@@ -87,13 +87,13 @@ Help (tool, new); search has no panel of its own — it lives in the palette, th
 
 ## Panel catalogue
 
-Version 1 has 32 panels: 13 documents that open in the centre and 19 tools that follow the active document or are pinned to an agent session. Notifications are part of the chrome, not a panel.
+Version 1 has 33 panels: 13 documents that open in the centre and 20 tools that follow the active document or are pinned to an agent session. Notifications are part of the chrome, not a panel.
 
 | Panel | Kind | Shows | Main actions | Live topic |
 | --- | --- | --- | --- | --- |
 | Run | Document | Config diff against the parent run, status, stage timeline, final metrics | Pause, resume, stop; resume from checkpoint; new stage from checkpoint with an explicit peak LR | `run.{id}.``status`, `run.{id}.``metrics` |
-| Eval report | Document | Matrix of languages and golden sets × latency (`[56,0]`, `[56,1]`, offline); WER/CER with delta to production and gate colour | Open a cell in Diff; re-run; set as baseline; edit gate thresholds | `eval.{id}.progress` |
-| Dataset version | Document | Fingerprint, hours by language and source, applied filters, lineage | Diff two versions; export to Shar | `entity.dataset_version.{id}`, `job.{id}` |
+| Eval report | Document | Matrix of languages and golden sets × latency profiles (`80ms`, `160ms`, `1120ms`; R43); WER/CER with delta to production and gate colour; charts: WER deltas with confidence intervals, S/D/I, duration and SNR buckets, latency to final, WER against latency (R53) | Open a cell in Diff; re-run; set as baseline; edit gate thresholds | `eval.{id}.progress` |
+| Dataset version | Document | Fingerprint, hours by language and source, applied filters, lineage; statistics charts: duration, characters per second, level and SNR, sample rates, speakers (R53) | Diff two versions; export to Shar | `entity.dataset_version.{id}`, `job.{id}` |
 | Mix | Document | Groups, weights, temperature, replay share; preview of hours per language | Save as version; launch a run with this mix | `entity.mix.{id}` (drafts arrive here) |
 | Triage queue | Document | Disputed production utterances: audio with a channel switch, hypotheses from several models, consensus, the item's signals; an Annotate mode for annotation batches with an editable transcript, tags and a keyboard-first flow | Accept, correct, reject; send to the next dataset version | `triage.new` |
 | Model | Document | Checkpoint → ONNX → Triton repository; stage: shadow, canary, prod | Export; promote; roll back | `deploy.{id}` |
@@ -102,11 +102,12 @@ Version 1 has 32 panels: 13 documents that open in the centre and 19 tools that 
 | Golden set | Document | Frozen test set: languages, domain, normalizer version, size, lineage | Propose or approve a freeze; set the normalizer | `entity.golden_set.{id}` |
 | Library | Tool | The registry (sources, dataset versions, golden sets, models, normalizers, templates) and the project's work (runs, mixes, recipes) with search, tags and a this-project / all filter | Open as document; compare two; adopt into project; set alias | — |
 | Queue & GPU | Tool | Job queue per card; GPU memory and compute; who holds the training slot | Reorder, pause, cancel | `queue`, `gpu` |
-| Metrics | Tool | Loss, validation WER and LR curves of the active run; pinned runs overlaid | Pin a run; change smoothing | `run.{id}.metrics` |
+| Metrics | Tool | Loss, validation WER, LR, gradient norm, throughput and GPU memory of the active run by step, epoch, wall time or GPU-hours; checkpoint marks; pinned runs overlaid (R53) | Pin a run; change smoothing, x-axis and scale; show as table | `run.{id}.metrics` |
 | Checkpoints | Tool | Checkpoints of the active run with validation WER | Evaluate; export; new stage from here | `run.{id}.metrics` |
 | Logs | Tool | Streaming log of the active job | Follow, search, copy | `job.{id}.log` |
 | Diff | Tool | Reference vs hypothesis for the selected utterance; substitutions, deletions and insertions marked | Step through utterances; copy | — |
-| Audio | Tool | Waveform and player for the selected utterance; renderer `always`; floating by default | Play, loop a span, change speed | — |
+| Audio | Tool | The audio view (R51) of the selected utterance or span: waveform, spectrogram, model input and emissions, reference and hypothesis word tracks, streaming timeline; renderer `always`; floating by default | Play, loop a span, change speed, zoom, choose tracks and colormap, attach the span to Chat, export TextGrid, CTM or WebVTT | — |
+| Transcription | Tool, floating by default | A manual test (R47–R50): a file, the microphone or an utterance span; one to three targets (checkpoint, model version, staging deployment) at chosen latency profiles; live partial and final words per target with level meter, latency and real-time factor; then the audio view with every target's words and the streaming timeline; nothing is stored | Choose the input; go live; finalize; stop; add a target; blind compare; type a reference (WER on the page); copy the text | `job.{id}` |
 | Inspector | Tool | Properties of the current selection: config values, manifest row, metadata | Copy a value; open its source | — |
 | Shadow | Tool | Divergence between the production and candidate models on live calls | Open an utterance in Diff; mark it for triage | `shadow.{``deployment``}` |
 | Chat | Tool, one per agent session | Streaming transcript: replies with entity links, plan checklist (a playbook's chain is the initial plan), tool-call cards with dry-run estimates and diffs, shell cards, approval cards; header chip with the session kind (interactive, playbook, scheduled, read-only) and state; budget meter for turns, tokens and GPU-hours | Send; stop; attach the selection; approve or deny; pause or resume; merge session changes | `agent.session.{id}` |
@@ -198,6 +199,7 @@ Commands are the only way the UI changes anything: menus, buttons, shortcuts and
 | Help for this / Shortcut sheet / Explain this | ? / Ctrl/Cmd+/ / — | `GET /help/context?panel=&entity=`; `POST /agent-sessions` (read-only, with the article attached) |
 | Save search as view | — | `PUT /me/projects/{p}/views/{name}` |
 | Edit language pack / Test boosting | — | worktree edit; `POST /projects/{p}/boost:evaluate` |
+| Try a model (file, microphone) | — | `POST /projects/{p}/transcriptions` (tag `media`, not an MCP tool); audio and words over the WebSocket it returns |
 | New annotation batch / Adjudicate / Freeze batch | — | `POST /projects/{p}/batches`; `PATCH /batches/{id}/items/{i}`; `POST /batches/{id}:freeze` — approval |
 | New experiment / Run sweep | — | `POST /projects/{p}/experiments`; `POST /experiments/{id}/sweeps:run` (dry run first; cap enforced) |
 | Preview augmentation / Robustness matrix | — | `POST /projects/{p}/augment:preview`; `POST /projects/{p}/evals` with profiles |
@@ -216,7 +218,7 @@ Rules:
 
 ## Backend contract
 
-The shell needs thirteen things from the Go control plane, all in the OpenAPI 3.1 contract that also generates the TypeScript client and the MCP tools.
+The shell needs fourteen things from the Go control plane, all in the OpenAPI 3.1 contract that also generates the TypeScript client and the MCP tools.
 
 | Need | Endpoints | Behaviour |
 | --- | --- | --- |
@@ -232,6 +234,7 @@ The shell needs thirteen things from the Go control plane, all in the OpenAPI 3.
 | Registry | `GET /registry/{kind}` with tag filters; `GET /registry/{kind}/{id}/versions`; `GET /registry/{kind}/{id}/lineage`; `POST /projects/{p}/adoptions`; `PUT /projects/{p}/aliases/{name}` | Registry events carry no projectId; the Library shows them by reference. Versions are immutable; only aliases change |
 | Settings | `GET` / `PATCH /compute/{id}`; `POST /secrets` (values never returned); `GET /catalog/*`; `GET` / `PATCH /policies` | Admin only; compute health on compute.{id} |
 | Search and help | `GET /search?q=&scope=` (query language above; grouped results); `GET /help/{slug}`, `GET /help/context?panel=&field=&error=`; `PUT /me/projects/{p}/views/{name}` | The index is fed from the outbox; help articles ship with the binary; problem+json type URIs resolve to help pages |
+| Audio and live audio | `GET /utterances/{id}/audio` (R25); `GET …/peaks`; `POST /projects/{p}/transcriptions` and `GET /transcriptions/{id}/stream` (WebSocket, R48) | Tag `media`: exempt from the verb rule and MCP; ranges and signed segments for audio; single-use ticket and Origin check for the socket; message schemas are contract components |
 | Credentials and notifications | `POST /login`, `POST /logout`; `GET` / `POST /credentials`, `POST /credentials/{id}:revoke`; `GET /invite/{token}`; `GET` / `PATCH /notification-rules` | Session cookie plus custom header on mutations, or Bearer; tokens hashed at rest; Telegram inline actions carry single-use signed tokens |
 
 Standards basis:

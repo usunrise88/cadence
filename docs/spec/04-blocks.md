@@ -56,7 +56,7 @@ Process:
 5. Apply the gate: thresholds for target languages, maximum regression for replay languages, and a check that fewer deletions were not bought with more insertions.
 6. Publish the eval report; the worst utterances of failing cells become triage candidates.
 
-Windows: Eval report, Diff, Audio, Inspector, Golden set, Library.
+Windows: Eval report, Diff, Audio, Inspector, Golden set, Library, Transcription (a manual test on a file or the microphone, shown live, nothing stored; R47–R50).
 
 Agent tools: `goldenSets.list`, `goldenSets.``freez``e`, `evals.``new`, `evals.``get` (cells, worst-N utterances, filters), `evals.g``ate`, gates.edit, `baselines.``set`.
 
@@ -108,8 +108,9 @@ WER stays the headline, but a voice agent fails on a wrong phone number or a lat
 | Metric | How it is computed | Needs |
 | --- | --- | --- |
 | Entity accuracy | Numbers, dates, phone numbers and amounts compared after inverse normalisation; names and addresses compared on annotated spans | Annotated spans in the golden set (optional; unannotated sets report the number classes only) |
-| Latency to final | Time from utterance end to the final hypothesis, per latency setting | Streaming eval with timestamps |
-| Partial stability | Edits per second between successive partial hypotheses | Streaming eval keeps partials |
+| Latency to final | Time from utterance end (per-channel VAD, else the aligned reference) to the final that covers it, per latency profile, with audio fed at real-time pace; p50 and p95 (R54) | Streaming eval with timestamps |
+| Emission delay | Time from a word's aligned end to its first appearance in a partial, as PR50 and PR90 (Yu et al., FastEmit, ICASSP 2021; R54) | Streaming eval keeps partials; aligned references |
+| Partial stability | Unstable partial word ratio: the share of words shown in partials that the final changed or dropped (Shangguan et al., Interspeech 2020); edits per second reported beside it (R54) | Streaming eval keeps partials |
 | End-of-utterance | Delay and false end-of-utterance rate against the VAD reference | Per-channel VAD on the golden set |
 | Throughput | RTF and maximum concurrent streams within the latency budget | The benchmark step on the staging card |
 
@@ -159,6 +160,7 @@ Every step now has a window, a palette command, an API operation, an agent tool 
 | Golden set | Golden set | Propose / approve freeze | `POST /projects/{p}/golden-sets`; `…:freeze` | `goldenSets.``freez``e` | `entity.golden_set.{id}`, `approvals` |
 | Eval run | Eval report | Run eval matrix | `POST /projects/{p}/evals` | `evals.create` | `eval.{id}.progress` |
 | Inspect results | Diff, Audio, Inspector | — | `GET /evals/{id}/results` | `evals.``get` | — |
+| Try a model by hand | Transcription, Audio | Try a model (file, microphone) | `POST /projects/{p}/transcriptions`; audio and words over `GET /transcriptions/{id}/stream` (WebSocket) | — (a person speaks or listens; agents use `evals.new`) | `job.{id}` |
 | Gate | Eval report | Evaluate gate; Edit gate | `POST /evals/{id}:gate`; `PATCH /projects/{p}/gates/{id}` | `evals.g``ate`, `gates.``edit` | `entity.gate.{id}` |
 | Baseline | Eval report | Set eval baseline (approval) | `PATCH /projects/{p}/baseline` | `baselines.``set` | `approvals` |
 | Register model | Model | Register model version | `POST /projects/{p}/models` | `models.register` | `entity.model_version.{id}` |

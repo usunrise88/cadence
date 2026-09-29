@@ -4,7 +4,7 @@ _Part of the Cadence specification v0.2 (2026-09-29). Source of truth: the Claud
 
 ## Domain model
 
-Forty-four entities across the five blocks, the project layer and the registry; everything a model was built from is reachable from the model by lineage links, and nothing referenced by a promoted model can be deleted.
+Forty-six entities across the five blocks, the project layer and the registry (two added by R40–R41); everything a model was built from is reachable from the model by lineage links, and nothing referenced by a promoted model can be deleted.
 
 | Entity | Block | What it is | Links to |
 | --- | --- | --- | --- |
@@ -52,6 +52,8 @@ Forty-four entities across the five blocks, the project layer and the registry; 
 | Augmentation profile | Training, Eval (project) | A versioned file of transforms with probabilities and ranges; telephony by default | Commit SHA; Runs, Eval runs; Noise bank |
 | Noise bank | Data (registry) | Non-speech segments mined from own recordings plus licensed public noise sets, versioned like a dataset | Sources, Augmentation profiles |
 | Notification rule | Cross-cutting (registry) | Event class → channels and timing; quiet hours | — |
+| Runtime | All (registry) | A worker container image pinned by digest, with the framework versions and the worker plugin it carries; each step kind names its runtime (R40) | Step kinds, Model families, Compute |
+| Model family | Training, Eval, Deploy (registry) | Versioned descriptor of a framework and architecture: formats, capabilities, latency profiles, the step kinds for each role, defaults (R41) | Runtime; Base models, Checkpoints, Model versions |
 
 ## Projects
 
@@ -96,7 +98,7 @@ This is the pattern of [W&B Registry](https://docs.wandb.ai/models/registry): or
 
 | Registry — shared, versioned, immutable | Project — the work |
 | --- | --- |
-| Source, Utterance, Dataset version, Golden set, Normalizer, Base model, Model version, Mount, Step kind, Pipeline template, Instruction template, Permission preset, Skill | Mix, Run, Checkpoint, Eval run and results, Gate, Deployment, Promotion, Production sample, Signal, Triage item, Correction batch (until packaged), Agent profile, Agent session, Schedule, Approval, workspace layouts |
+| Source, Utterance, Dataset version, Golden set, Normalizer, Base model, Model version, Mount, Step kind, Runtime, Model family, Pipeline template, Instruction template, Permission preset, Skill | Mix, Run, Checkpoint, Eval run and results, Gate, Deployment, Promotion, Production sample, Signal, Triage item, Correction batch (until packaged), Agent profile, Agent session, Schedule, Approval, workspace layouts |
 
 Rules:
 

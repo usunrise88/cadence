@@ -10,7 +10,8 @@ Every block's process is a pipeline of typed steps declared in the recipes repos
 
 - Pipeline: a YAML file in the recipes repository (`pipelines/data-ingest.yaml`, `pipelines/train-stage.yaml`, …) listing steps in order, each with a step kind, parameters and named inputs and outputs. A pipeline version is its commit SHA.
 - Step kind: a Python entry point in the worker (`cadence.steps` group, the same idea as SDP processors) declaring a JSON Schema for parameters, the artifact types it consumes and produces, resource needs (GPU, memory cap, disk) and a `run()`; the worker publishes the registry to the control plane at start.
-- Artifact types: manifest, Shar shard set, checkpoint, ONNX bundle, eval report, correction batch — each with a schema, so a pipeline is validated at plan time (`dryRun`), not at step 4 of a run.
+- Artifact types: manifest, Shar shard set, checkpoint, hypotheses, analysis arrays, waveform peaks, deployable bundle (ONNX, Triton repository), eval report, correction batch — each with a schema, so a pipeline is validated at plan time (`dryRun`), not at step 4 of a run. Framework-specific code stops at the role steps of a model family; everything after them reads these neutral types (R42).
+- Runtime: every step-kind version names the runtime (a pinned worker image) it runs in; a worker leases only its runtime's step kinds (R40).
 - Pipeline run: a job with per-step status, inputs, outputs and logs; a failed step can be retried alone, and outputs of finished steps are reused.
 
 ### What derives from the schema
@@ -27,6 +28,9 @@ Every block's process is a pipeline of typed steps declared in the recipes repos
 | To add | Touch | Nothing else changes because |
 | --- | --- | --- |
 | A processing, training, eval or export step | One step-kind module with its schema | Registry publishes it; pipelines reference it by name and version |
+| A training framework or model family (icefall, Hugging Face, ESPnet, …) | A framework pack: runtime image, step kinds for the family's roles, family descriptor with latency profiles, pipeline templates and playbooks, a `defaults.yaml` section, help, an agent skill (R40–R45) | Scorers, gates, Diff, Audio, triage and the registry read neutral artifacts; the conformance suite proves the pack before it ships. Packs beyond NeMo are deferred; the seams are built in phase 2 (R45) |
+| A deployment target | A target descriptor listing the families and formats it serves, its repository builder and parity check (R46) | Promotion checks family and format against the target |
+| An audio track or a chart | A track in the shell's audio view or a chart in the catalogue, reading a contract resource (R51–R53) | Panels compose tracks and charts; the numbers come from the API that agents read |
 | A flywheel signal | A signal provider in the same registry, producing Signal rows | Triage reads signals generically |
 | A scorer or normalizer | A versioned step kind; golden sets pin the version | Eval results carry the version |
 | A storage backend | A mount driver (see Storage and mounts) | Utterances carry URIs, not paths |
@@ -65,8 +69,10 @@ Rules:
 | Sampling policy | 10% of calls plus every low-confidence utterance | Cadence recommendation |
 | Retention, PII | 90 days; NER spans masked in text and cut from audio | Proposed default, awaiting confirmation |
 | Budgets | 8 GPU-hours per project per day; 200 turns per agent session; 3 min inactivity timeout | Cadence recommendation |
+| Manual tests | Nothing stored; one session per user, 15 min, 5 min idle; files up to 15 min of audio; 1 GPU-hour per project per day (R47–R49) | Owner (nothing stored); the limits are a Cadence recommendation |
+| Audio views | 25 ms Hann window, 10 ms hop, mel scale to 8 kHz (4 kHz for 8 kHz audio), 80 dB range, magma colormap (R52) | Kaldi, Lhotse and NeMo feature framing; librosa `top_db`; perceptually uniform colormaps |
 | Cache | High-water mark 80% of local NVMe; 40% quota per project | Cadence recommendation |
-| Significance | 1 000-sample bootstrap 95% confidence interval on every WER delta; a gate counts a gain or a regression only when the interval excludes zero | Bisani & Ney, ICASSP 2004 |
+| Significance | 1 000-sample bootstrap 95% confidence interval on every WER delta, resampling whole calls (or speakers) rather than utterances (R54); a gate counts a gain or a regression only when the interval excludes zero | Bisani & Ney, ICASSP 2004; Liu & Peng, arXiv:1912.09508 (blockwise bootstrap) |
 | Cards | Every dataset version gets a generated dataset card and every registered model a model card: composition, licences, lineage, eval records, departures from defaults | Datasheets for Datasets (Gebru et al., CACM 2021); Model Cards (Mitchell et al., FAT* 2019) |
 
 ### Playbooks

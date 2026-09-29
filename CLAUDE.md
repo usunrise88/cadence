@@ -35,6 +35,8 @@ Work follows `ROADMAP.md`: six phases (0 Shell → 1 Agent loop → 2 Training �
 flywheel), each closed by a gate. Pick work from the current phase; tick items there as they merge; don't start an
 item whose **decide** line is still open. Proposed answers to every **decide**/**spec** line are in
 `docs/spec/08-resolutions.md` (R1–R39), ported to the Doc; they win over older spec text until it is rewritten.
+R40–R54 in the same file (framework seams, manual transcription tests, the audio view and charts) were added the same
+day: build the seams in phase 2; training from scratch and packs beyond NeMo are deferred; transcriptions store nothing.
 
 Phase 0 (shell) passed its gate on 2026-09-29: spikes S1–S4 are done with numbers in `docs/spikes/`. What exists:
 - **Contract toolchain.** `api/openapi.yaml` follows R1; `api/vocabulary.yaml` is the machine copy of the verb table
