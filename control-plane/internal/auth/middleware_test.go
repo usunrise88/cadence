@@ -121,6 +121,15 @@ func TestMiddleware(t *testing.T) {
 		})
 	}
 
+	// An in-process request that already carries a principal (approval replay, MCP) is not re-authenticated.
+	seen = Actor{}
+	inproc := httptest.NewRequest("POST", "/projects", nil).WithContext(WithPrincipal(context.Background(), key))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, inproc)
+	if rec.Code != http.StatusNoContent || seen.ID != "crd_k" {
+		t.Errorf("in-process request: %d, actor %q", rec.Code, seen.ID)
+	}
+
 	fixed := &Authenticator{Fixed: &Actor{Kind: KindUser, ID: "usr_test"}}
 	var scope Scope
 	fh := fixed.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

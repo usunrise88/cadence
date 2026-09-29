@@ -62,6 +62,12 @@ type Authenticator struct {
 //   - A mutation (POST, PUT, PATCH) not authenticated by Bearer must carry Cadence-Client: web, or it is 403.
 func (a *Authenticator) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := PrincipalFromContext(r.Context()); ok {
+			// An in-process request (an approval replayed as its original actor, an MCP tool call) already carries
+			// its principal; a request from the network never does, since only this middleware sets one.
+			next.ServeHTTP(w, r)
+			return
+		}
 		ctx := WithClient(r.Context(), ClientOf(r))
 		if a.Fixed != nil {
 			p := Principal{Actor: *a.Fixed, Scope: FullScope(), UserID: fixedUser(*a.Fixed)}
