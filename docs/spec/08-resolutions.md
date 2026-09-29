@@ -92,6 +92,7 @@ are confirmed to cover them. Budgets count turns/tokens in both modes; money onl
 - Policy engine runs server-side on every command: input = actor, verb class, entity, scope, estimate vs remaining
   budget; output = `allow` | `approval` | `deny`. Rules are data (same YAML), evaluated in order, first match wins;
   default `deny`. Agent-side files never widen what the server allows.
+- Built in phase 1 (stream C): presets `guardrails-default` and `read-only` in `control-plane/templates/presets/`, the engine and the renderer in `control-plane/internal/policy`, the guide `docs/help/guides/approvals.md`. Rules marked `everyone` apply to people too (R8 `baseline`); agent-side files allow every Cadence tool the server may run (spend and gated ones answer with an approval id) and deny the rest.
 
 **R8 · Reserved aliases** (B3)
 `baseline` and `production` are reserved. `aliases.set baseline` is a gated command (returns `202 {approvalId}`);
