@@ -53,10 +53,16 @@ func LoadMigrations(fsys fs.FS) ([]Migration, error) {
 	return out, nil
 }
 
+// Step is a migration owned by a library (River's own tables). It runs after the SQL files on every start, while
+// this process holds the migration lock (so concurrent starts still take turns), manages its own transactions on
+// the pool, and must be idempotent.
+type Step func(ctx context.Context, pool *pgxpool.Pool) error
+
 // Migrate applies the migrations in fsys that the database has not seen, each in its own transaction, while
-// holding a session advisory lock so that concurrent starts apply every migration exactly once. It refuses to
-// run when the database records a migration this binary does not know (a newer release migrated it).
-func Migrate(ctx context.Context, pool *pgxpool.Pool, fsys fs.FS) (applied int, err error) {
+// holding a session advisory lock so that concurrent starts apply every migration exactly once; then it runs the
+// steps under the same lock. It refuses to run when the database records a migration this binary does not know
+// (a newer release migrated it). applied counts the SQL files only.
+func Migrate(ctx context.Context, pool *pgxpool.Pool, fsys fs.FS, steps ...Step) (applied int, err error) {
 	migrations, err := LoadMigrations(fsys)
 	if err != nil {
 		return 0, err
@@ -115,6 +121,11 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool, fsys fs.FS) (applied int, 
 			return applied, fmt.Errorf("migration %04d_%s: %w", m.Version, m.Name, err)
 		}
 		applied++
+	}
+	for i, step := range steps {
+		if err := step(ctx, pool); err != nil {
+			return applied, fmt.Errorf("migration step %d: %w", i+1, err)
+		}
 	}
 	return applied, nil
 }

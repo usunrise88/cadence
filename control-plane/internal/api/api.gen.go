@@ -44,6 +44,81 @@ func (e ActorKind) Valid() bool {
 	}
 }
 
+// Defines values for ApprovalScope.
+const (
+	ApprovalScopeProject  ApprovalScope = "project"
+	ApprovalScopeRegistry ApprovalScope = "registry"
+)
+
+// Valid indicates whether the value is a known member of the ApprovalScope enum.
+func (e ApprovalScope) Valid() bool {
+	switch e {
+	case ApprovalScopeProject:
+		return true
+	case ApprovalScopeRegistry:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ApprovalState.
+const (
+	ApprovalStateApproved ApprovalState = "approved"
+	ApprovalStateDenied   ApprovalState = "denied"
+	ApprovalStatePending  ApprovalState = "pending"
+)
+
+// Valid indicates whether the value is a known member of the ApprovalState enum.
+func (e ApprovalState) Valid() bool {
+	switch e {
+	case ApprovalStateApproved:
+		return true
+	case ApprovalStateDenied:
+		return true
+	case ApprovalStatePending:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ApprovalApproveGrant.
+const (
+	ApprovalApproveGrantOnce    ApprovalApproveGrant = "once"
+	ApprovalApproveGrantSession ApprovalApproveGrant = "session"
+)
+
+// Valid indicates whether the value is a known member of the ApprovalApproveGrant enum.
+func (e ApprovalApproveGrant) Valid() bool {
+	switch e {
+	case ApprovalApproveGrantOnce:
+		return true
+	case ApprovalApproveGrantSession:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ApprovalDecisionGrant.
+const (
+	ApprovalDecisionGrantOnce    ApprovalDecisionGrant = "once"
+	ApprovalDecisionGrantSession ApprovalDecisionGrant = "session"
+)
+
+// Valid indicates whether the value is a known member of the ApprovalDecisionGrant enum.
+func (e ApprovalDecisionGrant) Valid() bool {
+	switch e {
+	case ApprovalDecisionGrantOnce:
+		return true
+	case ApprovalDecisionGrantSession:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for HelpArticleSection.
 const (
 	Errors HelpArticleSection = "errors"
@@ -65,6 +140,33 @@ func (e HelpArticleSection) Valid() bool {
 	case Shell:
 		return true
 	case Steps:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for JobState.
+const (
+	Cancelled JobState = "cancelled"
+	Done      JobState = "done"
+	Failed    JobState = "failed"
+	Queued    JobState = "queued"
+	Running   JobState = "running"
+)
+
+// Valid indicates whether the value is a known member of the JobState enum.
+func (e JobState) Valid() bool {
+	switch e {
+	case Cancelled:
+		return true
+	case Done:
+		return true
+	case Failed:
+		return true
+	case Queued:
+		return true
+	case Running:
 		return true
 	default:
 		return false
@@ -94,16 +196,22 @@ func (e RegistryVersionState) Valid() bool {
 
 // Defines values for ApprovalsListParamsState.
 const (
-	Decided ApprovalsListParamsState = "decided"
-	Pending ApprovalsListParamsState = "pending"
+	ApprovalsListParamsStateApproved ApprovalsListParamsState = "approved"
+	ApprovalsListParamsStateDecided  ApprovalsListParamsState = "decided"
+	ApprovalsListParamsStateDenied   ApprovalsListParamsState = "denied"
+	ApprovalsListParamsStatePending  ApprovalsListParamsState = "pending"
 )
 
 // Valid indicates whether the value is a known member of the ApprovalsListParamsState enum.
 func (e ApprovalsListParamsState) Valid() bool {
 	switch e {
-	case Decided:
+	case ApprovalsListParamsStateApproved:
 		return true
-	case Pending:
+	case ApprovalsListParamsStateDecided:
+		return true
+	case ApprovalsListParamsStateDenied:
+		return true
+	case ApprovalsListParamsStatePending:
 		return true
 	default:
 		return false
@@ -121,9 +229,140 @@ type Actor struct {
 // ActorKind defines model for Actor.Kind.
 type ActorKind string
 
+// Approval defines model for Approval.
+type Approval struct {
+	Actor     Actor             `json:"actor"`
+	CreatedAt time.Time         `json:"createdAt"`
+	DecidedAt *time.Time        `json:"decidedAt,omitempty"`
+	DecidedBy *Actor            `json:"decidedBy,omitempty"`
+	Decision  *ApprovalDecision `json:"decision,omitempty"`
+	Estimate  *PolicyEstimate   `json:"estimate,omitempty"`
+
+	// ExpiresAt Pending approvals are denied when this passes (24 h)
+	ExpiresAt time.Time `json:"expiresAt"`
+
+	// Id apr_<uuidv7>
+	Id string `json:"id"`
+
+	// Operation The gated operation, e.g. projects.archive
+	Operation string  `json:"operation"`
+	ProjectId *string `json:"projectId,omitempty"`
+	Reason    string  `json:"reason"`
+
+	// Request The stored request, without credentials or cookies
+	Request ApprovalRequest `json:"request"`
+
+	// Result What the replayed request answered
+	Result *ApprovalResult `json:"result,omitempty"`
+	Rev    int             `json:"rev"`
+
+	// Rule The policy rule that asked for approval
+	Rule string `json:"rule"`
+
+	// Scope Registry approvals are decided by the admin only
+	Scope ApprovalScope `json:"scope"`
+	State ApprovalState `json:"state"`
+}
+
+// ApprovalScope Registry approvals are decided by the admin only
+type ApprovalScope string
+
+// ApprovalState defines model for Approval.State.
+type ApprovalState string
+
 // ApprovalAccepted defines model for ApprovalAccepted.
 type ApprovalAccepted struct {
 	ApprovalId string `json:"approvalId"`
+}
+
+// ApprovalApprove defines model for ApprovalApprove.
+type ApprovalApprove struct {
+	Grant *ApprovalApproveGrant `json:"grant,omitempty"`
+	Note  *string               `json:"note,omitempty"`
+}
+
+// ApprovalApproveGrant defines model for ApprovalApprove.Grant.
+type ApprovalApproveGrant string
+
+// ApprovalDecision defines model for ApprovalDecision.
+type ApprovalDecision struct {
+	// Expired Denied because nobody decided within 24 h
+	Expired *bool `json:"expired,omitempty"`
+
+	// Grant session also allows the same operation on the same path for the rest of the agent session
+	Grant ApprovalDecisionGrant `json:"grant"`
+	Note  *string               `json:"note,omitempty"`
+}
+
+// ApprovalDecisionGrant session also allows the same operation on the same path for the rest of the agent session
+type ApprovalDecisionGrant string
+
+// ApprovalDeny defines model for ApprovalDeny.
+type ApprovalDeny struct {
+	Note *string `json:"note,omitempty"`
+}
+
+// ApprovalList defines model for ApprovalList.
+type ApprovalList struct {
+	Items []Approval `json:"items"`
+}
+
+// ApprovalRequest The stored request, without credentials or cookies
+type ApprovalRequest struct {
+	// Body The JSON body
+	Body    interface{}       `json:"body,omitempty"`
+	Headers map[string]string `json:"headers"`
+	Method  string            `json:"method"`
+	Path    string            `json:"path"`
+	Query   *string           `json:"query,omitempty"`
+}
+
+// ApprovalResult What the replayed request answered
+type ApprovalResult struct {
+	// Body The JSON body of the replay's response
+	Body      interface{} `json:"body,omitempty"`
+	CommandId string      `json:"commandId"`
+	Status    int         `json:"status"`
+}
+
+// AuditCause defines model for AuditCause.
+type AuditCause struct {
+	ApprovalId *string `json:"approvalId,omitempty"`
+	CommandId  *string `json:"commandId,omitempty"`
+	ToolCallId *string `json:"toolCallId,omitempty"`
+}
+
+// AuditEntry defines model for AuditEntry.
+type AuditEntry struct {
+	Actor     Actor       `json:"actor"`
+	At        time.Time   `json:"at"`
+	CausedBy  *AuditCause `json:"causedBy,omitempty"`
+	CommandId *string     `json:"commandId,omitempty"`
+
+	// Id aud_<uuidv7>
+	Id        string `json:"id"`
+	Operation string `json:"operation"`
+
+	// Outcome ok, approval (stored as an approval), denied (policy), expired (approval nobody decided), or the problem slug of a failed attempt
+	Outcome string `json:"outcome"`
+
+	// Preset The permission preset the policy engine applied
+	Preset    *string `json:"preset,omitempty"`
+	ProjectId *string `json:"projectId,omitempty"`
+
+	// Rule The policy rule that decided
+	Rule *string `json:"rule,omitempty"`
+
+	// Status HTTP status answered
+	Status int `json:"status"`
+}
+
+// AuditList defines model for AuditList.
+type AuditList struct {
+	Items []AuditEntry `json:"items"`
+
+	// Next Pass as `before` for the next (older) page; absent on the last page
+	Next *string `json:"next,omitempty"`
 }
 
 // CadenceEvent defines model for CadenceEvent.
@@ -131,7 +370,11 @@ type CadenceEvent struct {
 	Actor    Actor     `json:"actor"`
 	At       time.Time `json:"at"`
 	CausedBy *struct {
+		// ApprovalId The approval a person granted for this command
+		ApprovalId *string `json:"approvalId,omitempty"`
 		CommandId  string  `json:"commandId"`
+
+		// ToolCallId The agent tool call (Cadence-Tool-Call-Id request header)
 		ToolCallId *string `json:"toolCallId,omitempty"`
 	} `json:"causedBy,omitempty"`
 	Entity *struct {
@@ -187,16 +430,58 @@ type HelpSearchResult struct {
 	Items []HelpHit `json:"items"`
 }
 
+// Job defines model for Job.
+type Job struct {
+	Actor             Actor      `json:"actor"`
+	Attempt           int        `json:"attempt"`
+	CancelRequestedAt *time.Time `json:"cancelRequestedAt,omitempty"`
+	CreatedAt         time.Time  `json:"createdAt"`
+
+	// Error Why it failed
+	Error      *string    `json:"error,omitempty"`
+	FinishedAt *time.Time `json:"finishedAt,omitempty"`
+
+	// Id job_<uuidv7>
+	Id   string `json:"id"`
+	Kind string `json:"kind"`
+
+	// Message The last progress message
+	Message   *string `json:"message,omitempty"`
+	Progress  float64 `json:"progress"`
+	ProjectId *string `json:"projectId,omitempty"`
+
+	// Result What the job produced (kind-specific JSON)
+	Result    interface{} `json:"result,omitempty"`
+	Rev       int         `json:"rev"`
+	StartedAt *time.Time  `json:"startedAt,omitempty"`
+	State     JobState    `json:"state"`
+	UpdatedAt time.Time   `json:"updatedAt"`
+}
+
 // JobAccepted defines model for JobAccepted.
 type JobAccepted struct {
 	JobId string `json:"jobId"`
 }
+
+// JobList defines model for JobList.
+type JobList struct {
+	Items []Job `json:"items"`
+}
+
+// JobState defines model for JobState.
+type JobState string
 
 // PanelState defines model for PanelState.
 type PanelState struct {
 	// PinnedTo Document reference kind:id
 	PinnedTo  *string                 `json:"pinnedTo,omitempty"`
 	ViewState *map[string]interface{} `json:"viewState,omitempty"`
+}
+
+// PolicyEstimate defines model for PolicyEstimate.
+type PolicyEstimate struct {
+	GpuHours          *float64 `json:"gpuHours,omitempty"`
+	RemainingGpuHours *float64 `json:"remainingGpuHours,omitempty"`
 }
 
 // Problem defines model for Problem.
@@ -372,7 +657,12 @@ type AgentSessionsCancelParams struct {
 
 // ApprovalsListParams defines parameters for ApprovalsList.
 type ApprovalsListParams struct {
+	// State Only approvals in this state; decided means approved or denied
 	State *ApprovalsListParamsState `form:"state,omitempty" json:"state,omitempty"`
+
+	// Project Project slug or id
+	Project *string `form:"project,omitempty" json:"project,omitempty"`
+	Limit   *int    `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
 // ApprovalsListParamsState defines parameters for ApprovalsList.
@@ -400,6 +690,22 @@ type ApprovalsDenyParams struct {
 
 	// IfMatch The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
 	IfMatch IfMatch `json:"If-Match"`
+}
+
+// AuditListParams defines parameters for AuditList.
+type AuditListParams struct {
+	// Actor Actor id (usr_…
+	Actor *string `form:"actor,omitempty" json:"actor,omitempty"`
+
+	// Project Project slug or id
+	Project *string `form:"project,omitempty" json:"project,omitempty"`
+
+	// Operation Operation id, e.g. projects.archive
+	Operation *string `form:"operation,omitempty" json:"operation,omitempty"`
+
+	// Before Cursor: the `next` value of the previous page
+	Before *string `form:"before,omitempty" json:"before,omitempty"`
+	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
 // EventsListParams defines parameters for EventsList.
@@ -440,6 +746,12 @@ type JobsCancelParams struct {
 
 	// IfMatch The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
 	IfMatch IfMatch `json:"If-Match"`
+}
+
+// JobsWaitParams defines parameters for JobsWait.
+type JobsWaitParams struct {
+	// Timeout Seconds to wait at most
+	Timeout *int `form:"timeout,omitempty" json:"timeout,omitempty"`
 }
 
 // WorkspacesSetParams defines parameters for WorkspacesSet.
@@ -535,6 +847,13 @@ type AliasesSetParams struct {
 	IfMatch *IfMatchOptional `json:"If-Match,omitempty"`
 }
 
+// JobsListParams defines parameters for JobsList.
+type JobsListParams struct {
+	// State Only jobs in this state
+	State *JobState `form:"state,omitempty" json:"state,omitempty"`
+	Limit *int      `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
 // MixesNewJSONBody defines parameters for MixesNew.
 type MixesNewJSONBody map[string]interface{}
 
@@ -597,6 +916,12 @@ type RegistrySearchParams struct {
 // AgentMessagesNewJSONRequestBody defines body for AgentMessagesNew for application/json ContentType.
 type AgentMessagesNewJSONRequestBody AgentMessagesNewJSONBody
 
+// ApprovalsApproveJSONRequestBody defines body for ApprovalsApprove for application/json ContentType.
+type ApprovalsApproveJSONRequestBody = ApprovalApprove
+
+// ApprovalsDenyJSONRequestBody defines body for ApprovalsDeny for application/json ContentType.
+type ApprovalsDenyJSONRequestBody = ApprovalDeny
+
 // WorkspacesSetJSONRequestBody defines body for WorkspacesSet for application/json ContentType.
 type WorkspacesSetJSONRequestBody = WorkspaceSet
 
@@ -635,15 +960,21 @@ type ServerInterface interface {
 	// AgentSessionsCancel Stop the session's current turn
 	// (POST /agent-sessions/{id}:cancel)
 	AgentSessionsCancel(w http.ResponseWriter, r *http.Request, id Id, params AgentSessionsCancelParams)
-	// ApprovalsList Approvals, pending first
+	// ApprovalsList Approvals, pending first, then the most recently decided
 	// (GET /approvals)
 	ApprovalsList(w http.ResponseWriter, r *http.Request, params ApprovalsListParams)
-	// ApprovalsApprove Approve a pending request
+	// ApprovalsGet Get an approval with its stored request and, once approved, the replay's result
+	// (GET /approvals/{id})
+	ApprovalsGet(w http.ResponseWriter, r *http.Request, id Id)
+	// ApprovalsApprove Approve a pending request; the stored request runs as its original actor
 	// (POST /approvals/{id}:approve)
 	ApprovalsApprove(w http.ResponseWriter, r *http.Request, id Id, params ApprovalsApproveParams)
-	// ApprovalsDeny Deny a pending request
+	// ApprovalsDeny Deny a pending request; it never runs
 	// (POST /approvals/{id}:deny)
 	ApprovalsDeny(w http.ResponseWriter, r *http.Request, id Id, params ApprovalsDenyParams)
+	// AuditList The audit log, newest first — every command, denial and failed attempt with its actor and cause
+	// (GET /audit)
+	AuditList(w http.ResponseWriter, r *http.Request, params AuditListParams)
 	// EventsList Events after a sequence number; with Accept text/event-stream, the live stream
 	// (GET /events)
 	EventsList(w http.ResponseWriter, r *http.Request, params EventsListParams)
@@ -656,9 +987,12 @@ type ServerInterface interface {
 	// JobsGet Get a job
 	// (GET /jobs/{id})
 	JobsGet(w http.ResponseWriter, r *http.Request, id Id)
-	// JobsCancel Cancel a job
+	// JobsCancel Cancel a job; a queued job stops at once, a running one when its handler notices
 	// (POST /jobs/{id}:cancel)
 	JobsCancel(w http.ResponseWriter, r *http.Request, id Id, params JobsCancelParams)
+	// JobsWait Wait until a job ends or the timeout passes, then return it (agents)
+	// (GET /jobs/{id}:wait)
+	JobsWait(w http.ResponseWriter, r *http.Request, id Id, params JobsWaitParams)
 	// MeGet The current actor
 	// (GET /me)
 	MeGet(w http.ResponseWriter, r *http.Request)
@@ -698,6 +1032,9 @@ type ServerInterface interface {
 	// AliasesSet Point a project alias at a registry version (baseline is gated, production moves only by promotion)
 	// (PUT /projects/{p}/aliases/{name})
 	AliasesSet(w http.ResponseWriter, r *http.Request, p ProjectSlug, name string, params AliasesSetParams)
+	// JobsList Jobs of a project, newest first
+	// (GET /projects/{p}/jobs)
+	JobsList(w http.ResponseWriter, r *http.Request, p ProjectSlug, params JobsListParams)
 	// MixesNew Save a mix (input_cfg groups, weights, temperature, replay share)
 	// (POST /projects/{p}/mixes)
 	MixesNew(w http.ResponseWriter, r *http.Request, p ProjectSlug, params MixesNewParams)
@@ -731,21 +1068,33 @@ func (_ Unimplemented) AgentSessionsCancel(w http.ResponseWriter, r *http.Reques
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// ApprovalsList Approvals, pending first
+// ApprovalsList Approvals, pending first, then the most recently decided
 // (GET /approvals)
 func (_ Unimplemented) ApprovalsList(w http.ResponseWriter, r *http.Request, params ApprovalsListParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// ApprovalsApprove Approve a pending request
+// ApprovalsGet Get an approval with its stored request and, once approved, the replay's result
+// (GET /approvals/{id})
+func (_ Unimplemented) ApprovalsGet(w http.ResponseWriter, r *http.Request, id Id) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ApprovalsApprove Approve a pending request; the stored request runs as its original actor
 // (POST /approvals/{id}:approve)
 func (_ Unimplemented) ApprovalsApprove(w http.ResponseWriter, r *http.Request, id Id, params ApprovalsApproveParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// ApprovalsDeny Deny a pending request
+// ApprovalsDeny Deny a pending request; it never runs
 // (POST /approvals/{id}:deny)
 func (_ Unimplemented) ApprovalsDeny(w http.ResponseWriter, r *http.Request, id Id, params ApprovalsDenyParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AuditList The audit log, newest first — every command, denial and failed attempt with its actor and cause
+// (GET /audit)
+func (_ Unimplemented) AuditList(w http.ResponseWriter, r *http.Request, params AuditListParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -773,9 +1122,15 @@ func (_ Unimplemented) JobsGet(w http.ResponseWriter, r *http.Request, id Id) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// JobsCancel Cancel a job
+// JobsCancel Cancel a job; a queued job stops at once, a running one when its handler notices
 // (POST /jobs/{id}:cancel)
 func (_ Unimplemented) JobsCancel(w http.ResponseWriter, r *http.Request, id Id, params JobsCancelParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// JobsWait Wait until a job ends or the timeout passes, then return it (agents)
+// (GET /jobs/{id}:wait)
+func (_ Unimplemented) JobsWait(w http.ResponseWriter, r *http.Request, id Id, params JobsWaitParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -854,6 +1209,12 @@ func (_ Unimplemented) AgentSessionsNew(w http.ResponseWriter, r *http.Request, 
 // AliasesSet Point a project alias at a registry version (baseline is gated, production moves only by promotion)
 // (PUT /projects/{p}/aliases/{name})
 func (_ Unimplemented) AliasesSet(w http.ResponseWriter, r *http.Request, p ProjectSlug, name string, params AliasesSetParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// JobsList Jobs of a project, newest first
+// (GET /projects/{p}/jobs)
+func (_ Unimplemented) JobsList(w http.ResponseWriter, r *http.Request, p ProjectSlug, params JobsListParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1075,8 +1436,60 @@ func (siw *ServerInterfaceWrapper) ApprovalsList(w http.ResponseWriter, r *http.
 		return
 	}
 
+	// ------------- Optional query parameter "project" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "project", r.URL.Query(), &params.Project, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "project"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "project", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ApprovalsList(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ApprovalsGet operation middleware
+func (siw *ServerInterfaceWrapper) ApprovalsGet(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ApprovalsGet(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1257,6 +1670,91 @@ func (siw *ServerInterfaceWrapper) ApprovalsDeny(w http.ResponseWriter, r *http.
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ApprovalsDeny(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AuditList operation middleware
+func (siw *ServerInterfaceWrapper) AuditList(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AuditListParams
+
+	// ------------- Optional query parameter "actor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "actor", r.URL.Query(), &params.Actor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "actor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "actor", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "project" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "project", r.URL.Query(), &params.Project, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "project"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "project", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "operation" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "operation", r.URL.Query(), &params.Operation, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "operation"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "operation", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "before" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "before", r.URL.Query(), &params.Before, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "before"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "before", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AuditList(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1551,6 +2049,48 @@ func (siw *ServerInterfaceWrapper) JobsCancel(w http.ResponseWriter, r *http.Req
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.JobsCancel(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// JobsWait operation middleware
+func (siw *ServerInterfaceWrapper) JobsWait(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params JobsWaitParams
+
+	// ------------- Optional query parameter "timeout" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "timeout", r.URL.Query(), &params.Timeout, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "timeout"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "timeout", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.JobsWait(w, r, id, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2261,6 +2801,61 @@ func (siw *ServerInterfaceWrapper) AliasesSet(w http.ResponseWriter, r *http.Req
 	handler.ServeHTTP(w, r)
 }
 
+// JobsList operation middleware
+func (siw *ServerInterfaceWrapper) JobsList(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "p" -------------
+	var p ProjectSlug
+
+	err = runtime.BindStyledParameterWithOptions("simple", "p", chi.URLParam(r, "p"), &p, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "p", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params JobsListParams
+
+	// ------------- Optional query parameter "state" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "state", r.URL.Query(), &params.State, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "state"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "state", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.JobsList(w, r, p, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // MixesNew operation middleware
 func (siw *ServerInterfaceWrapper) MixesNew(w http.ResponseWriter, r *http.Request) {
 
@@ -2777,6 +3372,33 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/registry", wrapper.RegistrySearch)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/approvals", wrapper.ApprovalsList)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/approvals/{id}", wrapper.ApprovalsGet)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/approvals/{id}:approve", wrapper.ApprovalsApprove)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/approvals/{id}:deny", wrapper.ApprovalsDeny)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/audit", wrapper.AuditList)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/projects/{p}/jobs", wrapper.JobsList)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/jobs/{id}", wrapper.JobsGet)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/jobs/{id}:cancel", wrapper.JobsCancel)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/jobs/{id}:wait", wrapper.JobsWait)
+	})
+	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/projects/{p}/mixes", wrapper.MixesNew)
 	})
 	r.Group(func(r chi.Router) {
@@ -2789,12 +3411,6 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/projects/{p}/runs", wrapper.RunsNew)
 	})
 	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/jobs/{id}", wrapper.JobsGet)
-	})
-	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/jobs/{id}:cancel", wrapper.JobsCancel)
-	})
-	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/projects/{p}/agent-sessions", wrapper.AgentSessionsNew)
 	})
 	r.Group(func(r chi.Router) {
@@ -2802,15 +3418,6 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/agent-sessions/{id}/agent-messages", wrapper.AgentMessagesNew)
-	})
-	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/approvals", wrapper.ApprovalsList)
-	})
-	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/approvals/{id}:approve", wrapper.ApprovalsApprove)
-	})
-	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/approvals/{id}:deny", wrapper.ApprovalsDeny)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/mounts", wrapper.MountsList)
@@ -2922,7 +3529,7 @@ type ApprovalsListResponseObject interface {
 	VisitApprovalsListResponse(w http.ResponseWriter) error
 }
 
-type ApprovalsList200JSONResponse struct{ PlannedEntityJSONResponse }
+type ApprovalsList200JSONResponse ApprovalList
 
 func (response ApprovalsList200JSONResponse) VisitApprovalsListResponse(w http.ResponseWriter) error {
 
@@ -2953,24 +3560,84 @@ func (response ApprovalsListdefaultApplicationProblemPlusJSONResponse) VisitAppr
 	return err
 }
 
+type ApprovalsGetRequestObject struct {
+	Id Id `json:"id"`
+}
+
+type ApprovalsGetResponseObject interface {
+	VisitApprovalsGetResponse(w http.ResponseWriter) error
+}
+
+type ApprovalsGet200ResponseHeaders struct {
+	ETag *string
+}
+
+type ApprovalsGet200JSONResponse struct {
+	Body    Approval
+	Headers ApprovalsGet200ResponseHeaders
+}
+
+func (response ApprovalsGet200JSONResponse) VisitApprovalsGetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.ETag != nil {
+		w.Header().Set("ETag", fmt.Sprint(*response.Headers.ETag))
+	}
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ApprovalsGetdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ApprovalsGetdefaultApplicationProblemPlusJSONResponse) VisitApprovalsGetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ApprovalsApproveRequestObject struct {
 	Id     Id `json:"id"`
 	Params ApprovalsApproveParams
+	Body   *ApprovalsApproveJSONRequestBody
 }
 
 type ApprovalsApproveResponseObject interface {
 	VisitApprovalsApproveResponse(w http.ResponseWriter) error
 }
 
-type ApprovalsApprove200JSONResponse struct{ PlannedEntityJSONResponse }
+type ApprovalsApprove200ResponseHeaders struct {
+	ETag *string
+}
+
+type ApprovalsApprove200JSONResponse struct {
+	Body    Approval
+	Headers ApprovalsApprove200ResponseHeaders
+}
 
 func (response ApprovalsApprove200JSONResponse) VisitApprovalsApproveResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.ETag != nil {
+		w.Header().Set("ETag", fmt.Sprint(*response.Headers.ETag))
+	}
 	w.WriteHeader(200)
 	_, err := buf.WriteTo(w)
 	return err
@@ -2996,21 +3663,32 @@ func (response ApprovalsApprovedefaultApplicationProblemPlusJSONResponse) VisitA
 type ApprovalsDenyRequestObject struct {
 	Id     Id `json:"id"`
 	Params ApprovalsDenyParams
+	Body   *ApprovalsDenyJSONRequestBody
 }
 
 type ApprovalsDenyResponseObject interface {
 	VisitApprovalsDenyResponse(w http.ResponseWriter) error
 }
 
-type ApprovalsDeny200JSONResponse struct{ PlannedEntityJSONResponse }
+type ApprovalsDeny200ResponseHeaders struct {
+	ETag *string
+}
+
+type ApprovalsDeny200JSONResponse struct {
+	Body    Approval
+	Headers ApprovalsDeny200ResponseHeaders
+}
 
 func (response ApprovalsDeny200JSONResponse) VisitApprovalsDenyResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.ETag != nil {
+		w.Header().Set("ETag", fmt.Sprint(*response.Headers.ETag))
+	}
 	w.WriteHeader(200)
 	_, err := buf.WriteTo(w)
 	return err
@@ -3022,6 +3700,45 @@ type ApprovalsDenydefaultApplicationProblemPlusJSONResponse struct {
 }
 
 func (response ApprovalsDenydefaultApplicationProblemPlusJSONResponse) VisitApprovalsDenyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AuditListRequestObject struct {
+	Params AuditListParams
+}
+
+type AuditListResponseObject interface {
+	VisitAuditListResponse(w http.ResponseWriter) error
+}
+
+type AuditList200JSONResponse AuditList
+
+func (response AuditList200JSONResponse) VisitAuditListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AuditListdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response AuditListdefaultApplicationProblemPlusJSONResponse) VisitAuditListResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -3201,15 +3918,25 @@ type JobsGetResponseObject interface {
 	VisitJobsGetResponse(w http.ResponseWriter) error
 }
 
-type JobsGet200JSONResponse struct{ PlannedEntityJSONResponse }
+type JobsGet200ResponseHeaders struct {
+	ETag *string
+}
+
+type JobsGet200JSONResponse struct {
+	Body    Job
+	Headers JobsGet200ResponseHeaders
+}
 
 func (response JobsGet200JSONResponse) VisitJobsGetResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.ETag != nil {
+		w.Header().Set("ETag", fmt.Sprint(*response.Headers.ETag))
+	}
 	w.WriteHeader(200)
 	_, err := buf.WriteTo(w)
 	return err
@@ -3241,16 +3968,26 @@ type JobsCancelResponseObject interface {
 	VisitJobsCancelResponse(w http.ResponseWriter) error
 }
 
-type JobsCancel202JSONResponse struct{ JobAcceptedJSONResponse }
+type JobsCancel200ResponseHeaders struct {
+	ETag *string
+}
 
-func (response JobsCancel202JSONResponse) VisitJobsCancelResponse(w http.ResponseWriter) error {
+type JobsCancel200JSONResponse struct {
+	Body    Job
+	Headers JobsCancel200ResponseHeaders
+}
+
+func (response JobsCancel200JSONResponse) VisitJobsCancelResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(202)
+	if response.Headers.ETag != nil {
+		w.Header().Set("ETag", fmt.Sprint(*response.Headers.ETag))
+	}
+	w.WriteHeader(200)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -3261,6 +3998,56 @@ type JobsCanceldefaultApplicationProblemPlusJSONResponse struct {
 }
 
 func (response JobsCanceldefaultApplicationProblemPlusJSONResponse) VisitJobsCancelResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type JobsWaitRequestObject struct {
+	Id     Id `json:"id"`
+	Params JobsWaitParams
+}
+
+type JobsWaitResponseObject interface {
+	VisitJobsWaitResponse(w http.ResponseWriter) error
+}
+
+type JobsWait200ResponseHeaders struct {
+	ETag *string
+}
+
+type JobsWait200JSONResponse struct {
+	Body    Job
+	Headers JobsWait200ResponseHeaders
+}
+
+func (response JobsWait200JSONResponse) VisitJobsWaitResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.ETag != nil {
+		w.Header().Set("ETag", fmt.Sprint(*response.Headers.ETag))
+	}
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type JobsWaitdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response JobsWaitdefaultApplicationProblemPlusJSONResponse) VisitJobsWaitResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -3870,6 +4657,46 @@ func (response AliasesSetdefaultApplicationProblemPlusJSONResponse) VisitAliases
 	return err
 }
 
+type JobsListRequestObject struct {
+	P      ProjectSlug `json:"p"`
+	Params JobsListParams
+}
+
+type JobsListResponseObject interface {
+	VisitJobsListResponse(w http.ResponseWriter) error
+}
+
+type JobsList200JSONResponse JobList
+
+func (response JobsList200JSONResponse) VisitJobsListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type JobsListdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response JobsListdefaultApplicationProblemPlusJSONResponse) VisitJobsListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type MixesNewRequestObject struct {
 	P      ProjectSlug `json:"p"`
 	Params MixesNewParams
@@ -4026,6 +4853,20 @@ func (response ProjectsArchive200JSONResponse) VisitProjectsArchiveResponse(w ht
 	return err
 }
 
+type ProjectsArchive202JSONResponse struct{ ApprovalAcceptedJSONResponse }
+
+func (response ProjectsArchive202JSONResponse) VisitProjectsArchiveResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(202)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ProjectsArchivedefaultApplicationProblemPlusJSONResponse struct {
 	Body       Problem
 	StatusCode int
@@ -4090,15 +4931,21 @@ type StrictServerInterface interface {
 	// AgentSessionsCancel Stop the session's current turn
 	// (POST /agent-sessions/{id}:cancel)
 	AgentSessionsCancel(ctx context.Context, request AgentSessionsCancelRequestObject) (AgentSessionsCancelResponseObject, error)
-	// ApprovalsList Approvals, pending first
+	// ApprovalsList Approvals, pending first, then the most recently decided
 	// (GET /approvals)
 	ApprovalsList(ctx context.Context, request ApprovalsListRequestObject) (ApprovalsListResponseObject, error)
-	// ApprovalsApprove Approve a pending request
+	// ApprovalsGet Get an approval with its stored request and, once approved, the replay's result
+	// (GET /approvals/{id})
+	ApprovalsGet(ctx context.Context, request ApprovalsGetRequestObject) (ApprovalsGetResponseObject, error)
+	// ApprovalsApprove Approve a pending request; the stored request runs as its original actor
 	// (POST /approvals/{id}:approve)
 	ApprovalsApprove(ctx context.Context, request ApprovalsApproveRequestObject) (ApprovalsApproveResponseObject, error)
-	// ApprovalsDeny Deny a pending request
+	// ApprovalsDeny Deny a pending request; it never runs
 	// (POST /approvals/{id}:deny)
 	ApprovalsDeny(ctx context.Context, request ApprovalsDenyRequestObject) (ApprovalsDenyResponseObject, error)
+	// AuditList The audit log, newest first — every command, denial and failed attempt with its actor and cause
+	// (GET /audit)
+	AuditList(ctx context.Context, request AuditListRequestObject) (AuditListResponseObject, error)
 	// EventsList Events after a sequence number; with Accept text/event-stream, the live stream
 	// (GET /events)
 	EventsList(ctx context.Context, request EventsListRequestObject) (EventsListResponseObject, error)
@@ -4111,9 +4958,12 @@ type StrictServerInterface interface {
 	// JobsGet Get a job
 	// (GET /jobs/{id})
 	JobsGet(ctx context.Context, request JobsGetRequestObject) (JobsGetResponseObject, error)
-	// JobsCancel Cancel a job
+	// JobsCancel Cancel a job; a queued job stops at once, a running one when its handler notices
 	// (POST /jobs/{id}:cancel)
 	JobsCancel(ctx context.Context, request JobsCancelRequestObject) (JobsCancelResponseObject, error)
+	// JobsWait Wait until a job ends or the timeout passes, then return it (agents)
+	// (GET /jobs/{id}:wait)
+	JobsWait(ctx context.Context, request JobsWaitRequestObject) (JobsWaitResponseObject, error)
 	// MeGet The current actor
 	// (GET /me)
 	MeGet(ctx context.Context, request MeGetRequestObject) (MeGetResponseObject, error)
@@ -4153,6 +5003,9 @@ type StrictServerInterface interface {
 	// AliasesSet Point a project alias at a registry version (baseline is gated, production moves only by promotion)
 	// (PUT /projects/{p}/aliases/{name})
 	AliasesSet(ctx context.Context, request AliasesSetRequestObject) (AliasesSetResponseObject, error)
+	// JobsList Jobs of a project, newest first
+	// (GET /projects/{p}/jobs)
+	JobsList(ctx context.Context, request JobsListRequestObject) (JobsListResponseObject, error)
 	// MixesNew Save a mix (input_cfg groups, weights, temperature, replay share)
 	// (POST /projects/{p}/mixes)
 	MixesNew(ctx context.Context, request MixesNewRequestObject) (MixesNewResponseObject, error)
@@ -4299,12 +5152,48 @@ func (sh *strictHandler) ApprovalsList(w http.ResponseWriter, r *http.Request, p
 	}
 }
 
+// ApprovalsGet operation middleware
+func (sh *strictHandler) ApprovalsGet(w http.ResponseWriter, r *http.Request, id Id) {
+	var request ApprovalsGetRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ApprovalsGet(ctx, request.(ApprovalsGetRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ApprovalsGet")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ApprovalsGetResponseObject); ok {
+		if err := validResponse.VisitApprovalsGetResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ApprovalsApprove operation middleware
 func (sh *strictHandler) ApprovalsApprove(w http.ResponseWriter, r *http.Request, id Id, params ApprovalsApproveParams) {
 	var request ApprovalsApproveRequestObject
 
 	request.Id = id
 	request.Params = params
+
+	var body ApprovalsApproveJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		if !errors.Is(err, io.EOF) {
+			sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+			return
+		}
+	} else {
+		request.Body = &body
+	}
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
 		return sh.ssi.ApprovalsApprove(ctx, request.(ApprovalsApproveRequestObject))
@@ -4333,6 +5222,16 @@ func (sh *strictHandler) ApprovalsDeny(w http.ResponseWriter, r *http.Request, i
 	request.Id = id
 	request.Params = params
 
+	var body ApprovalsDenyJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		if !errors.Is(err, io.EOF) {
+			sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+			return
+		}
+	} else {
+		request.Body = &body
+	}
+
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
 		return sh.ssi.ApprovalsDeny(ctx, request.(ApprovalsDenyRequestObject))
 	}
@@ -4346,6 +5245,32 @@ func (sh *strictHandler) ApprovalsDeny(w http.ResponseWriter, r *http.Request, i
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ApprovalsDenyResponseObject); ok {
 		if err := validResponse.VisitApprovalsDenyResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AuditList operation middleware
+func (sh *strictHandler) AuditList(w http.ResponseWriter, r *http.Request, params AuditListParams) {
+	var request AuditListRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AuditList(ctx, request.(AuditListRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AuditList")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AuditListResponseObject); ok {
+		if err := validResponse.VisitAuditListResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -4477,6 +5402,33 @@ func (sh *strictHandler) JobsCancel(w http.ResponseWriter, r *http.Request, id I
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(JobsCancelResponseObject); ok {
 		if err := validResponse.VisitJobsCancelResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// JobsWait operation middleware
+func (sh *strictHandler) JobsWait(w http.ResponseWriter, r *http.Request, id Id, params JobsWaitParams) {
+	var request JobsWaitRequestObject
+
+	request.Id = id
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.JobsWait(ctx, request.(JobsWaitRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "JobsWait")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(JobsWaitResponseObject); ok {
+		if err := validResponse.VisitJobsWaitResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -4887,6 +5839,33 @@ func (sh *strictHandler) AliasesSet(w http.ResponseWriter, r *http.Request, p Pr
 	}
 }
 
+// JobsList operation middleware
+func (sh *strictHandler) JobsList(w http.ResponseWriter, r *http.Request, p ProjectSlug, params JobsListParams) {
+	var request JobsListRequestObject
+
+	request.P = p
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.JobsList(ctx, request.(JobsListRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "JobsList")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(JobsListResponseObject); ok {
+		if err := validResponse.VisitJobsListResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // MixesNew operation middleware
 func (sh *strictHandler) MixesNew(w http.ResponseWriter, r *http.Request, p ProjectSlug, params MixesNewParams) {
 	var request MixesNewRequestObject
@@ -5056,94 +6035,123 @@ func (sh *strictHandler) RegistrySearch(w http.ResponseWriter, r *http.Request, 
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"7D3tchu3dq9yZntnrpQsSUn2vb2XmkzHsR1bN7ajWk46aazG4O4hCXsXWANYSYyGM/nVB2j7DH2wPEnn",
-	"ANgvEkuJtmTF0/yxl/txcHC+cL4AXUaJzAspUBgdjS+jObIUlb18/IrN6P8UdaJ4YbgU0Th6NUdAYbhZ",
-	"gMIzrrkUMbwvpcEUdnA4G8Lr6N7raPcQNIoUuIEJS94B03A0HTxnJplHcaSTOeaMgJtFgdE40kZxMYuW",
-	"y2UcFUyxHI3H4pFavCzFOh4/sIynzCAwkYLCQioD53Nm4FyWWQpzVhQo4JybuSwNJHMmZlzMgImFmdNQ",
-	"ccQJzPsS1SKKI8FywiN1o7UxTHHKysxE4ynLNMYVxhMpM2QiIoyPUnrRwiuYmTfgeBrFkcL3JVeYRmOj",
-	"Stw0eYKEeSENimTxLS7WZ/0w4yjMIJlLjQLe4eIQGM0eaeLczMHMETTLkZ6BQlMqoe1NqfiMC5aBQk3T",
-	"8fN3/G4wbiEwIAw2oZ+zi2coZmYejQ/29uIo56L6/bc4NLmp439QpiphsshadiFwDROmMQUpYIfuk0iC",
-	"nNp3MqYNKGTpLtEg5zon4MCEPkel4f7+gaNIUiqFwrzEs945N4K5Fa/cdL6zs2DZB03rEKoRoRQZascr",
-	"w9QMDaQSNQhpAC+4NrBAc40ZbML4WMm3mJiTrAwotn8Imp7GIWkuNhLoTwqn0Tj6p1FjUEbuqR7ZEa1y",
-	"0/eozdcy5Wj1+zhjQmD6tUytuCdSGBSGLllRZDxhhN7orZbWBjTDsTTljvDHShaojIXnkPIzlxOaEI3r",
-	"RtaFFNqN+qAolDxj2YMkwcJgutXQm2a6BtiO3aX0E2YwJaEtUGkpIMWEp+hYz/z3IEXntwYjC55Eyzj6",
-	"h5zcONptmAGMq2eHMJVZJs8tam/lhLB8KyfDy7dycpQuCTvPz8d2ibg9jq5ieDJnBUKKUy4whfM5OvIR",
-	"HDvenzUUc6YReF5kmNPkgZvIKcUkw3wDqoV748vtSFrBDSD7WCmpYOflNw/h7/f/8s+7Vjn9d1Y6EyMV",
-	"XRQtQlzSarKu1nH0jgv7AEWZR+OfolJb08BmNJU4YqWRuZ1IdBqvf+10OwBWoybDdZSGbUljCH5yGMSE",
-	"3+kaq+KgrnUnVgn5dcZqvRsa7CFLUST4+MzzcWWgirAbVdi+tIwjZiFMpcrpKiJvY2B4jlGAjAkrNaZf",
-	"L9bHTGSeM5EehZlnpMwesuxaU28ghWaOtcZtJTVrDxSete5zYXCGagPL3RchjAq2yCRLt9TtmPCnS0eS",
-	"rub8m1TvAM+s+kqRLWj9nHFt1KK6mzClFiCkCLJJ4/t1oE8yOWFZFDes5sL89X4UR7kU0kjBk0NrTU5O",
-	"HgNPYSqV9aJIcUSZZfEaseLIWWvSygtGFicaewYN/eyG9yf7yW+//m8IS3ej/W31UaKQFo8ovkJUaJ4V",
-	"Ev7d2Eu/lesQu6zOPOM6oDfcYN692KRAHR2spxMxpdiCfpPndhJixDHTmiKFN2xqUL0BI4FMMhclhrhz",
-	"hYg6XJvhQnN+ilnxQBmeZLg+64n3SbpIPmfqXSrPRdAKSGHwwuj1r/61ZBmfclS0zHMNzA1auasx2NCp",
-	"YAKzccYnitmopCZ3j4g0NO3Rco2JQ6BZHpAWH6KLHYwutMGC/p+V5IbQjTlmWXC10GWeE2pBlLjJ8Gor",
-	"Zk2Ge7fBL3bE7mPRU26ubdhaU/5k6PfhfYJMJfOXLuL6SK2q6LDG/KDYhzBacRy7yFgP7urpu9dC0I9J",
-	"nE4MMwFNKrgQmL6S63rxSCZljsKAwikqFAkCLS1jnob064zjeT3ENv5iCN/G71tZsJuAMRAkoSZspbAB",
-	"5m+//g+YTpQnQSEFdyBFFFoXUjSMZ0EB9Iq5NuY3HLN0kOEZZuBdUW0RODiI4uvJjp+rhWSdz6AJEdow",
-	"kfR4g4aZUoccg37NaRay7oTmxhR6PBolbp0YZjJh2WiOWTFyNBi9Lvf27iUUidorrAlNL9W2k9Zha0zt",
-	"V1euiX4VrHXXzei0XzRa5FoTkhy1ZrPwrG3UfKUm+di6AtSDh71cG52sCj/D9ME2HqpzHbb5pMO2wER7",
-	"LHBvSNHjWsaR9hmJq3MIcVQW6XbzCBlwn+SwmDq82gRqD7KBL49TbvoNkU8Xdhm3QtFuBm1vQ3jWenP/",
-	"oJtr2w/NuA/nm/DvPKiPWIk8hBd4/ruk3zYCuTLntmCFZv7ShyvfcpE+lGUoSE2q2+t60hO0hWMzB2cT",
-	"EjfpnlQwf0BFK2FogSG8tgfYUOp68laNs2niFZIfmSDYNrTuz7VUPk3lpKeKTQ3FPEr+giIiU1woTGzs",
-	"F/LLDZt1KXtlwLC1GY2js4Zq3QX9xx9//HHw/Png0aOhX7nnzF5cbY3beQRvjathKrKEGBlOYT+T56gS",
-	"phEyNMaGVSmfcaNtkShleo76EO799ut/39+jZLxiiUEfC9H7BOM/fmKDX07pn73B3wenl/vxvb8t/c/T",
-	"P4XIQjkJXbAErx2iZGwhS3OVD7vmKL8j9xdYwYdG/uPkuxc7u1GANJWQbZLgGuUX9PKyjgV7MbpiQWhc",
-	"/9DS07/s2+9byphzwfMyb9vk1us3svJ7IesOXbOkFRU7p2CzI1DT8SaW1RrYiY9SP3x97fJ3fNmR7weD",
-	"f/fi3FzCz4PTy734rwfLzSJ+gtt6PNeT9UDu8BYFciu5W13grxCcjew4afIPXSp9kNL26tXHKkrHLd6k",
-	"AUsbNk4Dcf2JLFWCtlarSjP3sRrCEwka1Rmq2P58tSjwxH4GiS1tW0tNT54/PAZKjushvGA5le53Upno",
-	"kS4wGe39baBQy6yk0fQwT+Hl/u64qfYcpfBVDQG+gu+PwCfP4StwS5TLxtpr9KvWGaqJu+HSve4VKtem",
-	"mGRM2YptglCgAoregAu4GFRRrHv7EAiKpuEQpkrmZK9HZzJhkzJjajFcsDxz4J++enUM2tatpvzC1//o",
-	"6yE8L42dhwamsEJdj2GlOh/XPRVVubBpyfgX18rwFemXHW8BmHMDUiDI0kzkhcuYD+GZFDM4p8R61S9w",
-	"sHcAvqR3CDPifuB5U4hZDsFGyQ7bvspZq94F53OpEUiYwPLxjGYvgXXi+yF8V/FTu1J+Q+zCVRntgCSt",
-	"KcxRIWhpqSCcwCRSGFriIZFnLvGKuSO9E8G6V+Ave/tQCsMzesjVeqWQvhy+FnX2YFzVmeDB8VHLZRlH",
-	"e8P94R7poCxQsIJH4+ieveXSAlbZR7Y0N/AFNj265OnS3/PZAO1sdtMH81PYNDSvjI7SaHkaR4V0C1FL",
-	"Fah+S8Cfe9gUdcVbQ+/0pSzjK7/wfTvLU2daXM1/0WfjOm0Bo3ZPwGrl/mDvoB+If69bzo6bFp6rvmtq",
-	"tq1ccfS9RgWeM04Q6wYon7PUh+DMJKmA4mdI+mg5OvRcHhKTo8pR/ynyAhydLuOoFmsXAbgyXsTaPIvi",
-	"+ovxPmEXkqFxwkSC2W3Izokf56Eb4fbFp+oV2lbSOpKydw2Od9oVPl5WTowsvImxFPuzrhqQgGzn9hJQ",
-	"UT4gAVVrCH00wxDrqjese7rGtFADnAu52n09VUhaoEhd45zrVwkFor8PHtTTjsEjDVOutNmO+DV1+wnv",
-	"tM79xJtWu2qQBx78Hzq3md8IrGa3X05uieEpisVtcfsRwf6D1X2sJvLcHp9dC0mvObUNDT22dKVNlzz2",
-	"gUZ6ibxn24gBPgjX1PpnFOMZTeHNF2/Adq6idr65glwqBI0z63sO4ZEjGbAsG/a0LVv4umu2+/pOvoi7",
-	"jskXoXBwdULfIhYuBqiab6au9Oahws5KH04M53OezOt2HKibemJg2TlbaCiY1rs9E/Jvb+5nXUXyO5FV",
-	"wzs3TeN7mNmqDgWfTFiUD20bj4s2NeRs4RrVnzFtBpbDg6NHwIU2yNIe7Gx7Sge39c6hKqOwF8oorDe+",
-	"zBA0/wXrOJnye/Qj70Eh4zk34T5114vNLnxGw9ZFNic41oL3k8e+wQkKyUVv23GHZht51WM8bqR3telb",
-	"soUvvDBOkQfaKGR5F1Bgv8FKqysUxAw5rSRph1ixC54vGTn3DjDsEJ2mZAY0vOHp2GcWNL63F/gGvoQ3",
-	"KTOsetJujLIc9u/FpCB2OBvM7t6AoXzskLeSCow0oaShQZT5BNWh0w8XI8EayeLVqbYMrLeRpyvmlRIt",
-	"j7pNrhsxiEFmKWrjPLMYpO+izxYw5ZlBhSlMFiuGE3ZahvOL2my6xEfOuKD7leH0LVWqFMP9g3vDL3Zt",
-	"aqmygvC9xmYbARmKcN8ZRf3L3rXEE8MuHpS66F06mmagq5aObxSi5UiP4r/fzibWfWfVtokiY4mbealR",
-	"UXKLi7FvPHNSylP7P8agDRb+JtVpqtu23WK82qMRw5T6Jfx9SnbUJaDQPHyrXM+atdoIF5jn1laxaxSv",
-	"sIm3abDWOsMCZsi6Z3bDkkuG6RgmLXWp9jVN3D6KG4hbLT6d/Ju2CogXhmzfZAGeY7BjmeOkwzZreYmw",
-	"+TwvBbsti0EwN/hj9nFVNLW/fvYINHpl/e6NyvUEie+3yrIHNVbLOLDTp0b6o3nxBM1KKhR2ct91GiTs",
-	"RoNSLUq2U7GT727rrrWVlo16KKQZTGVJjLWs1sNGEbff5LZaWv3y9ethXV79MlBuWp5+qKi8lRO9WVT+",
-	"ISe6X1Q+bSzj2PxWTnrClw8KL8OEI8Kshzs1uW4ncUi0/rzyhZ88s+zIs1EKtmFojr2C/xxv2UL6ppge",
-	"20gPycNVi7oQV0WQCcsy54gwYxSflC5gvgHq0shV8rXa+1CROMcN1M2xsTJ+N5XmYpahkcIZOE/ukXcn",
-	"9eiyWI7OqwJtfwqhruFWaYRb40e3NSG0Y46d+bqex/lmCE70+rMGvQKdaqWsyRYIGzS5rduuYqltEOSq",
-	"6Xp3nVPbGZD2Ttd+s9ie/GaGji4J4+U1+HrLalYP1KdqNc5RHNrMH4LtXxvZd5bLj5cDt7KtiMCNsjQO",
-	"brev+xY+ZI/ySnuFXdfKjaw+QfPpVrZ6m/lH1V5vVgaJAMvlcpXiy7uSf2vS7lDuaXxgjch7cwY7VZvG",
-	"IcicG7BtGNnC5hlsenL3uivTmsWixpHa5f0w5606k2HFYSDItsP99+u83WhbwR1EAERee3bFxaHrFgBM",
-	"udGQ0cLINNguYL2VY2gFou0ZHjg5keWmysZz+3iDS/Jp6eLatG0O0CFedYVxBXNkmZn30CQciLjZ/T9o",
-	"e1k/fOLGWAEM7DYt2/gWw4tvTkYnz7/2v07uDQgkM3ySIUzK5B3apNHTcgLaNQLuVGW33e3E2cltS57v",
-	"W3mu3LReifbewrWqdUciycoUodpVBTX0nvKPf2+7Y4JuM6PY3twTWBf9Y3Kx8bzOIt6AdNCAbWrVjK1u",
-	"9StlhdNdq+VN0p/m8on9oXov1jrXH6kFVT/qvZNV8GWaU7Im6B2Q9BCEtAdjwTnTcK64MWg38Rzs7X8K",
-	"ZB/WBxvclfPmMGiC1KA4X1n1WoUyBgalIIdv6urntvBGi7w8F/bcMs2NVIsYJmU6Q7/UzZhBPYRj24e6",
-	"53lUFboSqVJ/+MVESqONYgXstEEZzIuMvtj17Yg2/HZdrfvVWirq9ldq57Vo2TwU8HRz0aumRscSU8B8",
-	"pTW+5eB4g3y9ahTgzgPjTQL20ZmOHne+4sDn5NHfpEzYef9+bDOJI/n6jbMBO1LFtv2DQeosd+wONOSN",
-	"tU5kbmPFu5LflyhYbnuUFA7cjCZ4tURva0dWmpu3D23XlOLqzubPPTzY//Rh2jNWimQODzNG3vNDmVrJ",
-	"kAWKhK47GV9a+4xCvMkG6K7IZJzpTqL206cXA4XMYArxgcP1M8wf3kWS5a5C32PJRWu5BithwIw9cdU3",
-	"O/qNP7AzYRozLuzhnnbHVEzfpaWtukMuz9AdWEaNFIWSuaT728XCXsKv0AOXALoli2mTgn9Yyg9NDOf8",
-	"Ana4KErzczKdwUzJsqBOWeSzudHObydylwpjUFhk1Jw6Zwp3byIHuC4m44Kqb+4QjlsTl2M/xucsMneQ",
-	"A30qS6XtVtOMiVlJPanOOSQhqtq/NDujkJ2bG5cPVd6e3/WyFH9sQtx+YxlTxm8csH2uqhSHnV2+9fbc",
-	"J8ffD+YkPjEkTKXu8IvSMWArQbFCsFFOxj4Xelui4t/SD/wwn9POmE8RQ66mrO8wNvQsand5aDk1dEKr",
-	"9ZImWXcZ2zZArHyu3iRT91Sja/dZu9TX++Z8zh17AGEMhs3Gsat64Hj3Q9uxQx/5Q2+23drinU3d3XnD",
-	"Ulm4zOlHbKTZspl6v7PF5C932k0dPMwqoC4/VNSrTpggLmiXDbcH7LuuakhcyenGWqpXYwXt95aohcUA",
-	"djAvzMKfP1DlaN1HJI0Wy7biVPA22e3qlbqLrbrz81l1PJfF1R6D4LSjVFk0jkas4Nag+dEuo7W0dHXm",
-	"cZe63wvudoU1SW5Xr+2mudcEU0frwk6GTfOZwHTARdVQRnDs5mRbqYCinGRcz9HWyeuzQhrwOfYCpkY+",
-	"v9um2sjjD8T47T//izaH7TZgqg0e8WVYmjDt9GlrmJQizTCtKQATLlh73vR6AJ7fGjQ455Q5yfPSMKql",
-	"ntXDMK3RtCZY8ziwfYvPxICLKI5snQ+0cx1EChoTKVKY2m7IjYT0TPaDsdLMAwM9OD6ivzPihMM1MPic",
-	"HRj5Dmmn45w52AaU26jpISYKU5JXVp21JN+5HT++PdQhsD7kU6k77QDk4BCEHHNJzaWs8NjQnynA1BY0",
-	"/LlznRmRHpcmJCQv7HEiLfz8aSVnLCvRHXFC5TEcUDjfTEhjorBXnBs+eqOivQmo1yiLNW34c+zS9vCY",
-	"Bnz1WQD+kT+31clOITOecNSw4zW3pXL+URRH9Ad7mN6tiKLQoHDgwmS3f7Ki4o2Gc8aN3VYvVf1nLJpx",
-	"mh2264Aed3qA62KYaxCmW/Yg/Ras0ibu4/Wj3qpDa6wBb5eymj8IpOu/T+EO3/AwbfN0H+OFpMCkPvsF",
-	"U5fHzOwmUmeedzrnxYjdFdGq3OXl6fL/BgA=",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

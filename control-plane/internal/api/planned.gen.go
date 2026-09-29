@@ -17,11 +17,6 @@ var PlannedOperations = map[string]int{
 	"agentSessions.cancel": 1,
 	"agentSessions.new":    1,
 	"aliases.set":          1,
-	"approvals.approve":    1,
-	"approvals.deny":       1,
-	"approvals.list":       1,
-	"jobs.cancel":          1,
-	"jobs.get":             1,
 	"mixes.edit":           2,
 	"mixes.new":            2,
 	"mixes.preview":        2,
@@ -53,31 +48,6 @@ func (Planned) AgentSessionsNew(_ context.Context, _ AgentSessionsNewRequestObje
 // AliasesSet answers 501 until phase 1.
 func (Planned) AliasesSet(_ context.Context, _ AliasesSetRequestObject) (AliasesSetResponseObject, error) {
 	return AliasesSetdefaultApplicationProblemPlusJSONResponse{Body: plannedProblem("aliases.set", 1), StatusCode: 501}, nil
-}
-
-// ApprovalsApprove answers 501 until phase 1.
-func (Planned) ApprovalsApprove(_ context.Context, _ ApprovalsApproveRequestObject) (ApprovalsApproveResponseObject, error) {
-	return ApprovalsApprovedefaultApplicationProblemPlusJSONResponse{Body: plannedProblem("approvals.approve", 1), StatusCode: 501}, nil
-}
-
-// ApprovalsDeny answers 501 until phase 1.
-func (Planned) ApprovalsDeny(_ context.Context, _ ApprovalsDenyRequestObject) (ApprovalsDenyResponseObject, error) {
-	return ApprovalsDenydefaultApplicationProblemPlusJSONResponse{Body: plannedProblem("approvals.deny", 1), StatusCode: 501}, nil
-}
-
-// ApprovalsList answers 501 until phase 1.
-func (Planned) ApprovalsList(_ context.Context, _ ApprovalsListRequestObject) (ApprovalsListResponseObject, error) {
-	return ApprovalsListdefaultApplicationProblemPlusJSONResponse{Body: plannedProblem("approvals.list", 1), StatusCode: 501}, nil
-}
-
-// JobsCancel answers 501 until phase 1.
-func (Planned) JobsCancel(_ context.Context, _ JobsCancelRequestObject) (JobsCancelResponseObject, error) {
-	return JobsCanceldefaultApplicationProblemPlusJSONResponse{Body: plannedProblem("jobs.cancel", 1), StatusCode: 501}, nil
-}
-
-// JobsGet answers 501 until phase 1.
-func (Planned) JobsGet(_ context.Context, _ JobsGetRequestObject) (JobsGetResponseObject, error) {
-	return JobsGetdefaultApplicationProblemPlusJSONResponse{Body: plannedProblem("jobs.get", 1), StatusCode: 501}, nil
 }
 
 // MixesEdit answers 501 until phase 2.

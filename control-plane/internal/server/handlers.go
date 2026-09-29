@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/usunrise88/cadence/control-plane/internal/api"
@@ -20,13 +22,34 @@ import (
 
 // ---------------------------------------------------------------- commands
 
-// command builds the pipeline input from the request context.
+// command builds the pipeline input from the request context: actor, key, dry run, fingerprint and the route's
+// path parameters (policy rules can match them, e.g. aliases.set name=baseline).
 func command(ctx context.Context, op, key string, dryRun *bool) commands.Command {
 	actor, _ := auth.FromContext(ctx)
-	return commands.Command{
+	cmd := commands.Command{
 		Operation: op, Actor: actor, IdempotencyKey: key, DryRun: dryRun != nil && *dryRun,
 		RequestHash: commands.RequestHash(ctx),
 	}
+	if rc := chi.RouteContext(ctx); rc != nil && len(rc.URLParams.Keys) > 0 {
+		cmd.PathParams = make(map[string]string, len(rc.URLParams.Keys))
+		for i, k := range rc.URLParams.Keys {
+			v, err := url.PathUnescape(rc.URLParams.Values[i])
+			if err != nil {
+				v = rc.URLParams.Values[i]
+			}
+			cmd.PathParams[k] = v
+		}
+	}
+	return cmd
+}
+
+// withProject resolves the project slug of a project command and names it to the pipeline (commands.WithProject).
+func (s *Server) withProject(ctx context.Context, slug string) (context.Context, error) {
+	p, err := projects.Get(ctx, s.Pool, slug)
+	if err != nil {
+		return ctx, err
+	}
+	return commands.WithProject(ctx, p.ID), nil
 }
 
 // commandResponse writes a pipeline response verbatim; it satisfies the response interface of every command, so
@@ -46,6 +69,11 @@ func (c commandResponse) VisitProjectsNewResponse(w http.ResponseWriter) error  
 func (c commandResponse) VisitProjectsEditResponse(w http.ResponseWriter) error    { return c.write(w) }
 func (c commandResponse) VisitProjectsArchiveResponse(w http.ResponseWriter) error { return c.write(w) }
 func (c commandResponse) VisitWorkspacesSetResponse(w http.ResponseWriter) error   { return c.write(w) }
+func (c commandResponse) VisitApprovalsApproveResponse(w http.ResponseWriter) error {
+	return c.write(w)
+}
+func (c commandResponse) VisitApprovalsDenyResponse(w http.ResponseWriter) error { return c.write(w) }
+func (c commandResponse) VisitJobsCancelResponse(w http.ResponseWriter) error    { return c.write(w) }
 
 func projectResult(status int) func(projects.Project, []events.Draft, error) (commands.Result, []events.Draft, error) {
 	return func(p projects.Project, drafts []events.Draft, err error) (commands.Result, []events.Draft, error) {
@@ -101,6 +129,10 @@ func (s *Server) ProjectsEdit(ctx context.Context, req api.ProjectsEditRequestOb
 		return nil, err
 	}
 	in := projects.EditInput{Name: req.Body.Name, Description: req.Body.Description}
+	ctx, err = s.withProject(ctx, req.P)
+	if err != nil {
+		return nil, err
+	}
 	resp, err := s.Pipeline.Run(ctx, command(ctx, "projects.edit", req.Params.IdempotencyKey, req.Params.DryRun),
 		func(ctx context.Context, tx pgx.Tx) (commands.Result, []events.Draft, error) {
 			return projectResult(http.StatusOK)(projects.Edit(ctx, tx, req.P, rev, in))
@@ -114,6 +146,10 @@ func (s *Server) ProjectsEdit(ctx context.Context, req api.ProjectsEditRequestOb
 // ProjectsArchive implements projects.archive.
 func (s *Server) ProjectsArchive(ctx context.Context, req api.ProjectsArchiveRequestObject) (api.ProjectsArchiveResponseObject, error) {
 	rev, err := commands.ParseIfMatch(req.Params.IfMatch)
+	if err != nil {
+		return nil, err
+	}
+	ctx, err = s.withProject(ctx, req.P)
 	if err != nil {
 		return nil, err
 	}
@@ -215,6 +251,10 @@ func (s *Server) WorkspacesSet(ctx context.Context, req api.WorkspacesSetRequest
 		return nil, fmt.Errorf("marshal panels: %w", err)
 	}
 	in := projects.WorkspaceInput{SchemaVersion: req.Body.SchemaVersion, Layout: layout, Panels: panels}
+	ctx, err = s.withProject(ctx, req.P)
+	if err != nil {
+		return nil, err
+	}
 	cmd := command(ctx, "workspaces.set", req.Params.IdempotencyKey, req.Params.DryRun)
 	resp, err := s.Pipeline.Run(ctx, cmd, func(ctx context.Context, tx pgx.Tx) (commands.Result, []events.Draft, error) {
 		p, err := projects.Get(ctx, tx, req.P)

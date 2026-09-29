@@ -142,7 +142,14 @@ export type CadenceEvent = {
     actor: Actor;
     causedBy?: {
         commandId: string;
+        /**
+         * The agent tool call (Cadence-Tool-Call-Id request header)
+         */
         toolCallId?: string;
+        /**
+         * The approval a person granted for this command
+         */
+        approvalId?: string;
     };
     payload?: {
         [key: string]: unknown;
@@ -206,6 +213,179 @@ export type RegistryKindCount = {
 export type RegistrySearchResult = {
     items: Array<RegistryVersion>;
     kinds: Array<RegistryKindCount>;
+};
+
+export type Approval = {
+    /**
+     * apr_<uuidv7>
+     */
+    id: string;
+    state: 'pending' | 'approved' | 'denied';
+    /**
+     * Registry approvals are decided by the admin only
+     */
+    scope: 'project' | 'registry';
+    /**
+     * The gated operation, e.g. projects.archive
+     */
+    operation: string;
+    projectId?: string;
+    actor: Actor;
+    /**
+     * The policy rule that asked for approval
+     */
+    rule: string;
+    reason: string;
+    estimate?: PolicyEstimate;
+    request: ApprovalRequest;
+    rev: number;
+    createdAt: string;
+    /**
+     * Pending approvals are denied when this passes (24 h)
+     */
+    expiresAt: string;
+    decidedAt?: string;
+    decidedBy?: Actor;
+    decision?: ApprovalDecision;
+    result?: ApprovalResult;
+};
+
+export type ApprovalDecision = {
+    /**
+     * session also allows the same operation on the same path for the rest of the agent session
+     */
+    grant: 'once' | 'session';
+    note?: string;
+    /**
+     * Denied because nobody decided within 24 h
+     */
+    expired?: boolean;
+};
+
+/**
+ * The stored request, without credentials or cookies
+ */
+export type ApprovalRequest = {
+    method: string;
+    path: string;
+    query?: string;
+    headers: {
+        [key: string]: string;
+    };
+    /**
+     * The JSON body
+     */
+    body?: unknown;
+};
+
+/**
+ * What the replayed request answered
+ */
+export type ApprovalResult = {
+    status: number;
+    commandId: string;
+    /**
+     * The JSON body of the replay's response
+     */
+    body?: unknown;
+};
+
+export type PolicyEstimate = {
+    gpuHours?: number;
+    remainingGpuHours?: number;
+};
+
+export type ApprovalApprove = {
+    grant?: 'once' | 'session';
+    note?: string;
+};
+
+export type ApprovalDeny = {
+    note?: string;
+};
+
+export type ApprovalList = {
+    items: Array<Approval>;
+};
+
+export type AuditEntry = {
+    /**
+     * aud_<uuidv7>
+     */
+    id: string;
+    commandId?: string;
+    operation: string;
+    actor: Actor;
+    /**
+     * The permission preset the policy engine applied
+     */
+    preset?: string;
+    projectId?: string;
+    /**
+     * ok, approval (stored as an approval), denied (policy), expired (approval nobody decided), or the problem slug of a failed attempt
+     */
+    outcome: string;
+    /**
+     * HTTP status answered
+     */
+    status: number;
+    /**
+     * The policy rule that decided
+     */
+    rule?: string;
+    causedBy?: AuditCause;
+    at: string;
+};
+
+export type AuditCause = {
+    commandId?: string;
+    toolCallId?: string;
+    approvalId?: string;
+};
+
+export type AuditList = {
+    items: Array<AuditEntry>;
+    /**
+     * Pass as `before` for the next (older) page; absent on the last page
+     */
+    next?: string;
+};
+
+export type JobState = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
+
+export type Job = {
+    /**
+     * job_<uuidv7>
+     */
+    id: string;
+    kind: string;
+    projectId?: string;
+    state: JobState;
+    progress: number;
+    /**
+     * The last progress message
+     */
+    message?: string;
+    /**
+     * What the job produced (kind-specific JSON)
+     */
+    result?: unknown;
+    /**
+     * Why it failed
+     */
+    error?: string;
+    attempt: number;
+    rev: number;
+    actor: Actor;
+    createdAt: string;
+    updatedAt: string;
+    startedAt?: string;
+    finishedAt?: string;
+    cancelRequestedAt?: string;
+};
+
+export type JobList = {
+    items: Array<Job>;
 };
 
 /**
@@ -425,6 +605,10 @@ export type ProjectsArchiveResponses = {
      * The archived project
      */
     200: Project;
+    /**
+     * Gated; a person decides the approval on the approvals topic
+     */
+    202: ApprovalAccepted;
 };
 
 export type ProjectsArchiveResponse = ProjectsArchiveResponses[keyof ProjectsArchiveResponses];
@@ -710,6 +894,332 @@ export type RegistrySearchResponses = {
 
 export type RegistrySearchResponse = RegistrySearchResponses[keyof RegistrySearchResponses];
 
+export type ApprovalsListData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Only approvals in this state; decided means approved or denied
+         */
+        state?: 'pending' | 'approved' | 'denied' | 'decided';
+        /**
+         * Project slug or id
+         */
+        project?: string;
+        limit?: number;
+    };
+    url: '/approvals';
+};
+
+export type ApprovalsListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type ApprovalsListError = ApprovalsListErrors[keyof ApprovalsListErrors];
+
+export type ApprovalsListResponses = {
+    /**
+     * Approvals, pending first (oldest first), then decided (newest first)
+     */
+    200: ApprovalList;
+};
+
+export type ApprovalsListResponse = ApprovalsListResponses[keyof ApprovalsListResponses];
+
+export type ApprovalsGetData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/approvals/{id}';
+};
+
+export type ApprovalsGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type ApprovalsGetError = ApprovalsGetErrors[keyof ApprovalsGetErrors];
+
+export type ApprovalsGetResponses = {
+    /**
+     * The approval
+     */
+    200: Approval;
+};
+
+export type ApprovalsGetResponse = ApprovalsGetResponses[keyof ApprovalsGetResponses];
+
+export type ApprovalsApproveData = {
+    body?: ApprovalApprove;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/approvals/{id}:approve';
+};
+
+export type ApprovalsApproveErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type ApprovalsApproveError = ApprovalsApproveErrors[keyof ApprovalsApproveErrors];
+
+export type ApprovalsApproveResponses = {
+    /**
+     * The decided approval, with the replayed request's status and body under result
+     */
+    200: Approval;
+};
+
+export type ApprovalsApproveResponse = ApprovalsApproveResponses[keyof ApprovalsApproveResponses];
+
+export type ApprovalsDenyData = {
+    body?: ApprovalDeny;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/approvals/{id}:deny';
+};
+
+export type ApprovalsDenyErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type ApprovalsDenyError = ApprovalsDenyErrors[keyof ApprovalsDenyErrors];
+
+export type ApprovalsDenyResponses = {
+    /**
+     * The denied approval
+     */
+    200: Approval;
+};
+
+export type ApprovalsDenyResponse = ApprovalsDenyResponses[keyof ApprovalsDenyResponses];
+
+export type AuditListData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Actor id (usr_…
+         */
+        actor?: string;
+        /**
+         * Project slug or id
+         */
+        project?: string;
+        /**
+         * Operation id, e.g. projects.archive
+         */
+        operation?: string;
+        /**
+         * Cursor: the `next` value of the previous page
+         */
+        before?: string;
+        limit?: number;
+    };
+    url: '/audit';
+};
+
+export type AuditListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type AuditListError = AuditListErrors[keyof AuditListErrors];
+
+export type AuditListResponses = {
+    /**
+     * A page of audit entries, newest first
+     */
+    200: AuditList;
+};
+
+export type AuditListResponse = AuditListResponses[keyof AuditListResponses];
+
+export type JobsListData = {
+    body?: never;
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        /**
+         * Only jobs in this state
+         */
+        state?: JobState;
+        limit?: number;
+    };
+    url: '/projects/{p}/jobs';
+};
+
+export type JobsListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type JobsListError = JobsListErrors[keyof JobsListErrors];
+
+export type JobsListResponses = {
+    /**
+     * Jobs, newest first
+     */
+    200: JobList;
+};
+
+export type JobsListResponse = JobsListResponses[keyof JobsListResponses];
+
+export type JobsGetData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/jobs/{id}';
+};
+
+export type JobsGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type JobsGetError = JobsGetErrors[keyof JobsGetErrors];
+
+export type JobsGetResponses = {
+    /**
+     * The job
+     */
+    200: Job;
+};
+
+export type JobsGetResponse = JobsGetResponses[keyof JobsGetResponses];
+
+export type JobsCancelData = {
+    body?: never;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/jobs/{id}:cancel';
+};
+
+export type JobsCancelErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type JobsCancelError = JobsCancelErrors[keyof JobsCancelErrors];
+
+export type JobsCancelResponses = {
+    /**
+     * The job, cancelled or with cancelRequestedAt set
+     */
+    200: Job;
+};
+
+export type JobsCancelResponse = JobsCancelResponses[keyof JobsCancelResponses];
+
+export type JobsWaitData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: {
+        /**
+         * Seconds to wait at most
+         */
+        timeout?: number;
+    };
+    url: '/jobs/{id}:wait';
+};
+
+export type JobsWaitErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type JobsWaitError = JobsWaitErrors[keyof JobsWaitErrors];
+
+export type JobsWaitResponses = {
+    /**
+     * The job, ended or as it is when the timeout passed
+     */
+    200: Job;
+};
+
+export type JobsWaitResponse = JobsWaitResponses[keyof JobsWaitResponses];
+
 export type MixesNewData = {
     body?: PlannedBody;
     headers: {
@@ -881,77 +1391,6 @@ export type RunsNewResponses = {
 
 export type RunsNewResponse = RunsNewResponses[keyof RunsNewResponses];
 
-export type JobsGetData = {
-    body?: never;
-    path: {
-        id: string;
-    };
-    query?: never;
-    url: '/jobs/{id}';
-};
-
-export type JobsGetErrors = {
-    /**
-     * Error (RFC 9457)
-     */
-    default: Problem;
-};
-
-export type JobsGetError = JobsGetErrors[keyof JobsGetErrors];
-
-export type JobsGetResponses = {
-    /**
-     * Shape defined when the operation's phase implements it
-     */
-    200: {
-        [key: string]: unknown;
-    };
-};
-
-export type JobsGetResponse = JobsGetResponses[keyof JobsGetResponses];
-
-export type JobsCancelData = {
-    body?: never;
-    headers: {
-        /**
-         * Client-chosen key; a repeat with the same key returns the original result
-         */
-        'Idempotency-Key': string;
-        /**
-         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
-         */
-        'If-Match': string;
-    };
-    path: {
-        id: string;
-    };
-    query?: {
-        /**
-         * Validate and report what would happen without changing anything
-         */
-        dryRun?: boolean;
-    };
-    url: '/jobs/{id}:cancel';
-};
-
-export type JobsCancelErrors = {
-    /**
-     * Error (RFC 9457)
-     */
-    default: Problem;
-};
-
-export type JobsCancelError = JobsCancelErrors[keyof JobsCancelErrors];
-
-export type JobsCancelResponses = {
-    /**
-     * Accepted; follow the job on job.{jobId}
-     */
-    202: JobAccepted;
-};
-
-export type JobsCancelResponse = JobsCancelResponses[keyof JobsCancelResponses];
-
 export type AgentSessionsNewData = {
     body?: PlannedBody;
     headers: {
@@ -1076,123 +1515,6 @@ export type AgentMessagesNewResponses = {
 };
 
 export type AgentMessagesNewResponse = AgentMessagesNewResponses[keyof AgentMessagesNewResponses];
-
-export type ApprovalsListData = {
-    body?: never;
-    path?: never;
-    query?: {
-        state?: 'pending' | 'decided';
-    };
-    url: '/approvals';
-};
-
-export type ApprovalsListErrors = {
-    /**
-     * Error (RFC 9457)
-     */
-    default: Problem;
-};
-
-export type ApprovalsListError = ApprovalsListErrors[keyof ApprovalsListErrors];
-
-export type ApprovalsListResponses = {
-    /**
-     * Shape defined when the operation's phase implements it
-     */
-    200: {
-        [key: string]: unknown;
-    };
-};
-
-export type ApprovalsListResponse = ApprovalsListResponses[keyof ApprovalsListResponses];
-
-export type ApprovalsApproveData = {
-    body?: never;
-    headers: {
-        /**
-         * Client-chosen key; a repeat with the same key returns the original result
-         */
-        'Idempotency-Key': string;
-        /**
-         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
-         */
-        'If-Match': string;
-    };
-    path: {
-        id: string;
-    };
-    query?: {
-        /**
-         * Validate and report what would happen without changing anything
-         */
-        dryRun?: boolean;
-    };
-    url: '/approvals/{id}:approve';
-};
-
-export type ApprovalsApproveErrors = {
-    /**
-     * Error (RFC 9457)
-     */
-    default: Problem;
-};
-
-export type ApprovalsApproveError = ApprovalsApproveErrors[keyof ApprovalsApproveErrors];
-
-export type ApprovalsApproveResponses = {
-    /**
-     * Shape defined when the operation's phase implements it
-     */
-    200: {
-        [key: string]: unknown;
-    };
-};
-
-export type ApprovalsApproveResponse = ApprovalsApproveResponses[keyof ApprovalsApproveResponses];
-
-export type ApprovalsDenyData = {
-    body?: never;
-    headers: {
-        /**
-         * Client-chosen key; a repeat with the same key returns the original result
-         */
-        'Idempotency-Key': string;
-        /**
-         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
-         */
-        'If-Match': string;
-    };
-    path: {
-        id: string;
-    };
-    query?: {
-        /**
-         * Validate and report what would happen without changing anything
-         */
-        dryRun?: boolean;
-    };
-    url: '/approvals/{id}:deny';
-};
-
-export type ApprovalsDenyErrors = {
-    /**
-     * Error (RFC 9457)
-     */
-    default: Problem;
-};
-
-export type ApprovalsDenyError = ApprovalsDenyErrors[keyof ApprovalsDenyErrors];
-
-export type ApprovalsDenyResponses = {
-    /**
-     * Shape defined when the operation's phase implements it
-     */
-    200: {
-        [key: string]: unknown;
-    };
-};
-
-export type ApprovalsDenyResponse = ApprovalsDenyResponses[keyof ApprovalsDenyResponses];
 
 export type MountsListData = {
     body?: never;
