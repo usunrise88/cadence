@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AgentMessagesNewData, AgentMessagesNewErrors, AgentMessagesNewResponses, AgentSessionsCancelData, AgentSessionsCancelErrors, AgentSessionsCancelResponses, AgentSessionsNewData, AgentSessionsNewErrors, AgentSessionsNewResponses, AliasesSetData, AliasesSetErrors, AliasesSetResponses, ApprovalsApproveData, ApprovalsApproveErrors, ApprovalsApproveResponses, ApprovalsDenyData, ApprovalsDenyErrors, ApprovalsDenyResponses, ApprovalsListData, ApprovalsListErrors, ApprovalsListResponses, EventsListData, EventsListErrors, EventsListResponses, HelpGetData, HelpGetErrors, HelpGetResponses, HelpSearchData, HelpSearchErrors, HelpSearchResponses, JobsCancelData, JobsCancelErrors, JobsCancelResponses, JobsGetData, JobsGetErrors, JobsGetResponses, MeGetData, MeGetErrors, MeGetResponses, MixesEditData, MixesEditErrors, MixesEditResponses, MixesNewData, MixesNewErrors, MixesNewResponses, MixesPreviewData, MixesPreviewErrors, MixesPreviewResponses, MountsListData, MountsListErrors, MountsListResponses, MountsNewData, MountsNewErrors, MountsNewResponses, ProjectsArchiveData, ProjectsArchiveErrors, ProjectsArchiveResponses, ProjectsEditData, ProjectsEditErrors, ProjectsEditResponses, ProjectsGetData, ProjectsGetErrors, ProjectsGetResponses, ProjectsListData, ProjectsListErrors, ProjectsListResponses, ProjectsNewData, ProjectsNewErrors, ProjectsNewResponses, RegistrySearchData, RegistrySearchErrors, RegistrySearchResponses, RunsNewData, RunsNewErrors, RunsNewResponses, WorkspacesGetData, WorkspacesGetErrors, WorkspacesGetResponses, WorkspacesListData, WorkspacesListErrors, WorkspacesListResponses, WorkspacesSetData, WorkspacesSetErrors, WorkspacesSetResponses } from './types.gen';
+import type { AgentMessagesNewData, AgentMessagesNewErrors, AgentMessagesNewResponses, AgentSessionsCancelData, AgentSessionsCancelErrors, AgentSessionsCancelResponses, AgentSessionsNewData, AgentSessionsNewErrors, AgentSessionsNewResponses, AliasesSetData, AliasesSetErrors, AliasesSetResponses, ApprovalsApproveData, ApprovalsApproveErrors, ApprovalsApproveResponses, ApprovalsDenyData, ApprovalsDenyErrors, ApprovalsDenyResponses, ApprovalsGetData, ApprovalsGetErrors, ApprovalsGetResponses, ApprovalsListData, ApprovalsListErrors, ApprovalsListResponses, AuditListData, AuditListErrors, AuditListResponses, EventsListData, EventsListErrors, EventsListResponses, HelpGetData, HelpGetErrors, HelpGetResponses, HelpSearchData, HelpSearchErrors, HelpSearchResponses, JobsCancelData, JobsCancelErrors, JobsCancelResponses, JobsGetData, JobsGetErrors, JobsGetResponses, JobsListData, JobsListErrors, JobsListResponses, JobsWaitData, JobsWaitErrors, JobsWaitResponses, MeGetData, MeGetErrors, MeGetResponses, MixesEditData, MixesEditErrors, MixesEditResponses, MixesNewData, MixesNewErrors, MixesNewResponses, MixesPreviewData, MixesPreviewErrors, MixesPreviewResponses, MountsListData, MountsListErrors, MountsListResponses, MountsNewData, MountsNewErrors, MountsNewResponses, ProjectsArchiveData, ProjectsArchiveErrors, ProjectsArchiveResponses, ProjectsEditData, ProjectsEditErrors, ProjectsEditResponses, ProjectsGetData, ProjectsGetErrors, ProjectsGetResponses, ProjectsListData, ProjectsListErrors, ProjectsListResponses, ProjectsNewData, ProjectsNewErrors, ProjectsNewResponses, RegistrySearchData, RegistrySearchErrors, RegistrySearchResponses, RunsNewData, RunsNewErrors, RunsNewResponses, WorkspacesGetData, WorkspacesGetErrors, WorkspacesGetResponses, WorkspacesListData, WorkspacesListErrors, WorkspacesListResponses, WorkspacesSetData, WorkspacesSetErrors, WorkspacesSetResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -105,6 +105,65 @@ export const helpGet = <ThrowOnError extends boolean = false>(options: Options<H
 export const registrySearch = <ThrowOnError extends boolean = false>(options?: Options<RegistrySearchData, ThrowOnError>): RequestResult<RegistrySearchResponses, RegistrySearchErrors, ThrowOnError> => (options?.client ?? client).get<RegistrySearchResponses, RegistrySearchErrors, ThrowOnError>({ url: '/registry', ...options });
 
 /**
+ * Approvals, pending first, then the most recently decided
+ */
+export const approvalsList = <ThrowOnError extends boolean = false>(options?: Options<ApprovalsListData, ThrowOnError>): RequestResult<ApprovalsListResponses, ApprovalsListErrors, ThrowOnError> => (options?.client ?? client).get<ApprovalsListResponses, ApprovalsListErrors, ThrowOnError>({ url: '/approvals', ...options });
+
+/**
+ * Get an approval with its stored request and, once approved, the replay's result
+ */
+export const approvalsGet = <ThrowOnError extends boolean = false>(options: Options<ApprovalsGetData, ThrowOnError>): RequestResult<ApprovalsGetResponses, ApprovalsGetErrors, ThrowOnError> => (options.client ?? client).get<ApprovalsGetResponses, ApprovalsGetErrors, ThrowOnError>({ url: '/approvals/{id}', ...options });
+
+/**
+ * Approve a pending request; the stored request runs as its original actor
+ */
+export const approvalsApprove = <ThrowOnError extends boolean = false>(options: Options<ApprovalsApproveData, ThrowOnError>): RequestResult<ApprovalsApproveResponses, ApprovalsApproveErrors, ThrowOnError> => (options.client ?? client).post<ApprovalsApproveResponses, ApprovalsApproveErrors, ThrowOnError>({
+    url: '/approvals/{id}:approve',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Deny a pending request; it never runs
+ */
+export const approvalsDeny = <ThrowOnError extends boolean = false>(options: Options<ApprovalsDenyData, ThrowOnError>): RequestResult<ApprovalsDenyResponses, ApprovalsDenyErrors, ThrowOnError> => (options.client ?? client).post<ApprovalsDenyResponses, ApprovalsDenyErrors, ThrowOnError>({
+    url: '/approvals/{id}:deny',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * The audit log, newest first — every command, denial and failed attempt with its actor and cause
+ */
+export const auditList = <ThrowOnError extends boolean = false>(options?: Options<AuditListData, ThrowOnError>): RequestResult<AuditListResponses, AuditListErrors, ThrowOnError> => (options?.client ?? client).get<AuditListResponses, AuditListErrors, ThrowOnError>({ url: '/audit', ...options });
+
+/**
+ * Jobs of a project, newest first
+ */
+export const jobsList = <ThrowOnError extends boolean = false>(options: Options<JobsListData, ThrowOnError>): RequestResult<JobsListResponses, JobsListErrors, ThrowOnError> => (options.client ?? client).get<JobsListResponses, JobsListErrors, ThrowOnError>({ url: '/projects/{p}/jobs', ...options });
+
+/**
+ * Get a job
+ */
+export const jobsGet = <ThrowOnError extends boolean = false>(options: Options<JobsGetData, ThrowOnError>): RequestResult<JobsGetResponses, JobsGetErrors, ThrowOnError> => (options.client ?? client).get<JobsGetResponses, JobsGetErrors, ThrowOnError>({ url: '/jobs/{id}', ...options });
+
+/**
+ * Cancel a job; a queued job stops at once, a running one when its handler notices
+ */
+export const jobsCancel = <ThrowOnError extends boolean = false>(options: Options<JobsCancelData, ThrowOnError>): RequestResult<JobsCancelResponses, JobsCancelErrors, ThrowOnError> => (options.client ?? client).post<JobsCancelResponses, JobsCancelErrors, ThrowOnError>({ url: '/jobs/{id}:cancel', ...options });
+
+/**
+ * Wait until a job ends or the timeout passes, then return it (agents)
+ */
+export const jobsWait = <ThrowOnError extends boolean = false>(options: Options<JobsWaitData, ThrowOnError>): RequestResult<JobsWaitResponses, JobsWaitErrors, ThrowOnError> => (options.client ?? client).get<JobsWaitResponses, JobsWaitErrors, ThrowOnError>({ url: '/jobs/{id}:wait', ...options });
+
+/**
  * Save a mix (input_cfg groups, weights, temperature, replay share)
  */
 export const mixesNew = <ThrowOnError extends boolean = false>(options: Options<MixesNewData, ThrowOnError>): RequestResult<MixesNewResponses, MixesNewErrors, ThrowOnError> => (options.client ?? client).post<MixesNewResponses, MixesNewErrors, ThrowOnError>({
@@ -153,16 +212,6 @@ export const runsNew = <ThrowOnError extends boolean = false>(options: Options<R
 });
 
 /**
- * Get a job
- */
-export const jobsGet = <ThrowOnError extends boolean = false>(options: Options<JobsGetData, ThrowOnError>): RequestResult<JobsGetResponses, JobsGetErrors, ThrowOnError> => (options.client ?? client).get<JobsGetResponses, JobsGetErrors, ThrowOnError>({ url: '/jobs/{id}', ...options });
-
-/**
- * Cancel a job
- */
-export const jobsCancel = <ThrowOnError extends boolean = false>(options: Options<JobsCancelData, ThrowOnError>): RequestResult<JobsCancelResponses, JobsCancelErrors, ThrowOnError> => (options.client ?? client).post<JobsCancelResponses, JobsCancelErrors, ThrowOnError>({ url: '/jobs/{id}:cancel', ...options });
-
-/**
  * Launch Claude Code or opencode in a project worktree
  */
 export const agentSessionsNew = <ThrowOnError extends boolean = false>(options: Options<AgentSessionsNewData, ThrowOnError>): RequestResult<AgentSessionsNewResponses, AgentSessionsNewErrors, ThrowOnError> => (options.client ?? client).post<AgentSessionsNewResponses, AgentSessionsNewErrors, ThrowOnError>({
@@ -190,21 +239,6 @@ export const agentMessagesNew = <ThrowOnError extends boolean = false>(options: 
         ...options.headers
     }
 });
-
-/**
- * Approvals, pending first
- */
-export const approvalsList = <ThrowOnError extends boolean = false>(options?: Options<ApprovalsListData, ThrowOnError>): RequestResult<ApprovalsListResponses, ApprovalsListErrors, ThrowOnError> => (options?.client ?? client).get<ApprovalsListResponses, ApprovalsListErrors, ThrowOnError>({ url: '/approvals', ...options });
-
-/**
- * Approve a pending request
- */
-export const approvalsApprove = <ThrowOnError extends boolean = false>(options: Options<ApprovalsApproveData, ThrowOnError>): RequestResult<ApprovalsApproveResponses, ApprovalsApproveErrors, ThrowOnError> => (options.client ?? client).post<ApprovalsApproveResponses, ApprovalsApproveErrors, ThrowOnError>({ url: '/approvals/{id}:approve', ...options });
-
-/**
- * Deny a pending request
- */
-export const approvalsDeny = <ThrowOnError extends boolean = false>(options: Options<ApprovalsDenyData, ThrowOnError>): RequestResult<ApprovalsDenyResponses, ApprovalsDenyErrors, ThrowOnError> => (options.client ?? client).post<ApprovalsDenyResponses, ApprovalsDenyErrors, ThrowOnError>({ url: '/approvals/{id}:deny', ...options });
 
 /**
  * Registered mounts and their health

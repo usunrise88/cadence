@@ -56,8 +56,8 @@ func TestPlannedOperationsAnswer501(t *testing.T) {
 	defer srv.Close()
 	tests := []struct{ method, path string }{
 		{http.MethodPost, "/api/projects/demo/mixes"},
-		{http.MethodGet, "/api/jobs/job_1"},
-		{http.MethodGet, "/api/approvals"},
+		{http.MethodPost, "/api/projects/demo/runs"},
+		{http.MethodPost, "/api/projects/demo/agent-sessions"},
 		{http.MethodGet, "/api/mounts"},
 	}
 	for _, tt := range tests {

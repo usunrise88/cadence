@@ -90,7 +90,7 @@ func (c *Contract) Tools() []Tool {
 			}
 			desc += " Pass dryRun=true to see what would happen without changing anything."
 		}
-		v := o.resolvedVrb
+		v := c.Vocab.Verbs[o.Verb]
 		tools = append(tools, Tool{
 			Name: o.ID, Title: o.Summary, Description: desc, Method: o.Method, Path: o.Path,
 			InputSchema: schema, Params: params,

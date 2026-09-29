@@ -39,13 +39,14 @@ var (
 	IdempotencyKeyReused = Type{"idempotency-key-reused", http.StatusUnprocessableEntity, "Idempotency key reused"}
 	NotImplemented       = Type{"not-implemented", http.StatusNotImplemented, "Not implemented"}
 	Internal             = Type{"internal", http.StatusInternalServerError, "Internal error"}
+	PolicyDenied         = Type{"policy-denied", http.StatusForbidden, "Denied by policy"}
 )
 
 // Types lists every registered type.
 func Types() []Type {
 	return []Type{
 		BadRequest, ValidationFailed, NotFound, MethodNotAllowed, Conflict, PreconditionFailed,
-		PreconditionRequired, IdempotencyKeyReused, NotImplemented, Internal,
+		PreconditionRequired, IdempotencyKeyReused, NotImplemented, Internal, PolicyDenied,
 	}
 }
 

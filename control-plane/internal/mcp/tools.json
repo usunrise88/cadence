@@ -2,6 +2,299 @@
   "generatedFrom": "api/openapi.yaml",
   "tools": [
     {
+      "name": "approvals.approve",
+      "title": "Approve a pending request; the stored request runs as its original actor",
+      "description": "Approve a pending request; the stored request runs as its original actor. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/approvals/{id}:approve",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "grant": {
+                "default": "once",
+                "enum": [
+                  "once",
+                  "session"
+                ],
+                "type": "string"
+              },
+              "note": {
+                "maxLength": 2000,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "approvals.deny",
+      "title": "Deny a pending request; it never runs",
+      "description": "Deny a pending request; it never runs. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/approvals/{id}:deny",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "note": {
+                "maxLength": 2000,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "approvals.get",
+      "title": "Get an approval with its stored request and, once approved, the replay's result",
+      "description": "Get an approval with its stored request and, once approved, the replay's result",
+      "method": "GET",
+      "path": "/approvals/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        }
+      ]
+    },
+    {
+      "name": "approvals.list",
+      "title": "Approvals, pending first, then the most recently decided",
+      "description": "Approvals: gated commands waiting for a person, pending first. Filter by state (pending, approved, denied, or decided for both) and project. An agent cannot decide approvals; it waits for the approval.decided event.",
+      "method": "GET",
+      "path": "/approvals",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "default": 100,
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "project": {
+            "description": "Project slug or id",
+            "type": "string"
+          },
+          "state": {
+            "description": "Only approvals in this state; decided means approved or denied",
+            "enum": [
+              "pending",
+              "approved",
+              "denied",
+              "decided"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "state",
+          "in": "query",
+          "name": "state"
+        },
+        {
+          "property": "project",
+          "in": "query",
+          "name": "project"
+        },
+        {
+          "property": "limit",
+          "in": "query",
+          "name": "limit"
+        }
+      ]
+    },
+    {
+      "name": "audit.list",
+      "title": "The audit log, newest first — every command, denial and failed attempt with its actor and cause",
+      "description": "The audit log, newest first — every command, denial and failed attempt with its actor and cause",
+      "method": "GET",
+      "path": "/audit",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "description": "Actor id (usr_…",
+            "type": "string"
+          },
+          "before": {
+            "description": "Cursor: the `next` value of the previous page",
+            "type": "string"
+          },
+          "limit": {
+            "default": 100,
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "operation": {
+            "description": "Operation id, e.g. projects.archive",
+            "type": "string"
+          },
+          "project": {
+            "description": "Project slug or id",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "actor",
+          "in": "query",
+          "name": "actor"
+        },
+        {
+          "property": "project",
+          "in": "query",
+          "name": "project"
+        },
+        {
+          "property": "operation",
+          "in": "query",
+          "name": "operation"
+        },
+        {
+          "property": "before",
+          "in": "query",
+          "name": "before"
+        },
+        {
+          "property": "limit",
+          "in": "query",
+          "name": "limit"
+        }
+      ]
+    },
+    {
       "name": "events.list",
       "title": "Events after a sequence number; with Accept text/event-stream, the live stream",
       "description": "Events after a sequence number, oldest first, optionally filtered by topic patterns (a trailing * matches the remaining segments, e.g. run.123.*) and project. Use the last seq as `after` to continue.",
@@ -141,6 +434,191 @@
           "property": "limit",
           "in": "query",
           "name": "limit"
+        }
+      ]
+    },
+    {
+      "name": "jobs.cancel",
+      "title": "Cancel a job; a queued job stops at once, a running one when its handler notices",
+      "description": "Cancel a job; a queued job stops at once, a running one when its handler notices. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/jobs/{id}:cancel",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        }
+      ]
+    },
+    {
+      "name": "jobs.get",
+      "title": "Get a job",
+      "description": "Get a job",
+      "method": "GET",
+      "path": "/jobs/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        }
+      ]
+    },
+    {
+      "name": "jobs.list",
+      "title": "Jobs of a project, newest first",
+      "description": "Jobs of a project, newest first",
+      "method": "GET",
+      "path": "/projects/{p}/jobs",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "default": 100,
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          },
+          "state": {
+            "description": "Only jobs in this state",
+            "enum": [
+              "queued",
+              "running",
+              "done",
+              "failed",
+              "cancelled"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "state",
+          "in": "query",
+          "name": "state"
+        },
+        {
+          "property": "limit",
+          "in": "query",
+          "name": "limit"
+        }
+      ]
+    },
+    {
+      "name": "jobs.wait",
+      "title": "Wait until a job ends or the timeout passes, then return it (agents)",
+      "description": "Wait for a job started by another tool (which answered 202 with a jobId). Returns the job as soon as it is done, failed or cancelled, or when the timeout (seconds, at most 60) passes — check `state` and call again if it is still queued or running.",
+      "method": "GET",
+      "path": "/jobs/{id}:wait",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "timeout": {
+            "default": 30,
+            "description": "Seconds to wait at most",
+            "maximum": 60,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "timeout",
+          "in": "query",
+          "name": "timeout"
         }
       ]
     },

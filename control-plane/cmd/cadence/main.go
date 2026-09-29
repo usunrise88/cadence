@@ -20,13 +20,18 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/usunrise88/cadence/control-plane/internal/approvals"
+	"github.com/usunrise88/cadence/control-plane/internal/audit"
 	"github.com/usunrise88/cadence/control-plane/internal/auth"
 	"github.com/usunrise88/cadence/control-plane/internal/commands"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
 	"github.com/usunrise88/cadence/control-plane/internal/help"
+	"github.com/usunrise88/cadence/control-plane/internal/jobs"
 	"github.com/usunrise88/cadence/control-plane/internal/obs"
+	"github.com/usunrise88/cadence/control-plane/internal/policy"
 	"github.com/usunrise88/cadence/control-plane/internal/server"
 	"github.com/usunrise88/cadence/control-plane/internal/storage"
 	"github.com/usunrise88/cadence/control-plane/migrations"
@@ -118,7 +123,7 @@ func serve(ctx context.Context, getenv func(string) string) error {
 		return err
 	}
 	defer pool.Close()
-	applied, err := storage.Migrate(ctx, pool, migrations.FS)
+	applied, err := storage.Migrate(ctx, pool, migrations.FS, jobs.MigrateRiver)
 	if err != nil {
 		return fmt.Errorf("migrate: %w", err)
 	}
@@ -127,11 +132,18 @@ func serve(ctx context.Context, getenv func(string) string) error {
 		return err
 	}
 
+	engine, err := policy.Embedded(policy.StubBudget{GPUHoursPerDay: stubGPUHoursPerDay})
+	if err != nil {
+		return err
+	}
+	jobSvc := jobs.New(pool, log)
+	registerChores(jobSvc, pool, log)
+
 	metrics := obs.NewMetrics()
 	hub := events.NewHub(256)
 	srv, err := server.New(server.Config{
 		Pool:     pool,
-		Pipeline: commands.NewPipeline(pool, log, metrics.Commands),
+		Pipeline: commands.NewPipeline(pool, log, metrics.Commands, engine),
 		Streamer: events.NewStreamer(pool, hub, log, metrics.SSEClients),
 		Help:     library,
 		Log:      log,
@@ -139,6 +151,7 @@ func serve(ctx context.Context, getenv func(string) string) error {
 		Tracer:   tp,
 		Version:  version,
 		Actor:    auth.DevActor(),
+		Jobs:     jobSvc,
 	})
 	if err != nil {
 		return err
@@ -160,6 +173,9 @@ func serve(ctx context.Context, getenv func(string) string) error {
 
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	if err := jobSvc.Start(runCtx); err != nil {
+		return err
+	}
 	g, gctx := errgroup.WithContext(runCtx)
 	g.Go(func() error { return events.NewDispatcher(pool, hub, log, metrics.EventsDispatched).Run(gctx) })
 	g.Go(func() error {
@@ -172,6 +188,11 @@ func serve(ctx context.Context, getenv func(string) string) error {
 		<-gctx.Done()
 		log.Info("shutting down")
 		hub.Close() // end event streams so Shutdown does not wait for them
+		jctx, jcancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer jcancel()
+		if err := jobSvc.Stop(jctx); err != nil {
+			log.Warn("stop jobs", "err", err)
+		}
 		sctx, scancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
 		defer scancel()
 		if err := httpServer.Shutdown(sctx); err != nil {
@@ -180,4 +201,26 @@ func serve(ctx context.Context, getenv func(string) string) error {
 		return nil
 	})
 	return g.Wait()
+}
+
+// stubGPUHoursPerDay is the daily GPU-hours allowance the policy engine checks spend against until phase 2 meters
+// use and reads the project's budget (policy.StubBudget).
+const stubGPUHoursPerDay = 8
+
+// registerChores schedules the periodic maintenance jobs: approval expiry (R5) and audit retention.
+func registerChores(j *jobs.Service, pool *pgxpool.Pool, log *slog.Logger) {
+	j.AddPeriodic("approvals.expire", time.Minute, func(ctx context.Context) error {
+		n, err := approvals.Sweep(ctx, pool, time.Now())
+		if n > 0 {
+			log.InfoContext(ctx, "approvals expired", "count", n)
+		}
+		return err
+	})
+	j.AddPeriodic("audit.prune", 24*time.Hour, func(ctx context.Context) error {
+		n, err := audit.Prune(ctx, pool, time.Now())
+		if n > 0 {
+			log.InfoContext(ctx, "audit entries pruned", "count", n)
+		}
+		return err
+	})
 }

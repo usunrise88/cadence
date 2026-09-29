@@ -16,19 +16,24 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/events"
 	"github.com/usunrise88/cadence/control-plane/internal/help"
 	"github.com/usunrise88/cadence/control-plane/internal/obs"
+	"github.com/usunrise88/cadence/control-plane/internal/policy"
 )
 
 // newTestServer wires a server like main does; pool may be nil for tests that never reach the database.
-func newTestServer(t *testing.T, pool *pgxpool.Pool, hub *events.Hub, metrics *obs.Metrics) *Server {
+func newTestServer(t *testing.T, pool *pgxpool.Pool, hub *events.Hub, metrics *obs.Metrics, opts ...func(*Config)) *Server {
 	t.Helper()
+	engine, err := policy.Embedded(policy.StubBudget{GPUHoursPerDay: 8})
+	if err != nil {
+		t.Fatal(err)
+	}
 	log := slog.New(slog.NewTextHandler(t.Output(), &slog.HandlerOptions{Level: slog.LevelWarn}))
 	lib, err := help.Bundled()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := New(Config{
+	cfg := Config{
 		Pool:     pool,
-		Pipeline: commands.NewPipeline(pool, log, metrics.Commands),
+		Pipeline: commands.NewPipeline(pool, log, metrics.Commands, engine),
 		Streamer: events.NewStreamer(pool, hub, log, metrics.SSEClients),
 		Help:     lib,
 		Log:      log,
@@ -36,7 +41,11 @@ func newTestServer(t *testing.T, pool *pgxpool.Pool, hub *events.Hub, metrics *o
 		Tracer:   noop.NewTracerProvider(),
 		Version:  "test",
 		Actor:    auth.DevActor(),
-	})
+	}
+	for _, o := range opts {
+		o(&cfg)
+	}
+	s, err := New(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

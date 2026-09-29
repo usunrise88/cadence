@@ -35,7 +35,7 @@ func TestMCPToolsAreTheImplementedOperations(t *testing.T) {
 			t.Errorf("tool %s missing from %v", want, names)
 		}
 	}
-	for _, never := range []string{"me.get", "workspaces.set", "mixes.new", "approvals.list"} { // exempt or planned
+	for _, never := range []string{"me.get", "workspaces.set", "mixes.new"} { // exempt or planned
 		if slices.Contains(names, never) {
 			t.Errorf("tool %s must not be listed", never)
 		}
@@ -154,7 +154,10 @@ func TestMCPResources(t *testing.T) {
 		if !strings.Contains(string(summary["project"]), `"slug":"hebrew"`) {
 			t.Errorf("%s project: %s", uri, summary["project"])
 		}
-		for _, k := range []string{"locales", "baseModel", "aliases", "budgets", "todayUse", "openApprovals"} {
+		if !strings.Contains(string(summary["openApprovals"]), `"items"`) {
+			t.Errorf("%s openApprovals: %s", uri, summary["openApprovals"])
+		}
+		for _, k := range []string{"locales", "baseModel", "aliases", "budgets", "todayUse"} {
 			if !strings.Contains(string(summary[k]), "not available yet") {
 				t.Errorf("%s %s: %s", uri, k, summary[k])
 			}

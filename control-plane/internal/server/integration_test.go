@@ -21,7 +21,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
+	"github.com/usunrise88/cadence/control-plane/internal/auth"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
+	"github.com/usunrise88/cadence/control-plane/internal/jobs"
 	"github.com/usunrise88/cadence/control-plane/internal/obs"
 	"github.com/usunrise88/cadence/control-plane/internal/storage"
 	"github.com/usunrise88/cadence/control-plane/internal/testdb"
@@ -31,14 +33,20 @@ import (
 func TestMain(m *testing.M) { testdb.Main(m) }
 
 type env struct {
-	t       *testing.T
-	url     string
-	pool    *pgxpool.Pool
-	metrics *obs.Metrics
-	keys    atomic.Int64
+	t        *testing.T
+	url      string // requests as the admin (a person)
+	agentURL string // requests as testAgent (an agent session with the default preset)
+	pool     *pgxpool.Pool
+	metrics  *obs.Metrics
+	jobs     *jobs.Service
+	keys     atomic.Int64
 }
 
-// start runs the whole control plane on a fresh database: migrations, dispatcher, HTTP server.
+// testAgent is the actor of every request to env.agentURL.
+var testAgent = auth.Actor{Kind: auth.KindAgent, ID: "ses_test", Name: "claude-code", SessionID: "ses_test"}
+
+// start runs the whole control plane on a fresh database: migrations (River's too), dispatcher, job runner and
+// two HTTP servers over the same database, one attributing requests to the admin and one to an agent session.
 func start(t *testing.T) *env {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -46,35 +54,59 @@ func start(t *testing.T) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := storage.Migrate(ctx, pool, migrations.FS); err != nil {
+	if _, err := storage.Migrate(ctx, pool, migrations.FS, jobs.MigrateRiver); err != nil {
 		t.Fatal(err)
 	}
+	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
 	hub, metrics := events.NewHub(64), obs.NewMetrics()
-	d := events.NewDispatcher(pool, hub, slog.New(slog.NewTextHandler(io.Discard, nil)), metrics.EventsDispatched)
+	d := events.NewDispatcher(pool, hub, quiet, metrics.EventsDispatched)
 	d.PollInterval = 200 * time.Millisecond
 	done := make(chan struct{})
 	go func() { defer close(done); _ = d.Run(ctx) }()
-	srv := httptest.NewServer(newTestServer(t, pool, hub, metrics).Handler())
+	js := jobs.New(pool, quiet)
+	js.FetchPollInterval = 100 * time.Millisecond
+	if err := js.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	withJobs := func(c *Config) { c.Jobs = js }
+	asAgent := func(c *Config) { c.Actor = testAgent }
+	srv := httptest.NewServer(newTestServer(t, pool, hub, metrics, withJobs).Handler())
+	agentSrv := httptest.NewServer(newTestServer(t, pool, hub, obs.NewMetrics(), withJobs, asAgent).Handler())
 	t.Cleanup(func() {
 		hub.Close()
 		srv.Close()
+		agentSrv.Close()
+		sctx, scancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_ = js.Stop(sctx)
+		scancel()
 		cancel()
 		<-done
 		pool.Close()
 	})
-	return &env{t: t, url: srv.URL, pool: pool, metrics: metrics}
+	return &env{t: t, url: srv.URL, agentURL: agentSrv.URL, pool: pool, metrics: metrics, jobs: js}
 }
 
 func (e *env) key() string { return fmt.Sprintf("test-key-%08d", e.keys.Add(1)) }
 
-// do sends a request; headers come as name, value pairs.
+// do sends a request as the admin; headers come as name, value pairs.
 func (e *env) do(method, path, body string, hdr ...string) *http.Response {
+	e.t.Helper()
+	return e.send(e.url, method, path, body, hdr...)
+}
+
+// agent sends a request as testAgent.
+func (e *env) agent(method, path, body string, hdr ...string) *http.Response {
+	e.t.Helper()
+	return e.send(e.agentURL, method, path, body, hdr...)
+}
+
+func (e *env) send(base, method, path, body string, hdr ...string) *http.Response {
 	e.t.Helper()
 	var r io.Reader
 	if body != "" {
 		r = strings.NewReader(body)
 	}
-	req, err := http.NewRequestWithContext(e.t.Context(), method, e.url+path, r)
+	req, err := http.NewRequestWithContext(e.t.Context(), method, base+path, r)
 	if err != nil {
 		e.t.Fatal(err)
 	}

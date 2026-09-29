@@ -20,6 +20,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/commands"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
 	"github.com/usunrise88/cadence/control-plane/internal/help"
+	"github.com/usunrise88/cadence/control-plane/internal/jobs"
 	"github.com/usunrise88/cadence/control-plane/internal/mcp"
 	"github.com/usunrise88/cadence/control-plane/internal/obs"
 	"github.com/usunrise88/cadence/control-plane/internal/problems"
@@ -45,15 +46,18 @@ type Config struct {
 	Defaults mcp.DefaultsSource
 	// Selection backs the MCP resource selection://current (nil: empty).
 	Selection mcp.SelectionStore
+	// Jobs runs and mirrors jobs; nil in tests that never reach a job.
+	Jobs *jobs.Service
 }
 
 // Server implements api.StrictServerInterface. Planned operations fall through to api.Planned (501).
 type Server struct {
 	api.Planned
 	Config
-	spec *openapi3.T
-	api  http.Handler // the contract, routed relative to APIPrefix
-	mcp  *mcp.Server
+	spec   *openapi3.T
+	api    http.Handler // the contract, routed relative to APIPrefix
+	mcp    *mcp.Server
+	replay http.Handler // the API without authentication, for replaying approved requests as their actor
 }
 
 var _ api.StrictServerInterface = (*Server)(nil)
@@ -79,6 +83,9 @@ func New(c Config) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("mcp server: %w", err)
 	}
+	replay := chi.NewRouter()
+	replay.Mount(APIPrefix, s.apiRouter(false))
+	s.replay = replay
 	return s, nil
 }
 
@@ -96,9 +103,15 @@ func (s *Server) Handler() http.Handler {
 }
 
 // APIHandler routes the contract's operations (paths relative to /api).
-func (s *Server) APIHandler() http.Handler {
+func (s *Server) APIHandler() http.Handler { return s.apiRouter(true) }
+
+// apiRouter routes the contract's operations; without authentication it serves approved requests replayed with
+// their actor already in the context.
+func (s *Server) apiRouter(authenticate bool) http.Handler {
 	r := chi.NewRouter()
-	r.Use(auth.Middleware(s.Actor))
+	if authenticate {
+		r.Use(auth.Middleware(s.Actor))
+	}
 	r.Use(commands.HashMiddleware(s.writeProblem))
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
 		s.writeProblem(w, r, problems.NotFound.New("no API operation at %s %s", r.Method, r.URL.Path))

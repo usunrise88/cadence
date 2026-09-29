@@ -1,0 +1,88 @@
+{
+  "permissions": {
+    "defaultMode": "default",
+    "allow": [
+      "mcp__cadence__aliases.set",
+      "mcp__cadence__approvals.list",
+      "mcp__cadence__goldenSets.freeze",
+      "mcp__cadence__help.get",
+      "mcp__cadence__jobs.cancel",
+      "mcp__cadence__jobs.wait",
+      "mcp__cadence__mixes.edit",
+      "mcp__cadence__projects.archive",
+      "mcp__cadence__projects.edit",
+      "mcp__cadence__projects.get",
+      "mcp__cadence__projects.list",
+      "mcp__cadence__runs.new",
+      "Read(/**)",
+      "Edit(/**)",
+      "Bash(git status)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git show *)",
+      "Bash(ls *)",
+      "Bash(wc *)",
+      "Bash(uv run *)",
+      "Bash(python *)",
+      "Bash(python3 *)",
+      "Bash(pytest *)",
+      "Bash(jq *)",
+      "Bash(yq *)"
+    ],
+    "ask": [
+      "Bash(pip install *)",
+      "Bash(uv add *)",
+      "Bash(uv pip install *)",
+      "Bash(rm *)",
+      "Bash(mv *)",
+      "WebFetch",
+      "WebSearch"
+    ],
+    "deny": [
+      "mcp__cadence__approvals.approve",
+      "mcp__cadence__credentials.revoke",
+      "mcp__cadence__secrets.new",
+      "mcp__cadence__sources.archive",
+      "Read(/.env)",
+      "Edit(/.env)",
+      "Read(/.env.*)",
+      "Edit(/.env.*)",
+      "Read(/**/*.pem)",
+      "Edit(/**/*.pem)",
+      "Read(/**/*.key)",
+      "Edit(/**/*.key)",
+      "Read(/.git/**)",
+      "Edit(/.git/**)",
+      "Bash(git push *)",
+      "Bash(git remote *)",
+      "Bash(git config *)",
+      "Bash(sudo *)",
+      "Bash(ssh *)",
+      "Bash(scp *)",
+      "Bash(curl *)",
+      "Bash(wget *)",
+      "Bash(nc *)",
+      "Bash(docker *)",
+      "Bash(rm -rf /*)",
+      "Bash(env)",
+      "Bash(printenv *)"
+    ]
+  },
+  "sandbox": {
+    "enabled": true,
+    "allowUnsandboxedCommands": false,
+    "network": {
+      "allowedDomains": [
+        "huggingface.co",
+        "*.huggingface.co",
+        "*.hf.co",
+        "pypi.org",
+        "files.pythonhosted.org",
+        "nvcr.io",
+        "*.nvcr.io",
+        "ngc.nvidia.com",
+        "*.ngc.nvidia.com"
+      ]
+    }
+  }
+}

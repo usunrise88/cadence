@@ -24,7 +24,7 @@ verbs:
   resume:      { class: mutate, shape: action,          reversible: null,  confirm: none,     icon: Forward }
   cancel:      { class: mutate, shape: action,          reversible: false, confirm: inline,   icon: Xmark }
   retry:       { class: mutate, shape: action,          reversible: null,  confirm: none,     icon: Restart }
-  wait:        { class: mutate, shape: action,          reversible: null,  confirm: none,     icon: Hourglass, agentOnly: true }
+  wait:        { class: read,   shape: action,          reversible: null,  confirm: none,     icon: Hourglass, agentOnly: true }
   stage:       { class: mutate, shape: action,          reversible: null,  confirm: none,     icon: StatUp }
   freeze:      { class: mutate, shape: action,          reversible: false, confirm: inline,   icon: Lock }
   materialize: { class: mutate, shape: action,          reversible: null,  confirm: none,     icon: Download }

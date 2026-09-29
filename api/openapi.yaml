@@ -119,6 +119,7 @@ paths:
         - $ref: "#/components/parameters/IfMatch"
         - $ref: "#/components/parameters/DryRun"
       responses:
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
         "200":
           description: The archived project
           headers: { ETag: { $ref: "#/components/headers/ETag" } }
@@ -295,6 +296,177 @@ paths:
   #
   #
   #
+  /approvals:
+    x-cadence: { entity: approvals }
+    get:
+      operationId: approvals.list
+      summary: Approvals, pending first, then the most recently decided
+      tags: [approvals]
+      x-cadence:
+        toolDescription: >
+          Approvals: gated commands waiting for a person, pending first. Filter by state (pending, approved, denied,
+          or decided for both) and project. An agent cannot decide approvals; it waits for the approval.decided event.
+      parameters:
+        - name: state
+          in: query
+          description: Only approvals in this state; decided means approved or denied
+          schema: { type: string, enum: [pending, approved, denied, decided] }
+        - { name: project, in: query, description: Project slug or id, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+      responses:
+        "200":
+          description: Approvals, pending first (oldest first), then decided (newest first)
+          content: { application/json: { schema: { $ref: "#/components/schemas/ApprovalList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /approvals/{id}:
+    x-cadence: { entity: approvals }
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      operationId: approvals.get
+      summary: Get an approval with its stored request and, once approved, the replay's result
+      tags: [approvals]
+      responses:
+        "200":
+          description: The approval
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Approval" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /approvals/{id}:approve:
+    x-cadence: { entity: approvals }
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      operationId: approvals.approve
+      summary: Approve a pending request; the stored request runs as its original actor
+      tags: [approvals]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: false
+        content: { application/json: { schema: { $ref: "#/components/schemas/ApprovalApprove" } } }
+      responses:
+        "200":
+          description: The decided approval, with the replayed request's status and body under result
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Approval" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /approvals/{id}:deny:
+    x-cadence: { entity: approvals }
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      operationId: approvals.deny
+      summary: Deny a pending request; it never runs
+      tags: [approvals]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: false
+        content: { application/json: { schema: { $ref: "#/components/schemas/ApprovalDeny" } } }
+      responses:
+        "200":
+          description: The denied approval
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Approval" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /audit:
+    x-cadence: { entity: audit, kind: audit_entry }
+    get:
+      operationId: audit.list
+      summary: The audit log, newest first — every command, denial and failed attempt with its actor and cause
+      tags: [audit]
+      parameters:
+        - { name: actor, in: query, description: Actor id (usr_…, a session id, …), schema: { type: string } }
+        - { name: project, in: query, description: Project slug or id, schema: { type: string } }
+        - { name: operation, in: query, description: "Operation id, e.g. projects.archive", schema: { type: string } }
+        - { name: before, in: query, description: "Cursor: the `next` value of the previous page", schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+      responses:
+        "200":
+          description: A page of audit entries, newest first
+          content: { application/json: { schema: { $ref: "#/components/schemas/AuditList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /projects/{p}/jobs:
+    x-cadence: { entity: jobs }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    get:
+      operationId: jobs.list
+      summary: Jobs of a project, newest first
+      tags: [jobs]
+      parameters:
+        - name: state
+          in: query
+          description: Only jobs in this state
+          schema: { $ref: "#/components/schemas/JobState" }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+      responses:
+        "200":
+          description: Jobs, newest first
+          content: { application/json: { schema: { $ref: "#/components/schemas/JobList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /jobs/{id}:
+    x-cadence: { entity: jobs }
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      operationId: jobs.get
+      summary: Get a job
+      tags: [jobs]
+      responses:
+        "200":
+          description: The job
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Job" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /jobs/{id}:cancel:
+    x-cadence: { entity: jobs }
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      operationId: jobs.cancel
+      summary: Cancel a job; a queued job stops at once, a running one when its handler notices
+      tags: [jobs]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      responses:
+        "200":
+          description: The job, cancelled or with cancelRequestedAt set
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Job" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /jobs/{id}:wait:
+    x-cadence: { entity: jobs }
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      operationId: jobs.wait
+      summary: Wait until a job ends or the timeout passes, then return it (agents)
+      tags: [jobs]
+      x-cadence:
+        toolDescription: >
+          Wait for a job started by another tool (which answered 202 with a jobId). Returns the job as soon as it is
+          done, failed or cancelled, or when the timeout (seconds, at most 60) passes — check `state` and call again
+          if it is still queued or running.
+      parameters:
+        - name: timeout
+          in: query
+          description: Seconds to wait at most
+          schema: { type: integer, minimum: 1, maximum: 60, default: 30 }
+      responses:
+        "200":
+          description: The job, ended or as it is when the timeout passed
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Job" } } }
+        default: { $ref: "#/components/responses/Problem" }
 
   # ---------------------------------------------------------------- planned (later phases)
   /projects/{p}/mixes:
@@ -344,28 +516,6 @@ paths:
       requestBody: { $ref: "#/components/requestBodies/PlannedBody" }
       responses: { "202": { $ref: "#/components/responses/JobAccepted" }, default: { $ref: "#/components/responses/Problem" } }
 
-  /jobs/{id}:
-    x-cadence: { entity: jobs, planned: 1 }
-    parameters: [{ $ref: "#/components/parameters/Id" }]
-    get:
-      operationId: jobs.get
-      summary: Get a job
-      tags: [planned]
-      responses: { "200": { $ref: "#/components/responses/PlannedEntity" }, default: { $ref: "#/components/responses/Problem" } }
-
-  /jobs/{id}:cancel:
-    x-cadence: { entity: jobs, planned: 1 }
-    parameters: [{ $ref: "#/components/parameters/Id" }]
-    post:
-      operationId: jobs.cancel
-      summary: Cancel a job
-      tags: [planned]
-      parameters:
-        - $ref: "#/components/parameters/IdempotencyKey"
-        - $ref: "#/components/parameters/IfMatch"
-        - $ref: "#/components/parameters/DryRun"
-      responses: { "202": { $ref: "#/components/responses/JobAccepted" }, default: { $ref: "#/components/responses/Problem" } }
-
   /projects/{p}/agent-sessions:
     x-cadence: { entity: agentSessions, planned: 1 }
     parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
@@ -400,41 +550,6 @@ paths:
       parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }, { $ref: "#/components/parameters/DryRun" }]
       requestBody: { $ref: "#/components/requestBodies/PlannedBody" }
       responses: { "202": { $ref: "#/components/responses/JobAccepted" }, default: { $ref: "#/components/responses/Problem" } }
-
-  /approvals:
-    x-cadence: { entity: approvals, planned: 1 }
-    get:
-      operationId: approvals.list
-      summary: Approvals, pending first
-      tags: [planned]
-      parameters: [{ name: state, in: query, schema: { type: string, enum: [pending, decided] } }]
-      responses: { "200": { $ref: "#/components/responses/PlannedEntity" }, default: { $ref: "#/components/responses/Problem" } }
-
-  /approvals/{id}:approve:
-    x-cadence: { entity: approvals, planned: 1 }
-    parameters: [{ $ref: "#/components/parameters/Id" }]
-    post:
-      operationId: approvals.approve
-      summary: Approve a pending request
-      tags: [planned]
-      parameters:
-        - $ref: "#/components/parameters/IdempotencyKey"
-        - $ref: "#/components/parameters/IfMatch"
-        - $ref: "#/components/parameters/DryRun"
-      responses: { "200": { $ref: "#/components/responses/PlannedEntity" }, default: { $ref: "#/components/responses/Problem" } }
-
-  /approvals/{id}:deny:
-    x-cadence: { entity: approvals, planned: 1 }
-    parameters: [{ $ref: "#/components/parameters/Id" }]
-    post:
-      operationId: approvals.deny
-      summary: Deny a pending request
-      tags: [planned]
-      parameters:
-        - $ref: "#/components/parameters/IdempotencyKey"
-        - $ref: "#/components/parameters/IfMatch"
-        - $ref: "#/components/parameters/DryRun"
-      responses: { "200": { $ref: "#/components/responses/PlannedEntity" }, default: { $ref: "#/components/responses/Problem" } }
 
   /mounts:
     x-cadence: { entity: mounts, planned: 4 }
@@ -667,7 +782,10 @@ components:
         causedBy:
           type: object
           required: [commandId]
-          properties: { commandId: { type: string }, toolCallId: { type: string } }
+          properties:
+            commandId: { type: string }
+            toolCallId: { type: string, description: The agent tool call (Cadence-Tool-Call-Id request header) }
+            approvalId: { type: string, description: The approval a person granted for this command }
         payload: { type: object, additionalProperties: true }
         at: { type: string, format: date-time }
     EventList:
@@ -738,3 +856,132 @@ components:
     #
     #
     #
+    Approval:
+      type: object
+      required: [id, state, scope, operation, actor, rule, reason, request, rev, createdAt, expiresAt]
+      properties:
+        id: { type: string, description: "apr_<uuidv7>" }
+        state: { type: string, enum: [pending, approved, denied] }
+        scope: { type: string, enum: [project, registry], description: Registry approvals are decided by the admin only }
+        operation: { type: string, description: "The gated operation, e.g. projects.archive" }
+        projectId: { type: string }
+        actor: { $ref: "#/components/schemas/Actor" }
+        rule: { type: string, description: The policy rule that asked for approval }
+        reason: { type: string }
+        estimate: { $ref: "#/components/schemas/PolicyEstimate" }
+        request: { $ref: "#/components/schemas/ApprovalRequest" }
+        rev: { type: integer }
+        createdAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time, description: Pending approvals are denied when this passes (24 h) }
+        decidedAt: { type: string, format: date-time }
+        decidedBy: { $ref: "#/components/schemas/Actor" }
+        decision: { $ref: "#/components/schemas/ApprovalDecision" }
+        result: { $ref: "#/components/schemas/ApprovalResult" }
+    ApprovalDecision:
+      type: object
+      required: [grant]
+      properties:
+        grant:
+          type: string
+          enum: [once, session]
+          description: session also allows the same operation on the same path for the rest of the agent session
+        note: { type: string }
+        expired: { type: boolean, description: Denied because nobody decided within 24 h }
+    ApprovalRequest:
+      type: object
+      required: [method, path, headers]
+      description: The stored request, without credentials or cookies
+      properties:
+        method: { type: string }
+        path: { type: string }
+        query: { type: string }
+        headers: { type: object, additionalProperties: { type: string } }
+        body: { description: The JSON body, when there was one }
+    ApprovalResult:
+      type: object
+      required: [status, commandId]
+      description: What the replayed request answered
+      properties:
+        status: { type: integer }
+        commandId: { type: string }
+        body: { description: The JSON body of the replay's response }
+    PolicyEstimate:
+      type: object
+      properties:
+        gpuHours: { type: number, format: double, minimum: 0 }
+        remainingGpuHours: { type: number, format: double }
+    ApprovalApprove:
+      type: object
+      additionalProperties: false
+      properties:
+        grant: { type: string, enum: [once, session], default: once }
+        note: { type: string, maxLength: 2000 }
+    ApprovalDeny:
+      type: object
+      additionalProperties: false
+      properties:
+        note: { type: string, maxLength: 2000 }
+    ApprovalList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Approval" } }
+
+    AuditEntry:
+      type: object
+      required: [id, operation, actor, outcome, status, at]
+      properties:
+        id: { type: string, description: "aud_<uuidv7>" }
+        commandId: { type: string }
+        operation: { type: string }
+        actor: { $ref: "#/components/schemas/Actor" }
+        preset: { type: string, description: The permission preset the policy engine applied }
+        projectId: { type: string }
+        outcome:
+          type: string
+          description: "ok, approval (stored as an approval), denied (policy), expired (approval nobody decided), or the problem slug of a failed attempt"
+        status: { type: integer, description: HTTP status answered }
+        rule: { type: string, description: The policy rule that decided }
+        causedBy: { $ref: "#/components/schemas/AuditCause" }
+        at: { type: string, format: date-time }
+    AuditCause:
+      type: object
+      properties:
+        commandId: { type: string }
+        toolCallId: { type: string }
+        approvalId: { type: string }
+    AuditList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/AuditEntry" } }
+        next: { type: string, description: Pass as `before` for the next (older) page; absent on the last page }
+
+    JobState:
+      type: string
+      enum: [queued, running, done, failed, cancelled]
+    Job:
+      type: object
+      required: [id, kind, state, progress, attempt, rev, actor, createdAt, updatedAt]
+      properties:
+        id: { type: string, description: "job_<uuidv7>" }
+        kind: { type: string }
+        projectId: { type: string }
+        state: { $ref: "#/components/schemas/JobState" }
+        progress: { type: number, format: double, minimum: 0, maximum: 1 }
+        message: { type: string, description: The last progress message }
+        result: { description: What the job produced (kind-specific JSON), once done }
+        error: { type: string, description: Why it failed, once failed }
+        attempt: { type: integer }
+        rev: { type: integer }
+        actor: { $ref: "#/components/schemas/Actor" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        startedAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time }
+        cancelRequestedAt: { type: string, format: date-time }
+    JobList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Job" } }
