@@ -35,6 +35,11 @@ The biggest unknowns are how complete the Claude Code ACP adapter is and how rou
 | A TypeScript sidecar breaks the single-binary shape | More to deploy | A separate service in the same compose file, health-checked by the control plane; one version for all services |
 | Licence mistakes in training data | Commercial use blocked later | Licence is a required source field; exports check every member's licence |
 | Test leakage | Inflated scores, bad promotions | Runs cannot reference golden sets; fingerprint exclusion at freeze |
+| Framework seams erode while NeMo is the only framework | A second framework later needs control-plane rewrites and migrations | The CPU toy pack runs the conformance suite on every pull request (R45); spike F1 before a real second pack |
+| A second framework's stack rots (icefall changes little now; k2 must match PyTorch exactly) | Broken pack after an upgrade | One runtime image per pack, pinned by digest; conformance suite on every upgrade; sherpa-onnx (active) for serving exports |
+| Live sessions share the staging card with training | OOM, slower training, latency numbers that lie | Interactive memory reservation under the card cap, never beside a benchmark (R49); A5 measures |
+| Audio views in many panels | Blank views at the WebGL context limit, memory growth, jank | One renderer per window, peaks and tiles for long audio, context-loss handling; S5 sets the budgets |
+| People's voices in manual tests | Personal data kept by accident | Nothing is stored: session audio lives in the worker's temporary directory until the socket closes, and a sweep removes leftovers within an hour (R47) |
 
 Spikes:
 
@@ -42,6 +47,9 @@ Spikes:
 - [ ] A2: Cadence MCP server with ten generated tools; both agents create a mix and launch a dry-run
 - [ ] A3: Nemotron 3.5 fine-tune on the staging card under a 24 GB cap, then ONNX export and a parity check
 - [ ] A4: Outbox → SSE → cache patching with an agent editing a mix while the Mix panel is open
+- [ ] A5: live microphone → WebSocket relay → Nemotron checkpoint in the worker and back, beside a training job (before phase 3's live mode)
+- [ ] S5: one audio view with a 30-minute call, spectrogram and word tracks at 60 fps across popouts (before phase 3's Audio panel)
+- [ ] F1: k2/icefall through the framework seams without changes outside its pack (deferred with the packs beyond NeMo)
 
 Open questions:
 
@@ -53,6 +61,8 @@ Open questions:
 - [ ] Projects need a state template the spec does not list: `container` (active → archived). Phase 0 adds it beside registry / work / promotion; confirm or fold projects into one of the three
 - [ ] Client-only commands (float, dock, theme, palette) are not API operations; phase 0 names them `view.<name>`, exempt from the verb vocabulary like the `me`/`auth` tags (R1). Confirm the namespace
 - [ ] Unknown `/api` path answers 404 `not-found`, wrong method 405 `method-not-allowed` (a tenth error type with its article); the review proposed 400 for both
+- [x] Training from scratch or a second framework (k2/icefall) in v1? — Only the seams, in phase 2; training from scratch, packs beyond NeMo and spike F1 are deferred (owner, 2026-09-29; R44, R45)
+- [x] Keep uploads and microphone recordings? — No: a transcription is a manual test and stores nothing (owner, 2026-09-29; R47)
 
 ## Sources
 
@@ -71,3 +81,30 @@ Open questions:
 - M. Bisani, H. Ney, "Bootstrap estimates for confidence intervals in ASR performance evaluation", ICASSP 2004 — significance of WER deltas
 - T. Gebru et al., "Datasheets for Datasets", CACM 2021; M. Mitchell et al., "Model Cards for Model Reporting", FAT* 2019 — generated cards
 - ISO 9241-110:2020 interaction principles; WCAG 2.2 as ISO/IEC 40500:2025; RFC 9457 and RFC 9110 — standards cited in the UI shell tab
+
+Added 2026-09-29 with R40–R54 (extensibility, trying models, audio views and charts):
+
+- Frameworks:
+  - [icefall](https://github.com/k2-fsa/icefall) and its [installation order](https://k2-fsa.github.io/icefall/installation/index.html)
+  - [k2 CUDA wheels](https://k2-fsa.github.io/k2/cuda.html) and [Lhotse](https://pypi.org/project/lhotse/)
+  - [sherpa-onnx releases](https://github.com/k2-fsa/sherpa-onnx/releases) and its [Nemotron 3.5 export](https://github.com/k2-fsa/sherpa-onnx/tree/master/scripts/nemo/nemotron-3.5-asr-streaming-0.6b)
+  - Zipformer, [arXiv:2310.11230](https://arxiv.org/abs/2310.11230) — training cost table; CR-CTC, [arXiv:2410.05101](https://arxiv.org/abs/2410.05101); FastConformer, [arXiv:2305.05084](https://arxiv.org/abs/2305.05084)
+  - Precedents: [Kubeflow Trainer](https://www.kubeflow.org/docs/components/trainer/overview/), [W&B Launch](https://docs.wandb.ai/platform/launch/launch-terminology), [MLflow models](https://mlflow.org/docs/latest/ml/model/)
+  - OpenAI-shaped speech servers: [vLLM speech-to-text](https://docs.vllm.ai/en/latest/serving/online_serving/speech_to_text/)
+- Live testing:
+  - NVIDIA: [NeMo streaming inference pipelines](https://github.com/NVIDIA-NeMo/Speech/tree/main/nemo/collections/asr/inference); [NVIDIA Speech NIM realtime ASR](https://docs.nvidia.com/nim/speech/latest/reference/api-references/asr/realtime-asr.html); [NeMo telephony tutorial](https://github.com/NVIDIA-NeMo/Speech/blob/main/tutorials/asr/ASR_for_telephony_speech.ipynb)
+  - Vendor protocols: [Deepgram live](https://developers.deepgram.com/reference/listen-live); [AssemblyAI streaming](https://www.assemblyai.com/docs/streaming/message-sequence.md); [Speechmatics real-time](https://docs.speechmatics.com/introduction/rt-guide); [Soniox real-time](https://soniox.com/docs/stt/rt/real-time-transcription)
+  - Capture: [Google STT audio best practices](https://docs.cloud.google.com/speech-to-text/docs/best-practices-provide-speech-data); [MDN AudioWorklet](https://developer.mozilla.org/en-US/docs/Web/API/AudioWorklet); [WebKit bug 281978](https://bugs.webkit.org/show_bug.cgi?id=281978) (Safari stereo capture)
+  - Metrics: [Pipecat STT benchmark](https://github.com/pipecat-ai/stt-benchmark) (time to final segment); Y. Shangguan et al., "Analyzing the Quality and Stability of a Streaming End-to-End On-Device Speech Recognizer", Interspeech 2020, [arXiv:2006.01416](https://arxiv.org/abs/2006.01416); J. Yu et al., "FastEmit", ICASSP 2021, [arXiv:2010.11148](https://arxiv.org/abs/2010.11148); Z. Liu, F. Peng, "Statistical Testing on ASR Performance via Blockwise Bootstrap", [arXiv:1912.09508](https://arxiv.org/abs/1912.09508)
+- Audio views and charts:
+  - Spectrogram defaults in tools: [Praat editor preferences](https://github.com/praat/praat.github.io/blob/master/foned/SoundAnalysisArea_prefs.h); [Audacity spectrogram settings](https://github.com/audacity/audacity/blob/master/src/spectrogram/internal/globalspectrogramconfiguration.cpp); [librosa display](https://github.com/librosa/librosa/blob/main/librosa/display.py)
+  - What models see: [Kaldi fbank options](https://github.com/kaldi-asr/kaldi/blob/master/src/feat/feature-fbank.h); [NeMo FastConformer configs](https://github.com/NVIDIA/NeMo/tree/main/examples/asr/conf/fastconformer); [Whisper audio](https://github.com/openai/whisper/blob/main/whisper/audio.py)
+  - Colormaps:
+    - [matplotlib colormaps, Smith & van der Walt 2015](https://bids.github.io/colormap/)
+    - Nuñez et al., cividis, [PLOS ONE 2018](https://doi.org/10.1371/journal.pone.0199239)
+    - Borland & Taylor, "Rainbow Color Map (Still) Considered Harmful", IEEE CG&A 2007
+    - Crameri, Shephard & Heron, [Nature Communications 2020](https://doi.org/10.1038/s41467-020-19160-7)
+    - [Turbo](https://research.google/blog/turbo-an-improved-rainbow-colormap-for-visualization/)
+  - Libraries: [wavesurfer.js 8.0.0](https://github.com/katspaugh/wavesurfer.js/releases/tag/8.0.0); [uPlot](https://github.com/leeoniya/uPlot); [Apache ECharts](https://echarts.apache.org/)
+  - ASR views: [NeMo Speech Data Explorer](https://docs.nvidia.com/nemo/speech/latest/tools/speech_data_explorer.html); [entropy-based word confidence](https://developer.nvidia.com/blog/entropy-based-methods-for-word-level-asr-confidence-estimation)
+  - Standards: [Web Audio API, AnalyserNode windowing](https://webaudio.github.io/web-audio-api/#fft-windowing-and-smoothing-over-time); [W3C Media Fragments URI 1.0](https://www.w3.org/TR/media-frags/)

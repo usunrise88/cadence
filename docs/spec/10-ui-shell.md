@@ -66,6 +66,8 @@ The full preferred stack is feasible as of September 2026: shadcn/ui made [Base 
 | App frame | Vite + TanStack Router | Root shell = the OS chrome; routes are deep links, not pages |
 | Agent chat | Streamdown (streaming Markdown with Shiki code blocks) | Agent replies render cleanly mid-stream; entity references become links that open panels |
 | Diffs and recipe editing | CodeMirror 6 with its merge view | Recipe documents, tool-call cards and agent drafts show the same live diff |
+| Charts | uPlot (MIT) for time series and live data; Apache ECharts 6 (Apache-2.0, tree-shaken) for analytics (R53) | Metrics, latency and GPU curves; histograms, forest plots, heatmaps and scatter in Eval report, Dataset version, Experiment and Model; panels reach both only through `@/shell/charts` |
+| Audio view | Cadence's own tracks on one time axis: WebGL2 spectrogram with a colour lookup texture and FFT in a Web Worker; wavesurfer.js 8 (BSD-3) for waveform, regions and minimap if S5 confirms (R51, R52) | Audio, Diff, Triage, Transcription, Language pack and Recipe previews compose `@/shell/audio`; no maintained WebGL spectrogram library exists, and LGPL/GPL/AGPL audio libraries are excluded |
 
 Boundaries:
 
@@ -73,6 +75,7 @@ Boundaries:
 - Panels never import each other and never talk to Dockview directly; they get context from the shell (see Shell concepts).
 - Base UI uses the `render` prop, not Radix's `asChild`. Coding agents default to the Radix pattern, so the lint rules reject `asChild` and a Base UI skill is added to the Claude Code setup.
 - Icons: one `IconoirProvider` at the root sets size 16 and stroke width 1.5 for the compact chrome; panels do not override it.
+- Audio and charts are shell primitives like the entity primitives: panels import `@/shell/audio` and `@/shell/charts`, never uPlot, ECharts, wavesurfer or WebGL directly, so the theme bridge, context budget and accessibility rules live in one place.
 - Existing conventions carry over inside panels: Page/Section/Stack primitives, single Skeleton and Spinner, notification history, language and theme switches.
 
 ## Shell concepts
@@ -209,6 +212,11 @@ Three state templates cover every kind: registry assets `draft → frozen → de
 | Playbook | A pipeline chain with defaults, a prefilled agent prompt and an estimate, run from the Project home | Pipeline |
 | Session | One agent conversation with its own worktree, branch, token and budget; a first-class entity | Chat (the panel that shows it) |
 | Session changes | Commits on a session branch not yet merged to main; accepted or discarded as a whole | Draft (an entity change awaiting Accept) |
+| Transcription | A manual test: models run on a file, the microphone or an utterance span, words shown live, nothing stored (R47) | Transcript (text attached to an utterance as data); Eval (stored and comparable) |
+| Latency profile | A named streaming setting of a model family with its latency in milliseconds: `160ms` is `[56,1]` for Nemotron (R43) | Latency to final (a measured metric) |
+| Model family | The framework and architecture a model belongs to, with its capabilities, latency profiles and step kinds (R41) | Base model (one upstream checkpoint of a family) |
+| Runtime | The pinned worker image a step kind runs in (R40) | Compute (the host and its cards) |
+| Track | One lane of the audio view on the shared time axis: waveform, spectrogram, words, timeline (R51) | Channel (one side of a stereo recording) |
 
 ## Window states
 
@@ -317,6 +325,9 @@ Step roles follow Radix's [scale guide](https://radix-ui.com/colors/docs/palette
 | Agent attribution badge | accent alpha 3 fill, accent-11 text | Marks changes an agent made; click jumps to the tool call in Chat |
 | Agent draft, not yet accepted | accent-8 dashed outline | Amber stays reserved for warnings |
 | Diff added / removed | grass-3 / red-3 background, step-11 text | Recipe documents, tool-call cards, drafts |
+| Chart series (categorical) | Eight Radix hues at step 9 (dark: 10), excluding blue, grass, amber, red and the accent | Inside charts only; 3:1 against the chart background and apart under a colour-vision-deficiency simulation (R53) |
+| Heatmaps, spectrograms | magma by default; viridis, cividis, inferno, Roseus, grey on request | Independent of light and dark; axes, grid and labels use slate-11/12 (R52) |
+| Deltas (diverging) | blue ↔ slate ↔ orange | Never red–green: red and grass stay status colours (R53) |
 
 Implementation:
 
@@ -339,6 +350,8 @@ The target is WCAG 2.2 level AA, which is also the international standard [ISO/I
 | 2.5.8 Target Size, Minimum (AA) | Hit areas at least 24×24 CSS px, including tab close buttons with 16 px icons |
 | 1.4.3 Contrast, Minimum (AA) | Text pairs at least 4.5:1 in light and dark themes |
 | 1.4.11 Non-text Contrast (AA) | Focus rings, sash handles and state indicators at least 3:1 against their background |
+| 1.1.1 Non-text Content (A) | Every chart has a table view and a text summary; the audio view's words and transcripts are DOM text, not pixels (R51, R53) |
+| 1.4.1 Use of Color (A) | Substitutions, deletions, insertions, gate verdicts and chart series differ by glyph, pattern or label as well as colour |
 | 4.1.3 Status Messages (AA) | Agent progress, approval requests and job completion reach assistive technology through a polite live region; streamed tokens are not announced, the finished turn is |
 
 Keyboard map (all remappable, all also in the command palette):
@@ -355,6 +368,7 @@ Keyboard map (all remappable, all also in the command palette):
 | Ctrl/Cmd+I | Focus Chat and attach the current selection |
 | Ctrl/Cmd+. | Stop the agent's current turn |
 | Enter / Backspace on an approval card | Approve / deny |
+| Space, ←/→, +/−, [ ], `,` `.` (audio view focused) | Play or pause, seek, zoom, loop in / out, previous / next word (`view.audio.*`, R51) |
 
 Notes:
 
@@ -378,6 +392,8 @@ A panel costs nothing while hidden, and a workspace is versioned data that survi
 | Throttled charts | Live metrics redraw at most 4 times per second |
 | Virtualized lists | Every list or table that can exceed 200 rows (eval utterances, logs, datasets) |
 | Renderer `always` | Only for panels that must keep live DOM when hidden, such as the audio player |
+| Audio and heavy charts | FFT and tiling run in Web Workers; one WebGL2 renderer per window (Chrome allows 16 active contexts per page); views survive context loss and hidden panels release textures; audio over 10 minutes uses server peaks and tiles (R52) |
+| Live audio | The microphone waterfall renders in the browser at display rate; only 80 ms PCM frames go to the server (R48) |
 | Agent bursts | Events from an active agent session are coalesced per animation frame; a panel under agent edit batches its updates |
 
 Budgets: restoring a 20-panel workspace under 300 ms; floating-window drag at 60 fps with 10 floats open.

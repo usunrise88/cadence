@@ -282,6 +282,386 @@ person pastes it into Cadence to confirm, which proves the script that ran is th
   `@` prefix plus Ctrl/Cmd+Alt+P; S2 verifies interceptability of every default key.
 - **R38 · `CadenceEvent.projectId`** (B8) optional; **R39 · compose exposure** (B7) as in the roadmap.
 
+---
+
+## Second pass of 2026-09-29: extensibility, trying models by hand, audio views
+
+The owner asked three questions: how hard it would be to train other models (k2/icefall from scratch, newer
+stacks), whether Cadence can test ASR by upload, microphone and live streaming, and whether spectrograms and charts
+are designed in. The spec answered no to the second and third and assumed NeMo in about ten places. R40–R54 answer
+them, built on research of 2026-09-29 (sources in `07-audit-risks-sources.md`). The owner's decisions the same day:
+the framework seams now and everything beyond them deferred (R44–R46); manual tests store nothing (R47). ROADMAP
+places the rest; spikes A5 and S5 test it, F1 waits with the deferred packs. Ported into the Doc (Resolutions tab and
+decision log) on 2026-09-29; the section-level edits of this pass (entity, panel and glossary rows, theming,
+defaults, the consistency matrix) are in these files only until the Doc's tabs are re-synced.
+
+### Extensibility: training frameworks and model families (phase 2 seams; everything beyond them deferred)
+
+Where the spec assumes NeMo today: one worker image; latency spelled as `att_context_size`; OOMptimizer as the
+calibration; `init_from_nemo_model`, Noam and `target_lang` in the run recipe; NeMo cache-aware inference as the only
+evaluator; `.nemo` → ONNX → Triton as the only artifacts; RNNT context biasing as the only boosting; a Lightning
+logger for metrics; runs that start only from a base model or a checkpoint; one card per job; the NeMo fine-tune skill.
+
+Why now: the seams cost days while step kinds are being born (phase 2) and weeks later, when checkpoints, eval
+records and panels already assume NeMo. The shape follows platforms that already solved it: Kubeflow Trainer's
+training runtimes (an admin-defined image and policy that jobs reference), W&B Launch (queues and agents that pull a
+per-job image), MLflow's model flavours (framework-specific payload, one common interface).
+
+**R40 · Runtimes**
+- A runtime is a registry entry: a container image pinned by digest, its environment lock (CUDA, PyTorch, NeMo or
+  k2/icefall, Lhotse) and the worker plugin it carries.
+- Each step-kind version names its runtime. A worker process lives in one runtime and advertises `runtime@version`,
+  GPU class and count; it leases only that runtime's step kinds (R14 capabilities).
+- Card slots belong to the control plane per host and card, not per worker, so two runtimes share a card without
+  double-booking.
+- v1 ships one runtime, NeMo Speech 26.07. Compose gets one worker service per runtime.
+- A framework gets its own image even when its wheels would fit another's (k2 has a wheel for NeMo Speech 3.0's
+  PyTorch), so the two stacks upgrade independently.
+- Adding a runtime is an admin command with approval (`runtimes.new`), because the image runs arbitrary code on the
+  GPU host.
+
+**R41 · Model families**
+A model family is a versioned descriptor that a runtime publishes at start, beside its step kinds. It holds:
+- framework and architecture;
+- artifact formats and what loading a checkpoint needs (config, train arguments, tokenizer);
+- input (sample rate, channels) and features;
+- tokenizer kind;
+- capabilities: streaming, word timestamps, confidence, boosting method, language prompting, and train modes
+  `finetune | adapter | scratch`;
+- latency profiles (R43);
+- the step kinds that fill each role: calibrate, train, average, transcribe, export, parity reference;
+- a `defaults.yaml` section;
+- help and skill slugs.
+
+Base models, checkpoints and model versions carry a family reference. The UI and MCP render family options from the
+descriptor's schemas. No control-plane or web code branches on a family name; R45 runs the flows against a second
+family to prove it. Nemotron 3.5 streaming (cache-aware FastConformer RNNT, NeMo) is the first family.
+
+**R42 · Neutral artifacts at the seams**
+Framework code lives only in the role step kinds of R41. Everything downstream reads neutral, self-describing
+artifact types:
+- `shar` in: audio and text only. Frozen versions never store features, because 80 or 128 mel bins, the frame rate
+  and normalisation belong to a family; a pack computes features on the fly or materialises them itself.
+- `checkpoint`: the family's payload, the configuration needed to load it (for icefall, every train argument), the
+  tokenizer reference, and neutral metadata (family, step, validation metrics, weights hash). Optimiser and sampler
+  state is a separate `training-state` artifact, used only to resume.
+- `hypotheses`: JSON lines per utterance with text; words with start, end and confidence; the decoding config and
+  its hash; family and weights hash. Streaming decodes add partial events (audio offset, emit time, text).
+- `analysis`: float16 arrays with frame rate and axis labels — the model's input features and per-frame emissions.
+- `eval report` and `deployable` (format, files, serving metadata).
+
+Scorers, gates, Diff, Audio, Shadow, triage and the Transcription panel read only these, so a new family changes
+none of them.
+
+**R43 · Latency profiles**
+- A family declares named latency profiles. Each has its algorithmic latency, chunk and left context in
+  milliseconds, plus the family parameters that realise it.
+- Nemotron 3.5 has `80ms`, `160ms`, `320ms`, `560ms` and `1120ms`: `att_context_size` `[56,r]` gives 80 × (r + 1) ms,
+  with a left context of 56 frames (4.48 s).
+- A family without streaming has one profile, `offline`.
+- The eval matrix axis, the primary cell (R20) and the decoding config of Eval records (R22) name profiles. The UI
+  shows "160 ms · [56,1]". Families line up by milliseconds, not by parameter spelling.
+- Evaluation always runs the real streaming decoder, never an offline decode relabelled.
+
+**R44 · Starting points and multi-card runs: the seams now, the features later**
+- Owner, 2026-09-29: prepare for other ways of training, build none of them yet.
+- Seams in phase 2:
+  - `runs.new` carries `init: base | checkpoint`, an enum that can grow;
+  - step resources carry `gpus` (1 in v1);
+  - a checkpoint names the tokenizer it was trained with (the base model's).
+- Deferred, without a phase:
+  - training from scratch (`init: scratch`), with a `tokenizer` artifact and a Tokenizer registry kind trained by
+    `tokenizers.new`;
+  - gang leases of several cards;
+  - adapter (LoRA) runs;
+  - multi-node training.
+- When they come back, `scratch` in the Nemotron family is the cheapest first step: NeMo ships streaming
+  FastConformer configs for it. A second framework is justified only by what it adds, for example compact Zipformer
+  models for CPU through sherpa-onnx.
+
+**R45 · Framework packs and the conformance suite**
+- A framework pack is the unit of extension. It contains:
+  - a runtime image and its environment lock;
+  - the worker plugin (entry points `cadence.steps`, `cadence.families`);
+  - exporters and the transcribe (eval decoder) step;
+  - pipeline templates and playbooks;
+  - a `defaults.yaml` section;
+  - help articles and an agent skill.
+- At start the worker publishes the whole pack. The control plane stores it as registry versions keyed by the runtime
+  digest, just as it stores the step registry today (R14).
+- Every pack passes one conformance suite on fixtures: calibrate → train a few steps → average → transcribe (file and
+  streaming) → export → parity → score. The suite also checks schemas: `x-cadence` complete, help present, profiles
+  declared. The NeMo pack's run grows with the phases; export and parity join it in phase 5.
+- CI runs the suite for two packs:
+  - the NeMo pack, nightly on the staging GPU;
+  - a CPU `toy` pack (a tiny CTC model trained in seconds) on every pull request. The toy pack exists only to keep
+    the seams honest.
+- NeMo is the only real pack (owner, 2026-09-29). Packs beyond it are deferred without a phase, and spike F1 with
+  them: sherpa-onnx, Hugging Face transformers, k2/icefall.
+- When one comes back:
+  - sherpa-onnx goes first, because it already runs Whisper, Omnilingual CTC and the exported Nemotron 3.5;
+  - icefall changes little now (17 commits in the last year), does not read Shar, and needs k2 matched to PyTorch
+    exactly, so it would be a pack, never a dependency of the NeMo runtime.
+- R26's pseudo-label members that are not NeMo models are decided when phase 4 starts: they run in the NeMo runtime
+  if its libraries serve them, or the ensemble starts with NeMo models only.
+
+**R46 · Deployment targets and external baselines**
+- A deployment target declares the families and formats it serves:
+  - Эра's Triton target serves the Nemotron family: cache-aware ONNX Runtime models with sequence batching and
+    implicit state. k2-fsa's Triton recipe for streaming Zipformer uses the same pattern, so a Zipformer target
+    would be a builder, not a new server.
+  - sherpa-onnx bundles serve CPU and edge.
+  - vLLM would serve LLM-based ASR.
+- A model version of another family can be registered, evaluated, used as the offline oracle (Block 5 signals) or as
+  a pseudo-labeller. It cannot be promoted to a target that does not serve it.
+- A family meant for Эра brings a Triton repository builder and its parity check in its pack.
+- Deferred with the packs: inference servers that speak the OpenAI audio API (`/v1/audio/transcriptions`,
+  `/v1/realtime?intent=transcription`), such as NVIDIA Speech NIM and vLLM, as eval baselines through one adapter.
+
+### Trying models by hand: transcriptions and live audio (phase 3; Triton target in phase 5)
+
+**R47 · Transcriptions are manual tests; nothing is stored**
+- A transcription is a manual test (owner, 2026-09-29). A person runs models on a file, the microphone or an
+  utterance span and watches the words appear.
+- Nothing outlives the session: no audio, no text, no metrics.
+  - The interactive job's record keeps only who, when, which targets and the GPU time, because the queue and the
+    daily allowance need them.
+  - The page can copy the text.
+  - Evaluations are where results are kept and compared.
+- `transcriptions.new` is the only operation: there is nothing to get or list. It and its socket carry the `media`
+  tag, so they are not MCP tools.
+  - This is a human tool: someone has to speak or listen.
+  - Agents test models through evals and the benchmark, which run the same decoder and are stored.
+  - It is the second UI-only surface after workspace layouts (principle 1).
+- Inputs:
+  - a file chosen in the browser;
+  - the microphone;
+  - an utterance span already in Cadence (`utt:123#t=1.2,3.4`).
+  One streaming decoder serves all three. A file can play at real-time pace or as fast as the card allows; the
+  microphone and paced files show latency.
+- A file's bytes go to the worker's temporary directory for the session only, capped at 15 minutes of audio. There
+  they are decoded with ffmpeg and the training resampler. They are deleted when the socket closes, and a sweep
+  removes what a crashed session left within an hour.
+- Targets: one to three of checkpoint, model version, base model and, from phase 5, the staging Triton deployment.
+  - Each target has its own latency profile (R43), boost list or none, and language.
+  - Streaming families decode as streaming at the profile, so the page shows what production would have written.
+  - To see the gap to the high-latency reference, add the same checkpoint at `1120ms` as a second target.
+  - A blind option hides which target wrote which lane until the person picks the better one (the ASR-arena
+    pattern). The pick is not recorded.
+- A typed reference gives WER and a diff on the page. The Language pack's "test a phrase" (R24) is a transcription
+  with two targets, boost on and off.
+- `analysis: [features, emissions]` asks the transcribe step for the model's inputs and per-frame outputs, shown in
+  the audio view. They live as long as the session.
+
+**R48 · The live channel**
+- `transcriptions.new` takes targets, profiles, boost lists and language. It returns a session with a `streamUrl` and
+  a single-use ticket valid 60 s, and the server also checks `Origin`.
+- The browser then opens a WebSocket to `/api/transcriptions/{id}/stream`. This is the only connection besides the
+  event stream, because audio flows up and SSE is one-way.
+- No WebRTC: its Opus encoding and echo processing would change the audio under test.
+- The protocol copies the shape the streaming vendors converged on (Deepgram, AssemblyAI, Speechmatics, Soniox,
+  NVIDIA NIM). Configuration comes first, then binary audio. Partials replace each other; finals never change.
+  `finalize` flushes without closing, and `end` flushes, summarises and closes.
+  - Up, client to server:
+    - `start` as JSON: the input (microphone with its capture rate and `getSettings()`, a file, or an utterance
+      span), telephony simulation, and the pace for files;
+    - then binary frames: 16-bit little-endian mono PCM at the capture rate, 80 ms each, or a file's bytes closed by
+      `fileEnd`;
+    - `finalize`, `keepalive` and `end` as JSON.
+  - Down, server to client:
+    - `started`: the effective configuration and model load time;
+    - `partial`: target, segment, sequence, text, audio end;
+    - `final`: words with audio-time start, end and confidence, and the endpoint reason;
+    - `stats`: real-time factor, queue, relay time;
+    - `error`: problem+json;
+    - `summary`, then close code 1000.
+  - Every result states the audio offset it covers, so latency is measured on audio time. The client adds its own
+    wall-clock stamps.
+- Message schemas are components in `api/openapi.yaml` (`LiveClientMessage`, `LiveServerMessage`). The TypeScript
+  types are generated like the rest.
+- Media endpoints (`…/stream`, `…/audio`, `…/peaks`, `transcriptions.new`) carry the tag `media`. They are exempt from
+  the verb rule and from MCP, like `auth` and `me`.
+- The control plane relays frames to a `live` job and enforces backpressure, caps and timeouts.
+  - The worker dials out for the job (`/worker/live/{jobId}`), so the pull model of R14 holds.
+  - In the NeMo runtime the job runs NeMo's streaming pipeline API (`nemo.collections.asr.inference`, the
+    cache-aware RNNT pipeline):
+    - one socket per stream id;
+    - streams batched continuously;
+    - end-of-utterance detection;
+    - boosting and language per stream.
+  - A hard finalize pads the right context with silence. Up to three targets receive the same audio.
+- Limits in v1: one session per user, 15 minutes each, closed after 5 minutes idle.
+- Nothing is written. The worker keeps audio and results in memory or its temporary directory for the session only.
+  The latency and stability figures on the page are computed from the session's own events and go with it.
+
+**R49 · Interactive compute**
+- Job kind `interactive` (transcription sessions):
+  - memory reservation from the family (Nemotron 0.6B: 3 GB, measured in A5);
+  - highest queue priority;
+  - may run beside training under the card's cap, never beside a benchmark (R30);
+  - counted in a small daily GPU-hour allowance per project (default 1).
+- When no card has room, the session waits in the queue, the page shows its place, and live mode is disabled with the
+  reason.
+- From phase 5 a Triton target needs no worker job.
+- sherpa-onnx can run exported Nemotron 3.5 on CPU, one export per chunk size. Its exporter needs a small
+  `restore_from` change for a fine-tuned `.nemo`. It is a CPU fallback for when packs return.
+
+**R50 · Capture in the browser**
+- The microphone is captured with an AudioWorklet at the device rate, and the worker resamples with the same
+  resampler as the training data. MediaRecorder's lossy formats are not used.
+- `getUserMedia` runs with echo cancellation, noise suppression and automatic gain off by default ("raw microphone"),
+  as Google and Deepgram advise for recognition. A toggle turns them on, to hear what a call stack does to the audio.
+- Take channel 0 only: Safari returns a stereo track with audio on the left when echo cancellation is off.
+- Telephony simulation: down to 8 kHz, through the codec of the project's augmentation profile (G.711 by default),
+  then back up to 16 kHz with the training resampler. This is the path NeMo recommends for telephone audio. The
+  profile's SHA and seed are shown with the result. A wideband laptop microphone says little about 8 kHz calls.
+- The page has a device picker and an input level meter with a clipping mark. It needs a secure context: HTTPS
+  through Caddy, or localhost.
+- Display:
+  - Hebrew renders right to left, with bidi isolation around digits and Latin text.
+  - Grey partials update in place; finals are solid, with endpoint marks.
+  - Confidence shades words, and timestamps show on hover.
+  - Live p50/p95 time to final and the real-time factor sit under the lanes.
+
+### Audio views and charts (phases 2–5)
+
+**R51 · One audio view, many tracks**
+- `AudioView` is a shell primitive (`@/shell/audio`), allowed in panels the same way the entity primitives are. The
+  panels that show audio compose it: Audio, Diff, Triage (Annotate), Transcription, Language pack ("test a phrase"),
+  Recipe (augmentation preview) and Shadow. No panel draws audio itself, and lint enforces this as it does for
+  `EntityHeader`.
+- The view owns one time axis: visible range, zoom, playhead and loop span. Tracks render against it, stacked like
+  Sonic Visualiser layers or Praat tiers. The axis runs left to right in every locale.
+
+  | Track | Shows | Data | Phase |
+  | --- | --- | --- | --- |
+  | Overview, waveform | Min/max peaks per channel (caller and bot lanes for calls), clipping marks | Session audio and short utterances from their PCM; long audio from a `peaks` artifact (≈ 450 KB per hour) computed at ingest (phase 4) | 3 |
+  | Spectrogram | The acoustic view (R52) | Browser FFT for session audio and short spans; server tiles for long audio | 3 |
+  | Model input | The family's features as the model saw them, from its own preprocessor; SpecAugment masks in training previews | `analysis` artifact | 3 |
+  | Emissions | CTC posteriors or RNNT per-frame emissions (top tokens and blank) | `analysis` artifact | 3 |
+  | Hypothesis words | One lane per target; word confidence shades each word (NeMo's entropy-based confidence); S, D and I against the reference by glyph as well as colour | `hypotheses` | 3 |
+  | Streaming timeline | Each word from its first partial to its final, against audio time; revisions highlighted | `hypotheses` partial events | 3 |
+  | Reference words | The reference transcript at aligned times; unaligned references show as text | Alignment step (NeMo Forced Aligner with a CTC model for the locale) | 4 |
+  | Energy, VAD | Level in dBFS, speech regions, endpoints, estimated bandwidth | Worker step; the worklet when live | 4 (live: 3) |
+  | Redactions, boosted terms | PII spans replaced by tone; hits of boost-list terms | `pii_redact`; decode | 5; 3 |
+
+- Playback goes through an HTMLMediaElement (Media Source Extensions for signed segments, R25).
+- The spectrogram, model-input, emissions and word tracks are Cadence code: no maintained open-source WebGL
+  spectrogram library exists.
+- wavesurfer.js 8 (BSD-3) may provide the waveform, regions, timeline and minimap tracks, but only if S5 shows that it
+  follows the external time axis and renders in popouts. Otherwise those tracks are Cadence code too; they are simple
+  over precomputed peaks.
+- Excluded for their licences: peaks.js and waveform-data (LGPL-3.0), audiowaveform (GPL-3.0; peaks come from our own
+  step), audioMotion-analyzer (AGPL-3.0).
+- Spans are selections: `utt:123#t=1.20,2.35`, in the W3C Media Fragments temporal syntax. They work in chat
+  references and deep links; the Inspector shows a span's statistics, and Ask agent attaches it.
+- Words are DOM, not canvas. Each word is its own bidi-isolated run: Hebrew runs right to left inside its box, with
+  digits and Latin text isolated. The flowing transcript beside the view follows the locale's direction, and hovering
+  a word highlights it in both places.
+- Keys are `view.audio.*` commands, active only while a view has focus: Space plays and pauses, ←/→ seek, +/− zoom,
+  `[` and `]` set loop in and out, `,` and `.` step between words. The window-move arrows of a floating panel apply
+  only while its frame has focus.
+- Exports: Praat TextGrid, NIST CTM and WebVTT. TextGrid and CTM also import as a reference track.
+
+**R52 · Spectrograms: two modes, defaults, computation**
+- Acoustic mode, for people: a dB STFT on a mel or Hz axis.
+  - Defaults, in `defaults.yaml` `views.audio`:
+    - 25 ms Hann window with a 10 ms hop (the model's frame grid), FFT 512;
+    - mel axis 0–8 kHz;
+    - range 80 dB below the peak, gain 0;
+    - colormap magma.
+  - Audio whose estimated bandwidth shows 8 kHz origin stops at 4 kHz, with a Nyquist line.
+  - Presets:
+    - "Praat broadband": Praat's editor defaults — 5 ms Gaussian, 0–5 kHz, 70 dB, +6 dB/octave pre-emphasis, grey;
+    - "Narrowband": 30 ms, harmonics visible;
+    - "Model frames": the default.
+  - A reassigned spectrogram is an expert option computed on the server, never the default.
+- Model-input mode, what the model saw:
+  - Computed by the checkpoint's own preprocessor in the transcribe step, never re-implemented in the browser.
+  - Colormap:
+    - sequential for features without normalisation (NeMo's cache-aware streaming configs use `normalize: NA`);
+    - diverging over ±3σ for per-feature normalised ones.
+  - For 8 kHz audio upsampled to 16 kHz, about 18 of 80 mel filters sit above 4 kHz and hold dither only. The view
+    dims them: the telephony mismatch in one picture.
+- Colormaps:
+  - Available: magma (the default), viridis, cividis, inferno, Roseus (the default of Audacity and wavesurfer), and
+    grey and inverse grey (the phonetics convention).
+  - Turbo only on request, labelled "not perceptually uniform".
+  - No jet or rainbow (Borland & Taylor 2007; Crameri, Shephard & Heron 2020): they invent edges and fail colour-blind
+    readers.
+  - The colormap ignores the light/dark theme; axes, grid and labels follow it at 3:1 or better.
+- Where it is computed:
+  - Browser, for session audio and spans under 10 minutes:
+    - the served 16 kHz PCM (R25) goes through an FFT in a Web Worker (WASM);
+    - uint8 dB values go to WebGL2 once, as R8 textures with a 256×1 colour lookup texture;
+    - gain, range and colormap are shader parameters, so they change instantly;
+    - Canvas 2D is the fallback.
+  - Server, for long audio:
+    - a uint8 dB tile pyramid: a 10 ms base level, with coarser levels max-pooled over time;
+    - computed by a worker step on demand and cached in the artifact store by content hash and settings;
+    - one hour at 10 ms × 257 bins is ≈ 93 MB, too much for a tab to compute or hold.
+  - Live microphone:
+    - AudioWorklet frames are posted to a worker as transferable buffers and drawn by the same FFT and renderer as a
+      waterfall;
+    - nothing round-trips to the server for visuals;
+    - no AnalyserNode: its window is fixed and polling it drops frames.
+- WebGL2 is the baseline, not WebGPU, whose Linux support was still rolling out at the last check.
+- Chrome allows 16 active WebGL contexts per page. Views therefore share one renderer per window and survive context
+  loss, and hidden panels release their textures.
+
+**R53 · Charts**
+- Two libraries, each for its job:
+  - uPlot (MIT, 22 KB) for time series and live data: Metrics, latency traces, GPU telemetry. It gives synced cursors,
+    EMA smoothing over a faint raw line, and min/max envelopes for dense series.
+  - Apache ECharts 6 (Apache-2.0, tree-shaken) for analytics: histograms, bars, forest plots with confidence
+    intervals, heatmaps, scatter and Pareto fronts. Its ARIA descriptions and decal patterns help screen-reader and
+    colour-blind readers, and `setTheme` switches light and dark without re-creating a chart.
+  - Not Recharts (the shadcn chart): SVG slows down past tens of thousands of points.
+  - Not Plotly: 1.5 MB.
+  - Dense heatmaps (spectrogram, emissions) belong to the audio view's renderer.
+- Panels import charts only through `@/shell/charts` (added to the lint allowlist beside `@/shell/audio`); no panel
+  imports uPlot, ECharts or WebGL directly.
+- Chart data is contract data. Histograms, buckets, confidence intervals and aggregates arrive binned from the API:
+  the same numbers an agent gets from the same `get` operation. The browser only zooms, smooths and switches scales.
+
+  | Panel | Charts |
+  | --- | --- |
+  | Metrics | Loss, validation WER, LR, gradient norm, throughput (audio seconds per second), GPU memory; x by step, epoch, wall time or GPU-hours; checkpoint marks; pinned runs overlaid |
+  | Run | Sample predictions of a fixed validation subset at each validation step: the text as it evolves |
+  | Dataset version | Hours by language, source and speaker; duration histogram with the filter bounds and percentiles (as Lhotse's `describe`); characters per second with outliers; level, SNR and estimated bandwidth; sample rates and codecs; transcript length against duration; two versions overlaid |
+  | Eval report | Matrix heatmap; forest plot of WER deltas with 95 % intervals; S/D/I stacked bars; WER by duration, SNR, bandwidth and speaker; per-utterance WER ECDF; top confusion pairs; entity accuracy; CDFs of latency to final and emission delay per profile; WER against latency across profiles and models; robustness matrix; an utterance table (as in NeMo's Speech Data Explorer) whose rows open in Diff and Audio |
+  | Experiment | Parameter against metric scatter; parallel coordinates for sweeps |
+  | Model, Queue & GPU | Benchmark p50/p95 against concurrent streams, real-time factor; GPU memory and utilisation |
+  | Shadow, Triage | Divergence over time; signals per day; triage throughput |
+  | Transcription | Live latency and real-time factor sparkline; the streaming timeline (R51) |
+
+- Tokens:
+  - categorical: eight Radix hues at step 9 (dark: 10), excluding the four status hues and the accent;
+  - sequential: magma or viridis for heatmaps;
+  - diverging: blue–slate–orange for deltas, never red–green;
+  - the contrast script checks chart colours at 3:1 against their background (WCAG 1.4.11), and a
+    colour-vision-deficiency simulation keeps neighbouring series apart;
+  - the Theming table lists these as allowed pairings.
+- Accessibility:
+  - every chart has a table view with CSV copy, a keyboard cursor and a text summary;
+  - colour is never the only channel (WCAG 1.4.1);
+  - live charts redraw at most 4 times per second (the existing rule);
+  - sonification (Chart2Music, MIT) is a later option.
+
+**R54 · Streaming metrics and significance by published definitions**
+- Latency to final: the time from utterance end to the final that covers it, with audio fed at real-time pace,
+  reported at p50 and p95. Pipecat's "time to final segment" is the same measure. Utterance end comes from
+  per-channel VAD or the aligned reference.
+- Emission delay: the time from a word's aligned end to its first appearance in a partial, reported as percentiles
+  PR50 and PR90 (Yu et al., FastEmit, ICASSP 2021).
+- Partial stability: the unstable partial word ratio (Shangguan et al., Interspeech 2020), with edits per second
+  beside it.
+- All three come from the partial events of the `hypotheses` artifact (R42). Live tests, paced replays and eval runs
+  therefore compute them the same way.
+- Confidence intervals resample whole calls, or speakers where there are no calls: a blockwise bootstrap (Liu & Peng,
+  arXiv:1912.09508), because utterances from one call are correlated. Bisani & Ney's 1 000-sample bootstrap stays the
+  method; only the resampling unit changes.
+
 ## Needs the owner's answer
 
 | # | Question | Default built meanwhile |

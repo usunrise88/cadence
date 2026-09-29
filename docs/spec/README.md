@@ -14,7 +14,7 @@ and re-export, or change here and port to the Doc in the same change — never l
 | `05-agents.md` | The agent host, ACP drivers, sessions, worktrees and merges, guardrails, security |
 | `06-platform.md` | Events and SSE, authentication, operations, notifications, the testing pyramid |
 | `07-audit-risks-sources.md` | What is still open, risks, spikes, sources |
-| `08-resolutions.md` | Resolutions R1–R39 of open decisions and spec gaps; they win over older text until it is rewritten |
+| `08-resolutions.md` | Resolutions R1–R39 of open decisions and spec gaps (they win over older text until it is rewritten); proposals R40–R54 for framework extensibility, interactive testing, audio views and charts |
 | `10-ui-shell.md` | The Dockview shell, uniform workflow, document anatomy, verb vocabulary, theming, accessibility |
 | `11-ui-panels.md` | Panel catalogue, workspaces, commands, the backend contract the UI relies on, build order |
 
