@@ -1,0 +1,34 @@
+{
+  "name": "cadence-web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@base-ui-components/react": "latest",
+    "@radix-ui/colors": "latest",
+    "@tanstack/react-query": "latest",
+    "@tanstack/react-router": "latest",
+    "dockview-react": "latest",
+    "iconoir-react": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "streamdown": "latest",
+    "@codemirror/merge": "latest",
+    "zustand": "latest"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "latest",
+    "eslint": "latest",
+    "typescript": "latest",
+    "vite": "latest"
+  },
+  "x-notes": [
+    "Pin every version in the lockfile before spike S1; 'latest' is a placeholder.",
+    "shadcn: npx shadcn init (Base UI is the default since July 2026).",
+    "Dockview: MIT packages only; dockview-enterprise is never installed."
+  ]
+}

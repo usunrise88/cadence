@@ -1,0 +1,160 @@
+openapi: 3.1.0
+info:
+  title: Cadence API
+  version: 0.1.0
+  description: >
+    Source of truth for the Go server, the TypeScript client and the MCP tools.
+    Conventions: mutations are commands (Idempotency-Key, If-Match, ?dryRun=true);
+    long work returns 202 with a job id; errors are application/problem+json (RFC 9457).
+servers:
+  - url: http://localhost:8080
+paths:
+  /projects:
+    get:
+      operationId: listProjects
+      summary: List projects
+      responses: { "200": { description: OK } }
+    post:
+      operationId: createProject
+      summary: Create a project (unit of work with its own recipes branch, budgets and gates)
+      responses: { "201": { description: Created } }
+  /events:
+    get:
+      operationId: streamEvents
+      summary: Server-sent events; resume with Last-Event-ID; filter with ?topics=run.123.*
+      responses: { "200": { description: text/event-stream } }
+  /projects/{p}/mixes:
+    post:
+      operationId: createMix
+      summary: Save a mix (input_cfg groups, weights, temperature, replay share) as a version
+      parameters: [{ name: p, in: path, required: true, schema: { type: string } }]
+      responses: { "201": { description: Created } }
+  /projects/{p}/mixes:preview:
+    post:
+      operationId: previewMix
+      summary: Hours per language for a mix without saving it
+      parameters: [{ name: p, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: OK } }
+  /projects/{p}/runs:
+    post:
+      operationId: createRun
+      summary: Start a training run; ?dryRun=true returns GPU-hours, card and duration
+      parameters:
+        - { name: p, in: path, required: true, schema: { type: string } }
+        - { name: dryRun, in: query, schema: { type: boolean } }
+      responses:
+        "202": { description: Accepted, job id in body }
+  /jobs/{id}:
+    get:
+      operationId: getJob
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: OK } }
+  /jobs/{id}:cancel:
+    post:
+      operationId: cancelJob
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { "202": { description: Accepted } }
+  /agent-sessions:
+    post:
+      operationId: createAgentSession
+      summary: Launch Claude Code or opencode in a project worktree
+      responses: { "201": { description: Created } }
+  /agent-sessions/{id}/messages:
+    post:
+      operationId: sendAgentMessage
+      summary: User message with entity references; updates arrive on agent.session.{id}
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { "202": { description: Accepted } }
+  /agent-sessions/{id}:cancel:
+    post:
+      operationId: cancelAgentTurn
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { "202": { description: Accepted } }
+  /approvals:
+    get:
+      operationId: listApprovals
+      parameters: [{ name: state, in: query, schema: { type: string, enum: [pending, decided] } }]
+      responses: { "200": { description: OK } }
+  /approvals/{id}:approve:
+    post:
+      operationId: approveRequest
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: OK } }
+  /mounts:
+    get:
+      operationId: listMounts
+      responses: { "200": { description: OK } }
+    post:
+      operationId: createMount
+      summary: Register a local path, NFS/SMB path, S3-compatible bucket or Hub source (approval)
+      responses: { "202": { description: Accepted, approval id in body } }
+  /registry/{kind}:
+    get:
+      operationId: listRegistry
+      summary: Browse a registry kind (datasets, sources, golden-sets, models, normalizers, base-models, templates) with tag filters
+      parameters:
+        - { name: kind, in: path, required: true, schema: { type: string } }
+        - { name: tag, in: query, schema: { type: array, items: { type: string } } }
+      responses: { "200": { description: OK } }
+  /registry/{kind}/{id}/versions:
+    get:
+      operationId: listRegistryVersions
+      summary: Immutable versions of a registry collection, newest first
+      parameters:
+        - { name: kind, in: path, required: true, schema: { type: string } }
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses: { "200": { description: OK } }
+  /registry/{kind}/{id}/lineage:
+    get:
+      operationId: getLineage
+      summary: Upstream and downstream graph, including "used by" projects
+      parameters:
+        - { name: kind, in: path, required: true, schema: { type: string } }
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses: { "200": { description: OK } }
+  /projects/{p}/adoptions:
+    post:
+      operationId: adoptAsset
+      summary: Reference a registry version from the project (licence and locale are checked)
+      parameters: [{ name: p, in: path, required: true, schema: { type: string } }]
+      responses: { "201": { description: Created } }
+  /projects/{p}/aliases/{name}:
+    put:
+      operationId: setAlias
+      summary: Point a project alias (train-current, baseline, production) at a registry version
+      parameters:
+        - { name: p, in: path, required: true, schema: { type: string } }
+        - { name: name, in: path, required: true, schema: { type: string } }
+      responses: { "200": { description: OK } }
+  /me/projects/{p}/workspaces/{name}:
+    put:
+      operationId: saveWorkspace
+      summary: Save a Dockview layout for the user in this project (If-Match)
+      parameters:
+        - { name: p, in: path, required: true, schema: { type: string } }
+        - { name: name, in: path, required: true, schema: { type: string } }
+      responses: { "200": { description: OK } }
+components:
+  schemas:
+    CadenceEvent:
+      type: object
+      required: [seq, topic, type, actor, at, projectId]
+      properties:
+        seq: { type: integer }
+        topic: { type: string }
+        type: { type: string }
+        projectId: { type: string }
+        entity:
+          type: object
+          properties: { kind: { type: string }, id: { type: string }, rev: { type: integer } }
+        actor:
+          type: object
+          properties:
+            kind: { type: string, enum: [user, agent, automation] }
+            id: { type: string }
+            sessionId: { type: string }
+        causedBy:
+          type: object
+          properties: { commandId: { type: string }, toolCallId: { type: string } }
+        payload: {}
+        at: { type: string, format: date-time }

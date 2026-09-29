@@ -1,4 +1,8 @@
-# Cadence — guide for coding agents
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Cadence — guide for coding agents
 
 Cadence is a self-hosted workbench for the full life of Nemotron ASR fine-tunes (data, training, evaluation,
 deployment, production flywheel), agent-native and API-first. You are implementing Cadence itself, not running it.
@@ -18,10 +22,33 @@ control-plane/  Go: REST API, MCP server, outbox → SSE, River jobs, Postgres, 
 web/            Vite + React SPA: Dockview shell, shadcn on Base UI, Radix Slate + Indigo, Iconoir
 worker/         Python step-kind registry; runs inside the NeMo Speech NGC container (GPU)
 agent-host/     TypeScript ACP client hosting Claude Code (claude-agent-acp) and opencode (opencode acp)
-recipes/        Example project repository after bootstrap (pipelines, project.yaml, data.lock)
+recipes/        Example project repository after bootstrap (projects/hebrew: pipelines/, project.yaml, data.lock)
 docs/spec/      The specification (read before changing behaviour); docs/spikes/ the eight gated experiments
 .claude/rules/  Path-scoped rules that load when you touch the matching directory
+.claude/skills/ Dev skills for building Cadence (cadence-spikes). Product skills (cadence-data, -train, …) are in
+                control-plane/templates/skills/ and copied into project repos at bootstrap
 ```
+
+## Current state (phase 0, pre-spikes)
+
+Work follows `ROADMAP.md`: six phases (0 Shell → 1 Agent loop → 2 Training → 3 Evaluation → 4 Data → 5 Deploy and
+flywheel), each closed by a gate. Pick work from the current phase; tick items there as they merge; don't start an
+item whose **decide** line is still open. Proposed answers to every **decide**/**spec** line are in
+`docs/spec/08-resolutions.md` (R1–R39), ported to the Doc; they win over older spec text until it is rewritten.
+
+The repo is a kickoff skeleton; most components are stubs until the spikes in `docs/spikes/` are done.
+
+Known spec conflicts and gaps are listed in `docs/review/2026-09-29-spec-kickoff-review.md` — check it before
+naming an operation (sections A: the `<entity>.<verb>` rules are not yet consistent) or touching agent-host security (B).
+When one is resolved, mark it there and link the decision-log row.
+
+- `make gen`, `make lint`, `make test`, `make e2e` only echo TODO — they pass without checking anything. Until they
+  are wired up, run the real tool for what you touched (commands below) and wire the target when you add the tooling.
+- `web/` and `agent-host/` have no `test` script yet; dependency versions are `latest` placeholders to pin before S1/A1.
+- `api/openapi.yaml` operationIds are still camelCase (`listProjects`, `createRun`) — they predate the `<entity>.<verb>`
+  rule; rename them when you touch an operation.
+- `control-plane/templates/pipelines/` is the source for starter pipelines; `recipes/projects/hebrew/pipelines/` is
+  their rendered copy — change both together.
 
 ## Commands
 
@@ -34,7 +61,14 @@ make e2e         # smoke project on the staging card — only from the staging h
 make spikes      # status of docs/spikes/*.md
 ```
 
-Per package: `cd control-plane && go test ./...`, `cd web && npm test`, `cd worker && pytest`, `cd agent-host && npm test`.
+Per package (single test in brackets):
+
+```
+cd control-plane && go test ./...          # go test ./internal/<pkg> -run TestName
+cd worker && pytest                         # pytest tests/test_x.py::test_name ; GPU tests: -m gpu
+cd worker && python -m cadence_worker       # print the step-kind registry (entry points need `pip install -e .`)
+cd web && npm run dev | npm run build | npm run lint
+```
 
 ## Non-negotiables
 
@@ -72,6 +106,5 @@ IMPORTANT — these are enforced by lint or review; do not work around them:
 
 - Don't add a UI-only capability, a hand-written API client, or a tool name outside the vocabulary.
 - Don't write to the database from the worker, the agent host or a step kind — everything goes through the API.
-- Don't put credentials, tokens or `.env` contents anywhere in the repo, logs or test fixtures.
 - Don't touch `recipes/` semantics without reading `docs/spec/02-domain-projects-registry.md` — it is the shape of every project repository.
 - Don't paste large spec sections into chat or commits; link the file and section.

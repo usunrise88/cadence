@@ -1,0 +1,13 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "{{ .Agent.Model }}",
+  "instructions": ["AGENTS.md"],
+  "mcp": {
+    "cadence": {
+      "type": "remote",
+      "url": "{{ .Cadence.MCPURL }}",
+      "headers": { "Authorization": "Bearer {{ .Cadence.SessionToken }}" }
+    }
+  },
+  "permission": {{ .Agent.PermissionPresetOpencodeJSON }}
+}

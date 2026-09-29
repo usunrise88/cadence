@@ -1,0 +1,15 @@
+{
+  "name": "cadence-agent-host",
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "tsx src/index.ts" },
+  "dependencies": {
+    "@agentclientprotocol/sdk": "latest",
+    "@agentclientprotocol/claude-agent-acp": "latest"
+  },
+  "devDependencies": { "tsx": "latest", "typescript": "latest" },
+  "x-notes": [
+    "opencode is installed on the host (opencode acp); Claude Code through the claude-agent-acp adapter.",
+    "Pin versions after spike A1."
+  ]
+}

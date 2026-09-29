@@ -1,0 +1,12 @@
+[project]
+name = "cadence-worker"
+version = "0.1.0"
+description = "Cadence GPU worker: step registry and NeMo Speech jobs"
+requires-python = ">=3.12"
+dependencies = ["httpx", "pydantic>=2", "pyyaml"]
+# NeMo Speech, Lhotse and PyTorch come from the NeMo Speech NGC container (26.07.00); do not pin them here.
+
+[project.entry-points."cadence.steps"]
+echo = "cadence_worker.steps.echo:EchoStep"
+# nemotron_finetune = "cadence_worker.steps.nemotron_finetune:FinetuneStep"   # spike A3
+# export_onnx = "cadence_worker.steps.export_onnx:ExportOnnxStep"             # spike A3
