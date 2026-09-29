@@ -18,6 +18,15 @@ tags:
   - { name: events, description: The single event stream (outbox → SSE) }
   - { name: help, description: Versioned help articles bundled with the binary }
   - { name: registry, description: Cadence-wide immutable versioned assets }
+  - { name: auth, description: Sign-in, first start and second factor; not published as MCP tools }
+  - { name: credentials, description: API keys and agent session tokens; hashed at rest, revoked by command }
+  - { name: compute, description: Hosts and their cards, memory caps and allowed job kinds }
+  - { name: secrets, description: Named credentials whose values are write-only }
+  - { name: defaults, description: The versioned defaults every parameter and form starts from }
+  - { name: policies, description: Instance-wide policies (budgets, retention, quotas) }
+  - { name: approvals, description: Gated commands waiting for a person }
+  - { name: audit, description: Every command with its actor and cause }
+  - { name: jobs, description: "Long work that answers 202 and reports on job.{id}" }
   - { name: planned, description: Named now, implemented in a later phase (501 until then) }
 
 paths:
@@ -259,6 +268,21 @@ paths:
           description: Versions and the kinds that exist, with counts
           content: { application/json: { schema: { $ref: "#/components/schemas/RegistrySearchResult" } } }
         default: { $ref: "#/components/responses/Problem" }
+
+  # ---------------------------------------------------------------- auth and credentials (phase 1 · stream A) — add paths below this line
+  #
+  #
+  #
+
+  # ---------------------------------------------------------------- registry, compute, secrets, defaults, policies (phase 1 · stream B) — add paths below this line
+  #
+  #
+  #
+
+  # ---------------------------------------------------------------- approvals, policy engine, audit, jobs (phase 1 · stream C) — add paths below this line
+  #
+  #
+  #
 
   # ---------------------------------------------------------------- planned (later phases)
   /projects/{p}/mixes:
@@ -687,3 +711,18 @@ components:
       properties:
         items: { type: array, items: { $ref: "#/components/schemas/RegistryVersion" } }
         kinds: { type: array, items: { $ref: "#/components/schemas/RegistryKindCount" } }
+
+    # ---------------------------------------------------------------- auth and credentials schemas (stream A) — add below
+    #
+    #
+    #
+
+    # ---------------------------------------------------------------- registry, compute, secrets, defaults, policies schemas (stream B) — add below
+    #
+    #
+    #
+
+    # ---------------------------------------------------------------- approvals, audit, jobs schemas (stream C) — add below
+    #
+    #
+    #
