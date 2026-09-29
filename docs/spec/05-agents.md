@@ -102,7 +102,7 @@ Every mutating tool accepts `dryRun`; the verbs come from the vocabulary in the 
 |  | Claude Code | opencode |
 | --- | --- | --- |
 | Launch | `claude-agent-acp` adapter | `opencode acp` |
-| Authentication | The user's Claude subscription, as the CLI | Providers configured in the project's `opencode.json`, including self-hosted vLLM |
+| Authentication | The owner's Claude subscription, as the CLI, for every session kind (R6) | MiniMax through its Token Plan by default; other providers configured in the project's `opencode.json`, including self-hosted vLLM (R6) |
 | Permissions | `.claude/settings.json` rendered from the preset | `permission` block rendered from the preset |
 | Skills | `.claude/skills` | `.claude/skills` (Claude-compatible path, [docs](https://opencode.ai/docs/skills)) |
 | Resume | Where the adapter supports it; otherwise summary injection | Native session resume |

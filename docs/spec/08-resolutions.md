@@ -79,10 +79,12 @@ Three different clocks: *stuck turn* — no ACP update for 5 min during a turn �
 pauses the session; the approval itself expires after 24 h → treated as deny, Telegram notified. Defaults live in
 `defaults.yaml`.
 
-**R6 · Claude authentication** (00 decision log) — **confirm**
-Driver supports two auth modes per profile: subscription login and API key. Default: subscription for interactive
-and read-only sessions; API key for playbook and scheduled sessions (no person present) until the subscription terms
-are confirmed to cover them. Budgets count turns/tokens in both modes; money only for API key.
+**R6 · Agent authentication** (00 decision log) — confirmed by the owner, 2026-09-29
+Claude Code sessions of every kind — interactive, read-only, playbook and scheduled — use the owner's Claude
+subscription. The driver keeps an API-key mode per profile as a fallback; budgets count turns and tokens in both
+modes, money only for an API key. opencode sessions use MiniMax through its Token Plan: the provider key lives with the
+agent's own configuration in the `agent-credentials` volume (R3), never in Cadence's secrets or an agent context. The
+free OpenCode Zen model used in spike A1 is for spikes and gated live tests only; it sends prompts to a third party.
 
 **R7 · Permission presets and policy engine** (spec gap)
 - Preset = `control-plane/templates/presets/<name>.yaml`, Cadence-level rules in three classes:
@@ -666,7 +668,6 @@ none of them.
 
 | # | Question | Default built meanwhile |
 | --- | --- | --- |
-| R6 | Do the Claude subscription terms cover ACP-driven and scheduled headless sessions? | API key for playbook/scheduled sessions |
 | R28 | Legal basis and term for keeping curated call audio | 90 days captured, 24 months curated |
 | R26 | Licences of the auxiliary models | Adopt only what passes the check |
 | R31 | Peak concurrent streams per card at Эра | 32 |

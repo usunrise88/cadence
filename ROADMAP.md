@@ -125,7 +125,7 @@ Decide before starting:
 - [ ] **decide** → *R3* Agent credential isolation: per-session `CLAUDE_CONFIG_DIR`, no host `~/.claude` in the agent's reach (B2)
 - [ ] **decide** → *R4* Network sandbox for the shell: container egress proxy vs Claude-only guardrail (B4)
 - [ ] **decide** → *R8* Reserved aliases (`baseline`, `production`) not settable via `aliases.set` (B3)
-- [ ] **decide** → *R6 · confirm* Claude subscription terms for ACP-driven and scheduled headless sessions, else API key (00 decision log)
+- [x] **decide** → *R6* Claude subscription for every session kind; opencode on MiniMax Token Plan (owner, 2026-09-29)
 - [ ] **decide** → *R5* Separate timeouts for idle-in-turn vs waiting-for-approval (C3)
 - [ ] **decide** → *R11* `defaults.yaml` location and loading — the wizard's Recommended mode and the budgets read it here,
       and pipelines stop hard-coding defaults (C1)
