@@ -1,7 +1,8 @@
 // Command cadence is the Cadence control plane: the REST API, the event stream and the embedded web UI.
 //
-//	cadence [serve]   run the server (default)
-//	cadence version   print the version
+//	cadence [serve]                     run the server (default)
+//	cadence admin reset-password [...]  set a user's password from the host shell (see admin.go)
+//	cadence version                     print the version
 //
 // Configuration comes from the environment: DATABASE_URL (required), CADENCE_ADDR (127.0.0.1:8080),
 // CADENCE_DATA_DIR (./data), CADENCE_LOG_DIR ($CADENCE_DATA_DIR/logs), CADENCE_LOG_LEVEL (info).
@@ -22,7 +23,6 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/usunrise88/cadence/control-plane/internal/auth"
 	"github.com/usunrise88/cadence/control-plane/internal/commands"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
 	"github.com/usunrise88/cadence/control-plane/internal/help"
@@ -48,10 +48,17 @@ func main() {
 			fmt.Fprintln(os.Stderr, "cadence:", err)
 			os.Exit(1)
 		}
+	case "admin":
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		if err := admin(ctx, os.Args[2:], os.Getenv, os.Stdin, os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, "cadence admin:", err)
+			os.Exit(1)
+		}
 	case "version":
 		fmt.Println(version)
 	default:
-		fmt.Fprintf(os.Stderr, "usage: cadence [serve|version]\nunknown command %q\n", cmd)
+		fmt.Fprintf(os.Stderr, "usage: cadence [serve|admin|version]\nunknown command %q\n", cmd)
 		os.Exit(2)
 	}
 }
@@ -138,7 +145,6 @@ func serve(ctx context.Context, getenv func(string) string) error {
 		Metrics:  metrics,
 		Tracer:   tp,
 		Version:  version,
-		Actor:    auth.DevActor(),
 	})
 	if err != nil {
 		return err

@@ -16,6 +16,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/help"
 	"github.com/usunrise88/cadence/control-plane/internal/problems"
 	"github.com/usunrise88/cadence/control-plane/internal/projects"
+	"github.com/usunrise88/cadence/control-plane/internal/storage"
 )
 
 // ---------------------------------------------------------------- commands
@@ -60,12 +61,16 @@ func projectResult(status int) func(projects.Project, []events.Draft, error) (co
 
 // ProjectsList implements projects.list.
 func (s *Server) ProjectsList(ctx context.Context, req api.ProjectsListRequestObject) (api.ProjectsListResponseObject, error) {
+	scope, _ := auth.ScopeFromContext(ctx)
 	list, err := projects.List(ctx, s.Pool, req.Params.Archived != nil && *req.Params.Archived)
 	if err != nil {
 		return nil, err
 	}
 	items := make([]api.Project, 0, len(list))
 	for _, p := range list {
+		if !scope.AllowsProject(p.ID) {
+			continue
+		}
 		items = append(items, apiProject(p))
 	}
 	return api.ProjectsList200JSONResponse{Items: items}, nil
@@ -73,6 +78,9 @@ func (s *Server) ProjectsList(ctx context.Context, req api.ProjectsListRequestOb
 
 // ProjectsNew implements projects.new.
 func (s *Server) ProjectsNew(ctx context.Context, req api.ProjectsNewRequestObject) (api.ProjectsNewResponseObject, error) {
+	if err := auth.CheckAll(ctx); err != nil {
+		return nil, err
+	}
 	in := projects.NewInput{Slug: req.Body.Slug, Name: req.Body.Name, Description: deref(req.Body.Description)}
 	resp, err := s.Pipeline.Run(ctx, command(ctx, "projects.new", req.Params.IdempotencyKey, req.Params.DryRun),
 		func(ctx context.Context, tx pgx.Tx) (commands.Result, []events.Draft, error) {
@@ -86,7 +94,7 @@ func (s *Server) ProjectsNew(ctx context.Context, req api.ProjectsNewRequestObje
 
 // ProjectsGet implements projects.get.
 func (s *Server) ProjectsGet(ctx context.Context, req api.ProjectsGetRequestObject) (api.ProjectsGetResponseObject, error) {
-	p, err := projects.Get(ctx, s.Pool, req.P)
+	p, err := scopedProject(ctx, s.Pool, req.P)
 	if err != nil {
 		return nil, err
 	}
@@ -96,6 +104,9 @@ func (s *Server) ProjectsGet(ctx context.Context, req api.ProjectsGetRequestObje
 
 // ProjectsEdit implements projects.edit.
 func (s *Server) ProjectsEdit(ctx context.Context, req api.ProjectsEditRequestObject) (api.ProjectsEditResponseObject, error) {
+	if _, err := scopedProject(ctx, s.Pool, req.P); err != nil {
+		return nil, err
+	}
 	rev, err := commands.ParseIfMatch(req.Params.IfMatch)
 	if err != nil {
 		return nil, err
@@ -113,6 +124,9 @@ func (s *Server) ProjectsEdit(ctx context.Context, req api.ProjectsEditRequestOb
 
 // ProjectsArchive implements projects.archive.
 func (s *Server) ProjectsArchive(ctx context.Context, req api.ProjectsArchiveRequestObject) (api.ProjectsArchiveResponseObject, error) {
+	if _, err := scopedProject(ctx, s.Pool, req.P); err != nil {
+		return nil, err
+	}
 	rev, err := commands.ParseIfMatch(req.Params.IfMatch)
 	if err != nil {
 		return nil, err
@@ -143,7 +157,7 @@ func apiProject(p projects.Project) api.Project {
 func (s *Server) MeGet(ctx context.Context, _ api.MeGetRequestObject) (api.MeGetResponseObject, error) {
 	a, ok := auth.FromContext(ctx)
 	if !ok {
-		return nil, fmt.Errorf("no actor in request context")
+		return nil, problems.Unauthenticated.New("sign in or send a Bearer token")
 	}
 	return api.MeGet200JSONResponse(apiActor(a)), nil
 }
@@ -162,7 +176,7 @@ func apiActor(a auth.Actor) api.Actor {
 // WorkspacesList implements workspaces.list.
 func (s *Server) WorkspacesList(ctx context.Context, req api.WorkspacesListRequestObject) (api.WorkspacesListResponseObject, error) {
 	actor, _ := auth.FromContext(ctx)
-	p, err := projects.Get(ctx, s.Pool, req.P)
+	p, err := scopedProject(ctx, s.Pool, req.P)
 	if err != nil {
 		return nil, err
 	}
@@ -180,7 +194,7 @@ func (s *Server) WorkspacesList(ctx context.Context, req api.WorkspacesListReque
 // WorkspacesGet implements workspaces.get.
 func (s *Server) WorkspacesGet(ctx context.Context, req api.WorkspacesGetRequestObject) (api.WorkspacesGetResponseObject, error) {
 	actor, _ := auth.FromContext(ctx)
-	p, err := projects.Get(ctx, s.Pool, req.P)
+	p, err := scopedProject(ctx, s.Pool, req.P)
 	if err != nil {
 		return nil, err
 	}
@@ -217,7 +231,7 @@ func (s *Server) WorkspacesSet(ctx context.Context, req api.WorkspacesSetRequest
 	in := projects.WorkspaceInput{SchemaVersion: req.Body.SchemaVersion, Layout: layout, Panels: panels}
 	cmd := command(ctx, "workspaces.set", req.Params.IdempotencyKey, req.Params.DryRun)
 	resp, err := s.Pipeline.Run(ctx, cmd, func(ctx context.Context, tx pgx.Tx) (commands.Result, []events.Draft, error) {
-		p, err := projects.Get(ctx, tx, req.P)
+		p, err := scopedProject(ctx, tx, req.P)
 		if err != nil {
 			return commands.Result{}, nil, err
 		}
@@ -284,7 +298,10 @@ func apiArticle(a help.Article) api.HelpArticle {
 }
 
 // RegistrySearch implements registry.search. Registry kinds arrive in phase 1; until then the registry is empty.
-func (s *Server) RegistrySearch(_ context.Context, _ api.RegistrySearchRequestObject) (api.RegistrySearchResponseObject, error) {
+func (s *Server) RegistrySearch(ctx context.Context, _ api.RegistrySearchRequestObject) (api.RegistrySearchResponseObject, error) {
+	if err := auth.CheckRegistryRead(ctx); err != nil {
+		return nil, err
+	}
 	return api.RegistrySearch200JSONResponse{Items: []api.RegistryVersion{}, Kinds: []api.RegistryKindCount{}}, nil
 }
 
@@ -314,4 +331,16 @@ func writeJSON(w http.ResponseWriter, r *http.Request, log *slog.Logger, status 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_, _ = w.Write(append(b, '\n'))
+}
+
+// scopedProject reads the project with slug and checks that the request's scope reaches it (403 otherwise).
+func scopedProject(ctx context.Context, q storage.Querier, slug string) (projects.Project, error) {
+	p, err := projects.Get(ctx, q, slug)
+	if err != nil {
+		return projects.Project{}, err
+	}
+	if err := auth.CheckProject(ctx, p.ID); err != nil {
+		return projects.Project{}, err
+	}
+	return p, nil
 }

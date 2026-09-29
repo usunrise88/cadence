@@ -25,19 +25,46 @@ import (
 
 // Defines values for ActorKind.
 const (
-	Agent      ActorKind = "agent"
-	Automation ActorKind = "automation"
-	User       ActorKind = "user"
+	ActorKindAgent      ActorKind = "agent"
+	ActorKindAutomation ActorKind = "automation"
+	ActorKindUser       ActorKind = "user"
 )
 
 // Valid indicates whether the value is a known member of the ActorKind enum.
 func (e ActorKind) Valid() bool {
 	switch e {
-	case Agent:
+	case ActorKindAgent:
 		return true
-	case Automation:
+	case ActorKindAutomation:
 		return true
-	case User:
+	case ActorKindUser:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CredentialKind.
+const (
+	CredentialKindAgent      CredentialKind = "agent"
+	CredentialKindApiKey     CredentialKind = "api_key"
+	CredentialKindInvitation CredentialKind = "invitation"
+	CredentialKindSession    CredentialKind = "session"
+	CredentialKindWorker     CredentialKind = "worker"
+)
+
+// Valid indicates whether the value is a known member of the CredentialKind enum.
+func (e CredentialKind) Valid() bool {
+	switch e {
+	case CredentialKindAgent:
+		return true
+	case CredentialKindApiKey:
+		return true
+	case CredentialKindInvitation:
+		return true
+	case CredentialKindSession:
+		return true
+	case CredentialKindWorker:
 		return true
 	default:
 		return false
@@ -126,6 +153,35 @@ type ApprovalAccepted struct {
 	ApprovalId string `json:"approvalId"`
 }
 
+// AuthLogin defines model for AuthLogin.
+type AuthLogin struct {
+	Password string `json:"password"`
+
+	// TotpCode Required when the user has TOTP on
+	TotpCode *string `json:"totpCode,omitempty"`
+	Username string  `json:"username"`
+}
+
+// AuthSetup defines model for AuthSetup.
+type AuthSetup struct {
+	// Password At least 12 characters (Cadence recommendation, after NIST SP 800-63B)
+	Password Password `json:"password"`
+
+	// Username Lowercase letters, digits, dots, dashes and underscores; 2–32 characters
+	Username *Username `json:"username,omitempty"`
+}
+
+// AuthStatus defines model for AuthStatus.
+type AuthStatus struct {
+	Actor *Actor `json:"actor,omitempty"`
+
+	// SetupRequired First start: no admin password is set yet; auth.setup sets it
+	SetupRequired bool `json:"setupRequired"`
+
+	// TotpEnabled The signed-in user signs in with a TOTP code
+	TotpEnabled *bool `json:"totpEnabled,omitempty"`
+}
+
 // CadenceEvent defines model for CadenceEvent.
 type CadenceEvent struct {
 	Actor    Actor     `json:"actor"`
@@ -148,6 +204,80 @@ type CadenceEvent struct {
 	Seq   int64  `json:"seq"`
 	Topic string `json:"topic"`
 	Type  string `json:"type"`
+}
+
+// Credential defines model for Credential.
+type Credential struct {
+	CreatedAt time.Time `json:"createdAt"`
+
+	// Current The credential of this request
+	Current   *bool      `json:"current,omitempty"`
+	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
+
+	// Id crd_<uuidv7>
+	Id   string         `json:"id"`
+	Kind CredentialKind `json:"kind"`
+
+	// LastUsedAt Updated at most once a minute
+	LastUsedAt *time.Time      `json:"lastUsedAt,omitempty"`
+	Name       string          `json:"name"`
+	Rev        int             `json:"rev"`
+	RevokedAt  *time.Time      `json:"revokedAt,omitempty"`
+	Scope      CredentialScope `json:"scope"`
+
+	// Subject What it stands for: the agent session, invitation batch or worker
+	Subject *string `json:"subject,omitempty"`
+
+	// UserId The user who owns or created it
+	UserId *string `json:"userId,omitempty"`
+}
+
+// CredentialCreated defines model for CredentialCreated.
+type CredentialCreated struct {
+	Credential Credential `json:"credential"`
+
+	// Token The secret (cdk_…); only in the first 201 — store it now
+	Token *string `json:"token,omitempty"`
+}
+
+// CredentialKind defines model for CredentialKind.
+type CredentialKind string
+
+// CredentialList defines model for CredentialList.
+type CredentialList struct {
+	Items []Credential `json:"items"`
+}
+
+// CredentialNew defines model for CredentialNew.
+type CredentialNew struct {
+	// ExpiresAt Never expires when absent
+	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
+	Name      string     `json:"name"`
+
+	// Scope One project, registry read, or both
+	Scope struct {
+		// Project Lowercase letters, digits and dashes; 3–40 characters
+		Project      *Slug `json:"project,omitempty"`
+		RegistryRead *bool `json:"registryRead,omitempty"`
+	} `json:"scope"`
+}
+
+// CredentialScope defines model for CredentialScope.
+type CredentialScope struct {
+	// All Every project and the registry (the admin's own sessions)
+	All *bool `json:"all,omitempty"`
+
+	// Preset Permission preset (agent session tokens)
+	Preset *string `json:"preset,omitempty"`
+
+	// Project Lowercase letters, digits and dashes; 3–40 characters
+	Project *Slug `json:"project,omitempty"`
+
+	// ProjectId The one project this credential reaches
+	ProjectId *string `json:"projectId,omitempty"`
+
+	// RegistryRead May read the registry
+	RegistryRead *bool `json:"registryRead,omitempty"`
 }
 
 // EventList defines model for EventList.
@@ -198,6 +328,9 @@ type PanelState struct {
 	PinnedTo  *string                 `json:"pinnedTo,omitempty"`
 	ViewState *map[string]interface{} `json:"viewState,omitempty"`
 }
+
+// Password At least 12 characters (Cadence recommendation, after NIST SP 800-63B)
+type Password = string
 
 // Problem defines model for Problem.
 type Problem struct {
@@ -286,6 +419,23 @@ type RegistryVersionState string
 
 // Slug Lowercase letters, digits and dashes; 3–40 characters
 type Slug = string
+
+// TotpCode defines model for TotpCode.
+type TotpCode struct {
+	Code string `json:"code"`
+}
+
+// TotpEnrollment defines model for TotpEnrollment.
+type TotpEnrollment struct {
+	// Secret Base32 secret for manual entry
+	Secret string `json:"secret"`
+
+	// Uri otpauth://totp/… URI for a QR code
+	Uri string `json:"uri"`
+}
+
+// Username Lowercase letters, digits, dots, dashes and underscores; 2–32 characters
+type Username = string
 
 // Workspace defines model for Workspace.
 type Workspace struct {
@@ -392,6 +542,36 @@ type ApprovalsApproveParams struct {
 
 // ApprovalsDenyParams defines parameters for ApprovalsDeny.
 type ApprovalsDenyParams struct {
+	// DryRun Validate and report what would happen without changing anything
+	DryRun *DryRun `form:"dryRun,omitempty" json:"dryRun,omitempty"`
+
+	// IdempotencyKey Client-chosen key; a repeat with the same key returns the original result
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+
+	// IfMatch The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+	IfMatch IfMatch `json:"If-Match"`
+}
+
+// CredentialsListParams defines parameters for CredentialsList.
+type CredentialsListParams struct {
+	// Kind Only this kind
+	Kind *CredentialKind `form:"kind,omitempty" json:"kind,omitempty"`
+
+	// Revoked Include revoked and expired credentials
+	Revoked *bool `form:"revoked,omitempty" json:"revoked,omitempty"`
+}
+
+// CredentialsNewParams defines parameters for CredentialsNew.
+type CredentialsNewParams struct {
+	// DryRun Validate and report what would happen without changing anything
+	DryRun *DryRun `form:"dryRun,omitempty" json:"dryRun,omitempty"`
+
+	// IdempotencyKey Client-chosen key; a repeat with the same key returns the original result
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// CredentialsRevokeParams defines parameters for CredentialsRevoke.
+type CredentialsRevokeParams struct {
 	// DryRun Validate and report what would happen without changing anything
 	DryRun *DryRun `form:"dryRun,omitempty" json:"dryRun,omitempty"`
 
@@ -597,6 +777,21 @@ type RegistrySearchParams struct {
 // AgentMessagesNewJSONRequestBody defines body for AgentMessagesNew for application/json ContentType.
 type AgentMessagesNewJSONRequestBody AgentMessagesNewJSONBody
 
+// TotpConfirmJSONRequestBody defines body for TotpConfirm for application/json ContentType.
+type TotpConfirmJSONRequestBody = TotpCode
+
+// TotpDisableJSONRequestBody defines body for TotpDisable for application/json ContentType.
+type TotpDisableJSONRequestBody = TotpCode
+
+// AuthLoginJSONRequestBody defines body for AuthLogin for application/json ContentType.
+type AuthLoginJSONRequestBody = AuthLogin
+
+// AuthSetupJSONRequestBody defines body for AuthSetup for application/json ContentType.
+type AuthSetupJSONRequestBody = AuthSetup
+
+// CredentialsNewJSONRequestBody defines body for CredentialsNew for application/json ContentType.
+type CredentialsNewJSONRequestBody = CredentialNew
+
 // WorkspacesSetJSONRequestBody defines body for WorkspacesSet for application/json ContentType.
 type WorkspacesSetJSONRequestBody = WorkspaceSet
 
@@ -644,6 +839,36 @@ type ServerInterface interface {
 	// ApprovalsDeny Deny a pending request
 	// (POST /approvals/{id}:deny)
 	ApprovalsDeny(w http.ResponseWriter, r *http.Request, id Id, params ApprovalsDenyParams)
+	// AuthGet Sign-in state — whether first start is pending and who is signed in
+	// (GET /auth)
+	AuthGet(w http.ResponseWriter, r *http.Request)
+	// TotpConfirm Confirm TOTP enrollment with a current code; sign-in asks for a code from then on
+	// (POST /auth/totp:confirm)
+	TotpConfirm(w http.ResponseWriter, r *http.Request)
+	// TotpDisable Turn TOTP off for the signed-in user with a current code
+	// (POST /auth/totp:disable)
+	TotpDisable(w http.ResponseWriter, r *http.Request)
+	// TotpEnroll Start TOTP enrollment for the signed-in user — a new secret, active once confirmed
+	// (POST /auth/totp:enroll)
+	TotpEnroll(w http.ResponseWriter, r *http.Request)
+	// AuthLogin Sign in with username, password and, when enabled, a TOTP code; rate-limited per address and username
+	// (POST /auth:login)
+	AuthLogin(w http.ResponseWriter, r *http.Request)
+	// AuthLogout Sign out — revoke this browser's session and clear its cookie
+	// (POST /auth:logout)
+	AuthLogout(w http.ResponseWriter, r *http.Request)
+	// AuthSetup First start — set the admin password once and sign in; refused (409) once a password is set
+	// (POST /auth:setup)
+	AuthSetup(w http.ResponseWriter, r *http.Request)
+	// CredentialsList List credentials (sessions, API keys, agent tokens) without their secrets
+	// (GET /credentials)
+	CredentialsList(w http.ResponseWriter, r *http.Request, params CredentialsListParams)
+	// CredentialsNew Create a personal API key (cdk_) scoped to one project or to registry read
+	// (POST /credentials)
+	CredentialsNew(w http.ResponseWriter, r *http.Request, params CredentialsNewParams)
+	// CredentialsRevoke Revoke a credential; requests carrying it are refused from now on (irreversible)
+	// (POST /credentials/{id}:revoke)
+	CredentialsRevoke(w http.ResponseWriter, r *http.Request, id Id, params CredentialsRevokeParams)
 	// EventsList Events after a sequence number; with Accept text/event-stream, the live stream
 	// (GET /events)
 	EventsList(w http.ResponseWriter, r *http.Request, params EventsListParams)
@@ -746,6 +971,66 @@ func (_ Unimplemented) ApprovalsApprove(w http.ResponseWriter, r *http.Request, 
 // ApprovalsDeny Deny a pending request
 // (POST /approvals/{id}:deny)
 func (_ Unimplemented) ApprovalsDeny(w http.ResponseWriter, r *http.Request, id Id, params ApprovalsDenyParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AuthGet Sign-in state — whether first start is pending and who is signed in
+// (GET /auth)
+func (_ Unimplemented) AuthGet(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// TotpConfirm Confirm TOTP enrollment with a current code; sign-in asks for a code from then on
+// (POST /auth/totp:confirm)
+func (_ Unimplemented) TotpConfirm(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// TotpDisable Turn TOTP off for the signed-in user with a current code
+// (POST /auth/totp:disable)
+func (_ Unimplemented) TotpDisable(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// TotpEnroll Start TOTP enrollment for the signed-in user — a new secret, active once confirmed
+// (POST /auth/totp:enroll)
+func (_ Unimplemented) TotpEnroll(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AuthLogin Sign in with username, password and, when enabled, a TOTP code; rate-limited per address and username
+// (POST /auth:login)
+func (_ Unimplemented) AuthLogin(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AuthLogout Sign out — revoke this browser's session and clear its cookie
+// (POST /auth:logout)
+func (_ Unimplemented) AuthLogout(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AuthSetup First start — set the admin password once and sign in; refused (409) once a password is set
+// (POST /auth:setup)
+func (_ Unimplemented) AuthSetup(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// CredentialsList List credentials (sessions, API keys, agent tokens) without their secrets
+// (GET /credentials)
+func (_ Unimplemented) CredentialsList(w http.ResponseWriter, r *http.Request, params CredentialsListParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// CredentialsNew Create a personal API key (cdk_) scoped to one project or to registry read
+// (POST /credentials)
+func (_ Unimplemented) CredentialsNew(w http.ResponseWriter, r *http.Request, params CredentialsNewParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// CredentialsRevoke Revoke a credential; requests carrying it are refused from now on (irreversible)
+// (POST /credentials/{id}:revoke)
+func (_ Unimplemented) CredentialsRevoke(w http.ResponseWriter, r *http.Request, id Id, params CredentialsRevokeParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1257,6 +1542,298 @@ func (siw *ServerInterfaceWrapper) ApprovalsDeny(w http.ResponseWriter, r *http.
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ApprovalsDeny(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AuthGet operation middleware
+func (siw *ServerInterfaceWrapper) AuthGet(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AuthGet(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// TotpConfirm operation middleware
+func (siw *ServerInterfaceWrapper) TotpConfirm(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.TotpConfirm(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// TotpDisable operation middleware
+func (siw *ServerInterfaceWrapper) TotpDisable(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.TotpDisable(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// TotpEnroll operation middleware
+func (siw *ServerInterfaceWrapper) TotpEnroll(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.TotpEnroll(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AuthLogin operation middleware
+func (siw *ServerInterfaceWrapper) AuthLogin(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AuthLogin(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AuthLogout operation middleware
+func (siw *ServerInterfaceWrapper) AuthLogout(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AuthLogout(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AuthSetup operation middleware
+func (siw *ServerInterfaceWrapper) AuthSetup(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AuthSetup(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CredentialsList operation middleware
+func (siw *ServerInterfaceWrapper) CredentialsList(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CredentialsListParams
+
+	// ------------- Optional query parameter "kind" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "kind", r.URL.Query(), &params.Kind, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "kind"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "kind", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "revoked" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "revoked", r.URL.Query(), &params.Revoked, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "revoked"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "revoked", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CredentialsList(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CredentialsNew operation middleware
+func (siw *ServerInterfaceWrapper) CredentialsNew(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CredentialsNewParams
+
+	// ------------- Optional query parameter "dryRun" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "dryRun", r.URL.Query(), &params.DryRun, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "dryRun"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "dryRun", Err: err})
+		}
+		return
+	}
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CredentialsNew(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CredentialsRevoke operation middleware
+func (siw *ServerInterfaceWrapper) CredentialsRevoke(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CredentialsRevokeParams
+
+	// ------------- Optional query parameter "dryRun" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "dryRun", r.URL.Query(), &params.DryRun, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "dryRun"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "dryRun", Err: err})
+		}
+		return
+	}
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	// ------------- Required header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = IfMatch
+
+	} else {
+		err := fmt.Errorf("Header parameter If-Match is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "If-Match", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CredentialsRevoke(w, r, id, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2777,6 +3354,36 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/registry", wrapper.RegistrySearch)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/auth", wrapper.AuthGet)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/auth:setup", wrapper.AuthSetup)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/auth:login", wrapper.AuthLogin)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/auth:logout", wrapper.AuthLogout)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/auth/totp:enroll", wrapper.TotpEnroll)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/auth/totp:confirm", wrapper.TotpConfirm)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/auth/totp:disable", wrapper.TotpDisable)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/credentials", wrapper.CredentialsList)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/credentials", wrapper.CredentialsNew)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/credentials/{id}:revoke", wrapper.CredentialsRevoke)
+	})
+	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/projects/{p}/mixes", wrapper.MixesNew)
 	})
 	r.Group(func(r chi.Router) {
@@ -3022,6 +3629,451 @@ type ApprovalsDenydefaultApplicationProblemPlusJSONResponse struct {
 }
 
 func (response ApprovalsDenydefaultApplicationProblemPlusJSONResponse) VisitApprovalsDenyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AuthGetRequestObject struct {
+}
+
+type AuthGetResponseObject interface {
+	VisitAuthGetResponse(w http.ResponseWriter) error
+}
+
+type AuthGet200JSONResponse AuthStatus
+
+func (response AuthGet200JSONResponse) VisitAuthGetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AuthGetdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response AuthGetdefaultApplicationProblemPlusJSONResponse) VisitAuthGetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type TotpConfirmRequestObject struct {
+	Body *TotpConfirmJSONRequestBody
+}
+
+type TotpConfirmResponseObject interface {
+	VisitTotpConfirmResponse(w http.ResponseWriter) error
+}
+
+type TotpConfirm200JSONResponse AuthStatus
+
+func (response TotpConfirm200JSONResponse) VisitTotpConfirmResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type TotpConfirmdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response TotpConfirmdefaultApplicationProblemPlusJSONResponse) VisitTotpConfirmResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type TotpDisableRequestObject struct {
+	Body *TotpDisableJSONRequestBody
+}
+
+type TotpDisableResponseObject interface {
+	VisitTotpDisableResponse(w http.ResponseWriter) error
+}
+
+type TotpDisable200JSONResponse AuthStatus
+
+func (response TotpDisable200JSONResponse) VisitTotpDisableResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type TotpDisabledefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response TotpDisabledefaultApplicationProblemPlusJSONResponse) VisitTotpDisableResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type TotpEnrollRequestObject struct {
+}
+
+type TotpEnrollResponseObject interface {
+	VisitTotpEnrollResponse(w http.ResponseWriter) error
+}
+
+type TotpEnroll200JSONResponse TotpEnrollment
+
+func (response TotpEnroll200JSONResponse) VisitTotpEnrollResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type TotpEnrolldefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response TotpEnrolldefaultApplicationProblemPlusJSONResponse) VisitTotpEnrollResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AuthLoginRequestObject struct {
+	Body *AuthLoginJSONRequestBody
+}
+
+type AuthLoginResponseObject interface {
+	VisitAuthLoginResponse(w http.ResponseWriter) error
+}
+
+type AuthLogin200ResponseHeaders struct {
+	SetCookie *string
+}
+
+type AuthLogin200JSONResponse struct {
+	Body    AuthStatus
+	Headers AuthLogin200ResponseHeaders
+}
+
+func (response AuthLogin200JSONResponse) VisitAuthLoginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.SetCookie != nil {
+		w.Header().Set("Set-Cookie", fmt.Sprint(*response.Headers.SetCookie))
+	}
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AuthLogindefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response AuthLogindefaultApplicationProblemPlusJSONResponse) VisitAuthLoginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AuthLogoutRequestObject struct {
+}
+
+type AuthLogoutResponseObject interface {
+	VisitAuthLogoutResponse(w http.ResponseWriter) error
+}
+
+type AuthLogout204ResponseHeaders struct {
+	SetCookie *string
+}
+
+type AuthLogout204Response struct {
+	Headers AuthLogout204ResponseHeaders
+}
+
+func (response AuthLogout204Response) VisitAuthLogoutResponse(w http.ResponseWriter) error {
+	if response.Headers.SetCookie != nil {
+		w.Header().Set("Set-Cookie", fmt.Sprint(*response.Headers.SetCookie))
+	}
+	w.WriteHeader(204)
+	return nil
+}
+
+type AuthLogoutdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response AuthLogoutdefaultApplicationProblemPlusJSONResponse) VisitAuthLogoutResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AuthSetupRequestObject struct {
+	Body *AuthSetupJSONRequestBody
+}
+
+type AuthSetupResponseObject interface {
+	VisitAuthSetupResponse(w http.ResponseWriter) error
+}
+
+type AuthSetup200ResponseHeaders struct {
+	SetCookie *string
+}
+
+type AuthSetup200JSONResponse struct {
+	Body    AuthStatus
+	Headers AuthSetup200ResponseHeaders
+}
+
+func (response AuthSetup200JSONResponse) VisitAuthSetupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.SetCookie != nil {
+		w.Header().Set("Set-Cookie", fmt.Sprint(*response.Headers.SetCookie))
+	}
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AuthSetupdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response AuthSetupdefaultApplicationProblemPlusJSONResponse) VisitAuthSetupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CredentialsListRequestObject struct {
+	Params CredentialsListParams
+}
+
+type CredentialsListResponseObject interface {
+	VisitCredentialsListResponse(w http.ResponseWriter) error
+}
+
+type CredentialsList200JSONResponse CredentialList
+
+func (response CredentialsList200JSONResponse) VisitCredentialsListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CredentialsListdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response CredentialsListdefaultApplicationProblemPlusJSONResponse) VisitCredentialsListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CredentialsNewRequestObject struct {
+	Params CredentialsNewParams
+	Body   *CredentialsNewJSONRequestBody
+}
+
+type CredentialsNewResponseObject interface {
+	VisitCredentialsNewResponse(w http.ResponseWriter) error
+}
+
+type CredentialsNew200JSONResponse CredentialCreated
+
+func (response CredentialsNew200JSONResponse) VisitCredentialsNewResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CredentialsNew201ResponseHeaders struct {
+	ETag *string
+}
+
+type CredentialsNew201JSONResponse struct {
+	Body    CredentialCreated
+	Headers CredentialsNew201ResponseHeaders
+}
+
+func (response CredentialsNew201JSONResponse) VisitCredentialsNewResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.ETag != nil {
+		w.Header().Set("ETag", fmt.Sprint(*response.Headers.ETag))
+	}
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CredentialsNewdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response CredentialsNewdefaultApplicationProblemPlusJSONResponse) VisitCredentialsNewResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CredentialsRevokeRequestObject struct {
+	Id     Id `json:"id"`
+	Params CredentialsRevokeParams
+}
+
+type CredentialsRevokeResponseObject interface {
+	VisitCredentialsRevokeResponse(w http.ResponseWriter) error
+}
+
+type CredentialsRevoke200ResponseHeaders struct {
+	ETag *string
+}
+
+type CredentialsRevoke200JSONResponse struct {
+	Body    Credential
+	Headers CredentialsRevoke200ResponseHeaders
+}
+
+func (response CredentialsRevoke200JSONResponse) VisitCredentialsRevokeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.ETag != nil {
+		w.Header().Set("ETag", fmt.Sprint(*response.Headers.ETag))
+	}
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CredentialsRevokedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response CredentialsRevokedefaultApplicationProblemPlusJSONResponse) VisitCredentialsRevokeResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -4099,6 +5151,36 @@ type StrictServerInterface interface {
 	// ApprovalsDeny Deny a pending request
 	// (POST /approvals/{id}:deny)
 	ApprovalsDeny(ctx context.Context, request ApprovalsDenyRequestObject) (ApprovalsDenyResponseObject, error)
+	// AuthGet Sign-in state — whether first start is pending and who is signed in
+	// (GET /auth)
+	AuthGet(ctx context.Context, request AuthGetRequestObject) (AuthGetResponseObject, error)
+	// TotpConfirm Confirm TOTP enrollment with a current code; sign-in asks for a code from then on
+	// (POST /auth/totp:confirm)
+	TotpConfirm(ctx context.Context, request TotpConfirmRequestObject) (TotpConfirmResponseObject, error)
+	// TotpDisable Turn TOTP off for the signed-in user with a current code
+	// (POST /auth/totp:disable)
+	TotpDisable(ctx context.Context, request TotpDisableRequestObject) (TotpDisableResponseObject, error)
+	// TotpEnroll Start TOTP enrollment for the signed-in user — a new secret, active once confirmed
+	// (POST /auth/totp:enroll)
+	TotpEnroll(ctx context.Context, request TotpEnrollRequestObject) (TotpEnrollResponseObject, error)
+	// AuthLogin Sign in with username, password and, when enabled, a TOTP code; rate-limited per address and username
+	// (POST /auth:login)
+	AuthLogin(ctx context.Context, request AuthLoginRequestObject) (AuthLoginResponseObject, error)
+	// AuthLogout Sign out — revoke this browser's session and clear its cookie
+	// (POST /auth:logout)
+	AuthLogout(ctx context.Context, request AuthLogoutRequestObject) (AuthLogoutResponseObject, error)
+	// AuthSetup First start — set the admin password once and sign in; refused (409) once a password is set
+	// (POST /auth:setup)
+	AuthSetup(ctx context.Context, request AuthSetupRequestObject) (AuthSetupResponseObject, error)
+	// CredentialsList List credentials (sessions, API keys, agent tokens) without their secrets
+	// (GET /credentials)
+	CredentialsList(ctx context.Context, request CredentialsListRequestObject) (CredentialsListResponseObject, error)
+	// CredentialsNew Create a personal API key (cdk_) scoped to one project or to registry read
+	// (POST /credentials)
+	CredentialsNew(ctx context.Context, request CredentialsNewRequestObject) (CredentialsNewResponseObject, error)
+	// CredentialsRevoke Revoke a credential; requests carrying it are refused from now on (irreversible)
+	// (POST /credentials/{id}:revoke)
+	CredentialsRevoke(ctx context.Context, request CredentialsRevokeRequestObject) (CredentialsRevokeResponseObject, error)
 	// EventsList Events after a sequence number; with Accept text/event-stream, the live stream
 	// (GET /events)
 	EventsList(ctx context.Context, request EventsListRequestObject) (EventsListResponseObject, error)
@@ -4346,6 +5428,288 @@ func (sh *strictHandler) ApprovalsDeny(w http.ResponseWriter, r *http.Request, i
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ApprovalsDenyResponseObject); ok {
 		if err := validResponse.VisitApprovalsDenyResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AuthGet operation middleware
+func (sh *strictHandler) AuthGet(w http.ResponseWriter, r *http.Request) {
+	var request AuthGetRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AuthGet(ctx, request.(AuthGetRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AuthGet")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AuthGetResponseObject); ok {
+		if err := validResponse.VisitAuthGetResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// TotpConfirm operation middleware
+func (sh *strictHandler) TotpConfirm(w http.ResponseWriter, r *http.Request) {
+	var request TotpConfirmRequestObject
+
+	var body TotpConfirmJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.TotpConfirm(ctx, request.(TotpConfirmRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "TotpConfirm")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(TotpConfirmResponseObject); ok {
+		if err := validResponse.VisitTotpConfirmResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// TotpDisable operation middleware
+func (sh *strictHandler) TotpDisable(w http.ResponseWriter, r *http.Request) {
+	var request TotpDisableRequestObject
+
+	var body TotpDisableJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.TotpDisable(ctx, request.(TotpDisableRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "TotpDisable")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(TotpDisableResponseObject); ok {
+		if err := validResponse.VisitTotpDisableResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// TotpEnroll operation middleware
+func (sh *strictHandler) TotpEnroll(w http.ResponseWriter, r *http.Request) {
+	var request TotpEnrollRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.TotpEnroll(ctx, request.(TotpEnrollRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "TotpEnroll")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(TotpEnrollResponseObject); ok {
+		if err := validResponse.VisitTotpEnrollResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AuthLogin operation middleware
+func (sh *strictHandler) AuthLogin(w http.ResponseWriter, r *http.Request) {
+	var request AuthLoginRequestObject
+
+	var body AuthLoginJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AuthLogin(ctx, request.(AuthLoginRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AuthLogin")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AuthLoginResponseObject); ok {
+		if err := validResponse.VisitAuthLoginResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AuthLogout operation middleware
+func (sh *strictHandler) AuthLogout(w http.ResponseWriter, r *http.Request) {
+	var request AuthLogoutRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AuthLogout(ctx, request.(AuthLogoutRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AuthLogout")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AuthLogoutResponseObject); ok {
+		if err := validResponse.VisitAuthLogoutResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AuthSetup operation middleware
+func (sh *strictHandler) AuthSetup(w http.ResponseWriter, r *http.Request) {
+	var request AuthSetupRequestObject
+
+	var body AuthSetupJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AuthSetup(ctx, request.(AuthSetupRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AuthSetup")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AuthSetupResponseObject); ok {
+		if err := validResponse.VisitAuthSetupResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CredentialsList operation middleware
+func (sh *strictHandler) CredentialsList(w http.ResponseWriter, r *http.Request, params CredentialsListParams) {
+	var request CredentialsListRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CredentialsList(ctx, request.(CredentialsListRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CredentialsList")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CredentialsListResponseObject); ok {
+		if err := validResponse.VisitCredentialsListResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CredentialsNew operation middleware
+func (sh *strictHandler) CredentialsNew(w http.ResponseWriter, r *http.Request, params CredentialsNewParams) {
+	var request CredentialsNewRequestObject
+
+	request.Params = params
+
+	var body CredentialsNewJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CredentialsNew(ctx, request.(CredentialsNewRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CredentialsNew")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CredentialsNewResponseObject); ok {
+		if err := validResponse.VisitCredentialsNewResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CredentialsRevoke operation middleware
+func (sh *strictHandler) CredentialsRevoke(w http.ResponseWriter, r *http.Request, id Id, params CredentialsRevokeParams) {
+	var request CredentialsRevokeRequestObject
+
+	request.Id = id
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CredentialsRevoke(ctx, request.(CredentialsRevokeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CredentialsRevoke")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CredentialsRevokeResponseObject); ok {
+		if err := validResponse.VisitCredentialsRevokeResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -5056,94 +6420,123 @@ func (sh *strictHandler) RegistrySearch(w http.ResponseWriter, r *http.Request, 
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
-	"U5fHzOwmUmeedzrnxYjdFdGq3OXl6fL/BgA=",
+	"7H3rchs3svCrdM23VZGSEXWxN5tQlfrKsZ1EG9vxWvZ+lS/xscGZJol4BhgDGMlcl6ry6zzA2fMM+2B5",
+	"klNoAHMhMZRoU5ZzNn9sai5Ao29o9G3eJpksKylQGJ2M3yZzZDkq+nn/KZvZ/3PUmeKV4VIk4+TpHAGF",
+	"4WYBCs+45lKk8LqWBnPYwdFsBD8nt35Odo9Bo8iBG5iw7BUwDSfTvYfMZPMkTXQ2x5LZwc2iwmScaKO4",
+	"mCUXF2lyitoOelfKVxxX589YjiLDF9o99tXP9cHBrczIVyjoJx7Dd8ZUP4hicQynrMRTbvCrB+zNMTxm",
+	"Zv7V/jGcYlYrhAnOucjh6YPTY7h1sJezBeiC5xaOdRBepEnFFCvReDzdU4sntViF9O+s4DkzCEzkoLCS",
+	"ysD5nBk4l3WRw5xVFQo452YuawPZnIkZFzNgYmHmDghuh3ldo1okaSJYaeHI3WxdCHOcsrowyXjKCo1p",
+	"gHgiZYFMEFJPcvsgjVcxM2+H43mSJgpf11xhnoyNqnE9eU5yLCtpUGSL73Gxuuq7BUdh9rK51CjgFS6O",
+	"gdnVo104N3MwcwTNSrT3QKGpldB0USo+44IVoFDb5fj1O45sIe4AsGchWAd+yd48QDEz82R8dHCQJiUX",
+	"4e8v0tjipo5Do1wf2J2AJXIhcA0TpjEHKWDHXrdCA3JKzxRMG1DI8l2Lg5Lr0g4OTOhzVBpuHx45jGS1",
+	"UijMEzwbXHMrOhvRyi3nB1oFK95pWccQZoRaFKgdrQxTMzSQS9QgpAF8w7WBBZorrGAdxI+V/AUzc1rU",
+	"EdXjb4K2d9MYN1drEfQnhdNknPyf/Vbl7bu7ep9mJOG276M2X8ucI8n344IJgfnXMid2z6QwKIz9yaqq",
+	"4Bmz4O3/oiXpgHY6lufcIf6xkhUqQ+M5oPzK5cQuyM7rZtaVFNrNeqeqlDxjxZ0sw8pgvtHU61a6MjDN",
+	"3cf0t8xgbpm2QqWlgBwznqMjPfPvgxS9vzUYWfEsuUiTv8rJ1sHujhmBONw7hqksCnlOoP0iJxbKX+Rk",
+	"9PYXOTnJLyx0np73aRO7PoouQ3g6ZxVCjlMuMIfzOTr02XFovk80VHOmEXhZFVjaxQM3iROKSYHlGlAr",
+	"98Rnm6E0jBsB9r5SUsHOk2/uwpe3//yXXRJO/x5xZ2aksj+qDiLe2t1kVazT5BUXdANFXSbjn5Jak2pg",
+	"M7uUNGG1kSUtJHmerr7tZDsyrDcBTvK4LmkVwU8OgtTC93yFVGlU1voLC0x+lbk6z0Ynq838gZxxMcxR",
+	"fh/vg1Axrc+lypf2tcODo9u9je0wgkIjTXVX5hFz6klQ7g1DWuLAnGl4+sPTxyBFYu0dY1DZx//jp4O9",
+	"L5+//fziT0lkGvtqoFYHxM8vA3AJgc0wabvoIUyeoqmr98DkWvkIzy0tbd07z8Jzy4u6fCWGmVpHWC+I",
+	"2lqlTg+RTJi6etLMu0zub7jSBrRhyoxBSGB5yQUE2Oy+r5H28WNgtZmPaDh7jXTRqmnpWOu+YJMC87h9",
+	"oflMYL7HheMs+6cG7gxfYI7LMsubUcO1i8L+2mJ4vOsOB/fPvI58H0wyGmEqVWl/JdaS3zO8xBjjZ6zW",
+	"mH+9WJ0zk2XJRH4SV4xGyuIuK66kVtqRYivHZjfbSCOv3FB41rnOhcEZqjXq1L0Rg6hii0KyfMN9k2TV",
+	"/jyJsNP/k+oV4BltjZIOeApnXBu1CFczptQChBRRMml8vTrot4WcsCJJW1JzYT6/naRJKYU0UvDsmBTj",
+	"6el94DlMpaITitUFoi6KdAVZaeIsIbvjvWF2N0/GnkAjv7rR7clh9tuv/4pB6S503w0vZQqtYZZcpkDt",
+	"OgMQ/tnUcz/xdVR0FOYWRlasMpGf984mEuHONHGVkDVzuaMS1+Ct7qiKwTcVV6g3mZ5HuCdT+QvnLahr",
+	"np/9hX5H3w7SsU5PtPj63j59kSb2uPdMBzT1535WWXBzYAZKqQ1IkSGdCUVtsMt7a1c1aAkNSC3dkK82",
+	"o5zOZIVXX/0pPW7fqx0vrUqt9Xlw2nVErq38jN3BwZp/4I24FLg444asQJjQOVkqOJfqFaoYlHYvORnY",
+	"cew9OJ9LkOdC22E8//a2sAHRIZXm1Zu3QRxCHJLTjiysl6K77rmoMHUE7WpIdjrlFYqBLRYzhQZ2svzV",
+	"i99+/dfuMWlHu8laPE9pzz86OITffv1v0EYqtOQQ8vxSbHRgXb/a75csfE/VJE1YxV+8IjdNMPdbQidp",
+	"4ikcs/vb0R9wHdnOucGy/2MDZLrJmFJsscoDNN76BT/C8w2tzp4W69PwEZ6hAv+As8TZRDtsbaYZugeD",
+	"o4NLzwWNrK9dRx/YHwSC35DSdv9VyPLUytpEkkNmyeJ2z1/NCZMmYdQnyLpWStcuXD5u9ynYk9z1hDwN",
+	"KFiyFYuIu+z+GapFWDy5dQ050DwOyAFIFvUn2uqeoNv0bnRbqxRqjHDDY1QlpxfBPQI7PVUJpAm6g7YE",
+	"3RDRa2wtq1dkS2q3S3c2boUsm6OOAbFMvv7AD5njlh7u4sb/CtnIsN+KNugeFFb0gdvLT2PWoj0T2mDG",
+	"SzY1qF6CkZBJYbioMWZCXmJHO1jb6WKs+h0W1R1leFZE2HTinZLLKFavcnkuooaZFAbfGL361t9qVvAp",
+	"R6UdsZmbNPirU6DoTsUEFuOCTxQjsjXoHrBjW5wOHEU0Zg6AdvdApaTSdPwXWNgf2mBl/5/VPCem03Ms",
+	"iui2oeuytKBFQeKmwMuPWmQEuGdb+FKH7CESfcfNlU9fnSV/MPCH4D5FprL5ExdyeU+pCnh49w12yXPc",
+	"B4ZcuJcv3z0WG/2xZSfrZ4lIUsWFwPypXJWLezKrSxQGFE5RocgQrIE45nlMvs44njdTbOIwjsLbOqqW",
+	"3N0GCmTawOGRjdkolhkrtzter4FC6y5AkZOdlQJpK3h0cvoUTh/DFwcHe5/f+truIGs9iUeR9XWc0Ut2",
+	"bRvFikRuUFsMSkFRL2uHml7oSYJCG3Fy/sbVc0yOhvEiKhReWURcXVjkewWeYQHeP64JgKOjJL0aP/u1",
+	"0kjkEY+qNaENE9mAi7px6q2uaUiaWw9Af0FzYyo93t/3EfBRITNW7M+xqPYdDvbd6daGx+gXNoi2DzX6",
+	"3DowSMHTW5eeAehuR5+4FUXFawVdK0xSotZsFl81hfIulW4f8AsDDcARjKD+7FbT8bMNHRmb+z56ZHs7",
+	"5JzYwule+zDpVUy9uso3W0dsU/GRV29eLx+Iu5Osocv9nJth5Rg9Oy1htB/WP9jWeehiGOZt2Jx+qPfY",
+	"Hf0Im589Pwz+NmHIpTV3GSu28if+nGD9DHdlHfPuZ+HyqpwMeLvjTm03zjogtmkyhTH/joocJpENxsK1",
+	"+YAtpq7Gb2GedQsPQL5nZGXTmMRwADjYWeHgkCs2JaeJkv9AkVhVXCnMyBEXOysYNutj9tJDzMZqNE3O",
+	"Wqz1N/Qff/zxx72HD/fu3Rv5nXvOhpzSawIwXhuHaQJaYoSM59U8kOeoMqYRCjSGjno5n3GjycWRMz1H",
+	"fQy3fvv1n7cPOtbmUmCY7f3juf3nYO/LvedvD9NbX1z4P59Hg8VPOzHpDVRZ5l+5Wkx6JYaWxxHzlKKY",
+	"ShZFGQ0dOg/rKuq+ZhpvHQUHrLWsSiZqVgCKnlejXXat+Oow0lQ23Dre3zfSVPu//fovePbkhMZj8Lcn",
+	"S/HRwagPweimiC3yWSeGfUUOSCGX9C8xAfFDLXJUOpPKMsXRb7/+89bRlZhi9MKxxWE8d8DG9nTFMrzy",
+	"KbpgC1mby45ZK2e5V/aEBqziIyP/evrDo53dJIKrq8T6G5Af2YcvGnfFIESXpRs0p9OYJTJsBdL7Hd1c",
+	"csHLuuxu0Z3Ht2IINg7W7tQNSTqOG2cjrrcLGzxuw8pqBjv1jpR3N7f69F3SOXf2/r/Xbu1PsCx+kH5+",
+	"dAmLn+KmBvDVeD0Sg79GhtyI75Z11SWMs5Ycp62LrI+ldxLaQbl6X0HpnZLWScAFeRGmEdfTqaxVhhQk",
+	"V7WZ+6M7wrcSNKozVCn9+XRR4Sm9BhmlXzexiYd3H4NNMtEjeMRKm16+k8tM7+sKs/2DL/YUalnUdjY9",
+	"KnN4crg7bjMST3L4qhkBvoJnJ+CTUOArcBaLy2qg3+iNmDNUk5CJb9piAa4hx6xgirKKM4QKFdjDvA1T",
+	"vtkLTg339DHYUbSdDmGqZGn19f6ZzNikLphajBasLNzw3z19+hg05VZO+Rufo2rfHsHD2oUZNTCFAXQ9",
+	"hqUM8rSpTAgprW1hw/916fZfWfmi+RaAJTcUGZG1mcg3LvNkBA+kmFG8uslpPzo4Ap92egwzCkCv3m+T",
+	"BS9GQE4TB+1QdmcnJ9OGuDWCZSYgOp7Z1UtgPXfPCH4I9NQu56pFduUyYWlCy605zFEhaElYEI5hMimM",
+	"3dwhk2cuNoClQ71jwSaf/c8Hh1ALwwt7k6vVbFb75uhn0TiTxiFfC+48PulYsOPkYHQ4OrAyKCsUrOLJ",
+	"OLlFl5yXiIR9n4JieyHGtv+W5xf+mncO+WS/tlbjp7hqaB/ZP8mTi+dpUkm3EXVEwTpd7eAP/dj2EJ5u",
+	"PHqvduIivfQNX1ty8dypFpeXvhjScb3U9f1u3vpydvnRwdHwIP65fsp12paZXPZem1fcCWeQ9QmeMo4R",
+	"mzIi71bXx+DUpBUBxc/QyiNRdOSpPLJETsK57afEM3Dy/CJNGrZ2B0KXDpewLs2StHljfGihi/HQOGMi",
+	"w+I6eMeXNum7bobrZ59Qz7Ipp/U45eAKFO+l1L8/r5waWXkVQxj7RIciGbC6c3MOCJiPcEAoX7AvzTBG",
+	"uvAEmacrRIsVabkTeLf2JHgoKhS+wszVVMT8Eh8HDZplp+CBdplEmyG/we4w4p3UuT9x22IXJrnjh/9D",
+	"5tbTG4E15O7kZF4DwXMUi+ui9j079h+kHiK1Rc810rk282FlWpv5t2iSOBq2U+DWFlNEKpuoAmKPKiCA",
+	"1HRzVmoLFcidnQKf2mLcbWxnfCbsuG4+G5Q9n6OZo/K5mQ4arhuKWJBsAivXHirg3U2PMLyGNjWFSDUX",
+	"swKNXbVRNTa0IR/jOJNiypWL40eFyfln3UMr1udWCNV4gC/6R2eC9sYYhApSuAYptkB5j0BX5YKNgzkU",
+	"vwSjxvp3j0F7NmH6lfa+X3vDHYDNHAXIDbjAUvlSLsi5tqU767ngnn/o35ILptMtsMHTWglfTzedNl6c",
+	"pcqoCE9smdqOAdcT20VBrlM/L8VaYsifY6MKfWiFUS8JDT5SQuGRHT23WbZSZLi7lUOH1cLLkjpALKvE",
+	"GQg89wCmdtNwR9YMwStXzLdGwHERSkYHTJ+mqvR6pLQd/6MS09OwOx53j4uQUfMQX86YpN2uJqdo9tre",
+	"IrGZ/cP7/UYkFxdb4DA+E03pY6goTdvySyby1KX/o6uoTLsFksegrO+54CU3mJP/lOW5Qu3jcm3V7Hbs",
+	"BMtyPuiwluec436JAW5HnNmOVrK2Ce2Flk3JsUI4ZxqEDPTb/chIZkG2Au+qqVzy3ETJc43qE90wnSVC",
+	"ViBTpKgcC26PGDoUOg/TwtVCX5/8u/E/rm06VFwAyyhxJ5Qw1xXRo2s9fyQc1SnBJqay0DaFI60ucBWC",
+	"fgmk4BROa227LN0++HLX318u3d4Kv7VVHsNOsbaAZsAttlw0VCyc3ITMlYjXzN+6Gl8s119epMtznois",
+	"qHP0Ukva1ddY5dBdYhwY/9ZmjZaeX6MgLJXDRYShfUKn1jRBbbzL7v251s7ZxRrsBKd5aqM3tpmTTn1J",
+	"p69PalpbuXCQs5N0h0O7RLCMGtdsnVXddMxly3S0y/nA2nS1PjXCR/fUAlQtmuxx26jLtI3LJtgU1O4I",
+	"6ai9ewxCUtsy2srPFTcG6QB9dHD4YaH3t47hJUH2kjRjc1CAHSaAB54woLAq2AJkyanFxZLlEVrgrdsh",
+	"6JltbAwO8KbpEiuCYLnC3l2gcsbchni7hXlSufKJTiHmkIwt7QU2rH8vgrsoCF8jU6gglBg7/0TTuKdx",
+	"ot19cJJeAiijc123+m8Edh8ncgH1AjC1Ej5PIHVlzHTZ4c+3fgixYypo1mRzzZme2wDzxeCu10XH8l7n",
+	"3NJO72/ZMd3RYU/c+L8n5/SWZXfIjgv7dEuSGxRGRyZgHWiOg6PctxmxXMwNJU8E04w8dUKeUztArhRS",
+	"SsOkwN01294VOdV1OBk0yKiU9Uq22F2bCLOn0T5kSEwrnoHPbdO265tRjBd2eS8/fQnUtBC1S3lRUEqF",
+	"oHFGKR0juOfQDKwoRgOWFI2v+9HQobYon6b9eP+nsSyr5QV9j1i51JrQG8Y3FQmaZ2epTYw9ZPNs3nSL",
+	"gaYOOgVWnLOFJrt6d2BB/un1rQyjFrCHj87/Gl/DjPStdTAxp+SOqcuMS+LSULKF66L6gGmzRxTeO7kH",
+	"XGjjtHwMOir168G22tgmJOodxBL1VkueZwia/wMbX5hNm7V/lAMgkIsibjm7NpzsjU8UpOqT9XmDK26E",
+	"0/u+/w5UkovBjpM9nK2l1XWqvbZi3Qqxrbx2grynjUJW9geKtJpdKvuEyhJDTgMn7VhS7IKnS2EdkG5g",
+	"2LF4mlo1oOElz8c+YU/ja/qBL+EzeJkzw8Kdbkk8Udg/l1oBoekoR2wbntb7DnhXlMqsJNS0lYu6nKA6",
+	"dvLhUo9gBWXp8lI7qtXryMsNnfUQpCCLvDk9pSB9A9ViAVNeGLQnyMliSXHCTkdxftqoTWfnlIwLLmaN",
+	"4vTF9KoWo8OjW6NPd8mACloQnmlsO8haRRHvOLDe1vHIoM3DZgQObh1tGfhlW8c3CpEoMiD4rzfTiU3H",
+	"gdAxtypYhm0XQq6Bi7FvOeC4lOf0P6agDVb+onUchMtU1DperoRNYWqrUv11m0PYFNrE1uGbJAzsWcst",
+	"ECLr3Fgr9pXiJTrxOhXWSk+AiBoiw5Li1C7HVKcw6YhLOPdPXAvdLThhCZ5eWqsmAcQ3dKyYLMBTDHaI",
+	"OI47yNfkOYLSZD0XdI0xO+YaK4xuh9I0+uuFB6CVKzo3rBWua0546HYIGfKRhtvvTYtv0SxlGMNO6fuN",
+	"RBG7VqGETYl6VPTSyLuyS7qSyKhHQpq9qawtYYnUetQK4ub9zZdrlT77+edRU8T2Wayg7Pm7ssovcqLX",
+	"s8pf5UQPs8qHTRFyZP5FTgaygt7pcBxHnEXMahZRg67ryce1uP59peF+8IRth561XLAJQUscZPyHeN0p",
+	"Ya70eEA32pvWwlWLpr4lnCAzVhTOEGHGKD6p3YF5Gykhc2xSPUJrzoDiEtdgt8RWy/hG2rEgTon73pzU",
+	"+2+ri/3zUPc07EJoSqOCG+Ha6NGv+IvF9dmZL5fxMG8H4bWP2C6Nbl2MrPUWCDo0ua92uEIgTYcgV6Sm",
+	"d1cptZkC6X7kYFgtdhe/nqD7by3EF1eg6zWLWTPRkKg1MN+gZ8/tbEsssFWSptEvrTTlgO/yeYqlqkXa",
+	"1+q1pD5F8+F2tuYLIzcfXusV2X7g6Npa/ieVdoN8b+cH1rK8V2ewE6ofjykKBlTdaKP10of5dq+6M61o",
+	"LFuP2Zi872a8hc/xLBkMdmTqI/TxGm9brda7gROARS+1qH5z7OP6mHOjobAbI9NAvVb0RoYhMUTXMjxy",
+	"fCLrdZGNh3R7jUnyYfHimuGQD9ABHmKfXMEcWWHmAziJH0Tc6v4NqklXvzu0NVIAA2qGR/XkKTz65nT/",
+	"9OHX/q/TW3t2SGZsHA4mdfYKyWn0XT0B7errd0I1y+5m7Oz4tsPPt4mfg5k2yNHeWrhStC5kMYXeddCM",
+	"PhD+8c99PIlL3RZqkX3R376mlKUOthrChkvDQhlg+l+RcNTpGveB7aGm493lOUZtm+lIntEHSS5aA+zd",
+	"5rsbN58b1MSeV9l5g/Qe984YGNTCGnxTFz+nwBuVWZwL+mSl5kaqRQqTOp+h3+pmzKAewWNq73DgaRQC",
+	"XZnLXbUJOhMpjTaKVbDTHcpgWRX2jV1f5U/Hb9cs4jDspaLpKmG7ZPjKGPs5N56vD3o12OhpYntgvlQb",
+	"X/PheA1/PW0F4MYPxusY7L09HQPmfKDA78mi3yZP0Lo/Ht1s2dHa+q2xATtSpb4kMXeaO3XfsuWtts5k",
+	"ibs3mrJlTSCgzzPtuRVN8HKO3lSPLPUM2fxouyIUlzcM+b0fDw4//DHtAatFNoe7BbPWsy0wtZwhKxRU",
+	"U9vz+Nq9zyjEbfYV6bNMwZnuOWo/vHsxEsiMuhDvOFh/h/7Dm3Cy3NTR97HkorNdA3EYMEMf2/bJjr6f",
+	"FuxMmMaCCyqIpEZkqX0vrynqDqU8Q/c9PZtIUSlZSuOL8DaQBsc1l8iBcwBdk8Ykp+AfmvJdHcMlfwM7",
+	"XFS1eZFNZzBTsq5spizy2dxoZ7dbdNcK01A2oedM4e42fICrbDKubPTNtTq/NnZ57Of4PbPMDfhAv5O1",
+	"0lSBXDAxq21OqjMOLROF9C/NzlyK/Nb5Q9XXZ3c9qcUfvf3erXWCy3+lPFdVi+Ne88ym6+W3j5/tzS37",
+	"pJAxV/MOea3C9wCvzijEBGv5ZOx9odfFKv4pfcdP829X03PJGXLZZX2DZ0NPom6Wh5ZTY0t6YiU6Gx8Q",
+	"g8016GTqfzviynnWzvX1uv0y2w59eioFw2bj1EU9cLz7runYV6rCvlppizc2db/yhuWycp7T9yik2TCZ",
+	"+rBXYvLnG82mjn4yJCIufw/YC3WUlgraecPxDQ9Z1ZC5kNPWUqqXzwra15aoBUEAO1hWZuHb+gYfrXvJ",
+	"ciNB2RWcMN46vR0eabLYwpUXZ+EjKAQrdRd20lGrIhkn+6zipND8bG+TFbd0+CT30teXBXdVYa2T28Vr",
+	"+27uFcbUySqzr37SPnzs0zCDFKmAqp4UXM+R4uRNC+52+BIHB7aJfL7aJhTy+D7Tv/3nf9nisN12mFDg",
+	"kb6NcxPmvTxtDZNa5AXmDQZgwgXrrts+HhnPlwbtnXPrOSnL2tjuNIFnaJnalfb7cRoaR8q3XJOzJE26",
+	"ve8sATVmUuQwpWzItYj0RPaTUSeL1YlCVwIaO/YB1WOqF3Yf5Vau/6Efsd8dItSlTpr0UAfA6pTfSd1L",
+	"B7AGjh2hxFLa5FJWeWiKQp5jTgEN/3Wf3oqsHNcmxiSPqEt3Bz7fBPyMFTW6zuE2PIZ79jjfLij0Xohz",
+	"XUtHr1S0VwHNHkVQ24I/Ry5Nha7t8OG1JNaEw30dz/FOJQuecdSw4yW3I3L+VpImr2tpmN4NSFFoULjh",
+	"4mj/lspYPW00nDNuqFutVE0leztP27jyIo1/39cP1AbDXIKwvZSxWmNnrJoc9+nq51RCL3hS4N1QFqOs",
+	"0kpaJEphOSD0tPZjUvL0EOHdN7ublurU2cYmP1ARqVPPO7027GJ3ibWCuXzx/OJ/BgA=",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

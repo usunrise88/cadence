@@ -18,6 +18,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/api"
 	"github.com/usunrise88/cadence/control-plane/internal/auth"
 	"github.com/usunrise88/cadence/control-plane/internal/commands"
+	"github.com/usunrise88/cadence/control-plane/internal/credentials"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
 	"github.com/usunrise88/cadence/control-plane/internal/help"
 	"github.com/usunrise88/cadence/control-plane/internal/obs"
@@ -38,8 +39,13 @@ type Config struct {
 	Metrics  *obs.Metrics
 	Tracer   trace.TracerProvider
 	Version  string
-	// Actor every request is attributed to until phase 1 brings login.
+	// Actor, when set (non-empty id), is attributed to every request with full scope and no authentication at all:
+	// tests and development. Production leaves it empty and authenticates through Credentials.
 	Actor auth.Actor
+	// Credentials resolves sessions and tokens and checks sign-ins; New creates one on Pool when nil.
+	Credentials *credentials.Store
+	// LoginLimiter throttles failed sign-ins per address and per username; New creates the default when nil.
+	LoginLimiter *auth.Limiter
 }
 
 // Server implements api.StrictServerInterface. Planned operations fall through to api.Planned (501).
@@ -56,6 +62,12 @@ func New(c Config) (*Server, error) {
 	spec, err := api.GetSpec()
 	if err != nil {
 		return nil, fmt.Errorf("load embedded contract: %w", err)
+	}
+	if c.Credentials == nil {
+		c.Credentials = credentials.NewStore(c.Pool, time.Now, auth.DefaultPasswordParams())
+	}
+	if c.LoginLimiter == nil {
+		c.LoginLimiter = auth.NewLimiter(time.Now, auth.DefaultLoginLimits()...)
 	}
 	return &Server{Config: c, spec: spec}, nil
 }
@@ -74,7 +86,7 @@ func (s *Server) Handler() http.Handler {
 // APIHandler routes the contract's operations (paths relative to /api).
 func (s *Server) APIHandler() http.Handler {
 	r := chi.NewRouter()
-	r.Use(auth.Middleware(s.Actor))
+	r.Use(s.authenticator().Middleware)
 	r.Use(commands.HashMiddleware(s.writeProblem))
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
 		s.writeProblem(w, r, problems.NotFound.New("no API operation at %s %s", r.Method, r.URL.Path))

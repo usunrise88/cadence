@@ -38,8 +38,13 @@ type env struct {
 	keys    atomic.Int64
 }
 
-// start runs the whole control plane on a fresh database: migrations, dispatcher, HTTP server.
-func start(t *testing.T) *env {
+// start runs the whole control plane on a fresh database: migrations, dispatcher, HTTP server. Every request acts
+// as the fixed development actor.
+func start(t *testing.T) *env { return startWith(t, nil) }
+
+// startWith is start with a hook that adjusts the server before it serves (authentication tests clear the fixed
+// actor).
+func startWith(t *testing.T, adjust func(*Server)) *env {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	pool, err := storage.Open(ctx, testdb.New(t))
@@ -54,7 +59,11 @@ func start(t *testing.T) *env {
 	d.PollInterval = 200 * time.Millisecond
 	done := make(chan struct{})
 	go func() { defer close(done); _ = d.Run(ctx) }()
-	srv := httptest.NewServer(newTestServer(t, pool, hub, metrics).Handler())
+	s := newTestServer(t, pool, hub, metrics)
+	if adjust != nil {
+		adjust(s)
+	}
+	srv := httptest.NewServer(s.Handler())
 	t.Cleanup(func() {
 		hub.Close()
 		srv.Close()

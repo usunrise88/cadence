@@ -2,6 +2,176 @@
   "generatedFrom": "api/openapi.yaml",
   "tools": [
     {
+      "name": "credentials.list",
+      "title": "List credentials (sessions, API keys, agent tokens) without their secrets",
+      "description": "List credentials (sessions, API keys, agent tokens) without their secrets",
+      "method": "GET",
+      "path": "/credentials",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "description": "Only this kind",
+            "enum": [
+              "session",
+              "api_key",
+              "agent",
+              "invitation",
+              "worker"
+            ],
+            "type": "string"
+          },
+          "revoked": {
+            "default": false,
+            "description": "Include revoked and expired credentials",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "kind",
+          "in": "query",
+          "name": "kind"
+        },
+        {
+          "property": "revoked",
+          "in": "query",
+          "name": "revoked"
+        }
+      ]
+    },
+    {
+      "name": "credentials.new",
+      "title": "Create a personal API key (cdk_) scoped to one project or to registry read",
+      "description": "Create a personal API key (Bearer cdk_…) for automation and the CLI, scoped to one project or to reading the registry. The token is returned once, in this response only; Cadence stores its hash. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/credentials",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "expiresAt": {
+                "description": "Never expires when absent",
+                "format": "date-time",
+                "type": "string"
+              },
+              "name": {
+                "maxLength": 120,
+                "minLength": 1,
+                "type": "string"
+              },
+              "scope": {
+                "additionalProperties": false,
+                "description": "One project, registry read, or both",
+                "properties": {
+                  "project": {
+                    "description": "Lowercase letters, digits and dashes; 3–40 characters",
+                    "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+                    "type": "string"
+                  },
+                  "registryRead": {
+                    "type": "boolean"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "required": [
+              "name",
+              "scope"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "credentials.revoke",
+      "title": "Revoke a credential; requests carrying it are refused from now on (irreversible)",
+      "description": "Revoke a credential; requests carrying it are refused from now on (irreversible) Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/credentials/{id}:revoke",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        }
+      ]
+    },
+    {
       "name": "events.list",
       "title": "Events after a sequence number; with Accept text/event-stream, the live stream",
       "description": "Events after a sequence number, oldest first, optionally filtered by topic patterns (a trailing * matches the remaining segments, e.g. run.123.*) and project. Use the last seq as `after` to continue.",

@@ -270,9 +270,163 @@ paths:
         default: { $ref: "#/components/responses/Problem" }
 
   # ---------------------------------------------------------------- auth and credentials (phase 1 · stream A) — add paths below this line
-  #
-  #
-  #
+  # Operations tagged auth are reachable without a session (docs/spec/06-platform.md "Authentication and access"),
+  # are not commands (no actor before sign-in; a browser session is not an entity with a revision) and are never
+  # MCP tools (R1). Browsers send `Cadence-Client: web` on every POST, PUT and PATCH (the CSRF rule).
+  /auth:
+    x-cadence: { entity: auth, singleton: true }
+    get:
+      operationId: auth.get
+      summary: Sign-in state — whether first start is pending and who is signed in
+      tags: [auth]
+      responses:
+        "200":
+          description: First-start state and the signed-in actor, if any
+          content: { application/json: { schema: { $ref: "#/components/schemas/AuthStatus" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /auth:setup:
+    x-cadence: { entity: auth, singleton: true }
+    post:
+      operationId: auth.setup
+      summary: First start — set the admin password once and sign in; refused (409) once a password is set
+      tags: [auth]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/AuthSetup" } } }
+      responses:
+        "200":
+          description: The admin account is set up and signed in
+          headers: { Set-Cookie: { $ref: "#/components/headers/SessionCookie" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/AuthStatus" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /auth:login:
+    x-cadence: { entity: auth, singleton: true }
+    post:
+      operationId: auth.login
+      summary: Sign in with username, password and, when enabled, a TOTP code; rate-limited per address and username
+      tags: [auth]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/AuthLogin" } } }
+      responses:
+        "200":
+          description: Signed in; the session cookie is set
+          headers: { Set-Cookie: { $ref: "#/components/headers/SessionCookie" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/AuthStatus" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /auth:logout:
+    x-cadence: { entity: auth, singleton: true }
+    post:
+      operationId: auth.logout
+      summary: Sign out — revoke this browser's session and clear its cookie
+      tags: [auth]
+      responses:
+        "204":
+          description: Signed out (also when there was no session)
+          headers: { Set-Cookie: { $ref: "#/components/headers/SessionCookie" } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /auth/totp:enroll:
+    x-cadence: { entity: totp, singleton: true }
+    post:
+      operationId: totp.enroll
+      summary: Start TOTP enrollment for the signed-in user — a new secret, active once confirmed
+      tags: [auth]
+      responses:
+        "200":
+          description: The pending secret and its otpauth URI (shown once)
+          content: { application/json: { schema: { $ref: "#/components/schemas/TotpEnrollment" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /auth/totp:confirm:
+    x-cadence: { entity: totp, singleton: true }
+    post:
+      operationId: totp.confirm
+      summary: Confirm TOTP enrollment with a current code; sign-in asks for a code from then on
+      tags: [auth]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/TotpCode" } } }
+      responses:
+        "200":
+          description: TOTP is on
+          content: { application/json: { schema: { $ref: "#/components/schemas/AuthStatus" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /auth/totp:disable:
+    x-cadence: { entity: totp, singleton: true }
+    post:
+      operationId: totp.disable
+      summary: Turn TOTP off for the signed-in user with a current code
+      tags: [auth]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/TotpCode" } } }
+      responses:
+        "200":
+          description: TOTP is off
+          content: { application/json: { schema: { $ref: "#/components/schemas/AuthStatus" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /credentials:
+    x-cadence: { entity: credentials }
+    get:
+      operationId: credentials.list
+      summary: List credentials (sessions, API keys, agent tokens) without their secrets
+      tags: [credentials]
+      parameters:
+        - { name: kind, in: query, description: Only this kind, schema: { $ref: "#/components/schemas/CredentialKind" } }
+        - { name: revoked, in: query, description: Include revoked and expired credentials, schema: { type: boolean, default: false } }
+      responses:
+        "200":
+          description: Credentials, newest first
+          content: { application/json: { schema: { $ref: "#/components/schemas/CredentialList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+    post:
+      operationId: credentials.new
+      summary: Create a personal API key (cdk_) scoped to one project or to registry read
+      tags: [credentials]
+      x-cadence:
+        toolDescription: >
+          Create a personal API key (Bearer cdk_…) for automation and the CLI, scoped to one project or to reading
+          the registry. The token is returned once, in this response only; Cadence stores its hash.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/CredentialNew" } } }
+      responses:
+        "200":
+          description: Dry run — the key that would be created (no token); nothing was written
+          content: { application/json: { schema: { $ref: "#/components/schemas/CredentialCreated" } } }
+        "201":
+          description: Created; `token` is shown once (an idempotent replay omits it)
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/CredentialCreated" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /credentials/{id}:revoke:
+    x-cadence: { entity: credentials }
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      operationId: credentials.revoke
+      summary: Revoke a credential; requests carrying it are refused from now on (irreversible)
+      tags: [credentials]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      responses:
+        "200":
+          description: The revoked credential
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Credential" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
 
   # ---------------------------------------------------------------- registry, compute, secrets, defaults, policies (phase 1 · stream B) — add paths below this line
   #
@@ -500,6 +654,9 @@ components:
     ETag:
       description: The entity revision, quoted (e.g. "3"); send it back as If-Match
       schema: { type: string }
+    SessionCookie:
+      description: "cadence_session=<token>; HttpOnly; SameSite=Lax; Path=/; Secure behind TLS; 30-day sliding"
+      schema: { type: string }
 
   requestBodies:
     PlannedBody:
@@ -713,9 +870,103 @@ components:
         kinds: { type: array, items: { $ref: "#/components/schemas/RegistryKindCount" } }
 
     # ---------------------------------------------------------------- auth and credentials schemas (stream A) — add below
-    #
-    #
-    #
+    AuthStatus:
+      type: object
+      required: [setupRequired]
+      properties:
+        setupRequired: { type: boolean, description: "First start: no admin password is set yet; auth.setup sets it" }
+        actor: { $ref: "#/components/schemas/Actor" }
+        totpEnabled: { type: boolean, description: The signed-in user signs in with a TOTP code }
+    Username:
+      type: string
+      pattern: "^[a-z][a-z0-9._-]{1,31}$"
+      description: Lowercase letters, digits, dots, dashes and underscores; 2–32 characters
+    Password:
+      type: string
+      minLength: 12
+      maxLength: 1024
+      description: At least 12 characters (Cadence recommendation, after NIST SP 800-63B)
+    AuthSetup:
+      type: object
+      required: [password]
+      additionalProperties: false
+      properties:
+        username: { $ref: "#/components/schemas/Username" }
+        password: { $ref: "#/components/schemas/Password" }
+    AuthLogin:
+      type: object
+      required: [username, password]
+      additionalProperties: false
+      properties:
+        username: { type: string, minLength: 1, maxLength: 64 }
+        password: { type: string, minLength: 1, maxLength: 1024 }
+        totpCode: { type: string, pattern: "^[0-9]{6}$", description: Required when the user has TOTP on }
+    TotpEnrollment:
+      type: object
+      required: [secret, uri]
+      properties:
+        secret: { type: string, description: Base32 secret for manual entry }
+        uri: { type: string, description: "otpauth://totp/… URI for a QR code" }
+    TotpCode:
+      type: object
+      required: [code]
+      additionalProperties: false
+      properties:
+        code: { type: string, pattern: "^[0-9]{6}$" }
+
+    CredentialKind:
+      type: string
+      enum: [session, api_key, agent, invitation, worker]
+    CredentialScope:
+      type: object
+      properties:
+        all: { type: boolean, description: Every project and the registry (the admin's own sessions) }
+        projectId: { type: string, description: The one project this credential reaches }
+        project: { $ref: "#/components/schemas/Slug" }
+        registryRead: { type: boolean, description: May read the registry }
+        preset: { type: string, description: Permission preset (agent session tokens) }
+    Credential:
+      type: object
+      required: [id, kind, name, scope, rev, createdAt]
+      properties:
+        id: { type: string, description: "crd_<uuidv7>" }
+        kind: { $ref: "#/components/schemas/CredentialKind" }
+        name: { type: string }
+        scope: { $ref: "#/components/schemas/CredentialScope" }
+        userId: { type: string, description: The user who owns or created it }
+        subject: { type: string, description: "What it stands for: the agent session, invitation batch or worker" }
+        current: { type: boolean, description: The credential of this request }
+        rev: { type: integer }
+        createdAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+        lastUsedAt: { type: string, format: date-time, description: Updated at most once a minute }
+        revokedAt: { type: string, format: date-time }
+    CredentialNew:
+      type: object
+      required: [name, scope]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        scope:
+          type: object
+          additionalProperties: false
+          description: One project, registry read, or both
+          properties:
+            project: { $ref: "#/components/schemas/Slug" }
+            registryRead: { type: boolean }
+        expiresAt: { type: string, format: date-time, description: Never expires when absent }
+    CredentialCreated:
+      type: object
+      required: [credential]
+      properties:
+        credential: { $ref: "#/components/schemas/Credential" }
+        token: { type: string, description: "The secret (cdk_…); only in the first 201 — store it now" }
+    CredentialList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Credential" } }
+
 
     # ---------------------------------------------------------------- registry, compute, secrets, defaults, policies schemas (stream B) — add below
     #
