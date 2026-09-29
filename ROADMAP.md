@@ -9,7 +9,7 @@ block's endpoints and MCP tools land before its panels.*
 | --- | --- | --- | --- |
 | 0 · Shell | Contract toolchain, control-plane core, Dockview shell | S1–S4 pass | S1, S2, S3, S4 |
 | 1 · Agent loop | Auth, MCP, agent host, sessions, approvals, projects, registry core | An agent edits a mix and the open Mix panel updates live, attributed | A1, A2, A4 |
-| 2 · Training | Worker protocol, artifact store, queue, runs, playbooks; runtimes and model families (seams for other frameworks) | The agent runs a fine-tune on the staging card end to end | A3 |
+| 2 · Training | Worker protocol, artifact store, queue, runs, playbooks; runtimes and model families (seams for other frameworks) | The agent runs a fine-tune on the staging card end to end; the CPU toy pack passes the conformance suite | A3 |
 | 3 · Evaluation | Golden sets, streaming eval, gates, language packs; manual transcription tests (file, microphone); the audio view | A gate verdict is produced on staging | A5, S5 |
 | 4 · Data | Mounts, ingest pipeline, freeze, registry in full, annotation | A dataset version frozen by Cadence is trained on | — |
 | 5 · Deploy and flywheel | Export, shadow/canary, triage, schedules | A canary promotion is approved in the UI | — |
@@ -22,10 +22,12 @@ demonstrated and recorded (a note in the phase section + the spike Results). Two
 - **spec** — a block the items rely on that the spec does not describe yet; write it (Doc first, then re-export)
   before implementing. Found by the dependency audit at the end of this file.
 
-Every **decide** and **spec** line now carries a proposed resolution (`→ R#`) in
-`docs/spec/08-resolutions.md`. All were ported into the Doc ("Resolutions 2026-09-29" tab + decision log) on
-2026-09-29, so every such line is decided; tick it when the affected spec section is rewritten. Lines marked *confirm*
-wait for the owner's answer and are built against the proposed default.
+Every **decide** and **spec** line now carries a resolution (`→ R#`) in `docs/spec/08-resolutions.md`. R1–R39 and
+the second pass R40–R54 (framework seams, manual transcription tests, audio views and charts) were ported into the Doc
+("Resolutions 2026-09-29" tab + decision log) on 2026-09-29, so every such line is decided; tick it when the affected
+spec section is rewritten. Lines marked *confirm* wait for the owner's answer and are built against the proposed
+default; the one phase-4 **decide** on non-NeMo models is settled when that phase starts. What the owner deferred is
+listed under "Deferred" and is not planned into any phase.
 
 Every phase also carries the standing obligations from `CLAUDE.md`: spec file updated, help articles for new
 panels/steps/errors, `make gen` output committed, tests at the right layer of the pyramid (`docs/spec/06-platform.md`).
@@ -104,6 +106,9 @@ Phase 0 notes (what differs from the plan above):
   `view.*` namespace for client-only commands, 404/405 for unknown API paths.
 - Not in phase 0 by design: auth (phase 1 replaces the fixed dev actor), River jobs, Caddy TLS (B7 rest), idempotency
   key cleanup (a phase 1 job), per-user filtering of workspace events.
+- After the gate, a staging stand runs at `https://cadence.llmto.day` (compose, one `CADENCE_VERSION`): TLS ends at the
+  host's own Caddy with basic auth until phase-1 sign-in, the event stream unbuffered and uncompressed, `/metrics`
+  closed; compose publishes the control plane on 127.0.0.1 only and Postgres not at all.
 ---
 
 ## Phase 1 · Agent loop
@@ -144,13 +149,16 @@ Identity and access (06 Authentication)
 - [ ] Admin: Argon2id password + optional TOTP, HttpOnly session cookie, custom-header CSRF rule, rate-limited login,
       `cadence admin reset-password`
 - [ ] Credentials table (kind, scope, hash, expiry, last use); agent session tokens; `cdk_` API keys; revoke as a command
-- [ ] Caddy TLS in compose; control plane and Postgres not exposed outside the compose network (B7)
+- [ ] Exposure (B7, R39) on the staging stand: TLS at the host's Caddy, control plane on 127.0.0.1, Postgres unpublished
+      (in place since phase 0); once sign-in works, the owner drops basic auth from the Caddy site file (a root-owned
+      file); a Caddy compose profile stays the option for hosts without a proxy of their own
 
 Registry core (completed in phase 4)
 - [ ] Collections and immutable versions named `YYYY-MM-DD.<sha>`, tags, aliases per project, adoption by reference,
       "used by"; registry events without `projectId`
-- [ ] Kinds needed now: base model (catalogue, pinned HF revision), dataset version (registered from fixtures so a mix
-      has something to reference), template (instruction templates, permission presets, skills)
+- [ ] Kinds needed now: base model (catalogue, pinned HF revision, its model family id — R41; the descriptor arrives
+      with the worker in phase 2), dataset version (registered from fixtures so a mix has something to reference),
+      template (instruction templates, permission presets, skills)
 - [ ] Compute entity (hosts, cards, memory caps, allowed job kinds) — Settings edits it now, the queue uses it in phase 2
 - [ ] Secrets entity (names only; values per the **spec** above)
 - [ ] Minimal `defaults.yaml` (wizard fields, budgets, the estimate table) + the `defaults://` resource; full
@@ -164,7 +172,8 @@ MCP and approvals
       a gated fixture command for integration tests until real gated commands arrive (over-budget runs in phase 2)
 - [ ] Drafts on draftable kinds with Accept/Revert; presence ("agent editing"); audit log with `causedBy`
 - [ ] Training-run dry run ahead of phase 2: `runs.new?dryRun=true` returns an estimate from defaults and the compute
-      entity (A2 acceptance); the real run lands in phase 2
+      entity (A2 acceptance); the real run lands in phase 2. Its request carries `init: base | checkpoint` and `gpus`
+      from the start (R44), so phase 2 does not change the shape
 
 Agent host (05 Agent integration)
 - [ ] One ACP client; drivers for `claude-agent-acp` and `opencode acp` behind the ACP-shaped interface (`src/drivers/`)
@@ -206,7 +215,9 @@ step budget — scheduled on a card under its memory cap, watched live and conti
 
 **Gate.** The agent (a session running the phase-2 playbook below) calibrates and runs a Nemotron 3.5 fine-tune on the staging card under the
 24 GB cap from a dataset version, with a dry-run estimate shown first; metrics stream to the Run panel; checkpoints
-are registered with validation WER. A3 acceptance met (incl. ONNX parity numbers recorded for phase 5).
+are registered with validation WER. A3 acceptance met (incl. ONNX parity numbers recorded for phase 5). The seams
+hold: the CPU toy pack passes the conformance suite in CI, and no control-plane or web code names the Nemotron family
+(R40–R45).
 
 Decide before starting:
 - [ ] **decide** → *R18* How phase 2 gets training data before the Data phase — proposed: an import step that registers a
@@ -250,8 +261,9 @@ Worker and jobs
 - [ ] Minimal data entities for imports: Source (licence, eval-only until cleared, archive), Utterance, Transcript,
       per-utterance fingerprints — the full ingest path arrives in phase 4
 - [ ] Replay corpus and replay golden sets imported per the **spec** above
-- [ ] Runtimes (R40): `runtimes.list|get`, `runtimes.new` with approval; the worker announces its runtime; card slots
-      are owned per host and card, so two runtimes can share a card
+- [ ] Runtimes (R40): the worker announces `runtime@version` and the NeMo runtime is registered from it;
+      `runtimes.list|get`; card slots are owned per host and card, so two runtimes could share a card; `runtimes.new`
+      (a second runtime, with approval) waits with the deferred packs
 - [ ] Model families (R41, R43): published by the runtime; Nemotron 3.5 streaming first, with latency profiles
       `80ms`–`1120ms`; base models and checkpoints carry their family; no code branches on a family name
 - [ ] CPU `toy` framework pack (a tiny CTC model) and the conformance suite in CI; the NeMo pack runs it nightly (R45)
@@ -288,7 +300,8 @@ from phase 2) runs on staging and `evals.gate` returns a verdict (target-locale 
 replay-locale regression ≤ 0.5, deletions/insertions check). The telephone golden set from own calls needs phase 4.
 
 Decide before starting:
-- [ ] **decide** → *R20* The latency set and primary cell (`[56,1]` vs `[56,0]`, offline vs `[56,13]`) (C2)
+- [ ] **decide** → *R20* The latency set and primary cell (`[56,1]` vs `[56,0]`, offline vs `[56,13]`) (C2), named as
+      latency profiles (R43)
 - [ ] **decide** → *R22* What evaluations are keyed by before a model version exists: registry Eval records are keyed by
       model version, but phase 3 evaluates checkpoints and registration is phase 5 — key by checkpoint content hash,
       or move `models.register` into phase 3
@@ -304,7 +317,8 @@ Write before starting:
       the generator, interactive jobs beside training, capture defaults; *R51–R54* the audio view, spectrogram defaults,
       charts, streaming metric definitions
 
-Spikes before the items they gate: A5 (live transcription) before live mode; S5 (audio view) before the Audio panel.
+Spikes before the items they gate: A5 (live transcription) before live mode — it needs a phase-2 checkpoint and the
+worker protocol; S5 (audio view) before the Audio panel — it needs only the phase-0 shell and can run any time before.
 
 - [ ] Golden sets as registry assets from imports (FLEURS he), freeze with approval, fingerprint exclusion, runs
       cannot reference them; adoption re-runs the leakage check against fingerprints of imported versions
@@ -313,11 +327,14 @@ Spikes before the items they gate: A5 (live transcription) before live mode; S5 
       a new baseline; the search index starts using per-locale normalisation
 - [ ] `streaming_eval` (cache-aware, per latency profile — R43), WER/CER/S/D/I, per-utterance rows, duration buckets,
       punctuation-insensitive companion score
-- [ ] Scorer step kinds available now: entity accuracy for number classes (names and addresses need annotated spans,
-      phase 4), latency to final, partial stability; end-of-utterance needs per-channel VAD (phase 4); RTF and streams
-      per card come from the benchmark step (phase 5)
+- [ ] Scorer step kinds available now (R54 definitions): entity accuracy for number classes (names and addresses need
+      annotated spans, phase 4); latency to final at p50/p95 with audio at real-time pace, utterance ends from a NeMo
+      frame-VAD model until per-channel VAD lands in phase 4; partial stability as the unstable partial word ratio.
+      Emission delay PR50/PR90 needs aligned references and end-of-utterance needs per-channel VAD (both phase 4); RTF
+      and streams per card come from the benchmark step (phase 5)
 - [ ] Eval records cache (per the **decide** above); only missing cells computed
-- [ ] Baselines (approval), gates per project (`gates.edit`), 1 000-sample bootstrap CI on every delta
+- [ ] Baselines (approval), gates per project (`gates.edit`), 1 000-sample bootstrap CI on every delta, resampling whole
+      calls or speakers (R54)
 - [ ] Decoding config as an eval axis (R24): static RNNT context biasing in the eval decoder; `langpacks.get|edit`,
       `boost.edit`; boosted vs unboosted cells in `evals.new` (entity recall + general WER); the Language pack
       "test a phrase" box as a one-utterance eval
@@ -332,8 +349,12 @@ Spikes before the items they gate: A5 (live transcription) before live mode; S5 
 - [ ] Transcription tool (R47–R50): a file, the microphone or an utterance span through one WebSocket session; up to
       three targets, blind compare; telephony simulation; a typed reference gives WER on the page; nothing is stored;
       "test a phrase" becomes a two-target transcription
-- [ ] Eval charts (R53) and streaming metrics by their published definitions (R54): latency to final p50/p95, emission
-      delay PR50/PR90, unstable partial word ratio; confidence intervals by blockwise (per-call) bootstrap
+- [ ] Eval charts (R53): matrix heatmap, forest plot of deltas with intervals, S/D/I, buckets, latency CDFs, WER
+      against latency; the utterance table opens rows in Diff and Audio
+- [ ] Generator: the `media` tag — exempt from the verb rule and from MCP — for R25's audio endpoint, `…/peaks`,
+      `transcriptions.new` and its socket (R48)
+- [ ] Queue: job kind `interactive` beside training under the card's cap, never beside a benchmark, 1 GPU-hour per
+      project per day (R49)
 
 Panels: Eval report, Diff, Audio, Golden set, Lineage (over what the registry holds so far), Language pack,
 Experiment, Transcription; Eval workspace.
@@ -350,8 +371,10 @@ telephone golden set is built from own calls.
 dataset card generated) is trained on through the phase-2 path — ideally as the "Adapt a new language" playbook.
 
 Decide before starting:
-- [ ] **decide** → *R45* R26's pseudo-label members that are not NeMo models, while packs beyond NeMo are deferred: run
-      them in the NeMo runtime if its libraries serve them, or start the ensemble with NeMo models only
+- [ ] **decide** → *R45* The models phase 4 needs that are not NeMo models, while packs beyond NeMo are deferred: R26's
+      pseudo-label members (the ivrit.ai Whisper fine-tune, the omnilingual model) and a CTC model to align Hebrew
+      references for NeMo Forced Aligner (R51) — run them in the NeMo runtime where its libraries serve them;
+      otherwise the ensemble starts with NeMo models only and references stay unaligned
 
 Write before starting:
 - [ ] **spec** → *R26 · confirm* The language-ID model and the pseudo-label ensemble members as registry references (the starter
@@ -374,8 +397,11 @@ Write before starting:
       invitations per batch (play, no download), Annotation batch, double annotation 10 %, adjudication,
       inter-annotator WER ≤ 5 %, freeze as the telephone golden set; entity spans for names and addresses;
       end-of-utterance metric from per-channel VAD
-- [ ] Waveform peaks at ingest and freeze; energy/VAD and channel tracks; a reference alignment step (NeMo Forced
-      Aligner with a CTC model for the locale) so golden sets carry word timings for the reference track (R51)
+- [ ] For long audio (call recordings): waveform peaks at ingest and freeze, the spectrogram tile pyramid on demand,
+      an estimated bandwidth per utterance so 8 kHz-origin audio is shown to 4 kHz (R51, R52); energy/VAD and channel
+      tracks
+- [ ] A reference alignment step (NeMo Forced Aligner, per the **decide** above) so golden sets carry word timings for
+      the reference track; emission delay PR50/PR90 joins the scorers (R54)
 - [ ] Dataset version statistics charts (R53); the numbers come from `datasets.get`, as the agent sees them
 - [ ] Playbooks: "Adapt a new language"; smoke project ("Try Cadence": 2 h FLEURS, full loop ≈ 1 GPU-hour —
       its export and parity steps complete once phase 5 lands)
@@ -428,8 +454,19 @@ Flywheel
 
 Panels: Model, Shadow, Triage queue (triage mode); Ops workspace.
 
-Deferred beyond phase 5 (spec "Could" or v2): data governance under immutability beyond B6 (tombstones, access audit,
-data-subject requests), passkeys, pgvector search, snapping to docked groups, email notifications, team roles.
+---
+
+## Deferred
+
+Not planned into any phase; each comes back only by the owner's decision.
+
+- By the owner, 2026-09-29 — the phase-2 seams keep each of these to one framework pack:
+  - training from scratch, tokenizers, multi-card gang leases, adapter runs, multi-node training (R44);
+  - packs beyond NeMo — sherpa-onnx, Hugging Face transformers, k2/icefall — with `runtimes.new` and spike F1 (R45);
+  - OpenAI-API inference servers (NVIDIA Speech NIM, vLLM) as eval baselines (R46).
+- Beyond phase 5 (spec "Could" or v2): data governance under immutability beyond B6 (tombstones, access audit,
+  data-subject requests), passkeys, pgvector search and dataset embedding maps, snapping to docked groups, email
+  notifications, team roles.
 
 ---
 
@@ -440,10 +477,6 @@ data-subject requests), passkeys, pgvector search, snapping to docked groups, em
       commands arrive with phase 1, `smoke` with phase 4.
 - [ ] Release process: semver, the pinned matrix (NeMo container, Dockview, agent adapters) in release notes — first
       needed when there is something to upgrade from, i.e. before the first real project after phase 2.
-- [ ] Deferred by the owner (2026-09-29), no phase: training from scratch, tokenizers, multi-card gang leases and
-      adapter runs (R44); packs beyond NeMo — sherpa-onnx, Hugging Face transformers, k2/icefall — with spike F1
-      (R45); OpenAI-API inference servers as eval baselines (R46). The phase-2 seams keep each of them to one pack
-- [ ] Multi-node training; dataset embedding maps (with pgvector search, v2)
 
 ## Notes on the mapping
 
@@ -454,10 +487,11 @@ data-subject requests), passkeys, pgvector search, snapping to docked groups, em
   phase 0, context help and "Explain this" sessions in phase 1).
 - Phase order puts Training before Data on purpose ("the order a first fine-tune needs them"): phase 2 trains on an
   imported dataset version; phase 4 replaces the import with Cadence's own pipeline.
-- Extensibility, interactive testing and audio views (R40–R54, proposed 2026-09-29) follow the same rule: the seams
-  land in phase 2 where step kinds are born, because retrofitting them means migrating every stored checkpoint and
-  eval record; manual transcription tests and the audio view in phase 3 where audio serving arrives; data-side tracks
-  in phase 4; Triton targets in phase 5; everything beyond the seams is deferred by the owner.
+- Extensibility, manual tests and audio views (R40–R54, 2026-09-29) follow the same rule: the seams land in phase 2
+  where step kinds are born, because retrofitting them means migrating every stored checkpoint and eval record; the
+  fields they need appear in phase 1 already (a family on base models, `init` and `gpus` on the run request); manual
+  transcription tests and the audio view in phase 3 where audio serving arrives; long-audio tracks and alignment in
+  phase 4 with call recordings; Triton targets in phase 5; everything beyond the seams is deferred by the owner.
 
 ## Dependency audit (2026-09-29)
 
@@ -480,3 +514,18 @@ Every item was checked for what it relies on. Changes made to the first draft:
 | Blocks the spec relies on but never describes | **spec** lines: permission presets and policy engine, secret storage, internal git repository, worker protocol, artifact store, metric/log storage, estimate model, playbook format, audio serving, LID/pseudo-label models, staging serving, PII redaction, Эра interfaces, signed promotions, CLI |
 | Second pass (independent review): phase-2 gate had no runnable playbook; phase-1 estimate lacked defaults and the estimate model; no `mixes.edit` tool; boosting needed at decode before phase 5; replay data unspecified; imports lacked Source/Utterance/Transcript; parity and latency thresholds undefined; Normalizer and guidelines homes contradictory; Lineage endpoint after its panel | Phase-2 playbook **spec** + replay **spec**; defaults and estimate model moved to phase 1; `mixes.edit` **spec**; static boosting in phase 3; minimal data entities in phase 2; new **spec** lines in phases 3–5; lineage endpoint in phase 3 |
 | Spec items missing from the first draft | Added: saved searches, context bridge, archive, policies, pipelines/augment/langpack tools, weekly perf job, CI, selection bus, entity manifest conventions, worktree watcher, first-start admin creation, help context and CI check, OTel propagation, GPU telemetry, staging host setup, retention jobs, SPA embedding, release process |
+
+Second pass (2026-09-29): R40–R54, the owner's answers and the staging stand, checked the same way:
+
+| Found | Fix in this file |
+| --- | --- |
+| Base models are created in phase 1, but the family descriptor comes with the worker in phase 2 | Phase-1 base models store their family id |
+| The phase-1 estimate-only `runs.new` would fix a request shape without `init` and `gpus` | Both fields in the phase-1 request |
+| Seams without an exit criterion get cut under schedule pressure | Toy-pack conformance joins the phase-2 gate |
+| `runtimes.new` matters only for a second runtime, and packs are deferred | The worker registers the NeMo runtime; `runtimes.new` is deferred |
+| Transcriptions (phase 3) need the `media` tag and an `interactive` job kind, and neither was placed | Both are phase-3 items |
+| R54's latency to final needs utterance ends, and emission delay needs aligned word ends (phase 4) | Phase 3 takes ends from a NeMo frame-VAD model; emission delay moves to phase 4 |
+| Call recordings (phase 4) need server peaks and tiles, and the 8 kHz view cap needs a bandwidth estimate | Both arrive with ingest in phase 4 |
+| Deferred packs leave R26's non-NeMo members and a Hebrew CTC aligner without a runtime | One phase-4 **decide** line |
+| TLS moved to the host's Caddy on the staging stand | Phase-1 exposure item rewritten; basic auth goes once sign-in works |
+| S5 depends only on the phase-0 shell | May run any time before phase 3 |
