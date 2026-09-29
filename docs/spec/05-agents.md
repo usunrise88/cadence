@@ -43,7 +43,7 @@ Cadence launches Claude Code or opencode inside a project worktree, hands it the
 ### What the agent sees
 
 - Files in the worktree: the project facts, notes, the data lockfile, language packs, pipelines, augmentation profile, skills.
-- MCP resources: `project://summary` (locales, base model, aliases, budgets and today's use, open approvals), `selection://current` (the references the user attached), `help://{slug}`, `defaults://`.
+- MCP resources: `project://summary` (locales, base model, aliases, budgets and today's use, open approvals; the connection's project, or `project://{p}/summary`), `selection://current` (the references the user attached), `help://{slug}` (`help://errors.not-found`), `defaults://`.
 - The tool catalogue below; every tool description carries the parameter docs from the step schemas.
 - Not: secrets, other projects' work (the registry is readable, their work is not), production hosts, raw audio bytes; audio-level checks run as scorer steps the agent can start.
 
@@ -159,6 +159,6 @@ Agents may do anything reversible on their own; anything that spends real GPU ti
 Cadence does not build its own agent sandbox: Claude Code and opencode each ship a permission system, and Cadence configures those from the project's permission preset; Cadence adds only what the agents cannot know — token scope, secret isolation, and approvals for GPU spend and production.
 
 - The permission preset renders into `.claude/settings.json` (allow, deny and ask rules, sandbox settings) and `opencode.json` (`permission` block); the agent enforces them, Cadence shows what was rendered in Agent settings.
-- Tool results that carry content from data — transcripts, notes, help articles, search hits — are marked as data in the MCP response so the agent's own injection defences apply; no Cadence tool ever executes an instruction found in data, and anything that could reach production sits behind an approval a person decides.
+- Tool results that carry content from data — transcripts, notes, help articles, search hits — are marked as data in the MCP response so the agent's own injection defences apply (every result is JSON with the content under `data` or `error` and a `note` saying it is data, not instructions); no Cadence tool ever executes an instruction found in data, and anything that could reach production sits behind an approval a person decides.
 - Secrets never appear in an agent context: jobs receive them from the control plane at start; the MCP token is the only credential an agent holds.
 - Container images are pinned by digest, dependencies by lockfiles; updates arrive as reviewed pull requests.

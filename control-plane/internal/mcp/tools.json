@@ -65,7 +65,7 @@
     {
       "name": "help.get",
       "title": "Get a help article (markdown)",
-      "description": "Get a help article (markdown)",
+      "description": "Get a help article (markdown) by id \u003csection\u003e.\u003cslug\u003e. Every error a tool returns names its article (errors.\u003cslug\u003e): read it for what went wrong and how to fix it.",
       "method": "GET",
       "path": "/help/{id}",
       "inputSchema": {
@@ -147,7 +147,7 @@
     {
       "name": "projects.archive",
       "title": "Archive a project (soft; reversible)",
-      "description": "Archive a project (soft; reversible) Pass dryRun=true to see what would happen without changing anything.",
+      "description": "Archive a project (soft; reversible): it leaves the default projects.list but still resolves by slug. Send ifMatch with the etag (or rev) of your last projects.get. Pass dryRun=true to see what would happen without changing anything.",
       "method": "POST",
       "path": "/projects/{p}:archive",
       "inputSchema": {
@@ -200,7 +200,7 @@
     {
       "name": "projects.edit",
       "title": "Rename or re-describe a project",
-      "description": "Rename or re-describe a project Pass dryRun=true to see what would happen without changing anything.",
+      "description": "Rename or re-describe a project. Send ifMatch with the etag (or rev) of your last projects.get; a stale revision fails with precondition-failed and the current revision to re-read. Pass dryRun=true to see what would happen without changing anything.",
       "method": "PATCH",
       "path": "/projects/{p}",
       "inputSchema": {

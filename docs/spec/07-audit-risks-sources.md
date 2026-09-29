@@ -63,6 +63,14 @@ Open questions:
 - [ ] Unknown `/api` path answers 404 `not-found`, wrong method 405 `method-not-allowed` (a tenth error type with its article); the review proposed 400 for both
 - [x] Training from scratch or a second framework (k2/icefall) in v1? — Only the seams, in phase 2; training from scratch, packs beyond NeMo and spike F1 are deferred (owner, 2026-09-29; R44, R45)
 - [x] Keep uploads and microphone recordings? — No: a transcription is a manual test and stores nothing (owner, 2026-09-29; R47)
+- [ ] `project://summary` needs the connection's project, which the spec does not say how to name. Phase 1 reads a
+  `Cadence-Project: <slug>` header that the agent host sends next to `Authorization` in ACP `session/new` →
+  `mcpServers` (R2); once `cst_` tokens are project-bound, the token's scope decides and the header must agree.
+  `project://{p}/summary` reads any project the token may see. Confirm
+- [ ] MCP tool names keep the dotted `<entity>.<verb>` on the wire, but both agents rewrite them: Claude Code shows
+  `mcp__cadence__projects_new`, opencode `cadence_projects_new` (model APIs allow only `[a-zA-Z0-9_-]` in tool names).
+  Spike A2 checks whether agents still map them to the names in help, errors and skills, or whether the vocabulary
+  should use `_` in tool names
 
 ## Sources
 
