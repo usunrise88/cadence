@@ -4,7 +4,7 @@ paths:
 ---
 # Go rules (control plane)
 
-- Go 1.23; packages under `internal/` by concern (`api`, `events`, `jobs`, `mcp`, `storage`, `projects`, `registry`, `auth`, `notify`).
+- Go 1.27; packages under `internal/` by concern (`api`, `events`, `jobs`, `mcp`, `storage`, `projects`, `registry`, `auth`, `notify`).
 - Generated code from oapi-codegen (strict server) is committed and never edited by hand.
 - Postgres through `pgx`; every mutation runs in a transaction that also inserts the outbox event; use River for jobs (one training slot per card).
 - Entities carry `rev`; writes check `If-Match` and return `412` with `currentRev` on mismatch.

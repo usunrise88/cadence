@@ -276,7 +276,7 @@ computeSnap(raw: Rect, lines: SnapLines, prev: SnapState, opts: SnapOptions)
 - One module, `shell/floating-snap/dockview-adapter.ts`, is the only code allowed to touch Dockview internals; lint enforces it.
 - Move: `floatingGroupDragHandle: "tabbar"` for a compact header. The adapter captures pointer-down on the empty header space and runs the drag itself; tabs keep Dockview's drag-and-drop for docking back into the grid. Fallback if capture proves fragile: the `"titlebar"` handle.
 - Resize: the same capture on the floating overlay's resize handles.
-- Writing bounds: the public API creates floats with bounds and reports location changes. Moving an existing float each frame most likely needs the internal overlay bounds setter, which clamps to the container ([issue #318](https://github.com/mathuo/dockview/issues/318)). A contract test runs on every Dockview upgrade: set bounds, read them back, check `toJSON()`.
+- Writing bounds: moves go through the public `transformFloatingGroupDrag` option (Dockview 8.x), which hands each pointer frame's proposed box to `computeSnap` (S1). Resize snapping, keyboard moves and align commands use the internal overlay bounds setter, which clamps to the container ([issue #318](https://github.com/mathuo/dockview/issues/318)). A contract test runs on every Dockview upgrade: set bounds, read them back, check `toJSON()`. Floating overlays are `border-box`, or every restore grows them by their border (S4).
 - Stacking: floating overlays live in a shell-level host with z-index `calc(999 + i*2)` ([PR #1203](https://github.com/mathuo/dockview/pull/1203)). The guides layer is a sibling above them with `pointer-events: none`.
 - Nothing extra is stored: final bounds reach the workspace through Dockview's own serialization.
 
@@ -307,13 +307,13 @@ Step roles follow Radix's [scale guide](https://radix-ui.com/colors/docs/palette
 | Inactive tab hover, list row hover | slate-3 / slate-4 |  |
 | Selected row, pressed control | slate-5 |  |
 | Group separators, panel borders | slate-6 | Decorative, 1 px |
-| Sash hover and drag, floating window border | slate-7 / slate-8 | Floating windows are the only elements with a shadow |
-| Focus ring | accent-8 |  |
+| Sash hover and drag, floating window border | slate-9 (sash) / slate-7 (border) | Floating windows are the only elements with a shadow; slate-8 fails 3:1 (S3) |
+| Focus ring | accent-9 (dark: accent-10) | accent-8 is 2.3:1 on slate-1 (S3) |
 | Drop-target overlay | accent alpha 4 fill, accent-8 border | Dockview drag-and-drop targets |
 | Snap guides | accent-9 | 1 px |
 | Secondary text, inactive tab labels | slate-11 |  |
 | Primary text, active tab label, icons | slate-12 |  |
-| Status: running, done, warning, failed | blue, grass, amber, red (step 9 fills, step 11 text) | The only saturated color on screen besides the accent |
+| Status: running, done, warning, failed | blue, grass, amber, red (step 9 fills, step 11 text; warning text amber-12) | The only saturated color on screen besides the accent; amber-11 is 4.498:1 (S3) |
 | Agent attribution badge | accent alpha 3 fill, accent-11 text | Marks changes an agent made; click jumps to the tool call in Chat |
 | Agent draft, not yet accepted | accent-8 dashed outline | Amber stays reserved for warnings |
 | Diff added / removed | grass-3 / red-3 background, step-11 text | Recipe documents, tool-call cards, drafts |
@@ -335,7 +335,7 @@ The target is WCAG 2.2 level AA, which is also the international standard [ISO/I
 | 2.5.7 Dragging Movements (AA) | Every drag has a single-pointer, non-drag path: tab context menu (Float, Pop out, Move to…, Dock left/right/top/bottom) and the same commands in the palette |
 | 2.1.1 Keyboard (A) | Every window operation works from the keyboard, including sash resize and floating-window moves |
 | 2.4.11 Focus Not Obscured, Minimum (AA) | A focused element under a floating window must not be fully hidden: covering floats drop to 20% opacity and ignore the pointer until focus leaves |
-| 2.4.7 Focus Visible (AA) | Accent-8 focus ring on tabs, sashes, window chrome and panel controls |
+| 2.4.7 Focus Visible (AA) | Accent-9 focus ring (dark: accent-10) on tabs, sashes, window chrome and panel controls |
 | 2.5.8 Target Size, Minimum (AA) | Hit areas at least 24×24 CSS px, including tab close buttons with 16 px icons |
 | 1.4.3 Contrast, Minimum (AA) | Text pairs at least 4.5:1 in light and dark themes |
 | 1.4.11 Non-text Contrast (AA) | Focus rings, sash handles and state indicators at least 3:1 against their background |
@@ -359,7 +359,7 @@ Keyboard map (all remappable, all also in the command palette):
 Notes:
 
 - Photoshop's bare Tab to hide panels is deliberately not copied: it would break keyboard focus navigation.
-- Dockview's own keyboard navigation and live-region announcement options ([typedocs](https://dockview.dev/typedocs/interfaces/dockview-core.DockviewOptions.html)) are turned on, with our wording for announcements.
+- Dockview's announcements are routed through its `announcer` option into the shell's polite live region. Its `keyboardNavigation` option needs a `dockview-enterprise` module (S1), so the command registry owns F6, tab cycling, close and float moves ([typedocs](https://dockview.dev/typedocs/interfaces/dockview-core.DockviewOptions.html)).
 - `prefers-reduced-motion` is honored; animations are off by default anyway.
 - A CI script computes contrast for every pairing in the Theming table, in both modes, and fails the build below the thresholds above.
 

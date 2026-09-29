@@ -38,57 +38,72 @@ panels/steps/errors, `make gen` output committed, tests at the right layer of th
 Go stubs, the TS client and the MCP manifest; the control plane owns state, emits events and serves layouts; the
 Dockview shell restores workspaces, runs commands and themes every surface.
 
-**Gate.** S1–S4 Results filled and `Status: done`: 60 fps drag with 10 floats and tab docking intact (S1); Base UI
+**Gate — passed 2026-09-29** (branch `feat/phase-0-shell`): S1–S4 `Status: done`, numbers in each spike's Result
+(p95 frame 16.7 ms with 10 floats and tab docking intact; tooltip, menu and palette render in a popout; 311 Dockview
+surfaces themed in both modes, contrast script green after three token fixes; 20-panel restore 171 ms, 4 subscriptions
+for 4 visible panels). Re-measured weekly by `.github/workflows/performance.yml`.
+
+Original gate: S1–S4 Results filled and `Status: done`: 60 fps drag with 10 floats and tab docking intact (S1); Base UI
 popovers, tooltips and palette work in a popout (S2); no unthemed Dockview surface, contrast script passes (S3);
 20-panel workspace restores in < 300 ms with zero hidden subscriptions (S4).
 
 Decide before starting:
-- [ ] **decide** → *R1* Naming rules for operations: verb list gaps, one name per action, entity casing, HTTP-shape → verb,
+- [x] **decide** → *R1* Naming rules for operations: verb list gaps, one name per action, entity casing, HTTP-shape → verb,
       global vs project item paths (review A1–A4, A6). The generator enforces them, so nothing is generated before.
 
 Contract and toolchain
-- [ ] `api/openapi.yaml` rewritten to the rules: shared components for `Idempotency-Key`, `If-Match`, `dryRun`,
+- [x] `api/openapi.yaml` rewritten to the rules: shared components for `Idempotency-Key`, `If-Match`, `dryRun`,
       problem+json (RFC 9457, `412` with `currentRev`), `202 {jobId}` / `202 {approvalId}`; `CadenceEvent.projectId` optional (B8)
-- [ ] `make gen`: oapi-codegen strict server, `@hey-api/openapi-ts` client + TanStack Query hooks, `mcpgen` tool
+- [x] `make gen`: oapi-codegen strict server, `@hey-api/openapi-ts` client + TanStack Query hooks, `mcpgen` tool
       manifest that refuses verbs outside the vocabulary
-- [ ] `make lint` / `make test` wired for real (golangci-lint, ESLint, ruff, mypy --strict; go test, Vitest, pytest)
-- [ ] CI on every pull request running lint, unit, contract and integration layers; nightly job slot reserved for
+- [x] `make lint` / `make test` wired for real (golangci-lint, ESLint, ruff, mypy --strict; go test, Vitest, pytest)
+- [x] CI on every pull request running lint, unit, contract and integration layers; nightly job slot reserved for
       agent evals and e2e (later phases), weekly performance job (restore, drag frame time, SSE fan-out, search)
-- [ ] Contract tests: OpenAPI ↔ generated server/client/tools
-- [ ] Pin every dependency (web, agent-host); fix `@base-ui/react` name; Go module path to the real origin
-- [ ] SPA embedded in the Go binary (single-binary shape); compose builds all images with one version
+- [x] Contract tests: OpenAPI ↔ generated server/client/tools
+- [x] Pin every dependency (web, agent-host); fix `@base-ui/react` name; Go module path to the real origin
+- [x] SPA embedded in the Go binary (single-binary shape); compose builds all images with one version
 
 Control plane core
-- [ ] Postgres via pgx; forward-only migrations embedded, run under an advisory lock
-- [ ] Fixed development actor (the single admin) so commands carry an actor before real login lands in phase 1
-- [ ] Command pipeline: actor, idempotency keys (repeat → original result), revisions + `If-Match`, `dryRun`
-- [ ] Transactional outbox → dispatcher in `seq` order → `GET /events` SSE with topics, wildcards, `Last-Event-ID` resume
-- [ ] Projects (list/create, minimal) and per-user workspaces `GET/PUT /me/projects/{p}/workspaces/{name}`
-- [ ] Observability: structured JSON logs (`slog`) with rotation, `/healthz`, Prometheus endpoint, OpenTelemetry
+- [x] Postgres via pgx; forward-only migrations embedded, run under an advisory lock
+- [x] Fixed development actor (the single admin) so commands carry an actor before real login lands in phase 1
+- [x] Command pipeline: actor, idempotency keys (repeat → original result), revisions + `If-Match`, `dryRun`
+- [x] Transactional outbox → dispatcher in `seq` order → `GET /events` SSE with topics, wildcards, `Last-Event-ID` resume
+- [x] Projects (list/create, minimal) and per-user workspaces `GET/PUT /me/projects/{p}/workspaces/{name}`
+- [x] Observability: structured JSON logs (`slog`) with rotation, `/healthz`, Prometheus endpoint, OpenTelemetry
       traces to a file exporter, trace context carried UI → API (extended to jobs and agent tool calls later)
-- [ ] problem+json errors with `type` → `docs/help/errors/<slug>`; help articles bundled in the binary,
+- [x] problem+json errors with `type` → `docs/help/errors/<slug>`; help articles bundled in the binary,
       `GET /help/{slug}`, `GET /help/context`; CI fails when a panel, step kind or error type lacks its article
 
 Web shell
-- [ ] Vite + React + TanStack Router/Query + Zustand app frame; chrome (menu bar with project switcher, status bar,
+- [x] Vite + React + TanStack Router/Query + Zustand app frame; chrome (menu bar with project switcher, status bar,
       notification history)
-- [ ] Panel registry + `PanelManifest`; documents vs tools; ESLint rules: no panel↔panel imports, no Dockview outside
+- [x] Panel registry + `PanelManifest`; documents vs tools; ESLint rules: no panel↔panel imports, no Dockview outside
       the adapter, no `asChild`
-- [ ] Selection bus: active document + selection inside it, tool panels follow it or are pinned
-- [ ] Entity manifest (`EntityManifest`, three state templates) and its primitives `EntityHeader`, `ActionBar`,
+- [x] Selection bus: active document + selection inside it, tool panels follow it or are pinned
+- [x] Entity manifest (`EntityManifest`, three state templates) and its primitives `EntityHeader`, `ActionBar`,
       `StatusChip`, `NextStep`; lint rejects hand-drawn headers; list, Compare and empty-state conventions
-- [ ] Workspaces: `toJSON`/`fromJSON`, `schemaVersion` + migrations, alias map, placeholder for unknown panels,
+- [x] Workspaces: `toJSON`/`fromJSON`, `schemaVersion` + migrations, alias map, placeholder for unknown panels,
       default layouts as code factories, debounced save with `If-Match`, deep links `/p/:project/w/:workspace?doc=…`
-- [ ] Command registry + Ctrl/Cmd+K palette (`>` commands, `?` help), keyboard map, no browser-reserved keys
-- [ ] Floating-window snapping: pure `computeSnap()` + `dockview-adapter.ts`; keyboard/non-drag alternatives
-- [ ] Theme: Radix Slate + Indigo tokens in `theme.css`, Dockview `--dv-*` mapping, dark mode, popout stylesheet injection
-- [ ] Accessibility: WCAG 2.2 AA table (focus, targets ≥ 24 px, live region), contrast CI script
-- [ ] SSE client: one multiplexed stream, visibility-scoped subscriptions, cache patching, per-frame coalescing
-- [ ] Generic panels: Library (shell only — lists whatever registry kinds exist; empty until phase 1), Inspector, Help
+- [x] Command registry + Ctrl/Cmd+K palette (`>` commands, `?` help), keyboard map, no browser-reserved keys
+- [x] Floating-window snapping: pure `computeSnap()` + `dockview-adapter.ts`; keyboard/non-drag alternatives
+- [x] Theme: Radix Slate + Indigo tokens in `theme.css`, Dockview `--dv-*` mapping, dark mode, popout stylesheet injection
+- [x] Accessibility: WCAG 2.2 AA table (focus, targets ≥ 24 px, live region), contrast CI script
+- [x] SSE client: one multiplexed stream, visibility-scoped subscriptions, cache patching, per-frame coalescing
+- [x] Generic panels: Library (shell only — lists whatever registry kinds exist; empty until phase 1), Inspector, Help
 
 Tests: `computeSnap` table tests, adapter contract test on the pinned Dockview, workspace round-trip fixtures,
 Playwright on drag/dock/float/popout/palette, integration test for outbox → SSE resume.
 
+
+Phase 0 notes (what differs from the plan above):
+- Operations of later phases are already named in the contract (`x-cadence.planned`) and answer 501 until built.
+- Dockview's public `transformFloatingGroupDrag` replaced most adapter internals; Dockview's keyboard navigation and
+  Smart Guides are enterprise-only, so the command registry owns every window key.
+- Three Theming steps changed for contrast (S3); floats are `border-box` (S4). Decision log rows of 2026-09-29.
+- Open questions recorded in `docs/spec/07-audit-risks-sources.md`: the `container` state template for projects, the
+  `view.*` namespace for client-only commands, 404/405 for unknown API paths.
+- Not in phase 0 by design: auth (phase 1 replaces the fixed dev actor), River jobs, Caddy TLS (B7 rest), idempotency
+  key cleanup (a phase 1 job), per-user filtering of workspace events.
 ---
 
 ## Phase 1 · Agent loop
