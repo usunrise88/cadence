@@ -1,0 +1,133 @@
+/* Shell chrome that Tailwind classes can't reach: Dockview's own elements and generated layers. Tokens only. */
+
+@source "../../node_modules/streamdown/dist/*.js";
+
+.dockview-theme-cadence .dv-tab {
+  padding: 0;
+  font-size: var(--cadence-font-size-small);
+}
+.dockview-theme-cadence .dv-tab:focus-visible,
+.dockview-theme-cadence .dv-tab:has(:focus-visible) {
+  outline: 2px solid var(--cadence-focus);
+  outline-offset: -2px;
+}
+.dockview-theme-cadence .dv-tabs-and-actions-container {
+  border-bottom: 1px solid var(--cadence-separator);
+}
+.dockview-theme-cadence .dv-tab {
+  border-right: 1px solid var(--cadence-separator);
+  color: var(--cadence-text-secondary);
+}
+.dockview-theme-cadence .dv-tab.dv-active-tab {
+  color: var(--cadence-text);
+  box-shadow: inset 0 -1px 0 var(--cadence-document);
+}
+/* The active tab of the active group carries the accent line. */
+.dockview-theme-cadence .dv-groupview.dv-active-group .dv-tab.dv-active-tab {
+  box-shadow: inset 0 2px 0 var(--cadence-accent-line), inset 0 -1px 0 var(--cadence-document);
+}
+.cadence-group-actions {
+  opacity: 0.7;
+}
+.dv-groupview:hover .cadence-group-actions,
+.cadence-group-actions:focus-within {
+  opacity: 1;
+}
+.cadence-tab-close {
+  opacity: 0;
+}
+.dv-tab:hover .cadence-tab-close,
+.dv-active-tab .cadence-tab-close,
+.cadence-tab-close:focus-visible {
+  opacity: 1;
+}
+.dv-inactive-tab:hover {
+  background-color: var(--cadence-hover);
+}
+/* Floating windows are the only elements with a shadow. border-box is load-bearing: with content-box, Dockview
+   8.3.1 grows a float by its border on every fromJSON(toJSON()) round-trip (spike S4). */
+.dockview-theme-cadence .dv-resize-container {
+  box-sizing: border-box;
+  box-shadow: var(--cadence-shadow);
+  border: 1px solid var(--cadence-float-border);
+}
+/* WCAG 2.4.11: a float covering the focused element yields until focus leaves. */
+.cadence-float-yield {
+  opacity: 0.2 !important;
+  pointer-events: none !important;
+}
+.cadence-guides {
+  z-index: 9999;
+}
+.dockview-theme-cadence .dv-sash:hover,
+.dockview-theme-cadence .dv-sash:active {
+  background-color: var(--cadence-sash-active);
+}
+.dockview-theme-cadence .dv-sash:focus-visible {
+  outline: 2px solid var(--cadence-focus);
+}
+
+.cadence-prose {
+  color: var(--cadence-text);
+  max-width: 44rem;
+}
+.cadence-prose .cadence-title,
+.cadence-prose h1 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 0.5rem;
+}
+.cadence-prose h2 {
+  font-size: var(--cadence-font-size);
+  font-weight: 600;
+  margin: 1.1rem 0 0.25rem;
+}
+.cadence-lede {
+  color: var(--cadence-text-secondary);
+  margin-bottom: 0.5rem;
+}
+.cadence-prose h3 {
+  font-size: var(--cadence-font-size);
+  font-weight: 600;
+  margin: 0.75rem 0 0.25rem;
+}
+.cadence-prose ul,
+.cadence-prose ol {
+  padding-left: 1.1rem;
+  margin: 0.25rem 0;
+}
+.cadence-prose ul {
+  list-style: disc;
+}
+.cadence-prose table {
+  width: 100%;
+  font-size: var(--cadence-font-size-small);
+  border-collapse: collapse;
+  margin: 0.5rem 0;
+}
+.cadence-prose th,
+.cadence-prose td {
+  text-align: left;
+  padding: 0.25rem 0.5rem;
+  border-bottom: 1px solid var(--cadence-separator);
+  vertical-align: top;
+}
+.cadence-prose th {
+  color: var(--cadence-text-secondary);
+  font-weight: 500;
+}
+.cadence-prose p,
+.cadence-prose li {
+  font-size: var(--cadence-font-size);
+  line-height: 1.5;
+}
+.cadence-prose a {
+  color: var(--cadence-agent-text);
+  text-decoration: underline;
+}
+.cadence-prose code {
+  font-size: 0.85em;
+  background: var(--cadence-hover);
+  border-radius: 3px;
+  padding: 0 0.25em;
+}

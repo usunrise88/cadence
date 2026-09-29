@@ -1,0 +1,166 @@
+/*
+ * Cadence theme — the only token source (docs/spec/10-ui-shell.md "Theming").
+ * Radix Colors: Slate is the neutral scale, Indigo the accent; blue/grass/amber/red are status colours.
+ * Everything below maps those steps onto shadcn variables, Dockview's --dv-* variables and Cadence roles.
+ * No colour literal may appear outside this file (lint + review); `scripts/contrast.mjs` checks every pairing.
+ */
+@import "@radix-ui/colors/slate.css";
+@import "@radix-ui/colors/slate-dark.css";
+@import "@radix-ui/colors/slate-alpha.css";
+@import "@radix-ui/colors/slate-dark-alpha.css";
+@import "@radix-ui/colors/indigo.css";
+@import "@radix-ui/colors/indigo-dark.css";
+@import "@radix-ui/colors/indigo-alpha.css";
+@import "@radix-ui/colors/indigo-dark-alpha.css";
+@import "@radix-ui/colors/blue.css";
+@import "@radix-ui/colors/blue-dark.css";
+@import "@radix-ui/colors/grass.css";
+@import "@radix-ui/colors/grass-dark.css";
+@import "@radix-ui/colors/amber.css";
+@import "@radix-ui/colors/amber-dark.css";
+@import "@radix-ui/colors/red.css";
+@import "@radix-ui/colors/red-dark.css";
+
+:root,
+.dark {
+  /* ---- shadcn variables (components/ui) ---- */
+  --background: var(--slate-1);
+  --foreground: var(--slate-12);
+  --card: var(--slate-1);
+  --card-foreground: var(--slate-12);
+  --popover: var(--slate-2);
+  --popover-foreground: var(--slate-12);
+  --primary: var(--indigo-9);
+  --primary-foreground: var(--cadence-on-solid);
+  --secondary: var(--slate-3);
+  --secondary-foreground: var(--slate-12);
+  --muted: var(--slate-3);
+  --muted-foreground: var(--slate-11);
+  --accent: var(--slate-4);
+  --accent-foreground: var(--slate-12);
+  --destructive: var(--red-11);
+  --border: var(--slate-6);
+  --input: var(--slate-7);
+  --ring: var(--indigo-8);
+  --radius: 0.375rem;
+
+  /* ---- Cadence roles ---- */
+  --cadence-desktop: var(--slate-1);
+  --cadence-document: var(--slate-1);
+  --cadence-tool: var(--slate-2);
+  --cadence-chrome: var(--slate-2);
+  --cadence-hover: var(--slate-3);
+  --cadence-hover-strong: var(--slate-4);
+  --cadence-selected: var(--slate-5);
+  --cadence-separator: var(--slate-6);
+  --cadence-float-border: var(--slate-7);
+  --cadence-sash-active: var(--slate-8);
+  --cadence-text: var(--slate-12);
+  --cadence-text-secondary: var(--slate-11);
+  --cadence-focus: var(--indigo-8);
+  --cadence-accent-soft: var(--indigo-3);
+  --cadence-accent-text: var(--indigo-11);
+  --cadence-accent-line: var(--indigo-9);
+  --cadence-guide: var(--indigo-9);
+  --cadence-drop-fill: var(--indigo-a4);
+  --cadence-drop-border: var(--indigo-8);
+  --cadence-agent-fill: var(--indigo-a3);
+  --cadence-agent-text: var(--indigo-11);
+  --cadence-draft-outline: var(--indigo-8);
+  --cadence-status-running: var(--blue-9);
+  --cadence-status-running-text: var(--blue-11);
+  --cadence-status-done: var(--grass-9);
+  --cadence-status-done-text: var(--grass-11);
+  --cadence-status-warning: var(--amber-9);
+  --cadence-status-warning-text: var(--amber-11);
+  --cadence-status-failed: var(--red-9);
+  --cadence-status-failed-text: var(--red-11);
+  --cadence-diff-added: var(--grass-3);
+  --cadence-diff-added-text: var(--grass-11);
+  --cadence-diff-removed: var(--red-3);
+  --cadence-diff-removed-text: var(--red-11);
+  --cadence-shadow: 0 8px 24px var(--slate-a7), 0 2px 6px var(--slate-a5);
+
+  /* ---- density ---- */
+  --cadence-font-size: 13px;
+  --cadence-font-size-small: 12px;
+  --cadence-tab-height: 28px;
+  --cadence-target: 24px;
+}
+
+:root {
+  --cadence-on-solid: white;
+}
+.dark {
+  --cadence-on-solid: white;
+}
+
+/* ---- Dockview theme: pinned to dockview 8.3.1's --dv-* list (see docs/spikes/S3-slate-theme.md) ---- */
+.dockview-theme-cadence {
+  color-scheme: light;
+  --dv-group-view-background-color: var(--cadence-document);
+  --dv-tabs-and-actions-container-background-color: var(--cadence-chrome);
+  --dv-tabs-and-actions-container-height: var(--cadence-tab-height);
+  --dv-tabs-and-actions-container-font-size: var(--cadence-font-size-small);
+  --dv-tabs-container-scrollbar-color: var(--slate-8);
+  --dv-scrollbar-background-color: var(--slate-a8);
+  --dv-activegroup-visiblepanel-tab-background-color: var(--cadence-document);
+  --dv-activegroup-hiddenpanel-tab-background-color: var(--cadence-chrome);
+  --dv-inactivegroup-visiblepanel-tab-background-color: var(--cadence-document);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--cadence-chrome);
+  --dv-activegroup-visiblepanel-tab-color: var(--cadence-text);
+  --dv-activegroup-hiddenpanel-tab-color: var(--cadence-text-secondary);
+  --dv-inactivegroup-visiblepanel-tab-color: var(--cadence-text);
+  --dv-inactivegroup-hiddenpanel-tab-color: var(--cadence-text-secondary);
+  --dv-tab-divider-color: var(--cadence-separator);
+  --dv-separator-border: var(--cadence-separator);
+  --dv-paneview-header-border-color: var(--cadence-separator);
+  --dv-paneview-active-outline-color: var(--cadence-focus);
+  --dv-sash-color: transparent;
+  --dv-active-sash-color: var(--cadence-sash-active);
+  --dv-active-sash-transition-duration: 0s;
+  --dv-active-sash-transition-delay: 0.2s;
+  --dv-drag-over-background-color: var(--cadence-drop-fill);
+  --dv-drag-over-border-color: var(--cadence-drop-border);
+  --dv-drag-over-border: 1px solid var(--cadence-drop-border);
+  --dv-edge-dock-indicator-color: var(--cadence-drop-border);
+  --dv-dnd-compass-color: var(--cadence-drop-border);
+  --dv-dnd-compass-cell-color: var(--cadence-drop-fill);
+  --dv-dnd-compass-active-cell-color: var(--cadence-drop-border);
+  --dv-dnd-compass-edge-cell-color: var(--cadence-drop-fill);
+  --dv-icon-hover-background-color: var(--cadence-hover-strong);
+  --dv-floating-box-shadow: var(--cadence-shadow);
+  --dv-floating-border: 1px solid var(--cadence-float-border);
+  --dv-floating-group-border: 1px solid var(--cadence-float-border);
+  --dv-floating-titlebar-background-color: var(--cadence-chrome);
+  --dv-floating-titlebar-border-bottom: 1px solid var(--cadence-separator);
+  --dv-floating-titlebar-height: 8px;
+  --dv-floating-group-dragging-opacity: 0.85;
+  --dv-context-menu-background-color: var(--cadence-chrome);
+  --dv-context-menu-color: var(--cadence-text);
+  --dv-smart-guides-color: var(--cadence-guide);
+  --dv-smart-guides-preview-color: var(--cadence-drop-fill);
+  --dv-overlay-z-index: 999;
+  --dv-transition-duration: 0s;
+  --dv-tab-font-size: inherit;
+  --dv-tab-margin: 0;
+  --dv-border-radius: 0px;
+  --dv-tab-border-radius: 0px;
+  --dv-sash-border-radius: 0px;
+  --dv-dropdown-border-radius: var(--radius);
+  --dv-tab-close-icon-size: 16px;
+  --dv-spacing-padding: 0px;
+}
+.dark .dockview-theme-cadence,
+.dark.dockview-theme-cadence {
+  color-scheme: dark;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

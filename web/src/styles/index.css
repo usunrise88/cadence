@@ -1,0 +1,72 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "./shadcn-tailwind.css";
+@import "dockview-react/dist/styles/dockview.css";
+@import "./theme.css";
+@import "./shell.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --color-tool: var(--cadence-tool);
+  --color-chrome: var(--cadence-chrome);
+  --color-selected: var(--cadence-selected);
+  --color-hover: var(--cadence-hover);
+  --color-accent-soft: var(--cadence-accent-soft);
+  --color-accent-text: var(--cadence-accent-text);
+  --color-accent-line: var(--cadence-accent-line);
+  --color-agent: var(--cadence-agent-fill);
+  --color-agent-foreground: var(--cadence-agent-text);
+  --color-status-running: var(--cadence-status-running);
+  --color-status-running-foreground: var(--cadence-status-running-text);
+  --color-status-done: var(--cadence-status-done);
+  --color-status-done-foreground: var(--cadence-status-done-text);
+  --color-status-warning: var(--cadence-status-warning);
+  --color-status-warning-foreground: var(--cadence-status-warning-text);
+  --color-status-failed: var(--cadence-status-failed);
+  --color-status-failed-foreground: var(--cadence-status-failed-text);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring;
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-size: var(--cadence-font-size);
+    margin: 0;
+    overflow: hidden;
+  }
+  :focus-visible {
+    outline: 2px solid var(--cadence-focus);
+    outline-offset: 1px;
+  }
+}
