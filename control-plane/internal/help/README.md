@@ -1,0 +1,2 @@
+# internal/help
+Help articles bundled in the binary: `docs/help/<section>/<slug>.md` (sections errors, panels, steps, guides, shell) with YAML front matter (`title`, `summary`, `contexts`). Article id = `<section>.<slug>`. `content/` is a generated mirror — run `go run ./cmd/helpsync` in control-plane after editing docs/help; a test fails when it is stale. `help.search` matches `context` exactly against front-matter contexts and ranks `q` over title, summary and body.

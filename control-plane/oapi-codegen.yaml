@@ -1,0 +1,10 @@
+# oapi-codegen config: strict server over chi, models and the embedded spec (used by the contract tests).
+package: api
+output: internal/api/api.gen.go
+generate:
+  chi-server: true
+  strict-server: true
+  models: true
+  embedded-spec: true
+output-options:
+  nullable-type: false

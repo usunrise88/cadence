@@ -1,0 +1,689 @@
+openapi: 3.1.0
+info:
+  title: Cadence API
+  version: 0.1.0
+  description: >
+    Source of truth for the Go server, the TypeScript client and the MCP tools.
+    Naming (docs/spec/08-resolutions.md R1): operationId = MCP tool = UI command = <entity>.<verb>; the entity is
+    declared once per path in x-cadence.entity; verbs come from api/vocabulary.yaml; the HTTP shape fixes the verb.
+    Mutations are commands: Idempotency-Key, If-Match on the revision, ?dryRun=true; they emit one outbox event.
+    Long work returns 202 {jobId}; gated work returns 202 {approvalId}. Errors are application/problem+json
+    (RFC 9457) whose type resolves to a help article. Operations with x-cadence.planned are named here so the
+    naming contract covers them; the server answers 501 until their phase implements them.
+servers:
+  - url: /api
+tags:
+  - { name: projects, description: Units of work with their own repository, budgets and gates }
+  - { name: me, description: The signed-in user's own state; not published as MCP tools }
+  - { name: events, description: The single event stream (outbox → SSE) }
+  - { name: help, description: Versioned help articles bundled with the binary }
+  - { name: registry, description: Cadence-wide immutable versioned assets }
+  - { name: planned, description: Named now, implemented in a later phase (501 until then) }
+
+paths:
+  # ---------------------------------------------------------------- projects
+  /projects:
+    x-cadence: { entity: projects }
+    get:
+      operationId: projects.list
+      summary: List projects
+      tags: [projects]
+      parameters:
+        - { name: archived, in: query, description: Include archived projects, schema: { type: boolean, default: false } }
+      responses:
+        "200":
+          description: Projects, newest first
+          content: { application/json: { schema: { $ref: "#/components/schemas/ProjectList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+    post:
+      operationId: projects.new
+      summary: Create a project
+      tags: [projects]
+      x-cadence:
+        toolDescription: >
+          Create a project: a unit of work with its own repository, budgets and gates. Phase 0 creates the record
+          only; bootstrap (repository, templates) arrives in phase 1 and then answers 202 with a job id.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ProjectNew" } } }
+      responses:
+        "200":
+          description: Dry run — the project that would be created; nothing was written
+          content: { application/json: { schema: { $ref: "#/components/schemas/Project" } } }
+        "201":
+          description: Created
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Project" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /projects/{p}:
+    x-cadence: { entity: projects }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    get:
+      operationId: projects.get
+      summary: Get a project
+      tags: [projects]
+      responses:
+        "200":
+          description: The project
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Project" } } }
+        default: { $ref: "#/components/responses/Problem" }
+    patch:
+      operationId: projects.edit
+      summary: Rename or re-describe a project
+      tags: [projects]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ProjectEdit" } } }
+      responses:
+        "200":
+          description: The edited project (or, for a dry run, what it would become)
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Project" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /projects/{p}:archive:
+    x-cadence: { entity: projects }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    post:
+      operationId: projects.archive
+      summary: Archive a project (soft; reversible)
+      tags: [projects]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      responses:
+        "200":
+          description: The archived project
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Project" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  # ---------------------------------------------------------------- me
+  /me:
+    x-cadence: { entity: me, kind: user, singleton: true }
+    get:
+      operationId: me.get
+      summary: The current actor
+      tags: [me]
+      responses:
+        "200":
+          description: The actor every command of this caller is attributed to
+          content: { application/json: { schema: { $ref: "#/components/schemas/Actor" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /me/projects/{p}/workspaces:
+    x-cadence: { entity: workspaces }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    get:
+      operationId: workspaces.list
+      summary: The user's saved workspaces in a project (names and revisions, no layouts)
+      tags: [me]
+      responses:
+        "200":
+          description: Saved workspaces
+          content: { application/json: { schema: { $ref: "#/components/schemas/WorkspaceList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /me/projects/{p}/workspaces/{name}:
+    x-cadence: { entity: workspaces }
+    parameters:
+      - $ref: "#/components/parameters/ProjectSlug"
+      - { name: name, in: path, required: true, schema: { $ref: "#/components/schemas/WorkspaceName" } }
+    get:
+      operationId: workspaces.get
+      summary: Get a saved workspace
+      tags: [me]
+      responses:
+        "200":
+          description: The workspace
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Workspace" } } }
+        default: { $ref: "#/components/responses/Problem" }
+    put:
+      operationId: workspaces.set
+      summary: Save a workspace layout (If-Match; omit it only to create)
+      tags: [me]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatchOptional"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/WorkspaceSet" } } }
+      responses:
+        "200":
+          description: Saved
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Workspace" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  # ---------------------------------------------------------------- events
+  /events:
+    x-cadence: { entity: events }
+    get:
+      operationId: events.list
+      summary: Events after a sequence number; with Accept text/event-stream, the live stream
+      tags: [events]
+      x-cadence:
+        toolDescription: >
+          Events after a sequence number, oldest first, optionally filtered by topic patterns (a trailing * matches
+          the remaining segments, e.g. run.123.*) and project. Use the last seq as `after` to continue.
+      parameters:
+        - name: topics
+          in: query
+          description: Comma-separated topic patterns; a trailing `*` matches one or more segments. Default all.
+          schema: { type: string, example: "entity.project.*,agent.session.*" }
+        - name: project
+          in: query
+          description: Keep work events of this project (registry events, which carry no projectId, always pass)
+          schema: { type: string }
+        - name: after
+          in: query
+          description: Only events with seq greater than this; SSE clients may send Last-Event-ID instead
+          schema: { type: integer, format: int64, minimum: 0 }
+        - name: limit
+          in: query
+          description: Page size for the JSON form
+          schema: { type: integer, minimum: 1, maximum: 1000, default: 200 }
+        - { name: Last-Event-ID, in: header, description: SSE resume point, schema: { type: string } }
+      responses:
+        "200":
+          description: "A page of events (JSON) or the live stream (SSE frames `id: <seq>` + `data: <CadenceEvent JSON>`, no event name)"
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/EventList" } }
+            text/event-stream: { schema: { type: string } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  # ---------------------------------------------------------------- help
+  /help:
+    x-cadence: { entity: help, kind: help_article }
+    get:
+      operationId: help.search
+      summary: Search help articles by text or by context (panel, step kind, error type, field)
+      tags: [help]
+      parameters:
+        - { name: q, in: query, description: Free text, schema: { type: string } }
+        - name: context
+          in: query
+          description: "Qualifier of the place the user is in: panel:<id>, step:<kind>, error:<slug>, field:<path>"
+          schema: { type: string, example: "panel:library" }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        "200":
+          description: Matching articles, best first, without bodies
+          content: { application/json: { schema: { $ref: "#/components/schemas/HelpSearchResult" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /help/{id}:
+    x-cadence: { entity: help, kind: help_article }
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: "<section>.<slug>, e.g. errors.not-found, panels.library"
+        schema: { type: string, pattern: "^[a-z]+\\.[a-z0-9-]+$" }
+    get:
+      operationId: help.get
+      summary: Get a help article (markdown)
+      tags: [help]
+      responses:
+        "200":
+          description: The article
+          content: { application/json: { schema: { $ref: "#/components/schemas/HelpArticle" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  # ---------------------------------------------------------------- registry
+  /registry:
+    x-cadence: { entity: registry, kind: registry_version }
+    get:
+      operationId: registry.search
+      summary: Search registry versions of every kind (empty until phase 1 registers kinds)
+      tags: [registry]
+      parameters:
+        - { name: q, in: query, description: "Free text with qualifiers (kind:, tag:, locale:)", schema: { type: string } }
+        - { name: kind, in: query, schema: { type: string } }
+        - { name: project, in: query, description: Only versions this project adopted, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+      responses:
+        "200":
+          description: Versions and the kinds that exist, with counts
+          content: { application/json: { schema: { $ref: "#/components/schemas/RegistrySearchResult" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  # ---------------------------------------------------------------- planned (later phases)
+  /projects/{p}/mixes:
+    x-cadence: { entity: mixes, planned: 2 }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    post:
+      operationId: mixes.new
+      summary: Save a mix (input_cfg groups, weights, temperature, replay share)
+      tags: [planned]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }, { $ref: "#/components/parameters/DryRun" }]
+      requestBody: { $ref: "#/components/requestBodies/PlannedBody" }
+      responses: { "201": { $ref: "#/components/responses/PlannedEntity" }, default: { $ref: "#/components/responses/Problem" } }
+
+  /projects/{p}/mixes:preview:
+    x-cadence: { entity: mixes, planned: 2 }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    post:
+      operationId: mixes.preview
+      summary: Hours per language for a mix without saving it
+      tags: [planned]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }, { $ref: "#/components/parameters/DryRun" }]
+      requestBody: { $ref: "#/components/requestBodies/PlannedBody" }
+      responses: { "200": { $ref: "#/components/responses/PlannedEntity" }, default: { $ref: "#/components/responses/Problem" } }
+
+  /mixes/{id}:
+    x-cadence: { entity: mixes, planned: 2 }
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    patch:
+      operationId: mixes.edit
+      summary: Edit a mix; agent edits land as drafts
+      tags: [planned]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody: { $ref: "#/components/requestBodies/PlannedBody" }
+      responses: { "200": { $ref: "#/components/responses/PlannedEntity" }, default: { $ref: "#/components/responses/Problem" } }
+
+  /projects/{p}/runs:
+    x-cadence: { entity: runs, planned: 2 }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    post:
+      operationId: runs.new
+      summary: Start a training run; ?dryRun=true returns GPU-hours, card and duration
+      tags: [planned]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }, { $ref: "#/components/parameters/DryRun" }]
+      requestBody: { $ref: "#/components/requestBodies/PlannedBody" }
+      responses: { "202": { $ref: "#/components/responses/JobAccepted" }, default: { $ref: "#/components/responses/Problem" } }
+
+  /jobs/{id}:
+    x-cadence: { entity: jobs, planned: 1 }
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      operationId: jobs.get
+      summary: Get a job
+      tags: [planned]
+      responses: { "200": { $ref: "#/components/responses/PlannedEntity" }, default: { $ref: "#/components/responses/Problem" } }
+
+  /jobs/{id}:cancel:
+    x-cadence: { entity: jobs, planned: 1 }
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      operationId: jobs.cancel
+      summary: Cancel a job
+      tags: [planned]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      responses: { "202": { $ref: "#/components/responses/JobAccepted" }, default: { $ref: "#/components/responses/Problem" } }
+
+  /projects/{p}/agent-sessions:
+    x-cadence: { entity: agentSessions, planned: 1 }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    post:
+      operationId: agentSessions.new
+      summary: Launch Claude Code or opencode in a project worktree
+      tags: [planned]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }, { $ref: "#/components/parameters/DryRun" }]
+      requestBody: { $ref: "#/components/requestBodies/PlannedBody" }
+      responses: { "201": { $ref: "#/components/responses/PlannedEntity" }, default: { $ref: "#/components/responses/Problem" } }
+
+  /agent-sessions/{id}:cancel:
+    x-cadence: { entity: agentSessions, planned: 1 }
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      operationId: agentSessions.cancel
+      summary: Stop the session's current turn
+      tags: [planned]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      responses: { "200": { $ref: "#/components/responses/PlannedEntity" }, default: { $ref: "#/components/responses/Problem" } }
+
+  /agent-sessions/{id}/agent-messages:
+    x-cadence: { entity: agentMessages, planned: 1 }
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      operationId: agentMessages.new
+      summary: User message with entity references; updates arrive on agent.session.{id}
+      tags: [planned]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }, { $ref: "#/components/parameters/DryRun" }]
+      requestBody: { $ref: "#/components/requestBodies/PlannedBody" }
+      responses: { "202": { $ref: "#/components/responses/JobAccepted" }, default: { $ref: "#/components/responses/Problem" } }
+
+  /approvals:
+    x-cadence: { entity: approvals, planned: 1 }
+    get:
+      operationId: approvals.list
+      summary: Approvals, pending first
+      tags: [planned]
+      parameters: [{ name: state, in: query, schema: { type: string, enum: [pending, decided] } }]
+      responses: { "200": { $ref: "#/components/responses/PlannedEntity" }, default: { $ref: "#/components/responses/Problem" } }
+
+  /approvals/{id}:approve:
+    x-cadence: { entity: approvals, planned: 1 }
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      operationId: approvals.approve
+      summary: Approve a pending request
+      tags: [planned]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      responses: { "200": { $ref: "#/components/responses/PlannedEntity" }, default: { $ref: "#/components/responses/Problem" } }
+
+  /approvals/{id}:deny:
+    x-cadence: { entity: approvals, planned: 1 }
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      operationId: approvals.deny
+      summary: Deny a pending request
+      tags: [planned]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      responses: { "200": { $ref: "#/components/responses/PlannedEntity" }, default: { $ref: "#/components/responses/Problem" } }
+
+  /mounts:
+    x-cadence: { entity: mounts, planned: 4 }
+    get:
+      operationId: mounts.list
+      summary: Registered mounts and their health
+      tags: [planned]
+      responses: { "200": { $ref: "#/components/responses/PlannedEntity" }, default: { $ref: "#/components/responses/Problem" } }
+    post:
+      operationId: mounts.new
+      summary: Register a local path, NFS/SMB path, S3-compatible bucket or Hub source (approval)
+      tags: [planned]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }, { $ref: "#/components/parameters/DryRun" }]
+      requestBody: { $ref: "#/components/requestBodies/PlannedBody" }
+      responses: { "202": { $ref: "#/components/responses/ApprovalAccepted" }, default: { $ref: "#/components/responses/Problem" } }
+
+  /projects/{p}/aliases/{name}:
+    x-cadence: { entity: aliases, planned: 1 }
+    parameters:
+      - $ref: "#/components/parameters/ProjectSlug"
+      - { name: name, in: path, required: true, schema: { type: string } }
+    put:
+      operationId: aliases.set
+      summary: Point a project alias at a registry version (baseline is gated, production moves only by promotion)
+      tags: [planned]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatchOptional"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody: { $ref: "#/components/requestBodies/PlannedBody" }
+      responses:
+        "200": { $ref: "#/components/responses/PlannedEntity" }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+components:
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Client-chosen key; a repeat with the same key returns the original result
+      schema: { type: string, minLength: 8, maxLength: 200 }
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+      schema: { type: string }
+    IfMatchOptional:
+      name: If-Match
+      in: header
+      required: false
+      description: The revision the change is based on; required unless the target does not exist yet
+      schema: { type: string }
+    DryRun:
+      name: dryRun
+      in: query
+      required: false
+      description: Validate and report what would happen without changing anything
+      schema: { type: boolean, default: false }
+    ProjectSlug:
+      name: p
+      in: path
+      required: true
+      description: Project slug
+      schema: { $ref: "#/components/schemas/Slug" }
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+
+  headers:
+    ETag:
+      description: The entity revision, quoted (e.g. "3"); send it back as If-Match
+      schema: { type: string }
+
+  requestBodies:
+    PlannedBody:
+      required: false
+      content: { application/json: { schema: { type: object, additionalProperties: true } } }
+
+  responses:
+    Problem:
+      description: Error (RFC 9457)
+      content: { application/problem+json: { schema: { $ref: "#/components/schemas/Problem" } } }
+    JobAccepted:
+      description: Accepted; follow the job on job.{jobId}
+      content: { application/json: { schema: { $ref: "#/components/schemas/JobAccepted" } } }
+    ApprovalAccepted:
+      description: Gated; a person decides the approval on the approvals topic
+      content: { application/json: { schema: { $ref: "#/components/schemas/ApprovalAccepted" } } }
+    PlannedEntity:
+      description: Shape defined when the operation's phase implements it
+      content: { application/json: { schema: { type: object, additionalProperties: true } } }
+
+  schemas:
+    Slug:
+      type: string
+      pattern: "^[a-z][a-z0-9-]{1,38}[a-z0-9]$"
+      description: Lowercase letters, digits and dashes; 3–40 characters
+    WorkspaceName:
+      type: string
+      pattern: "^[A-Za-z0-9][A-Za-z0-9 _-]{0,62}$"
+
+    Problem:
+      type: object
+      required: [type, title, status]
+      properties:
+        type: { type: string, description: "https://cadence.local/help/errors/<slug> — the help article for this error" }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+        currentRev: { type: integer, description: Present on 412 — the revision to rebase on }
+        errors:
+          type: array
+          description: Field-level problems on 422
+          items: { $ref: "#/components/schemas/ProblemFieldError" }
+    ProblemFieldError:
+      type: object
+      required: [path, message]
+      properties: { path: { type: string }, message: { type: string } }
+
+    JobAccepted:
+      type: object
+      required: [jobId]
+      properties: { jobId: { type: string } }
+    ApprovalAccepted:
+      type: object
+      required: [approvalId]
+      properties: { approvalId: { type: string } }
+
+    Actor:
+      type: object
+      required: [kind, id]
+      properties:
+        kind: { type: string, enum: [user, agent, automation] }
+        id: { type: string }
+        name: { type: string }
+        sessionId: { type: string }
+
+    Project:
+      type: object
+      required: [id, slug, name, rev, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        slug: { $ref: "#/components/schemas/Slug" }
+        name: { type: string }
+        description: { type: string }
+        rev: { type: integer }
+        archivedAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ProjectNew:
+      type: object
+      required: [slug, name]
+      additionalProperties: false
+      properties:
+        slug: { $ref: "#/components/schemas/Slug" }
+        name: { type: string, minLength: 1, maxLength: 120 }
+        description: { type: string, maxLength: 2000 }
+    ProjectEdit:
+      type: object
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        description: { type: string, maxLength: 2000 }
+    ProjectList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Project" } }
+
+    Workspace:
+      type: object
+      required: [id, name, schemaVersion, layout, panels, rev, updatedAt]
+      properties:
+        id: { type: string }
+        name: { $ref: "#/components/schemas/WorkspaceName" }
+        schemaVersion: { type: integer, minimum: 1 }
+        layout: { type: object, additionalProperties: true, description: "Dockview api.toJSON()" }
+        panels:
+          type: object
+          additionalProperties: { $ref: "#/components/schemas/PanelState" }
+        rev: { type: integer }
+        updatedAt: { type: string, format: date-time }
+    WorkspaceSet:
+      type: object
+      required: [schemaVersion, layout, panels]
+      additionalProperties: false
+      properties:
+        schemaVersion: { type: integer, minimum: 1 }
+        layout: { type: object, additionalProperties: true }
+        panels:
+          type: object
+          additionalProperties: { $ref: "#/components/schemas/PanelState" }
+    PanelState:
+      type: object
+      properties:
+        pinnedTo: { type: string, description: "Document reference kind:id" }
+        viewState: { type: object, additionalProperties: true }
+    WorkspaceSummary:
+      type: object
+      required: [name, rev, updatedAt]
+      properties:
+        name: { $ref: "#/components/schemas/WorkspaceName" }
+        rev: { type: integer }
+        updatedAt: { type: string, format: date-time }
+    WorkspaceList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/WorkspaceSummary" } }
+
+    CadenceEvent:
+      type: object
+      required: [seq, topic, type, actor, at]
+      properties:
+        seq: { type: integer, format: int64, description: Global, monotonic; the SSE id for resume }
+        topic: { type: string, example: entity.project.4b1c… }
+        type: { type: string, example: project.created }
+        projectId: { type: string, description: Work events only; registry events carry none }
+        entity:
+          type: object
+          required: [kind, id, rev]
+          properties: { kind: { type: string }, id: { type: string }, rev: { type: integer } }
+        actor: { $ref: "#/components/schemas/Actor" }
+        causedBy:
+          type: object
+          required: [commandId]
+          properties: { commandId: { type: string }, toolCallId: { type: string } }
+        payload: { type: object, additionalProperties: true }
+        at: { type: string, format: date-time }
+    EventList:
+      type: object
+      required: [items, lastSeq]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/CadenceEvent" } }
+        lastSeq: { type: integer, format: int64, description: Pass as `after` to continue }
+
+    HelpArticle:
+      type: object
+      required: [id, title, section, body]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        section: { type: string, enum: [errors, panels, steps, guides, shell] }
+        summary: { type: string }
+        body: { type: string, description: Markdown }
+        contexts: { type: array, items: { type: string }, description: "Qualifiers this article answers, e.g. panel:library" }
+    HelpHit:
+      type: object
+      required: [id, title, section]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        section: { type: string }
+        summary: { type: string }
+    HelpSearchResult:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/HelpHit" } }
+
+    RegistryVersion:
+      type: object
+      required: [kind, id, name, version, state]
+      properties:
+        kind: { type: string }
+        id: { type: string }
+        name: { type: string }
+        version: { type: string, description: "YYYY-MM-DD.<sha>" }
+        state: { type: string, enum: [draft, frozen, deprecated] }
+        tags: { type: array, items: { type: string } }
+        actor: { $ref: "#/components/schemas/Actor" }
+        updatedAt: { type: string, format: date-time }
+    RegistryKindCount:
+      type: object
+      required: [kind, count]
+      properties: { kind: { type: string }, count: { type: integer } }
+    RegistrySearchResult:
+      type: object
+      required: [items, kinds]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/RegistryVersion" } }
+        kinds: { type: array, items: { $ref: "#/components/schemas/RegistryKindCount" } }

@@ -1,0 +1,23 @@
+# Starter pipeline: one training stage from a mix, then checkpoint registration.
+name: train-stage
+steps:
+  - id: calibrate
+    kind: oomptimizer_calibrate@1
+    params: { memory_cap_gb: 24 }
+    outputs: { bucket_batch_sizes: json }
+  - id: train
+    kind: nemotron_finetune@1
+    inputs: { bucket_batch_sizes: calibrate.bucket_batch_sizes }
+    params:
+      init_from: base            # base | checkpoint:<id>
+      mix: ""
+      steps: 3000
+      peak_lr: 2.0e-4
+      warmup_steps: 100
+      precision: bf16
+      replay_share: 0.15
+    outputs: { checkpoints: checkpoint_set }
+  - id: register
+    kind: checkpoint_register@1
+    inputs: { checkpoints: train.checkpoints }
+    params: { keep_top_k: 3 }

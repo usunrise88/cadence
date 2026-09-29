@@ -1,0 +1,10 @@
+# Written by Cadence, never by hand. Every registry version this project depends on,
+# resolved from aliases at the time of the last run/mix save. Same idea as DVC pointer files.
+version: 1
+resolved: []
+# example after the first mix:
+# - kind: dataset
+#   collection: hebrew-calls
+#   version: 2026-10-05.1f2e3d4
+#   alias: train-current
+#   fingerprint: blake3:...

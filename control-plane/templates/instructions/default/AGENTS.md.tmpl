@@ -1,0 +1,24 @@
+# {{ .Name }} — agent instructions
+
+Cadence project `{{ .Slug }}`: locales {{ .Locales }}, domain {{ .Domain }}.
+Base model: `{{ .BaseModel.Repo }}` at revision `{{ .BaseModel.Revision }}`.
+
+## How to work here
+
+- Use the Cadence MCP tools for every change to runs, mixes, datasets, evals and deployments; never edit the database.
+- Recipes and pipelines live in this repository; commit after each change with a one-line message.
+- Before any GPU job, call the command with `dryRun` and check the estimate against the project budget
+  ({{ .Budgets.GPUHoursPerDay }} GPU-hours per day).
+- Evaluate only in true streaming at deployment latency; never reference golden sets from a run.
+- Ask for approval when a tool returns an approval id; do not retry the same request.
+
+## Skills
+
+Load `cadence-data`, `cadence-train`, `cadence-eval`, `cadence-deploy`, `cadence-flywheel` for the block you are on,
+and `nemo-speech-asr-finetune` for NeMo specifics.
+
+## Do not
+
+- Touch the production card or host.
+- Delete anything; use soft delete requests.
+- Send audio or unredacted transcripts to any external service.

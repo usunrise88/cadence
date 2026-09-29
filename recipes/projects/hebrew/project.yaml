@@ -1,0 +1,33 @@
+# Written by the project wizard (bootstrap job). Edit through the Project document, not by hand.
+version: 1
+name: Hebrew telephony
+slug: hebrew
+locales: [he-IL]
+domain: telephony
+base_model:
+  repo: nvidia/nemotron-3.5-asr-streaming-0.6b
+  revision: PIN_ME            # the wizard pins the current Hugging Face revision hash
+  license: OpenMDW-1.1
+agent:
+  driver: claude              # claude | opencode
+  model: default              # opencode: provider/model id; claude: subscription default
+  permission_preset: guardrails-default
+  instructions_template: default
+repository:
+  kind: github                # github | internal
+  url: PIN_ME
+  branch: main
+storage:
+  mounts: []                  # mount ids attached in the wizard
+budgets:
+  gpu_hours_per_day: 8
+  agent_spend_per_day: 0      # 0 = subscription, counted in turns
+replay:
+  share: 0.15
+  locales: all                # the base model's other 39 locales
+adoptions:                    # registry versions this project references (see also data.lock)
+  golden_sets: []             # e.g. golden-set/hebrew-phone@2026-10-05.1f2e3d4
+  datasets: []                # adopted dataset versions the Mix editor may use
+aliases:                      # project-scoped pointers into the registry; versions never change, aliases move
+  train-current: null
+  baseline: null

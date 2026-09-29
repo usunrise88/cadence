@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "name": "Training",
+  "panels": { "inspector": { "pinnedTo": "project:demo" } },
+  "layout": {
+    "grid": {
+      "root": {
+        "type": "branch",
+        "data": [
+          { "type": "leaf", "data": { "views": ["library"], "activeView": "library", "id": "1" }, "size": 300 },
+          { "type": "leaf", "data": { "views": ["project:project:demo"], "activeView": "project:project:demo", "id": "2" }, "size": 400 },
+          { "type": "leaf", "data": { "views": ["properties", "old-metrics"], "activeView": "properties", "id": "3" }, "size": 300 }
+        ],
+        "size": 800
+      },
+      "width": 1000,
+      "height": 800,
+      "orientation": "HORIZONTAL"
+    },
+    "panels": {
+      "library": { "id": "library", "contentComponent": "panel", "title": "Library", "params": { "panel": "library", "loc": "left" } },
+      "project:project:demo": { "id": "project:project:demo", "contentComponent": "panel", "title": "Project", "params": { "panel": "project", "doc": "project:demo", "loc": "centre" } },
+      "properties": { "id": "properties", "contentComponent": "panel", "title": "Properties", "params": { "panel": "properties", "loc": "right" } },
+      "old-metrics": { "id": "old-metrics", "contentComponent": "panel", "title": "Metrics (v0)", "params": { "panel": "metrics-legacy", "loc": "right" } }
+    },
+    "activeGroup": "2"
+  }
+}

@@ -1,0 +1,58 @@
+# Verb vocabulary — machine copy of docs/spec/10-ui-shell.md "Verb vocabulary" plus R1 (docs/spec/08-resolutions.md).
+# Every operationId, MCP tool name and UI command id is <entity>.<verb> with a verb from this list.
+# mcpgen refuses any operation whose verb is missing here; a test keeps this file and the spec table in step.
+#
+# class:   read | mutate          — read verbs never take Idempotency-Key / dryRun
+# shape:   HTTP shape the generator requires (R1):
+#            item-get | collection-get | search | collection-post | item-patch | pointer-put | action
+# confirm: none | inline | approval | modal
+# icon:    Iconoir React component name; one per verb, used by menus, palette and ActionBar
+# key:     default shortcut (remappable); browser-reserved keys are rejected by the web command registry
+verbs:
+  get:         { class: read,   shape: item-get,        reversible: null,  confirm: none,     icon: Page }
+  list:        { class: read,   shape: collection-get,  reversible: null,  confirm: none,     icon: List }
+  search:      { class: read,   shape: search,          reversible: null,  confirm: none,     icon: Search }
+  compare:     { class: read,   shape: action,          reversible: null,  confirm: none,     icon: Compress }
+  lineage:     { class: read,   shape: action,          reversible: null,  confirm: none,     icon: GitFork }
+  new:         { class: mutate, shape: collection-post, reversible: null,  confirm: none,     icon: Plus }
+  open:        { class: mutate, shape: action,          reversible: null,  confirm: none,     icon: OpenNewWindow }
+  edit:        { class: mutate, shape: item-patch,      reversible: true,  confirm: none,     icon: EditPencil }
+  preview:     { class: mutate, shape: action,          reversible: null,  confirm: none,     icon: Eye }
+  calibrate:   { class: mutate, shape: action,          reversible: null,  confirm: none,     icon: Settings }
+  run:         { class: mutate, shape: action,          reversible: null,  confirm: none,     icon: Play }
+  pause:       { class: mutate, shape: action,          reversible: true,  confirm: none,     icon: Pause }
+  resume:      { class: mutate, shape: action,          reversible: null,  confirm: none,     icon: Forward }
+  cancel:      { class: mutate, shape: action,          reversible: false, confirm: inline,   icon: Xmark }
+  retry:       { class: mutate, shape: action,          reversible: null,  confirm: none,     icon: Restart }
+  wait:        { class: mutate, shape: action,          reversible: null,  confirm: none,     icon: Hourglass, agentOnly: true }
+  stage:       { class: mutate, shape: action,          reversible: null,  confirm: none,     icon: StatUp }
+  freeze:      { class: mutate, shape: action,          reversible: false, confirm: inline,   icon: Lock }
+  materialize: { class: mutate, shape: action,          reversible: null,  confirm: none,     icon: Download }
+  evict:       { class: mutate, shape: action,          reversible: true,  confirm: none,     icon: Upload }
+  scan:        { class: mutate, shape: action,          reversible: null,  confirm: none,     icon: ScanBarcode }
+  export:      { class: mutate, shape: action,          reversible: null,  confirm: none,     icon: ShareIos }
+  register:    { class: mutate, shape: action,          reversible: false, confirm: inline,   icon: BookmarkBook }
+  parity:      { class: mutate, shape: action,          reversible: null,  confirm: none,     icon: DoubleCheck }
+  benchmark:   { class: mutate, shape: action,          reversible: null,  confirm: none,     icon: Timer }
+  average:     { class: mutate, shape: action,          reversible: null,  confirm: none,     icon: Combine }
+  gate:        { class: mutate, shape: action,          reversible: null,  confirm: none,     icon: Filter }
+  set:         { class: mutate, shape: pointer-put,     reversible: true,  confirm: none,     icon: Pin }
+  adopt:       { class: mutate, shape: action,          reversible: true,  confirm: none,     icon: Import }
+  pin:         { class: mutate, shape: action,          reversible: true,  confirm: none,     icon: PinSolid }
+  promote:     { class: mutate, shape: action,          reversible: null,  confirm: modal,    icon: ArrowUpCircle }
+  rollback:    { class: mutate, shape: action,          reversible: true,  confirm: none,     icon: Undo }
+  accept:      { class: mutate, shape: action,          reversible: null,  confirm: none,     icon: Check }
+  correct:     { class: mutate, shape: action,          reversible: false, confirm: none,     icon: TextSquare }
+  reject:      { class: mutate, shape: action,          reversible: false, confirm: none,     icon: Prohibition }
+  revert:      { class: mutate, shape: action,          reversible: true,  confirm: none,     icon: UndoAction }
+  approve:     { class: mutate, shape: action,          reversible: false, confirm: none,     icon: CheckCircle }
+  deny:        { class: mutate, shape: action,          reversible: false, confirm: none,     icon: XmarkCircle }
+  package:     { class: mutate, shape: action,          reversible: false, confirm: none,     icon: Box }
+  note:        { class: mutate, shape: action,          reversible: true,  confirm: none,     icon: Notes }
+  sync:        { class: mutate, shape: action,          reversible: true,  confirm: none,     icon: RefreshDouble }
+  archive:     { class: mutate, shape: action,          reversible: true,  confirm: inline,   icon: Archive }
+  revoke:      { class: mutate, shape: action,          reversible: false, confirm: inline,   icon: KeyMinus }
+
+# Operations tagged with these tags keep <entity>.<verb> ids but are exempt from the vocabulary and never become
+# MCP tools (R1).
+exemptTags: [auth, me]

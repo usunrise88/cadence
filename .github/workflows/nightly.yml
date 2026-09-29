@@ -1,0 +1,16 @@
+# Nightly slot (docs/spec/06-platform.md): agent evals (skills and playbooks on a fixture project, both drivers) from
+# phase 1, and the smoke project on the staging card (`make e2e`) from phase 4. Until then the job only reports.
+name: nightly
+on:
+  schedule: [{ cron: "30 1 * * *" }]
+  workflow_dispatch:
+
+jobs:
+  agent-evals:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "Agent evals arrive with the agent loop (ROADMAP phase 1)."
+  smoke:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "The smoke project runs on the staging host from phase 4 (R34); it never runs on GitHub runners."

@@ -1,0 +1,9 @@
+# Build context is the repository root (compose: context: ., dockerfile: <component>/Dockerfile).
+.git
+**/node_modules
+web/dist
+data
+cache
+control-plane/bin
+**/__pycache__
+.env

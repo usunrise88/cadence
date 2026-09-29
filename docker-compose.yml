@@ -1,0 +1,68 @@
+# Cadence — one version for every image: `make up` sets CADENCE_VERSION from git.
+# Phase 1 adds Caddy TLS in front of the control plane and the agent host's sandbox (R3, R4, B7).
+x-version: &version
+  CADENCE_VERSION: ${CADENCE_VERSION:-dev}
+
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: cadence
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: cadence
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # Not published: only the compose network reaches the database (B7).
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U cadence"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  control-plane:
+    image: cadence/control-plane:${CADENCE_VERSION:-dev}
+    build:
+      context: .
+      dockerfile: control-plane/Dockerfile
+      args: *version
+    environment:
+      DATABASE_URL: postgres://cadence:${POSTGRES_PASSWORD}@postgres:5432/cadence?sslmode=disable
+      CADENCE_LOG_LEVEL: ${CADENCE_LOG_LEVEL:-info}
+    volumes:
+      - cadence-data:/data # the image runs as uid 65532; a named volume is writable by it
+    ports: ["127.0.0.1:${CADENCE_PORT:-8080}:8080"] # localhost only until Caddy lands (phase 1)
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  agent-host:
+    image: cadence/agent-host:${CADENCE_VERSION:-dev}
+    build:
+      context: ./agent-host
+      args: *version
+    environment:
+      CADENCE_API: http://control-plane:8080
+    # No host mounts: credentials get their own volume and sessions their own worktrees in phase 1 (R3).
+    depends_on: [control-plane]
+
+  # GPU worker: runs on the staging host inside the NeMo Speech container.
+  # Uncomment once spike A3 fixes the image tag and memory cap.
+  # worker:
+  #   image: nvcr.io/nvidia/nemo-speech:26.07.00
+  #   command: python -m cadence_worker
+  #   environment:
+  #     CADENCE_API: http://control-plane:8080
+  #     CADENCE_GPU_MEMORY_CAP_GB: "24"
+  #   volumes:
+  #     - ./worker:/workspace/worker
+  #     - ${CADENCE_CACHE_DIR:-./cache}:/cache
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: 1
+  #             capabilities: [gpu]
+
+volumes:
+  pgdata:
+  cadence-data:
