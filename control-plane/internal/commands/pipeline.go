@@ -76,7 +76,7 @@ func NewPipeline(pool *pgxpool.Pool, log *slog.Logger, commands *prometheus.Coun
 //     operation and request hash replays the stored response; anything else is idempotency-key-reused.
 //  2. Run fn.
 //  3. A dry run rolls back here and answers 200 with the would-be result; nothing is written, no event emitted.
-//  4. Append fn's events to the outbox with causedBy.commandId, store the response under the key, commit.
+//  4. Append fn's events to the outbox with causedBy (commandId; toolCallId for agent calls), store the response under the key, commit.
 //
 // Failed commands roll back entirely and store nothing, so a retry with the same key runs again.
 func (p *Pipeline) Run(ctx context.Context, cmd Command, fn Func) (Response, error) {
@@ -87,6 +87,9 @@ func (p *Pipeline) Run(ctx context.Context, cmd Command, fn Func) (Response, err
 	attrs := []any{
 		"actor", cmd.Actor.ID, "actor_kind", cmd.Actor.Kind, "operation", cmd.Operation, "commandId", id,
 		"dryRun", cmd.DryRun, "outcome", outcome, "duration_ms", time.Since(start).Milliseconds(),
+	}
+	if tc := ToolCallID(ctx); tc != "" {
+		attrs = append(attrs, "toolCallId", tc)
 	}
 	level := slog.LevelInfo
 	if outcome == problems.Internal.Slug {
@@ -127,7 +130,7 @@ func (p *Pipeline) run(ctx context.Context, cmd Command, id string, fn Func) (Re
 		return resp, "dry_run", nil
 	}
 
-	if err := events.Append(ctx, tx, cmd.Actor, &events.CausedBy{CommandID: id}, drafts); err != nil {
+	if err := events.Append(ctx, tx, cmd.Actor, &events.CausedBy{CommandID: id, ToolCallID: ToolCallID(ctx)}, drafts); err != nil {
 		return Response{}, problems.Internal.Slug, err
 	}
 	if useKey {

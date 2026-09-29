@@ -85,6 +85,10 @@ paths:
       operationId: projects.edit
       summary: Rename or re-describe a project
       tags: [projects]
+      x-cadence:
+        toolDescription: >
+          Rename or re-describe a project. Send ifMatch with the etag (or rev) of your last projects.get; a
+          stale revision fails with precondition-failed and the current revision to re-read.
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
         - $ref: "#/components/parameters/IfMatch"
@@ -106,6 +110,10 @@ paths:
       operationId: projects.archive
       summary: Archive a project (soft; reversible)
       tags: [projects]
+      x-cadence:
+        toolDescription: >
+          Archive a project (soft; reversible): it leaves the default projects.list but still resolves by
+          slug. Send ifMatch with the etag (or rev) of your last projects.get.
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
         - $ref: "#/components/parameters/IfMatch"
@@ -245,6 +253,10 @@ paths:
       operationId: help.get
       summary: Get a help article (markdown)
       tags: [help]
+      x-cadence:
+        toolDescription: >
+          Get a help article (markdown) by id <section>.<slug>. Every error a tool returns names its article
+          (errors.<slug>): read it for what went wrong and how to fix it.
       responses:
         "200":
           description: The article

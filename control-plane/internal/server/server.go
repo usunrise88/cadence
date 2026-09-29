@@ -1,5 +1,5 @@
 // Package server implements the API contract (api.StrictServerInterface) on top of the command pipeline, the
-// stores and the event stream, and assembles the HTTP handler: /api, /healthz, /metrics and the SPA.
+// stores and the event stream, and assembles the HTTP handler: /api, /mcp, /healthz, /metrics and the SPA.
 package server
 
 import (
@@ -20,6 +20,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/commands"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
 	"github.com/usunrise88/cadence/control-plane/internal/help"
+	"github.com/usunrise88/cadence/control-plane/internal/mcp"
 	"github.com/usunrise88/cadence/control-plane/internal/obs"
 	"github.com/usunrise88/cadence/control-plane/internal/problems"
 	"github.com/usunrise88/cadence/control-plane/internal/webui"
@@ -40,6 +41,10 @@ type Config struct {
 	Version  string
 	// Actor every request is attributed to until phase 1 brings login.
 	Actor auth.Actor
+	// Defaults backs the MCP resource defaults:// (nil: "not available yet").
+	Defaults mcp.DefaultsSource
+	// Selection backs the MCP resource selection://current (nil: empty).
+	Selection mcp.SelectionStore
 }
 
 // Server implements api.StrictServerInterface. Planned operations fall through to api.Planned (501).
@@ -47,26 +52,45 @@ type Server struct {
 	api.Planned
 	Config
 	spec *openapi3.T
+	api  http.Handler // the contract, routed relative to APIPrefix
+	mcp  *mcp.Server
 }
 
 var _ api.StrictServerInterface = (*Server)(nil)
 
-// New returns a server; it loads the embedded contract for request validation.
+// New returns a server; it loads the embedded contract for request validation and the MCP tool manifest.
 func New(c Config) (*Server, error) {
 	spec, err := api.GetSpec()
 	if err != nil {
 		return nil, fmt.Errorf("load embedded contract: %w", err)
 	}
-	return &Server{Config: c, spec: spec}, nil
+	s := &Server{Config: c, spec: spec}
+	s.api = s.APIHandler()
+	apiRouter := chi.NewRouter()
+	apiRouter.Mount(APIPrefix, s.api)
+	// In-process requests from the MCP server inherit the context of the /mcp request, routing state included;
+	// chi would take that for a parent router's and skip routing, so each one starts with none.
+	apiRoot := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		apiRouter.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, (*chi.Context)(nil))))
+	})
+	s.mcp, err = mcp.New(mcp.Options{
+		API: apiRoot, APIPrefix: APIPrefix, Log: c.Log, Version: c.Version, Defaults: c.Defaults, Selection: c.Selection,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("mcp server: %w", err)
+	}
+	return s, nil
 }
 
-// Handler is the whole HTTP surface: /api (the contract), /healthz, /metrics, and the SPA for every other path.
+// Handler is the whole HTTP surface: /api (the contract), /mcp (the same operations as MCP tools), /healthz,
+// /metrics, and the SPA for every other path.
 func (s *Server) Handler() http.Handler {
 	root := chi.NewRouter()
 	root.Use(obs.RequestLog(s.Log, s.Metrics))
 	root.Get("/healthz", s.healthz)
 	root.Handle("/metrics", s.Metrics.Handler())
-	root.Mount(APIPrefix, s.APIHandler())
+	root.Mount(APIPrefix, s.api)
+	root.Handle(mcp.Path, s.mcp.Handler())
 	root.Handle("/*", webui.Handler())
 	return obs.Trace(root, s.Tracer)
 }

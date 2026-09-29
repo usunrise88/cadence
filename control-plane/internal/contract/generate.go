@@ -85,6 +85,9 @@ func (c *Contract) Tools() []Tool {
 			desc = o.Summary
 		}
 		if o.Mutation {
+			if !strings.HasSuffix(desc, ".") {
+				desc += "."
+			}
 			desc += " Pass dryRun=true to see what would happen without changing anything."
 		}
 		v := o.resolvedVrb
