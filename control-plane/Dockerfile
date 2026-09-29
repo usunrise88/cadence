@@ -20,11 +20,14 @@ COPY control-plane/go.mod control-plane/go.sum ./
 RUN go mod download
 COPY control-plane/ ./
 COPY --from=web /src/web/dist/ internal/webui/dist/
-RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${CADENCE_VERSION}" -o /out/cadence ./cmd/cadence
+RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${CADENCE_VERSION}" -o /out/cadence ./cmd/cadence \
+ && mkdir -p /out/data
 
 # ---- runtime: static, non-root (uid 65532). The data volume must be writable by that uid.
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/cadence /cadence
+# An empty /data owned by the runtime uid, so a fresh named volume starts writable.
+COPY --from=build --chown=65532:65532 /out/data /data
 ENV CADENCE_ADDR=0.0.0.0:8080 \
     CADENCE_DATA_DIR=/data
 USER nonroot:nonroot

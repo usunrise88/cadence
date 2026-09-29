@@ -19,8 +19,12 @@ export interface AgentSession {
   worktree: string;
 }
 
+export function describe(s: AgentSession): string {
+  return `${s.driver} session ${s.id} in ${s.worktree} (project ${s.projectId})`;
+}
+
 export async function main(): Promise<void> {
   console.log("cadence agent host stub — run spike A1 (docs/spikes/A1-acp-client.md) to fill this in");
 }
 
-main();
+if (import.meta.url === `file://${process.argv[1]}`) void main();

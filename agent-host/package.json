@@ -1,15 +1,25 @@
 {
   "name": "cadence-agent-host",
   "private": true,
+  "version": "0.1.0",
   "type": "module",
-  "scripts": { "start": "tsx src/index.ts" },
-  "dependencies": {
-    "@agentclientprotocol/sdk": "latest",
-    "@agentclientprotocol/claude-agent-acp": "latest"
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "test": "node --import tsx --test \"src/**/*.test.ts\""
   },
-  "devDependencies": { "tsx": "latest", "typescript": "latest" },
+  "dependencies": {
+    "@agentclientprotocol/claude-agent-acp": "0.84.0",
+    "@agentclientprotocol/sdk": "1.5.1"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.4",
+    "tsx": "4.23.15",
+    "typescript": "6.0.3"
+  },
   "x-notes": [
-    "opencode is installed on the host (opencode acp); Claude Code through the claude-agent-acp adapter.",
-    "Pin versions after spike A1."
+    "Versions are pinned (exact + package-lock.json); bump them with spike A1's findings.",
+    "opencode runs as `opencode acp` inside the agent-host image (installed there in phase 1, R3/R4); Claude Code through claude-agent-acp."
   ]
 }
