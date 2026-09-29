@@ -1,0 +1,77 @@
+// Stdio transport: spawn an agent subprocess and speak newline-delimited JSON-RPC over its stdin/stdout.
+// `tap` observes every message in both directions (transcripts, debugging) without changing them.
+
+import { type ChildProcessByStdio, spawn } from "node:child_process";
+import { Readable, Writable } from "node:stream";
+import * as acp from "@agentclientprotocol/sdk";
+
+export interface LaunchSpec {
+  command: string;
+  args: readonly string[];
+  cwd: string;
+  env: NodeJS.ProcessEnv;
+}
+
+// "in" = agent → client, "out" = client → agent.
+export type Direction = "in" | "out";
+export type MessageTap = (direction: Direction, message: acp.AnyMessage) => void;
+
+export interface AgentProcess {
+  stream: acp.Stream;
+  pid: number | undefined;
+  exited: Promise<{ code: number | null; signal: NodeJS.Signals | null }>;
+  stderr: () => string;
+  kill: (signal?: NodeJS.Signals) => void;
+}
+
+const STDERR_KEEP = 64 * 1024;
+
+export function tapStream(stream: acp.Stream, tap: MessageTap): acp.Stream {
+  const inbound = new TransformStream<acp.AnyMessage, acp.AnyMessage>({
+    transform(msg, ctl) {
+      tap("in", msg);
+      ctl.enqueue(msg);
+    },
+  });
+  const outbound = new TransformStream<acp.AnyMessage, acp.AnyMessage>({
+    transform(msg, ctl) {
+      tap("out", msg);
+      ctl.enqueue(msg);
+    },
+  });
+  void stream.readable.pipeTo(inbound.writable).catch(() => undefined);
+  void outbound.readable.pipeTo(stream.writable).catch(() => undefined);
+  return { readable: inbound.readable, writable: outbound.writable };
+}
+
+export function launch(spec: LaunchSpec, tap?: MessageTap): AgentProcess {
+  const child: ChildProcessByStdio<Writable, Readable, Readable> = spawn(spec.command, [...spec.args], {
+    cwd: spec.cwd,
+    env: spec.env,
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  let stderr = "";
+  child.stderr.setEncoding("utf8");
+  child.stderr.on("data", (chunk: string) => {
+    stderr = (stderr + chunk).slice(-STDERR_KEEP);
+  });
+  const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((res) => {
+    child.on("exit", (code, signal) => res({ code, signal }));
+    child.on("error", () => res({ code: null, signal: null }));
+  });
+  // A write after the agent exits must not crash the host.
+  child.stdin.on("error", () => undefined);
+  const raw = acp.ndJsonStream(
+    Writable.toWeb(child.stdin) as WritableStream<Uint8Array>,
+    Readable.toWeb(child.stdout) as ReadableStream<Uint8Array>,
+  );
+  return {
+    stream: tap ? tapStream(raw, tap) : raw,
+    pid: child.pid,
+    exited,
+    stderr: () => stderr,
+    kill: (signal = "SIGTERM") => {
+      if (child.exitCode === null && child.signalCode === null) child.kill(signal);
+    },
+  };
+}
