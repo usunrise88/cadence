@@ -15,9 +15,9 @@ export default defineConfig({
   webServer: [
     { command: "./e2e/stack.sh", url: `http://127.0.0.1:${API_PORT}/healthz`, timeout: 180_000, reuseExistingServer: false, env: { E2E_API_PORT: String(API_PORT) } },
     {
-      command: `npx vite --port ${WEB_PORT} --strictPort`,
+      command: `npx vite --host 127.0.0.1 --port ${WEB_PORT} --strictPort`,
       url: `http://127.0.0.1:${WEB_PORT}`,
-      timeout: 60_000,
+      timeout: 120_000,
       reuseExistingServer: false,
       env: { CADENCE_API: `http://127.0.0.1:${API_PORT}` },
     },
