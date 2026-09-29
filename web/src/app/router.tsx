@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { createRootRoute, createRoute, createRouter, Outlet, useNavigate } from "@tanstack/react-router";
 import { projectsListOptions } from "@/api/gen/@tanstack/react-query.gen";
 import { Button } from "@/components/ui/button";
+import { AuthGate } from "@/shell/auth/AuthGate";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Dialogs } from "@/shell/chrome/Dialogs";
 import { useDialogs } from "@/shell/chrome/dialogs";
@@ -33,7 +34,9 @@ function recall(): { project: string; workspace: string } | null {
 const rootRoute = createRootRoute({
   component: () => (
     <TooltipProvider delay={400}>
-      <Outlet />
+      <AuthGate>
+        <Outlet />
+      </AuthGate>
     </TooltipProvider>
   ),
 });

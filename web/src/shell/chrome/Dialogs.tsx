@@ -11,6 +11,7 @@ import { commands } from "@/shell/registries";
 import { notify } from "@/shell/notifications/store";
 import { PortalContainerContext } from "@/lib/portal";
 import { useDialogs, useFocusedDocument, type DialogRequest } from "./dialogs";
+import { TwoFactorDialog } from "@/shell/auth/TwoFactorDialog";
 import { Palette } from "./Palette";
 
 // Modal flows opened by commands. Each submits exactly one API command.
@@ -40,6 +41,8 @@ function DialogSwitch({ onSwitchProject }: { onSwitchProject: (slug: string) => 
       return <ConfirmDialog req={open} onClose={close} />;
     case "shortcuts":
       return <ShortcutsDialog onClose={close} />;
+    case "twoFactor":
+      return <TwoFactorDialog onClose={close} />;
   }
 }
 

@@ -14,7 +14,8 @@ selection bus · workspaces · commands · agent bridge · chrome.
 | `workspaces/` | Schema version + migrations, `normalizeLayout` (aliases, placeholders), default layouts as code factories, debounced If-Match persistence |
 | `commands/` | The command registry (`<entity>.<verb>` = one API operation, `view.<name>` = client-only), key map with browser-reserved keys refused, built-in commands |
 | `live/` | One multiplexed SSE stream, topic patterns, per-frame coalescing, cache patching |
-| `chrome/` | Menu bar with project switcher, status bar with notification history and live region, palette, dialogs |
+| `chrome/` | Menu bar with project switcher and user menu, status bar with notification history and live region, palette, dialogs |
+| `auth/` | `AuthGate` (first start, sign-in, back to sign-in on any 401), the session helpers that reset the cache and the event stream, the two-factor dialog |
 | `theme/`, `help/`, `notifications/` | Theme mode (and popout injection), Help panel state, notices |
 
 Agent bridge (Chat, attribution badges, drafts) arrives in phase 1 under `agent/`.

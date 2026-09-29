@@ -6,6 +6,7 @@ export type DialogRequest =
   | { kind: "editProject"; slug: string }
   | { kind: "confirm"; title: string; detail?: string; confirmLabel: string; onConfirm: () => Promise<unknown> | void }
   | { kind: "shortcuts" }
+  | { kind: "twoFactor" }
   | { kind: "palette"; prefix: string };
 
 type DialogState = {
