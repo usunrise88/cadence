@@ -60,7 +60,7 @@ func RequestHash(ctx context.Context) string {
 }
 
 // HashMiddleware buffers the body of mutating requests (POST, PUT, PATCH), caps it at MaxBodyBytes and stores
-// the request fingerprint in the context.
+// the request fingerprint (and the Cadence-Tool-Call-Id, if any) in the context.
 func HashMiddleware(onErr func(http.ResponseWriter, *http.Request, error)) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -77,7 +77,11 @@ func HashMiddleware(onErr func(http.ResponseWriter, *http.Request, error)) func(
 			}
 			r.Body = io.NopCloser(bytes.NewReader(body))
 			hash := HashRequest(r.Method, r.URL.EscapedPath(), r.URL.Query(), r.Header.Get("If-Match"), body)
-			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), hashKey{}, hash)))
+			ctx := context.WithValue(r.Context(), hashKey{}, hash)
+			if id := r.Header.Get(HeaderToolCallID); id != "" && len(id) <= maxToolCallID {
+				ctx = WithToolCallID(ctx, id)
+			}
+			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 }
