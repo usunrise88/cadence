@@ -41,7 +41,7 @@
   --destructive: var(--red-11);
   --border: var(--slate-6);
   --input: var(--slate-7);
-  --ring: var(--indigo-8);
+  --ring: var(--indigo-9);
   --radius: 0.375rem;
 
   /* ---- Cadence roles ---- */
@@ -54,10 +54,10 @@
   --cadence-selected: var(--slate-5);
   --cadence-separator: var(--slate-6);
   --cadence-float-border: var(--slate-7);
-  --cadence-sash-active: var(--slate-8);
+  --cadence-sash-active: var(--slate-9); /* S3: slate-8 is 1.9:1 */
   --cadence-text: var(--slate-12);
   --cadence-text-secondary: var(--slate-11);
-  --cadence-focus: var(--indigo-8);
+  --cadence-focus: var(--indigo-9); /* S3: indigo-8 is 2.3:1 on slate-1 */
   --cadence-accent-soft: var(--indigo-3);
   --cadence-accent-text: var(--indigo-11);
   --cadence-accent-line: var(--indigo-9);
@@ -72,7 +72,7 @@
   --cadence-status-done: var(--grass-9);
   --cadence-status-done-text: var(--grass-11);
   --cadence-status-warning: var(--amber-9);
-  --cadence-status-warning-text: var(--amber-11);
+  --cadence-status-warning-text: var(--amber-12); /* S3: amber-11 is 4.498:1 */
   --cadence-status-failed: var(--red-9);
   --cadence-status-failed-text: var(--red-11);
   --cadence-diff-added: var(--grass-3);
@@ -93,6 +93,9 @@
 }
 .dark {
   --cadence-on-solid: white;
+  /* S3: indigo-9 is 2.8:1 on dark slate-4 */
+  --cadence-focus: var(--indigo-10);
+  --ring: var(--indigo-10);
 }
 
 /* ---- Dockview theme: pinned to dockview 8.3.1's --dv-* list (see docs/spikes/S3-slate-theme.md) ---- */

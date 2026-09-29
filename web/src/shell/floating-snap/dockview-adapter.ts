@@ -34,6 +34,8 @@ type ComponentInternal = { floatingGroups: readonly FloatingInternal[]; element?
 
 export const MIN_VISIBLE = { width: 100, height: 40 };
 
+const ARROWS: Record<string, [-1 | 0 | 1, -1 | 0 | 1]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+
 function internals(api: DockviewApi): ComponentInternal {
   return (api as unknown as { component: ComponentInternal }).component;
 }
@@ -91,7 +93,7 @@ export const useSnap = create<SnapUiState>((set) => ({
 
 // ---------------------------------------------------------------- move snapping (public API)
 
-let dragState: { lines: SnapLines; state: SnapState } | null = null;
+let dragState: { lines: SnapLines; state: SnapState; group: DockviewGroupPanel; start: Box } | null = null;
 
 function endDrag(): void {
   dragState = null;
@@ -103,7 +105,7 @@ export function transformFloatingGroupDrag(ctx: FloatingGroupDragContext): { top
   const bypass = !useSnap.getState().enabled || ctx.modifiers.ctrlKey || ctx.modifiers.metaKey;
   if (!dragState) {
     // Lines are snapshotted once per drag: the layout does not change while dragging.
-    dragState = { lines: snapLines(ctx.container, ctx.others, DEFAULT_SNAP.gutter), state: {} };
+    dragState = { lines: snapLines(ctx.container, ctx.others, DEFAULT_SNAP.gutter), state: {}, group: ctx.group, start: { ...ctx.proposed } };
   }
   const raw: Rect = { left: ctx.proposed.left, top: ctx.proposed.top, width: ctx.proposed.width, height: ctx.proposed.height };
   const res = computeSnap(raw, dragState.lines, dragState.state, {
@@ -197,6 +199,31 @@ export function installAdapter(api: DockviewApi, root: HTMLElement, opts: Adapte
   watchFloats();
   const layoutSub = api.onDidLayoutChange(() => watchFloats());
   disposers.push(() => layoutSub.dispose());
+
+  // Keyboard: with a floating window's header focused, arrows move it 1 px, Shift 10 px, Alt to the next snap
+  // line; Esc during a pointer drag cancels it and restores the start position.
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === "Escape" && dragState) {
+      const d = dragState;
+      const f = findFloat(api, d.group);
+      (f?.overlay as unknown as { cancelPendingDrag?: () => void } | undefined)?.cancelPendingDrag?.();
+      f?.overlay.setBounds({ left: d.start.left, top: d.start.top });
+      endDrag();
+      e.preventDefault();
+      return;
+    }
+    const dir = ARROWS[e.key];
+    if (!dir || e.ctrlKey || e.metaKey) return;
+    const t = e.target as HTMLElement | null;
+    if (!t?.closest(".dv-tabs-and-actions-container, .dv-floating-titlebar")) return;
+    const f = floats(api).find((x) => x.overlay.element.contains(t));
+    if (!f) return;
+    e.preventDefault();
+    e.stopPropagation();
+    nudgeFloat(api, f.group, dir[0], dir[1], e.altKey ? "snap" : e.shiftKey ? "10px" : "px");
+  };
+  doc.addEventListener("keydown", onKey, true);
+  disposers.push(() => doc.removeEventListener("keydown", onKey, true));
 
   // Focus Not Obscured (WCAG 2.4.11): floats covering the focused element fade to 20% and ignore the pointer.
   const onFocusIn = (e: FocusEvent) => updateYield(api, e.target as Element | null);

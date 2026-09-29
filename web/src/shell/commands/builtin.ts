@@ -42,7 +42,7 @@ const needFloat = (): true | string => (isFloating(activeGroup()) ? true : "The 
 const needGroup = (): true | string => (activeGroup() ? true : "No active window");
 
 function pascal(id: string): string {
-  return id.replace(/(^|-)([a-z])/g, (_m, _d, c: string) => c.toUpperCase());
+  return id.replace(/(^|-)([a-z0-9])/g, (_m, _d, c: string) => c.toUpperCase());
 }
 
 export function registerBuiltinCommands(): void {
