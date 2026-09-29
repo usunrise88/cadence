@@ -19,3 +19,21 @@ export const useDialogs = create<DialogState>((set) => ({
   show: (open) => set({ open }),
   close: () => set({ open: null }),
 }));
+
+/** The document that last had focus (the main window or a popout): dialogs and the palette open there. */
+type FocusState = { doc: Document | null; setDoc(d: Document): void };
+export const useFocusedDocument = create<FocusState>((set) => ({
+  doc: null,
+  setDoc: (doc) => set((s) => (s.doc === doc ? s : { doc })),
+}));
+
+export function trackFocus(doc: Document): () => void {
+  const on = () => useFocusedDocument.getState().setDoc(doc);
+  doc.addEventListener("focusin", on, true);
+  doc.addEventListener("pointerdown", on, true);
+  return () => {
+    doc.removeEventListener("focusin", on, true);
+    doc.removeEventListener("pointerdown", on, true);
+    if (useFocusedDocument.getState().doc === doc) useFocusedDocument.getState().setDoc(document);
+  };
+}

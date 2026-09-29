@@ -90,6 +90,14 @@ test.describe("shell", () => {
     }));
     expect(themed.cls).toMatch(/light|dark/);
     expect(themed.guide).not.toBe("");
+    // Tooltips and the palette open in the popout's own document; shortcuts work there too.
+    await popup.getByRole("button", { name: "Return to grid" }).hover();
+    await expect(popup.locator('[data-slot="tooltip-content"]')).toContainText("Return to grid");
+    await popup.locator('[data-panel="help"]').click();
+    await popup.keyboard.press("ControlOrMeta+k");
+    await expect(popup.getByRole("dialog").getByRole("combobox")).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await popup.keyboard.press("Escape");
     // Base UI menus portal into the popout's own document.
     await popup.getByRole("button", { name: "Window actions" }).click();
     await expect(popup.getByRole("menuitem", { name: "Return to grid" })).toBeVisible();

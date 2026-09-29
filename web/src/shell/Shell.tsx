@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialogs } from "@/shell/chrome/Dialogs";
+import { trackFocus } from "@/shell/chrome/dialogs";
 import { MenuBar } from "@/shell/chrome/MenuBar";
 import { StatusBar } from "@/shell/chrome/StatusBar";
 import { installKeyboard } from "@/shell/commands/registry";
@@ -37,6 +38,7 @@ export function Shell({ project, workspace, doc, sel, onNavigate }: ShellProps) 
   }, [project, workspace]);
 
   useEffect(() => installKeyboard(document, commands, commandContext, isMac()), []);
+  useEffect(() => trackFocus(document), []);
 
   // Restore on (project, workspace) change, then autosave.
   useEffect(() => {

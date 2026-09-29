@@ -9,12 +9,24 @@ import { Input } from "@/components/ui/input";
 import { chordLabel } from "@/shell/commands/keymap";
 import { commands } from "@/shell/registries";
 import { notify } from "@/shell/notifications/store";
-import { useDialogs, type DialogRequest } from "./dialogs";
+import { PortalContainerContext } from "@/lib/portal";
+import { useDialogs, useFocusedDocument, type DialogRequest } from "./dialogs";
 import { Palette } from "./Palette";
 
 // Modal flows opened by commands. Each submits exactly one API command.
 
 export function Dialogs({ onSwitchProject }: { onSwitchProject: (slug: string) => void }) {
+  const doc = useFocusedDocument((s) => s.doc);
+  // Open in the window that has focus (a popout on a second monitor, or the main window).
+  const body = doc && doc !== document && doc.defaultView && !doc.defaultView.closed ? doc.body : null;
+  return (
+    <PortalContainerContext.Provider value={body}>
+      <DialogSwitch onSwitchProject={onSwitchProject} />
+    </PortalContainerContext.Provider>
+  );
+}
+
+function DialogSwitch({ onSwitchProject }: { onSwitchProject: (slug: string) => void }) {
   const { open, close } = useDialogs();
   if (!open) return null;
   switch (open.kind) {

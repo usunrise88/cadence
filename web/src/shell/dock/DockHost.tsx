@@ -4,6 +4,7 @@ import { EmptyState } from "@/shell/entity/primitives";
 import { installAdapter, MIN_VISIBLE, transformFloatingGroupDrag } from "@/shell/floating-snap/dockview-adapter";
 import { Guides } from "@/shell/floating-snap/Guides";
 import { useHelp } from "@/shell/help/store";
+import { trackFocus } from "@/shell/chrome/dialogs";
 import { installKeyboard } from "@/shell/commands/registry";
 import { isMac } from "@/shell/commands/keymap";
 import { announce } from "@/shell/notifications/store";
@@ -57,9 +58,11 @@ export function DockHost({ onReady }: { onReady: (e: DockviewReadyEvent) => void
         onPopoutWindow: (win) => {
           const offTheme = installTheme(win.document);
           const offKeys = installKeyboard(win.document, commands, commandContext, mac);
+          const offFocus = trackFocus(win.document);
           win.addEventListener("unload", () => {
             offTheme();
             offKeys();
+            offFocus();
           });
         },
       }),
