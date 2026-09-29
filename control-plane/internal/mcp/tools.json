@@ -1,0 +1,458 @@
+{
+  "generatedFrom": "api/openapi.yaml",
+  "tools": [
+    {
+      "name": "events.list",
+      "title": "Events after a sequence number; with Accept text/event-stream, the live stream",
+      "description": "Events after a sequence number, oldest first, optionally filtered by topic patterns (a trailing * matches the remaining segments, e.g. run.123.*) and project. Use the last seq as `after` to continue.",
+      "method": "GET",
+      "path": "/events",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "after": {
+            "description": "Only events with seq greater than this; SSE clients may send Last-Event-ID instead",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "limit": {
+            "default": 200,
+            "description": "Page size for the JSON form",
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "project": {
+            "description": "Keep work events of this project (registry events, which carry no projectId, always pass)",
+            "type": "string"
+          },
+          "topics": {
+            "description": "Comma-separated topic patterns; a trailing `*` matches one or more segments. Default all.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "topics",
+          "in": "query",
+          "name": "topics"
+        },
+        {
+          "property": "project",
+          "in": "query",
+          "name": "project"
+        },
+        {
+          "property": "after",
+          "in": "query",
+          "name": "after"
+        },
+        {
+          "property": "limit",
+          "in": "query",
+          "name": "limit"
+        }
+      ]
+    },
+    {
+      "name": "help.get",
+      "title": "Get a help article (markdown)",
+      "description": "Get a help article (markdown)",
+      "method": "GET",
+      "path": "/help/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "\u003csection\u003e.\u003cslug\u003e, e.g. errors.not-found, panels.library",
+            "pattern": "^[a-z]+\\.[a-z0-9-]+$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        }
+      ]
+    },
+    {
+      "name": "help.search",
+      "title": "Search help articles by text or by context (panel, step kind, error type, field)",
+      "description": "Search help articles by text or by context (panel, step kind, error type, field)",
+      "method": "GET",
+      "path": "/help",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "context": {
+            "description": "Qualifier of the place the user is in: panel:\u003cid\u003e, step:\u003ckind\u003e, error:\u003cslug\u003e, field:\u003cpath\u003e",
+            "type": "string"
+          },
+          "limit": {
+            "default": 20,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "q": {
+            "description": "Free text",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "q",
+          "in": "query",
+          "name": "q"
+        },
+        {
+          "property": "context",
+          "in": "query",
+          "name": "context"
+        },
+        {
+          "property": "limit",
+          "in": "query",
+          "name": "limit"
+        }
+      ]
+    },
+    {
+      "name": "projects.archive",
+      "title": "Archive a project (soft; reversible)",
+      "description": "Archive a project (soft; reversible) Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/projects/{p}:archive",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ifMatch",
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        }
+      ]
+    },
+    {
+      "name": "projects.edit",
+      "title": "Rename or re-describe a project",
+      "description": "Rename or re-describe a project Pass dryRun=true to see what would happen without changing anything.",
+      "method": "PATCH",
+      "path": "/projects/{p}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "description": {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              "name": {
+                "maxLength": 120,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "ifMatch",
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "projects.get",
+      "title": "Get a project",
+      "description": "Get a project",
+      "method": "GET",
+      "path": "/projects/{p}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        }
+      ]
+    },
+    {
+      "name": "projects.list",
+      "title": "List projects",
+      "description": "List projects",
+      "method": "GET",
+      "path": "/projects",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "archived": {
+            "default": false,
+            "description": "Include archived projects",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "archived",
+          "in": "query",
+          "name": "archived"
+        }
+      ]
+    },
+    {
+      "name": "projects.new",
+      "title": "Create a project",
+      "description": "Create a project: a unit of work with its own repository, budgets and gates. Phase 0 creates the record only; bootstrap (repository, templates) arrives in phase 1 and then answers 202 with a job id. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/projects",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "description": {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              "name": {
+                "maxLength": 120,
+                "minLength": 1,
+                "type": "string"
+              },
+              "slug": {
+                "description": "Lowercase letters, digits and dashes; 3–40 characters",
+                "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "slug",
+              "name"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "registry.search",
+      "title": "Search registry versions of every kind (empty until phase 1 registers kinds)",
+      "description": "Search registry versions of every kind (empty until phase 1 registers kinds)",
+      "method": "GET",
+      "path": "/registry",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "limit": {
+            "default": 100,
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "project": {
+            "description": "Only versions this project adopted",
+            "type": "string"
+          },
+          "q": {
+            "description": "Free text with qualifiers (kind:, tag:, locale:)",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "q",
+          "in": "query",
+          "name": "q"
+        },
+        {
+          "property": "kind",
+          "in": "query",
+          "name": "kind"
+        },
+        {
+          "property": "project",
+          "in": "query",
+          "name": "project"
+        },
+        {
+          "property": "limit",
+          "in": "query",
+          "name": "limit"
+        }
+      ]
+    }
+  ],
+  "version": "0.1.0"
+}

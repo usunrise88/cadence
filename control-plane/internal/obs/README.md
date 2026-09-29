@@ -1,0 +1,2 @@
+# internal/obs
+Observability: JSON slog lines to stdout and `$CADENCE_LOG_DIR/cadence.log` (lumberjack, 100 MB files, 14 days) with `trace_id`/`span_id`; Prometheus metrics on a private registry (`/metrics`: HTTP duration by route/method/status, SSE clients, events dispatched, commands by operation/outcome); OpenTelemetry spans as JSON lines in `$CADENCE_LOG_DIR/traces.jsonl`, W3C `traceparent` continued from the UI via otelhttp.

@@ -1,0 +1,4 @@
+# The SPA build is copied here by `make web` / the Docker build; only the placeholder is committed.
+!dist/
+dist/*
+!dist/index.html

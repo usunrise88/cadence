@@ -1,0 +1,2 @@
+# internal/commands
+The command pipeline every mutation runs through (`Pipeline.Run`): one transaction; Idempotency-Key lookup under an advisory lock on (actor, key) — same request hash replays the stored status, headers and body, anything else is `idempotency-key-reused`; the operation's work; dry runs roll back and answer 200; outbox events with `causedBy.commandId`; the stored response; commit. One slog line and one `cadence_commands_total` increment per command. Also: request fingerprinting (`HashMiddleware`), `ETag`/`If-Match` parsing and revision checks.

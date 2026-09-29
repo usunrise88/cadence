@@ -1,0 +1,131 @@
+// Package problems is the single registry of Cadence error types and their RFC 9457 rendering.
+//
+// Every type has a slug; its `type` URI is https://cadence.local/help/errors/<slug>, which resolves to the help
+// article docs/help/errors/<slug>.md (a test keeps the registry and the articles in step).
+package problems
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log/slog"
+	"net/http"
+
+	"github.com/usunrise88/cadence/control-plane/internal/api"
+)
+
+// TypeBase prefixes every problem type URI.
+const TypeBase = "https://cadence.local/help/errors/"
+
+// ContentType is the media type of every error body.
+const ContentType = "application/problem+json"
+
+// Type is one registered error type.
+type Type struct {
+	Slug   string
+	Status int
+	Title  string
+}
+
+// The registry. Add a type here together with docs/help/errors/<slug>.md.
+var (
+	BadRequest           = Type{"bad-request", http.StatusBadRequest, "Bad request"}
+	ValidationFailed     = Type{"validation-failed", http.StatusUnprocessableEntity, "Validation failed"}
+	NotFound             = Type{"not-found", http.StatusNotFound, "Not found"}
+	MethodNotAllowed     = Type{"method-not-allowed", http.StatusMethodNotAllowed, "Method not allowed"}
+	Conflict             = Type{"conflict", http.StatusConflict, "Conflict"}
+	PreconditionFailed   = Type{"precondition-failed", http.StatusPreconditionFailed, "Precondition failed"}
+	PreconditionRequired = Type{"precondition-required", http.StatusPreconditionRequired, "Precondition required"}
+	IdempotencyKeyReused = Type{"idempotency-key-reused", http.StatusUnprocessableEntity, "Idempotency key reused"}
+	NotImplemented       = Type{"not-implemented", http.StatusNotImplemented, "Not implemented"}
+	Internal             = Type{"internal", http.StatusInternalServerError, "Internal error"}
+)
+
+// Types lists every registered type.
+func Types() []Type {
+	return []Type{
+		BadRequest, ValidationFailed, NotFound, MethodNotAllowed, Conflict, PreconditionFailed,
+		PreconditionRequired, IdempotencyKeyReused, NotImplemented, Internal,
+	}
+}
+
+// URI is the type URI of t.
+func (t Type) URI() string { return TypeBase + t.Slug }
+
+// New returns an error of type t with a detail message.
+func (t Type) New(format string, args ...any) *Error {
+	return &Error{Type: t, Detail: fmt.Sprintf(format, args...)}
+}
+
+// FieldError is one field-level problem of a validation-failed error.
+type FieldError = api.ProblemFieldError
+
+// Error is a Cadence error that renders as problem+json.
+type Error struct {
+	Type       Type
+	Detail     string
+	CurrentRev *int
+	Errors     []FieldError
+}
+
+func (e *Error) Error() string { return e.Type.Slug + ": " + e.Detail }
+
+// Stale is a precondition-failed error carrying the revision to rebase on.
+func Stale(current int, format string, args ...any) *Error {
+	e := PreconditionFailed.New(format, args...)
+	e.CurrentRev = &current
+	return e
+}
+
+// Validation is a validation-failed error listing field problems.
+func Validation(fields []FieldError) *Error {
+	e := ValidationFailed.New("the request does not match the operation's schema")
+	e.Errors = fields
+	return e
+}
+
+// As extracts a *Error from err's chain; any other error becomes internal.
+func As(err error) (*Error, bool) {
+	var pe *Error
+	if errors.As(err, &pe) {
+		return pe, true
+	}
+	return Internal.New("something went wrong on the server; the log has the details"), false
+}
+
+// Body renders e as the contract's Problem.
+func (e *Error) Body() api.Problem {
+	p := api.Problem{Type: e.Type.URI(), Title: e.Type.Title, Status: e.Type.Status, CurrentRev: e.CurrentRev}
+	if e.Detail != "" {
+		p.Detail = &e.Detail
+	}
+	if len(e.Errors) > 0 {
+		p.Errors = &e.Errors
+	}
+	return p
+}
+
+// Write renders err as problem+json. Errors that are not *Error are logged and answered as internal, so internals
+// never leak into a response.
+func Write(w http.ResponseWriter, r *http.Request, log *slog.Logger, err error) {
+	pe, ok := As(err)
+	if !ok {
+		log.ErrorContext(r.Context(), "request failed", "method", r.Method, "path", r.URL.Path, "err", err)
+	}
+	body := pe.Body()
+	if r.URL != nil {
+		instance := r.URL.Path
+		body.Instance = &instance
+	}
+	b, merr := json.Marshal(body)
+	if merr != nil {
+		log.ErrorContext(r.Context(), "marshal problem", "err", merr)
+		return
+	}
+	w.Header().Set("Content-Type", ContentType)
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(pe.Type.Status)
+	if _, werr := w.Write(append(b, '\n')); werr != nil {
+		log.DebugContext(r.Context(), "write problem", "err", werr)
+	}
+}

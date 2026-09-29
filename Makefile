@@ -1,4 +1,4 @@
-.PHONY: up down gen lint test e2e spikes
+.PHONY: up down gen lint test e2e spikes web help-sync
 
 up:            ## start postgres, control-plane stub, agent-host stub
 	docker compose up -d --build
@@ -21,6 +21,14 @@ test:          ## unit + contract + integration
 
 e2e:           ## smoke project on the staging card — run only from the staging host
 	@echo "TODO: cadence smoke --project cadence-smoke"
+
+web:           ## build the SPA and copy it into the control plane's embed directory (replaces the placeholder page)
+	cd web && npm ci && npm run build
+	rm -rf control-plane/internal/webui/dist && mkdir -p control-plane/internal/webui/dist
+	cp -R web/dist/. control-plane/internal/webui/dist/
+
+help-sync:     ## mirror docs/help into control-plane/internal/help/content (embedded in the binary)
+	cd control-plane && go run ./cmd/helpsync
 
 spikes:        ## list spike briefs and their status
 	@grep -H '^Status:' docs/spikes/*.md
