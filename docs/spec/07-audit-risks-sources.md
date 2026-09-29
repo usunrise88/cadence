@@ -63,6 +63,18 @@ Open questions:
 - [ ] Unknown `/api` path answers 404 `not-found`, wrong method 405 `method-not-allowed` (a tenth error type with its article); the review proposed 400 for both
 - [x] Training from scratch or a second framework (k2/icefall) in v1? — Only the seams, in phase 2; training from scratch, packs beyond NeMo and spike F1 are deferred (owner, 2026-09-29; R44, R45)
 - [x] Keep uploads and microphone recordings? — No: a transcription is a manual test and stores nothing (owner, 2026-09-29; R47)
+- [ ] Registry API shape (phase 1): versions are served per kind (`baseModels`, `datasets`, `templates` under
+      `/registry/<kind>`, so `datasets.materialize` and `models.export` fit later) and collections generically
+      (`collections.list|get`); a collection name in a path escapes its slash (`dataset%2Ffleurs-he-smoke`). Adoption is
+      `POST /projects/{p}:adopt` (`projects.adopt`, If-Match on the project) instead of `POST /projects/{p}/adoptions`.
+      Confirm
+- [ ] Adoption checks: phase 1 accepts any frozen version; the licence and locale checks of 02 "Registry" wait for
+      project locales (wizard) and a licence policy — which licences may a project adopt without a person?
+- [ ] An alias may point only at a version the project adopted (enforced by a foreign key); versions and the staging
+      card's class (`blackwell-96gb`, from spike A3's "96 GB" and the Blackwell toolchain note) are assumptions until
+      the staging host is inventoried
+- [ ] Secrets: no rotation or archive yet (`secrets.new` refuses a taken name); the master key defaults to
+      `$CADENCE_DATA_DIR/master.key`, generated on first start, until the compose secret of R9 is wired
 
 ## Sources
 
