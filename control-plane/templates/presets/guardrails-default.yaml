@@ -1,0 +1,103 @@
+# written by Cadence — permission preset (docs/spec/08-resolutions.md R7). Keys are stable; keep prose in comments.
+#
+# The Guardrails table of docs/spec/05-agents.md as rules. The server's policy engine evaluates `tools` on every
+# command an agent (or an automation key) sends: in order, first match wins, no match = deny. People are allowed
+# everything except the rules marked `everyone`. The same file renders into Claude Code's .claude/settings.json and
+# opencode's `permission` block; those files only reduce prompts and never widen what the server allows.
+#
+# Classes: read and draft → allow; spend → allow while the GPU-hours estimate fits the remaining budget, otherwise
+# approval; gated → approval; forbidden → deny.
+name: guardrails-default
+description: Agents do anything reversible on their own; over-budget spend, baselines, gates, golden sets, deployments and registry changes wait for a person; deletes, secrets and credentials are out of reach.
+
+tools:
+  # An agent never decides approvals, its own or anyone's.
+  - id: approvals-are-for-people
+    class: forbidden
+    operations: [approvals.approve, approvals.deny]
+    reason: approvals are decided by a person
+
+  # Secrets never enter an agent context; credentials, compute, policies and defaults are the admin's.
+  - id: admin-only
+    class: forbidden
+    operations: ["secrets.*", "credentials.*", compute.new, compute.edit, compute.archive, policies.edit]
+    reason: secrets, credentials, compute and policies are changed by the admin only
+
+  # R8: the baseline alias is gated for everyone, people included (production moves only by promotion).
+  - id: baseline-alias
+    class: gated
+    everyone: true
+    operations: [aliases.set]
+    params: { name: baseline }
+    reason: changing a project's baseline changes what every gate compares against
+
+  # "Freeze a golden set, change a baseline or gate" → approval.
+  - id: evaluation-gates
+    class: gated
+    operations: [goldenSets.freeze, gates.edit]
+    reason: golden sets and gates decide what counts as better
+
+  # "Canary, production, rollback" → approval (shadow is decided by the promotion's own stage check, phase 5).
+  - id: deployments
+    class: gated
+    operations: [deployments.promote, deployments.rollback]
+    reason: deployments reach real traffic
+
+  # Registry-scope approvals: mounts, model registration.
+  - id: registry-changes
+    class: gated
+    operations: [mounts.new, models.register]
+    reason: registry changes are shared by every project
+
+  # Phase-1 fixture for the approval loop until real gated commands arrive: archiving a project is a soft delete.
+  - id: archive-project
+    class: gated
+    operations: [projects.archive]
+    reason: archiving a project hides its work from every panel
+
+  # "Delete anything" → not allowed; revoking credentials is the admin's.
+  - id: no-deletes
+    class: forbidden
+    verbs: [archive, revoke]
+    reason: removing things is left to people
+
+  # "GPU job within the session budget → allowed; over budget → approval" (the estimate comes from the dry run).
+  - id: gpu-spend
+    class: spend
+    operations: [runs.new, runs.resume, runs.stage, evals.new, pipelines.run, sweeps.run, playbooks.run]
+    reason: the job spends GPU time
+
+  # "Read any entity, log, metric or result" → allowed.
+  - id: read
+    class: read
+    verbClass: read
+
+  # "Edit recipes and drafts", "create sources, dataset versions, mixes, eval runs" → allowed (reversible).
+  - id: draft
+    class: draft
+    verbs: [new, open, edit, preview, calibrate, run, pause, resume, cancel, retry, stage, freeze, materialize,
+            evict, scan, export, parity, benchmark, average, gate, set, adopt, pin, accept, correct, reject, revert,
+            package, note, sync]
+
+files:
+  worktree: true          # nothing outside the session worktree
+  read: allow
+  edit: allow             # reversible: every turn is a commit on the session branch
+  deny: [".env", ".env.*", "**/*.pem", "**/*.key", ".git/**"]
+
+shell:
+  default: ask
+  # File contents are read with the agent's own read tool, which the `files` rules cover; cat and friends ask.
+  allow: ["git status", "git diff *", "git log *", "git show *", "ls *", "wc *", "uv run *", "python *",
+          "python3 *", "pytest *", "jq *", "yq *"]
+  ask: ["pip install *", "uv add *", "uv pip install *", "rm *", "mv *"]
+  deny: ["git push *", "git remote *", "git config *", "sudo *", "ssh *", "scp *", "curl *", "wget *", "nc *",
+         "docker *", "rm -rf /*", "env", "printenv *"]
+
+web: ask
+
+sandbox:
+  enabled: true
+  # R4: the network sandbox for the shell — Hugging Face, PyPI and NGC.
+  network: [huggingface.co, "*.huggingface.co", "*.hf.co", pypi.org, files.pythonhosted.org, nvcr.io, "*.nvcr.io",
+            ngc.nvidia.com, "*.ngc.nvidia.com"]
