@@ -291,7 +291,9 @@ stacks), whether Cadence can test ASR by upload, microphone and live streaming, 
 are designed in. The spec answered no to the second and third and assumed NeMo in about ten places. R40–R54 answer
 them, built on research of 2026-09-29 (sources in `07-audit-risks-sources.md`). The owner's decisions the same day:
 the framework seams now and everything beyond them deferred (R44–R46); manual tests store nothing (R47). ROADMAP
-places the rest; spikes A5 and S5 test it, F1 waits with the deferred packs.
+places the rest; spikes A5 and S5 test it, F1 waits with the deferred packs. Ported into the Doc (Resolutions tab and
+decision log) on 2026-09-29; the section-level edits of this pass (entity, panel and glossary rows, theming,
+defaults, the consistency matrix) are in these files only until the Doc's tabs are re-synced.
 
 ### Extensibility: training frameworks and model families (phase 2 seams; everything beyond them deferred)
 
