@@ -4,7 +4,8 @@
 //	cadence version   print the version
 //
 // Configuration comes from the environment: DATABASE_URL (required), CADENCE_ADDR (127.0.0.1:8080),
-// CADENCE_DATA_DIR (./data), CADENCE_LOG_DIR ($CADENCE_DATA_DIR/logs), CADENCE_LOG_LEVEL (info).
+// CADENCE_DATA_DIR (./data), CADENCE_LOG_DIR ($CADENCE_DATA_DIR/logs), CADENCE_LOG_LEVEL (info),
+// CADENCE_MASTER_KEY_FILE ($CADENCE_DATA_DIR/master.key; generated on first start when missing).
 package main
 
 import (
@@ -27,14 +28,19 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/audit"
 	"github.com/usunrise88/cadence/control-plane/internal/auth"
 	"github.com/usunrise88/cadence/control-plane/internal/commands"
+	"github.com/usunrise88/cadence/control-plane/internal/compute"
+	"github.com/usunrise88/cadence/control-plane/internal/defaults"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
 	"github.com/usunrise88/cadence/control-plane/internal/help"
 	"github.com/usunrise88/cadence/control-plane/internal/jobs"
 	"github.com/usunrise88/cadence/control-plane/internal/obs"
 	"github.com/usunrise88/cadence/control-plane/internal/policy"
+	"github.com/usunrise88/cadence/control-plane/internal/registry"
+	"github.com/usunrise88/cadence/control-plane/internal/secrets"
 	"github.com/usunrise88/cadence/control-plane/internal/server"
 	"github.com/usunrise88/cadence/control-plane/internal/storage"
 	"github.com/usunrise88/cadence/control-plane/migrations"
+	"github.com/usunrise88/cadence/control-plane/templates"
 )
 
 // version is set at build time: -ldflags "-X main.version=<semver>".
@@ -67,6 +73,7 @@ type config struct {
 	dataDir     string
 	logDir      string
 	logLevel    slog.Level
+	masterKey   string
 }
 
 func loadConfig(getenv func(string) string) (config, error) {
@@ -75,6 +82,7 @@ func loadConfig(getenv func(string) string) (config, error) {
 		addr:        getenv("CADENCE_ADDR"),
 		dataDir:     getenv("CADENCE_DATA_DIR"),
 		logDir:      getenv("CADENCE_LOG_DIR"),
+		masterKey:   getenv("CADENCE_MASTER_KEY_FILE"),
 	}
 	if c.databaseURL == "" {
 		return c, errors.New("DATABASE_URL is not set")
@@ -87,6 +95,9 @@ func loadConfig(getenv func(string) string) (config, error) {
 	}
 	if c.logDir == "" {
 		c.logDir = filepath.Join(c.dataDir, "logs")
+	}
+	if c.masterKey == "" {
+		c.masterKey = filepath.Join(c.dataDir, "master.key")
 	}
 	if lvl := getenv("CADENCE_LOG_LEVEL"); lvl != "" {
 		if err := c.logLevel.UnmarshalText([]byte(lvl)); err != nil {
@@ -131,6 +142,14 @@ func serve(ctx context.Context, getenv func(string) string) error {
 	if err != nil {
 		return err
 	}
+	seeded, err := seed(ctx, pool, log)
+	if err != nil {
+		return err
+	}
+	store, err := openSecrets(pool, cfg, log)
+	if err != nil {
+		return err
+	}
 
 	engine, err := policy.Embedded(policy.StubBudget{GPUHoursPerDay: stubGPUHoursPerDay})
 	if err != nil {
@@ -152,6 +171,7 @@ func serve(ctx context.Context, getenv func(string) string) error {
 		Version:  version,
 		Actor:    auth.DevActor(),
 		Jobs:     jobSvc,
+		Secrets:  store,
 	})
 	if err != nil {
 		return err
@@ -169,7 +189,7 @@ func serve(ctx context.Context, getenv func(string) string) error {
 		return fmt.Errorf("listen on %s: %w", cfg.addr, err)
 	}
 	log.Info("cadence control plane started", "version", version, "addr", listener.Addr().String(),
-		"data_dir", cfg.dataDir, "log_dir", cfg.logDir, "migrations_applied", applied, "help_articles", len(library.All()))
+		"data_dir", cfg.dataDir, "log_dir", cfg.logDir, "migrations_applied", applied, "help_articles", len(library.All()), "registry_versions_added", seeded)
 
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -223,4 +243,35 @@ func registerChores(j *jobs.Service, pool *pgxpool.Pool, log *slog.Logger) {
 		}
 		return err
 	})
+}
+
+// seed registers the bundled registry versions (base-model catalogue, fixture dataset versions, templates) and
+// creates the compute hosts of defaults.yaml that do not exist yet.
+func seed(ctx context.Context, pool *pgxpool.Pool, log *slog.Logger) (int, error) {
+	d := defaults.Get()
+	added, err := registry.Seed(ctx, pool, templates.FS, time.Now())
+	if err != nil {
+		return 0, err
+	}
+	hosts, err := compute.Seed(ctx, pool, d.Compute.Hosts, registry.Bundled())
+	if err != nil {
+		return 0, fmt.Errorf("seed compute: %w", err)
+	}
+	if hosts > 0 {
+		log.Info("compute hosts created from defaults.yaml", "hosts", hosts)
+	}
+	return added, nil
+}
+
+// openSecrets opens the encrypted secret store under the data directory, generating the master key on first start.
+func openSecrets(pool *pgxpool.Pool, cfg config, log *slog.Logger) (*secrets.Store, error) {
+	key, created, err := secrets.LoadOrCreateKey(cfg.masterKey)
+	if err != nil {
+		return nil, err
+	}
+	if created {
+		log.Warn("generated a new master key for the secret store; back it up — without it stored secrets cannot be read",
+			"path", cfg.masterKey)
+	}
+	return secrets.NewStore(pool, filepath.Join(cfg.dataDir, "secrets"), key)
 }

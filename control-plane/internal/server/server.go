@@ -18,12 +18,14 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/api"
 	"github.com/usunrise88/cadence/control-plane/internal/auth"
 	"github.com/usunrise88/cadence/control-plane/internal/commands"
+	"github.com/usunrise88/cadence/control-plane/internal/defaults"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
 	"github.com/usunrise88/cadence/control-plane/internal/help"
 	"github.com/usunrise88/cadence/control-plane/internal/jobs"
 	"github.com/usunrise88/cadence/control-plane/internal/mcp"
 	"github.com/usunrise88/cadence/control-plane/internal/obs"
 	"github.com/usunrise88/cadence/control-plane/internal/problems"
+	"github.com/usunrise88/cadence/control-plane/internal/secrets"
 	"github.com/usunrise88/cadence/control-plane/internal/webui"
 )
 
@@ -42,12 +44,15 @@ type Config struct {
 	Version  string
 	// Actor every request is attributed to until phase 1 brings login.
 	Actor auth.Actor
-	// Defaults backs the MCP resource defaults:// (nil: "not available yet").
-	Defaults mcp.DefaultsSource
+	// Defaults overrides the embedded defaults.yaml (tests); nil means defaults.Get(). It also backs the MCP
+	// resource defaults://.
+	Defaults *defaults.Defaults
 	// Selection backs the MCP resource selection://current (nil: empty).
 	Selection mcp.SelectionStore
 	// Jobs runs and mirrors jobs; nil in tests that never reach a job.
 	Jobs *jobs.Service
+	// Secrets is the encrypted secret store (R9); secrets.new fails without it.
+	Secrets *secrets.Store
 }
 
 // Server implements api.StrictServerInterface. Planned operations fall through to api.Planned (501).
@@ -78,7 +83,7 @@ func New(c Config) (*Server, error) {
 		apiRouter.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, (*chi.Context)(nil))))
 	})
 	s.mcp, err = mcp.New(mcp.Options{
-		API: apiRoot, APIPrefix: APIPrefix, Log: c.Log, Version: c.Version, Defaults: c.Defaults, Selection: c.Selection,
+		API: apiRoot, APIPrefix: APIPrefix, Log: c.Log, Version: c.Version, Defaults: defaultsSource{c.Defaults}, Selection: c.Selection,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("mcp server: %w", err)
@@ -163,4 +168,15 @@ func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, r, s.Log, status, h)
+}
+
+// defaultsSource serves defaults.yaml to the MCP resource defaults://: the configured document or the embedded one.
+type defaultsSource struct{ d *defaults.Defaults }
+
+func (s defaultsSource) Defaults(context.Context) (any, error) {
+	d := s.d
+	if d == nil {
+		d = defaults.Get()
+	}
+	return d.Document(), nil
 }

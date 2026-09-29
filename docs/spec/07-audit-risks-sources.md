@@ -77,6 +77,18 @@ Open questions:
 - [ ] The phase-1 fixture gates `projects.archive` for agents (`archive-project` rule); the Guardrails table says "delete anything: not allowed" — once real gated commands exist, move `projects.archive` to `no-deletes`
 - [ ] Until phase 2 meters GPU use, the budget check uses a fixed 8 GPU-hours per day (`policy.StubBudget`); the value should come from `defaults.yaml` budgets (R11)
 - [ ] opencode names MCP tools `<server>_<tool>` with other characters replaced by `_` (`cadence_projects_get`); the rendered `permission` block assumes it — verify in spike A1 with both drivers
+- [ ] Registry API shape (phase 1): versions are served per kind (`baseModels`, `datasets`, `templates` under
+      `/registry/<kind>`, so `datasets.materialize` and `models.export` fit later) and collections generically
+      (`collections.list|get`); a collection name in a path escapes its slash (`dataset%2Ffleurs-he-smoke`). Adoption is
+      `POST /projects/{p}:adopt` (`projects.adopt`, If-Match on the project) instead of `POST /projects/{p}/adoptions`.
+      Confirm
+- [ ] Adoption checks: phase 1 accepts any frozen version; the licence and locale checks of 02 "Registry" wait for
+      project locales (wizard) and a licence policy — which licences may a project adopt without a person?
+- [ ] An alias may point only at a version the project adopted (enforced by a foreign key); versions and the staging
+      card's class (`blackwell-96gb`, from spike A3's "96 GB" and the Blackwell toolchain note) are assumptions until
+      the staging host is inventoried
+- [ ] Secrets: no rotation or archive yet (`secrets.new` refuses a taken name); the master key defaults to
+      `$CADENCE_DATA_DIR/master.key`, generated on first start, until the compose secret of R9 is wired
 
 ## Sources
 

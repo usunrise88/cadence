@@ -191,28 +191,583 @@ export type HelpSearchResult = {
     items: Array<HelpHit>;
 };
 
+/**
+ * One immutable version of a registry collection. Versions never change once frozen; only aliases move.
+ */
 export type RegistryVersion = {
-    kind: string;
+    kind: RegistryKind;
+    /**
+     * ver_…
+     */
     id: string;
+    /**
+     * reg_…
+     */
+    collectionId: string;
+    /**
+     * The collection's name, e.g. dataset/fleurs-he-smoke
+     */
     name: string;
     /**
-     * YYYY-MM-DD.<sha>
+     * YYYY-MM-DD.<sha>: the registration date and the first 12 hex digits of the content fingerprint
      */
     version: string;
-    state: 'draft' | 'frozen' | 'deprecated';
-    tags?: Array<string>;
-    actor?: Actor;
-    updatedAt?: string;
+    state: VersionState;
+    /**
+     * The collection's tags (locale:he-IL, domain:telephony, …)
+     */
+    tags: Array<string>;
+    /**
+     * The collection's licence (SPDX id where one exists)
+     */
+    licence: string;
+    /**
+     * sha256 of the version's canonical content (hex)
+     */
+    fingerprint: string;
+    actor: Actor;
+    createdAt: string;
+    /**
+     * The last state change
+     */
+    updatedAt: string;
 };
 
 export type RegistryKindCount = {
-    kind: string;
+    kind: RegistryKind;
     count: number;
 };
 
 export type RegistrySearchResult = {
     items: Array<RegistryVersion>;
     kinds: Array<RegistryKindCount>;
+};
+
+/**
+ * The kinds registered so far; golden sets, sources, normalizers and model versions join in later phases
+ */
+export type RegistryKind = 'base_model' | 'dataset_version' | 'template';
+
+/**
+ * draft → frozen → deprecated; a frozen version never changes
+ */
+export type VersionState = 'draft' | 'frozen' | 'deprecated';
+
+/**
+ * A project that adopted the version, and its aliases pointing at it
+ */
+export type UsedBy = {
+    projectId: string;
+    projectSlug: Slug;
+    adoptedAt: string;
+    aliases: Array<AliasName>;
+};
+
+export type VersionSummary = {
+    id: string;
+    version: string;
+    state: VersionState;
+    createdAt: string;
+};
+
+/**
+ * A named series of immutable versions of one kind
+ */
+export type Collection = {
+    /**
+     * reg_…
+     */
+    id: string;
+    kind: RegistryKind;
+    /**
+     * <kind>/<name>, e.g. dataset/fleurs-he-smoke
+     */
+    name: string;
+    description: string;
+    tags: Array<string>;
+    licence: string;
+    versionCount: number;
+    latest?: VersionSummary;
+    /**
+     * Newest first; collections.get only
+     */
+    versions?: Array<VersionSummary>;
+    createdAt: string;
+};
+
+export type CollectionList = {
+    items: Array<Collection>;
+};
+
+/**
+ * An upstream checkpoint pinned to one Hugging Face revision
+ */
+export type BaseModelPayload = {
+    hfRepo: string;
+    /**
+     * The pinned Hugging Face commit sha
+     */
+    revision: string;
+    licence: string;
+    licenceUrl?: string;
+    /**
+     * Model family descriptor id (R41); the descriptor itself arrives with the worker in phase 2
+     */
+    familyId: string;
+    /**
+     * The file a run initialises from, e.g. the .nemo archive
+     */
+    checkpointFile?: string;
+    /**
+     * Model size as the model card states it, e.g. 0.6B
+     */
+    parameters?: string;
+    sampleRateHz?: number;
+    /**
+     * Locales the model card lists
+     */
+    locales: Array<string>;
+};
+
+export type BaseModelVersion = RegistryVersion & {
+    baseModel: BaseModelPayload;
+    usedBy: Array<UsedBy>;
+};
+
+export type BaseModelVersionList = {
+    items: Array<BaseModelVersion>;
+};
+
+export type DatasetSplit = {
+    name: string;
+    utterances: number;
+    hours: number;
+    speakers?: number;
+};
+
+/**
+ * A fingerprinted selection of utterances with splits, statistics and lineage
+ */
+export type DatasetPayload = {
+    /**
+     * Where the audio comes from, e.g. hf://datasets/google/fleurs
+     */
+    source: string;
+    /**
+     * The pinned revision of the source
+     */
+    sourceRevision?: string;
+    /**
+     * The source's configuration or subset, e.g. he_il
+     */
+    subset?: string;
+    locales: Array<string>;
+    domain?: string;
+    sampleRateHz?: number;
+    splits: Array<DatasetSplit>;
+    hours: number;
+    utterances: number;
+    /**
+     * Size of the frozen shards; estimated for fixtures
+     */
+    bytes: number;
+    /**
+     * Metadata only: no audio is stored (phase-1 fixture so mixes have something to reference)
+     */
+    fixture: boolean;
+};
+
+export type DatasetVersion = RegistryVersion & {
+    dataset: DatasetPayload;
+    usedBy: Array<UsedBy>;
+};
+
+export type DatasetVersionList = {
+    items: Array<DatasetVersion>;
+};
+
+export type TemplateKind = 'instructions' | 'preset' | 'skill' | 'pipeline' | 'agent-config';
+
+export type TemplateFile = {
+    /**
+     * Path inside the bundled templates tree
+     */
+    path: string;
+    sha256: string;
+    bytes: number;
+};
+
+/**
+ * Bundled configuration the bootstrap copies into a project; the contents ship in the binary
+ */
+export type TemplatePayload = {
+    templateKind: TemplateKind;
+    /**
+     * Directory or file in the templates tree, e.g. instructions/default
+     */
+    path: string;
+    files: Array<TemplateFile>;
+};
+
+export type TemplateVersion = RegistryVersion & {
+    template: TemplatePayload;
+    usedBy: Array<UsedBy>;
+};
+
+export type TemplateVersionList = {
+    items: Array<TemplateVersion>;
+};
+
+export type AdoptionNew = {
+    /**
+     * The registry version to adopt (ver_…)
+     */
+    version: string;
+};
+
+export type Adoption = {
+    projectId: string;
+    version: RegistryVersion;
+    actor: Actor;
+    adoptedAt: string;
+    aliases: Array<AliasName>;
+};
+
+export type AdoptionList = {
+    items: Array<Adoption>;
+};
+
+/**
+ * Lowercase letters, digits and dashes, shown with a leading @; baseline and production are reserved (R8)
+ */
+export type AliasName = string;
+
+export type AliasSet = {
+    /**
+     * A registry version the project adopted (ver_…)
+     */
+    version: string;
+};
+
+export type Alias = {
+    /**
+     * als_…
+     */
+    id: string;
+    name: AliasName;
+    projectId: string;
+    version: RegistryVersion;
+    /**
+     * free: aliases.set moves it; gated: aliases.set needs an approval (baseline); promotion: only deployments.promote moves it (production)
+     */
+    reserved: 'free' | 'gated' | 'promotion';
+    rev: number;
+    actor: Actor;
+    updatedAt: string;
+};
+
+export type AliasList = {
+    items: Array<Alias>;
+};
+
+export type JobKind = 'training' | 'eval' | 'shadow' | 'export';
+
+export type ComputeCard = {
+    /**
+     * The card's index on its host (CUDA device order)
+     */
+    index: number;
+    name: string;
+    /**
+     * Key into the estimate table in defaults.yaml
+     */
+    cardClass: string;
+    memoryGb: number;
+    /**
+     * The memory a Cadence job may use on this card (CADENCE_GPU_MEMORY_CAP_GB)
+     */
+    memoryCapGb: number;
+    allowedJobKinds: Array<JobKind>;
+};
+
+export type ComputeHealth = {
+    /**
+     * unknown until a worker reports (phase 2)
+     */
+    state: 'unknown' | 'healthy' | 'degraded' | 'unreachable';
+    checkedAt?: string;
+    detail?: string;
+};
+
+export type ComputeHost = {
+    /**
+     * cmp_…
+     */
+    id: string;
+    name: string;
+    description: string;
+    cards: Array<ComputeCard>;
+    health: ComputeHealth;
+    rev: number;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type ComputeList = {
+    items: Array<ComputeHost>;
+};
+
+export type ComputeCardEdit = {
+    index: number;
+    memoryCapGb?: number;
+    allowedJobKinds?: Array<JobKind>;
+};
+
+export type ComputeEdit = {
+    description?: string;
+    cards?: Array<ComputeCardEdit>;
+};
+
+export type SecretKind = 'huggingface' | 'ngc' | 'github' | 's3' | 'judge-api' | 'other';
+
+export type SecretName = string;
+
+/**
+ * instance, or project:<slug> when only that project's jobs and bootstrap may read it
+ */
+export type SecretScope = string;
+
+/**
+ * A named credential; its value is never returned
+ */
+export type Secret = {
+    /**
+     * sec_…
+     */
+    id: string;
+    name: SecretName;
+    kind: SecretKind;
+    scope: SecretScope;
+    rev: number;
+    actor: Actor;
+    createdAt: string;
+    /**
+     * The last time a server-side consumer read the value
+     */
+    lastUsedAt?: string;
+};
+
+export type SecretNew = {
+    name: SecretName;
+    kind: SecretKind;
+    scope?: SecretScope;
+};
+
+export type SecretList = {
+    items: Array<Secret>;
+};
+
+export type DefaultRange = {
+    min?: number;
+    max?: number;
+    values?: Array<string>;
+};
+
+/**
+ * One default with its description, source and safe range
+ */
+export type DefaultValue = {
+    /**
+     * The default: a number, string, boolean or list
+     */
+    value: unknown;
+    unit?: string;
+    description: string;
+    /**
+     * The published source, or "Cadence recommendation"
+     */
+    source: string;
+    range?: DefaultRange;
+};
+
+export type DefaultSection = {
+    [key: string]: DefaultValue;
+};
+
+/**
+ * Seconds per training step for one base model × card class × memory cap × precision (R12 table path)
+ */
+export type TrainingEstimateRow = {
+    /**
+     * Registry collection name of the base model
+     */
+    base_model: string;
+    card_class: string;
+    memory_cap_gb: number;
+    precision: string;
+    seconds_per_step: number;
+    /**
+     * Relative uncertainty: 0.5 means ±50%
+     */
+    plus_minus: number;
+    description: string;
+    source: string;
+};
+
+export type DefaultCard = {
+    index: number;
+    name: string;
+    card_class: string;
+    memory_gb: number;
+    memory_cap_gb: number;
+    allowed_job_kinds: Array<JobKind>;
+};
+
+/**
+ * A compute host seeded at first start
+ */
+export type DefaultHost = {
+    name: string;
+    description: string;
+    cards: Array<DefaultCard>;
+    source: string;
+};
+
+/**
+ * defaults.yaml (R11): keys are snake_case, addressed as <section>.<key> (x-cadence.defaultRef)
+ */
+export type Defaults = {
+    version: number;
+    wizard: DefaultSection;
+    budgets: DefaultSection;
+    timeouts: DefaultSection;
+    training: DefaultSection;
+    cache: DefaultSection;
+    estimates: {
+        bytes_per_audio_hour: DefaultValue;
+        training: Array<TrainingEstimateRow>;
+    };
+    compute: {
+        hosts: Array<DefaultHost>;
+    };
+};
+
+export type PolicyBudgets = {
+    /**
+     * Default budgets.gpu_hours_per_project_per_day
+     */
+    gpuHoursPerProjectPerDay: number;
+    /**
+     * Default budgets.agent_turns_per_session
+     */
+    agentTurnsPerSession: number;
+};
+
+export type Policies = {
+    rev: number;
+    updatedAt: string;
+    budgets: PolicyBudgets;
+    /**
+     * Fields that differ from defaults.yaml, e.g. budgets.gpuHoursPerProjectPerDay
+     */
+    departures: Array<string>;
+};
+
+export type PoliciesEdit = {
+    budgets?: {
+        gpuHoursPerProjectPerDay?: number;
+        agentTurnsPerSession?: number;
+    };
+};
+
+/**
+ * Where the weights start (R44); scratch is deferred
+ */
+export type RunInit = 'base' | 'checkpoint';
+
+export type Precision = 'bf16' | 'fp16' | 'fp32';
+
+export type RunNew = {
+    init?: RunInit;
+    /**
+     * Base model version (ver_…), collection name (its newest frozen version) or @alias; default the defaults' base model
+     */
+    baseModel?: string;
+    /**
+     * Required when init is checkpoint (checkpoints arrive in phase 2)
+     */
+    checkpoint?: string;
+    /**
+     * Default training.steps
+     */
+    steps?: number;
+    precision?: Precision;
+    /**
+     * Cards for the run; v1 accepts 1 (training.gpus)
+     */
+    gpus?: number;
+    /**
+     * Host id or name; default the first host whose card allows training
+     */
+    compute?: string;
+    /**
+     * Dataset versions (ver_… or @alias) the run reads, for the data volume; the mix replaces this in phase 2
+     */
+    datasets?: Array<string>;
+};
+
+export type EstimateRange = {
+    value: number;
+    low: number;
+    high: number;
+};
+
+/**
+ * What a run would cost (R12). basis table: from the estimate table in defaults.yaml; measured: from runs.calibrate (phase 2)
+ */
+export type RunEstimate = {
+    basis: 'measured' | 'table';
+    /**
+     * Relative uncertainty: 0.5 means ±50%
+     */
+    plusMinus: number;
+    gpuHours: EstimateRange;
+    durationSeconds: EstimateRange;
+    secondsPerStep: number;
+    steps: number;
+    gpus: number;
+    precision: Precision;
+    init: RunInit;
+    baseModel: RegistryVersion;
+    card: {
+        computeId: string;
+        host: string;
+        index: number;
+        cardClass: string;
+        memoryCapGb: number;
+    };
+    data: {
+        /**
+         * Resolved dataset version ids
+         */
+        datasets: Array<string>;
+        hours: number;
+        /**
+         * What must be materialised on the worker's disk
+         */
+        bytes: number;
+    };
+    budget: {
+        gpuHoursPerProjectPerDay: number;
+        /**
+         * The upper bound fits the project's daily GPU-hour budget
+         */
+        withinDailyBudget: boolean;
+    };
+    /**
+     * The source of the estimate-table row
+     */
+    source: string;
 };
 
 export type Approval = {
@@ -388,6 +943,16 @@ export type JobList = {
     items: Array<Job>;
 };
 
+export type SecretNewWritable = {
+    name: SecretName;
+    kind: SecretKind;
+    scope?: SecretScope;
+    /**
+     * Write-only; stored encrypted outside the database
+     */
+    value: string;
+};
+
 /**
  * Client-chosen key; a repeat with the same key returns the original result
  */
@@ -414,6 +979,21 @@ export type DryRun = boolean;
 export type ProjectSlug = Slug;
 
 export type Id = string;
+
+/**
+ * Registry version id (ver_…)
+ */
+export type VersionId = string;
+
+/**
+ * Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)
+ */
+export type RegistryCollectionFilter = string;
+
+/**
+ * Only versions in this state
+ */
+export type RegistryStateFilter = VersionState;
 
 export type PlannedBody = {
     [key: string]: unknown;
@@ -863,12 +1443,12 @@ export type RegistrySearchData = {
     path?: never;
     query?: {
         /**
-         * Free text with qualifiers (kind:, tag:, locale:)
+         * Free text with qualifiers (kind:, tag:, locale:, state:)
          */
         q?: string;
-        kind?: string;
+        kind?: RegistryKind;
         /**
-         * Only versions this project adopted
+         * Only versions this project adopted (slug)
          */
         project?: string;
         limit?: number;
@@ -893,6 +1473,763 @@ export type RegistrySearchResponses = {
 };
 
 export type RegistrySearchResponse = RegistrySearchResponses[keyof RegistrySearchResponses];
+
+export type CollectionsListData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Only collections of this kind
+         */
+        kind?: RegistryKind;
+        /**
+         * Only collections carrying this tag (e.g. locale:he-IL)
+         */
+        tag?: string;
+    };
+    url: '/registry/collections';
+};
+
+export type CollectionsListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type CollectionsListError = CollectionsListErrors[keyof CollectionsListErrors];
+
+export type CollectionsListResponses = {
+    /**
+     * Collections by name
+     */
+    200: CollectionList;
+};
+
+export type CollectionsListResponse = CollectionsListResponses[keyof CollectionsListResponses];
+
+export type CollectionsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Collection id (reg_…) or name with the slash escaped (dataset%2Ffleurs-he-smoke)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/registry/collections/{id}';
+};
+
+export type CollectionsGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type CollectionsGetError = CollectionsGetErrors[keyof CollectionsGetErrors];
+
+export type CollectionsGetResponses = {
+    /**
+     * The collection
+     */
+    200: Collection;
+};
+
+export type CollectionsGetResponse = CollectionsGetResponses[keyof CollectionsGetResponses];
+
+export type BaseModelsListData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)
+         */
+        collection?: string;
+        /**
+         * Only versions in this state
+         */
+        state?: VersionState;
+    };
+    url: '/registry/base-models';
+};
+
+export type BaseModelsListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type BaseModelsListError = BaseModelsListErrors[keyof BaseModelsListErrors];
+
+export type BaseModelsListResponses = {
+    /**
+     * Base model versions, newest first
+     */
+    200: BaseModelVersionList;
+};
+
+export type BaseModelsListResponse = BaseModelsListResponses[keyof BaseModelsListResponses];
+
+export type BaseModelsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Registry version id (ver_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/registry/base-models/{id}';
+};
+
+export type BaseModelsGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type BaseModelsGetError = BaseModelsGetErrors[keyof BaseModelsGetErrors];
+
+export type BaseModelsGetResponses = {
+    /**
+     * The version
+     */
+    200: BaseModelVersion;
+};
+
+export type BaseModelsGetResponse = BaseModelsGetResponses[keyof BaseModelsGetResponses];
+
+export type DatasetsListData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)
+         */
+        collection?: string;
+        /**
+         * Only versions in this state
+         */
+        state?: VersionState;
+    };
+    url: '/registry/datasets';
+};
+
+export type DatasetsListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type DatasetsListError = DatasetsListErrors[keyof DatasetsListErrors];
+
+export type DatasetsListResponses = {
+    /**
+     * Dataset versions, newest first
+     */
+    200: DatasetVersionList;
+};
+
+export type DatasetsListResponse = DatasetsListResponses[keyof DatasetsListResponses];
+
+export type DatasetsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Registry version id (ver_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/registry/datasets/{id}';
+};
+
+export type DatasetsGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type DatasetsGetError = DatasetsGetErrors[keyof DatasetsGetErrors];
+
+export type DatasetsGetResponses = {
+    /**
+     * The version
+     */
+    200: DatasetVersion;
+};
+
+export type DatasetsGetResponse = DatasetsGetResponses[keyof DatasetsGetResponses];
+
+export type TemplatesListData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)
+         */
+        collection?: string;
+        /**
+         * Only versions in this state
+         */
+        state?: VersionState;
+        /**
+         * Only templates of this kind
+         */
+        templateKind?: TemplateKind;
+    };
+    url: '/registry/templates';
+};
+
+export type TemplatesListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type TemplatesListError = TemplatesListErrors[keyof TemplatesListErrors];
+
+export type TemplatesListResponses = {
+    /**
+     * Template versions, newest first
+     */
+    200: TemplateVersionList;
+};
+
+export type TemplatesListResponse = TemplatesListResponses[keyof TemplatesListResponses];
+
+export type TemplatesGetData = {
+    body?: never;
+    path: {
+        /**
+         * Registry version id (ver_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/registry/templates/{id}';
+};
+
+export type TemplatesGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type TemplatesGetError = TemplatesGetErrors[keyof TemplatesGetErrors];
+
+export type TemplatesGetResponses = {
+    /**
+     * The version
+     */
+    200: TemplateVersion;
+};
+
+export type TemplatesGetResponse = TemplatesGetResponses[keyof TemplatesGetResponses];
+
+export type ProjectsAdoptData = {
+    body: AdoptionNew;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/projects/{p}:adopt';
+};
+
+export type ProjectsAdoptErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type ProjectsAdoptError = ProjectsAdoptErrors[keyof ProjectsAdoptErrors];
+
+export type ProjectsAdoptResponses = {
+    /**
+     * Adopted (or, for a dry run, what would be adopted); ETag is the project's new revision
+     */
+    200: Adoption;
+};
+
+export type ProjectsAdoptResponse = ProjectsAdoptResponses[keyof ProjectsAdoptResponses];
+
+export type AdoptionsListData = {
+    body?: never;
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        /**
+         * Only versions of this kind
+         */
+        kind?: RegistryKind;
+    };
+    url: '/projects/{p}/adoptions';
+};
+
+export type AdoptionsListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type AdoptionsListError = AdoptionsListErrors[keyof AdoptionsListErrors];
+
+export type AdoptionsListResponses = {
+    /**
+     * Adoptions, newest first
+     */
+    200: AdoptionList;
+};
+
+export type AdoptionsListResponse = AdoptionsListResponses[keyof AdoptionsListResponses];
+
+export type AliasesListData = {
+    body?: never;
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: never;
+    url: '/projects/{p}/aliases';
+};
+
+export type AliasesListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type AliasesListError = AliasesListErrors[keyof AliasesListErrors];
+
+export type AliasesListResponses = {
+    /**
+     * Aliases by name
+     */
+    200: AliasList;
+};
+
+export type AliasesListResponse = AliasesListResponses[keyof AliasesListResponses];
+
+export type AliasesGetData = {
+    body?: never;
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+        /**
+         * Alias name without the @ (train-current, baseline, …)
+         */
+        name: AliasName;
+    };
+    query?: never;
+    url: '/projects/{p}/aliases/{name}';
+};
+
+export type AliasesGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type AliasesGetError = AliasesGetErrors[keyof AliasesGetErrors];
+
+export type AliasesGetResponses = {
+    /**
+     * The alias
+     */
+    200: Alias;
+};
+
+export type AliasesGetResponse = AliasesGetResponses[keyof AliasesGetResponses];
+
+export type AliasesSetData = {
+    body: AliasSet;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on; required unless the target does not exist yet
+         */
+        'If-Match'?: string;
+    };
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+        /**
+         * Alias name without the @ (train-current, baseline, …)
+         */
+        name: AliasName;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/projects/{p}/aliases/{name}';
+};
+
+export type AliasesSetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type AliasesSetError = AliasesSetErrors[keyof AliasesSetErrors];
+
+export type AliasesSetResponses = {
+    /**
+     * The alias as set
+     */
+    200: Alias;
+    /**
+     * Gated; a person decides the approval on the approvals topic
+     */
+    202: ApprovalAccepted;
+};
+
+export type AliasesSetResponse = AliasesSetResponses[keyof AliasesSetResponses];
+
+export type ComputeListData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/compute';
+};
+
+export type ComputeListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type ComputeListError = ComputeListErrors[keyof ComputeListErrors];
+
+export type ComputeListResponses = {
+    /**
+     * Hosts by name
+     */
+    200: ComputeList;
+};
+
+export type ComputeListResponse = ComputeListResponses[keyof ComputeListResponses];
+
+export type ComputeGetData = {
+    body?: never;
+    path: {
+        /**
+         * Host id (cmp_…) or name (staging)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/compute/{id}';
+};
+
+export type ComputeGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type ComputeGetError = ComputeGetErrors[keyof ComputeGetErrors];
+
+export type ComputeGetResponses = {
+    /**
+     * The host
+     */
+    200: ComputeHost;
+};
+
+export type ComputeGetResponse = ComputeGetResponses[keyof ComputeGetResponses];
+
+export type ComputeEditData = {
+    body: ComputeEdit;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Host id (cmp_…) or name (staging)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/compute/{id}';
+};
+
+export type ComputeEditErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type ComputeEditError = ComputeEditErrors[keyof ComputeEditErrors];
+
+export type ComputeEditResponses = {
+    /**
+     * The edited host (or, for a dry run, what it would become)
+     */
+    200: ComputeHost;
+};
+
+export type ComputeEditResponse = ComputeEditResponses[keyof ComputeEditResponses];
+
+export type SecretsListData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/secrets';
+};
+
+export type SecretsListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type SecretsListError = SecretsListErrors[keyof SecretsListErrors];
+
+export type SecretsListResponses = {
+    /**
+     * Secrets by name, without values
+     */
+    200: SecretList;
+};
+
+export type SecretsListResponse = SecretsListResponses[keyof SecretsListResponses];
+
+export type SecretsNewData = {
+    body: SecretNewWritable;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/secrets';
+};
+
+export type SecretsNewErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type SecretsNewError = SecretsNewErrors[keyof SecretsNewErrors];
+
+export type SecretsNewResponses = {
+    /**
+     * Dry run — the secret that would be stored; nothing was written
+     */
+    200: Secret;
+    /**
+     * Stored
+     */
+    201: Secret;
+};
+
+export type SecretsNewResponse = SecretsNewResponses[keyof SecretsNewResponses];
+
+export type DefaultsGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/defaults';
+};
+
+export type DefaultsGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type DefaultsGetError = DefaultsGetErrors[keyof DefaultsGetErrors];
+
+export type DefaultsGetResponses = {
+    /**
+     * The defaults; ETag is their version
+     */
+    200: Defaults;
+};
+
+export type DefaultsGetResponse = DefaultsGetResponses[keyof DefaultsGetResponses];
+
+export type PoliciesGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/policies';
+};
+
+export type PoliciesGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type PoliciesGetError = PoliciesGetErrors[keyof PoliciesGetErrors];
+
+export type PoliciesGetResponses = {
+    /**
+     * The policies
+     */
+    200: Policies;
+};
+
+export type PoliciesGetResponse = PoliciesGetResponses[keyof PoliciesGetResponses];
+
+export type PoliciesEditData = {
+    body: PoliciesEdit;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/policies';
+};
+
+export type PoliciesEditErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type PoliciesEditError = PoliciesEditErrors[keyof PoliciesEditErrors];
+
+export type PoliciesEditResponses = {
+    /**
+     * The edited policies (or, for a dry run, what they would become)
+     */
+    200: Policies;
+};
+
+export type PoliciesEditResponse = PoliciesEditResponses[keyof PoliciesEditResponses];
+
+export type RunsNewData = {
+    body: RunNew;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/projects/{p}/runs';
+};
+
+export type RunsNewErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type RunsNewError = RunsNewErrors[keyof RunsNewErrors];
+
+export type RunsNewResponses = {
+    /**
+     * Dry run — the estimate; nothing was written or queued
+     */
+    200: RunEstimate;
+    /**
+     * Accepted; follow the job on job.{jobId}
+     */
+    202: JobAccepted;
+};
+
+export type RunsNewResponse = RunsNewResponses[keyof RunsNewResponses];
 
 export type ApprovalsListData = {
     body?: never;
@@ -1350,47 +2687,6 @@ export type MixesEditResponses = {
 
 export type MixesEditResponse = MixesEditResponses[keyof MixesEditResponses];
 
-export type RunsNewData = {
-    body?: PlannedBody;
-    headers: {
-        /**
-         * Client-chosen key; a repeat with the same key returns the original result
-         */
-        'Idempotency-Key': string;
-    };
-    path: {
-        /**
-         * Project slug
-         */
-        p: Slug;
-    };
-    query?: {
-        /**
-         * Validate and report what would happen without changing anything
-         */
-        dryRun?: boolean;
-    };
-    url: '/projects/{p}/runs';
-};
-
-export type RunsNewErrors = {
-    /**
-     * Error (RFC 9457)
-     */
-    default: Problem;
-};
-
-export type RunsNewError = RunsNewErrors[keyof RunsNewErrors];
-
-export type RunsNewResponses = {
-    /**
-     * Accepted; follow the job on job.{jobId}
-     */
-    202: JobAccepted;
-};
-
-export type RunsNewResponse = RunsNewResponses[keyof RunsNewResponses];
-
 export type AgentSessionsNewData = {
     body?: PlannedBody;
     headers: {
@@ -1578,55 +2874,3 @@ export type MountsNewResponses = {
 };
 
 export type MountsNewResponse = MountsNewResponses[keyof MountsNewResponses];
-
-export type AliasesSetData = {
-    body?: PlannedBody;
-    headers: {
-        /**
-         * Client-chosen key; a repeat with the same key returns the original result
-         */
-        'Idempotency-Key': string;
-        /**
-         * The revision the change is based on; required unless the target does not exist yet
-         */
-        'If-Match'?: string;
-    };
-    path: {
-        /**
-         * Project slug
-         */
-        p: Slug;
-        name: string;
-    };
-    query?: {
-        /**
-         * Validate and report what would happen without changing anything
-         */
-        dryRun?: boolean;
-    };
-    url: '/projects/{p}/aliases/{name}';
-};
-
-export type AliasesSetErrors = {
-    /**
-     * Error (RFC 9457)
-     */
-    default: Problem;
-};
-
-export type AliasesSetError = AliasesSetErrors[keyof AliasesSetErrors];
-
-export type AliasesSetResponses = {
-    /**
-     * Shape defined when the operation's phase implements it
-     */
-    200: {
-        [key: string]: unknown;
-    };
-    /**
-     * Gated; a person decides the approval on the approvals topic
-     */
-    202: ApprovalAccepted;
-};
-
-export type AliasesSetResponse = AliasesSetResponses[keyof AliasesSetResponses];

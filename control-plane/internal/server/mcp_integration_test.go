@@ -157,7 +157,10 @@ func TestMCPResources(t *testing.T) {
 		if !strings.Contains(string(summary["openApprovals"]), `"items"`) {
 			t.Errorf("%s openApprovals: %s", uri, summary["openApprovals"])
 		}
-		for _, k := range []string{"locales", "baseModel", "aliases", "budgets", "todayUse"} {
+		if !strings.Contains(string(summary["aliases"]), `"items"`) {
+			t.Errorf("%s aliases: %s", uri, summary["aliases"])
+		}
+		for _, k := range []string{"locales", "baseModel", "budgets", "todayUse"} {
 			if !strings.Contains(string(summary[k]), "not available yet") {
 				t.Errorf("%s %s: %s", uri, k, summary[k])
 			}
@@ -175,7 +178,7 @@ func TestMCPResources(t *testing.T) {
 		t.Errorf("unbound summary: %+v", s)
 	}
 
-	if d := mcptest.Read(t, cs, mcp.URIDefaults); !strings.Contains(string(d.Data), "not available yet") {
+	if d := mcptest.Read(t, cs, mcp.URIDefaults); !strings.Contains(string(d.Data), "gpu_hours_per_project_per_day") {
 		t.Errorf("defaults: %s", d.Data)
 	}
 	if sel := mcptest.Read(t, cs, mcp.URISelection); !strings.Contains(string(sel.Data), `"references":[]`) {

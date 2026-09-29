@@ -21,3 +21,7 @@ Rendered from the preset (`internal/policy`, JSON via `policy.JSON`):
 - `{{ .Agent.PermissionPresetOpencodeJSON }}` — `policy.RenderOpencode(preset, tools)` (opencode's `permission` block)
 
 `tools` is the MCP manifest (`internal/mcp/tools.json`: name, and `readOnlyHint` for the verb class).
+`embed.go` embeds the whole tree. At start the control plane registers every entry under `instructions/`, `presets/`,
+`skills/`, `pipelines/` and `agent-config/` as a registry template version (`template/<kind>-<name>`, e.g.
+`template/skill-cadence-train`); a changed file registers a new version, so `templates.list` shows what projects can
+sync to.

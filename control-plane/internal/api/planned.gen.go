@@ -16,13 +16,11 @@ var PlannedOperations = map[string]int{
 	"agentMessages.new":    1,
 	"agentSessions.cancel": 1,
 	"agentSessions.new":    1,
-	"aliases.set":          1,
 	"mixes.edit":           2,
 	"mixes.new":            2,
 	"mixes.preview":        2,
 	"mounts.list":          4,
 	"mounts.new":           4,
-	"runs.new":             2,
 }
 
 func plannedProblem(opID string, phase int) Problem {
@@ -43,11 +41,6 @@ func (Planned) AgentSessionsCancel(_ context.Context, _ AgentSessionsCancelReque
 // AgentSessionsNew answers 501 until phase 1.
 func (Planned) AgentSessionsNew(_ context.Context, _ AgentSessionsNewRequestObject) (AgentSessionsNewResponseObject, error) {
 	return AgentSessionsNewdefaultApplicationProblemPlusJSONResponse{Body: plannedProblem("agentSessions.new", 1), StatusCode: 501}, nil
-}
-
-// AliasesSet answers 501 until phase 1.
-func (Planned) AliasesSet(_ context.Context, _ AliasesSetRequestObject) (AliasesSetResponseObject, error) {
-	return AliasesSetdefaultApplicationProblemPlusJSONResponse{Body: plannedProblem("aliases.set", 1), StatusCode: 501}, nil
 }
 
 // MixesEdit answers 501 until phase 2.
@@ -73,9 +66,4 @@ func (Planned) MountsList(_ context.Context, _ MountsListRequestObject) (MountsL
 // MountsNew answers 501 until phase 4.
 func (Planned) MountsNew(_ context.Context, _ MountsNewRequestObject) (MountsNewResponseObject, error) {
 	return MountsNewdefaultApplicationProblemPlusJSONResponse{Body: plannedProblem("mounts.new", 4), StatusCode: 501}, nil
-}
-
-// RunsNew answers 501 until phase 2.
-func (Planned) RunsNew(_ context.Context, _ RunsNewRequestObject) (RunsNewResponseObject, error) {
-	return RunsNewdefaultApplicationProblemPlusJSONResponse{Body: plannedProblem("runs.new", 2), StatusCode: 501}, nil
 }

@@ -1,0 +1,54 @@
+# The base-model catalogue registered at start (docs/spec/08-resolutions.md R41). payload is the contract's
+# BaseModelPayload. Pin a new revision by adding it here: the registry keeps the old version and registers a new
+# one; projects move with aliases. Revision and licence from the Hugging Face API (api/models/<repo>), 2026-09-29.
+- name: base-model/nemotron-3.5-asr-streaming-0.6b
+  description: NVIDIA Nemotron 3.5 ASR streaming 0.6B — cache-aware FastConformer RNNT, punctuated and cased output, 35 locales
+  licence: openmdw-1.1
+  tags:
+    - family:nemo.fastconformer-rnnt.cache-aware
+    - streaming
+    - locale:en
+    - locale:es
+    - locale:de
+    - locale:fr
+    - locale:it
+    - locale:ar
+    - locale:ja
+    - locale:ko
+    - locale:pt
+    - locale:ru
+    - locale:hi
+    - locale:zh
+    - locale:vi
+    - locale:he
+    - locale:nl
+    - locale:cs
+    - locale:da
+    - locale:pl
+    - locale:no
+    - locale:sv
+    - locale:th
+    - locale:tr
+    - locale:bg
+    - locale:el
+    - locale:et
+    - locale:fi
+    - locale:hr
+    - locale:hu
+    - locale:lt
+    - locale:lv
+    - locale:ro
+    - locale:sk
+    - locale:uk
+    - locale:mt
+    - locale:sl
+  payload:
+    hfRepo: nvidia/nemotron-3.5-asr-streaming-0.6b
+    revision: ea30d66debe3740a08b573244286791d423d6b3e
+    licence: openmdw-1.1
+    licenceUrl: https://openmdw.ai/license/1-1/
+    familyId: nemo.fastconformer-rnnt.cache-aware
+    checkpointFile: nemotron-3.5-asr-streaming-0.6b.nemo
+    parameters: 0.6B
+    sampleRateHz: 16000
+    locales: [en, es, de, fr, it, ar, ja, ko, pt, ru, hi, zh, vi, he, nl, cs, da, pl, "no", sv, th, tr, bg, el, et, fi, hr, hu, lt, lv, ro, sk, uk, mt, sl]

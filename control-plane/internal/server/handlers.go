@@ -288,7 +288,7 @@ func apiWorkspace(w projects.Workspace) (api.Workspace, error) {
 	return out, nil
 }
 
-// ---------------------------------------------------------------- help and registry
+// ---------------------------------------------------------------- help
 
 // HelpSearch implements help.search.
 func (s *Server) HelpSearch(_ context.Context, req api.HelpSearchRequestObject) (api.HelpSearchResponseObject, error) {
@@ -321,11 +321,6 @@ func apiArticle(a help.Article) api.HelpArticle {
 		out.Contexts = &a.Contexts
 	}
 	return out
-}
-
-// RegistrySearch implements registry.search. Registry kinds arrive in phase 1; until then the registry is empty.
-func (s *Server) RegistrySearch(_ context.Context, _ api.RegistrySearchRequestObject) (api.RegistrySearchResponseObject, error) {
-	return api.RegistrySearch200JSONResponse{Items: []api.RegistryVersion{}, Kinds: []api.RegistryKindCount{}}, nil
 }
 
 // ---------------------------------------------------------------- helpers

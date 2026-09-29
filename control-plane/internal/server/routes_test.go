@@ -125,12 +125,7 @@ func TestRoutingOutsideOperations(t *testing.T) {
 	if resp.StatusCode != 200 || !strings.Contains(string(body), `"id":"errors.conflict"`) {
 		t.Errorf("help.search by context = %d %s", resp.StatusCode, body)
 	}
-	resp = do(http.MethodGet, "/api/registry")
-	body, _ = io.ReadAll(resp.Body)
-	_ = resp.Body.Close()
-	if strings.TrimSpace(string(body)) != `{"items":[],"kinds":[]}` {
-		t.Errorf("registry.search = %s", body)
-	}
+	// registry.search reads the database since phase 1; integration_registry_test.go covers it.
 	resp = do(http.MethodGet, "/api/me")
 	body, _ = io.ReadAll(resp.Body)
 	_ = resp.Body.Close()

@@ -28,6 +28,8 @@ services:
     environment:
       DATABASE_URL: postgres://cadence:${POSTGRES_PASSWORD}@postgres:5432/cadence?sslmode=disable
       CADENCE_LOG_LEVEL: ${CADENCE_LOG_LEVEL:-info}
+      # Secret-store master key (R9); generated on first start when the file is missing — back it up.
+      CADENCE_MASTER_KEY_FILE: ${CADENCE_MASTER_KEY_FILE:-/data/master.key}
     volumes:
       - cadence-data:/data # the image runs as uid 65532; a named volume is writable by it
     ports: ["127.0.0.1:${CADENCE_PORT:-8080}:8080"] # localhost only until Caddy lands (phase 1)

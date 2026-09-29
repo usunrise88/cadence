@@ -40,6 +40,10 @@ var (
 	NotImplemented       = Type{"not-implemented", http.StatusNotImplemented, "Not implemented"}
 	Internal             = Type{"internal", http.StatusInternalServerError, "Internal error"}
 	PolicyDenied         = Type{"policy-denied", http.StatusForbidden, "Denied by policy"}
+
+	// Registry and estimates (phase 1 · stream B).
+	ReservedAlias       = Type{"reserved-alias", http.StatusConflict, "Reserved alias"}
+	EstimateUnavailable = Type{"estimate-unavailable", http.StatusUnprocessableEntity, "Estimate unavailable"}
 )
 
 // Types lists every registered type.
@@ -47,6 +51,7 @@ func Types() []Type {
 	return []Type{
 		BadRequest, ValidationFailed, NotFound, MethodNotAllowed, Conflict, PreconditionFailed,
 		PreconditionRequired, IdempotencyKeyReused, NotImplemented, Internal, PolicyDenied,
+		ReservedAlias, EstimateUnavailable,
 	}
 }
 

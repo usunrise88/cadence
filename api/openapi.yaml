@@ -269,12 +269,18 @@ paths:
     x-cadence: { entity: registry, kind: registry_version }
     get:
       operationId: registry.search
-      summary: Search registry versions of every kind (empty until phase 1 registers kinds)
+      summary: Search registry versions of every kind by text and qualifiers (kind:, tag:, locale:, state:)
       tags: [registry]
+      x-cadence:
+        toolDescription: >
+          Search registry versions of every kind (base models, dataset versions, templates). q is free text matched
+          against collection names and descriptions plus qualifiers: kind:base_model, tag:telephony, locale:he-IL,
+          state:frozen. project=<slug> keeps only what that project adopted. Get one version with baseModels.get,
+          datasets.get or templates.get.
       parameters:
-        - { name: q, in: query, description: "Free text with qualifiers (kind:, tag:, locale:)", schema: { type: string } }
-        - { name: kind, in: query, schema: { type: string } }
-        - { name: project, in: query, description: Only versions this project adopted, schema: { type: string } }
+        - { name: q, in: query, description: "Free text with qualifiers (kind:, tag:, locale:, state:)", schema: { type: string } }
+        - { name: kind, in: query, schema: { $ref: "#/components/schemas/RegistryKind" } }
+        - { name: project, in: query, description: Only versions this project adopted (slug), schema: { type: string } }
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
       responses:
         "200":
@@ -291,6 +297,373 @@ paths:
   #
   #
   #
+  /registry/collections:
+    x-cadence: { entity: collections, kind: registry_collection }
+    get:
+      operationId: collections.list
+      summary: List registry collections (named series of immutable versions), optionally of one kind or tag
+      tags: [registry]
+      x-cadence:
+        toolDescription: >
+          List registry collections such as base-model/nemotron-3.5-asr-streaming-0.6b or dataset/fleurs-he-smoke.
+          A collection groups immutable versions of one kind; list the versions with baseModels.list,
+          datasets.list or templates.list (filter collection=<name>).
+      parameters:
+        - { name: kind, in: query, description: Only collections of this kind, schema: { $ref: "#/components/schemas/RegistryKind" } }
+        - { name: tag, in: query, description: "Only collections carrying this tag (e.g. locale:he-IL)", schema: { type: string } }
+      responses:
+        "200":
+          description: Collections by name
+          content: { application/json: { schema: { $ref: "#/components/schemas/CollectionList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/collections/{id}:
+    x-cadence: { entity: collections, kind: registry_collection }
+    parameters:
+      - { name: id, in: path, required: true, description: "Collection id (reg_…) or name with the slash escaped (dataset%2Ffleurs-he-smoke)", schema: { type: string } }
+    get:
+      operationId: collections.get
+      summary: Get a registry collection with its versions, newest first
+      tags: [registry]
+      responses:
+        "200":
+          description: The collection
+          content: { application/json: { schema: { $ref: "#/components/schemas/Collection" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/base-models:
+    x-cadence: { entity: baseModels, kind: base_model }
+    get:
+      operationId: baseModels.list
+      summary: List base model versions (Hugging Face repository at a pinned revision, licence, model family)
+      tags: [registry]
+      parameters:
+        - $ref: "#/components/parameters/RegistryCollectionFilter"
+        - $ref: "#/components/parameters/RegistryStateFilter"
+      responses:
+        "200":
+          description: Base model versions, newest first
+          content: { application/json: { schema: { $ref: "#/components/schemas/BaseModelVersionList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/base-models/{id}:
+    x-cadence: { entity: baseModels, kind: base_model }
+    parameters: [{ $ref: "#/components/parameters/VersionId" }]
+    get:
+      operationId: baseModels.get
+      summary: Get a base model version with the projects that use it
+      tags: [registry]
+      responses:
+        "200":
+          description: The version
+          content: { application/json: { schema: { $ref: "#/components/schemas/BaseModelVersion" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/datasets:
+    x-cadence: { entity: datasets, kind: dataset_version }
+    get:
+      operationId: datasets.list
+      summary: List dataset versions (immutable, fingerprinted selections with splits and statistics)
+      tags: [registry]
+      parameters:
+        - $ref: "#/components/parameters/RegistryCollectionFilter"
+        - $ref: "#/components/parameters/RegistryStateFilter"
+      responses:
+        "200":
+          description: Dataset versions, newest first
+          content: { application/json: { schema: { $ref: "#/components/schemas/DatasetVersionList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/datasets/{id}:
+    x-cadence: { entity: datasets, kind: dataset_version }
+    parameters: [{ $ref: "#/components/parameters/VersionId" }]
+    get:
+      operationId: datasets.get
+      summary: Get a dataset version with its splits, statistics and the projects that use it
+      tags: [registry]
+      responses:
+        "200":
+          description: The version
+          content: { application/json: { schema: { $ref: "#/components/schemas/DatasetVersion" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/templates:
+    x-cadence: { entity: templates, kind: template }
+    get:
+      operationId: templates.list
+      summary: List template versions (instruction templates, permission presets, skills, pipeline templates, agent config)
+      tags: [registry]
+      parameters:
+        - $ref: "#/components/parameters/RegistryCollectionFilter"
+        - $ref: "#/components/parameters/RegistryStateFilter"
+        - { name: templateKind, in: query, description: Only templates of this kind, schema: { $ref: "#/components/schemas/TemplateKind" } }
+      responses:
+        "200":
+          description: Template versions, newest first
+          content: { application/json: { schema: { $ref: "#/components/schemas/TemplateVersionList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/templates/{id}:
+    x-cadence: { entity: templates, kind: template }
+    parameters: [{ $ref: "#/components/parameters/VersionId" }]
+    get:
+      operationId: templates.get
+      summary: Get a template version with its files (paths and hashes) and the projects that use it
+      tags: [registry]
+      responses:
+        "200":
+          description: The version
+          content: { application/json: { schema: { $ref: "#/components/schemas/TemplateVersion" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /projects/{p}:adopt:
+    x-cadence: { entity: projects }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    post:
+      operationId: projects.adopt
+      summary: Adopt a registry version into the project by reference
+      tags: [projects]
+      x-cadence:
+        toolDescription: >
+          Adopt a registry version (base model, dataset version, template) into this project by reference, so mixes,
+          runs and aliases may use it. Only frozen versions are adoptable. Needs If-Match with the project's revision
+          (projects.get); the project's revision goes up by one.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/AdoptionNew" } } }
+      responses:
+        "200":
+          description: Adopted (or, for a dry run, what would be adopted); ETag is the project's new revision
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Adoption" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /projects/{p}/adoptions:
+    x-cadence: { entity: adoptions }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    get:
+      operationId: adoptions.list
+      summary: Registry versions the project adopted, with the aliases pointing at each
+      tags: [projects]
+      parameters:
+        - { name: kind, in: query, description: Only versions of this kind, schema: { $ref: "#/components/schemas/RegistryKind" } }
+      responses:
+        "200":
+          description: Adoptions, newest first
+          content: { application/json: { schema: { $ref: "#/components/schemas/AdoptionList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /projects/{p}/aliases:
+    x-cadence: { entity: aliases }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    get:
+      operationId: aliases.list
+      summary: The project's aliases (train-current, baseline, production, …) and the versions they point at
+      tags: [projects]
+      responses:
+        "200":
+          description: Aliases by name
+          content: { application/json: { schema: { $ref: "#/components/schemas/AliasList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /projects/{p}/aliases/{name}:
+    x-cadence: { entity: aliases }
+    parameters:
+      - $ref: "#/components/parameters/ProjectSlug"
+      - { name: name, in: path, required: true, description: "Alias name without the @ (train-current, baseline, …)", schema: { $ref: "#/components/schemas/AliasName" } }
+    get:
+      operationId: aliases.get
+      summary: Get one project alias and the version it points at
+      tags: [projects]
+      responses:
+        "200":
+          description: The alias
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Alias" } } }
+        default: { $ref: "#/components/responses/Problem" }
+    put:
+      operationId: aliases.set
+      summary: Point a project alias at an adopted registry version (baseline is gated, production moves only by promotion)
+      tags: [projects]
+      x-cadence:
+        toolDescription: >
+          Point a project alias (@train-current, @baseline, or any free name) at a registry version the project has
+          adopted (projects.adopt first). Pipelines reference aliases; runs record the resolved version. Moving
+          baseline is gated and may answer 202 with an approval id (R8). production is read-only here: it answers
+          409 reserved-alias and moves only with deployments.promote. Send If-Match with the alias's revision
+          (aliases.get) unless the alias does not exist yet.
+        # The policy engine gates the call when the path parameter matches (docs/spec/08-resolutions.md R8).
+        gatedWhen: { param: name, values: [baseline] }
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatchOptional"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/AliasSet" } } }
+      responses:
+        "200":
+          description: The alias as set
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Alias" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /compute:
+    x-cadence: { entity: compute }
+    get:
+      operationId: compute.list
+      summary: Hosts and their cards (memory cap per card, allowed job kinds) with health
+      tags: [compute]
+      responses:
+        "200":
+          description: Hosts by name
+          content: { application/json: { schema: { $ref: "#/components/schemas/ComputeList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /compute/{id}:
+    x-cadence: { entity: compute }
+    parameters:
+      - { name: id, in: path, required: true, description: "Host id (cmp_…) or name (staging)", schema: { type: string } }
+    get:
+      operationId: compute.get
+      summary: Get a host and its cards
+      tags: [compute]
+      responses:
+        "200":
+          description: The host
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/ComputeHost" } } }
+        default: { $ref: "#/components/responses/Problem" }
+    patch:
+      operationId: compute.edit
+      summary: Change a host's description or a card's memory cap and allowed job kinds
+      tags: [compute]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ComputeEdit" } } }
+      responses:
+        "200":
+          description: The edited host (or, for a dry run, what it would become)
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/ComputeHost" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /secrets:
+    x-cadence: { entity: secrets }
+    get:
+      operationId: secrets.list
+      summary: Named credentials (name, kind, scope, last use); values are never returned
+      tags: [secrets]
+      responses:
+        "200":
+          description: Secrets by name, without values
+          content: { application/json: { schema: { $ref: "#/components/schemas/SecretList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+    post:
+      operationId: secrets.new
+      summary: Store a named credential; the value is write-only and never returned
+      tags: [secrets]
+      x-cadence:
+        toolDescription: >
+          Store a named credential (Hugging Face, NGC, GitHub, S3, judge API). The value is encrypted at rest outside
+          the database and never returned by any operation; jobs and bootstrap read it on the server. Agents should
+          not call this: secrets never enter an agent context.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/SecretNew" } } }
+      responses:
+        "200":
+          description: Dry run — the secret that would be stored; nothing was written
+          content: { application/json: { schema: { $ref: "#/components/schemas/Secret" } } }
+        "201":
+          description: Stored
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Secret" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /defaults:
+    x-cadence: { entity: defaults, kind: defaults, singleton: true }
+    get:
+      operationId: defaults.get
+      summary: The versioned defaults (defaults.yaml) every form, budget and estimate starts from
+      tags: [defaults]
+      x-cadence:
+        toolDescription: >
+          The defaults every parameter, form, budget and estimate starts from (defaults.yaml): each value with its
+          description, source and safe range. A value written anywhere else that differs is a departure from default.
+      responses:
+        "200":
+          description: The defaults; ETag is their version
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Defaults" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /policies:
+    x-cadence: { entity: policies, kind: policies, singleton: true }
+    get:
+      operationId: policies.get
+      summary: Instance-wide policies (budgets now; retention, PII and cache quotas later)
+      tags: [policies]
+      responses:
+        "200":
+          description: The policies
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Policies" } } }
+        default: { $ref: "#/components/responses/Problem" }
+    patch:
+      operationId: policies.edit
+      summary: Change instance-wide policies; values must stay inside the ranges in defaults.yaml
+      tags: [policies]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/PoliciesEdit" } } }
+      responses:
+        "200":
+          description: The edited policies (or, for a dry run, what they would become)
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Policies" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /projects/{p}/runs:
+    x-cadence: { entity: runs }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    post:
+      operationId: runs.new
+      summary: Start a training run; until phase 2 only ?dryRun=true answers, with GPU-hours, card, duration and data
+      tags: [projects]
+      x-cadence:
+        toolDescription: >
+          Start a training run from a base model (init base) or a checkpoint. Until phase 2 only the dry run works:
+          call it with dryRun=true to get the estimate (GPU-hours, duration, card, data volume, basis and ±) from the
+          defaults table and the compute entity; without dryRun it answers 501.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/RunNew" } } }
+      responses:
+        "200":
+          description: Dry run — the estimate; nothing was written or queued
+          content: { application/json: { schema: { $ref: "#/components/schemas/RunEstimate" } } }
+        "202": { $ref: "#/components/responses/JobAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
 
   # ---------------------------------------------------------------- approvals, policy engine, audit, jobs (phase 1 · stream C) — add paths below this line
   #
@@ -505,17 +878,6 @@ paths:
       requestBody: { $ref: "#/components/requestBodies/PlannedBody" }
       responses: { "200": { $ref: "#/components/responses/PlannedEntity" }, default: { $ref: "#/components/responses/Problem" } }
 
-  /projects/{p}/runs:
-    x-cadence: { entity: runs, planned: 2 }
-    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
-    post:
-      operationId: runs.new
-      summary: Start a training run; ?dryRun=true returns GPU-hours, card and duration
-      tags: [planned]
-      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }, { $ref: "#/components/parameters/DryRun" }]
-      requestBody: { $ref: "#/components/requestBodies/PlannedBody" }
-      responses: { "202": { $ref: "#/components/responses/JobAccepted" }, default: { $ref: "#/components/responses/Problem" } }
-
   /projects/{p}/agent-sessions:
     x-cadence: { entity: agentSessions, planned: 1 }
     parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
@@ -566,25 +928,6 @@ paths:
       requestBody: { $ref: "#/components/requestBodies/PlannedBody" }
       responses: { "202": { $ref: "#/components/responses/ApprovalAccepted" }, default: { $ref: "#/components/responses/Problem" } }
 
-  /projects/{p}/aliases/{name}:
-    x-cadence: { entity: aliases, planned: 1 }
-    parameters:
-      - $ref: "#/components/parameters/ProjectSlug"
-      - { name: name, in: path, required: true, schema: { type: string } }
-    put:
-      operationId: aliases.set
-      summary: Point a project alias at a registry version (baseline is gated, production moves only by promotion)
-      tags: [planned]
-      parameters:
-        - $ref: "#/components/parameters/IdempotencyKey"
-        - $ref: "#/components/parameters/IfMatchOptional"
-        - $ref: "#/components/parameters/DryRun"
-      requestBody: { $ref: "#/components/requestBodies/PlannedBody" }
-      responses:
-        "200": { $ref: "#/components/responses/PlannedEntity" }
-        "202": { $ref: "#/components/responses/ApprovalAccepted" }
-        default: { $ref: "#/components/responses/Problem" }
-
 components:
   parameters:
     IdempotencyKey:
@@ -622,6 +965,24 @@ components:
       in: path
       required: true
       schema: { type: string }
+    VersionId:
+      name: id
+      in: path
+      required: true
+      description: Registry version id (ver_…)
+      schema: { type: string }
+    RegistryCollectionFilter:
+      name: collection
+      in: query
+      required: false
+      description: "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)"
+      schema: { type: string }
+    RegistryStateFilter:
+      name: state
+      in: query
+      required: false
+      description: Only versions in this state
+      schema: { $ref: "#/components/schemas/VersionState" }
 
   headers:
     ETag:
@@ -821,20 +1182,28 @@ components:
 
     RegistryVersion:
       type: object
-      required: [kind, id, name, version, state]
+      description: One immutable version of a registry collection. Versions never change once frozen; only aliases move.
+      required: [kind, id, collectionId, name, version, state, tags, licence, fingerprint, actor, createdAt, updatedAt]
       properties:
-        kind: { type: string }
-        id: { type: string }
-        name: { type: string }
-        version: { type: string, description: "YYYY-MM-DD.<sha>" }
-        state: { type: string, enum: [draft, frozen, deprecated] }
-        tags: { type: array, items: { type: string } }
+        kind: { $ref: "#/components/schemas/RegistryKind" }
+        id: { type: string, description: "ver_…" }
+        collectionId: { type: string, description: "reg_…" }
+        name: { type: string, description: "The collection's name, e.g. dataset/fleurs-he-smoke" }
+        version:
+          type: string
+          pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}\\.[0-9a-f]{12}$"
+          description: "YYYY-MM-DD.<sha>: the registration date and the first 12 hex digits of the content fingerprint"
+        state: { $ref: "#/components/schemas/VersionState" }
+        tags: { type: array, items: { type: string }, description: "The collection's tags (locale:he-IL, domain:telephony, …)" }
+        licence: { type: string, description: The collection's licence (SPDX id where one exists) }
+        fingerprint: { type: string, description: "sha256 of the version's canonical content (hex)" }
         actor: { $ref: "#/components/schemas/Actor" }
-        updatedAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time, description: The last state change }
     RegistryKindCount:
       type: object
       required: [kind, count]
-      properties: { kind: { type: string }, count: { type: integer } }
+      properties: { kind: { $ref: "#/components/schemas/RegistryKind" }, count: { type: integer } }
     RegistrySearchResult:
       type: object
       required: [items, kinds]
@@ -851,6 +1220,464 @@ components:
     #
     #
     #
+    RegistryKind:
+      type: string
+      enum: [base_model, dataset_version, template]
+      description: The kinds registered so far; golden sets, sources, normalizers and model versions join in later phases
+    VersionState:
+      type: string
+      enum: [draft, frozen, deprecated]
+      description: "draft → frozen → deprecated; a frozen version never changes"
+    UsedBy:
+      type: object
+      description: A project that adopted the version, and its aliases pointing at it
+      required: [projectId, projectSlug, adoptedAt, aliases]
+      properties:
+        projectId: { type: string }
+        projectSlug: { $ref: "#/components/schemas/Slug" }
+        adoptedAt: { type: string, format: date-time }
+        aliases: { type: array, items: { $ref: "#/components/schemas/AliasName" } }
+    VersionSummary:
+      type: object
+      required: [id, version, state, createdAt]
+      properties:
+        id: { type: string }
+        version: { type: string }
+        state: { $ref: "#/components/schemas/VersionState" }
+        createdAt: { type: string, format: date-time }
+    Collection:
+      type: object
+      description: A named series of immutable versions of one kind
+      required: [id, kind, name, description, tags, licence, versionCount, createdAt]
+      properties:
+        id: { type: string, description: "reg_…" }
+        kind: { $ref: "#/components/schemas/RegistryKind" }
+        name: { type: string, description: "<kind>/<name>, e.g. dataset/fleurs-he-smoke" }
+        description: { type: string }
+        tags: { type: array, items: { type: string } }
+        licence: { type: string }
+        versionCount: { type: integer }
+        latest: { $ref: "#/components/schemas/VersionSummary" }
+        versions: { type: array, items: { $ref: "#/components/schemas/VersionSummary" }, description: "Newest first; collections.get only" }
+        createdAt: { type: string, format: date-time }
+    CollectionList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Collection" } }
+
+    BaseModelPayload:
+      type: object
+      description: An upstream checkpoint pinned to one Hugging Face revision
+      required: [hfRepo, revision, licence, familyId, locales]
+      properties:
+        hfRepo: { type: string, example: nvidia/nemotron-3.5-asr-streaming-0.6b }
+        revision: { type: string, description: The pinned Hugging Face commit sha }
+        licence: { type: string }
+        licenceUrl: { type: string }
+        familyId: { type: string, description: "Model family descriptor id (R41); the descriptor itself arrives with the worker in phase 2" }
+        checkpointFile: { type: string, description: "The file a run initialises from, e.g. the .nemo archive" }
+        parameters: { type: string, description: "Model size as the model card states it, e.g. 0.6B" }
+        sampleRateHz: { type: integer }
+        locales: { type: array, items: { type: string }, description: Locales the model card lists }
+    BaseModelVersion:
+      allOf:
+        - $ref: "#/components/schemas/RegistryVersion"
+        - type: object
+          required: [baseModel, usedBy]
+          properties:
+            baseModel: { $ref: "#/components/schemas/BaseModelPayload" }
+            usedBy: { type: array, items: { $ref: "#/components/schemas/UsedBy" } }
+    BaseModelVersionList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/BaseModelVersion" } }
+
+    DatasetSplit:
+      type: object
+      required: [name, utterances, hours]
+      properties:
+        name: { type: string, example: train }
+        utterances: { type: integer }
+        hours: { type: number, format: double }
+        speakers: { type: integer }
+    DatasetPayload:
+      type: object
+      description: A fingerprinted selection of utterances with splits, statistics and lineage
+      required: [source, locales, splits, hours, utterances, bytes, fixture]
+      properties:
+        source: { type: string, description: "Where the audio comes from, e.g. hf://datasets/google/fleurs" }
+        sourceRevision: { type: string, description: The pinned revision of the source }
+        subset: { type: string, description: "The source's configuration or subset, e.g. he_il" }
+        locales: { type: array, items: { type: string } }
+        domain: { type: string }
+        sampleRateHz: { type: integer }
+        splits: { type: array, items: { $ref: "#/components/schemas/DatasetSplit" } }
+        hours: { type: number, format: double }
+        utterances: { type: integer }
+        bytes: { type: integer, format: int64, description: Size of the frozen shards; estimated for fixtures }
+        fixture: { type: boolean, description: "Metadata only: no audio is stored (phase-1 fixture so mixes have something to reference)" }
+    DatasetVersion:
+      allOf:
+        - $ref: "#/components/schemas/RegistryVersion"
+        - type: object
+          required: [dataset, usedBy]
+          properties:
+            dataset: { $ref: "#/components/schemas/DatasetPayload" }
+            usedBy: { type: array, items: { $ref: "#/components/schemas/UsedBy" } }
+    DatasetVersionList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/DatasetVersion" } }
+
+    TemplateKind:
+      type: string
+      enum: [instructions, preset, skill, pipeline, agent-config]
+    TemplateFile:
+      type: object
+      required: [path, sha256, bytes]
+      properties:
+        path: { type: string, description: Path inside the bundled templates tree }
+        sha256: { type: string }
+        bytes: { type: integer }
+    TemplatePayload:
+      type: object
+      description: Bundled configuration the bootstrap copies into a project; the contents ship in the binary
+      required: [templateKind, path, files]
+      properties:
+        templateKind: { $ref: "#/components/schemas/TemplateKind" }
+        path: { type: string, description: "Directory or file in the templates tree, e.g. instructions/default" }
+        files: { type: array, items: { $ref: "#/components/schemas/TemplateFile" } }
+    TemplateVersion:
+      allOf:
+        - $ref: "#/components/schemas/RegistryVersion"
+        - type: object
+          required: [template, usedBy]
+          properties:
+            template: { $ref: "#/components/schemas/TemplatePayload" }
+            usedBy: { type: array, items: { $ref: "#/components/schemas/UsedBy" } }
+    TemplateVersionList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/TemplateVersion" } }
+
+    AdoptionNew:
+      type: object
+      required: [version]
+      additionalProperties: false
+      properties:
+        version: { type: string, description: "The registry version to adopt (ver_…)" }
+    Adoption:
+      type: object
+      required: [projectId, version, actor, adoptedAt, aliases]
+      properties:
+        projectId: { type: string }
+        version: { $ref: "#/components/schemas/RegistryVersion" }
+        actor: { $ref: "#/components/schemas/Actor" }
+        adoptedAt: { type: string, format: date-time }
+        aliases: { type: array, items: { $ref: "#/components/schemas/AliasName" } }
+    AdoptionList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Adoption" } }
+
+    AliasName:
+      type: string
+      pattern: "^[a-z][a-z0-9-]{1,38}[a-z0-9]$"
+      description: "Lowercase letters, digits and dashes, shown with a leading @; baseline and production are reserved (R8)"
+    AliasSet:
+      type: object
+      required: [version]
+      additionalProperties: false
+      properties:
+        version: { type: string, description: "A registry version the project adopted (ver_…)" }
+    Alias:
+      type: object
+      required: [id, name, projectId, version, reserved, rev, actor, updatedAt]
+      properties:
+        id: { type: string, description: "als_…" }
+        name: { $ref: "#/components/schemas/AliasName" }
+        projectId: { type: string }
+        version: { $ref: "#/components/schemas/RegistryVersion" }
+        reserved:
+          type: string
+          enum: [free, gated, promotion]
+          description: "free: aliases.set moves it; gated: aliases.set needs an approval (baseline); promotion: only deployments.promote moves it (production)"
+        rev: { type: integer }
+        actor: { $ref: "#/components/schemas/Actor" }
+        updatedAt: { type: string, format: date-time }
+    AliasList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Alias" } }
+
+    JobKind:
+      type: string
+      enum: [training, eval, shadow, export]
+    ComputeCard:
+      type: object
+      required: [index, name, cardClass, memoryGb, memoryCapGb, allowedJobKinds]
+      properties:
+        index: { type: integer, minimum: 0, description: The card's index on its host (CUDA device order) }
+        name: { type: string }
+        cardClass: { type: string, description: Key into the estimate table in defaults.yaml }
+        memoryGb: { type: number, format: double }
+        memoryCapGb: { type: number, format: double, description: "The memory a Cadence job may use on this card (CADENCE_GPU_MEMORY_CAP_GB)" }
+        allowedJobKinds: { type: array, items: { $ref: "#/components/schemas/JobKind" } }
+    ComputeHealth:
+      type: object
+      required: [state]
+      properties:
+        state: { type: string, enum: [unknown, healthy, degraded, unreachable], description: "unknown until a worker reports (phase 2)" }
+        checkedAt: { type: string, format: date-time }
+        detail: { type: string }
+    ComputeHost:
+      type: object
+      required: [id, name, description, cards, health, rev, createdAt, updatedAt]
+      properties:
+        id: { type: string, description: "cmp_…" }
+        name: { type: string }
+        description: { type: string }
+        cards: { type: array, items: { $ref: "#/components/schemas/ComputeCard" } }
+        health: { $ref: "#/components/schemas/ComputeHealth" }
+        rev: { type: integer }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ComputeList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/ComputeHost" } }
+    ComputeCardEdit:
+      type: object
+      required: [index]
+      additionalProperties: false
+      properties:
+        index: { type: integer, minimum: 0 }
+        memoryCapGb: { type: number, format: double, exclusiveMinimum: 0 }
+        allowedJobKinds: { type: array, uniqueItems: true, items: { $ref: "#/components/schemas/JobKind" } }
+    ComputeEdit:
+      type: object
+      additionalProperties: false
+      properties:
+        description: { type: string, maxLength: 2000 }
+        cards: { type: array, minItems: 1, items: { $ref: "#/components/schemas/ComputeCardEdit" } }
+
+    SecretKind:
+      type: string
+      enum: [huggingface, ngc, github, s3, judge-api, other]
+    SecretName:
+      type: string
+      pattern: "^[a-z][a-z0-9_-]{1,62}$"
+    SecretScope:
+      type: string
+      pattern: "^(instance|project:[a-z][a-z0-9-]{1,38}[a-z0-9])$"
+      description: "instance, or project:<slug> when only that project's jobs and bootstrap may read it"
+    Secret:
+      type: object
+      description: A named credential; its value is never returned
+      required: [id, name, kind, scope, rev, actor, createdAt]
+      properties:
+        id: { type: string, description: "sec_…" }
+        name: { $ref: "#/components/schemas/SecretName" }
+        kind: { $ref: "#/components/schemas/SecretKind" }
+        scope: { $ref: "#/components/schemas/SecretScope" }
+        rev: { type: integer }
+        actor: { $ref: "#/components/schemas/Actor" }
+        createdAt: { type: string, format: date-time }
+        lastUsedAt: { type: string, format: date-time, description: The last time a server-side consumer read the value }
+    SecretNew:
+      type: object
+      required: [name, kind, value]
+      additionalProperties: false
+      properties:
+        name: { $ref: "#/components/schemas/SecretName" }
+        kind: { $ref: "#/components/schemas/SecretKind" }
+        scope: { $ref: "#/components/schemas/SecretScope" }
+        value: { type: string, writeOnly: true, minLength: 1, maxLength: 16384, description: Write-only; stored encrypted outside the database }
+    SecretList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Secret" } }
+
+    DefaultRange:
+      type: object
+      properties:
+        min: { type: number, format: double }
+        max: { type: number, format: double }
+        values: { type: array, items: { type: string } }
+    DefaultValue:
+      type: object
+      description: One default with its description, source and safe range
+      required: [value, description, source]
+      properties:
+        value: { description: "The default: a number, string, boolean or list" }
+        unit: { type: string }
+        description: { type: string }
+        source: { type: string, description: "The published source, or \"Cadence recommendation\"" }
+        range: { $ref: "#/components/schemas/DefaultRange" }
+    DefaultSection:
+      type: object
+      additionalProperties: { $ref: "#/components/schemas/DefaultValue" }
+    TrainingEstimateRow:
+      type: object
+      description: "Seconds per training step for one base model × card class × memory cap × precision (R12 table path)"
+      required: [base_model, card_class, memory_cap_gb, precision, seconds_per_step, plus_minus, description, source]
+      properties:
+        base_model: { type: string, description: Registry collection name of the base model }
+        card_class: { type: string }
+        memory_cap_gb: { type: number, format: double }
+        precision: { type: string }
+        seconds_per_step: { type: number, format: double }
+        plus_minus: { type: number, format: double, description: "Relative uncertainty: 0.5 means ±50%" }
+        description: { type: string }
+        source: { type: string }
+    DefaultCard:
+      type: object
+      required: [index, name, card_class, memory_gb, memory_cap_gb, allowed_job_kinds]
+      properties:
+        index: { type: integer }
+        name: { type: string }
+        card_class: { type: string }
+        memory_gb: { type: number, format: double }
+        memory_cap_gb: { type: number, format: double }
+        allowed_job_kinds: { type: array, items: { $ref: "#/components/schemas/JobKind" } }
+    DefaultHost:
+      type: object
+      description: A compute host seeded at first start
+      required: [name, description, cards, source]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        cards: { type: array, items: { $ref: "#/components/schemas/DefaultCard" } }
+        source: { type: string }
+    Defaults:
+      type: object
+      description: "defaults.yaml (R11): keys are snake_case, addressed as <section>.<key> (x-cadence.defaultRef)"
+      required: [version, wizard, budgets, timeouts, training, estimates, cache, compute]
+      properties:
+        version: { type: integer }
+        wizard: { $ref: "#/components/schemas/DefaultSection" }
+        budgets: { $ref: "#/components/schemas/DefaultSection" }
+        timeouts: { $ref: "#/components/schemas/DefaultSection" }
+        training: { $ref: "#/components/schemas/DefaultSection" }
+        cache: { $ref: "#/components/schemas/DefaultSection" }
+        estimates:
+          type: object
+          required: [bytes_per_audio_hour, training]
+          properties:
+            bytes_per_audio_hour: { $ref: "#/components/schemas/DefaultValue" }
+            training: { type: array, items: { $ref: "#/components/schemas/TrainingEstimateRow" } }
+        compute:
+          type: object
+          required: [hosts]
+          properties:
+            hosts: { type: array, items: { $ref: "#/components/schemas/DefaultHost" } }
+
+    PolicyBudgets:
+      type: object
+      required: [gpuHoursPerProjectPerDay, agentTurnsPerSession]
+      properties:
+        gpuHoursPerProjectPerDay: { type: number, format: double, description: "Default budgets.gpu_hours_per_project_per_day" }
+        agentTurnsPerSession: { type: integer, description: "Default budgets.agent_turns_per_session" }
+    Policies:
+      type: object
+      required: [rev, updatedAt, budgets, departures]
+      properties:
+        rev: { type: integer }
+        updatedAt: { type: string, format: date-time }
+        budgets: { $ref: "#/components/schemas/PolicyBudgets" }
+        departures:
+          type: array
+          items: { type: string }
+          description: "Fields that differ from defaults.yaml, e.g. budgets.gpuHoursPerProjectPerDay"
+    PoliciesEdit:
+      type: object
+      additionalProperties: false
+      properties:
+        budgets:
+          type: object
+          additionalProperties: false
+          properties:
+            gpuHoursPerProjectPerDay: { type: number, format: double }
+            agentTurnsPerSession: { type: integer }
+
+    RunInit:
+      type: string
+      enum: [base, checkpoint]
+      description: "Where the weights start (R44); scratch is deferred"
+    Precision:
+      type: string
+      enum: [bf16, fp16, fp32]
+    RunNew:
+      type: object
+      additionalProperties: false
+      properties:
+        init: { $ref: "#/components/schemas/RunInit" }
+        baseModel:
+          type: string
+          description: "Base model version (ver_…), collection name (its newest frozen version) or @alias; default the defaults' base model"
+        checkpoint: { type: string, description: "Required when init is checkpoint (checkpoints arrive in phase 2)" }
+        steps: { type: integer, minimum: 1, description: "Default training.steps" }
+        precision: { $ref: "#/components/schemas/Precision" }
+        gpus: { type: integer, minimum: 1, description: "Cards for the run; v1 accepts 1 (training.gpus)" }
+        compute: { type: string, description: "Host id or name; default the first host whose card allows training" }
+        datasets:
+          type: array
+          maxItems: 100
+          items: { type: string }
+          description: "Dataset versions (ver_… or @alias) the run reads, for the data volume; the mix replaces this in phase 2"
+    EstimateRange:
+      type: object
+      required: [value, low, high]
+      properties:
+        value: { type: number, format: double }
+        low: { type: number, format: double }
+        high: { type: number, format: double }
+    RunEstimate:
+      type: object
+      description: "What a run would cost (R12). basis table: from the estimate table in defaults.yaml; measured: from runs.calibrate (phase 2)"
+      required: [basis, plusMinus, gpuHours, durationSeconds, secondsPerStep, steps, gpus, precision, init, baseModel, card, data, budget, source]
+      properties:
+        basis: { type: string, enum: [measured, table] }
+        plusMinus: { type: number, format: double, description: "Relative uncertainty: 0.5 means ±50%" }
+        gpuHours: { $ref: "#/components/schemas/EstimateRange" }
+        durationSeconds: { $ref: "#/components/schemas/EstimateRange" }
+        secondsPerStep: { type: number, format: double }
+        steps: { type: integer }
+        gpus: { type: integer }
+        precision: { $ref: "#/components/schemas/Precision" }
+        init: { $ref: "#/components/schemas/RunInit" }
+        baseModel: { $ref: "#/components/schemas/RegistryVersion" }
+        card:
+          type: object
+          required: [computeId, host, index, cardClass, memoryCapGb]
+          properties:
+            computeId: { type: string }
+            host: { type: string }
+            index: { type: integer }
+            cardClass: { type: string }
+            memoryCapGb: { type: number, format: double }
+        data:
+          type: object
+          required: [datasets, hours, bytes]
+          properties:
+            datasets: { type: array, items: { type: string }, description: Resolved dataset version ids }
+            hours: { type: number, format: double }
+            bytes: { type: integer, format: int64, description: What must be materialised on the worker's disk }
+        budget:
+          type: object
+          required: [gpuHoursPerProjectPerDay, withinDailyBudget]
+          properties:
+            gpuHoursPerProjectPerDay: { type: number, format: double }
+            withinDailyBudget: { type: boolean, description: "The upper bound fits the project's daily GPU-hour budget" }
+        source: { type: string, description: The source of the estimate-table row }
 
     # ---------------------------------------------------------------- approvals, audit, jobs schemas (stream C) — add below
     #
