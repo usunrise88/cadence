@@ -2,6 +2,608 @@
   "generatedFrom": "api/openapi.yaml",
   "tools": [
     {
+      "name": "adoptions.list",
+      "title": "Registry versions the project adopted, with the aliases pointing at each",
+      "description": "Registry versions the project adopted, with the aliases pointing at each",
+      "method": "GET",
+      "path": "/projects/{p}/adoptions",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "description": "Only versions of this kind",
+            "enum": [
+              "base_model",
+              "dataset_version",
+              "template"
+            ],
+            "type": "string"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "kind",
+          "in": "query",
+          "name": "kind"
+        }
+      ]
+    },
+    {
+      "name": "aliases.get",
+      "title": "Get one project alias and the version it points at",
+      "description": "Get one project alias and the version it points at",
+      "method": "GET",
+      "path": "/projects/{p}/aliases/{name}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "Alias name without the @ (train-current, baseline, …)",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "name",
+          "in": "path",
+          "name": "name"
+        }
+      ]
+    },
+    {
+      "name": "aliases.list",
+      "title": "The project's aliases (train-current, baseline, production, …) and the versions they point at",
+      "description": "The project's aliases (train-current, baseline, production, …) and the versions they point at",
+      "method": "GET",
+      "path": "/projects/{p}/aliases",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        }
+      ]
+    },
+    {
+      "name": "aliases.set",
+      "title": "Point a project alias at an adopted registry version (baseline is gated, production moves only by promotion)",
+      "description": "Point a project alias (@train-current, @baseline, or any free name) at a registry version the project has adopted (projects.adopt first). Pipelines reference aliases; runs record the resolved version. Moving baseline is gated and may answer 202 with an approval id (R8). production is read-only here: it answers 409 reserved-alias and moves only with deployments.promote. Send If-Match with the alias's revision (aliases.get) unless the alias does not exist yet. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "PUT",
+      "path": "/projects/{p}/aliases/{name}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "version": {
+                "description": "A registry version the project adopted (ver_…)",
+                "type": "string"
+              }
+            },
+            "required": [
+              "version"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on; required unless the target does not exist yet",
+            "type": "string"
+          },
+          "name": {
+            "description": "Alias name without the @ (train-current, baseline, …)",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "name",
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "name",
+          "in": "path",
+          "name": "name"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "baseModels.get",
+      "title": "Get a base model version with the projects that use it",
+      "description": "Get a base model version with the projects that use it",
+      "method": "GET",
+      "path": "/registry/base-models/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Registry version id (ver_…)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        }
+      ]
+    },
+    {
+      "name": "baseModels.list",
+      "title": "List base model versions (Hugging Face repository at a pinned revision, licence, model family)",
+      "description": "List base model versions (Hugging Face repository at a pinned revision, licence, model family)",
+      "method": "GET",
+      "path": "/registry/base-models",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "collection": {
+            "description": "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)",
+            "type": "string"
+          },
+          "state": {
+            "description": "Only versions in this state",
+            "enum": [
+              "draft",
+              "frozen",
+              "deprecated"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "collection",
+          "in": "query",
+          "name": "collection"
+        },
+        {
+          "property": "state",
+          "in": "query",
+          "name": "state"
+        }
+      ]
+    },
+    {
+      "name": "collections.get",
+      "title": "Get a registry collection with its versions, newest first",
+      "description": "Get a registry collection with its versions, newest first",
+      "method": "GET",
+      "path": "/registry/collections/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Collection id (reg_…) or name with the slash escaped (dataset%2Ffleurs-he-smoke)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        }
+      ]
+    },
+    {
+      "name": "collections.list",
+      "title": "List registry collections (named series of immutable versions), optionally of one kind or tag",
+      "description": "List registry collections such as base-model/nemotron-3.5-asr-streaming-0.6b or dataset/fleurs-he-smoke. A collection groups immutable versions of one kind; list the versions with baseModels.list, datasets.list or templates.list (filter collection=\u003cname\u003e).",
+      "method": "GET",
+      "path": "/registry/collections",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "description": "Only collections of this kind",
+            "enum": [
+              "base_model",
+              "dataset_version",
+              "template"
+            ],
+            "type": "string"
+          },
+          "tag": {
+            "description": "Only collections carrying this tag (e.g. locale:he-IL)",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "kind",
+          "in": "query",
+          "name": "kind"
+        },
+        {
+          "property": "tag",
+          "in": "query",
+          "name": "tag"
+        }
+      ]
+    },
+    {
+      "name": "compute.edit",
+      "title": "Change a host's description or a card's memory cap and allowed job kinds",
+      "description": "Change a host's description or a card's memory cap and allowed job kinds Pass dryRun=true to see what would happen without changing anything.",
+      "method": "PATCH",
+      "path": "/compute/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "cards": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "allowedJobKinds": {
+                      "items": {
+                        "enum": [
+                          "training",
+                          "eval",
+                          "shadow",
+                          "export"
+                        ],
+                        "type": "string"
+                      },
+                      "type": "array",
+                      "uniqueItems": true
+                    },
+                    "index": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "memoryCapGb": {
+                      "exclusiveMinimum": 0,
+                      "format": "double",
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "index"
+                  ],
+                  "type": "object"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "description": {
+                "maxLength": 2000,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Host id (cmp_…) or name (staging)",
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "compute.get",
+      "title": "Get a host and its cards",
+      "description": "Get a host and its cards",
+      "method": "GET",
+      "path": "/compute/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Host id (cmp_…) or name (staging)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        }
+      ]
+    },
+    {
+      "name": "compute.list",
+      "title": "Hosts and their cards (memory cap per card, allowed job kinds) with health",
+      "description": "Hosts and their cards (memory cap per card, allowed job kinds) with health",
+      "method": "GET",
+      "path": "/compute",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": null
+    },
+    {
+      "name": "datasets.get",
+      "title": "Get a dataset version with its splits, statistics and the projects that use it",
+      "description": "Get a dataset version with its splits, statistics and the projects that use it",
+      "method": "GET",
+      "path": "/registry/datasets/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Registry version id (ver_…)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        }
+      ]
+    },
+    {
+      "name": "datasets.list",
+      "title": "List dataset versions (immutable, fingerprinted selections with splits and statistics)",
+      "description": "List dataset versions (immutable, fingerprinted selections with splits and statistics)",
+      "method": "GET",
+      "path": "/registry/datasets",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "collection": {
+            "description": "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)",
+            "type": "string"
+          },
+          "state": {
+            "description": "Only versions in this state",
+            "enum": [
+              "draft",
+              "frozen",
+              "deprecated"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "collection",
+          "in": "query",
+          "name": "collection"
+        },
+        {
+          "property": "state",
+          "in": "query",
+          "name": "state"
+        }
+      ]
+    },
+    {
+      "name": "defaults.get",
+      "title": "The versioned defaults (defaults.yaml) every form, budget and estimate starts from",
+      "description": "The defaults every parameter, form, budget and estimate starts from (defaults.yaml): each value with its description, source and safe range. A value written anywhere else that differs is a departure from default.",
+      "method": "GET",
+      "path": "/defaults",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": null
+    },
+    {
       "name": "events.list",
       "title": "Events after a sequence number; with Accept text/event-stream, the live stream",
       "description": "Events after a sequence number, oldest first, optionally filtered by topic patterns (a trailing * matches the remaining segments, e.g. run.123.*) and project. Use the last seq as `after` to continue.",
@@ -141,6 +743,163 @@
           "property": "limit",
           "in": "query",
           "name": "limit"
+        }
+      ]
+    },
+    {
+      "name": "policies.edit",
+      "title": "Change instance-wide policies; values must stay inside the ranges in defaults.yaml",
+      "description": "Change instance-wide policies; values must stay inside the ranges in defaults.yaml Pass dryRun=true to see what would happen without changing anything.",
+      "method": "PATCH",
+      "path": "/policies",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "budgets": {
+                "additionalProperties": false,
+                "properties": {
+                  "agentTurnsPerSession": {
+                    "type": "integer"
+                  },
+                  "gpuHoursPerProjectPerDay": {
+                    "format": "double",
+                    "type": "number"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "policies.get",
+      "title": "Instance-wide policies (budgets now; retention, PII and cache quotas later)",
+      "description": "Instance-wide policies (budgets now; retention, PII and cache quotas later)",
+      "method": "GET",
+      "path": "/policies",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": null
+    },
+    {
+      "name": "projects.adopt",
+      "title": "Adopt a registry version into the project by reference",
+      "description": "Adopt a registry version (base model, dataset version, template) into this project by reference, so mixes, runs and aliases may use it. Only frozen versions are adoptable. Needs If-Match with the project's revision (projects.get); the project's revision goes up by one. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/projects/{p}:adopt",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "version": {
+                "description": "The registry version to adopt (ver_…)",
+                "type": "string"
+              }
+            },
+            "required": [
+              "version"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "ifMatch",
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
         }
       ]
     },
@@ -398,14 +1157,20 @@
     },
     {
       "name": "registry.search",
-      "title": "Search registry versions of every kind (empty until phase 1 registers kinds)",
-      "description": "Search registry versions of every kind (empty until phase 1 registers kinds)",
+      "title": "Search registry versions of every kind by text and qualifiers (kind:, tag:, locale:, state:)",
+      "description": "Search registry versions of every kind (base models, dataset versions, templates). q is free text matched against collection names and descriptions plus qualifiers: kind:base_model, tag:telephony, locale:he-IL, state:frozen. project=\u003cslug\u003e keeps only what that project adopted. Get one version with baseModels.get, datasets.get or templates.get.",
       "method": "GET",
       "path": "/registry",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "kind": {
+            "description": "The kinds registered so far; golden sets, sources, normalizers and model versions join in later phases",
+            "enum": [
+              "base_model",
+              "dataset_version",
+              "template"
+            ],
             "type": "string"
           },
           "limit": {
@@ -415,11 +1180,11 @@
             "type": "integer"
           },
           "project": {
-            "description": "Only versions this project adopted",
+            "description": "Only versions this project adopted (slug)",
             "type": "string"
           },
           "q": {
-            "description": "Free text with qualifiers (kind:, tag:, locale:)",
+            "description": "Free text with qualifiers (kind:, tag:, locale:, state:)",
             "type": "string"
           }
         },
@@ -450,6 +1215,292 @@
           "property": "limit",
           "in": "query",
           "name": "limit"
+        }
+      ]
+    },
+    {
+      "name": "runs.new",
+      "title": "Start a training run; until phase 2 only ?dryRun=true answers, with GPU-hours, card, duration and data",
+      "description": "Start a training run from a base model (init base) or a checkpoint. Until phase 2 only the dry run works: call it with dryRun=true to get the estimate (GPU-hours, duration, card, data volume, basis and ±) from the defaults table and the compute entity; without dryRun it answers 501. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/projects/{p}/runs",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "baseModel": {
+                "description": "Base model version (ver_…), collection name (its newest frozen version) or @alias; default the defaults' base model",
+                "type": "string"
+              },
+              "checkpoint": {
+                "description": "Required when init is checkpoint (checkpoints arrive in phase 2)",
+                "type": "string"
+              },
+              "compute": {
+                "description": "Host id or name; default the first host whose card allows training",
+                "type": "string"
+              },
+              "datasets": {
+                "description": "Dataset versions (ver_… or @alias) the run reads, for the data volume; the mix replaces this in phase 2",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 100,
+                "type": "array"
+              },
+              "gpus": {
+                "description": "Cards for the run; v1 accepts 1 (training.gpus)",
+                "minimum": 1,
+                "type": "integer"
+              },
+              "init": {
+                "description": "Where the weights start (R44); scratch is deferred",
+                "enum": [
+                  "base",
+                  "checkpoint"
+                ],
+                "type": "string"
+              },
+              "precision": {
+                "enum": [
+                  "bf16",
+                  "fp16",
+                  "fp32"
+                ],
+                "type": "string"
+              },
+              "steps": {
+                "description": "Default training.steps",
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "secrets.list",
+      "title": "Named credentials (name, kind, scope, last use); values are never returned",
+      "description": "Named credentials (name, kind, scope, last use); values are never returned",
+      "method": "GET",
+      "path": "/secrets",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": null
+    },
+    {
+      "name": "secrets.new",
+      "title": "Store a named credential; the value is write-only and never returned",
+      "description": "Store a named credential (Hugging Face, NGC, GitHub, S3, judge API). The value is encrypted at rest outside the database and never returned by any operation; jobs and bootstrap read it on the server. Agents should not call this: secrets never enter an agent context. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/secrets",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "enum": [
+                  "huggingface",
+                  "ngc",
+                  "github",
+                  "s3",
+                  "judge-api",
+                  "other"
+                ],
+                "type": "string"
+              },
+              "name": {
+                "pattern": "^[a-z][a-z0-9_-]{1,62}$",
+                "type": "string"
+              },
+              "scope": {
+                "description": "instance, or project:\u003cslug\u003e when only that project's jobs and bootstrap may read it",
+                "pattern": "^(instance|project:[a-z][a-z0-9-]{1,38}[a-z0-9])$",
+                "type": "string"
+              },
+              "value": {
+                "description": "Write-only; stored encrypted outside the database",
+                "maxLength": 16384,
+                "minLength": 1,
+                "type": "string",
+                "writeOnly": true
+              }
+            },
+            "required": [
+              "name",
+              "kind",
+              "value"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "templates.get",
+      "title": "Get a template version with its files (paths and hashes) and the projects that use it",
+      "description": "Get a template version with its files (paths and hashes) and the projects that use it",
+      "method": "GET",
+      "path": "/registry/templates/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Registry version id (ver_…)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        }
+      ]
+    },
+    {
+      "name": "templates.list",
+      "title": "List template versions (instruction templates, permission presets, skills, pipeline templates, agent config)",
+      "description": "List template versions (instruction templates, permission presets, skills, pipeline templates, agent config)",
+      "method": "GET",
+      "path": "/registry/templates",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "collection": {
+            "description": "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)",
+            "type": "string"
+          },
+          "state": {
+            "description": "Only versions in this state",
+            "enum": [
+              "draft",
+              "frozen",
+              "deprecated"
+            ],
+            "type": "string"
+          },
+          "templateKind": {
+            "description": "Only templates of this kind",
+            "enum": [
+              "instructions",
+              "preset",
+              "skill",
+              "pipeline",
+              "agent-config"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "collection",
+          "in": "query",
+          "name": "collection"
+        },
+        {
+          "property": "state",
+          "in": "query",
+          "name": "state"
+        },
+        {
+          "property": "templateKind",
+          "in": "query",
+          "name": "templateKind"
         }
       ]
     }

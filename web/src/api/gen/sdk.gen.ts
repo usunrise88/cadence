@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AgentMessagesNewData, AgentMessagesNewErrors, AgentMessagesNewResponses, AgentSessionsCancelData, AgentSessionsCancelErrors, AgentSessionsCancelResponses, AgentSessionsNewData, AgentSessionsNewErrors, AgentSessionsNewResponses, AliasesSetData, AliasesSetErrors, AliasesSetResponses, ApprovalsApproveData, ApprovalsApproveErrors, ApprovalsApproveResponses, ApprovalsDenyData, ApprovalsDenyErrors, ApprovalsDenyResponses, ApprovalsListData, ApprovalsListErrors, ApprovalsListResponses, EventsListData, EventsListErrors, EventsListResponses, HelpGetData, HelpGetErrors, HelpGetResponses, HelpSearchData, HelpSearchErrors, HelpSearchResponses, JobsCancelData, JobsCancelErrors, JobsCancelResponses, JobsGetData, JobsGetErrors, JobsGetResponses, MeGetData, MeGetErrors, MeGetResponses, MixesEditData, MixesEditErrors, MixesEditResponses, MixesNewData, MixesNewErrors, MixesNewResponses, MixesPreviewData, MixesPreviewErrors, MixesPreviewResponses, MountsListData, MountsListErrors, MountsListResponses, MountsNewData, MountsNewErrors, MountsNewResponses, ProjectsArchiveData, ProjectsArchiveErrors, ProjectsArchiveResponses, ProjectsEditData, ProjectsEditErrors, ProjectsEditResponses, ProjectsGetData, ProjectsGetErrors, ProjectsGetResponses, ProjectsListData, ProjectsListErrors, ProjectsListResponses, ProjectsNewData, ProjectsNewErrors, ProjectsNewResponses, RegistrySearchData, RegistrySearchErrors, RegistrySearchResponses, RunsNewData, RunsNewErrors, RunsNewResponses, WorkspacesGetData, WorkspacesGetErrors, WorkspacesGetResponses, WorkspacesListData, WorkspacesListErrors, WorkspacesListResponses, WorkspacesSetData, WorkspacesSetErrors, WorkspacesSetResponses } from './types.gen';
+import type { AdoptionsListData, AdoptionsListErrors, AdoptionsListResponses, AgentMessagesNewData, AgentMessagesNewErrors, AgentMessagesNewResponses, AgentSessionsCancelData, AgentSessionsCancelErrors, AgentSessionsCancelResponses, AgentSessionsNewData, AgentSessionsNewErrors, AgentSessionsNewResponses, AliasesGetData, AliasesGetErrors, AliasesGetResponses, AliasesListData, AliasesListErrors, AliasesListResponses, AliasesSetData, AliasesSetErrors, AliasesSetResponses, ApprovalsApproveData, ApprovalsApproveErrors, ApprovalsApproveResponses, ApprovalsDenyData, ApprovalsDenyErrors, ApprovalsDenyResponses, ApprovalsListData, ApprovalsListErrors, ApprovalsListResponses, BaseModelsGetData, BaseModelsGetErrors, BaseModelsGetResponses, BaseModelsListData, BaseModelsListErrors, BaseModelsListResponses, CollectionsGetData, CollectionsGetErrors, CollectionsGetResponses, CollectionsListData, CollectionsListErrors, CollectionsListResponses, ComputeEditData, ComputeEditErrors, ComputeEditResponses, ComputeGetData, ComputeGetErrors, ComputeGetResponses, ComputeListData, ComputeListErrors, ComputeListResponses, DatasetsGetData, DatasetsGetErrors, DatasetsGetResponses, DatasetsListData, DatasetsListErrors, DatasetsListResponses, DefaultsGetData, DefaultsGetErrors, DefaultsGetResponses, EventsListData, EventsListErrors, EventsListResponses, HelpGetData, HelpGetErrors, HelpGetResponses, HelpSearchData, HelpSearchErrors, HelpSearchResponses, JobsCancelData, JobsCancelErrors, JobsCancelResponses, JobsGetData, JobsGetErrors, JobsGetResponses, MeGetData, MeGetErrors, MeGetResponses, MixesEditData, MixesEditErrors, MixesEditResponses, MixesNewData, MixesNewErrors, MixesNewResponses, MixesPreviewData, MixesPreviewErrors, MixesPreviewResponses, MountsListData, MountsListErrors, MountsListResponses, MountsNewData, MountsNewErrors, MountsNewResponses, PoliciesEditData, PoliciesEditErrors, PoliciesEditResponses, PoliciesGetData, PoliciesGetErrors, PoliciesGetResponses, ProjectsAdoptData, ProjectsAdoptErrors, ProjectsAdoptResponses, ProjectsArchiveData, ProjectsArchiveErrors, ProjectsArchiveResponses, ProjectsEditData, ProjectsEditErrors, ProjectsEditResponses, ProjectsGetData, ProjectsGetErrors, ProjectsGetResponses, ProjectsListData, ProjectsListErrors, ProjectsListResponses, ProjectsNewData, ProjectsNewErrors, ProjectsNewResponses, RegistrySearchData, RegistrySearchErrors, RegistrySearchResponses, RunsNewData, RunsNewErrors, RunsNewResponses, SecretsListData, SecretsListErrors, SecretsListResponses, SecretsNewData, SecretsNewErrors, SecretsNewResponses, TemplatesGetData, TemplatesGetErrors, TemplatesGetResponses, TemplatesListData, TemplatesListErrors, TemplatesListResponses, WorkspacesGetData, WorkspacesGetErrors, WorkspacesGetResponses, WorkspacesListData, WorkspacesListErrors, WorkspacesListResponses, WorkspacesSetData, WorkspacesSetErrors, WorkspacesSetResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -100,9 +100,161 @@ export const helpSearch = <ThrowOnError extends boolean = false>(options?: Optio
 export const helpGet = <ThrowOnError extends boolean = false>(options: Options<HelpGetData, ThrowOnError>): RequestResult<HelpGetResponses, HelpGetErrors, ThrowOnError> => (options.client ?? client).get<HelpGetResponses, HelpGetErrors, ThrowOnError>({ url: '/help/{id}', ...options });
 
 /**
- * Search registry versions of every kind (empty until phase 1 registers kinds)
+ * Search registry versions of every kind by text and qualifiers (kind:, tag:, locale:, state:)
  */
 export const registrySearch = <ThrowOnError extends boolean = false>(options?: Options<RegistrySearchData, ThrowOnError>): RequestResult<RegistrySearchResponses, RegistrySearchErrors, ThrowOnError> => (options?.client ?? client).get<RegistrySearchResponses, RegistrySearchErrors, ThrowOnError>({ url: '/registry', ...options });
+
+/**
+ * List registry collections (named series of immutable versions), optionally of one kind or tag
+ */
+export const collectionsList = <ThrowOnError extends boolean = false>(options?: Options<CollectionsListData, ThrowOnError>): RequestResult<CollectionsListResponses, CollectionsListErrors, ThrowOnError> => (options?.client ?? client).get<CollectionsListResponses, CollectionsListErrors, ThrowOnError>({ url: '/registry/collections', ...options });
+
+/**
+ * Get a registry collection with its versions, newest first
+ */
+export const collectionsGet = <ThrowOnError extends boolean = false>(options: Options<CollectionsGetData, ThrowOnError>): RequestResult<CollectionsGetResponses, CollectionsGetErrors, ThrowOnError> => (options.client ?? client).get<CollectionsGetResponses, CollectionsGetErrors, ThrowOnError>({ url: '/registry/collections/{id}', ...options });
+
+/**
+ * List base model versions (Hugging Face repository at a pinned revision, licence, model family)
+ */
+export const baseModelsList = <ThrowOnError extends boolean = false>(options?: Options<BaseModelsListData, ThrowOnError>): RequestResult<BaseModelsListResponses, BaseModelsListErrors, ThrowOnError> => (options?.client ?? client).get<BaseModelsListResponses, BaseModelsListErrors, ThrowOnError>({ url: '/registry/base-models', ...options });
+
+/**
+ * Get a base model version with the projects that use it
+ */
+export const baseModelsGet = <ThrowOnError extends boolean = false>(options: Options<BaseModelsGetData, ThrowOnError>): RequestResult<BaseModelsGetResponses, BaseModelsGetErrors, ThrowOnError> => (options.client ?? client).get<BaseModelsGetResponses, BaseModelsGetErrors, ThrowOnError>({ url: '/registry/base-models/{id}', ...options });
+
+/**
+ * List dataset versions (immutable, fingerprinted selections with splits and statistics)
+ */
+export const datasetsList = <ThrowOnError extends boolean = false>(options?: Options<DatasetsListData, ThrowOnError>): RequestResult<DatasetsListResponses, DatasetsListErrors, ThrowOnError> => (options?.client ?? client).get<DatasetsListResponses, DatasetsListErrors, ThrowOnError>({ url: '/registry/datasets', ...options });
+
+/**
+ * Get a dataset version with its splits, statistics and the projects that use it
+ */
+export const datasetsGet = <ThrowOnError extends boolean = false>(options: Options<DatasetsGetData, ThrowOnError>): RequestResult<DatasetsGetResponses, DatasetsGetErrors, ThrowOnError> => (options.client ?? client).get<DatasetsGetResponses, DatasetsGetErrors, ThrowOnError>({ url: '/registry/datasets/{id}', ...options });
+
+/**
+ * List template versions (instruction templates, permission presets, skills, pipeline templates, agent config)
+ */
+export const templatesList = <ThrowOnError extends boolean = false>(options?: Options<TemplatesListData, ThrowOnError>): RequestResult<TemplatesListResponses, TemplatesListErrors, ThrowOnError> => (options?.client ?? client).get<TemplatesListResponses, TemplatesListErrors, ThrowOnError>({ url: '/registry/templates', ...options });
+
+/**
+ * Get a template version with its files (paths and hashes) and the projects that use it
+ */
+export const templatesGet = <ThrowOnError extends boolean = false>(options: Options<TemplatesGetData, ThrowOnError>): RequestResult<TemplatesGetResponses, TemplatesGetErrors, ThrowOnError> => (options.client ?? client).get<TemplatesGetResponses, TemplatesGetErrors, ThrowOnError>({ url: '/registry/templates/{id}', ...options });
+
+/**
+ * Adopt a registry version into the project by reference
+ */
+export const projectsAdopt = <ThrowOnError extends boolean = false>(options: Options<ProjectsAdoptData, ThrowOnError>): RequestResult<ProjectsAdoptResponses, ProjectsAdoptErrors, ThrowOnError> => (options.client ?? client).post<ProjectsAdoptResponses, ProjectsAdoptErrors, ThrowOnError>({
+    url: '/projects/{p}:adopt',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Registry versions the project adopted, with the aliases pointing at each
+ */
+export const adoptionsList = <ThrowOnError extends boolean = false>(options: Options<AdoptionsListData, ThrowOnError>): RequestResult<AdoptionsListResponses, AdoptionsListErrors, ThrowOnError> => (options.client ?? client).get<AdoptionsListResponses, AdoptionsListErrors, ThrowOnError>({ url: '/projects/{p}/adoptions', ...options });
+
+/**
+ * The project's aliases (train-current, baseline, production, …) and the versions they point at
+ */
+export const aliasesList = <ThrowOnError extends boolean = false>(options: Options<AliasesListData, ThrowOnError>): RequestResult<AliasesListResponses, AliasesListErrors, ThrowOnError> => (options.client ?? client).get<AliasesListResponses, AliasesListErrors, ThrowOnError>({ url: '/projects/{p}/aliases', ...options });
+
+/**
+ * Get one project alias and the version it points at
+ */
+export const aliasesGet = <ThrowOnError extends boolean = false>(options: Options<AliasesGetData, ThrowOnError>): RequestResult<AliasesGetResponses, AliasesGetErrors, ThrowOnError> => (options.client ?? client).get<AliasesGetResponses, AliasesGetErrors, ThrowOnError>({ url: '/projects/{p}/aliases/{name}', ...options });
+
+/**
+ * Point a project alias at an adopted registry version (baseline is gated, production moves only by promotion)
+ */
+export const aliasesSet = <ThrowOnError extends boolean = false>(options: Options<AliasesSetData, ThrowOnError>): RequestResult<AliasesSetResponses, AliasesSetErrors, ThrowOnError> => (options.client ?? client).put<AliasesSetResponses, AliasesSetErrors, ThrowOnError>({
+    url: '/projects/{p}/aliases/{name}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Hosts and their cards (memory cap per card, allowed job kinds) with health
+ */
+export const computeList = <ThrowOnError extends boolean = false>(options?: Options<ComputeListData, ThrowOnError>): RequestResult<ComputeListResponses, ComputeListErrors, ThrowOnError> => (options?.client ?? client).get<ComputeListResponses, ComputeListErrors, ThrowOnError>({ url: '/compute', ...options });
+
+/**
+ * Get a host and its cards
+ */
+export const computeGet = <ThrowOnError extends boolean = false>(options: Options<ComputeGetData, ThrowOnError>): RequestResult<ComputeGetResponses, ComputeGetErrors, ThrowOnError> => (options.client ?? client).get<ComputeGetResponses, ComputeGetErrors, ThrowOnError>({ url: '/compute/{id}', ...options });
+
+/**
+ * Change a host's description or a card's memory cap and allowed job kinds
+ */
+export const computeEdit = <ThrowOnError extends boolean = false>(options: Options<ComputeEditData, ThrowOnError>): RequestResult<ComputeEditResponses, ComputeEditErrors, ThrowOnError> => (options.client ?? client).patch<ComputeEditResponses, ComputeEditErrors, ThrowOnError>({
+    url: '/compute/{id}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Named credentials (name, kind, scope, last use); values are never returned
+ */
+export const secretsList = <ThrowOnError extends boolean = false>(options?: Options<SecretsListData, ThrowOnError>): RequestResult<SecretsListResponses, SecretsListErrors, ThrowOnError> => (options?.client ?? client).get<SecretsListResponses, SecretsListErrors, ThrowOnError>({ url: '/secrets', ...options });
+
+/**
+ * Store a named credential; the value is write-only and never returned
+ */
+export const secretsNew = <ThrowOnError extends boolean = false>(options: Options<SecretsNewData, ThrowOnError>): RequestResult<SecretsNewResponses, SecretsNewErrors, ThrowOnError> => (options.client ?? client).post<SecretsNewResponses, SecretsNewErrors, ThrowOnError>({
+    url: '/secrets',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * The versioned defaults (defaults.yaml) every form, budget and estimate starts from
+ */
+export const defaultsGet = <ThrowOnError extends boolean = false>(options?: Options<DefaultsGetData, ThrowOnError>): RequestResult<DefaultsGetResponses, DefaultsGetErrors, ThrowOnError> => (options?.client ?? client).get<DefaultsGetResponses, DefaultsGetErrors, ThrowOnError>({ url: '/defaults', ...options });
+
+/**
+ * Instance-wide policies (budgets now; retention, PII and cache quotas later)
+ */
+export const policiesGet = <ThrowOnError extends boolean = false>(options?: Options<PoliciesGetData, ThrowOnError>): RequestResult<PoliciesGetResponses, PoliciesGetErrors, ThrowOnError> => (options?.client ?? client).get<PoliciesGetResponses, PoliciesGetErrors, ThrowOnError>({ url: '/policies', ...options });
+
+/**
+ * Change instance-wide policies; values must stay inside the ranges in defaults.yaml
+ */
+export const policiesEdit = <ThrowOnError extends boolean = false>(options: Options<PoliciesEditData, ThrowOnError>): RequestResult<PoliciesEditResponses, PoliciesEditErrors, ThrowOnError> => (options.client ?? client).patch<PoliciesEditResponses, PoliciesEditErrors, ThrowOnError>({
+    url: '/policies',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Start a training run; until phase 2 only ?dryRun=true answers, with GPU-hours, card, duration and data
+ */
+export const runsNew = <ThrowOnError extends boolean = false>(options: Options<RunsNewData, ThrowOnError>): RequestResult<RunsNewResponses, RunsNewErrors, ThrowOnError> => (options.client ?? client).post<RunsNewResponses, RunsNewErrors, ThrowOnError>({
+    url: '/projects/{p}/runs',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
 
 /**
  * Save a mix (input_cfg groups, weights, temperature, replay share)
@@ -133,18 +285,6 @@ export const mixesPreview = <ThrowOnError extends boolean = false>(options: Opti
  */
 export const mixesEdit = <ThrowOnError extends boolean = false>(options: Options<MixesEditData, ThrowOnError>): RequestResult<MixesEditResponses, MixesEditErrors, ThrowOnError> => (options.client ?? client).patch<MixesEditResponses, MixesEditErrors, ThrowOnError>({
     url: '/mixes/{id}',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
-});
-
-/**
- * Start a training run; ?dryRun=true returns GPU-hours, card and duration
- */
-export const runsNew = <ThrowOnError extends boolean = false>(options: Options<RunsNewData, ThrowOnError>): RequestResult<RunsNewResponses, RunsNewErrors, ThrowOnError> => (options.client ?? client).post<RunsNewResponses, RunsNewErrors, ThrowOnError>({
-    url: '/projects/{p}/runs',
     ...options,
     headers: {
         'Content-Type': 'application/json',
@@ -216,18 +356,6 @@ export const mountsList = <ThrowOnError extends boolean = false>(options?: Optio
  */
 export const mountsNew = <ThrowOnError extends boolean = false>(options: Options<MountsNewData, ThrowOnError>): RequestResult<MountsNewResponses, MountsNewErrors, ThrowOnError> => (options.client ?? client).post<MountsNewResponses, MountsNewErrors, ThrowOnError>({
     url: '/mounts',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
-});
-
-/**
- * Point a project alias at a registry version (baseline is gated, production moves only by promotion)
- */
-export const aliasesSet = <ThrowOnError extends boolean = false>(options: Options<AliasesSetData, ThrowOnError>): RequestResult<AliasesSetResponses, AliasesSetErrors, ThrowOnError> => (options.client ?? client).put<AliasesSetResponses, AliasesSetErrors, ThrowOnError>({
-    url: '/projects/{p}/aliases/{name}',
     ...options,
     headers: {
         'Content-Type': 'application/json',

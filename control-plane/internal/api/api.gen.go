@@ -44,6 +44,51 @@ func (e ActorKind) Valid() bool {
 	}
 }
 
+// Defines values for AliasReserved.
+const (
+	Free      AliasReserved = "free"
+	Gated     AliasReserved = "gated"
+	Promotion AliasReserved = "promotion"
+)
+
+// Valid indicates whether the value is a known member of the AliasReserved enum.
+func (e AliasReserved) Valid() bool {
+	switch e {
+	case Free:
+		return true
+	case Gated:
+		return true
+	case Promotion:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ComputeHealthState.
+const (
+	Degraded    ComputeHealthState = "degraded"
+	Healthy     ComputeHealthState = "healthy"
+	Unknown     ComputeHealthState = "unknown"
+	Unreachable ComputeHealthState = "unreachable"
+)
+
+// Valid indicates whether the value is a known member of the ComputeHealthState enum.
+func (e ComputeHealthState) Valid() bool {
+	switch e {
+	case Degraded:
+		return true
+	case Healthy:
+		return true
+	case Unknown:
+		return true
+	case Unreachable:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for HelpArticleSection.
 const (
 	Errors HelpArticleSection = "errors"
@@ -71,15 +116,174 @@ func (e HelpArticleSection) Valid() bool {
 	}
 }
 
-// Defines values for RegistryVersionState.
+// Defines values for JobKind.
 const (
-	Deprecated RegistryVersionState = "deprecated"
-	Draft      RegistryVersionState = "draft"
-	Frozen     RegistryVersionState = "frozen"
+	Eval     JobKind = "eval"
+	Export   JobKind = "export"
+	Shadow   JobKind = "shadow"
+	Training JobKind = "training"
 )
 
-// Valid indicates whether the value is a known member of the RegistryVersionState enum.
-func (e RegistryVersionState) Valid() bool {
+// Valid indicates whether the value is a known member of the JobKind enum.
+func (e JobKind) Valid() bool {
+	switch e {
+	case Eval:
+		return true
+	case Export:
+		return true
+	case Shadow:
+		return true
+	case Training:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for Precision.
+const (
+	Bf16 Precision = "bf16"
+	Fp16 Precision = "fp16"
+	Fp32 Precision = "fp32"
+)
+
+// Valid indicates whether the value is a known member of the Precision enum.
+func (e Precision) Valid() bool {
+	switch e {
+	case Bf16:
+		return true
+	case Fp16:
+		return true
+	case Fp32:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RegistryKind.
+const (
+	RegistryKindBaseModel      RegistryKind = "base_model"
+	RegistryKindDatasetVersion RegistryKind = "dataset_version"
+	RegistryKindTemplate       RegistryKind = "template"
+)
+
+// Valid indicates whether the value is a known member of the RegistryKind enum.
+func (e RegistryKind) Valid() bool {
+	switch e {
+	case RegistryKindBaseModel:
+		return true
+	case RegistryKindDatasetVersion:
+		return true
+	case RegistryKindTemplate:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RunEstimateBasis.
+const (
+	Measured RunEstimateBasis = "measured"
+	Table    RunEstimateBasis = "table"
+)
+
+// Valid indicates whether the value is a known member of the RunEstimateBasis enum.
+func (e RunEstimateBasis) Valid() bool {
+	switch e {
+	case Measured:
+		return true
+	case Table:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RunInit.
+const (
+	Base       RunInit = "base"
+	Checkpoint RunInit = "checkpoint"
+)
+
+// Valid indicates whether the value is a known member of the RunInit enum.
+func (e RunInit) Valid() bool {
+	switch e {
+	case Base:
+		return true
+	case Checkpoint:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SecretKind.
+const (
+	Github      SecretKind = "github"
+	Huggingface SecretKind = "huggingface"
+	JudgeApi    SecretKind = "judge-api"
+	Ngc         SecretKind = "ngc"
+	Other       SecretKind = "other"
+	S3          SecretKind = "s3"
+)
+
+// Valid indicates whether the value is a known member of the SecretKind enum.
+func (e SecretKind) Valid() bool {
+	switch e {
+	case Github:
+		return true
+	case Huggingface:
+		return true
+	case JudgeApi:
+		return true
+	case Ngc:
+		return true
+	case Other:
+		return true
+	case S3:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TemplateKind.
+const (
+	AgentConfig  TemplateKind = "agent-config"
+	Instructions TemplateKind = "instructions"
+	Pipeline     TemplateKind = "pipeline"
+	Preset       TemplateKind = "preset"
+	Skill        TemplateKind = "skill"
+)
+
+// Valid indicates whether the value is a known member of the TemplateKind enum.
+func (e TemplateKind) Valid() bool {
+	switch e {
+	case AgentConfig:
+		return true
+	case Instructions:
+		return true
+	case Pipeline:
+		return true
+	case Preset:
+		return true
+	case Skill:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for VersionState.
+const (
+	Deprecated VersionState = "deprecated"
+	Draft      VersionState = "draft"
+	Frozen     VersionState = "frozen"
+)
+
+// Valid indicates whether the value is a known member of the VersionState enum.
+func (e VersionState) Valid() bool {
 	switch e {
 	case Deprecated:
 		return true
@@ -121,9 +325,135 @@ type Actor struct {
 // ActorKind defines model for Actor.Kind.
 type ActorKind string
 
+// Adoption defines model for Adoption.
+type Adoption struct {
+	Actor     Actor       `json:"actor"`
+	AdoptedAt time.Time   `json:"adoptedAt"`
+	Aliases   []AliasName `json:"aliases"`
+	ProjectId string      `json:"projectId"`
+
+	// Version One immutable version of a registry collection. Versions never change once frozen; only aliases move.
+	Version RegistryVersion `json:"version"`
+}
+
+// AdoptionList defines model for AdoptionList.
+type AdoptionList struct {
+	Items []Adoption `json:"items"`
+}
+
+// AdoptionNew defines model for AdoptionNew.
+type AdoptionNew struct {
+	// Version The registry version to adopt (ver_…)
+	Version string `json:"version"`
+}
+
+// Alias defines model for Alias.
+type Alias struct {
+	Actor Actor `json:"actor"`
+
+	// Id als_…
+	Id string `json:"id"`
+
+	// Name Lowercase letters, digits and dashes, shown with a leading @; baseline and production are reserved (R8)
+	Name      AliasName `json:"name"`
+	ProjectId string    `json:"projectId"`
+
+	// Reserved free: aliases.set moves it; gated: aliases.set needs an approval (baseline); promotion: only deployments.promote moves it (production)
+	Reserved  AliasReserved `json:"reserved"`
+	Rev       int           `json:"rev"`
+	UpdatedAt time.Time     `json:"updatedAt"`
+
+	// Version One immutable version of a registry collection. Versions never change once frozen; only aliases move.
+	Version RegistryVersion `json:"version"`
+}
+
+// AliasReserved free: aliases.set moves it; gated: aliases.set needs an approval (baseline); promotion: only deployments.promote moves it (production)
+type AliasReserved string
+
+// AliasList defines model for AliasList.
+type AliasList struct {
+	Items []Alias `json:"items"`
+}
+
+// AliasName Lowercase letters, digits and dashes, shown with a leading @; baseline and production are reserved (R8)
+type AliasName = string
+
+// AliasSet defines model for AliasSet.
+type AliasSet struct {
+	// Version A registry version the project adopted (ver_…)
+	Version string `json:"version"`
+}
+
 // ApprovalAccepted defines model for ApprovalAccepted.
 type ApprovalAccepted struct {
 	ApprovalId string `json:"approvalId"`
+}
+
+// BaseModelPayload An upstream checkpoint pinned to one Hugging Face revision
+type BaseModelPayload struct {
+	// CheckpointFile The file a run initialises from, e.g. the .nemo archive
+	CheckpointFile *string `json:"checkpointFile,omitempty"`
+
+	// FamilyId Model family descriptor id (R41); the descriptor itself arrives with the worker in phase 2
+	FamilyId   string  `json:"familyId"`
+	HfRepo     string  `json:"hfRepo"`
+	Licence    string  `json:"licence"`
+	LicenceUrl *string `json:"licenceUrl,omitempty"`
+
+	// Locales Locales the model card lists
+	Locales []string `json:"locales"`
+
+	// Parameters Model size as the model card states it, e.g. 0.6B
+	Parameters *string `json:"parameters,omitempty"`
+
+	// Revision The pinned Hugging Face commit sha
+	Revision     string `json:"revision"`
+	SampleRateHz *int   `json:"sampleRateHz,omitempty"`
+}
+
+// BaseModelVersion defines model for BaseModelVersion.
+type BaseModelVersion struct {
+	Actor Actor `json:"actor"`
+
+	// BaseModel An upstream checkpoint pinned to one Hugging Face revision
+	BaseModel BaseModelPayload `json:"baseModel"`
+
+	// CollectionId reg_…
+	CollectionId string    `json:"collectionId"`
+	CreatedAt    time.Time `json:"createdAt"`
+
+	// Fingerprint sha256 of the version's canonical content (hex)
+	Fingerprint string `json:"fingerprint"`
+
+	// Id ver_…
+	Id string `json:"id"`
+
+	// Kind The kinds registered so far; golden sets, sources, normalizers and model versions join in later phases
+	Kind RegistryKind `json:"kind"`
+
+	// Licence The collection's licence (SPDX id where one exists)
+	Licence string `json:"licence"`
+
+	// Name The collection's name, e.g. dataset/fleurs-he-smoke
+	Name string `json:"name"`
+
+	// State draft → frozen → deprecated; a frozen version never changes
+	State VersionState `json:"state"`
+
+	// Tags The collection's tags (locale:he-IL, domain:telephony, …)
+	Tags []string `json:"tags"`
+
+	// UpdatedAt The last state change
+	UpdatedAt time.Time `json:"updatedAt"`
+	UsedBy    []UsedBy  `json:"usedBy"`
+
+	// Version YYYY-MM-DD.<sha>: the registration date and the first 12 hex digits of the content fingerprint
+	Version string `json:"version"`
+}
+
+// BaseModelVersionList defines model for BaseModelVersionList.
+type BaseModelVersionList struct {
+	Items []BaseModelVersion `json:"items"`
 }
 
 // CadenceEvent defines model for CadenceEvent.
@@ -148,6 +478,236 @@ type CadenceEvent struct {
 	Seq   int64  `json:"seq"`
 	Topic string `json:"topic"`
 	Type  string `json:"type"`
+}
+
+// Collection A named series of immutable versions of one kind
+type Collection struct {
+	CreatedAt   time.Time `json:"createdAt"`
+	Description string    `json:"description"`
+
+	// Id reg_…
+	Id string `json:"id"`
+
+	// Kind The kinds registered so far; golden sets, sources, normalizers and model versions join in later phases
+	Kind    RegistryKind    `json:"kind"`
+	Latest  *VersionSummary `json:"latest,omitempty"`
+	Licence string          `json:"licence"`
+
+	// Name <kind>/<name>, e.g. dataset/fleurs-he-smoke
+	Name         string   `json:"name"`
+	Tags         []string `json:"tags"`
+	VersionCount int      `json:"versionCount"`
+
+	// Versions Newest first; collections.get only
+	Versions *[]VersionSummary `json:"versions,omitempty"`
+}
+
+// CollectionList defines model for CollectionList.
+type CollectionList struct {
+	Items []Collection `json:"items"`
+}
+
+// ComputeCard defines model for ComputeCard.
+type ComputeCard struct {
+	AllowedJobKinds []JobKind `json:"allowedJobKinds"`
+
+	// CardClass Key into the estimate table in defaults.yaml
+	CardClass string `json:"cardClass"`
+
+	// Index The card's index on its host (CUDA device order)
+	Index int `json:"index"`
+
+	// MemoryCapGb The memory a Cadence job may use on this card (CADENCE_GPU_MEMORY_CAP_GB)
+	MemoryCapGb float64 `json:"memoryCapGb"`
+	MemoryGb    float64 `json:"memoryGb"`
+	Name        string  `json:"name"`
+}
+
+// ComputeCardEdit defines model for ComputeCardEdit.
+type ComputeCardEdit struct {
+	AllowedJobKinds *[]JobKind `json:"allowedJobKinds,omitempty"`
+	Index           int        `json:"index"`
+	MemoryCapGb     *float64   `json:"memoryCapGb,omitempty"`
+}
+
+// ComputeEdit defines model for ComputeEdit.
+type ComputeEdit struct {
+	Cards       *[]ComputeCardEdit `json:"cards,omitempty"`
+	Description *string            `json:"description,omitempty"`
+}
+
+// ComputeHealth defines model for ComputeHealth.
+type ComputeHealth struct {
+	CheckedAt *time.Time `json:"checkedAt,omitempty"`
+	Detail    *string    `json:"detail,omitempty"`
+
+	// State unknown until a worker reports (phase 2)
+	State ComputeHealthState `json:"state"`
+}
+
+// ComputeHealthState unknown until a worker reports (phase 2)
+type ComputeHealthState string
+
+// ComputeHost defines model for ComputeHost.
+type ComputeHost struct {
+	Cards       []ComputeCard `json:"cards"`
+	CreatedAt   time.Time     `json:"createdAt"`
+	Description string        `json:"description"`
+	Health      ComputeHealth `json:"health"`
+
+	// Id cmp_…
+	Id        string    `json:"id"`
+	Name      string    `json:"name"`
+	Rev       int       `json:"rev"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// ComputeList defines model for ComputeList.
+type ComputeList struct {
+	Items []ComputeHost `json:"items"`
+}
+
+// DatasetPayload A fingerprinted selection of utterances with splits, statistics and lineage
+type DatasetPayload struct {
+	// Bytes Size of the frozen shards; estimated for fixtures
+	Bytes  int64   `json:"bytes"`
+	Domain *string `json:"domain,omitempty"`
+
+	// Fixture Metadata only: no audio is stored (phase-1 fixture so mixes have something to reference)
+	Fixture      bool     `json:"fixture"`
+	Hours        float64  `json:"hours"`
+	Locales      []string `json:"locales"`
+	SampleRateHz *int     `json:"sampleRateHz,omitempty"`
+
+	// Source Where the audio comes from, e.g. hf://datasets/google/fleurs
+	Source string `json:"source"`
+
+	// SourceRevision The pinned revision of the source
+	SourceRevision *string        `json:"sourceRevision,omitempty"`
+	Splits         []DatasetSplit `json:"splits"`
+
+	// Subset The source's configuration or subset, e.g. he_il
+	Subset     *string `json:"subset,omitempty"`
+	Utterances int     `json:"utterances"`
+}
+
+// DatasetSplit defines model for DatasetSplit.
+type DatasetSplit struct {
+	Hours      float64 `json:"hours"`
+	Name       string  `json:"name"`
+	Speakers   *int    `json:"speakers,omitempty"`
+	Utterances int     `json:"utterances"`
+}
+
+// DatasetVersion defines model for DatasetVersion.
+type DatasetVersion struct {
+	Actor Actor `json:"actor"`
+
+	// CollectionId reg_…
+	CollectionId string    `json:"collectionId"`
+	CreatedAt    time.Time `json:"createdAt"`
+
+	// Dataset A fingerprinted selection of utterances with splits, statistics and lineage
+	Dataset DatasetPayload `json:"dataset"`
+
+	// Fingerprint sha256 of the version's canonical content (hex)
+	Fingerprint string `json:"fingerprint"`
+
+	// Id ver_…
+	Id string `json:"id"`
+
+	// Kind The kinds registered so far; golden sets, sources, normalizers and model versions join in later phases
+	Kind RegistryKind `json:"kind"`
+
+	// Licence The collection's licence (SPDX id where one exists)
+	Licence string `json:"licence"`
+
+	// Name The collection's name, e.g. dataset/fleurs-he-smoke
+	Name string `json:"name"`
+
+	// State draft → frozen → deprecated; a frozen version never changes
+	State VersionState `json:"state"`
+
+	// Tags The collection's tags (locale:he-IL, domain:telephony, …)
+	Tags []string `json:"tags"`
+
+	// UpdatedAt The last state change
+	UpdatedAt time.Time `json:"updatedAt"`
+	UsedBy    []UsedBy  `json:"usedBy"`
+
+	// Version YYYY-MM-DD.<sha>: the registration date and the first 12 hex digits of the content fingerprint
+	Version string `json:"version"`
+}
+
+// DatasetVersionList defines model for DatasetVersionList.
+type DatasetVersionList struct {
+	Items []DatasetVersion `json:"items"`
+}
+
+// DefaultCard defines model for DefaultCard.
+type DefaultCard struct {
+	AllowedJobKinds []JobKind `json:"allowed_job_kinds"`
+	CardClass       string    `json:"card_class"`
+	Index           int       `json:"index"`
+	MemoryCapGb     float64   `json:"memory_cap_gb"`
+	MemoryGb        float64   `json:"memory_gb"`
+	Name            string    `json:"name"`
+}
+
+// DefaultHost A compute host seeded at first start
+type DefaultHost struct {
+	Cards       []DefaultCard `json:"cards"`
+	Description string        `json:"description"`
+	Name        string        `json:"name"`
+	Source      string        `json:"source"`
+}
+
+// DefaultRange defines model for DefaultRange.
+type DefaultRange struct {
+	Max    *float64  `json:"max,omitempty"`
+	Min    *float64  `json:"min,omitempty"`
+	Values *[]string `json:"values,omitempty"`
+}
+
+// DefaultSection defines model for DefaultSection.
+type DefaultSection map[string]DefaultValue
+
+// DefaultValue One default with its description, source and safe range
+type DefaultValue struct {
+	Description string        `json:"description"`
+	Range       *DefaultRange `json:"range,omitempty"`
+
+	// Source The published source, or "Cadence recommendation"
+	Source string  `json:"source"`
+	Unit   *string `json:"unit,omitempty"`
+
+	// Value The default: a number, string, boolean or list
+	Value interface{} `json:"value"`
+}
+
+// Defaults defaults.yaml (R11): keys are snake_case, addressed as <section>.<key> (x-cadence.defaultRef)
+type Defaults struct {
+	Budgets DefaultSection `json:"budgets"`
+	Cache   DefaultSection `json:"cache"`
+	Compute struct {
+		Hosts []DefaultHost `json:"hosts"`
+	} `json:"compute"`
+	Estimates struct {
+		// BytesPerAudioHour One default with its description, source and safe range
+		BytesPerAudioHour DefaultValue          `json:"bytes_per_audio_hour"`
+		Training          []TrainingEstimateRow `json:"training"`
+	} `json:"estimates"`
+	Timeouts DefaultSection `json:"timeouts"`
+	Training DefaultSection `json:"training"`
+	Version  int            `json:"version"`
+	Wizard   DefaultSection `json:"wizard"`
+}
+
+// EstimateRange defines model for EstimateRange.
+type EstimateRange struct {
+	High  float64 `json:"high"`
+	Low   float64 `json:"low"`
+	Value float64 `json:"value"`
 }
 
 // EventList defines model for EventList.
@@ -192,12 +752,45 @@ type JobAccepted struct {
 	JobId string `json:"jobId"`
 }
 
+// JobKind defines model for JobKind.
+type JobKind string
+
 // PanelState defines model for PanelState.
 type PanelState struct {
 	// PinnedTo Document reference kind:id
 	PinnedTo  *string                 `json:"pinnedTo,omitempty"`
 	ViewState *map[string]interface{} `json:"viewState,omitempty"`
 }
+
+// Policies defines model for Policies.
+type Policies struct {
+	Budgets PolicyBudgets `json:"budgets"`
+
+	// Departures Fields that differ from defaults.yaml, e.g. budgets.gpuHoursPerProjectPerDay
+	Departures []string  `json:"departures"`
+	Rev        int       `json:"rev"`
+	UpdatedAt  time.Time `json:"updatedAt"`
+}
+
+// PoliciesEdit defines model for PoliciesEdit.
+type PoliciesEdit struct {
+	Budgets *struct {
+		AgentTurnsPerSession     *int     `json:"agentTurnsPerSession,omitempty"`
+		GpuHoursPerProjectPerDay *float64 `json:"gpuHoursPerProjectPerDay,omitempty"`
+	} `json:"budgets,omitempty"`
+}
+
+// PolicyBudgets defines model for PolicyBudgets.
+type PolicyBudgets struct {
+	// AgentTurnsPerSession Default budgets.agent_turns_per_session
+	AgentTurnsPerSession int `json:"agentTurnsPerSession"`
+
+	// GpuHoursPerProjectPerDay Default budgets.gpu_hours_per_project_per_day
+	GpuHoursPerProjectPerDay float64 `json:"gpuHoursPerProjectPerDay"`
+}
+
+// Precision defines model for Precision.
+type Precision string
 
 // Problem defines model for Problem.
 type Problem struct {
@@ -255,10 +848,15 @@ type ProjectNew struct {
 	Slug Slug `json:"slug"`
 }
 
+// RegistryKind The kinds registered so far; golden sets, sources, normalizers and model versions join in later phases
+type RegistryKind string
+
 // RegistryKindCount defines model for RegistryKindCount.
 type RegistryKindCount struct {
-	Count int    `json:"count"`
-	Kind  string `json:"kind"`
+	Count int `json:"count"`
+
+	// Kind The kinds registered so far; golden sets, sources, normalizers and model versions join in later phases
+	Kind RegistryKind `json:"kind"`
 }
 
 // RegistrySearchResult defines model for RegistrySearchResult.
@@ -267,25 +865,266 @@ type RegistrySearchResult struct {
 	Kinds []RegistryKindCount `json:"kinds"`
 }
 
-// RegistryVersion defines model for RegistryVersion.
+// RegistryVersion One immutable version of a registry collection. Versions never change once frozen; only aliases move.
 type RegistryVersion struct {
-	Actor     *Actor               `json:"actor,omitempty"`
-	Id        string               `json:"id"`
-	Kind      string               `json:"kind"`
-	Name      string               `json:"name"`
-	State     RegistryVersionState `json:"state"`
-	Tags      *[]string            `json:"tags,omitempty"`
-	UpdatedAt *time.Time           `json:"updatedAt,omitempty"`
+	Actor Actor `json:"actor"`
 
-	// Version YYYY-MM-DD.<sha>
+	// CollectionId reg_…
+	CollectionId string    `json:"collectionId"`
+	CreatedAt    time.Time `json:"createdAt"`
+
+	// Fingerprint sha256 of the version's canonical content (hex)
+	Fingerprint string `json:"fingerprint"`
+
+	// Id ver_…
+	Id string `json:"id"`
+
+	// Kind The kinds registered so far; golden sets, sources, normalizers and model versions join in later phases
+	Kind RegistryKind `json:"kind"`
+
+	// Licence The collection's licence (SPDX id where one exists)
+	Licence string `json:"licence"`
+
+	// Name The collection's name, e.g. dataset/fleurs-he-smoke
+	Name string `json:"name"`
+
+	// State draft → frozen → deprecated; a frozen version never changes
+	State VersionState `json:"state"`
+
+	// Tags The collection's tags (locale:he-IL, domain:telephony, …)
+	Tags []string `json:"tags"`
+
+	// UpdatedAt The last state change
+	UpdatedAt time.Time `json:"updatedAt"`
+
+	// Version YYYY-MM-DD.<sha>: the registration date and the first 12 hex digits of the content fingerprint
 	Version string `json:"version"`
 }
 
-// RegistryVersionState defines model for RegistryVersion.State.
-type RegistryVersionState string
+// RunEstimate What a run would cost (R12). basis table: from the estimate table in defaults.yaml; measured: from runs.calibrate (phase 2)
+type RunEstimate struct {
+	// BaseModel One immutable version of a registry collection. Versions never change once frozen; only aliases move.
+	BaseModel RegistryVersion  `json:"baseModel"`
+	Basis     RunEstimateBasis `json:"basis"`
+	Budget    struct {
+		GpuHoursPerProjectPerDay float64 `json:"gpuHoursPerProjectPerDay"`
+
+		// WithinDailyBudget The upper bound fits the project's daily GPU-hour budget
+		WithinDailyBudget bool `json:"withinDailyBudget"`
+	} `json:"budget"`
+	Card struct {
+		CardClass   string  `json:"cardClass"`
+		ComputeId   string  `json:"computeId"`
+		Host        string  `json:"host"`
+		Index       int     `json:"index"`
+		MemoryCapGb float64 `json:"memoryCapGb"`
+	} `json:"card"`
+	Data struct {
+		// Bytes What must be materialised on the worker's disk
+		Bytes int64 `json:"bytes"`
+
+		// Datasets Resolved dataset version ids
+		Datasets []string `json:"datasets"`
+		Hours    float64  `json:"hours"`
+	} `json:"data"`
+	DurationSeconds EstimateRange `json:"durationSeconds"`
+	GpuHours        EstimateRange `json:"gpuHours"`
+	Gpus            int           `json:"gpus"`
+
+	// Init Where the weights start (R44); scratch is deferred
+	Init RunInit `json:"init"`
+
+	// PlusMinus Relative uncertainty: 0.5 means ±50%
+	PlusMinus      float64   `json:"plusMinus"`
+	Precision      Precision `json:"precision"`
+	SecondsPerStep float64   `json:"secondsPerStep"`
+
+	// Source The source of the estimate-table row
+	Source string `json:"source"`
+	Steps  int    `json:"steps"`
+}
+
+// RunEstimateBasis defines model for RunEstimate.Basis.
+type RunEstimateBasis string
+
+// RunInit Where the weights start (R44); scratch is deferred
+type RunInit string
+
+// RunNew defines model for RunNew.
+type RunNew struct {
+	// BaseModel Base model version (ver_…), collection name (its newest frozen version) or @alias; default the defaults' base model
+	BaseModel *string `json:"baseModel,omitempty"`
+
+	// Checkpoint Required when init is checkpoint (checkpoints arrive in phase 2)
+	Checkpoint *string `json:"checkpoint,omitempty"`
+
+	// Compute Host id or name; default the first host whose card allows training
+	Compute *string `json:"compute,omitempty"`
+
+	// Datasets Dataset versions (ver_… or @alias) the run reads, for the data volume; the mix replaces this in phase 2
+	Datasets *[]string `json:"datasets,omitempty"`
+
+	// Gpus Cards for the run; v1 accepts 1 (training.gpus)
+	Gpus *int `json:"gpus,omitempty"`
+
+	// Init Where the weights start (R44); scratch is deferred
+	Init      *RunInit   `json:"init,omitempty"`
+	Precision *Precision `json:"precision,omitempty"`
+
+	// Steps Default training.steps
+	Steps *int `json:"steps,omitempty"`
+}
+
+// Secret A named credential; its value is never returned
+type Secret struct {
+	Actor     Actor     `json:"actor"`
+	CreatedAt time.Time `json:"createdAt"`
+
+	// Id sec_…
+	Id   string     `json:"id"`
+	Kind SecretKind `json:"kind"`
+
+	// LastUsedAt The last time a server-side consumer read the value
+	LastUsedAt *time.Time `json:"lastUsedAt,omitempty"`
+	Name       SecretName `json:"name"`
+	Rev        int        `json:"rev"`
+
+	// Scope instance, or project:<slug> when only that project's jobs and bootstrap may read it
+	Scope SecretScope `json:"scope"`
+}
+
+// SecretKind defines model for SecretKind.
+type SecretKind string
+
+// SecretList defines model for SecretList.
+type SecretList struct {
+	Items []Secret `json:"items"`
+}
+
+// SecretName defines model for SecretName.
+type SecretName = string
+
+// SecretNew defines model for SecretNew.
+type SecretNew struct {
+	Kind SecretKind `json:"kind"`
+	Name SecretName `json:"name"`
+
+	// Scope instance, or project:<slug> when only that project's jobs and bootstrap may read it
+	Scope *SecretScope `json:"scope,omitempty"`
+
+	// Value Write-only; stored encrypted outside the database
+	Value *string `json:"value,omitempty"`
+}
+
+// SecretScope instance, or project:<slug> when only that project's jobs and bootstrap may read it
+type SecretScope = string
 
 // Slug Lowercase letters, digits and dashes; 3–40 characters
 type Slug = string
+
+// TemplateFile defines model for TemplateFile.
+type TemplateFile struct {
+	Bytes int `json:"bytes"`
+
+	// Path Path inside the bundled templates tree
+	Path   string `json:"path"`
+	Sha256 string `json:"sha256"`
+}
+
+// TemplateKind defines model for TemplateKind.
+type TemplateKind string
+
+// TemplatePayload Bundled configuration the bootstrap copies into a project; the contents ship in the binary
+type TemplatePayload struct {
+	Files []TemplateFile `json:"files"`
+
+	// Path Directory or file in the templates tree, e.g. instructions/default
+	Path         string       `json:"path"`
+	TemplateKind TemplateKind `json:"templateKind"`
+}
+
+// TemplateVersion defines model for TemplateVersion.
+type TemplateVersion struct {
+	Actor Actor `json:"actor"`
+
+	// CollectionId reg_…
+	CollectionId string    `json:"collectionId"`
+	CreatedAt    time.Time `json:"createdAt"`
+
+	// Fingerprint sha256 of the version's canonical content (hex)
+	Fingerprint string `json:"fingerprint"`
+
+	// Id ver_…
+	Id string `json:"id"`
+
+	// Kind The kinds registered so far; golden sets, sources, normalizers and model versions join in later phases
+	Kind RegistryKind `json:"kind"`
+
+	// Licence The collection's licence (SPDX id where one exists)
+	Licence string `json:"licence"`
+
+	// Name The collection's name, e.g. dataset/fleurs-he-smoke
+	Name string `json:"name"`
+
+	// State draft → frozen → deprecated; a frozen version never changes
+	State VersionState `json:"state"`
+
+	// Tags The collection's tags (locale:he-IL, domain:telephony, …)
+	Tags []string `json:"tags"`
+
+	// Template Bundled configuration the bootstrap copies into a project; the contents ship in the binary
+	Template TemplatePayload `json:"template"`
+
+	// UpdatedAt The last state change
+	UpdatedAt time.Time `json:"updatedAt"`
+	UsedBy    []UsedBy  `json:"usedBy"`
+
+	// Version YYYY-MM-DD.<sha>: the registration date and the first 12 hex digits of the content fingerprint
+	Version string `json:"version"`
+}
+
+// TemplateVersionList defines model for TemplateVersionList.
+type TemplateVersionList struct {
+	Items []TemplateVersion `json:"items"`
+}
+
+// TrainingEstimateRow Seconds per training step for one base model × card class × memory cap × precision (R12 table path)
+type TrainingEstimateRow struct {
+	// BaseModel Registry collection name of the base model
+	BaseModel   string  `json:"base_model"`
+	CardClass   string  `json:"card_class"`
+	Description string  `json:"description"`
+	MemoryCapGb float64 `json:"memory_cap_gb"`
+
+	// PlusMinus Relative uncertainty: 0.5 means ±50%
+	PlusMinus      float64 `json:"plus_minus"`
+	Precision      string  `json:"precision"`
+	SecondsPerStep float64 `json:"seconds_per_step"`
+	Source         string  `json:"source"`
+}
+
+// UsedBy A project that adopted the version, and its aliases pointing at it
+type UsedBy struct {
+	AdoptedAt time.Time   `json:"adoptedAt"`
+	Aliases   []AliasName `json:"aliases"`
+	ProjectId string      `json:"projectId"`
+
+	// ProjectSlug Lowercase letters, digits and dashes; 3–40 characters
+	ProjectSlug Slug `json:"projectSlug"`
+}
+
+// VersionState draft → frozen → deprecated; a frozen version never changes
+type VersionState string
+
+// VersionSummary defines model for VersionSummary.
+type VersionSummary struct {
+	CreatedAt time.Time `json:"createdAt"`
+	Id        string    `json:"id"`
+
+	// State draft → frozen → deprecated; a frozen version never changes
+	State   VersionState `json:"state"`
+	Version string       `json:"version"`
+}
 
 // Workspace defines model for Workspace.
 type Workspace struct {
@@ -340,6 +1179,15 @@ type IfMatchOptional = string
 // ProjectSlug Lowercase letters, digits and dashes; 3–40 characters
 type ProjectSlug = Slug
 
+// RegistryCollectionFilter defines model for RegistryCollectionFilter.
+type RegistryCollectionFilter = string
+
+// RegistryStateFilter draft → frozen → deprecated; a frozen version never changes
+type RegistryStateFilter = VersionState
+
+// VersionId defines model for VersionId.
+type VersionId = string
+
 // PlannedEntity defines model for PlannedEntity.
 type PlannedEntity map[string]interface{}
 
@@ -392,6 +1240,18 @@ type ApprovalsApproveParams struct {
 
 // ApprovalsDenyParams defines parameters for ApprovalsDeny.
 type ApprovalsDenyParams struct {
+	// DryRun Validate and report what would happen without changing anything
+	DryRun *DryRun `form:"dryRun,omitempty" json:"dryRun,omitempty"`
+
+	// IdempotencyKey Client-chosen key; a repeat with the same key returns the original result
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+
+	// IfMatch The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+	IfMatch IfMatch `json:"If-Match"`
+}
+
+// ComputeEditParams defines parameters for ComputeEdit.
+type ComputeEditParams struct {
 	// DryRun Validate and report what would happen without changing anything
 	DryRun *DryRun `form:"dryRun,omitempty" json:"dryRun,omitempty"`
 
@@ -481,6 +1341,18 @@ type MountsNewParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
 
+// PoliciesEditParams defines parameters for PoliciesEdit.
+type PoliciesEditParams struct {
+	// DryRun Validate and report what would happen without changing anything
+	DryRun *DryRun `form:"dryRun,omitempty" json:"dryRun,omitempty"`
+
+	// IdempotencyKey Client-chosen key; a repeat with the same key returns the original result
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+
+	// IfMatch The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+	IfMatch IfMatch `json:"If-Match"`
+}
+
 // ProjectsListParams defines parameters for ProjectsList.
 type ProjectsListParams struct {
 	// Archived Include archived projects
@@ -508,6 +1380,12 @@ type ProjectsEditParams struct {
 	IfMatch IfMatch `json:"If-Match"`
 }
 
+// AdoptionsListParams defines parameters for AdoptionsList.
+type AdoptionsListParams struct {
+	// Kind Only versions of this kind
+	Kind *RegistryKind `form:"kind,omitempty" json:"kind,omitempty"`
+}
+
 // AgentSessionsNewJSONBody defines parameters for AgentSessionsNew.
 type AgentSessionsNewJSONBody map[string]interface{}
 
@@ -519,9 +1397,6 @@ type AgentSessionsNewParams struct {
 	// IdempotencyKey Client-chosen key; a repeat with the same key returns the original result
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
-
-// AliasesSetJSONBody defines parameters for AliasesSet.
-type AliasesSetJSONBody map[string]interface{}
 
 // AliasesSetParams defines parameters for AliasesSet.
 type AliasesSetParams struct {
@@ -559,9 +1434,6 @@ type MixesPreviewParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
 
-// RunsNewJSONBody defines parameters for RunsNew.
-type RunsNewJSONBody map[string]interface{}
-
 // RunsNewParams defines parameters for RunsNew.
 type RunsNewParams struct {
 	// DryRun Validate and report what would happen without changing anything
@@ -569,6 +1441,18 @@ type RunsNewParams struct {
 
 	// IdempotencyKey Client-chosen key; a repeat with the same key returns the original result
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// ProjectsAdoptParams defines parameters for ProjectsAdopt.
+type ProjectsAdoptParams struct {
+	// DryRun Validate and report what would happen without changing anything
+	DryRun *DryRun `form:"dryRun,omitempty" json:"dryRun,omitempty"`
+
+	// IdempotencyKey Client-chosen key; a repeat with the same key returns the original result
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+
+	// IfMatch The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+	IfMatch IfMatch `json:"If-Match"`
 }
 
 // ProjectsArchiveParams defines parameters for ProjectsArchive.
@@ -585,17 +1469,68 @@ type ProjectsArchiveParams struct {
 
 // RegistrySearchParams defines parameters for RegistrySearch.
 type RegistrySearchParams struct {
-	// Q Free text with qualifiers (kind:, tag:, locale:)
-	Q    *string `form:"q,omitempty" json:"q,omitempty"`
-	Kind *string `form:"kind,omitempty" json:"kind,omitempty"`
+	// Q Free text with qualifiers (kind:, tag:, locale:, state:)
+	Q    *string       `form:"q,omitempty" json:"q,omitempty"`
+	Kind *RegistryKind `form:"kind,omitempty" json:"kind,omitempty"`
 
-	// Project Only versions this project adopted
+	// Project Only versions this project adopted (slug)
 	Project *string `form:"project,omitempty" json:"project,omitempty"`
 	Limit   *int    `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
+// BaseModelsListParams defines parameters for BaseModelsList.
+type BaseModelsListParams struct {
+	// Collection Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)
+	Collection *RegistryCollectionFilter `form:"collection,omitempty" json:"collection,omitempty"`
+
+	// State Only versions in this state
+	State *RegistryStateFilter `form:"state,omitempty" json:"state,omitempty"`
+}
+
+// CollectionsListParams defines parameters for CollectionsList.
+type CollectionsListParams struct {
+	// Kind Only collections of this kind
+	Kind *RegistryKind `form:"kind,omitempty" json:"kind,omitempty"`
+
+	// Tag Only collections carrying this tag (e.g. locale:he-IL)
+	Tag *string `form:"tag,omitempty" json:"tag,omitempty"`
+}
+
+// DatasetsListParams defines parameters for DatasetsList.
+type DatasetsListParams struct {
+	// Collection Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)
+	Collection *RegistryCollectionFilter `form:"collection,omitempty" json:"collection,omitempty"`
+
+	// State Only versions in this state
+	State *RegistryStateFilter `form:"state,omitempty" json:"state,omitempty"`
+}
+
+// TemplatesListParams defines parameters for TemplatesList.
+type TemplatesListParams struct {
+	// Collection Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)
+	Collection *RegistryCollectionFilter `form:"collection,omitempty" json:"collection,omitempty"`
+
+	// State Only versions in this state
+	State *RegistryStateFilter `form:"state,omitempty" json:"state,omitempty"`
+
+	// TemplateKind Only templates of this kind
+	TemplateKind *TemplateKind `form:"templateKind,omitempty" json:"templateKind,omitempty"`
+}
+
+// SecretsNewParams defines parameters for SecretsNew.
+type SecretsNewParams struct {
+	// DryRun Validate and report what would happen without changing anything
+	DryRun *DryRun `form:"dryRun,omitempty" json:"dryRun,omitempty"`
+
+	// IdempotencyKey Client-chosen key; a repeat with the same key returns the original result
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
 // AgentMessagesNewJSONRequestBody defines body for AgentMessagesNew for application/json ContentType.
 type AgentMessagesNewJSONRequestBody AgentMessagesNewJSONBody
+
+// ComputeEditJSONRequestBody defines body for ComputeEdit for application/json ContentType.
+type ComputeEditJSONRequestBody = ComputeEdit
 
 // WorkspacesSetJSONRequestBody defines body for WorkspacesSet for application/json ContentType.
 type WorkspacesSetJSONRequestBody = WorkspaceSet
@@ -605,6 +1540,9 @@ type MixesEditJSONRequestBody MixesEditJSONBody
 
 // MountsNewJSONRequestBody defines body for MountsNew for application/json ContentType.
 type MountsNewJSONRequestBody MountsNewJSONBody
+
+// PoliciesEditJSONRequestBody defines body for PoliciesEdit for application/json ContentType.
+type PoliciesEditJSONRequestBody = PoliciesEdit
 
 // ProjectsNewJSONRequestBody defines body for ProjectsNew for application/json ContentType.
 type ProjectsNewJSONRequestBody = ProjectNew
@@ -616,7 +1554,7 @@ type ProjectsEditJSONRequestBody = ProjectEdit
 type AgentSessionsNewJSONRequestBody AgentSessionsNewJSONBody
 
 // AliasesSetJSONRequestBody defines body for AliasesSet for application/json ContentType.
-type AliasesSetJSONRequestBody AliasesSetJSONBody
+type AliasesSetJSONRequestBody = AliasSet
 
 // MixesNewJSONRequestBody defines body for MixesNew for application/json ContentType.
 type MixesNewJSONRequestBody MixesNewJSONBody
@@ -625,7 +1563,13 @@ type MixesNewJSONRequestBody MixesNewJSONBody
 type MixesPreviewJSONRequestBody MixesPreviewJSONBody
 
 // RunsNewJSONRequestBody defines body for RunsNew for application/json ContentType.
-type RunsNewJSONRequestBody RunsNewJSONBody
+type RunsNewJSONRequestBody = RunNew
+
+// ProjectsAdoptJSONRequestBody defines body for ProjectsAdopt for application/json ContentType.
+type ProjectsAdoptJSONRequestBody = AdoptionNew
+
+// SecretsNewJSONRequestBody defines body for SecretsNew for application/json ContentType.
+type SecretsNewJSONRequestBody = SecretNew
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -644,6 +1588,18 @@ type ServerInterface interface {
 	// ApprovalsDeny Deny a pending request
 	// (POST /approvals/{id}:deny)
 	ApprovalsDeny(w http.ResponseWriter, r *http.Request, id Id, params ApprovalsDenyParams)
+	// ComputeList Hosts and their cards (memory cap per card, allowed job kinds) with health
+	// (GET /compute)
+	ComputeList(w http.ResponseWriter, r *http.Request)
+	// ComputeGet Get a host and its cards
+	// (GET /compute/{id})
+	ComputeGet(w http.ResponseWriter, r *http.Request, id string)
+	// ComputeEdit Change a host's description or a card's memory cap and allowed job kinds
+	// (PATCH /compute/{id})
+	ComputeEdit(w http.ResponseWriter, r *http.Request, id string, params ComputeEditParams)
+	// DefaultsGet The versioned defaults (defaults.yaml) every form, budget and estimate starts from
+	// (GET /defaults)
+	DefaultsGet(w http.ResponseWriter, r *http.Request)
 	// EventsList Events after a sequence number; with Accept text/event-stream, the live stream
 	// (GET /events)
 	EventsList(w http.ResponseWriter, r *http.Request, params EventsListParams)
@@ -680,6 +1636,12 @@ type ServerInterface interface {
 	// MountsNew Register a local path, NFS/SMB path, S3-compatible bucket or Hub source (approval)
 	// (POST /mounts)
 	MountsNew(w http.ResponseWriter, r *http.Request, params MountsNewParams)
+	// PoliciesGet Instance-wide policies (budgets now; retention, PII and cache quotas later)
+	// (GET /policies)
+	PoliciesGet(w http.ResponseWriter, r *http.Request)
+	// PoliciesEdit Change instance-wide policies; values must stay inside the ranges in defaults.yaml
+	// (PATCH /policies)
+	PoliciesEdit(w http.ResponseWriter, r *http.Request, params PoliciesEditParams)
 	// ProjectsList List projects
 	// (GET /projects)
 	ProjectsList(w http.ResponseWriter, r *http.Request, params ProjectsListParams)
@@ -692,27 +1654,69 @@ type ServerInterface interface {
 	// ProjectsEdit Rename or re-describe a project
 	// (PATCH /projects/{p})
 	ProjectsEdit(w http.ResponseWriter, r *http.Request, p ProjectSlug, params ProjectsEditParams)
+	// AdoptionsList Registry versions the project adopted, with the aliases pointing at each
+	// (GET /projects/{p}/adoptions)
+	AdoptionsList(w http.ResponseWriter, r *http.Request, p ProjectSlug, params AdoptionsListParams)
 	// AgentSessionsNew Launch Claude Code or opencode in a project worktree
 	// (POST /projects/{p}/agent-sessions)
 	AgentSessionsNew(w http.ResponseWriter, r *http.Request, p ProjectSlug, params AgentSessionsNewParams)
-	// AliasesSet Point a project alias at a registry version (baseline is gated, production moves only by promotion)
+	// AliasesList The project's aliases (train-current, baseline, production, …) and the versions they point at
+	// (GET /projects/{p}/aliases)
+	AliasesList(w http.ResponseWriter, r *http.Request, p ProjectSlug)
+	// AliasesGet Get one project alias and the version it points at
+	// (GET /projects/{p}/aliases/{name})
+	AliasesGet(w http.ResponseWriter, r *http.Request, p ProjectSlug, name AliasName)
+	// AliasesSet Point a project alias at an adopted registry version (baseline is gated, production moves only by promotion)
 	// (PUT /projects/{p}/aliases/{name})
-	AliasesSet(w http.ResponseWriter, r *http.Request, p ProjectSlug, name string, params AliasesSetParams)
+	AliasesSet(w http.ResponseWriter, r *http.Request, p ProjectSlug, name AliasName, params AliasesSetParams)
 	// MixesNew Save a mix (input_cfg groups, weights, temperature, replay share)
 	// (POST /projects/{p}/mixes)
 	MixesNew(w http.ResponseWriter, r *http.Request, p ProjectSlug, params MixesNewParams)
 	// MixesPreview Hours per language for a mix without saving it
 	// (POST /projects/{p}/mixes:preview)
 	MixesPreview(w http.ResponseWriter, r *http.Request, p ProjectSlug, params MixesPreviewParams)
-	// RunsNew Start a training run; ?dryRun=true returns GPU-hours, card and duration
+	// RunsNew Start a training run; until phase 2 only ?dryRun=true answers, with GPU-hours, card, duration and data
 	// (POST /projects/{p}/runs)
 	RunsNew(w http.ResponseWriter, r *http.Request, p ProjectSlug, params RunsNewParams)
+	// ProjectsAdopt Adopt a registry version into the project by reference
+	// (POST /projects/{p}:adopt)
+	ProjectsAdopt(w http.ResponseWriter, r *http.Request, p ProjectSlug, params ProjectsAdoptParams)
 	// ProjectsArchive Archive a project (soft; reversible)
 	// (POST /projects/{p}:archive)
 	ProjectsArchive(w http.ResponseWriter, r *http.Request, p ProjectSlug, params ProjectsArchiveParams)
-	// RegistrySearch Search registry versions of every kind (empty until phase 1 registers kinds)
+	// RegistrySearch Search registry versions of every kind by text and qualifiers (kind:, tag:, locale:, state:)
 	// (GET /registry)
 	RegistrySearch(w http.ResponseWriter, r *http.Request, params RegistrySearchParams)
+	// BaseModelsList List base model versions (Hugging Face repository at a pinned revision, licence, model family)
+	// (GET /registry/base-models)
+	BaseModelsList(w http.ResponseWriter, r *http.Request, params BaseModelsListParams)
+	// BaseModelsGet Get a base model version with the projects that use it
+	// (GET /registry/base-models/{id})
+	BaseModelsGet(w http.ResponseWriter, r *http.Request, id VersionId)
+	// CollectionsList List registry collections (named series of immutable versions), optionally of one kind or tag
+	// (GET /registry/collections)
+	CollectionsList(w http.ResponseWriter, r *http.Request, params CollectionsListParams)
+	// CollectionsGet Get a registry collection with its versions, newest first
+	// (GET /registry/collections/{id})
+	CollectionsGet(w http.ResponseWriter, r *http.Request, id string)
+	// DatasetsList List dataset versions (immutable, fingerprinted selections with splits and statistics)
+	// (GET /registry/datasets)
+	DatasetsList(w http.ResponseWriter, r *http.Request, params DatasetsListParams)
+	// DatasetsGet Get a dataset version with its splits, statistics and the projects that use it
+	// (GET /registry/datasets/{id})
+	DatasetsGet(w http.ResponseWriter, r *http.Request, id VersionId)
+	// TemplatesList List template versions (instruction templates, permission presets, skills, pipeline templates, agent config)
+	// (GET /registry/templates)
+	TemplatesList(w http.ResponseWriter, r *http.Request, params TemplatesListParams)
+	// TemplatesGet Get a template version with its files (paths and hashes) and the projects that use it
+	// (GET /registry/templates/{id})
+	TemplatesGet(w http.ResponseWriter, r *http.Request, id VersionId)
+	// SecretsList Named credentials (name, kind, scope, last use); values are never returned
+	// (GET /secrets)
+	SecretsList(w http.ResponseWriter, r *http.Request)
+	// SecretsNew Store a named credential; the value is write-only and never returned
+	// (POST /secrets)
+	SecretsNew(w http.ResponseWriter, r *http.Request, params SecretsNewParams)
 }
 
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
@@ -746,6 +1750,30 @@ func (_ Unimplemented) ApprovalsApprove(w http.ResponseWriter, r *http.Request, 
 // ApprovalsDeny Deny a pending request
 // (POST /approvals/{id}:deny)
 func (_ Unimplemented) ApprovalsDeny(w http.ResponseWriter, r *http.Request, id Id, params ApprovalsDenyParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ComputeList Hosts and their cards (memory cap per card, allowed job kinds) with health
+// (GET /compute)
+func (_ Unimplemented) ComputeList(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ComputeGet Get a host and its cards
+// (GET /compute/{id})
+func (_ Unimplemented) ComputeGet(w http.ResponseWriter, r *http.Request, id string) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ComputeEdit Change a host's description or a card's memory cap and allowed job kinds
+// (PATCH /compute/{id})
+func (_ Unimplemented) ComputeEdit(w http.ResponseWriter, r *http.Request, id string, params ComputeEditParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// DefaultsGet The versioned defaults (defaults.yaml) every form, budget and estimate starts from
+// (GET /defaults)
+func (_ Unimplemented) DefaultsGet(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -821,6 +1849,18 @@ func (_ Unimplemented) MountsNew(w http.ResponseWriter, r *http.Request, params 
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// PoliciesGet Instance-wide policies (budgets now; retention, PII and cache quotas later)
+// (GET /policies)
+func (_ Unimplemented) PoliciesGet(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// PoliciesEdit Change instance-wide policies; values must stay inside the ranges in defaults.yaml
+// (PATCH /policies)
+func (_ Unimplemented) PoliciesEdit(w http.ResponseWriter, r *http.Request, params PoliciesEditParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // ProjectsList List projects
 // (GET /projects)
 func (_ Unimplemented) ProjectsList(w http.ResponseWriter, r *http.Request, params ProjectsListParams) {
@@ -845,15 +1885,33 @@ func (_ Unimplemented) ProjectsEdit(w http.ResponseWriter, r *http.Request, p Pr
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// AdoptionsList Registry versions the project adopted, with the aliases pointing at each
+// (GET /projects/{p}/adoptions)
+func (_ Unimplemented) AdoptionsList(w http.ResponseWriter, r *http.Request, p ProjectSlug, params AdoptionsListParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // AgentSessionsNew Launch Claude Code or opencode in a project worktree
 // (POST /projects/{p}/agent-sessions)
 func (_ Unimplemented) AgentSessionsNew(w http.ResponseWriter, r *http.Request, p ProjectSlug, params AgentSessionsNewParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// AliasesSet Point a project alias at a registry version (baseline is gated, production moves only by promotion)
+// AliasesList The project's aliases (train-current, baseline, production, …) and the versions they point at
+// (GET /projects/{p}/aliases)
+func (_ Unimplemented) AliasesList(w http.ResponseWriter, r *http.Request, p ProjectSlug) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AliasesGet Get one project alias and the version it points at
+// (GET /projects/{p}/aliases/{name})
+func (_ Unimplemented) AliasesGet(w http.ResponseWriter, r *http.Request, p ProjectSlug, name AliasName) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AliasesSet Point a project alias at an adopted registry version (baseline is gated, production moves only by promotion)
 // (PUT /projects/{p}/aliases/{name})
-func (_ Unimplemented) AliasesSet(w http.ResponseWriter, r *http.Request, p ProjectSlug, name string, params AliasesSetParams) {
+func (_ Unimplemented) AliasesSet(w http.ResponseWriter, r *http.Request, p ProjectSlug, name AliasName, params AliasesSetParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -869,9 +1927,15 @@ func (_ Unimplemented) MixesPreview(w http.ResponseWriter, r *http.Request, p Pr
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// RunsNew Start a training run; ?dryRun=true returns GPU-hours, card and duration
+// RunsNew Start a training run; until phase 2 only ?dryRun=true answers, with GPU-hours, card, duration and data
 // (POST /projects/{p}/runs)
 func (_ Unimplemented) RunsNew(w http.ResponseWriter, r *http.Request, p ProjectSlug, params RunsNewParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ProjectsAdopt Adopt a registry version into the project by reference
+// (POST /projects/{p}:adopt)
+func (_ Unimplemented) ProjectsAdopt(w http.ResponseWriter, r *http.Request, p ProjectSlug, params ProjectsAdoptParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -881,9 +1945,69 @@ func (_ Unimplemented) ProjectsArchive(w http.ResponseWriter, r *http.Request, p
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// RegistrySearch Search registry versions of every kind (empty until phase 1 registers kinds)
+// RegistrySearch Search registry versions of every kind by text and qualifiers (kind:, tag:, locale:, state:)
 // (GET /registry)
 func (_ Unimplemented) RegistrySearch(w http.ResponseWriter, r *http.Request, params RegistrySearchParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// BaseModelsList List base model versions (Hugging Face repository at a pinned revision, licence, model family)
+// (GET /registry/base-models)
+func (_ Unimplemented) BaseModelsList(w http.ResponseWriter, r *http.Request, params BaseModelsListParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// BaseModelsGet Get a base model version with the projects that use it
+// (GET /registry/base-models/{id})
+func (_ Unimplemented) BaseModelsGet(w http.ResponseWriter, r *http.Request, id VersionId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// CollectionsList List registry collections (named series of immutable versions), optionally of one kind or tag
+// (GET /registry/collections)
+func (_ Unimplemented) CollectionsList(w http.ResponseWriter, r *http.Request, params CollectionsListParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// CollectionsGet Get a registry collection with its versions, newest first
+// (GET /registry/collections/{id})
+func (_ Unimplemented) CollectionsGet(w http.ResponseWriter, r *http.Request, id string) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// DatasetsList List dataset versions (immutable, fingerprinted selections with splits and statistics)
+// (GET /registry/datasets)
+func (_ Unimplemented) DatasetsList(w http.ResponseWriter, r *http.Request, params DatasetsListParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// DatasetsGet Get a dataset version with its splits, statistics and the projects that use it
+// (GET /registry/datasets/{id})
+func (_ Unimplemented) DatasetsGet(w http.ResponseWriter, r *http.Request, id VersionId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// TemplatesList List template versions (instruction templates, permission presets, skills, pipeline templates, agent config)
+// (GET /registry/templates)
+func (_ Unimplemented) TemplatesList(w http.ResponseWriter, r *http.Request, params TemplatesListParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// TemplatesGet Get a template version with its files (paths and hashes) and the projects that use it
+// (GET /registry/templates/{id})
+func (_ Unimplemented) TemplatesGet(w http.ResponseWriter, r *http.Request, id VersionId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// SecretsList Named credentials (name, kind, scope, last use); values are never returned
+// (GET /secrets)
+func (_ Unimplemented) SecretsList(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// SecretsNew Store a named credential; the value is write-only and never returned
+// (POST /secrets)
+func (_ Unimplemented) SecretsNew(w http.ResponseWriter, r *http.Request, params SecretsNewParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1257,6 +2381,150 @@ func (siw *ServerInterfaceWrapper) ApprovalsDeny(w http.ResponseWriter, r *http.
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ApprovalsDeny(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ComputeList operation middleware
+func (siw *ServerInterfaceWrapper) ComputeList(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ComputeList(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ComputeGet operation middleware
+func (siw *ServerInterfaceWrapper) ComputeGet(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ComputeGet(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ComputeEdit operation middleware
+func (siw *ServerInterfaceWrapper) ComputeEdit(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ComputeEditParams
+
+	// ------------- Optional query parameter "dryRun" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "dryRun", r.URL.Query(), &params.DryRun, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "dryRun"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "dryRun", Err: err})
+		}
+		return
+	}
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	// ------------- Required header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = IfMatch
+
+	} else {
+		err := fmt.Errorf("Header parameter If-Match is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "If-Match", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ComputeEdit(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DefaultsGet operation middleware
+func (siw *ServerInterfaceWrapper) DefaultsGet(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DefaultsGet(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1892,6 +3160,101 @@ func (siw *ServerInterfaceWrapper) MountsNew(w http.ResponseWriter, r *http.Requ
 	handler.ServeHTTP(w, r)
 }
 
+// PoliciesGet operation middleware
+func (siw *ServerInterfaceWrapper) PoliciesGet(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PoliciesGet(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PoliciesEdit operation middleware
+func (siw *ServerInterfaceWrapper) PoliciesEdit(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params PoliciesEditParams
+
+	// ------------- Optional query parameter "dryRun" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "dryRun", r.URL.Query(), &params.DryRun, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "dryRun"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "dryRun", Err: err})
+		}
+		return
+	}
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	// ------------- Required header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = IfMatch
+
+	} else {
+		err := fmt.Errorf("Header parameter If-Match is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "If-Match", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PoliciesEdit(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ProjectsList operation middleware
 func (siw *ServerInterfaceWrapper) ProjectsList(w http.ResponseWriter, r *http.Request) {
 
@@ -2099,6 +3462,48 @@ func (siw *ServerInterfaceWrapper) ProjectsEdit(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
+// AdoptionsList operation middleware
+func (siw *ServerInterfaceWrapper) AdoptionsList(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "p" -------------
+	var p ProjectSlug
+
+	err = runtime.BindStyledParameterWithOptions("simple", "p", chi.URLParam(r, "p"), &p, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "p", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AdoptionsListParams
+
+	// ------------- Optional query parameter "kind" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "kind", r.URL.Query(), &params.Kind, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "kind"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "kind", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdoptionsList(w, r, p, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // AgentSessionsNew operation middleware
 func (siw *ServerInterfaceWrapper) AgentSessionsNew(w http.ResponseWriter, r *http.Request) {
 
@@ -2166,6 +3571,67 @@ func (siw *ServerInterfaceWrapper) AgentSessionsNew(w http.ResponseWriter, r *ht
 	handler.ServeHTTP(w, r)
 }
 
+// AliasesList operation middleware
+func (siw *ServerInterfaceWrapper) AliasesList(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "p" -------------
+	var p ProjectSlug
+
+	err = runtime.BindStyledParameterWithOptions("simple", "p", chi.URLParam(r, "p"), &p, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "p", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AliasesList(w, r, p)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AliasesGet operation middleware
+func (siw *ServerInterfaceWrapper) AliasesGet(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "p" -------------
+	var p ProjectSlug
+
+	err = runtime.BindStyledParameterWithOptions("simple", "p", chi.URLParam(r, "p"), &p, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "p", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "name" -------------
+	var name AliasName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", chi.URLParam(r, "name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AliasesGet(w, r, p, name)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // AliasesSet operation middleware
 func (siw *ServerInterfaceWrapper) AliasesSet(w http.ResponseWriter, r *http.Request) {
 
@@ -2182,7 +3648,7 @@ func (siw *ServerInterfaceWrapper) AliasesSet(w http.ResponseWriter, r *http.Req
 	}
 
 	// ------------- Path parameter "name" -------------
-	var name string
+	var name AliasName
 
 	err = runtime.BindStyledParameterWithOptions("simple", "name", chi.URLParam(r, "name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
 	if err != nil {
@@ -2462,6 +3928,96 @@ func (siw *ServerInterfaceWrapper) RunsNew(w http.ResponseWriter, r *http.Reques
 	handler.ServeHTTP(w, r)
 }
 
+// ProjectsAdopt operation middleware
+func (siw *ServerInterfaceWrapper) ProjectsAdopt(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "p" -------------
+	var p ProjectSlug
+
+	err = runtime.BindStyledParameterWithOptions("simple", "p", chi.URLParam(r, "p"), &p, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "p", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ProjectsAdoptParams
+
+	// ------------- Optional query parameter "dryRun" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "dryRun", r.URL.Query(), &params.DryRun, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "dryRun"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "dryRun", Err: err})
+		}
+		return
+	}
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	// ------------- Required header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = IfMatch
+
+	} else {
+		err := fmt.Errorf("Header parameter If-Match is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "If-Match", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ProjectsAdopt(w, r, p, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ProjectsArchive operation middleware
 func (siw *ServerInterfaceWrapper) ProjectsArchive(w http.ResponseWriter, r *http.Request) {
 
@@ -2624,6 +4180,379 @@ func (siw *ServerInterfaceWrapper) RegistrySearch(w http.ResponseWriter, r *http
 	handler.ServeHTTP(w, r)
 }
 
+// BaseModelsList operation middleware
+func (siw *ServerInterfaceWrapper) BaseModelsList(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params BaseModelsListParams
+
+	// ------------- Optional query parameter "collection" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "collection", r.URL.Query(), &params.Collection, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "collection"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "collection", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "state" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "state", r.URL.Query(), &params.State, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "state"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "state", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.BaseModelsList(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// BaseModelsGet operation middleware
+func (siw *ServerInterfaceWrapper) BaseModelsGet(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id VersionId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.BaseModelsGet(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CollectionsList operation middleware
+func (siw *ServerInterfaceWrapper) CollectionsList(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CollectionsListParams
+
+	// ------------- Optional query parameter "kind" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "kind", r.URL.Query(), &params.Kind, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "kind"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "kind", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "tag" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "tag", r.URL.Query(), &params.Tag, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "tag"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tag", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CollectionsList(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CollectionsGet operation middleware
+func (siw *ServerInterfaceWrapper) CollectionsGet(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CollectionsGet(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DatasetsList operation middleware
+func (siw *ServerInterfaceWrapper) DatasetsList(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DatasetsListParams
+
+	// ------------- Optional query parameter "collection" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "collection", r.URL.Query(), &params.Collection, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "collection"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "collection", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "state" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "state", r.URL.Query(), &params.State, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "state"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "state", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DatasetsList(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DatasetsGet operation middleware
+func (siw *ServerInterfaceWrapper) DatasetsGet(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id VersionId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DatasetsGet(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// TemplatesList operation middleware
+func (siw *ServerInterfaceWrapper) TemplatesList(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params TemplatesListParams
+
+	// ------------- Optional query parameter "collection" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "collection", r.URL.Query(), &params.Collection, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "collection"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "collection", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "state" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "state", r.URL.Query(), &params.State, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "state"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "state", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "templateKind" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "templateKind", r.URL.Query(), &params.TemplateKind, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "templateKind"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "templateKind", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.TemplatesList(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// TemplatesGet operation middleware
+func (siw *ServerInterfaceWrapper) TemplatesGet(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id VersionId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.TemplatesGet(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SecretsList operation middleware
+func (siw *ServerInterfaceWrapper) SecretsList(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SecretsList(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SecretsNew operation middleware
+func (siw *ServerInterfaceWrapper) SecretsNew(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params SecretsNewParams
+
+	// ------------- Optional query parameter "dryRun" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "dryRun", r.URL.Query(), &params.DryRun, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "dryRun"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "dryRun", Err: err})
+		}
+		return
+	}
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SecretsNew(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 type UnescapedCookieParamError struct {
 	ParamName string
 	Err       error
@@ -2777,6 +4706,72 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/registry", wrapper.RegistrySearch)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/registry/collections", wrapper.CollectionsList)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/registry/collections/{id}", wrapper.CollectionsGet)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/registry/base-models", wrapper.BaseModelsList)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/registry/base-models/{id}", wrapper.BaseModelsGet)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/registry/datasets", wrapper.DatasetsList)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/registry/datasets/{id}", wrapper.DatasetsGet)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/registry/templates", wrapper.TemplatesList)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/registry/templates/{id}", wrapper.TemplatesGet)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/projects/{p}:adopt", wrapper.ProjectsAdopt)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/projects/{p}/adoptions", wrapper.AdoptionsList)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/projects/{p}/aliases", wrapper.AliasesList)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/projects/{p}/aliases/{name}", wrapper.AliasesGet)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/projects/{p}/aliases/{name}", wrapper.AliasesSet)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/compute", wrapper.ComputeList)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/compute/{id}", wrapper.ComputeGet)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/compute/{id}", wrapper.ComputeEdit)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/secrets", wrapper.SecretsList)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/secrets", wrapper.SecretsNew)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/defaults", wrapper.DefaultsGet)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/policies", wrapper.PoliciesGet)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/policies", wrapper.PoliciesEdit)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/projects/{p}/runs", wrapper.RunsNew)
+	})
+	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/projects/{p}/mixes", wrapper.MixesNew)
 	})
 	r.Group(func(r chi.Router) {
@@ -2784,9 +4779,6 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Patch(options.BaseURL+"/mixes/{id}", wrapper.MixesEdit)
-	})
-	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/projects/{p}/runs", wrapper.RunsNew)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/jobs/{id}", wrapper.JobsGet)
@@ -2817,9 +4809,6 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/mounts", wrapper.MountsNew)
-	})
-	r.Group(func(r chi.Router) {
-		r.Put(options.BaseURL+"/projects/{p}/aliases/{name}", wrapper.AliasesSet)
 	})
 
 	return r
@@ -3022,6 +5011,192 @@ type ApprovalsDenydefaultApplicationProblemPlusJSONResponse struct {
 }
 
 func (response ApprovalsDenydefaultApplicationProblemPlusJSONResponse) VisitApprovalsDenyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ComputeListRequestObject struct {
+}
+
+type ComputeListResponseObject interface {
+	VisitComputeListResponse(w http.ResponseWriter) error
+}
+
+type ComputeList200JSONResponse ComputeList
+
+func (response ComputeList200JSONResponse) VisitComputeListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ComputeListdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ComputeListdefaultApplicationProblemPlusJSONResponse) VisitComputeListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ComputeGetRequestObject struct {
+	Id string `json:"id"`
+}
+
+type ComputeGetResponseObject interface {
+	VisitComputeGetResponse(w http.ResponseWriter) error
+}
+
+type ComputeGet200ResponseHeaders struct {
+	ETag *string
+}
+
+type ComputeGet200JSONResponse struct {
+	Body    ComputeHost
+	Headers ComputeGet200ResponseHeaders
+}
+
+func (response ComputeGet200JSONResponse) VisitComputeGetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.ETag != nil {
+		w.Header().Set("ETag", fmt.Sprint(*response.Headers.ETag))
+	}
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ComputeGetdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ComputeGetdefaultApplicationProblemPlusJSONResponse) VisitComputeGetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ComputeEditRequestObject struct {
+	Id     string `json:"id"`
+	Params ComputeEditParams
+	Body   *ComputeEditJSONRequestBody
+}
+
+type ComputeEditResponseObject interface {
+	VisitComputeEditResponse(w http.ResponseWriter) error
+}
+
+type ComputeEdit200ResponseHeaders struct {
+	ETag *string
+}
+
+type ComputeEdit200JSONResponse struct {
+	Body    ComputeHost
+	Headers ComputeEdit200ResponseHeaders
+}
+
+func (response ComputeEdit200JSONResponse) VisitComputeEditResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.ETag != nil {
+		w.Header().Set("ETag", fmt.Sprint(*response.Headers.ETag))
+	}
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ComputeEditdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ComputeEditdefaultApplicationProblemPlusJSONResponse) VisitComputeEditResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DefaultsGetRequestObject struct {
+}
+
+type DefaultsGetResponseObject interface {
+	VisitDefaultsGetResponse(w http.ResponseWriter) error
+}
+
+type DefaultsGet200ResponseHeaders struct {
+	ETag *string
+}
+
+type DefaultsGet200JSONResponse struct {
+	Body    Defaults
+	Headers DefaultsGet200ResponseHeaders
+}
+
+func (response DefaultsGet200JSONResponse) VisitDefaultsGetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.ETag != nil {
+		w.Header().Set("ETag", fmt.Sprint(*response.Headers.ETag))
+	}
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DefaultsGetdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response DefaultsGetdefaultApplicationProblemPlusJSONResponse) VisitDefaultsGetResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -3570,6 +5745,104 @@ func (response MountsNewdefaultApplicationProblemPlusJSONResponse) VisitMountsNe
 	return err
 }
 
+type PoliciesGetRequestObject struct {
+}
+
+type PoliciesGetResponseObject interface {
+	VisitPoliciesGetResponse(w http.ResponseWriter) error
+}
+
+type PoliciesGet200ResponseHeaders struct {
+	ETag *string
+}
+
+type PoliciesGet200JSONResponse struct {
+	Body    Policies
+	Headers PoliciesGet200ResponseHeaders
+}
+
+func (response PoliciesGet200JSONResponse) VisitPoliciesGetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.ETag != nil {
+		w.Header().Set("ETag", fmt.Sprint(*response.Headers.ETag))
+	}
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PoliciesGetdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response PoliciesGetdefaultApplicationProblemPlusJSONResponse) VisitPoliciesGetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PoliciesEditRequestObject struct {
+	Params PoliciesEditParams
+	Body   *PoliciesEditJSONRequestBody
+}
+
+type PoliciesEditResponseObject interface {
+	VisitPoliciesEditResponse(w http.ResponseWriter) error
+}
+
+type PoliciesEdit200ResponseHeaders struct {
+	ETag *string
+}
+
+type PoliciesEdit200JSONResponse struct {
+	Body    Policies
+	Headers PoliciesEdit200ResponseHeaders
+}
+
+func (response PoliciesEdit200JSONResponse) VisitPoliciesEditResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.ETag != nil {
+		w.Header().Set("ETag", fmt.Sprint(*response.Headers.ETag))
+	}
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PoliciesEditdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response PoliciesEditdefaultApplicationProblemPlusJSONResponse) VisitPoliciesEditResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ProjectsListRequestObject struct {
 	Params ProjectsListParams
 }
@@ -3773,6 +6046,46 @@ func (response ProjectsEditdefaultApplicationProblemPlusJSONResponse) VisitProje
 	return err
 }
 
+type AdoptionsListRequestObject struct {
+	P      ProjectSlug `json:"p"`
+	Params AdoptionsListParams
+}
+
+type AdoptionsListResponseObject interface {
+	VisitAdoptionsListResponse(w http.ResponseWriter) error
+}
+
+type AdoptionsList200JSONResponse AdoptionList
+
+func (response AdoptionsList200JSONResponse) VisitAdoptionsListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdoptionsListdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response AdoptionsListdefaultApplicationProblemPlusJSONResponse) VisitAdoptionsListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type AgentSessionsNewRequestObject struct {
 	P      ProjectSlug `json:"p"`
 	Params AgentSessionsNewParams
@@ -3814,9 +6127,98 @@ func (response AgentSessionsNewdefaultApplicationProblemPlusJSONResponse) VisitA
 	return err
 }
 
+type AliasesListRequestObject struct {
+	P ProjectSlug `json:"p"`
+}
+
+type AliasesListResponseObject interface {
+	VisitAliasesListResponse(w http.ResponseWriter) error
+}
+
+type AliasesList200JSONResponse AliasList
+
+func (response AliasesList200JSONResponse) VisitAliasesListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AliasesListdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response AliasesListdefaultApplicationProblemPlusJSONResponse) VisitAliasesListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AliasesGetRequestObject struct {
+	P    ProjectSlug `json:"p"`
+	Name AliasName   `json:"name"`
+}
+
+type AliasesGetResponseObject interface {
+	VisitAliasesGetResponse(w http.ResponseWriter) error
+}
+
+type AliasesGet200ResponseHeaders struct {
+	ETag *string
+}
+
+type AliasesGet200JSONResponse struct {
+	Body    Alias
+	Headers AliasesGet200ResponseHeaders
+}
+
+func (response AliasesGet200JSONResponse) VisitAliasesGetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.ETag != nil {
+		w.Header().Set("ETag", fmt.Sprint(*response.Headers.ETag))
+	}
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AliasesGetdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response AliasesGetdefaultApplicationProblemPlusJSONResponse) VisitAliasesGetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type AliasesSetRequestObject struct {
 	P      ProjectSlug `json:"p"`
-	Name   string      `json:"name"`
+	Name   AliasName   `json:"name"`
 	Params AliasesSetParams
 	Body   *AliasesSetJSONRequestBody
 }
@@ -3825,15 +6227,25 @@ type AliasesSetResponseObject interface {
 	VisitAliasesSetResponse(w http.ResponseWriter) error
 }
 
-type AliasesSet200JSONResponse struct{ PlannedEntityJSONResponse }
+type AliasesSet200ResponseHeaders struct {
+	ETag *string
+}
+
+type AliasesSet200JSONResponse struct {
+	Body    Alias
+	Headers AliasesSet200ResponseHeaders
+}
 
 func (response AliasesSet200JSONResponse) VisitAliasesSetResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.ETag != nil {
+		w.Header().Set("ETag", fmt.Sprint(*response.Headers.ETag))
+	}
 	w.WriteHeader(200)
 	_, err := buf.WriteTo(w)
 	return err
@@ -3962,6 +6374,20 @@ type RunsNewResponseObject interface {
 	VisitRunsNewResponse(w http.ResponseWriter) error
 }
 
+type RunsNew200JSONResponse RunEstimate
+
+func (response RunsNew200JSONResponse) VisitRunsNewResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type RunsNew202JSONResponse struct{ JobAcceptedJSONResponse }
 
 func (response RunsNew202JSONResponse) VisitRunsNewResponse(w http.ResponseWriter) error {
@@ -3982,6 +6408,57 @@ type RunsNewdefaultApplicationProblemPlusJSONResponse struct {
 }
 
 func (response RunsNewdefaultApplicationProblemPlusJSONResponse) VisitRunsNewResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ProjectsAdoptRequestObject struct {
+	P      ProjectSlug `json:"p"`
+	Params ProjectsAdoptParams
+	Body   *ProjectsAdoptJSONRequestBody
+}
+
+type ProjectsAdoptResponseObject interface {
+	VisitProjectsAdoptResponse(w http.ResponseWriter) error
+}
+
+type ProjectsAdopt200ResponseHeaders struct {
+	ETag *string
+}
+
+type ProjectsAdopt200JSONResponse struct {
+	Body    Adoption
+	Headers ProjectsAdopt200ResponseHeaders
+}
+
+func (response ProjectsAdopt200JSONResponse) VisitProjectsAdoptResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.ETag != nil {
+		w.Header().Set("ETag", fmt.Sprint(*response.Headers.ETag))
+	}
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ProjectsAdoptdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ProjectsAdoptdefaultApplicationProblemPlusJSONResponse) VisitProjectsAdoptResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -4082,6 +6559,420 @@ func (response RegistrySearchdefaultApplicationProblemPlusJSONResponse) VisitReg
 	return err
 }
 
+type BaseModelsListRequestObject struct {
+	Params BaseModelsListParams
+}
+
+type BaseModelsListResponseObject interface {
+	VisitBaseModelsListResponse(w http.ResponseWriter) error
+}
+
+type BaseModelsList200JSONResponse BaseModelVersionList
+
+func (response BaseModelsList200JSONResponse) VisitBaseModelsListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type BaseModelsListdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response BaseModelsListdefaultApplicationProblemPlusJSONResponse) VisitBaseModelsListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type BaseModelsGetRequestObject struct {
+	Id VersionId `json:"id"`
+}
+
+type BaseModelsGetResponseObject interface {
+	VisitBaseModelsGetResponse(w http.ResponseWriter) error
+}
+
+type BaseModelsGet200JSONResponse BaseModelVersion
+
+func (response BaseModelsGet200JSONResponse) VisitBaseModelsGetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type BaseModelsGetdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response BaseModelsGetdefaultApplicationProblemPlusJSONResponse) VisitBaseModelsGetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CollectionsListRequestObject struct {
+	Params CollectionsListParams
+}
+
+type CollectionsListResponseObject interface {
+	VisitCollectionsListResponse(w http.ResponseWriter) error
+}
+
+type CollectionsList200JSONResponse CollectionList
+
+func (response CollectionsList200JSONResponse) VisitCollectionsListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CollectionsListdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response CollectionsListdefaultApplicationProblemPlusJSONResponse) VisitCollectionsListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CollectionsGetRequestObject struct {
+	Id string `json:"id"`
+}
+
+type CollectionsGetResponseObject interface {
+	VisitCollectionsGetResponse(w http.ResponseWriter) error
+}
+
+type CollectionsGet200JSONResponse Collection
+
+func (response CollectionsGet200JSONResponse) VisitCollectionsGetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CollectionsGetdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response CollectionsGetdefaultApplicationProblemPlusJSONResponse) VisitCollectionsGetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DatasetsListRequestObject struct {
+	Params DatasetsListParams
+}
+
+type DatasetsListResponseObject interface {
+	VisitDatasetsListResponse(w http.ResponseWriter) error
+}
+
+type DatasetsList200JSONResponse DatasetVersionList
+
+func (response DatasetsList200JSONResponse) VisitDatasetsListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DatasetsListdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response DatasetsListdefaultApplicationProblemPlusJSONResponse) VisitDatasetsListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DatasetsGetRequestObject struct {
+	Id VersionId `json:"id"`
+}
+
+type DatasetsGetResponseObject interface {
+	VisitDatasetsGetResponse(w http.ResponseWriter) error
+}
+
+type DatasetsGet200JSONResponse DatasetVersion
+
+func (response DatasetsGet200JSONResponse) VisitDatasetsGetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DatasetsGetdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response DatasetsGetdefaultApplicationProblemPlusJSONResponse) VisitDatasetsGetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type TemplatesListRequestObject struct {
+	Params TemplatesListParams
+}
+
+type TemplatesListResponseObject interface {
+	VisitTemplatesListResponse(w http.ResponseWriter) error
+}
+
+type TemplatesList200JSONResponse TemplateVersionList
+
+func (response TemplatesList200JSONResponse) VisitTemplatesListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type TemplatesListdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response TemplatesListdefaultApplicationProblemPlusJSONResponse) VisitTemplatesListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type TemplatesGetRequestObject struct {
+	Id VersionId `json:"id"`
+}
+
+type TemplatesGetResponseObject interface {
+	VisitTemplatesGetResponse(w http.ResponseWriter) error
+}
+
+type TemplatesGet200JSONResponse TemplateVersion
+
+func (response TemplatesGet200JSONResponse) VisitTemplatesGetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type TemplatesGetdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response TemplatesGetdefaultApplicationProblemPlusJSONResponse) VisitTemplatesGetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SecretsListRequestObject struct {
+}
+
+type SecretsListResponseObject interface {
+	VisitSecretsListResponse(w http.ResponseWriter) error
+}
+
+type SecretsList200JSONResponse SecretList
+
+func (response SecretsList200JSONResponse) VisitSecretsListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SecretsListdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response SecretsListdefaultApplicationProblemPlusJSONResponse) VisitSecretsListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SecretsNewRequestObject struct {
+	Params SecretsNewParams
+	Body   *SecretsNewJSONRequestBody
+}
+
+type SecretsNewResponseObject interface {
+	VisitSecretsNewResponse(w http.ResponseWriter) error
+}
+
+type SecretsNew200JSONResponse Secret
+
+func (response SecretsNew200JSONResponse) VisitSecretsNewResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SecretsNew201ResponseHeaders struct {
+	ETag *string
+}
+
+type SecretsNew201JSONResponse struct {
+	Body    Secret
+	Headers SecretsNew201ResponseHeaders
+}
+
+func (response SecretsNew201JSONResponse) VisitSecretsNewResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.ETag != nil {
+		w.Header().Set("ETag", fmt.Sprint(*response.Headers.ETag))
+	}
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SecretsNewdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response SecretsNewdefaultApplicationProblemPlusJSONResponse) VisitSecretsNewResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
 	// AgentMessagesNew User message with entity references; updates arrive on agent.session.{id}
@@ -4099,6 +6990,18 @@ type StrictServerInterface interface {
 	// ApprovalsDeny Deny a pending request
 	// (POST /approvals/{id}:deny)
 	ApprovalsDeny(ctx context.Context, request ApprovalsDenyRequestObject) (ApprovalsDenyResponseObject, error)
+	// ComputeList Hosts and their cards (memory cap per card, allowed job kinds) with health
+	// (GET /compute)
+	ComputeList(ctx context.Context, request ComputeListRequestObject) (ComputeListResponseObject, error)
+	// ComputeGet Get a host and its cards
+	// (GET /compute/{id})
+	ComputeGet(ctx context.Context, request ComputeGetRequestObject) (ComputeGetResponseObject, error)
+	// ComputeEdit Change a host's description or a card's memory cap and allowed job kinds
+	// (PATCH /compute/{id})
+	ComputeEdit(ctx context.Context, request ComputeEditRequestObject) (ComputeEditResponseObject, error)
+	// DefaultsGet The versioned defaults (defaults.yaml) every form, budget and estimate starts from
+	// (GET /defaults)
+	DefaultsGet(ctx context.Context, request DefaultsGetRequestObject) (DefaultsGetResponseObject, error)
 	// EventsList Events after a sequence number; with Accept text/event-stream, the live stream
 	// (GET /events)
 	EventsList(ctx context.Context, request EventsListRequestObject) (EventsListResponseObject, error)
@@ -4135,6 +7038,12 @@ type StrictServerInterface interface {
 	// MountsNew Register a local path, NFS/SMB path, S3-compatible bucket or Hub source (approval)
 	// (POST /mounts)
 	MountsNew(ctx context.Context, request MountsNewRequestObject) (MountsNewResponseObject, error)
+	// PoliciesGet Instance-wide policies (budgets now; retention, PII and cache quotas later)
+	// (GET /policies)
+	PoliciesGet(ctx context.Context, request PoliciesGetRequestObject) (PoliciesGetResponseObject, error)
+	// PoliciesEdit Change instance-wide policies; values must stay inside the ranges in defaults.yaml
+	// (PATCH /policies)
+	PoliciesEdit(ctx context.Context, request PoliciesEditRequestObject) (PoliciesEditResponseObject, error)
 	// ProjectsList List projects
 	// (GET /projects)
 	ProjectsList(ctx context.Context, request ProjectsListRequestObject) (ProjectsListResponseObject, error)
@@ -4147,10 +7056,19 @@ type StrictServerInterface interface {
 	// ProjectsEdit Rename or re-describe a project
 	// (PATCH /projects/{p})
 	ProjectsEdit(ctx context.Context, request ProjectsEditRequestObject) (ProjectsEditResponseObject, error)
+	// AdoptionsList Registry versions the project adopted, with the aliases pointing at each
+	// (GET /projects/{p}/adoptions)
+	AdoptionsList(ctx context.Context, request AdoptionsListRequestObject) (AdoptionsListResponseObject, error)
 	// AgentSessionsNew Launch Claude Code or opencode in a project worktree
 	// (POST /projects/{p}/agent-sessions)
 	AgentSessionsNew(ctx context.Context, request AgentSessionsNewRequestObject) (AgentSessionsNewResponseObject, error)
-	// AliasesSet Point a project alias at a registry version (baseline is gated, production moves only by promotion)
+	// AliasesList The project's aliases (train-current, baseline, production, …) and the versions they point at
+	// (GET /projects/{p}/aliases)
+	AliasesList(ctx context.Context, request AliasesListRequestObject) (AliasesListResponseObject, error)
+	// AliasesGet Get one project alias and the version it points at
+	// (GET /projects/{p}/aliases/{name})
+	AliasesGet(ctx context.Context, request AliasesGetRequestObject) (AliasesGetResponseObject, error)
+	// AliasesSet Point a project alias at an adopted registry version (baseline is gated, production moves only by promotion)
 	// (PUT /projects/{p}/aliases/{name})
 	AliasesSet(ctx context.Context, request AliasesSetRequestObject) (AliasesSetResponseObject, error)
 	// MixesNew Save a mix (input_cfg groups, weights, temperature, replay share)
@@ -4159,15 +7077,48 @@ type StrictServerInterface interface {
 	// MixesPreview Hours per language for a mix without saving it
 	// (POST /projects/{p}/mixes:preview)
 	MixesPreview(ctx context.Context, request MixesPreviewRequestObject) (MixesPreviewResponseObject, error)
-	// RunsNew Start a training run; ?dryRun=true returns GPU-hours, card and duration
+	// RunsNew Start a training run; until phase 2 only ?dryRun=true answers, with GPU-hours, card, duration and data
 	// (POST /projects/{p}/runs)
 	RunsNew(ctx context.Context, request RunsNewRequestObject) (RunsNewResponseObject, error)
+	// ProjectsAdopt Adopt a registry version into the project by reference
+	// (POST /projects/{p}:adopt)
+	ProjectsAdopt(ctx context.Context, request ProjectsAdoptRequestObject) (ProjectsAdoptResponseObject, error)
 	// ProjectsArchive Archive a project (soft; reversible)
 	// (POST /projects/{p}:archive)
 	ProjectsArchive(ctx context.Context, request ProjectsArchiveRequestObject) (ProjectsArchiveResponseObject, error)
-	// RegistrySearch Search registry versions of every kind (empty until phase 1 registers kinds)
+	// RegistrySearch Search registry versions of every kind by text and qualifiers (kind:, tag:, locale:, state:)
 	// (GET /registry)
 	RegistrySearch(ctx context.Context, request RegistrySearchRequestObject) (RegistrySearchResponseObject, error)
+	// BaseModelsList List base model versions (Hugging Face repository at a pinned revision, licence, model family)
+	// (GET /registry/base-models)
+	BaseModelsList(ctx context.Context, request BaseModelsListRequestObject) (BaseModelsListResponseObject, error)
+	// BaseModelsGet Get a base model version with the projects that use it
+	// (GET /registry/base-models/{id})
+	BaseModelsGet(ctx context.Context, request BaseModelsGetRequestObject) (BaseModelsGetResponseObject, error)
+	// CollectionsList List registry collections (named series of immutable versions), optionally of one kind or tag
+	// (GET /registry/collections)
+	CollectionsList(ctx context.Context, request CollectionsListRequestObject) (CollectionsListResponseObject, error)
+	// CollectionsGet Get a registry collection with its versions, newest first
+	// (GET /registry/collections/{id})
+	CollectionsGet(ctx context.Context, request CollectionsGetRequestObject) (CollectionsGetResponseObject, error)
+	// DatasetsList List dataset versions (immutable, fingerprinted selections with splits and statistics)
+	// (GET /registry/datasets)
+	DatasetsList(ctx context.Context, request DatasetsListRequestObject) (DatasetsListResponseObject, error)
+	// DatasetsGet Get a dataset version with its splits, statistics and the projects that use it
+	// (GET /registry/datasets/{id})
+	DatasetsGet(ctx context.Context, request DatasetsGetRequestObject) (DatasetsGetResponseObject, error)
+	// TemplatesList List template versions (instruction templates, permission presets, skills, pipeline templates, agent config)
+	// (GET /registry/templates)
+	TemplatesList(ctx context.Context, request TemplatesListRequestObject) (TemplatesListResponseObject, error)
+	// TemplatesGet Get a template version with its files (paths and hashes) and the projects that use it
+	// (GET /registry/templates/{id})
+	TemplatesGet(ctx context.Context, request TemplatesGetRequestObject) (TemplatesGetResponseObject, error)
+	// SecretsList Named credentials (name, kind, scope, last use); values are never returned
+	// (GET /secrets)
+	SecretsList(ctx context.Context, request SecretsListRequestObject) (SecretsListResponseObject, error)
+	// SecretsNew Store a named credential; the value is write-only and never returned
+	// (POST /secrets)
+	SecretsNew(ctx context.Context, request SecretsNewRequestObject) (SecretsNewResponseObject, error)
 }
 
 type StrictHandlerFunc func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error)
@@ -4346,6 +7297,114 @@ func (sh *strictHandler) ApprovalsDeny(w http.ResponseWriter, r *http.Request, i
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ApprovalsDenyResponseObject); ok {
 		if err := validResponse.VisitApprovalsDenyResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ComputeList operation middleware
+func (sh *strictHandler) ComputeList(w http.ResponseWriter, r *http.Request) {
+	var request ComputeListRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ComputeList(ctx, request.(ComputeListRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ComputeList")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ComputeListResponseObject); ok {
+		if err := validResponse.VisitComputeListResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ComputeGet operation middleware
+func (sh *strictHandler) ComputeGet(w http.ResponseWriter, r *http.Request, id string) {
+	var request ComputeGetRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ComputeGet(ctx, request.(ComputeGetRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ComputeGet")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ComputeGetResponseObject); ok {
+		if err := validResponse.VisitComputeGetResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ComputeEdit operation middleware
+func (sh *strictHandler) ComputeEdit(w http.ResponseWriter, r *http.Request, id string, params ComputeEditParams) {
+	var request ComputeEditRequestObject
+
+	request.Id = id
+	request.Params = params
+
+	var body ComputeEditJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ComputeEdit(ctx, request.(ComputeEditRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ComputeEdit")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ComputeEditResponseObject); ok {
+		if err := validResponse.VisitComputeEditResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DefaultsGet operation middleware
+func (sh *strictHandler) DefaultsGet(w http.ResponseWriter, r *http.Request) {
+	var request DefaultsGetRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DefaultsGet(ctx, request.(DefaultsGetRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DefaultsGet")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DefaultsGetResponseObject); ok {
+		if err := validResponse.VisitDefaultsGetResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -4693,6 +7752,63 @@ func (sh *strictHandler) MountsNew(w http.ResponseWriter, r *http.Request, param
 	}
 }
 
+// PoliciesGet operation middleware
+func (sh *strictHandler) PoliciesGet(w http.ResponseWriter, r *http.Request) {
+	var request PoliciesGetRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.PoliciesGet(ctx, request.(PoliciesGetRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PoliciesGet")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(PoliciesGetResponseObject); ok {
+		if err := validResponse.VisitPoliciesGetResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PoliciesEdit operation middleware
+func (sh *strictHandler) PoliciesEdit(w http.ResponseWriter, r *http.Request, params PoliciesEditParams) {
+	var request PoliciesEditRequestObject
+
+	request.Params = params
+
+	var body PoliciesEditJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.PoliciesEdit(ctx, request.(PoliciesEditRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PoliciesEdit")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(PoliciesEditResponseObject); ok {
+		if err := validResponse.VisitPoliciesEditResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ProjectsList operation middleware
 func (sh *strictHandler) ProjectsList(w http.ResponseWriter, r *http.Request, params ProjectsListParams) {
 	var request ProjectsListRequestObject
@@ -4812,6 +7928,33 @@ func (sh *strictHandler) ProjectsEdit(w http.ResponseWriter, r *http.Request, p 
 	}
 }
 
+// AdoptionsList operation middleware
+func (sh *strictHandler) AdoptionsList(w http.ResponseWriter, r *http.Request, p ProjectSlug, params AdoptionsListParams) {
+	var request AdoptionsListRequestObject
+
+	request.P = p
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AdoptionsList(ctx, request.(AdoptionsListRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdoptionsList")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AdoptionsListResponseObject); ok {
+		if err := validResponse.VisitAdoptionsListResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // AgentSessionsNew operation middleware
 func (sh *strictHandler) AgentSessionsNew(w http.ResponseWriter, r *http.Request, p ProjectSlug, params AgentSessionsNewParams) {
 	var request AgentSessionsNewRequestObject
@@ -4849,8 +7992,61 @@ func (sh *strictHandler) AgentSessionsNew(w http.ResponseWriter, r *http.Request
 	}
 }
 
+// AliasesList operation middleware
+func (sh *strictHandler) AliasesList(w http.ResponseWriter, r *http.Request, p ProjectSlug) {
+	var request AliasesListRequestObject
+
+	request.P = p
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AliasesList(ctx, request.(AliasesListRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AliasesList")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AliasesListResponseObject); ok {
+		if err := validResponse.VisitAliasesListResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AliasesGet operation middleware
+func (sh *strictHandler) AliasesGet(w http.ResponseWriter, r *http.Request, p ProjectSlug, name AliasName) {
+	var request AliasesGetRequestObject
+
+	request.P = p
+	request.Name = name
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AliasesGet(ctx, request.(AliasesGetRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AliasesGet")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AliasesGetResponseObject); ok {
+		if err := validResponse.VisitAliasesGetResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // AliasesSet operation middleware
-func (sh *strictHandler) AliasesSet(w http.ResponseWriter, r *http.Request, p ProjectSlug, name string, params AliasesSetParams) {
+func (sh *strictHandler) AliasesSet(w http.ResponseWriter, r *http.Request, p ProjectSlug, name AliasName, params AliasesSetParams) {
 	var request AliasesSetRequestObject
 
 	request.P = p
@@ -4859,13 +8055,10 @@ func (sh *strictHandler) AliasesSet(w http.ResponseWriter, r *http.Request, p Pr
 
 	var body AliasesSetJSONRequestBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		if !errors.Is(err, io.EOF) {
-			sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
-			return
-		}
-	} else {
-		request.Body = &body
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
 	}
+	request.Body = &body
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
 		return sh.ssi.AliasesSet(ctx, request.(AliasesSetRequestObject))
@@ -4970,13 +8163,10 @@ func (sh *strictHandler) RunsNew(w http.ResponseWriter, r *http.Request, p Proje
 
 	var body RunsNewJSONRequestBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		if !errors.Is(err, io.EOF) {
-			sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
-			return
-		}
-	} else {
-		request.Body = &body
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
 	}
+	request.Body = &body
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
 		return sh.ssi.RunsNew(ctx, request.(RunsNewRequestObject))
@@ -4991,6 +8181,40 @@ func (sh *strictHandler) RunsNew(w http.ResponseWriter, r *http.Request, p Proje
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(RunsNewResponseObject); ok {
 		if err := validResponse.VisitRunsNewResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ProjectsAdopt operation middleware
+func (sh *strictHandler) ProjectsAdopt(w http.ResponseWriter, r *http.Request, p ProjectSlug, params ProjectsAdoptParams) {
+	var request ProjectsAdoptRequestObject
+
+	request.P = p
+	request.Params = params
+
+	var body ProjectsAdoptJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ProjectsAdopt(ctx, request.(ProjectsAdoptRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ProjectsAdopt")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ProjectsAdoptResponseObject); ok {
+		if err := validResponse.VisitProjectsAdoptResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -5051,99 +8275,465 @@ func (sh *strictHandler) RegistrySearch(w http.ResponseWriter, r *http.Request, 
 	}
 }
 
+// BaseModelsList operation middleware
+func (sh *strictHandler) BaseModelsList(w http.ResponseWriter, r *http.Request, params BaseModelsListParams) {
+	var request BaseModelsListRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.BaseModelsList(ctx, request.(BaseModelsListRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "BaseModelsList")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(BaseModelsListResponseObject); ok {
+		if err := validResponse.VisitBaseModelsListResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// BaseModelsGet operation middleware
+func (sh *strictHandler) BaseModelsGet(w http.ResponseWriter, r *http.Request, id VersionId) {
+	var request BaseModelsGetRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.BaseModelsGet(ctx, request.(BaseModelsGetRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "BaseModelsGet")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(BaseModelsGetResponseObject); ok {
+		if err := validResponse.VisitBaseModelsGetResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CollectionsList operation middleware
+func (sh *strictHandler) CollectionsList(w http.ResponseWriter, r *http.Request, params CollectionsListParams) {
+	var request CollectionsListRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CollectionsList(ctx, request.(CollectionsListRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CollectionsList")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CollectionsListResponseObject); ok {
+		if err := validResponse.VisitCollectionsListResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CollectionsGet operation middleware
+func (sh *strictHandler) CollectionsGet(w http.ResponseWriter, r *http.Request, id string) {
+	var request CollectionsGetRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CollectionsGet(ctx, request.(CollectionsGetRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CollectionsGet")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CollectionsGetResponseObject); ok {
+		if err := validResponse.VisitCollectionsGetResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DatasetsList operation middleware
+func (sh *strictHandler) DatasetsList(w http.ResponseWriter, r *http.Request, params DatasetsListParams) {
+	var request DatasetsListRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DatasetsList(ctx, request.(DatasetsListRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DatasetsList")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DatasetsListResponseObject); ok {
+		if err := validResponse.VisitDatasetsListResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DatasetsGet operation middleware
+func (sh *strictHandler) DatasetsGet(w http.ResponseWriter, r *http.Request, id VersionId) {
+	var request DatasetsGetRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DatasetsGet(ctx, request.(DatasetsGetRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DatasetsGet")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DatasetsGetResponseObject); ok {
+		if err := validResponse.VisitDatasetsGetResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// TemplatesList operation middleware
+func (sh *strictHandler) TemplatesList(w http.ResponseWriter, r *http.Request, params TemplatesListParams) {
+	var request TemplatesListRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.TemplatesList(ctx, request.(TemplatesListRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "TemplatesList")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(TemplatesListResponseObject); ok {
+		if err := validResponse.VisitTemplatesListResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// TemplatesGet operation middleware
+func (sh *strictHandler) TemplatesGet(w http.ResponseWriter, r *http.Request, id VersionId) {
+	var request TemplatesGetRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.TemplatesGet(ctx, request.(TemplatesGetRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "TemplatesGet")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(TemplatesGetResponseObject); ok {
+		if err := validResponse.VisitTemplatesGetResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SecretsList operation middleware
+func (sh *strictHandler) SecretsList(w http.ResponseWriter, r *http.Request) {
+	var request SecretsListRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SecretsList(ctx, request.(SecretsListRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SecretsList")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SecretsListResponseObject); ok {
+		if err := validResponse.VisitSecretsListResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SecretsNew operation middleware
+func (sh *strictHandler) SecretsNew(w http.ResponseWriter, r *http.Request, params SecretsNewParams) {
+	var request SecretsNewRequestObject
+
+	request.Params = params
+
+	var body SecretsNewJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SecretsNew(ctx, request.(SecretsNewRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SecretsNew")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SecretsNewResponseObject); ok {
+		if err := validResponse.VisitSecretsNewResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // Base64 encoded, compressed with deflate, json marshaled OpenAPI spec.
 // Stored as a slice of fixed-width chunks rather than one concatenated
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"7D3tchu3dq9yZntnrpQsSUn2vb2XmkzHsR1bN7ajWk46aazG4O4hCXsXWANYSYyGM/nVB2j7DH2wPEnn",
-	"ANgvEkuJtmTF0/yxl/txcHC+cL4AXUaJzAspUBgdjS+jObIUlb18/IrN6P8UdaJ4YbgU0Th6NUdAYbhZ",
-	"gMIzrrkUMbwvpcEUdnA4G8Lr6N7raPcQNIoUuIEJS94B03A0HTxnJplHcaSTOeaMgJtFgdE40kZxMYuW",
-	"y2UcFUyxHI3H4pFavCzFOh4/sIynzCAwkYLCQioD53Nm4FyWWQpzVhQo4JybuSwNJHMmZlzMgImFmdNQ",
-	"ccQJzPsS1SKKI8FywiN1o7UxTHHKysxE4ynLNMYVxhMpM2QiIoyPUnrRwiuYmTfgeBrFkcL3JVeYRmOj",
-	"Stw0eYKEeSENimTxLS7WZ/0w4yjMIJlLjQLe4eIQGM0eaeLczMHMETTLkZ6BQlMqoe1NqfiMC5aBQk3T",
-	"8fN3/G4wbiEwIAw2oZ+zi2coZmYejQ/29uIo56L6/bc4NLmp439QpiphsshadiFwDROmMQUpYIfuk0iC",
-	"nNp3MqYNKGTpLtEg5zon4MCEPkel4f7+gaNIUiqFwrzEs945N4K5Fa/cdL6zs2DZB03rEKoRoRQZascr",
-	"w9QMDaQSNQhpAC+4NrBAc40ZbML4WMm3mJiTrAwotn8Imp7GIWkuNhLoTwqn0Tj6p1FjUEbuqR7ZEa1y",
-	"0/eozdcy5Wj1+zhjQmD6tUytuCdSGBSGLllRZDxhhN7orZbWBjTDsTTljvDHShaojIXnkPIzlxOaEI3r",
-	"RtaFFNqN+qAolDxj2YMkwcJgutXQm2a6BtiO3aX0E2YwJaEtUGkpIMWEp+hYz/z3IEXntwYjC55Eyzj6",
-	"h5zcONptmAGMq2eHMJVZJs8tam/lhLB8KyfDy7dycpQuCTvPz8d2ibg9jq5ieDJnBUKKUy4whfM5OvIR",
-	"HDvenzUUc6YReF5kmNPkgZvIKcUkw3wDqoV748vtSFrBDSD7WCmpYOflNw/h7/f/8s+7Vjn9d1Y6EyMV",
-	"XRQtQlzSarKu1nH0jgv7AEWZR+OfolJb08BmNJU4YqWRuZ1IdBqvf+10OwBWoybDdZSGbUljCH5yGMSE",
-	"3+kaq+KgrnUnVgn5dcZqvRsa7CFLUST4+MzzcWWgirAbVdi+tIwjZiFMpcrpKiJvY2B4jlGAjAkrNaZf",
-	"L9bHTGSeM5EehZlnpMwesuxaU28ghWaOtcZtJTVrDxSete5zYXCGagPL3RchjAq2yCRLt9TtmPCnS0eS",
-	"rub8m1TvAM+s+kqRLWj9nHFt1KK6mzClFiCkCLJJ4/t1oE8yOWFZFDes5sL89X4UR7kU0kjBk0NrTU5O",
-	"HgNPYSqV9aJIcUSZZfEaseLIWWvSygtGFicaewYN/eyG9yf7yW+//m8IS3ej/W31UaKQFo8ovkJUaJ4V",
-	"Ev7d2Eu/lesQu6zOPOM6oDfcYN692KRAHR2spxMxpdiCfpPndhJixDHTmiKFN2xqUL0BI4FMMhclhrhz",
-	"hYg6XJvhQnN+ilnxQBmeZLg+64n3SbpIPmfqXSrPRdAKSGHwwuj1r/61ZBmfclS0zHMNzA1auasx2NCp",
-	"YAKzccYnitmopCZ3j4g0NO3Rco2JQ6BZHpAWH6KLHYwutMGC/p+V5IbQjTlmWXC10GWeE2pBlLjJ8Gor",
-	"Zk2Ge7fBL3bE7mPRU26ubdhaU/5k6PfhfYJMJfOXLuL6SK2q6LDG/KDYhzBacRy7yFgP7urpu9dC0I9J",
-	"nE4MMwFNKrgQmL6S63rxSCZljsKAwikqFAkCLS1jnob064zjeT3ENv5iCN/G71tZsJuAMRAkoSZspbAB",
-	"5m+//g+YTpQnQSEFdyBFFFoXUjSMZ0EB9Iq5NuY3HLN0kOEZZuBdUW0RODiI4uvJjp+rhWSdz6AJEdow",
-	"kfR4g4aZUoccg37NaRay7oTmxhR6PBolbp0YZjJh2WiOWTFyNBi9Lvf27iUUidorrAlNL9W2k9Zha0zt",
-	"V1euiX4VrHXXzei0XzRa5FoTkhy1ZrPwrG3UfKUm+di6AtSDh71cG52sCj/D9ME2HqpzHbb5pMO2wER7",
-	"LHBvSNHjWsaR9hmJq3MIcVQW6XbzCBlwn+SwmDq82gRqD7KBL49TbvoNkU8Xdhm3QtFuBm1vQ3jWenP/",
-	"oJtr2w/NuA/nm/DvPKiPWIk8hBd4/ruk3zYCuTLntmCFZv7ShyvfcpE+lGUoSE2q2+t60hO0hWMzB2cT",
-	"EjfpnlQwf0BFK2FogSG8tgfYUOp68laNs2niFZIfmSDYNrTuz7VUPk3lpKeKTQ3FPEr+giIiU1woTGzs",
-	"F/LLDZt1KXtlwLC1GY2js4Zq3QX9xx9//HHw/Png0aOhX7nnzF5cbY3beQRvjathKrKEGBlOYT+T56gS",
-	"phEyNMaGVSmfcaNtkShleo76EO799ut/39+jZLxiiUEfC9H7BOM/fmKDX07pn73B3wenl/vxvb8t/c/T",
-	"P4XIQjkJXbAErx2iZGwhS3OVD7vmKL8j9xdYwYdG/uPkuxc7u1GANJWQbZLgGuUX9PKyjgV7MbpiQWhc",
-	"/9DS07/s2+9byphzwfMyb9vk1us3svJ7IesOXbOkFRU7p2CzI1DT8SaW1RrYiY9SP3x97fJ3fNmR7weD",
-	"f/fi3FzCz4PTy734rwfLzSJ+gtt6PNeT9UDu8BYFciu5W13grxCcjew4afIPXSp9kNL26tXHKkrHLd6k",
-	"AUsbNk4Dcf2JLFWCtlarSjP3sRrCEwka1Rmq2P58tSjwxH4GiS1tW0tNT54/PAZKjushvGA5le53Upno",
-	"kS4wGe39baBQy6yk0fQwT+Hl/u64qfYcpfBVDQG+gu+PwCfP4StwS5TLxtpr9KvWGaqJu+HSve4VKtem",
-	"mGRM2YptglCgAoregAu4GFRRrHv7EAiKpuEQpkrmZK9HZzJhkzJjajFcsDxz4J++enUM2tatpvzC1//o",
-	"6yE8L42dhwamsEJdj2GlOh/XPRVVubBpyfgX18rwFemXHW8BmHMDUiDI0kzkhcuYD+GZFDM4p8R61S9w",
-	"sHcAvqR3CDPifuB5U4hZDsFGyQ7bvspZq94F53OpEUiYwPLxjGYvgXXi+yF8V/FTu1J+Q+zCVRntgCSt",
-	"KcxRIWhpqSCcwCRSGFriIZFnLvGKuSO9E8G6V+Ave/tQCsMzesjVeqWQvhy+FnX2YFzVmeDB8VHLZRlH",
-	"e8P94R7poCxQsIJH4+ieveXSAlbZR7Y0N/AFNj265OnS3/PZAO1sdtMH81PYNDSvjI7SaHkaR4V0C1FL",
-	"Fah+S8Cfe9gUdcVbQ+/0pSzjK7/wfTvLU2daXM1/0WfjOm0Bo3ZPwGrl/mDvoB+If69bzo6bFp6rvmtq",
-	"tq1ccfS9RgWeM04Q6wYon7PUh+DMJKmA4mdI+mg5OvRcHhKTo8pR/ynyAhydLuOoFmsXAbgyXsTaPIvi",
-	"+ovxPmEXkqFxwkSC2W3Izokf56Eb4fbFp+oV2lbSOpKydw2Od9oVPl5WTowsvImxFPuzrhqQgGzn9hJQ",
-	"UT4gAVVrCH00wxDrqjese7rGtFADnAu52n09VUhaoEhd45zrVwkFor8PHtTTjsEjDVOutNmO+DV1+wnv",
-	"tM79xJtWu2qQBx78Hzq3md8IrGa3X05uieEpisVtcfsRwf6D1X2sJvLcHp9dC0mvObUNDT22dKVNlzz2",
-	"gUZ6ibxn24gBPgjX1PpnFOMZTeHNF2/Adq6idr65glwqBI0z63sO4ZEjGbAsG/a0LVv4umu2+/pOvoi7",
-	"jskXoXBwdULfIhYuBqiab6au9Oahws5KH04M53OezOt2HKibemJg2TlbaCiY1rs9E/Jvb+5nXUXyO5FV",
-	"wzs3TeN7mNmqDgWfTFiUD20bj4s2NeRs4RrVnzFtBpbDg6NHwIU2yNIe7Gx7Sge39c6hKqOwF8oorDe+",
-	"zBA0/wXrOJnye/Qj70Eh4zk34T5114vNLnxGw9ZFNic41oL3k8e+wQkKyUVv23GHZht51WM8bqR3telb",
-	"soUvvDBOkQfaKGR5F1Bgv8FKqysUxAw5rSRph1ixC54vGTn3DjDsEJ2mZAY0vOHp2GcWNL63F/gGvoQ3",
-	"KTOsetJujLIc9u/FpCB2OBvM7t6AoXzskLeSCow0oaShQZT5BNWh0w8XI8EayeLVqbYMrLeRpyvmlRIt",
-	"j7pNrhsxiEFmKWrjPLMYpO+izxYw5ZlBhSlMFiuGE3ZahvOL2my6xEfOuKD7leH0LVWqFMP9g3vDL3Zt",
-	"aqmygvC9xmYbARmKcN8ZRf3L3rXEE8MuHpS66F06mmagq5aObxSi5UiP4r/fzibWfWfVtokiY4mbealR",
-	"UXKLi7FvPHNSylP7P8agDRb+JtVpqtu23WK82qMRw5T6Jfx9SnbUJaDQPHyrXM+atdoIF5jn1laxaxSv",
-	"sIm3abDWOsMCZsi6Z3bDkkuG6RgmLXWp9jVN3D6KG4hbLT6d/Ju2CogXhmzfZAGeY7BjmeOkwzZreYmw",
-	"+TwvBbsti0EwN/hj9nFVNLW/fvYINHpl/e6NyvUEie+3yrIHNVbLOLDTp0b6o3nxBM1KKhR2ct91GiTs",
-	"RoNSLUq2U7GT727rrrWVlo16KKQZTGVJjLWs1sNGEbff5LZaWv3y9ethXV79MlBuWp5+qKi8lRO9WVT+",
-	"ISe6X1Q+bSzj2PxWTnrClw8KL8OEI8Kshzs1uW4ncUi0/rzyhZ88s+zIs1EKtmFojr2C/xxv2UL6ppge",
-	"20gPycNVi7oQV0WQCcsy54gwYxSflC5gvgHq0shV8rXa+1CROMcN1M2xsTJ+N5XmYpahkcIZOE/ukXcn",
-	"9eiyWI7OqwJtfwqhruFWaYRb40e3NSG0Y46d+bqex/lmCE70+rMGvQKdaqWsyRYIGzS5rduuYqltEOSq",
-	"6Xp3nVPbGZD2Ttd+s9ie/GaGji4J4+U1+HrLalYP1KdqNc5RHNrMH4LtXxvZd5bLj5cDt7KtiMCNsjQO",
-	"brev+xY+ZI/ySnuFXdfKjaw+QfPpVrZ6m/lH1V5vVgaJAMvlcpXiy7uSf2vS7lDuaXxgjch7cwY7VZvG",
-	"IcicG7BtGNnC5hlsenL3uivTmsWixpHa5f0w5606k2HFYSDItsP99+u83WhbwR1EAERee3bFxaHrFgBM",
-	"udGQ0cLINNguYL2VY2gFou0ZHjg5keWmysZz+3iDS/Jp6eLatG0O0CFedYVxBXNkmZn30CQciLjZ/T9o",
-	"e1k/fOLGWAEM7DYt2/gWw4tvTkYnz7/2v07uDQgkM3ySIUzK5B3apNHTcgLaNQLuVGW33e3E2cltS57v",
-	"W3mu3LReifbewrWqdUciycoUodpVBTX0nvKPf2+7Y4JuM6PY3twTWBf9Y3Kx8bzOIt6AdNCAbWrVjK1u",
-	"9StlhdNdq+VN0p/m8on9oXov1jrXH6kFVT/qvZNV8GWaU7Im6B2Q9BCEtAdjwTnTcK64MWg38Rzs7X8K",
-	"ZB/WBxvclfPmMGiC1KA4X1n1WoUyBgalIIdv6urntvBGi7w8F/bcMs2NVIsYJmU6Q7/UzZhBPYRj24e6",
-	"53lUFboSqVJ/+MVESqONYgXstEEZzIuMvtj17Yg2/HZdrfvVWirq9ldq57Vo2TwU8HRz0aumRscSU8B8",
-	"pTW+5eB4g3y9ahTgzgPjTQL20ZmOHne+4sDn5NHfpEzYef9+bDOJI/n6jbMBO1LFtv2DQeosd+wONOSN",
-	"tU5kbmPFu5LflyhYbnuUFA7cjCZ4tURva0dWmpu3D23XlOLqzubPPTzY//Rh2jNWimQODzNG3vNDmVrJ",
-	"kAWKhK47GV9a+4xCvMkG6K7IZJzpTqL206cXA4XMYArxgcP1M8wf3kWS5a5C32PJRWu5BithwIw9cdU3",
-	"O/qNP7AzYRozLuzhnnbHVEzfpaWtukMuz9AdWEaNFIWSuaT728XCXsKv0AOXALoli2mTgn9Yyg9NDOf8",
-	"Ana4KErzczKdwUzJsqBOWeSzudHObydylwpjUFhk1Jw6Zwp3byIHuC4m44Kqb+4QjlsTl2M/xucsMneQ",
-	"A30qS6XtVtOMiVlJPanOOSQhqtq/NDujkJ2bG5cPVd6e3/WyFH9sQtx+YxlTxm8csH2uqhSHnV2+9fbc",
-	"J8ffD+YkPjEkTKXu8IvSMWArQbFCsFFOxj4Xelui4t/SD/wwn9POmE8RQ66mrO8wNvQsand5aDk1dEKr",
-	"9ZImWXcZ2zZArHyu3iRT91Sja/dZu9TX++Z8zh17AGEMhs3Gsat64Hj3Q9uxQx/5Q2+23drinU3d3XnD",
-	"Ulm4zOlHbKTZspl6v7PF5C932k0dPMwqoC4/VNSrTpggLmiXDbcH7LuuakhcyenGWqpXYwXt95aohcUA",
-	"djAvzMKfP1DlaN1HJI0Wy7biVPA22e3qlbqLrbrz81l1PJfF1R6D4LSjVFk0jkas4Nag+dEuo7W0dHXm",
-	"cZe63wvudoU1SW5Xr+2mudcEU0frwk6GTfOZwHTARdVQRnDs5mRbqYCinGRcz9HWyeuzQhrwOfYCpkY+",
-	"v9um2sjjD8T47T//izaH7TZgqg0e8WVYmjDt9GlrmJQizTCtKQATLlh73vR6AJ7fGjQ455Q5yfPSMKql",
-	"ntXDMK3RtCZY8ziwfYvPxICLKI5snQ+0cx1EChoTKVKY2m7IjYT0TPaDsdLMAwM9OD6ivzPihMM1MPic",
-	"HRj5Dmmn45w52AaU26jpISYKU5JXVp21JN+5HT++PdQhsD7kU6k77QDk4BCEHHNJzaWs8NjQnynA1BY0",
-	"/LlznRmRHpcmJCQv7HEiLfz8aSVnLCvRHXFC5TEcUDjfTEhjorBXnBs+eqOivQmo1yiLNW34c+zS9vCY",
-	"Bnz1WQD+kT+31clOITOecNSw4zW3pXL+URRH9Ad7mN6tiKLQoHDgwmS3f7Ki4o2Gc8aN3VYvVf1nLJpx",
-	"mh2264Aed3qA62KYaxCmW/Yg/Ras0ibu4/Wj3qpDa6wBb5eymj8IpOu/T+EO3/AwbfN0H+OFpMCkPvsF",
-	"U5fHzOwmUmeedzrnxYjdFdGq3OXl6fL/BgA=",
+	"7H3tlhu3seCr4PTmHpNJkzMj2V6Hc3I28kiWlVj27IzsbDbWjsHuIglPE2gB6BnR2jknv+4D3N1z9g32",
+	"/32Fu2+SJ9mDAtAfbHSTHJEaO8kfiUN2A4WqQqFQn++iRCxzwYFrFU3eRQugKUj8+OwVnZv/U1CJZLlm",
+	"gkeT6NUCCHDN9IpIuGGKCR6TN4XQkJIBjOdj8n30+PtoeEoU8JQwTaY0uSZUkRez0Uuqk0UURypZwJKa",
+	"wfUqh2gSKS0Zn0d3d3dxlFNJl6AdFE/l6qLgbTi+oxlLqQZCeUok5EJqcrugmtyKIkvJguY5cHLL9EIU",
+	"miQLyueMzwnlK70wU8URM8O8KUCuojjidGngSO1sdQhTmNEi09FkRjMFsYd4KkQGlEcG4hepeRDHy6le",
+	"VMOxNIojCW8KJiGNJloW0Ld4MxIsc6GBJ6s/wqq96rOMAdejZCEUcHINq1NCzerBLJzpBdELIIouwfxG",
+	"JOhCcoVfCsnmjNOMSFBmOW79lt4VxDUARgaCPvCX9O1XwOd6EU0eHR/H0ZJx//dncWhxM0v/IE95ZkJg",
+	"kVxAmCJTqiAlgpOB+d6wJBEzfCajShMJNB0aHCyZWprBCeXqFqQiH588shhJCimB6wu46VxzxZg70cou",
+	"5xtcBc3utaxT4mckBc9AWVppKuegSSpAES40gbdMabICvcUK+iA+l+JHSPRlVgQ2tvuRKPNrHOLmvBdB",
+	"v5IwiybRfzqqBMqR/VUd4YwGgguYM6Xl6kxkGSRm5i9YpkG2wfmGZytyA9IgT1maM0WS8j0yYGbfz6/+",
+	"9tf/S4QkBsaYoABKqaYK9NEsg0Kq0QJGaimuYdix56sxN6DPA3+pqYbt4Gbcwq3MKx3z+9+2Q+V3dmiE",
+	"AaFyX7xI27B4gD08hKVkcAPS4GwYxXuQWHf2YVD6c5EyQIl9nlHOIf1cpCjAEsE1cG0+0jzPWEINdEc/",
+	"KoFSvRqbpimzW+lcihykxvEsBG5eMTUsaua1M6tccGVnfZLnUtzQ7EmSQK4h3WnqPoS3Bsa5m4h+TjWk",
+	"RgzlIJXgJIWEpWA3M3XvE8EbfyuiRc6S6C6O/iCmewe7PmYAYv/bKZmJLBO3CNqPYmqg/FFMx+9+FNMX",
+	"6Z2BztHzGR76h6PoOoSXC5oDSWHGOKTkdgEWfWYcnO8jRfIFVUDYMs9gaRZPmI6smJtmsOwBNbdP/GY3",
+	"lPpxA8A+k1JIMrj44oz89uNP/vMQd6Z7D7kz0QKFRV5DxDuz29qbKo6uGccfgBfLaPKXqFAo7OncLCWO",
+	"aKHFEhcSvY7bb9udHBhWgaokRVu8Vbv+LxaC2MD3ukWqOHqSCrfw9QVRv87eHYUP3cURNeNA+gTpMxNy",
+	"SXU0iVKqYaTZEqLA4mjGqNvxTMNSbZzLPP+1wchdORqVkq7M37k98l6EqeCE5qYZvJB1criFymqSasjY",
+	"IaqOgmptfSj/iikd4COPiu1w4snXQska6Ha0PnC+htvuje4U5iaoNayGtKW1A0sLghhqHFv9rOsnCIJt",
+	"MPy+XMsCJy3NlIEu6tmOW3NpP1dKUCBvIADDTAJMiGOisQJNluIGjFA8JXNzQDV/5ACpIpRXB9TAaKUZ",
+	"4zA8JbkUS2EGnhBhNJoU8kysUMqO7W9QDk8GuRRpgSqUoY8XWwagKI5w7iiOyiGDUkvCTW29jGuYA6K7",
+	"yFNqd8jWQmJPOxd1ISRf3LGLS2JY+KttXQHdyYZ72clmoPfZxiXftbjpK3ELMjHnawZag1QxSdmcaYUX",
+	"7pSqBaiYqIW4tbdsQkkGNDV37N+fEs9J+HDFHYRKIB5pZHDxmWGXnJrxzZz/4y909NNr88/x6Lej1+9O",
+	"4sef3bk/X/8qRGlcwCXofQmhJwERtADiqE+ctN6XNAqorGuCyT2xzZFdezY02edUwUuRQnZOV5mgAfnx",
+	"hJMiV1oCXZJkAcl1LhjXJGdG+zOSWHAgXxZztKN8QZPqchut47d6/QuWQVjWz1gGxnhRcMI404xmTIEi",
+	"MymW7h5nMD/msBSEymTBboJ7fUaXLFuFbj+4WmJ/J/4nIfESdPHxyfAUJ6j/oBVkM0KlZEawlfaUWyGv",
+	"QZq7nFU4H4XgWMwuIBcGCnhLjUYaTSJ+w1JGj8wStBR89Hj8yYgqObJIZnw+Oh5/Og2NlrEEeBJW49xv",
+	"38os/LNIaGbJsL6j8Qdc0hJxk1CZkowpraK4EjitEVtqU8NAF0K6Yj8Boa2p8KZrTgxH4OPxp59H4bOA",
+	"dSsJjiEbnJiI5ZJpohY0NJ5CglxQDV/+FDpk1naSI2UNjoogNYarUN27376rZA3Nsm9m0eQvOx5L8bpY",
+	"mPqxN50PrU1vzlMF6eerrY+Yb+3jm86YCqRyhjZWXgfwso9jsIXr+5+IZzQ1dH52AzwA1o7Xmx1UloRW",
+	"dFmTpWK5pDztUAe1ENkZzbY6IaqRQiuH8n6/0x11W0Wu84Jp3whBlFcn1Q6WhDUFuik//iTkNYEbNBYY",
+	"vfa0Ou/dtwmVckW44EEyKXjTHvR5JqbUMH5Jasb1px9HcbQUXGjBWWLPmsvLZ+b0mQmJVvglRBNeZFkc",
+	"0HqtbahxmlgCjd3qxh9PT5KOK4f9ov6ufymR4LTxflYx6/RAuGdrd9awVlvZdEN6ldGjU6JAMkBzLlsu",
+	"C02nGTSMvEbFcKyxtgsk7HoLaEAQYNTQPc4ZlEPDeYbfRnT/0TxrzmKqQelNb3mTbrFcUrnadPzzoLr+",
+	"fXF8/DgxMOInOLJfmIftF/228SAX0XlTBG9UDBwlz0RhhWebrT2t2wv4Gm5BaTJjUunTmp1fjeegca/W",
+	"dZTd0Nl/FhhmczznLnt1yBwe6hpAY5lxjTX7d8U+TrpqtPc548QyLzScURm6chhrMKR/EFPDxNtD5l4I",
+	"sYXR/c4yqgJU/yOsCONaoHgEpdmSaiBWLjBOnO9VjVd0mYV4lPEU3obVRDPrR8YDk8JbY9U2V9eFUJoM",
+	"zr59+oSkcMMSIEKmIM01bsk4Wxq7xXFIHC9hKeTqjObPp+HZ7AOEEqdAoC19SVekUGAt/0xZJXhw9uTp",
+	"s6/Pnl09P//26uWzl99c/Pnq7Mn51fPPh/UjJBXFNKvtS14sp3VYLCBbPN5hDl7nFkRkuQMqktXma6Ih",
+	"brHKBl57lrJd7+n7ZsY4Kjh7U8ALO4iWBdSZaCcegLdJVih2Ay9rb22kRxDtPYi7B9IM7XaRKE0C3eFW",
+	"cAg6aW/mtVO1GQNwHNIrupb2JdBMLwIKrzEe7HrUa8rC12HrXW3t2YJfc2O6KrhmGaH+jm8DSRQZuJt+",
+	"3ZzpXoniaIGQr/CkmEuaokJVcAk0WRjRFTBwrutXCFUP3b8UocPi3qQNiuX9q1SLkqRbwOXo36GJJct8",
+	"k0X9gDbkHktwUzmwFClX7u3AFW432YIdMvajHFSsc3/t4KnVELvNhGTG+BxkLg2CU6LAR2SIGSm0Bkl5",
+	"4s1nKs+YVjFafpjSLLHmY2MapnNoafnTlQ5Zri6NOcmF/cyk+Am4sfTIVJ2WOoO9Vc3YW11IUKG7WJsr",
+	"UrGkLMzIbqCAfQs0NTo0aqQTwgWhRcoEwRgPISF1omN04oEhSpAlewuKLOiN+WsJGIFmLKoSZiCBJzCM",
+	"2oFlcbQQhbWxbXHM18x+2yvsmwxjcaREIZMAHv60AAlIELv+RCybxtvFbHJ05G4b6mguxDwDd+sIXqxx",
+	"nottDH9lSJXjCAdiaFDkvq33j+P8S/NWEFvFVIEOw2aB+EiRRPAZmxc2RoEISexbHitwxYKKbLVxtjCe",
+	"lCv2RC+X6nmmMWDs9lXF1j373q6+JYl2YUUvnyvzg5ZmowUpBPTaGZIDYnsXpDjx3Fi3hbpntQcwzjqe",
+	"35LZDm6Y9eBsMMs28bGP02gNw+9xINlLYO919epHMb263ueF9SrxN9buS2fXHeEqofnVfNsLmntnfvAL",
+	"nVtSfcZ1iOMAQnto4rXUdQ0hsZqIvW8rgBRSQp1xx+gCUkfvd2up88TdxkvKDiFS5XHXj91eXdAN0oO3",
+	"C8rn0GbmJX27Lc8wvuWTNzQrdlML7rrhvqzsu+EL6VZU+86AFPVMYx8IhNaCtwhZ7ZJpRWqPxO4URhVT",
+	"0RkQiXheZ7VN3CE9dbZYi6Vkj6KEiksxzZhaQOoAjI1e8L33NREJxjMDPEWd4fsoqB9wpsNRamFcvVqU",
+	"uJoQSiw/xMS+FxOnZBo4jP+3HbaAo64z+GbGbuM3atjwyODi5GQ4MdkJCoNBFKfXcJVQBTGhaSpBKSMr",
+	"FLH2a2UZDv+AsTNyw8r+TQZvR4nF4djNcgGzYftWUaRz0Nty52VlX01osoB7vGalX0iJUnpnGbfVdc6O",
+	"HCKMvyAFwt5QK7zKQV6hDn9ltKWdt7DR7AwrbruqV+6FZw6uC3G72bkcArQ2d2jdmi1BFPehen1Ju71Z",
+	"Cytqqwa37CenwewyaEc4UTlcXHJ3bcm1NdQZwDN0xaEhxJWECZ9RCzZfbH0lvd3lkNrq2Q45ZaaKLWzB",
+	"NRnf7l5MLPXwgIDikVGlL0M+4nOqlBFrP9CZBvmDufwngmvGEfyNxoqgslxNF1rzl5DlT6RmSRag4tQl",
+	"Z6wZN6i8Tq2Jsx2gILiGtyEB/18LmrEZA6msl4PaSX0mlrv55pRDNsnYVFK52incqCMAQVW6iLfQgpQC",
+	"L784mfmgNOTm/3nBUntPXkCWBQNQlfMXBkFiOttG504j/2wFX2yR3UWiL0O37c1L/mDgd8F9CSYo78Im",
+	"E77nrvJ4uP8dcS2DpgkMprJsXr59rGP0P66lZNQF7A0Gf6gFTVEKwdtcSB3ksXPDl5feI9GE0lq3Xon2",
+	"BnsqkmIJXFfmQoyRmLA0GPzM4LacYpcMnMDCz0XGEhbUHbbTqXCA1efuYbyZ5VRaG21rnV8wyFIjRKgm",
+	"KZvNQKJBsekFduLEzT+e58WXxshzDtIlMJ6DfEp3kzAH8xtYZ0A1Sv20rmHidQ/q7+EArNFmh7cwu+hV",
+	"IbnB5aVNFQpjpRPnWx7g2zJeyTeTd1vCurZv3F3R8wq+dYUp0ahMunyoKN5xjf2zzPMCFVQ7hwu8ws8p",
+	"suWuKk4PhwfREGQmCUlpWPcibDo7+dTAk7v/Hj8Ky6wqm27NYlMlVgeSiUEZiSU4JmL/7a//G031VTa0",
+	"IBKmFGMjwr6Zbo+uO+XD4mOUwQ1kxCX4KQTg0aNtQ4fcWnEkTOkL6iNcadoVnaU01UWHObvrGK4C9poL",
+	"Wmidq8nRkb/jorX/aAFZfmRx4IK8TMY2foIS0eahUhEznjHUzPCtjUILf60pAnZFYbZaR1fbpAVK0Xl4",
+	"1Zh5vPFYxqficqAOOPBjW07YvIGdfNwHizTcgx9bucz9zbn2e/J544SlEXlX37ajyz2OsB2jTCpc1p48",
+	"edSsSXGyVXCKg3kfl0U31HuotW6E3bMsPwz+dmHItTXXGSu08kYkbdC6ic4JF74NEm2rZEblKZmLLAVO",
+	"FGDgAZosVUy42QEZ+wmkDUGwaSll7PGPgpk8JJJRDdLm+aha7I85qq6WLr/BudSuKmOMhmWeNSN6KhzV",
+	"l1KGxq7H+HdGzO4edhyOtLdT9KF6nze6tpu0dYzu5q1rI3G7XeXn6Vv4d13ZgMbh0IpTN2EHtEobqCKV",
+	"x+Q7z00cbkD6ci+CJz5s5dQm07o0XEygHbfM1bslmVTzv9gtnv0e51wt8Kc9lVrQR5986oMyHLJMQATl",
+	"JgOCZsQVYyCDBbwdRnHXOdkc1mVa7i0iv4qsD4QMl7j8SBH3JBlcnj/9byZt4xZDXgQHW49HDfti0zYM",
+	"vrlaTWjwMpZx+wIxVRj/BojMY2RgA0omCxi9+ComNkBqoiGDfCH4Kia+cMzWV+uGFtIGAYs44bLcboni",
+	"LXmxM4X3z3/+859HL1+Onj51/iK1oPgBJu4Oghxh43PKCmJ6Ac49ffKILOCtT3Z27OxZt74DmpnLJkX5",
+	"3cd3I/vhUfXh++/H5iMdzV6/O3l096uNilc9Naqxu0s9rDp4fO2gVo5CE1CfubO96nZRcO8ICAV/Ue1S",
+	"d221tQTj6i9OHg3HJvWbKRvCP7H2my1i+0/JEqgqJKTuHVlwNU4o2os1NOJx75kLGTiSENT6ldgDgRgN",
+	"B/J6E077hHwvs4hx6JiwwKeUZc7uEd4xRZ6DJFNR8JTMDIfW8tM/UiQ175Pn59+OjA3CGSWiYNW6LY0M",
+	"bbhC/JIEo3MamR8BlwJ6oToyGxcutmT38JsyRH9XU0sFkJs+LsNo2gkRdpYQLoxE7/C2duylZaE0mQIx",
+	"O0TaTPjU14uykemGtExdbxnY6sIuQxXBlMhM7QX3SK0y2G454NvHA4bj0eqhihYzQUy6OMpLSITTFvu2",
+	"eNN1WbPi3efFDiMOc4EYvaKm4C+49WfkWaFeMl4EaZFRzW6AFDwBqSnjejUhx+NPjCzkivzHv39y/C/b",
+	"pQTldfte/5XUP2jdSQarxnaoId9STPXFudjf/JnpRf7Iinwpbqvx6joN5NuEd1pZXUdojbxtTmmtruYL",
+	"zPHlCmeOqHEjiT2x3nXcy6XM7w2B8VTviZW+BTZfaGVD4EwVio9NndREYuVKpsyZCNKeP/WbZxTbpBis",
+	"qBG+Yxb3KMXUODqbIJuM+uYVuap5EterMBqNhAzMOcRdAqeNz3dvDYmQ5Pd43zktY7d0FZukPiLTcqrg",
+	"LaVad2ADWfawxeEMDQ0OqzfIoPqsXFmPWhWPoP5ei91pTmbCcMwtwJWabK7Gao4Y7Xi7EMomHxIMpVSk",
+	"5ipsTdctqZ82BbQq8V9hdIhzGy1MAk1V7Ay9gMKd3IisMHCaL5bsLZGQZzQB56RvFDPpFvtL+tangh0f",
+	"t08BLybXitRSmaoSGFnwU3JzQij6ZxU5IQOPEeMrUY3ky5N4DyL3fsLQy6Gwd6cE2UuRPpBDdsVLSCTo",
+	"7sz4REIKXDOanWJcI0a2EOZtCbaUL6Tvay3Y/dIfupQrSN7nUm5xUSXJK/2t8kB13BENdIQSrBwlR4ql",
+	"eCdTxRJxQ+0FzkcDbbewbQqzWUh9ZbZuu3wi8i3HusRH+xLM3P3PjrleWKw/2byG2NqtZmEr5cwo3gz5",
+	"PDGHINOLYmqmeRzF0Y/meBvRnEVxJPQCZPCQsaPvwzJuR3oPw3iNLpN3jXt4rYLYFZYQ+zR45y6H2PnU",
+	"3J3Bd2e03fmpMxD4T5JpGNlaJy5DDXgiV1jHTBQat5I/NJyyUXcCfPr4s4/73QBxdGvmMIWPXUp1OFje",
+	"8bWFs5uol37tzXV4ryvGTrv77qTl/0RNwCzWRpFU9+IfxdTa/adCaKUlzTE7H0UHW7PlDPxc/9PP01eX",
+	"bhjmrmCN7W2K6p2Sx3/76//6+NgYxCRNzFPvWSTvlfNO+FpsHffStljzDtr1UEYTes9LxpkWPM0gJd4J",
+	"ooi2hR9bgFgT8dYuX/d43wXRL21d5BkKSltz0On6NgdKXbMsM1+wHOsT+iCKkU3bC4o9P0dnRuznDgHN",
+	"1D9ETclsicgZKFvrgnq+PK3bFhVRC5bbiuFApozbOMkmsUzRvO3FbIPwwUJuIfo+ZRLMabMimFGbgYep",
+	"SWBnvq5j+sjpxCHa6zVKbQN30J/VGCj2vGIR08ciB0j186Bsu56DJ/uVAG3I9lvDyT6O9HU03/9sD2UI",
+	"tFPC7e2e5CBL3ZwoDTneOwSH2r2S/L//Yy9kmP9m/nLVWhKam7/KCwOasJ2F2vBV2Nrs/MDd1fbXr8fO",
+	"HrLhotufc7gpxOQ+iYfGlHK1/LDGqVBMsyGkDci7jxmq/yhpOO5DSZBl4mPdHtQCqoGsHdKivi23+fqt",
+	"z5eURT3F15WteU5jVAlQNXDeYrRjGDan2qkszYvgz7qYet5sPbJzvEg1enOs7SuoN/yiLYKkks40+du/",
+	"/ps3YJmPKRim8L0dmpatho+/HiqCI5mdgY/bQF83SlC9WCtX1vah3PfKvh/3cTunqS9erO2Z7L+wmnqM",
+	"KqcJbJ0DkdGVKPSm2PZWAP21CYsnNGdjLf5w+c3Xg2EUAGebm1oJst8ILtnknjmxtZSAkNmox+Rg3q8p",
+	"Nf02tH1WwGlOXZKklnazHvfeS/p9aB/lYFtX/etUP5r0XbMuPBn9d3fTqj4SY2c47rQzVKDtXKZ8O14P",
+	"1E09IEPuxHdrSN/EOL3k6BSQ99q0B0v5aITK9u2AO7RszwL5PpeVG00WelFa0p8LZ/+M8c9Xqxwu8TWS",
+	"YFu4MpDl5dk50UJkaky+xjrjZJCKRB2pHJKj489GEpTICltdc5mSC5ORXfbVeZGS35UjkN+Rb18QVziY",
+	"/M5lZdtKtI2k7BuQU/uFvdTaR6xPK8moRH92Aqiv59aAQKrsbfv0qTlbp8pMBzYKhObs6EYkdFpkVK5c",
+	"pIgZ/stXr86Jwg5BM6yt5DSn6Zi8LDSuw+aXO9DVhKx1tovLfoTe0V61M/wvtg3g78z+wvlWBJZM47VC",
+	"FHoq3tpqwWPyleBz9NCXvfYeHT8irnmSa7sR+L2q1X83Jhg5b6Ht6lFU6yzkHEyGmYi03nyFbVIaMf9j",
+	"8o2np6vEVSE7t/2ccELre0D/pLJFOLllGGOUkDTRJBE3NrMTlhb1lgXLPnufHJ+4Inp6AUy2ezKZN8ff",
+	"8zKjYFLWPXhy/qKmMkyi4/HJ+NjsQZEDpzmLJtFj/Mre8nGzH1lzjUvdUUfvWHrnvnMZAsrK7KpEfcc1",
+	"v3rk6EUa3b2Oo9xFnNS2glHVzeAv3djGXBzvPHqjp+NdvPEN1/Py7rUVLba72qpLxjUasB3Vu6+t90h7",
+	"dPyoexD3XLNxWFy1v9z0XtUdq5aMai5AkjjKWEYsm4e6XEZ1SqyYLF20ghOk6NhReWyI7IPczF3ALjEy",
+	"loySra31T2MJ84jWaRbF5RuTEwNdiIcmCeWJvdXvm3dcYpY6szMcnn18n81dOa3BKcdbULzRGO79eeVS",
+	"i9yJGOWDh22OGTGyc3cO8JgPcIATwLjYOYRI559A9bRFtO0aOfo7YQ48ta4S2xkwdBP8edCgXHZMHNA2",
+	"uGE35JfY7Ua83XX2T9j3tvOTPHHD/3PP9dMbCC3J7Y6TAxE8Bb46FLWfmrH/SeouUhv0HI7OtcCpoDyt",
+	"17kNY2MvbU/r0wT6dJooLkWmK1R894BTO567dzGJbgZFBjX/Qg7225i4ynpYGR6TkoZWISpLB3s6lNV5",
+	"Oungn6hjHvfXJvQ/hw+BfVuyqo19E83j4qoDfeZDA7vHjvCZu7v3J9hz0ITaSD1vX/dl+0LoX5Ml4ZDA",
+	"gatVPfTBgWSgNDUhN/tpsmwkn2+cHqQqJtj+fAVf4wazTz7Ddd/d3a0j8+5hWRxSps2tGpNihLRxmZSk",
+	"cmWCIWNyu0APjsudmUIillgA+qH2xJnNU7Tb4qNGSUWCkLtWGjWpZvZOS57dX4SlteqBQfHlywseWH75",
+	"aboo6+E8JQb5xrplxX7l9ngoGr6qPIeQlnCSQSPLamjMVnJl+HEZu9wgJGWZnYWB6baOd42aJXler1HT",
+	"mAifdmLJzVaKhXi7ideBnhCgycIFxO5Q93NMnviXJNMaOKF8ZZM4IVNQrzOkDCkpKUvyNOoOGePVXScf",
+	"l7jxoa/1bxTj8wy04E4uGV63fcY6OR1Ly3VcOtfCrI1pc6QMzGhmxG5dxHkrlPFYaklZZnS9H379A1ka",
+	"2Q3KGjElWQoJRMHctvQlPs6ZZtk4ioPXWxxfNe+3Xc3Jfh03LTi/DtnN282AILfGUt+hbWaD1d2oZLDW",
+	"rM2IUpYsyp5tpPQSG23rlq4UyalSw44FuaejvrM3bueEZ356y4wK3pA5OjmNlZ7aVj+n2OvNmuUVRhoq",
+	"4Cn5iio9QgqPXjzF0CmgaQd0WCiwAVu7vVxPv5o25OfGBIedOb1DwThCzR/LDhAytmRN9JRS6pFJB1jS",
+	"t871g0Ul+j1BLS/H5TPXBc9GNngYrGisgGjgLNqgJx3sZKgqSN5hMNtbbTey6+XaHGgdsNZZ8oTkhhhi",
+	"5jlpYEgxJI4umbGC2oHJwOBpZsSAIj+wdFIWxn2DH+AH8hvyQ0o19b/US1Qihd1zsdkgOB3qqMM93H6e",
+	"WeCRUzE4/01hpnbVhk/t/rDGZNJCWby+1NqB42Tk5uOmH4KYiCwtu8rFxPasp1m2MnGNtmrIdLUmOMmg",
+	"Jjh/XYpN6yFa+kgzJzhdEKQs+Pjk0ePxr4e+4TVKQfKtsiGyNs0d3nRUAO0/YRwy8PAwPp7Oo6Mqy7jp",
+	"6PhCAiBFOjb+m91kYlkB1Ie6YaYRfioUSIL5RhNXAtRyKUt9W0KlIZ+sty+Mba2qVoB3TGYMstR9b25V",
+	"9vuOdbiipR1n1npJ0sA6d5aKTaG4QSYeUmC1anQGxBBe5zCizHoNVUymte1itq8oNJmiZ2kfBn6Ep+Go",
+	"RGOMoZGRfdMVcRQjAySO5Q68XTiOQMen44JhTWKYMXtuG/hzqaGZv64cANW+6jegGHwe+PZRr9jbcQEp",
+	"gd6XIaRGCjJYuvq/QcT2CpTuau31vYuyEsmoxlzo0cxUMYitXFDjaiPubjJZT4/4jam64VMkfhOqufH6",
+	"vqxiMkn6WeUPYtpzUf2wRl9L5h/FtMPOey87fBhxBjFtu3CJrsN4WA2uf1mO1Q/ugrfo6eWCXQi67Lbx",
+	"vzy0fdnlsXbIRvOjszn4iCV/g0xolllFhGot2bSwF+ZoP4YX76X2SZoexcs+A1iVEzeJCgWyw1ywhCOn",
+	"Tqqjd/nd0a2PZOs2IZTBburQ3pZmDGeALpf0xgVAOZj3g3CDr48UUWujm6AyWlkLOF6aDBv40C6sA0hs",
+	"2KEatim1mwA5r8Whd4vF+uL7CXr0zkB8twVdD7zNyom6tloJ84N7ctZYYK8kjd+FNJEywLNLF9khDhXP",
+	"taKX1JfwAV0737gL8s/AxdMIm/7APp5e/keR9oB8b+Z3DYsRRifOyMDHs54SsWToYLKJ0ILYHIzhtidT",
+	"S2KZCNtS5b2f8hb2X740I/+SvJfvG3/5ADcAg15CTQmYUxtWif5JRTL04SmC+UpqJ8UQGaKuGT6yfCKK",
+	"Ps/GS/y5RyX5sHi5qCoHW8BrYRytkIzGlUmoztX9A8QH+3CrPd5QPCkIJViAFDMEYvL1F5dHly8/d39d",
+	"Ph6ZIalmJj13WiTXgEajL4up9/8NfHzScDd2tnxb4+ePkZ/zWveTIEf7Hh0HVsf8NF3aWAnnwx1KL1zF",
+	"jNEtSyuAyMA1xSBc3J4SCQYX6LA9f/ECtxs2JCNvCqGpsrW3G6TzC7OKXPAIafRJ+UeKgWks/AMrSJs4",
+	"0kXAVHzQFQWDuTU/szgYFuTlUxtLoGytTqXpql4DBQMOVKusbRcvh+VQbR87u0Dtm5BtwN8juwWUe2Cb",
+	"cIIXPMmKFIjvmUHK0Tv80+65sCfE5TO2ys4e0uVRb90QYEz3s4rLUoUY2P7+fGMmrGOrJLn/qltr8DA9",
+	"tN6wT/ybtXxoeeQ7bbSp/tTKm7IzTqPugpc87oaUnhIuNHrEbqnyYUOGQx4dn3wIYM8sGA8pAxGCyooW",
+	"ZOeNbvn1USaEkoKbG+nMBviUYVzilhMJuVBMC7nysWFWF59TDWpMzjGj8NjRyHviEyFTYsuaVVWWBvWh",
+	"ynJFQ5dYVqt6eeKVfV4mMprETAQLDeWEpf1e+RIbDUlsLHobpfGh1cVu/npVbYAHt9z1Mdh7m2K7lEU3",
+	"wz+esljrxPTzkc11VdEb7X8B8dIXYMs6SSJhZFc0hc0cvascOcLKNpi/2Jmk6J/YRsHDyMWynLD3jPlu",
+	"EwENz/20HZnXehAdUs/zq+5S9Eqs7F3T84us0FhXKVwlIhs4g7+ESjcBTRaHEXodOVslFwU4rJEIvbt1",
+	"tyV2N2dB/9ItZCcf3lL5FS14siBnGTX3szORouwROfDEfG44PY125ctv7itZuskyVc2wsEiyvx/a84zT",
+	"dAoAt+32l+f3qtFkxW9rW8h85Nz/MVb4yxiH2Dyb2qKYtmdSWZqlLjhWVi4Qqj+oPHAE7CTtJje0w+6h",
+	"Qz3MLJ2hHvjjw2qwgtckv4FnncZGZfG9Bw5B4VYYLqLMJiD60E0Dzu97+NT389qzm7tWKLDTxe3Y6B/V",
+	"v43LfwDf9uZ9ZZyCtlryvbfXQzmSzq08Xd+XmlBe1tiUazocGfjtQJiyFZvq8hubNCrrSp+uzA9LYb4f",
+	"bmMZwdH+tABeqlbVzrLmZF+j1MyPAqFtTAkvavD7tU39+2pXm+sTX5GZBFvhaUhsv7b1ldeV1wVVJYoG",
+	"fkFj/Maqz8MxOXdVs1VVvcefhafYsc3bZfSiLE6V+tnG5KW4MTpwC922HytdOVNMzRLDiffoYZ71xWfD",
+	"cZ00TGEBd6xuj0WsJkbmeoPOx8e/NUCAvIF0VEnoGj1xkhTyTKxsGpylLozJJfC0KhDW1Oc/UlUf84Fb",
+	"/ngOekgKnoFS1ZMkFWB8X9p2jCQr2JBM2H02W5f7gRR0DMP4p2J+31Ac011nwHhe6KtkNidzKYpcxb7Z",
+	"kzVEGnQXEmLbhmdF1IJKGO4j6qLNJpPc8KdtbHEwdjl3c/ySWeYBok6wXxkWBckonxd0Ds7aZZjIa22K",
+	"oqBkeu/8YYT0odjiouB/H34s10ztAytm9Y6rW/ixfOZ80GVlNIA3BRRWqXqAnINLbHBHq9L82AXM1ol0",
+	"fcfsEVwvtelPbmdA801MVewK6Pgef65Ziqb3c06FYHPlRutNAwbYUM58MXRVMMpmcmPybXslhijOZG2D",
+	"MyeYdYCGa9QzagvVgsxBN+hIBrX1+pWWK68ausWuwa7BwX/8+7DqsFtWXbD9C/xl1NXZIL7EqpcxFpy6",
+	"vvTJ8Um/doLCoyVTJqgjHkqouKcU2nT/oVw23or9AKLIT91pXIe021FT+tTdbWLYKJZSs6JxuC0V6Qe0",
+	"5eCCQrcj7NVTvyJNa1VL7yd6OucaVIInXu/NW3myhx4mpoJAxUQJgmpAbK9jtkyPNVaaC1ahgDA9JugK",
+	"avYzcAWIDYBGfozJ1wCpCtyBKgJWt6DyvmiuQaddj80FKFLkBmTB4b7u9YkLPDq4xHHT/JIKCn4Ih+16",
+	"fNhDbl0LSj3nS4mZNpGmyNXTDIbv443127TTFO79gTtWXbCb6Y2vmqDIwLhaJzHRdD6JbQw0TGKiNNUw",
+	"Gd63SMO+fbpxv0e5IZZKU5LJ/37PAjw7FmE4aZSm+eRBqzA0GaS7EsN3pRB2apuhk7JBamg7cjpxYkPV",
+	"91aKQbYc2rYmjVwhBGVxBgPWLvzqt5wffxu1fDuIaielah2Vqh71NSZvjNIxK3edLeWSEjqnjCu93qfL",
+	"Ir9GF0VM06fauicIwqTqKWUxoCGDfCH4qkTFAkYvvvL4sOfs2G+N37WaVl4D5N4iaYOiqV7fSGPifU5e",
+	"ZUB+KFt449Fb4gP/wmpCHhvmiw3avSdVGX3sv7m68T3d6kLxyMw9soToFJCfl/CFI1Q2HHd++5yVlPoC",
+	"6/Zsc1SWW0/bDoj42iH3ernWele9wF5v91Y/UEjytD0RGXxpmwGTL2gCtchL6yHIGXaGqDphZCyxiqUd",
+	"ZkaXLFuFN3gnY1U8WrFWtYW6maq/yEbFWQd2RK+TtUsvKjfJnuIj29Rr6eDugLBafRdRdttxbpG9hT52",
+	"ImglZFVPceLyma0D2WrjHjqWLd4IABYgNLsKwdB0TgZY66Z+HHQpQZrOH6yqXYX4LmF1Vlvl/sJpUDzJ",
+	"dr9MZYs2pESBZICEZctlYS1aXoYNG4XcxAxPRdQNzIFH58GNsFH96AZJFcnC+MQr0XTEYSm0FHz0ePzJ",
+	"iCrpStoxPh8djz+dGkDcSXw0y6CQarSAkVqKayxKWg3ufEWBRdbXdUoyA1wjfGj99M9QRyyPf3yhcf7j",
+	"NwNb9q4GgdNGDNbxEwz7tYT6dm4rCtWv3VJgU53y8sGD1yqvwRqU6PXV7EmoBxisyoXo0Aa2k+td2xYd",
+	"5xLmzQLl5UmiMqoWBFRCc3Nbcwz0L4++WOPbvVUy3ytbeX7vrhvtHvj71z7dSjfonk9b96VDKJ7rtzIy",
+	"KAWcKd3H5yBzybhGQV/KWeRJlWe+Hb7SVDOlWaJ2VDhLrig5yX3TcZHxz/dLJs9Khy5B3qDjh1I21yhW",
+	"ySRLj7hGjNJE8bBK6K5ELk/CTgL7DuY/E2ER1jrLZWyj9K61yt+OAdea7x9SZoXa0IcY3j12YKml16cx",
+	"LmClpQs28z9jZyy5ZBgtT3IJCnCDXLMMu2a5GLn687bsSiL4jM13lGXlKBWf+6+6GLxfjJVcfmA5tkbb",
+	"DyXI1olYSbIZy0zIPnaSRBm2oGqByaE/C3m2kdAKEtmn6lza3w+deGGn6az3Z4HwV8WqhrCLdn1/Mn+N",
+	"98NEQmpQRzN3ZYxdkWCViBxiW3C7UDAsyzZgt1Ns2W47sUJao63HbXeivlvY30V8k13LA8QV2Im3iW6y",
+	"BFlL0ldayA+Uo98N6SUC8ZD13wwAhBK+thGs2x25nTCLGLCR0UbAbWb9LeKmwhM3bcox+fr5WUyeM/1l",
+	"MTVVm2Lyo8npN91+h2Pyqg4j8ESu0E1INZGgNBGFLmuqGH0OjaBt+I18MRHu5R49NTn7VqxX1QAk0NSW",
+	"was1Lh4TTEdURC2Qr7jQNk7LKFMTx3jKzQccq1Lx6gQ3jqR+C4lHKNLazmnFRCGzaBId0ZzhznYEeBe1",
+	"Sh5EE15k2TrjfcuZbYlSFVCwxcqaJRRa3lUVUCUNFRSbc0hHjPtqqmYc9FjhDiN5Mc2YQn+ZqjqKV8Mv",
+	"oXNgPs/AtZrwXSxc2+y//eu/mc4ow2oY392gNdR3ZTejtXrxBU8zSEsMkCnjtL5u83hgPNcXw1b1aRnc",
+	"cJnuPuHGKQ/89liXbM5HjEdxhBqo7V5kL62QCJ6SGZYC7kWkI7KbjBZ6EUrpOn9BrmHlInmQCV22LtHi",
+	"GkybH1Rjyh1UgV87Im0/enFtN46rjWwBaE8ZbGkYxVHV/Ut1tP9qrqhs8NWaoX2E257mtZO6kl7VgsqN",
+	"FeS6QPOrtfZTCLXpdrPW5coN718LjL+hullty1X1mmxNs6FHSln7rAvtzzETxtFGkVvKMGHcRtjlIJXg",
+	"1TxVH872QM8aBbBL9RcZ0tVcKxTUxiqwKERrnKq1PZ7C9TIpFEsq58IgUXDDAb5FtxvTCONOwnNhdKiy",
+	"QzykNoMZq7+5kNpBo6s8H66xlo9wv3t99/8HAA==",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

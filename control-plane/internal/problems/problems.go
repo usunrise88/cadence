@@ -39,6 +39,10 @@ var (
 	IdempotencyKeyReused = Type{"idempotency-key-reused", http.StatusUnprocessableEntity, "Idempotency key reused"}
 	NotImplemented       = Type{"not-implemented", http.StatusNotImplemented, "Not implemented"}
 	Internal             = Type{"internal", http.StatusInternalServerError, "Internal error"}
+
+	// Registry and estimates (phase 1 · stream B).
+	ReservedAlias       = Type{"reserved-alias", http.StatusConflict, "Reserved alias"}
+	EstimateUnavailable = Type{"estimate-unavailable", http.StatusUnprocessableEntity, "Estimate unavailable"}
 )
 
 // Types lists every registered type.
@@ -46,6 +50,7 @@ func Types() []Type {
 	return []Type{
 		BadRequest, ValidationFailed, NotFound, MethodNotAllowed, Conflict, PreconditionFailed,
 		PreconditionRequired, IdempotencyKeyReused, NotImplemented, Internal,
+		ReservedAlias, EstimateUnavailable,
 	}
 }
 

@@ -1,0 +1,40 @@
+# Fixture dataset versions registered at start so a mix has something to reference before ingest exists
+# (phase 4). Metadata only: no audio is stored or fetched (payload.fixture: true). Split sizes are the target sizes
+# of the smoke subsets (docs/spec/03 "Smoke project": a 2-hour FLEURS subset), not measurements; bytes are
+# hours × estimates.bytes_per_audio_hour of defaults.yaml. FLEURS revision from the Hugging Face API, 2026-09-29.
+- name: dataset/fleurs-he-smoke
+  description: FLEURS Hebrew (he_il), a 2-hour read-speech subset for the smoke project and mix fixtures
+  licence: CC-BY-4.0
+  tags: [locale:he-IL, domain:read-speech, source:fleurs, fixture]
+  payload:
+    source: hf://datasets/google/fleurs
+    sourceRevision: 70bb2e84b976b7e960aa89f1c648e09c59f894dd
+    subset: he_il
+    locales: [he-IL]
+    domain: read-speech
+    sampleRateHz: 16000
+    splits:
+      - { name: train, utterances: 700, hours: 1.8 }
+      - { name: validation, utterances: 78, hours: 0.2 }
+    hours: 2.0
+    utterances: 778
+    bytes: 230400000
+    fixture: true
+- name: dataset/fleurs-ru-smoke
+  description: FLEURS Russian (ru_ru), a 1-hour read-speech subset standing in for replay of another locale
+  licence: CC-BY-4.0
+  tags: [locale:ru-RU, domain:read-speech, source:fleurs, fixture]
+  payload:
+    source: hf://datasets/google/fleurs
+    sourceRevision: 70bb2e84b976b7e960aa89f1c648e09c59f894dd
+    subset: ru_ru
+    locales: [ru-RU]
+    domain: read-speech
+    sampleRateHz: 16000
+    splits:
+      - { name: train, utterances: 350, hours: 0.9 }
+      - { name: validation, utterances: 39, hours: 0.1 }
+    hours: 1.0
+    utterances: 389
+    bytes: 115200000
+    fixture: true

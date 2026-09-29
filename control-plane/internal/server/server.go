@@ -18,10 +18,12 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/api"
 	"github.com/usunrise88/cadence/control-plane/internal/auth"
 	"github.com/usunrise88/cadence/control-plane/internal/commands"
+	"github.com/usunrise88/cadence/control-plane/internal/defaults"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
 	"github.com/usunrise88/cadence/control-plane/internal/help"
 	"github.com/usunrise88/cadence/control-plane/internal/obs"
 	"github.com/usunrise88/cadence/control-plane/internal/problems"
+	"github.com/usunrise88/cadence/control-plane/internal/secrets"
 	"github.com/usunrise88/cadence/control-plane/internal/webui"
 )
 
@@ -40,6 +42,10 @@ type Config struct {
 	Version  string
 	// Actor every request is attributed to until phase 1 brings login.
 	Actor auth.Actor
+	// Secrets is the encrypted secret store (R9); secrets.new fails without it.
+	Secrets *secrets.Store
+	// Defaults overrides the embedded defaults.yaml (tests); nil means defaults.Get().
+	Defaults *defaults.Defaults
 }
 
 // Server implements api.StrictServerInterface. Planned operations fall through to api.Planned (501).

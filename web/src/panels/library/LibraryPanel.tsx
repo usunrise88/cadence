@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { registrySearchOptions } from "@/api/gen/@tanstack/react-query.gen";
+import type { RegistryKind } from "@/api/gen/types.gen";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { EmptyState, EntityList, type ListRow } from "@/shell/entity/primitives";
@@ -23,10 +24,10 @@ export function LibraryPanel(_props: PanelProps) {
   const project = useProject();
   const [scope, setScope] = useState<"project" | "all">("all");
   const [q, setQ] = useState("");
-  const [kind, setKind] = useState<string | undefined>(undefined);
+  const [kind, setKind] = useState<RegistryKind | undefined>(undefined);
   const query = registrySearchOptions({ query: { q: q || undefined, kind, project: scope === "project" ? project : undefined, limit: 500 } });
   const { data, refetch } = useQuery(query);
-  useTopic(["entity.registry_version.*"], () => void refetch());
+  useTopic(["entity.base_model.*", "entity.dataset_version.*", "entity.template.*"], () => void refetch());
   const rows: ListRow[] = (data?.items ?? []).map((r) => ({ id: `${r.kind}:${r.id}`, name: r.name, version: r.version, state: r.state, tags: r.tags, actor: r.actor, updatedAt: r.updatedAt }));
   const select = useSelection((s) => s.select);
   return (
