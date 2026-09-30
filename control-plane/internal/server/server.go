@@ -18,6 +18,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/agentcreds"
 	"github.com/usunrise88/cadence/control-plane/internal/api"
 	"github.com/usunrise88/cadence/control-plane/internal/auth"
+	"github.com/usunrise88/cadence/control-plane/internal/backups"
 	"github.com/usunrise88/cadence/control-plane/internal/cas"
 	"github.com/usunrise88/cadence/control-plane/internal/commands"
 	"github.com/usunrise88/cadence/control-plane/internal/credentials"
@@ -28,6 +29,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/jobs"
 	"github.com/usunrise88/cadence/control-plane/internal/mcp"
 	"github.com/usunrise88/cadence/control-plane/internal/mixes"
+	"github.com/usunrise88/cadence/control-plane/internal/notify"
 	"github.com/usunrise88/cadence/control-plane/internal/obs"
 	"github.com/usunrise88/cadence/control-plane/internal/policy"
 	"github.com/usunrise88/cadence/control-plane/internal/problems"
@@ -78,6 +80,13 @@ type Config struct {
 	StepHooks *steps.Hooks
 	// Leases is the worker protocol as the pipeline engine sees it; steps.NoLeases when nil.
 	Leases steps.Leases
+
+	// Backups takes and restore-tests backup sets (phase 2 · stream O); backups.* fail without it.
+	Backups *backups.Service
+	// Telegram reaches the Bot API (base URL, HTTP client); the token comes from Secrets.
+	Telegram notify.Bot
+	// Poller is the Telegram long-poll loop, read for its status only; nil when it does not run.
+	Poller *notify.Poller
 }
 
 // Server implements api.StrictServerInterface. Planned operations fall through to api.Planned (501).

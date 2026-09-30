@@ -66,6 +66,11 @@ type Defaults struct {
 	Cache     Cache     `yaml:"cache"`
 	Compute   Compute   `yaml:"compute"`
 
+	// Operations, notifications and backups (phase 2 · stream O).
+	Operations    Operations    `yaml:"operations"`
+	Notifications Notifications `yaml:"notifications"`
+	Backups       Backups       `yaml:"backups"`
+
 	document map[string]any
 }
 
@@ -152,6 +157,28 @@ type Drafts struct {
 type Cache struct {
 	HighWaterMark Param[float64] `yaml:"high_water_mark"`
 	ProjectQuota  Param[float64] `yaml:"project_quota"`
+}
+
+// Operations holds instance-wide operational defaults.
+type Operations struct {
+	Timezone Param[string] `yaml:"timezone"`
+}
+
+// Notifications holds the defaults of the notification settings (the routing table is seeded by migration).
+type Notifications struct {
+	DigestTime        Param[string] `yaml:"digest_time"`
+	QuietHoursEnabled Param[bool]   `yaml:"quiet_hours_enabled"`
+	QuietHoursStart   Param[string] `yaml:"quiet_hours_start"`
+	QuietHoursEnd     Param[string] `yaml:"quiet_hours_end"`
+}
+
+// Backups holds the backup schedule and retention.
+type Backups struct {
+	NightlyAt          Param[string] `yaml:"nightly_at"`
+	RestoreTestWeekday Param[string] `yaml:"restore_test_weekday"`
+	RestoreTestAt      Param[string] `yaml:"restore_test_at"`
+	KeepNightly        Param[int]    `yaml:"keep_nightly"`
+	KeepWeekly         Param[int]    `yaml:"keep_weekly"`
 }
 
 // Compute holds the hosts seeded at first start.

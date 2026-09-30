@@ -4,7 +4,7 @@
 # the control-plane binary and packaged with the worker. Every value carries a description, a source and, where it
 # applies, a safe range; a value without a published source is a "Cadence recommendation" re-checked after the spikes.
 # Keys are addressed as <section>.<key> (x-cadence.defaultRef: training.steps). Bump `version` on every change.
-version: 3
+version: 4
 
 # The project wizard's Recommended mode (docs/spec/02-domain-projects-registry.md "Project wizard").
 wizard:
@@ -211,6 +211,60 @@ cache:
     description: Share of the local cache one project's frozen shards may occupy
     source: Cadence recommendation (docs/spec/03 "Key defaults")
     range: { min: 0.05, max: 1 }
+
+# Instance operations (docs/spec/06-platform.md "Operations"): the clock quiet hours, the digest and backups follow.
+operations:
+  timezone:
+    value: UTC
+    description: IANA timezone of the instance; quiet hours, the daily digest and the backup schedule are local to it (policies.edit changes it)
+    source: Cadence recommendation
+
+# Notification routing (docs/spec/06-platform.md "Notifications"); the routing table itself is seeded by migration.
+notifications:
+  digest_time:
+    value: "09:00"
+    description: Local time of the daily digest (runs, evals, spend against budgets, open approvals)
+    source: docs/spec/06-platform.md "Notifications"
+  quiet_hours_enabled:
+    value: false
+    description: Whether quiet hours hold Telegram messages back (failures still go out)
+    source: Cadence recommendation (off until the admin sets their hours)
+  quiet_hours_start:
+    value: "22:00"
+    description: Local time quiet hours begin
+    source: Cadence recommendation
+  quiet_hours_end:
+    value: "08:00"
+    description: Local time quiet hours end (before the digest, so the digest is never held back)
+    source: Cadence recommendation
+
+# Backups (docs/spec/06-platform.md "Operations": 24 h RPO, 1 h RTO).
+backups:
+  nightly_at:
+    value: "03:00"
+    description: Local time of the nightly backup set (pg_dump custom format plus the new content-store blobs)
+    source: docs/spec/06-platform.md "Operations" (nightly, 24 h RPO); Cadence recommendation for the hour
+  restore_test_weekday:
+    value: sunday
+    description: Day of the weekly restore test; the set taken that night is the weekly set, kept longer
+    source: docs/spec/06-platform.md "Operations" (weekly automated restore)
+    range: { values: [monday, tuesday, wednesday, thursday, friday, saturday, sunday] }
+  restore_test_at:
+    value: "04:00"
+    description: Local time of the weekly restore test into a scratch database (after the nightly set)
+    source: Cadence recommendation
+  keep_nightly:
+    value: 7
+    unit: sets
+    description: Nightly (and manual) backup sets kept; older ones have their files removed
+    source: Cadence recommendation (one week of daily restore points)
+    range: { min: 1, max: 60 }
+  keep_weekly:
+    value: 4
+    unit: sets
+    description: Weekly backup sets kept beside the nightly ones
+    source: Cadence recommendation (a month of weekly restore points)
+    range: { min: 1, max: 52 }
 
 # Hosts seeded into the compute entity at first start; Settings edits them afterwards (compute.edit).
 compute:

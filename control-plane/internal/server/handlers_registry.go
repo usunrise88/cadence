@@ -656,6 +656,7 @@ func (s *Server) PoliciesEdit(ctx context.Context, req api.PoliciesEditRequestOb
 	if b := req.Body.Budgets; b != nil {
 		in.GPUHoursPerProjectPerDay, in.AgentTurnsPerSession = b.GpuHoursPerProjectPerDay, b.AgentTurnsPerSession
 	}
+	in.Timezone = req.Body.Timezone
 	return s.run(ctx, command(ctx, "policies.edit", req.Params.IdempotencyKey, req.Params.DryRun), func(ctx context.Context, tx pgx.Tx) (commands.Result, []events.Draft, error) {
 		p, drafts, err := policies.Edit(ctx, tx, rev, in, s.defaultsDoc())
 		if err != nil {
@@ -667,7 +668,7 @@ func (s *Server) PoliciesEdit(ctx context.Context, req api.PoliciesEditRequestOb
 
 func apiPolicies(p policies.Policies) api.Policies {
 	return api.Policies{
-		Rev: p.Rev, UpdatedAt: p.UpdatedAt, Departures: p.Departures,
+		Rev: p.Rev, UpdatedAt: p.UpdatedAt, Departures: p.Departures, Timezone: p.Timezone,
 		Budgets: api.PolicyBudgets{GpuHoursPerProjectPerDay: p.Budgets.GPUHoursPerProjectPerDay, AgentTurnsPerSession: p.Budgets.AgentTurnsPerSession},
 	}
 }

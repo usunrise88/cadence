@@ -19,6 +19,7 @@ Entities:
   aliases        get list set
   approvals      approve deny get list
   audit          list
+  backups        get list new verify
   baseModels     get list
   branches       accept compare get list revert
   collections    get list
@@ -31,12 +32,15 @@ Entities:
   help           get search
   jobs           cancel get list wait
   mixes          edit get list new preview
+  notificationRules edit list
+  notificationSettings edit get
   policies       edit get
   projects       adopt archive edit get list new note search sync
   recipes        get list
   registry       search
   runs           new
   secrets        list new
+  telegramBot    set verify
   templates      get list
 
 Global flags:

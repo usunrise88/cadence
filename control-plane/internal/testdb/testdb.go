@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"strings"
 	"sync/atomic"
@@ -19,8 +20,9 @@ import (
 )
 
 var (
-	adminDSN string
-	counter  atomic.Int64
+	adminDSN    string
+	containerID string
+	counter     atomic.Int64
 )
 
 // Main starts the container, runs the tests and removes the container. Call it from TestMain.
@@ -36,6 +38,7 @@ func Main(m *testing.M) {
 	if err != nil {
 		log.Fatalf("postgres dsn: %v", err)
 	}
+	containerID = c.GetContainerID()
 	code := m.Run()
 	if err := testcontainers.TerminateContainer(c); err != nil {
 		log.Printf("terminate postgres: %v", err)
@@ -57,4 +60,18 @@ func New(t *testing.T) string {
 		t.Fatalf("create database: %v", err)
 	}
 	return strings.Replace(adminDSN, "/cadence?", "/"+name+"?", 1)
+}
+
+// ContainerID is the Postgres container's id: tests that need the server's own client tools (pg_dump, pg_restore)
+// run them inside it with docker exec.
+func ContainerID() string { return containerID }
+
+// InContainer rewrites a DSN from New so that it reaches the same database from inside the container.
+func InContainer(dsn string) string {
+	u, err := url.Parse(dsn)
+	if err != nil {
+		return dsn
+	}
+	u.Host = "localhost:5432"
+	return u.String()
 }

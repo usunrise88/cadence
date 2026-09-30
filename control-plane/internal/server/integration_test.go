@@ -57,8 +57,8 @@ var testAgent = auth.Actor{Kind: auth.KindAgent, ID: "ses_test", Name: "claude-c
 func start(t *testing.T) *env { return startWith(t, nil) }
 
 // startWith is start with a hook that adjusts the admin server before it serves (authentication tests clear the
-// fixed actor).
-func startWith(t *testing.T, adjust func(*Config)) *env {
+// fixed actor) and hooks that register job kinds before the job runner starts.
+func startWith(t *testing.T, adjust func(*Config), register ...func(*pgxpool.Pool, *jobs.Service)) *env {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	pool, err := storage.Open(ctx, testdb.New(t))
@@ -94,6 +94,9 @@ func startWith(t *testing.T, adjust func(*Config)) *env {
 		t.Fatal(err)
 	}
 	svc.Register(js)
+	for _, r := range register {
+		r(pool, js)
+	}
 	if err := js.Start(ctx); err != nil {
 		t.Fatal(err)
 	}

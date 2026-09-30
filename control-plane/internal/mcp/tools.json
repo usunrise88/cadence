@@ -1359,6 +1359,149 @@
       ]
     },
     {
+      "name": "backups.get",
+      "title": "Get a backup set with its manifest and last restore test report",
+      "description": "Get a backup set with its manifest and last restore test report",
+      "method": "GET",
+      "path": "/backups/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        }
+      ]
+    },
+    {
+      "name": "backups.list",
+      "title": "Backup sets, newest first, with the schedule and the last restore test",
+      "description": "Backup sets, newest first, with the schedule and the last restore test",
+      "method": "GET",
+      "path": "/backups",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "default": 50,
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "limit",
+          "in": "query",
+          "name": "limit"
+        }
+      ]
+    },
+    {
+      "name": "backups.new",
+      "title": "Take a backup set now (pg_dump plus the content store); answers the job",
+      "description": "Take a backup set now (pg_dump plus the content store); answers the job. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/backups",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        }
+      ]
+    },
+    {
+      "name": "backups.verify",
+      "title": "Restore the set into a scratch database and check it (the weekly restore test, now); answers the job",
+      "description": "Restore the set into a scratch database and check it (the weekly restore test, now); answers the job. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/backups/{id}:verify",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        }
+      ]
+    },
+    {
       "name": "baseModels.get",
       "title": "Get a base model version with the projects that use it",
       "description": "Get a base model version with the projects that use it",
@@ -3140,6 +3283,214 @@
       ]
     },
     {
+      "name": "notificationRules.edit",
+      "title": "Change which channels an event class reaches and when (admin only)",
+      "description": "Change which channels an event class reaches and when (admin only). Pass dryRun=true to see what would happen without changing anything.",
+      "method": "PATCH",
+      "path": "/notification-rules/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "channels": {
+                "additionalProperties": false,
+                "properties": {
+                  "inApp": {
+                    "type": "boolean"
+                  },
+                  "telegram": {
+                    "type": "boolean"
+                  }
+                },
+                "type": "object"
+              },
+              "timing": {
+                "description": "immediate: sent as it happens; digest: held for the next daily digest; daily: the digest itself (its rule only); none: never sent",
+                "enum": [
+                  "immediate",
+                  "digest",
+                  "daily",
+                  "none"
+                ],
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "notificationRules.list",
+      "title": "The notification routing table — one rule per event class with its channels and timing",
+      "description": "The notification routing table — one rule per event class with its channels and timing",
+      "method": "GET",
+      "path": "/notification-rules",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": null
+    },
+    {
+      "name": "notificationSettings.edit",
+      "title": "Change quiet hours, the digest time or the allow-listed Telegram chats (admin only)",
+      "description": "Change quiet hours, the digest time or the allow-listed Telegram chats (admin only). Pass dryRun=true to see what would happen without changing anything.",
+      "method": "PATCH",
+      "path": "/notification-settings",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "digestTime": {
+                "description": "HH:MM on a 24-hour clock, in the instance timezone (policies)",
+                "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+                "type": "string"
+              },
+              "quietHours": {
+                "additionalProperties": false,
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "end": {
+                    "description": "HH:MM on a 24-hour clock, in the instance timezone (policies)",
+                    "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+                    "type": "string"
+                  },
+                  "start": {
+                    "description": "HH:MM on a 24-hour clock, in the instance timezone (policies)",
+                    "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "telegramChats": {
+                "description": "The complete allowlist of Telegram chat ids",
+                "items": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "maxItems": 20,
+                "type": "array"
+              }
+            },
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "notificationSettings.get",
+      "title": "Quiet hours, the digest time and the Telegram bot's allow-listed chats and status",
+      "description": "Quiet hours, the digest time and the Telegram bot's allow-listed chats and status",
+      "method": "GET",
+      "path": "/notification-settings",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": null
+    },
+    {
       "name": "policies.edit",
       "title": "Change instance-wide policies; values must stay inside the ranges in defaults.yaml",
       "description": "Change instance-wide policies; values must stay inside the ranges in defaults.yaml. Pass dryRun=true to see what would happen without changing anything.",
@@ -3163,6 +3514,12 @@
                   }
                 },
                 "type": "object"
+              },
+              "timezone": {
+                "description": "IANA timezone name, e.g. Europe/Berlin or UTC",
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
               }
             },
             "type": "object"
@@ -4185,6 +4542,7 @@
                   "github",
                   "s3",
                   "judge-api",
+                  "telegram",
                   "other"
                 ],
                 "type": "string"
@@ -4239,6 +4597,100 @@
           "property": "body",
           "in": "body",
           "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "telegramBot.set",
+      "title": "Store or replace the Telegram bot token (write-only, kept in the secret store as telegram-bot-token)",
+      "description": "Store or replace the Telegram bot token. The value is write-only, encrypted in the secret store and never returned. Admin only; agents must not call this — secrets never enter an agent context. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "PUT",
+      "path": "/telegram-bot",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "token": {
+                "description": "Write-only: the token @BotFather issued (123456:ABC…)",
+                "maxLength": 200,
+                "minLength": 20,
+                "pattern": "^[0-9]+:[A-Za-z0-9_-]+$",
+                "type": "string",
+                "writeOnly": true
+              }
+            },
+            "required": [
+              "token"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on; required unless the target does not exist yet",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "telegramBot.verify",
+      "title": "Check the bot token with Telegram and send a test message to every allow-listed chat",
+      "description": "Check the bot token with Telegram and send a test message to every allow-listed chat. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/telegram-bot:verify",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
         }
       ]
     },
