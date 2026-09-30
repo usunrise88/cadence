@@ -411,8 +411,12 @@ Open questions:
       `budgets.queue_priority_per_project` = 0, set by `projects.new`/`projects.edit`); the claim and `queue.list`
       order by it, then the job's priority, then first come. It is read live from the project in the claim query
       rather than copied into the step spec by the pipelines engine, so an edit reorders jobs already waiting
-- [ ] gap (phase 2): `pipelines.run` does not refuse eval-only dataset versions (`data.Trainable`); only mixes and the
-      run estimate check them, so the run facade must (stream R)
+- [x] F · resolved (phase 2): `pipelines.run` (dry run included) answers `eval-only-dataset` when a training step
+      (`resources.jobKind` training or unset) reads, straight from `$inputs.<name>`, a `dataset` artifact that an
+      eval-only version registers (`payload.artifact.hash`, `data.Trainable`) or a `mix` artifact referencing one;
+      inputs only eval, data or export steps read may be eval-only. Assumptions: a mix artifact names its dataset
+      versions in `meta.datasets` or in its JSON content's `groups[].datasets` / `datasets` (stream R renders it);
+      a dataset artifact no version registers passes; only direct reads are checked, not outputs derived from it
 - [x] F · resolved (phase 2): notifications classify the events that exist — `pipeline_run.step_changed` on
       `pipeline_run.{id}` (step `done` → progress, `failed`, i.e. no retry left → failure) and `compute.health` on
       `compute.{id}` (`unreachable` → failure); a step job's own `job.state_changed` is no longer noticed (the step

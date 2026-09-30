@@ -29,6 +29,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/auth"
 	"github.com/usunrise88/cadence/control-plane/internal/cas"
 	"github.com/usunrise88/cadence/control-plane/internal/commands"
+	"github.com/usunrise88/cadence/control-plane/internal/data"
 	"github.com/usunrise88/cadence/control-plane/internal/defaults"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
 	"github.com/usunrise88/cadence/control-plane/internal/jobs"
@@ -155,7 +156,41 @@ func (e *Engine) Prepare(ctx context.Context, q storage.Querier, in StartInput) 
 			src.Pipeline.Name, src.Version, in.Version)
 	}
 	plan, err := e.Plan(ctx, q, src.Pipeline, PlanInput{Inputs: in.Inputs, Params: in.Params, Estimates: in.Estimates})
+	if err == nil {
+		err = e.trainable(ctx, q, plan, in.Inputs)
+	}
 	return src, plan, err
+}
+
+// trainable refuses (eval-only-dataset) a run input that a training step reads directly — a dataset artifact of an
+// eval-only version, or a mix artifact referencing one (data.TrainableArtifact). An input only non-training steps
+// read (eval, data, export: resources.jobKind) may be eval-only: golden and replay sets are evaluated, never trained.
+func (e *Engine) trainable(ctx context.Context, q storage.Querier, plan Plan, inputs map[string]steps.ArtifactRef) error {
+	for _, name := range sortedKeys(inputs) {
+		for _, ps := range plan.Steps {
+			if !trains(ps.Kind.Resources) || !readsInput(ps, name) {
+				continue
+			}
+			if err := data.TrainableArtifact(ctx, q, e.o.CAS, inputs[name]); err != nil {
+				return err
+			}
+			break
+		}
+	}
+	return nil
+}
+
+// trains reports whether a step with these resources is a training step (the queue's default job kind).
+func trains(r steps.Resources) bool { return r.JobKind == "" || r.JobKind == steps.JobTraining }
+
+// readsInput reports whether step ps is wired to the run input name ($inputs.<name>).
+func readsInput(ps PlanStep, name string) bool {
+	for _, wire := range ps.In {
+		if w, ok := ParseWire(wire); ok && w.Input == name {
+			return true
+		}
+	}
+	return false
 }
 
 // Start validates the pipeline, records the run and its steps in tx, and queues the steps that are ready (or

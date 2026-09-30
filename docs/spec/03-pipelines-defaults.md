@@ -57,7 +57,8 @@ Every block's process is a pipeline of typed steps declared in the recipes repos
   resolved by the facade that starts the run — a mix revision renders to a `mix` artifact with its resolved
   `input_cfg`, a base model version to a `base_model` artifact. Facades (runs, evals, playbooks) start pipeline runs
   through the Go API, `pipelines.Engine.Start` with a pipeline name or a parsed pipeline, inputs, parameter overrides,
-  per-step estimates, the run id, priority and `fresh`.
+  per-step estimates, the run id, priority and `fresh`. A run whose training step reads an eval-only dataset version
+  (a `dataset` input, or a `mix` input referencing one) is refused with `eval-only-dataset` (R18).
 
 ```yaml
 # pipelines/train-stage.yaml in the project repository

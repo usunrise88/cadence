@@ -2320,7 +2320,8 @@ paths:
           pipelines.list (or "*" for whatever is at ref). inputs maps each pipeline input to an artifact {hash, type};
           params overrides parameters per step id; finished steps with the same input hash are reused unless fresh.
           The answer is the pipeline run (plr_…): follow pipeline_run.{id} or call pipelineRuns.wait. Spending GPU time
-          over the budget answers 202 with an approvalId instead.
+          over the budget answers 202 with an approvalId instead. A dataset input of an eval-only version (or a mix
+          input referencing one) that a training step reads answers eval-only-dataset.
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
         - $ref: "#/components/parameters/IfMatch"

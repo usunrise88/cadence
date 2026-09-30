@@ -7,8 +7,10 @@ contexts: [error:eval-only-dataset, field:datasets]
 ## What this is
 
 A `422 Unprocessable Entity` problem of type `eval-only-dataset`: a mix (`mixes.new`, `mixes.edit`,
-`mixes.preview`, accepting a mix draft) or a run estimate (`runs.new`) named a dataset version that must not reach
-training (docs/spec/08-resolutions.md R18). A dataset version is eval-only when either holds:
+`mixes.preview`, accepting a mix draft), a run estimate (`runs.new`) or a pipeline run (`pipelines.run`, dry run
+included) named a dataset version that must not reach training (docs/spec/08-resolutions.md R18). `pipelines.run`
+refuses a `dataset` input of such a version, or a `mix` input referencing one, only when a training step
+(`resources.jobKind: training`) reads it; steps that evaluate, import or export may read eval-only data. A dataset version is eval-only when either holds:
 
 | Why | How to tell | What changes it |
 | --- | --- | --- |
