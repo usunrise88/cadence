@@ -36,7 +36,7 @@ def registry() -> dict[str, dict[str, Any]]:
             "consumes": list(cls.consumes),
             "produces": list(cls.produces),
             "resources": dict(cls.resources),
-            "help": f"steps.{name}",
+            "help": f"steps.{name.replace('_', '-')}",  # help slugs use dashes
         }
     return out
 

@@ -7,6 +7,10 @@ Step kinds live in `cadence_worker/steps/` and register through the `cadence.ste
 Adding a step: one module + one schema. The control plane derives the API operation, the MCP tool and
 the generic Pipeline run panel from the schema.
 
+Core (runtime-neutral) step kinds: `echo` and `dataset_import` (imports a NeMo manifest, a Hugging Face dataset such
+as FLEURS, or a folder with `metadata.csv` as a `dataset` artifact; audio helpers in `cadence_worker/audio.py`; help
+`docs/help/steps/dataset-import.md`). Help slugs use dashes (`steps.dataset-import`).
+
 Planned step kinds for phase 2: `sdp_ingest`, `pseudolabel_ensemble`, `dataset_freeze`, `shar_export`,
 `oomptimizer_calibrate`, `nemotron_finetune`, `checkpoint_average`, `streaming_eval`, `export_onnx`,
 `onnx_parity`, `triton_repo_build`, `latency_benchmark`.

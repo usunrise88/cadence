@@ -65,6 +65,7 @@ type Defaults struct {
 	Drafts    Drafts    `yaml:"drafts"`
 	Cache     Cache     `yaml:"cache"`
 	Compute   Compute   `yaml:"compute"`
+	Data      Data      `yaml:"data"`
 
 	document map[string]any
 }
@@ -152,6 +153,15 @@ type Drafts struct {
 type Cache struct {
 	HighWaterMark Param[float64] `yaml:"high_water_mark"`
 	ProjectQuota  Param[float64] `yaml:"project_quota"`
+}
+
+// Data holds the import defaults (the dataset_import step kind's defaultRefs, phase 2).
+type Data struct {
+	ValidationShare   Param[float64] `yaml:"validation_share"`
+	MaxHours          Param[float64] `yaml:"max_hours"`
+	MaxUtterances     Param[int]     `yaml:"max_utterances"`
+	SampleRate        Param[int]     `yaml:"sample_rate"`
+	TextNormalisation Param[bool]    `yaml:"text_normalisation"`
 }
 
 // Compute holds the hosts seeded at first start.

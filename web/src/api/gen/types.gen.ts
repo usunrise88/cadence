@@ -552,6 +552,33 @@ export type DatasetPayload = {
      * Metadata only: no audio is stored (phase-1 fixture so mixes have something to reference)
      */
     fixture: boolean;
+    /**
+     * Sources (src_…) of the utterances; an imported version is eval-only while any of them is not cleared for training (phase 2)
+     */
+    sourceIds?: Array<string>;
+    /**
+     * The sources' licences, joined with ' AND ' when there are several
+     */
+    licence?: string;
+    /**
+     * Utterances and hours per language
+     */
+    languages?: Array<DatasetLanguage>;
+    artifact?: ArtifactRef;
+    /**
+     * Registered for evaluation only (golden and replay test sets): never mixed or trained on, whatever its sources
+     */
+    evalOnly?: boolean;
+    /**
+     * How utterances were assigned to splits (speaker-disjoint, source, all-train, all-validation, all-test)
+     */
+    splitRule?: string;
+    speakers?: number;
+    /**
+     * Tags given at import (golden, replay, eval-only, …)
+     */
+    tags?: Array<string>;
+    lineage?: DatasetLineage;
 };
 
 export type DatasetVersion = RegistryVersion & {
@@ -822,6 +849,7 @@ export type Defaults = {
     mix: DefaultSection;
     drafts: DefaultSection;
     cache: DefaultSection;
+    data?: DefaultSection;
     estimates: {
         bytes_per_audio_hour: DefaultValue;
         training: Array<TrainingEstimateRow>;
@@ -3172,6 +3200,155 @@ export type StepError = {
     retryable?: boolean;
 };
 
+export type SourceKind = 'public' | 'production' | 'synthetic';
+
+/**
+ * A corpus in the registry (R18): licence, kind, languages; eval-only until a person clears it for training
+ */
+export type Source = {
+    /**
+     * src_…
+     */
+    id: string;
+    name: string;
+    description: string;
+    licence: string;
+    kind: SourceKind;
+    languages: Array<string>;
+    /**
+     * Where the corpus comes from, e.g. hf://datasets/google/fleurs
+     */
+    url: string;
+    /**
+     * false = eval-only: its dataset versions cannot be mixed or trained on
+     */
+    trainingCleared: boolean;
+    clearedBy?: Actor;
+    clearedAt?: string;
+    archived: boolean;
+    rev: number;
+    /**
+     * Utterances this source owns
+     */
+    utterances: number;
+    /**
+     * Their total duration in hours
+     */
+    hours: number;
+    /**
+     * Dataset version ids built from this source (sources.get only; empty in lists)
+     */
+    datasets: Array<string>;
+    createdBy: Actor;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type SourceList = {
+    items: Array<Source>;
+};
+
+export type SourceEdit = {
+    description?: string;
+    licence?: string;
+    /**
+     * true clears the source for training (a person's decision); false makes it eval-only again
+     */
+    trainingCleared?: boolean;
+};
+
+export type DatasetSplitName = 'train' | 'validation' | 'test';
+
+/**
+ * human, pseudo-label, or model:<id> for a single model's output
+ */
+export type TranscriptOrigin = string;
+
+export type Transcript = {
+    /**
+     * trn_…
+     */
+    id: string;
+    text: string;
+    origin: TranscriptOrigin;
+    confidence?: number;
+    createdAt: string;
+};
+
+export type UtteranceMembership = {
+    datasetVersionId: string;
+    split: DatasetSplitName;
+    /**
+     * The transcript this dataset version uses
+     */
+    transcriptId: string;
+};
+
+/**
+ * One audio segment in the content store; its content hash is its identity
+ */
+export type Utterance = {
+    /**
+     * utt_…
+     */
+    id: string;
+    /**
+     * BLAKE3-256 of the audio file's bytes (its blob in the content store)
+     */
+    contentHash: string;
+    sourceId: string;
+    sourceName: string;
+    /**
+     * Seconds
+     */
+    duration: number;
+    language: string;
+    /**
+     * Speaker id within the source; empty when unknown
+     */
+    speaker: string;
+    sampleRate: number;
+    channels: number;
+    bytes: number;
+    transcripts: Array<Transcript>;
+    split?: DatasetSplitName;
+    /**
+     * Kind → value (audio-b3, …); utterances.get only
+     */
+    fingerprints?: {
+        [key: string]: string;
+    };
+    /**
+     * utterances.get only
+     */
+    datasets?: Array<UtteranceMembership>;
+    createdAt: string;
+};
+
+export type UtteranceList = {
+    items: Array<Utterance>;
+    /**
+     * Pass as `after` for the next page; absent on the last page
+     */
+    next?: string;
+};
+
+export type DatasetLanguage = {
+    language: string;
+    utterances: number;
+    hours: number;
+};
+
+/**
+ * Where an imported dataset version came from
+ */
+export type DatasetLineage = {
+    pipelineRunId?: string;
+    stepId?: string;
+    projectId?: string;
+    stepKind?: string;
+};
+
 export type SecretNewWritable = {
     name: SecretName;
     kind: SecretKind;
@@ -3236,6 +3413,11 @@ export type Id = string;
  * claude-code or opencode.<provider>
  */
 export type AgentCredentialId = AgentCredentialIdValue;
+
+/**
+ * Source id (src_…) or name (fleurs)
+ */
+export type SourceId = string;
 
 /**
  * Mix id (mix_…)
@@ -7166,6 +7348,249 @@ export type WorkerArtifactsSetResponses = {
 };
 
 export type WorkerArtifactsSetResponse = WorkerArtifactsSetResponses[keyof WorkerArtifactsSetResponses];
+
+export type SourcesListData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Include archived sources
+         */
+        archived?: boolean;
+        /**
+         * Only sources of this kind
+         */
+        kind?: SourceKind;
+        /**
+         * Only sources covering this language (he or he-IL; either matches the other)
+         */
+        language?: string;
+    };
+    url: '/registry/sources';
+};
+
+export type SourcesListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type SourcesListError = SourcesListErrors[keyof SourcesListErrors];
+
+export type SourcesListResponses = {
+    /**
+     * Sources by name
+     */
+    200: SourceList;
+};
+
+export type SourcesListResponse = SourcesListResponses[keyof SourcesListResponses];
+
+export type SourcesGetData = {
+    body?: never;
+    path: {
+        /**
+         * Source id (src_…) or name (fleurs)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/registry/sources/{id}';
+};
+
+export type SourcesGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type SourcesGetError = SourcesGetErrors[keyof SourcesGetErrors];
+
+export type SourcesGetResponses = {
+    /**
+     * The source
+     */
+    200: Source;
+};
+
+export type SourcesGetResponse = SourcesGetResponses[keyof SourcesGetResponses];
+
+export type SourcesEditData = {
+    body: SourceEdit;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Source id (src_…) or name (fleurs)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/registry/sources/{id}';
+};
+
+export type SourcesEditErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type SourcesEditError = SourcesEditErrors[keyof SourcesEditErrors];
+
+export type SourcesEditResponses = {
+    /**
+     * The edited source (or, for a dry run, what it would become)
+     */
+    200: Source;
+    /**
+     * Gated; a person decides the approval on the approvals topic
+     */
+    202: ApprovalAccepted;
+};
+
+export type SourcesEditResponse = SourcesEditResponses[keyof SourcesEditResponses];
+
+export type SourcesArchiveData = {
+    body?: never;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Source id (src_…) or name (fleurs)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/registry/sources/{id}:archive';
+};
+
+export type SourcesArchiveErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type SourcesArchiveError = SourcesArchiveErrors[keyof SourcesArchiveErrors];
+
+export type SourcesArchiveResponses = {
+    /**
+     * The archived source
+     */
+    200: Source;
+    /**
+     * Gated; a person decides the approval on the approvals topic
+     */
+    202: ApprovalAccepted;
+};
+
+export type SourcesArchiveResponse = SourcesArchiveResponses[keyof SourcesArchiveResponses];
+
+export type UtterancesListData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Source id (src_…) or name
+         */
+        source?: string;
+        /**
+         * Dataset version id (ver_…)
+         */
+        dataset?: string;
+        /**
+         * Split within the dataset version (needs dataset)
+         */
+        split?: DatasetSplitName;
+        /**
+         * Language (he or he-IL; either matches the other)
+         */
+        language?: string;
+        /**
+         * Cursor: the `next` value of the previous page
+         */
+        after?: string;
+        limit?: number;
+    };
+    url: '/registry/utterances';
+};
+
+export type UtterancesListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type UtterancesListError = UtterancesListErrors[keyof UtterancesListErrors];
+
+export type UtterancesListResponses = {
+    /**
+     * A page of utterances, oldest first
+     */
+    200: UtteranceList;
+};
+
+export type UtterancesListResponse = UtterancesListResponses[keyof UtterancesListResponses];
+
+export type UtterancesGetData = {
+    body?: never;
+    path: {
+        /**
+         * Utterance id (utt_…) or content hash (b3:…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/registry/utterances/{id}';
+};
+
+export type UtterancesGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type UtterancesGetError = UtterancesGetErrors[keyof UtterancesGetErrors];
+
+export type UtterancesGetResponses = {
+    /**
+     * The utterance
+     */
+    200: Utterance;
+};
+
+export type UtterancesGetResponse = UtterancesGetResponses[keyof UtterancesGetResponses];
 
 export type MountsListData = {
     body?: never;

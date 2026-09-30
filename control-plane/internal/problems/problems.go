@@ -59,6 +59,9 @@ var (
 	// Project repositories (phase 1 · wave 2, projects).
 	MergeConflict         = Type{"merge-conflict", http.StatusConflict, "Merge conflict"}
 	RepositoryUnavailable = Type{"repository-unavailable", http.StatusBadGateway, "Repository unavailable"}
+
+	// Data entities (phase 2 · stream D).
+	EvalOnlyDataset = Type{"eval-only-dataset", http.StatusUnprocessableEntity, "Eval-only dataset"}
 )
 
 // Types lists every registered type.
@@ -67,7 +70,7 @@ func Types() []Type {
 		BadRequest, ValidationFailed, NotFound, MethodNotAllowed, Conflict, PreconditionFailed,
 		PreconditionRequired, IdempotencyKeyReused, Unauthenticated, TOTPRequired, Forbidden, RateLimited, NotImplemented,
 		Internal, PolicyDenied, ReservedAlias, EstimateUnavailable, InvalidQuery, DraftStale, MergeConflict,
-		RepositoryUnavailable,
+		RepositoryUnavailable, EvalOnlyDataset,
 	}
 }
 

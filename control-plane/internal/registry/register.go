@@ -15,7 +15,10 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/events"
 )
 
-var collectionName = regexp.MustCompile(`^[a-z][a-z-]*/[a-z0-9][a-z0-9._-]{0,98}[a-z0-9]$`)
+var (
+	collectionName = regexp.MustCompile(`^[a-z][a-z-]*/[a-z0-9][a-z0-9._-]{0,98}[a-z0-9]$`)
+	fingerprintRe  = regexp.MustCompile(`^[0-9a-f]{64}$`)
+)
 
 // RegisterInput describes a version to register.
 type RegisterInput struct {
@@ -27,6 +30,10 @@ type RegisterInput struct {
 	Payload     []byte // JSON; stored canonical
 	Actor       auth.Actor
 	Freeze      bool // register frozen (bundled and fixture versions) instead of as a draft
+	// Fingerprint, when set (64 hex digits), replaces the sha256 of the payload as the version's identity: a kind
+	// whose content is defined apart from its descriptive payload (a dataset version is its utterances, splits and
+	// transcripts, R18) registers once however its payload's lineage differs.
+	Fingerprint string
 }
 
 // Register adds a version to a collection, creating the collection on first use. Content that the collection
@@ -44,6 +51,12 @@ func Register(ctx context.Context, tx pgx.Tx, in RegisterInput, now time.Time) (
 		return Version{}, false, nil, err
 	}
 	fp := Fingerprint(canonical)
+	if in.Fingerprint != "" {
+		if !fingerprintRe.MatchString(in.Fingerprint) {
+			return Version{}, false, nil, fmt.Errorf("register: fingerprint %q must be 64 lowercase hex digits", in.Fingerprint)
+		}
+		fp = in.Fingerprint
+	}
 
 	collectionID, err := ensureCollection(ctx, tx, in)
 	if err != nil {

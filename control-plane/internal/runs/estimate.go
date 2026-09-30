@@ -10,6 +10,7 @@ import (
 	"slices"
 
 	"github.com/usunrise88/cadence/control-plane/internal/compute"
+	datasets "github.com/usunrise88/cadence/control-plane/internal/data"
 	"github.com/usunrise88/cadence/control-plane/internal/defaults"
 	"github.com/usunrise88/cadence/control-plane/internal/policies"
 	"github.com/usunrise88/cadence/control-plane/internal/problems"
@@ -154,6 +155,9 @@ func data(ctx context.Context, q storage.Querier, d *defaults.Defaults, projectI
 		}
 		if slices.Contains(out.Datasets, v.ID) {
 			continue
+		}
+		if err := datasets.Trainable(ctx, q, v); err != nil {
+			return Data{}, err
 		}
 		var p struct {
 			Hours float64 `json:"hours"`

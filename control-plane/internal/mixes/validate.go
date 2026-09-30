@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/usunrise88/cadence/control-plane/internal/data"
 	"github.com/usunrise88/cadence/control-plane/internal/defaults"
 	"github.com/usunrise88/cadence/control-plane/internal/problems"
 	"github.com/usunrise88/cadence/control-plane/internal/registry"
@@ -90,6 +91,7 @@ func Normalize(ctx context.Context, q storage.Querier, projectID string, in Inpu
 	}
 	names := map[string]bool{}
 	used := map[string]string{} // version id → group path
+	var evalOnly []problems.FieldError
 	replay, plain := 0, 0
 	for i, g := range in.Groups {
 		p := fmt.Sprintf("/groups/%d", i)
@@ -131,6 +133,17 @@ func Normalize(ctx context.Context, q storage.Querier, projectID string, in Inpu
 				fail(dp, "%s %s is %s; only frozen dataset versions can be mixed", v.Name, v.Version, v.State)
 				continue
 			}
+			if err := data.Trainable(ctx, q, v); err != nil {
+				pe, ok := problems.As(err)
+				if !ok {
+					return Content{}, err
+				}
+				fail(dp, "%s", pe.Detail)
+				if pe.Type == problems.EvalOnlyDataset {
+					evalOnly = append(evalOnly, errs[len(errs)-1])
+				}
+				continue
+			}
 			if prev, dup := used[v.ID]; dup {
 				fail(dp, "%s %s is already in %s; a dataset version belongs to one group", v.Name, v.Version, prev)
 				continue
@@ -153,6 +166,12 @@ func Normalize(ctx context.Context, q storage.Querier, projectID string, in Inpu
 		fail("/replayShare", "%v (defaults.yaml mix.replay_share)", err)
 	} else if c.ReplayShare > 0 && replay == 0 {
 		fail("/replayShare", "is %g but no group is a replay group (replay: true); set it to 0 or mark a group", c.ReplayShare)
+	}
+	if len(evalOnly) > 0 {
+		// A mix is training data: an eval-only version is refused with its own type, whatever else is wrong.
+		pe := problems.EvalOnlyDataset.New("the mix is not valid: %s %s", evalOnly[0].Path, evalOnly[0].Message)
+		pe.Errors = errs
+		return Content{}, pe
 	}
 	if len(errs) > 0 {
 		pe := problems.Validation(errs)

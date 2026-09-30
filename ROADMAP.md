@@ -305,8 +305,9 @@ Worker and jobs
 - [ ] OOM → typed error → one retry at 0.75× batch
 - [ ] Playbook engine and playbook sessions (plan from the chain, `dryRun` before each spending step, estimate first);
       the fifth v1 playbook "Fine-tune from a dataset version" (R16) — the gate runs it
-- [ ] Minimal data entities for imports: Source (licence, eval-only until cleared, archive), Utterance, Transcript,
-      per-utterance fingerprints — the full ingest path arrives in phase 4
+- [x] Minimal data entities for imports: Source (licence, eval-only until cleared, archive), Utterance, Transcript,
+      per-utterance fingerprints — the full ingest path arrives in phase 4 (stream D: internal/data, `sources.*`,
+      `utterances.*`, the `dataset` output hook)
 - [ ] Replay corpus and replay golden sets imported per the **spec** above
 - [ ] Runtimes (R40): the worker announces `runtime@version` and the NeMo runtime is registered from it;
       `runtimes.list|get`; card slots are owned per host and card, so two runtimes could share a card; `runtimes.new`

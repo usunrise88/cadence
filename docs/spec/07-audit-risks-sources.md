@@ -288,6 +288,31 @@ Open questions:
       file's allow rules for shell commands, reads and edits are still not applied by Claude Code, so those keep going
       through the host's permission request and the preset (a round trip each, no person). Pre-allowing them the same
       way would need the host to trust the preset's shell rules without the per-call check
+- [ ] D · Clearing a source for training (phase 2, R18), confirm: imported sources start eval-only; any change by
+      an agent through `sources.edit` is gated (preset rule `registry-changes`, approval), a person edits directly,
+      `sources.archive` is the admin's only (agents: `no-deletes`). Clearance is read when a mix or run is checked,
+      so clearing a source makes its existing versions trainable without a re-import; the collection tag `eval-only`
+      written at registration is informative and is not removed when the source is cleared
+- [ ] D · Utterance identity and audio format (phase 2), confirm: `dataset_import` stores audio as 16-bit PCM WAV,
+      mono, 16 kHz (`data.sample_rate`), written byte for byte the same by the pure-Python and NumPy paths, so an
+      utterance's BLAKE3 identity does not depend on the host (FLAC would halve the bytes but its encoder output
+      varies with libsndfile versions). Resampled sources (Common Voice MP3 at 48 kHz) hash per resampler (SciPy
+      polyphase when present, linear otherwise). The first source that imports an audio owns the utterance; a
+      re-import must carry the source's registry licence and kind, else the step fails
+- [ ] D · Dataset version identity (phase 2), confirm: the fingerprint of an imported `dataset_version` is the sha256
+      of the sorted `[audio hash, split, transcript text]` tuples (`registry.RegisterInput.Fingerprint`), not of its
+      payload, so the same content re-imported into the same collection returns the version already there with its
+      first lineage. A dataset artifact names audio by path inside the artifact (the plan's `audio: b3 hash` became
+      a path so the artifact is self-contained; the path's blob hash is the utterance hash)
+- [ ] D · Replay (R17) in phase 2, confirm: FLEURS covers 34 of the base model's 39 other locales with a
+      configuration of its own; en-GB, es-ES, fr-CA, pt-PT and nn-NO share their sister variant's configuration
+      until the Common Voice re-freeze. `dataset/replay-base` is one multi-language version (≈ 1 h per locale from
+      FLEURS train, `all-train`); replay golden sets are dataset versions `dataset/replay-golden-<locale>` (FLEURS
+      test, ≤ 300 utterances, `evalOnly`, tags `golden`, `replay`, `eval-only`) until the Golden set entity arrives
+      in phase 3, which will adopt or re-register them. Without speaker ids (FLEURS) the speaker-disjoint split
+      groups by transcript
+- [ ] D · Step help slugs (phase 2): help slugs allow only dashes, so a step kind's help article is
+      `docs/help/steps/<name with _ as ->.md` (`steps.dataset-import`); the worker's registry publishes that slug
 
 ## Sources
 

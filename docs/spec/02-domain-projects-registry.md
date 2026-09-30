@@ -123,6 +123,38 @@ Rules:
 
 Windows: Library gains a this-project / all filter and an Adopt action; registry documents (Source, Dataset version, Golden set, Model) show "Used by projects"; a Lineage tool draws the graph around the selection. API (phase 1, R1 names): versions per kind at `/registry/base-models`, `/registry/datasets`, `/registry/templates` (`<kind>.list|get`, each version with "used by"), collections at `/registry/collections` (`collections.list|get`), `registry.search`, `POST /projects/{p}:adopt`, `GET /projects/{p}/adoptions`, `GET|PUT /projects/{p}/aliases/{name}`. Agent tools: `registry.search`, `projects.adopt`, `aliases.set` and the list/get reads.
 
+### Data entities as built (phase 2, R18)
+
+The minimal data entities imports need; the full ingest path (mounts, pseudo-labels, triage) arrives in phase 4. All are registry data (no `projectId`; events on `entity.source.{id}`), in `internal/data`, migration `0014_data.sql`.
+
+| Entity | As built |
+| --- | --- |
+| Source (`src_…`) | Unique name, licence (required), kind `public \| production \| synthetic`, languages, url, `trainingCleared` with who cleared it and when, `archived`, `rev`. Created by the first import that names it, **eval-only** (`trainingCleared: false`) until a person clears it. `sources.list\|get\|edit\|archive` at `/registry/sources`; `sources.get` adds utterance count, hours and the dataset versions built from it |
+| Utterance (`utt_…`) | Identity = content hash, the BLAKE3 (`b3:…`) of its audio file in the content store; duration, language, speaker, sample rate, channels, bytes; owned by the first source that imported it. `utterances.list\|get` at `/registry/utterances` (filters source, dataset version and split, language; oldest first, `after` cursor; `get` by id or hash with fingerprints and memberships) |
+| Transcript (`trn_…`) | Text with origin `human \| pseudo-label \| model:<id>` and optional confidence; one row per (utterance, origin, text) |
+| Dataset membership | Which utterances a dataset version holds, the split (`train \| validation \| test`) and the transcript it uses; written once when the version is registered |
+| Utterance fingerprint | Kind → value per utterance for leakage checks: `audio-b3` from every import; steps may add others (an acoustic fingerprint in phase 4) |
+
+Rules:
+
+- Clearing a source for training is a person's decision: an agent's `sources.edit` is gated (preset rule `registry-changes`, approval); `sources.archive` is the admin's (agents: `no-deletes`). An archived source takes no new imports and cannot be edited; its utterances and versions stay.
+- A dataset version is **eval-only** when it was registered `evalOnly` (golden and replay test sets) or any of its sources is not cleared *at the time of asking*. Mixes (`mixes.new|edit|preview`, draft accept) and `runs.new` refuse eval-only versions with `eval-only-dataset` (422); clearing a source makes its versions trainable without a re-import. Collections of versions eval-only at registration carry the tag `eval-only`.
+- A re-import must carry the source's registry licence and kind, else the import step fails.
+
+### The dataset artifact
+
+What an import step produces and the `dataset` output hook reads (artifact type `dataset`): a directory artifact — a content-store manifest `{files: [{path, hash, size}]}` whose files are each their own blob.
+
+| File | Content |
+| --- | --- |
+| `dataset.json` | Header: `format` (`cadence.dataset/1`), `name?` (collection without `dataset/`), `description?`, `source: {name, licence, kind, languages, url?, revision?, subset?}`, `splitRule` (`speaker-disjoint \| source \| all-train \| all-validation \| all-test`), `counts: {train, validation, test}`, `hours`, `tags?`, `evalOnly?` |
+| `manifest.jsonl` | One line per utterance: `audio` (the audio file's path inside the artifact), `duration` (s), `sampleRate`, `channels` (1 when omitted), `language`, `speaker?`, `text`, `origin`, `confidence?`, `split`, `fingerprints?` (kind → value) |
+| audio files | `dataset_import` writes `audio/<h2>/<h>.wav`: 16-bit PCM WAV, mono, 16 kHz, byte-identical on every host; the utterance's content hash is the file's blob hash |
+
+The hook runs in the transaction that marks the step done: it reads the artifact strictly (unknown fields, missing audio, an audio twice, or counts and hours that disagree with the lines fail the step), ensures the source, upserts utterances by content hash and transcripts with origin, writes fingerprints, and registers a **frozen** `dataset_version` in `dataset/<step param name | header name | source name>`. Its fingerprint is the sha256 of the sorted `[audio hash, split, transcript text]` tuples, so the same content re-imported (in any order, from any pipeline run) returns the version already there. Its payload is the `DatasetPayload` with `sourceIds`, `licence`, hours and counts per split and language, `artifact` (the hash training steps read), `evalOnly`, `splitRule`, `tags` and `lineage` (pipeline run, step, step kind).
+
+Starter pipelines: `pipelines/import.yaml` (one corpus, FLEURS Hebrew as shipped) and `pipelines/replay-base.yaml` (R17: `dataset/replay-base`, ≈ 1 h per locale of FLEURS train across the base model's 34 FLEURS-covered other locales, and one `dataset/replay-golden-<locale>` per locale, FLEURS test ≤ 300 utterances, `evalOnly`, tags `golden`, `replay`).
+
 ## Storage and mounts
 
 Audio lives where it already is — local disk, a network share or object storage — and Cadence indexes it by content hash; only what a job needs is materialised onto the fast local cache, and only for as long as it is pinned.

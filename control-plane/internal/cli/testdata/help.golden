@@ -37,7 +37,9 @@ Entities:
   registry       search
   runs           new
   secrets        list new
+  sources        archive edit get list
   templates      get list
+  utterances     get list
 
 Global flags:
   --url URL               control plane (env CADENCE_URL, default http://127.0.0.1:8080; /api is appended)

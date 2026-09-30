@@ -20,7 +20,8 @@ def test_registry_lists_echo_with_its_contract() -> None:
 
 def test_every_step_kind_has_complete_metadata_and_a_help_article() -> None:
     for name, _ in registry().items():
-        assert (HELP / f"{name}.md").is_file(), f"docs/help/steps/{name}.md is missing"
+        slug = name.replace("_", "-")
+        assert (HELP / f"{slug}.md").is_file(), f"docs/help/steps/{slug}.md is missing"
 
 
 def test_missing_metadata_is_detected() -> None:
