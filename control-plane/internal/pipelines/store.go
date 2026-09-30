@@ -47,6 +47,7 @@ const (
 	ReasonOOM     = "oom"
 	ReasonLost    = "lost"
 	ReasonRetry   = "retry"
+	ReasonResume  = "resume" // a retry that continues from a training-state artifact (runs.resume)
 )
 
 // Event types on pipeline_run.{id}.
@@ -98,7 +99,8 @@ type Attempt struct {
 	JobID      string           `json:"jobId"`
 	Reason     string           `json:"reason"`
 	BatchScale float64          `json:"batchScale,omitempty"`
-	State      string           `json:"state"` // queued | running | done | failed | cancelled
+	ResumeFrom string           `json:"resumeFrom,omitempty"` // training-state artifact the attempt resumes from
+	State      string           `json:"state"`                // queued | running | done | failed | cancelled
 	Error      *steps.StepError `json:"error,omitempty"`
 	StartedAt  *time.Time       `json:"startedAt,omitempty"`
 	FinishedAt *time.Time       `json:"finishedAt,omitempty"`

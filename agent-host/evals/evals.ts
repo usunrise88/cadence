@@ -171,7 +171,7 @@ export const playbookFinetune: Eval = {
   observe: { mixes: [], aliases: [] },
   budget: playbookBudget,
   graders: [
-    callsInOrder(["mixes.new", "runs.new?dryRun", "runs.new"]),
+    callsInOrder(["mixes.new", "runs.calibrate?dryRun", "runs.new?dryRun", "runs.new"]),
     dryRunFirst(SPENDING),
     planItem("mix", "done"),
     planItem("eval", "skipped"),
@@ -186,29 +186,37 @@ export const playbookFinetune: Eval = {
       p: t.project,
       body: { name: "playbook-mix", groups: [{ name: "target", datasets: ["dataset/fleurs-he-smoke"] }] },
     });
-    const notes: string[] = [`mix ${(mix.data as { id?: string } | undefined)?.id ?? "?"}`];
-    // runs.calibrate and checkpoints.list arrive with the runs stream; skip what the server does not offer yet.
-    if (await t.has("runs.calibrate")) {
-      await must(t, "runs.calibrate", { p: t.project, dryRun: true, body: {} });
-      await must(t, "runs.calibrate", { p: t.project, body: {} });
-    }
-    const run = { init: "base", steps: 300, datasets: ["dataset/fleurs-he-smoke"] };
-    const est = await must(t, "runs.new", { p: t.project, dryRun: true, body: run });
+    const mixId = (mix.data as { id?: string } | undefined)?.id ?? "playbook-mix";
+    const notes: string[] = [`mix ${mixId}`];
+    const ok = (r: ToolResult) => r.status < 400;
+    // Calibration plans over the mix with the base model's family; a stand without a worker publishes no family, so
+    // the dry run may be refused — then there is nothing to calibrate and the step is left to the person.
+    const calDry = await must(t, "runs.calibrate", { p: t.project, dryRun: true, body: { mix: mixId } });
+    if (ok(calDry)) {
+      const cal = await must(t, "runs.calibrate", { p: t.project, body: { mix: mixId } });
+      notes.push(`calibration answered ${cal.status}`);
+    } else notes.push(`calibration not possible here (${calDry.status})`);
+    // The run: its dry run first (over the mix; without a worker's family, from the estimate table over the
+    // datasets), then the same run for real.
+    const run = { mix: mixId, steps: 300 };
+    let est = await must(t, "runs.new", { p: t.project, dryRun: true, body: run });
+    if (!ok(est)) est = await must(t, "runs.new", { p: t.project, dryRun: true, body: { steps: 300, datasets: ["dataset/fleurs-he-smoke"] } });
     notes.push(`estimate ${gpuHours(est.data)} GPU-hours`);
     const started = await must(t, "runs.new", { p: t.project, body: run });
-    const jobId = (started.data as { jobId?: string } | undefined)?.jobId;
-    if (started.status >= 400 || !jobId) {
+    const r = started.data as { id?: string; currentJobId?: string } | undefined;
+    if (!ok(started) || !r?.id) {
       notes.push(`runs.new answered ${started.status}`);
     } else {
-      for (let i = 0; i < 20; i++) {
-        const j = await must(t, "jobs.wait", { id: jobId, timeout: 30 });
-        const state = (j.data as { state?: string } | undefined)?.state;
-        if (state === "done" || state === "failed" || state === "cancelled") {
-          notes.push(`job ${jobId} ${state}`);
+      for (let i = 0; i < 10; i++) {
+        if (r.currentJobId) await must(t, "jobs.wait", { id: r.currentJobId, timeout: 30 });
+        const got = await must(t, "runs.get", { id: r.id });
+        const status = (got.data as { status?: string } | undefined)?.status;
+        if (status === "done" || status === "failed" || status === "cancelled") {
+          notes.push(`run ${r.id} ${status}`);
           break;
         }
       }
-      if (await t.has("checkpoints.list")) await must(t, "checkpoints.list", { p: t.project });
+      await must(t, "checkpoints.list", { p: t.project, run: r.id });
     }
     await t.say(`Playbook steps so far: ${notes.join("; ")}. Next: evaluate the checkpoints once phase 3 ships.`);
   },

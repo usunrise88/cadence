@@ -149,28 +149,13 @@ func (st *State) Observe(o Observation) bool {
 		}
 		it.State, it.Note, it.At = ItemRunning, "dry run answered"+estimateText(o.Body), &at
 	case it.Until == UntilTerminal:
-		if want := st.jobBefore(i); want != "" && str(o.Body["id"]) != want {
-			return changed // a wait on some other job
+		if !st.terminal(i, it, o) {
+			return changed
 		}
-		state := str(o.Body["state"])
-		switch state {
-		case "done":
-			it.State, it.Note = ItemDone, "job "+str(o.Body["id"])+" done"
-		case "failed", "cancelled":
-			it.State, it.Note = ItemFailed, "job "+str(o.Body["id"])+" "+state
-			if e := str(o.Body["error"]); e != "" {
-				it.Note += ": " + e
-			}
-		default:
-			if it.State == ItemRunning {
-				return changed
-			}
-			it.State, it.Note = ItemRunning, "waiting for job "+str(o.Body["id"])
-		}
-		it.JobID, it.At = str(o.Body["id"]), &at
+		it.At = &at
 	default:
 		it.State, it.At = ItemDone, &at
-		it.EntityID, it.JobID = str(o.Body["id"]), jobOf(o.Body)
+		it.EntityID, it.JobID = entityOf(o.Body), jobOf(o.Body)
 		switch {
 		case it.EntityID != "" && it.JobID != "":
 			it.Note = it.EntityID + ", job " + it.JobID
@@ -188,14 +173,65 @@ func (st *State) Observe(o Observation) bool {
 	return true
 }
 
-// jobBefore is the job the nearest earlier item started (what a terminal item waits for), or "".
-func (st *State) jobBefore(i int) string {
+// before is the nearest earlier item that is done and not itself a wait: what a terminal item waits for.
+func (st *State) before(i int) *Item {
 	for j := i - 1; j >= 0; j-- {
-		if st.Plan[j].State == ItemDone && st.Plan[j].JobID != "" && st.Plan[j].Until == "" {
-			return st.Plan[j].JobID
+		if st.Plan[j].State == ItemDone && st.Plan[j].Until == "" && (st.Plan[j].EntityID != "" || st.Plan[j].JobID != "") {
+			return &st.Plan[j]
 		}
 	}
-	return ""
+	return nil
+}
+
+// terminal applies the answer of a wait to a terminal item and reports whether it changed. A read of an entity with
+// a status (runs.get: the run the step before started) ticks it once the status has ended — done, or failed and
+// cancelled, which fail it. A job (jobs.wait) ends the item only when it is the job the step before started; any other
+// job of it (a run's pipeline has several steps) only marks the item running.
+func (st *State) terminal(i int, it *Item, o Observation) bool {
+	prev := st.before(i)
+	id := str(o.Body["id"])
+	status, isJob := str(o.Body["status"]), false
+	if _, ok := o.Body["state"]; ok && status == "" {
+		status, isJob = str(o.Body["state"]), true
+	}
+	var ours bool
+	switch {
+	case prev == nil:
+		ours = true
+	case isJob:
+		ours = prev.EntityID == "" && id == prev.JobID // the step before started a job, not an entity
+	default:
+		if prev.EntityID != "" && id != prev.EntityID {
+			return false // some other run
+		}
+		ours = true
+	}
+	what := id
+	if isJob {
+		what = "job " + id
+	}
+	ended := status == "done" || status == "failed" || status == "cancelled"
+	switch {
+	case ours && status == "done":
+		it.State, it.Note = ItemDone, what+" done"
+	case ours && ended:
+		it.State, it.Note = ItemFailed, what+" "+status
+		if e := str(o.Body["error"]); e != "" {
+			it.Note += ": " + e
+		}
+	case ended:
+		return false // one job of a longer run ended; the run goes on
+	default:
+		note := "waiting for " + what + " (" + status + ")"
+		if it.State == ItemRunning && it.Note == note {
+			return false
+		}
+		it.State, it.Note = ItemRunning, note
+	}
+	if isJob {
+		it.JobID = id
+	}
+	return true
 }
 
 func (st *State) advance(at time.Time) {
@@ -276,8 +312,23 @@ func str(v any) string {
 	return s
 }
 
+// entityOf is the entity a command answered: its id, or the pipeline run it started (runs.calibrate,
+// checkpoints.average).
+func entityOf(body map[string]any) string {
+	if id := str(body["id"]); id != "" {
+		return id
+	}
+	if m, ok := body["pipelineRun"].(map[string]any); ok {
+		return str(m["id"])
+	}
+	return ""
+}
+
 func jobOf(body map[string]any) string {
 	if j := str(body["jobId"]); j != "" {
+		return j
+	}
+	if j := str(body["currentJobId"]); j != "" {
 		return j
 	}
 	if m, ok := body["job"].(map[string]any); ok {

@@ -1,7 +1,8 @@
-// Package pipelinestest runs the pipeline engine without a worker: Leases is a steps.Leases that executes two
-// fixture step kinds inside the test process (echo@1 copies text with a prefix, tally@1 counts it) and writes
-// their outputs into the content store, with scripted failures and hangs per step and attempt. RegisterKinds
-// publishes the fixtures in the registry the way the worker protocol stores what workers publish.
+// Package pipelinestest runs the pipeline engine without a worker: Leases is a steps.Leases that executes fixture
+// step kinds inside the test process (echo@1 copies text with a prefix, tally@1 counts it; the training fixtures of
+// training.go fill the calibrate, train and average roles of a fixture model family) and writes their outputs into
+// the content store, with scripted failures and hangs per step and attempt. RegisterKinds publishes the fixtures in
+// the registry the way the worker protocol stores what workers publish.
 package pipelinestest
 
 import (
@@ -65,8 +66,13 @@ var Fixtures = []map[string]any{
 
 // RegisterKinds publishes the fixture step kinds in the registry.
 func RegisterKinds(ctx context.Context, pool *pgxpool.Pool) error {
+	return Register(ctx, pool, Fixtures...)
+}
+
+// Register publishes step kind descriptors (the shape of Fixtures) in the registry, as a worker would.
+func Register(ctx context.Context, pool *pgxpool.Pool, kinds ...map[string]any) error {
 	return pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
-		for _, f := range Fixtures {
+		for _, f := range kinds {
 			b, err := json.Marshal(f)
 			if err != nil {
 				return err
@@ -100,6 +106,9 @@ type Leases struct {
 	Pool   *pgxpool.Pool
 	CAS    *cas.Store
 	Engine *pipelines.Engine // marks steps running (Leased), as the worker protocol does when it grants a lease
+
+	// SecondsPerStep is what the fixture calibrate kind measures (0: 0.5 s).
+	SecondsPerStep float64
 
 	mu     sync.Mutex
 	script map[string][]Action // step id → action per attempt (1-based index = attempt)
@@ -180,6 +189,9 @@ func (l *Leases) Await(ctx context.Context, jobID string) (steps.Outcome, error)
 }
 
 func (l *Leases) run(spec steps.Spec) (steps.Outcome, error) {
+	if o, ok, err := l.runTraining(spec); ok {
+		return o, err
+	}
 	in, ok := spec.Inputs["text"]
 	if !ok {
 		return steps.Outcome{State: steps.StateFailed, Error: &steps.StepError{Type: steps.ErrInput, Message: "no text input"}}, nil

@@ -46,7 +46,8 @@ chain:
     with: { baseModel: $inputs.base, steps: $inputs.steps, datasets: [$inputs.dataset, $inputs.replay] }
   - id: watch
     title: Wait for the run to finish
-    command: jobs.wait
+    command: runs.get
+    accepts: [jobs.wait]
     until: terminal
   - id: checkpoints
     title: List the checkpoints the run registered (top-k by validation WER)
@@ -80,8 +81,8 @@ prompt: |
 
   Work the plan one step at a time with Cadence tools:
   1. mixes.new — one group with the dataset version(s), plus a group flagged replay with the replay corpus when there is one; replayShare as given.
-  2. runs.calibrate — dry run first, then for real; wait for its job with jobs.wait.
-  3. runs.new — dry run first and report its estimate (GPU-hours, card, duration), then start it for real with the mix, the base model and the steps.
-  4. jobs.wait on the run's job until it has ended (call it again while it is queued or running); metrics.get shows the loss and validation WER meanwhile.
-  5. checkpoints.list — report the registered checkpoints with their validation WER.
+  2. runs.calibrate with the mix (and the base model) — dry run first, then for real.
+  3. runs.new with the mix, the base model and steps — dry run first and report its estimate (GPU-hours, card, duration), then the same call for real; it answers the run (run_…).
+  4. Follow the run until its status is done, failed or cancelled: jobs.wait on its currentJobId, then runs.get id=<run>; metrics.get id=<run> shows the loss and validation WER meanwhile.
+  5. checkpoints.list with run=<run> — report the registered checkpoints with their validation WER.
   The eval matrix and the gate arrive in phase 3: skip them. Finish with a short summary and the next step.

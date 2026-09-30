@@ -16,6 +16,15 @@ inputs:
     from: project
     description: The project's default base model
 
+  parent:
+    type: string
+    required: true
+    description: The run to continue (run_…); the stage starts from its best kept checkpoint
+  peakLr:
+    type: number
+    required: true
+    description: The continuation stage's peak learning rate (runs.stage peakLr)
+
 chain:
   - id: boost
     title: Boost list from the glossary
@@ -28,10 +37,12 @@ chain:
   - id: stage
     title: Short continuation (dry run first)
     command: runs.stage
+    with: { run: $inputs.parent, peakLr: $inputs.peakLr }
     estimate: { gpuHours: 0.75, minutes: 45, plusMinus: 0.5 }
   - id: watch
     title: Wait for the stage to finish
-    command: jobs.wait
+    command: runs.get
+    accepts: [jobs.wait]
     until: terminal
 
 stop:

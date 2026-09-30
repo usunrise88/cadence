@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/usunrise88/cadence/control-plane/internal/pipelines/pipelinestest"
 )
 
 // Playbooks against the real control plane (R16): playbooks.list|get with the estimate, playbooks.run (dry run and
@@ -51,8 +53,11 @@ func (h *hostEnv) playbookSession(id string) playbookSession {
 
 func TestPlaybooks(t *testing.T) {
 	h := startHost(t)
-	startSeededCompute(t, h.env)
-	h.newProject("hebrew")
+	// The fixture family and a trainable dataset, so the chain runs end to end on the in-process fake worker.
+	if err := pipelinestest.RegisterTraining(t.Context(), h.pool); err != nil {
+		t.Fatal(err)
+	}
+	trainingProject(t, h.env, "hebrew")
 
 	// playbooks.list: five, the runnable one first, with project facts and the estimate.
 	var list struct {
@@ -162,8 +167,12 @@ func TestPlaybooks(t *testing.T) {
 	h.report(s.ID, map[string]any{"hostId": "host-a", "state": map[string]any{"state": "running", "busy": true, "turn": 1}})
 
 	// A later step's operation does not tick; the mix does.
+	h.ok(agent("GET", "/api/projects/hebrew/checkpoints", ""), 200, nil)
+	if pb := h.playbookSession(s.ID).Playbook; pb.Plan[0].State != "pending" || pb.Plan[4].State != "pending" {
+		t.Fatalf("a later step ticked: %+v", pb.Plan)
+	}
 	var mix mixView
-	h.ok(agent("POST", "/api/projects/hebrew/mixes", heMix, "Idempotency-Key", h.key()), 201, &mix)
+	h.ok(agent("POST", "/api/projects/hebrew/mixes", `{"name":"pb-mix","groups":[{"name":"he","datasets":["dataset/fx-he"]}]}`, "Idempotency-Key", h.key()), 201, &mix)
 	pb := h.playbookSession(s.ID).Playbook
 	if pb.Plan[0].State != "done" || pb.Plan[0].EntityID != mix.ID || pb.Plan[1].State != "pending" {
 		t.Fatalf("after mixes.new: %+v", pb.Plan[:2])
@@ -173,18 +182,6 @@ func TestPlaybooks(t *testing.T) {
 		AND payload->'session'->'playbook'->'plan'->0->>'state' = 'done'`, "agent.session."+s.ID).Scan(&n); err != nil || n == 0 {
 		t.Fatalf("the tick is not an event on the session's topic: %d %v", n, err)
 	}
-
-	// Spending without a dry run is refused; the dry run lets exactly one real call through (it answers 501 until the
-	// runs stream implements runs.new — past the playbook's check).
-	runBody := `{"steps":500,"datasets":["dataset/fleurs-he-smoke"]}`
-	expectProblem(t, agent("POST", "/api/projects/hebrew/runs", runBody, "Idempotency-Key", h.key()), 409, "playbook-dry-run-required")
-	h.ok(agent("POST", "/api/projects/hebrew/runs?dryRun=true", runBody, "Idempotency-Key", h.key()), 200, nil)
-	if pb = h.playbookSession(s.ID).Playbook; len(pb.DryRuns) != 1 || pb.DryRuns[0] != "runs.new" {
-		t.Fatalf("dry runs %v", pb.DryRuns)
-	}
-	expectProblem(t, agent("POST", "/api/projects/hebrew/runs", runBody, "Idempotency-Key", h.key()), 501, "not-implemented")
-	// A person's runs are not a playbook session's: no rule for them.
-	expectProblem(t, h.do("POST", "/api/projects/hebrew/runs", runBody, "Idempotency-Key", h.key()), 501, "not-implemented")
 
 	// The turn ends without progress on the current step: the agent is reminded of it, at most twice.
 	for turn := 1; turn <= 3; turn++ {
@@ -202,6 +199,56 @@ func TestPlaybooks(t *testing.T) {
 	}
 	if reminders != 2 {
 		t.Fatalf("%d reminders, want 2", reminders)
+	}
+	h.report(s.ID, map[string]any{"hostId": "host-a", "state": map[string]any{"state": "running", "busy": true, "turn": 4}})
+
+	// Calibrate: refused without its dry run; the dry run marks the step running; the real call ticks it.
+	calBody := `{"baseModel":"` + pipelinestest.BaseModel + `","mix":"` + mix.ID + `"}`
+	expectProblem(t, agent("POST", "/api/projects/hebrew/runs:calibrate", calBody, "Idempotency-Key", h.key()), 409, "playbook-dry-run-required")
+	h.ok(agent("POST", "/api/projects/hebrew/runs:calibrate?dryRun=true", calBody, "Idempotency-Key", h.key()), 200, nil)
+	if pb = h.playbookSession(s.ID).Playbook; pb.Plan[1].State != "running" || len(pb.DryRuns) != 1 || pb.DryRuns[0] != "runs.calibrate" {
+		t.Fatalf("after the calibration dry run: %+v %v", pb.Plan[1], pb.DryRuns)
+	}
+	var cal struct{ PipelineRun struct{ ID string } }
+	h.ok(agent("POST", "/api/projects/hebrew/runs:calibrate", calBody, "Idempotency-Key", h.key()), 201, &cal)
+	if pb = h.playbookSession(s.ID).Playbook; pb.Plan[1].State != "done" || pb.Plan[1].EntityID != cal.PipelineRun.ID || len(pb.DryRuns) != 0 {
+		t.Fatalf("after the calibration: %+v %v", pb.Plan[1], pb.DryRuns)
+	}
+	h.waitPipelineRun(cal.PipelineRun.ID, "done")
+
+	// Train: the calibration's dry run does not count for runs.new; its own does, once.
+	runBody := calBody
+	expectProblem(t, agent("POST", "/api/projects/hebrew/runs", runBody, "Idempotency-Key", h.key()), 409, "playbook-dry-run-required")
+	h.ok(agent("POST", "/api/projects/hebrew/runs?dryRun=true", runBody, "Idempotency-Key", h.key()), 200, nil)
+	var trained runView
+	h.ok(agent("POST", "/api/projects/hebrew/runs", runBody, "Idempotency-Key", h.key()), 201, &trained)
+	expectProblem(t, agent("POST", "/api/projects/hebrew/runs", runBody, "Idempotency-Key", h.key()), 409, "playbook-dry-run-required")
+	if pb = h.playbookSession(s.ID).Playbook; pb.Plan[2].State != "done" || pb.Plan[2].EntityID != trained.ID {
+		t.Fatalf("after runs.new: %+v", pb.Plan[2])
+	}
+	// A person's run is not a playbook session's: no dry-run rule for it.
+	var other runView
+	h.ok(h.do("POST", "/api/projects/hebrew/runs", runBody, "Idempotency-Key", h.key()), 201, &other)
+
+	// Wait: another run does not count; the run reaching done ticks the step; the checkpoints end the chain.
+	h.waitRun(other.ID, "done")
+	h.ok(agent("GET", "/api/runs/"+other.ID, ""), 200, nil)
+	if pb = h.playbookSession(s.ID).Playbook; pb.Plan[3].State == "done" {
+		t.Fatal("another run ticked the wait")
+	}
+	h.waitRun(trained.ID, "done")
+	h.ok(agent("GET", "/api/runs/"+trained.ID, ""), 200, nil)
+	h.ok(agent("GET", "/api/projects/hebrew/checkpoints?run="+trained.ID, ""), 200, nil)
+	got := h.playbookSession(s.ID)
+	pb = got.Playbook
+	if pb.Plan[3].State != "done" || pb.Plan[4].State != "done" || pb.State != "done" || !strings.Contains(pb.Summary, "complete: 5 step(s) done") {
+		b, _ := json.Marshal(pb)
+		t.Fatalf("after the chain: %s", b)
+	}
+	// The turn ends: the session ends with it.
+	h.report(s.ID, map[string]any{"hostId": "host-a", "state": map[string]any{"state": "running", "busy": false, "turn": 4}})
+	if got = h.playbookSession(s.ID); got.PendingControl != "end" {
+		t.Fatalf("the finished playbook's session goes on: %+v", got.sessionView)
 	}
 }
 

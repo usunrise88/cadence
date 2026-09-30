@@ -20,19 +20,17 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/problems"
 	"github.com/usunrise88/cadence/control-plane/internal/projects"
 	"github.com/usunrise88/cadence/control-plane/internal/registry"
-	"github.com/usunrise88/cadence/control-plane/internal/runs"
 	"github.com/usunrise88/cadence/control-plane/internal/secrets"
 	"github.com/usunrise88/cadence/control-plane/internal/storage"
 )
 
-// Registry, compute, secrets, defaults, policies and the estimate-only runs.new (phase 1 · stream B).
+// Registry, compute, secrets, defaults and policies (phase 1 · stream B); runs.* live in handlers_runs.go.
 
 func (c commandResponse) VisitProjectsAdoptResponse(w http.ResponseWriter) error { return c.write(w) }
 func (c commandResponse) VisitAliasesSetResponse(w http.ResponseWriter) error    { return c.write(w) }
 func (c commandResponse) VisitComputeEditResponse(w http.ResponseWriter) error   { return c.write(w) }
 func (c commandResponse) VisitSecretsNewResponse(w http.ResponseWriter) error    { return c.write(w) }
 func (c commandResponse) VisitPoliciesEditResponse(w http.ResponseWriter) error  { return c.write(w) }
-func (c commandResponse) VisitRunsNewResponse(w http.ResponseWriter) error       { return c.write(w) }
 
 // defaultsDoc returns the defaults the server runs with.
 func (s *Server) defaultsDoc() *defaults.Defaults {
@@ -715,59 +713,4 @@ func apiPolicies(p policies.Policies) api.Policies {
 		Rev: p.Rev, UpdatedAt: p.UpdatedAt, Departures: p.Departures, Timezone: p.Timezone,
 		Budgets: api.PolicyBudgets{GpuHoursPerProjectPerDay: p.Budgets.GPUHoursPerProjectPerDay, AgentTurnsPerSession: p.Budgets.AgentTurnsPerSession},
 	}
-}
-
-// ---------------------------------------------------------------- runs
-
-// RunsNew implements runs.new. Phase 1 answers only the dry run, with the estimate (R12 table path); the run
-// itself arrives with training in phase 2.
-func (s *Server) RunsNew(ctx context.Context, req api.RunsNewRequestObject) (api.RunsNewResponseObject, error) {
-	notYet := problems.NotImplemented.New("runs.new is implemented in roadmap phase 2; until then call it with dryRun=true for the estimate")
-	if actor, _ := auth.FromContext(ctx); (req.Params.DryRun == nil || !*req.Params.DryRun) && actor.SessionID == "" {
-		return nil, notYet
-	}
-	p, err := projects.Get(ctx, s.Pool, req.P)
-	if err != nil {
-		return nil, err
-	}
-	if err := auth.CheckProject(ctx, p.ID); err != nil {
-		return nil, err
-	}
-	b := req.Body
-	in := runs.Input{
-		ProjectID: p.ID, BaseModel: deref(b.BaseModel), Checkpoint: deref(b.Checkpoint), Steps: b.Steps, GPUs: b.Gpus,
-		Compute: deref(b.Compute), Datasets: deref(b.Datasets),
-	}
-	if b.Init != nil {
-		in.Init = string(*b.Init)
-	}
-	if b.Precision != nil {
-		in.Precision = string(*b.Precision)
-	}
-	cmd := command(ctx, "runs.new", req.Params.IdempotencyKey, req.Params.DryRun)
-	return s.run(ctx, cmd, func(ctx context.Context, tx pgx.Tx) (commands.Result, []events.Draft, error) {
-		if !cmd.DryRun { // an agent session's real call reaches the pipeline, so a playbook's dry-run rule is checked first
-			return commands.Result{}, nil, notYet
-		}
-		e, err := runs.EstimateRun(ctx, tx, s.defaultsDoc(), in)
-		if err != nil {
-			return commands.Result{}, nil, err
-		}
-		return commands.Result{Status: http.StatusOK, Body: apiEstimate(e)}, nil, nil
-	})
-}
-
-func apiEstimate(e runs.Estimate) api.RunEstimate {
-	out := api.RunEstimate{
-		Basis: api.RunEstimateBasis(e.Basis), PlusMinus: e.PlusMinus,
-		GpuHours:        api.EstimateRange{Value: e.GPUHours.Value, Low: e.GPUHours.Low, High: e.GPUHours.High},
-		DurationSeconds: api.EstimateRange{Value: e.DurationSeconds.Value, Low: e.DurationSeconds.Low, High: e.DurationSeconds.High},
-		SecondsPerStep:  e.SecondsPerStep, Steps: e.Steps, Gpus: e.GPUs, Precision: api.Precision(e.Precision),
-		Init: api.RunInit(e.Init), BaseModel: apiVersion(e.BaseModel), Source: e.Source,
-	}
-	out.Card.ComputeId, out.Card.Host = e.Slot.Host.ID, e.Slot.Host.Name
-	out.Card.Index, out.Card.CardClass, out.Card.MemoryCapGb = e.Slot.Card.Index, e.Slot.Card.CardClass, e.Slot.Card.MemoryCapGB
-	out.Data.Datasets, out.Data.Hours, out.Data.Bytes = e.Data.Datasets, e.Data.Hours, e.Data.Bytes
-	out.Budget.GpuHoursPerProjectPerDay, out.Budget.WithinDailyBudget = e.DailyBudget, e.WithinBudget
-	return out
 }

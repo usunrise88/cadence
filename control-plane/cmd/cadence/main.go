@@ -59,6 +59,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/projects/bootstrap"
 	"github.com/usunrise88/cadence/control-plane/internal/registry"
 	"github.com/usunrise88/cadence/control-plane/internal/repos"
+	"github.com/usunrise88/cadence/control-plane/internal/runs"
 	"github.com/usunrise88/cadence/control-plane/internal/search"
 	"github.com/usunrise88/cadence/control-plane/internal/secrets"
 	"github.com/usunrise88/cadence/control-plane/internal/server"
@@ -199,7 +200,8 @@ func serve(ctx context.Context, getenv func(string) string) error {
 		return err
 	}
 
-	engine, err := policy.Embedded(policy.StubBudget{GPUHoursPerDay: stubGPUHoursPerDay})
+	// GPU budgets: the project's daily budget and the agent session's, metered from lease time on GPU cards.
+	engine, err := policy.Embedded(runs.Meter{Pool: pool, Defaults: defaults.Get})
 	if err != nil {
 		return err
 	}
@@ -245,7 +247,7 @@ func serve(ctx context.Context, getenv func(string) string) error {
 	signer := notify.NewSigner(store.DeriveKey("telegram-callback"))
 	notifyWake := make(chan struct{}, 1)
 	poller := &notify.Poller{Pool: pool, Log: log, Bot: bot, Signer: signer, Defaults: defaults.Get}
-	digester := &notify.Digester{Pool: pool, Log: log, Defaults: defaults.Get, Wake: notifyWake}
+	digester := &notify.Digester{Pool: pool, Log: log, Defaults: defaults.Get, Wake: notifyWake, Spend: runs.Spend}
 	jobSvc.AddPeriodic("notifications.digest", time.Minute, func(ctx context.Context) error {
 		_, err := digester.Tick(ctx)
 		return err
@@ -375,10 +377,6 @@ func serve(ctx context.Context, getenv func(string) string) error {
 // defaultWorkerHost is the compute host of the worker token in CADENCE_WORKER_TOKEN_FILE when CADENCE_WORKER_HOST is
 // not set: the staging host defaults.yaml seeds.
 const defaultWorkerHost = "staging"
-
-// stubGPUHoursPerDay is the daily GPU-hours allowance the policy engine checks spend against until phase 2 meters
-// use and reads the project's budget (policy.StubBudget).
-const stubGPUHoursPerDay = 8
 
 // registerChores schedules the periodic maintenance jobs: approval expiry (R5) and audit retention.
 func registerChores(j *jobs.Service, pool *pgxpool.Pool, log *slog.Logger) {

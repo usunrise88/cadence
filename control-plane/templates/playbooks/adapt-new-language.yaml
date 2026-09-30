@@ -47,7 +47,8 @@ chain:
     with: { baseModel: $inputs.base, steps: $inputs.steps }
   - id: watch
     title: Wait for the run to finish
-    command: jobs.wait
+    command: runs.get
+    accepts: [jobs.wait]
     until: terminal
   - id: eval
     title: Eval matrix

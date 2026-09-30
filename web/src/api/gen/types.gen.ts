@@ -871,6 +871,7 @@ export type Defaults = {
     backups?: DefaultSection;
     estimates: {
         bytes_per_audio_hour: DefaultValue;
+        measured_plus_minus?: DefaultValue;
         training: Array<TrainingEstimateRow>;
     };
     compute: {
@@ -934,11 +935,11 @@ export type RunNew = {
      */
     baseModel?: string;
     /**
-     * Required when init is checkpoint (checkpoints arrive in phase 2)
+     * The checkpoint to start from (ckp_…); required when init is checkpoint. The run's base model is then the checkpoint's
      */
     checkpoint?: string;
     /**
-     * Default training.steps
+     * Step budget of the stage (default training.steps); the train step's steps parameter
      */
     steps?: number;
     precision?: Precision;
@@ -951,9 +952,39 @@ export type RunNew = {
      */
     compute?: string;
     /**
-     * Dataset versions (ver_… or @alias) the run reads, for the data volume; the mix replaces this in phase 2
+     * Dry runs without a mix only: dataset versions (ver_… or @alias) for the data volume
      */
     datasets?: Array<string>;
+    /**
+     * The mix to train on (mix_… or its name); required unless dryRun with datasets
+     */
+    mix?: string;
+    /**
+     * The mix revision (default its current one)
+     */
+    mixRevision?: number;
+    /**
+     * The train step's seed parameter, when its kind has one (default: the kind's default)
+     */
+    seed?: number;
+    /**
+     * The recipe: a pipeline of the project repository (default training.pipeline, train-stage)
+     */
+    pipeline?: string;
+    /**
+     * Branch, tag or commit to read the pipeline at (default main)
+     */
+    ref?: string;
+    /**
+     * Overrides of the train step's parameters (recorded as departures when they differ from the default)
+     */
+    params?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Queue priority of the run's step jobs (higher first)
+     */
+    priority?: number;
 };
 
 export type EstimateRange = {
@@ -998,16 +1029,48 @@ export type RunEstimate = {
         bytes: number;
     };
     budget: {
+        /**
+         * The project's daily GPU-hour budget
+         */
         gpuHoursPerProjectPerDay: number;
         /**
-         * The upper bound fits the project's daily GPU-hour budget
+         * GPU-hours the project's leases on GPU cards used today (policies timezone)
+         */
+        usedTodayGpuHours?: number;
+        /**
+         * Budget minus today's use (negative when overspent)
+         */
+        remainingGpuHours?: number;
+        /**
+         * Today's use plus the estimate fits the project's daily budget (over it, an agent's run waits for an approval)
          */
         withinDailyBudget: boolean;
+        /**
+         * An agent session's GPU-hour budget (budgets.agent_gpu_hours_per_session), for a session's request
+         */
+        sessionGpuHours?: number;
+        /**
+         * GPU-hours the session's leases used so far
+         */
+        sessionUsedGpuHours?: number;
     };
     /**
-     * The source of the estimate-table row
+     * The source of the estimate-table row, or the calibration it was measured by
      */
     source: string;
+    /**
+     * basis measured: when the calibration ran
+     */
+    measuredAt?: string;
+    /**
+     * The mix revision the run trains on, rendered as a mix artifact (its hash is the content hash of the resolved input_cfg)
+     */
+    mix?: {
+        id: string;
+        name: string;
+        revision: number;
+        hash: string;
+    };
 };
 
 export type Approval = {
@@ -1644,11 +1707,19 @@ export type ProjectBudgets = {
      * Agent spend per day in tokens; default budgets.agent_tokens_per_project_per_day
      */
     agentTokensPerDay: number;
+    /**
+     * The project's queue priority: waiting step jobs start by project priority (higher first), then the job's priority, then first come; default budgets.queue_priority_per_project
+     */
+    queuePriority: number;
 };
 
 export type ProjectBudgetsEdit = {
     gpuHoursPerDay?: number;
     agentTokensPerDay?: number;
+    /**
+     * Queue priority of the project's step jobs against other projects (higher first)
+     */
+    queuePriority?: number;
 };
 
 export type AgentChoice = {
@@ -2071,6 +2142,10 @@ export type AgentBudget = {
      * A turn over this is cancelled and the session pauses (budgets.agent_tokens_per_turn)
      */
     tokensPerTurn: number;
+    /**
+     * GPU-hours the session's commands may spend before a spending one waits for an approval (budgets.agent_gpu_hours_per_session)
+     */
+    gpuHours?: number;
 };
 
 export type AgentUse = {
@@ -3353,6 +3428,10 @@ export type QueueEntry = {
     memoryGb?: number;
     state: 'waiting' | 'paused' | 'running' | 'stopping';
     priority: number;
+    /**
+     * The project's queue priority (budgets.queuePriority): the first sort key, before priority
+     */
+    projectPriority?: number;
     enqueuedAt: string;
     estimateSeconds?: number;
     attempt: number;
@@ -3381,7 +3460,7 @@ export type AvailabilityWindow = {
      */
     end: string;
     /**
-     * IANA time zone, e.g. Europe/Berlin
+     * IANA time zone, e.g. Europe/Berlin; empty follows the instance time zone (policies.timezone)
      */
     timezone?: string;
 };
@@ -3744,10 +3823,14 @@ export type PipelineStepAttempt = {
     attempt: number;
     jobId: string;
     /**
-     * Why the attempt started: the first, the automatic OOM retry at 0.75× batch, the retry after a lost lease, or pipelineRuns.retry
+     * Why the attempt started: the first, the automatic OOM retry at 0.75× batch, the retry after a lost lease, pipelineRuns.retry, or runs.resume
      */
-    reason: 'initial' | 'oom' | 'lost' | 'retry';
+    reason: 'initial' | 'oom' | 'lost' | 'retry' | 'resume';
     batchScale?: number;
+    /**
+     * The training-state artifact the attempt resumes from (runs.resume)
+     */
+    resumeFrom?: string;
     state: 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
     error?: StepError;
     startedAt?: string;
@@ -4181,6 +4264,441 @@ export type BackupList = {
         backupId: string;
         report: RestoreTest;
     };
+};
+
+/**
+ * Mirrors the run's pipeline run: queued (a step waits for a card), running (a worker holds a step), paused (its step job is paused), done, failed, cancelled
+ */
+export type RunStatus = 'queued' | 'running' | 'paused' | 'done' | 'failed' | 'cancelled';
+
+export type RunMixRef = {
+    /**
+     * mix_…
+     */
+    id: string;
+    name: string;
+    /**
+     * The mix revision the run trains on
+     */
+    revision: number;
+    /**
+     * The mix artifact (b3:…): the content hash of the resolved input_cfg (R13)
+     */
+    hash: string;
+};
+
+/**
+ * The pipeline the run executes, read at a commit of the project repository
+ */
+export type RunRecipe = {
+    pipeline: string;
+    source: 'repository' | 'template' | 'inline';
+    ref?: string;
+    commit?: string;
+    version: string;
+};
+
+export type RunStage = {
+    /**
+     * The checkpoint to start from (ckp_… of this run); default the run's best kept checkpoint
+     */
+    checkpoint?: string;
+    /**
+     * The new stage's peak learning rate (the train step's peak_lr, learning_rate or lr parameter)
+     */
+    peakLr: number;
+    /**
+     * The mix (default the parent's)
+     */
+    mix?: string;
+    /**
+     * The mix revision (default the named mix's current one, or the parent's revision when the mix is the parent's)
+     */
+    mixRevision?: number;
+    /**
+     * Step budget (default training.steps)
+     */
+    steps?: number;
+    seed?: number;
+    precision?: Precision;
+    compute?: string;
+    /**
+     * The recipe (default the parent's pipeline)
+     */
+    pipeline?: string;
+    ref?: string;
+    /**
+     * More overrides of the train step's parameters
+     */
+    params?: {
+        [key: string]: unknown;
+    };
+    priority?: number;
+};
+
+export type RunCalibrate = {
+    /**
+     * Base model version (ver_…), collection name or @alias; default the defaults' base model
+     */
+    baseModel?: string;
+    /**
+     * The mix whose data the calibration measures on (mix_… or name)
+     */
+    mix: string;
+    mixRevision?: number;
+    precision?: Precision;
+    /**
+     * Host id or name; default the first host whose card allows training
+     */
+    compute?: string;
+    /**
+     * Overrides of the calibrate step's parameters
+     */
+    params?: {
+        [key: string]: unknown;
+    };
+};
+
+/**
+ * What a measured estimate is cached by (R12); the bucket configuration is part of the measurement
+ */
+export type CalibrationKey = {
+    /**
+     * The base model's registry collection
+     */
+    baseModel: string;
+    cardClass: string;
+    memoryCapGb: number;
+    precision: Precision;
+};
+
+export type RunCalibration = {
+    key: CalibrationKey;
+    /**
+     * The model family whose calibrate role runs
+     */
+    family: string;
+    /**
+     * The calibrate step kind (kind@version)
+     */
+    step: string;
+    mix?: RunMixRef;
+    pipelineRun?: PipelineRun;
+    plan?: PipelinePlan;
+    /**
+     * The calibration cached for the key so far, when there is one
+     */
+    current?: {
+        secondsPerStep?: number;
+        plusMinus?: number;
+        measuredAt?: string;
+    };
+};
+
+/**
+ * One step of the run's pipeline run, for the Run panel's stage timeline
+ */
+export type RunStageEntry = {
+    step: string;
+    kind: string;
+    kindVersion: string;
+    /**
+     * The family role the step fills (calibrate, train, average, …), when it fills one
+     */
+    role?: string;
+    state: PipelineStepState;
+    attempts: number;
+    /**
+     * The current attempt's batch scale (0.75 after an out-of-memory retry)
+     */
+    batchScale?: number;
+    /**
+     * Attempts started by the automatic OOM retry
+     */
+    oomRetries?: number;
+    jobId?: string;
+    /**
+     * The step's job is paused (jobs.pause)
+     */
+    paused?: boolean;
+    estimateSeconds?: number;
+    startedAt?: string;
+    finishedAt?: string;
+    error?: StepError;
+};
+
+export type RunDeparture = {
+    /**
+     * The pipeline step the parameter belongs to
+     */
+    step: string;
+    param: string;
+    /**
+     * The value the step runs with
+     */
+    value: unknown;
+    /**
+     * The default; absent when the parameter has none
+     */
+    default?: unknown;
+};
+
+export type RunParentDiff = {
+    /**
+     * A resolved train-step parameter, or a run field (init, mix, pipeline)
+     */
+    param: string;
+    /**
+     * This run's value
+     */
+    value: unknown;
+    /**
+     * The parent's value; absent when the parent had none
+     */
+    parentValue?: unknown;
+};
+
+export type Run = {
+    /**
+     * run_…
+     */
+    id: string;
+    projectId: string;
+    status: RunStatus;
+    init: RunInit;
+    baseModel: RegistryVersion;
+    /**
+     * init checkpoint: the checkpoint the run starts from
+     */
+    checkpointId?: string;
+    /**
+     * The run the start checkpoint came from (runs.stage)
+     */
+    parentRunId?: string;
+    family: {
+        /**
+         * The model family of the base model (R41)
+         */
+        name: string;
+        /**
+         * The family descriptor's registry version (ver_…)
+         */
+        versionId: string;
+    };
+    mix: RunMixRef;
+    recipe: RunRecipe;
+    /**
+     * The pipeline run the run mirrors (plr_…)
+     */
+    pipelineRunId: string;
+    /**
+     * The step of the pipeline that fills the family's train role
+     */
+    trainStep: string;
+    /**
+     * Step budget
+     */
+    steps: number;
+    seed?: number;
+    gpus: number;
+    precision: Precision;
+    /**
+     * The runtime the train step runs in: registry version and image digest
+     */
+    runtime?: {
+        name?: string;
+        versionId?: string;
+        digest?: string;
+    };
+    /**
+     * The card the estimate was made for
+     */
+    card?: {
+        computeId?: string;
+        host?: string;
+        index?: number;
+        cardClass?: string;
+        memoryCapGb?: number;
+    };
+    estimate?: RunEstimate;
+    timeline: Array<RunStageEntry>;
+    /**
+     * The step job to pause, resume or cancel (jobs.pause | jobs.resume | jobs.cancel)
+     */
+    currentJobId?: string;
+    /**
+     * The training-state the last runs.resume continued from
+     */
+    resumedFrom?: string;
+    /**
+     * Parameters that differ from defaults.yaml, per step
+     */
+    departures: Array<RunDeparture>;
+    /**
+     * Where this run's train-step parameters differ from the parent's
+     */
+    parentDiff?: Array<RunParentDiff>;
+    /**
+     * The train step's final metrics (val_wer, …)
+     */
+    finalMetrics: {
+        [key: string]: number;
+    };
+    /**
+     * The kept checkpoint with the lowest validation WER
+     */
+    bestCheckpointId?: string;
+    checkpointCount: number;
+    /**
+     * GPU-hours the run's leases on GPU cards used so far
+     */
+    gpuHours?: number;
+    error?: string;
+    rev: number;
+    actor: Actor;
+    createdAt: string;
+    updatedAt: string;
+    finishedAt?: string;
+};
+
+export type RunList = {
+    items: Array<Run>;
+};
+
+export type Checkpoint = {
+    /**
+     * ckp_…
+     */
+    id: string;
+    runId: string;
+    projectId: string;
+    /**
+     * The checkpoint artifact (b3:…); artifacts.get lists its files
+     */
+    artifact: string;
+    kind: 'trained' | 'averaged';
+    /**
+     * The optimiser step it was saved at
+     */
+    step?: number;
+    /**
+     * Validation WER the step measured (0–1)
+     */
+    valWer?: number;
+    family?: string;
+    weightsHash?: string;
+    /**
+     * The checkpoints an averaged one was made from (ckp_…)
+     */
+    averagedFrom?: Array<string>;
+    /**
+     * In its run's top k by validation WER (training.keep_top_k)
+     */
+    kept: boolean;
+    /**
+     * 1 = the run's best by validation WER
+     */
+    rank?: number;
+    pipelineRunId?: string;
+    stepId?: string;
+    /**
+     * The artifact's neutral metadata (R42)
+     */
+    meta?: {
+        [key: string]: unknown;
+    };
+    createdAt: string;
+};
+
+export type CheckpointList = {
+    items: Array<Checkpoint>;
+    /**
+     * training.keep_top_k
+     */
+    keepTopK: number;
+};
+
+export type CheckpointAverage = {
+    /**
+     * Checkpoints of the run (ckp_…)
+     */
+    checkpoints: Array<string>;
+    /**
+     * Overrides of the average step's parameters
+     */
+    params?: {
+        [key: string]: unknown;
+    };
+};
+
+export type CheckpointAverageStarted = {
+    runId: string;
+    /**
+     * The average step kind (kind@version)
+     */
+    step: string;
+    checkpoints: Array<string>;
+    pipelineRun?: PipelineRun;
+    plan?: PipelinePlan;
+};
+
+/**
+ * step: optimiser step; epoch; wall: seconds since the run's first point; gpuHours: GPU-hours of the run's leases on GPU cards up to the point (wall hours when it had none)
+ */
+export type MetricAxis = 'step' | 'epoch' | 'wall' | 'gpuHours';
+
+/**
+ * One point, or the bucket of points a long series was binned into: mean value with min and max (R53)
+ */
+export type MetricBin = {
+    x: number;
+    value: number;
+    min: number;
+    max: number;
+    count: number;
+    /**
+     * The last optimiser step in the bucket
+     */
+    step?: number;
+    epoch?: number;
+    /**
+     * The last point's wall time
+     */
+    wallTime?: string;
+};
+
+export type MetricSeriesView = {
+    name: string;
+    /**
+     * Points the series has (after afterStep)
+     */
+    total: number;
+    /**
+     * The points are buckets
+     */
+    binned: boolean;
+    points: Array<MetricBin>;
+};
+
+export type MetricSeriesSet = {
+    runId: string;
+    x: MetricAxis;
+    maxPoints: number;
+    /**
+     * The highest optimiser step returned; pass it as afterStep to append
+     */
+    lastStep?: number;
+    series: Array<MetricSeriesView>;
+    /**
+     * Checkpoint marks for the chart
+     */
+    checkpoints: Array<{
+        id: string;
+        step?: number;
+        valWer?: number;
+        kind?: string;
+        kept: boolean;
+    }>;
 };
 
 export type PlaybookInputType = 'dataset_version' | 'base_model' | 'integer' | 'number' | 'string' | 'boolean';
@@ -6042,51 +6560,6 @@ export type PoliciesEditResponses = {
 };
 
 export type PoliciesEditResponse = PoliciesEditResponses[keyof PoliciesEditResponses];
-
-export type RunsNewData = {
-    body: RunNew;
-    headers: {
-        /**
-         * Client-chosen key; a repeat with the same key returns the original result
-         */
-        'Idempotency-Key': string;
-    };
-    path: {
-        /**
-         * Project slug
-         */
-        p: Slug;
-    };
-    query?: {
-        /**
-         * Validate and report what would happen without changing anything
-         */
-        dryRun?: boolean;
-    };
-    url: '/projects/{p}/runs';
-};
-
-export type RunsNewErrors = {
-    /**
-     * Error (RFC 9457)
-     */
-    default: Problem;
-};
-
-export type RunsNewError = RunsNewErrors[keyof RunsNewErrors];
-
-export type RunsNewResponses = {
-    /**
-     * Dry run — the estimate; nothing was written or queued
-     */
-    200: RunEstimate;
-    /**
-     * Accepted; follow the job on job.{jobId}
-     */
-    202: JobAccepted;
-};
-
-export type RunsNewResponse = RunsNewResponses[keyof RunsNewResponses];
 
 export type ApprovalsListData = {
     body?: never;
@@ -9750,6 +10223,438 @@ export type BackupsVerifyResponses = {
 };
 
 export type BackupsVerifyResponse = BackupsVerifyResponses[keyof BackupsVerifyResponses];
+
+export type RunsListData = {
+    body?: never;
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        /**
+         * Only runs in this status
+         */
+        status?: RunStatus;
+        limit?: number;
+    };
+    url: '/projects/{p}/runs';
+};
+
+export type RunsListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type RunsListError = RunsListErrors[keyof RunsListErrors];
+
+export type RunsListResponses = {
+    /**
+     * Runs, newest first
+     */
+    200: RunList;
+};
+
+export type RunsListResponse = RunsListResponses[keyof RunsListResponses];
+
+export type RunsNewData = {
+    body: RunNew;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/projects/{p}/runs';
+};
+
+export type RunsNewErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type RunsNewError = RunsNewErrors[keyof RunsNewErrors];
+
+export type RunsNewResponses = {
+    /**
+     * Dry run — the estimate; nothing was written or queued
+     */
+    200: RunEstimate;
+    /**
+     * The run, queued
+     */
+    201: Run;
+    /**
+     * Gated; a person decides the approval on the approvals topic
+     */
+    202: ApprovalAccepted;
+};
+
+export type RunsNewResponse = RunsNewResponses[keyof RunsNewResponses];
+
+export type RunsCalibrateData = {
+    body: RunCalibrate;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/projects/{p}/runs:calibrate';
+};
+
+export type RunsCalibrateErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type RunsCalibrateError = RunsCalibrateErrors[keyof RunsCalibrateErrors];
+
+export type RunsCalibrateResponses = {
+    /**
+     * Dry run — the calibration's key and plan; nothing was queued
+     */
+    200: RunCalibration;
+    /**
+     * The calibration's pipeline run, queued
+     */
+    201: RunCalibration;
+    /**
+     * Gated; a person decides the approval on the approvals topic
+     */
+    202: ApprovalAccepted;
+};
+
+export type RunsCalibrateResponse = RunsCalibrateResponses[keyof RunsCalibrateResponses];
+
+export type RunsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Run id (run_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/runs/{id}';
+};
+
+export type RunsGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type RunsGetError = RunsGetErrors[keyof RunsGetErrors];
+
+export type RunsGetResponses = {
+    /**
+     * The run
+     */
+    200: Run;
+};
+
+export type RunsGetResponse = RunsGetResponses[keyof RunsGetResponses];
+
+export type RunsResumeData = {
+    body?: never;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Run id (run_…)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/runs/{id}:resume';
+};
+
+export type RunsResumeErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type RunsResumeError = RunsResumeErrors[keyof RunsResumeErrors];
+
+export type RunsResumeResponses = {
+    /**
+     * The run, queued again (or, for a dry run, what it would be)
+     */
+    200: Run;
+    /**
+     * Gated; a person decides the approval on the approvals topic
+     */
+    202: ApprovalAccepted;
+};
+
+export type RunsResumeResponse = RunsResumeResponses[keyof RunsResumeResponses];
+
+export type RunsStageData = {
+    body: RunStage;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * The parent run (run_…)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/runs/{id}:stage';
+};
+
+export type RunsStageErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type RunsStageError = RunsStageErrors[keyof RunsStageErrors];
+
+export type RunsStageResponses = {
+    /**
+     * Dry run — the new stage's estimate
+     */
+    200: RunEstimate;
+    /**
+     * The new run, queued
+     */
+    201: Run;
+    /**
+     * Gated; a person decides the approval on the approvals topic
+     */
+    202: ApprovalAccepted;
+};
+
+export type RunsStageResponse = RunsStageResponses[keyof RunsStageResponses];
+
+export type CheckpointsListData = {
+    body?: never;
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        /**
+         * Only this run's checkpoints (run_…)
+         */
+        run?: string;
+        /**
+         * Only the checkpoints in their run's top k
+         */
+        kept?: boolean;
+        limit?: number;
+    };
+    url: '/projects/{p}/checkpoints';
+};
+
+export type CheckpointsListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type CheckpointsListError = CheckpointsListErrors[keyof CheckpointsListErrors];
+
+export type CheckpointsListResponses = {
+    /**
+     * Checkpoints, best validation WER first
+     */
+    200: CheckpointList;
+};
+
+export type CheckpointsListResponse = CheckpointsListResponses[keyof CheckpointsListResponses];
+
+export type CheckpointsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Checkpoint id (ckp_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/checkpoints/{id}';
+};
+
+export type CheckpointsGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type CheckpointsGetError = CheckpointsGetErrors[keyof CheckpointsGetErrors];
+
+export type CheckpointsGetResponses = {
+    /**
+     * The checkpoint
+     */
+    200: Checkpoint;
+};
+
+export type CheckpointsGetResponse = CheckpointsGetResponses[keyof CheckpointsGetResponses];
+
+export type CheckpointsAverageData = {
+    body: CheckpointAverage;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path: {
+        /**
+         * Run id (run_…)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/runs/{id}/checkpoints:average';
+};
+
+export type CheckpointsAverageErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type CheckpointsAverageError = CheckpointsAverageErrors[keyof CheckpointsAverageErrors];
+
+export type CheckpointsAverageResponses = {
+    /**
+     * Dry run — the plan; nothing was queued
+     */
+    200: CheckpointAverageStarted;
+    /**
+     * The averaging pipeline run, queued
+     */
+    201: CheckpointAverageStarted;
+    /**
+     * Gated; a person decides the approval on the approvals topic
+     */
+    202: ApprovalAccepted;
+};
+
+export type CheckpointsAverageResponse = CheckpointsAverageResponses[keyof CheckpointsAverageResponses];
+
+export type MetricsGetData = {
+    body?: never;
+    path: {
+        /**
+         * The run whose metrics to read (run_…)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Metric names (all when absent)
+         */
+        names?: Array<string>;
+        /**
+         * The x axis
+         */
+        x?: MetricAxis;
+        /**
+         * Points per series at most; longer series are binned
+         */
+        maxPoints?: number;
+        /**
+         * Only points after this optimiser step (live append)
+         */
+        afterStep?: number;
+    };
+    url: '/metrics/{id}';
+};
+
+export type MetricsGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type MetricsGetError = MetricsGetErrors[keyof MetricsGetErrors];
+
+export type MetricsGetResponses = {
+    /**
+     * The series
+     */
+    200: MetricSeriesSet;
+};
+
+export type MetricsGetResponse = MetricsGetResponses[keyof MetricsGetResponses];
 
 export type PlaybooksListData = {
     body?: never;

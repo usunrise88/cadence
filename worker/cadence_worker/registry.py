@@ -36,8 +36,9 @@ class RegistryError(Exception):
 class Family:
     """A model family a pack publishes (entry point ``cadence.families``): the runtime it belongs to and its
     descriptor (ModelFamilyDescriptor in api/openapi.yaml). ``fixtures`` and ``conformance`` are for the conformance
-    suite only and never published: a directory with ``manifest.jsonl`` (``{"audio": "<file>", "text": ...}`` lines)
-    and the clips, and per-stage parameters (keys calibrate, train, resume, stop, average, transcribe)."""
+    suite only and never published: an import folder in ``dataset_import``'s ``folder-csv`` format (``metadata.csv``
+    with columns file, text, split? and the clips), which the suite imports into a ``dataset`` artifact first, and
+    per-stage parameters (keys import, calibrate, train, resume, stop, average, transcribe)."""
 
     runtime: str
     descriptor: ModelFamilyDescriptor

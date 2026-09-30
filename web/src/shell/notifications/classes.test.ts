@@ -25,6 +25,14 @@ describe("event classes", () => {
     expect(classOf(ev({ topic: "job.j", type: "job.state_changed", payload: { job: { state: "failed" } } }))).toBe("failure");
     expect(classOf(ev({ topic: "job.j", type: "job.state_changed", payload: { job: { state: "done" } } }))).toBe("progress");
     expect(classOf(ev({ type: "mix.edited" }))).toBeUndefined();
+    expect(classOf(ev({ topic: "job.j", type: "job.state_changed", payload: { job: { state: "failed", kind: "step" } } }))).toBeUndefined();
+    const step = (state: string) => ev({ topic: "pipeline_run.plr_1", type: "pipeline_run.step_changed", payload: { pipelineRunId: "plr_1", step: { state } } });
+    expect(classOf(step("done"))).toBe("progress");
+    expect(classOf(step("failed"))).toBe("failure");
+    expect(classOf(step("running"))).toBeUndefined();
+    const health = (state: string) => ev({ topic: "compute.cmp_1", type: "compute.health", payload: { hostId: "cmp_1", health: { state } } });
+    expect(classOf(health("unreachable"))).toBe("failure");
+    expect(classOf(health("healthy"))).toBeUndefined();
   });
 
   it("lets a class into the in-app history only when its rule has in-app on", () => {

@@ -7,6 +7,8 @@ import (
 
 	"github.com/usunrise88/cadence/control-plane/internal/api"
 	"github.com/usunrise88/cadence/control-plane/internal/auth"
+	"github.com/usunrise88/cadence/control-plane/internal/cli"
+	"github.com/usunrise88/cadence/control-plane/internal/contract"
 )
 
 // Reads a playbook chain waits on (jobs.wait, checkpoints.list) tick the plan of a playbook session like its commands
@@ -18,11 +20,21 @@ type opKey struct{}
 // opName carries the operation id from the strict handler back out to observeReads.
 type opName struct{ id string }
 
+// operationIDs maps the strict handler's operation names (oapi-codegen's Go names: RunsGet) to operation ids (runs.get).
+var operationIDs = func() map[string]string {
+	m := make(map[string]string, len(cli.Operations))
+	for _, o := range cli.Operations {
+		m[contract.GoName(o.ID)] = o.ID
+	}
+	return m
+}()
+
 // nameOperation is a strict middleware: it names the operation of the request for observeReads.
 func nameOperation(f api.StrictHandlerFunc, operationID string) api.StrictHandlerFunc {
+	id := operationIDs[operationID]
 	return func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		if n, ok := ctx.Value(opKey{}).(*opName); ok {
-			n.id = operationID
+			n.id = id
 		}
 		return f(ctx, w, r, request)
 	}

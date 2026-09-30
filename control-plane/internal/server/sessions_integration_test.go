@@ -112,6 +112,8 @@ func startHost(t *testing.T) *hostEnv {
 	e := start(t)
 	authed := newTestServer(t, e.pool, events.NewHub(8), obs.NewMetrics(), func(c *Config) {
 		c.Actor, c.Jobs, c.Projects, c.Secrets = auth.Actor{}, e.jobs, e.repos, e.admin.Secrets
+		// Runs and calibrations start pipeline runs the env's engine executes (playbook sessions train through it).
+		c.CAS, c.Pipelines = e.admin.CAS, e.admin.Pipelines
 	})
 	srv := httptest.NewServer(authed.Handler())
 	t.Cleanup(srv.Close)

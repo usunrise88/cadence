@@ -44,7 +44,7 @@ class TranscribeStep:
             raise StepInputError(f"toy-ctc has no latency profile {p.profile!r}") from e
         model, tok = load_checkpoint(inputs["model"])
         whash = weights_hash(inputs["model"] / "model.pt")
-        utts = read_dataset(inputs["data"], ctx.blob)
+        utts = read_dataset(inputs["data"])
         decoding: dict[str, Any] = {"profile": prof["name"], "decoder": "greedy-ctc", **(prof.get("params") or {})}
         decoding_hash = "sha256:" + hashlib.sha256(json.dumps(decoding, sort_keys=True).encode()).hexdigest()
         chunk_ms = prof.get("chunkMs")

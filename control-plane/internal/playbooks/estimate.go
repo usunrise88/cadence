@@ -59,8 +59,8 @@ type Estimate struct {
 // Estimator answers a step's estimate from its operation's own dry-run logic; with is the step's resolved `with`.
 type Estimator func(ctx context.Context, q storage.Querier, d *defaults.Defaults, projectID string, with map[string]any) (StepEstimate, error)
 
-// DefaultEstimators are the operations whose estimate the control plane computes today: runs.new from the estimate
-// table (R12). runs.calibrate, runs.stage and runs.resume use the playbook's hint until their stream registers one.
+// DefaultEstimators are the estimators that need nothing but the database: runs.new from the estimate table or the
+// calibration (R12). The server adds runs.calibrate, runs.stage and runs.resume, which plan through the runs service.
 func DefaultEstimators() map[string]Estimator {
 	return map[string]Estimator{"runs.new": estimateRun}
 }
@@ -126,19 +126,26 @@ func StepEstimates(ctx context.Context, q storage.Querier, d *defaults.Defaults,
 					return nil, err
 				}
 				se.Note = pe.Detail
+				if s.Estimate != nil { // what the operation cannot plan yet (no mix, no parent run): the hint
+					se = hinted(s, se.Note)
+				}
 				break
 			}
 			got.ID, got.Command = s.ID, s.Command
 			se = got
 		case s.Estimate != nil:
-			pm := s.Estimate.PlusMinus
-			se.Basis, se.PlusMinus = BasisHint, pm
-			se.GPUHours = spread(s.Estimate.GPUHours, pm, 3)
-			se.DurationSeconds = spread(s.Estimate.Minutes*60, pm, 0)
+			se = hinted(s, "")
 		}
 		out = append(out, se)
 	}
 	return out, nil
+}
+
+// hinted is the step's own estimate hint; note says why the operation's estimate was not used.
+func hinted(s Step, note string) StepEstimate {
+	pm := s.Estimate.PlusMinus
+	return StepEstimate{ID: s.ID, Command: s.Command, Basis: BasisHint, PlusMinus: pm, Note: note,
+		GPUHours: spread(s.Estimate.GPUHours, pm, 3), DurationSeconds: spread(s.Estimate.Minutes*60, pm, 0)}
 }
 
 // Sum adds the counted steps (not skipped, with GPU-hours): values and bounds add up, plusMinus is the largest of

@@ -96,6 +96,7 @@ type Entry struct {
 	MemoryGB        float64     `json:"memoryGb,omitempty"`
 	State           string      `json:"state"`
 	Priority        int         `json:"priority"`
+	ProjectPriority int         `json:"projectPriority"`
 	EnqueuedAt      time.Time   `json:"enqueuedAt"`
 	EstimateSeconds *float64    `json:"estimateSeconds,omitempty"`
 	Attempt         int         `json:"attempt"`
@@ -103,17 +104,21 @@ type Entry struct {
 	Lease           *QueueLease `json:"lease,omitempty"`
 }
 
-// Queue lists the step jobs not yet ended: running ones first, then in start order. projectID filters when set.
+// Queue lists the step jobs not yet ended: running ones first, then in start order (project queue priority, job
+// priority, first come). projectID filters when set.
 func Queue(ctx context.Context, q storage.Querier, projectID string) ([]Entry, error) {
-	rows, err := q.Query(ctx, `SELECT s.job_id, s.spec, s.state, s.job_kind, s.enqueued_at, j.priority, j.paused_at IS NOT NULL,
+	rows, err := q.Query(ctx, `SELECT s.job_id, s.spec, s.state, s.job_kind, s.enqueued_at, j.priority,
+			`+projectPriority("$2")+`, j.paused_at IS NOT NULL,
 			l.id, l.worker_id, w.runtime_name, h.name, l.card_index, l.memory_mb, l.created_at, l.heartbeat_at, l.progress,
 			l.message, l.stop_reason
 		FROM step_jobs s JOIN jobs j ON j.id = s.job_id
+		LEFT JOIN projects p ON p.id = s.project_id
 		LEFT JOIN leases l ON l.job_id = s.job_id AND l.state = 'active'
 		LEFT JOIN workers w ON w.id = l.worker_id
 		LEFT JOIN compute_hosts h ON h.id = l.host_id
 		WHERE s.state <> 'ended' AND ($1 = '' OR s.project_id = $1)
-		ORDER BY (s.state = 'leased') DESC, j.priority DESC, s.enqueued_at, s.job_id`, projectID)
+		ORDER BY (s.state = 'leased') DESC, `+projectPriority("$2")+` DESC, j.priority DESC, s.enqueued_at, s.job_id`,
+		projectID, defaultProjectPriority())
 	if err != nil {
 		return nil, fmt.Errorf("read the queue: %w", err)
 	}
@@ -129,7 +134,7 @@ func Queue(ctx context.Context, q storage.Querier, projectID string) ([]Entry, e
 			started, beat                         *time.Time
 			progress                              *float64
 		)
-		if err := row.Scan(&e.JobID, &raw, &state, &e.JobKind, &e.EnqueuedAt, &e.Priority, &paused, &leaseID, &workerID,
+		if err := row.Scan(&e.JobID, &raw, &state, &e.JobKind, &e.EnqueuedAt, &e.Priority, &e.ProjectPriority, &paused, &leaseID, &workerID,
 			&runtime, &host, &card, &memMB, &started, &beat, &progress, &msg, &stop); err != nil {
 			return e, err
 		}

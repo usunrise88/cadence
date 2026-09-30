@@ -1880,6 +1880,170 @@
       ]
     },
     {
+      "name": "checkpoints.average",
+      "title": "Average chosen checkpoints of a run with the family's average step; the result is a new checkpoint of the run",
+      "description": "Average two or more checkpoints of one run (ids from checkpoints.list, typically the top k) with the model family's average step. Answers 201 with the pipeline run; when it finishes the averaged checkpoint appears in checkpoints.list (kind averaged, averagedFrom) with its own validation WER when the step measures one. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/runs/{id}/checkpoints:average",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "checkpoints": {
+                "description": "Checkpoints of the run (ckp_…)",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "minItems": 2,
+                "type": "array"
+              },
+              "params": {
+                "description": "Overrides of the average step's parameters",
+                "type": "object"
+              }
+            },
+            "required": [
+              "checkpoints"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Run id (run_…)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "checkpoints.get",
+      "title": "Get a checkpoint with its artifact, metrics and lineage",
+      "description": "Get a checkpoint with its artifact, metrics and lineage",
+      "method": "GET",
+      "path": "/checkpoints/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Checkpoint id (ckp_…)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        }
+      ]
+    },
+    {
+      "name": "checkpoints.list",
+      "title": "Checkpoints of a project or of one run, best validation WER first",
+      "description": "Checkpoints registered by training runs (step, validation WER, family, weights hash; trained or averaged), best validation WER first. Filter by run; kept=true lists only the top k per run (training.keep_top_k). Average some with checkpoints.average; start a new stage from one with runs.stage.",
+      "method": "GET",
+      "path": "/projects/{p}/checkpoints",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "kept": {
+            "description": "Only the checkpoints in their run's top k",
+            "type": "boolean"
+          },
+          "limit": {
+            "default": 100,
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          },
+          "run": {
+            "description": "Only this run's checkpoints (run_…)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "run",
+          "in": "query",
+          "name": "run"
+        },
+        {
+          "property": "kept",
+          "in": "query",
+          "name": "kept"
+        },
+        {
+          "property": "limit",
+          "in": "query",
+          "name": "limit"
+        }
+      ]
+    },
+    {
       "name": "collections.get",
       "title": "Get a registry collection with its versions, newest first",
       "description": "Get a registry collection with its versions, newest first",
@@ -2046,8 +2210,7 @@
                               "type": "string"
                             },
                             "timezone": {
-                              "default": "UTC",
-                              "description": "IANA time zone, e.g. Europe/Berlin",
+                              "description": "IANA time zone, e.g. Europe/Berlin; empty follows the instance time zone (policies.timezone)",
                               "maxLength": 64,
                               "type": "string"
                             }
@@ -3236,6 +3399,91 @@
       ]
     },
     {
+      "name": "metrics.get",
+      "title": "A run's metric series, binned server-side for charts (min and max per bucket), with checkpoint marks",
+      "description": "Metric series of a training run (loss, val_wer, lr, …) for charts and for judging progress: choose names, the x axis (step, epoch, wall seconds since the first point, or GPU-hours), and maxPoints — longer series are binned server-side, each point carrying the bucket's mean value with min and max. afterStep returns only newer points (live append). Checkpoint marks come along.",
+      "method": "GET",
+      "path": "/metrics/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "afterStep": {
+            "description": "Only points after this optimiser step (live append)",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "id": {
+            "description": "The run whose metrics to read (run_…)",
+            "type": "string"
+          },
+          "maxPoints": {
+            "default": 1000,
+            "description": "Points per series at most; longer series are binned",
+            "maximum": 10000,
+            "minimum": 2,
+            "type": "integer"
+          },
+          "names": {
+            "description": "Metric names (all when absent)",
+            "items": {
+              "maxLength": 100,
+              "type": "string"
+            },
+            "maxItems": 50,
+            "type": "array"
+          },
+          "x": {
+            "default": "step",
+            "description": "The x axis",
+            "enum": [
+              "step",
+              "epoch",
+              "wall",
+              "gpuHours"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "names",
+          "in": "query",
+          "name": "names"
+        },
+        {
+          "property": "x",
+          "in": "query",
+          "name": "x"
+        },
+        {
+          "property": "maxPoints",
+          "in": "query",
+          "name": "maxPoints"
+        },
+        {
+          "property": "afterStep",
+          "in": "query",
+          "name": "afterStep"
+        }
+      ]
+    },
+    {
       "name": "mixes.edit",
       "title": "Edit a mix; a person's edit makes a new revision, an agent's lands as a draft when the draft policy says so",
       "description": "Edit a mix: the fields you send replace the current ones (groups as a whole list). Send ifMatch with the etag (or rev) of your last mixes.get; a stale revision fails with precondition-failed and the current revision. Under the project's draft policy (the default for agents) the edit does not change the mix: it lands as a draft (result.draft) that a person accepts or reverts, and your later edits update the same draft. mixes.get shows your open draft under presence. Pass dryRun=true to see what would happen without changing anything.",
@@ -4268,7 +4516,7 @@
     {
       "name": "pipelines.run",
       "title": "Validate a pipeline against the step registry and start a pipeline run (dryRun validates and estimates)",
-      "description": "Run a pipeline of this project. Always call it with dryRun=true first: that validates the pipeline against the published step kinds (kind@version exists, input and output artifact types match, parameters fit each kind's schema, no cycles), resolves every parameter from defaults.yaml, lists the departures from defaults and sums the known estimates, without starting anything; a broken pipeline answers pipeline-invalid with one error per problem. Then run it for real with the same body and ifMatch = the pipeline's version from pipelines.list (or \"*\" for whatever is at ref). inputs maps each pipeline input to an artifact {hash, type}; params overrides parameters per step id; finished steps with the same input hash are reused unless fresh. The answer is the pipeline run (plr_…): follow pipeline_run.{id} or call pipelineRuns.wait. Spending GPU time over the budget answers 202 with an approvalId instead. Pass dryRun=true to see what would happen without changing anything.",
+      "description": "Run a pipeline of this project. Always call it with dryRun=true first: that validates the pipeline against the published step kinds (kind@version exists, input and output artifact types match, parameters fit each kind's schema, no cycles), resolves every parameter from defaults.yaml, lists the departures from defaults and sums the known estimates, without starting anything; a broken pipeline answers pipeline-invalid with one error per problem. Then run it for real with the same body and ifMatch = the pipeline's version from pipelines.list (or \"*\" for whatever is at ref). inputs maps each pipeline input to an artifact {hash, type}; params overrides parameters per step id; finished steps with the same input hash are reused unless fresh. The answer is the pipeline run (plr_…): follow pipeline_run.{id} or call pipelineRuns.wait. Spending GPU time over the budget answers 202 with an approvalId instead. A dataset input of an eval-only version (or a mix input referencing one) that a training step reads answers eval-only-dataset. Pass dryRun=true to see what would happen without changing anything.",
       "method": "POST",
       "path": "/projects/{p}/pipelines/{name}:run",
       "inputSchema": {
@@ -4806,6 +5054,12 @@
                     "maximum": 192,
                     "minimum": 0,
                     "type": "number"
+                  },
+                  "queuePriority": {
+                    "description": "Queue priority of the project's step jobs against other projects (higher first)",
+                    "maximum": 100,
+                    "minimum": -100,
+                    "type": "integer"
                   }
                 },
                 "type": "object"
@@ -5004,6 +5258,12 @@
                     "maximum": 192,
                     "minimum": 0,
                     "type": "number"
+                  },
+                  "queuePriority": {
+                    "description": "Queue priority of the project's step jobs against other projects (higher first)",
+                    "maximum": 100,
+                    "minimum": -100,
+                    "type": "integer"
                   }
                 },
                 "type": "object"
@@ -5302,7 +5562,7 @@
     {
       "name": "queueEntries.list",
       "title": "The step queue across projects — waiting, paused and running step jobs with their card and lease",
-      "description": "The GPU queue: step jobs waiting, paused or running on a worker, in start order (priority, then first come), with the card and worker holding each running one. Reorder with jobs.edit (priority), pause with jobs.pause. A project-scoped credential sees its own project's entries only.",
+      "description": "The GPU queue: step jobs waiting, paused or running on a worker, in start order (the project's queue priority, then the job's priority, then first come), with the card and worker holding each running one. Reorder with jobs.edit (a job's priority) or projects.edit (budgets.queuePriority), pause with jobs.pause. A project-scoped credential sees its own project's entries only.",
       "method": "GET",
       "path": "/queue-entries",
       "inputSchema": {
@@ -5504,9 +5764,189 @@
       ]
     },
     {
+      "name": "runs.calibrate",
+      "title": "Measure seconds per step and batch sizes for a base model on the training card (the family's calibrate step)",
+      "description": "Calibrate before the first run of a base model on a card: runs the model family's calibrate step on the mix's data under the card's memory cap. When it finishes, runs.new?dryRun=true estimates switch from basis table to basis measured for that base model, card class, memory cap and precision. Answers 201 with the pipeline run (follow it with pipelineRuns.wait), or 202 with an approvalId when today's GPU budget is spent. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/projects/{p}/runs:calibrate",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "baseModel": {
+                "description": "Base model version (ver_…), collection name or @alias; default the defaults' base model",
+                "type": "string"
+              },
+              "compute": {
+                "description": "Host id or name; default the first host whose card allows training",
+                "type": "string"
+              },
+              "mix": {
+                "description": "The mix whose data the calibration measures on (mix_… or name)",
+                "maxLength": 200,
+                "type": "string"
+              },
+              "mixRevision": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "params": {
+                "description": "Overrides of the calibrate step's parameters",
+                "type": "object"
+              },
+              "precision": {
+                "enum": [
+                  "bf16",
+                  "fp16",
+                  "fp32"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "mix"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "runs.get",
+      "title": "Get a run with its stage timeline, final metrics, departures from defaults and parent run",
+      "description": "A training run: status, the stage timeline (calibrate, train, … with their states and attempts), the job to pause or cancel (currentJobId, via jobs.pause | jobs.resume | jobs.cancel), OOM retries (batch scale), final metrics, departures from defaults, the parent run and the config diff against it, the best checkpoint and the estimate it started with.",
+      "method": "GET",
+      "path": "/runs/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Run id (run_…)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        }
+      ]
+    },
+    {
+      "name": "runs.list",
+      "title": "Training runs of a project, newest first",
+      "description": "List the project's training runs, newest first: status (queued, running, paused, done, failed, cancelled), start (base model or checkpoint), mix revision, step budget, final metrics and the best checkpoint. Filter by status. Open one with runs.get.",
+      "method": "GET",
+      "path": "/projects/{p}/runs",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "default": 100,
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          },
+          "status": {
+            "description": "Only runs in this status",
+            "enum": [
+              "queued",
+              "running",
+              "paused",
+              "done",
+              "failed",
+              "cancelled"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "status",
+          "in": "query",
+          "name": "status"
+        },
+        {
+          "property": "limit",
+          "in": "query",
+          "name": "limit"
+        }
+      ]
+    },
+    {
       "name": "runs.new",
-      "title": "Start a training run; until phase 2 only ?dryRun=true answers, with GPU-hours, card, duration and data",
-      "description": "Start a training run from a base model (init base) or a checkpoint. Until phase 2 only the dry run works: call it with dryRun=true to get the estimate (GPU-hours, duration, card, data volume, basis and ±) from the defaults table and the compute entity; without dryRun it answers 501. Pass dryRun=true to see what would happen without changing anything.",
+      "title": "Start a training run (one optimisation stage); ?dryRun=true answers the estimate first",
+      "description": "Start one training stage: a base model (init base) or a checkpoint (init checkpoint, ckp_…), a mix (mix_… or its name, at its current revision unless mixRevision), the project's train-stage pipeline at a commit, a step budget and a seed. Always call it with dryRun=true first: the answer is the estimate (GPU-hours, duration, card, data volume, basis table or measured, ±, today's GPU spend against the project's budget). Without dryRun it answers 201 with the run, or 202 with an approvalId when the estimate exceeds today's remaining GPU budget of the project or of your session — then wait for approval.decided. Eval-only datasets are refused. Follow the run with runs.get and metrics.get; checkpoints arrive on checkpoints.list. Pass dryRun=true to see what would happen without changing anything.",
       "method": "POST",
       "path": "/projects/{p}/runs",
       "inputSchema": {
@@ -5520,7 +5960,7 @@
                 "type": "string"
               },
               "checkpoint": {
-                "description": "Required when init is checkpoint (checkpoints arrive in phase 2)",
+                "description": "The checkpoint to start from (ckp_…); required when init is checkpoint. The run's base model is then the checkpoint's",
                 "type": "string"
               },
               "compute": {
@@ -5528,7 +5968,7 @@
                 "type": "string"
               },
               "datasets": {
-                "description": "Dataset versions (ver_… or @alias) the run reads, for the data volume; the mix replaces this in phase 2",
+                "description": "Dry runs without a mix only: dataset versions (ver_… or @alias) for the data volume",
                 "items": {
                   "type": "string"
                 },
@@ -5548,6 +5988,25 @@
                 ],
                 "type": "string"
               },
+              "mix": {
+                "description": "The mix to train on (mix_… or its name); required unless dryRun with datasets",
+                "maxLength": 200,
+                "type": "string"
+              },
+              "mixRevision": {
+                "description": "The mix revision (default its current one)",
+                "minimum": 1,
+                "type": "integer"
+              },
+              "params": {
+                "description": "Overrides of the train step's parameters (recorded as departures when they differ from the default)",
+                "type": "object"
+              },
+              "pipeline": {
+                "description": "The recipe: a pipeline of the project repository (default training.pipeline, train-stage)",
+                "maxLength": 63,
+                "type": "string"
+              },
               "precision": {
                 "enum": [
                   "bf16",
@@ -5556,8 +6015,26 @@
                 ],
                 "type": "string"
               },
+              "priority": {
+                "default": 0,
+                "description": "Queue priority of the run's step jobs (higher first)",
+                "maximum": 100,
+                "minimum": -100,
+                "type": "integer"
+              },
+              "ref": {
+                "description": "Branch, tag or commit to read the pipeline at (default main)",
+                "maxLength": 200,
+                "type": "string"
+              },
+              "seed": {
+                "description": "The train step's seed parameter, when its kind has one (default: the kind's default)",
+                "maximum": 2147483647,
+                "minimum": 0,
+                "type": "integer"
+              },
               "steps": {
-                "description": "Default training.steps",
+                "description": "Step budget of the stage (default training.steps); the train step's steps parameter",
                 "minimum": 1,
                 "type": "integer"
               }
@@ -5591,6 +6068,186 @@
           "property": "p",
           "in": "path",
           "name": "p"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "runs.resume",
+      "title": "Continue a stopped or failed run from its last training state (same stage, same optimiser state)",
+      "description": "Continue the same stage of a cancelled or failed run from its last saved training-state (same optimiser and sampler state, same step budget). A paused step job resumes with jobs.resume instead. Send ifMatch with the run's etag. Answers the run (queued again), 409 no-training-state when it never saved one (start a new run), or 202 with an approvalId when the remaining steps exceed today's GPU budget. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/runs/{id}:resume",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Run id (run_…)",
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        }
+      ]
+    },
+    {
+      "name": "runs.stage",
+      "title": "Start a new stage from a checkpoint of this run with an explicit peak learning rate",
+      "description": "Start the next training stage from a checkpoint of this run (default its best kept checkpoint): a new run with init checkpoint, a new optimiser and the peak learning rate you give (peakLr, e.g. 2e-5 for a continuation), on the parent's mix unless you name another. The new run records the parent, and runs.get shows the config diff against it. Send ifMatch with the parent's etag; dryRun=true answers the estimate. Answers 201 with the new run or 202 with an approvalId over budget. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/runs/{id}:stage",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "checkpoint": {
+                "description": "The checkpoint to start from (ckp_… of this run); default the run's best kept checkpoint",
+                "type": "string"
+              },
+              "compute": {
+                "type": "string"
+              },
+              "mix": {
+                "description": "The mix (default the parent's)",
+                "maxLength": 200,
+                "type": "string"
+              },
+              "mixRevision": {
+                "description": "The mix revision (default the named mix's current one, or the parent's revision when the mix is the parent's)",
+                "minimum": 1,
+                "type": "integer"
+              },
+              "params": {
+                "description": "More overrides of the train step's parameters",
+                "type": "object"
+              },
+              "peakLr": {
+                "description": "The new stage's peak learning rate (the train step's peak_lr, learning_rate or lr parameter)",
+                "exclusiveMinimum": 0,
+                "format": "double",
+                "maximum": 1,
+                "type": "number"
+              },
+              "pipeline": {
+                "description": "The recipe (default the parent's pipeline)",
+                "maxLength": 63,
+                "type": "string"
+              },
+              "precision": {
+                "enum": [
+                  "bf16",
+                  "fp16",
+                  "fp32"
+                ],
+                "type": "string"
+              },
+              "priority": {
+                "default": 0,
+                "maximum": 100,
+                "minimum": -100,
+                "type": "integer"
+              },
+              "ref": {
+                "maxLength": 200,
+                "type": "string"
+              },
+              "seed": {
+                "maximum": 2147483647,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "steps": {
+                "description": "Step budget (default training.steps)",
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "peakLr"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "The parent run (run_…)",
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
         },
         {
           "property": "dryRun",

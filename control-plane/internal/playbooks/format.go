@@ -59,12 +59,9 @@ var Spending = map[string]bool{
 	"runs.new": true, "runs.calibrate": true, "runs.resume": true, "runs.stage": true, "checkpoints.average": true,
 }
 
-// Pending are operations of phase-2 wave 2 (stream R: runs, checkpoints, metrics) that a chain may name before the
-// contract carries them; Validate accepts them as known. Remove an entry once the contract has the operation.
-var Pending = []string{
-	"runs.calibrate", "runs.resume", "runs.stage", "runs.get", "runs.list",
-	"checkpoints.list", "checkpoints.get", "checkpoints.average", "metrics.get",
-}
+// Pending are operations a chain may name before the contract carries them (a parallel stream builds them);
+// Validate accepts them as known. Empty since stream R's runs, checkpoints and metrics merged.
+var Pending = []string{}
 
 // Known answers whether op is an implemented operation of the contract (the generated operation table, exempt tags
 // aside) or one of Pending.

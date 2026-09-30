@@ -76,6 +76,10 @@ var (
 	PlaybookDryRunRequired = Type{"playbook-dry-run-required", http.StatusConflict, "Dry run required first"}
 	PlaybookStopped        = Type{"playbook-stopped", http.StatusConflict, "Playbook stopped"}
 	PlaybookUnavailable    = Type{"playbook-unavailable", http.StatusConflict, "Playbook not available yet"}
+	// Runs, checkpoints and metrics (phase 2 · wave 2 · stream R).
+	FamilyUnavailable = Type{"family-unavailable", http.StatusUnprocessableEntity, "Model family unavailable"}
+	RecipeMismatch    = Type{"recipe-mismatch", http.StatusUnprocessableEntity, "Recipe does not fit the run"}
+	NoTrainingState   = Type{"no-training-state", http.StatusConflict, "No training state"}
 )
 
 // Types lists every registered type.
@@ -87,6 +91,7 @@ func Types() []Type {
 		RepositoryUnavailable, EvalOnlyDataset, PipelineInvalid,
 		LeaseEnded, StepKindConflict, ArtifactHashMismatch, ArtifactMissing,
 		PlaybookDryRunRequired, PlaybookStopped, PlaybookUnavailable,
+		FamilyUnavailable, RecipeMismatch, NoTrainingState,
 	}
 }
 

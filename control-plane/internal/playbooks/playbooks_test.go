@@ -64,7 +64,7 @@ func TestBundledPlaybooksValidate(t *testing.T) {
 	for _, s := range ft.Chain {
 		cmds = append(cmds, s.Command)
 	}
-	if got := strings.Join(cmds, " "); got != "mixes.new runs.calibrate runs.new jobs.wait checkpoints.list evals.new evals.gate" {
+	if got := strings.Join(cmds, " "); got != "mixes.new runs.calibrate runs.new runs.get checkpoints.list evals.new evals.gate" {
 		t.Errorf("fine-tune chain = %s", got)
 	}
 }
@@ -168,6 +168,17 @@ func TestStepEstimatesAndSum(t *testing.T) {
 	if steps[2].Note != "no row" || Sum(steps).GPUHours.Value != 0.1 || Sum(steps).Basis != BasisHint {
 		t.Fatalf("with the table missing: %+v / %+v", steps[2], Sum(steps))
 	}
+	// An operation that cannot plan yet (no mix before the session) falls back to the step's hint, saying why.
+	est["runs.calibrate"] = func(context.Context, storage.Querier, *defaults.Defaults, string, map[string]any) (StepEstimate, error) {
+		return StepEstimate{}, problems.EstimateUnavailable.New("mix is only known during the session")
+	}
+	steps, err = StepEstimates(context.Background(), nil, defaults.Get(), est, p, r, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if steps[1].Basis != BasisHint || steps[1].GPUHours.Value != 0.1 || !strings.Contains(steps[1].Note, "mix") {
+		t.Fatalf("calibrate without a mix: %+v", steps[1])
+	}
 }
 
 func testState(t *testing.T) State {
@@ -213,24 +224,31 @@ func TestObserveTicksInOrder(t *testing.T) {
 	if st.Plan[1].State != ItemRunning || len(st.DryRuns) != 1 || !strings.Contains(st.Plan[1].Note, "0.10 GPU-hours") {
 		t.Fatalf("calibrate after its dry run: %+v %v", st.Plan[1], st.DryRuns)
 	}
-	obs("runs.calibrate", false, map[string]any{"jobId": "job_c"})
-	if st.Plan[1].State != ItemDone || len(st.DryRuns) != 0 {
+	obs("runs.calibrate", false, map[string]any{"pipelineRun": map[string]any{"id": "plr_c"}})
+	if st.Plan[1].State != ItemDone || len(st.DryRuns) != 0 || st.Plan[1].EntityID != "plr_c" {
 		t.Fatalf("calibrate: %+v %v", st.Plan[1], st.DryRuns)
 	}
 	obs("runs.new", true, nil)
-	obs("runs.new", false, map[string]any{"id": "run_1", "jobId": "job_t"})
+	obs("runs.new", false, map[string]any{"id": "run_1", "status": "queued", "currentJobId": "job_t"})
 	if st.Plan[2].JobID != "job_t" || st.Plan[2].Note != "run_1, job job_t" {
 		t.Fatalf("train: %+v", st.Plan[2])
 	}
-	// A wait on another job does not tick; a running one marks the step running; the ended one ticks it.
-	if obs("jobs.wait", false, map[string]any{"id": "job_c", "state": "done"}) {
-		t.Fatal("a wait on the calibration job ticked the training wait")
+	// One job of the run ending does not end the wait (the run has more steps); a running job marks it running;
+	// another run does not count; the run reaching done ticks it.
+	if obs("jobs.wait", false, map[string]any{"id": "job_t", "state": "done"}) {
+		t.Fatal("a job of the run ticked the wait for the whole run")
 	}
-	obs("jobs.wait", false, map[string]any{"id": "job_t", "state": "running"})
+	obs("jobs.wait", false, map[string]any{"id": "job_u", "state": "running"})
 	if st.Plan[3].State != ItemRunning {
 		t.Fatalf("watch while running: %+v", st.Plan[3])
 	}
-	obs("jobs.wait", false, map[string]any{"id": "job_t", "state": "done"})
+	if obs("runs.get", false, map[string]any{"id": "run_9", "status": "done"}) {
+		t.Fatal("another run ticked the wait")
+	}
+	obs("runs.get", false, map[string]any{"id": "run_1", "status": "done"})
+	if st.Plan[3].State != ItemDone {
+		t.Fatalf("watch after the run: %+v", st.Plan[3])
+	}
 	obs("checkpoints.list", false, map[string]any{"items": []any{}})
 	if st.State != StateDone || !strings.Contains(st.Summary, "complete: 5 step(s) done") || st.Next == "" {
 		t.Fatalf("end: %s — %s / %s", st.State, st.Summary, st.Next)
@@ -245,8 +263,8 @@ func TestObserveFailedJobStops(t *testing.T) {
 	for i := range 3 {
 		st.Plan[i].State = ItemDone
 	}
-	st.Plan[2].JobID = "job_t"
-	st.Observe(Observation{Operation: "jobs.wait", Body: map[string]any{"id": "job_t", "state": "failed", "error": "oom"}})
+	st.Plan[2].EntityID = "run_1"
+	st.Observe(Observation{Operation: "runs.get", Body: map[string]any{"id": "run_1", "status": "failed", "error": "oom"}})
 	if st.State != StateStopped || st.Stop == nil || st.Stop.On != "step" || !strings.Contains(st.Stop.Message, "oom") {
 		t.Fatalf("stop: %s %+v", st.State, st.Stop)
 	}
@@ -286,7 +304,7 @@ func TestRenderPrompt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"project Hebrew (hebrew, locales he-IL)", "Base model: B", "Training steps: 500", "runs.new — dry run first"} {
+	for _, want := range []string{"project Hebrew (hebrew, locales he-IL)", "Base model: B", "Training steps: 500", "runs.new with the mix, the base model and steps — dry run first"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("prompt lacks %q:\n%s", want, out)
 		}

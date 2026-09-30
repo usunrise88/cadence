@@ -16,12 +16,14 @@ steps). Work the steps in order:
 
 1. `mixes.new` — groups: the dataset version(s); plus a group with `replay: true` holding `dataset/replay-base` when
    the project adopted it; `replayShare` as given. A draft or a follow-up `mixes.edit` also counts.
-2. `runs.calibrate` — `dryRun: true`, then for real; wait for its job with `jobs.wait`.
-3. `runs.new` — `dryRun: true` first and report the estimate in one line (GPU-hours low–high, card, duration), then
-   the same call without `dryRun`. A real spending call without its dry run answers `playbook-dry-run-required`.
-4. `jobs.wait` on the run's job until `state` is done, failed or cancelled (60 s per call; call again).
-   `metrics.get` shows loss and validation WER meanwhile.
-5. `checkpoints.list` — report the registered checkpoints with their validation WER (top-k register by themselves).
+2. `runs.calibrate` with `mix` (and `baseModel`) — `dryRun: true`, then for real.
+3. `runs.new` with `mix`, `baseModel`, `steps` — `dryRun: true` first and report the estimate in one line
+   (GPU-hours low–high, card, duration), then the same call without `dryRun`; it answers the run (`run_…`). A real
+   spending call without its dry run answers `playbook-dry-run-required`.
+4. Follow the run: `jobs.wait` on its `currentJobId` (60 s per call; call again), then `runs.get id=<run>` until
+   `status` is done, failed or cancelled. `metrics.get id=<run>` shows loss and validation WER meanwhile.
+5. `checkpoints.list` with `run=<run>` — report the checkpoints with their validation WER (top-k are kept).
+   `checkpoints.average` (dry run first) averages chosen ones; `runs.stage` (a parent run, `peakLr`) continues.
 6. Eval matrix and gate: phase 3 — skipped in the plan; do not attempt them.
 
 - 202 with `approvalId`: a person decides; say what you asked for and wait. Do not retry.

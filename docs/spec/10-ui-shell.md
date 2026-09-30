@@ -220,6 +220,9 @@ Three state templates cover every kind: registry assets `draft → frozen → de
 | Framework pack | The unit of extension for a training framework: runtime image, step kinds, family descriptor, templates, defaults section, help and skill; proven by the conformance suite (R45) | Runtime (the image alone); Language pack |
 | Artifact | A step input or output in the content store, addressed by its BLAKE3 hash (`b3:…`), with a neutral type (R15, R42) | Version (a named registry entry that may reference artifacts) |
 | Lease | A worker's claim on one step job: spec, inputs, card and memory cap, kept alive by heartbeats and reaped after three missed beats (R14) | Job (the unit of work the lease runs); Approval |
+| Card slot | The control plane's reservation of memory on one card of a compute host; one training job per card, other kinds share what is left under the cap (R40) | Lease (the worker's claim that holds a slot) |
+| Availability window | Weekly hours in which a card takes jobs of one kind; training is stopped at a close and resumes from its training state (R19) | Budget (GPU-hours a project may spend) |
+| Step kind | A versioned worker plugin a pipeline pins as `kind@version`: parameter schema, artifact types consumed and produced, resources (R40) | Job (one execution of a step) |
 | Replay | Training samples from the base model's other locales, mixed in to stop forgetting (R17) | Shadow (replayed production calls) |
 | Track | One lane of the audio view on the shared time axis: waveform, spectrogram, words, timeline (R51) | Channel (one side of a stereo recording) |
 

@@ -62,10 +62,30 @@ Open questions:
   over-budget GPU spend waits for its approval as in any session, and stops the playbook only when denied.
 - [ ] K: playbooks run from the bundled templates; the copies in a project's `playbooks/` are for reading and editing,
   and project overrides of a playbook are not read yet.
-- [ ] K: the watch step ticks from `jobs.wait` answering the run's job ended; once stream R's `runs.get` reports a
-  terminal run it can be accepted too. The calibrate step's estimate is a hint (0.1 GPU-hours) until `runs.calibrate`
-  has an estimator (`playbooks.Service.Estimators`).
+- [ ] K: the watch step ticks from `runs.get` answering the run with an ended status (a run's pipeline has several
+  step jobs, so `jobs.wait` only marks it running). Before the session the calibrate step's estimate is its hint
+  (0.1 GPU-hours): `runs.calibrate` plans over a mix, which exists only once the session made it. The later
+  playbooks' continuation stages ask for the parent run and `peakLr` (no defaults.yaml key for a stage's peak LR).
 
+- [ ] R (2026-09-30, runs): the base model's `familyId` names the family collection `model-family/<familyId>`; the
+  seeded Nemotron base model says `nemo.fastconformer-rnnt.cache-aware`, so the NeMo pack must publish its family
+  descriptor under that name (or the base model fixture must change with it).
+- [ ] R: train role kinds take the step budget as `steps`, the seed as `seed` and a stage's peak learning rate as
+  `peak_lr` (else `learning_rate`, else `lr`); a request setting a parameter the kind lacks is `recipe-mismatch`.
+- [ ] R: a `dataset` input of a run's recipe takes the mix's only dataset (the CPU toy pack trains on a dataset, not
+  a mix); a mix of several datasets needs a recipe whose kinds read the `mix` artifact.
+- [ ] R: calibrations are cached by (base model collection, card class, memory cap, precision); the card is the one
+  the estimate picks (compute.ForJob), not the card the lease got, and the newest calibration of any bucket
+  configuration answers. A calibrate step's meta gives `secondsPerStep` and optionally `plusMinus` | `spread` |
+  `secondsPerStepStd`, `batchSizes`, `bucketConfig`.
+- [ ] R: people are not gated by GPU budgets (the phase-1 policy engine's rule); only agents and automation keys are.
+  Calibration and averaging count as spending (`runs.calibrate`, `checkpoints.average` joined the `gpu-spend` rule)
+  with their kinds' published estimate.
+- [ ] R: `runs.resume` continues only failed or cancelled runs, from the newest training-state a released lease of
+  the run carries (a paused job resumes by itself with `jobs.resume`); pause, resume and stop in the Run panel act on
+  `currentJobId` through `jobs.pause|resume|cancel` — no `runs.pause|cancel` operations.
+- [ ] R: a dry run of `runs.new`, `runs.stage` or `runs.calibrate` writes the rendered mix and base-model blobs into
+  the content store (content-addressed, not indexed); nothing else.
 - [ ] Y (2026-09-30, worker harness): a directory artifact is recognised by `meta.layout: dir|file`, which the worker
   adds to every output it releases; an input without it is sniffed (a blob that parses as exactly the manifest shape
   and whose files are all present is a directory). The control plane should keep `layout` in stored artifact meta.
@@ -396,9 +416,60 @@ Open questions:
       (kind `telegram`), replaced through `telegramBot.set`; backup sets carry the sealed secret values but never the
       master key; the content-store mirror is never pruned; the set taken on the restore-test weekday is the weekly
       set; failed sets keep no files. Event types other streams should emit for the routing table (or add to
-      `internal/notify/classify.go` and `web/src/shell/notifications/classes.ts`): `mount.unhealthy`,
-      `compute.card_closed` (failure); `gate.verdict`, `deployment.promoted`, `schedule.finished`, `batch.closed`
-      (outcome); `pipeline_step.done`, `checkpoint.saved`, `triage.item_added` (progress) — on a non-entity topic
+      `internal/notify/classify.go` and `web/src/shell/notifications/classes.ts`): `mount.unhealthy` (failure);
+      `gate.verdict`, `deployment.promoted`, `schedule.finished`, `batch.closed` (outcome); `checkpoint.saved`,
+      `triage.item_added` (progress) — on a non-entity topic. Step outcomes are `pipeline_run.step_changed` and host
+      loss `compute.health` (classified by payload, F); `pipeline_step.done` was dropped (nothing emits it) and
+      `compute.card_closed` waits for per-card health
+- [ ] S · Job logs (phase 2), confirm: a job's log is one NDJSON file `$CADENCE_DATA_DIR/job-logs/<jobId>.ndjson`
+      (lines `{t, level, msg, fields}`), not a content-store blob, read through `jobLogs.list` and tailed on
+      `job.{id}.log`; a daily chore deletes files untouched for 14 days (hard-coded, not a `defaults.yaml` key)
+- [ ] S · Retention of training data (phase 2), confirm: v1 deletes no content-store blob (the backup mirror is never
+      pruned either) and never deletes a metric point — points in `metric_points` live as long as their run, and no
+      code path deletes either
+- [ ] S · Availability windows (phase 2, R19), confirm: windows are per card and job kind (training, eval, shadow,
+      export, data), each a set of weekdays with `start`/`end` `HH:MM` (an end at or before the start closes the next
+      day, `24:00` is midnight) and its own IANA `timezone`; a window naming none follows the instance's
+      `policies.timezone` (like quiet hours, the digest and backups), resolved at check time (F, phase 2 — it
+      defaulted to UTC in wave 1); no windows means always open; only training is stopped at a
+      close; an unknown estimate or a resumed step starts whenever its window is open
+- [ ] S · Playbook format (phase 2, R16), confirm: a playbook input is taken from the project with `from: project`
+      (the base-model input: the project's default base model) or from `defaults.yaml` with `defaultRef`, and a chain
+      step not built yet carries `phase: <n>` so the estimate lists and skips it (03 "Playbooks"; stream K builds it)
+- [x] F · resolved (phase 2): the toy pack reads only the `dataset` directory artifact of 02 "The dataset artifact"
+      (`dataset.json` with `format: cadence.dataset/1`, `manifest.jsonl` with `audio` as a path inside it) and names an
+      utterance by the BLAKE3 hash of its audio file; its fixtures are a `folder-csv` import folder (`metadata.csv`),
+      and the conformance suite starts with a `dataset_import` stage, so import → calibrate → train → … runs end to end
+- [x] F · resolved (phase 2): the project's queue priority is `budgets.queuePriority` (−100…100, default
+      `budgets.queue_priority_per_project` = 0, set by `projects.new`/`projects.edit`); the claim and `queue.list`
+      order by it, then the job's priority, then first come. It is read live from the project in the claim query
+      rather than copied into the step spec by the pipelines engine, so an edit reorders jobs already waiting
+- [x] F · resolved (phase 2): `pipelines.run` (dry run included) answers `eval-only-dataset` when a training step
+      (`resources.jobKind` training or unset) reads, straight from `$inputs.<name>`, a `dataset` artifact that an
+      eval-only version registers (`payload.artifact.hash`, `data.Trainable`) or a `mix` artifact referencing one;
+      inputs only eval, data or export steps read may be eval-only. Assumptions: a mix artifact names its dataset
+      versions in `meta.datasets` or in its JSON content's `groups[].datasets` / `datasets` (stream R renders it);
+      a dataset artifact no version registers passes; only direct reads are checked, not outputs derived from it
+- [x] F · resolved (phase 2): notifications classify the events that exist — `pipeline_run.step_changed` on
+      `pipeline_run.{id}` (step `done` → progress, `failed`, i.e. no retry left → failure) and `compute.health` on
+      `compute.{id}` (`unreachable` → failure); a step job's own `job.state_changed` is no longer noticed (the step
+      event tells it once per step, not per attempt). `pipeline_step.done` and `compute.card_closed` left the routing
+      table; `TestClassTableMatchesWeb` keeps `classify.go` and `classes.ts` equal
+- [ ] gap (phase 2): card health is per host (`unknown | healthy | unreachable` from heartbeats); nothing closes a
+      card's slot for an unhealthy card, so nothing emits `compute.card_closed` (it rejoins the routing table as a
+      failure when it does). Not small: the worker's card telemetry carries no health field today (NVML errors, a
+      card missing from the report), `card_slots` has no closed state, and the claim and reopening need it (06
+      "Notifications", "Failures")
+- [ ] gap (phase 2): "a checkpoint and training state every 20 minutes" (03 "Key defaults") has no `defaults.yaml` key
+      and no step kind implements it yet; the NeMo pack's train kind must, with the interval from `defaults.yaml`
+- [ ] gap (phase 2): `metrics.get` (series binned for charts, R53) is not in the contract yet; `internal/telemetry.Get`
+      is ready for stream R to expose
+- [ ] gap (later): job-log field search and the global search index of `warn`+ lines (R15) are not built; remote
+      workers have an upload path (`workerArtifacts.set`) but no download path
+- [ ] deferred (later, decided 2026-09-30): per-kind MCP tool descriptions — step kinds' parameter schemas are not
+      rendered into a tool description per kind; agents read `stepKinds.get` (schema with `x-cadence`) and the
+      `pipelines.run` dry run (resolved parameters, departures), which covers phase 2. Revisit when playbooks or
+      agents show they need it; no code in phase 2
 
 ## Sources
 

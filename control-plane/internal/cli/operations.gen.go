@@ -349,6 +349,38 @@ var Operations = []Operation{
 		},
 	},
 	{
+		ID: "checkpoints.average", Entity: "checkpoints", Verb: "average", Method: "POST", Path: "/runs/{id}/checkpoints:average",
+		Summary:        "Average chosen checkpoints of a run with the family's average step; the result is a new checkpoint of the run",
+		Description:    "Average two or more checkpoints of one run (ids from checkpoints.list, typically the top k) with the model family's average step. Answers 201 with the pipeline run; when it finishes the averaged checkpoint appears in checkpoints.list (kind averaged, averagedFrom) with its own validation WER when the step measures one.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Run id (run_…)"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "checkpoints", Required: true, Type: "array of string", Description: "Checkpoints of the run (ckp_…)"},
+			{Name: "params", Type: "object", Description: "Overrides of the average step's parameters"},
+		}},
+	},
+	{
+		ID: "checkpoints.get", Entity: "checkpoints", Verb: "get", Method: "GET", Path: "/checkpoints/{id}",
+		Summary: "Get a checkpoint with its artifact, metrics and lineage",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Checkpoint id (ckp_…)"},
+		},
+	},
+	{
+		ID: "checkpoints.list", Entity: "checkpoints", Verb: "list", Method: "GET", Path: "/projects/{p}/checkpoints",
+		Summary:     "Checkpoints of a project or of one run, best validation WER first",
+		Description: "Checkpoints registered by training runs (step, validation WER, family, weights hash; trained or averaged), best validation WER first. Filter by run; kept=true lists only the top k per run (training.keep_top_k). Average some with checkpoints.average; start a new stage from one with runs.stage.",
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "run", In: "query", Flag: "run", Type: "string", Description: "Only this run's checkpoints (run_…)"},
+			{Name: "kept", In: "query", Flag: "kept", Type: "boolean", Description: "Only the checkpoints in their run's top k"},
+			{Name: "limit", In: "query", Flag: "limit", Type: "integer", Default: "100"},
+		},
+	},
+	{
 		ID: "collections.get", Entity: "collections", Verb: "get", Method: "GET", Path: "/registry/collections/{id}",
 		Summary: "Get a registry collection with its versions, newest first",
 		Params: []Param{
@@ -590,6 +622,18 @@ var Operations = []Operation{
 		},
 	},
 	{
+		ID: "metrics.get", Entity: "metrics", Verb: "get", Method: "GET", Path: "/metrics/{id}",
+		Summary:     "A run's metric series, binned server-side for charts (min and max per bucket), with checkpoint marks",
+		Description: "Metric series of a training run (loss, val_wer, lr, …) for charts and for judging progress: choose names, the x axis (step, epoch, wall seconds since the first point, or GPU-hours), and maxPoints — longer series are binned server-side, each point carrying the bucket's mean value with min and max. afterStep returns only newer points (live append). Checkpoint marks come along.",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "The run whose metrics to read (run_…)"},
+			{Name: "names", In: "query", Flag: "names", Type: "array", Items: "string", Description: "Metric names (all when absent)"},
+			{Name: "x", In: "query", Flag: "x", Type: "string", Description: "The x axis", Default: "step", Enum: []string{"step", "epoch", "wall", "gpuHours"}},
+			{Name: "maxPoints", In: "query", Flag: "max-points", Type: "integer", Description: "Points per series at most; longer series are binned", Default: "1000"},
+			{Name: "afterStep", In: "query", Flag: "after-step", Type: "integer", Description: "Only points after this optimiser step (live append)"},
+		},
+	},
+	{
 		ID: "mixes.edit", Entity: "mixes", Verb: "edit", Method: "PATCH", Path: "/mixes/{id}",
 		Summary:        "Edit a mix; a person's edit makes a new revision, an agent's lands as a draft when the draft policy says so",
 		Description:    "Edit a mix: the fields you send replace the current ones (groups as a whole list). Send ifMatch with the etag (or rev) of your last mixes.get; a stale revision fails with precondition-failed and the current revision. Under the project's draft policy (the default for agents) the edit does not change the mix: it lands as a draft (result.draft) that a person accepts or reverts, and your later edits update the same draft. mixes.get shows your open draft under presence.",
@@ -771,7 +815,7 @@ var Operations = []Operation{
 	{
 		ID: "pipelines.run", Entity: "pipelines", Verb: "run", Method: "POST", Path: "/projects/{p}/pipelines/{name}:run",
 		Summary:        "Validate a pipeline against the step registry and start a pipeline run (dryRun validates and estimates)",
-		Description:    "Run a pipeline of this project. Always call it with dryRun=true first: that validates the pipeline against the published step kinds (kind@version exists, input and output artifact types match, parameters fit each kind's schema, no cycles), resolves every parameter from defaults.yaml, lists the departures from defaults and sums the known estimates, without starting anything; a broken pipeline answers pipeline-invalid with one error per problem. Then run it for real with the same body and ifMatch = the pipeline's version from pipelines.list (or \"*\" for whatever is at ref). inputs maps each pipeline input to an artifact {hash, type}; params overrides parameters per step id; finished steps with the same input hash are reused unless fresh. The answer is the pipeline run (plr_…): follow pipeline_run.{id} or call pipelineRuns.wait. Spending GPU time over the budget answers 202 with an approvalId instead.",
+		Description:    "Run a pipeline of this project. Always call it with dryRun=true first: that validates the pipeline against the published step kinds (kind@version exists, input and output artifact types match, parameters fit each kind's schema, no cycles), resolves every parameter from defaults.yaml, lists the departures from defaults and sums the known estimates, without starting anything; a broken pipeline answers pipeline-invalid with one error per problem. Then run it for real with the same body and ifMatch = the pipeline's version from pipelines.list (or \"*\" for whatever is at ref). inputs maps each pipeline input to an artifact {hash, type}; params overrides parameters per step id; finished steps with the same input hash are reused unless fresh. The answer is the pipeline run (plr_…): follow pipeline_run.{id} or call pipelineRuns.wait. Spending GPU time over the budget answers 202 with an approvalId instead. A dataset input of an eval-only version (or a mix input referencing one) that a training step reads answers eval-only-dataset.",
 		IdempotencyKey: true,
 		Params: []Param{
 			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
@@ -954,7 +998,7 @@ var Operations = []Operation{
 	{
 		ID: "queueEntries.list", Entity: "queueEntries", Verb: "list", Method: "GET", Path: "/queue-entries",
 		Summary:     "The step queue across projects — waiting, paused and running step jobs with their card and lease",
-		Description: "The GPU queue: step jobs waiting, paused or running on a worker, in start order (priority, then first come), with the card and worker holding each running one. Reorder with jobs.edit (priority), pause with jobs.pause. A project-scoped credential sees its own project's entries only.",
+		Description: "The GPU queue: step jobs waiting, paused or running on a worker, in start order (the project's queue priority, then the job's priority, then first come), with the card and worker holding each running one. Reorder with jobs.edit (a job's priority) or projects.edit (budgets.queuePriority), pause with jobs.pause. A project-scoped credential sees its own project's entries only.",
 		Params: []Param{
 			{Name: "project", In: "query", Flag: "project", Type: "string", Description: "Only this project's entries (slug)"},
 		},
@@ -989,9 +1033,45 @@ var Operations = []Operation{
 		},
 	},
 	{
+		ID: "runs.calibrate", Entity: "runs", Verb: "calibrate", Method: "POST", Path: "/projects/{p}/runs:calibrate",
+		Summary:        "Measure seconds per step and batch sizes for a base model on the training card (the family's calibrate step)",
+		Description:    "Calibrate before the first run of a base model on a card: runs the model family's calibrate step on the mix's data under the card's memory cap. When it finishes, runs.new?dryRun=true estimates switch from basis table to basis measured for that base model, card class, memory cap and precision. Answers 201 with the pipeline run (follow it with pipelineRuns.wait), or 202 with an approvalId when today's GPU budget is spent.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "baseModel", Type: "string", Description: "Base model version (ver_…), collection name or @alias; default the defaults' base model"},
+			{Name: "compute", Type: "string", Description: "Host id or name; default the first host whose card allows training"},
+			{Name: "mix", Required: true, Type: "string", Description: "The mix whose data the calibration measures on (mix_… or name)"},
+			{Name: "mixRevision", Type: "integer"},
+			{Name: "params", Type: "object", Description: "Overrides of the calibrate step's parameters"},
+			{Name: "precision", Type: "string"},
+		}},
+	},
+	{
+		ID: "runs.get", Entity: "runs", Verb: "get", Method: "GET", Path: "/runs/{id}",
+		Summary:     "Get a run with its stage timeline, final metrics, departures from defaults and parent run",
+		Description: "A training run: status, the stage timeline (calibrate, train, … with their states and attempts), the job to pause or cancel (currentJobId, via jobs.pause | jobs.resume | jobs.cancel), OOM retries (batch scale), final metrics, departures from defaults, the parent run and the config diff against it, the best checkpoint and the estimate it started with.",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Run id (run_…)"},
+		},
+	},
+	{
+		ID: "runs.list", Entity: "runs", Verb: "list", Method: "GET", Path: "/projects/{p}/runs",
+		Summary:     "Training runs of a project, newest first",
+		Description: "List the project's training runs, newest first: status (queued, running, paused, done, failed, cancelled), start (base model or checkpoint), mix revision, step budget, final metrics and the best checkpoint. Filter by status. Open one with runs.get.",
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "status", In: "query", Flag: "status", Type: "string", Description: "Only runs in this status", Enum: []string{"queued", "running", "paused", "done", "failed", "cancelled"}},
+			{Name: "limit", In: "query", Flag: "limit", Type: "integer", Default: "100"},
+		},
+	},
+	{
 		ID: "runs.new", Entity: "runs", Verb: "new", Method: "POST", Path: "/projects/{p}/runs",
-		Summary:        "Start a training run; until phase 2 only ?dryRun=true answers, with GPU-hours, card, duration and data",
-		Description:    "Start a training run from a base model (init base) or a checkpoint. Until phase 2 only the dry run works: call it with dryRun=true to get the estimate (GPU-hours, duration, card, data volume, basis and ±) from the defaults table and the compute entity; without dryRun it answers 501.",
+		Summary:        "Start a training run (one optimisation stage); ?dryRun=true answers the estimate first",
+		Description:    "Start one training stage: a base model (init base) or a checkpoint (init checkpoint, ckp_…), a mix (mix_… or its name, at its current revision unless mixRevision), the project's train-stage pipeline at a commit, a step budget and a seed. Always call it with dryRun=true first: the answer is the estimate (GPU-hours, duration, card, data volume, basis table or measured, ±, today's GPU spend against the project's budget). Without dryRun it answers 201 with the run, or 202 with an approvalId when the estimate exceeds today's remaining GPU budget of the project or of your session — then wait for approval.decided. Eval-only datasets are refused. Follow the run with runs.get and metrics.get; checkpoints arrive on checkpoints.list.",
 		IdempotencyKey: true,
 		Params: []Param{
 			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
@@ -999,13 +1079,56 @@ var Operations = []Operation{
 		},
 		Body: &Body{Required: true, Properties: []BodyProperty{
 			{Name: "baseModel", Type: "string", Description: "Base model version (ver_…), collection name (its newest frozen version) or @alias; default the defaults' base model"},
-			{Name: "checkpoint", Type: "string", Description: "Required when init is checkpoint (checkpoints arrive in phase 2)"},
+			{Name: "checkpoint", Type: "string", Description: "The checkpoint to start from (ckp_…); required when init is checkpoint. The run's base model is then the checkpoint's"},
 			{Name: "compute", Type: "string", Description: "Host id or name; default the first host whose card allows training"},
-			{Name: "datasets", Type: "array of string", Description: "Dataset versions (ver_… or @alias) the run reads, for the data volume; the mix replaces this in phase 2"},
+			{Name: "datasets", Type: "array of string", Description: "Dry runs without a mix only: dataset versions (ver_… or @alias) for the data volume"},
 			{Name: "gpus", Type: "integer", Description: "Cards for the run; v1 accepts 1 (training.gpus)"},
 			{Name: "init", Type: "string", Description: "Where the weights start (R44); scratch is deferred"},
+			{Name: "mix", Type: "string", Description: "The mix to train on (mix_… or its name); required unless dryRun with datasets"},
+			{Name: "mixRevision", Type: "integer", Description: "The mix revision (default its current one)"},
+			{Name: "params", Type: "object", Description: "Overrides of the train step's parameters (recorded as departures when they differ from the default)"},
+			{Name: "pipeline", Type: "string", Description: "The recipe: a pipeline of the project repository (default training.pipeline, train-stage)"},
 			{Name: "precision", Type: "string"},
-			{Name: "steps", Type: "integer", Description: "Default training.steps"},
+			{Name: "priority", Type: "integer", Description: "Queue priority of the run's step jobs (higher first)"},
+			{Name: "ref", Type: "string", Description: "Branch, tag or commit to read the pipeline at (default main)"},
+			{Name: "seed", Type: "integer", Description: "The train step's seed parameter, when its kind has one (default: the kind's default)"},
+			{Name: "steps", Type: "integer", Description: "Step budget of the stage (default training.steps); the train step's steps parameter"},
+		}},
+	},
+	{
+		ID: "runs.resume", Entity: "runs", Verb: "resume", Method: "POST", Path: "/runs/{id}:resume",
+		Summary:        "Continue a stopped or failed run from its last training state (same stage, same optimiser state)",
+		Description:    "Continue the same stage of a cancelled or failed run from its last saved training-state (same optimiser and sampler state, same step budget). A paused step job resumes with jobs.resume instead. Send ifMatch with the run's etag. Answers the run (queued again), 409 no-training-state when it never saved one (start a new run), or 202 with an approvalId when the remaining steps exceed today's GPU budget.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Run id (run_…)"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+	},
+	{
+		ID: "runs.stage", Entity: "runs", Verb: "stage", Method: "POST", Path: "/runs/{id}:stage",
+		Summary:        "Start a new stage from a checkpoint of this run with an explicit peak learning rate",
+		Description:    "Start the next training stage from a checkpoint of this run (default its best kept checkpoint): a new run with init checkpoint, a new optimiser and the peak learning rate you give (peakLr, e.g. 2e-5 for a continuation), on the parent's mix unless you name another. The new run records the parent, and runs.get shows the config diff against it. Send ifMatch with the parent's etag; dryRun=true answers the estimate. Answers 201 with the new run or 202 with an approvalId over budget.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "The parent run (run_…)"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "checkpoint", Type: "string", Description: "The checkpoint to start from (ckp_… of this run); default the run's best kept checkpoint"},
+			{Name: "compute", Type: "string"},
+			{Name: "mix", Type: "string", Description: "The mix (default the parent's)"},
+			{Name: "mixRevision", Type: "integer", Description: "The mix revision (default the named mix's current one, or the parent's revision when the mix is the parent's)"},
+			{Name: "params", Type: "object", Description: "More overrides of the train step's parameters"},
+			{Name: "peakLr", Required: true, Type: "number", Description: "The new stage's peak learning rate (the train step's peak_lr, learning_rate or lr parameter)"},
+			{Name: "pipeline", Type: "string", Description: "The recipe (default the parent's pipeline)"},
+			{Name: "precision", Type: "string"},
+			{Name: "priority", Type: "integer"},
+			{Name: "ref", Type: "string"},
+			{Name: "seed", Type: "integer"},
+			{Name: "steps", Type: "integer", Description: "Step budget (default training.steps)"},
 		}},
 	},
 	{
