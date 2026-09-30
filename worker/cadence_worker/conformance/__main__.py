@@ -1,5 +1,6 @@
-"""``python -m cadence_worker.conformance --runtime RUNTIME [--report FILE] [--help-dir DIR]``: run the suite for the
-packs of one runtime; prints the report as JSON and exits 1 when a stage failed."""
+"""``python -m cadence_worker.conformance --runtime RUNTIME [--report FILE] [--help-dir DIR] [--memory-cap-mb N]
+[--work DIR]``: run the suite for the packs of one runtime; prints the report as JSON and exits 1 when a stage failed.
+On a shared card, ``--memory-cap-mb`` is the cap a lease would carry (the NeMo pack's nightly run beside vLLM)."""
 
 from __future__ import annotations
 
@@ -16,8 +17,10 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--runtime", required=True, help="runtime whose packs to check (toy, nemo-speech)")
     ap.add_argument("--report", type=Path, help="also write the JSON report here")
     ap.add_argument("--help-dir", type=Path, help="docs/help to check help articles against (default: the checkout's)")
+    ap.add_argument("--memory-cap-mb", type=int, default=0, help="card memory cap of GPU steps, as a lease's (0: none)")
+    ap.add_argument("--work", type=Path, help="parent directory of the temporary store and scratch (default: TMPDIR)")
     args = ap.parse_args(argv[1:])
-    report = run(args.runtime, help_dir=args.help_dir)
+    report = run(args.runtime, help_dir=args.help_dir, memory_cap_mb=args.memory_cap_mb, work=args.work)
     text = json.dumps(report.to_json(), indent=2)
     print(text)
     if args.report:

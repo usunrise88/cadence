@@ -11,6 +11,11 @@ the pack whose ``role`` matches), then the flow on the pack's fixtures through t
 Export and parity join in phase 5. Contracts a pack must meet beyond the schemas: the transcribe kind takes a
 ``profile`` parameter naming a latency profile; the train kind resumes from ``overrides.resumeFrom``; checkpoints carry
 the neutral meta family, step, valWer and weightsHash.
+
+Inputs are filled by declared artifact type, as the control plane fills a run's pipeline inputs: ``dataset`` (the
+imported fixtures), ``mix`` (a ``cadence.mix/1`` rendered over that dataset), ``base_model`` (a
+``cadence.base_model/1`` from the family's ``conformance["base_model"]``), ``calibration`` (the calibrate stage's
+output) and ``checkpoint`` (the stage's model).
 """
 
 from __future__ import annotations
@@ -147,8 +152,16 @@ class StopAfterFirstMetric(MemorySink):
 
 
 class Flow:
-    def __init__(self, runtime: str, kinds: Mapping[str, KindEntry], work: Path, stop_grace: float = 60.0) -> None:
+    def __init__(
+        self,
+        runtime: str,
+        kinds: Mapping[str, KindEntry],
+        work: Path,
+        stop_grace: float = 60.0,
+        memory_cap_mb: int = 0,
+    ) -> None:
         self.runtime = runtime
+        self.memory_cap_mb = memory_cap_mb
         self.kinds = kinds
         self.store = Store(work / "cas")
         self.scratch = work / "scratch"
@@ -182,7 +195,7 @@ class Flow:
             "jobId": f"job_conformance{self.n}",
             "spec": spec,
             "inputs": {k: "cas://" + v["hash"] for k, v in inputs.items()},
-            "card": {"index": 0, "memoryCapMb": 0},
+            "card": {"index": 0, "memoryCapMb": self.memory_cap_mb},
             "heartbeatSeconds": 10,
         }
 
@@ -223,6 +236,67 @@ class Flow:
                 row = json.loads(line)
                 refs[files[row["audio"]]] = row["text"]
         return data, refs
+
+    def put_json(self, doc: Mapping[str, Any], typ: str, meta: Mapping[str, Any] | None = None) -> ArtifactRef:
+        b = json.dumps(doc, sort_keys=True, separators=(",", ":")).encode()
+        return {
+            "hash": self.store.put_bytes(b),
+            "type": typ,
+            "size": len(b),
+            "meta": {"layout": "file", **(meta or {})},
+        }
+
+    def render_mix(self, data: ArtifactRef) -> ArtifactRef:
+        """A one-group mix over the imported dataset, in the control plane's format (runs.RenderMix)."""
+        files = {f.path: f.hash for f in self.store.read_manifest(data["hash"])}
+        header = json.loads(self.store.path(files["dataset.json"]).read_bytes())
+        hours = float(header.get("hours") or 0.0)
+        doc = {
+            "format": "cadence.mix/1",
+            "mix": {"id": "mix_conformance", "name": "conformance", "revision": 1},
+            "temperature": 1.0,
+            "replayShare": 0.0,
+            "input_cfg": [
+                {
+                    "type": "group",
+                    "name": "fixtures",
+                    "replay": False,
+                    "weight": 1.0,
+                    "probability": 1.0,
+                    "input_cfg": [
+                        {
+                            "type": "dataset",
+                            "dataset": "dsv_conformance",
+                            "name": "conformance-fixtures",
+                            "version": "fixtures",
+                            "artifact": data["hash"],
+                            "hours": hours,
+                        }
+                    ],
+                }
+            ],
+        }
+        return self.put_json(doc, "mix", {"format": "cadence.mix/1", "datasets": ["dsv_conformance"]})
+
+    def render_base_model(self, family: str, model: Mapping[str, Any]) -> ArtifactRef:
+        doc = {
+            "format": "cadence.base_model/1",
+            "versionId": "bmv_conformance",
+            "collection": "base-model/conformance",
+            "version": "fixtures",
+            "family": {"name": family, "versionId": "mfv_conformance"},
+            "model": dict(model),
+        }
+        return self.put_json(doc, "base_model", {"format": "cadence.base_model/1", "family": family})
+
+    def inputs_for(self, kind: str, available: Mapping[str, ArtifactRef]) -> dict[str, ArtifactRef]:
+        """Every input the kind consumes, filled from ``available`` by artifact type."""
+        out: dict[str, ArtifactRef] = {}
+        for name, typ in sorted(self.kinds[kind].cls.consumes.items()):
+            if typ not in available:
+                raise ConformanceError(f"{kind} consumes {name} ({typ}), which the conformance flow cannot provide")
+            out[name] = available[typ]
+        return out
 
     def read_json(self, ref: ArtifactRef) -> Any:
         return json.loads(self.store.path(ref["hash"]).read_bytes())
@@ -272,10 +346,20 @@ def run_family(flow: Flow, fam: Family, report: Report) -> None:
         return
     data: ArtifactRef = state["data"]
     refs: dict[str, str] = state["refs"]
+    available: dict[str, ArtifactRef] = {"dataset": data}
+    consumed = {t for k in roles.values() if k in flow.kinds for t in flow.kinds[k].cls.consumes.values()}
+    if "mix" in consumed:
+        available["mix"] = flow.render_mix(data)
+    if "base_model" in consumed:
+        if "base_model" not in conf:
+            report.stages.append(Stage(f"{prefix}/inputs", False, 0.0, {"error": "no conformance base_model"}))
+            return
+        available["base_model"] = flow.render_base_model(d["name"], conf["base_model"])
 
     def calibrate() -> dict[str, Any]:
-        out, _ = flow.run(roles["calibrate"], conf.get("calibrate", {}), {"data": data})
+        out, _ = flow.run(roles["calibrate"], conf.get("calibrate", {}), flow.inputs_for(roles["calibrate"], available))
         cal = _by_type(_expect_done(out, "calibrate"), "calibration", "calibrate")
+        available["calibration"] = cal
         doc = flow.read_json(cal)
         if not (isinstance(doc, dict) and float(doc.get("secondsPerStep", 0)) > 0 and int(doc.get("batchSize", 0)) > 0):
             raise ConformanceError(f"calibration lacks secondsPerStep/batchSize: {doc}")
@@ -289,7 +373,7 @@ def run_family(flow: Flow, fam: Family, report: Report) -> None:
         return meta
 
     def train() -> dict[str, Any]:
-        out, sink = flow.run(roles["train"], conf.get("train", {}), {"data": data})
+        out, sink = flow.run(roles["train"], conf.get("train", {}), flow.inputs_for(roles["train"], available))
         outputs = _expect_done(out, "train")
         ck = _by_type(outputs, "checkpoint", "train")
         state["ck1"], state["ts1"] = ck, _by_type(outputs, "training-state", "train")
@@ -301,7 +385,12 @@ def run_family(flow: Flow, fam: Family, report: Report) -> None:
         return {"step": meta["step"], "valWer": meta["valWer"], "firstLoss": losses[0], "lastLoss": losses[-1]}
 
     def stop() -> dict[str, Any]:
-        out, _ = flow.run(roles["train"], conf.get("stop", {}), {"data": data}, sink=StopAfterFirstMetric())
+        out, _ = flow.run(
+            roles["train"],
+            conf.get("stop", {}),
+            flow.inputs_for(roles["train"], available),
+            sink=StopAfterFirstMetric(),
+        )
         if out["state"] != "cancelled":
             raise ConformanceError(f"a stopped train step ended {out['state']}, expected cancelled")
         outputs = out.get("outputs") or {}
@@ -311,7 +400,12 @@ def run_family(flow: Flow, fam: Family, report: Report) -> None:
         return {"trainingState": ts["hash"], "meta": ts.get("meta")}
 
     def resume() -> dict[str, Any]:
-        out, _ = flow.run(roles["train"], conf.get("resume", {}), {"data": data}, {"resumeFrom": state["ts1"]["hash"]})
+        out, _ = flow.run(
+            roles["train"],
+            conf.get("resume", {}),
+            flow.inputs_for(roles["train"], available),
+            {"resumeFrom": state["ts1"]["hash"]},
+        )
         ck = _by_type(_expect_done(out, "resume"), "checkpoint", "resume")
         meta = check_checkpoint(ck, "resume")
         if int(meta["step"]) <= int((state["ck1"].get("meta") or {})["step"]):
@@ -333,7 +427,11 @@ def run_family(flow: Flow, fam: Family, report: Report) -> None:
     def transcribe(profile: Mapping[str, Any]) -> Callable[[], dict[str, Any]]:
         def run() -> dict[str, Any]:
             params = {**conf.get("transcribe", {}), "profile": profile["name"]}
-            out, _ = flow.run(roles["transcribe"], params, {"model": state["avg"], "data": data})
+            out, _ = flow.run(
+                roles["transcribe"],
+                params,
+                flow.inputs_for(roles["transcribe"], {**available, "checkpoint": state["avg"]}),
+            )
             hyp = _by_type(_expect_done(out, f"transcribe {profile['name']}"), "hypotheses", "transcribe")
             lines = flow.read_lines(hyp)
             if len(lines) != len(refs):
@@ -368,7 +466,16 @@ def run_family(flow: Flow, fam: Family, report: Report) -> None:
         report.stages.append(Stage(f"{prefix}/{role}", True, 0.0, {"skipped": why}))
 
 
-def run(runtime: str, *, help_dir: Path | None = None, work: Path | None = None, stop_grace: float = 60.0) -> Report:
+def run(
+    runtime: str,
+    *,
+    help_dir: Path | None = None,
+    work: Path | None = None,
+    stop_grace: float = 60.0,
+    memory_cap_mb: int = 0,
+) -> Report:
+    """The suite for one runtime. ``memory_cap_mb`` is the card cap GPU steps run under, as a lease's would be (0: the
+    whole card)."""
     report = Report(runtime)
     kinds = load_kinds(runtime)
     families = load_families(runtime)
@@ -380,7 +487,7 @@ def run(runtime: str, *, help_dir: Path | None = None, work: Path | None = None,
     if problems:
         return report
     with tempfile.TemporaryDirectory(prefix="cadence-conformance-", dir=work) as tmp:
-        flow = Flow(runtime, kinds, Path(tmp), stop_grace=stop_grace)
+        flow = Flow(runtime, kinds, Path(tmp), stop_grace=stop_grace, memory_cap_mb=memory_cap_mb)
         for fam in families:
             run_family(flow, fam, report)
     return report

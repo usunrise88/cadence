@@ -22,7 +22,9 @@ def test_a_runtime_publishes_its_own_kinds_and_the_neutral_ones() -> None:
     assert "echo" in nemo
     assert not any(k.startswith("toy_") for k in nemo)
     assert [f.descriptor["name"] for f in load_families("toy")] == ["toy-ctc"]
-    assert load_families("nemo-speech") == []
+    assert [f.descriptor["name"] for f in load_families("nemo-speech")] == ["nemo.fastconformer-rnnt.cache-aware"]
+    assert {"oomptimizer_calibrate", "nemotron_finetune", "checkpoint_average", "nemotron_transcribe"} <= set(nemo)
+    assert not any(k.startswith("nemotron_") for k in toy)
 
 
 def test_runtime_descriptor_from_env_with_the_environment_lock(monkeypatch: pytest.MonkeyPatch) -> None:
