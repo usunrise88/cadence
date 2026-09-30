@@ -63,7 +63,6 @@ Open questions:
 - [ ] Unknown `/api` path answers 404 `not-found`, wrong method 405 `method-not-allowed` (a tenth error type with its article); the review proposed 400 for both
 - [x] Training from scratch or a second framework (k2/icefall) in v1? — Only the seams, in phase 2; training from scratch, packs beyond NeMo and spike F1 are deferred (owner, 2026-09-29; R44, R45)
 - [x] Keep uploads and microphone recordings? — No: a transcription is a manual test and stores nothing (owner, 2026-09-29; R47)
-<<<<<<< HEAD
 - [ ] `project://summary` needs the connection's project, which the spec does not say how to name. Phase 1 reads a
   `Cadence-Project: <slug>` header that the agent host sends next to `Authorization` in ACP `session/new` →
   `mcpServers` (R2); once `cst_` tokens are project-bound, the token's scope decides and the header must agree.
@@ -90,9 +89,15 @@ Open questions:
       the staging host is inventoried
 - [ ] Secrets: no rotation or archive yet (`secrets.new` refuses a taken name); the master key defaults to
       `$CADENCE_DATA_DIR/master.key`, generated on first start, until the compose secret of R9 is wired
-=======
 - [ ] Identity (phase 1) assumptions, confirm: login throttling counts failed attempts only (5/min, 20/h per address and per username, in memory); `X-Forwarded-For`/`-Proto` are trusted from loopback and private peers (the host's Caddy, Docker's gateway); the TOTP secret lives in the `users` row, not the R9 file store (it is a sign-in factor, not a secret handed to jobs); passwords need 12+ characters; first start may rename the admin account; out-of-scope reads answer 403 `forbidden` rather than hiding the entity behind 404; a credential without a project may not open the event stream
->>>>>>> phase1/identity
+- [ ] Phase-1 panels (wave 2), confirm: the audit log is a Settings section (11 names no panel of its own);
+  Getting started sits in the Training workspace's right column (Training is where a newcomer lands; 11 lists it
+  in no workspace) and "Dismiss" is remembered per browser, not per user, until a user-preferences entity exists;
+  "first dataset frozen" counts a dataset version frozen by a person or an agent (bundled fixtures do not);
+  Settings opens floating and shows to any signed-in person (v1 has one admin; the reviewer role hides it later);
+  "Approve for this session" is offered only for requests carrying an agent session id; stored Ops workspaces are
+  not migrated to add the Approvals panel (the stored shape did not change; the status-bar badge reaches it) — only
+  "Reset to default" and new workspaces get it
 
 ## Sources
 
