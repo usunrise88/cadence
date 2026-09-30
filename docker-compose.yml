@@ -64,6 +64,9 @@ services:
       - agent-sessions:/var/lib/cadence-host
     networks: [agents]
     depends_on: [control-plane, egress-proxy]
+    # On SIGTERM the host stops its agents, commits their interrupted turns and releases the sessions
+    # (hostSessions.release) so the next host takes them at once; it releases after 20 s at the latest.
+    stop_grace_period: 30s
 
   # The agent sandbox's only egress (R4): HTTP CONNECT to the listed hosts, 403 for anything else. It is the control
   # plane binary (`cadence egress-proxy`, internal/egress); the list is the whole policy — model providers, Hugging

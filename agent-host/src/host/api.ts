@@ -6,12 +6,14 @@ import type {
   HostAsk,
   HostClaim,
   HostDecision,
+  HostRelease,
+  HostReleased,
   HostReport,
   HostWork,
   Problem,
 } from "../api/gen/types.gen.ts";
 
-export type { AgentSession, HostAsk, HostClaim, HostDecision, HostReport, HostWork };
+export type { AgentSession, HostAsk, HostClaim, HostDecision, HostRelease, HostReleased, HostReport, HostWork };
 export type {
   AgentPauseReason,
   AgentToolCall,
@@ -26,6 +28,8 @@ export interface ControlPlane {
   claim(req: HostClaim, signal?: AbortSignal): Promise<HostWork>;
   report(sessionId: string, body: HostReport): Promise<AgentSession>;
   ask(sessionId: string, body: HostAsk): Promise<HostDecision>;
+  // release gives every session of a host that shuts down back to the control plane (the next host takes them).
+  release(body: HostRelease): Promise<HostReleased>;
 }
 
 export class ApiError extends Error {
@@ -80,5 +84,9 @@ export class HttpControlPlane implements ControlPlane {
 
   ask(sessionId: string, body: HostAsk): Promise<HostDecision> {
     return this.call("POST", `/host-sessions/${encodeURIComponent(sessionId)}:ask`, body);
+  }
+
+  release(body: HostRelease): Promise<HostReleased> {
+    return this.call("POST", "/host-sessions:release", body);
   }
 }
