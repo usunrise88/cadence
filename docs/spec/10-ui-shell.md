@@ -328,9 +328,10 @@ Step roles follow Radix's [scale guide](https://radix-ui.com/colors/docs/palette
 | Agent attribution badge | accent alpha 3 fill, accent-11 text | Marks changes an agent made; click jumps to the tool call in Chat |
 | Agent draft, not yet accepted | accent-8 dashed outline | Amber stays reserved for warnings |
 | Diff added / removed | grass-3 / red-3 background, step-11 text | Recipe documents, tool-call cards, drafts |
-| Chart series (categorical) | Eight Radix hues at step 9 (dark: 10), excluding blue, grass, amber, red and the accent | Inside charts only; 3:1 against the chart background and apart under a colour-vision-deficiency simulation (R53) |
+| Chart series (categorical) | Eight Radix hues at step 9 (dark: 10), excluding blue, grass, amber, red and the accent, in this order: crimson, violet, bronze, plum, lime, sky, orange, teal. Light mode takes lime-11, sky-11, orange-10 and teal-10: their step 9 is under 3:1 (lime 1.3, sky 1.4, orange 2.8, teal 2.9 on slate-2) | Inside charts only, on slate-1 or slate-2: every series ≥ 3:1 on both in both modes (lowest: orange-10 3.17:1 light on slate-2). Colour-vision-deficiency check (Machado 2009, OKLab ΔE×100): neighbours ≥ 8 under protanopia and deuteranopia, ≥ 6 under tritanopia, ≥ 15 in normal vision; any two ≥ 8. Each slot also has its own dash, symbol or decal (R53) |
+| Chart axes and labels, grid, crosshair, checkpoint marks | slate-11 / slate-a4 / slate-9 / slate-11 | Labels 4.5:1 and crosshair and marks 3:1 on slate-1 and slate-2; the grid is decorative |
 | Heatmaps, spectrograms | magma by default; viridis, cividis, inferno, Roseus, grey on request | Independent of light and dark; axes, grid and labels use slate-11/12 (R52) |
-| Deltas (diverging) | blue ↔ slate ↔ orange | Never red–green: red and grass stay status colours (R53) |
+| Deltas (diverging) | blue ↔ slate ↔ orange (blue-11, 9, 7, 5, slate-4, orange-5, 7, 9, 11) | Never red–green: red and grass stay status colours; the poles are ≥ 15 ΔE apart under every simulation (R53) |
 
 Implementation:
 
