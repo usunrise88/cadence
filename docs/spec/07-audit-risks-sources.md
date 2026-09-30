@@ -431,9 +431,12 @@ Open questions:
       and no step kind implements it yet; the NeMo pack's train kind must, with the interval from `defaults.yaml`
 - [ ] gap (phase 2): `metrics.get` (series binned for charts, R53) is not in the contract yet; `internal/telemetry.Get`
       is ready for stream R to expose
-- [ ] gap (later): job-log field search and the global search index of `warn`+ lines (R15) are not built; step kinds'
-      schemas are not rendered into a per-kind MCP tool description (agents read `stepKinds.get` and the dry run);
-      remote workers have an upload path (`workerArtifacts.set`) but no download path
+- [ ] gap (later): job-log field search and the global search index of `warn`+ lines (R15) are not built; remote
+      workers have an upload path (`workerArtifacts.set`) but no download path
+- [ ] deferred (later, decided 2026-09-30): per-kind MCP tool descriptions — step kinds' parameter schemas are not
+      rendered into a tool description per kind; agents read `stepKinds.get` (schema with `x-cadence`) and the
+      `pipelines.run` dry run (resolved parameters, departures), which covers phase 2. Revisit when playbooks or
+      agents show they need it; no code in phase 2
 
 ## Sources
 
