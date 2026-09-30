@@ -8,6 +8,8 @@
 //   hang                 sends nothing until cancelled (stuck turn)
 //   scribble <file> <t>  writes the file, then sends nothing until cancelled (the worktree watcher)
 //   ask <command>        asks permission to run a shell command, answers with the option it got
+//   mcp <tool>           calls mcp__cadence__<tool> as Claude does: at once when session/new pre-allowed it
+//                        (_meta.claudeCode.options.allowedTools), else after asking permission; answers "mcp:<how>"
 //   usage <n>            answers with n input tokens used
 //   think                streams 50 thought chunks, then answers
 //   anything else        answers "ok: <the whole prompt>" in three chunks
@@ -21,7 +23,13 @@ import * as acp from "@agentclientprotocol/sdk";
 
 type Ctx = { notify: (method: string, params: unknown) => Promise<void>; request: (method: string, params: unknown) => Promise<unknown> };
 
-const sessions = new Map<string, { cwd: string; abort?: AbortController }>();
+const sessions = new Map<string, { cwd: string; abort?: AbortController; allowed?: string[] }>();
+
+// The tools session/new pre-allowed (Claude Agent SDK options in _meta, as claude-agent-acp reads them).
+function allowedTools(meta: unknown): string[] {
+  const opts = (meta as { claudeCode?: { options?: { allowedTools?: unknown } } } | undefined)?.claudeCode?.options;
+  return Array.isArray(opts?.allowedTools) ? opts.allowedTools.filter((t): t is string => typeof t === "string") : [];
+}
 let n = 0;
 
 const tick = (): Promise<void> => new Promise((r) => setImmediate(r));
@@ -106,6 +114,28 @@ async function turn(cx: Ctx, sessionId: string, prompt: string, signal: AbortSig
       await say(cx, sessionId, `permission:${got}`);
       return { stopReason: "end_turn", usage };
     }
+    case "mcp": {
+      const name = `mcp__cadence__${rest[0] ?? "echo"}`;
+      const toolCallId = `mcp-${++n}`;
+      const _meta = { claudeCode: { toolName: name } };
+      const toolCall = { toolCallId, title: name, kind: "other", status: "pending", rawInput: { id: "mix_1" }, _meta };
+      await cx.notify("session/update", { sessionId, update: { sessionUpdate: "tool_call", ...toolCall } });
+      let how = "pre-allowed";
+      if (!s.allowed?.includes(name)) {
+        const res = (await cx.request("session/request_permission", {
+          sessionId,
+          toolCall,
+          options: [
+            { optionId: "yes", name: "Allow", kind: "allow_once" },
+            { optionId: "no", name: "Reject", kind: "reject_once" },
+          ],
+        })) as acp.RequestPermissionResponse;
+        how = res.outcome.outcome === "selected" ? `asked:${res.outcome.optionId}` : "asked:cancelled";
+      }
+      await cx.notify("session/update", { sessionId, update: { sessionUpdate: "tool_call_update", toolCallId, _meta, status: "completed" } });
+      await say(cx, sessionId, `mcp:${how}`);
+      return { stopReason: "end_turn", usage };
+    }
     case "usage":
       await say(cx, sessionId, "counted");
       return { stopReason: "end_turn", usage: { inputTokens: Number(rest[0]), outputTokens: 1, totalTokens: Number(rest[0]) + 1 } };
@@ -128,11 +158,11 @@ acp
   }))
   .onRequest("session/new", (ctx) => {
     const sessionId = `script-${process.pid}-${++n}`;
-    sessions.set(sessionId, { cwd: ctx.params.cwd });
+    sessions.set(sessionId, { cwd: ctx.params.cwd, allowed: allowedTools(ctx.params._meta) });
     return { sessionId };
   })
   .onRequest("session/resume", (ctx) => {
-    sessions.set(ctx.params.sessionId, { cwd: ctx.params.cwd });
+    sessions.set(ctx.params.sessionId, { cwd: ctx.params.cwd, allowed: allowedTools(ctx.params._meta) });
     return {};
   })
   .onRequest("session/prompt", async (ctx) => {

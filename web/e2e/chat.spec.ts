@@ -77,6 +77,11 @@ test("Chat: new session, streamed reply, inline permission, tool call with badge
   // A Cadence tool call through MCP with the session token: the edit lands as a draft on the mix.
   const agent = await host.mcp(sessionId, slug);
   const read = await agent.call("mixes.get", { id: mix.id });
+  // An agent that still asks for a tool the preset allows (the host pre-allows them for Claude): the preset answers at
+  // once, and the answer is left out of the transcript once the call itself is there.
+  const auto = await host.ask(sessionId, 1, { id: "toolu_mix", title: "mcp__cadence__mixes_edit", class: "mcp", status: "pending", operation: "mixes.edit", server: "cadence" });
+  expect(auto.outcome).toBe("allow_once");
+  await expect(chat.locator('[data-kind="permission"]')).toHaveCount(2);
   const edit = await agent.call("mixes.edit", { id: mix.id, ifMatch: read.result.etag, body: { temperature: 2 } }, "toolu_mix");
   expect(edit.isError, JSON.stringify(edit.result)).toBe(false);
   await host.entries(sessionId, 1, [
@@ -87,6 +92,8 @@ test("Chat: new session, streamed reply, inline permission, tool call with badge
     },
   ]);
   const toolCall = chat.locator('[data-tool-call="toolu_mix"]');
+  await expect(toolCall).toHaveCount(1);
+  await expect(chat.locator('[data-kind="permission"]')).toHaveCount(1); // the person's approval stays
   // Collapsed to one line by default; a click opens the card.
   await expect(toolCall.locator('[data-slot="tool-operation"]')).toHaveText("mixes.edit");
   const toolLine = toolCall.locator('[data-slot="tool-line"]');
@@ -164,6 +171,18 @@ test("Chat: new session, streamed reply, inline permission, tool call with badge
   await next.start(sessionId);
   await expect(hostLine).toHaveCount(0);
   await expect(chat.locator('[data-slot="session-state"]')).toHaveText("idle");
+
+  // Idleness pauses the session (R5): it reads as asleep, quietly, and the next message wakes it.
+  await next.report(sessionId, { state: { state: "paused", busy: false, turn: 1, reason: { code: "idle", message: "no message for 30 min" } } });
+  await expect(chat.locator('[data-slot="session-state"]')).toHaveText("asleep");
+  await expect(chat.locator('[data-slot="composer-notice"]')).toHaveText("Asleep — your next message wakes it");
+  await expect(tabIcon).toHaveAttribute("data-tone", "asleep");
+  await chat.getByLabel("Message to the agent").fill("Still there?");
+  await chat.getByRole("button", { name: "Send" }).click();
+  await next.control(sessionId, "resume");
+  await next.report(sessionId, { state: { state: "running", busy: false, turn: 1 } });
+  expect(await next.message(sessionId)).toBe("Still there?");
+  await expect(chat.locator('[data-slot="composer-notice"]')).toHaveCount(0);
 
   // End the session: the host is told, commits nothing more and reports done; the changes wait for a person.
   await chat.getByRole("button", { name: "End session…" }).click();

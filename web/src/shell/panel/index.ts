@@ -17,7 +17,7 @@ export { useEditRequest } from "@/shell/entity/edits";
 // Agents: sessions and transcripts (live through useTopic + useAgentPatcher), the context bridge (which Chat shows
 // which session, composer drafts, Ask agent, badge → tool call) and references as links.
 export { isLive, sessionTopic, SESSIONS_TOPIC, useAgentPatcher, useAgentSession, useAgentSessions, useTranscript } from "@/shell/agents/sessions";
-export { sessionLabel } from "@/shell/agents/labels";
+export { isAsleep, sessionLabel, sessionStateLabel } from "@/shell/agents/labels";
 export { useUnread, viewSession } from "@/shell/agents/unread";
 export {
   askAgent,

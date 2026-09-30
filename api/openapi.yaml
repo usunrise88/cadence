@@ -1710,7 +1710,9 @@ paths:
           description: Dry run — the entry with its expanded context; nothing was sent
           content: { application/json: { schema: { $ref: "#/components/schemas/AgentMessage" } } }
         "201":
-          description: Queued for the agent (delivery pending until the host takes it)
+          description: >
+            Queued for the agent (delivery pending until the host takes it). A session paused for idleness is resumed
+            first; a session paused for any other reason answers 409 conflict with the reason until it is resumed
           content: { application/json: { schema: { $ref: "#/components/schemas/AgentMessage" } } }
         default: { $ref: "#/components/responses/Problem" }
 
@@ -3926,6 +3928,13 @@ components:
           properties:
             stuckTurnSeconds: { type: integer, description: "timeouts.stuck_turn_minutes" }
             identicalCalls: { type: integer, description: The same tool with the same arguments this many times in a row is a runaway }
+        allowedTools:
+          type: array
+          items: { type: string }
+          description: >
+            Cadence MCP tools (operation ids, e.g. mixes.get) the session's permission preset lets the agent call
+            without a permission prompt; the driver pre-allows them in the agent (Claude Code does not apply allow
+            rules from the repository's .claude/settings.json). The server still applies the preset to every call.
         resume:
           type: object
           description: The session ran before (host restart or resume after pause)

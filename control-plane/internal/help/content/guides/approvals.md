@@ -29,7 +29,9 @@ alias, R8).
 
 Presets live in `control-plane/templates/presets/<name>.yaml` and are rendered into the agents' own permission files
 (`.claude/settings.json`, opencode's `permission` block) at bootstrap; those files only save prompts, the server
-decides.
+decides. Claude Code ignores the allow rules of a repository's `.claude/settings.json`, so the agent host passes the
+Cadence tools the preset allows to each Claude session at start (`allowedTools`): they run without a permission
+request, and the Chat does not list a permission the preset allowed on its own for a call it shows.
 
 | Preset | Used by |
 | --- | --- |

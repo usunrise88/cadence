@@ -88,6 +88,13 @@ function toolName(call: RawToolCall): string | undefined {
   return isRecord(cc) && typeof cc.toolName === "string" ? cc.toolName : undefined;
 }
 
+// The name Claude gives an MCP tool in tool calls and permission rules: mcp__<server>__<tool>, characters outside
+// [A-Za-z0-9_-] replaced by underscores (mixes.get → mcp__cadence__mixes_get; policy.ClaudeMCPTool on the server).
+export function mcpToolName(server: string, tool: string): string {
+  const clean = (s: string) => s.replace(/[^A-Za-z0-9_-]/g, "_");
+  return `mcp__${clean(server)}__${clean(tool)}`;
+}
+
 export function parseMcpName(name: string): { server: string; tool: string } | undefined {
   const m = /^mcp__(.+?)__(.+)$/.exec(name);
   return m?.[1] && m[2] ? { server: m[1], tool: m[2] } : undefined;
@@ -117,9 +124,17 @@ export const claudeDriver: Driver = {
   },
 
   // Claude Agent SDK options travel in `_meta.claudeCode.options` (the adapter merges them into its query options).
+  // Claude Code applies the ask and deny rules of the worktree's .claude/settings.json but not its allow rules (a
+  // repository cannot widen its own permissions), so every Cadence call raised a permission request the preset then
+  // answered. The preset's allowed Cadence tools go in as `allowedTools` instead (a CLI-argument rule); the file's
+  // deny rules still win over them.
   sessionMeta(opts: LaunchOptions): Record<string, unknown> | undefined {
-    if (!opts.thoughts) return undefined;
-    return { claudeCode: { options: { thinking: { type: "adaptive", display: "summarized" } } } };
+    const options: Record<string, unknown> = {};
+    if (opts.thoughts) options.thinking = { type: "adaptive", display: "summarized" };
+    const pre = opts.preAllowed;
+    const allowed = pre ? pre.tools.map((t) => mcpToolName(pre.server, t)) : [];
+    if (allowed.length) options.allowedTools = allowed;
+    return Object.keys(options).length ? { claudeCode: { options } } : undefined;
   },
 
   // The agent-credentials volume holds `claude/`: either `oauth-token` (a long-lived token from `claude setup-token`,

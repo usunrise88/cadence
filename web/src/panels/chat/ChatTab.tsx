@@ -11,10 +11,11 @@ const FILL: Record<TabTone, string> = {
   ready: "fill-status-done",
   attention: "fill-status-warning",
   paused: "fill-muted-foreground/40",
+  asleep: "fill-muted-foreground/40", // an idle pause is not a problem: grey like any pause, never a warning
   failed: "fill-status-failed",
   none: "",
 };
-const TONE_LABEL: Record<TabTone, string> = { working: "working", ready: "waiting for you", attention: "waits for a decision", paused: "paused", failed: "failed", none: "" };
+const TONE_LABEL: Record<TabTone, string> = { working: "working", ready: "waiting for you", attention: "waits for a decision", paused: "paused", asleep: "asleep", failed: "failed", none: "" };
 
 export function ChatTab({ instanceId, doc, title, icon: Icon }: PanelTabProps) {
   const pinned = useSelection((s) => s.pins[instanceId]);

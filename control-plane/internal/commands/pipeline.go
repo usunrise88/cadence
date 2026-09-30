@@ -300,15 +300,17 @@ func (p *Pipeline) gate(ctx context.Context, tx pgx.Tx, cmd Command, id string, 
 	return resp, outcomeApproval, nil
 }
 
-// commit appends the events, writes the audit row, stores the response under the key and commits.
+// commit appends the events, writes the audit row (unless audit.Recorded says no), stores the response under the key and commits.
 func (p *Pipeline) commit(ctx context.Context, tx pgx.Tx, cmd Command, id string, tr *trace, outcome string,
 	drafts []events.Draft, resp Response, useKey bool) error {
 	cause := &events.CausedBy{CommandID: id, ToolCallID: tr.toolCallID, ApprovalID: tr.approvalID, DraftID: tr.draftID}
 	if err := events.Append(ctx, tx, cmd.Actor, cause, drafts); err != nil {
 		return err
 	}
-	if err := audit.Write(ctx, tx, p.auditEntry(ctx, cmd, id, outcome, tr)); err != nil {
-		return err
+	if audit.Recorded(cmd.Operation, outcome) {
+		if err := audit.Write(ctx, tx, p.auditEntry(ctx, cmd, id, outcome, tr)); err != nil {
+			return err
+		}
 	}
 	if useKey {
 		if err := storeKey(ctx, tx, cmd, resp); err != nil {

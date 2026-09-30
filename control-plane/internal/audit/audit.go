@@ -1,5 +1,7 @@
 // Package audit is the audit log: one row per committed command, written in the command's own transaction, plus
-// one per denied, gated or failed attempt. It is kept one year (docs/spec/06-platform.md, Operations).
+// one per denied, gated or failed attempt. It is kept one year (docs/spec/06-platform.md, Operations). Personal
+// preferences a client saves on its own (the workspace layout autosave) are not domain commands: their successful
+// runs are not recorded (see Recorded).
 package audit
 
 import (
@@ -26,6 +28,18 @@ const (
 	OutcomeDenied   = "denied"   // refused by the policy engine
 	OutcomeExpired  = "expired"  // an approval nobody decided
 )
+
+// preferences are operations that store one user's own UI state, saved by the client without the person asking
+// (the web shell autosaves the workspace layout). A committed run changes nothing anyone else sees, so it gets no
+// row; a denied or failed attempt still does.
+var preferences = map[string]bool{
+	"workspaces.set": true,
+}
+
+// Recorded reports whether a run of operation with outcome gets an audit row.
+func Recorded(operation, outcome string) bool {
+	return !preferences[operation] || outcome != OutcomeOK
+}
 
 // Entry is one audit row. Its JSON form is the contract's AuditEntry.
 type Entry struct {

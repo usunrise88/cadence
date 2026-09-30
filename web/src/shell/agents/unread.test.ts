@@ -14,6 +14,8 @@ describe("unread Chats", () => {
     expect(isNews(busy, session({ rev: 3, busy: true }))).toBe(false);
     expect(isNews(busy, session({ rev: 2, busy: false }))).toBe(false);
     expect(isNews(undefined, session())).toBe(false);
+    expect(isNews(session({ rev: 2 }), session({ rev: 3, state: "paused", pauseReason: { code: "idle", message: "no message for 30 min" } }))).toBe(false); // asleep
+    expect(isNews(session({ rev: 2 }), session({ rev: 3, state: "paused", pauseReason: { code: "runaway", message: "same call 3 times" } }))).toBe(true);
   });
 
   it("marks a session unread only while no visible Chat shows it; showing it reads it", () => {

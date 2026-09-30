@@ -172,7 +172,8 @@ Open questions:
   - Development without the agent-credentials volume uses the agents' default login under the host user's HOME and
     no per-session users; the image always isolates
   - claude-agent-acp raises a permission request even for MCP tools the rendered settings allow (A2); the preset
-    answers them without a person
+    answers them without a person — resolved 2026-09-30: Claude Code ignores a project file's allow rules; the host
+    pre-allows the preset's Cadence tools (`HostStart.allowedTools` → `allowedTools`)
 - [ ] Chat, Agent sessions and the context bridge (phase 1, chat stream) assumptions, confirm:
   - "One Chat per agent session": the workspace's Chat (instance `chat`, in the right column of every default
     workspace) is pinned to a session through the selection bus pins, stored as `panels.chat.pinnedTo =
@@ -260,6 +261,24 @@ Open questions:
   - Conflicts are resolved on the branch (a new turn, or a push), not in the UI: the three-way view is read-only and
     Accept stays disabled while a conflict remains. Editing a resolution in the browser would need a commit command
     on a session branch, which agents' tokens own
+- [ ] Workspace layout saves and the audit log (polish, 2026-09-30), confirm: the web saves a layout 2 s after the
+      last change, skips a save equal to the stored layout, and saves at once on page hide and workspace switch
+      (10 said "debounced 1 s"); committed `workspaces.set` runs get no audit row at all (a preference, not a domain
+      command: the log filled with a row per window move), chosen over "one row per user and workspace per N
+      minutes" because a throttled row says nothing the workspace's `rev` does not; refused attempts (412, denied)
+      are still recorded. The exemption list lives in `internal/audit` (`Recorded`); saved searches (`views.set`) stay
+      audited because a person names them on purpose
+- [ ] Asleep sessions (polish, 2026-09-30), confirm: only an idle pause (`pauseReason.code = idle`) wakes on
+      `agentMessages.new`; a pause by a person (`user`), a stuck turn, a runaway, a budget or a lost host now refuses
+      the message with `409 conflict` and the reason (before, every pause but a budget one resumed on a message).
+      A person's own pause could arguably wake on their message too — kept explicit (Resume) for now. An asleep
+      session gets no notification and no unread dot, only a polite live-region line; the reason text reads
+      "no message for 30 min" (was "30m0s")
+- [ ] Pre-allowed Cadence tools (polish, 2026-09-30), confirm: only Cadence MCP tools are pre-allowed for Claude
+      sessions (from the preset through the control plane, not from the repository file an agent can edit); the
+      file's allow rules for shell commands, reads and edits are still not applied by Claude Code, so those keep going
+      through the host's permission request and the preset (a round trip each, no person). Pre-allowing them the same
+      way would need the host to trust the preset's shell rules without the per-call check
 
 ## Sources
 

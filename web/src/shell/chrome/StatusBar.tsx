@@ -12,6 +12,7 @@ import { openPanel } from "@/shell/dock/layout";
 import { events } from "@/shell/registries";
 import { useTheme } from "@/shell/theme/store";
 import { useWorkspaceSync } from "@/shell/workspaces/persistence";
+import { isAsleep } from "@/shell/agents/labels";
 import { useAgentSessions } from "@/shell/agents/sessions";
 import { useShell } from "@/shell/state";
 
@@ -63,9 +64,10 @@ function AgentSessionsBadge() {
   const items = data?.items ?? [];
   const running = items.filter((s) => s.state === "running" || s.state === "created").length;
   const waiting = items.filter((s) => s.state === "waiting_approval").length;
-  const paused = items.filter((s) => s.state === "paused").length;
-  const live = running + waiting + paused;
-  const parts = [running && `${running} running`, waiting && `${waiting} waiting for approval`, paused && `${paused} paused`].filter(Boolean).join(", ");
+  const asleep = items.filter(isAsleep).length;
+  const paused = items.filter((s) => s.state === "paused").length - asleep;
+  const live = running + waiting + paused + asleep;
+  const parts = [running && `${running} running`, waiting && `${waiting} waiting for approval`, paused && `${paused} paused`, asleep && `${asleep} asleep`].filter(Boolean).join(", ");
   return (
     <Button
       variant="ghost"

@@ -309,6 +309,26 @@ describe("session manager", () => {
     await waitFor("done", () => h.cp.states().at(-1) === "done");
   });
 
+  test("Cadence tools the preset allows are pre-allowed in the agent: no permission round trip; others still ask", async () => {
+    const h = harness();
+    const st = { ...startFor(), allowedTools: ["mixes.get", "mixes.edit"] };
+    run(h, st);
+    await waitFor("running", () => h.cp.states().includes("running"));
+    say(h, st, "mcp mixes_edit");
+    await waitFor("the first turn", () => h.cp.entries().some((e) => e.text?.startsWith("mcp:")) && turnsEnded(h.cp) === 1);
+    assert.ok(h.cp.entries().some((e) => e.text === "mcp:pre-allowed"));
+    assert.equal(h.cp.asks.length, 0, "an allowed Cadence tool never reaches the policy engine");
+    h.cp.answer = () => ({ outcome: "reject_once", rule: "admin-only" });
+    say(h, st, "mcp secrets_new");
+    await waitFor("the second turn", () => turnsEnded(h.cp) === 2);
+    assert.equal(h.cp.asks.length, 1, "a tool the preset does not allow still asks");
+    assert.equal(h.cp.asks[0]?.toolCall.class, "mcp");
+    assert.match(h.cp.asks[0]?.toolCall.operation ?? h.cp.asks[0]?.toolCall.title ?? "", /secrets[._]new/);
+    assert.ok(h.cp.entries().some((e) => e.text === "mcp:asked:no"));
+    control(h, st, "end");
+    await waitFor("done", () => h.cp.states().at(-1) === "done");
+  });
+
   test("a cancelled turn withdraws its pending permission", async () => {
     const h = harness();
     const st = startFor();

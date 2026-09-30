@@ -30,6 +30,11 @@ describe("what agent sessions tell the live region (WCAG 4.1.3)", () => {
     expect(sessionTransition(session({ rev: 6, hostState: "released" }), session({ rev: 7, hostState: "connected" }))).toEqual({});
   });
 
+  it("says an idle pause quietly: asleep, no notice in the history", () => {
+    const t = sessionTransition(session({ rev: 1 }), session({ rev: 2, state: "paused", pauseReason: { code: "idle", message: "no message for 30 min" } }));
+    expect(t).toEqual({ announce: "claude-code · session 3 is asleep (no message for 30 min); your next message wakes it" });
+  });
+
   it("says when an ended session leaves changes to accept, and ignores stale revisions", () => {
     const ended = session({ rev: 9, state: "done", merge: { state: "pending", head: "abc" } });
     const t = sessionTransition(session({ rev: 8 }), ended);

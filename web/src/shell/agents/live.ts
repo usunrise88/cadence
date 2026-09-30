@@ -3,7 +3,7 @@ import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import type { AgentSession } from "@/api/gen/types.gen";
 import { announce, notify, type Notice } from "@/shell/notifications/store";
 import { events } from "@/shell/registries";
-import { sessionLabel } from "./labels";
+import { isAsleep, sessionLabel } from "./labels";
 import { isNews, noteNews } from "./unread";
 import { patchAgentBatch, splitBatch, SESSIONS_TOPIC, transcriptKey, useAgentSessions, type Transcript } from "./sessions";
 
@@ -25,6 +25,8 @@ export function sessionTransition(prev: AgentSession | undefined, next: AgentSes
   if (prev.state !== next.state) {
     switch (next.state) {
       case "paused":
+        // Idleness is routine, not news: said once, quietly; the next message wakes the session.
+        if (isAsleep(next)) return { announce: `${who} is asleep (${next.pauseReason?.message ?? "idle"}); your next message wakes it` };
         return {
           announce: `${who} paused: ${next.pauseReason?.message ?? "paused"}`,
           notice: { level: "warning", title: `${who} paused`, detail: next.pauseReason?.message, open: SESSIONS },

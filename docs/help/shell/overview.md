@@ -22,7 +22,7 @@ header; the next-step bar offers the next step.
 | --- | --- |
 | Theme | Follows the system; View → Toggle dark mode |
 | Snapping of floating windows | On; hold Ctrl/Cmd while dragging to bypass |
-| Workspace save | Automatic, 1 s after the last layout change |
+| Workspace save | Automatic, 2 s after the last layout change, and on workspace switch or page hide |
 
 ## Commands
 

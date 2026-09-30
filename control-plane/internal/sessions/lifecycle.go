@@ -110,8 +110,11 @@ func (s *Service) post(ctx context.Context, tx pgx.Tx, sess Session, text string
 	return m, append([]events.Draft{*d}, more...), nil
 }
 
-// Post is agentMessages.new: a user message for a live session. A session paused for any reason but its budget
-// resumes; a read-only session takes one message.
+// Post is agentMessages.new: a user message for a live session. A session paused for idleness (R5: no message for
+// timeouts.idle_session_minutes) wakes up: the message queues a resume and is delivered after it, and an idle pause
+// the host has not taken yet is withdrawn. A session paused for any other reason (the person, a runaway or
+// stuck-turn check, a budget, a lost host) stays paused until someone resumes it; the message is refused with the
+// reason. A read-only session takes one message.
 func (s *Service) Post(ctx context.Context, tx pgx.Tx, id, text string, refs []Reference, by auth.Actor) (Message, []events.Draft, error) {
 	sess, err := Lock(ctx, tx, id)
 	if err != nil {
@@ -124,15 +127,28 @@ func (s *Service) Post(ctx context.Context, tx pgx.Tx, id, text string, refs []R
 		return Message{}, nil, problems.Conflict.New("read-only session %s takes one message; start a new session", id)
 	}
 	var drafts []events.Draft
-	if sess.State == StatePaused {
-		if budgetPause(sess.PauseReason) {
-			return Message{}, nil, problems.Conflict.New("agent session %s paused on its budget (%s); resume it with a larger budget (agentSessions.resume)",
-				id, sess.PauseReason.Message)
+	switch {
+	case sess.State == StatePaused && sess.PendingControl == "resume":
+		// Someone already resumed it; the message waits for the resume like any other.
+	case sess.State == StatePaused && sess.PauseReason != nil && sess.PauseReason.Code == PauseIdle:
+		if sess, drafts, err = s.request(ctx, tx, sess, "resume", nil, nil, by); err != nil {
+			return Message{}, nil, err
 		}
-		if sess.PendingControl != "resume" {
-			if sess, drafts, err = s.request(ctx, tx, sess, "resume", nil, nil, by); err != nil {
-				return Message{}, nil, err
-			}
+	case sess.State == StatePaused && budgetPause(sess.PauseReason):
+		return Message{}, nil, problems.Conflict.New("agent session %s paused on its budget (%s); resume it with a larger budget (agentSessions.resume)",
+			id, sess.PauseReason.Message)
+	case sess.State == StatePaused:
+		why := "paused"
+		if sess.PauseReason != nil {
+			why = sess.PauseReason.Message
+		}
+		return Message{}, nil, problems.Conflict.New("agent session %s is paused (%s); resume it first (agentSessions.resume)", id, why)
+	case sess.PendingControl == "pause":
+		// The idle clock asked the host to pause and the host has not taken it yet: this message is what the pause
+		// was waiting for, so the pause is withdrawn.
+		if _, err := tx.Exec(ctx, `DELETE FROM agent_session_controls WHERE session_id = $1 AND delivered_at IS NULL
+			AND action = 'pause' AND reason->>'code' = $2`, sess.ID, PauseIdle); err != nil {
+			return Message{}, nil, fmt.Errorf("withdraw the idle pause of %s: %w", sess.ID, err)
 		}
 	}
 	m, more, err := s.post(ctx, tx, sess, text, refs, by)

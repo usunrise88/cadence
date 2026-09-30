@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { AgentSession } from "@/api/gen/types.gen";
+import { isAsleep } from "./labels";
 
 // Chats with news the reader has not seen: the agent finished a turn or the session wants attention (an approval,
 // a pause, a failure, its end) while no visible Chat showed it. The Chat's tab carries a dot until one does.
@@ -17,7 +18,7 @@ const ATTENTION = new Set<AgentSession["state"]>(["waiting_approval", "paused", 
 export function isNews(prev: AgentSession | undefined, next: AgentSession): boolean {
   if (!prev || prev.rev >= next.rev) return false;
   if (prev.busy && !next.busy) return true;
-  return prev.state !== next.state && ATTENTION.has(next.state);
+  return prev.state !== next.state && ATTENTION.has(next.state) && !isAsleep(next); // falling asleep is not news
 }
 
 function seen(id: string): void {

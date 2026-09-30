@@ -38,13 +38,25 @@ type ClaimInput struct {
 
 // Start is a session the host starts (or resumes after another host went silent, or after a pause).
 type Start struct {
-	Session  View        `json:"session"`
-	Token    string      `json:"token"`
-	CloneURL string      `json:"cloneUrl"`
-	MCPURL   string      `json:"mcpUrl"`
-	Budget   Budget      `json:"budget"`
-	Clocks   Clocks      `json:"clocks"`
-	Resume   *ResumeInfo `json:"resume,omitempty"`
+	Session  View   `json:"session"`
+	Token    string `json:"token"`
+	CloneURL string `json:"cloneUrl"`
+	MCPURL   string `json:"mcpUrl"`
+	Budget   Budget `json:"budget"`
+	Clocks   Clocks `json:"clocks"`
+	// AllowedTools are the Cadence tools the preset lets the agent call without a prompt (policy.AgentAllowed).
+	AllowedTools []string    `json:"allowedTools"`
+	Resume       *ResumeInfo `json:"resume,omitempty"`
+}
+
+// allowedTools is what the session's preset lets its agent call without a prompt; none for an unknown preset (the
+// agent then asks, and the host's permission request meets the same engine).
+func (s *Service) allowedTools(preset string) []string {
+	p, ok := s.Policy.Preset(preset)
+	if !ok || s.Projects == nil {
+		return []string{}
+	}
+	return policy.AgentAllowed(p, s.Projects.Renderer().Tools)
 }
 
 // Clocks are the host-side limits of a session (R5 and the runaway rule).
@@ -268,7 +280,8 @@ func (s *Service) claimStarts(ctx context.Context, tx pgx.Tx, in ClaimInput) ([]
 		var back *time.Time
 		u := Update{CredentialID: &credID, HostID: &in.HostID, Busy: &f, HostLeftAt: &back, ResumeNote: &empty}
 		st := Start{Token: tok, CloneURL: projects.CloneURL(sess.ProjectSlug), MCPURL: mcp.Path, Budget: sess.Budget,
-			Clocks: Clocks{StuckTurnSeconds: d.Timeouts.StuckTurnMinutes.Value * 60, IdenticalCalls: IdenticalCalls}}
+			Clocks:       Clocks{StuckTurnSeconds: d.Timeouts.StuckTurnMinutes.Value * 60, IdenticalCalls: IdenticalCalls},
+			AllowedTools: s.allowedTools(sess.Preset)}
 		if sess.State == StatePaused {
 			// A resume nobody could deliver (the host that paused it is gone): take it here.
 			var budget *Budget
@@ -998,7 +1011,7 @@ func (s *Service) Sweep(ctx context.Context) error {
 				return err
 			}
 			_, d, err := s.request(ctx, tx, sess, "pause", &Reason{Code: PauseIdle,
-				Message: fmt.Sprintf("no message for %s", idle)}, nil, System)
+				Message: fmt.Sprintf("no message for %d min", int(idle.Minutes()))}, nil, System)
 			if err != nil {
 				return err
 			}

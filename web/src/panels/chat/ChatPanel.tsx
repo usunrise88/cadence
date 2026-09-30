@@ -20,6 +20,7 @@ import {
   runCommand,
   sessionIdOfDoc,
   sessionLabel,
+  sessionStateLabel,
   sessionTopic,
   useAgentPatcher,
   useAgentSession,
@@ -35,7 +36,7 @@ import {
   type PanelProps,
 } from "@/shell/panel";
 import { Entry, RefChips } from "./entries";
-import { budgetUse, compact, entryMatchesToolCall, hostAway, rowOffsets, sessionStatus, tabLabel, VIRTUALIZE_AFTER, visibleEntries, visibleRange, type Meter, type Tone } from "./model";
+import { budgetUse, compact, composerNotice, entryMatchesToolCall, hostAway, rowOffsets, sessionStatus, tabLabel, VIRTUALIZE_AFTER, visibleEntries, visibleRange, type Meter, type Tone } from "./model";
 
 // Chat (docs/spec/11-ui-panels.md "Panel catalogue"; docs/spec/05-agents.md "What the Chat panel shows"): one agent
 // session's streaming transcript, its header (kind, state, budget; stop, pause or resume, end), the merge of its
@@ -202,7 +203,7 @@ function Header({ session: s, instanceId, switchable }: { session: AgentSession;
             {options.map((x) => (
               <option key={x.id} value={x.id}>
                 {tabLabel(x)} · {x.model}
-                {x.id !== s.id ? ` (${x.state.replace("_", " ")})` : ""}
+                {x.id !== s.id ? ` (${sessionStateLabel(x)})` : ""}
               </option>
             ))}
             <option value="">New session…</option>
@@ -586,6 +587,21 @@ function Composer({ instanceId, session, bound }: { instanceId: string; session:
   }, [focusNonce]);
   const b = useChatBridge.getState;
   const continues = !!session && isLive(session) && session.kind === "interactive";
+  const notice = continues ? composerNotice(session) : undefined;
+  const held = notice ? !notice.send : false;
+  const [resuming, setResuming] = useState(false);
+  const resume = async () => {
+    if (!session) return;
+    setResuming(true);
+    setError(null);
+    try {
+      await runCommand("agentSessions.resume", { session });
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setResuming(false);
+    }
+  };
   const placeholder = continues
     ? `Message ${sessionLabel(session)}`
     : session && !isLive(session)
@@ -596,7 +612,7 @@ function Composer({ instanceId, session, bound }: { instanceId: string; session:
 
   const send = async () => {
     const text = draft.text.trim();
-    if (!text || sending || !project) return;
+    if (!text || sending || !project || held) return;
     setSending(true);
     setError(null);
     try {
@@ -629,6 +645,17 @@ function Composer({ instanceId, session, bound }: { instanceId: string; session:
   };
   return (
     <div className="@container flex shrink-0 flex-col gap-1.5 border-t bg-background p-2" data-slot="composer">
+      {notice ? (
+        <p className={cn("flex min-w-0 items-center gap-2 text-xs", notice.tone === "quiet" ? "text-muted-foreground" : "text-status-warning-foreground")} data-slot="composer-notice" data-tone={notice.tone}>
+          <span className="min-w-0">{notice.text}</span>
+          {notice.send ? null : (
+            <Button size="xs" variant="outline" className="ml-auto shrink-0" disabled={resuming} onClick={() => void resume()} data-command="agentSessions.resume">
+              <Play aria-hidden />
+              Resume
+            </Button>
+          )}
+        </p>
+      ) : null}
       <RefChips refs={draft.refs} onRemove={(r) => b().removeRef(instanceId, r)} />
       <Textarea
         ref={ref}
@@ -652,7 +679,7 @@ function Composer({ instanceId, session, bound }: { instanceId: string; session:
         <Button
           size="xs"
           className="ml-auto shrink-0 @lg:ml-0"
-          disabled={!draft.text.trim() || sending || !project}
+          disabled={!draft.text.trim() || sending || !project || held}
           onClick={() => void send()}
           data-command={continues ? "agentMessages.new" : "agentSessions.new"}
           title="Enter sends · Shift+Enter starts a new line"

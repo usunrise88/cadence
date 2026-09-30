@@ -2414,6 +2414,11 @@ export type HostStart = {
         identicalCalls: number;
     };
     /**
+     * Cadence MCP tools (operation ids, e.g. mixes.get) the session's permission preset lets the agent call without a permission prompt; the driver pre-allows them in the agent (Claude Code does not apply allow rules from the repository's .claude/settings.json). The server still applies the preset to every call.
+     *
+     */
+    allowedTools?: Array<string>;
+    /**
      * The session ran before (host restart or resume after pause)
      */
     resume?: {
@@ -6111,7 +6116,8 @@ export type AgentMessagesNewResponses = {
      */
     200: AgentMessage;
     /**
-     * Queued for the agent (delivery pending until the host takes it)
+     * Queued for the agent (delivery pending until the host takes it). A session paused for idleness is resumed first; a session paused for any other reason answers 409 conflict with the reason until it is resumed
+     *
      */
     201: AgentMessage;
 };

@@ -5,6 +5,8 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 )
 
@@ -81,4 +83,44 @@ func TestRenderNeverWidens(t *testing.T) {
 			}
 		}
 	}
+}
+
+// The tools the host pre-allows (HostStart.allowedTools) are exactly the MCP allow rules of the rendered
+// .claude/settings.json, and never one the server denies.
+func TestAgentAllowedMatchesClaudeAllow(t *testing.T) {
+	presets, err := EmbeddedPresets()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, p := range presets {
+		var fromFile []string
+		for _, r := range RenderClaude(p, fixtureOps).Permissions.Allow {
+			if strings.HasPrefix(r, "mcp__") {
+				fromFile = append(fromFile, r)
+			}
+		}
+		allowed := AgentAllowed(p, fixtureOps)
+		var named []string
+		for _, op := range allowed {
+			named = append(named, ClaudeMCPTool(op))
+			if c, _ := p.ClassOf(op, verbClassOf(op)); c == "" || c == ClassForbidden {
+				t.Errorf("%s pre-allows %s, which the server denies", name, op)
+			}
+		}
+		if !slices.Equal(named, fromFile) {
+			t.Errorf("%s: pre-allowed %v, settings.json allows %v", name, named, fromFile)
+		}
+	}
+	if got := AgentAllowed(presets["guardrails-default"], fixtureOps); !slices.Contains(got, "mixes.edit") || slices.Contains(got, "secrets.new") {
+		t.Errorf("guardrails-default pre-allows %v", got)
+	}
+}
+
+func verbClassOf(op string) string {
+	for _, o := range fixtureOps {
+		if o.Name == op {
+			return o.VerbClass
+		}
+	}
+	return ""
 }

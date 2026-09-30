@@ -59,6 +59,8 @@ type Phase = "starting" | "running" | "paused" | "ending" | "ended" | "failed" |
 type After = { action: "pause"; reason: AgentPauseReason; note?: string } | { action: "end" } | { action: "none" };
 
 const READ_ONLY = "read-only";
+// The name agents know the Cadence MCP server by (policy.MCPServer on the control plane).
+const MCP_SERVER = "cadence";
 
 export class HostSession {
   readonly id: string;
@@ -194,7 +196,7 @@ export class HostSession {
     return [
       {
         type: "http",
-        name: "cadence",
+        name: MCP_SERVER,
         url: new URL(this.start.mcpUrl, this.deps.baseUrl).toString(),
         headers: [
           { name: "Authorization", value: `Bearer ${this.start.token}` },
@@ -217,6 +219,7 @@ export class HostSession {
       env: this.homeEnv,
       model: this.start.session.model,
       thoughts: this.deps.thoughts ?? true,
+      preAllowed: { server: MCP_SERVER, tools: this.start.allowedTools ?? [] },
       onPermission: (req, signal) => this.permission(req, signal),
       ...(this.user ? { user: this.user } : {}),
       ...(command ? { command } : {}),
@@ -583,7 +586,8 @@ export class HostSession {
   private async pause(reason: AgentPauseReason, note?: string): Promise<void> {
     if (this.phase !== "running") return;
     this.phase = "paused";
-    this.notice(`Paused: ${reason.message}`, reason.code === "user" || reason.code === "idle" ? "info" : "warning");
+    if (reason.code === "idle") this.notice(`Asleep: ${reason.message}; the next message wakes the session`, "info");
+    else this.notice(`Paused: ${reason.message}`, reason.code === "user" ? "info" : "warning");
     await this.stopAgent();
     await this.report({ state: { state: "paused", busy: false, turn: this.turn, reason }, ...(note ? { note } : {}) });
   }
