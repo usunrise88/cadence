@@ -15,6 +15,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/auth"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
 	"github.com/usunrise88/cadence/control-plane/internal/jobs"
+	"github.com/usunrise88/cadence/control-plane/internal/mixes"
 	"github.com/usunrise88/cadence/control-plane/internal/problems"
 	"github.com/usunrise88/cadence/control-plane/internal/projects"
 	"github.com/usunrise88/cadence/control-plane/internal/registry"
@@ -74,6 +75,7 @@ func Sources() []Source {
 		{Kind: registry.CollectionKind, Aliases: []string{"collection"}, Load: loadCollection},
 		{Kind: jobs.Kind, Load: loadJob},
 		{Kind: approvals.Kind, Load: loadApproval},
+		{Kind: mixes.Kind, Load: loadMix},
 	}
 }
 
@@ -222,6 +224,29 @@ func loadApproval(ctx context.Context, q storage.Querier, ev events.Record) ([]D
 		d.Scope = ScopeDocProject
 	}
 	return []Document{d}, nil
+}
+
+// loadMix indexes a mix at its current revision: project work, found by its name, description, group names and the
+// dataset versions it samples. Draft and presence events on the mix's topic reload it too (harmless).
+func loadMix(ctx context.Context, q storage.Querier, ev events.Record) ([]Document, error) {
+	m, err := mixes.Get(ctx, q, ev.Entity.ID)
+	if isNotFound(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	parts := []string{m.Name, m.Description}
+	for _, g := range m.Groups {
+		parts = append(parts, g.Name)
+		parts = append(parts, g.Datasets...)
+	}
+	actor := m.UpdatedBy
+	return []Document{{
+		Kind: mixes.Kind, ID: m.ID, Scope: ScopeDocProject, ProjectID: m.ProjectID, Ref: ref(mixes.Kind, m.ID),
+		Title: m.Name, Text: joinText(parts...), Status: "active", Actor: &actor,
+		Numbers: map[string]float64{"rev": float64(m.Rev)}, UpdatedAt: m.UpdatedAt,
+	}}, nil
 }
 
 func joinText(parts ...string) string {

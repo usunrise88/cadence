@@ -1131,7 +1131,7 @@ export type SearchQualifier = {
 
 export type SearchHit = {
     /**
-     * EntityKind of the hit (project, base_model, dataset_version, template, registry_collection, job, approval, help_article, …)
+     * EntityKind of the hit (project, base_model, dataset_version, template, registry_collection, job, approval, mix, help_article, …)
      */
     kind: string;
     id: string;

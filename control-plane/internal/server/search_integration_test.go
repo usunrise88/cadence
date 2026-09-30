@@ -279,3 +279,17 @@ func TestSavedViews(t *testing.T) {
 		t.Errorf("saved_search.set events without the query: %d", n)
 	}
 }
+
+// Mixes are project work in the index: found by name and group, opened by their mix: ref, renamed within seconds.
+func TestSearchFindsMixes(t *testing.T) {
+	e, p := startMixes(t)
+	m := e.newMix(heMix)
+	eventually(t, "the mix in the index", func() bool { return e.search("hebrew", "kind:mix he-smoke").has("mix", "he-smoke") })
+	h := e.search("hebrew", "kind:mix target rev=1").hits()
+	if len(h) != 1 || h[0].Ref != "mix:"+m.ID || h[0].Project != "hebrew" || h[0].ProjectID != p.ID || h[0].Scope != "project" ||
+		h[0].Actor == nil || h[0].Actor.ID != "usr_admin" {
+		t.Fatalf("mix hit = %+v", h)
+	}
+	e.ok(e.do("PATCH", "/api/mixes/"+m.ID, `{"name":"he-smoke v2"}`, "Idempotency-Key", e.key(), "If-Match", `"1"`), 200, nil)
+	eventually(t, "the rename", func() bool { return e.search("hebrew", "kind:mix rev=2").has("mix", "he-smoke v2") })
+}
