@@ -2057,6 +2057,124 @@ paths:
 
   # ---------------------------------------------------------------- data entities and imports (phase 2 · stream D) — add paths below this line
 
+  /registry/sources:
+    x-cadence: { entity: sources }
+    get:
+      operationId: sources.list
+      summary: List sources (corpora with licence, kind and languages; eval-only until cleared for training)
+      tags: [registry]
+      x-cadence:
+        toolDescription: >
+          List registry sources: the corpora imported audio comes from (FLEURS, Common Voice, own calls), each with its
+          licence, kind (public, production, synthetic), languages and trainingCleared. A source that is not cleared
+          is eval-only: dataset versions built from it can be evaluated but never mixed or trained on. Archived
+          sources are left out unless archived=true.
+      parameters:
+        - { name: archived, in: query, description: Include archived sources, schema: { type: boolean, default: false } }
+        - { name: kind, in: query, description: Only sources of this kind, schema: { $ref: "#/components/schemas/SourceKind" } }
+        - { name: language, in: query, description: "Only sources covering this language (he or he-IL; either matches the other)", schema: { type: string } }
+      responses:
+        "200":
+          description: Sources by name
+          content: { application/json: { schema: { $ref: "#/components/schemas/SourceList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/sources/{id}:
+    x-cadence: { entity: sources }
+    parameters: [{ $ref: "#/components/parameters/SourceId" }]
+    get:
+      operationId: sources.get
+      summary: Get a source with its utterance count, hours and the dataset versions built from it
+      tags: [registry]
+      responses:
+        "200":
+          description: The source
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Source" } } }
+        default: { $ref: "#/components/responses/Problem" }
+    patch:
+      operationId: sources.edit
+      summary: Change a source's description or licence, or clear it for training (a person's decision)
+      tags: [registry]
+      x-cadence:
+        toolDescription: >
+          Change a source's description or licence, or set trainingCleared. Clearing a source for training is a
+          person's decision (the licence allows training and the data may be used): an agent's sources.edit waits
+          for a person's approval (202 with approvalId). Sources are shared by every project. Send ifMatch with the
+          etag (or rev) of your last sources.get. An archived source cannot be edited.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/SourceEdit" } } }
+      responses:
+        "200":
+          description: The edited source (or, for a dry run, what it would become)
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Source" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/sources/{id}:archive:
+    x-cadence: { entity: sources }
+    parameters: [{ $ref: "#/components/parameters/SourceId" }]
+    post:
+      operationId: sources.archive
+      summary: Archive a source (soft); it takes no new imports, its utterances and dataset versions stay
+      tags: [registry]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      responses:
+        "200":
+          description: The archived source
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Source" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/utterances:
+    x-cadence: { entity: utterances }
+    get:
+      operationId: utterances.list
+      summary: A page of utterances (audio segments by content hash) filtered by source, dataset version, split or language
+      tags: [registry]
+      x-cadence:
+        toolDescription: >
+          List utterances, oldest first, a page at a time: each is one audio segment identified by the BLAKE3 hash of
+          its bytes, with duration, language, speaker, sample rate, its source and its transcripts (text with origin
+          human, pseudo-label or model:<id>). Filter by source (id or name), dataset (a dataset version id, ver_…)
+          and split (train, validation, test; needs dataset), or language. Pass next as after for the next page.
+      parameters:
+        - { name: source, in: query, description: Source id (src_…) or name, schema: { type: string } }
+        - { name: dataset, in: query, description: Dataset version id (ver_…), schema: { type: string } }
+        - { name: split, in: query, description: Split within the dataset version (needs dataset), schema: { $ref: "#/components/schemas/DatasetSplitName" } }
+        - { name: language, in: query, description: "Language (he or he-IL; either matches the other)", schema: { type: string } }
+        - { name: after, in: query, description: "Cursor: the `next` value of the previous page", schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+      responses:
+        "200":
+          description: A page of utterances, oldest first
+          content: { application/json: { schema: { $ref: "#/components/schemas/UtteranceList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/utterances/{id}:
+    x-cadence: { entity: utterances }
+    parameters:
+      - { name: id, in: path, required: true, description: "Utterance id (utt_…) or content hash (b3:…)", schema: { type: string } }
+    get:
+      operationId: utterances.get
+      summary: Get an utterance with its transcripts, fingerprints and the dataset versions (and splits) that hold it
+      tags: [registry]
+      responses:
+        "200":
+          description: The utterance
+          content: { application/json: { schema: { $ref: "#/components/schemas/Utterance" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
   # ---------------------------------------------------------------- notifications and operations (phase 2 · stream O) — add paths below this line
 
   # ---------------------------------------------------------------- runs, checkpoints, metrics (phase 2 · wave 2 · stream R) — add paths below this line
@@ -2123,6 +2241,12 @@ components:
       required: true
       description: "claude-code or opencode.<provider>"
       schema: { $ref: "#/components/schemas/AgentCredentialIdValue" }
+    SourceId:
+      name: id
+      in: path
+      required: true
+      description: Source id (src_…) or name (fleurs)
+      schema: { type: string }
     MixId:
       name: id
       in: path
@@ -2642,6 +2766,15 @@ components:
         utterances: { type: integer }
         bytes: { type: integer, format: int64, description: Size of the frozen shards; estimated for fixtures }
         fixture: { type: boolean, description: "Metadata only: no audio is stored (phase-1 fixture so mixes have something to reference)" }
+        sourceIds: { type: array, items: { type: string }, description: "Sources (src_…) of the utterances; an imported version is eval-only while any of them is not cleared for training (phase 2)" }
+        licence: { type: string, description: "The sources' licences, joined with ' AND ' when there are several" }
+        languages: { type: array, items: { $ref: "#/components/schemas/DatasetLanguage" }, description: Utterances and hours per language }
+        artifact: { $ref: "#/components/schemas/ArtifactRef" }
+        evalOnly: { type: boolean, description: "Registered for evaluation only (golden and replay test sets): never mixed or trained on, whatever its sources" }
+        splitRule: { type: string, description: "How utterances were assigned to splits (speaker-disjoint, source, all-train, all-validation, all-test)" }
+        speakers: { type: integer }
+        tags: { type: array, items: { type: string }, description: "Tags given at import (golden, replay, eval-only, …)" }
+        lineage: { $ref: "#/components/schemas/DatasetLineage" }
     DatasetVersion:
       allOf:
         - $ref: "#/components/schemas/RegistryVersion"
@@ -2894,6 +3027,7 @@ components:
         mix: { $ref: "#/components/schemas/DefaultSection" }
         drafts: { $ref: "#/components/schemas/DefaultSection" }
         cache: { $ref: "#/components/schemas/DefaultSection" }
+        data: { $ref: "#/components/schemas/DefaultSection" }
         estimates:
           type: object
           required: [bytes_per_audio_hour, training]
@@ -4572,6 +4706,109 @@ components:
     # ---------------------------------------------------------------- artifacts and pipelines schemas (stream P) — add below
 
     # ---------------------------------------------------------------- data entities and imports schemas (stream D) — add below
+    SourceKind:
+      type: string
+      enum: [public, production, synthetic]
+    Source:
+      type: object
+      description: "A corpus in the registry (R18): licence, kind, languages; eval-only until a person clears it for training"
+      required: [id, name, description, licence, kind, languages, url, trainingCleared, archived, rev, utterances, hours, datasets, createdBy, createdAt, updatedAt]
+      properties:
+        id: { type: string, description: "src_…" }
+        name: { type: string, example: fleurs }
+        description: { type: string }
+        licence: { type: string, example: CC-BY-4.0 }
+        kind: { $ref: "#/components/schemas/SourceKind" }
+        languages: { type: array, items: { type: string }, example: [he-IL] }
+        url: { type: string, description: "Where the corpus comes from, e.g. hf://datasets/google/fleurs" }
+        trainingCleared: { type: boolean, description: "false = eval-only: its dataset versions cannot be mixed or trained on" }
+        clearedBy: { $ref: "#/components/schemas/Actor" }
+        clearedAt: { type: string, format: date-time }
+        archived: { type: boolean }
+        rev: { type: integer }
+        utterances: { type: integer, description: Utterances this source owns }
+        hours: { type: number, format: double, description: Their total duration in hours }
+        datasets: { type: array, items: { type: string }, description: "Dataset version ids built from this source (sources.get only; empty in lists)" }
+        createdBy: { $ref: "#/components/schemas/Actor" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    SourceList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Source" } }
+    SourceEdit:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        description: { type: string, maxLength: 2000 }
+        licence: { type: string, minLength: 1, maxLength: 200 }
+        trainingCleared: { type: boolean, description: "true clears the source for training (a person's decision); false makes it eval-only again" }
+    DatasetSplitName:
+      type: string
+      enum: [train, validation, test]
+    TranscriptOrigin:
+      type: string
+      description: "human, pseudo-label, or model:<id> for a single model's output"
+      pattern: "^(human|pseudo-label|model:.+)$"
+    Transcript:
+      type: object
+      required: [id, text, origin, createdAt]
+      properties:
+        id: { type: string, description: "trn_…" }
+        text: { type: string }
+        origin: { $ref: "#/components/schemas/TranscriptOrigin" }
+        confidence: { type: number, format: double, minimum: 0, maximum: 1 }
+        createdAt: { type: string, format: date-time }
+    UtteranceMembership:
+      type: object
+      required: [datasetVersionId, split, transcriptId]
+      properties:
+        datasetVersionId: { type: string }
+        split: { $ref: "#/components/schemas/DatasetSplitName" }
+        transcriptId: { type: string, description: The transcript this dataset version uses }
+    Utterance:
+      type: object
+      description: One audio segment in the content store; its content hash is its identity
+      required: [id, contentHash, sourceId, sourceName, duration, language, speaker, sampleRate, channels, bytes, transcripts, createdAt]
+      properties:
+        id: { type: string, description: "utt_…" }
+        contentHash: { type: string, pattern: "^b3:[0-9a-f]{64}$", description: BLAKE3-256 of the audio file's bytes (its blob in the content store) }
+        sourceId: { type: string }
+        sourceName: { type: string }
+        duration: { type: number, format: double, description: Seconds }
+        language: { type: string, example: he-IL }
+        speaker: { type: string, description: "Speaker id within the source; empty when unknown" }
+        sampleRate: { type: integer, example: 16000 }
+        channels: { type: integer, example: 1 }
+        bytes: { type: integer, format: int64 }
+        transcripts: { type: array, items: { $ref: "#/components/schemas/Transcript" } }
+        split: { $ref: "#/components/schemas/DatasetSplitName" }
+        fingerprints: { type: object, additionalProperties: { type: string }, description: "Kind → value (audio-b3, …); utterances.get only" }
+        datasets: { type: array, items: { $ref: "#/components/schemas/UtteranceMembership" }, description: "utterances.get only" }
+        createdAt: { type: string, format: date-time }
+    UtteranceList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Utterance" } }
+        next: { type: string, description: Pass as `after` for the next page; absent on the last page }
+    DatasetLanguage:
+      type: object
+      required: [language, utterances, hours]
+      properties:
+        language: { type: string }
+        utterances: { type: integer }
+        hours: { type: number, format: double }
+    DatasetLineage:
+      type: object
+      description: Where an imported dataset version came from
+      properties:
+        pipelineRunId: { type: string }
+        stepId: { type: string }
+        projectId: { type: string }
+        stepKind: { type: string, example: dataset_import@1 }
 
     # ---------------------------------------------------------------- notifications and operations schemas (stream O) — add below
 

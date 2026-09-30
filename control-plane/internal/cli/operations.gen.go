@@ -765,6 +765,49 @@ var Operations = []Operation{
 		}},
 	},
 	{
+		ID: "sources.archive", Entity: "sources", Verb: "archive", Method: "POST", Path: "/registry/sources/{id}:archive",
+		Summary:        "Archive a source (soft); it takes no new imports, its utterances and dataset versions stay",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Source id (src_…) or name (fleurs)"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+	},
+	{
+		ID: "sources.edit", Entity: "sources", Verb: "edit", Method: "PATCH", Path: "/registry/sources/{id}",
+		Summary:        "Change a source's description or licence, or clear it for training (a person's decision)",
+		Description:    "Change a source's description or licence, or set trainingCleared. Clearing a source for training is a person's decision (the licence allows training and the data may be used): an agent's sources.edit waits for a person's approval (202 with approvalId). Sources are shared by every project. Send ifMatch with the etag (or rev) of your last sources.get. An archived source cannot be edited.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Source id (src_…) or name (fleurs)"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "description", Type: "string"},
+			{Name: "licence", Type: "string"},
+			{Name: "trainingCleared", Type: "boolean", Description: "true clears the source for training (a person's decision); false makes it eval-only again"},
+		}},
+	},
+	{
+		ID: "sources.get", Entity: "sources", Verb: "get", Method: "GET", Path: "/registry/sources/{id}",
+		Summary: "Get a source with its utterance count, hours and the dataset versions built from it",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Source id (src_…) or name (fleurs)"},
+		},
+	},
+	{
+		ID: "sources.list", Entity: "sources", Verb: "list", Method: "GET", Path: "/registry/sources",
+		Summary:     "List sources (corpora with licence, kind and languages; eval-only until cleared for training)",
+		Description: "List registry sources: the corpora imported audio comes from (FLEURS, Common Voice, own calls), each with its licence, kind (public, production, synthetic), languages and trainingCleared. A source that is not cleared is eval-only: dataset versions built from it can be evaluated but never mixed or trained on. Archived sources are left out unless archived=true.",
+		Params: []Param{
+			{Name: "archived", In: "query", Flag: "archived", Type: "boolean", Description: "Include archived sources", Default: "false"},
+			{Name: "kind", In: "query", Flag: "kind", Type: "string", Description: "Only sources of this kind", Enum: []string{"public", "production", "synthetic"}},
+			{Name: "language", In: "query", Flag: "language", Type: "string", Description: "Only sources covering this language (he or he-IL; either matches the other)"},
+		},
+	},
+	{
 		ID: "templates.get", Entity: "templates", Verb: "get", Method: "GET", Path: "/registry/templates/{id}",
 		Summary: "Get a template version with its files (paths and hashes) and the projects that use it",
 		Params: []Param{
@@ -778,6 +821,26 @@ var Operations = []Operation{
 			{Name: "collection", In: "query", Flag: "collection", Type: "string", Description: "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)"},
 			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated"}},
 			{Name: "templateKind", In: "query", Flag: "template-kind", Type: "string", Description: "Only templates of this kind", Enum: []string{"instructions", "preset", "skill", "pipeline", "agent-config"}},
+		},
+	},
+	{
+		ID: "utterances.get", Entity: "utterances", Verb: "get", Method: "GET", Path: "/registry/utterances/{id}",
+		Summary: "Get an utterance with its transcripts, fingerprints and the dataset versions (and splits) that hold it",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Utterance id (utt_…) or content hash (b3:…)"},
+		},
+	},
+	{
+		ID: "utterances.list", Entity: "utterances", Verb: "list", Method: "GET", Path: "/registry/utterances",
+		Summary:     "A page of utterances (audio segments by content hash) filtered by source, dataset version, split or language",
+		Description: "List utterances, oldest first, a page at a time: each is one audio segment identified by the BLAKE3 hash of its bytes, with duration, language, speaker, sample rate, its source and its transcripts (text with origin human, pseudo-label or model:<id>). Filter by source (id or name), dataset (a dataset version id, ver_…) and split (train, validation, test; needs dataset), or language. Pass next as after for the next page.",
+		Params: []Param{
+			{Name: "source", In: "query", Flag: "source", Type: "string", Description: "Source id (src_…) or name"},
+			{Name: "dataset", In: "query", Flag: "dataset", Type: "string", Description: "Dataset version id (ver_…)"},
+			{Name: "split", In: "query", Flag: "split", Type: "string", Description: "Split within the dataset version (needs dataset)", Enum: []string{"train", "validation", "test"}},
+			{Name: "language", In: "query", Flag: "language", Type: "string", Description: "Language (he or he-IL; either matches the other)"},
+			{Name: "after", In: "query", Flag: "after", Type: "string", Description: "Cursor: the `next` value of the previous page"},
+			{Name: "limit", In: "query", Flag: "limit", Type: "integer", Default: "100"},
 		},
 	},
 }

@@ -21,6 +21,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/cas"
 	"github.com/usunrise88/cadence/control-plane/internal/commands"
 	"github.com/usunrise88/cadence/control-plane/internal/credentials"
+	"github.com/usunrise88/cadence/control-plane/internal/data"
 	"github.com/usunrise88/cadence/control-plane/internal/defaults"
 	"github.com/usunrise88/cadence/control-plane/internal/drafts"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
@@ -112,6 +113,7 @@ func New(c Config) (*Server, error) {
 	if c.StepHooks == nil {
 		c.StepHooks = &steps.Hooks{}
 	}
+	(&data.Importer{CAS: c.CAS}).Register(c.StepHooks) // dataset artifacts register dataset versions (R18)
 	if c.Leases == nil {
 		c.Leases = steps.NoLeases{}
 	}

@@ -4243,6 +4243,221 @@
       ]
     },
     {
+      "name": "sources.archive",
+      "title": "Archive a source (soft); it takes no new imports, its utterances and dataset versions stay",
+      "description": "Archive a source (soft); it takes no new imports, its utterances and dataset versions stay. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/registry/sources/{id}:archive",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Source id (src_…) or name (fleurs)",
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        }
+      ]
+    },
+    {
+      "name": "sources.edit",
+      "title": "Change a source's description or licence, or clear it for training (a person's decision)",
+      "description": "Change a source's description or licence, or set trainingCleared. Clearing a source for training is a person's decision (the licence allows training and the data may be used): an agent's sources.edit waits for a person's approval (202 with approvalId). Sources are shared by every project. Send ifMatch with the etag (or rev) of your last sources.get. An archived source cannot be edited. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "PATCH",
+      "path": "/registry/sources/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "minProperties": 1,
+            "properties": {
+              "description": {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              "licence": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "trainingCleared": {
+                "description": "true clears the source for training (a person's decision); false makes it eval-only again",
+                "type": "boolean"
+              }
+            },
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Source id (src_…) or name (fleurs)",
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "sources.get",
+      "title": "Get a source with its utterance count, hours and the dataset versions built from it",
+      "description": "Get a source with its utterance count, hours and the dataset versions built from it",
+      "method": "GET",
+      "path": "/registry/sources/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Source id (src_…) or name (fleurs)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        }
+      ]
+    },
+    {
+      "name": "sources.list",
+      "title": "List sources (corpora with licence, kind and languages; eval-only until cleared for training)",
+      "description": "List registry sources: the corpora imported audio comes from (FLEURS, Common Voice, own calls), each with its licence, kind (public, production, synthetic), languages and trainingCleared. A source that is not cleared is eval-only: dataset versions built from it can be evaluated but never mixed or trained on. Archived sources are left out unless archived=true.",
+      "method": "GET",
+      "path": "/registry/sources",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "archived": {
+            "default": false,
+            "description": "Include archived sources",
+            "type": "boolean"
+          },
+          "kind": {
+            "description": "Only sources of this kind",
+            "enum": [
+              "public",
+              "production",
+              "synthetic"
+            ],
+            "type": "string"
+          },
+          "language": {
+            "description": "Only sources covering this language (he or he-IL; either matches the other)",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "archived",
+          "in": "query",
+          "name": "archived"
+        },
+        {
+          "property": "kind",
+          "in": "query",
+          "name": "kind"
+        },
+        {
+          "property": "language",
+          "in": "query",
+          "name": "language"
+        }
+      ]
+    },
+    {
       "name": "templates.get",
       "title": "Get a template version with its files (paths and hashes) and the projects that use it",
       "description": "Get a template version with its files (paths and hashes) and the projects that use it",
@@ -4330,6 +4545,119 @@
           "property": "templateKind",
           "in": "query",
           "name": "templateKind"
+        }
+      ]
+    },
+    {
+      "name": "utterances.get",
+      "title": "Get an utterance with its transcripts, fingerprints and the dataset versions (and splits) that hold it",
+      "description": "Get an utterance with its transcripts, fingerprints and the dataset versions (and splits) that hold it",
+      "method": "GET",
+      "path": "/registry/utterances/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Utterance id (utt_…) or content hash (b3:…)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        }
+      ]
+    },
+    {
+      "name": "utterances.list",
+      "title": "A page of utterances (audio segments by content hash) filtered by source, dataset version, split or language",
+      "description": "List utterances, oldest first, a page at a time: each is one audio segment identified by the BLAKE3 hash of its bytes, with duration, language, speaker, sample rate, its source and its transcripts (text with origin human, pseudo-label or model:\u003cid\u003e). Filter by source (id or name), dataset (a dataset version id, ver_…) and split (train, validation, test; needs dataset), or language. Pass next as after for the next page.",
+      "method": "GET",
+      "path": "/registry/utterances",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "after": {
+            "description": "Cursor: the `next` value of the previous page",
+            "type": "string"
+          },
+          "dataset": {
+            "description": "Dataset version id (ver_…)",
+            "type": "string"
+          },
+          "language": {
+            "description": "Language (he or he-IL; either matches the other)",
+            "type": "string"
+          },
+          "limit": {
+            "default": 100,
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "source": {
+            "description": "Source id (src_…) or name",
+            "type": "string"
+          },
+          "split": {
+            "description": "Split within the dataset version (needs dataset)",
+            "enum": [
+              "train",
+              "validation",
+              "test"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "source",
+          "in": "query",
+          "name": "source"
+        },
+        {
+          "property": "dataset",
+          "in": "query",
+          "name": "dataset"
+        },
+        {
+          "property": "split",
+          "in": "query",
+          "name": "split"
+        },
+        {
+          "property": "language",
+          "in": "query",
+          "name": "language"
+        },
+        {
+          "property": "after",
+          "in": "query",
+          "name": "after"
+        },
+        {
+          "property": "limit",
+          "in": "query",
+          "name": "limit"
         }
       ]
     }
