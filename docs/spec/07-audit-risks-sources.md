@@ -89,7 +89,8 @@ Open questions:
       project locales (wizard) and a licence policy — which licences may a project adopt without a person?
 - [ ] An alias may point only at a version the project adopted (enforced by a foreign key); versions and the staging
       card's class (`blackwell-96gb`, from spike A3's "96 GB" and the Blackwell toolchain note) are assumptions until
-      the staging host is inventoried
+      the staging host is inventoried — card class resolved 2026-09-30: RTX PRO 5000 Blackwell 48 GB, `blackwell-48gb`,
+      cap 24 GB = fraction 0.5 (00 decision log)
 - [ ] Secrets: no rotation or archive yet (`secrets.new` refuses a taken name); the master key defaults to
       `$CADENCE_DATA_DIR/master.key`, generated on first start, until the compose secret of R9 is wired
 - [ ] Identity (phase 1) assumptions, confirm: login throttling counts failed attempts only (5/min, 20/h per address and per username, in memory); `X-Forwarded-For`/`-Proto` are trusted from loopback and private peers (the host's Caddy, Docker's gateway); the TOTP secret lives in the `users` row, not the R9 file store (it is a sign-in factor, not a secret handed to jobs); passwords need 12+ characters; first start may rename the admin account; out-of-scope reads answer 403 `forbidden` rather than hiding the entity behind 404; a credential without a project may not open the event stream

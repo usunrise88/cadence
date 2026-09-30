@@ -7,7 +7,7 @@ Box: 2 days
 Confirm the training and export path on the staging card while other services stay resident.
 
 ## Setup
-NeMo Speech 26.07 container; nvidia/nemotron-3.5-asr-streaming-0.6b pinned; a 20-hour Hebrew subset as Lhotse Shar; memory fraction 0.25 of 96 GB.
+NeMo Speech 26.07 container; nvidia/nemotron-3.5-asr-streaming-0.6b pinned; a 20-hour Hebrew subset as Lhotse Shar; staging card RTX PRO 5000 Blackwell 48 GB with the vLLM service resident (≈ 24 GB), so memory fraction 0.5 (24 GB).
 
 ## Steps
 1. Run OOMptimizer under the cap; record bucket batch sizes. 2. Fine-tune 500 steps with init_from_nemo_model, bf16, explicit Noam scale (log the computed peak LR). 3. Evaluate in streaming at [56,0] on a held-out set. 4. Export to ONNX; run parity on 200 utterances. 5. Load into Triton with sequence batching; measure p50/p95 at 80 ms chunks.
