@@ -99,6 +99,9 @@ Every tool call starts collapsed; the attribution badge's jump opens the one it 
 ### Playbooks and schedules as sessions
 
 - A playbook session shows the chain's estimate before it starts, runs one step at a time with `dryRun` before each spending step, and reports each step's outcome as a plan tick; a failed gate ends the playbook with a summary and a next-step suggestion.
+- Mechanics (R16, phase 2): `playbooks.run` takes the playbook's inputs, answers the estimate first (the sum of the chain's step estimates, `basis` and ±) and starts an agent session of kind `playbook` with the project's driver and model. Its prompt is the template's `prompt` rendered with the inputs and the project facts; its initial plan is the chain, one entry per step (steps of a phase not yet shipped are listed as skipped). The agent works the chain through ordinary MCP tools — the same commands a person would issue — so every step is attributed, gated and budgeted as usual; a spend over the session's or project's GPU budget returns an approval id and the session waits.
+- The session ends when the last step reports, or at a stop condition from the template (failed gate, exhausted budget, denied approval, a step failed after its retries), with a summary and a next-step suggestion in the transcript.
+- "Fine-tune from a dataset version" (03 "Playbooks") is the phase-2 gate: mix with replay → `runs.calibrate` → `runs.new` (dry run shown first) → checkpoints registered with validation WER → from phase 3 the eval matrix and the gate.
 - A scheduled session uses the project's driver and model, has no person present, sends its approvals and its summary to Telegram, and never touches production; its budget is part of the schedule.
 
 ### Drivers
