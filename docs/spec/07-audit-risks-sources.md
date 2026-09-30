@@ -142,7 +142,7 @@ Open questions:
   - Linking an existing repository uses its `main`; a repository whose default branch has another name gets a new
     `main` from the bootstrap commit. SSH remotes are refused (https only)
   - Creating a GitHub repository is tested against a fake of the REST API only, not against GitHub itself
-  - The default opencode model is `minimax/MiniMax-M2` (models.dev naming of the MiniMax provider, R6) — check the
+  - The default opencode model is `minimax/MiniMax-M3` (models.dev naming of the MiniMax provider, R6) — check the
     exact id against the Token Plan; Claude Code models are the aliases `sonnet` (default), `opus`, `haiku`
   - The per-project agent budget is in tokens per day (`budgets.agent_tokens_per_project_per_day`, 20 M), since money
     counts only in API-key mode (R6); the draft policy defaults are mix, gate and language pack as drafts, notes direct

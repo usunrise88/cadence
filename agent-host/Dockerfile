@@ -15,7 +15,8 @@ RUN apt-get update \
       groupadd --gid "$uid" "cs$i" && useradd --uid "$uid" --gid "$uid" --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin "cs$i"; \
     done \
  && mkdir -p /var/lib/cadence-host /agent-credentials /host-credential \
- && chmod 0711 /var/lib/cadence-host && chmod 0700 /agent-credentials
+ && chmod 0711 /var/lib/cadence-host && chmod 0700 /agent-credentials \
+ && chown 65532:65532 /host-credential
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force

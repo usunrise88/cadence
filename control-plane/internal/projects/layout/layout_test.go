@@ -29,7 +29,7 @@ func facts() Facts {
 		Name: "Hebrew telephony", Slug: "hebrew", Locales: []string{"he-IL"}, Domain: "telephony",
 		BaseModel: BaseModel{VersionID: "ver_1", Collection: "base-model/nemotron", Version: "2026-09-29.abcdefabcdef",
 			Repo: "nvidia/nemotron-3.5-asr-streaming-0.6b", Revision: "ea30d66d", Licence: "openmdw-1.1"},
-		Agent: Agent{Driver: "claude-code", Model: "sonnet", OpencodeModel: "minimax/MiniMax-M2",
+		Agent: Agent{Driver: "claude-code", Model: "sonnet", OpencodeModel: "minimax/MiniMax-M3",
 			PermissionPreset: "guardrails-default", InstructionsTemplate: "default", AutoMerge: "when-clean",
 			DraftPolicy: map[string]string{"mix": "draft", "gate": "draft", "note": "direct", "language_pack": "draft"}},
 		Repo:      Repo{Kind: "internal", CloneURL: "/git/hebrew.git"},
@@ -79,7 +79,7 @@ func TestBootstrapFiles(t *testing.T) {
 	if err := json.Unmarshal(files[OpencodeJSON], &oc); err != nil {
 		t.Fatalf("opencode.json is not JSON: %v\n%s", err, files[OpencodeJSON])
 	}
-	if oc["model"] != "minimax/MiniMax-M2" || oc["permission"] == nil || oc["mcp"] != nil {
+	if oc["model"] != "minimax/MiniMax-M3" || oc["permission"] == nil || oc["mcp"] != nil {
 		t.Errorf("opencode.json = %v", oc)
 	}
 

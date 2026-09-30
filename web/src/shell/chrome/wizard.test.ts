@@ -11,7 +11,7 @@ const defaults = {
     base_model: param("base-model/nemotron-3.5-asr-streaming-0.6b"),
     driver: param("claude-code"),
     claude_code_model: param("sonnet"),
-    opencode_model: param("minimax/MiniMax-M2"),
+    opencode_model: param("minimax/MiniMax-M3"),
     permission_preset: param("guardrails-default"),
     instructions_template: param("default"),
     repository: param("internal"),
@@ -20,7 +20,7 @@ const defaults = {
 } as unknown as Defaults;
 const catalogue: AgentModels[] = [
   { driver: "claude-code", default: "sonnet", models: [{ id: "sonnet", name: "Sonnet" }], freeForm: false, description: "", source: "" },
-  { driver: "opencode", default: "minimax/MiniMax-M2", models: [], freeForm: true, description: "", source: "" },
+  { driver: "opencode", default: "minimax/MiniMax-M3", models: [], freeForm: true, description: "", source: "" },
 ];
 
 describe("project wizard", () => {
@@ -36,12 +36,12 @@ describe("project wizard", () => {
   });
 
   it("sends each departure from the defaults", () => {
-    const v = { ...rec, name: "Balkans", locale: "sr-RS", driver: "opencode" as const, model: "minimax/MiniMax-M2", repoKind: "url" as const, repoUrl: "https://example.org/r.git", gpuHoursPerDay: "4" };
+    const v = { ...rec, name: "Balkans", locale: "sr-RS", driver: "opencode" as const, model: "minimax/MiniMax-M3", repoKind: "url" as const, repoUrl: "https://example.org/r.git", gpuHoursPerDay: "4" };
     expect(projectNewBody(v, rec)).toEqual({
       name: "Balkans",
       slug: "balkans",
       locales: ["sr-RS"],
-      agent: { driver: "opencode", model: "minimax/MiniMax-M2", permissionPreset: "guardrails-default" },
+      agent: { driver: "opencode", model: "minimax/MiniMax-M3", permissionPreset: "guardrails-default" },
       repository: { kind: "url", url: "https://example.org/r.git" },
       budgets: { gpuHoursPerDay: 4 },
     });

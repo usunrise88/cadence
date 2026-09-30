@@ -436,7 +436,7 @@ func (s *Server) AgentModelsList(ctx context.Context, _ api.AgentModelsListReque
 	return api.AgentModelsList200JSONResponse{Items: []api.AgentModels{
 		entry(projects.DriverClaudeCode, w.ClaudeCodeModel, false, map[string]string{
 			"sonnet": "Claude Sonnet (latest)", "opus": "Claude Opus (latest)", "haiku": "Claude Haiku (latest)"}),
-		entry(projects.DriverOpencode, w.OpencodeModel, true, map[string]string{"minimax/MiniMax-M2": "MiniMax M2 (Token Plan)"}),
+		entry(projects.DriverOpencode, w.OpencodeModel, true, map[string]string{"minimax/MiniMax-M3": "MiniMax M3 (Token Plan)"}),
 	}}, nil
 }
 
