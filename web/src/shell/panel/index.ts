@@ -39,3 +39,13 @@ export { BranchConflicts, ThreeWayDiff, type BranchConflictsProps, type ThreeWay
 // the Project home share, and a playbook session's plan as the server ticks it.
 export { PlaybookLauncher, type PlaybookLauncherProps } from "@/shell/agents/PlaybookLauncher";
 export { budgetNote, estimateLine, planProgress, playbookStateLabel } from "@/shell/agents/playbooks";
+// Training (phase 2): the log view Logs shows and Pipeline run embeds; forms rendered from a parameter schema
+// (x-cadence); the active job and pipeline run that Logs and Pipeline run follow.
+export { LogView, LOG_ROW_HEIGHT, type LogViewProps } from "@/shell/logs/LogView";
+export { SchemaForm, type SchemaFormProps } from "@/shell/forms/SchemaForm";
+export { departuresOf, recommended, type ParamSchema, type Values } from "@/shell/forms/schema";
+export { AUGMENT_DIR, AUGMENTATION_PROFILE_SCHEMA, isAugmentationProfile, newProfile, parseProfile, writeProfile } from "@/shell/forms/augmentation";
+export { focusJob, focusPipelineRun, useFocusedJob, useFocusedPipelineRun, type FocusedJob } from "@/shell/training/focus";
+export { DAY_LABEL, DAYS, formatDays, formatWindows, windowError } from "@/shell/training/windows";
+export { runIdOfDoc, runLabel } from "@/shell/training/runs";
+export { useActiveRun } from "@/shell/training/useActiveRun";

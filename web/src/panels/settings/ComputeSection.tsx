@@ -1,19 +1,23 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { computeGetQueryKey, computeListOptions, computeListQueryKey } from "@/api/gen/@tanstack/react-query.gen";
-import type { ComputeCard, ComputeCardEdit, ComputeHost, ComputeList, DefaultHost, DefaultValue, JobKind } from "@/api/gen/types.gen";
+import type { AvailabilityWindows, ComputeCard, ComputeCardEdit, ComputeHost, ComputeList, DefaultHost, DefaultValue, JobKind } from "@/api/gen/types.gen";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { errorMessage, problemOf, rangeWarning, runCommand, useDefaults, useTopic, WhyDefault } from "@/shell/panel";
+import { errorMessage, formatWindows, problemOf, rangeWarning, runCommand, useDefaults, useTopic, WhyDefault, windowError } from "@/shell/panel";
 import { Chip, SectionHeading, Table, Td, when } from "./ui";
+import { windowRows, WindowsEditor } from "./WindowsEditor";
 
 // Compute (docs/spec/11-ui-panels.md "Settings"): hosts, cards, memory caps and allowed job kinds. Edits carry
 // If-Match with the revision the edit started from; a change made meanwhile (another tab, an agent) answers 412 and
 // the form shows both instead of overwriting (docs/spec/11 "Risks": revision conflicts, not silent overwrites).
+// Availability windows per card and job kind (R19) are edited here too; Queue & GPU shows them.
 
 export const JOB_KINDS: JobKind[] = ["training", "eval", "shadow", "export"];
 
-type CardDraft = { memoryCapGb: string; allowedJobKinds: JobKind[] };
+type CardDraft = { memoryCapGb: string; allowedJobKinds: JobKind[]; windows?: AvailabilityWindows };
+
+const sameWindows = (a: AvailabilityWindows | undefined, b: AvailabilityWindows | undefined) => JSON.stringify(windowRows(a)) === JSON.stringify(windowRows(b));
 
 /** The card edits that differ from the host they were started from (only those are sent). */
 export function cardEdits(base: ComputeHost, draft: Record<number, CardDraft>): ComputeCardEdit[] {
@@ -26,7 +30,8 @@ export function cardEdits(base: ComputeHost, draft: Record<number, CardDraft>): 
     if (cap !== c.memoryCapGb) e.memoryCapGb = cap;
     const kinds = JOB_KINDS.filter((k) => d.allowedJobKinds.includes(k));
     if (kinds.join() !== JOB_KINDS.filter((k) => c.allowedJobKinds.includes(k)).join()) e.allowedJobKinds = kinds;
-    if (e.memoryCapGb !== undefined || e.allowedJobKinds) out.push(e);
+    if (d.windows !== undefined && !sameWindows(d.windows, c.windows)) e.windows = d.windows;
+    if (e.memoryCapGb !== undefined || e.allowedJobKinds || e.windows) out.push(e);
   }
   return out;
 }
@@ -78,7 +83,7 @@ function HostCard({ host, seeded }: { host: ComputeHost; seeded?: DefaultHost })
 
   const start = () => {
     setBase(host);
-    setDraft(Object.fromEntries(host.cards.map((c) => [c.index, { memoryCapGb: String(c.memoryCapGb), allowedJobKinds: [...c.allowedJobKinds] }])));
+    setDraft(Object.fromEntries(host.cards.map((c) => [c.index, { memoryCapGb: String(c.memoryCapGb), allowedJobKinds: [...c.allowedJobKinds], windows: c.windows ?? {} }])));
     setError(null);
     setConflict(null);
   };
@@ -109,7 +114,7 @@ function HostCard({ host, seeded }: { host: ComputeHost; seeded?: DefaultHost })
     }
   };
 
-  const invalid = editing && Object.values(draft).some((d) => !(Number(d.memoryCapGb) > 0));
+  const invalid = editing && Object.values(draft).some((d) => !(Number(d.memoryCapGb) > 0) || windowRows(d.windows).some((r) => windowError(r.window)));
   return (
     <div className="rounded-md border" data-testid={`compute-host-${host.name}`}>
       <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2">
@@ -136,7 +141,7 @@ function HostCard({ host, seeded }: { host: ComputeHost; seeded?: DefaultHost })
           </Button>
         )}
       </div>
-      <Table label={`Cards of ${host.name}`} head={["#", "Card", "Class", "Memory", "Memory cap", "Allowed job kinds"]} className="rounded-none border-0">
+      <Table label={`Cards of ${host.name}`} head={["#", "Card", "Class", "Memory", "Memory cap", "Allowed job kinds", "Availability"]} className="rounded-none border-0">
         {host.cards.map((c) => {
           const d = draft[c.index];
           const def = capDefault(seeded, c);
@@ -144,66 +149,81 @@ function HostCard({ host, seeded }: { host: ComputeHost; seeded?: DefaultHost })
           const warn = rangeWarning(capValue, def?.range);
           const departs = def && Number(def.value) !== c.memoryCapGb;
           const capId = `cap-${host.id}-${c.index}`;
+          const windows = formatWindows(c.windows);
           return (
-            <tr key={c.index}>
-              <Td className="tabular-nums">{c.index}</Td>
-              <Td>{c.name}</Td>
-              <Td className="font-mono">{c.cardClass}</Td>
-              <Td className="tabular-nums">{c.memoryGb} GB</Td>
-              <Td>
-                <div className="flex items-center gap-1">
-                  {editing && d ? (
-                    <>
-                      <label htmlFor={capId} className="sr-only">
-                        Memory cap of card {c.index} (GB)
-                      </label>
-                      <Input
-                        id={capId}
-                        type="number"
-                        min={1}
-                        max={c.memoryGb}
-                        step={1}
-                        value={d.memoryCapGb}
-                        onChange={(e) => setDraft((s) => ({ ...s, [c.index]: { ...d, memoryCapGb: e.target.value } }))}
-                        className="h-6 w-20 text-xs"
-                        aria-invalid={!(Number(d.memoryCapGb) > 0) || undefined}
-                      />
-                      <span className="text-muted-foreground">GB</span>
-                    </>
-                  ) : (
-                    <span className="tabular-nums">{c.memoryCapGb} GB</span>
-                  )}
-                  <WhyDefault label={`memory cap of card ${c.index}`} value={def} />
-                  {!editing && departs ? <Chip tone="accent" title={`Default ${String(def?.value)} GB`}>departs from default</Chip> : null}
-                </div>
-                {warn ? <span className="text-status-warning-foreground">{warn}</span> : null}
-              </Td>
-              <Td>
-                {editing && d ? (
-                  <fieldset className="flex flex-wrap gap-2">
-                    <legend className="sr-only">Allowed job kinds of card {c.index}</legend>
-                    {JOB_KINDS.map((k) => (
-                      <label key={k} className="inline-flex min-h-6 items-center gap-1">
-                        <input
-                          type="checkbox"
-                          className="size-3.5 accent-primary"
-                          checked={d.allowedJobKinds.includes(k)}
-                          onChange={(e) =>
-                            setDraft((s) => ({
-                              ...s,
-                              [c.index]: { ...d, allowedJobKinds: e.target.checked ? [...d.allowedJobKinds, k] : d.allowedJobKinds.filter((x) => x !== k) },
-                            }))
-                          }
+            <Fragment key={c.index}>
+              <tr>
+                <Td className="tabular-nums">{c.index}</Td>
+                <Td>{c.name}</Td>
+                <Td className="font-mono">{c.cardClass}</Td>
+                <Td className="tabular-nums">{c.memoryGb} GB</Td>
+                <Td>
+                  <div className="flex items-center gap-1">
+                    {editing && d ? (
+                      <>
+                        <label htmlFor={capId} className="sr-only">
+                          Memory cap of card {c.index} (GB)
+                        </label>
+                        <Input
+                          id={capId}
+                          type="number"
+                          min={1}
+                          max={c.memoryGb}
+                          step={1}
+                          value={d.memoryCapGb}
+                          onChange={(e) => setDraft((s) => ({ ...s, [c.index]: { ...d, memoryCapGb: e.target.value } }))}
+                          className="h-6 w-20 text-xs"
+                          aria-invalid={!(Number(d.memoryCapGb) > 0) || undefined}
                         />
-                        {k}
-                      </label>
-                    ))}
-                  </fieldset>
-                ) : (
-                  <span className="text-muted-foreground">{c.allowedJobKinds.join(", ") || "none"}</span>
-                )}
-              </Td>
-            </tr>
+                        <span className="text-muted-foreground">GB</span>
+                      </>
+                    ) : (
+                      <span className="tabular-nums">{c.memoryCapGb} GB</span>
+                    )}
+                    <WhyDefault label={`memory cap of card ${c.index}`} value={def} />
+                    {!editing && departs ? <Chip tone="accent" title={`Default ${String(def?.value)} GB`}>departs from default</Chip> : null}
+                  </div>
+                  {warn ? <span className="text-status-warning-foreground">{warn}</span> : null}
+                </Td>
+                <Td>
+                  {editing && d ? (
+                    <fieldset className="flex flex-wrap gap-2">
+                      <legend className="sr-only">Allowed job kinds of card {c.index}</legend>
+                      {JOB_KINDS.map((k) => (
+                        <label key={k} className="inline-flex min-h-6 items-center gap-1">
+                          <input
+                            type="checkbox"
+                            className="size-3.5 accent-primary"
+                            checked={d.allowedJobKinds.includes(k)}
+                            onChange={(e) =>
+                              setDraft((s) => ({
+                                ...s,
+                                [c.index]: { ...d, allowedJobKinds: e.target.checked ? [...d.allowedJobKinds, k] : d.allowedJobKinds.filter((x) => x !== k) },
+                              }))
+                            }
+                          />
+                          {k}
+                        </label>
+                      ))}
+                    </fieldset>
+                  ) : (
+                    <span className="text-muted-foreground">{c.allowedJobKinds.join(", ") || "none"}</span>
+                  )}
+                </Td>
+                <Td>
+                  <span className="text-muted-foreground" data-testid={`windows-${c.index}`}>
+                    {windows.length ? windows.join(" · ") : "any time"}
+                  </span>
+                </Td>
+              </tr>
+              {editing && d ? (
+                <tr>
+                  <td colSpan={7} className="px-2 py-1.5">
+                    <WindowsEditor card={c.index} kinds={[...JOB_KINDS, "data"]} value={d.windows} onChange={(w) => setDraft((s) => ({ ...s, [c.index]: { ...d, windows: w } }))} />
+                  </td>
+                </tr>
+              ) : null}
+            </Fragment>
           );
         })}
       </Table>

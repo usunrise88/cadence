@@ -66,6 +66,19 @@ Open questions:
   step jobs, so `jobs.wait` only marks it running). Before the session the calibrate step's estimate is its hint
   (0.1 GPU-hours): `runs.calibrate` plans over a mix, which exists only once the session made it. The later
   playbooks' continuation stages ask for the parent run and `peakLr` (no defaults.yaml key for a stage's peak LR).
+- [ ] U (2026-09-30, panels): the worker reports one memory number per card, so Queue & GPU estimates Cadence's share
+  (used − the last reading taken while no Cadence job held the card; without one, the job's cap) and labels it
+  "estimated"; per-process memory from the worker would make it exact.
+- [ ] U (2026-09-30, panels): jobs and pipeline runs are not documents, so "the active job" (Logs) and the pipeline
+  run Pipeline run follows are a small shell focus store set by Queue & GPU, Pipeline run and (later) Run, not the
+  selection bus.
+- [ ] U (2026-09-30, panels): the Mix document's "launch a run" sends the project's base model (the wizard's choice;
+  runs.new alone defaults to the instance's), shows the dry-run estimate and starts the run only on confirmation.
+  Metrics and Checkpoints follow the active Run document, then the last run shown, then the project's newest run.
+- [ ] U (2026-09-30, panels): the Recipe document had no write path; `recipes.new` / `recipes.edit` commit one text
+  file to main as the person (If-Match: the commit that last changed the file). The default preset forbids both for
+  agents, who change files on their session branch. The augmentation profile file shape (`augment/<name>.yaml`) and
+  its recommended values (`defaults.yaml` `augment.*`) are recorded in 03 "Augmentation".
 
 - [ ] R (2026-09-30, runs): the base model's `familyId` names the family collection `model-family/<familyId>`; the
   seeded Nemotron base model says `nemo.fastconformer-rnnt.cache-aware`, so the NeMo pack must publish its family

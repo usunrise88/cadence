@@ -4,7 +4,7 @@
 # the control-plane binary and packaged with the worker. Every value carries a description, a source and, where it
 # applies, a safe range; a value without a published source is a "Cadence recommendation" re-checked after the spikes.
 # Keys are addressed as <section>.<key> (x-cadence.defaultRef: training.steps). Bump `version` on every change.
-version: 8
+version: 9
 
 # The project wizard's Recommended mode (docs/spec/02-domain-projects-registry.md "Project wizard").
 wizard:
@@ -293,6 +293,62 @@ backups:
     description: Weekly backup sets kept beside the nightly ones
     source: Cadence recommendation (a month of weekly restore points)
     range: { min: 1, max: 52 }
+
+# The recommended augmentation profile (docs/spec/03-pipelines-defaults.md "Augmentation"): a project's
+# augment/<name>.yaml starts from these values and the Recipe form's "Reset to recommended" writes them back. Each
+# transform is applied to an utterance with its probability; ranges are drawn uniformly per utterance.
+augment:
+  seed:
+    value: 1234
+    description: Seed of the augmentation draw, recorded on the run so the same draw can be repeated
+    source: docs/spec/03-pipelines-defaults.md "Augmentation" (the seed is recorded on the run); the value is a Cadence recommendation
+    range: { min: 0, max: 2147483647 }
+  codec_probability:
+    value: 0.5
+    unit: fraction
+    description: Share of utterances passed through a lossy telephony codec
+    source: Cadence recommendation (NeMo's lossy-codec augmentation and Lhotse's codec transforms are the base, docs/spec/03 "Augmentation")
+    range: { min: 0, max: 1 }
+  codecs:
+    value: [g711-ulaw, g711-alaw, gsm-fr, amr-nb, opus]
+    description: Codecs one is drawn from per augmented utterance (G.711 μ-law and A-law, GSM full rate, AMR narrowband, Opus at 6–16 kbps)
+    source: docs/spec/03-pipelines-defaults.md "Augmentation" (Codecs)
+    range: { values: [g711-ulaw, g711-alaw, gsm-fr, amr-nb, opus] }
+  band_limit_probability:
+    value: 0.5
+    unit: fraction
+    description: Share of utterances band-limited to narrowband telephony and resampled back to the model rate
+    source: Cadence recommendation
+    range: { min: 0, max: 1 }
+  band_limit_hz:
+    value: 3400
+    unit: Hz
+    description: Upper edge of the band-limit (the telephone channel passes 300–3400 Hz)
+    source: ITU-T G.712 (telephone channel passband 300–3400 Hz); docs/spec/03 "Augmentation" (band-limit to 8 kHz sampling)
+    range: { min: 3000, max: 8000 }
+  level_probability:
+    value: 0.3
+    unit: fraction
+    description: Share of utterances whose level is changed by a random gain
+    source: Cadence recommendation
+    range: { min: 0, max: 1 }
+  level_gain_db:
+    value: [-10, 6]
+    unit: dB
+    description: Range the gain is drawn from (quiet handsets to hot lines)
+    source: Cadence recommendation — re-checked against the noise-bank level statistics (docs/spec/03 "Augmentation", Level and dynamics)
+    range: { min: -30, max: 20 }
+  speed_probability:
+    value: 0.3
+    unit: fraction
+    description: Share of utterances speed-perturbed
+    source: Cadence recommendation
+    range: { min: 0, max: 1 }
+  speed_factor:
+    value: [0.9, 1.1]
+    description: Range the speed factor is drawn from (tempo and pitch change together)
+    source: Ko et al., "Audio augmentation for speech recognition", Interspeech 2015 (factors 0.9, 1.0, 1.1); NeMo and Lhotse defaults
+    range: { min: 0.8, max: 1.2 }
 
 # Hosts seeded into the compute entity at first start; Settings edits them afterwards (compute.edit).
 compute:

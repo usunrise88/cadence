@@ -1130,6 +1130,27 @@ paths:
           description: Files by path, with the commit the ref resolved to
           content: { application/json: { schema: { $ref: "#/components/schemas/RecipeList" } } }
         default: { $ref: "#/components/responses/Problem" }
+    # phase 2 · wave 2 · stream U: a new recipe file (an augmentation profile) from the Recipe document.
+    post:
+      operationId: recipes.new
+      summary: Create one text file in the project repository and commit it to main
+      tags: [projects]
+      x-cadence:
+        toolDescription: >
+          Create one UTF-8 text file in the project repository and commit it to main as the caller; a path that
+          exists answers 409 (change it with recipes.edit). Agents create files in their session worktree; the
+          default preset does not allow this tool.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/RecipeNew" } } }
+      responses:
+        "201":
+          description: The file as committed (or, for a dry run, as it would be)
+          content: { application/json: { schema: { $ref: "#/components/schemas/Recipe" } } }
+        default: { $ref: "#/components/responses/Problem" }
 
   /projects/{p}/recipes/{path}:
     x-cadence: { entity: recipes }
@@ -1145,6 +1166,29 @@ paths:
       responses:
         "200":
           description: The file
+          content: { application/json: { schema: { $ref: "#/components/schemas/Recipe" } } }
+        default: { $ref: "#/components/responses/Problem" }
+    # phase 2 · wave 2 · stream U: the Recipe document's form edits (an augmentation profile) commit through this.
+    patch:
+      operationId: recipes.edit
+      summary: Write one text file of the project repository and commit it to main (the Recipe document's edits)
+      tags: [projects]
+      x-cadence:
+        toolDescription: >
+          Change one UTF-8 text file of the project repository and commit it to main as the caller. Send ifMatch with
+          the commit that last changed the file (history[0].sha from recipes.get); recipes.new creates a file. Files rendered from the agent profile (AGENTS.md, CLAUDE.md, .claude/settings.json,
+          opencode.json) change through agentProfile.edit instead. Agents edit files in their session worktree; the
+          default preset does not allow this tool.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/RecipeEdit" } } }
+      responses:
+        "200":
+          description: The file as committed (or, for a dry run, as it would be), with its history
           content: { application/json: { schema: { $ref: "#/components/schemas/Recipe" } } }
         default: { $ref: "#/components/responses/Problem" }
 
@@ -3880,6 +3924,7 @@ components:
         operations: { $ref: "#/components/schemas/DefaultSection" }
         notifications: { $ref: "#/components/schemas/DefaultSection" }
         backups: { $ref: "#/components/schemas/DefaultSection" }
+        augment: { $ref: "#/components/schemas/DefaultSection", description: "The recommended augmentation profile (docs/spec/03 \"Augmentation\"): what the Recipe form's Reset to recommended writes" }
         estimates:
           type: object
           required: [bytes_per_audio_hour, training]
@@ -6676,3 +6721,20 @@ components:
         next: { type: string, description: The suggested next step }
         dryRuns: { type: array, items: { type: string }, description: Spending operations with a successful dry run in this session }
         nudges: { type: integer, description: Turns that ended without progress since the last tick (the server reminds the agent at most twice) }
+
+    # ---------------------------------------------------------------- panels schemas (wave 2 · stream U) — add below
+    RecipeEdit:
+      type: object
+      required: [content]
+      additionalProperties: false
+      properties:
+        content: { type: string, maxLength: 1048576, description: The file's new content (UTF-8 text) }
+        message: { type: string, minLength: 1, maxLength: 200, description: "Commit message (default: edit <path>)" }
+    RecipeNew:
+      type: object
+      required: [path, content]
+      additionalProperties: false
+      properties:
+        path: { $ref: "#/components/schemas/RecipePath" }
+        content: { type: string, maxLength: 1048576, description: The file's content (UTF-8 text) }
+        message: { type: string, minLength: 1, maxLength: 200, description: "Commit message (default: add <path>)" }

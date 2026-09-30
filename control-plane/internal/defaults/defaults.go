@@ -72,6 +72,10 @@ type Defaults struct {
 	Notifications Notifications `yaml:"notifications"`
 	Backups       Backups       `yaml:"backups"`
 
+	// Augment is the recommended augmentation profile (docs/spec/03 "Augmentation"): served to the Recipe form, read
+	// by the training step kinds through their defaultRefs; the control plane never interprets it (phase 2 · stream U).
+	Augment map[string]any `yaml:"augment"`
+
 	// Packs holds one section per framework pack (R45), addressed as packs.<pack>.<key> by the step kinds'
 	// x-cadence defaultRef. The control plane serves and validates these sections and never branches on a pack.
 	Packs map[string]map[string]any `yaml:"packs"`
