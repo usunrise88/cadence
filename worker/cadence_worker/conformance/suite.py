@@ -2,9 +2,10 @@
 
 Schema checks first (x-cadence complete, help present, profiles declared, every role mapped to a published kind of
 the pack whose ``role`` matches), then the flow on the pack's fixtures through the real harness path (LeaseRunner →
-``python -m cadence_worker.run_step``) with a local content store and no control plane:
+``python -m cadence_worker.run_step``) with a local content store and no control plane, starting from a
+``dataset_import`` of the pack's fixtures (a ``folder-csv`` folder):
 
-    calibrate → train a few steps → stop (training-state on cancel) → resume → average → transcribe (file and
+    import → calibrate → train a few steps → stop (training-state on cancel) → resume → average → transcribe (file and
     streaming profiles) → score
 
 Export and parity join in phase 5. Contracts a pack must meet beyond the schemas: the transcribe kind takes a
@@ -33,6 +34,15 @@ REQUIRED_ROLES = ("calibrate", "train", "average", "transcribe")
 LATER_ROLES = {"export": "joins in phase 5", "parity": "joins in phase 5"}
 CHECKPOINT_META = ("family", "step", "valWer", "weightsHash")
 HYPOTHESIS_FIELDS = ("text", "words", "decoding", "decodingHash", "family", "weightsHash")
+IMPORT_KIND = "dataset_import"
+IMPORT_PARAMS: Mapping[str, Any] = {
+    "format": "folder-csv",
+    "source_name": "conformance-fixtures",
+    "source_kind": "synthetic",
+    "licence": "CC0-1.0",
+    "locale": "und",
+    "split_rule": "source",
+}
 REPO_HELP = Path(__file__).resolve().parents[3] / "docs" / "help"
 
 
@@ -115,8 +125,10 @@ def check_schemas(
             problems.append(f"family {fname}: no help slug")
         elif (f := _help_file(str(d["help"]), help_dir)) is not None and not f.is_file():
             problems.append(f"family {fname}: help article {f} is missing")
-        if fam.fixtures is None or not (fam.fixtures / "manifest.jsonl").is_file():
-            problems.append(f"family {fname}: no conformance fixtures (manifest.jsonl)")
+        if fam.fixtures is None or not (fam.fixtures / "metadata.csv").is_file():
+            problems.append(f"family {fname}: no conformance fixtures (a folder-csv import folder with metadata.csv)")
+    if families and IMPORT_KIND not in kinds:
+        problems.append(f"runtime {runtime!r} does not publish the neutral {IMPORT_KIND} kind the flow starts from")
     return problems
 
 
@@ -195,29 +207,22 @@ class Flow:
             sink.on_first = lambda: runner.stop("conformance: stop after the first metric")
         return runner.run(), sink
 
-    def ingest(self, fixtures: Path) -> tuple[ArtifactRef, dict[str, str]]:
-        """The fixtures as a ``dataset`` artifact: a header line, then one line per utterance with its audio hash."""
-        rows = [
-            json.loads(line) for line in (fixtures / "manifest.jsonl").read_text(encoding="utf-8").splitlines() if line
-        ]
+    def ingest(self, fixtures: Path, params: Mapping[str, Any]) -> tuple[ArtifactRef, dict[str, str]]:
+        """Import the fixtures (a ``folder-csv`` folder) with ``dataset_import`` through the harness, as a pipeline's
+        import step would: the ``dataset`` directory artifact every training and transcribe step reads, and the
+        reference text of every utterance by the BLAKE3 hash of its audio."""
+        p = {**IMPORT_PARAMS, **params, "path": str(fixtures)}
+        out, _ = self.run(IMPORT_KIND, p, {})
+        data = _by_type(_expect_done(out, "import"), "dataset", "import")
+        files = {f.path: f.hash for f in self.store.read_manifest(data["hash"])}
+        if "dataset.json" not in files or "manifest.jsonl" not in files:
+            raise ConformanceError(f"the imported dataset lacks dataset.json or manifest.jsonl: {sorted(files)}")
         refs: dict[str, str] = {}
-        lines = [json.dumps({"source": {"name": "conformance-fixtures", "licence": "CC0-1.0", "kind": "synthetic"}})]
-        for r in rows:
-            h, _ = self.store.put_file(fixtures / r["audio"])
-            refs[h] = r["text"]
-            lines.append(
-                json.dumps(
-                    {
-                        "audio": h,
-                        "text": r["text"],
-                        "language": r.get("language", "und"),
-                        "origin": "fixture",
-                        "split": r.get("split", "train"),
-                    }
-                )
-            )
-        h = self.store.put_bytes(("\n".join(lines) + "\n").encode())
-        return {"hash": h, "type": "dataset", "meta": {"layout": "file"}}, refs
+        for line in self.store.path(files["manifest.jsonl"]).read_text(encoding="utf-8").splitlines():
+            if line:
+                row = json.loads(line)
+                refs[files[row["audio"]]] = row["text"]
+        return data, refs
 
     def read_json(self, ref: ArtifactRef) -> Any:
         return json.loads(self.store.path(ref["hash"]).read_bytes())
@@ -244,6 +249,7 @@ def run_family(flow: Flow, fam: Family, report: Report) -> None:
     roles = d["roles"]
     conf = fam.conformance
     assert fam.fixtures is not None
+    fixtures = fam.fixtures
     prefix = d["name"]
 
     def stage(name: str, fn: Callable[[], dict[str, Any]]) -> bool:
@@ -256,8 +262,16 @@ def run_family(flow: Flow, fam: Family, report: Report) -> None:
             report.stages.append(Stage(f"{prefix}/{name}", False, time.monotonic() - t0, {"error": str(e)}))
             return False
 
-    data, refs = flow.ingest(fam.fixtures)
     state: dict[str, Any] = {}
+
+    def ingest() -> dict[str, Any]:
+        state["data"], state["refs"] = flow.ingest(fixtures, conf.get("import", {}))
+        return {"dataset": state["data"]["hash"], "utterances": len(state["refs"])}
+
+    if not stage("import", ingest):
+        return
+    data: ArtifactRef = state["data"]
+    refs: dict[str, str] = state["refs"]
 
     def calibrate() -> dict[str, Any]:
         out, _ = flow.run(roles["calibrate"], conf.get("calibrate", {}), {"data": data})

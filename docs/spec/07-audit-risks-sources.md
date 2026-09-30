@@ -400,9 +400,10 @@ Open questions:
 - [ ] S · Playbook format (phase 2, R16), confirm: a playbook input is taken from the project with `from: project`
       (the base-model input: the project's default base model) or from `defaults.yaml` with `defaultRef`, and a chain
       step not built yet carries `phase: <n>` so the estimate lists and skips it (03 "Playbooks"; stream K builds it)
-- [ ] gap (phase 2): the toy pack reads a `dataset` input as one JSON-lines file with `audio` as a b3 hash
-      (`packs/toy/cadence_toy/data.py`), while `dataset_import` produces the directory artifact of 02 "The dataset
-      artifact" (`manifest.jsonl`, `audio` as a path inside it); an import → toy train chain fails until one side moves
+- [x] F · resolved (phase 2): the toy pack reads only the `dataset` directory artifact of 02 "The dataset artifact"
+      (`dataset.json` with `format: cadence.dataset/1`, `manifest.jsonl` with `audio` as a path inside it) and names an
+      utterance by the BLAKE3 hash of its audio file; its fixtures are a `folder-csv` import folder (`metadata.csv`),
+      and the conformance suite starts with a `dataset_import` stage, so import → calibrate → train → … runs end to end
 - [ ] gap (phase 2): queue order is the job's own priority (`pipelines.run` `priority`, `jobs.edit`); the project's
       queue priority from its budgets (02 "Projects", Budgets) does not feed it yet
 - [ ] gap (phase 2): `pipelines.run` does not refuse eval-only dataset versions (`data.Trainable`); only mixes and the
