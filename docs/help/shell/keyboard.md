@@ -28,6 +28,9 @@ Any step.
 | ? | Help for the focused panel |
 | Ctrl/Cmd+/ | Keyboard shortcuts |
 | Ctrl+M | Move the active panel with the keyboard (arrows pick the target, Enter docks, Esc cancels) |
+| Ctrl/Cmd+I | Focus Chat and attach the current selection as references |
+| Ctrl/Cmd+. | Stop the agent's current turn (the session the current Chat shows) |
+| Enter / Backspace | On a focused approval card: approve (allow) once / deny |
 
 ## Commands
 
