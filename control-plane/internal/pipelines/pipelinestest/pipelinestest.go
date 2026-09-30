@@ -64,7 +64,9 @@ var Fixtures = []map[string]any{
 }
 
 // RegisterKinds publishes the fixture step kinds in the registry.
-func RegisterKinds(ctx context.Context, pool *pgxpool.Pool) error { return Register(ctx, pool, Fixtures...) }
+func RegisterKinds(ctx context.Context, pool *pgxpool.Pool) error {
+	return Register(ctx, pool, Fixtures...)
+}
 
 // Register publishes step kind descriptors (the shape of Fixtures) in the registry, as a worker would.
 func Register(ctx context.Context, pool *pgxpool.Pool, kinds ...map[string]any) error {
