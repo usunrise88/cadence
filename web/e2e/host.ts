@@ -6,7 +6,7 @@ import { expect, request as playwrightRequest, type APIRequestContext } from "@p
 import type { AgentSession, AgentToolCall, HostDecision, HostEntry, HostReport, HostStart, HostWork } from "../src/api/gen/types.gen";
 import { API_URL, McpAgent } from "./agent";
 
-// A scripted agent host for the specs: it speaks the host protocol (hostSessions.claim|report|ask|decision) with
+// A scripted agent host for the specs: it speaks the host protocol (hostSessions.claim|report|ask|decision|release) with
 // the host credential the e2e stack writes to CADENCE_HOST_TOKEN_FILE (e2e/stack.sh), so a spec can drive a session
 // turn by turn — streamed text, a permission request, a Cadence tool call through MCP with the session token, a
 // commit on the session branch — without a real agent.
@@ -14,19 +14,28 @@ import { API_URL, McpAgent } from "./agent";
 const TOKEN_FILE = path.resolve(import.meta.dirname, "../.e2e/host-token");
 
 export class ScriptedHost {
-  readonly hostId = `e2e-host-${process.pid}`;
+  readonly hostId: string;
   private readonly ctx: APIRequestContext;
   private readonly started = new Map<string, HostStart>();
   private readonly pending: HostWork = { start: [], messages: [], controls: [], decisions: [] };
 
-  private constructor(ctx: APIRequestContext) {
+  private constructor(ctx: APIRequestContext, hostId: string) {
     this.ctx = ctx;
+    this.hostId = hostId;
   }
 
-  static async connect(): Promise<ScriptedHost> {
+  /** A host process; another name plays the host that comes up after a restart. */
+  static async connect(name = "e2e-host"): Promise<ScriptedHost> {
     const token = readFileSync(TOKEN_FILE, "utf8").trim();
     const ctx = await playwrightRequest.newContext({ baseURL: API_URL, extraHTTPHeaders: { Authorization: `Bearer ${token}` } });
-    return new ScriptedHost(ctx);
+    return new ScriptedHost(ctx, `${name}-${process.pid}`);
+  }
+
+  /** Shuts down as the host does on SIGTERM: releases every session it runs (hostSessions.release). */
+  async release(): Promise<string[]> {
+    const res = await this.ctx.post("/api/host-sessions:release", { data: { hostId: this.hostId } });
+    expect(res.status(), await res.text()).toBe(200);
+    return ((await res.json()) as { released: string[] }).released;
   }
 
   private async claim(wait = 1): Promise<void> {

@@ -46,7 +46,14 @@ export function sessionTransition(prev: AgentSession | undefined, next: AgentSes
         return { announce: `${who} waits for your approval` };
     }
   }
-  if (prev.busy && !next.busy && (next.state === "running" || next.state === "waiting_approval")) {
+  const live = next.state === "running" || next.state === "waiting_approval";
+  if (live && prev.hostState !== next.hostState && (next.hostState === "released" || next.hostState === "lost")) {
+    // The turn did not finish: its host restarted or went silent.
+    return {
+      announce: next.hostState === "released" ? `${who}: the agent host is restarting — reconnecting` : `${who}: the agent host stopped answering`,
+    };
+  }
+  if (prev.busy && !next.busy && live) {
     const reply = lastReply ? `: ${lastReply.length > 200 ? `${lastReply.slice(0, 200)}…` : lastReply}` : "";
     return { announce: `${who} finished its turn${reply}` };
   }

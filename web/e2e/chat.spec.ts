@@ -6,7 +6,9 @@ import { ScriptedHost } from "./host";
 // Chat and the context bridge end to end, without a real agent: the spec plays the agent host through the host
 // protocol (e2e/host.ts). New session from Chat with the selection attached → the streamed reply renders with its
 // reference as a link → a permission request is allowed inline → a Cadence tool call drafts the mix and the draft's
-// badge jumps to the tool call in Chat → the session ends and its changes are accepted into main.
+// badge jumps to the tool call in Chat; an opencode-style call (no tool-use id) gets its tool call's id once the host
+// reports it → the host restarts: Chat says it is reconnecting until the next host takes the session → the session
+// ends and its changes are accepted into main.
 
 test.setTimeout(120_000);
 
@@ -94,6 +96,23 @@ test("Chat: new session, streamed reply, inline permission, tool call with badge
   await badge.click();
   await expect(toolCall).toHaveAttribute("data-highlighted", "true");
   await expect(toolCall).toBeFocused();
+
+  // opencode sends no tool-use id: the draft first names the MCP call, then the agent's tool call once the host
+  // reports it — and the badge jumps there.
+  const edit2 = await agent.call("mixes.edit", { id: mix.id, ifMatch: read.result.etag, body: { temperature: 2.5 } });
+  expect(edit2.isError, JSON.stringify(edit2.result)).toBe(false);
+  await expect(badge).toHaveAttribute("data-tool-call", /^mcp:/);
+  await host.entries(sessionId, 1, [
+    {
+      key: "tool:call_oc",
+      kind: "tool_call",
+      toolCall: { id: "call_oc", title: "cadence.mixes_edit", class: "mcp", status: "completed", operation: "mixes.edit", server: "cadence", input: { id: mix.id, body: { temperature: 2.5 } }, output: edit2.result },
+    },
+  ]);
+  await expect(badge).toHaveAttribute("data-tool-call", "call_oc");
+  await chat.locator('[data-testid="chat-transcript"]').evaluate((el) => (el.scrollTop = 0));
+  await badge.click();
+  await expect(chat.locator('[data-tool-call="call_oc"]')).toHaveAttribute("data-highlighted", "true");
   await agent.close();
 
   // The turn ends with a commit on the session branch; the finished turn reaches the live region.
@@ -106,11 +125,23 @@ test("Chat: new session, streamed reply, inline permission, tool call with badge
   await expect(page.getByTestId("live-region")).toContainText(`${label} finished its turn`);
   await expect(chat.locator('[data-slot="commit"]')).toContainText(sha.slice(0, 7));
 
+  // The agent host restarts: it releases the session, and Chat says so instead of looking hung until the next host
+  // takes it over — at once, without waiting for the old host's lapse.
+  expect(await host.release()).toEqual([sessionId]);
+  const hostLine = chat.locator('[data-slot="host-state"]');
+  await expect(hostLine).toHaveText("The agent host is restarting — reconnecting…");
+  await expect(chat.locator('[data-slot="session-state"]')).toHaveText("reconnecting");
+  await host.close();
+  const next = await ScriptedHost.connect("e2e-host-next");
+  await next.start(sessionId);
+  await expect(hostLine).toHaveCount(0);
+  await expect(chat.locator('[data-slot="session-state"]')).toHaveText("idle");
+
   // End the session: the host is told, commits nothing more and reports done; the changes wait for a person.
   await chat.getByRole("button", { name: "End…" }).click();
   await chat.getByRole("button", { name: "End the session" }).click();
-  await host.control(sessionId, "end");
-  await host.report(sessionId, { state: { state: "done" } });
+  await next.control(sessionId, "end");
+  await next.report(sessionId, { state: { state: "done" } });
   const merge = chat.locator('[data-slot="merge-area"]');
   await expect(merge).toHaveAttribute("data-merge", "pending");
   await expect(merge.getByLabel("Changed files")).toContainText("NOTES-agent.md");
@@ -127,5 +158,5 @@ test("Chat: new session, streamed reply, inline permission, tool call with badge
     .toBe(`agent_session:${sessionId}`);
   await page.reload();
   await expect(page.locator('[data-panel="chat"] [data-chat-session]').first()).toHaveAttribute("data-chat-session", sessionId);
-  await host.close();
+  await next.close();
 });

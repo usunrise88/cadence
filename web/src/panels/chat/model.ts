@@ -11,9 +11,26 @@ export function visibleEntries(items: AgentMessage[]): AgentMessage[] {
 
 export type Tone = "neutral" | "running" | "done" | "warning" | "failed";
 
-/** The header chip: running / waiting approval / paused with the reason / ended. */
+/**
+ * Why a live session looks quiet while its agent host is away: the host restarted (it released the session) or went
+ * silent; requests and messages wait for the next host. Undefined while a host runs the session.
+ */
+export function hostAway(s: AgentSession): string | undefined {
+  if (s.state !== "running" && s.state !== "waiting_approval") return undefined;
+  switch (s.hostState) {
+    case "released":
+      return "The agent host is restarting — reconnecting…";
+    case "lost":
+      return "The agent host stopped answering — the session moves to the next host that starts…";
+  }
+  return undefined;
+}
+
+/** The header chip: running / waiting approval / paused with the reason / ended; reconnecting while the host is away. */
 export function sessionStatus(s: AgentSession): { label: string; tone: Tone; detail?: string } {
   const pending = s.pendingControl ? ` · ${s.pendingControl === "cancel" ? "stopping" : s.pendingControl === "end" ? "ending" : `${s.pendingControl === "pause" ? "pausing" : "resuming"}`}…` : "";
+  const away = hostAway(s);
+  if (away) return { label: `reconnecting${pending}`, tone: "warning", detail: away };
   switch (s.state) {
     case "created":
       return { label: `starting${pending}`, tone: "neutral", detail: "Waiting for the agent host to take the session" };
