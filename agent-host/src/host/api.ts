@@ -4,6 +4,11 @@
 import type {
   AgentSession,
   HostAsk,
+  HostCredentialAck,
+  HostCredentialClaim,
+  HostCredentialReport,
+  HostCredentialTask,
+  HostCredentialWork,
   HostClaim,
   HostDecision,
   HostReport,
@@ -12,6 +17,7 @@ import type {
 } from "../api/gen/types.gen.ts";
 
 export type { AgentSession, HostAsk, HostClaim, HostDecision, HostReport, HostWork };
+export type { HostCredentialAck, HostCredentialClaim, HostCredentialReport, HostCredentialTask, HostCredentialWork };
 export type {
   AgentPauseReason,
   AgentToolCall,
@@ -26,6 +32,13 @@ export interface ControlPlane {
   claim(req: HostClaim, signal?: AbortSignal): Promise<HostWork>;
   report(sessionId: string, body: HostReport): Promise<AgentSession>;
   ask(sessionId: string, body: HostAsk): Promise<HostDecision>;
+}
+
+// The agent-credential side of the host protocol (hostCredentials.claim|report): values to write into the
+// agent-credentials volume, removals and verifications.
+export interface CredentialPlane {
+  claimCredentials(req: HostCredentialClaim, signal?: AbortSignal): Promise<HostCredentialWork>;
+  reportCredential(taskId: string, body: HostCredentialReport): Promise<HostCredentialAck>;
 }
 
 export class ApiError extends Error {
@@ -43,7 +56,7 @@ export class ApiError extends Error {
   }
 }
 
-export class HttpControlPlane implements ControlPlane {
+export class HttpControlPlane implements ControlPlane, CredentialPlane {
   constructor(
     private readonly baseUrl: string, // e.g. http://control-plane:8080
     private readonly token: string,
@@ -80,5 +93,13 @@ export class HttpControlPlane implements ControlPlane {
 
   ask(sessionId: string, body: HostAsk): Promise<HostDecision> {
     return this.call("POST", `/host-sessions/${encodeURIComponent(sessionId)}:ask`, body);
+  }
+
+  claimCredentials(req: HostCredentialClaim, signal?: AbortSignal): Promise<HostCredentialWork> {
+    return this.call("POST", "/host-credentials:claim", req, signal);
+  }
+
+  reportCredential(taskId: string, body: HostCredentialReport): Promise<HostCredentialAck> {
+    return this.call("POST", `/host-credentials/${encodeURIComponent(taskId)}:report`, body);
   }
 }

@@ -98,7 +98,7 @@ export function launch(spec: LaunchSpec, tap?: MessageTap): AgentProcess {
 }
 
 // signalGroup sends a signal to the process group led by pid; false when no process of the group is left.
-function signalGroup(pid: number, signal: NodeJS.Signals | 0): boolean {
+export function signalGroup(pid: number, signal: NodeJS.Signals | 0): boolean {
   try {
     process.kill(-pid, signal);
     return true;
