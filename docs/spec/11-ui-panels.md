@@ -40,7 +40,7 @@ One search box finds anything Cadence knows — entities, utterance text, logs, 
 | Palette, plain text | Ctrl/Cmd+K | Entities across the registry and the current project; `>` prefix switches to commands, `?` to help (the VS Code convention) |
 | Library filter bar | — | The same query language, as a persistent list with saved views |
 | Find in panel | Ctrl/Cmd+F | Inside the focused panel: log lines, utterances in a Diff or Triage list, rows in a table |
-| Agent | `search.query` tool | The same index and grammar; the tool description carries the qualifier list |
+| Agent and CLI | `projects.search` tool (R1; `cadence projects search`) | The same index and grammar; the tool description carries the qualifier list |
 
 ### Query language
 
@@ -51,6 +51,13 @@ Free text plus qualifiers, autocompleted as chips: `kind:run status:running`, `l
 - Results are grouped by kind, ranked by recency within the current project first; Enter opens the document, Space previews in Inspector, Ctrl/Cmd+Enter opens Compare with the pinned selection.
 - "Open as list" turns any search into a Library view; saved searches are per user per project and appear in the palette.
 - The index is fed from the event stream, so a frozen dataset or a finished run is searchable within seconds.
+  The indexer keeps its own cursor over the outbox (`event_cursors`), reloads each entity an event names and
+  upserts its document; a restart resumes after the last committed batch. A kind joins the index by one row in
+  the registration table (`internal/search.Sources`); help articles are indexed at start.
+- Scope follows the credential: without a scope qualifier a search covers the current project, the registry (with
+  registry read) and help; `project:<slug>` searches the named projects, `scope:all` every project the credential
+  reaches — a project-bound token never sees another project's work, and registry hits need registry read. An
+  unknown qualifier is an `invalid-query` error listing the qualifiers, never free text.
 - Logs are structured JSON lines, so log search filters by field (`level:error step:train`), not only by substring.
 - Version 1: Postgres full-text search with trigram matching for typos and identifiers; version 2 adds embedding search over transcripts and notes ("utterances like this one") with pgvector, still self-hosted.
 

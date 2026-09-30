@@ -198,8 +198,8 @@ Projects
 - [ ] Context bridge: selection → prompt references (`@run:123`), Ask agent / Ctrl/Cmd+I, references in replies as
       links, attribution badge → tool call in Chat
 - [ ] Project archive (read-only artifacts, worktrees removed); source archive comes with Sources in phase 2
-- [ ] Saved searches: Saved search entity, `PUT /me/projects/{p}/views/{name}`, Library views and palette entries
-- [ ] Search index fed from the outbox (Postgres FTS + trigram), qualifier grammar, `search.query`, palette entity search
+- [x] Saved searches: Saved search entity, `PUT /me/projects/{p}/views/{name}`, Library views and palette entries
+- [x] Search index fed from the outbox (Postgres FTS + trigram), qualifier grammar, `search.query` (`projects.search`, R1), palette entity search
 
 Panels: Chat, Agent sessions, Approvals, Agent settings, Settings (compute, secrets write-only, catalogues, credentials),
 Getting started, Project document, Mix (minimal), Recipe (read + session-branch diffs).
@@ -472,9 +472,10 @@ Not planned into any phase; each comes back only by the owner's decision.
 
 ## Not placed yet
 
-- [ ] **spec** → *R34* The `cadence` CLI surface (07 lists it as unspecified). Principle 1 says it is generated from the
+- [x] **spec** → *R34* The `cadence` CLI surface (07 lists it as unspecified). Principle 1 says it is generated from the
       contract; `make e2e` (`cadence smoke`) and `cadence admin reset-password` depend on it. Proposed: generated
-      commands arrive with phase 1, `smoke` with phase 4.
+      commands arrive with phase 1, `smoke` with phase 4. Generated commands built in phase 1 (R34 in 08); `smoke`
+      stays with phase 4.
 - [ ] Release process: semver, the pinned matrix (NeMo container, Dockview, agent adapters) in release notes — first
       needed when there is something to upgrade from, i.e. before the first real project after phase 2.
 

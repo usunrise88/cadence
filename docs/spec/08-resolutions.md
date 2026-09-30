@@ -278,6 +278,10 @@ person pastes it into Cadence to confirm, which proves the script that ran is th
 
 - **R34 · CLI**: `cadence <entity> <verb>` generated from the contract, same Go binary as the server
   (`cadence serve`), hand-written `admin` and `smoke` subcommands; generated commands in phase 1, `smoke` in phase 4.
+  Built in phase 1: `make gen` writes the command table from the contract (exempt `auth`/`me` and planned operations
+  left out); flags come from parameters (`p` → `--project`, `If-Match` → `--if-match`), `--body` takes JSON,
+  `@file` or `@-`, the Idempotency-Key is generated; `CADENCE_URL`/`CADENCE_TOKEN` or `--url`/`--token`; JSON on
+  stdout, the problem on stderr with exit 1, usage errors exit 2 (help article `guides.cli`).
 - **R35 · Agent budget in `project.yaml`** (C4): `agent_budget: {turns_per_day: 200, tokens_per_turn: …}`; money
   appears only with API-key auth.
 - **R36 · Versions** (C6): a pipeline version is its commit SHA; `YYYY-MM-DD.<sha>` is for registry assets only.

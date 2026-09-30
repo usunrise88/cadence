@@ -41,8 +41,9 @@ day: build the seams in phase 2; training from scratch and packs beyond NeMo are
 Phase 0 (shell) passed its gate on 2026-09-29: spikes S1–S4 are done with numbers in `docs/spikes/`. What exists:
 - **Contract toolchain.** `api/openapi.yaml` follows R1; `api/vocabulary.yaml` is the machine copy of the verb table
   (a test keeps it equal to `docs/spec/10-ui-shell.md`). `control-plane/cmd/mcpgen` refuses naming violations and
-  writes `internal/mcp/tools.json`, `internal/api/planned.gen.go` (501 for `x-cadence.planned` operations) and
-  `web/src/api/operations.gen.ts`. The API lives under `/api`.
+  writes `internal/mcp/tools.json`, `internal/api/planned.gen.go` (501 for `x-cadence.planned` operations),
+  `internal/cli/operations.gen.go` (the `cadence <entity> <verb>` CLI, R34) and `web/src/api/operations.gen.ts`.
+  The API lives under `/api`.
 - **Control plane.** pgx + embedded migrations, fixed dev actor (`usr_admin`) until phase 1 auth, command pipeline
   (idempotency, If-Match/412/428, dryRun by rollback), outbox → SSE, projects, per-user workspaces, help bundle, slog
   / Prometheus / OTel file traces, SPA embedded (`make web`).
@@ -85,6 +86,7 @@ Per package (single test in brackets):
 ```
 cd control-plane && go test ./...                 # go test ./internal/<pkg> -run TestName ; -tags integration
 cd control-plane && go run ./cmd/cadence          # serve on 127.0.0.1:8080 (DATABASE_URL required)
+cd control-plane && go run ./cmd/cadence help     # the generated CLI: cadence <entity> <verb> (CADENCE_URL, CADENCE_TOKEN)
 cd web && npm run dev                             # Vite on :5173, proxies /api to $CADENCE_API (default :8080)
 cd web && npx vitest run --project unit           # npx vitest run src/shell/floating-snap -t "hysteresis"
 cd web && npx vitest run --project browser        # Dockview contract tests in headless Chromium
