@@ -65,6 +65,9 @@ type Defaults struct {
 	Drafts    Drafts    `yaml:"drafts"`
 	Cache     Cache     `yaml:"cache"`
 	Compute   Compute   `yaml:"compute"`
+	// Packs holds one section per framework pack (R45), addressed as packs.<pack>.<key> by the step kinds'
+	// x-cadence defaultRef. The control plane serves and validates these sections and never branches on a pack.
+	Packs map[string]map[string]any `yaml:"packs"`
 
 	document map[string]any
 }

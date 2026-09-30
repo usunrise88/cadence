@@ -829,6 +829,12 @@ export type Defaults = {
     compute: {
         hosts: Array<DefaultHost>;
     };
+    /**
+     * One section per framework pack (R45), addressed as packs.<pack>.<key> by the step kinds' x-cadence defaultRef
+     */
+    packs?: {
+        [key: string]: DefaultSection;
+    };
 };
 
 export type PolicyBudgets = {

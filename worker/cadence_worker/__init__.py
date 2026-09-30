@@ -1,2 +1,3 @@
-"""Cadence worker: discovers step kinds through the `cadence.steps` entry-point group,
-publishes their schemas to the control plane, and runs pipeline steps as subprocesses."""
+"""Cadence worker: the lease harness, the step contract and the runtime-neutral core step kinds."""
+
+__version__ = "0.2.0"

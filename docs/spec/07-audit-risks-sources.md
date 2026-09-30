@@ -53,6 +53,25 @@ Spikes:
 
 Open questions:
 
+- [ ] Y (2026-09-30, worker harness): a directory artifact is recognised by `meta.layout: dir|file`, which the worker
+  adds to every output it releases; an input without it is sniffed (a blob that parses as exactly the manifest shape
+  and whose files are all present is a directory). The control plane should keep `layout` in stored artifact meta.
+- [ ] Y: an input name may receive several artifacts as `<name>.0`, `<name>.1`, … (checkpoint averaging declares
+  `consumes: {checkpoints: checkpoint}`); the pipeline and `checkpoints.average` pass them that way.
+- [ ] Y: a CPU runtime (the toy worker) claims with an empty `cards` list; the scheduler must lease `gpu: false` steps to
+  a worker without cards, and the lease's `card` is then ignored (`CUDA_VISIBLE_DEVICES` is empty for CPU steps).
+- [ ] Y: a lease claimed while the worker is stopping is handed back at once as `failed` with error type `lost`,
+  `retryable: true`; a worker stopping mid-step releases it `cancelled` with its training state (message "the worker
+  is stopping"). A heartbeat answered with a 4xx other than 408/429 means the lease is gone: the step is stopped and
+  not released.
+- [ ] Y: the `dataset` artifact the toy pack reads is JSON lines whose utterance lines carry `audio` (a b3 hash of a
+  16 kHz WAV in the content store), `text` and optionally `split`; other lines (the header) are skipped. Steps read
+  such referenced blobs read-only through `ctx.blob(hash)`. Stream D's final format must keep those keys.
+- [ ] Y: pack defaults live under `packs.<pack>.<key>` in defaults.yaml (toy: `packs.toy.*`); the worker reads the
+  control plane's file (`CADENCE_DEFAULTS_FILE`, copied unchanged into each image), never a copy of its values; the
+  contract's `Defaults` gained `packs` (a map of sections) for it.
+- [ ] Y: a transcribe-role kind takes a `profile` parameter naming one of its family's latency profiles, and a
+  train-role kind resumes from `overrides.resumeFrom` up to its total `steps` — the conformance suite relies on both.
 - [ ] `audit.list` for scoped credentials (2026-09-30, for the evals on the staging stand): an API key or agent token
   of one project reads that project's audit rows only (narrowed like `approvals.list`); a key without a project is
   refused; the admin's session still reads everything. Agents may therefore read their own project's audit

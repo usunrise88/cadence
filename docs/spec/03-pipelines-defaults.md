@@ -9,7 +9,7 @@ Every block's process is a pipeline of typed steps declared in the recipes repos
 ### Model
 
 - Pipeline: a YAML file in the recipes repository (`pipelines/data-ingest.yaml`, `pipelines/train-stage.yaml`, …) listing steps in order, each with a step kind, parameters and named inputs and outputs. A pipeline version is its commit SHA.
-- Step kind: a Python entry point in the worker (`cadence.steps` group, the same idea as SDP processors) declaring a JSON Schema for parameters, the artifact types it consumes and produces, resource needs (GPU, memory cap, disk) and a `run()`; the worker publishes the registry to the control plane at start.
+- Step kind: a Python entry point in the worker (`cadence.steps` group, the same idea as SDP processors) declaring a JSON Schema for parameters, the artifacts it consumes and produces as name → type maps, resource needs (GPU, card count, memory, disk, job kind), the model-family role it fills (or `neutral` for core kinds shipped in every runtime), the secrets it needs, and `run(params, inputs, outputs, ctx)`; the worker publishes the registry with its runtime and model families at start (`workerRegistrations.new`). The contract as built is in `worker/README.md` ("The step contract").
 - Artifact types: manifest, Shar shard set, checkpoint, hypotheses, analysis arrays, waveform peaks, deployable bundle (ONNX, Triton repository), eval report, correction batch — each with a schema, so a pipeline is validated at plan time (`dryRun`), not at step 4 of a run. Framework-specific code stops at the role steps of a model family; everything after them reads these neutral types (R42).
 - Runtime: every step-kind version names the runtime (a pinned worker image) it runs in; a worker leases only its runtime's step kinds (R40).
 - Pipeline run: a job with per-step status, inputs, outputs and logs; a failed step can be retried alone, and outputs of finished steps are reused.
@@ -39,6 +39,15 @@ Every block's process is a pipeline of typed steps declared in the recipes repos
 | A command | A registry entry bound to an API operation | Palette, menus and MCP pick it up |
 
 Rules: step kinds are versioned and a pipeline pins the versions it was validated with; a step declares idempotence by an input hash so re-running a pipeline skips finished work; no step reads the database directly — inputs and outputs are artifacts.
+
+### Step contract (phase 2, as built)
+
+- A step runs in its own process per lease. Its inputs are materialised from the content store into a scratch directory (hard links; a directory artifact is a manifest of blobs); its outputs are hashed into the store at release with neutral meta (R42) and `layout: file|dir`. An input name may receive several artifacts as `<name>.0`, `<name>.1`, ….
+- The step context reports progress, metric points (`name, value, step, epoch`), log lines and output meta, and exposes the card, its memory cap (applied with `set_per_process_memory_fraction`), the OOM retry's batch scale and the training state to resume from.
+- Errors are typed: card out-of-memory → `oom` (one retry at 0.75× batch), bad inputs or parameters → `input`, anything else → `step`. A stop request (cancel, pause, a closing window) reaches the step as `should_stop()`; a training step writes its `training-state` and the lease is released `cancelled` with it.
+- Every parameter's default either is a literal with its source or comes from `defaults.yaml` through `x-cadence.defaultRef`; pack defaults sit under `packs.<pack>`. Ranges are enforced before `run`.
+- Secrets named by the kind reach only the step process's environment and are redacted from its forwarded logs.
+- A framework pack passes the conformance suite (`python -m cadence_worker.conformance --runtime <runtime>`, R45); the CPU toy pack (runtime `toy`, family `toy-ctc`) runs it on every pull request.
 
 ## Defaults
 

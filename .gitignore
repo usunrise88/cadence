@@ -8,3 +8,4 @@ __pycache__/
 control-plane/bin/
 .venv/
 .claude/worktrees/
+worker/test-results/

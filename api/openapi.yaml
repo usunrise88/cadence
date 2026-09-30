@@ -2905,6 +2905,10 @@ components:
           required: [hosts]
           properties:
             hosts: { type: array, items: { $ref: "#/components/schemas/DefaultHost" } }
+        packs:
+          type: object
+          description: "One section per framework pack (R45), addressed as packs.<pack>.<key> by the step kinds' x-cadence defaultRef"
+          additionalProperties: { $ref: "#/components/schemas/DefaultSection" }
 
     PolicyBudgets:
       type: object

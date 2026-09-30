@@ -44,6 +44,19 @@ jobs:
       - run: (cd web && npm ci && npx playwright install --with-deps chromium) && (cd agent-host && npm ci) && (cd worker && uv sync --python 3.12)
       - run: make test
 
+  conformance:
+    name: conformance (toy pack)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with: { version: "${{ env.UV_VERSION }}" }
+      - run: cd worker && uv sync --python 3.12
+      - run: make conformance
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with: { name: conformance-toy, path: worker/test-results, retention-days: 14 }
+
   integration:
     name: integration (Postgres)
     runs-on: ubuntu-24.04
@@ -90,3 +103,5 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: POSTGRES_PASSWORD=ci CADENCE_VERSION=ci-${{ github.sha }} docker compose build
+      # The toy worker image (the NeMo worker's 30 GB base is built on the staging host, not here).
+      - run: POSTGRES_PASSWORD=ci CADENCE_VERSION=ci-${{ github.sha }} docker compose --profile toy build worker-toy
