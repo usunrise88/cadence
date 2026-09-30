@@ -63,7 +63,6 @@ Open questions:
 - [ ] Unknown `/api` path answers 404 `not-found`, wrong method 405 `method-not-allowed` (a tenth error type with its article); the review proposed 400 for both
 - [x] Training from scratch or a second framework (k2/icefall) in v1? — Only the seams, in phase 2; training from scratch, packs beyond NeMo and spike F1 are deferred (owner, 2026-09-29; R44, R45)
 - [x] Keep uploads and microphone recordings? — No: a transcription is a manual test and stores nothing (owner, 2026-09-29; R47)
-<<<<<<< HEAD
 - [ ] `project://summary` needs the connection's project, which the spec does not say how to name. Phase 1 reads a
   `Cadence-Project: <slug>` header that the agent host sends next to `Authorization` in ACP `session/new` →
   `mcpServers` (R2); once `cst_` tokens are project-bound, the token's scope decides and the header must agree.
@@ -90,9 +89,23 @@ Open questions:
       the staging host is inventoried
 - [ ] Secrets: no rotation or archive yet (`secrets.new` refuses a taken name); the master key defaults to
       `$CADENCE_DATA_DIR/master.key`, generated on first start, until the compose secret of R9 is wired
-=======
 - [ ] Identity (phase 1) assumptions, confirm: login throttling counts failed attempts only (5/min, 20/h per address and per username, in memory); `X-Forwarded-For`/`-Proto` are trusted from loopback and private peers (the host's Caddy, Docker's gateway); the TOTP secret lives in the `users` row, not the R9 file store (it is a sign-in factor, not a secret handed to jobs); passwords need 12+ characters; first start may rename the admin account; out-of-scope reads answer 403 `forbidden` rather than hiding the entity behind 404; a credential without a project may not open the event stream
->>>>>>> phase1/identity
+- [ ] Search (phase 1, wave 2): `projects.search` is `GET /projects/{p}:search` (a read action; `/projects/{p}/search`
+      fails R1's path rule). Without a scope qualifier it covers the current project, the registry (with registry
+      read) and help; instance-wide work (jobs and approvals without a project) only for full scope. `project:<slug>`
+      replaces the current project (each checked against the credential); `scope:all` never widens a project-bound
+      token beyond its project. Unknown qualifiers are a 400 `invalid-query`, never text. Confirm
+- [ ] Search typo tolerance uses pg_trgm word similarity above 0.4 (one transposition in a six-letter word); the
+      Hebrew fold is niqqud stripping plus a ten-word ktiv male/haser stub list until the Hebrew language pack
+      (phase 3) brings a lexicon
+- [ ] Saved searches belong to the actor id (a person, or an API key acting as itself), like workspaces; there is no
+      way to remove one yet (removal would be an `archive` verb under `me`)
+- [ ] CLI (R34): generated commands exclude the exempt tags (`auth`, `me`) and planned operations; `cadence help`
+      is both the help command and the `help` entity, so `cadence help get|search` call `help.get|search` and
+      `cadence help <entity>` describes an entity
+- [ ] The palette's text box keeps focus, so Space previews a hit in the Inspector only after the highlight was moved
+      with the arrow keys (typing resets it); Enter opens a hit's document where its kind has one, else the Inspector
+      (10 "Every list" assumes list focus, not a text box)
 
 ## Sources
 

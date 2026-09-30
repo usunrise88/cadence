@@ -6,14 +6,14 @@ up:            ## build all images with one version and start postgres, control 
 down:
 	docker compose down
 
-gen:           ## regenerate Go server stubs, MCP tool manifest, TS client and bundled help from api/ and docs/help
+gen:           ## regenerate Go server stubs, MCP tool manifest, CLI table, TS client and bundled help from api/ and docs/help
 	cd control-plane && go tool oapi-codegen -config oapi-codegen.yaml ../api/openapi.yaml
 	cd control-plane && go run ./cmd/mcpgen
 	cd web && npx openapi-ts
 	cd control-plane && go run ./cmd/helpsync
 
 check-gen: gen ## CI: fail when generated files are not committed
-	git diff --exit-code -- control-plane/internal/api control-plane/internal/mcp control-plane/internal/help/content web/src/api \
+	git diff --exit-code -- control-plane/internal/api control-plane/internal/mcp control-plane/internal/cli control-plane/internal/help/content web/src/api \
 	  || (echo "generated files are stale: run make gen and commit" && exit 1)
 
 lint:          ## golangci-lint, eslint (panel, Dockview and Base UI rules), tsc, ruff, mypy --strict
@@ -32,7 +32,7 @@ test-integration: ## control plane against Postgres in Docker (testcontainers): 
 	cd control-plane && go test -tags integration ./...
 
 ui-e2e:        ## Playwright on sign-in and the shell against the real control plane (Postgres in Docker)
-	cd web && npx playwright test e2e/auth.spec.ts e2e/shell.spec.ts
+	cd web && npx playwright test e2e/auth.spec.ts e2e/shell.spec.ts e2e/search.spec.ts
 
 spikes-measure: ## S1, S3, S4 measurements (weekly performance job); results in web/test-results/spikes
 	cd web && npx playwright test e2e/spikes.spec.ts

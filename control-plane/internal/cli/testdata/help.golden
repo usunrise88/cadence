@@ -1,0 +1,39 @@
+$ cadence help
+exit 0
+--- requests
+--- stdout
+usage: cadence <entity> <verb> [flags]
+       cadence help [<entity> [<verb>]]
+       cadence serve | admin | version
+
+Every command is one API operation (<entity>.<verb>, the same name as the MCP tool and the UI command); the answer
+is printed as JSON. Errors print the problem to standard error and exit 1; a wrong command line exits 2.
+The help entity's own verbs read "cadence help get --id <article>" and "cadence help search --q <text>".
+
+Entities:
+  adoptions      list
+  aliases        get list set
+  approvals      approve deny get list
+  audit          list
+  baseModels     get list
+  collections    get list
+  compute        edit get list
+  credentials    list new revoke
+  datasets       get list
+  defaults       get
+  events         list
+  help           get search
+  jobs           cancel get list wait
+  policies       edit get
+  projects       adopt archive edit get list new search
+  registry       search
+  runs           new
+  secrets        list new
+  templates      get list
+
+Global flags:
+  --url URL               control plane (env CADENCE_URL, default http://127.0.0.1:8080; /api is appended)
+  --token TOKEN           API key, sent as a Bearer token (env CADENCE_TOKEN; create one with credentials new)
+  --idempotency-key KEY   commands only: reuse a key to replay a command's first result (default: a new key)
+  -h, --help              this command's flags
+--- stderr

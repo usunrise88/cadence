@@ -995,6 +995,87 @@ paths:
           content: { application/json: { schema: { $ref: "#/components/schemas/Job" } } }
         default: { $ref: "#/components/responses/Problem" }
 
+  # ---------------------------------------------------------------- search and saved views (phase 1 · wave 2 · search) — add paths below this line
+  # R1: search.query becomes projects.search — the agent token is project-bound; the scope:all qualifier reaches
+  # the registry and, for a credential that reaches them, the other projects. Saved views are per user and tagged me.
+  /projects/{p}:search:
+    x-cadence: { entity: projects }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    get:
+      operationId: projects.search
+      summary: Search entities of this project and the registry with free text and qualifiers
+      tags: [projects]
+      x-cadence:
+        toolDescription: >
+          Search what Cadence knows — projects, registry versions and collections, jobs, approvals, help articles —
+          from this project. q is free text (typos and identifiers match by trigram; Hebrew is matched without
+          niqqud) plus qualifiers: kind:<kind>[,<kind>] (e.g. kind:dataset_version,job), status:<s> (alias
+          state:), lang:<locale> (he matches he-IL), actor:agent|user|automation|<id>, updated:>2026-09-01
+          (also <, >=, <=, a day, or a..b), project:<slug> or scope:all|project|registry, tag:<tag>,
+          alias:@<name>, and numeric comparisons such as wer<10, progress>=0.5 or dur:2..8. Without a scope
+          qualifier the search covers this project and the registry. Results are grouped by kind, this project's
+          newest first. An unknown qualifier answers invalid-query with the list of qualifiers.
+      parameters:
+        - name: q
+          in: query
+          description: "Free text plus qualifiers, e.g. `fleurs kind:dataset_version tag:telephony updated:>2026-09-01`"
+          schema: { type: string, maxLength: 1000 }
+        - name: limit
+          in: query
+          description: Most hits returned over all groups
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        "200":
+          description: Hits grouped by kind, with the parsed qualifiers
+          content: { application/json: { schema: { $ref: "#/components/schemas/SearchResult" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /me/projects/{p}/views:
+    x-cadence: { entity: views, kind: saved_search }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    get:
+      operationId: views.list
+      summary: The user's saved searches in a project, by name
+      tags: [me]
+      responses:
+        "200":
+          description: Saved searches
+          content: { application/json: { schema: { $ref: "#/components/schemas/SavedViewList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /me/projects/{p}/views/{name}:
+    x-cadence: { entity: views, kind: saved_search }
+    parameters:
+      - $ref: "#/components/parameters/ProjectSlug"
+      - { name: name, in: path, required: true, schema: { $ref: "#/components/schemas/SavedViewName" } }
+    get:
+      operationId: views.get
+      summary: Get a saved search
+      tags: [me]
+      responses:
+        "200":
+          description: The saved search
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/SavedView" } } }
+        default: { $ref: "#/components/responses/Problem" }
+    put:
+      operationId: views.set
+      summary: Save a search under a name (If-Match; omit it only to create)
+      tags: [me]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatchOptional"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/SavedViewSet" } } }
+      responses:
+        "200":
+          description: Saved (or, for a dry run, what would be saved)
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/SavedView" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
   # ---------------------------------------------------------------- planned (later phases)
   /projects/{p}/mixes:
     x-cadence: { entity: mixes, planned: 2 }
@@ -2063,3 +2144,76 @@ components:
       required: [items]
       properties:
         items: { type: array, items: { $ref: "#/components/schemas/Job" } }
+
+    # ---------------------------------------------------------------- search and saved views schemas (wave 2 · search) — add below
+    SearchQualifier:
+      type: object
+      required: [field, op, value, raw]
+      description: One parsed qualifier, rendered by the UI as a chip
+      properties:
+        field: { type: string, description: "kind, status, lang, actor, updated, project, scope, tag, alias, or a numeric field (wer, cer, dur, hours, progress, rev)" }
+        op: { type: string, enum: [":", "<", "<=", ">", ">=", "=", ".."] }
+        value: { type: string }
+        raw: { type: string, description: The qualifier as typed }
+    SearchHit:
+      type: object
+      required: [kind, id, title, ref, scope, tags, updatedAt]
+      properties:
+        kind: { type: string, description: "EntityKind of the hit (project, base_model, dataset_version, template, registry_collection, job, approval, help_article, …)" }
+        id: { type: string }
+        title: { type: string }
+        snippet: { type: string, description: A short excerpt of the text the hit carries }
+        ref: { type: string, description: "The document reference the UI opens: <kind>:<id> (project:<slug>, help_article:<id>, …)" }
+        scope: { type: string, enum: [project, registry, instance, help], description: Where the entity lives }
+        projectId: { type: string }
+        project: { type: string, description: The project's slug, for project work }
+        status: { type: string }
+        lang: { type: string }
+        tags: { type: array, items: { type: string } }
+        actor: { $ref: "#/components/schemas/Actor" }
+        numbers: { type: object, additionalProperties: { type: number, format: double }, description: "Numeric fields the comparisons read (wer, progress, …)" }
+        updatedAt: { type: string, format: date-time }
+    SearchGroup:
+      type: object
+      required: [kind, items]
+      properties:
+        kind: { type: string }
+        items: { type: array, items: { $ref: "#/components/schemas/SearchHit" } }
+    SearchResult:
+      type: object
+      required: [q, text, qualifiers, groups, total, truncated]
+      properties:
+        q: { type: string, description: The query as sent }
+        text: { type: string, description: The free text left after the qualifiers }
+        qualifiers: { type: array, items: { $ref: "#/components/schemas/SearchQualifier" } }
+        groups: { type: array, items: { $ref: "#/components/schemas/SearchGroup" }, description: "By kind; the group of the best hit first" }
+        total: { type: integer, description: Hits returned over all groups }
+        truncated: { type: boolean, description: More hits matched than limit }
+
+    SavedViewName:
+      type: string
+      pattern: "^[A-Za-z0-9][A-Za-z0-9 _.-]{0,62}$"
+    SavedView:
+      type: object
+      required: [id, name, query, rev, createdAt, updatedAt]
+      description: A saved search — a named query in the qualifier language, per user per project
+      properties:
+        id: { type: string, description: "vew_<uuidv7>" }
+        name: { $ref: "#/components/schemas/SavedViewName" }
+        query: { type: string }
+        description: { type: string }
+        rev: { type: integer }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    SavedViewSet:
+      type: object
+      required: [query]
+      additionalProperties: false
+      properties:
+        query: { type: string, minLength: 1, maxLength: 1000, description: Checked by the query parser; an unknown qualifier fails with invalid-query }
+        description: { type: string, maxLength: 500 }
+    SavedViewList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/SavedView" } }

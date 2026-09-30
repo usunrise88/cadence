@@ -1073,6 +1073,118 @@ export type JobList = {
     items: Array<Job>;
 };
 
+/**
+ * One parsed qualifier, rendered by the UI as a chip
+ */
+export type SearchQualifier = {
+    /**
+     * kind, status, lang, actor, updated, project, scope, tag, alias, or a numeric field (wer, cer, dur, hours, progress, rev)
+     */
+    field: string;
+    op: ':' | '<' | '<=' | '>' | '>=' | '=' | '..';
+    value: string;
+    /**
+     * The qualifier as typed
+     */
+    raw: string;
+};
+
+export type SearchHit = {
+    /**
+     * EntityKind of the hit (project, base_model, dataset_version, template, registry_collection, job, approval, help_article, …)
+     */
+    kind: string;
+    id: string;
+    title: string;
+    /**
+     * A short excerpt of the text the hit carries
+     */
+    snippet?: string;
+    /**
+     * The document reference the UI opens: <kind>:<id> (project:<slug>, help_article:<id>, …)
+     */
+    ref: string;
+    /**
+     * Where the entity lives
+     */
+    scope: 'project' | 'registry' | 'instance' | 'help';
+    projectId?: string;
+    /**
+     * The project's slug
+     */
+    project?: string;
+    status?: string;
+    lang?: string;
+    tags: Array<string>;
+    actor?: Actor;
+    /**
+     * Numeric fields the comparisons read (wer, progress, …)
+     */
+    numbers?: {
+        [key: string]: number;
+    };
+    updatedAt: string;
+};
+
+export type SearchGroup = {
+    kind: string;
+    items: Array<SearchHit>;
+};
+
+export type SearchResult = {
+    /**
+     * The query as sent
+     */
+    q: string;
+    /**
+     * The free text left after the qualifiers
+     */
+    text: string;
+    qualifiers: Array<SearchQualifier>;
+    /**
+     * By kind; the group of the best hit first
+     */
+    groups: Array<SearchGroup>;
+    /**
+     * Hits returned over all groups
+     */
+    total: number;
+    /**
+     * More hits matched than limit
+     */
+    truncated: boolean;
+};
+
+export type SavedViewName = string;
+
+/**
+ * A saved search — a named query in the qualifier language, per user per project
+ */
+export type SavedView = {
+    /**
+     * vew_<uuidv7>
+     */
+    id: string;
+    name: SavedViewName;
+    query: string;
+    description?: string;
+    rev: number;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type SavedViewSet = {
+    /**
+     * Checked by the query parser; an unknown qualifier fails with invalid-query
+     */
+    query: string;
+    description?: string;
+};
+
+export type SavedViewList = {
+    items: Array<SavedView>;
+};
+
 export type SecretNewWritable = {
     name: SecretName;
     kind: SecretKind;
@@ -2977,6 +3089,152 @@ export type JobsWaitResponses = {
 };
 
 export type JobsWaitResponse = JobsWaitResponses[keyof JobsWaitResponses];
+
+export type ProjectsSearchData = {
+    body?: never;
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        /**
+         * Free text plus qualifiers, e.g. `fleurs kind:dataset_version tag:telephony updated:>2026-09-01`
+         */
+        q?: string;
+        /**
+         * Most hits returned over all groups
+         */
+        limit?: number;
+    };
+    url: '/projects/{p}:search';
+};
+
+export type ProjectsSearchErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type ProjectsSearchError = ProjectsSearchErrors[keyof ProjectsSearchErrors];
+
+export type ProjectsSearchResponses = {
+    /**
+     * Hits grouped by kind, with the parsed qualifiers
+     */
+    200: SearchResult;
+};
+
+export type ProjectsSearchResponse = ProjectsSearchResponses[keyof ProjectsSearchResponses];
+
+export type ViewsListData = {
+    body?: never;
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: never;
+    url: '/me/projects/{p}/views';
+};
+
+export type ViewsListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type ViewsListError = ViewsListErrors[keyof ViewsListErrors];
+
+export type ViewsListResponses = {
+    /**
+     * Saved searches
+     */
+    200: SavedViewList;
+};
+
+export type ViewsListResponse = ViewsListResponses[keyof ViewsListResponses];
+
+export type ViewsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+        name: SavedViewName;
+    };
+    query?: never;
+    url: '/me/projects/{p}/views/{name}';
+};
+
+export type ViewsGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type ViewsGetError = ViewsGetErrors[keyof ViewsGetErrors];
+
+export type ViewsGetResponses = {
+    /**
+     * The saved search
+     */
+    200: SavedView;
+};
+
+export type ViewsGetResponse = ViewsGetResponses[keyof ViewsGetResponses];
+
+export type ViewsSetData = {
+    body: SavedViewSet;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on; required unless the target does not exist yet
+         */
+        'If-Match'?: string;
+    };
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+        name: SavedViewName;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/me/projects/{p}/views/{name}';
+};
+
+export type ViewsSetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type ViewsSetError = ViewsSetErrors[keyof ViewsSetErrors];
+
+export type ViewsSetResponses = {
+    /**
+     * Saved (or, for a dry run, what would be saved)
+     */
+    200: SavedView;
+};
+
+export type ViewsSetResponse = ViewsSetResponses[keyof ViewsSetResponses];
 
 export type MixesNewData = {
     body?: PlannedBody;

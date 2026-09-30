@@ -263,6 +263,7 @@ export function EntityList({
   onOpen,
   onPreview,
   height,
+  versionLabel = "Version",
 }: {
   rows: ListRow[];
   label: string;
@@ -270,6 +271,8 @@ export function EntityList({
   onPreview?: (r: ListRow) => void;
   /** Viewport height for virtualization; defaults to the container's. */
   height?: number;
+  /** Heading of the second column; mixed-kind lists (search results) show the kind there. */
+  versionLabel?: string;
 }) {
   const [cursor, setCursor] = useState(0);
   const [scrollTop, setScrollTop] = useState(0);
@@ -299,7 +302,7 @@ export function EntityList({
       data-slot="entity-list"
     >
       <div role="row" className="sticky top-0 z-10 grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr] gap-2 border-b bg-tool px-2 py-1 text-muted-foreground">
-        {["Name", "Version", "Status", "Actor", "Updated", "Tags"].map((h) => (
+        {["Name", versionLabel, "Status", "Actor", "Updated", "Tags"].map((h) => (
           <span key={h} role="columnheader">
             {h}
           </span>

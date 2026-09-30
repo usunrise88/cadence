@@ -1,0 +1,20 @@
+$ cadence adoptions list --project alpha --kind model
+exit 2
+--- requests
+--- stdout
+--- stderr
+cadence adoptions list: --kind must be one of base_model, dataset_version, template, not "model"
+
+usage: cadence adoptions list --project PROJECT [--kind KIND]
+
+Registry versions the project adopted, with the aliases pointing at each (GET /projects/{p}/adoptions, operation adoptions.list)
+
+Flags:
+  --project            Project slug [required]
+  --kind               Only versions of this kind [one of base_model, dataset_version, template]
+
+Global flags:
+  --url URL               control plane (env CADENCE_URL, default http://127.0.0.1:8080; /api is appended)
+  --token TOKEN           API key, sent as a Bearer token (env CADENCE_TOKEN; create one with credentials new)
+  --idempotency-key KEY   commands only: reuse a key to replay a command's first result (default: a new key)
+  -h, --help              this command's flags

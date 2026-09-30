@@ -1,0 +1,6 @@
+$ cadence projects new --body {nope
+exit 2
+--- requests
+--- stdout
+--- stderr
+cadence projects new: --body is not valid JSON

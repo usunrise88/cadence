@@ -25,6 +25,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/events"
 	"github.com/usunrise88/cadence/control-plane/internal/jobs"
 	"github.com/usunrise88/cadence/control-plane/internal/obs"
+	"github.com/usunrise88/cadence/control-plane/internal/search"
 	"github.com/usunrise88/cadence/control-plane/internal/storage"
 	"github.com/usunrise88/cadence/control-plane/internal/testdb"
 	"github.com/usunrise88/cadence/control-plane/migrations"
@@ -65,8 +66,14 @@ func startWith(t *testing.T, adjust func(*Config)) *env {
 	hub, metrics := events.NewHub(64), obs.NewMetrics()
 	d := events.NewDispatcher(pool, hub, quiet, metrics.EventsDispatched)
 	d.PollInterval = 200 * time.Millisecond
-	done := make(chan struct{})
+	done, indexed := make(chan struct{}), make(chan struct{})
 	go func() { defer close(done); _ = d.Run(ctx) }()
+	if err := search.IndexHelp(ctx, pool, mustHelp(t).All(), time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	ix := search.NewIndexer(pool, hub, quiet, search.Sources())
+	ix.PollInterval = 200 * time.Millisecond
+	go func() { defer close(indexed); _ = ix.Run(ctx) }()
 	js := jobs.New(pool, quiet)
 	js.FetchPollInterval = 100 * time.Millisecond
 	if err := js.Start(ctx); err != nil {
@@ -89,6 +96,7 @@ func startWith(t *testing.T, adjust func(*Config)) *env {
 		scancel()
 		cancel()
 		<-done
+		<-indexed
 		pool.Close()
 	})
 	return &env{t: t, url: srv.URL, agentURL: agentSrv.URL, pool: pool, metrics: metrics, jobs: js}

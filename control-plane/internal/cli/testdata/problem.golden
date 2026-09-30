@@ -1,0 +1,15 @@
+$ cadence projects get --project nope
+exit 1
+--- requests
+GET /api/projects/nope
+  header Authorization: Bearer cdk_env
+  header Accept: application/json
+--- stdout
+--- stderr
+cadence: HTTP 404 Not found: no project with slug "nope" (help: errors.not-found)
+{
+  "type": "https://cadence.local/help/errors/not-found",
+  "title": "Not found",
+  "status": 404,
+  "detail": "no project with slug \"nope\""
+}
