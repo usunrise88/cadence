@@ -63,6 +63,429 @@ func (e AgentDriver) Valid() bool {
 	}
 }
 
+// Defines values for AgentMergeState.
+const (
+	AgentMergeStateConflict  AgentMergeState = "conflict"
+	AgentMergeStateDiscarded AgentMergeState = "discarded"
+	AgentMergeStateMerged    AgentMergeState = "merged"
+	AgentMergeStateNone      AgentMergeState = "none"
+	AgentMergeStatePending   AgentMergeState = "pending"
+)
+
+// Valid indicates whether the value is a known member of the AgentMergeState enum.
+func (e AgentMergeState) Valid() bool {
+	switch e {
+	case AgentMergeStateConflict:
+		return true
+	case AgentMergeStateDiscarded:
+		return true
+	case AgentMergeStateMerged:
+		return true
+	case AgentMergeStateNone:
+		return true
+	case AgentMergeStatePending:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentMessageDelivery.
+const (
+	AgentMessageDeliveryDelivered AgentMessageDelivery = "delivered"
+	AgentMessageDeliveryPending   AgentMessageDelivery = "pending"
+)
+
+// Valid indicates whether the value is a known member of the AgentMessageDelivery enum.
+func (e AgentMessageDelivery) Valid() bool {
+	switch e {
+	case AgentMessageDeliveryDelivered:
+		return true
+	case AgentMessageDeliveryPending:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentMessageLevel.
+const (
+	AgentMessageLevelError   AgentMessageLevel = "error"
+	AgentMessageLevelInfo    AgentMessageLevel = "info"
+	AgentMessageLevelWarning AgentMessageLevel = "warning"
+)
+
+// Valid indicates whether the value is a known member of the AgentMessageLevel enum.
+func (e AgentMessageLevel) Valid() bool {
+	switch e {
+	case AgentMessageLevelError:
+		return true
+	case AgentMessageLevelInfo:
+		return true
+	case AgentMessageLevelWarning:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentMessageKind.
+const (
+	AgentMessageKindAgentMessage AgentMessageKind = "agent_message"
+	AgentMessageKindCommit       AgentMessageKind = "commit"
+	AgentMessageKindNotice       AgentMessageKind = "notice"
+	AgentMessageKindPermission   AgentMessageKind = "permission"
+	AgentMessageKindPlan         AgentMessageKind = "plan"
+	AgentMessageKindThought      AgentMessageKind = "thought"
+	AgentMessageKindToolCall     AgentMessageKind = "tool_call"
+	AgentMessageKindTurn         AgentMessageKind = "turn"
+	AgentMessageKindUserMessage  AgentMessageKind = "user_message"
+)
+
+// Valid indicates whether the value is a known member of the AgentMessageKind enum.
+func (e AgentMessageKind) Valid() bool {
+	switch e {
+	case AgentMessageKindAgentMessage:
+		return true
+	case AgentMessageKindCommit:
+		return true
+	case AgentMessageKindNotice:
+		return true
+	case AgentMessageKindPermission:
+		return true
+	case AgentMessageKindPlan:
+		return true
+	case AgentMessageKindThought:
+		return true
+	case AgentMessageKindToolCall:
+		return true
+	case AgentMessageKindTurn:
+		return true
+	case AgentMessageKindUserMessage:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentPauseReasonCode.
+const (
+	AgentPauseReasonCodeBudgetTokens  AgentPauseReasonCode = "budget_tokens"
+	AgentPauseReasonCodeBudgetTurns   AgentPauseReasonCode = "budget_turns"
+	AgentPauseReasonCodeHostLost      AgentPauseReasonCode = "host_lost"
+	AgentPauseReasonCodeIdle          AgentPauseReasonCode = "idle"
+	AgentPauseReasonCodeProjectTokens AgentPauseReasonCode = "project_tokens"
+	AgentPauseReasonCodeRunaway       AgentPauseReasonCode = "runaway"
+	AgentPauseReasonCodeStuckTurn     AgentPauseReasonCode = "stuck_turn"
+	AgentPauseReasonCodeTurnTokens    AgentPauseReasonCode = "turn_tokens"
+	AgentPauseReasonCodeUser          AgentPauseReasonCode = "user"
+)
+
+// Valid indicates whether the value is a known member of the AgentPauseReasonCode enum.
+func (e AgentPauseReasonCode) Valid() bool {
+	switch e {
+	case AgentPauseReasonCodeBudgetTokens:
+		return true
+	case AgentPauseReasonCodeBudgetTurns:
+		return true
+	case AgentPauseReasonCodeHostLost:
+		return true
+	case AgentPauseReasonCodeIdle:
+		return true
+	case AgentPauseReasonCodeProjectTokens:
+		return true
+	case AgentPauseReasonCodeRunaway:
+		return true
+	case AgentPauseReasonCodeStuckTurn:
+		return true
+	case AgentPauseReasonCodeTurnTokens:
+		return true
+	case AgentPauseReasonCodeUser:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentPermissionGrant.
+const (
+	AgentPermissionGrantOnce    AgentPermissionGrant = "once"
+	AgentPermissionGrantSession AgentPermissionGrant = "session"
+)
+
+// Valid indicates whether the value is a known member of the AgentPermissionGrant enum.
+func (e AgentPermissionGrant) Valid() bool {
+	switch e {
+	case AgentPermissionGrantOnce:
+		return true
+	case AgentPermissionGrantSession:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentPermissionOptionsKind.
+const (
+	AgentPermissionOptionsKindAllowAlways  AgentPermissionOptionsKind = "allow_always"
+	AgentPermissionOptionsKindAllowOnce    AgentPermissionOptionsKind = "allow_once"
+	AgentPermissionOptionsKindRejectAlways AgentPermissionOptionsKind = "reject_always"
+	AgentPermissionOptionsKindRejectOnce   AgentPermissionOptionsKind = "reject_once"
+)
+
+// Valid indicates whether the value is a known member of the AgentPermissionOptionsKind enum.
+func (e AgentPermissionOptionsKind) Valid() bool {
+	switch e {
+	case AgentPermissionOptionsKindAllowAlways:
+		return true
+	case AgentPermissionOptionsKindAllowOnce:
+		return true
+	case AgentPermissionOptionsKindRejectAlways:
+		return true
+	case AgentPermissionOptionsKindRejectOnce:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentPermissionSource.
+const (
+	AgentPermissionSourceAgent   AgentPermissionSource = "agent"
+	AgentPermissionSourceCommand AgentPermissionSource = "command"
+)
+
+// Valid indicates whether the value is a known member of the AgentPermissionSource enum.
+func (e AgentPermissionSource) Valid() bool {
+	switch e {
+	case AgentPermissionSourceAgent:
+		return true
+	case AgentPermissionSourceCommand:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentPermissionState.
+const (
+	AgentPermissionStateApproved  AgentPermissionState = "approved"
+	AgentPermissionStateCancelled AgentPermissionState = "cancelled"
+	AgentPermissionStateDenied    AgentPermissionState = "denied"
+	AgentPermissionStatePending   AgentPermissionState = "pending"
+)
+
+// Valid indicates whether the value is a known member of the AgentPermissionState enum.
+func (e AgentPermissionState) Valid() bool {
+	switch e {
+	case AgentPermissionStateApproved:
+		return true
+	case AgentPermissionStateCancelled:
+		return true
+	case AgentPermissionStateDenied:
+		return true
+	case AgentPermissionStatePending:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentPlanEntryPriority.
+const (
+	High   AgentPlanEntryPriority = "high"
+	Low    AgentPlanEntryPriority = "low"
+	Medium AgentPlanEntryPriority = "medium"
+)
+
+// Valid indicates whether the value is a known member of the AgentPlanEntryPriority enum.
+func (e AgentPlanEntryPriority) Valid() bool {
+	switch e {
+	case High:
+		return true
+	case Low:
+		return true
+	case Medium:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentPlanEntryStatus.
+const (
+	AgentPlanEntryStatusCompleted  AgentPlanEntryStatus = "completed"
+	AgentPlanEntryStatusInProgress AgentPlanEntryStatus = "in_progress"
+	AgentPlanEntryStatusPending    AgentPlanEntryStatus = "pending"
+)
+
+// Valid indicates whether the value is a known member of the AgentPlanEntryStatus enum.
+func (e AgentPlanEntryStatus) Valid() bool {
+	switch e {
+	case AgentPlanEntryStatusCompleted:
+		return true
+	case AgentPlanEntryStatusInProgress:
+		return true
+	case AgentPlanEntryStatusPending:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentSessionPendingControl.
+const (
+	AgentSessionPendingControlCancel AgentSessionPendingControl = "cancel"
+	AgentSessionPendingControlEnd    AgentSessionPendingControl = "end"
+	AgentSessionPendingControlPause  AgentSessionPendingControl = "pause"
+	AgentSessionPendingControlResume AgentSessionPendingControl = "resume"
+)
+
+// Valid indicates whether the value is a known member of the AgentSessionPendingControl enum.
+func (e AgentSessionPendingControl) Valid() bool {
+	switch e {
+	case AgentSessionPendingControlCancel:
+		return true
+	case AgentSessionPendingControlEnd:
+		return true
+	case AgentSessionPendingControlPause:
+		return true
+	case AgentSessionPendingControlResume:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentSessionKind.
+const (
+	Interactive AgentSessionKind = "interactive"
+	ReadOnly    AgentSessionKind = "read-only"
+)
+
+// Valid indicates whether the value is a known member of the AgentSessionKind enum.
+func (e AgentSessionKind) Valid() bool {
+	switch e {
+	case Interactive:
+		return true
+	case ReadOnly:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentSessionState.
+const (
+	AgentSessionStateCancelled       AgentSessionState = "cancelled"
+	AgentSessionStateCreated         AgentSessionState = "created"
+	AgentSessionStateDone            AgentSessionState = "done"
+	AgentSessionStateFailed          AgentSessionState = "failed"
+	AgentSessionStatePaused          AgentSessionState = "paused"
+	AgentSessionStateRunning         AgentSessionState = "running"
+	AgentSessionStateWaitingApproval AgentSessionState = "waiting_approval"
+)
+
+// Valid indicates whether the value is a known member of the AgentSessionState enum.
+func (e AgentSessionState) Valid() bool {
+	switch e {
+	case AgentSessionStateCancelled:
+		return true
+	case AgentSessionStateCreated:
+		return true
+	case AgentSessionStateDone:
+		return true
+	case AgentSessionStateFailed:
+		return true
+	case AgentSessionStatePaused:
+		return true
+	case AgentSessionStateRunning:
+		return true
+	case AgentSessionStateWaitingApproval:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentToolCallClass.
+const (
+	AgentToolCallClassEdit   AgentToolCallClass = "edit"
+	AgentToolCallClassFetch  AgentToolCallClass = "fetch"
+	AgentToolCallClassMcp    AgentToolCallClass = "mcp"
+	AgentToolCallClassOther  AgentToolCallClass = "other"
+	AgentToolCallClassRead   AgentToolCallClass = "read"
+	AgentToolCallClassSearch AgentToolCallClass = "search"
+	AgentToolCallClassShell  AgentToolCallClass = "shell"
+	AgentToolCallClassThink  AgentToolCallClass = "think"
+)
+
+// Valid indicates whether the value is a known member of the AgentToolCallClass enum.
+func (e AgentToolCallClass) Valid() bool {
+	switch e {
+	case AgentToolCallClassEdit:
+		return true
+	case AgentToolCallClassFetch:
+		return true
+	case AgentToolCallClassMcp:
+		return true
+	case AgentToolCallClassOther:
+		return true
+	case AgentToolCallClassRead:
+		return true
+	case AgentToolCallClassSearch:
+		return true
+	case AgentToolCallClassShell:
+		return true
+	case AgentToolCallClassThink:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentToolCallStatus.
+const (
+	AgentToolCallStatusCompleted  AgentToolCallStatus = "completed"
+	AgentToolCallStatusFailed     AgentToolCallStatus = "failed"
+	AgentToolCallStatusInProgress AgentToolCallStatus = "in_progress"
+	AgentToolCallStatusPending    AgentToolCallStatus = "pending"
+)
+
+// Valid indicates whether the value is a known member of the AgentToolCallStatus enum.
+func (e AgentToolCallStatus) Valid() bool {
+	switch e {
+	case AgentToolCallStatusCompleted:
+		return true
+	case AgentToolCallStatusFailed:
+		return true
+	case AgentToolCallStatusInProgress:
+		return true
+	case AgentToolCallStatusPending:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AgentTurnState.
+const (
+	Ended   AgentTurnState = "ended"
+	Started AgentTurnState = "started"
+)
+
+// Valid indicates whether the value is a known member of the AgentTurnState enum.
+func (e AgentTurnState) Valid() bool {
+	switch e {
+	case Ended:
+		return true
+	case Started:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for AliasReserved.
 const (
 	Free      AliasReserved = "free"
@@ -78,6 +501,24 @@ func (e AliasReserved) Valid() bool {
 	case Gated:
 		return true
 	case Promotion:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ApprovalKind.
+const (
+	ApprovalKindAgentPermission ApprovalKind = "agent_permission"
+	ApprovalKindCommand         ApprovalKind = "command"
+)
+
+// Valid indicates whether the value is a known member of the ApprovalKind enum.
+func (e ApprovalKind) Valid() bool {
+	switch e {
+	case ApprovalKindAgentPermission:
+		return true
+	case ApprovalKindCommand:
 		return true
 	default:
 		return false
@@ -153,6 +594,30 @@ func (e ApprovalDecisionGrant) Valid() bool {
 	case ApprovalDecisionGrantOnce:
 		return true
 	case ApprovalDecisionGrantSession:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ApprovalPermissionOptions.
+const (
+	ApprovalPermissionOptionsAllowAlways  ApprovalPermissionOptions = "allow_always"
+	ApprovalPermissionOptionsAllowOnce    ApprovalPermissionOptions = "allow_once"
+	ApprovalPermissionOptionsRejectAlways ApprovalPermissionOptions = "reject_always"
+	ApprovalPermissionOptionsRejectOnce   ApprovalPermissionOptions = "reject_once"
+)
+
+// Valid indicates whether the value is a known member of the ApprovalPermissionOptions enum.
+func (e ApprovalPermissionOptions) Valid() bool {
+	switch e {
+	case ApprovalPermissionOptionsAllowAlways:
+		return true
+	case ApprovalPermissionOptionsAllowOnce:
+		return true
+	case ApprovalPermissionOptionsRejectAlways:
+		return true
+	case ApprovalPermissionOptionsRejectOnce:
 		return true
 	default:
 		return false
@@ -267,6 +732,7 @@ func (e ComputeHealthState) Valid() bool {
 // Defines values for CredentialKind.
 const (
 	CredentialKindAgent      CredentialKind = "agent"
+	CredentialKindAgentHost  CredentialKind = "agent_host"
 	CredentialKindApiKey     CredentialKind = "api_key"
 	CredentialKindInvitation CredentialKind = "invitation"
 	CredentialKindSession    CredentialKind = "session"
@@ -277,6 +743,8 @@ const (
 func (e CredentialKind) Valid() bool {
 	switch e {
 	case CredentialKindAgent:
+		return true
+	case CredentialKindAgentHost:
 		return true
 	case CredentialKindApiKey:
 		return true
@@ -347,25 +815,196 @@ func (e DraftableKind) Valid() bool {
 
 // Defines values for HelpArticleSection.
 const (
-	Errors HelpArticleSection = "errors"
-	Guides HelpArticleSection = "guides"
-	Panels HelpArticleSection = "panels"
-	Shell  HelpArticleSection = "shell"
-	Steps  HelpArticleSection = "steps"
+	HelpArticleSectionErrors HelpArticleSection = "errors"
+	HelpArticleSectionGuides HelpArticleSection = "guides"
+	HelpArticleSectionPanels HelpArticleSection = "panels"
+	HelpArticleSectionShell  HelpArticleSection = "shell"
+	HelpArticleSectionSteps  HelpArticleSection = "steps"
 )
 
 // Valid indicates whether the value is a known member of the HelpArticleSection enum.
 func (e HelpArticleSection) Valid() bool {
 	switch e {
-	case Errors:
+	case HelpArticleSectionErrors:
 		return true
-	case Guides:
+	case HelpArticleSectionGuides:
 		return true
-	case Panels:
+	case HelpArticleSectionPanels:
 		return true
-	case Shell:
+	case HelpArticleSectionShell:
 		return true
-	case Steps:
+	case HelpArticleSectionSteps:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for HostAskOptionsKind.
+const (
+	HostAskOptionsKindAllowAlways  HostAskOptionsKind = "allow_always"
+	HostAskOptionsKindAllowOnce    HostAskOptionsKind = "allow_once"
+	HostAskOptionsKindRejectAlways HostAskOptionsKind = "reject_always"
+	HostAskOptionsKindRejectOnce   HostAskOptionsKind = "reject_once"
+)
+
+// Valid indicates whether the value is a known member of the HostAskOptionsKind enum.
+func (e HostAskOptionsKind) Valid() bool {
+	switch e {
+	case HostAskOptionsKindAllowAlways:
+		return true
+	case HostAskOptionsKindAllowOnce:
+		return true
+	case HostAskOptionsKindRejectAlways:
+		return true
+	case HostAskOptionsKindRejectOnce:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for HostControlAction.
+const (
+	HostControlActionCancel HostControlAction = "cancel"
+	HostControlActionEnd    HostControlAction = "end"
+	HostControlActionPause  HostControlAction = "pause"
+	HostControlActionResume HostControlAction = "resume"
+)
+
+// Valid indicates whether the value is a known member of the HostControlAction enum.
+func (e HostControlAction) Valid() bool {
+	switch e {
+	case HostControlActionCancel:
+		return true
+	case HostControlActionEnd:
+		return true
+	case HostControlActionPause:
+		return true
+	case HostControlActionResume:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for HostDecisionOutcome.
+const (
+	HostDecisionOutcomeAllowAlways HostDecisionOutcome = "allow_always"
+	HostDecisionOutcomeAllowOnce   HostDecisionOutcome = "allow_once"
+	HostDecisionOutcomePending     HostDecisionOutcome = "pending"
+	HostDecisionOutcomeRejectOnce  HostDecisionOutcome = "reject_once"
+)
+
+// Valid indicates whether the value is a known member of the HostDecisionOutcome enum.
+func (e HostDecisionOutcome) Valid() bool {
+	switch e {
+	case HostDecisionOutcomeAllowAlways:
+		return true
+	case HostDecisionOutcomeAllowOnce:
+		return true
+	case HostDecisionOutcomePending:
+		return true
+	case HostDecisionOutcomeRejectOnce:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for HostEntryKind.
+const (
+	HostEntryKindAgentMessage HostEntryKind = "agent_message"
+	HostEntryKindCommit       HostEntryKind = "commit"
+	HostEntryKindNotice       HostEntryKind = "notice"
+	HostEntryKindPlan         HostEntryKind = "plan"
+	HostEntryKindThought      HostEntryKind = "thought"
+	HostEntryKindToolCall     HostEntryKind = "tool_call"
+	HostEntryKindTurn         HostEntryKind = "turn"
+)
+
+// Valid indicates whether the value is a known member of the HostEntryKind enum.
+func (e HostEntryKind) Valid() bool {
+	switch e {
+	case HostEntryKindAgentMessage:
+		return true
+	case HostEntryKindCommit:
+		return true
+	case HostEntryKindNotice:
+		return true
+	case HostEntryKindPlan:
+		return true
+	case HostEntryKindThought:
+		return true
+	case HostEntryKindToolCall:
+		return true
+	case HostEntryKindTurn:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for HostEntryLevel.
+const (
+	HostEntryLevelError   HostEntryLevel = "error"
+	HostEntryLevelInfo    HostEntryLevel = "info"
+	HostEntryLevelWarning HostEntryLevel = "warning"
+)
+
+// Valid indicates whether the value is a known member of the HostEntryLevel enum.
+func (e HostEntryLevel) Valid() bool {
+	switch e {
+	case HostEntryLevelError:
+		return true
+	case HostEntryLevelInfo:
+		return true
+	case HostEntryLevelWarning:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for HostMessageKind.
+const (
+	HostMessageKindNotice      HostMessageKind = "notice"
+	HostMessageKindUserMessage HostMessageKind = "user_message"
+)
+
+// Valid indicates whether the value is a known member of the HostMessageKind enum.
+func (e HostMessageKind) Valid() bool {
+	switch e {
+	case HostMessageKindNotice:
+		return true
+	case HostMessageKindUserMessage:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for HostReportStateState.
+const (
+	HostReportStateStateCancelled HostReportStateState = "cancelled"
+	HostReportStateStateDone      HostReportStateState = "done"
+	HostReportStateStateFailed    HostReportStateState = "failed"
+	HostReportStateStatePaused    HostReportStateState = "paused"
+	HostReportStateStateRunning   HostReportStateState = "running"
+)
+
+// Valid indicates whether the value is a known member of the HostReportStateState enum.
+func (e HostReportStateState) Valid() bool {
+	switch e {
+	case HostReportStateStateCancelled:
+		return true
+	case HostReportStateStateDone:
+		return true
+	case HostReportStateStateFailed:
+		return true
+	case HostReportStateStatePaused:
+		return true
+	case HostReportStateStateRunning:
 		return true
 	default:
 		return false
@@ -780,6 +1419,42 @@ func (e DraftsListParamsState) Valid() bool {
 	}
 }
 
+// Defines values for AgentSessionsListParamsState.
+const (
+	AgentSessionsListParamsStateCancelled       AgentSessionsListParamsState = "cancelled"
+	AgentSessionsListParamsStateCreated         AgentSessionsListParamsState = "created"
+	AgentSessionsListParamsStateDone            AgentSessionsListParamsState = "done"
+	AgentSessionsListParamsStateFailed          AgentSessionsListParamsState = "failed"
+	AgentSessionsListParamsStateLive            AgentSessionsListParamsState = "live"
+	AgentSessionsListParamsStatePaused          AgentSessionsListParamsState = "paused"
+	AgentSessionsListParamsStateRunning         AgentSessionsListParamsState = "running"
+	AgentSessionsListParamsStateWaitingApproval AgentSessionsListParamsState = "waiting_approval"
+)
+
+// Valid indicates whether the value is a known member of the AgentSessionsListParamsState enum.
+func (e AgentSessionsListParamsState) Valid() bool {
+	switch e {
+	case AgentSessionsListParamsStateCancelled:
+		return true
+	case AgentSessionsListParamsStateCreated:
+		return true
+	case AgentSessionsListParamsStateDone:
+		return true
+	case AgentSessionsListParamsStateFailed:
+		return true
+	case AgentSessionsListParamsStateLive:
+		return true
+	case AgentSessionsListParamsStatePaused:
+		return true
+	case AgentSessionsListParamsStateRunning:
+		return true
+	case AgentSessionsListParamsStateWaitingApproval:
+		return true
+	default:
+		return false
+	}
+}
+
 // Actor defines model for Actor.
 type Actor struct {
 	Id        string    `json:"id"`
@@ -813,6 +1488,18 @@ type AdoptionNew struct {
 	Version string `json:"version"`
 }
 
+// AgentBudget defines model for AgentBudget.
+type AgentBudget struct {
+	// Tokens Input + output tokens before it pauses (budgets.agent_tokens_per_session)
+	Tokens int64 `json:"tokens"`
+
+	// TokensPerTurn A turn over this is cancelled and the session pauses (budgets.agent_tokens_per_turn)
+	TokensPerTurn int64 `json:"tokensPerTurn"`
+
+	// Turns Turns before the session pauses (budgets.agent_turns_per_session)
+	Turns int `json:"turns"`
+}
+
 // AgentChoice defines model for AgentChoice.
 type AgentChoice struct {
 	Driver *AgentDriver `json:"driver,omitempty"`
@@ -824,8 +1511,113 @@ type AgentChoice struct {
 	PermissionPreset *PresetName `json:"permissionPreset,omitempty"`
 }
 
+// AgentCommit defines model for AgentCommit.
+type AgentCommit struct {
+	Files    *[]string `json:"files,omitempty"`
+	Findings *[]struct {
+		// Kind The credential kind found (cst_, cdk_, cwk_, anthropic, …); the value is never reported
+		Kind string `json:"kind"`
+		Line *int   `json:"line,omitempty"`
+		Path string `json:"path"`
+	} `json:"findings,omitempty"`
+
+	// Refused The staged diff held a credential; nothing was committed
+	Refused *bool   `json:"refused,omitempty"`
+	Sha     *string `json:"sha,omitempty"`
+}
+
 // AgentDriver defines model for AgentDriver.
 type AgentDriver string
+
+// AgentFileDiff defines model for AgentFileDiff.
+type AgentFileDiff struct {
+	NewText string `json:"newText"`
+
+	// OldText Absent for a new file
+	OldText *string `json:"oldText,omitempty"`
+	Path    string  `json:"path"`
+}
+
+// AgentMerge defines model for AgentMerge.
+type AgentMerge struct {
+	At *time.Time `json:"at,omitempty"`
+	By *Actor     `json:"by,omitempty"`
+
+	// Commit main after the merge
+	Commit      *string   `json:"commit,omitempty"`
+	Conflicts   *[]string `json:"conflicts,omitempty"`
+	FastForward *bool     `json:"fastForward,omitempty"`
+
+	// Head The branch head that was merged or discarded
+	Head *string `json:"head,omitempty"`
+
+	// State none: no changes (or read-only); pending: Session changes waiting for accept or revert; conflict: a merge would conflict
+	State AgentMergeState `json:"state"`
+}
+
+// AgentMergeState none: no changes (or read-only); pending: Session changes waiting for accept or revert; conflict: a merge would conflict
+type AgentMergeState string
+
+// AgentMessage One transcript entry; tool calls, plans, permissions and streamed text are updated in place (rev)
+type AgentMessage struct {
+	Actor  Actor        `json:"actor"`
+	Commit *AgentCommit `json:"commit,omitempty"`
+
+	// Context The context block the references expanded into (user_message)
+	Context   *string   `json:"context,omitempty"`
+	CreatedAt time.Time `json:"createdAt"`
+
+	// Delivery user_message and notice: whether the agent host took it
+	Delivery *AgentMessageDelivery `json:"delivery,omitempty"`
+
+	// Final Streamed text is complete
+	Final *bool `json:"final,omitempty"`
+
+	// Id msg_<uuidv7>
+	Id   string           `json:"id"`
+	Kind AgentMessageKind `json:"kind"`
+
+	// Level notice
+	Level      *AgentMessageLevel `json:"level,omitempty"`
+	Permission *AgentPermission   `json:"permission,omitempty"`
+	Plan       *[]AgentPlanEntry  `json:"plan,omitempty"`
+	References *[]AgentReference  `json:"references,omitempty"`
+	Rev        int                `json:"rev"`
+
+	// Seq Order in the transcript
+	Seq       int64  `json:"seq"`
+	SessionId string `json:"sessionId"`
+
+	// Text user_message, notice, agent_message (Markdown), thought
+	Text      *string        `json:"text,omitempty"`
+	ToolCall  *AgentToolCall `json:"toolCall,omitempty"`
+	Turn      int            `json:"turn"`
+	TurnInfo  *AgentTurn     `json:"turnInfo,omitempty"`
+	UpdatedAt time.Time      `json:"updatedAt"`
+}
+
+// AgentMessageDelivery user_message and notice: whether the agent host took it
+type AgentMessageDelivery string
+
+// AgentMessageLevel notice
+type AgentMessageLevel string
+
+// AgentMessageKind defines model for AgentMessageKind.
+type AgentMessageKind string
+
+// AgentMessageList defines model for AgentMessageList.
+type AgentMessageList struct {
+	Items []AgentMessage `json:"items"`
+
+	// Next Pass as after for the next page; absent on the last page
+	Next *int64 `json:"next,omitempty"`
+}
+
+// AgentMessageNew defines model for AgentMessageNew.
+type AgentMessageNew struct {
+	References *[]AgentReference `json:"references,omitempty"`
+	Text       string            `json:"text"`
+}
 
 // AgentModel defines model for AgentModel.
 type AgentModel struct {
@@ -854,6 +1646,68 @@ type AgentModels struct {
 	Models   []AgentModel `json:"models"`
 	Source   string       `json:"source"`
 }
+
+// AgentPauseReason defines model for AgentPauseReason.
+type AgentPauseReason struct {
+	Code AgentPauseReasonCode `json:"code"`
+
+	// Message What happened
+	Message string `json:"message"`
+}
+
+// AgentPauseReasonCode defines model for AgentPauseReason.Code.
+type AgentPauseReasonCode string
+
+// AgentPermission defines model for AgentPermission.
+type AgentPermission struct {
+	ApprovalId *string               `json:"approvalId,omitempty"`
+	Class      *string               `json:"class,omitempty"`
+	DecidedBy  *Actor                `json:"decidedBy,omitempty"`
+	Grant      *AgentPermissionGrant `json:"grant,omitempty"`
+	Note       *string               `json:"note,omitempty"`
+
+	// Operation The gated operation (command)
+	Operation *string `json:"operation,omitempty"`
+	Options   *[]struct {
+		Kind     AgentPermissionOptionsKind `json:"kind"`
+		Name     string                     `json:"name"`
+		OptionId string                     `json:"optionId"`
+	} `json:"options,omitempty"`
+
+	// Rule The preset rule that answered without asking a person
+	Rule *string `json:"rule,omitempty"`
+
+	// Source agent: an ACP permission request; command: a gated Cadence command (202)
+	Source     AgentPermissionSource `json:"source"`
+	State      AgentPermissionState  `json:"state"`
+	Title      *string               `json:"title,omitempty"`
+	ToolCallId *string               `json:"toolCallId,omitempty"`
+}
+
+// AgentPermissionGrant defines model for AgentPermission.Grant.
+type AgentPermissionGrant string
+
+// AgentPermissionOptionsKind defines model for AgentPermission.Options.Kind.
+type AgentPermissionOptionsKind string
+
+// AgentPermissionSource agent: an ACP permission request; command: a gated Cadence command (202)
+type AgentPermissionSource string
+
+// AgentPermissionState defines model for AgentPermission.State.
+type AgentPermissionState string
+
+// AgentPlanEntry defines model for AgentPlanEntry.
+type AgentPlanEntry struct {
+	Content  string                  `json:"content"`
+	Priority *AgentPlanEntryPriority `json:"priority,omitempty"`
+	Status   AgentPlanEntryStatus    `json:"status"`
+}
+
+// AgentPlanEntryPriority defines model for AgentPlanEntry.Priority.
+type AgentPlanEntryPriority string
+
+// AgentPlanEntryStatus defines model for AgentPlanEntry.Status.
+type AgentPlanEntryStatus string
 
 // AgentProfile defines model for AgentProfile.
 type AgentProfile struct {
@@ -912,6 +1766,198 @@ type AgentProfileEdit struct {
 	PermissionPreset *PresetName `json:"permissionPreset,omitempty"`
 }
 
+// AgentReference defines model for AgentReference.
+type AgentReference struct {
+	// Fragment The part after #
+	Fragment *string `json:"fragment,omitempty"`
+	Id       *string `json:"id,omitempty"`
+
+	// Kind EntityKind (snake singular), filled by the server from ref
+	Kind *string `json:"kind,omitempty"`
+
+	// Label What the UI showed
+	Label *string `json:"label,omitempty"`
+
+	// Ref The textual reference: @run:123, @mix:mix_…, @utt:9f3c#t=1.5-3.0
+	Ref string `json:"ref"`
+}
+
+// AgentSession defines model for AgentSession.
+type AgentSession struct {
+	// AutoMerge when-clean: a session branch merges into main at session end when it applies cleanly; never: it always waits as Session changes
+	AutoMerge AutoMerge `json:"autoMerge"`
+
+	// Branch session/<id> (empty for read-only sessions)
+	Branch string      `json:"branch"`
+	Budget AgentBudget `json:"budget"`
+
+	// Busy A turn is in progress
+	Busy      *bool       `json:"busy,omitempty"`
+	CreatedAt time.Time   `json:"createdAt"`
+	Driver    AgentDriver `json:"driver"`
+	EndedAt   *time.Time  `json:"endedAt,omitempty"`
+
+	// Error Why it failed
+	Error *string `json:"error,omitempty"`
+
+	// Id ses_<uuidv7>
+	Id string `json:"id"`
+
+	// Kind interactive: a conversation on its own branch; read-only: one turn under the read-only preset, no branch
+	Kind AgentSessionKind `json:"kind"`
+
+	// LastMessageAt The last user message; the idle clock (R5) runs from it
+	LastMessageAt *time.Time `json:"lastMessageAt,omitempty"`
+	Merge         AgentMerge `json:"merge"`
+	Model         string     `json:"model"`
+
+	// Number The session's ordinal in its project (claude-code · session 3)
+	Number      int               `json:"number"`
+	PauseReason *AgentPauseReason `json:"pauseReason,omitempty"`
+
+	// PendingControl A request the agent host has not carried out yet
+	PendingControl *AgentSessionPendingControl `json:"pendingControl,omitempty"`
+
+	// Preset The permission preset of the session token
+	Preset string `json:"preset"`
+
+	// Project Lowercase letters, digits and dashes; 3–40 characters
+	Project   Slug   `json:"project"`
+	ProjectId string `json:"projectId"`
+
+	// Prompt The first message
+	Prompt     *string          `json:"prompt,omitempty"`
+	References []AgentReference `json:"references"`
+	Rev        int              `json:"rev"`
+	StartedAt  *time.Time       `json:"startedAt,omitempty"`
+	StartedBy  Actor            `json:"startedBy"`
+
+	// State docs/spec/05-agents.md "Session lifecycle"; done, failed and cancelled are terminal
+	State AgentSessionState `json:"state"`
+
+	// Turn The current (or last) turn number
+	Turn      *int      `json:"turn,omitempty"`
+	UpdatedAt time.Time `json:"updatedAt"`
+	Use       AgentUse  `json:"use"`
+}
+
+// AgentSessionPendingControl A request the agent host has not carried out yet
+type AgentSessionPendingControl string
+
+// AgentSessionCancel defines model for AgentSessionCancel.
+type AgentSessionCancel struct {
+	// End Also end the session (done); its branch merges per the auto-merge policy
+	End *bool `json:"end,omitempty"`
+}
+
+// AgentSessionKind interactive: a conversation on its own branch; read-only: one turn under the read-only preset, no branch
+type AgentSessionKind string
+
+// AgentSessionList defines model for AgentSessionList.
+type AgentSessionList struct {
+	Items []AgentSession `json:"items"`
+}
+
+// AgentSessionNew defines model for AgentSessionNew.
+type AgentSessionNew struct {
+	Driver *AgentDriver      `json:"driver,omitempty"`
+	Kind   *AgentSessionKind `json:"kind,omitempty"`
+
+	// Model Defaults to the agent profile's model (for the profile's driver) or the driver's default
+	Model *string `json:"model,omitempty"`
+
+	// Prompt The first message; required for read-only sessions
+	Prompt     *string           `json:"prompt,omitempty"`
+	References *[]AgentReference `json:"references,omitempty"`
+}
+
+// AgentSessionResume defines model for AgentSessionResume.
+type AgentSessionResume struct {
+	// Budget Raise the session budget (a session paused by its budget resumes only with room left)
+	Budget *struct {
+		Tokens *int64 `json:"tokens,omitempty"`
+		Turns  *int   `json:"turns,omitempty"`
+	} `json:"budget,omitempty"`
+}
+
+// AgentSessionState docs/spec/05-agents.md "Session lifecycle"; done, failed and cancelled are terminal
+type AgentSessionState string
+
+// AgentToolCall defines model for AgentToolCall.
+type AgentToolCall struct {
+	// ApprovalId The approval a gated MCP call returned
+	ApprovalId *string            `json:"approvalId,omitempty"`
+	Class      AgentToolCallClass `json:"class"`
+	Diffs      *[]AgentFileDiff   `json:"diffs,omitempty"`
+
+	// Id The agent's tool call id (Cadence-Tool-Call-Id of the commands it caused)
+	Id string `json:"id"`
+
+	// Input The tool's arguments
+	Input interface{} `json:"input,omitempty"`
+
+	// JobId The job a long MCP call returned
+	JobId     *string   `json:"jobId,omitempty"`
+	Locations *[]string `json:"locations,omitempty"`
+
+	// Operation The Cadence operation of an MCP call (<entity>.<verb>)
+	Operation *string `json:"operation,omitempty"`
+
+	// Output The tool's result (MCP results are Cadence's data-marked JSON)
+	Output interface{} `json:"output,omitempty"`
+
+	// Server The MCP server of an MCP call
+	Server *string `json:"server,omitempty"`
+	Shell  *struct {
+		Command string `json:"command"`
+
+		// ExitCode Only when the agent reports one (Claude does not)
+		ExitCode *int    `json:"exitCode,omitempty"`
+		Output   *string `json:"output,omitempty"`
+	} `json:"shell,omitempty"`
+	Status AgentToolCallStatus `json:"status"`
+	Text   *string             `json:"text,omitempty"`
+	Title  string              `json:"title"`
+}
+
+// AgentToolCallClass defines model for AgentToolCall.Class.
+type AgentToolCallClass string
+
+// AgentToolCallStatus defines model for AgentToolCall.Status.
+type AgentToolCallStatus string
+
+// AgentTurn defines model for AgentTurn.
+type AgentTurn struct {
+	CachedReadTokens *int64 `json:"cachedReadTokens,omitempty"`
+	InputTokens      *int64 `json:"inputTokens,omitempty"`
+
+	// MessageId The user message the turn answers
+	MessageId    *string        `json:"messageId,omitempty"`
+	OutputTokens *int64         `json:"outputTokens,omitempty"`
+	State        AgentTurnState `json:"state"`
+
+	// StopReason end_turn, cancelled, max_tokens, refusal, …
+	StopReason *string `json:"stopReason,omitempty"`
+}
+
+// AgentTurnState defines model for AgentTurn.State.
+type AgentTurnState string
+
+// AgentUse defines model for AgentUse.
+type AgentUse struct {
+	CachedReadTokens *int64 `json:"cachedReadTokens,omitempty"`
+	ContextSize      *int64 `json:"contextSize,omitempty"`
+
+	// ContextUsed Tokens in the agent's context window now
+	ContextUsed *int64 `json:"contextUsed,omitempty"`
+
+	// CostUsd What the agent reports; API-equivalent on a subscription (R6)
+	CostUsd      *float64 `json:"costUsd,omitempty"`
+	InputTokens  int64    `json:"inputTokens"`
+	OutputTokens int64    `json:"outputTokens"`
+	Turns        int      `json:"turns"`
+}
+
 // Alias defines model for Alias.
 type Alias struct {
 	Actor Actor `json:"actor"`
@@ -964,10 +2010,16 @@ type Approval struct {
 	// Id apr_<uuidv7>
 	Id string `json:"id"`
 
+	// Kind command: a gated command, replayed when approved; agent_permission: an ACP permission request of an agent session, answered to the agent (no replay)
+	Kind *ApprovalKind `json:"kind,omitempty"`
+
 	// Operation The gated operation, e.g. projects.archive
-	Operation string  `json:"operation"`
-	ProjectId *string `json:"projectId,omitempty"`
-	Reason    string  `json:"reason"`
+	Operation string `json:"operation"`
+
+	// Permission What the agent asked to do (agent_permission approvals)
+	Permission *ApprovalPermission `json:"permission,omitempty"`
+	ProjectId  *string             `json:"projectId,omitempty"`
+	Reason     string              `json:"reason"`
 
 	// Request The stored request, without credentials or cookies
 	Request ApprovalRequest `json:"request"`
@@ -983,6 +2035,9 @@ type Approval struct {
 	Scope ApprovalScope `json:"scope"`
 	State ApprovalState `json:"state"`
 }
+
+// ApprovalKind command: a gated command, replayed when approved; agent_permission: an ACP permission request of an agent session, answered to the agent (no replay)
+type ApprovalKind string
 
 // ApprovalScope Registry approvals are decided by the admin only
 type ApprovalScope string
@@ -1026,6 +2081,23 @@ type ApprovalDeny struct {
 type ApprovalList struct {
 	Items []Approval `json:"items"`
 }
+
+// ApprovalPermission What the agent asked to do (agent_permission approvals)
+type ApprovalPermission struct {
+	// Class mcp, edit, shell, fetch, …
+	Class string `json:"class"`
+
+	// Command The shell command
+	Command    *string                     `json:"command,omitempty"`
+	Options    []ApprovalPermissionOptions `json:"options"`
+	Paths      *[]string                   `json:"paths,omitempty"`
+	SessionId  string                      `json:"sessionId"`
+	Title      string                      `json:"title"`
+	ToolCallId string                      `json:"toolCallId"`
+}
+
+// ApprovalPermissionOptions defines model for ApprovalPermission.Options.
+type ApprovalPermissionOptions string
 
 // ApprovalRequest The stored request, without credentials or cookies
 type ApprovalRequest struct {
@@ -1744,6 +2816,160 @@ type HelpHit struct {
 // HelpSearchResult defines model for HelpSearchResult.
 type HelpSearchResult struct {
 	Items []HelpHit `json:"items"`
+}
+
+// HostAsk defines model for HostAsk.
+type HostAsk struct {
+	HostId  string `json:"hostId"`
+	Options []struct {
+		Kind     HostAskOptionsKind `json:"kind"`
+		Name     string             `json:"name"`
+		OptionId string             `json:"optionId"`
+	} `json:"options"`
+	ToolCall AgentToolCall `json:"toolCall"`
+	Turn     *int          `json:"turn,omitempty"`
+}
+
+// HostAskOptionsKind defines model for HostAsk.Options.Kind.
+type HostAskOptionsKind string
+
+// HostClaim defines model for HostClaim.
+type HostClaim struct {
+	// Capacity How many more sessions this host may start
+	Capacity *int `json:"capacity,omitempty"`
+
+	// HostId This host process (hostname and boot id); a session belongs to one
+	HostId  string  `json:"hostId"`
+	Version *string `json:"version,omitempty"`
+
+	// Wait Seconds to wait for work
+	Wait *int `json:"wait,omitempty"`
+}
+
+// HostControl defines model for HostControl.
+type HostControl struct {
+	Action HostControlAction `json:"action"`
+	Budget *AgentBudget      `json:"budget,omitempty"`
+	Id     string            `json:"id"`
+	Reason *AgentPauseReason `json:"reason,omitempty"`
+	Resume *struct {
+		AcpSessionId *string `json:"acpSessionId,omitempty"`
+		Summary      *string `json:"summary,omitempty"`
+	} `json:"resume,omitempty"`
+	SessionId string `json:"sessionId"`
+}
+
+// HostControlAction defines model for HostControl.Action.
+type HostControlAction string
+
+// HostDecision defines model for HostDecision.
+type HostDecision struct {
+	ApprovalId *string             `json:"approvalId,omitempty"`
+	Outcome    HostDecisionOutcome `json:"outcome"`
+	Reason     *string             `json:"reason,omitempty"`
+
+	// Rule The preset rule when the policy answered without a person
+	Rule       *string `json:"rule,omitempty"`
+	SessionId  *string `json:"sessionId,omitempty"`
+	ToolCallId *string `json:"toolCallId,omitempty"`
+}
+
+// HostDecisionOutcome defines model for HostDecision.Outcome.
+type HostDecisionOutcome string
+
+// HostEntry A transcript entry keyed by the host (e.g. t3:m1, tool:<id>): the same key updates the same entry
+type HostEntry struct {
+	Commit   *AgentCommit      `json:"commit,omitempty"`
+	Final    *bool             `json:"final,omitempty"`
+	Key      string            `json:"key"`
+	Kind     HostEntryKind     `json:"kind"`
+	Level    *HostEntryLevel   `json:"level,omitempty"`
+	Plan     *[]AgentPlanEntry `json:"plan,omitempty"`
+	Text     *string           `json:"text,omitempty"`
+	ToolCall *AgentToolCall    `json:"toolCall,omitempty"`
+	Turn     *int              `json:"turn,omitempty"`
+	TurnInfo *AgentTurn        `json:"turnInfo,omitempty"`
+}
+
+// HostEntryKind defines model for HostEntry.Kind.
+type HostEntryKind string
+
+// HostEntryLevel defines model for HostEntry.Level.
+type HostEntryLevel string
+
+// HostMessage defines model for HostMessage.
+type HostMessage struct {
+	// Context The expanded references
+	Context   *string         `json:"context,omitempty"`
+	Id        string          `json:"id"`
+	Kind      HostMessageKind `json:"kind"`
+	SessionId string          `json:"sessionId"`
+	Text      string          `json:"text"`
+}
+
+// HostMessageKind defines model for HostMessage.Kind.
+type HostMessageKind string
+
+// HostReport defines model for HostReport.
+type HostReport struct {
+	AcpSessionId *string      `json:"acpSessionId,omitempty"`
+	Entries      *[]HostEntry `json:"entries,omitempty"`
+	HostId       string       `json:"hostId"`
+
+	// Note A note for the next session (projects.note), e.g. why the session paused
+	Note  *string `json:"note,omitempty"`
+	State *struct {
+		Busy   *bool                `json:"busy,omitempty"`
+		Error  *string              `json:"error,omitempty"`
+		Reason *AgentPauseReason    `json:"reason,omitempty"`
+		State  HostReportStateState `json:"state"`
+		Turn   *int                 `json:"turn,omitempty"`
+	} `json:"state,omitempty"`
+	Use *AgentUse `json:"use,omitempty"`
+
+	// Withdraw Agent-permission approvals the agent no longer waits for (its turn was cancelled)
+	Withdraw *[]string `json:"withdraw,omitempty"`
+}
+
+// HostReportStateState defines model for HostReport.State.State.
+type HostReportStateState string
+
+// HostStart defines model for HostStart.
+type HostStart struct {
+	Budget AgentBudget `json:"budget"`
+	Clocks struct {
+		// IdenticalCalls The same tool with the same arguments this many times in a row is a runaway
+		IdenticalCalls int `json:"identicalCalls"`
+
+		// StuckTurnSeconds timeouts.stuck_turn_minutes
+		StuckTurnSeconds int `json:"stuckTurnSeconds"`
+	} `json:"clocks"`
+
+	// CloneUrl Path of the project repository on the control plane (/git/<slug>.git)
+	CloneUrl string `json:"cloneUrl"`
+
+	// McpUrl Path of the MCP endpoint (/mcp)
+	McpUrl string `json:"mcpUrl"`
+
+	// Resume The session ran before (host restart or resume after pause)
+	Resume *struct {
+		AcpSessionId *string `json:"acpSessionId,omitempty"`
+
+		// Summary A transcript summary for a new ACP session when resume fails
+		Summary *string `json:"summary,omitempty"`
+	} `json:"resume,omitempty"`
+	Session AgentSession `json:"session"`
+
+	// Token The session token (cst_…), shown once: MCP Authorization and git password; never written to disk
+	Token string `json:"token"`
+}
+
+// HostWork defines model for HostWork.
+type HostWork struct {
+	Controls  []HostControl  `json:"controls"`
+	Decisions []HostDecision `json:"decisions"`
+	Messages  []HostMessage  `json:"messages"`
+	Start     []HostStart    `json:"start"`
 }
 
 // InstructionsTemplateName An instructions template (templates.list templateKind=instructions): default or minimal; custom once AGENTS.md was edited by hand
@@ -2688,6 +3914,9 @@ type WorkspaceSummary struct {
 	UpdatedAt time.Time     `json:"updatedAt"`
 }
 
+// AgentSessionId defines model for AgentSessionId.
+type AgentSessionId = string
+
 // DraftId defines model for DraftId.
 type DraftId = string
 
@@ -2730,8 +3959,12 @@ type PlannedEntity map[string]interface{}
 // PlannedBody defines model for PlannedBody.
 type PlannedBody map[string]interface{}
 
-// AgentMessagesNewJSONBody defines parameters for AgentMessagesNew.
-type AgentMessagesNewJSONBody map[string]interface{}
+// AgentMessagesListParams defines parameters for AgentMessagesList.
+type AgentMessagesListParams struct {
+	// After Only entries with a larger seq (the last seq of the previous page)
+	After *int `form:"after,omitempty" json:"after,omitempty"`
+	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
+}
 
 // AgentMessagesNewParams defines parameters for AgentMessagesNew.
 type AgentMessagesNewParams struct {
@@ -2742,8 +3975,56 @@ type AgentMessagesNewParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
 
+// AgentSessionsAcceptParams defines parameters for AgentSessionsAccept.
+type AgentSessionsAcceptParams struct {
+	// DryRun Validate and report what would happen without changing anything
+	DryRun *DryRun `form:"dryRun,omitempty" json:"dryRun,omitempty"`
+
+	// IdempotencyKey Client-chosen key; a repeat with the same key returns the original result
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+
+	// IfMatch The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+	IfMatch IfMatch `json:"If-Match"`
+}
+
 // AgentSessionsCancelParams defines parameters for AgentSessionsCancel.
 type AgentSessionsCancelParams struct {
+	// DryRun Validate and report what would happen without changing anything
+	DryRun *DryRun `form:"dryRun,omitempty" json:"dryRun,omitempty"`
+
+	// IdempotencyKey Client-chosen key; a repeat with the same key returns the original result
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+
+	// IfMatch The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+	IfMatch IfMatch `json:"If-Match"`
+}
+
+// AgentSessionsPauseParams defines parameters for AgentSessionsPause.
+type AgentSessionsPauseParams struct {
+	// DryRun Validate and report what would happen without changing anything
+	DryRun *DryRun `form:"dryRun,omitempty" json:"dryRun,omitempty"`
+
+	// IdempotencyKey Client-chosen key; a repeat with the same key returns the original result
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+
+	// IfMatch The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+	IfMatch IfMatch `json:"If-Match"`
+}
+
+// AgentSessionsResumeParams defines parameters for AgentSessionsResume.
+type AgentSessionsResumeParams struct {
+	// DryRun Validate and report what would happen without changing anything
+	DryRun *DryRun `form:"dryRun,omitempty" json:"dryRun,omitempty"`
+
+	// IdempotencyKey Client-chosen key; a repeat with the same key returns the original result
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+
+	// IfMatch The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+	IfMatch IfMatch `json:"If-Match"`
+}
+
+// AgentSessionsRevertParams defines parameters for AgentSessionsRevert.
+type AgentSessionsRevertParams struct {
 	// DryRun Validate and report what would happen without changing anything
 	DryRun *DryRun `form:"dryRun,omitempty" json:"dryRun,omitempty"`
 
@@ -2916,6 +4197,17 @@ type HelpSearchParams struct {
 	Limit   *int    `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
+// HostSessionsDecisionParams defines parameters for HostSessionsDecision.
+type HostSessionsDecisionParams struct {
+	ApprovalId string `form:"approvalId" json:"approvalId"`
+
+	// HostId The host process asking (it must run the session)
+	HostId string `form:"hostId" json:"hostId"`
+
+	// Wait Seconds to wait for a decision
+	Wait *int `form:"wait,omitempty" json:"wait,omitempty"`
+}
+
 // JobsCancelParams defines parameters for JobsCancel.
 type JobsCancelParams struct {
 	// DryRun Validate and report what would happen without changing anything
@@ -3039,8 +4331,15 @@ type AgentProfileEditParams struct {
 	IfMatch IfMatch `json:"If-Match"`
 }
 
-// AgentSessionsNewJSONBody defines parameters for AgentSessionsNew.
-type AgentSessionsNewJSONBody map[string]interface{}
+// AgentSessionsListParams defines parameters for AgentSessionsList.
+type AgentSessionsListParams struct {
+	// State Only sessions in this state; live means created, running, waiting_approval or paused
+	State *AgentSessionsListParamsState `form:"state,omitempty" json:"state,omitempty"`
+	Limit *int                          `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// AgentSessionsListParamsState defines parameters for AgentSessionsList.
+type AgentSessionsListParamsState string
 
 // AgentSessionsNewParams defines parameters for AgentSessionsNew.
 type AgentSessionsNewParams struct {
@@ -3253,7 +4552,13 @@ type SecretsNewParams struct {
 }
 
 // AgentMessagesNewJSONRequestBody defines body for AgentMessagesNew for application/json ContentType.
-type AgentMessagesNewJSONRequestBody AgentMessagesNewJSONBody
+type AgentMessagesNewJSONRequestBody = AgentMessageNew
+
+// AgentSessionsCancelJSONRequestBody defines body for AgentSessionsCancel for application/json ContentType.
+type AgentSessionsCancelJSONRequestBody = AgentSessionCancel
+
+// AgentSessionsResumeJSONRequestBody defines body for AgentSessionsResume for application/json ContentType.
+type AgentSessionsResumeJSONRequestBody = AgentSessionResume
 
 // ApprovalsApproveJSONRequestBody defines body for ApprovalsApprove for application/json ContentType.
 type ApprovalsApproveJSONRequestBody = ApprovalApprove
@@ -3278,6 +4583,15 @@ type ComputeEditJSONRequestBody = ComputeEdit
 
 // CredentialsNewJSONRequestBody defines body for CredentialsNew for application/json ContentType.
 type CredentialsNewJSONRequestBody = CredentialNew
+
+// HostSessionsAskJSONRequestBody defines body for HostSessionsAsk for application/json ContentType.
+type HostSessionsAskJSONRequestBody = HostAsk
+
+// HostSessionsReportJSONRequestBody defines body for HostSessionsReport for application/json ContentType.
+type HostSessionsReportJSONRequestBody = HostReport
+
+// HostSessionsClaimJSONRequestBody defines body for HostSessionsClaim for application/json ContentType.
+type HostSessionsClaimJSONRequestBody = HostClaim
 
 // ViewsSetJSONRequestBody defines body for ViewsSet for application/json ContentType.
 type ViewsSetJSONRequestBody = SavedViewSet
@@ -3304,7 +4618,7 @@ type ProjectsEditJSONRequestBody = ProjectEdit
 type AgentProfileEditJSONRequestBody = AgentProfileEdit
 
 // AgentSessionsNewJSONRequestBody defines body for AgentSessionsNew for application/json ContentType.
-type AgentSessionsNewJSONRequestBody AgentSessionsNewJSONBody
+type AgentSessionsNewJSONRequestBody = AgentSessionNew
 
 // AliasesSetJSONRequestBody defines body for AliasesSet for application/json ContentType.
 type AliasesSetJSONRequestBody = AliasSet
@@ -3329,12 +4643,30 @@ type SecretsNewJSONRequestBody = SecretNew
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
-	// AgentMessagesNew User message with entity references; updates arrive on agent.session.{id}
+	// AgentSessionsGet Get an agent session with its state, budget and use, branch and merge state
+	// (GET /agent-sessions/{id})
+	AgentSessionsGet(w http.ResponseWriter, r *http.Request, id AgentSessionId)
+	// AgentMessagesList The session transcript in order, one page after a sequence number
+	// (GET /agent-sessions/{id}/agent-messages)
+	AgentMessagesList(w http.ResponseWriter, r *http.Request, id AgentSessionId, params AgentMessagesListParams)
+	// AgentMessagesNew Send a user message with entity references; the agent answers on agent.session.{id}
 	// (POST /agent-sessions/{id}/agent-messages)
-	AgentMessagesNew(w http.ResponseWriter, r *http.Request, id Id, params AgentMessagesNewParams)
-	// AgentSessionsCancel Stop the session's current turn
+	AgentMessagesNew(w http.ResponseWriter, r *http.Request, id AgentSessionId, params AgentMessagesNewParams)
+	// AgentSessionsAccept Merge the session branch into main as a whole and end the session
+	// (POST /agent-sessions/{id}:accept)
+	AgentSessionsAccept(w http.ResponseWriter, r *http.Request, id AgentSessionId, params AgentSessionsAcceptParams)
+	// AgentSessionsCancel Stop the session's current turn; with end, also end the session
 	// (POST /agent-sessions/{id}:cancel)
-	AgentSessionsCancel(w http.ResponseWriter, r *http.Request, id Id, params AgentSessionsCancelParams)
+	AgentSessionsCancel(w http.ResponseWriter, r *http.Request, id AgentSessionId, params AgentSessionsCancelParams)
+	// AgentSessionsPause Pause a session; the current turn stops, the worktree is committed and the agent process ends
+	// (POST /agent-sessions/{id}:pause)
+	AgentSessionsPause(w http.ResponseWriter, r *http.Request, id AgentSessionId, params AgentSessionsPauseParams)
+	// AgentSessionsResume Resume a paused session (ACP session/resume, else a new ACP session with a transcript summary)
+	// (POST /agent-sessions/{id}:resume)
+	AgentSessionsResume(w http.ResponseWriter, r *http.Request, id AgentSessionId, params AgentSessionsResumeParams)
+	// AgentSessionsRevert Discard the session branch as a whole and end the session
+	// (POST /agent-sessions/{id}:revert)
+	AgentSessionsRevert(w http.ResponseWriter, r *http.Request, id AgentSessionId, params AgentSessionsRevertParams)
 	// ApprovalsList Approvals, pending first, then the most recently decided
 	// (GET /approvals)
 	ApprovalsList(w http.ResponseWriter, r *http.Request, params ApprovalsListParams)
@@ -3416,6 +4748,18 @@ type ServerInterface interface {
 	// HelpGet Get a help article (markdown)
 	// (GET /help/{id})
 	HelpGet(w http.ResponseWriter, r *http.Request, id string)
+	// HostSessionsAsk Raise an ACP permission request; the preset answers it or it becomes an agent-permission approval
+	// (POST /host-sessions/{id}:ask)
+	HostSessionsAsk(w http.ResponseWriter, r *http.Request, id AgentSessionId)
+	// HostSessionsDecision Read (or wait for) the decision on an agent-permission approval
+	// (GET /host-sessions/{id}:decision)
+	HostSessionsDecision(w http.ResponseWriter, r *http.Request, id AgentSessionId, params HostSessionsDecisionParams)
+	// HostSessionsReport Post a batch of transcript entries, the session state, usage and the ACP session id
+	// (POST /host-sessions/{id}:report)
+	HostSessionsReport(w http.ResponseWriter, r *http.Request, id AgentSessionId)
+	// HostSessionsClaim Long-poll for work — sessions to start, messages to deliver, controls and permission decisions
+	// (POST /host-sessions:claim)
+	HostSessionsClaim(w http.ResponseWriter, r *http.Request)
 	// JobsGet Get a job
 	// (GET /jobs/{id})
 	JobsGet(w http.ResponseWriter, r *http.Request, id Id)
@@ -3485,7 +4829,10 @@ type ServerInterface interface {
 	// AgentProfileEdit Change the agent profile; the rendered config files and AGENTS.md are committed to main
 	// (PATCH /projects/{p}/agent-profile)
 	AgentProfileEdit(w http.ResponseWriter, r *http.Request, p ProjectSlug, params AgentProfileEditParams)
-	// AgentSessionsNew Launch Claude Code or opencode in a project worktree
+	// AgentSessionsList The project's agent sessions, live ones first, then the most recently changed
+	// (GET /projects/{p}/agent-sessions)
+	AgentSessionsList(w http.ResponseWriter, r *http.Request, p ProjectSlug, params AgentSessionsListParams)
+	// AgentSessionsNew Start Claude Code or opencode on its own branch session/<id> of the project repository
 	// (POST /projects/{p}/agent-sessions)
 	AgentSessionsNew(w http.ResponseWriter, r *http.Request, p ProjectSlug, params AgentSessionsNewParams)
 	// AliasesList The project's aliases (train-current, baseline, production, …) and the versions they point at
@@ -3584,15 +4931,51 @@ type ServerInterface interface {
 
 type Unimplemented struct{}
 
-// AgentMessagesNew User message with entity references; updates arrive on agent.session.{id}
-// (POST /agent-sessions/{id}/agent-messages)
-func (_ Unimplemented) AgentMessagesNew(w http.ResponseWriter, r *http.Request, id Id, params AgentMessagesNewParams) {
+// AgentSessionsGet Get an agent session with its state, budget and use, branch and merge state
+// (GET /agent-sessions/{id})
+func (_ Unimplemented) AgentSessionsGet(w http.ResponseWriter, r *http.Request, id AgentSessionId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// AgentSessionsCancel Stop the session's current turn
+// AgentMessagesList The session transcript in order, one page after a sequence number
+// (GET /agent-sessions/{id}/agent-messages)
+func (_ Unimplemented) AgentMessagesList(w http.ResponseWriter, r *http.Request, id AgentSessionId, params AgentMessagesListParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AgentMessagesNew Send a user message with entity references; the agent answers on agent.session.{id}
+// (POST /agent-sessions/{id}/agent-messages)
+func (_ Unimplemented) AgentMessagesNew(w http.ResponseWriter, r *http.Request, id AgentSessionId, params AgentMessagesNewParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AgentSessionsAccept Merge the session branch into main as a whole and end the session
+// (POST /agent-sessions/{id}:accept)
+func (_ Unimplemented) AgentSessionsAccept(w http.ResponseWriter, r *http.Request, id AgentSessionId, params AgentSessionsAcceptParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AgentSessionsCancel Stop the session's current turn; with end, also end the session
 // (POST /agent-sessions/{id}:cancel)
-func (_ Unimplemented) AgentSessionsCancel(w http.ResponseWriter, r *http.Request, id Id, params AgentSessionsCancelParams) {
+func (_ Unimplemented) AgentSessionsCancel(w http.ResponseWriter, r *http.Request, id AgentSessionId, params AgentSessionsCancelParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AgentSessionsPause Pause a session; the current turn stops, the worktree is committed and the agent process ends
+// (POST /agent-sessions/{id}:pause)
+func (_ Unimplemented) AgentSessionsPause(w http.ResponseWriter, r *http.Request, id AgentSessionId, params AgentSessionsPauseParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AgentSessionsResume Resume a paused session (ACP session/resume, else a new ACP session with a transcript summary)
+// (POST /agent-sessions/{id}:resume)
+func (_ Unimplemented) AgentSessionsResume(w http.ResponseWriter, r *http.Request, id AgentSessionId, params AgentSessionsResumeParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AgentSessionsRevert Discard the session branch as a whole and end the session
+// (POST /agent-sessions/{id}:revert)
+func (_ Unimplemented) AgentSessionsRevert(w http.ResponseWriter, r *http.Request, id AgentSessionId, params AgentSessionsRevertParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -3758,6 +5141,30 @@ func (_ Unimplemented) HelpGet(w http.ResponseWriter, r *http.Request, id string
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// HostSessionsAsk Raise an ACP permission request; the preset answers it or it becomes an agent-permission approval
+// (POST /host-sessions/{id}:ask)
+func (_ Unimplemented) HostSessionsAsk(w http.ResponseWriter, r *http.Request, id AgentSessionId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// HostSessionsDecision Read (or wait for) the decision on an agent-permission approval
+// (GET /host-sessions/{id}:decision)
+func (_ Unimplemented) HostSessionsDecision(w http.ResponseWriter, r *http.Request, id AgentSessionId, params HostSessionsDecisionParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// HostSessionsReport Post a batch of transcript entries, the session state, usage and the ACP session id
+// (POST /host-sessions/{id}:report)
+func (_ Unimplemented) HostSessionsReport(w http.ResponseWriter, r *http.Request, id AgentSessionId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// HostSessionsClaim Long-poll for work — sessions to start, messages to deliver, controls and permission decisions
+// (POST /host-sessions:claim)
+func (_ Unimplemented) HostSessionsClaim(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // JobsGet Get a job
 // (GET /jobs/{id})
 func (_ Unimplemented) JobsGet(w http.ResponseWriter, r *http.Request, id Id) {
@@ -3896,7 +5303,13 @@ func (_ Unimplemented) AgentProfileEdit(w http.ResponseWriter, r *http.Request, 
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// AgentSessionsNew Launch Claude Code or opencode in a project worktree
+// AgentSessionsList The project's agent sessions, live ones first, then the most recently changed
+// (GET /projects/{p}/agent-sessions)
+func (_ Unimplemented) AgentSessionsList(w http.ResponseWriter, r *http.Request, p ProjectSlug, params AgentSessionsListParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AgentSessionsNew Start Claude Code or opencode on its own branch session/<id> of the project repository
 // (POST /projects/{p}/agent-sessions)
 func (_ Unimplemented) AgentSessionsNew(w http.ResponseWriter, r *http.Request, p ProjectSlug, params AgentSessionsNewParams) {
 	w.WriteHeader(http.StatusNotImplemented)
@@ -4091,6 +5504,87 @@ type ServerInterfaceWrapper struct {
 
 type MiddlewareFunc func(http.Handler) http.Handler
 
+// AgentSessionsGet operation middleware
+func (siw *ServerInterfaceWrapper) AgentSessionsGet(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id AgentSessionId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AgentSessionsGet(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AgentMessagesList operation middleware
+func (siw *ServerInterfaceWrapper) AgentMessagesList(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id AgentSessionId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AgentMessagesListParams
+
+	// ------------- Optional query parameter "after" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "after", r.URL.Query(), &params.After, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "after"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "after", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AgentMessagesList(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // AgentMessagesNew operation middleware
 func (siw *ServerInterfaceWrapper) AgentMessagesNew(w http.ResponseWriter, r *http.Request) {
 
@@ -4098,7 +5592,7 @@ func (siw *ServerInterfaceWrapper) AgentMessagesNew(w http.ResponseWriter, r *ht
 	_ = err
 
 	// ------------- Path parameter "id" -------------
-	var id Id
+	var id AgentSessionId
 
 	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
 	if err != nil {
@@ -4158,6 +5652,96 @@ func (siw *ServerInterfaceWrapper) AgentMessagesNew(w http.ResponseWriter, r *ht
 	handler.ServeHTTP(w, r)
 }
 
+// AgentSessionsAccept operation middleware
+func (siw *ServerInterfaceWrapper) AgentSessionsAccept(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id AgentSessionId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AgentSessionsAcceptParams
+
+	// ------------- Optional query parameter "dryRun" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "dryRun", r.URL.Query(), &params.DryRun, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "dryRun"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "dryRun", Err: err})
+		}
+		return
+	}
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	// ------------- Required header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = IfMatch
+
+	} else {
+		err := fmt.Errorf("Header parameter If-Match is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "If-Match", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AgentSessionsAccept(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // AgentSessionsCancel operation middleware
 func (siw *ServerInterfaceWrapper) AgentSessionsCancel(w http.ResponseWriter, r *http.Request) {
 
@@ -4165,7 +5749,7 @@ func (siw *ServerInterfaceWrapper) AgentSessionsCancel(w http.ResponseWriter, r 
 	_ = err
 
 	// ------------- Path parameter "id" -------------
-	var id Id
+	var id AgentSessionId
 
 	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
 	if err != nil {
@@ -4239,6 +5823,276 @@ func (siw *ServerInterfaceWrapper) AgentSessionsCancel(w http.ResponseWriter, r 
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.AgentSessionsCancel(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AgentSessionsPause operation middleware
+func (siw *ServerInterfaceWrapper) AgentSessionsPause(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id AgentSessionId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AgentSessionsPauseParams
+
+	// ------------- Optional query parameter "dryRun" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "dryRun", r.URL.Query(), &params.DryRun, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "dryRun"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "dryRun", Err: err})
+		}
+		return
+	}
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	// ------------- Required header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = IfMatch
+
+	} else {
+		err := fmt.Errorf("Header parameter If-Match is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "If-Match", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AgentSessionsPause(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AgentSessionsResume operation middleware
+func (siw *ServerInterfaceWrapper) AgentSessionsResume(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id AgentSessionId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AgentSessionsResumeParams
+
+	// ------------- Optional query parameter "dryRun" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "dryRun", r.URL.Query(), &params.DryRun, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "dryRun"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "dryRun", Err: err})
+		}
+		return
+	}
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	// ------------- Required header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = IfMatch
+
+	} else {
+		err := fmt.Errorf("Header parameter If-Match is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "If-Match", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AgentSessionsResume(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AgentSessionsRevert operation middleware
+func (siw *ServerInterfaceWrapper) AgentSessionsRevert(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id AgentSessionId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AgentSessionsRevertParams
+
+	// ------------- Optional query parameter "dryRun" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "dryRun", r.URL.Query(), &params.DryRun, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "dryRun"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "dryRun", Err: err})
+		}
+		return
+	}
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	// ------------- Required header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = IfMatch
+
+	} else {
+		err := fmt.Errorf("Header parameter If-Match is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "If-Match", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AgentSessionsRevert(w, r, id, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -5491,6 +7345,140 @@ func (siw *ServerInterfaceWrapper) HelpGet(w http.ResponseWriter, r *http.Reques
 	handler.ServeHTTP(w, r)
 }
 
+// HostSessionsAsk operation middleware
+func (siw *ServerInterfaceWrapper) HostSessionsAsk(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id AgentSessionId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.HostSessionsAsk(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// HostSessionsDecision operation middleware
+func (siw *ServerInterfaceWrapper) HostSessionsDecision(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id AgentSessionId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params HostSessionsDecisionParams
+
+	// ------------- Required query parameter "approvalId" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "approvalId", r.URL.Query(), &params.ApprovalId, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "approvalId"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "approvalId", Err: err})
+		}
+		return
+	}
+
+	// ------------- Required query parameter "hostId" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "hostId", r.URL.Query(), &params.HostId, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "hostId"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "hostId", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "wait" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "wait", r.URL.Query(), &params.Wait, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "wait"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "wait", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.HostSessionsDecision(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// HostSessionsReport operation middleware
+func (siw *ServerInterfaceWrapper) HostSessionsReport(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id AgentSessionId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.HostSessionsReport(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// HostSessionsClaim operation middleware
+func (siw *ServerInterfaceWrapper) HostSessionsClaim(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.HostSessionsClaim(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // JobsGet operation middleware
 func (siw *ServerInterfaceWrapper) JobsGet(w http.ResponseWriter, r *http.Request) {
 
@@ -6614,6 +8602,61 @@ func (siw *ServerInterfaceWrapper) AgentProfileEdit(w http.ResponseWriter, r *ht
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.AgentProfileEdit(w, r, p, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AgentSessionsList operation middleware
+func (siw *ServerInterfaceWrapper) AgentSessionsList(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "p" -------------
+	var p ProjectSlug
+
+	err = runtime.BindStyledParameterWithOptions("simple", "p", chi.URLParam(r, "p"), &p, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "p", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AgentSessionsListParams
+
+	// ------------- Optional query parameter "state" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "state", r.URL.Query(), &params.State, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "state"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "state", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AgentSessionsList(w, r, p, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -8701,13 +10744,46 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/drafts/{id}:revert", wrapper.DraftsRevert)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/projects/{p}/agent-sessions", wrapper.AgentSessionsList)
+	})
+	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/projects/{p}/agent-sessions", wrapper.AgentSessionsNew)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/agent-sessions/{id}", wrapper.AgentSessionsGet)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/agent-sessions/{id}:cancel", wrapper.AgentSessionsCancel)
 	})
 	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/agent-sessions/{id}:pause", wrapper.AgentSessionsPause)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/agent-sessions/{id}:resume", wrapper.AgentSessionsResume)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/agent-sessions/{id}:accept", wrapper.AgentSessionsAccept)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/agent-sessions/{id}:revert", wrapper.AgentSessionsRevert)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/agent-sessions/{id}/agent-messages", wrapper.AgentMessagesList)
+	})
+	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/agent-sessions/{id}/agent-messages", wrapper.AgentMessagesNew)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/host-sessions:claim", wrapper.HostSessionsClaim)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/host-sessions/{id}:report", wrapper.HostSessionsReport)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/host-sessions/{id}:ask", wrapper.HostSessionsAsk)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/host-sessions/{id}:decision", wrapper.HostSessionsDecision)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/mounts", wrapper.MountsList)
@@ -8727,8 +10803,97 @@ type PlannedEntityJSONResponse map[string]interface{}
 
 type ProblemApplicationProblemPlusJSONResponse Problem
 
+type AgentSessionsGetRequestObject struct {
+	Id AgentSessionId `json:"id"`
+}
+
+type AgentSessionsGetResponseObject interface {
+	VisitAgentSessionsGetResponse(w http.ResponseWriter) error
+}
+
+type AgentSessionsGet200ResponseHeaders struct {
+	ETag *string
+}
+
+type AgentSessionsGet200JSONResponse struct {
+	Body    AgentSession
+	Headers AgentSessionsGet200ResponseHeaders
+}
+
+func (response AgentSessionsGet200JSONResponse) VisitAgentSessionsGetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.ETag != nil {
+		w.Header().Set("ETag", fmt.Sprint(*response.Headers.ETag))
+	}
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AgentSessionsGetdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response AgentSessionsGetdefaultApplicationProblemPlusJSONResponse) VisitAgentSessionsGetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AgentMessagesListRequestObject struct {
+	Id     AgentSessionId `json:"id"`
+	Params AgentMessagesListParams
+}
+
+type AgentMessagesListResponseObject interface {
+	VisitAgentMessagesListResponse(w http.ResponseWriter) error
+}
+
+type AgentMessagesList200JSONResponse AgentMessageList
+
+func (response AgentMessagesList200JSONResponse) VisitAgentMessagesListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AgentMessagesListdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response AgentMessagesListdefaultApplicationProblemPlusJSONResponse) VisitAgentMessagesListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type AgentMessagesNewRequestObject struct {
-	Id     Id `json:"id"`
+	Id     AgentSessionId `json:"id"`
 	Params AgentMessagesNewParams
 	Body   *AgentMessagesNewJSONRequestBody
 }
@@ -8737,16 +10902,30 @@ type AgentMessagesNewResponseObject interface {
 	VisitAgentMessagesNewResponse(w http.ResponseWriter) error
 }
 
-type AgentMessagesNew202JSONResponse struct{ JobAcceptedJSONResponse }
+type AgentMessagesNew200JSONResponse AgentMessage
 
-func (response AgentMessagesNew202JSONResponse) VisitAgentMessagesNewResponse(w http.ResponseWriter) error {
+func (response AgentMessagesNew200JSONResponse) VisitAgentMessagesNewResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(202)
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AgentMessagesNew201JSONResponse AgentMessage
+
+func (response AgentMessagesNew201JSONResponse) VisitAgentMessagesNewResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -8768,24 +10947,85 @@ func (response AgentMessagesNewdefaultApplicationProblemPlusJSONResponse) VisitA
 	return err
 }
 
+type AgentSessionsAcceptRequestObject struct {
+	Id     AgentSessionId `json:"id"`
+	Params AgentSessionsAcceptParams
+}
+
+type AgentSessionsAcceptResponseObject interface {
+	VisitAgentSessionsAcceptResponse(w http.ResponseWriter) error
+}
+
+type AgentSessionsAccept200ResponseHeaders struct {
+	ETag *string
+}
+
+type AgentSessionsAccept200JSONResponse struct {
+	Body    AgentSession
+	Headers AgentSessionsAccept200ResponseHeaders
+}
+
+func (response AgentSessionsAccept200JSONResponse) VisitAgentSessionsAcceptResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.ETag != nil {
+		w.Header().Set("ETag", fmt.Sprint(*response.Headers.ETag))
+	}
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AgentSessionsAcceptdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response AgentSessionsAcceptdefaultApplicationProblemPlusJSONResponse) VisitAgentSessionsAcceptResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type AgentSessionsCancelRequestObject struct {
-	Id     Id `json:"id"`
+	Id     AgentSessionId `json:"id"`
 	Params AgentSessionsCancelParams
+	Body   *AgentSessionsCancelJSONRequestBody
 }
 
 type AgentSessionsCancelResponseObject interface {
 	VisitAgentSessionsCancelResponse(w http.ResponseWriter) error
 }
 
-type AgentSessionsCancel200JSONResponse struct{ PlannedEntityJSONResponse }
+type AgentSessionsCancel200ResponseHeaders struct {
+	ETag *string
+}
+
+type AgentSessionsCancel200JSONResponse struct {
+	Body    AgentSession
+	Headers AgentSessionsCancel200ResponseHeaders
+}
 
 func (response AgentSessionsCancel200JSONResponse) VisitAgentSessionsCancelResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.ETag != nil {
+		w.Header().Set("ETag", fmt.Sprint(*response.Headers.ETag))
+	}
 	w.WriteHeader(200)
 	_, err := buf.WriteTo(w)
 	return err
@@ -8797,6 +11037,157 @@ type AgentSessionsCanceldefaultApplicationProblemPlusJSONResponse struct {
 }
 
 func (response AgentSessionsCanceldefaultApplicationProblemPlusJSONResponse) VisitAgentSessionsCancelResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AgentSessionsPauseRequestObject struct {
+	Id     AgentSessionId `json:"id"`
+	Params AgentSessionsPauseParams
+}
+
+type AgentSessionsPauseResponseObject interface {
+	VisitAgentSessionsPauseResponse(w http.ResponseWriter) error
+}
+
+type AgentSessionsPause200ResponseHeaders struct {
+	ETag *string
+}
+
+type AgentSessionsPause200JSONResponse struct {
+	Body    AgentSession
+	Headers AgentSessionsPause200ResponseHeaders
+}
+
+func (response AgentSessionsPause200JSONResponse) VisitAgentSessionsPauseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.ETag != nil {
+		w.Header().Set("ETag", fmt.Sprint(*response.Headers.ETag))
+	}
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AgentSessionsPausedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response AgentSessionsPausedefaultApplicationProblemPlusJSONResponse) VisitAgentSessionsPauseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AgentSessionsResumeRequestObject struct {
+	Id     AgentSessionId `json:"id"`
+	Params AgentSessionsResumeParams
+	Body   *AgentSessionsResumeJSONRequestBody
+}
+
+type AgentSessionsResumeResponseObject interface {
+	VisitAgentSessionsResumeResponse(w http.ResponseWriter) error
+}
+
+type AgentSessionsResume200ResponseHeaders struct {
+	ETag *string
+}
+
+type AgentSessionsResume200JSONResponse struct {
+	Body    AgentSession
+	Headers AgentSessionsResume200ResponseHeaders
+}
+
+func (response AgentSessionsResume200JSONResponse) VisitAgentSessionsResumeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.ETag != nil {
+		w.Header().Set("ETag", fmt.Sprint(*response.Headers.ETag))
+	}
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AgentSessionsResumedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response AgentSessionsResumedefaultApplicationProblemPlusJSONResponse) VisitAgentSessionsResumeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AgentSessionsRevertRequestObject struct {
+	Id     AgentSessionId `json:"id"`
+	Params AgentSessionsRevertParams
+}
+
+type AgentSessionsRevertResponseObject interface {
+	VisitAgentSessionsRevertResponse(w http.ResponseWriter) error
+}
+
+type AgentSessionsRevert200ResponseHeaders struct {
+	ETag *string
+}
+
+type AgentSessionsRevert200JSONResponse struct {
+	Body    AgentSession
+	Headers AgentSessionsRevert200ResponseHeaders
+}
+
+func (response AgentSessionsRevert200JSONResponse) VisitAgentSessionsRevertResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.ETag != nil {
+		w.Header().Set("ETag", fmt.Sprint(*response.Headers.ETag))
+	}
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AgentSessionsRevertdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response AgentSessionsRevertdefaultApplicationProblemPlusJSONResponse) VisitAgentSessionsRevertResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -10054,6 +12445,165 @@ func (response HelpGetdefaultApplicationProblemPlusJSONResponse) VisitHelpGetRes
 	return err
 }
 
+type HostSessionsAskRequestObject struct {
+	Id   AgentSessionId `json:"id"`
+	Body *HostSessionsAskJSONRequestBody
+}
+
+type HostSessionsAskResponseObject interface {
+	VisitHostSessionsAskResponse(w http.ResponseWriter) error
+}
+
+type HostSessionsAsk200JSONResponse HostDecision
+
+func (response HostSessionsAsk200JSONResponse) VisitHostSessionsAskResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type HostSessionsAskdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response HostSessionsAskdefaultApplicationProblemPlusJSONResponse) VisitHostSessionsAskResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type HostSessionsDecisionRequestObject struct {
+	Id     AgentSessionId `json:"id"`
+	Params HostSessionsDecisionParams
+}
+
+type HostSessionsDecisionResponseObject interface {
+	VisitHostSessionsDecisionResponse(w http.ResponseWriter) error
+}
+
+type HostSessionsDecision200JSONResponse HostDecision
+
+func (response HostSessionsDecision200JSONResponse) VisitHostSessionsDecisionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type HostSessionsDecisiondefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response HostSessionsDecisiondefaultApplicationProblemPlusJSONResponse) VisitHostSessionsDecisionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type HostSessionsReportRequestObject struct {
+	Id   AgentSessionId `json:"id"`
+	Body *HostSessionsReportJSONRequestBody
+}
+
+type HostSessionsReportResponseObject interface {
+	VisitHostSessionsReportResponse(w http.ResponseWriter) error
+}
+
+type HostSessionsReport200JSONResponse AgentSession
+
+func (response HostSessionsReport200JSONResponse) VisitHostSessionsReportResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type HostSessionsReportdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response HostSessionsReportdefaultApplicationProblemPlusJSONResponse) VisitHostSessionsReportResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type HostSessionsClaimRequestObject struct {
+	Body *HostSessionsClaimJSONRequestBody
+}
+
+type HostSessionsClaimResponseObject interface {
+	VisitHostSessionsClaimResponse(w http.ResponseWriter) error
+}
+
+type HostSessionsClaim200JSONResponse HostWork
+
+func (response HostSessionsClaim200JSONResponse) VisitHostSessionsClaimResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type HostSessionsClaimdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response HostSessionsClaimdefaultApplicationProblemPlusJSONResponse) VisitHostSessionsClaimResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type JobsGetRequestObject struct {
 	Id Id `json:"id"`
 }
@@ -11146,6 +13696,46 @@ func (response AgentProfileEditdefaultApplicationProblemPlusJSONResponse) VisitA
 	return err
 }
 
+type AgentSessionsListRequestObject struct {
+	P      ProjectSlug `json:"p"`
+	Params AgentSessionsListParams
+}
+
+type AgentSessionsListResponseObject interface {
+	VisitAgentSessionsListResponse(w http.ResponseWriter) error
+}
+
+type AgentSessionsList200JSONResponse AgentSessionList
+
+func (response AgentSessionsList200JSONResponse) VisitAgentSessionsListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AgentSessionsListdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response AgentSessionsListdefaultApplicationProblemPlusJSONResponse) VisitAgentSessionsListResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type AgentSessionsNewRequestObject struct {
 	P      ProjectSlug `json:"p"`
 	Params AgentSessionsNewParams
@@ -11156,15 +13746,39 @@ type AgentSessionsNewResponseObject interface {
 	VisitAgentSessionsNewResponse(w http.ResponseWriter) error
 }
 
-type AgentSessionsNew201JSONResponse struct{ PlannedEntityJSONResponse }
+type AgentSessionsNew200JSONResponse AgentSession
 
-func (response AgentSessionsNew201JSONResponse) VisitAgentSessionsNewResponse(w http.ResponseWriter) error {
+func (response AgentSessionsNew200JSONResponse) VisitAgentSessionsNewResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AgentSessionsNew201ResponseHeaders struct {
+	ETag *string
+}
+
+type AgentSessionsNew201JSONResponse struct {
+	Body    AgentSession
+	Headers AgentSessionsNew201ResponseHeaders
+}
+
+func (response AgentSessionsNew201JSONResponse) VisitAgentSessionsNewResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.ETag != nil {
+		w.Header().Set("ETag", fmt.Sprint(*response.Headers.ETag))
+	}
 	w.WriteHeader(201)
 	_, err := buf.WriteTo(w)
 	return err
@@ -12545,12 +15159,30 @@ func (response SecretsNewdefaultApplicationProblemPlusJSONResponse) VisitSecrets
 
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
-	// AgentMessagesNew User message with entity references; updates arrive on agent.session.{id}
+	// AgentSessionsGet Get an agent session with its state, budget and use, branch and merge state
+	// (GET /agent-sessions/{id})
+	AgentSessionsGet(ctx context.Context, request AgentSessionsGetRequestObject) (AgentSessionsGetResponseObject, error)
+	// AgentMessagesList The session transcript in order, one page after a sequence number
+	// (GET /agent-sessions/{id}/agent-messages)
+	AgentMessagesList(ctx context.Context, request AgentMessagesListRequestObject) (AgentMessagesListResponseObject, error)
+	// AgentMessagesNew Send a user message with entity references; the agent answers on agent.session.{id}
 	// (POST /agent-sessions/{id}/agent-messages)
 	AgentMessagesNew(ctx context.Context, request AgentMessagesNewRequestObject) (AgentMessagesNewResponseObject, error)
-	// AgentSessionsCancel Stop the session's current turn
+	// AgentSessionsAccept Merge the session branch into main as a whole and end the session
+	// (POST /agent-sessions/{id}:accept)
+	AgentSessionsAccept(ctx context.Context, request AgentSessionsAcceptRequestObject) (AgentSessionsAcceptResponseObject, error)
+	// AgentSessionsCancel Stop the session's current turn; with end, also end the session
 	// (POST /agent-sessions/{id}:cancel)
 	AgentSessionsCancel(ctx context.Context, request AgentSessionsCancelRequestObject) (AgentSessionsCancelResponseObject, error)
+	// AgentSessionsPause Pause a session; the current turn stops, the worktree is committed and the agent process ends
+	// (POST /agent-sessions/{id}:pause)
+	AgentSessionsPause(ctx context.Context, request AgentSessionsPauseRequestObject) (AgentSessionsPauseResponseObject, error)
+	// AgentSessionsResume Resume a paused session (ACP session/resume, else a new ACP session with a transcript summary)
+	// (POST /agent-sessions/{id}:resume)
+	AgentSessionsResume(ctx context.Context, request AgentSessionsResumeRequestObject) (AgentSessionsResumeResponseObject, error)
+	// AgentSessionsRevert Discard the session branch as a whole and end the session
+	// (POST /agent-sessions/{id}:revert)
+	AgentSessionsRevert(ctx context.Context, request AgentSessionsRevertRequestObject) (AgentSessionsRevertResponseObject, error)
 	// ApprovalsList Approvals, pending first, then the most recently decided
 	// (GET /approvals)
 	ApprovalsList(ctx context.Context, request ApprovalsListRequestObject) (ApprovalsListResponseObject, error)
@@ -12632,6 +15264,18 @@ type StrictServerInterface interface {
 	// HelpGet Get a help article (markdown)
 	// (GET /help/{id})
 	HelpGet(ctx context.Context, request HelpGetRequestObject) (HelpGetResponseObject, error)
+	// HostSessionsAsk Raise an ACP permission request; the preset answers it or it becomes an agent-permission approval
+	// (POST /host-sessions/{id}:ask)
+	HostSessionsAsk(ctx context.Context, request HostSessionsAskRequestObject) (HostSessionsAskResponseObject, error)
+	// HostSessionsDecision Read (or wait for) the decision on an agent-permission approval
+	// (GET /host-sessions/{id}:decision)
+	HostSessionsDecision(ctx context.Context, request HostSessionsDecisionRequestObject) (HostSessionsDecisionResponseObject, error)
+	// HostSessionsReport Post a batch of transcript entries, the session state, usage and the ACP session id
+	// (POST /host-sessions/{id}:report)
+	HostSessionsReport(ctx context.Context, request HostSessionsReportRequestObject) (HostSessionsReportResponseObject, error)
+	// HostSessionsClaim Long-poll for work — sessions to start, messages to deliver, controls and permission decisions
+	// (POST /host-sessions:claim)
+	HostSessionsClaim(ctx context.Context, request HostSessionsClaimRequestObject) (HostSessionsClaimResponseObject, error)
 	// JobsGet Get a job
 	// (GET /jobs/{id})
 	JobsGet(ctx context.Context, request JobsGetRequestObject) (JobsGetResponseObject, error)
@@ -12701,7 +15345,10 @@ type StrictServerInterface interface {
 	// AgentProfileEdit Change the agent profile; the rendered config files and AGENTS.md are committed to main
 	// (PATCH /projects/{p}/agent-profile)
 	AgentProfileEdit(ctx context.Context, request AgentProfileEditRequestObject) (AgentProfileEditResponseObject, error)
-	// AgentSessionsNew Launch Claude Code or opencode in a project worktree
+	// AgentSessionsList The project's agent sessions, live ones first, then the most recently changed
+	// (GET /projects/{p}/agent-sessions)
+	AgentSessionsList(ctx context.Context, request AgentSessionsListRequestObject) (AgentSessionsListResponseObject, error)
+	// AgentSessionsNew Start Claude Code or opencode on its own branch session/<id> of the project repository
 	// (POST /projects/{p}/agent-sessions)
 	AgentSessionsNew(ctx context.Context, request AgentSessionsNewRequestObject) (AgentSessionsNewResponseObject, error)
 	// AliasesList The project's aliases (train-current, baseline, production, …) and the versions they point at
@@ -12835,8 +15482,61 @@ type strictHandler struct {
 	options     StrictHTTPServerOptions
 }
 
+// AgentSessionsGet operation middleware
+func (sh *strictHandler) AgentSessionsGet(w http.ResponseWriter, r *http.Request, id AgentSessionId) {
+	var request AgentSessionsGetRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AgentSessionsGet(ctx, request.(AgentSessionsGetRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AgentSessionsGet")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AgentSessionsGetResponseObject); ok {
+		if err := validResponse.VisitAgentSessionsGetResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AgentMessagesList operation middleware
+func (sh *strictHandler) AgentMessagesList(w http.ResponseWriter, r *http.Request, id AgentSessionId, params AgentMessagesListParams) {
+	var request AgentMessagesListRequestObject
+
+	request.Id = id
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AgentMessagesList(ctx, request.(AgentMessagesListRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AgentMessagesList")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AgentMessagesListResponseObject); ok {
+		if err := validResponse.VisitAgentMessagesListResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // AgentMessagesNew operation middleware
-func (sh *strictHandler) AgentMessagesNew(w http.ResponseWriter, r *http.Request, id Id, params AgentMessagesNewParams) {
+func (sh *strictHandler) AgentMessagesNew(w http.ResponseWriter, r *http.Request, id AgentSessionId, params AgentMessagesNewParams) {
 	var request AgentMessagesNewRequestObject
 
 	request.Id = id
@@ -12844,13 +15544,10 @@ func (sh *strictHandler) AgentMessagesNew(w http.ResponseWriter, r *http.Request
 
 	var body AgentMessagesNewJSONRequestBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		if !errors.Is(err, io.EOF) {
-			sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
-			return
-		}
-	} else {
-		request.Body = &body
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
 	}
+	request.Body = &body
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
 		return sh.ssi.AgentMessagesNew(ctx, request.(AgentMessagesNewRequestObject))
@@ -12872,12 +15569,49 @@ func (sh *strictHandler) AgentMessagesNew(w http.ResponseWriter, r *http.Request
 	}
 }
 
+// AgentSessionsAccept operation middleware
+func (sh *strictHandler) AgentSessionsAccept(w http.ResponseWriter, r *http.Request, id AgentSessionId, params AgentSessionsAcceptParams) {
+	var request AgentSessionsAcceptRequestObject
+
+	request.Id = id
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AgentSessionsAccept(ctx, request.(AgentSessionsAcceptRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AgentSessionsAccept")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AgentSessionsAcceptResponseObject); ok {
+		if err := validResponse.VisitAgentSessionsAcceptResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // AgentSessionsCancel operation middleware
-func (sh *strictHandler) AgentSessionsCancel(w http.ResponseWriter, r *http.Request, id Id, params AgentSessionsCancelParams) {
+func (sh *strictHandler) AgentSessionsCancel(w http.ResponseWriter, r *http.Request, id AgentSessionId, params AgentSessionsCancelParams) {
 	var request AgentSessionsCancelRequestObject
 
 	request.Id = id
 	request.Params = params
+
+	var body AgentSessionsCancelJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		if !errors.Is(err, io.EOF) {
+			sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+			return
+		}
+	} else {
+		request.Body = &body
+	}
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
 		return sh.ssi.AgentSessionsCancel(ctx, request.(AgentSessionsCancelRequestObject))
@@ -12892,6 +15626,97 @@ func (sh *strictHandler) AgentSessionsCancel(w http.ResponseWriter, r *http.Requ
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(AgentSessionsCancelResponseObject); ok {
 		if err := validResponse.VisitAgentSessionsCancelResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AgentSessionsPause operation middleware
+func (sh *strictHandler) AgentSessionsPause(w http.ResponseWriter, r *http.Request, id AgentSessionId, params AgentSessionsPauseParams) {
+	var request AgentSessionsPauseRequestObject
+
+	request.Id = id
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AgentSessionsPause(ctx, request.(AgentSessionsPauseRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AgentSessionsPause")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AgentSessionsPauseResponseObject); ok {
+		if err := validResponse.VisitAgentSessionsPauseResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AgentSessionsResume operation middleware
+func (sh *strictHandler) AgentSessionsResume(w http.ResponseWriter, r *http.Request, id AgentSessionId, params AgentSessionsResumeParams) {
+	var request AgentSessionsResumeRequestObject
+
+	request.Id = id
+	request.Params = params
+
+	var body AgentSessionsResumeJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		if !errors.Is(err, io.EOF) {
+			sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+			return
+		}
+	} else {
+		request.Body = &body
+	}
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AgentSessionsResume(ctx, request.(AgentSessionsResumeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AgentSessionsResume")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AgentSessionsResumeResponseObject); ok {
+		if err := validResponse.VisitAgentSessionsResumeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AgentSessionsRevert operation middleware
+func (sh *strictHandler) AgentSessionsRevert(w http.ResponseWriter, r *http.Request, id AgentSessionId, params AgentSessionsRevertParams) {
+	var request AgentSessionsRevertRequestObject
+
+	request.Id = id
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AgentSessionsRevert(ctx, request.(AgentSessionsRevertRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AgentSessionsRevert")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AgentSessionsRevertResponseObject); ok {
+		if err := validResponse.VisitAgentSessionsRevertResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -13649,6 +16474,130 @@ func (sh *strictHandler) HelpGet(w http.ResponseWriter, r *http.Request, id stri
 	}
 }
 
+// HostSessionsAsk operation middleware
+func (sh *strictHandler) HostSessionsAsk(w http.ResponseWriter, r *http.Request, id AgentSessionId) {
+	var request HostSessionsAskRequestObject
+
+	request.Id = id
+
+	var body HostSessionsAskJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.HostSessionsAsk(ctx, request.(HostSessionsAskRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "HostSessionsAsk")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(HostSessionsAskResponseObject); ok {
+		if err := validResponse.VisitHostSessionsAskResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// HostSessionsDecision operation middleware
+func (sh *strictHandler) HostSessionsDecision(w http.ResponseWriter, r *http.Request, id AgentSessionId, params HostSessionsDecisionParams) {
+	var request HostSessionsDecisionRequestObject
+
+	request.Id = id
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.HostSessionsDecision(ctx, request.(HostSessionsDecisionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "HostSessionsDecision")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(HostSessionsDecisionResponseObject); ok {
+		if err := validResponse.VisitHostSessionsDecisionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// HostSessionsReport operation middleware
+func (sh *strictHandler) HostSessionsReport(w http.ResponseWriter, r *http.Request, id AgentSessionId) {
+	var request HostSessionsReportRequestObject
+
+	request.Id = id
+
+	var body HostSessionsReportJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.HostSessionsReport(ctx, request.(HostSessionsReportRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "HostSessionsReport")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(HostSessionsReportResponseObject); ok {
+		if err := validResponse.VisitHostSessionsReportResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// HostSessionsClaim operation middleware
+func (sh *strictHandler) HostSessionsClaim(w http.ResponseWriter, r *http.Request) {
+	var request HostSessionsClaimRequestObject
+
+	var body HostSessionsClaimJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.HostSessionsClaim(ctx, request.(HostSessionsClaimRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "HostSessionsClaim")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(HostSessionsClaimResponseObject); ok {
+		if err := validResponse.VisitHostSessionsClaimResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // JobsGet operation middleware
 func (sh *strictHandler) JobsGet(w http.ResponseWriter, r *http.Request, id Id) {
 	var request JobsGetRequestObject
@@ -14312,6 +17261,33 @@ func (sh *strictHandler) AgentProfileEdit(w http.ResponseWriter, r *http.Request
 	}
 }
 
+// AgentSessionsList operation middleware
+func (sh *strictHandler) AgentSessionsList(w http.ResponseWriter, r *http.Request, p ProjectSlug, params AgentSessionsListParams) {
+	var request AgentSessionsListRequestObject
+
+	request.P = p
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AgentSessionsList(ctx, request.(AgentSessionsListRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AgentSessionsList")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AgentSessionsListResponseObject); ok {
+		if err := validResponse.VisitAgentSessionsListResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // AgentSessionsNew operation middleware
 func (sh *strictHandler) AgentSessionsNew(w http.ResponseWriter, r *http.Request, p ProjectSlug, params AgentSessionsNewParams) {
 	var request AgentSessionsNewRequestObject
@@ -14321,13 +17297,10 @@ func (sh *strictHandler) AgentSessionsNew(w http.ResponseWriter, r *http.Request
 
 	var body AgentSessionsNewJSONRequestBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		if !errors.Is(err, io.EOF) {
-			sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
-			return
-		}
-	} else {
-		request.Body = &body
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
 	}
+	request.Body = &body
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
 		return sh.ssi.AgentSessionsNew(ctx, request.(AgentSessionsNewRequestObject))
@@ -15201,408 +18174,496 @@ func (sh *strictHandler) SecretsNew(w http.ResponseWriter, r *http.Request, para
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"7L3bciQ3liD4K7DYaVNEtzN4yZS6ijTZVIqZkrJKKXHIzKrtLWWnQHdEBEQPhwuAk4xSpVk/je3zzJrt",
-	"077u+/zC7J/Ul6ydcwB3eATc45LBpKo0bdalZLg7cIBzwcG5/jxI1bxUhSisGZz+PJgJngmN/3zxmk/h",
-	"v5kwqZallaoYnA5ezwQThZV2wbS4lUaqImE/VcqKjA3FeDpm3w+efD8YnTEjioxJy655esO4YS8nB6+4",
-	"TWeDZGDSmZhzGNwuSjE4HRirZTEdvH+fDK6EgUHPlbqRYnX+lGeiSMU7Q699/n11dPQktepGFPhPcca+",
-	"trb8rsgXZ+yKz8WVtOLzb/j9Gbvgdvb54Rm7EmmlBbsWM1lk7PU3V2fsydFBxhfM5DIDOPogfJ8MSq75",
-	"XFi3T19oXqSzb/k8Ai09YwWfi4S9ufzmQBSpymCrzKJI/+nky5Ojk88Ojn578OQoYW5J/3TyJS1KZvhf",
-	"MRokAwmjldzC7hU4Ff0nGWjxUyW1yAanVlcihPw/aTEZnA7+t8MGxYf01BwGQMOKnms+sS+z1QXgAyYz",
-	"Nsz05N3f/uP/7QBGZr2grKL5uV5cVsXqhH/kucy4FYwXGdOiVNqyuxm37E5VecZmvCxFwe6knanKsnTG",
-	"i6kspowXCzsj1CF0P1VCLxrwMpotBCkTE17ldnA64bkRiQfxWqlc8AJhpA3Zx2pfZmJeKiuKdPEHsVhd",
-	"9XkuRWEP0pkyomA3YnHGOKxewMKlnTE7E8zwuYBnTAtb6cLgj0rLqSx4zrQwsBy3fuLjBuIAgAOAoA/8",
-	"Ob//RhRTOxucnhwdJYO5LPzfv0lii5sQX0dlhRcSCCyiSzBp2DU3ImOqYEP4HUQNUxN8J+fGMi14NoI9",
-	"mEszh8EZL8yd0IY9PT6hHUkrrUVhL8Vt55obgbMVrmg53+EqeL7Tss6Yn5FVRS4M4cpyPRWWZUoYVijL",
-	"xL00li2E3WAFfRC/kvcx3n0l75Fz5/J+n5x7odWPIrVXeRU5HtxDZuBpdL5yZ5mFMwIElyKVpbgUk9X5",
-	"ncAdzrksaol62JanCQPh634EWePELFOapWo+l5aZGWdWIRkybs8YDMfuZqJg/NqIwnaIGQA+XE3JrRUa",
-	"Xvz3Pz87+D/4wV+ODn77tvnn+N3hwdufj5Lj3/72/X8axHjrUkylsXpxrvJcpLDIL2VuhV5dOZx47FZo",
-	"WLAhZpKGpfV3bChBoE6BFGCldCbhiZ1xy42wh5NcVNoczMSBmasbMepYZTPmGrr0wF9ZbsVmcMuC4Dbw",
-	"Scf8/tlmVPNHGhphQKjcDzGO8QB7eJB9boXeH/u8p5eFsV+oTApUIC5yXhQi+0JleDKkqrCisPBPXpa5",
-	"TDlAd/ijUXhcNmPzLJMkoy60KoW2OB5B4OZV18CNMC/NbEpVGJr1WVlqdcvzZ2kqSiuyrabu2/CVgXHu",
-	"9kZ/xa3IQL6XQhtVsEykMhMkJbn7nqmi9bdhVpUyHbxPBr9X13sHOxwzArF/dsYmKs/VHYL2o7oGKH9U",
-	"1+Off1TXL7P3AJ3D5wvUkh8Oo8sQXs14KVgmJrIQGQkrVBBKoXG+TwwrZ9wIJudlLuaweCbtgCT6dS7m",
-	"PaCW9Ma/bLelftwIsC+0VpoNL788Z799+um/jpAz3XdInalVKCzKYCN+HsgswlTJ4EYW+EAU1Xxw+udB",
-	"ZfAU5VMS1byyao4LGbxNVr8unOq+8sAdHy+zuHhruP7PBEEC8L1dQVUyeJYpt/DlBXG/zl6OwpfeJwMO",
-	"44jsGeJnovSc28HpAI6wAyvxNrCyBp5L7jheWjE3a+eC9+leUI/GteYL+Luk0/1lHAtOaK6bwQtZJ4dX",
-	"trKZpBkycRsVbkGztr4t/0YaG6EjvxWb7YlH38qWLIFOo/WB862462Z0dxNpgxrsakwNXTqwrGK4Q61j",
-	"q590/QRRsIGDzmdKpmJLsDMtb8V6yobxn9Or75PBXGUi3+ibV/DmywyJUui5REa90MIIu14qwVv11Te+",
-	"5uc1+F6mpDmvMnEA1/dBMlAl3eSjAqWBsEuCbbO+DvG0THqZ10k68ejHjFIS4esTw9RdwRAPTGanjLNz",
-	"XDc7V5lgyHBsaFRRCJswVVYmYTMubypUnv2mwEmj1a3MhD4klCYbqMKnh78jZfg4qgyHi9gLU9ejmQ/h",
-	"62CUFYBqE8N2CG8hJyJnd2KtiRbiS6Xnq9h/ViyW0AVqrzSMO5UnwcuqAj0dL+jSWLzkCsOGHuWjwaoF",
-	"xfHzLiiJHT5GVTrdgBPc9iT19tdwBLvQ3uV68E4UX2g1kbmIHOCVVa+Enoq1i6tffJ8M6JoZ50R6Bnol",
-	"3jotGL9mKs9IO9aiyIQWGQNwTIxNMjDZXahcpot1MD0PXt2ZsBCOjtPJwTom4XlohLWymJox6JFJLS/c",
-	"n8++evHt66vxPEPb3/k3z948fzGeo1q1CfVcutm+BDxF6EcWxuoK763mtZiXObdrkfYy8o1Xjj76YZUM",
-	"tLgN6F8WVkwJCVWZ8a0Uwy6eqcX1Mpwd+5cEDNAmPYI2BM3Tyjome5FJu6W2gZq+edVxtjWEZcW9PWOO",
-	"DJm0bM5v3LUzXB5LK2PVnA1ja2bXIlVz4V8CyRdYTI+Pjo6WjKbHMbV8J7GxxNpbbNB0A2JHaQC0ClPl",
-	"vJhWfCrelTy92erLubzf6v1CbQVaTGXbSXD93cuDqPIKGtqHXjNlhI94buA6Mei5P298rey/RsIK9a2I",
-	"wACn9ylzt76xEZbN1a0wTNozBgSetR8WQmSG8aKxKA3BPp/LQozOQOWZKxj4lFSbTJS5WqBZZEzPRD08",
-	"G5ZaZYR34Hd/JwCABgkyVzZIBvWQ0VvB/oT33q7azaUh6bh218jw4tzfwxug33aR4V60dBjoQ/Tzmu5W",
-	"qOkbdSd0yo1gubBWaJOwTE6lNah+ZNzMhEmYmcGFCD1OnOWCg3+Y/e6MeUrClxvqYFwL5jeNDS9/M1q6",
-	"+/CDv7z9M115Dt7+fJw8+c179+fb+KUHFnAl7L6sBs8iNoOZYA77zJlX9mU+cIz3oQIp1WJbDiGL8i6f",
-	"fLHYGC74YhM+9Pvw3L//PhkIY+V8gyOHjvsX/m348r6UWphnkfvDhSiQQBubOdBjJgrZmISlYSU3Bm5v",
-	"J0/ZDDC82f5Ej4VSvyNHWlXJ7PZf8d/Rr2s7dFxHQxnaGKudZ8qRpRlznc7kbXTgdacJNx33aOeI2RR5",
-	"l+51/NJU+RYf4tt9R4CuchHflxLRz+AFugpycwO3P6VrJMc2xaSqFD0OrmUCQcpn13TD59lcFngqBmed",
-	"22Y8CGiQ6ClHzrnAblYSSQ6SAc2JZwlRZGSA2AHV+PtgTSElNccRbmCN7Qa3/thqJEjIP30yK3QwLcku",
-	"98YmfoHg3d7J8L/b2linmhe2ZWgaqCIVAdLcn86REfd+OPW7HfVxFMNMJ/jPAznYBpH2OhZYRDLpWqS8",
-	"MoIV6lpli5oQ4byVBQP5FDUsBSsPB3XrZDw3inFw05kmcqYmG+9YxF/Bm4vcZNFgYayPQ8ErpY8g2G1L",
-	"+0mD1vC2d1uLbe95+8DmXvQ2N9aHqG5LcjcqHo1VWmTMsXvSBIZpkYnCSpBwGNYB0YRmsLxd187nvjrw",
-	"76+++5bh42TgfalasDtumCrE4LSo8vx9EsZLxrEUOXdWVjoXdqbixxeQZ/QBxUSsJTI3dOKjFjy8/Rvu",
-	"T7f2tvwJjh9ikzLni2bbXXCWvwNtt7+e32jQTwzzUQreTsqLrONsh4OhMrETdWkX3IvheNENqDJpz0Ee",
-	"bSn01wFqlcrPed55YsQheVFYvYhAsp3LeAsFGEXxJvpvs09rlx5VGqtsF6Vx9WllwRK3OoG6SYJLv5MR",
-	"vGULGCVeLR6SijVKmDus2LD+tn0sjRLmDgoXD4FhbkDAnE24zGESa8W8tHE91Rt4IlpebQZi9BrNQrqf",
-	"gBBXjIPJpcjiQ/eqwJsrl26hg6SP2drjfP369QWjh6EcWMORqNjFFDmP06RhWm67uXUvZ1XDbBG3QSHu",
-	"YxctbgxQ1A/XYqK0+KFWIeB1NlR5JvSIlXwqzlzIoNc6ML4VHqy9WfccjZWdfaOmsthSO4B7353S2ZKG",
-	"cHx08nStxdoqW4ITOHapIJibmKPKCM1m3LDX372+YKpYsoGAsePnz+JOXvjUGxQDED9bB+DS3tXDJM2i",
-	"u3byStiq/ICd7L29+/eWltb3zRv/3vKi1q+k5tEPOTIM7MdlPe8yur+U2ljgeG1PWaHcbdHDxqRhRmBU",
-	"8xnjlZ2NcTj4DcPNYto8kNaLgl/nosOBY+S0ENmBLIiy4E8MFXVmOaQyF5gRCeNvaQKttXXsY+OZaYMC",
-	"9H2QwrgQGOEvG9cUcjyHbwAqq8hxy+vbAxOFYw5pnRg3DMeBJJVC3Ap9io/yO74w7I6jEdIwlwrj4stN",
-	"cAlpIBkkAxwgehH5ghuBzoYLvsgVz2LOf1aVxmrB5yydifSmVLKwrJRFITJmFSi77OtqikkWX/K0iXxf",
-	"0fWaz7+UXQcOuPcYZ7oqmCwkqOfSCMMmWs2dxQfEx7gQc8V6TD4TPpf5IhrzDqtl9Jz5R0pjIO/l0+PR",
-	"GU4QPrBG5BPGNfiFTJNscaf0jdBAZBQ0eRKDYza5FKWiey6HqMrB6aC4lZnkh7AEq1Vx8GT86QE3+oA2",
-	"WRbTg6PxZ9ex0XKZiiKNhyK6Z290Hn+sUh51w39DD3BJFNuRcp1hDIcJHetdl5Qm9K+V8xTbdCP/Ihhf",
-	"mQqtN8D6DsFH48++GMTdI7I70M0RZIsSm1j92HgGEXLJrfj6LxtcERwqAzgahAQE12x1THbU/PbHxvzO",
-	"8/y7yeD0z1t6apJlGX7tx16b2rXM9HT0OL1+I43oDb2+7u7egFTPsLorbyP7sg+tbWWvd7c0UNJI5NiE",
-	"23IkWQvpzniFzsl/1J9R8Nf5PTMeiq/A3Euph70jN7E/wRzrR/YQrw2RbgxbkAwzSAbKzjpOkU10ljCf",
-	"cClwepWZW6Y1uj7FM3XcuqPsXRH6ohPALjjx8Ilh7lWWyyJ6mrT8r+sGy8gWvUOMjVNHXaQ4IqodHcPd",
-	"b446uin1uZxMNhct9E2HRIkvGXUZdHF664wjQHB2AmVGrQeqmOQytSamMsIZxN24jYpEOZ3+Q7oobH4k",
-	"TbixXyp9x3VMEYDxZ5zYBfz4GTOySEW4mlxAbmtcJ63D2jYTRjggLPMcdbUYuLhvHTa+ruzJqpATKTKW",
-	"yclkGRVTLgsD8JsQX6jA4OYOp9LSh/DneDymD0cx3FldFSm3Xfo3Qoi2z7SyoNh+enzC/iC/WK9vO2JB",
-	"UmtjLCQYv91+L0KAOk6U5Q1fFd7uMmfiHrdrWfCWATXAfSZy0fNpp022MZF4KcszsqbMVYaIHLjBN/F9",
-	"OYttYwapFxRCWK+kW1zs5bT1QqSTrDsDWZEY8V5gGLdrxaSjmHWndX1FW5Jp9VG+Kp/cLWrTJVOWaTc/",
-	"L4mfVTKKaw+vGxaGF+iMv+OOiaOmt/gW0yVzYgUZnvBzNkTHMMs0WPWKU0bmKSbt+kCO+qx1x5BDxBLP",
-	"uk3sRowPtvnA3NdkcE6VHl7cuny0x7CC9/kAInqNe97kNaKPz7nrXT4uGsvj52efHT3rqtBAyRtQpaGe",
-	"1QfuQ9EGPoHoCfwhLvlbrokuXQ3eYinPczZ0aDl4rVR+AF8evGwcQeReWk9r/X4YUWdObpX9t2nEXWfq",
-	"Hn0Rg6hs7Cdb5GguGeaXvGlK3zBxi2mYCg1BdWCW+zXlWi9YoeJaqxE/rQ76Va6uMSCkJnVZ2M+e4glU",
-	"KKsKmZIF5OrqBZNEl1qYau48mrErBWXdtmwchKCxW9346fVx2hEbSj+E3/qPXETGWlKBdXog3LtBNmDc",
-	"NdBky8cC4EARz5gRWgpMlJfzeWXB+thKn1eFYI40luxcuwSj9Wf0xJxkLlU/Npwn+E0MCn+AdzGe224Q",
-	"6+ST5av5nJM7pM8oVUTjKukKBzDiv4S708HL9EN/1YEoFfFp+9xeezdwmDxXFR0eq2Ttcb26gG/FnTCW",
-	"TaQ29iyooGDGU2F9WNRGKsTqdvZbKLLmfuhui+0sJdyH0C7VWmYY5dTPFfvQCJvRPsDycq7mZWXFudOh",
-	"lo5bCOAR2e/VNRDx5pC5D2JkARbJ85ybCNb/IBZ0MwXx6IMzGckFMOpQiJUZL/g8GnEni0zcdyjCXGef",
-	"GIZvgG1HWsNmylg2PH/z/BnLxK1MBVPaHZ1zWcg53B+OYuJ4LuZKL855+dV11+UdXoDMTTqpsUrBnC9Y",
-	"ZQTZrCSeLRkbnj97/uLb8xfvvrp48+7Vi1ffXf7bu/NnF++++qIdFKqq6zzgy6KaX4ewECAbvL5hJitu",
-	"ZM0BDcqC+drbkKyQyhpa2yXDaM/EmAyqQv5UiZc0iNWVCIloKxoQ92leGXkrXgVfrcVHdNt7Nm6HTQPc",
-	"bSNR2gh6j6zgNuh4lZmXTtVdQt7clF8LntuIARhdWtse9ZbLvNM8EDkvq+KmgByDqrASrg7O80S1zwwb",
-	"Ov9TmHfiPqG7Wm5nCzwpppqTtaEqtODpDETXejMDQdWD969V7LDYGbVRsbx/lWpWo3QDuBz+OzSxdF6u",
-	"S316wGSfnpSdtnJAGKlXHot87k/acZuxH+WgIZ0P0A7qIM4I/W1PMq5iXMcZXc9V185qYshXbTutHIzd",
-	"0ydSvWkk3CY6f7NfjdZvLDjzYr6NN0QMYM6dgzKiQFfgbC6LamMXxy4coMWt2lKo1tkMm63+Cl/vcxJh",
-	"KKvEKJYiM3ANPl0N+k6YLG6lpZjxazSBK+3Ec1foUpcZBZ6xu5mC8hoUkUz023I/9LF8+1rgUyGWWbyf",
-	"i87pvSgzBYy22SaTaeBGdBh/jUi1sGyYZjeYR3ZGWZaSfKZ4t2InR8fsb//xf1EQN6CjUHfrTUcNBP2r",
-	"/UOnx5OX8t2NWAQVohpEQ7g3YTjmCm1G34uUbG/mhwrJ7WsL9WSSfStuhXYRsWap9OF2kiEMNDxZnxlf",
-	"83rvOpZrCNYZjEljRtOCZxixe63wPGyv3b2/WdHJJunpsu1gD/1eS6iJu39pef2IvPJbsHIFWcXTi1uh",
-	"F036ZpG5YHq3B8M6n8uV9nFcYOIFW7pilC9W4pOHbSc+SgIz6glO3nSje0ymIFdUg2p3k20ObtR640VR",
-	"ltG37CwmamntXdy5uYK252TG6o6wYxNZTIUutURXgBG+IKeasMpaAV4TH3lmylxak2DQlDRWppSMnMtC",
-	"UMTwkrdrYWNBX1cQieW8xROt/iIKCJLSmTmrDRtk+p3Ie1tpYUKe9gbj1YM7U50ubDdQZGeF5WDoQ+lP",
-	"4aJVJhVGiVJYPt1vDo49MMwoNpf3wmCQCzNqLrCyM9VjnQgtirSj3NBMVRSetoEtIoiY29yquC6mLCxS",
-	"tKxwCE2xB7R+qiASxD3OJqeHh84kag6nSk1z4UyjUY0I57ncJGauLlXsKMKBGBsUqW/j48tR/hV8Fd2t",
-	"6roz4YGA+MRg8IecVj4zTzP6yu+KeCej1raGcTZJ//Er9kivl+pppjVg4viqIeu33XxPq1+R1duQoj8o",
-	"Gx+J1R0xNqYU/MbFYEbulttsijuPWusmqHtW+wBxjY7mNyS2B49p9OCsiWhs78c+lMGlHd5dIXxOlupe",
-	"m/q7H9X1u5t9WtXfpd6s3m0Z7zJkvkt5+W66qRXZfTN9cKuzW1I44zLESWRDe3DiTWnLGkJK5hJyChgh",
-	"MrqWT5pMi8GHmVZDmni/1pK6RYXcDWvy9RqsemrvObgv4yFec36/Kc3IYsM3b3lebacWvO+G+6pxQndl",
-	"B2+AtT8CSIOeaeiFSGV14d1WpF1Ka1jwSuJOYVQxDZ8IpnGfl0ltHXVoj50N1nLpo6m6FCVUXKrrXJqZ",
-	"yByAeIn73gcEMS0gfEQUGeoM3w+i+kEhbbxIcXyvXs/qvYLcHqKHhNF3CXNKJsCRS7N6uaNRtygq6bZj",
-	"dX8HLUcjG14eH49OoesHVeowBb8R71JuRMJ4lmlhDKW2khXREMHhH2LsPPFiQX+z4f2Ba58zdrNcislo",
-	"9VZRZVNhN6XOq8YJnML1a4fPSPrFlChjt5ZxG9mcaeS30VJyEDG1/SL8xSqSfYfa5LtS6Heo+78DLWtr",
-	"1geNEEh409147T7whYMu1d36fI4YoMHcsf3apNrfymZZOReq2mWbw33Y7sugItaqHnIn/8J1tu2gHZWw",
-	"6uGSmpWCJQdrCKmGdrKmP89MDXdEpQi8HE/qK+ogQNedxiqMC+UTCmmgEK6EVabieb6A0j+QHe/soStx",
-	"j7kU2aW4XZ0r0g8MB/Kz44yuQFo0MRxrYc62iOW85kZsDIqtoyOD7jxRKLYND8a9744ODhopvJL334q7",
-	"kY+w6wsg7FyQGy5YD6BIYRUvCvkl8lkhkd39ZGv2+BPT7HKh7s7aW20sz0Wd8wpZCEKTvYN5/EVNTB+j",
-	"ahvB3xFnSw//sIG37bnnJX8tijn4oGvaZg6+dWXMbntCf51tt8bH0DeOQitfKwiYihvSL1rcCm1HUUwg",
-	"Ant5jJJqVBHk1XhgAMVnTgaA6Q6KYzgLJ75yQKPHbHgr9cNUKag+BAkUcnoJHU+hWB/P3EQyO3OYh5kC",
-	"JJnIpF2bJLar3z6ssRkQWkCSjXhr8aH39PlSaF66NGKrFqMeddt4/pGUuwueZf6YWcsO7ejtnSQdp5Sm",
-	"QtwF9MwZNDMDYp7Le0e+o8E6lwvBXUPUufImhWj1AkX7C+XWRZ4lWESGahdhRovQTcygw0nS3LXwVuBT",
-	"MIDvMFtj9XidRBtjPaOyIXVRDYQAM0W0QN7DwxAH3+ZjSkkK0pgas+PhVKuqNIdHh3dCTmfrPdM4ROe2",
-	"7sUq5qlqV2NYXTh6VTRLLVJ7SjqPwzOIgQJtL6pIxRlRGoYGLNwTQ78Z1KdIomIMPYikIEKLBvf6XFRS",
-	"Pf9fxbxXcr9Qh5mSjMOhlmHvxHF9EK8G9soiAw+2Mj6+Q2QS0yuKZZwOYWpsd0H86udmMLdr/BXG4QG8",
-	"MdTWl6643Womp7ON3VR32xiuNnq3w3aRY/AFwhbbZczD2kvUQ5jXFdGcc27sVSy5pa65hALzB+BAkLmy",
-	"qMQmDsyozGimi635a5GXz7SVaazzR7y23SuubzKKzYxlSFtxHzP6/JeK53IihTbk1OY0qe966qvh8kLk",
-	"p7m81lwvtkqV7sicMo190pO00FppysQtqGeKsaKE/04rmZHvbCbyPEr3xiU6REGSNt+0jxG928CX0GZ3",
-	"oejrmAdu/ZI/GvhdcF8JrtNZU27xQ7jK78PuR2Vnb4OYfaHVLcO6t9nQ/8uMc2ls/QBE8OfhJ6PT2jKN",
-	"Ol0h5zw/8203MBKxadoBWovIpKUCxTNKn+yuqX6UfHYSzyj9vbr+8ERSi/X9olaklBep8PVKt7xzb39N",
-	"R06NRRos4MpN9QgHCdar9X+1c/zC8I0C7e0fGs4KTrDtwllXHsyFMXzacfOk2nlaTbUwhvlX45dpfCd+",
-	"Hs75PaVJHEeTbZozdW2jiv46qZB44y1fbAhLPjClSOVEpniHGHn0ZGFJ2c7AWXQEboek+ja9xrPruuPu",
-	"6ZrrYlX9ZbVGRsM+y90kNr+qLrV+bfMy9mBdL6TptY7Rl8NGQ2stFVs3M56hriTuS6Xjyv3v1fU+dCWQ",
-	"WLtL9BqxwXJ+qkRFVpSqcMvKKMO4lhgkxvIOAwtVFHvNI82/vzi/YE//lVGUTR3Bc/Dym4i8/vkkefJ+",
-	"eBCUBvj5JPnN+9E/RyX3K3nf3Wsc4nXp0u0NBgb8Zk9GZ67UnBap0nX/NHoFZCSi1luEl93rrgpwf3AL",
-	"jdWUwt3B2EqfbNV0ot8dS5f4ILQGlWbo58FkZvwZsCSy8L5PwYZUiJlNcj41ULAvFxmTxaYpr6/k/VcA",
-	"QLcW2p4ZmtNvdmR0BiGUWhifo7ykqGBbMFQeMIIQsiPlvQsz32g5F37saDdccSvF3bohXsn7C/fmBkcK",
-	"7P3VjGux4bWv87QAQSs0t9XGQ+3Qh8h9sjH1rjOKujgRR8LtRbR3Zyn34YvFIISm60QJiKXBX0x0vpL3",
-	"G+U7xkpcCuzVqJxJ6YzRaoivnKH8bqZy6qRJ+b7hyMdr4i/W5TmGEmBrlp3ze5dw6UL1u9Mvd4zv357E",
-	"t6Xk99347LprbWfh3sAoBgdWzLrVQWu0/1t2WHbSPVJujWK+3Qt1VYtT5po6Jex31MkXHYdNgQOsjMGG",
-	"zvyONRBoJDfC6Iw1tdTrAyWQpG3SXEsKDbF9uimxLaWwYQq17xbixLsvJMv1VDjjLFDcga42aEPMxu/w",
-	"CvlpR1EiGiveVgueELOzIVZTdJqQqSu3ceNKo45OW++DuJgK/ARgDljEf0qR5ybqMnPG+khd7pxbees+",
-	"hgOQ3jyDXRrjxO/oF5ilHXeEjgM1l5ZcbhtmmDcXq1AwddgdfUygJ+MO1tiHGo3cuLMaTf77bbnzly20",
-	"1/FR0+3pw8T7UmKKJ2lHzmB3vysoLKDFD0Si9NM747+KkKhX6WbomAvHSJjIjWBHg2SHM2YJbM8/wVtM",
-	"QX4ccfud056hS+Q1v5Y5+DH/9n/+P+7Bvw+PD4MvRyNaXWuwNfy3rU2/rUd1EPVFo78utXRQlTasFLpx",
-	"gFCIqNsGRIiL5nDse+CbCc59ws8wzPXRgmeRQENuZKtcov84evEMz7tNWcQt0cXWx5T47dnOjdl5y/F7",
-	"tsug37hvY+NaZXn+tc8rWVI84SZ7gEktDJM4gKIEpgbWOVPZskKwGWfccQ12gm1DokNqDCAPtyfQ82vc",
-	"BvMljj76qfd5kz6yXP9Tld0FTZfaXaLTxZMwHd530mBOsjT0FjgYPzztrMMrsVM2WueFeDXUcYNiEg1R",
-	"NFlSPjnK72U/KmoldvdUqP3uQ6OsrSLNxE+oi0CCU7tFd1YFGXtELUi7G7JQraDtKMfdQuqRGswYdxnu",
-	"q0ofES/dSFonV6QrIEUTbrZ+924MRR1oeHFfihQYsz77vRk20IS33cwa5PbmxbbsApyfte20vVWUVvla",
-	"RXoaqrSai8I2MhcrCJ7KaL1PQEg9xRZVJd9H4W3a0SxdTCzLBTeWHZ+AQULz1Apt6jKeS8kUiSso++3L",
-	"q9fs6oL95ujo4LMnX6z0uF/uF3QSWR+GtshoQPxmCQY4wOIL9zJaPkuuKWF59c7rzC4z7sNNnX4SqlXu",
-	"aujmH0/LCk+lC6GdLflC6Od8O9f6g1X6IftWaLtqosmDnYiSr9v6HUp2BbjZ4iuMq3ld6QL20rWtie9K",
-	"557vZtl537X6mm5Of94Q1iVedu5pTyv41TsLn2GGRFNNZLs19s8yLSvMuqA5nJaC/86QLLcVeT0UHt2G",
-	"TmJqGlCv7Kefo8PX2udf1WJOUv2r3jE2sO9d6KAFrb9OXE+OP4NNK91/npxELxYX3f6DIogYw77ahQ9T",
-	"HUI2WCkKCh1LyJRGUX/4tq90gy5rI1JVZGb1BrRd8EFQA3r1IJVuBZsZ7ns7UiYDrEUXrWJQLC3TWFUa",
-	"lqqqoA2qvS1137u7GTV9qnMDXET3DiLRu4tpsW/jdGCE7QhbibRZ7I1YoXdG7tSYVlxnmsvcHLhDZccw",
-	"lAtqHrnKSX2JF0Sk2EXw6fEJlk1quTOxOgZ17Cg6Uis6CxO6mK/4mXqQi1uR+46X2Jvm6cnJ5v4z/AxH",
-	"egHTRP2ChbG8q8hwd5PX7qCspu50e0Eza0tzenjosyBRIzycibw8pD1wtYqhrSf+S9QbDS/VYXl1OXf8",
-	"ai3Z4tMgLIxWFCff5e1aTXpuAmQ27RYcbyzhB+qAw9fsWRJY1JRtKyfhxp2r3Kx1Zyf8WClrrObli+5w",
-	"J7St+/d8J9YhbLOPfIoWJqo/+b0PG1k1FEAID+qU9csljK005pPVv8liOnL8WCojrdKL6IwbKr5uHxrN",
-	"9wEKZPZU89nCSNG3jCZSZMtLu9/BzbbpsvmgN3oK6kttWINqo7ApN/1+Q6cQyqS594dJP41dxuEuvBFs",
-	"HkG1wmWrxoC6reGGJd9fhyXHGn+iv25BfSd0e+3SFXH7voD1F8k2prH6WUwUOMfpWhw2Q0TsaqstBvvQ",
-	"0399wXJrXbcKDHthphRFhlb8jFPhRfzorI68Xbra4NOOe0d/OerglvFAt5yeW0T3jSe854T7tX7Xd6kP",
-	"HkNLyx9K/7f9Xva5WX97sm5vula6i2kglBgrRe4oUqDh9dqcDq1XHf9ARJ6zuNfeO2+K973aFmLJ63gS",
-	"dZfudJT6suJbO2ebwzLsSb3eG/pBR+YO4RFbOWt7qGMfTnc31Ac43t0ImzjfV08GqsEAFeZmSqbCnJE/",
-	"jGoJXleWgl28eTBiLGRDl7/hhkq8/BoNosy/9hoPL50jMCta8W7chHWEN4/e+cdhKxlJVVkHcmd6yy+d",
-	"TbdRiRtduCG0zRXfmPOpjy9VzBxIXf96OwK69rZnTMxLu2CtlnWDuOdfdPdm9ZG9mLUJuUITvP9VRSb0",
-	"spkpNrq/NC/VP/7u9QvIPop9AUl866/Zfj54OfGXbrc7a3Z1+3AjD9JqAnsuyKEOGiBnRhQW/T5KM3un",
-	"zliQrxhQ5dOjow1Oj3C1CEDPsi5bNNzVtLHbU0/vsCEQTvQ2n+aq8P3Ro7VXFcNXSNJ79xdG8Zg515Z9",
-	"/fr1BRseTqVdsQKNp9KC7lLZmSisTLl1jVZ5wZ5dvITyXGgAdr3ybkThG6GX3jG3cxsvv22+ykhZmdka",
-	"WwilSVVmxlxpAg3XLm8LCQyzVJ3FVGkqRBbvPUmfxnHzlbRfV9dUFK24EVlg/XDBJ47hfb9faRAskcEv",
-	"0J92Vl0nrNJ5FKNUQj7CmnxOLuGZ8PGo9Krz2AdYMsHy117eXNpS3Qezpqgesr6K93RpWYacBbxtpQLD",
-	"0p2WDYh+5868AcujJ8UmyaAaD9vGMGb4AhLbF0Cazi7n+cWwGyFKGFpqasGPIVzUUjAw4jW57C2QKTVL",
-	"3gZ5QXHPCW3CokgjXN3dXhpowZMGIHFRpPB3yQGXrrFx1H7WIyjIvUBv4IiOi0EM479Em/CrEogQngIB",
-	"rz2D9t09tu+YpKU0h2XT9Tmeg/FaPY9S4beKtN1W+SUYzDkaam+HWd/IuZ6lbubc1wqWVt9RCq8jebbe",
-	"kHjefBF/JopUZa4g3BIPciM+e+rqnOfCxQZwjZoCe/P6y4PfMHc4132V7OTgN26Fnz2NkvxMGn+IxXv3",
-	"4yy+agyVXslFUqvkWNJ16HuufHo02tST4giKdimWjdTVlRrH3NAnAO/WqGjqYNebHFYe8jvRjf+u1tyP",
-	"0kC7B8ya8pZudVtY25sadttlNLsONXCARsc1M74eefBSM0/SVILitmfZ0Dw9wqG56ugrOJWWwVMWD2fq",
-	"Ye2t3FKe5hCQbujjFooNLh902k6YFkblt6iKtC8igRIDOp6qvCiOFuLfziYS7Hw0lGgDTl1i0W7rCc11",
-	"Eb3dPGOw20z7DJFaT6yXrpWyK3eC5StB6P3+98Pvv78/Onr753+n/8YTeVttaaNowiLazpsgULdTbML1",
-	"GZuqPBMFMwIbZGBpXZOwAtgzl38RmrJXW9YSw35UoHYWWN1NM2w1YUKlhxvxDj9pgpDfNRZ7fz4O3q5Z",
-	"St1ndpkcO9vPbt/DN66t0hRx/NPX+6wyslrOf4WIt6sqv7qJm5kL/Tx9Cw+aFaxei1eaPsONgse8WGP2",
-	"R09NBTZFcgVVqbAGmthccytMqhMGKyOOPzDWp5n/5XbNoXdwFQcNalanMjN+8uln/r7lNusTLJ+lCpny",
-	"vK5NOpyJ+9GmpUI6PWo7trdu2lTHJL/fS6jzSG+y4dXF8/8dzKl3aB5QhWDiXhobb2LU7fdsDQ6vbd/e",
-	"eiN3s+8l7d3Nvif2GojgNTYkA+cpFmNIGJldT63IRTlTxSJhYE3eKuq15ezuKNRC107ilo27ht12Me2/",
-	"/du//dvBq1cHz5+7uuZmxvEf4jRs20R9ZDJ/4W2azR2fsJm4Z5mcSltnZHrSDTmgfaxhZYqn7w/oHyfN",
-	"P77/fgz/5AeTtz8fRyO94gJbktQOuDviKvYu/5WG321Aty+fcimKTGiRxZW/vovWVkqcHygOwpKNejtL",
-	"525Wszj/kgXqdFn3gZfPWs5JMAUuNcFrxcPHnBvqrhC6f06lp7yQhmgWDJSIx2VwwFJusXTtjQCWdr0k",
-	"twKm1PK2thFQ8GK0EKuHLg6JHyVauHdra92Q/mvGhbgbsZnKa1M+rhTVcYKHomvd7GAvjOSlrtpFYrbg",
-	"Sucr6LYK7Zds6MMDMUXemBmT5JI2VVkqbSmMLJj30w27TC+R4wpQsrBCF9xBds11CzxnAAKW0ipnZc4L",
-	"ceY2BntViDtviQ2+8v1FyUztdx439ozhLvCCDjzY9NXdCJRkD94gceQxoM2NK8VhSZxOC7U3QNXhq3T0",
-	"smuxUEWGxXNRtrFhXdMDkIEsKbQBn+xMNUXmXXDxqmMWf362XX35IMp69WBbqmvv+gS7Rbg6+YMdylJ7",
-	"14EvTo1WpDutah50U2DgqbMQDjYjvqoIY/cjpcqoSNIdmplTBeapy+OTEcZtwZ6Dknza2A59ywJ6AHer",
-	"ltf8jM0FN5UWmftGV4UZpxyrVkKJwKCdeU94yZaXkEgmMQGBZ2i8D7p3dndnNOyUowLdH8Ds+pzL3CWh",
-	"xFFelaWA3qRVAdWlrQkPnE8My+B79tXFmwMIlXKxB+vttD0ZH6twxY7nNNo3DH497+zw5XpUdCQTzFzX",
-	"q+0bg53z8qvrXfImG4Dc9H6yJFhJe5bYXmAuercRO8JL88pYdg0uDiu05LmkjhNU9Af7CgNqpbnZsOVm",
-	"Z42XS2++WkrqXi7JslaTn22TdxPplBfmCdPORHfSdXi8okyYdSzeLqAchMXt8mGHVVK6FlG9oqYqXhZk",
-	"by/zyrySRWV6Cq1URSq05bKwi1N2NP4UZGFh2P/8H58e/dNmqbJlmMe0pjCZe5F0L9hVSOSyotxQTPV1",
-	"4KJnXm3zIv+ARL6Oden2dYLXN54kWR1uaIDeVUpZWV1QkbjEj5s9c0gNg6ucQHO8XMv83uZcHus9XVx9",
-	"yQ+sycmGl0+fQnGkVGPTDWngTBSazp/Q1ohuM5HeYPOAuAJVFdtHf/TEkn1R1xxq6hv4+LFkm+gxUD2o",
-	"bFQTQWybrmnmk6C8UdyBWq87wkBEHs7nXVDZheYLNmz+bRjXGphNFizQJbrOpFh1E2PB7qO0u+iFqyFb",
-	"AfZhpIrxQD0MmzwaFpQC7a1OshT93BbQpt7/Zkdd7giWquSZSVyCkUDhzm5VXvkLKdS6cYXkXKnwZht6",
-	"xX4TpRZeEJsyKGVMsEG/SFMDo6vijN0eOx3YsGM29DsCId1oOKuDkY+TPYjc3YShl0PxIPQaZC9F+kCO",
-	"KdRX/FZkf4wWznnGDDxkBk3umDvGkcgy9lMl9MInhf7ky73XBXYSDNTHmz38oym/tKSG7T8PKG6cvduy",
-	"KGdvcKHfMB9uiXvR1+Zo/8n0YaUTmn6pgOQGtrN6HfuIjq4H+4D46PbGkmO9v7rdu3FvZmo94JWwe6t3",
-	"9mnUIFXTwJLEATlPhd6JUYBrSq6N0GdgsaiKmwJaXTUcFPSWksUtz2V24BHctoptGdBIg0S3Hbm7o9rN",
-	"llSAQ30dj+joqJHeYVbuppJ6jg+sfd+RFngTtWm9qNtbeS1yJi1WSAO4EtZ4XhO25HhN6rikpPbHvQuz",
-	"yn5U1wkYW7S65XlCNR8hP/edy8+t/RkrsIK4jS6C1GLT16l3A5V6yfJZzYWWaV0RlmIQSq6lATUAjno2",
-	"vBM6qUvaLwPeILFsEnI7Y2Q/McylD8KJXQbVsTsL/6+rRjyJT5itFrqB1b15ibn95tR1owXKwH+JU/pB",
-	"Zr4TrZv4dDnSto3Ipc+68WpSVYo+fd1Vbcjlbcv/35yzntAGQTp6MgBg4p1OClmWItrM28yUtkzcp0KX",
-	"1hM/BJrVXJByraUwXa7AquPizqdbFsbqTo//0OM09GX5tHYKTCFM1J6rNScqiqa6+U3cU4/SP2skPggF",
-	"cmL5U+LNS+rLls5kuaIyIfetjgwrSBhtd4JqWEIm54Q5mBNWCytcVAK+1ISc/K7eRxFyuOPlFP4nq3RC",
-	"BbNC5tbiNkq9qgxNl6eDZEB0X//jc/8vUf8DfoL/H4+j9Kn5XZx1m4OTGwafxWtT+WZS/WRAe4sL8N/Q",
-	"1N3I7opDCarWt++vC4wIotsPvlRX0xVwU5MupnLTMMrw8I6wzE9duwZ6CDfM+dsi6ozb1m3P/ob4Ywwc",
-	"zeoAgCZaOKGSi4l1VbtaVwsTd0NYHjESfC2tYVrYSmM7BAhyASdEU4Z9tfKGroqUR+srvlIaxZwBI2iK",
-	"wf4zaLUm53ID+/VPTcpMaykNLLiEEII4scW9kc/cdSzVIhOFldB1qGnVKH2Ij9+LDw3i2f66FruOGZF+",
-	"SKwM7UUdKcONfWPWhG4AdJgtpG+FPjAyQ/+jAXFHegvGAjmG32xhG90UEVJ/Tewu5eBP+/VjXeGrfbdB",
-	"d5T5c6urL003kS03jJlRLYIJRw2imKah39Q8GSSDH8EGecBLOUgGWGs0KsJp9L3cNXGkD7loNng5/bmr",
-	"5hEUTj/uvlrSEFubNrcn8O0JbXt6Ck7IJY1TSysOIBqwrpUvilQv0GesKous5C17ziIcXlM/e/Kbp/33",
-	"1GSAaUPfFfmCQjg6aoY6uiY4u5F6FdecvQ6Mik6Xsu6qVEPoI/qrm3vIj+qawnGbhKc5X5DokEshVkM/",
-	"11/9PEuVtI6TJ7957/58O4pTl8txbS/iG3UndMqNYLmA6Uziw78AtIybGaSFP/nbf/z3p0dBcczesl4t",
-	"YKKw+OTijvj69WHyy10v0bJRE851VWQ5HKpuGsOsFl25AyeffrZxzJZ7vc+L9zqojhaKvDAf2/dYASyb",
-	"G5nDWV3KUrgMBwx0OEhVMZHTqNjzc1zwRa545DT8wm0AjeG8RUvZdakqpTDUm5l7ujwLQ/4MMzNZeoPs",
-	"tSyopeby3WGbrPAW4nsydJbs0lKLlAJ9KFHJw9RGsIsqDXf6sClDt6roLWFqE7ijYeatgeo0ZtqYPhIJ",
-	"gq95nn83GZz+eduojp9Xcpw3y/RfpiC47xrfpGgjTL6h19cdmDVA9QSrO/J2dU/2caQvb/PuZ/trZctz",
-	"1yB7i3M5dZ+sxMp+tkEoLH7cBcyLQqs8n4tYQkVXkCF4OZ+c+MBC7BPPi4rnTBQ2Xoqt0nJ1GGVLyJ06",
-	"PTy0ypYQB8jeXL50eUH/5ZIh3OsW52CkKaKLdB6oOlZBRe7qzv2N3qCm9rUVJUKjirCbDPv//m/yU6Y5",
-	"Nwb+osAWlvIS/qr9aBjZ5QK3gJPjQVguISbipV3JjSCv8Up7m6g/luvsXdoZQrTOTUUrepfy8t30ekNz",
-	"LEQYvJt/3JiNWBY7IJKKBu8SndFPba0MpmCPl3esHSaxAlRrs9rY6A2VeFML1pUEM2d/pqzbus9CnUKS",
-	"oBKGyphLm0H3PpA5t05JjDV02OYy7UbeWKo+g/f9rWDl+O61lbunV7sWW2lGb4+VBOtuFtSBCh0Pc+/U",
-	"gyEVBP8XVWFECJZNManSoBqf/O0//vuTk41U4zFd/54cx69/reyVFQApmPZv//W/+aAT+GcmgGK5xYoV",
-	"S9EorUys0KDvA2PpdaRkP8rgbQ9cTefvD3a4dzUe3yXJZ7tOHqv5I/32iz8pfWNKnoqNu6fnfKEqu65h",
-	"wUpXhBvodcB4KcdWQePjYdTHtcnFvQbZc6lrU9/jt+sNHGn6PMRCPXosUPB9oOP2x73sM3qhPXWNkqBh",
-	"/3LjgF7U70MZrQfzbLS7NtrG70YhDb0RDQ1oW0c0bEbrKyt4UILciu6W9dI1hNOLjk4BuRPTPliYT6tu",
-	"bh8HvMdotEmkictVE/qqKzuro9++Us4cnuCfrxeluMLPWJpLUdg63fDV+QUmcpgx+xZL27JhplJzaEqR",
-	"Hh795gALD1QwmxnPM3Z5PDplCjvBYTog+7wegX0Ork1I9YexP3dedXJlu8JU9NOt0Ne+xk3g7cY41DTH",
-	"qjqYrYyhZWRPYvcHvgo6vX0GZ+u1gelcjSxeysNblfLrKud64bI7YHislGVmvBRsIu9dBSP4esxeVRbX",
-	"YbDQigPdnLKXmZiXyooiXRz8QSwS9nJy8AqDZVXRynBJ2H/O9OKyKj4H/sL5FkxQIRwBFtRrdc/ErSjs",
-	"mH2jiil1/yZ/jWEnRyfsZ2zv/v6MTSkBauW5jxx5mb0fM6ykRNBi+k6K4B+6cvf/8qPBW9OX5+y3Tz/9",
-	"15ELCgVi8gUksNUvb9WHH7PvPD5dZFKz2WXOsWIxTEiuKIxRMFSAoSCCwVwvnlqWgi8O93dOW08kyHhh",
-	"7uDBp0fHDHs1uEpPFAkq52Uu5mjkgi/H3xe1mx5iOhEQqFsWqAyng6Px8fiIvNGi4KUcnA6e4E9k9EFm",
-	"PyTrnet9Yg5/ltl795urPmJIZms+F6gvdll9mlcOX2aD92+TQemyRAJW8KWMX7mxwXuQbD16TXh/EAu0",
-	"Kq354jmSH8IEokUY+4XKOisvNq9IYQ4vCLv4AYomU6rC3UBOjk66B3HvQcP/Zy7FjG7FLldz3Xe+pwTI",
-	"NeNlNV4JmMMMEaKTDHXcjjlz4Q51WLVyPU/GDstjQLIP6ICLCi1xAIatmqzJGAxDD04HPMTZIKm/OD0G",
-	"6GI0dJryInWVyPdMO66zjTmnGR6efF5OUK5tTWktSjnaAOO0qxRntwdaubKqdCLG+BIPvkxYpYvtKcDv",
-	"fIQCnACmwA8RQ51/4xtqkb6EtOUgIai94b+oO9ThHQii+1OZicyZdeg1gdH/mSgoW1PCKD5olBSa+gZF",
-	"Okzo7ChF4Wph+cHwmln46lQ4XbQ6VaTZYJNdrjSTXcA0YWoNOJHRY5/6sIvmw5pOMBGgriX+aas2eUyd",
-	"7CDToGhAeILCyQm/NRP3Wl4c+hDfqJ0t2ZM8ehPm9t+XUlN5VhdWG6FuVtQ4H4ZV10Z7YJIuMNy8mKGh",
-	"jGVapKKw+cJDEnBPQ/xvl9gHVL7n8VWfOmXGK1TsjlNDKjJNU070Ekxj9qXMLaSYLogX2NA9T2o2SBwT",
-	"JMQPtGsw5rWysxGqtI72xqxuhpXyolDWvd4wHgTSIFxNxoh/NvZDk+L2PYX9dMiOen/asgIPivUC4ytB",
-	"0ZwPTKcxGn0drBhjR3nm4sFeQKnojpHda4f4zvv3H06jXwnLeFFD4kLjrfHxCE5jAeQmdC1oqMFVRsj5",
-	"4hPDNIXqRUn3fbLbSb0Dzk/pT7Fv7cBP8swN/8tVDVpK6F7J2K/9/fv37x+Ra7x4aGL6kWgbamzI9hPj",
-	"gnZdeEm2IJN1Q62PxXduL1Eckxh2IJ+FtU/cb1gWgXGDjKm0nMqC58yHncUZbhfeyUSxeCjGeQ5j/xq5",
-	"Bhf+6CxTyIBjHpHuYTdiRC+tD6atCvOBRF25bjXxsx+exi8K3N9mQLd2STBLiiWwHHbVqIyvSBfToz1r",
-	"dirgyQCTU3CSh1f1l25Afj+YzFygkBvHjF2x747p6p3cbsLzShulqV7RD4W4tz+4CGoXClCCOU9VhpV8",
-	"2jX1tZgoLf6R7zQ1XcYuNLg1sF9I3BioIrGgaXBl2cONBZVSnCFX0/bomJ/c1OlHfRDEChxERebL0HNr",
-	"xby0jRqJnIBvpFjkKeBsmKePq/G5D1qnP99RhI5jczvr4XI7e2jlvrKzK0rAimDsS9izAyr40FTUx6Nd",
-	"TguRHcjCZxDJCePFXowyclrAuDQf4OtuJuxMaIdBgkaaWvoCSFAaSxoHFZNFC0N21osgigSVxTQXFlbt",
-	"A4wRNxgVdYpxl5ra10YVBIooo5ce5iCuY9betx1ACO2jEcjr715fwMarYg+YdxvIcFBRh8T5em7eNJeq",
-	"TJwx48iEmxvjTALwoC7aVTC1BRUAltdSQSYN1tXqpYLn7qVfJRVMJvsQ35UuiAbUZFLbVRqBQ7UgV2li",
-	"z9gmAuxHNsVtPqR8XooO7dCMvSh0waA+yszFdmJA59DMoIiAKlIx2ovpHKTwMqd2IMsVBRF3DkBMOyXH",
-	"SyqYE64i2xsCT3M1lUU36oCav8FXHujSVI//i2LTK386noVOD5YqdSMxEZAyGIJL1ZWwB+f4eN3Vynk+",
-	"3Mv7uGMBtODYQE6vXKBfUneXIlseZuOIAiRuljBOBEkHhIYIClSbBbWE5VmmhXEhf268vekJQHIudKaX",
-	"5ij8ZIkAnkZCMghXqoLOKblRdfNQTQ3fCuXxN/qFoQxABobX4lbdCPJLXWt1Z7AOoCc61KVzwTUKKiLB",
-	"/SHDCFuV/bi4wlcejv9p/F/WMQ33omyOOjv2UHA8D32hAB+h9vwLoagvA5UfiMoIKilBy6hlAZn03RJQ",
-	"wGkxqQy4w54e/Xbknjfv17Luw+kt5ZbnaupDQlQm+ny8GCaA7zjjzcORQj1V13UcCk3gTZQaZkMkhN6H",
-	"vxAmppwIE4wc2LfD4nPUZ5aVMr0JDWZuV9dGXNB2N9drbOuNc9P1OqiIF0XIOT1/aGSE00QwAeX5DPgs",
-	"Cxcs+IEooPHcVV1qTJQxbBhkyJSCfk2ozp/IsDkf7KIZEaJmgud2FqLEbWU3Svwb4c73uzDdvjywjcPN",
-	"8rWK7z42VVXGPrb/EoGodXfEWcf294aG+FqPw3Re1i2TqdKlsRzS9EfeOukyG52JEe2z7bOqz1AJzhJ0",
-	"UnRh9UUm7a/KVxKu+yMf/BuQuMhQE0YiG4LFrtX/EVRpzEFyRdGvRarmYvSIPEGd9BxbQAXpZkVUiSil",
-	"XueBVAPeWZFnHyDC6oIp3Sf6efPOxnFbqBL7clIRW797tCHmawB8LvPynC+LNK8y4RRyvDgxcV9K3aoJ",
-	"YzqAcV/FXQ8uiWClvs1DuhiaBXcdp80b+/ctwJzhrkFHD4r5S3xbZJOEXZHdeQq3IjqMXQeQkCyb4Ui8",
-	"Ry8twaoeOyh4z3iE5XxseVlPfk7pYjE6ek6iES8eoKtCy2tqUuFEZN1xZFgowvbojBWuAy3c0qFsiRVo",
-	"Gz85Ov640LtHZ+wHhOwHvPTUNkA25OA5dTRhXcwJU9jPVdpHFfwIeB3ix3PPWGyYZjfvRlSaDvtpq6Lp",
-	"V6Q0/FI3s9OCZ108tjYIsQeELwTXoDxnN6Rc4SlaWTUnZ7T3j51/8zJZA2jTxt8DPWav605AMqxOhlVp",
-	"fJCv3z9GJXd8cgMG21BwzYybWX/EYbgdy2cdRdGQ3N9zHE0gwy5p/L+n4PQ9826XoubP6QYlj8iMhCbG",
-	"A2jOfLyLod7qQMWSukx7qws64Qp1xyCTSGotMOfmOhejLpbcnFLdgrpVMlf1/KHDYv003dFK9PyMATJc",
-	"KyepWZOx/Fg4fd1UJBBZDScbtpoajVyYxETpeeJa8ZDq6JshoVWOOqwHWK3Rs17KhrvkZquZMdls4mWg",
-	"T5ng6cwF5tThGwFyfBtdHNHwiWAarhlj9sx/REc2BDNQl0yRG0HHvu8pLw3cm0TJta208zg7MPqlbr03",
-	"tcEq+CVmXMTU/h5Kx8eb3DvCotQ4KBZpQ7Diar+oa1n3GgV6GQTmAc9M58WkAyQ2nMv7d74/ZydwL7ez",
-	"VyTRuxjt8HICDVQCzaWpydJnxmyWNVOzJ6CrCCo1uD99QzXK2hWa/snzWHu5Bz2LEENdt6jnRHt7CJak",
-	"LVYTajjrUAx7AT+g3dPNMFq6rgVShYDpPibcCwHX9FseCaiHPiJgks7zAR8+ts0RoWgkpasuwviUy8LY",
-	"diM+zHUxWPMoa0fXBOjZTp177hoPdudJdCD2lJhoe/00nDGupOIbhlJSf336Ka6+ycft8CK2W0L6S4/j",
-	"bbQjYk+lmnZaShB99UnTRfJxMxggk9IvxLg4lZrm1QTXQitLGLdWy+vK0q0u2pvTUCGnZdZYn/iGX3tQ",
-	"Tp1fHDHqrLEx4JptjwEHfTVr1xuGrkJXUZdxX2NizK4EeB2IEAM/nUOTsHzKhlDJHdQkJzGwKIBD+JzS",
-	"SwtmJNxEnZyY80yErUrwQwgmzcUSxQR5t35tY4Z+RIM1VAtl3ebSIOa0vpq7PBqzRvHqECJ0/D6cELmk",
-	"8X+dQqTnfos6z6OfgM+loVZnBMlZwOnMWL5wyUpMml34mXDPhhnNMmqmCURlpgT1W6aDdwtO3JjeMf+0",
-	"+w7xAh9vcoc4V/M5PzACXiIZU8qUuWJFBgqWWc1lDqLlh3/+wVXCN1TDRLO50oIZMcUaHWPmW5PxPB93",
-	"KNY4vmnno9/zeZk3V4Cxz9T956RdwOGfBxvkov9BiJJqpdAekTyVprbUDWtrIr0ATjKZzsjswQrF6gp2",
-	"4Ee/A4opuTGjvea5FLmfnujBiJ/YFO2TmroMAMhn7OrqhavKQzLTACF9w409QAwfvHyOhXTJKhqDDvsp",
-	"tGBbadZap5UcxSovrVZxngpm5F9EHRYKddDgj3kHCD1JLietJJe6tVVPIaiViLqrF5gwORdUddHDQGKl",
-	"AaK1Z4M1HvAHk6AIgLuaUXcIYuQDY7Xg8/ZAy4D1ZN44ShoCKka+tTa0CGI0MBvCPk1ADBj2g8x8XyMj",
-	"fsJ/iB/Yv7AfMm65f+LszwgwYti9lwCD4HQYfbCPoOMXBDxSKrZq+KmCqRmVED0j/nB61MqWJctLDYS6",
-	"k5HrhXo/BAkLKzMkTJVUCy1fQJVrW/fvaQlONgwE5z/XYpNuXnNfBdcJTpfppqtifHzyZPzPS/UK3hgq",
-	"mI4NLUBQcMN+QGB/AJUQKFMWleg/PNxm4OGBzaC6jo6vRV5SR5d1R8eXvnVLB+P/tJ1MrBvI1Ll3OXf9",
-	"uDDeHFuEnjIs8rbST8tYUZ4uN+tKmNBa6UhvLuz3434vuZ3VPYli60DWv7cdZxbBg13hYwWad0j9O1kS",
-	"io+Y+dcQg2t3FBFDqNUAObuiYSZh1wG7eD/5NRaW2keSAsLTqlOG5ibAEci+6wVzGGNDRA5RB6NGWUgR",
-	"WPfMUUHovKAuaZ08hI9rK2/Y363hq34DFeznA5unYIpnNVTxi75/vK8QtwAVbDjn+iZTd8Xqxq4VxL3D",
-	"AWJlVp9cWLa7VTywYfAxe4EWXkI2pxqEvnRegacgJoD6OfA9szLM6NQ3+kBlB2Op7jB3TSuXojhTdyCD",
-	"J/KeydpP0Cs1N4HfHQgOrELZg4mqgHqRns24kTbbR/wtlz3+l++/H9ddQf4lVvL+7a78AM1T+vnh9+r6",
-	"oc21v1fXXXzwo7p+dFMtweD5BHZs3zVpcMw2Ph6mTB0g8++wOt1HoLKE0YbnVK/NGe7gl0tyukNx19VE",
-	"rY8boIPwEEXCtf+nSlQu4tJYVRrGrQtZ4aCpogKrCtc6ieJTiiwXmhXKylSYGFVvTqBQfqtXavyJy7W2",
-	"Dd96wios5wUrmFNIeNQyIeeCErkiOtmTUCf77DFVsnWUJoqMqMybueokM+ZWiOYM9E4+Fq0B8ly5V6Q3",
-	"ANr4e2sLSuMK0tHhDQsaok3IjFboa6128SfuDnLuqJqjwfJ6wXiB3etITxiSOYgq04oMS+26xGQsyDsa",
-	"s0unSljadNhqo1TRbHmmCpH4whNKN+yP9elWEDJ0bSwST6Lss6OR2wAMVEyhmzj7Ab3SP7iSFXlODj0o",
-	"0kCzGivz3DOu0p5NO9SS/Zwp8+40nFcPnQLi2lN2ebOs0u2qILUpkDwosGUt78qeqpR4r8dyEax5X4x6",
-	"0+rudADX3Y7Ykbk49AVxDn8u3x9CP4JuMzB0wH/wnLS6135XzAG+wAxe24TZ0yZXLvO0NTaTRdMlLalz",
-	"r1ZQsB0nXARdTLpZgjBR4xABe0eADbpRd/gzQPi+H4MPzEY1ArtYKdzkR1eYl4DZH2aTn2O3qboQ/y7B",
-	"UvXOUr8AVJ2rLixfiY/oU/zOGTF/ASkD9SbBBnzkjIFe0seH3VlVdb4AUuRjxtYDoIw7nnBVJLnLDvTt",
-	"Cc4wC4Bh+wHIVlIuzWG06QG1tXy7880yus+nup/Ggx9S7TYxncgOYH6AY6oZvXVQsSGZpEBD8ZESBh0t",
-	"1NnEjD7OCRYuvh+h606tBq8PfHTVE3UdXTXMv5BzK4TnF310LbW66Ty6GlT/Ws+vVmemj3x+9dI/irTH",
-	"P5ZqknfibI9n0orEgiY+/RbnV/L+waXSK3nfJY/m8v7RJdFc3vtozuUAvaQJGsbKp+IuLMQoMqrV3wqF",
-	"xD3fQYC9kvfemhwvOICY+tWVG3gl7x+j1ICbttvL64g3YdBetQlfa2xZAkuzcrQ+cgoQG1r6yEUIF6wq",
-	"KCKO0tV98DBQmyfA0VmPrj3jZSmK7x8zshg2iVjorI5W/YQ4g835zUo0b4IdDMBi+YnB3TEUjry0efRn",
-	"qXKZLpiBkDOjVnlsfSBLDR1VNEYHt2ELVVHkmBZNTIVnfczWGE61qkoH291M5QIzZUZdoYsUsqg0rHME",
-	"ZrWFqjQFqCCs46mwsEEUF+w3I4wbLjWaPLGv4IGv0FtkLdCasOE3eKexszrf9hPT3rNhWIIIKYisxA1p",
-	"LgVlMkebp8yRbQsxQyrCP8a/Rq71r0N3HRFOyxfaGmoB7PbACo0zGteQCmcycBlzcdn1DmHmtqHvMHOG",
-	"JqcLXKmFwUZrvWE9OJY7/FTVFxL6Ch/33LM+bpcm6sGNBnYCPKhstFKlKGzUFPc90up+BX3V6oYX+2uu",
-	"5lHBOMtVynPsrJiwb7+8Orx69YX76+rJAQzJLST8susqvREYbfN1de2TL4e+2P1oqx5bjm6D5lpPkZ6R",
-	"s2WP9eDCvfDA2pyfprNMq3/+eKfSy8JYXqTi4E5mDUBsSHm2IPbuIL8b9gLPpIuXL50TKZ0J9lOlLDck",
-	"uVqo8wsj5S6qpPnN+dXpaa2Ff2RlbR1FuqJQDR10mTCxJ+kvrDSUjNLyGSVyGzavqHTkAl6UGZ2umvIb",
-	"ZcFaieNdtByXQwEfOxtn8EvMF+eNY90Cyr2wSR6Gr+fkulzU4b9dFZz8e7+cEk5utV0GVvf4gYo3BbtV",
-	"o9z/1K01eJj+IUovucU8Qt0lN/Mm1Za8yTtacSlaZgkPqkJhnAWFNlDhpY/eg7YpH+TW4JsSuHKnkO84",
-	"UzIVvqOXssZqXrr7bamMtEov2LAOKIFvm9d+VNejKPluUdiIvjllnFWFtHAxw0yo2qgDhaIaUHwhDgJ4",
-	"yq0wY4apSeg7wqpERENnLpCCwmRovW61bAhxqwmpjsIkLFNzLosEM8qpYqwvnUY1Y3Ey93sp9FxS7Wi8",
-	"79gE5b+uUuo5bcW8BL0kiUE9auqMhNU6SPYHNUSmMKwLuHWwj6gok8ekNJ4EWd2jpEZM6duRALooKgg+",
-	"6MbiJ4ZBis1EQdFC+GHsOnmzIcTNjCEWbdR0uw5pQ7bJ3rZhpPr6lK5LbOXbZ58cHTXA9PIYjot8ZDy3",
-	"9d8wazpsnXngEFp77j20Yt4tdgLkPrq5tYEjfjJ9kCevSy13M/z61HJa+KNo5f3k6JVy7/P9eyrW2hjd",
-	"qF1Dq/RSj+DHdBwS1juebASBv6z4k8cIe7oRKKFVMABryOHE+Iso8Eeq7+6LZzGZnbl4Sp4prIfhQpyZ",
-	"JAPiQljK0HNLG7NzV2DFqkY54Cke+wdaOHMe/k5nE3z87KsX376+Gs9JIqdqPpe4xjmMAtDvYHute+Xt",
-	"1fwKAOFCeLbrUXGIWwlHencVff/GxhV3HcKaDO99Vd+9dAnirsTVg7bWc6vu7K7nd2Xv1ya/yGYbQ93B",
-	"kX5Q35/nkhthKM0aVSKLZdke5lyLE1hDRREKw1YNpVYTmYv+Xg0X9NJDRycHU3UGKcM7zAF9FvWIPXJJ",
-	"wUb0t2Bt6AIbPUGn9lwA0CDsfK1I+XGVnnDDf3WKz8riP3aTmg2ovVGBGhIiUvdUg0T0kcyVj+VuOW/8",
-	"j0vsb2ei2YsWXy0pDFo4hcFVhQJ14YMULNvN6af+2j5Mc15l4gAbMiryWMK/R0nPbZ5XVh3MhZ4K76kF",
-	"xPp+UdeaF+kMFbbQmVsK7UvpUNJ2h03AJQw1G4NJ39IakU98Gg855eG11iBpZayaOzNAvedjWuKhERaO",
-	"ODMGHkjqlbo/25rb+TfP3jx/0YmWszpZzi3aYFsc0vSqknFfQb4A2G2lmyJZ6Kh2Nb2kRttNzTp1KlNR",
-	"d87u0hfdN67QUL8Gx0Mu7rd6B4euX9n2+aQrkj3e2QtmcW2o/u59vMcf39f+DYfAG3aOxM3Ol/i3HYsM",
-	"9kKrhdjKhctDBIWe3OMIyZAe2a2h0fMH76QF03Rq3QTDHps3LalSbvyh1VwWB+7CRTfnXBYigXczklUJ",
-	"w4r0/nIWausLUsYZtx9VCXcI7ETtuuhwt7sPrX7DLJ16Nz58XMtg2D0A4VnGMZOWEGweBsMrFXhwy8j2",
-	"H3Q3Yb/rodOwnvMeo88RkjWR546Mfq1h57j8Rwg5X89XmA4t7N+jbn5B8nSZLy3qWc4aqJcMJ2zo2YFJ",
-	"g160LJTfWEfVUIT79QIezJV1HV7XKuw42p9moqhVq4azKCACPvfzo0BY1fHjixr+bompf9dwNSqWCzbR",
-	"QlCZN9yC1ZWHFqMZbwymw9oQib+QzWo0ZheyxBkM02IiNKzSn4WoJ8PvqdKZuwkZlUMkhJttzF6pW1CH",
-	"V7abPIp84b1zTcZ+ox1j87zL34zGIWrQw8mzA0TOTGiB0aDeqfb06LcAhNC3IjtoJHSAT5wkE2WuFlQB",
-	"k7DrK376PIclI1pQI5kN3fLBYgs+wVwY07zZBK2Ke2nQ8rxGf+88m/1Vq/NU/sK98NCKF83T2b60FOG1",
-	"EGshaJGKwuYLF0+b7c0E2pqsrjrn6Dn02If9jc2iSJuPADd4vQXPsbvyjT6mNlbjtRvl6/Qxj/kHVsho",
-	"mudyMuk6PQjgthkUzgZ3q37MguIOtqD7iJxM6oL6gPXGfaKKSS5Taxgn0nAmq7kQD6TFrXmdNp60qT3Q",
-	"0c5F+j8M7LhpwNPur7WwP63/FZBZZ9YOPOwwqgqM56ldzhNuoNScvoMQmT0IWISL8VBmNmKSDcPpyMla",
-	"KoMdpRKKNLqTRtRcREJgxxApDwnZGR0oQ4DrkIrvwcniqv41IJ6yVRAR9Bl3oh9q5HcDC6E6Xhy01Ap8",
-	"6aB+1HKmwC+g5jSW31xwUDlw5jqFCnSMthUVDZDuMMIRW2aZMbFtl5XQbQmKW3Te+FFd+JTCLCIag4l7",
-	"nsKBjFZ5+J1yBcUa//AWMmbXGv4PKWN+rXX/af2dHW+oEj4U0nLv7bGEfyg4vEkCKHwlC3ULUbDUIGCN",
-	"MDgNuUMalolcNFcOiXeIdTzZbFGELYnSd2LLnbkNy3f1VdfbOAYDRmr32dq4odaaIndX+MEu9ZOPW1Xl",
-	"Pz165Gp9XVcd2Oe9R3XAoHCTCapgdTTf2rHU6Ga3kqY+XIvuKFuxNzX/oa+fr+R9F0Jw/r3b+nHNyzdZ",
-	"nwa9jJRdk+k386PhAv8hch1eyftHyHPoqOuwnOMAGe92tULUR2ki3QHiL6QUSCHucHd8urm6FZpl3HIj",
-	"bO3ZStidkNOZNQm6+oXmttIi8c2szYxrMkjWRrTjHVLl2xBRNGnGPFwTHx+6DBwb3goNXSwT9jsy0eGV",
-	"KlV57hIMYCBmqnTGuPGfH05yUWlzMBMHZq5uRNIYN63ybdVQSNOsbrZRQo1PXfVR2pagAoPh8xIbTAT7",
-	"VJshwu0as+9cVILLokvVXPQmTZweHo7G7JznuUtX9+VAUGIB1EYINlOVNhiukfNiWnFqueoqPoQeZVqC",
-	"R5hhw8vjJ6ONM9tXz5BTB85DRRygpLxwc/wvabnrrH4HOzM03OMPli9frxCiawXsGAS5wClGQJ7+LmH4",
-	"rWt0PZwLy4Fd0bKP1de+ungz2kGyuEV3zUQXCpcyTwxEHXz0gsQPXfnDZeAHsAJ4E702uCZYnDBOROBR",
-	"MxW+egR8EhOjOF5bNFwKntWS6sC7dlrb0RxdciUv76uLN/BrZdbd/rsYWotUlj1q4SU9j19J1jAWfXsp",
-	"JoOOHlxkZPF7Bvc7qUVKaWbYg6H0LqvDzv5fYoJFnRqumPP7b0QxtbPB6dOjo4/b/ZdW3KXifildsxQq",
-	"6hDYnXz6AdNiEp5Oe2BOmrTbvYK+RXfRVbox9n80H4qnwE7aPPwZ9uv9OhL9SnwQhT48WXQJYgra/XB/",
-	"WkFDbYvroOoY/cBm0sDrHyPoBagT2YHMGKKVafrm8psDipIDp7YXBf908iX5zo0FlQd71MeDYNxfuwXB",
-	"EM4uYIj3OxFv9XAhmZdV8Y9xk7ysikfQjS6r4oWxck4mrrU3SuHejSfIK/24ifFXlmvLeKOZ6Ko4c/nN",
-	"5YwbwU4oXOI/Z4jLz2F3vTvE8f5XF28OUBlKGJhKE5ZVRG2oZoAispuxNwYbXXx4KyFQFpIyBEfuQgcN",
-	"FzD4DoqPrayEarYRkrAI5Sk1ZJDWd0VuFmoV6mUhHtkwWK9fab1ybjm7VXk1FxhpJ8kJ9D//x6ipOFAn",
-	"vlt+HTReBqRV1vehPauVTwInjG359Oi4X1tD4bEiU04xnuehhIp7y2DS268re8cltj2CKPJTd2YfblQD",
-	"3UV+jdot4YO84aAm4mPGcQCYsUg2dPkGIIOOXMeo7SZ6OucahpUxlgxMSZ3eMvIwSRMFCn2yzrgMzIpC",
-	"wAeWQzBcZQT0pKOCHm3DErmlEGcgP8bsWyEyE4lXaxDYRKyFScajs67XpgruVSWArAqxa97wqStz9OAS",
-	"x03zq/PtrilasFyN6u8xptfhNqy3bxR0bEfPK4ab7BhUssnIVF+UAjiCk7tJ1c+lsey6sq57k7t64yUd",
-	"CutQ/3oMQtUHWPDMZ+gQx8NfoNekuSoEsrUWGJWCT5dKD1HWZBj0OiwUNXGnixeas8vKzIQZfWD9gZ1Z",
-	"vlD2wfn9W2XFr7EuCqz78QqE4a53SBrAOuMmSKCMKR3UYM1rHb94baMsgYM4o7DlXHCNd5C2qvGJYd9+",
-	"9/rFcikQaT8ss/eSIul5M61v2I+Zpi6kmazRlDdrGNbXzsgrVcPkjKMq44tP0E4sAjBbma5hIm6eG2fU",
-	"djPBayB36oHH7A9ClEwVogGxpP6RIqGkRCMKYDeBmb53ig1J6eSGWS2xOgX8TWXB6z+tYpmiRVo5F6Oe",
-	"vFi3/STRPqpe4xrnrKugtWUjdnIN/uQbqfvG8j+Q+xGTqU+dwvmuzuHg01MrclHOVFGH2FNrdHFydPLZ",
-	"wdFvD46Of9iox3tg+D4+ilm+V6xvr5QBax8eU7bShcjIKQyXaXLGDpJt438+DcN/Th41/Gdd7/SvYeW4",
-	"TmpESenuDYlybUQWIHR/7dORSKVoiufU2UG1/9hdWxCaSU1ivGgBtJtVhmBAdj2nF9lNoe6o2WVZVwr1",
-	"15uVUjUkgLzP3SQYh5bUyT4mWWoPD8M640mz1DH7CYRes7ShXZSKBpcZbBAukc1RbkCHeS2nms/P2Nfi",
-	"Wos7Jt0zkdWWlkL+9FOVjZYZ8ZR4j6IL4Z/4L/HnZPmXt2yILBtj1QQqRCYYZVcZN5bB/wiXR4TPxOko",
-	"Qf+he4WKYvn3ZsLBbNhMHLz8ZpRQn8pTjEr8a2WE/iuvrJojuf+VhpCZ70veJR8AAKNcc/aE/is+d/9I",
-	"P0/wEFxQZtl4DMtwSDhd7n0Or5hUleKU5/lf3Vt/9SSQoLyibyyv26Xj6k9/R78XfC7qB0XGimoutEzR",
-	"Osa1NEBAPkDjTmj66PgIQZpqYdyefn40/hSAySp9ejIe/2bM/uSQzAnABr/koSWiTkF+mX6eGjMSCXQP",
-	"X+H/8NtPTCuAb8yeFawqgFmKYH5v1pPFLc9ldoDCspEjeMdQk+YDs1tP2M3caX3H3qJIH1q3v4I5fq0X",
-	"eVx85KD5k6+gBxhgE1UVqGwmPuWw1rGB4qsSlSissdJ0J/Ex0LZR/R5Rt4Y8snbFMpeL5c6TT5rmRt6i",
-	"RpLd3Mg8p3+qycTxLom1sAMIrXZX1dtX/SMNGH2i7TKxd1pZF4HVgDck2BLXmlo3wQe+gi4VBQpL0Dj8",
-	"UXVCqmpDRsVxrtKbUeDiX9qN5cMUZKOryUTVByHtmPFiQQ4nyHcjuVbvlgxva6pw0XSOTKLR9MEGn7qc",
-	"kdplEga2I0jAC4vVxy4FBQSzVuXqcx9P3xTJBelHgKeuTiOYPna6Fmyj73th3xM1QC9sq+QjqI0oZ0NU",
-	"Fuhk9DUwTxOvC2ykuEf09H1XUUz6azi2z0vvdwC1YNQZeONNkluv4+8keaBNIN23iD+GnAw0DHgyFIOM",
-	"iePuSpFSp5W93SFW9fI6kg0gQJV59cqwnl69yK05aOMbxTqIAteLSSKRx7UsHq1cDrym78+ZpZBf2vwA",
-	"L6bjDgAQvHPOn9bdu94K1Mv9fpDjZuxZ4/MVdflGiNKXI6BDnttlRhozX3DGLdXJTG7EK9wLSvJz+4F/",
-	"ocnF78Z6e26Nqrp5hv/F317aQvGwKbzbU5Kghm/H4D+a67zG1Jcyt0JvorLVrAdI8J89aJKdX6tj5q4I",
-	"vi9qAg7I9iE6alyvTsSGX1dTzL37kqdiJayrlEUhsqD1XS5T8lTSMBM+l/kizuDdWWw1DTSk1bBQN1H1",
-	"dwFtKOuhix4sobXL/F0zyZ6Kzq9ib0XDcQcEuYm7kLIdx7lFur6ee0BoYOPpxGXD3punLQbjPnT16GQt",
-	"ACnXekF1HqVhqHSiDSg8DrqUIMunvQrQQ4qsZuO7hNV5sMr91dKD2ZqTPtzJIWXxGKGdZVPO5xWFSHkZ",
-	"NkqYckW88gW8ogrSl/DA49MoI6xVP7pB8oamRjQdFmKurFbFwZPxpwfc6ANjteBzWUwPjsafXePVJp43",
-	"RPUE/OA+W2l1keG6zsj606oduHz656gj1sc/ftA6//GX4QTPwQCCz5cNbmsuSCE7ryoKzdNuKdAv1gN6",
-	"e2C5fh7CGpXo4Wr2JNQjBNZETndoA5vJ9S62xapZWkzfYQ1KpZvigGRMyrmZMWFSXsJtzRHQP518uUS3",
-	"HdHRMuuNjY7Isr2Slaf3TnJ67l74x9c+3UrX6J7PV+5LD6F4rqZc1gIuYRNZTIUutSwsCvpaziJNmjKX",
-	"rpuVsdxKY2VqtlQ4a6qoKWnJDdNBRf2SyZPSA4ulNh4/lrK5hLFGJhE+kgAZy22tHkkJ3RbJ9UnYieDX",
-	"/o1fhrCIa531MjZRev3Lf9hG+X0dfvSw6qefao3Qer1s734YqbVqVh8GBefrxyZSJR8YxBn+vcE/fD+0",
-	"/G8pyxqyrenc/9RF4P1irKbyB5ZjS7j9WIJsGYmNJHOdKUB/IRk24xgk+QuRZ2sRbUSq+1SdK3r+0NVX",
-	"aJouVnVA+KtiUkdVuFK3H47mb/F+mGqB4R08d1fGxDne0a2fUCxrZSC+kGZGN30hboWuw5QC3Pq97e4z",
-	"6xb2D5EwR2t5hCBSmniTdDlCyHINFqv0RyrC0g3pFQLxmIVYAADGWbHECBTviNTuc/wFRYhjBM1a0t8g",
-	"ES8+cdumnLBvvzpP2FfSfl1dJ+zqScJ+hCZ77NnFS9espYZRFKleoJuQW6aFsUxVtm4JDvocGkFX4Qf5",
-	"wosFq3n0jMqYtbv2YqyqtMyVuaYI/Lo3i5khXRXKUuIfKFOnjvCMm08UVlCHFn+CgyOp30LiNxRxTXOS",
-	"mKh0PjgdHPJSImc7BPw8WOngOzgtqjxfJrw3BQb3h/2Am64yjSF/xbtqIqokYMHIaSGyA1mAnNSfUGdh",
-	"9Fghh7Gyus6lQX+ZYa/OLxhQhGmGn4vOgYtpLpi4hS0jwxgbqspeq3v2t//639jV1YtRMwy+FoPRHZoi",
-	"WwoEvK6KLPeF+DAkQxY8XDe8HhnPRZVQU/oVgxsu090n3Dj1gb861pWcFgcY1k3FdAzlqMKlFZsyYu9I",
-	"pXs30iHZTcYrO4v1c7h4yW7EgoiDiLAJxr4RhTkjNabmoAb84IhEfeBW3RDjpGo+50VGAKxO+bUytr7k",
-	"SY0prTDCXMzBT5Ty0kEDvZFFBoxH3uqlFblM1siiVo/wu5kyIjypG+nVLKhmrCjVNXisM2vJa1yfqwj1",
-	"ROk5oYtaTjfD+88i478sjOU17WCLKwm6ZNMY1bOcezRIBj9VynIz8puihRUFDRff9q8wwcDhxmB7KB/x",
-	"z1kptFFFM08dJRsB9gWu2g3UqL9IkLgFKa+MCMaqsNfcyjjfqGJKsgZP4aZP9YmvQKNgE1VB/bHhzlGP",
-	"ScUDV4Z0EW4UFHzqjN/JZlVu4pXGqAxVM7GrULMy85uCu3S0OoLIKgpjQilQx1LTWt2Gu2K5mFJFQUkB",
-	"rvHj2Fx1oF5dPota3mIHOMfC1JyMpTOljAsiGxJ7k+8TAHBd24LVpdzyXE07WapQoJ3KeZmLuShcL3TO",
-	"co6RaJj9Pvz06LhpXF6MlpjWt316//b9/z8A",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

@@ -13,31 +13,13 @@ type Planned struct{}
 
 // PlannedOperations maps each planned operationId to the roadmap phase that implements it.
 var PlannedOperations = map[string]int{
-	"agentMessages.new":    1,
-	"agentSessions.cancel": 1,
-	"agentSessions.new":    1,
-	"mounts.list":          4,
-	"mounts.new":           4,
+	"mounts.list": 4,
+	"mounts.new":  4,
 }
 
 func plannedProblem(opID string, phase int) Problem {
 	detail := opID + " is planned for roadmap phase " + strconv.Itoa(phase) + " and not implemented yet"
 	return Problem{Type: "https://cadence.local/help/errors/not-implemented", Title: "Not implemented", Status: 501, Detail: &detail}
-}
-
-// AgentMessagesNew answers 501 until phase 1.
-func (Planned) AgentMessagesNew(_ context.Context, _ AgentMessagesNewRequestObject) (AgentMessagesNewResponseObject, error) {
-	return AgentMessagesNewdefaultApplicationProblemPlusJSONResponse{Body: plannedProblem("agentMessages.new", 1), StatusCode: 501}, nil
-}
-
-// AgentSessionsCancel answers 501 until phase 1.
-func (Planned) AgentSessionsCancel(_ context.Context, _ AgentSessionsCancelRequestObject) (AgentSessionsCancelResponseObject, error) {
-	return AgentSessionsCanceldefaultApplicationProblemPlusJSONResponse{Body: plannedProblem("agentSessions.cancel", 1), StatusCode: 501}, nil
-}
-
-// AgentSessionsNew answers 501 until phase 1.
-func (Planned) AgentSessionsNew(_ context.Context, _ AgentSessionsNewRequestObject) (AgentSessionsNewResponseObject, error) {
-	return AgentSessionsNewdefaultApplicationProblemPlusJSONResponse{Body: plannedProblem("agentSessions.new", 1), StatusCode: 501}, nil
 }
 
 // MountsList answers 501 until phase 4.

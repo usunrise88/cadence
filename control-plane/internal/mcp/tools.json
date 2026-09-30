@@ -49,6 +49,153 @@
       ]
     },
     {
+      "name": "agentMessages.list",
+      "title": "The session transcript in order, one page after a sequence number",
+      "description": "The session transcript in order, one page after a sequence number",
+      "method": "GET",
+      "path": "/agent-sessions/{id}/agent-messages",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "after": {
+            "default": 0,
+            "description": "Only entries with a larger seq (the last seq of the previous page)",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "id": {
+            "description": "Agent session id (ses_…)",
+            "type": "string"
+          },
+          "limit": {
+            "default": 200,
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "after",
+          "in": "query",
+          "name": "after"
+        },
+        {
+          "property": "limit",
+          "in": "query",
+          "name": "limit"
+        }
+      ]
+    },
+    {
+      "name": "agentMessages.new",
+      "title": "Send a user message with entity references; the agent answers on agent.session.{id}",
+      "description": "Send a message to an agent session. References (@run:123, @mix:mix_…, @utt:…#t=…) expand into a compact context block for the agent and become its selection://current. Agents cannot send messages to sessions. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/agent-sessions/{id}/agent-messages",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "references": {
+                "items": {
+                  "properties": {
+                    "fragment": {
+                      "description": "The part after #",
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "description": "EntityKind (snake singular), filled by the server from ref",
+                      "type": "string"
+                    },
+                    "label": {
+                      "description": "What the UI showed",
+                      "type": "string"
+                    },
+                    "ref": {
+                      "description": "The textual reference: @run:123, @mix:mix_…, @utt:9f3c#t=1.5-3.0",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ref"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 50,
+                "type": "array"
+              },
+              "text": {
+                "maxLength": 100000,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "text"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Agent session id (ses_…)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
       "name": "agentModels.list",
       "title": "Agent models per driver, with the default the wizard picks",
       "description": "Agent models per driver, with the default the wizard picks",
@@ -235,6 +382,524 @@
           "property": "p",
           "in": "path",
           "name": "p"
+        }
+      ]
+    },
+    {
+      "name": "agentSessions.accept",
+      "title": "Merge the session branch into main as a whole and end the session",
+      "description": "Accept a session's changes: merge its branch session/\u003cid\u003e into main (fast-forward, or a merge commit; a conflict answers merge-conflict and changes nothing). The session must be paused or ended; a paused one ends. Agents cannot accept sessions: a person decides. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/agent-sessions/{id}:accept",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Agent session id (ses_…)",
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        }
+      ]
+    },
+    {
+      "name": "agentSessions.cancel",
+      "title": "Stop the session's current turn; with end, also end the session",
+      "description": "Stop the current turn of an agent session (the agent answers ACP session/cancel). With end=true the session also ends: its token is revoked and its branch merges per the project's auto-merge policy. Agents cannot cancel sessions. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/agent-sessions/{id}:cancel",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "end": {
+                "default": false,
+                "description": "Also end the session (done); its branch merges per the auto-merge policy",
+                "type": "boolean"
+              }
+            },
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Agent session id (ses_…)",
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "agentSessions.get",
+      "title": "Get an agent session with its state, budget and use, branch and merge state",
+      "description": "Get an agent session with its state, budget and use, branch and merge state",
+      "method": "GET",
+      "path": "/agent-sessions/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Agent session id (ses_…)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        }
+      ]
+    },
+    {
+      "name": "agentSessions.list",
+      "title": "The project's agent sessions, live ones first, then the most recently changed",
+      "description": "The project's agent sessions, live ones first, then the most recently changed",
+      "method": "GET",
+      "path": "/projects/{p}/agent-sessions",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "default": 50,
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          },
+          "state": {
+            "description": "Only sessions in this state; live means created, running, waiting_approval or paused",
+            "enum": [
+              "live",
+              "created",
+              "running",
+              "waiting_approval",
+              "paused",
+              "done",
+              "failed",
+              "cancelled"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "state",
+          "in": "query",
+          "name": "state"
+        },
+        {
+          "property": "limit",
+          "in": "query",
+          "name": "limit"
+        }
+      ]
+    },
+    {
+      "name": "agentSessions.new",
+      "title": "Start Claude Code or opencode on its own branch session/\u003cid\u003e of the project repository",
+      "description": "Start an agent session in the project: interactive (a conversation) or read-only (one turn, no changes). Driver and model default to the project's agent profile. Agents cannot start sessions. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/projects/{p}/agent-sessions",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "driver": {
+                "enum": [
+                  "claude-code",
+                  "opencode"
+                ],
+                "type": "string"
+              },
+              "kind": {
+                "allOf": [
+                  {
+                    "description": "interactive: a conversation on its own branch; read-only: one turn under the read-only preset, no branch",
+                    "enum": [
+                      "interactive",
+                      "read-only"
+                    ],
+                    "type": "string"
+                  }
+                ],
+                "default": "interactive"
+              },
+              "model": {
+                "description": "Defaults to the agent profile's model (for the profile's driver) or the driver's default",
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "prompt": {
+                "description": "The first message; required for read-only sessions",
+                "maxLength": 100000,
+                "minLength": 1,
+                "type": "string"
+              },
+              "references": {
+                "items": {
+                  "properties": {
+                    "fragment": {
+                      "description": "The part after #",
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "description": "EntityKind (snake singular), filled by the server from ref",
+                      "type": "string"
+                    },
+                    "label": {
+                      "description": "What the UI showed",
+                      "type": "string"
+                    },
+                    "ref": {
+                      "description": "The textual reference: @run:123, @mix:mix_…, @utt:9f3c#t=1.5-3.0",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ref"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 50,
+                "type": "array"
+              }
+            },
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "agentSessions.pause",
+      "title": "Pause a session; the current turn stops, the worktree is committed and the agent process ends",
+      "description": "Pause a session; the current turn stops, the worktree is committed and the agent process ends. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/agent-sessions/{id}:pause",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Agent session id (ses_…)",
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        }
+      ]
+    },
+    {
+      "name": "agentSessions.resume",
+      "title": "Resume a paused session (ACP session/resume, else a new ACP session with a transcript summary)",
+      "description": "Resume a paused session (ACP session/resume, else a new ACP session with a transcript summary). Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/agent-sessions/{id}:resume",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "budget": {
+                "additionalProperties": false,
+                "description": "Raise the session budget (a session paused by its budget resumes only with room left)",
+                "properties": {
+                  "tokens": {
+                    "format": "int64",
+                    "maximum": 1000000000,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "turns": {
+                    "maximum": 2000,
+                    "minimum": 1,
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Agent session id (ses_…)",
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "agentSessions.revert",
+      "title": "Discard the session branch as a whole and end the session",
+      "description": "Discard a session's changes: delete its branch session/\u003cid\u003e; main does not change. The session must be paused or ended; a paused one ends. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/agent-sessions/{id}:revert",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Agent session id (ses_…)",
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
         }
       ]
     },
@@ -1213,6 +1878,7 @@
               "session",
               "api_key",
               "agent",
+              "agent_host",
               "invitation",
               "worker"
             ],

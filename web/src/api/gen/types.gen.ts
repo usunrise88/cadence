@@ -332,7 +332,7 @@ export type TotpCode = {
     code: string;
 };
 
-export type CredentialKind = 'session' | 'api_key' | 'agent' | 'invitation' | 'worker';
+export type CredentialKind = 'session' | 'api_key' | 'agent' | 'agent_host' | 'invitation' | 'worker';
 
 export type CredentialScope = {
     /**
@@ -973,6 +973,30 @@ export type Approval = {
     decidedBy?: Actor;
     decision?: ApprovalDecision;
     result?: ApprovalResult;
+    /**
+     * command: a gated command, replayed when approved; agent_permission: an ACP permission request of an agent session, answered to the agent (no replay)
+     */
+    kind?: 'command' | 'agent_permission';
+    permission?: ApprovalPermission;
+};
+
+/**
+ * What the agent asked to do (agent_permission approvals)
+ */
+export type ApprovalPermission = {
+    sessionId: string;
+    toolCallId: string;
+    title: string;
+    /**
+     * mcp, edit, shell, fetch, …
+     */
+    class: string;
+    /**
+     * The shell command
+     */
+    command?: string;
+    paths?: Array<string>;
+    options: Array<'allow_once' | 'allow_always' | 'reject_once' | 'reject_always'>;
 };
 
 export type ApprovalDecision = {
@@ -1854,6 +1878,516 @@ export type BranchMerge = {
     changes: Array<RecipeChange>;
 };
 
+/**
+ * interactive: a conversation on its own branch; read-only: one turn under the read-only preset, no branch
+ */
+export type AgentSessionKind = 'interactive' | 'read-only';
+
+/**
+ * docs/spec/05-agents.md "Session lifecycle"; done, failed and cancelled are terminal
+ */
+export type AgentSessionState = 'created' | 'running' | 'waiting_approval' | 'paused' | 'done' | 'failed' | 'cancelled';
+
+export type AgentPauseReason = {
+    code: 'user' | 'idle' | 'stuck_turn' | 'runaway' | 'budget_turns' | 'budget_tokens' | 'turn_tokens' | 'project_tokens' | 'host_lost';
+    /**
+     * What happened
+     */
+    message: string;
+};
+
+export type AgentBudget = {
+    /**
+     * Turns before the session pauses (budgets.agent_turns_per_session)
+     */
+    turns: number;
+    /**
+     * Input + output tokens before it pauses (budgets.agent_tokens_per_session)
+     */
+    tokens: number;
+    /**
+     * A turn over this is cancelled and the session pauses (budgets.agent_tokens_per_turn)
+     */
+    tokensPerTurn: number;
+};
+
+export type AgentUse = {
+    turns: number;
+    inputTokens: number;
+    outputTokens: number;
+    cachedReadTokens?: number;
+    /**
+     * What the agent reports; API-equivalent on a subscription (R6)
+     */
+    costUsd?: number;
+    /**
+     * Tokens in the agent's context window now
+     */
+    contextUsed?: number;
+    contextSize?: number;
+};
+
+export type AgentMerge = {
+    /**
+     * none: no changes (or read-only); pending: Session changes waiting for accept or revert; conflict: a merge would conflict
+     */
+    state: 'none' | 'pending' | 'merged' | 'conflict' | 'discarded';
+    /**
+     * main after the merge
+     */
+    commit?: string;
+    /**
+     * The branch head that was merged or discarded
+     */
+    head?: string;
+    conflicts?: Array<string>;
+    fastForward?: boolean;
+    at?: string;
+    by?: Actor;
+};
+
+export type AgentReference = {
+    /**
+     * The textual reference: @run:123, @mix:mix_…, @utt:9f3c#t=1.5-3.0
+     */
+    ref: string;
+    /**
+     * EntityKind (snake singular), filled by the server from ref
+     */
+    kind?: string;
+    id?: string;
+    /**
+     * The part after #
+     */
+    fragment?: string;
+    /**
+     * What the UI showed
+     */
+    label?: string;
+};
+
+export type AgentSession = {
+    /**
+     * ses_<uuidv7>
+     */
+    id: string;
+    /**
+     * The session's ordinal in its project (claude-code · session 3)
+     */
+    number: number;
+    projectId: string;
+    project: Slug;
+    kind: AgentSessionKind;
+    driver: AgentDriver;
+    model: string;
+    /**
+     * The permission preset of the session token
+     */
+    preset: string;
+    state: AgentSessionState;
+    /**
+     * A turn is in progress
+     */
+    busy?: boolean;
+    /**
+     * The current (or last) turn number
+     */
+    turn?: number;
+    pauseReason?: AgentPauseReason;
+    /**
+     * A request the agent host has not carried out yet
+     */
+    pendingControl?: 'cancel' | 'pause' | 'resume' | 'end';
+    /**
+     * Why it failed
+     */
+    error?: string;
+    /**
+     * session/<id> (empty for read-only sessions)
+     */
+    branch: string;
+    merge: AgentMerge;
+    autoMerge: AutoMerge;
+    budget: AgentBudget;
+    use: AgentUse;
+    /**
+     * The first message
+     */
+    prompt?: string;
+    references: Array<AgentReference>;
+    startedBy: Actor;
+    rev: number;
+    createdAt: string;
+    updatedAt: string;
+    startedAt?: string;
+    endedAt?: string;
+    /**
+     * The last user message; the idle clock (R5) runs from it
+     */
+    lastMessageAt?: string;
+};
+
+export type AgentSessionList = {
+    items: Array<AgentSession>;
+};
+
+export type AgentSessionNew = {
+    kind?: AgentSessionKind;
+    driver?: AgentDriver;
+    /**
+     * Defaults to the agent profile's model (for the profile's driver) or the driver's default
+     */
+    model?: string;
+    /**
+     * The first message; required for read-only sessions
+     */
+    prompt?: string;
+    references?: Array<AgentReference>;
+};
+
+export type AgentSessionCancel = {
+    /**
+     * Also end the session (done); its branch merges per the auto-merge policy
+     */
+    end?: boolean;
+};
+
+export type AgentSessionResume = {
+    /**
+     * Raise the session budget (a session paused by its budget resumes only with room left)
+     */
+    budget?: {
+        turns?: number;
+        tokens?: number;
+    };
+};
+
+export type AgentMessageKind = 'user_message' | 'notice' | 'agent_message' | 'thought' | 'plan' | 'tool_call' | 'permission' | 'turn' | 'commit';
+
+export type AgentPlanEntry = {
+    content: string;
+    status: 'pending' | 'in_progress' | 'completed';
+    priority?: 'high' | 'medium' | 'low';
+};
+
+export type AgentFileDiff = {
+    path: string;
+    /**
+     * Absent for a new file
+     */
+    oldText?: string;
+    newText: string;
+};
+
+export type AgentToolCall = {
+    /**
+     * The agent's tool call id (Cadence-Tool-Call-Id of the commands it caused)
+     */
+    id: string;
+    title: string;
+    class: 'mcp' | 'edit' | 'shell' | 'read' | 'search' | 'fetch' | 'think' | 'other';
+    status: 'pending' | 'in_progress' | 'completed' | 'failed';
+    /**
+     * The Cadence operation of an MCP call (<entity>.<verb>)
+     */
+    operation?: string;
+    /**
+     * The MCP server of an MCP call
+     */
+    server?: string;
+    diffs?: Array<AgentFileDiff>;
+    shell?: {
+        command: string;
+        /**
+         * Only when the agent reports one (Claude does not)
+         */
+        exitCode?: number;
+        output?: string;
+    };
+    locations?: Array<string>;
+    text?: string;
+    /**
+     * The tool's arguments
+     */
+    input?: unknown;
+    /**
+     * The tool's result (MCP results are Cadence's data-marked JSON)
+     */
+    output?: unknown;
+    /**
+     * The approval a gated MCP call returned
+     */
+    approvalId?: string;
+    /**
+     * The job a long MCP call returned
+     */
+    jobId?: string;
+};
+
+export type AgentPermission = {
+    /**
+     * agent: an ACP permission request; command: a gated Cadence command (202)
+     */
+    source: 'agent' | 'command';
+    approvalId?: string;
+    toolCallId?: string;
+    title?: string;
+    /**
+     * The gated operation (command)
+     */
+    operation?: string;
+    class?: string;
+    options?: Array<{
+        optionId: string;
+        name: string;
+        kind: 'allow_once' | 'allow_always' | 'reject_once' | 'reject_always';
+    }>;
+    state: 'pending' | 'approved' | 'denied' | 'cancelled';
+    grant?: 'once' | 'session';
+    decidedBy?: Actor;
+    /**
+     * The preset rule that answered without asking a person
+     */
+    rule?: string;
+    note?: string;
+};
+
+export type AgentCommit = {
+    sha?: string;
+    files?: Array<string>;
+    /**
+     * The staged diff held a credential; nothing was committed
+     */
+    refused?: boolean;
+    findings?: Array<{
+        path: string;
+        /**
+         * The credential kind found (cst_, cdk_, cwk_, anthropic, …); the value is never reported
+         */
+        kind: string;
+        line?: number;
+    }>;
+};
+
+export type AgentTurn = {
+    state: 'started' | 'ended';
+    /**
+     * end_turn, cancelled, max_tokens, refusal, …
+     */
+    stopReason?: string;
+    /**
+     * The user message the turn answers
+     */
+    messageId?: string;
+    inputTokens?: number;
+    outputTokens?: number;
+    cachedReadTokens?: number;
+};
+
+/**
+ * One transcript entry; tool calls, plans, permissions and streamed text are updated in place (rev)
+ */
+export type AgentMessage = {
+    /**
+     * msg_<uuidv7>
+     */
+    id: string;
+    sessionId: string;
+    /**
+     * Order in the transcript
+     */
+    seq: number;
+    kind: AgentMessageKind;
+    turn: number;
+    actor: Actor;
+    rev: number;
+    createdAt: string;
+    updatedAt: string;
+    /**
+     * user_message, notice, agent_message (Markdown), thought
+     */
+    text?: string;
+    /**
+     * Streamed text is complete
+     */
+    final?: boolean;
+    references?: Array<AgentReference>;
+    /**
+     * The context block the references expanded into (user_message)
+     */
+    context?: string;
+    /**
+     * user_message and notice: whether the agent host took it
+     */
+    delivery?: 'pending' | 'delivered';
+    plan?: Array<AgentPlanEntry>;
+    toolCall?: AgentToolCall;
+    permission?: AgentPermission;
+    turnInfo?: AgentTurn;
+    commit?: AgentCommit;
+    /**
+     * notice
+     */
+    level?: 'info' | 'warning' | 'error';
+};
+
+export type AgentMessageList = {
+    items: Array<AgentMessage>;
+    /**
+     * Pass as after for the next page; absent on the last page
+     */
+    next?: number;
+};
+
+export type AgentMessageNew = {
+    text: string;
+    references?: Array<AgentReference>;
+};
+
+export type HostClaim = {
+    /**
+     * This host process (hostname and boot id); a session belongs to one
+     */
+    hostId: string;
+    version?: string;
+    /**
+     * Seconds to wait for work
+     */
+    wait?: number;
+    /**
+     * How many more sessions this host may start
+     */
+    capacity?: number;
+};
+
+export type HostStart = {
+    session: AgentSession;
+    /**
+     * The session token (cst_…), shown once: MCP Authorization and git password; never written to disk
+     */
+    token: string;
+    /**
+     * Path of the project repository on the control plane (/git/<slug>.git)
+     */
+    cloneUrl: string;
+    /**
+     * Path of the MCP endpoint (/mcp)
+     */
+    mcpUrl: string;
+    budget: AgentBudget;
+    clocks: {
+        /**
+         * timeouts.stuck_turn_minutes
+         */
+        stuckTurnSeconds: number;
+        /**
+         * The same tool with the same arguments this many times in a row is a runaway
+         */
+        identicalCalls: number;
+    };
+    /**
+     * The session ran before (host restart or resume after pause)
+     */
+    resume?: {
+        acpSessionId?: string;
+        /**
+         * A transcript summary for a new ACP session when resume fails
+         */
+        summary?: string;
+    };
+};
+
+export type HostControl = {
+    id: string;
+    sessionId: string;
+    action: 'cancel' | 'pause' | 'resume' | 'end';
+    reason?: AgentPauseReason;
+    budget?: AgentBudget;
+    resume?: {
+        acpSessionId?: string;
+        summary?: string;
+    };
+};
+
+export type HostMessage = {
+    id: string;
+    sessionId: string;
+    kind: 'user_message' | 'notice';
+    text: string;
+    /**
+     * The expanded references
+     */
+    context?: string;
+};
+
+export type HostDecision = {
+    sessionId?: string;
+    approvalId?: string;
+    toolCallId?: string;
+    outcome: 'pending' | 'allow_once' | 'allow_always' | 'reject_once';
+    /**
+     * The preset rule when the policy answered without a person
+     */
+    rule?: string;
+    reason?: string;
+};
+
+export type HostWork = {
+    start: Array<HostStart>;
+    messages: Array<HostMessage>;
+    controls: Array<HostControl>;
+    decisions: Array<HostDecision>;
+};
+
+/**
+ * A transcript entry keyed by the host (e.g. t3:m1, tool:<id>): the same key updates the same entry
+ */
+export type HostEntry = {
+    key: string;
+    kind: 'notice' | 'agent_message' | 'thought' | 'plan' | 'tool_call' | 'turn' | 'commit';
+    turn?: number;
+    text?: string;
+    final?: boolean;
+    level?: 'info' | 'warning' | 'error';
+    plan?: Array<AgentPlanEntry>;
+    toolCall?: AgentToolCall;
+    turnInfo?: AgentTurn;
+    commit?: AgentCommit;
+};
+
+export type HostReport = {
+    hostId: string;
+    entries?: Array<HostEntry>;
+    state?: {
+        state: 'running' | 'paused' | 'done' | 'failed' | 'cancelled';
+        busy?: boolean;
+        turn?: number;
+        reason?: AgentPauseReason;
+        error?: string;
+    };
+    use?: AgentUse;
+    acpSessionId?: string;
+    /**
+     * A note for the next session (projects.note), e.g. why the session paused
+     */
+    note?: string;
+    /**
+     * Agent-permission approvals the agent no longer waits for (its turn was cancelled)
+     */
+    withdraw?: Array<string>;
+};
+
+export type HostAsk = {
+    hostId: string;
+    turn?: number;
+    toolCall: AgentToolCall;
+    options: Array<{
+        optionId: string;
+        name: string;
+        kind: 'allow_once' | 'allow_always' | 'reject_once' | 'reject_always';
+    }>;
+};
+
 export type SecretNewWritable = {
     name: SecretName;
     kind: SecretKind;
@@ -1895,6 +2429,11 @@ export type Id = string;
  * Mix id (mix_…)
  */
 export type MixId = string;
+
+/**
+ * Agent session id (ses_…)
+ */
+export type AgentSessionId = string;
 
 /**
  * Draft id (drf_…)
@@ -4709,8 +5248,44 @@ export type DraftsRevertResponses = {
 
 export type DraftsRevertResponse = DraftsRevertResponses[keyof DraftsRevertResponses];
 
+export type AgentSessionsListData = {
+    body?: never;
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        /**
+         * Only sessions in this state; live means created, running, waiting_approval or paused
+         */
+        state?: 'live' | 'created' | 'running' | 'waiting_approval' | 'paused' | 'done' | 'failed' | 'cancelled';
+        limit?: number;
+    };
+    url: '/projects/{p}/agent-sessions';
+};
+
+export type AgentSessionsListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type AgentSessionsListError = AgentSessionsListErrors[keyof AgentSessionsListErrors];
+
+export type AgentSessionsListResponses = {
+    /**
+     * Sessions
+     */
+    200: AgentSessionList;
+};
+
+export type AgentSessionsListResponse = AgentSessionsListResponses[keyof AgentSessionsListResponses];
+
 export type AgentSessionsNewData = {
-    body?: PlannedBody;
+    body: AgentSessionNew;
     headers: {
         /**
          * Client-chosen key; a repeat with the same key returns the original result
@@ -4743,17 +5318,49 @@ export type AgentSessionsNewError = AgentSessionsNewErrors[keyof AgentSessionsNe
 
 export type AgentSessionsNewResponses = {
     /**
-     * Shape defined when the operation's phase implements it
+     * Dry run — the session that would start; nothing was written
      */
-    201: {
-        [key: string]: unknown;
-    };
+    200: AgentSession;
+    /**
+     * Created; the agent host picks it up and the session turns running
+     */
+    201: AgentSession;
 };
 
 export type AgentSessionsNewResponse = AgentSessionsNewResponses[keyof AgentSessionsNewResponses];
 
-export type AgentSessionsCancelData = {
+export type AgentSessionsGetData = {
     body?: never;
+    path: {
+        /**
+         * Agent session id (ses_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/agent-sessions/{id}';
+};
+
+export type AgentSessionsGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type AgentSessionsGetError = AgentSessionsGetErrors[keyof AgentSessionsGetErrors];
+
+export type AgentSessionsGetResponses = {
+    /**
+     * The session
+     */
+    200: AgentSession;
+};
+
+export type AgentSessionsGetResponse = AgentSessionsGetResponses[keyof AgentSessionsGetResponses];
+
+export type AgentSessionsCancelData = {
+    body?: AgentSessionCancel;
     headers: {
         /**
          * Client-chosen key; a repeat with the same key returns the original result
@@ -4765,6 +5372,9 @@ export type AgentSessionsCancelData = {
         'If-Match': string;
     };
     path: {
+        /**
+         * Agent session id (ses_…)
+         */
         id: string;
     };
     query?: {
@@ -4787,17 +5397,231 @@ export type AgentSessionsCancelError = AgentSessionsCancelErrors[keyof AgentSess
 
 export type AgentSessionsCancelResponses = {
     /**
-     * Shape defined when the operation's phase implements it
+     * The session with the request pending on the agent host (pendingControl); state events follow
      */
-    200: {
-        [key: string]: unknown;
-    };
+    200: AgentSession;
 };
 
 export type AgentSessionsCancelResponse = AgentSessionsCancelResponses[keyof AgentSessionsCancelResponses];
 
+export type AgentSessionsPauseData = {
+    body?: never;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Agent session id (ses_…)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/agent-sessions/{id}:pause';
+};
+
+export type AgentSessionsPauseErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type AgentSessionsPauseError = AgentSessionsPauseErrors[keyof AgentSessionsPauseErrors];
+
+export type AgentSessionsPauseResponses = {
+    /**
+     * The session with the pause pending on the agent host
+     */
+    200: AgentSession;
+};
+
+export type AgentSessionsPauseResponse = AgentSessionsPauseResponses[keyof AgentSessionsPauseResponses];
+
+export type AgentSessionsResumeData = {
+    body?: AgentSessionResume;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Agent session id (ses_…)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/agent-sessions/{id}:resume';
+};
+
+export type AgentSessionsResumeErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type AgentSessionsResumeError = AgentSessionsResumeErrors[keyof AgentSessionsResumeErrors];
+
+export type AgentSessionsResumeResponses = {
+    /**
+     * The session with the resume pending on the agent host
+     */
+    200: AgentSession;
+};
+
+export type AgentSessionsResumeResponse = AgentSessionsResumeResponses[keyof AgentSessionsResumeResponses];
+
+export type AgentSessionsAcceptData = {
+    body?: never;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Agent session id (ses_…)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/agent-sessions/{id}:accept';
+};
+
+export type AgentSessionsAcceptErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type AgentSessionsAcceptError = AgentSessionsAcceptErrors[keyof AgentSessionsAcceptErrors];
+
+export type AgentSessionsAcceptResponses = {
+    /**
+     * The session with its merge state; for a dry run, what would merge
+     */
+    200: AgentSession;
+};
+
+export type AgentSessionsAcceptResponse = AgentSessionsAcceptResponses[keyof AgentSessionsAcceptResponses];
+
+export type AgentSessionsRevertData = {
+    body?: never;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Agent session id (ses_…)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/agent-sessions/{id}:revert';
+};
+
+export type AgentSessionsRevertErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type AgentSessionsRevertError = AgentSessionsRevertErrors[keyof AgentSessionsRevertErrors];
+
+export type AgentSessionsRevertResponses = {
+    /**
+     * The session with merge state discarded
+     */
+    200: AgentSession;
+};
+
+export type AgentSessionsRevertResponse = AgentSessionsRevertResponses[keyof AgentSessionsRevertResponses];
+
+export type AgentMessagesListData = {
+    body?: never;
+    path: {
+        /**
+         * Agent session id (ses_…)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Only entries with a larger seq (the last seq of the previous page)
+         */
+        after?: number;
+        limit?: number;
+    };
+    url: '/agent-sessions/{id}/agent-messages';
+};
+
+export type AgentMessagesListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type AgentMessagesListError = AgentMessagesListErrors[keyof AgentMessagesListErrors];
+
+export type AgentMessagesListResponses = {
+    /**
+     * Transcript entries, oldest first
+     */
+    200: AgentMessageList;
+};
+
+export type AgentMessagesListResponse = AgentMessagesListResponses[keyof AgentMessagesListResponses];
+
 export type AgentMessagesNewData = {
-    body?: PlannedBody;
+    body: AgentMessageNew;
     headers: {
         /**
          * Client-chosen key; a repeat with the same key returns the original result
@@ -4805,6 +5629,9 @@ export type AgentMessagesNewData = {
         'Idempotency-Key': string;
     };
     path: {
+        /**
+         * Agent session id (ses_…)
+         */
         id: string;
     };
     query?: {
@@ -4827,12 +5654,141 @@ export type AgentMessagesNewError = AgentMessagesNewErrors[keyof AgentMessagesNe
 
 export type AgentMessagesNewResponses = {
     /**
-     * Accepted; follow the job on job.{jobId}
+     * Dry run — the entry with its expanded context; nothing was sent
      */
-    202: JobAccepted;
+    200: AgentMessage;
+    /**
+     * Queued for the agent (delivery pending until the host takes it)
+     */
+    201: AgentMessage;
 };
 
 export type AgentMessagesNewResponse = AgentMessagesNewResponses[keyof AgentMessagesNewResponses];
+
+export type HostSessionsClaimData = {
+    body: HostClaim;
+    path?: never;
+    query?: never;
+    url: '/host-sessions:claim';
+};
+
+export type HostSessionsClaimErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type HostSessionsClaimError = HostSessionsClaimErrors[keyof HostSessionsClaimErrors];
+
+export type HostSessionsClaimResponses = {
+    /**
+     * Work for this host (empty lists when the wait passed with nothing to do)
+     */
+    200: HostWork;
+};
+
+export type HostSessionsClaimResponse = HostSessionsClaimResponses[keyof HostSessionsClaimResponses];
+
+export type HostSessionsReportData = {
+    body: HostReport;
+    path: {
+        /**
+         * Agent session id (ses_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/host-sessions/{id}:report';
+};
+
+export type HostSessionsReportErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type HostSessionsReportError = HostSessionsReportErrors[keyof HostSessionsReportErrors];
+
+export type HostSessionsReportResponses = {
+    /**
+     * The session after the report
+     */
+    200: AgentSession;
+};
+
+export type HostSessionsReportResponse = HostSessionsReportResponses[keyof HostSessionsReportResponses];
+
+export type HostSessionsAskData = {
+    body: HostAsk;
+    path: {
+        /**
+         * Agent session id (ses_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/host-sessions/{id}:ask';
+};
+
+export type HostSessionsAskErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type HostSessionsAskError = HostSessionsAskErrors[keyof HostSessionsAskErrors];
+
+export type HostSessionsAskResponses = {
+    /**
+     * The answer, or the approval a person decides (outcome pending)
+     */
+    200: HostDecision;
+};
+
+export type HostSessionsAskResponse = HostSessionsAskResponses[keyof HostSessionsAskResponses];
+
+export type HostSessionsDecisionData = {
+    body?: never;
+    path: {
+        /**
+         * Agent session id (ses_…)
+         */
+        id: string;
+    };
+    query: {
+        approvalId: string;
+        /**
+         * The host process asking (it must run the session)
+         */
+        hostId: string;
+        /**
+         * Seconds to wait for a decision
+         */
+        wait?: number;
+    };
+    url: '/host-sessions/{id}:decision';
+};
+
+export type HostSessionsDecisionErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type HostSessionsDecisionError = HostSessionsDecisionErrors[keyof HostSessionsDecisionErrors];
+
+export type HostSessionsDecisionResponses = {
+    /**
+     * The decision (outcome pending while nobody decided)
+     */
+    200: HostDecision;
+};
+
+export type HostSessionsDecisionResponse = HostSessionsDecisionResponses[keyof HostSessionsDecisionResponses];
 
 export type MountsListData = {
     body?: never;

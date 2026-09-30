@@ -3,8 +3,8 @@
 import { type InfiniteData, infiniteQueryOptions, queryOptions, type UseMutationOptions } from '@tanstack/react-query';
 
 import { client } from '../client.gen';
-import { adoptionsList, agentMessagesNew, agentModelsList, agentProfileEdit, agentProfileGet, agentSessionsCancel, agentSessionsNew, aliasesGet, aliasesList, aliasesSet, approvalsApprove, approvalsDeny, approvalsGet, approvalsList, auditList, authGet, authLogin, authLogout, authSetup, baseModelsGet, baseModelsList, branchesAccept, branchesGet, branchesList, branchesRevert, collectionsGet, collectionsList, computeEdit, computeGet, computeList, credentialsList, credentialsNew, credentialsRevoke, datasetsGet, datasetsList, defaultsGet, draftsAccept, draftsGet, draftsList, draftsRevert, eventsList, helpGet, helpSearch, jobsCancel, jobsGet, jobsList, jobsWait, meGet, mixesEdit, mixesGet, mixesList, mixesNew, mixesPreview, mountsList, mountsNew, type Options, policiesEdit, policiesGet, projectsAdopt, projectsArchive, projectsEdit, projectsGet, projectsList, projectsNew, projectsNote, projectsSearch, projectsSync, recipesGet, recipesList, registrySearch, runsNew, secretsList, secretsNew, templatesGet, templatesList, totpConfirm, totpDisable, totpEnroll, viewsGet, viewsList, viewsSet, workspacesGet, workspacesList, workspacesSet } from '../sdk.gen';
-import type { AdoptionsListData, AdoptionsListError, AdoptionsListResponse, AgentMessagesNewData, AgentMessagesNewError, AgentMessagesNewResponse, AgentModelsListData, AgentModelsListError, AgentModelsListResponse, AgentProfileEditData, AgentProfileEditError, AgentProfileEditResponse, AgentProfileGetData, AgentProfileGetError, AgentProfileGetResponse, AgentSessionsCancelData, AgentSessionsCancelError, AgentSessionsCancelResponse, AgentSessionsNewData, AgentSessionsNewError, AgentSessionsNewResponse, AliasesGetData, AliasesGetError, AliasesGetResponse, AliasesListData, AliasesListError, AliasesListResponse, AliasesSetData, AliasesSetError, AliasesSetResponse, ApprovalsApproveData, ApprovalsApproveError, ApprovalsApproveResponse, ApprovalsDenyData, ApprovalsDenyError, ApprovalsDenyResponse, ApprovalsGetData, ApprovalsGetError, ApprovalsGetResponse, ApprovalsListData, ApprovalsListError, ApprovalsListResponse, AuditListData, AuditListError, AuditListResponse, AuthGetData, AuthGetError, AuthGetResponse, AuthLoginData, AuthLoginError, AuthLoginResponse, AuthLogoutData, AuthLogoutError, AuthLogoutResponse, AuthSetupData, AuthSetupError, AuthSetupResponse, BaseModelsGetData, BaseModelsGetError, BaseModelsGetResponse, BaseModelsListData, BaseModelsListError, BaseModelsListResponse, BranchesAcceptData, BranchesAcceptError, BranchesAcceptResponse, BranchesGetData, BranchesGetError, BranchesGetResponse, BranchesListData, BranchesListError, BranchesListResponse, BranchesRevertData, BranchesRevertError, BranchesRevertResponse, CollectionsGetData, CollectionsGetError, CollectionsGetResponse, CollectionsListData, CollectionsListError, CollectionsListResponse, ComputeEditData, ComputeEditError, ComputeEditResponse, ComputeGetData, ComputeGetError, ComputeGetResponse, ComputeListData, ComputeListError, ComputeListResponse, CredentialsListData, CredentialsListError, CredentialsListResponse, CredentialsNewData, CredentialsNewError, CredentialsNewResponse, CredentialsRevokeData, CredentialsRevokeError, CredentialsRevokeResponse, DatasetsGetData, DatasetsGetError, DatasetsGetResponse, DatasetsListData, DatasetsListError, DatasetsListResponse, DefaultsGetData, DefaultsGetError, DefaultsGetResponse, DraftsAcceptData, DraftsAcceptError, DraftsAcceptResponse, DraftsGetData, DraftsGetError, DraftsGetResponse, DraftsListData, DraftsListError, DraftsListResponse, DraftsRevertData, DraftsRevertError, DraftsRevertResponse, EventsListData, EventsListError, EventsListResponse, HelpGetData, HelpGetError, HelpGetResponse, HelpSearchData, HelpSearchError, HelpSearchResponse, JobsCancelData, JobsCancelError, JobsCancelResponse, JobsGetData, JobsGetError, JobsGetResponse, JobsListData, JobsListError, JobsListResponse, JobsWaitData, JobsWaitError, JobsWaitResponse, MeGetData, MeGetError, MeGetResponse, MixesEditData, MixesEditError, MixesEditResponse, MixesGetData, MixesGetError, MixesGetResponse, MixesListData, MixesListError, MixesListResponse, MixesNewData, MixesNewError, MixesNewResponse, MixesPreviewData, MixesPreviewError, MixesPreviewResponse, MountsListData, MountsListError, MountsListResponse, MountsNewData, MountsNewError, MountsNewResponse, PoliciesEditData, PoliciesEditError, PoliciesEditResponse, PoliciesGetData, PoliciesGetError, PoliciesGetResponse, ProjectsAdoptData, ProjectsAdoptError, ProjectsAdoptResponse, ProjectsArchiveData, ProjectsArchiveError, ProjectsArchiveResponse, ProjectsEditData, ProjectsEditError, ProjectsEditResponse, ProjectsGetData, ProjectsGetError, ProjectsGetResponse, ProjectsListData, ProjectsListError, ProjectsListResponse, ProjectsNewData, ProjectsNewError, ProjectsNewResponse, ProjectsNoteData, ProjectsNoteError, ProjectsNoteResponse, ProjectsSearchData, ProjectsSearchError, ProjectsSearchResponse, ProjectsSyncData, ProjectsSyncError, ProjectsSyncResponse, RecipesGetData, RecipesGetError, RecipesGetResponse, RecipesListData, RecipesListError, RecipesListResponse, RegistrySearchData, RegistrySearchError, RegistrySearchResponse, RunsNewData, RunsNewError, RunsNewResponse, SecretsListData, SecretsListError, SecretsListResponse, SecretsNewData, SecretsNewError, SecretsNewResponse, TemplatesGetData, TemplatesGetError, TemplatesGetResponse, TemplatesListData, TemplatesListError, TemplatesListResponse, TotpConfirmData, TotpConfirmError, TotpConfirmResponse, TotpDisableData, TotpDisableError, TotpDisableResponse, TotpEnrollData, TotpEnrollError, TotpEnrollResponse, ViewsGetData, ViewsGetError, ViewsGetResponse, ViewsListData, ViewsListError, ViewsListResponse, ViewsSetData, ViewsSetError, ViewsSetResponse, WorkspacesGetData, WorkspacesGetError, WorkspacesGetResponse, WorkspacesListData, WorkspacesListError, WorkspacesListResponse, WorkspacesSetData, WorkspacesSetError, WorkspacesSetResponse } from '../types.gen';
+import { adoptionsList, agentMessagesList, agentMessagesNew, agentModelsList, agentProfileEdit, agentProfileGet, agentSessionsAccept, agentSessionsCancel, agentSessionsGet, agentSessionsList, agentSessionsNew, agentSessionsPause, agentSessionsResume, agentSessionsRevert, aliasesGet, aliasesList, aliasesSet, approvalsApprove, approvalsDeny, approvalsGet, approvalsList, auditList, authGet, authLogin, authLogout, authSetup, baseModelsGet, baseModelsList, branchesAccept, branchesGet, branchesList, branchesRevert, collectionsGet, collectionsList, computeEdit, computeGet, computeList, credentialsList, credentialsNew, credentialsRevoke, datasetsGet, datasetsList, defaultsGet, draftsAccept, draftsGet, draftsList, draftsRevert, eventsList, helpGet, helpSearch, hostSessionsAsk, hostSessionsClaim, hostSessionsDecision, hostSessionsReport, jobsCancel, jobsGet, jobsList, jobsWait, meGet, mixesEdit, mixesGet, mixesList, mixesNew, mixesPreview, mountsList, mountsNew, type Options, policiesEdit, policiesGet, projectsAdopt, projectsArchive, projectsEdit, projectsGet, projectsList, projectsNew, projectsNote, projectsSearch, projectsSync, recipesGet, recipesList, registrySearch, runsNew, secretsList, secretsNew, templatesGet, templatesList, totpConfirm, totpDisable, totpEnroll, viewsGet, viewsList, viewsSet, workspacesGet, workspacesList, workspacesSet } from '../sdk.gen';
+import type { AdoptionsListData, AdoptionsListError, AdoptionsListResponse, AgentMessagesListData, AgentMessagesListError, AgentMessagesListResponse, AgentMessagesNewData, AgentMessagesNewError, AgentMessagesNewResponse, AgentModelsListData, AgentModelsListError, AgentModelsListResponse, AgentProfileEditData, AgentProfileEditError, AgentProfileEditResponse, AgentProfileGetData, AgentProfileGetError, AgentProfileGetResponse, AgentSessionsAcceptData, AgentSessionsAcceptError, AgentSessionsAcceptResponse, AgentSessionsCancelData, AgentSessionsCancelError, AgentSessionsCancelResponse, AgentSessionsGetData, AgentSessionsGetError, AgentSessionsGetResponse, AgentSessionsListData, AgentSessionsListError, AgentSessionsListResponse, AgentSessionsNewData, AgentSessionsNewError, AgentSessionsNewResponse, AgentSessionsPauseData, AgentSessionsPauseError, AgentSessionsPauseResponse, AgentSessionsResumeData, AgentSessionsResumeError, AgentSessionsResumeResponse, AgentSessionsRevertData, AgentSessionsRevertError, AgentSessionsRevertResponse, AliasesGetData, AliasesGetError, AliasesGetResponse, AliasesListData, AliasesListError, AliasesListResponse, AliasesSetData, AliasesSetError, AliasesSetResponse, ApprovalsApproveData, ApprovalsApproveError, ApprovalsApproveResponse, ApprovalsDenyData, ApprovalsDenyError, ApprovalsDenyResponse, ApprovalsGetData, ApprovalsGetError, ApprovalsGetResponse, ApprovalsListData, ApprovalsListError, ApprovalsListResponse, AuditListData, AuditListError, AuditListResponse, AuthGetData, AuthGetError, AuthGetResponse, AuthLoginData, AuthLoginError, AuthLoginResponse, AuthLogoutData, AuthLogoutError, AuthLogoutResponse, AuthSetupData, AuthSetupError, AuthSetupResponse, BaseModelsGetData, BaseModelsGetError, BaseModelsGetResponse, BaseModelsListData, BaseModelsListError, BaseModelsListResponse, BranchesAcceptData, BranchesAcceptError, BranchesAcceptResponse, BranchesGetData, BranchesGetError, BranchesGetResponse, BranchesListData, BranchesListError, BranchesListResponse, BranchesRevertData, BranchesRevertError, BranchesRevertResponse, CollectionsGetData, CollectionsGetError, CollectionsGetResponse, CollectionsListData, CollectionsListError, CollectionsListResponse, ComputeEditData, ComputeEditError, ComputeEditResponse, ComputeGetData, ComputeGetError, ComputeGetResponse, ComputeListData, ComputeListError, ComputeListResponse, CredentialsListData, CredentialsListError, CredentialsListResponse, CredentialsNewData, CredentialsNewError, CredentialsNewResponse, CredentialsRevokeData, CredentialsRevokeError, CredentialsRevokeResponse, DatasetsGetData, DatasetsGetError, DatasetsGetResponse, DatasetsListData, DatasetsListError, DatasetsListResponse, DefaultsGetData, DefaultsGetError, DefaultsGetResponse, DraftsAcceptData, DraftsAcceptError, DraftsAcceptResponse, DraftsGetData, DraftsGetError, DraftsGetResponse, DraftsListData, DraftsListError, DraftsListResponse, DraftsRevertData, DraftsRevertError, DraftsRevertResponse, EventsListData, EventsListError, EventsListResponse, HelpGetData, HelpGetError, HelpGetResponse, HelpSearchData, HelpSearchError, HelpSearchResponse, HostSessionsAskData, HostSessionsAskError, HostSessionsAskResponse, HostSessionsClaimData, HostSessionsClaimError, HostSessionsClaimResponse, HostSessionsDecisionData, HostSessionsDecisionError, HostSessionsDecisionResponse, HostSessionsReportData, HostSessionsReportError, HostSessionsReportResponse, JobsCancelData, JobsCancelError, JobsCancelResponse, JobsGetData, JobsGetError, JobsGetResponse, JobsListData, JobsListError, JobsListResponse, JobsWaitData, JobsWaitError, JobsWaitResponse, MeGetData, MeGetError, MeGetResponse, MixesEditData, MixesEditError, MixesEditResponse, MixesGetData, MixesGetError, MixesGetResponse, MixesListData, MixesListError, MixesListResponse, MixesNewData, MixesNewError, MixesNewResponse, MixesPreviewData, MixesPreviewError, MixesPreviewResponse, MountsListData, MountsListError, MountsListResponse, MountsNewData, MountsNewError, MountsNewResponse, PoliciesEditData, PoliciesEditError, PoliciesEditResponse, PoliciesGetData, PoliciesGetError, PoliciesGetResponse, ProjectsAdoptData, ProjectsAdoptError, ProjectsAdoptResponse, ProjectsArchiveData, ProjectsArchiveError, ProjectsArchiveResponse, ProjectsEditData, ProjectsEditError, ProjectsEditResponse, ProjectsGetData, ProjectsGetError, ProjectsGetResponse, ProjectsListData, ProjectsListError, ProjectsListResponse, ProjectsNewData, ProjectsNewError, ProjectsNewResponse, ProjectsNoteData, ProjectsNoteError, ProjectsNoteResponse, ProjectsSearchData, ProjectsSearchError, ProjectsSearchResponse, ProjectsSyncData, ProjectsSyncError, ProjectsSyncResponse, RecipesGetData, RecipesGetError, RecipesGetResponse, RecipesListData, RecipesListError, RecipesListResponse, RegistrySearchData, RegistrySearchError, RegistrySearchResponse, RunsNewData, RunsNewError, RunsNewResponse, SecretsListData, SecretsListError, SecretsListResponse, SecretsNewData, SecretsNewError, SecretsNewResponse, TemplatesGetData, TemplatesGetError, TemplatesGetResponse, TemplatesListData, TemplatesListError, TemplatesListResponse, TotpConfirmData, TotpConfirmError, TotpConfirmResponse, TotpDisableData, TotpDisableError, TotpDisableResponse, TotpEnrollData, TotpEnrollError, TotpEnrollResponse, ViewsGetData, ViewsGetError, ViewsGetResponse, ViewsListData, ViewsListError, ViewsListResponse, ViewsSetData, ViewsSetError, ViewsSetResponse, WorkspacesGetData, WorkspacesGetError, WorkspacesGetResponse, WorkspacesListData, WorkspacesListError, WorkspacesListResponse, WorkspacesSetData, WorkspacesSetError, WorkspacesSetResponse } from '../types.gen';
 
 export type QueryKey<TOptions extends Options> = [
     Pick<TOptions, 'baseUrl' | 'body' | 'headers' | 'path' | 'query'> & {
@@ -1500,8 +1500,26 @@ export const draftsRevertMutation = (options?: Partial<Options<DraftsRevertData>
     return mutationOptions;
 };
 
+export const agentSessionsListQueryKey = (options: Options<AgentSessionsListData>) => createQueryKey('agentSessionsList', options);
+
 /**
- * Launch Claude Code or opencode in a project worktree
+ * The project's agent sessions, live ones first, then the most recently changed
+ */
+export const agentSessionsListOptions = (options: Options<AgentSessionsListData>) => queryOptions<AgentSessionsListResponse, AgentSessionsListError, AgentSessionsListResponse, ReturnType<typeof agentSessionsListQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await agentSessionsList({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: agentSessionsListQueryKey(options)
+});
+
+/**
+ * Start Claude Code or opencode on its own branch session/<id> of the project repository
  */
 export const agentSessionsNewMutation = (options?: Partial<Options<AgentSessionsNewData>>): UseMutationOptions<AgentSessionsNewResponse, AgentSessionsNewError, Options<AgentSessionsNewData>> => {
     const mutationOptions: UseMutationOptions<AgentSessionsNewResponse, AgentSessionsNewError, Options<AgentSessionsNewData>> = {
@@ -1517,8 +1535,26 @@ export const agentSessionsNewMutation = (options?: Partial<Options<AgentSessions
     return mutationOptions;
 };
 
+export const agentSessionsGetQueryKey = (options: Options<AgentSessionsGetData>) => createQueryKey('agentSessionsGet', options);
+
 /**
- * Stop the session's current turn
+ * Get an agent session with its state, budget and use, branch and merge state
+ */
+export const agentSessionsGetOptions = (options: Options<AgentSessionsGetData>) => queryOptions<AgentSessionsGetResponse, AgentSessionsGetError, AgentSessionsGetResponse, ReturnType<typeof agentSessionsGetQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await agentSessionsGet({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: agentSessionsGetQueryKey(options)
+});
+
+/**
+ * Stop the session's current turn; with end, also end the session
  */
 export const agentSessionsCancelMutation = (options?: Partial<Options<AgentSessionsCancelData>>): UseMutationOptions<AgentSessionsCancelResponse, AgentSessionsCancelError, Options<AgentSessionsCancelData>> => {
     const mutationOptions: UseMutationOptions<AgentSessionsCancelResponse, AgentSessionsCancelError, Options<AgentSessionsCancelData>> = {
@@ -1535,7 +1571,123 @@ export const agentSessionsCancelMutation = (options?: Partial<Options<AgentSessi
 };
 
 /**
- * User message with entity references; updates arrive on agent.session.{id}
+ * Pause a session; the current turn stops, the worktree is committed and the agent process ends
+ */
+export const agentSessionsPauseMutation = (options?: Partial<Options<AgentSessionsPauseData>>): UseMutationOptions<AgentSessionsPauseResponse, AgentSessionsPauseError, Options<AgentSessionsPauseData>> => {
+    const mutationOptions: UseMutationOptions<AgentSessionsPauseResponse, AgentSessionsPauseError, Options<AgentSessionsPauseData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await agentSessionsPause({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Resume a paused session (ACP session/resume, else a new ACP session with a transcript summary)
+ */
+export const agentSessionsResumeMutation = (options?: Partial<Options<AgentSessionsResumeData>>): UseMutationOptions<AgentSessionsResumeResponse, AgentSessionsResumeError, Options<AgentSessionsResumeData>> => {
+    const mutationOptions: UseMutationOptions<AgentSessionsResumeResponse, AgentSessionsResumeError, Options<AgentSessionsResumeData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await agentSessionsResume({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Merge the session branch into main as a whole and end the session
+ */
+export const agentSessionsAcceptMutation = (options?: Partial<Options<AgentSessionsAcceptData>>): UseMutationOptions<AgentSessionsAcceptResponse, AgentSessionsAcceptError, Options<AgentSessionsAcceptData>> => {
+    const mutationOptions: UseMutationOptions<AgentSessionsAcceptResponse, AgentSessionsAcceptError, Options<AgentSessionsAcceptData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await agentSessionsAccept({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Discard the session branch as a whole and end the session
+ */
+export const agentSessionsRevertMutation = (options?: Partial<Options<AgentSessionsRevertData>>): UseMutationOptions<AgentSessionsRevertResponse, AgentSessionsRevertError, Options<AgentSessionsRevertData>> => {
+    const mutationOptions: UseMutationOptions<AgentSessionsRevertResponse, AgentSessionsRevertError, Options<AgentSessionsRevertData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await agentSessionsRevert({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+export const agentMessagesListQueryKey = (options: Options<AgentMessagesListData>) => createQueryKey('agentMessagesList', options);
+
+/**
+ * The session transcript in order, one page after a sequence number
+ */
+export const agentMessagesListOptions = (options: Options<AgentMessagesListData>) => queryOptions<AgentMessagesListResponse, AgentMessagesListError, AgentMessagesListResponse, ReturnType<typeof agentMessagesListQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await agentMessagesList({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: agentMessagesListQueryKey(options)
+});
+
+export const agentMessagesListInfiniteQueryKey = (options: Options<AgentMessagesListData>): QueryKey<Options<AgentMessagesListData>> => createQueryKey('agentMessagesList', options, true);
+
+/**
+ * The session transcript in order, one page after a sequence number
+ */
+export const agentMessagesListInfiniteOptions = (options: Options<AgentMessagesListData>) => {
+    const opts = infiniteQueryOptions<AgentMessagesListResponse, AgentMessagesListError, InfiniteData<AgentMessagesListResponse>, QueryKey<Options<AgentMessagesListData>>, number | Pick<QueryKey<Options<AgentMessagesListData>>[0], 'body' | 'headers' | 'path' | 'query'>>(
+    // @ts-ignore
+    {
+        queryFn: async ({ pageParam, queryKey, signal }) => {
+            // @ts-ignore
+            const page: Pick<QueryKey<Options<AgentMessagesListData>>[0], 'body' | 'headers' | 'path' | 'query'> = typeof pageParam === 'object' ? pageParam : {
+                query: {
+                    after: pageParam
+                }
+            };
+            const params = createInfiniteParams(queryKey, page);
+            const { data } = await agentMessagesList({
+                ...options,
+                ...params,
+                signal,
+                throwOnError: true
+            });
+            return data;
+        },
+        queryKey: agentMessagesListInfiniteQueryKey(options)
+    });
+    return opts as Omit<typeof opts, 'initialData'>;
+};
+
+/**
+ * Send a user message with entity references; the agent answers on agent.session.{id}
  */
 export const agentMessagesNewMutation = (options?: Partial<Options<AgentMessagesNewData>>): UseMutationOptions<AgentMessagesNewResponse, AgentMessagesNewError, Options<AgentMessagesNewData>> => {
     const mutationOptions: UseMutationOptions<AgentMessagesNewResponse, AgentMessagesNewError, Options<AgentMessagesNewData>> = {
@@ -1550,6 +1702,75 @@ export const agentMessagesNewMutation = (options?: Partial<Options<AgentMessages
     };
     return mutationOptions;
 };
+
+/**
+ * Long-poll for work — sessions to start, messages to deliver, controls and permission decisions
+ */
+export const hostSessionsClaimMutation = (options?: Partial<Options<HostSessionsClaimData>>): UseMutationOptions<HostSessionsClaimResponse, HostSessionsClaimError, Options<HostSessionsClaimData>> => {
+    const mutationOptions: UseMutationOptions<HostSessionsClaimResponse, HostSessionsClaimError, Options<HostSessionsClaimData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await hostSessionsClaim({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Post a batch of transcript entries, the session state, usage and the ACP session id
+ */
+export const hostSessionsReportMutation = (options?: Partial<Options<HostSessionsReportData>>): UseMutationOptions<HostSessionsReportResponse, HostSessionsReportError, Options<HostSessionsReportData>> => {
+    const mutationOptions: UseMutationOptions<HostSessionsReportResponse, HostSessionsReportError, Options<HostSessionsReportData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await hostSessionsReport({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Raise an ACP permission request; the preset answers it or it becomes an agent-permission approval
+ */
+export const hostSessionsAskMutation = (options?: Partial<Options<HostSessionsAskData>>): UseMutationOptions<HostSessionsAskResponse, HostSessionsAskError, Options<HostSessionsAskData>> => {
+    const mutationOptions: UseMutationOptions<HostSessionsAskResponse, HostSessionsAskError, Options<HostSessionsAskData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await hostSessionsAsk({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+export const hostSessionsDecisionQueryKey = (options: Options<HostSessionsDecisionData>) => createQueryKey('hostSessionsDecision', options);
+
+/**
+ * Read (or wait for) the decision on an agent-permission approval
+ */
+export const hostSessionsDecisionOptions = (options: Options<HostSessionsDecisionData>) => queryOptions<HostSessionsDecisionResponse, HostSessionsDecisionError, HostSessionsDecisionResponse, ReturnType<typeof hostSessionsDecisionQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await hostSessionsDecision({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: hostSessionsDecisionQueryKey(options)
+});
 
 export const mountsListQueryKey = (options?: Options<MountsListData>) => createQueryKey('mountsList', options);
 

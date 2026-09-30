@@ -30,6 +30,8 @@ tags:
   - { name: mixes, description: "Project mixes: groups, weights, temperature and replay share over dataset versions (R13)" }
   - { name: drafts, description: Unaccepted changes to draftable entities that a person accepts or reverts }
   - { name: catalog, description: What the project wizard and Agent settings choose from (agent models per driver) }
+  - { name: agentSessions, description: "Claude Code and opencode sessions: lifecycle, transcript, branch accept or revert" }
+  - { name: host, description: The agent host's protocol (claim work, report, ask); exempt from the vocabulary and never MCP tools }
   - { name: planned, description: Named now, implemented in a later phase (501 until then) }
 
 paths:
@@ -1480,42 +1482,282 @@ paths:
           content: { application/json: { schema: { $ref: "#/components/schemas/Draft" } } }
         default: { $ref: "#/components/responses/Problem" }
 
-  # ---------------------------------------------------------------- planned (later phases)
+  # ---------------------------------------------------------------- agent sessions (phase 1 · wave 2 · sessions stream) — add paths below this line
+  #
+  #
+  #
   /projects/{p}/agent-sessions:
-    x-cadence: { entity: agentSessions, planned: 1 }
+    x-cadence: { entity: agentSessions }
     parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    get:
+      operationId: agentSessions.list
+      summary: The project's agent sessions, live ones first, then the most recently changed
+      tags: [agentSessions]
+      parameters:
+        - name: state
+          in: query
+          description: Only sessions in this state; live means created, running, waiting_approval or paused
+          schema: { type: string, enum: [live, created, running, waiting_approval, paused, done, failed, cancelled] }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+      responses:
+        "200":
+          description: Sessions
+          content: { application/json: { schema: { $ref: "#/components/schemas/AgentSessionList" } } }
+        default: { $ref: "#/components/responses/Problem" }
     post:
       operationId: agentSessions.new
-      summary: Launch Claude Code or opencode in a project worktree
-      tags: [planned]
-      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }, { $ref: "#/components/parameters/DryRun" }]
-      requestBody: { $ref: "#/components/requestBodies/PlannedBody" }
-      responses: { "201": { $ref: "#/components/responses/PlannedEntity" }, default: { $ref: "#/components/responses/Problem" } }
+      summary: Start Claude Code or opencode on its own branch session/<id> of the project repository
+      tags: [agentSessions]
+      x-cadence:
+        toolDescription: >
+          Start an agent session in the project: interactive (a conversation) or read-only (one turn, no changes).
+          Driver and model default to the project's agent profile. Agents cannot start sessions.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/AgentSessionNew" } } }
+      responses:
+        "200":
+          description: Dry run — the session that would start; nothing was written
+          content: { application/json: { schema: { $ref: "#/components/schemas/AgentSession" } } }
+        "201":
+          description: Created; the agent host picks it up and the session turns running
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/AgentSession" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /agent-sessions/{id}:
+    x-cadence: { entity: agentSessions }
+    parameters: [{ $ref: "#/components/parameters/AgentSessionId" }]
+    get:
+      operationId: agentSessions.get
+      summary: Get an agent session with its state, budget and use, branch and merge state
+      tags: [agentSessions]
+      responses:
+        "200":
+          description: The session
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/AgentSession" } } }
+        default: { $ref: "#/components/responses/Problem" }
 
   /agent-sessions/{id}:cancel:
-    x-cadence: { entity: agentSessions, planned: 1 }
-    parameters: [{ $ref: "#/components/parameters/Id" }]
+    x-cadence: { entity: agentSessions }
+    parameters: [{ $ref: "#/components/parameters/AgentSessionId" }]
     post:
       operationId: agentSessions.cancel
-      summary: Stop the session's current turn
-      tags: [planned]
+      summary: Stop the session's current turn; with end, also end the session
+      tags: [agentSessions]
+      x-cadence:
+        toolDescription: >
+          Stop the current turn of an agent session (the agent answers ACP session/cancel). With end=true the session
+          also ends: its token is revoked and its branch merges per the project's auto-merge policy. Agents cannot
+          cancel sessions.
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
         - $ref: "#/components/parameters/IfMatch"
         - $ref: "#/components/parameters/DryRun"
-      responses: { "200": { $ref: "#/components/responses/PlannedEntity" }, default: { $ref: "#/components/responses/Problem" } }
+      requestBody:
+        required: false
+        content: { application/json: { schema: { $ref: "#/components/schemas/AgentSessionCancel" } } }
+      responses:
+        "200":
+          description: The session with the request pending on the agent host (pendingControl); state events follow
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/AgentSession" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /agent-sessions/{id}:pause:
+    x-cadence: { entity: agentSessions }
+    parameters: [{ $ref: "#/components/parameters/AgentSessionId" }]
+    post:
+      operationId: agentSessions.pause
+      summary: Pause a session; the current turn stops, the worktree is committed and the agent process ends
+      tags: [agentSessions]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      responses:
+        "200":
+          description: The session with the pause pending on the agent host
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/AgentSession" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /agent-sessions/{id}:resume:
+    x-cadence: { entity: agentSessions }
+    parameters: [{ $ref: "#/components/parameters/AgentSessionId" }]
+    post:
+      operationId: agentSessions.resume
+      summary: Resume a paused session (ACP session/resume, else a new ACP session with a transcript summary)
+      tags: [agentSessions]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: false
+        content: { application/json: { schema: { $ref: "#/components/schemas/AgentSessionResume" } } }
+      responses:
+        "200":
+          description: The session with the resume pending on the agent host
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/AgentSession" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /agent-sessions/{id}:accept:
+    x-cadence: { entity: agentSessions }
+    parameters: [{ $ref: "#/components/parameters/AgentSessionId" }]
+    post:
+      operationId: agentSessions.accept
+      summary: Merge the session branch into main as a whole and end the session
+      tags: [agentSessions]
+      x-cadence:
+        toolDescription: >
+          Accept a session's changes: merge its branch session/<id> into main (fast-forward, or a merge commit; a
+          conflict answers merge-conflict and changes nothing). The session must be paused or ended; a paused one
+          ends. Agents cannot accept sessions: a person decides.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      responses:
+        "200":
+          description: The session with its merge state; for a dry run, what would merge
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/AgentSession" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /agent-sessions/{id}:revert:
+    x-cadence: { entity: agentSessions }
+    parameters: [{ $ref: "#/components/parameters/AgentSessionId" }]
+    post:
+      operationId: agentSessions.revert
+      summary: Discard the session branch as a whole and end the session
+      tags: [agentSessions]
+      x-cadence:
+        toolDescription: >
+          Discard a session's changes: delete its branch session/<id>; main does not change. The session must be
+          paused or ended; a paused one ends.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      responses:
+        "200":
+          description: The session with merge state discarded
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/AgentSession" } } }
+        default: { $ref: "#/components/responses/Problem" }
 
   /agent-sessions/{id}/agent-messages:
-    x-cadence: { entity: agentMessages, planned: 1 }
-    parameters: [{ $ref: "#/components/parameters/Id" }]
+    x-cadence: { entity: agentMessages }
+    parameters: [{ $ref: "#/components/parameters/AgentSessionId" }]
+    get:
+      operationId: agentMessages.list
+      summary: The session transcript in order, one page after a sequence number
+      tags: [agentSessions]
+      parameters:
+        - { name: after, in: query, description: Only entries with a larger seq (the last seq of the previous page), schema: { type: integer, minimum: 0, default: 0 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 200 } }
+      responses:
+        "200":
+          description: Transcript entries, oldest first
+          content: { application/json: { schema: { $ref: "#/components/schemas/AgentMessageList" } } }
+        default: { $ref: "#/components/responses/Problem" }
     post:
       operationId: agentMessages.new
-      summary: User message with entity references; updates arrive on agent.session.{id}
-      tags: [planned]
-      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }, { $ref: "#/components/parameters/DryRun" }]
-      requestBody: { $ref: "#/components/requestBodies/PlannedBody" }
-      responses: { "202": { $ref: "#/components/responses/JobAccepted" }, default: { $ref: "#/components/responses/Problem" } }
+      summary: Send a user message with entity references; the agent answers on agent.session.{id}
+      tags: [agentSessions]
+      x-cadence:
+        toolDescription: >
+          Send a message to an agent session. References (@run:123, @mix:mix_…, @utt:…#t=…) expand into a compact
+          context block for the agent and become its selection://current. Agents cannot send messages to sessions.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/AgentMessageNew" } } }
+      responses:
+        "200":
+          description: Dry run — the entry with its expanded context; nothing was sent
+          content: { application/json: { schema: { $ref: "#/components/schemas/AgentMessage" } } }
+        "201":
+          description: Queued for the agent (delivery pending until the host takes it)
+          content: { application/json: { schema: { $ref: "#/components/schemas/AgentMessage" } } }
+        default: { $ref: "#/components/responses/Problem" }
 
+  # ---------------------------------------------------------------- agent host protocol (exempt: tag host, never MCP tools)
+  # Authenticated by the agent-host credential (cah_…); every other credential is refused. These are the host's
+  # protocol, not commands: a report carries entry keys the host chose, so a retried batch upserts the same rows.
+  /host-sessions:claim:
+    x-cadence: { entity: hostSessions }
+    post:
+      operationId: hostSessions.claim
+      summary: Long-poll for work — sessions to start, messages to deliver, controls and permission decisions
+      tags: [host]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/HostClaim" } } }
+      responses:
+        "200":
+          description: Work for this host (empty lists when the wait passed with nothing to do)
+          content: { application/json: { schema: { $ref: "#/components/schemas/HostWork" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /host-sessions/{id}:report:
+    x-cadence: { entity: hostSessions }
+    parameters: [{ $ref: "#/components/parameters/AgentSessionId" }]
+    post:
+      operationId: hostSessions.report
+      summary: Post a batch of transcript entries, the session state, usage and the ACP session id
+      tags: [host]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/HostReport" } } }
+      responses:
+        "200":
+          description: The session after the report
+          content: { application/json: { schema: { $ref: "#/components/schemas/AgentSession" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /host-sessions/{id}:ask:
+    x-cadence: { entity: hostSessions }
+    parameters: [{ $ref: "#/components/parameters/AgentSessionId" }]
+    post:
+      operationId: hostSessions.ask
+      summary: Raise an ACP permission request; the preset answers it or it becomes an agent-permission approval
+      tags: [host]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/HostAsk" } } }
+      responses:
+        "200":
+          description: The answer, or the approval a person decides (outcome pending)
+          content: { application/json: { schema: { $ref: "#/components/schemas/HostDecision" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /host-sessions/{id}:decision:
+    x-cadence: { entity: hostSessions }
+    parameters: [{ $ref: "#/components/parameters/AgentSessionId" }]
+    get:
+      operationId: hostSessions.decision
+      summary: Read (or wait for) the decision on an agent-permission approval
+      tags: [host]
+      parameters:
+        - { name: approvalId, in: query, required: true, schema: { type: string } }
+        - { name: hostId, in: query, required: true, description: The host process asking (it must run the session), schema: { type: string } }
+        - { name: wait, in: query, description: Seconds to wait for a decision, schema: { type: integer, minimum: 0, maximum: 30, default: 0 } }
+      responses:
+        "200":
+          description: The decision (outcome pending while nobody decided)
+          content: { application/json: { schema: { $ref: "#/components/schemas/HostDecision" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  # ---------------------------------------------------------------- planned (later phases)
   /mounts:
     x-cadence: { entity: mounts, planned: 4 }
     get:
@@ -1573,6 +1815,12 @@ components:
       in: path
       required: true
       description: Mix id (mix_…)
+      schema: { type: string }
+    AgentSessionId:
+      name: id
+      in: path
+      required: true
+      description: Agent session id (ses_…)
       schema: { type: string }
     DraftId:
       name: id
@@ -1909,7 +2157,7 @@ components:
 
     CredentialKind:
       type: string
-      enum: [session, api_key, agent, invitation, worker]
+      enum: [session, api_key, agent, agent_host, invitation, worker]
     CredentialScope:
       type: object
       properties:
@@ -2451,6 +2699,23 @@ components:
         decidedBy: { $ref: "#/components/schemas/Actor" }
         decision: { $ref: "#/components/schemas/ApprovalDecision" }
         result: { $ref: "#/components/schemas/ApprovalResult" }
+        kind:
+          type: string
+          enum: [command, agent_permission]
+          description: "command: a gated command, replayed when approved; agent_permission: an ACP permission request of an agent session, answered to the agent (no replay)"
+        permission: { $ref: "#/components/schemas/ApprovalPermission" }
+    ApprovalPermission:
+      type: object
+      required: [sessionId, toolCallId, title, class, options]
+      description: What the agent asked to do (agent_permission approvals)
+      properties:
+        sessionId: { type: string }
+        toolCallId: { type: string }
+        title: { type: string }
+        class: { type: string, description: "mcp, edit, shell, fetch, …" }
+        command: { type: string, description: The shell command }
+        paths: { type: array, items: { type: string } }
+        options: { type: array, items: { type: string, enum: [allow_once, allow_always, reject_once, reject_always] } }
     ApprovalDecision:
       type: object
       required: [grant]
@@ -3108,3 +3373,380 @@ components:
         main: { type: string, description: "main after the merge (for a dry run: before it)" }
         fastForward: { type: boolean }
         changes: { type: array, items: { $ref: "#/components/schemas/RecipeChange" } }
+
+    # ---------------------------------------------------------------- agent sessions schemas (sessions stream) — add below
+    AgentSessionKind:
+      type: string
+      enum: [interactive, read-only]
+      description: "interactive: a conversation on its own branch; read-only: one turn under the read-only preset, no branch"
+    AgentSessionState:
+      type: string
+      enum: [created, running, waiting_approval, paused, done, failed, cancelled]
+      description: "docs/spec/05-agents.md \"Session lifecycle\"; done, failed and cancelled are terminal"
+    AgentPauseReason:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum: [user, idle, stuck_turn, runaway, budget_turns, budget_tokens, turn_tokens, project_tokens, host_lost]
+        message: { type: string, description: What happened, for the header chip and the note for the next session }
+    AgentBudget:
+      type: object
+      required: [turns, tokens, tokensPerTurn]
+      properties:
+        turns: { type: integer, description: "Turns before the session pauses (budgets.agent_turns_per_session)" }
+        tokens: { type: integer, format: int64, description: "Input + output tokens before it pauses (budgets.agent_tokens_per_session)" }
+        tokensPerTurn: { type: integer, format: int64, description: "A turn over this is cancelled and the session pauses (budgets.agent_tokens_per_turn)" }
+    AgentUse:
+      type: object
+      required: [turns, inputTokens, outputTokens]
+      properties:
+        turns: { type: integer }
+        inputTokens: { type: integer, format: int64 }
+        outputTokens: { type: integer, format: int64 }
+        cachedReadTokens: { type: integer, format: int64 }
+        costUsd: { type: number, format: double, description: What the agent reports; API-equivalent on a subscription (R6) }
+        contextUsed: { type: integer, format: int64, description: Tokens in the agent's context window now }
+        contextSize: { type: integer, format: int64 }
+    AgentMerge:
+      type: object
+      required: [state]
+      properties:
+        state:
+          type: string
+          enum: [none, pending, merged, conflict, discarded]
+          description: "none: no changes (or read-only); pending: Session changes waiting for accept or revert; conflict: a merge would conflict"
+        commit: { type: string, description: main after the merge }
+        head: { type: string, description: The branch head that was merged or discarded }
+        conflicts: { type: array, items: { type: string } }
+        fastForward: { type: boolean }
+        at: { type: string, format: date-time }
+        by: { $ref: "#/components/schemas/Actor" }
+    AgentReference:
+      type: object
+      required: [ref]
+      properties:
+        ref: { type: string, description: "The textual reference: @run:123, @mix:mix_…, @utt:9f3c#t=1.5-3.0" }
+        kind: { type: string, description: "EntityKind (snake singular), filled by the server from ref" }
+        id: { type: string }
+        fragment: { type: string, description: "The part after #" }
+        label: { type: string, description: What the UI showed }
+    AgentSession:
+      type: object
+      required: [id, number, projectId, project, kind, driver, model, preset, state, branch, merge, autoMerge, budget, use, references, startedBy, rev, createdAt, updatedAt]
+      properties:
+        id: { type: string, description: "ses_<uuidv7>" }
+        number: { type: integer, description: "The session's ordinal in its project (claude-code · session 3)" }
+        projectId: { type: string }
+        project: { $ref: "#/components/schemas/Slug" }
+        kind: { $ref: "#/components/schemas/AgentSessionKind" }
+        driver: { $ref: "#/components/schemas/AgentDriver" }
+        model: { type: string }
+        preset: { type: string, description: The permission preset of the session token }
+        state: { $ref: "#/components/schemas/AgentSessionState" }
+        busy: { type: boolean, description: A turn is in progress }
+        turn: { type: integer, description: The current (or last) turn number }
+        pauseReason: { $ref: "#/components/schemas/AgentPauseReason" }
+        pendingControl: { type: string, enum: [cancel, pause, resume, end], description: A request the agent host has not carried out yet }
+        error: { type: string, description: Why it failed }
+        branch: { type: string, description: "session/<id> (empty for read-only sessions)" }
+        merge: { $ref: "#/components/schemas/AgentMerge" }
+        autoMerge: { $ref: "#/components/schemas/AutoMerge" }
+        budget: { $ref: "#/components/schemas/AgentBudget" }
+        use: { $ref: "#/components/schemas/AgentUse" }
+        prompt: { type: string, description: The first message }
+        references: { type: array, items: { $ref: "#/components/schemas/AgentReference" } }
+        startedBy: { $ref: "#/components/schemas/Actor" }
+        rev: { type: integer }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        startedAt: { type: string, format: date-time }
+        endedAt: { type: string, format: date-time }
+        lastMessageAt: { type: string, format: date-time, description: The last user message; the idle clock (R5) runs from it }
+    AgentSessionList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/AgentSession" } }
+    AgentSessionNew:
+      type: object
+      additionalProperties: false
+      properties:
+        kind: { allOf: [{ $ref: "#/components/schemas/AgentSessionKind" }], default: interactive }
+        driver: { $ref: "#/components/schemas/AgentDriver" }
+        model: { type: string, minLength: 1, maxLength: 200, description: Defaults to the agent profile's model (for the profile's driver) or the driver's default }
+        prompt: { type: string, minLength: 1, maxLength: 100000, description: "The first message; required for read-only sessions" }
+        references: { type: array, maxItems: 50, items: { $ref: "#/components/schemas/AgentReference" } }
+    AgentSessionCancel:
+      type: object
+      additionalProperties: false
+      properties:
+        end: { type: boolean, default: false, description: Also end the session (done); its branch merges per the auto-merge policy }
+    AgentSessionResume:
+      type: object
+      additionalProperties: false
+      properties:
+        budget:
+          type: object
+          additionalProperties: false
+          description: Raise the session budget (a session paused by its budget resumes only with room left)
+          properties:
+            turns: { type: integer, minimum: 1, maximum: 2000 }
+            tokens: { type: integer, format: int64, minimum: 1, maximum: 1000000000 }
+    AgentMessageKind:
+      type: string
+      enum: [user_message, notice, agent_message, thought, plan, tool_call, permission, turn, commit]
+    AgentPlanEntry:
+      type: object
+      required: [content, status]
+      properties:
+        content: { type: string }
+        status: { type: string, enum: [pending, in_progress, completed] }
+        priority: { type: string, enum: [high, medium, low] }
+    AgentFileDiff:
+      type: object
+      required: [path, newText]
+      properties:
+        path: { type: string }
+        oldText: { type: string, description: Absent for a new file }
+        newText: { type: string }
+    AgentToolCall:
+      type: object
+      required: [id, title, class, status]
+      properties:
+        id: { type: string, description: "The agent's tool call id (Cadence-Tool-Call-Id of the commands it caused)" }
+        title: { type: string }
+        class: { type: string, enum: [mcp, edit, shell, read, search, fetch, think, other] }
+        status: { type: string, enum: [pending, in_progress, completed, failed] }
+        operation: { type: string, description: "The Cadence operation of an MCP call (<entity>.<verb>)" }
+        server: { type: string, description: The MCP server of an MCP call }
+        diffs: { type: array, items: { $ref: "#/components/schemas/AgentFileDiff" } }
+        shell:
+          type: object
+          required: [command]
+          properties:
+            command: { type: string }
+            exitCode: { type: integer, description: Only when the agent reports one (Claude does not) }
+            output: { type: string }
+        locations: { type: array, items: { type: string } }
+        text: { type: string }
+        input: { description: The tool's arguments }
+        output: { description: The tool's result (MCP results are Cadence's data-marked JSON) }
+        approvalId: { type: string, description: The approval a gated MCP call returned }
+        jobId: { type: string, description: The job a long MCP call returned }
+    AgentPermission:
+      type: object
+      required: [source, state]
+      properties:
+        source: { type: string, enum: [agent, command], description: "agent: an ACP permission request; command: a gated Cadence command (202)" }
+        approvalId: { type: string }
+        toolCallId: { type: string }
+        title: { type: string }
+        operation: { type: string, description: The gated operation (command) }
+        class: { type: string }
+        options:
+          type: array
+          items:
+            type: object
+            required: [optionId, name, kind]
+            properties:
+              optionId: { type: string }
+              name: { type: string }
+              kind: { type: string, enum: [allow_once, allow_always, reject_once, reject_always] }
+        state: { type: string, enum: [pending, approved, denied, cancelled] }
+        grant: { type: string, enum: [once, session] }
+        decidedBy: { $ref: "#/components/schemas/Actor" }
+        rule: { type: string, description: The preset rule that answered without asking a person }
+        note: { type: string }
+    AgentCommit:
+      type: object
+      properties:
+        sha: { type: string }
+        files: { type: array, items: { type: string } }
+        refused: { type: boolean, description: The staged diff held a credential; nothing was committed }
+        findings:
+          type: array
+          items:
+            type: object
+            required: [path, kind]
+            properties:
+              path: { type: string }
+              kind: { type: string, description: "The credential kind found (cst_, cdk_, cwk_, anthropic, …); the value is never reported" }
+              line: { type: integer }
+    AgentTurn:
+      type: object
+      required: [state]
+      properties:
+        state: { type: string, enum: [started, ended] }
+        stopReason: { type: string, description: "end_turn, cancelled, max_tokens, refusal, …" }
+        messageId: { type: string, description: The user message the turn answers }
+        inputTokens: { type: integer, format: int64 }
+        outputTokens: { type: integer, format: int64 }
+        cachedReadTokens: { type: integer, format: int64 }
+    AgentMessage:
+      type: object
+      required: [id, sessionId, seq, kind, turn, actor, rev, createdAt, updatedAt]
+      description: "One transcript entry; tool calls, plans, permissions and streamed text are updated in place (rev)"
+      properties:
+        id: { type: string, description: "msg_<uuidv7>" }
+        sessionId: { type: string }
+        seq: { type: integer, format: int64, description: Order in the transcript }
+        kind: { $ref: "#/components/schemas/AgentMessageKind" }
+        turn: { type: integer }
+        actor: { $ref: "#/components/schemas/Actor" }
+        rev: { type: integer }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        text: { type: string, description: "user_message, notice, agent_message (Markdown), thought" }
+        final: { type: boolean, description: Streamed text is complete }
+        references: { type: array, items: { $ref: "#/components/schemas/AgentReference" } }
+        context: { type: string, description: The context block the references expanded into (user_message) }
+        delivery: { type: string, enum: [pending, delivered], description: "user_message and notice: whether the agent host took it" }
+        plan: { type: array, items: { $ref: "#/components/schemas/AgentPlanEntry" } }
+        toolCall: { $ref: "#/components/schemas/AgentToolCall" }
+        permission: { $ref: "#/components/schemas/AgentPermission" }
+        turnInfo: { $ref: "#/components/schemas/AgentTurn" }
+        commit: { $ref: "#/components/schemas/AgentCommit" }
+        level: { type: string, enum: [info, warning, error], description: notice }
+    AgentMessageList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/AgentMessage" } }
+        next: { type: integer, format: int64, description: Pass as after for the next page; absent on the last page }
+    AgentMessageNew:
+      type: object
+      required: [text]
+      additionalProperties: false
+      properties:
+        text: { type: string, minLength: 1, maxLength: 100000 }
+        references: { type: array, maxItems: 50, items: { $ref: "#/components/schemas/AgentReference" } }
+
+    # ---------------------------------------------------------------- agent host protocol schemas (tag host)
+    HostClaim:
+      type: object
+      required: [hostId]
+      additionalProperties: false
+      properties:
+        hostId: { type: string, minLength: 1, maxLength: 200, description: "This host process (hostname and boot id); a session belongs to one" }
+        version: { type: string, maxLength: 100 }
+        wait: { type: integer, minimum: 0, maximum: 30, default: 20, description: Seconds to wait for work }
+        capacity: { type: integer, minimum: 0, maximum: 256, description: How many more sessions this host may start }
+    HostStart:
+      type: object
+      required: [session, token, cloneUrl, mcpUrl, budget, clocks]
+      properties:
+        session: { $ref: "#/components/schemas/AgentSession" }
+        token: { type: string, description: "The session token (cst_…), shown once: MCP Authorization and git password; never written to disk" }
+        cloneUrl: { type: string, description: "Path of the project repository on the control plane (/git/<slug>.git)" }
+        mcpUrl: { type: string, description: Path of the MCP endpoint (/mcp) }
+        budget: { $ref: "#/components/schemas/AgentBudget" }
+        clocks:
+          type: object
+          required: [stuckTurnSeconds, identicalCalls]
+          properties:
+            stuckTurnSeconds: { type: integer, description: "timeouts.stuck_turn_minutes" }
+            identicalCalls: { type: integer, description: The same tool with the same arguments this many times in a row is a runaway }
+        resume:
+          type: object
+          description: The session ran before (host restart or resume after pause)
+          properties:
+            acpSessionId: { type: string }
+            summary: { type: string, description: A transcript summary for a new ACP session when resume fails }
+    HostControl:
+      type: object
+      required: [id, sessionId, action]
+      properties:
+        id: { type: string }
+        sessionId: { type: string }
+        action: { type: string, enum: [cancel, pause, resume, end] }
+        reason: { $ref: "#/components/schemas/AgentPauseReason" }
+        budget: { $ref: "#/components/schemas/AgentBudget" }
+        resume:
+          type: object
+          properties:
+            acpSessionId: { type: string }
+            summary: { type: string }
+    HostMessage:
+      type: object
+      required: [id, sessionId, kind, text]
+      properties:
+        id: { type: string }
+        sessionId: { type: string }
+        kind: { type: string, enum: [user_message, notice] }
+        text: { type: string }
+        context: { type: string, description: The expanded references, sent before the text }
+    HostDecision:
+      type: object
+      required: [outcome]
+      properties:
+        sessionId: { type: string }
+        approvalId: { type: string }
+        toolCallId: { type: string }
+        outcome: { type: string, enum: [pending, allow_once, allow_always, reject_once] }
+        rule: { type: string, description: The preset rule when the policy answered without a person }
+        reason: { type: string }
+    HostWork:
+      type: object
+      required: [start, messages, controls, decisions]
+      properties:
+        start: { type: array, items: { $ref: "#/components/schemas/HostStart" } }
+        messages: { type: array, items: { $ref: "#/components/schemas/HostMessage" } }
+        controls: { type: array, items: { $ref: "#/components/schemas/HostControl" } }
+        decisions: { type: array, items: { $ref: "#/components/schemas/HostDecision" } }
+    HostEntry:
+      type: object
+      required: [key, kind]
+      additionalProperties: false
+      description: "A transcript entry keyed by the host (e.g. t3:m1, tool:<id>): the same key updates the same entry"
+      properties:
+        key: { type: string, minLength: 1, maxLength: 300 }
+        kind: { type: string, enum: [notice, agent_message, thought, plan, tool_call, turn, commit] }
+        turn: { type: integer, minimum: 0 }
+        text: { type: string, maxLength: 1000000 }
+        final: { type: boolean }
+        level: { type: string, enum: [info, warning, error] }
+        plan: { type: array, items: { $ref: "#/components/schemas/AgentPlanEntry" } }
+        toolCall: { $ref: "#/components/schemas/AgentToolCall" }
+        turnInfo: { $ref: "#/components/schemas/AgentTurn" }
+        commit: { $ref: "#/components/schemas/AgentCommit" }
+    HostReport:
+      type: object
+      required: [hostId]
+      additionalProperties: false
+      properties:
+        hostId: { type: string, minLength: 1, maxLength: 200 }
+        entries: { type: array, maxItems: 500, items: { $ref: "#/components/schemas/HostEntry" } }
+        state:
+          type: object
+          required: [state]
+          additionalProperties: false
+          properties:
+            state: { type: string, enum: [running, paused, done, failed, cancelled] }
+            busy: { type: boolean }
+            turn: { type: integer }
+            reason: { $ref: "#/components/schemas/AgentPauseReason" }
+            error: { type: string, maxLength: 20000 }
+        use: { $ref: "#/components/schemas/AgentUse" }
+        acpSessionId: { type: string, maxLength: 300 }
+        note: { type: string, maxLength: 4000, description: "A note for the next session (projects.note), e.g. why the session paused" }
+        withdraw: { type: array, items: { type: string }, description: "Agent-permission approvals the agent no longer waits for (its turn was cancelled)" }
+    HostAsk:
+      type: object
+      required: [hostId, toolCall, options]
+      additionalProperties: false
+      properties:
+        hostId: { type: string, minLength: 1, maxLength: 200 }
+        turn: { type: integer }
+        toolCall: { $ref: "#/components/schemas/AgentToolCall" }
+        options:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [optionId, name, kind]
+            properties:
+              optionId: { type: string }
+              name: { type: string }
+              kind: { type: string, enum: [allow_once, allow_always, reject_once, reject_always] }

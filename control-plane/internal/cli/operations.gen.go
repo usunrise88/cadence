@@ -13,6 +13,29 @@ var Operations = []Operation{
 		},
 	},
 	{
+		ID: "agentMessages.list", Entity: "agentMessages", Verb: "list", Method: "GET", Path: "/agent-sessions/{id}/agent-messages",
+		Summary: "The session transcript in order, one page after a sequence number",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Agent session id (ses_…)"},
+			{Name: "after", In: "query", Flag: "after", Type: "integer", Description: "Only entries with a larger seq (the last seq of the previous page)", Default: "0"},
+			{Name: "limit", In: "query", Flag: "limit", Type: "integer", Default: "200"},
+		},
+	},
+	{
+		ID: "agentMessages.new", Entity: "agentMessages", Verb: "new", Method: "POST", Path: "/agent-sessions/{id}/agent-messages",
+		Summary:        "Send a user message with entity references; the agent answers on agent.session.{id}",
+		Description:    "Send a message to an agent session. References (@run:123, @mix:mix_…, @utt:…#t=…) expand into a compact context block for the agent and become its selection://current. Agents cannot send messages to sessions.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Agent session id (ses_…)"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "references", Type: "array of object"},
+			{Name: "text", Required: true, Type: "string"},
+		}},
+	},
+	{
 		ID: "agentModels.list", Entity: "agentModels", Verb: "list", Method: "GET", Path: "/catalog/agent-models",
 		Summary: "Agent models per driver, with the default the wizard picks",
 	},
@@ -41,6 +64,98 @@ var Operations = []Operation{
 		Summary: "The project's agent profile with the config files rendered from it",
 		Params: []Param{
 			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+		},
+	},
+	{
+		ID: "agentSessions.accept", Entity: "agentSessions", Verb: "accept", Method: "POST", Path: "/agent-sessions/{id}:accept",
+		Summary:        "Merge the session branch into main as a whole and end the session",
+		Description:    "Accept a session's changes: merge its branch session/<id> into main (fast-forward, or a merge commit; a conflict answers merge-conflict and changes nothing). The session must be paused or ended; a paused one ends. Agents cannot accept sessions: a person decides.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Agent session id (ses_…)"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+	},
+	{
+		ID: "agentSessions.cancel", Entity: "agentSessions", Verb: "cancel", Method: "POST", Path: "/agent-sessions/{id}:cancel",
+		Summary:        "Stop the session's current turn; with end, also end the session",
+		Description:    "Stop the current turn of an agent session (the agent answers ACP session/cancel). With end=true the session also ends: its token is revoked and its branch merges per the project's auto-merge policy. Agents cannot cancel sessions.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Agent session id (ses_…)"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: false, Properties: []BodyProperty{
+			{Name: "end", Type: "boolean", Description: "Also end the session (done); its branch merges per the auto-merge policy"},
+		}},
+	},
+	{
+		ID: "agentSessions.get", Entity: "agentSessions", Verb: "get", Method: "GET", Path: "/agent-sessions/{id}",
+		Summary: "Get an agent session with its state, budget and use, branch and merge state",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Agent session id (ses_…)"},
+		},
+	},
+	{
+		ID: "agentSessions.list", Entity: "agentSessions", Verb: "list", Method: "GET", Path: "/projects/{p}/agent-sessions",
+		Summary: "The project's agent sessions, live ones first, then the most recently changed",
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only sessions in this state; live means created, running, waiting_approval or paused", Enum: []string{"live", "created", "running", "waiting_approval", "paused", "done", "failed", "cancelled"}},
+			{Name: "limit", In: "query", Flag: "limit", Type: "integer", Default: "50"},
+		},
+	},
+	{
+		ID: "agentSessions.new", Entity: "agentSessions", Verb: "new", Method: "POST", Path: "/projects/{p}/agent-sessions",
+		Summary:        "Start Claude Code or opencode on its own branch session/<id> of the project repository",
+		Description:    "Start an agent session in the project: interactive (a conversation) or read-only (one turn, no changes). Driver and model default to the project's agent profile. Agents cannot start sessions.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "driver", Type: "string"},
+			{Name: "kind"},
+			{Name: "model", Type: "string", Description: "Defaults to the agent profile's model (for the profile's driver) or the driver's default"},
+			{Name: "prompt", Type: "string", Description: "The first message; required for read-only sessions"},
+			{Name: "references", Type: "array of object"},
+		}},
+	},
+	{
+		ID: "agentSessions.pause", Entity: "agentSessions", Verb: "pause", Method: "POST", Path: "/agent-sessions/{id}:pause",
+		Summary:        "Pause a session; the current turn stops, the worktree is committed and the agent process ends",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Agent session id (ses_…)"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+	},
+	{
+		ID: "agentSessions.resume", Entity: "agentSessions", Verb: "resume", Method: "POST", Path: "/agent-sessions/{id}:resume",
+		Summary:        "Resume a paused session (ACP session/resume, else a new ACP session with a transcript summary)",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Agent session id (ses_…)"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: false, Properties: []BodyProperty{
+			{Name: "budget", Type: "object", Description: "Raise the session budget (a session paused by its budget resumes only with room left)"},
+		}},
+	},
+	{
+		ID: "agentSessions.revert", Entity: "agentSessions", Verb: "revert", Method: "POST", Path: "/agent-sessions/{id}:revert",
+		Summary:        "Discard the session branch as a whole and end the session",
+		Description:    "Discard a session's changes: delete its branch session/<id>; main does not change. The session must be paused or ended; a paused one ends.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Agent session id (ses_…)"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
 		},
 	},
 	{
@@ -227,7 +342,7 @@ var Operations = []Operation{
 		ID: "credentials.list", Entity: "credentials", Verb: "list", Method: "GET", Path: "/credentials",
 		Summary: "List credentials (sessions, API keys, agent tokens) without their secrets",
 		Params: []Param{
-			{Name: "kind", In: "query", Flag: "kind", Type: "string", Description: "Only this kind", Enum: []string{"session", "api_key", "agent", "invitation", "worker"}},
+			{Name: "kind", In: "query", Flag: "kind", Type: "string", Description: "Only this kind", Enum: []string{"session", "api_key", "agent", "agent_host", "invitation", "worker"}},
 			{Name: "revoked", In: "query", Flag: "revoked", Type: "boolean", Description: "Include revoked and expired credentials", Default: "false"},
 		},
 	},
