@@ -1,9 +1,9 @@
-// The Cadence mark: a rounded accent square with a white wave below its centre — the same drawing as
+// The Cadence mark: a rounded accent square with a white wave below and right of its centre — the same drawing as
 // public/favicon.svg (keep the two in step). Colours come from the theme: the accent fill (indigo-9) and the
 // on-solid white.
 
 /** The wave's path in the 32 × 32 square, and its stroke. */
-export const LOGO_WAVE = { d: "M8 20c3-8 5-8 8 0s5 8 8 0", width: 3 };
+export const LOGO_WAVE = { d: "M13 21c2.6-6.8 4.4-6.8 7 0s4.4 6.8 7 0", width: 2.75 };
 
 export function Logo({ className }: { className?: string }) {
   return (
