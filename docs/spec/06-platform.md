@@ -51,7 +51,7 @@ Topic scheme, canonical for both tabs:
 | `queue`, `gpu`, `mount.{id}` | Queue order; card memory and compute; mount health |
 | `triage.new`, `approvals` | New triage items; approval requests and decisions |
 | `agent.session.{id}`, `agent.sessions` | One transcript; the session list |
-| `recipe.{path}` | File changes in a project worktree, from the watcher |
+| `recipe.{path}` | File changes in the project repository: commits (`recipe.changed`) and, from the agent host's worktree watcher, a running turn's uncommitted edits (`recipe.working`) |
 | `compute.{id}` | Host and card health, slot occupancy |
 
 A subscription can use a wildcard on the last segment (`run.123.*`). Work events carry `projectId`; registry events carry none, so a client filters work by project and shows registry changes by reference.

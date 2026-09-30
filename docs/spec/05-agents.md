@@ -27,7 +27,7 @@ Cadence launches Claude Code or opencode inside a project worktree, hands it the
 4. Turn: each message becomes `session/prompt`; references expand into a compact context block (kind, id, the header facts, a link); the host counts turns and tokens against the budget.
 5. Tools: every MCP call is a command with actor = session, so it produces outbox events the open panels receive; results come back as data-marked JSON; long operations return a job id and the agent waits with `jobs.wait`.
 6. Permissions: the agent's own rules apply first; a gated Cadence command returns `202` with an approval id and the session becomes `waiting_approval`, which notifies in-app and on Telegram; the decision resumes it.
-7. Commit: after each turn the host commits worktree changes on the session branch with the turn id; the watcher emits `recipe.{path}` events so the Recipe document shows the diff live.
+7. Commit: after each turn the host commits worktree changes on the session branch with the turn id; during the turn the watcher reports uncommitted files, which the control plane emits as `recipe.{path}` events (`recipe.working`), so the Recipe document and Session changes follow the agent's edits live and show the diff once the turn commits.
 8. Pause and resume: inactivity, a budget limit or a runaway check pauses the session; resume restores the worktree and the ACP session where the driver supports it, otherwise a new ACP session starts with a transcript summary injected.
 9. End: the user closes it or the playbook completes; the session is `done`, the token is revoked, and the session branch is merged (see below).
 10. Failure: a driver crash marks the session `failed`, keeps the worktree and branch, and notifies.
@@ -134,6 +134,18 @@ Phase 1 as built (2026-09-30):
 - An ACP permission request first goes to the preset (`policy.AnswerPermission`: tool classes, file rules, shell patterns, web); only an `ask` becomes an approval of kind `agent_permission`, answered back to the host (once → allow_once, for session → allow_always, deny or expiry → reject_once), never replayed.
 - Ending: `agentSessions.cancel {"end": true}`; accept/revert need the session paused or ended (a paused one ends). A decided gated command is told to the agent as a notice (its next turn).
 - Clocks: the stuck-turn clock and the runaway rule run in the host; the idle clock and the project's daily token budget on the server (a chore and each report).
+- Worktree watcher and Session changes: while a turn runs the host watches the worktree (`fs.watch`, never `.git`;
+  polling every 2 s where it cannot), coalesces events for 300 ms, lists the uncommitted files with `git status`
+  (git's ignore rules, no optional locks) and reports a changed list as `hostSessions.report` `working` (paths,
+  status, sizes and line counts; ≤ 200 files; no content); after the turn's commit it reports what is left. The
+  session keeps it as `AgentSession.working`, and every file entering, changing in or leaving it is a `recipe.{path}`
+  event of type `recipe.working` on the session branch (by the agent); the end clears it. Chat's Session changes lists
+  the files live ("editing"), the Recipe document of such a file says which session is editing it. `branches.compare`
+  compares a session or sync branch with main per file (merge base, main, branch; clean or not by git's merge; for
+  conflicting files the three texts, 128 KiB each and 1 MiB per response, with diff3 hunks); Chat's Session changes
+  and the Recipe branch view open conflicting files in a three-way view (side by side, stacked when narrow, or
+  unified; next/previous conflict from the keyboard), clean files keep the two-way diff. Conflicts are resolved on
+  the branch; the view is read-only.
 - Chat and the context bridge (web): the workspace's Chat is pinned to a session (`panels.chat.pinnedTo`), further sessions open their own Chat; the transcript is `agentMessages.list` paged by `after` and patched in place from `agent.session.{id}` (one cache write per animation frame, windowed past 200 entries); permission entries embed the Approvals card; Session changes show the branch diff and `agentSessions.accept|revert`. Ctrl/Cmd+I and Ask agent attach the selection as `@<kind>:<id>[#part]` chips with a prefilled intent; Explain this starts a read-only session with the entity and its help article; references in replies are links; an attribution badge opens the session's Chat at the tool call (`Cadence-Tool-Call-Id` = the transcript's tool-call id). The finished turn is announced in the polite live region, streamed tokens never.
 
 ## Guardrails

@@ -29,10 +29,24 @@ The header shows the session (`claude-code · session 3`), its kind (interactive
 idle, waiting approval, paused with the reason, done, failed), the model, and meters for turns and tokens against
 the session budget.
 
+While a turn runs, **Session changes** lists the files the agent has changed in its worktree but not committed yet
+(state *editing*): status, lines added and removed, or the size of a new file. The agent host watches the worktree
+and reports within about a third of a second; the list empties when the turn's commit takes the files (a file the
+credential scan refused stays listed). Only paths and sizes travel — the diff itself appears once the turn commits.
+
 When an interactive session ends (or is paused), **Session changes** shows the merge state of its branch
 `session/<id>`: the changed files, **Diff in Recipe** (the branch's diff against main in the Recipe document), and
 **Accept into main** or **Discard…**. A clean branch of a project whose auto-merge policy is `when-clean` merges by
 itself at the end; otherwise it waits here.
+
+When `main` moved on the same lines, the state is *conflict* and each conflicting file has a **Three-way** button: the
+merge base, `main` and the session's version of the file, with every conflict marked (amber bar). At the Chat's usual
+width the three versions are stacked per conflict (base, main, session); in a wider Chat they sit side by side.
+**Unified** shows one column instead: unchanged lines from `main`, what each side changed, and each conflict as its
+main, base and session parts. **Next conflict** / **Previous conflict** (or `n` / `p` inside the view) move between
+conflicts. Files that merge cleanly keep the two-way diff in the Recipe document. A binary file, or one over 128 KiB,
+has no three-way view. Accepting stays disabled until the conflict is gone: resolve it on the branch (a new session
+turn) or discard the changes.
 
 ## Place in the loop
 
@@ -57,6 +71,7 @@ review, accepting drafts and session changes decides, and the note it leaves rec
 | Pause / Resume | — | `agentSessions.pause`, `agentSessions.resume` |
 | End the session | — (inline confirm) | `agentSessions.cancel` with `end: true` |
 | Accept / discard session changes | — | `agentSessions.accept`, `agentSessions.revert` (the session must be paused or ended) |
+| Three-way view of a conflicting file | Next / Previous conflict, `n` / `p` in the view | `branches.compare` |
 | Allow / deny a request | Enter / Backspace on the focused card | `approvals.approve`, `approvals.deny` |
 
 Screen readers hear when a turn finishes (with the start of the reply), when a session pauses, fails or ends —
@@ -68,6 +83,8 @@ through the polite live region; streamed tokens are not announced.
 - **Follow a change back**: click the agent badge on a mix or draft ("claude-code · session 3") — Chat opens at the
   tool call that made it, highlighted.
 - **Finish a session**: End…, then review Session changes and Accept into main (or Discard).
+- **A conflict at the end**: open Three-way on the file, compare main with the session's version, then either ask
+  the agent in a new session to redo the change on top of main, or Discard.
 
 ## Sources
 

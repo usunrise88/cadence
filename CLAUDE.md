@@ -68,9 +68,10 @@ p95 56–68 ms. What exists now (details in `ROADMAP.md` "Phase 1 notes" and `do
   per-session Unix users when root; `login` puts agent logins into the agent-credentials volume.
 - **Web.** Chat, Agent sessions, Approvals, Agent settings, Settings, Getting started, Project, Mix, Recipe panels;
   context bridge (Ctrl/Cmd+I, `@kind:id` chips, attribution badge → tool call in Chat).
-Open from phase 1: the live worktree watcher (recipe events come from pushes), a three-way "Session changes" diff, the
-agent evals harness, opencode tool-call ids for the badge link, claude.ai connectors in Claude sessions (check the
-`setup-token` mode), the owner's MiniMax model (not yet run), dropping basic auth on the staging stand.
+Open from phase 1: the agent evals harness, opencode tool-call ids for the badge link, claude.ai connectors in Claude
+sessions (check the `setup-token` mode), the owner's MiniMax model (not yet run), dropping basic auth on the staging
+stand. (The worktree watcher — `recipe.working` events — and the three-way Session changes, `branches.compare`, are
+built.)
 
 Known spec conflicts and gaps: `docs/review/2026-09-29-spec-kickoff-review.md` (statuses updated); assumptions made
 while building are in `docs/spec/07-audit-risks-sources.md` "Open questions".
