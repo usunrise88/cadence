@@ -44,7 +44,7 @@ const StepTimeout = 7 * 24 * time.Hour
 
 // StepQueue is the River queue of step jobs: each waits on its lease for as long as the step runs, so they get
 // their own workers instead of starving the in-process kinds.
-const StepQueue = "steps"
+const StepQueue = jobs.QueueSteps
 
 // SweepInterval is how often the engine looks for steps whose job ended without an outcome.
 const SweepInterval = time.Minute

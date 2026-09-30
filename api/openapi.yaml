@@ -709,7 +709,7 @@ paths:
         default: { $ref: "#/components/responses/Problem" }
     patch:
       operationId: compute.edit
-      summary: Change a host's description or a card's memory cap and allowed job kinds
+      summary: Change a host's description or a card's name, class, memory, memory cap, allowed job kinds and availability windows
       tags: [compute]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -960,6 +960,24 @@ paths:
       operationId: jobs.get
       summary: Get a job
       tags: [jobs]
+      responses:
+        "200":
+          description: The job
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Job" } } }
+        default: { $ref: "#/components/responses/Problem" }
+    # jobs.edit is stream W's (phase 2): the Queue reorders step jobs by priority.
+    patch:
+      operationId: jobs.edit
+      summary: Change a step job's priority (higher starts first; the Queue's reorder)
+      tags: [jobs]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/JobEdit" } } }
       responses:
         "200":
           description: The job
@@ -2054,6 +2072,188 @@ paths:
         default: { $ref: "#/components/responses/Problem" }
 
   # ---------------------------------------------------------------- worker, queue, telemetry, runtimes (phase 2 · stream W) — add paths below this line
+  /registry/runtimes:
+    x-cadence: { entity: runtimes, kind: runtime }
+    get:
+      operationId: runtimes.list
+      summary: List runtime versions (container image pinned by digest, environment lock, worker plugin) published by workers
+      tags: [registry]
+      x-cadence:
+        toolDescription: >
+          List runtimes: the container images step kinds run in, each pinned by digest with its environment lock
+          (CUDA, PyTorch, framework versions). Workers publish them at start; a new digest is a new version. Filter
+          collection=runtime/<name>.
+      parameters:
+        - $ref: "#/components/parameters/RegistryCollectionFilter"
+        - $ref: "#/components/parameters/RegistryStateFilter"
+      responses:
+        "200":
+          description: Runtime versions, newest first
+          content: { application/json: { schema: { $ref: "#/components/schemas/RuntimeVersionList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/runtimes/{id}:
+    x-cadence: { entity: runtimes, kind: runtime }
+    parameters: [{ $ref: "#/components/parameters/VersionId" }]
+    get:
+      operationId: runtimes.get
+      summary: Get a runtime version with the workers that run it
+      tags: [registry]
+      responses:
+        "200":
+          description: The version
+          content: { application/json: { schema: { $ref: "#/components/schemas/RuntimeVersion" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/model-families:
+    x-cadence: { entity: modelFamilies, kind: model_family }
+    get:
+      operationId: modelFamilies.list
+      summary: List model family versions (architecture, capabilities, latency profiles, role step kinds) published by runtimes
+      tags: [registry]
+      x-cadence:
+        toolDescription: >
+          List model families: what a runtime can train and decode — framework, architecture, capabilities, latency
+          profiles (e.g. 160 ms) and the step kind that fills each role (calibrate, train, average, transcribe).
+          Render options from the descriptor; never assume a family by name.
+      parameters:
+        - $ref: "#/components/parameters/RegistryCollectionFilter"
+        - $ref: "#/components/parameters/RegistryStateFilter"
+      responses:
+        "200":
+          description: Model family versions, newest first
+          content: { application/json: { schema: { $ref: "#/components/schemas/ModelFamilyVersionList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/model-families/{id}:
+    x-cadence: { entity: modelFamilies, kind: model_family }
+    parameters: [{ $ref: "#/components/parameters/VersionId" }]
+    get:
+      operationId: modelFamilies.get
+      summary: Get a model family version
+      tags: [registry]
+      responses:
+        "200":
+          description: The version
+          content: { application/json: { schema: { $ref: "#/components/schemas/ModelFamilyVersion" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/step-kinds:
+    x-cadence: { entity: stepKinds, kind: step_kind }
+    get:
+      operationId: stepKinds.list
+      summary: List step kind versions (parameter schema with defaults, inputs, outputs, resources, runtime)
+      tags: [registry]
+      x-cadence:
+        toolDescription: >
+          List step kinds a pipeline can pin as kind@version: the parameter schema (every parameter with its default,
+          description, source and safe range), consumed and produced artifact types, resources and the runtime that
+          runs it. Filter collection=step-kind/<name>.
+      parameters:
+        - $ref: "#/components/parameters/RegistryCollectionFilter"
+        - $ref: "#/components/parameters/RegistryStateFilter"
+      responses:
+        "200":
+          description: Step kind versions, newest first
+          content: { application/json: { schema: { $ref: "#/components/schemas/StepKindVersionList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/step-kinds/{id}:
+    x-cadence: { entity: stepKinds, kind: step_kind }
+    parameters: [{ $ref: "#/components/parameters/VersionId" }]
+    get:
+      operationId: stepKinds.get
+      summary: Get a step kind version
+      tags: [registry]
+      responses:
+        "200":
+          description: The version
+          content: { application/json: { schema: { $ref: "#/components/schemas/StepKindVersion" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /jobs/{id}:pause:
+    x-cadence: { entity: jobs }
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      operationId: jobs.pause
+      summary: Pause a step job; a queued one is held back, a running one saves its state and returns to the queue
+      tags: [jobs]
+      x-cadence:
+        toolDescription: >
+          Pause a step job (training, eval, data). A queued job is not started until jobs.resume; a running one is
+          told to stop at its next heartbeat, saves its training state and waits in the queue, resuming from that
+          state. Only jobs that run on a worker can be paused.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      responses:
+        "200":
+          description: The job with pausedAt set
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Job" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /jobs/{id}:resume:
+    x-cadence: { entity: jobs }
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      operationId: jobs.resume
+      summary: Resume a paused step job; it waits in the queue for a free card (from its saved training state)
+      tags: [jobs]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      responses:
+        "200":
+          description: The job without pausedAt
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Job" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /jobs/{id}/job-logs:
+    x-cadence: { entity: jobLogs }
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      operationId: jobLogs.list
+      summary: Read a job's log lines from its worker, filtered by level and text, after a line number
+      tags: [jobs]
+      x-cadence:
+        toolDescription: >
+          Read the log of a job that ran on a worker: lines {seq, t, level, msg, fields}. level=warn keeps warn and
+          error; text matches the message (case-insensitive); after=<seq> pages forward (nextAfter); tail=true returns
+          the last lines instead of the first. Live lines stream on job.{id}.log.
+      parameters:
+        - { name: level, in: query, description: Minimum level, schema: { type: string, enum: [debug, info, warn, error] } }
+        - { name: text, in: query, description: Text the message must contain (case-insensitive), schema: { type: string, maxLength: 200 } }
+        - { name: after, in: query, description: Only lines after this line number, schema: { type: integer, minimum: 0 } }
+        - { name: tail, in: query, description: The last matching lines instead of the first, schema: { type: boolean, default: false } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 5000, default: 500 } }
+      responses:
+        "200":
+          description: Matching lines in order
+          content: { application/json: { schema: { $ref: "#/components/schemas/JobLogPage" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /queue-entries:
+    x-cadence: { entity: queueEntries }
+    get:
+      operationId: queueEntries.list
+      summary: The step queue across projects — waiting, paused and running step jobs with their card and lease
+      tags: [jobs]
+      x-cadence:
+        toolDescription: >
+          The GPU queue: step jobs waiting, paused or running on a worker, in start order (priority, then first
+          come), with the card and worker holding each running one. Reorder with jobs.edit (priority), pause with
+          jobs.pause. A project-scoped credential sees its own project's entries only.
+      parameters:
+        - { name: project, in: query, description: Only this project's entries (slug), schema: { type: string } }
+      responses:
+        "200":
+          description: Entries, running ones first, then in start order
+          content: { application/json: { schema: { $ref: "#/components/schemas/QueueEntryList" } } }
+        default: { $ref: "#/components/responses/Problem" }
 
   # ---------------------------------------------------------------- artifacts and pipelines (phase 2 · stream P) — add paths below this line
   /artifacts/{hash}:
@@ -3059,7 +3259,7 @@ components:
 
     JobKind:
       type: string
-      enum: [training, eval, shadow, export]
+      enum: [training, eval, shadow, export, data]
     ComputeCard:
       type: object
       required: [index, name, cardClass, memoryGb, memoryCapGb, allowedJobKinds]
@@ -3070,6 +3270,8 @@ components:
         memoryGb: { type: number, format: double }
         memoryCapGb: { type: number, format: double, description: "The memory a Cadence job may use on this card (CADENCE_GPU_MEMORY_CAP_GB)" }
         allowedJobKinds: { type: array, items: { $ref: "#/components/schemas/JobKind" } }
+        windows: { $ref: "#/components/schemas/AvailabilityWindows" }
+        telemetry: { $ref: "#/components/schemas/CardTelemetryReport" }
     ComputeHealth:
       type: object
       required: [state]
@@ -3100,8 +3302,12 @@ components:
       additionalProperties: false
       properties:
         index: { type: integer, minimum: 0 }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        cardClass: { type: string, pattern: "^[a-z0-9][a-z0-9-]{0,62}$", description: "Key into the estimate table in defaults.yaml (a corrected card: blackwell-48gb)" }
+        memoryGb: { type: number, format: double, exclusiveMinimum: 0, description: "The card's memory; the cap must stay at or below it" }
         memoryCapGb: { type: number, format: double, exclusiveMinimum: 0 }
         allowedJobKinds: { type: array, uniqueItems: true, items: { $ref: "#/components/schemas/JobKind" } }
+        windows: { $ref: "#/components/schemas/AvailabilityWindows" }
     ComputeEdit:
       type: object
       additionalProperties: false
@@ -3468,6 +3674,8 @@ components:
         startedAt: { type: string, format: date-time }
         finishedAt: { type: string, format: date-time }
         cancelRequestedAt: { type: string, format: date-time }
+        priority: { type: integer, description: "Step jobs: start order in the queue, higher first (jobs.edit); 0 for other jobs" }
+        pausedAt: { type: string, format: date-time, description: "Step jobs: paused (jobs.pause) and held in the queue until jobs.resume" }
     JobList:
       type: object
       required: [items]
@@ -4886,6 +5094,146 @@ components:
         retryable: { type: boolean }
 
     # ---------------------------------------------------------------- worker, queue, telemetry, runtimes schemas (stream W) — add below
+    RuntimeVersion:
+      allOf:
+        - $ref: "#/components/schemas/RegistryVersion"
+        - type: object
+          required: [runtime, workers]
+          properties:
+            runtime: { $ref: "#/components/schemas/RuntimeDescriptor" }
+            workers: { type: array, items: { $ref: "#/components/schemas/Worker" }, description: Workers that registered with this version, newest first }
+    RuntimeVersionList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/RuntimeVersion" } }
+    ModelFamilyVersion:
+      allOf:
+        - $ref: "#/components/schemas/RegistryVersion"
+        - type: object
+          required: [modelFamily]
+          properties:
+            modelFamily: { $ref: "#/components/schemas/ModelFamilyDescriptor" }
+    ModelFamilyVersionList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/ModelFamilyVersion" } }
+    StepKindPayload:
+      allOf:
+        - $ref: "#/components/schemas/StepKindDescriptor"
+        - type: object
+          required: [name, runtime, runtimeVersionId, schemaHash]
+          properties:
+            name: { type: string, description: "The step kind's name; pipelines pin <name>@<version>" }
+            runtime: { type: string, description: The runtime that publishes it }
+            runtimeVersionId: { type: string, description: "The runtime's registry version (ver_…) when first published" }
+            schemaHash: { type: string, description: "sha256 of the canonical parameter schema; neutral kinds of several runtimes agree on it" }
+    StepKindVersion:
+      allOf:
+        - $ref: "#/components/schemas/RegistryVersion"
+        - type: object
+          required: [stepKind]
+          properties:
+            stepKind: { $ref: "#/components/schemas/StepKindPayload" }
+    StepKindVersionList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/StepKindVersion" } }
+    JobEdit:
+      type: object
+      required: [priority]
+      additionalProperties: false
+      properties:
+        priority: { type: integer, minimum: -1000, maximum: 1000, description: "Start order in the queue, higher first" }
+    JobLogLine:
+      type: object
+      required: [seq, t, level, msg]
+      properties:
+        seq: { type: integer, description: Line number in the job's log, from 1 }
+        t: { type: string, format: date-time }
+        level: { type: string, enum: [debug, info, warn, error] }
+        msg: { type: string }
+        fields: { type: object }
+    JobLogPage:
+      type: object
+      required: [items, nextAfter]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/JobLogLine" } }
+        nextAfter: { type: integer, description: "Pass as after= to read on (the last line number scanned)" }
+    QueueLease:
+      type: object
+      required: [id, workerId, host, card, memoryCapMb, startedAt, heartbeatAt]
+      properties:
+        id: { type: string, description: "lse_…" }
+        workerId: { type: string }
+        runtime: { type: string }
+        host: { type: string }
+        card: { type: integer, description: "Card index; -1 for a step that needs no card" }
+        memoryCapMb: { type: integer }
+        startedAt: { type: string, format: date-time }
+        heartbeatAt: { type: string, format: date-time }
+        progress: { type: number }
+        message: { type: string }
+        stopReason: { type: string, enum: [cancelled, paused, window-closed], description: The stop the worker was told about }
+    QueueEntry:
+      type: object
+      required: [jobId, kind, kindVersion, jobKind, state, priority, enqueuedAt, attempt]
+      properties:
+        jobId: { type: string }
+        projectId: { type: string }
+        pipelineRunId: { type: string }
+        stepId: { type: string }
+        runId: { type: string }
+        kind: { type: string }
+        kindVersion: { type: string }
+        jobKind: { $ref: "#/components/schemas/JobKind" }
+        gpu: { type: boolean }
+        memoryGb: { type: number }
+        state: { type: string, enum: [waiting, paused, running, stopping] }
+        priority: { type: integer }
+        enqueuedAt: { type: string, format: date-time }
+        estimateSeconds: { type: number }
+        attempt: { type: integer }
+        resumeFrom: { type: string, description: "The training state it resumes from (b3 hash), after a pause or a window close" }
+        lease: { $ref: "#/components/schemas/QueueLease" }
+    QueueEntryList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/QueueEntry" } }
+    AvailabilityWindow:
+      type: object
+      required: [days, start, end]
+      additionalProperties: false
+      properties:
+        days:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: string, enum: [mon, tue, wed, thu, fri, sat, sun] }
+          description: Days the window opens on (a window past midnight belongs to the day it opens)
+        start: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$", description: "Opens at HH:MM" }
+        end: { type: string, pattern: "^(([01][0-9]|2[0-3]):[0-5][0-9]|24:00)$", description: "Closes at HH:MM (24:00 = midnight); before start = the next day" }
+        timezone: { type: string, maxLength: 64, default: UTC, description: "IANA time zone, e.g. Europe/Berlin" }
+    AvailabilityWindows:
+      type: object
+      description: >
+        R19: job kind → the windows in which a job of that kind may run on the card. A kind without an entry may run
+        any time. A job starts only when its estimate fits before its window closes; a running training job is
+        paused at the close and resumes from its training state when a window opens.
+      additionalProperties:
+        type: array
+        maxItems: 28
+        items: { $ref: "#/components/schemas/AvailabilityWindow" }
+    CardTelemetryReport:
+      allOf:
+        - $ref: "#/components/schemas/CardTelemetry"
+        - type: object
+          required: [reportedAt]
+          properties:
+            reportedAt: { type: string, format: date-time }
 
     # ---------------------------------------------------------------- artifacts and pipelines schemas (stream P) — add below
     Artifact:

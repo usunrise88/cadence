@@ -30,17 +30,22 @@ Entities:
   drafts         accept get list revert
   events         list
   help           get search
-  jobs           cancel get list wait
+  jobLogs        list
+  jobs           cancel edit get list pause resume wait
   mixes          edit get list new preview
+  modelFamilies  get list
   pipelineRuns   cancel get list retry wait
   pipelines      list run
   policies       edit get
   projects       adopt archive edit get list new note search sync
+  queueEntries   list
   recipes        get list
   registry       search
   runs           new
+  runtimes       get list
   secrets        list new
   sources        archive edit get list
+  stepKinds      get list
   templates      get list
   utterances     get list
 

@@ -35,6 +35,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/steps"
 	"github.com/usunrise88/cadence/control-plane/internal/storage"
 	"github.com/usunrise88/cadence/control-plane/internal/testdb"
+	"github.com/usunrise88/cadence/control-plane/internal/workers"
 	"github.com/usunrise88/cadence/control-plane/migrations"
 	"github.com/usunrise88/cadence/control-plane/templates"
 )
@@ -51,6 +52,7 @@ type env struct {
 	admin    *Server               // the admin server (its secret store and repositories are inspected by tests)
 	repos    *bootstrap.Service    // project repositories under a temporary data directory
 	leases   *pipelinestest.Leases // the fake worker protocol the pipeline engine waits on
+	switched *switchLeases         // env.useWorkers moves the engine to the real worker protocol
 	keys     atomic.Int64
 }
 
@@ -105,13 +107,18 @@ func startWith(t *testing.T, adjust func(*Config)) *env {
 		t.Fatal(err)
 	}
 	hooks, leases := &steps.Hooks{}, &pipelinestest.Leases{Pool: pool, CAS: blobs}
-	eng := pipelines.New(pipelines.Options{Pool: pool, CAS: blobs, Hooks: hooks, Leases: leases, Repos: store, Log: quiet})
+	// The real worker protocol is there too; a test switches the engine over to it with env.useWorkers.
+	wsvc := workers.New(workers.Options{Pool: pool, CAS: blobs, LogDir: t.TempDir(), Log: quiet, Poll: 50 * time.Millisecond})
+	sw := &switchLeases{fake: leases, real: wsvc}
+	eng := pipelines.New(pipelines.Options{Pool: pool, CAS: blobs, Hooks: hooks, Leases: sw, Repos: store, Log: quiet})
 	leases.Engine = eng
 	eng.Register(js)
 	if err := js.Start(ctx); err != nil {
 		t.Fatal(err)
 	}
-	withJobs := func(c *Config) { c.Jobs, c.Projects, c.CAS, c.StepHooks, c.Pipelines = js, svc, blobs, hooks, eng }
+	withJobs := func(c *Config) {
+		c.Jobs, c.Projects, c.CAS, c.StepHooks, c.Pipelines, c.Workers = js, svc, blobs, hooks, eng, wsvc
+	}
 	asAgent := func(c *Config) { c.Actor = testAgent }
 	opts := []func(*Config){withJobs}
 	if adjust != nil {
@@ -133,8 +140,24 @@ func startWith(t *testing.T, adjust func(*Config)) *env {
 		<-indexed
 		pool.Close()
 	})
-	return &env{t: t, url: srv.URL, agentURL: agentSrv.URL, pool: pool, metrics: metrics, jobs: js, admin: admin, repos: svc, leases: leases}
+	return &env{t: t, url: srv.URL, agentURL: agentSrv.URL, pool: pool, metrics: metrics, jobs: js, admin: admin, repos: svc, leases: leases, switched: sw}
 }
+
+// switchLeases lets a test move the pipeline engine from the in-process fake to the real worker protocol.
+type switchLeases struct {
+	fake, real steps.Leases
+	useReal    atomic.Bool
+}
+
+func (s *switchLeases) Await(ctx context.Context, jobID string) (steps.Outcome, error) {
+	if s.useReal.Load() {
+		return s.real.Await(ctx, jobID)
+	}
+	return s.fake.Await(ctx, jobID)
+}
+
+// useWorkers makes step jobs wait for real workers (the worker protocol) instead of the in-process fake.
+func (e *env) useWorkers() { e.switched.useReal.Store(true) }
 
 func (e *env) key() string { return fmt.Sprintf("test-key-%08d", e.keys.Add(1)) }
 

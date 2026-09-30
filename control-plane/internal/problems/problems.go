@@ -65,6 +65,12 @@ var (
 
 	// Pipelines (phase 2 · stream P).
 	PipelineInvalid = Type{"pipeline-invalid", http.StatusUnprocessableEntity, "Pipeline invalid"}
+
+	// Worker protocol (phase 2 · stream W).
+	LeaseEnded           = Type{"lease-ended", http.StatusConflict, "Lease ended"}
+	StepKindConflict     = Type{"step-kind-conflict", http.StatusConflict, "Step kind conflict"}
+	ArtifactHashMismatch = Type{"artifact-hash-mismatch", http.StatusUnprocessableEntity, "Artifact hash mismatch"}
+	ArtifactMissing      = Type{"artifact-missing", http.StatusConflict, "Artifact missing"}
 )
 
 // Types lists every registered type.
@@ -74,6 +80,7 @@ func Types() []Type {
 		PreconditionRequired, IdempotencyKeyReused, Unauthenticated, TOTPRequired, Forbidden, RateLimited, NotImplemented,
 		Internal, PolicyDenied, ReservedAlias, EstimateUnavailable, InvalidQuery, DraftStale, MergeConflict,
 		RepositoryUnavailable, EvalOnlyDataset, PipelineInvalid,
+		LeaseEnded, StepKindConflict, ArtifactHashMismatch, ArtifactMissing,
 	}
 }
 

@@ -14,7 +14,9 @@
 // CADENCE_GITHUB_API (https://api.github.com; GitHub Enterprise: https://<host>/api/v3), CADENCE_HOST_TOKEN_FILE (where
 // the agent host's cah_ token is kept: a file on a volume both containers mount; see credentials.EnsureHostTokenFile),
 // CADENCE_EGRESS_TOKEN_FILE (the egress proxy's cep_ token, the same way), CADENCE_CAS_DIR ($CADENCE_DATA_DIR/cas: the
-// content-addressed artifact store, shared by volume with the worker).
+// content-addressed artifact store, shared by volume with the worker), CADENCE_WORKER_TOKEN_FILE (the worker's cwk_
+// token for the compute host CADENCE_WORKER_HOST, default staging, the same way). Job logs from workers live under
+// $CADENCE_DATA_DIR/job-logs (14 days).
 // Project repositories live under $CADENCE_DATA_DIR/repos (bare), work (working clones) and worktrees; the git binary
 // must be on PATH. `cadence egress-proxy` runs the agent sandbox's allowlisting proxy instead (internal/egress).
 package main
@@ -55,6 +57,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/secrets"
 	"github.com/usunrise88/cadence/control-plane/internal/server"
 	"github.com/usunrise88/cadence/control-plane/internal/storage"
+	"github.com/usunrise88/cadence/control-plane/internal/workers"
 	"github.com/usunrise88/cadence/control-plane/migrations"
 	"github.com/usunrise88/cadence/control-plane/templates"
 )
@@ -219,6 +222,9 @@ func serve(ctx context.Context, getenv func(string) string) error {
 	if err != nil {
 		return err
 	}
+	workerSvc := workers.New(workers.Options{
+		Pool: pool, Secrets: store, CAS: blobs, LogDir: filepath.Join(cfg.dataDir, "job-logs"), Log: log,
+	})
 	srv, err := server.New(server.Config{
 		Pool:     pool,
 		Pipeline: commands.NewPipeline(pool, log, metrics.Commands, engine),
@@ -232,11 +238,36 @@ func serve(ctx context.Context, getenv func(string) string) error {
 		Secrets:  store,
 		Projects: projectRepos,
 		CAS:      blobs,
+		Workers:  workerSvc,
 	})
 	if err != nil {
 		return err
 	}
 	srv.RegisterJobs(jobSvc) // the pipeline engine's step jobs (phase 2)
+	jobSvc.AddPeriodic("workerLeases.reap", 10*time.Second, func(ctx context.Context) error {
+		_, err := workerSvc.Reap(ctx)
+		return err
+	})
+	jobSvc.AddPeriodic("jobLogs.prune", 24*time.Hour, func(ctx context.Context) error {
+		n, err := workerSvc.PruneLogs(ctx)
+		if n > 0 {
+			log.InfoContext(ctx, "job logs pruned", "count", n)
+		}
+		return err
+	})
+	if path := getenv("CADENCE_WORKER_TOKEN_FILE"); path != "" {
+		host := getenv("CADENCE_WORKER_HOST")
+		if host == "" {
+			host = defaultWorkerHost
+		}
+		issued, err := credentials.EnsureWorkerTokenFile(ctx, pool, path, host)
+		if err != nil {
+			return fmt.Errorf("worker token: %w", err)
+		}
+		if issued {
+			log.Info("issued a new worker token; older ones of the host are revoked", "file", path, "host", host)
+		}
+	}
 	jobSvc.AddPeriodic("agentSessions.sweep", 30*time.Second, srv.SweepSessions)
 	jobSvc.AddPeriodic("agentCredentials.sweep", time.Minute, srv.SweepAgentCredentials)
 	if path := getenv("CADENCE_HOST_TOKEN_FILE"); path != "" {
@@ -304,6 +335,10 @@ func serve(ctx context.Context, getenv func(string) string) error {
 	})
 	return g.Wait()
 }
+
+// defaultWorkerHost is the compute host of the worker token in CADENCE_WORKER_TOKEN_FILE when CADENCE_WORKER_HOST is
+// not set: the staging host defaults.yaml seeds.
+const defaultWorkerHost = "staging"
 
 // stubGPUHoursPerDay is the daily GPU-hours allowance the policy engine checks spend against until phase 2 meters
 // use and reads the project's budget (policy.StubBudget).
