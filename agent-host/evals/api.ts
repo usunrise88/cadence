@@ -21,6 +21,8 @@ import type {
   Project,
 } from "../src/api/gen/types.gen.ts";
 
+const LIVE = new Set(["created", "running", "waiting_approval", "paused"]);
+
 export class CadenceError extends Error {
   constructor(
     readonly status: number,
@@ -105,7 +107,20 @@ export class CadenceApi {
 
   /** agentSessions.cancel {end: true}: the host ends the agent, the branch merges per the auto-merge policy. */
   async endSession(s: AgentSession): Promise<void> {
-    await this.req("POST", `/agent-sessions/${s.id}:cancel`, { end: true }, { "If-Match": `"${s.rev}"` });
+    // The host keeps revising a live session (usage, working changes, host state): on 412 re-read and try again.
+    let cur = s;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await this.req("POST", `/agent-sessions/${cur.id}:cancel`, { end: true }, { "If-Match": `"${cur.rev}"` });
+        return;
+      } catch (err) {
+        if (!(err instanceof CadenceError)) throw err;
+        // A read-only session ends by itself after its one turn: already over is what we wanted.
+        if (err.status === 409 && !LIVE.has((await this.session(cur.id)).state)) return;
+        if (err.status !== 412 || attempt >= 4) throw err;
+        cur = await this.session(cur.id);
+      }
+    }
   }
 
   async transcript(id: string): Promise<AgentMessage[]> {
