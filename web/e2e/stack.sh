@@ -26,6 +26,7 @@ mkdir -p "$TOOLS"
 printf '#!/usr/bin/env bash\nDATABASE_URL=%q exec %q "$@"\n' "$DSN" "$DATA/mintagent" > "$TOOLS/mint-agent-token"
 chmod +x "$TOOLS/mint-agent-token"
 # The agent-host credential (cah_…) for specs that play a scripted agent host (e2e/host.ts).
-DATABASE_URL="$DSN" CADENCE_HOST_TOKEN_FILE="$TOOLS/host-token" \
+# The worker credential (cwk_…) for specs that play a scripted worker (e2e/worker.ts): queue, leases, logs.
+DATABASE_URL="$DSN" CADENCE_HOST_TOKEN_FILE="$TOOLS/host-token" CADENCE_WORKER_TOKEN_FILE="$TOOLS/worker-token" \
 CADENCE_ADDR="127.0.0.1:${API_PORT}" CADENCE_DATA_DIR="$DATA" CADENCE_LOG_LEVEL=warn \
   "$DATA/cadence" serve

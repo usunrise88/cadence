@@ -35,3 +35,11 @@ export {
 export { formatReference, linkifyReferences, parseReference, referenceChipLabel, referenceFromHref } from "@/shell/agents/references";
 // Branches: the three-way view of conflicting files (branches.compare) that Session changes and the Recipe document share.
 export { BranchConflicts, ThreeWayDiff, type BranchConflictsProps, type ThreeWayDiffProps } from "@/shell/diff/ThreeWayDiff";
+// Training (phase 2): the log view Logs shows and Pipeline run embeds; forms rendered from a parameter schema
+// (x-cadence); the active job and pipeline run that Logs and Pipeline run follow.
+export { LogView, LOG_ROW_HEIGHT, type LogViewProps } from "@/shell/logs/LogView";
+export { SchemaForm, type SchemaFormProps } from "@/shell/forms/SchemaForm";
+export { departuresOf, recommended, type ParamSchema, type Values } from "@/shell/forms/schema";
+export { AUGMENT_DIR, AUGMENTATION_PROFILE_SCHEMA, isAugmentationProfile, newProfile, parseProfile, writeProfile } from "@/shell/forms/augmentation";
+export { focusJob, focusPipelineRun, useFocusedJob, useFocusedPipelineRun, type FocusedJob } from "@/shell/training/focus";
+export { DAY_LABEL, DAYS, formatDays, formatWindows, windowError } from "@/shell/training/windows";

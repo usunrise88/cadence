@@ -9,6 +9,9 @@ import type { DefaultWorkspaceName } from "./schema";
 type Slot = { panel: string; location: Location };
 
 const TABLE: Record<DefaultWorkspaceName, Slot[]> = {
+  // Centre documents (Run, Mix, Experiment) open from the Library, links and commands. Checkpoints and Metrics are
+  // slots for panels that arrive later in phase 2: planDefaultLayout skips them until they register, then a new or
+  // reset workspace places them here (stored workspaces keep their layout; no migration is needed).
   Training: [
     { panel: "library", location: "left" },
     { panel: "chat", location: "right" },

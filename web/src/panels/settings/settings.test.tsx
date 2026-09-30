@@ -128,6 +128,33 @@ describe("compute", () => {
     expect(runCommand).toHaveBeenCalledWith("compute.edit", { host, body: { cards: [{ index: 0, memoryCapGb: 32 }] } });
     expect(screen.getByRole("button", { name: "Discard mine and reload" })).toBeTruthy();
   });
+
+  it("edits availability windows per card and sends them only when they changed", async () => {
+    const w = { training: [{ days: ["mon" as const], start: "20:00", end: "08:00" }] };
+    expect(cardEdits(host, { 0: { memoryCapGb: "24", allowedJobKinds: host.cards[0]!.allowedJobKinds, windows: {} } })).toEqual([]);
+    expect(cardEdits(host, { 0: { memoryCapGb: "24", allowedJobKinds: host.cards[0]!.allowedJobKinds, windows: w } })).toEqual([{ index: 0, windows: w }]);
+
+    qc.setQueryData(computeListQueryKey(), { items: [host] });
+    runCommand.mockResolvedValue({ ...host, rev: 2, cards: [{ ...host.cards[0]!, windows: w }] });
+    wrap(<ComputeSection />);
+    expect(screen.getByTestId("windows-0").textContent).toBe("any time");
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add window" }));
+    const editor = screen.getByTestId("windows-editor-0");
+    // A bad time blocks Save with the reason.
+    fireEvent.change(screen.getByLabelText("Opens at"), { target: { value: "25:00" } });
+    expect(editor.textContent).toContain("Opens at HH:MM");
+    expect(screen.getByRole("button", { name: "Save" })).toHaveProperty("disabled", true);
+    fireEvent.change(screen.getByLabelText("Opens at"), { target: { value: "20:00" } });
+    for (const d of ["Tue", "Wed", "Thu", "Fri"]) fireEvent.click(screen.getByLabelText(d));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(runCommand).toHaveBeenCalledWith("compute.edit", {
+        host,
+        body: { cards: [{ index: 0, windows: { training: [{ days: ["mon"], start: "20:00", end: "08:00", timezone: "UTC" }] } }] },
+      }),
+    );
+  });
 });
 
 describe("policies", () => {

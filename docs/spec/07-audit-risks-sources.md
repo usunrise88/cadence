@@ -53,6 +53,17 @@ Spikes:
 
 Open questions:
 
+- [ ] U (2026-09-30, panels): the worker reports one memory number per card, so Queue & GPU estimates Cadence's share
+  (used − the last reading taken while no Cadence job held the card; without one, the job's cap) and labels it
+  "estimated"; per-process memory from the worker would make it exact.
+- [ ] U (2026-09-30, panels): jobs and pipeline runs are not documents, so "the active job" (Logs) and the pipeline
+  run Pipeline run follows are a small shell focus store set by Queue & GPU, Pipeline run and (later) Run, not the
+  selection bus.
+- [ ] U (2026-09-30, panels): the Recipe document had no write path; `recipes.new` / `recipes.edit` commit one text
+  file to main as the person (If-Match: the commit that last changed the file). The default preset forbids both for
+  agents, who change files on their session branch. The augmentation profile file shape (`augment/<name>.yaml`) and
+  its recommended values (`defaults.yaml` `augment.*`) are recorded in 03 "Augmentation".
+
 - [ ] Y (2026-09-30, worker harness): a directory artifact is recognised by `meta.layout: dir|file`, which the worker
   adds to every output it releases; an input without it is sniffed (a blob that parses as exactly the manifest shape
   and whose files are all present is a directory). The control plane should keep `layout` in stored artifact meta.

@@ -1,15 +1,17 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash } from "iconoir-react";
+import { Play, Plus, Trash } from "iconoir-react";
 import { datasetsListOptions, eventsListOptions, mixesGetQueryKey } from "@/api/gen/@tanstack/react-query.gen";
-import type { DraftChange, Mix, MixGroup, Problem } from "@/api/gen/types.gen";
+import type { DraftChange, Mix, MixGroup, MixPreview, Problem } from "@/api/gen/types.gen";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { AnalyticsChart, type AnalyticsSpec } from "@/shell/charts";
 import { cn } from "@/lib/utils";
 import { DraftOutline, PresenceNotice, changed, presenceLabel, useActivePresence, useDrafts } from "@/shell/entity/drafts";
 import { ActorBadge, EmptyState } from "@/shell/entity/primitives";
-import { runCommand, useCommand, useEditRequest, useTopic, type PanelProps } from "@/shell/panel";
+import { errorMessage, lookupDefault, rangeWarning, runCommand, useCommand, useDefaults, useEditRequest, useProject, useTopic, WhyDefault, type PanelProps } from "@/shell/panel";
 
 // The Mix document (docs/spec/11-ui-panels.md): groups, weights, temperature and replay share over dataset
 // versions, and the preview of hours per language. A person edits the table directly (a new revision); an agent's
@@ -155,8 +157,9 @@ function Overview({ mix, doc }: { mix: Mix; doc?: string }) {
         />
         <div className="flex flex-wrap items-end gap-4 text-xs">
           <NumberField label="Temperature" value={working.temperature} step={0.1} min={0.1} max={10} disabled={blocked} onChange={(v) => edit({ temperature: v })} />
-          <NumberField label="Replay share" value={working.replayShare} step={0.05} min={0} max={0.9} disabled={blocked} onChange={(v) => edit({ replayShare: v })} />
-          <div className="ml-auto flex gap-1">
+          <ReplayShare value={working.replayShare} hasReplay={working.groups.some((g) => g.replay)} disabled={blocked} onChange={(v) => edit({ replayShare: v })} />
+          <div className="ml-auto flex flex-wrap items-center gap-1">
+            <LaunchRun mix={mix} dirty={dirty} />
             <Button size="xs" variant="outline" disabled={!dirty || saving} onClick={discard}>
               Discard
             </Button>
@@ -193,7 +196,7 @@ function Overview({ mix, doc }: { mix: Mix; doc?: string }) {
         ) : null}
       </section>
 
-      <Preview mix={mix} />
+      <Preview mix={mix} working={local ?? {}} dirty={dirty} />
     </div>
   );
 }
@@ -364,38 +367,121 @@ function MixContent({ content, names, changes }: { content: Partial<Mix>; names:
   );
 }
 
-function Preview({ mix }: { mix: Mix }) {
-  const p = mix.preview;
+export type PreviewBy = "language" | "source" | "group";
+const PREVIEW_BY: { id: PreviewBy; label: string }[] = [
+  { id: "language", label: "Language" },
+  { id: "source", label: "Source" },
+  { id: "group", label: "Group" },
+];
+
+const pct = (v: number) => `${Math.round(v * 1000) / 10} %`;
+const hours = (v: number) => Math.round(v * 100) / 100;
+
+/** Rows of the preview for one grouping: label, train hours and (where the preview has it) sample share. */
+export function previewRows(p: MixPreview, by: PreviewBy): { label: string; hours: number; share?: number; note?: string }[] {
+  if (by === "language") return p.languages.map((l) => ({ label: l.locale, hours: l.hours, share: l.share }));
+  if (by === "group") return p.groups.map((g) => ({ label: g.name, hours: g.hours, share: g.share, note: g.replay ? "replay" : undefined }));
+  return p.datasets.map((d) => ({ label: `${d.name.replace(/^dataset\//, "")} · ${d.version}`, hours: d.hours, note: d.adopted ? undefined : "not adopted" }));
+}
+
+/**
+ * The preview of hours per language, source and group. While the person edits, it is recomputed from the unsaved
+ * values (mixes.preview: metadata only, nothing saved); otherwise it is the saved revision's.
+ */
+function Preview({ mix, working, dirty }: { mix: Mix; working: Local; dirty: boolean }) {
+  const project = useProject();
+  const [by, setBy] = useState<PreviewBy>("language");
+  const [live, setLive] = useState<{ key: string; preview: MixPreview } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const body = useMemo(
+    () => ({ name: mix.name, groups: working.groups ?? mix.groups, temperature: working.temperature ?? mix.temperature, replayShare: working.replayShare ?? mix.replayShare }),
+    [mix, working],
+  );
+  const key = JSON.stringify(body);
+  useEffect(() => {
+    if (!dirty || !project) return;
+    const t = setTimeout(() => {
+      runCommand("mixes.preview", { project, body })
+        .then((preview) => {
+          setLive({ key, preview });
+          setError(null);
+        })
+        .catch((err: unknown) => setError(errorMessage(err)));
+    }, 400);
+    return () => clearTimeout(t);
+    // body is derived from key
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dirty, project, key]);
+  const p = dirty && live?.key === key ? live.preview : mix.preview;
+  const pending = dirty && live?.key !== key;
+  const rows = previewRows(p, by);
+  const spec: AnalyticsSpec = {
+    kind: "bar",
+    title: `Train hours per ${by}`,
+    categories: rows.map((r) => r.label),
+    series: [{ id: "hours", label: "Train hours", slot: 0, values: rows.map((r) => hours(r.hours)) }],
+    horizontal: true,
+    unit: "h",
+    xLabel: "Train hours",
+  };
   return (
-    <section aria-labelledby="mix-preview" className="flex flex-col gap-2">
-      <h3 id="mix-preview" className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-        Preview · hours per language ({p.totalHours} h of training data, from dataset metadata)
-      </h3>
+    <section aria-labelledby="mix-preview" className="flex flex-col gap-2" data-preview={dirty ? (pending ? "pending" : "unsaved") : "saved"}>
+      <div className="flex flex-wrap items-center gap-2">
+        <h3 id="mix-preview" className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+          Preview · {hours(p.totalHours)} h of training data, from dataset metadata
+        </h3>
+        {dirty ? <span className="text-xs text-muted-foreground">{pending ? "updating for your changes…" : "for your unsaved changes"}</span> : null}
+        <div role="radiogroup" aria-label="Preview by" className="ml-auto inline-flex rounded-md border bg-background p-0.5 text-xs">
+          {PREVIEW_BY.map((o) => (
+            <button
+              key={o.id}
+              type="button"
+              role="radio"
+              aria-checked={by === o.id}
+              onClick={() => setBy(o.id)}
+              className={cn("h-6 rounded-[4px] px-2.5", by === o.id ? "bg-selected font-medium text-foreground" : "text-muted-foreground hover:text-foreground")}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {rows.length ? <AnalyticsChart spec={spec} height={Math.min(320, 64 + rows.length * 28)} hideTitle /> : null}
       <table data-slot="mix-preview" className="w-full text-xs">
         <thead>
           <tr className="text-left text-muted-foreground">
-            <th className="py-1 font-normal">Language</th>
+            <th className="py-1 font-normal">{PREVIEW_BY.find((o) => o.id === by)?.label}</th>
             <th className="font-normal">Train hours</th>
-            <th className="w-1/2 font-normal">Sample share</th>
+            <th className="w-1/2 font-normal">{by === "source" ? "" : "Sample share"}</th>
           </tr>
         </thead>
         <tbody>
-          {p.languages.map((l) => (
-            <tr key={l.locale} className="border-t">
-              <td className="py-1 font-medium">{l.locale}</td>
-              <td className="tabular-nums">{l.hours}</td>
+          {rows.map((r) => (
+            <tr key={r.label} className="border-t">
+              <td className="py-1 font-medium">
+                {r.label}
+                {r.note ? <span className="ml-1 rounded-full border px-1.5 text-[11px] font-normal text-muted-foreground">{r.note}</span> : null}
+              </td>
+              <td className="tabular-nums">{hours(r.hours)}</td>
               <td>
-                <span className="flex items-center gap-2">
-                  <span className="h-2 flex-1 rounded-full bg-muted">
-                    <span className="block h-2 rounded-full bg-accent-line" style={{ width: `${Math.round(l.share * 100)}%` }} />
+                {r.share !== undefined ? (
+                  <span className="flex items-center gap-2">
+                    <span className="h-2 flex-1 rounded-full bg-muted">
+                      <span className="block h-2 rounded-full bg-accent-line" style={{ width: `${Math.round(r.share * 100)}%` }} />
+                    </span>
+                    <span className="w-12 text-right tabular-nums">{pct(r.share)}</span>
                   </span>
-                  <span className="w-12 text-right tabular-nums">{Math.round(l.share * 1000) / 10} %</span>
-                </span>
+                ) : null}
               </td>
             </tr>
           ))}
         </tbody>
       </table>
+      {error ? (
+        <p role="alert" className="text-xs text-destructive">
+          Preview failed: {error}
+        </p>
+      ) : null}
       {p.warnings.length > 0 ? (
         <ul className="flex flex-col gap-0.5 text-xs text-status-warning-foreground">
           {p.warnings.map((w) => (
@@ -404,6 +490,86 @@ function Preview({ mix }: { mix: Mix }) {
         </ul>
       ) : null}
     </section>
+  );
+}
+
+/** Replay share: a slider with the number beside it, its default and "Why this default?" (defaults.yaml mix.replay_share). */
+function ReplayShare({ value, hasReplay, disabled, onChange }: { value: number; hasReplay: boolean; disabled: boolean; onChange: (v: number) => void }) {
+  const defaults = useDefaults();
+  const def = lookupDefault(defaults.data, "mix.replay_share");
+  const warn = rangeWarning(value, def?.range);
+  const departs = def !== undefined && hasReplay && Number(def.value) !== value;
+  const id = useId();
+  return (
+    <div className="flex flex-col gap-1" data-slot="replay-share">
+      <div className="flex items-center gap-1">
+        <label htmlFor={id} className="text-muted-foreground">
+          Replay share
+        </label>
+        <WhyDefault label="replay share" value={def} />
+      </div>
+      <div className="flex items-center gap-2">
+        <input
+          type="range"
+          aria-label="Replay share slider"
+          min={0}
+          max={0.9}
+          step={0.01}
+          value={value}
+          disabled={disabled}
+          aria-valuetext={pct(value)}
+          className="h-6 w-36 accent-primary"
+          onChange={(e) => onChange(Number(e.target.value))}
+        />
+        <Input id={id} type="number" className="w-20 text-xs tabular-nums" value={value} step={0.05} min={0} max={0.9} disabled={disabled} onChange={(e) => onChange(Number(e.target.value))} />
+        <span className="w-12 text-muted-foreground tabular-nums">{pct(value)}</span>
+      </div>
+      {!hasReplay ? <span className="text-muted-foreground">No group is marked replay, so no replay samples are drawn.</span> : null}
+      {departs ? <span className="text-muted-foreground">Departs from the default ({pct(Number(def.value))}).</span> : null}
+      {warn ? <span className="text-status-warning-foreground">{warn}</span> : null}
+    </div>
+  );
+}
+
+/**
+ * "Launch a run with this mix" (docs/spec/11-ui-panels.md, Mix, phase 2): runs the `runs.new` command once one is
+ * registered (the run form arrives with the Run panel); until then the button waits with the reason.
+ */
+function LaunchRun({ mix, dirty }: { mix: Mix; dirty: boolean }) {
+  const cmd = useCommand("runs.new");
+  const [error, setError] = useState<string | null>(null);
+  const reason = !cmd ? "Arrives with runs" : dirty ? "Save the mix first: a run trains on a saved revision" : cmd.enabled === true ? undefined : cmd.enabled;
+  const button = (
+    <Button
+      size="xs"
+      variant="outline"
+      disabled={!!reason}
+      onClick={() => {
+        setError(null);
+        runCommand("runs.new", { mix: { id: mix.id, rev: mix.rev } }).catch((err: unknown) => setError(errorMessage(err)));
+      }}
+      data-command="runs.new"
+    >
+      <Play aria-hidden />
+      Launch a run with this mix
+    </Button>
+  );
+  return (
+    <>
+      {reason ? (
+        <Tooltip>
+          <TooltipTrigger render={<span tabIndex={0} className="inline-flex rounded-md" aria-label={`Launch a run with this mix: ${reason}`} data-slot="launch-run" />}>{button}</TooltipTrigger>
+          <TooltipContent>{reason}</TooltipContent>
+        </Tooltip>
+      ) : (
+        button
+      )}
+      {error ? (
+        <span role="alert" className="text-xs text-destructive">
+          {error}
+        </span>
+      ) : null}
+    </>
   );
 }
 
