@@ -35,10 +35,13 @@ services:
       CADENCE_HOST_TOKEN_FILE: /host-credential/token
       # The egress proxy's own token (cep_…): it reads the allowlist of configured agent providers, nothing else.
       CADENCE_EGRESS_TOKEN_FILE: /egress-credential/token
+      # Nightly backup sets and the content-store mirror (pg_dump from the image's postgresql-client-17).
+      CADENCE_BACKUP_DIR: /backups
     volumes:
       - cadence-data:/data # the image runs as uid 65532; a named volume is writable by it
       - host-credential:/host-credential
       - egress-credential:/egress-credential
+      - cadence-backups:/backups
     ports: ["127.0.0.1:${CADENCE_PORT:-8080}:8080"] # localhost only; TLS ends at the host's Caddy (R39)
     networks: [default, agents]
     depends_on:
@@ -123,6 +126,7 @@ networks:
 volumes:
   pgdata:
   cadence-data:
+  cadence-backups:
   host-credential:
   egress-credential:
   agent-credentials:

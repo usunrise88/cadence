@@ -131,7 +131,7 @@ describe("compute", () => {
 });
 
 describe("policies", () => {
-  const policies: Policies = { rev: 3, updatedAt: "2026-09-30T00:00:00Z", budgets: { gpuHoursPerProjectPerDay: 12, agentTurnsPerSession: 200 }, departures: ["budgets.gpuHoursPerProjectPerDay"] };
+  const policies: Policies = { rev: 3, updatedAt: "2026-09-30T00:00:00Z", budgets: { gpuHoursPerProjectPerDay: 12, agentTurnsPerSession: 200 }, timezone: "UTC", departures: ["budgets.gpuHoursPerProjectPerDay"] };
 
   it("labels departures, warns outside the safe range and resets to recommended", async () => {
     qc.setQueryData(policiesGetQueryKey(), policies);

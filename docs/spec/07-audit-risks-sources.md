@@ -282,6 +282,19 @@ Open questions:
       file's allow rules for shell commands, reads and edits are still not applied by Claude Code, so those keep going
       through the host's permission request and the preset (a round trip each, no person). Pre-allowing them the same
       way would need the host to trust the preset's shell rules without the per-call check
+- [ ] O · Notifications and operations (phase 2, stream O), confirm: the instance timezone is a policy
+      (`policies.timezone`, default `defaults.yaml` `operations.timezone` = UTC) that quiet hours, the digest and the
+      backup schedule follow; a rule's timing applies to Telegram only (the in-app history is always immediate, its
+      checkbox only switches a class off); quiet hours *drop* Telegram messages (they stay in-app and the digest lists
+      open approvals) rather than deferring them; a Telegram press decides as the one admin account (`usr_admin`)
+      with `actor.channel = telegram` (a contract field) through `approvals.approve|deny`; the bot answers nothing to
+      chats outside the allowlist but lists them in Settings; the bot token is the secret `telegram-bot-token`
+      (kind `telegram`), replaced through `telegramBot.set`; backup sets carry the sealed secret values but never the
+      master key; the content-store mirror is never pruned; the set taken on the restore-test weekday is the weekly
+      set; failed sets keep no files. Event types other streams should emit for the routing table (or add to
+      `internal/notify/classify.go` and `web/src/shell/notifications/classes.ts`): `mount.unhealthy`,
+      `compute.card_closed` (failure); `gate.verdict`, `deployment.promoted`, `schedule.finished`, `batch.closed`
+      (outcome); `pipeline_step.done`, `checkpoint.saved`, `triage.item_added` (progress) — on a non-entity topic
 
 ## Sources
 
