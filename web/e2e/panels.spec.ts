@@ -72,10 +72,11 @@ test.describe("approvals", () => {
 
   test("moving @baseline waits for a person; Backspace denies it with a note", async ({ page, request }) => {
     const slug = await newProject(request, "Baseline");
-    const models = await (await request.get("/api/registry/base-models")).json();
-    const version = models.items[0].id as string;
-    const adopt = await request.post(`/api/projects/${slug}:adopt`, { data: { version }, headers: { "Idempotency-Key": key("adopt"), "If-Match": `"${await projectRev(request, slug)}"` } });
-    expect(adopt.status(), await adopt.text()).toBe(200);
+    // The wizard adopted the project's base model at creation; @baseline may point at it.
+    const version = (await (await request.get(`/api/projects/${slug}`)).json()).baseModel?.versionId as string;
+    expect(version).toBeTruthy();
+    const adoptions = await (await request.get(`/api/projects/${slug}/adoptions`)).json();
+    expect(adoptions.items.map((a: { version: { id: string } }) => a.version.id)).toContain(version);
     const gated = await request.put(`/api/projects/${slug}/aliases/baseline`, { data: { version }, headers: { "Idempotency-Key": key("baseline") } });
     expect(gated.status(), await gated.text()).toBe(202);
     const { approvalId } = await gated.json();
