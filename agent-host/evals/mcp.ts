@@ -40,6 +40,15 @@ export class McpClient {
     await (await this.post({ jsonrpc: "2.0", method: "notifications/initialized" })).text();
   }
 
+  /** The names of the tools the server offers (tools/list), as operation ids. */
+  async tools(): Promise<Set<string>> {
+    const res = await this.post({ jsonrpc: "2.0", id: this.id++, method: "tools/list", params: {} });
+    const text = await res.text();
+    if (res.status !== 200) throw new Error(`MCP tools/list answered ${res.status}: ${text.slice(0, 300)}`);
+    const json = parseRpc(res.headers.get("content-type") ?? "", text) as { result?: { tools?: { name: string }[] } };
+    return new Set((json.result?.tools ?? []).map((t) => t.name));
+  }
+
   /** Calls a tool. toolUseId goes where Claude Code puts it (_meta claudecode/toolUseId → causedBy.toolCallId). */
   async call(name: string, args: Record<string, unknown>, toolUseId?: string): Promise<{ result: ToolResult; isError: boolean }> {
     const params: Record<string, unknown> = { name, arguments: args };

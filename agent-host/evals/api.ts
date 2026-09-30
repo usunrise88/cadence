@@ -110,6 +110,13 @@ export class CadenceApi {
     return (await this.req<AgentSession>("POST", `/projects/${project}/agent-sessions`, body)).data;
   }
 
+  /** playbooks.run (If-Match: *): the playbook session it started. */
+  async runPlaybook(project: string, name: string, body: Record<string, unknown>): Promise<AgentSession> {
+    const r = await this.req<{ session?: AgentSession }>("POST", `/projects/${project}/playbooks/${name}:run`, body, { "If-Match": "*" });
+    if (!r.data.session) throw new Error(`playbooks.run ${name} answered no session`);
+    return r.data.session;
+  }
+
   async session(id: string): Promise<AgentSession> {
     return this.get<AgentSession>(`/agent-sessions/${id}`);
   }

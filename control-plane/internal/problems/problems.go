@@ -72,6 +72,10 @@ var (
 	ArtifactHashMismatch = Type{"artifact-hash-mismatch", http.StatusUnprocessableEntity, "Artifact hash mismatch"}
 	ArtifactMissing      = Type{"artifact-missing", http.StatusConflict, "Artifact missing"}
 
+	// Playbooks (phase 2 · stream K).
+	PlaybookDryRunRequired = Type{"playbook-dry-run-required", http.StatusConflict, "Dry run required first"}
+	PlaybookStopped        = Type{"playbook-stopped", http.StatusConflict, "Playbook stopped"}
+	PlaybookUnavailable    = Type{"playbook-unavailable", http.StatusConflict, "Playbook not available yet"}
 	// Runs, checkpoints and metrics (phase 2 · wave 2 · stream R).
 	FamilyUnavailable = Type{"family-unavailable", http.StatusUnprocessableEntity, "Model family unavailable"}
 	RecipeMismatch    = Type{"recipe-mismatch", http.StatusUnprocessableEntity, "Recipe does not fit the run"}
@@ -86,6 +90,7 @@ func Types() []Type {
 		Internal, PolicyDenied, ReservedAlias, EstimateUnavailable, InvalidQuery, DraftStale, MergeConflict,
 		RepositoryUnavailable, EvalOnlyDataset, PipelineInvalid,
 		LeaseEnded, StepKindConflict, ArtifactHashMismatch, ArtifactMissing,
+		PlaybookDryRunRequired, PlaybookStopped, PlaybookUnavailable,
 		FamilyUnavailable, RecipeMismatch, NoTrainingState,
 	}
 }

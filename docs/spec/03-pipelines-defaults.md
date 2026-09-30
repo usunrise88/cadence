@@ -227,36 +227,35 @@ A playbook is a pipeline chain with defaults filled in, a prefilled agent prompt
 Format (R16): a template version (`templateKind: playbook`) at `templates/playbooks/<name>.yaml`, copied into projects like other templates. Not built yet: phase 2 wave 2 (`playbooks.list|get|run`, playbook sessions) implements this format; no playbook template ships in wave 1.
 
 ```yaml
-name: finetune-from-dataset
+name: finetune-from-dataset                # = the file name
 title: Fine-tune from a dataset version
-inputs:                                    # asked for, or taken from the project
-  dataset: { type: dataset_version, required: true }
+description: …
+typicalCost: 1–4 GPU-hours
+availableFrom: 2                           # the roadmap phase from which it runs; later ones are listed, not run
+inputs:                                    # in order; exactly one of required, defaultRef, from
+  dataset: { type: dataset_version, multiple: true, required: true }
+  replay:  { type: dataset_version, from: adoption, collection: dataset/replay-base }  # when the project adopted it
   base:    { type: base_model, from: project }   # the project's default base model
   steps:   { type: integer, defaultRef: training.steps }
   replayShare: { type: number, defaultRef: mix.replay_share }
-chain:                                     # pipeline runs or commands, in order
-  - id: mix
-    command: mixes.new                     # dataset + dataset/replay-base at the replay share
-  - id: calibrate
-    command: runs.calibrate
-  - id: train
-    command: runs.new                      # the train-stage pipeline; checkpoints register through its hook
-  - id: eval
-    command: evals.new                     # from phase 3
-    phase: 3
-  - id: gate
-    command: evals.gate
-    phase: 3
-stop:                                      # conditions that end the playbook
-  - gate: failed
-  - budget: exceeded
-prompt: |                                  # rendered with the inputs and the project facts
-  Fine-tune {{ base }} on {{ dataset }} …
+chain:                                     # commands in order; the command's success ticks the step
+  - { id: mix, command: mixes.new, accepts: [mixes.edit] }
+  - { id: calibrate, command: runs.calibrate, estimate: { gpuHours: 0.1, minutes: 6, plusMinus: 0.5 } }  # a hint until runs.calibrate estimates
+  - { id: train, command: runs.new, with: { baseModel: $inputs.base, steps: $inputs.steps, datasets: [$inputs.dataset, $inputs.replay] } }
+  - { id: watch, command: runs.get, accepts: [jobs.wait], until: terminal }  # ticks when the run's status has ended
+  - { id: checkpoints, command: checkpoints.list }         # top-k registered by the checkpoint hook
+  - { id: eval, command: evals.new, phase: 3 }
+  - { id: gate, command: evals.gate, phase: 3 }
+stop: [ { gate: failed }, { budget: exceeded }, { step: failed }, { approval: denied } ]
+next: { done: …, stopped: … }              # the next-step suggestion written when the chain ends
+prompt: |                                  # Go text/template over .Inputs.<name> (as text) and .Project.{Name,Slug,Locales}
+  Run the playbook "Fine-tune from a dataset version" in project {{ .Project.Name }} … Base model: {{ .Inputs.base }} …
 ```
 
-- Inputs carry a type and either a `defaultRef` into `defaults.yaml` or `from: project` (a project fact), so a playbook asks only for what has neither.
-- The estimate is the sum of the chain's step estimates (R12), shown before the session starts; steps whose phase has not shipped are listed and skipped.
+- Inputs carry a type and exactly one source: `required`, a `defaultRef` into `defaults.yaml` (the value and its safe range), `from: project` (the project's base model) or `from: adoption` (the project's adopted version of a collection), so a playbook asks only for what has none of them.
+- The estimate is the sum of the chain's step estimates (R12), shown before the session starts: an operation with its own estimator gets the step's `with` (`runs.new` from the table or the calibration; `runs.calibrate` from the calibrate kind's plan over a mix; `runs.stage` and `runs.resume` from the runs service's plans over a parent run); a step whose operation cannot plan yet (the mix or the parent run exists only during the session) and other spending steps use the step's `estimate` hint; steps whose phase has not shipped are listed and skipped; the rest spend nothing.
 - Stop conditions: a failed gate, an exhausted GPU or agent budget, a denied approval, a step failed after its retries.
+- As built (phase 2, stream K): `playbooks.list|get` (`?project=` fills project facts and estimates with them; the ETag of `get` is the template version) and `playbooks.run` (`POST /projects/{p}/playbooks/{name}:run`, If-Match the version or `*`; `dryRun` answers the resolved inputs, the estimate, the plan and the rendered prompt). Five templates ship: "Fine-tune from a dataset version" runs in phase 2; the other four are listed with `availableFrom: 4` and `playbooks.run` answers `playbook-unavailable`. Templates are validated at start and in CI (`internal/playbooks`): every operation of a step that can run now is an implemented contract operation; later-phase steps only need `<entity>.<verb>` with a vocabulary verb. Agents cannot start playbook sessions (preset rule `sessions-are-for-people`); `playbooks.get` shows them the estimate.
 
 ### Smoke project
 

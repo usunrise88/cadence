@@ -594,7 +594,7 @@ export type DatasetVersionList = {
     items: Array<DatasetVersion>;
 };
 
-export type TemplateKind = 'instructions' | 'preset' | 'skill' | 'pipeline' | 'agent-config';
+export type TemplateKind = 'instructions' | 'preset' | 'skill' | 'pipeline' | 'agent-config' | 'playbook';
 
 export type TemplateFile = {
     /**
@@ -2112,9 +2112,9 @@ export type BranchMerge = {
 };
 
 /**
- * interactive: a conversation on its own branch; read-only: one turn under the read-only preset, no branch
+ * interactive: a conversation on its own branch; read-only: one turn under the read-only preset, no branch; playbook: started by playbooks.run, its plan is the playbook's chain (a branch like interactive)
  */
-export type AgentSessionKind = 'interactive' | 'read-only';
+export type AgentSessionKind = 'interactive' | 'read-only' | 'playbook';
 
 /**
  * docs/spec/05-agents.md "Session lifecycle"; done, failed and cancelled are terminal
@@ -2306,6 +2306,7 @@ export type AgentSession = {
      * The last user message; the idle clock (R5) runs from it
      */
     lastMessageAt?: string;
+    playbook?: AgentPlaybook;
 };
 
 export type AgentSessionList = {
@@ -4698,6 +4699,264 @@ export type MetricSeriesSet = {
         kind?: string;
         kept: boolean;
     }>;
+};
+
+export type PlaybookInputType = 'dataset_version' | 'base_model' | 'integer' | 'number' | 'string' | 'boolean';
+
+export type PlaybookInput = {
+    name: string;
+    type: PlaybookInputType;
+    description?: string;
+    /**
+     * The caller must give it: it has neither a defaultRef nor a project fact
+     */
+    required: boolean;
+    /**
+     * A list of values (dataset versions)
+     */
+    multiple: boolean;
+    /**
+     * A defaults.yaml key (training.steps) the value defaults to
+     */
+    defaultRef?: string;
+    /**
+     * project: a project fact (the default base model); adoption: the project's adopted version of collection
+     */
+    from?: 'project' | 'adoption';
+    /**
+     * from adoption: the registry collection (dataset/replay-base)
+     */
+    collection?: string;
+    /**
+     * The value it takes when not given: from defaults.yaml or the project (absent when there is none)
+     */
+    default?: unknown;
+    /**
+     * The safe range from defaults.yaml
+     */
+    min?: number;
+    max?: number;
+};
+
+export type PlaybookStep = {
+    id: string;
+    title: string;
+    /**
+     * The operation (<entity>.<verb>) whose success ticks the step
+     */
+    command: string;
+    /**
+     * Other operations that tick it too (mixes.edit for the mix step)
+     */
+    accepts?: Array<string>;
+    /**
+     * terminal: the step ticks when the job it waits for has ended (jobs.wait answered done; failed or cancelled fails it)
+     */
+    until?: 'terminal';
+    /**
+     * The roadmap phase that ships the step; a later phase than the running one lists it as skipped
+     */
+    phase?: number;
+    /**
+     * A GPU-spending command: in a playbook session it needs a successful dry run of the same operation first
+     */
+    spending: boolean;
+    /**
+     * The step can run now (its phase has shipped)
+     */
+    available: boolean;
+};
+
+export type PlaybookStop = {
+    /**
+     * What is watched
+     */
+    on: 'gate' | 'budget' | 'step' | 'approval';
+    /**
+     * The outcome that stops the playbook: gate failed, budget exceeded, step failed, approval denied
+     */
+    when: string;
+};
+
+export type PlaybookStepEstimate = {
+    id: string;
+    command: string;
+    /**
+     * table/measured: the operation's own dry-run estimate; hint: the playbook's estimate hint; none: spends no GPU time
+     */
+    basis: 'table' | 'measured' | 'hint' | 'none';
+    gpuHours?: EstimateRange;
+    durationSeconds?: EstimateRange;
+    /**
+     * The step's phase has not shipped: listed, not counted
+     */
+    skipped: boolean;
+    /**
+     * Why a step has no estimate (e.g. the estimate table has no row)
+     */
+    note?: string;
+};
+
+/**
+ * The sum of the chain's step estimates (R12, R16); skipped steps are listed and not counted
+ */
+export type PlaybookEstimate = {
+    basis: 'table' | 'measured' | 'mixed' | 'hint' | 'none';
+    /**
+     * The largest relative uncertainty of a counted step
+     */
+    plusMinus: number;
+    gpuHours: EstimateRange;
+    durationSeconds: EstimateRange;
+    budget?: {
+        gpuHoursPerProjectPerDay: number;
+        withinDailyBudget: boolean;
+    };
+    steps: Array<PlaybookStepEstimate>;
+};
+
+export type Playbook = {
+    /**
+     * templates/playbooks/<name>.yaml
+     */
+    name: string;
+    title: string;
+    description: string;
+    /**
+     * 03 "Playbooks": the typical GPU-hours, as text
+     */
+    typicalCost?: string;
+    /**
+     * The roadmap phase from which the playbook runs
+     */
+    availableFrom: number;
+    /**
+     * It can run now (availableFrom has shipped)
+     */
+    runnable: boolean;
+    /**
+     * Why it cannot run yet
+     */
+    unavailable?: string;
+    /**
+     * The registry template version (template/playbook-<name>)
+     */
+    versionId?: string;
+    version?: string;
+    inputs: Array<PlaybookInput>;
+    chain: Array<PlaybookStep>;
+    stop: Array<PlaybookStop>;
+    /**
+     * The prompt template (Go text/template over .Inputs and .Project)
+     */
+    prompt: string;
+    estimate?: PlaybookEstimate;
+    /**
+     * Why no estimate was computed (a required input is missing, the estimate table has no row)
+     */
+    estimateError?: string;
+};
+
+export type PlaybookList = {
+    items: Array<Playbook>;
+};
+
+export type PlaybookRunNew = {
+    /**
+     * Input name → value (a dataset_version input with multiple takes a list); omitted inputs take their default or project fact
+     */
+    inputs?: {
+        [key: string]: unknown;
+    };
+    driver?: AgentDriver;
+    model?: string;
+};
+
+export type PlaybookPlanItem = {
+    id: string;
+    title: string;
+    command: string;
+    accepts?: Array<string>;
+    until?: 'terminal';
+    phase?: number;
+    spending: boolean;
+    state: 'pending' | 'running' | 'done' | 'failed' | 'skipped';
+    /**
+     * What ticked it: the entity or job, the dry run's estimate, why it failed
+     */
+    note?: string;
+    /**
+     * The command that ticked it
+     */
+    commandId?: string;
+    toolCallId?: string;
+    /**
+     * The entity the command created (mix_…
+     */
+    entityId?: string;
+    /**
+     * The job the command started (a later terminal step waits for it)
+     */
+    jobId?: string;
+    at?: string;
+    estimate?: PlaybookStepEstimate;
+};
+
+export type PlaybookRunResult = {
+    playbook: Playbook;
+    /**
+     * Every input resolved (given
+     */
+    inputs: {
+        [key: string]: unknown;
+    };
+    estimate: PlaybookEstimate;
+    plan: Array<PlaybookPlanItem>;
+    /**
+     * The rendered prompt the session starts with
+     */
+    prompt: string;
+    session?: AgentSession;
+};
+
+/**
+ * A playbook session's playbook: the plan ticks on the server when the session's matching command succeeds
+ */
+export type AgentPlaybook = {
+    name: string;
+    title: string;
+    versionId?: string;
+    /**
+     * done: every available step ticked; stopped: a stop condition ended it
+     */
+    state: 'running' | 'done' | 'stopped';
+    inputs: {
+        [key: string]: unknown;
+    };
+    estimate: PlaybookEstimate;
+    plan: Array<PlaybookPlanItem>;
+    stop?: {
+        on: 'gate' | 'budget' | 'step' | 'approval';
+        when: string;
+        message: string;
+        at?: string;
+    };
+    /**
+     * What the chain did
+     */
+    summary?: string;
+    /**
+     * The suggested next step
+     */
+    next?: string;
+    /**
+     * Spending operations with a successful dry run in this session
+     */
+    dryRuns?: Array<string>;
+    /**
+     * Turns that ended without progress since the last tick (the server reminds the agent at most twice)
+     */
+    nudges?: number;
 };
 
 export type SecretNewWritable = {
@@ -10396,6 +10655,124 @@ export type MetricsGetResponses = {
 };
 
 export type MetricsGetResponse = MetricsGetResponses[keyof MetricsGetResponses];
+
+export type PlaybooksListData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * A project slug: fill project facts and estimate with them
+         */
+        project?: Slug;
+    };
+    url: '/playbooks';
+};
+
+export type PlaybooksListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type PlaybooksListError = PlaybooksListErrors[keyof PlaybooksListErrors];
+
+export type PlaybooksListResponses = {
+    /**
+     * Playbooks
+     */
+    200: PlaybookList;
+};
+
+export type PlaybooksListResponse = PlaybooksListResponses[keyof PlaybooksListResponses];
+
+export type PlaybooksGetData = {
+    body?: never;
+    path: {
+        /**
+         * Playbook name (templates/playbooks/<name>.yaml)
+         */
+        name: string;
+    };
+    query?: {
+        /**
+         * A project slug: fill project facts and estimate with them
+         */
+        project?: Slug;
+    };
+    url: '/playbooks/{name}';
+};
+
+export type PlaybooksGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type PlaybooksGetError = PlaybooksGetErrors[keyof PlaybooksGetErrors];
+
+export type PlaybooksGetResponses = {
+    /**
+     * The playbook
+     */
+    200: Playbook;
+};
+
+export type PlaybooksGetResponse = PlaybooksGetResponses[keyof PlaybooksGetResponses];
+
+export type PlaybooksRunData = {
+    body?: PlaybookRunNew;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+        /**
+         * Playbook name
+         */
+        name: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/projects/{p}/playbooks/{name}:run';
+};
+
+export type PlaybooksRunErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type PlaybooksRunError = PlaybooksRunErrors[keyof PlaybooksRunErrors];
+
+export type PlaybooksRunResponses = {
+    /**
+     * Dry run — the resolved inputs, estimate, plan and prompt; no session was started
+     */
+    200: PlaybookRunResult;
+    /**
+     * Started; the result carries the playbook session
+     */
+    201: PlaybookRunResult;
+};
+
+export type PlaybooksRunResponse = PlaybooksRunResponses[keyof PlaybooksRunResponses];
 
 export type MountsListData = {
     body?: never;

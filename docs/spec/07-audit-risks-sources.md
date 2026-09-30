@@ -53,6 +53,20 @@ Spikes:
 
 Open questions:
 
+- [ ] K (2026-09-30, playbooks): agents cannot start playbook sessions — `playbooks.run` joined the preset rule
+  `sessions-are-for-people` (05 lists it among the agent tools; an agent starting a session contradicts "sessions are
+  started by people"); `playbooks.get` gives an agent the estimate.
+- [ ] K: the dry-run rule is per operation and used up by the real call (two training runs need two dry runs); it is
+  enforced only in playbook sessions, not in interactive ones.
+- [ ] K: "budget: exceeded" stops a playbook when the session pauses on its turn, token or project token budget; an
+  over-budget GPU spend waits for its approval as in any session, and stops the playbook only when denied.
+- [ ] K: playbooks run from the bundled templates; the copies in a project's `playbooks/` are for reading and editing,
+  and project overrides of a playbook are not read yet.
+- [ ] K: the watch step ticks from `runs.get` answering the run with an ended status (a run's pipeline has several
+  step jobs, so `jobs.wait` only marks it running). Before the session the calibrate step's estimate is its hint
+  (0.1 GPU-hours): `runs.calibrate` plans over a mix, which exists only once the session made it. The later
+  playbooks' continuation stages ask for the parent run and `peakLr` (no defaults.yaml key for a stage's peak LR).
+
 - [ ] R (2026-09-30, runs): the base model's `familyId` names the family collection `model-family/<familyId>`; the
   seeded Nemotron base model says `nemo.fastconformer-rnnt.cache-aware`, so the NeMo pack must publish its family
   descriptor under that name (or the base model fixture must change with it).

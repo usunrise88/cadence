@@ -1,0 +1,75 @@
+# written by Cadence — playbook template (docs/spec/03-pipelines-defaults.md "Playbooks", R16; format:
+# control-plane/internal/playbooks/README.md). Listed from phase 2; runs once phase 4 ships ingest and freeze.
+name: adapt-new-language
+title: Adapt a new language
+description: Ingest a source, freeze a dataset version, then fine-tune with replay and gate — "Fine-tune from a dataset version" prefixed with ingest and freeze.
+typicalCost: 4–8 GPU-hours
+availableFrom: 4
+
+inputs:
+  source:
+    type: string
+    required: true
+    description: The source to ingest (a mount path or a public corpus name)
+  base:
+    type: base_model
+    from: project
+    description: The project's default base model
+  steps:
+    type: integer
+    defaultRef: training.steps
+    description: Optimiser steps of the training run
+  replayShare:
+    type: number
+    defaultRef: mix.replay_share
+    description: Share of the replay groups in the mix
+
+chain:
+  - id: ingest
+    title: Ingest the source
+    command: pipelines.run
+    phase: 4
+  - id: freeze
+    title: Freeze a dataset version
+    command: datasets.freeze
+    phase: 4
+  - id: mix
+    title: Mix with replay
+    command: mixes.new
+    accepts: [mixes.edit]
+  - id: calibrate
+    title: Calibrate batch sizes
+    command: runs.calibrate
+    estimate: { gpuHours: 0.1, minutes: 6, plusMinus: 0.5 }
+  - id: train
+    title: Train (dry run first)
+    command: runs.new
+    with: { baseModel: $inputs.base, steps: $inputs.steps }
+  - id: watch
+    title: Wait for the run to finish
+    command: runs.get
+    accepts: [jobs.wait]
+    until: terminal
+  - id: eval
+    title: Eval matrix
+    command: evals.new
+    phase: 3
+  - id: gate
+    title: Gate against the baseline
+    command: evals.gate
+    phase: 3
+
+stop:
+  - gate: failed
+  - budget: exceeded
+  - step: failed
+  - approval: denied
+
+next:
+  done: Promote the gated checkpoint to shadow when phase 5 ships; meanwhile note what worked (projects.note).
+  stopped: Read why the step stopped, fix the cause, and start again from the failed step.
+
+prompt: |
+  Run the playbook "Adapt a new language" in project {{ .Project.Name }} ({{ .Project.Slug }}, locales {{ .Project.Locales }}):
+  ingest {{ .Inputs.source }}, freeze a dataset version, mix it with replay at {{ .Inputs.replayShare }}, calibrate, train
+  {{ .Inputs.base }} for {{ .Inputs.steps }} steps (dry run first), evaluate and gate.

@@ -50,7 +50,8 @@ import { useFocusedApproval } from "@/shell/approvals/store";
 import { commands } from "@/shell/registries";
 import { commandContext } from "@/shell/state";
 import type { AgentMessage, AgentSession } from "@/api/gen/types.gen";
-import type { MessageNewArgs, SessionArgs, SessionCancelArgs, SessionNewArgs } from "./agents";
+import type { PlaybookRunResult } from "@/api/gen/types.gen";
+import type { MessageNewArgs, PlaybookRunArgs, SessionArgs, SessionCancelArgs, SessionNewArgs } from "./agents";
 import type { MixEditArgs } from "./entities";
 import type { BranchArgs, NoteArgs, ProfileEditArgs, ProfileEditResult, SyncArgs } from "./projects";
 import type { Command } from "./registry";
@@ -98,6 +99,7 @@ export type ApiCommands = {
   "agentSessions.accept": { args: SessionArgs; result: AgentSession | undefined };
   "agentSessions.revert": { args: SessionArgs; result: AgentSession | undefined };
   "agentMessages.new": { args: MessageNewArgs; result: AgentMessage };
+  "playbooks.run": { args: PlaybookRunArgs; result: PlaybookRunResult | undefined };
 };
 export type ApiCommandId = keyof ApiCommands;
 

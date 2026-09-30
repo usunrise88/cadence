@@ -1,0 +1,64 @@
+# written by Cadence — playbook template (docs/spec/03-pipelines-defaults.md "Playbooks", R16; format:
+# control-plane/internal/playbooks/README.md). Listed from phase 2; runs once phase 4 ships sources and augmentation.
+name: improve-telephony
+title: Improve on telephony
+description: Attach call recordings, add telephony augmentation, train a continuation stage and evaluate on the phone golden set.
+typicalCost: 2–4 GPU-hours
+availableFrom: 4
+
+inputs:
+  recordings:
+    type: string
+    required: true
+    description: The call recordings to attach (a mount path)
+  base:
+    type: base_model
+    from: project
+    description: The project's default base model
+
+  parent:
+    type: string
+    required: true
+    description: The run to continue (run_…); the stage starts from its best kept checkpoint
+  peakLr:
+    type: number
+    required: true
+    description: The continuation stage's peak learning rate (runs.stage peakLr)
+
+chain:
+  - id: attach
+    title: Attach the call recordings as a source
+    command: sources.new
+    phase: 4
+  - id: augment
+    title: Preview the telephony augmentation profile
+    command: augment.preview
+    phase: 4
+  - id: stage
+    title: Continuation stage (dry run first)
+    command: runs.stage
+    with: { run: $inputs.parent, peakLr: $inputs.peakLr }
+    estimate: { gpuHours: 1.5, minutes: 90, plusMinus: 0.5 }
+  - id: watch
+    title: Wait for the stage to finish
+    command: runs.get
+    accepts: [jobs.wait]
+    until: terminal
+  - id: eval
+    title: Eval on the phone golden set
+    command: evals.new
+    phase: 3
+
+stop:
+  - gate: failed
+  - budget: exceeded
+  - step: failed
+  - approval: denied
+
+next:
+  done: Compare the phone golden set against the baseline in the Eval panel; gate when the delta holds.
+  stopped: Read why the step stopped, fix the cause, and start again from the failed step.
+
+prompt: |
+  Run the playbook "Improve on telephony" in project {{ .Project.Name }}: attach {{ .Inputs.recordings }}, preview the
+  telephony augmentation, train a continuation stage of {{ .Inputs.base }} (dry run first) and evaluate on the phone golden set.

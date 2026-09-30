@@ -23,6 +23,7 @@ import type { Clock, Timer } from "./clock.ts";
 import { Worktree } from "./git.ts";
 import { baseEnv, own, prepareDirs, removeDirs, type SessionDirs, type SessionUser, type UidPool } from "./isolation.ts";
 import { errText, type Logger } from "./log.ts";
+import { isWaitTool, playbookPreamble } from "./playbook.ts";
 import { RunawayDetector } from "./runaway.ts";
 import { toolCall, Transcript } from "./transcript.ts";
 import { type WatcherOptions, type WorkingReport, WorktreeWatcher } from "./watcher.ts";
@@ -104,6 +105,8 @@ export class HostSession {
   private flushTimer: NodeJS.Timeout | undefined;
   private budget: HostStart["budget"];
   private noticeSeq = 0;
+  // The agent's own ACP session was restored (it already read the playbook preamble).
+  private restored = false;
 
   constructor(
     private readonly deps: SessionDeps,
@@ -165,6 +168,9 @@ export class HostSession {
         await this.stopAgent(); // the host shut down meanwhile
         return;
       }
+      // A playbook session's plan and rules, once per agent session (a restored one already has them).
+      const preamble = this.restored ? undefined : playbookPreamble(this.start.session);
+      if (preamble) this.nextPrompt.push(preamble);
       // Why the last turn ended, when a host restart interrupted it: the agent reads it before its next prompt.
       if (this.start.resume?.note) this.nextPrompt.push(this.start.resume.note);
       this.phase = "running";
@@ -234,6 +240,7 @@ export class HostSession {
       try {
         const mode = await agent.restoreSession(resume.acpSessionId, opts);
         this.acpId = resume.acpSessionId;
+        this.restored = true;
         this.notice(`The agent's session was restored (ACP session/${mode})`);
         return;
       } catch (err) {
@@ -479,7 +486,7 @@ export class HostSession {
     }
     // Counted once the call leaves pending: Claude streams the arguments into a pending call, starting from {}, so
     // a pending call's input is not its arguments yet (three edits with different values once looked identical).
-    if (u.kind === "tool_call" && u.call.status !== "pending") {
+    if (u.kind === "tool_call" && u.call.status !== "pending" && !(u.call.mcp && isWaitTool(u.call.mcp.tool))) {
       const tool = u.call.mcp ? `${u.call.mcp.server}.${u.call.mcp.tool}` : u.call.title;
       const n = this.runaway.observe(u.call.id, tool, u.call.rawInput);
       if (n !== undefined && this.turnRunning && this.after.action === "none") {

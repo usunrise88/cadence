@@ -41,12 +41,16 @@ Prepare (start a session) and decide (accept or discard what a session changed).
 | Command | Keys | API |
 | --- | --- | --- |
 | New session | — | `agentSessions.new` |
+| New session → From a playbook | — | `playbooks.run` (Show the estimate runs it with `dryRun`; Start playbook runs it for real) |
 | Open Chat | — | client: shows the session in Chat |
 | Pause / Resume | — | `agentSessions.pause`, `agentSessions.resume` |
 | Accept / Discard changes | — | `agentSessions.accept`, `agentSessions.revert` (paused or ended sessions) |
 
 ## Playbooks
 
+- **Start a playbook**: New session → From a playbook, pick it (playbooks of later phases are listed, greyed), fill
+  the inputs the project cannot give (the dataset version for "Fine-tune from a dataset version"; the rest start from
+  `defaults.yaml`), Show the estimate — the plan and the GPU-hours appear — then Start playbook. Its Chat opens.
 - A session paused on its budget: open its Chat, read the reason, Resume (the budget is raised in Agent settings or
   with `agentSessions.resume` and a larger budget).
 - Several sessions ended with changes: accept the clean ones here; open the Chat of one with a conflict to see its diff.

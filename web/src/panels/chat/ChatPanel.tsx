@@ -36,6 +36,7 @@ import {
   type PanelProps,
 } from "@/shell/panel";
 import { Entry, RefChips } from "./entries";
+import { PlaybookPlan } from "./PlaybookPlan";
 import { budgetUse, compact, composerNotice, entryMatchesToolCall, hostAway, rowOffsets, sessionStatus, tabLabel, VIRTUALIZE_AFTER, visibleEntries, visibleRange, type Meter, type Tone } from "./model";
 
 // Chat (docs/spec/11-ui-panels.md "Panel catalogue"; docs/spec/05-agents.md "What the Chat panel shows"): one agent
@@ -74,6 +75,7 @@ export function ChatPanel({ instanceId, doc }: PanelProps) {
       {sessionId && session.data ? (
         <>
           <Header session={session.data} instanceId={instanceId} switchable={!doc} />
+          {session.data.playbook ? <PlaybookPlan playbook={session.data.playbook} /> : null}
           <Transcript session={session.data} />
           <MergeArea session={session.data} />
         </>
@@ -444,7 +446,7 @@ function MergeArea({ session: s }: { session: AgentSession }) {
   // While a turn runs the agent host's watcher reports the worktree's uncommitted files (AgentSession.working).
   const working = !ended && s.working && s.working.files.length > 0 ? s.working : undefined;
   const settled = ended || s.state === "paused";
-  const show = s.kind === "interactive" && !!s.branch && (settled || !!working);
+  const show = s.kind !== "read-only" && !!s.branch && (settled || !!working);
   const decidable = show && settled && s.merge.state !== "merged" && s.merge.state !== "discarded";
   const path = { p: project ?? s.project, name: s.branch };
   const diff = useQuery({ ...branchesGetOptions({ path }), enabled: decidable, retry: false });
@@ -586,7 +588,7 @@ function Composer({ instanceId, session, bound }: { instanceId: string; session:
     if (focusNonce) ref.current?.focus();
   }, [focusNonce]);
   const b = useChatBridge.getState;
-  const continues = !!session && isLive(session) && session.kind === "interactive";
+  const continues = !!session && isLive(session) && session.kind !== "read-only";
   const notice = continues ? composerNotice(session) : undefined;
   const held = notice ? !notice.send : false;
   const [resuming, setResuming] = useState(false);

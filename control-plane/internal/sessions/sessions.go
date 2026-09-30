@@ -20,6 +20,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/usunrise88/cadence/control-plane/internal/approvals"
 	"github.com/usunrise88/cadence/control-plane/internal/auth"
 	"github.com/usunrise88/cadence/control-plane/internal/defaults"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
@@ -50,6 +51,8 @@ const (
 const (
 	KindInteractive = "interactive"
 	KindReadOnly    = "read-only"
+	// KindPlaybook sessions start from playbooks.run: the prompt is the playbook's, the plan its chain (R16).
+	KindPlaybook = "playbook"
 )
 
 // States.
@@ -189,6 +192,8 @@ type Session struct {
 	HostLeftAt *time.Time
 	// ResumeNote is what the next host tells the agent before its next prompt (set when a host releases the session).
 	ResumeNote string
+	// Playbook is a playbook session's playbook with its plan (internal/playbooks owns the shape); nil otherwise.
+	Playbook json.RawMessage
 }
 
 // Host states of a live session (the contract's AgentSession.hostState).
@@ -227,37 +232,38 @@ func (s Session) Agent() auth.Actor {
 
 // View is a session's JSON form: the contract's AgentSession.
 type View struct {
-	ID             string      `json:"id"`
-	Number         int         `json:"number"`
-	ProjectID      string      `json:"projectId"`
-	Project        string      `json:"project"`
-	Kind           string      `json:"kind"`
-	Driver         string      `json:"driver"`
-	Model          string      `json:"model"`
-	Preset         string      `json:"preset"`
-	State          string      `json:"state"`
-	Busy           bool        `json:"busy"`
-	Turn           int         `json:"turn"`
-	PauseReason    *Reason     `json:"pauseReason,omitempty"`
-	PendingControl string      `json:"pendingControl,omitempty"`
-	HostState      string      `json:"hostState,omitempty"`
-	HostLeftAt     *time.Time  `json:"hostLeftAt,omitempty"`
-	Error          string      `json:"error,omitempty"`
-	Branch         string      `json:"branch"`
-	Merge          Merge       `json:"merge"`
-	Working        *Working    `json:"working,omitempty"`
-	AutoMerge      string      `json:"autoMerge"`
-	Budget         Budget      `json:"budget"`
-	Use            Use         `json:"use"`
-	Prompt         string      `json:"prompt,omitempty"`
-	References     []Reference `json:"references"`
-	StartedBy      auth.Actor  `json:"startedBy"`
-	Rev            int         `json:"rev"`
-	CreatedAt      time.Time   `json:"createdAt"`
-	UpdatedAt      time.Time   `json:"updatedAt"`
-	StartedAt      *time.Time  `json:"startedAt,omitempty"`
-	EndedAt        *time.Time  `json:"endedAt,omitempty"`
-	LastMessageAt  *time.Time  `json:"lastMessageAt,omitempty"`
+	ID             string          `json:"id"`
+	Number         int             `json:"number"`
+	ProjectID      string          `json:"projectId"`
+	Project        string          `json:"project"`
+	Kind           string          `json:"kind"`
+	Driver         string          `json:"driver"`
+	Model          string          `json:"model"`
+	Preset         string          `json:"preset"`
+	State          string          `json:"state"`
+	Busy           bool            `json:"busy"`
+	Turn           int             `json:"turn"`
+	PauseReason    *Reason         `json:"pauseReason,omitempty"`
+	PendingControl string          `json:"pendingControl,omitempty"`
+	HostState      string          `json:"hostState,omitempty"`
+	HostLeftAt     *time.Time      `json:"hostLeftAt,omitempty"`
+	Error          string          `json:"error,omitempty"`
+	Branch         string          `json:"branch"`
+	Merge          Merge           `json:"merge"`
+	Working        *Working        `json:"working,omitempty"`
+	AutoMerge      string          `json:"autoMerge"`
+	Budget         Budget          `json:"budget"`
+	Use            Use             `json:"use"`
+	Prompt         string          `json:"prompt,omitempty"`
+	References     []Reference     `json:"references"`
+	StartedBy      auth.Actor      `json:"startedBy"`
+	Rev            int             `json:"rev"`
+	CreatedAt      time.Time       `json:"createdAt"`
+	UpdatedAt      time.Time       `json:"updatedAt"`
+	StartedAt      *time.Time      `json:"startedAt,omitempty"`
+	EndedAt        *time.Time      `json:"endedAt,omitempty"`
+	LastMessageAt  *time.Time      `json:"lastMessageAt,omitempty"`
+	Playbook       json.RawMessage `json:"playbook,omitempty"`
 }
 
 // JSON renders s as the contract's AgentSession.
@@ -272,7 +278,7 @@ func (s Session) JSON() View {
 		PendingControl: s.PendingControl, HostState: s.HostState(), Error: s.Error, Branch: s.Branch, Merge: s.Merge, Working: s.Working, AutoMerge: s.AutoMerge,
 		Budget: s.Budget, Use: s.Use, Prompt: s.Prompt, References: refs, StartedBy: s.StartedBy, Rev: s.Rev,
 		CreatedAt: s.CreatedAt, UpdatedAt: s.UpdatedAt, StartedAt: s.StartedAt, EndedAt: s.EndedAt,
-		LastMessageAt: s.LastMessageAt,
+		LastMessageAt: s.LastMessageAt, Playbook: s.Playbook,
 	}
 	if v.HostState == HostReleased || v.HostState == HostLost {
 		v.HostLeftAt = s.HostLeftAt
@@ -285,7 +291,7 @@ const cols = `s.id, s.project_id, p.slug, s.number, s.kind, s.driver, s.model, s
 	s.refs, s.started_by, coalesce(s.credential_id, ''), coalesce(s.acp_session_id, ''), coalesce(s.host_id, ''),
 	s.rev, s.created_at, s.updated_at, s.started_at, s.ended_at, s.last_message_at, s.host_left_at,
 	coalesce(s.resume_note, ''), coalesce((SELECT c.action FROM agent_session_controls c WHERE c.session_id = s.id AND c.delivered_at IS NULL
-		ORDER BY c.created_at LIMIT 1), ''), s.working`
+		ORDER BY c.created_at LIMIT 1), ''), s.working, s.playbook`
 
 const from = ` FROM agent_sessions s JOIN projects p ON p.id = s.project_id`
 
@@ -294,7 +300,7 @@ func scan(row pgx.CollectableRow) (Session, error) {
 	err := row.Scan(&s.ID, &s.ProjectID, &s.ProjectSlug, &s.Number, &s.Kind, &s.Driver, &s.Model, &s.Preset, &s.State,
 		&s.Busy, &s.Turn, &s.PauseReason, &s.Error, &s.Branch, &s.Merge, &s.AutoMerge, &s.Budget, &s.Use, &s.Prompt,
 		&s.Refs, &s.StartedBy, &s.CredentialID, &s.ACPSessionID, &s.HostID, &s.Rev, &s.CreatedAt, &s.UpdatedAt,
-		&s.StartedAt, &s.EndedAt, &s.LastMessageAt, &s.HostLeftAt, &s.ResumeNote, &s.PendingControl, &s.Working)
+		&s.StartedAt, &s.EndedAt, &s.LastMessageAt, &s.HostLeftAt, &s.ResumeNote, &s.PendingControl, &s.Working, &s.Playbook)
 	return s, err
 }
 
@@ -493,6 +499,50 @@ type Service struct {
 	ClaimPoll time.Duration
 	// Attribution renames a command's synthetic tool-call id in drafts and revisions (the draft store).
 	Attribution ToolCallRetagger
+	// Playbooks follows playbook sessions (internal/playbooks): host reports and approval decisions.
+	Playbooks PlaybookWatcher
+}
+
+// PlaybookWatcher is told what happens to a playbook session besides its commands: every host report (prev is the
+// session before it, next after) and every decided approval the session asked for. Its events join the caller's.
+type PlaybookWatcher interface {
+	Reported(ctx context.Context, tx pgx.Tx, prev, next Session) ([]events.Draft, error)
+	Decided(ctx context.Context, tx pgx.Tx, sess Session, a approvals.Approval) ([]events.Draft, error)
+}
+
+// SetPlaybook replaces the playbook of the locked session and bumps its revision; the session's changed events
+// carry it to the Chat and the session list.
+func SetPlaybook(ctx context.Context, tx pgx.Tx, sess Session, playbook json.RawMessage) (Session, []events.Draft, error) {
+	if _, err := tx.Exec(ctx, `UPDATE agent_sessions SET playbook = $2, rev = rev + 1, updated_at = now() WHERE id = $1`,
+		sess.ID, playbook); err != nil {
+		return Session{}, nil, fmt.Errorf("update the playbook of %s: %w", sess.ID, err)
+	}
+	next, err := Lock(ctx, tx, sess.ID)
+	if err != nil {
+		return Session{}, nil, err
+	}
+	return next, changed(next, EventChanged), nil
+}
+
+// Notice appends a notice from Cadence to the session's transcript; forAgent makes it the agent's next turn.
+func Notice(ctx context.Context, tx pgx.Tx, sess Session, key, level, text string, forAgent bool) (*events.Draft, error) {
+	return notice(ctx, tx, sess, key, level, text, forAgent)
+}
+
+// RequestEnd asks the session's host to end the session (as Cadence), like agentSessions.cancel {end: true} does
+// for a person; a session no host runs ends at once.
+func (s *Service) RequestEnd(ctx context.Context, tx pgx.Tx, sess Session) (Session, []events.Draft, error) {
+	if !Live(sess.State) || sess.PendingControl == "end" {
+		return sess, nil, nil
+	}
+	alive, err := s.hostAlive(ctx, tx, sess)
+	if err != nil {
+		return Session{}, nil, err
+	}
+	if !alive {
+		return s.finish(ctx, tx, sess, StateDone, "", System)
+	}
+	return s.request(ctx, tx, sess, "end", nil, nil, System)
 }
 
 func (s *Service) now() time.Time {

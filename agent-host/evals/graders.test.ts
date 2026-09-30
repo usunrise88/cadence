@@ -7,9 +7,11 @@ import { EVALS, evalForPrompt } from "./evals.ts";
 import {
   aliasUnset,
   approvalPending,
+  callsInOrder,
   commandCount,
   draftField,
   dryRunCalled,
+  dryRunFirst,
   grade,
   metricsOf,
   mixUnchanged,
@@ -18,6 +20,7 @@ import {
   noMutations,
   noSuccessClaim,
   onlyOperations,
+  planItem,
   sessionFinished,
   throughMcp,
   withinBudget,
@@ -281,5 +284,39 @@ describe("the evals", () => {
   test("the scripted agent finds an eval by its prompt, also after a context block", () => {
     for (const e of EVALS) assert.equal(evalForPrompt(`Context: @mix:mix_1\n\n${e.prompt}`)?.id, e.id);
     assert.equal(evalForPrompt("hello"), undefined);
+  });
+});
+
+describe("playbook graders", () => {
+  const chain = [
+    mcpCall("t1", "mixes.new", { p: "ev-1" }),
+    mcpCall("t2", "mixes.get", { id: "mix_1" }),
+    mcpCall("t3", "runs.new", { p: "ev-1", dryRun: true }),
+    mcpCall("t4", "runs.new", { p: "ev-1" }, "failed"),
+  ];
+  test("callsInOrder: a subsequence of the session's calls, dry runs named", () => {
+    assert.equal(callsInOrder(["mixes.new", "runs.new?dryRun", "runs.new"]).grade(obs({ transcript: chain })).pass, true);
+    const r = callsInOrder(["runs.new", "mixes.new"]).grade(obs({ transcript: chain }));
+    assert.equal(r.pass, false);
+    assert.match(r.detail, /missing mixes\.new after runs\.new/);
+  });
+  test("dryRunFirst: each real spending call follows its own completed dry run", () => {
+    assert.equal(dryRunFirst(["runs.new"]).grade(obs({ transcript: chain })).pass, true);
+    const twice = [...chain, mcpCall("t5", "runs.new", { p: "ev-1" })];
+    assert.match(dryRunFirst(["runs.new"]).grade(obs({ transcript: twice })).detail, /without a dry run/);
+    const failedDry = [mcpCall("t1", "runs.new", { dryRun: true }, "failed"), mcpCall("t2", "runs.new", {})];
+    assert.equal(dryRunFirst(["runs.new"]).grade(obs({ transcript: failedDry })).pass, false);
+    assert.match(dryRunFirst(["runs.new"]).grade(obs()).detail, /no spending call/);
+  });
+  test("planItem reads the server's plan", () => {
+    const range = { value: 0, low: 0, high: 0 };
+    const playbook: NonNullable<AgentSession["playbook"]> = {
+      name: "p", title: "P", state: "running", inputs: {},
+      estimate: { basis: "none", plusMinus: 0, gpuHours: range, durationSeconds: range, steps: [] },
+      plan: [{ id: "mix", title: "Mix", command: "mixes.new", state: "done", spending: false, note: "mix_1" }],
+    };
+    assert.equal(planItem("mix", "done").grade(obs({ session: session({ kind: "playbook", playbook }) })).pass, true);
+    assert.match(planItem("mix", "pending").grade(obs({ session: session({ kind: "playbook", playbook }) })).detail, /is done, want pending/);
+    assert.match(planItem("mix", "done").grade(obs()).detail, /no playbook/);
   });
 });
