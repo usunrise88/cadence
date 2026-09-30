@@ -647,7 +647,7 @@ export type AliasList = {
     items: Array<Alias>;
 };
 
-export type JobKind = 'training' | 'eval' | 'shadow' | 'export';
+export type JobKind = 'training' | 'eval' | 'shadow' | 'export' | 'data';
 
 export type ComputeCard = {
     /**
@@ -665,6 +665,8 @@ export type ComputeCard = {
      */
     memoryCapGb: number;
     allowedJobKinds: Array<JobKind>;
+    windows?: AvailabilityWindows;
+    telemetry?: CardTelemetryReport;
 };
 
 export type ComputeHealth = {
@@ -696,8 +698,18 @@ export type ComputeList = {
 
 export type ComputeCardEdit = {
     index: number;
+    name?: string;
+    /**
+     * Key into the estimate table in defaults.yaml (a corrected card: blackwell-48gb)
+     */
+    cardClass?: string;
+    /**
+     * The card's memory; the cap must stay at or below it
+     */
+    memoryGb?: number;
     memoryCapGb?: number;
     allowedJobKinds?: Array<JobKind>;
+    windows?: AvailabilityWindows;
 };
 
 export type ComputeEdit = {
@@ -1140,6 +1152,14 @@ export type Job = {
     startedAt?: string;
     finishedAt?: string;
     cancelRequestedAt?: string;
+    /**
+     * Step jobs: start order in the queue, higher first (jobs.edit); 0 for other jobs
+     */
+    priority?: number;
+    /**
+     * Step jobs: paused (jobs.pause) and held in the queue until jobs.resume
+     */
+    pausedAt?: string;
 };
 
 export type JobList = {
@@ -3172,6 +3192,162 @@ export type StepError = {
     retryable?: boolean;
 };
 
+export type RuntimeVersion = RegistryVersion & {
+    runtime: RuntimeDescriptor;
+    /**
+     * Workers that registered with this version
+     */
+    workers: Array<Worker>;
+};
+
+export type RuntimeVersionList = {
+    items: Array<RuntimeVersion>;
+};
+
+export type ModelFamilyVersion = RegistryVersion & {
+    modelFamily: ModelFamilyDescriptor;
+};
+
+export type ModelFamilyVersionList = {
+    items: Array<ModelFamilyVersion>;
+};
+
+export type StepKindPayload = StepKindDescriptor & {
+    /**
+     * The step kind's name; pipelines pin <name>@<version>
+     */
+    name: string;
+    /**
+     * The runtime that publishes it
+     */
+    runtime: string;
+    /**
+     * The runtime's registry version (ver_…) when first published
+     */
+    runtimeVersionId: string;
+    /**
+     * sha256 of the canonical parameter schema; neutral kinds of several runtimes agree on it
+     */
+    schemaHash: string;
+};
+
+export type StepKindVersion = RegistryVersion & {
+    stepKind: StepKindPayload;
+};
+
+export type StepKindVersionList = {
+    items: Array<StepKindVersion>;
+};
+
+export type JobEdit = {
+    /**
+     * Start order in the queue, higher first
+     */
+    priority: number;
+};
+
+export type JobLogLine = {
+    /**
+     * Line number in the job's log
+     */
+    seq: number;
+    t: string;
+    level: 'debug' | 'info' | 'warn' | 'error';
+    msg: string;
+    fields?: {
+        [key: string]: unknown;
+    };
+};
+
+export type JobLogPage = {
+    items: Array<JobLogLine>;
+    /**
+     * Pass as after= to read on (the last line number scanned)
+     */
+    nextAfter: number;
+};
+
+export type QueueLease = {
+    /**
+     * lse_…
+     */
+    id: string;
+    workerId: string;
+    runtime?: string;
+    host: string;
+    /**
+     * Card index; -1 for a step that needs no card
+     */
+    card: number;
+    memoryCapMb: number;
+    startedAt: string;
+    heartbeatAt: string;
+    progress?: number;
+    message?: string;
+    /**
+     * The stop the worker was told about
+     */
+    stopReason?: 'cancelled' | 'paused' | 'window-closed';
+};
+
+export type QueueEntry = {
+    jobId: string;
+    projectId?: string;
+    pipelineRunId?: string;
+    stepId?: string;
+    runId?: string;
+    kind: string;
+    kindVersion: string;
+    jobKind: JobKind;
+    gpu?: boolean;
+    memoryGb?: number;
+    state: 'waiting' | 'paused' | 'running' | 'stopping';
+    priority: number;
+    enqueuedAt: string;
+    estimateSeconds?: number;
+    attempt: number;
+    /**
+     * The training state it resumes from (b3 hash), after a pause or a window close
+     */
+    resumeFrom?: string;
+    lease?: QueueLease;
+};
+
+export type QueueEntryList = {
+    items: Array<QueueEntry>;
+};
+
+export type AvailabilityWindow = {
+    /**
+     * Days the window opens on (a window past midnight belongs to the day it opens)
+     */
+    days: Array<'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun'>;
+    /**
+     * Opens at HH:MM
+     */
+    start: string;
+    /**
+     * Closes at HH:MM (24:00 = midnight); before start = the next day
+     */
+    end: string;
+    /**
+     * IANA time zone, e.g. Europe/Berlin
+     */
+    timezone?: string;
+};
+
+/**
+ * R19: job kind → the windows in which a job of that kind may run on the card. A kind without an entry may run any time. A job starts only when its estimate fits before its window closes; a running training job is paused at the close and resumes from its training state when a window opens.
+ *
+ */
+export type AvailabilityWindows = {
+    [key: string]: Array<AvailabilityWindow>;
+};
+
+export type CardTelemetryReport = CardTelemetry & {
+    reportedAt: string;
+};
+
 export type SecretNewWritable = {
     name: SecretName;
     kind: SecretKind;
@@ -5065,6 +5241,48 @@ export type JobsGetResponses = {
 };
 
 export type JobsGetResponse = JobsGetResponses[keyof JobsGetResponses];
+
+export type JobsEditData = {
+    body: JobEdit;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/jobs/{id}';
+};
+
+export type JobsEditErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type JobsEditError = JobsEditErrors[keyof JobsEditErrors];
+
+export type JobsEditResponses = {
+    /**
+     * The job
+     */
+    200: Job;
+};
+
+export type JobsEditResponse = JobsEditResponses[keyof JobsEditResponses];
 
 export type JobsCancelData = {
     body?: never;
@@ -7166,6 +7384,357 @@ export type WorkerArtifactsSetResponses = {
 };
 
 export type WorkerArtifactsSetResponse = WorkerArtifactsSetResponses[keyof WorkerArtifactsSetResponses];
+
+export type RuntimesListData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)
+         */
+        collection?: string;
+        /**
+         * Only versions in this state
+         */
+        state?: VersionState;
+    };
+    url: '/registry/runtimes';
+};
+
+export type RuntimesListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type RuntimesListError = RuntimesListErrors[keyof RuntimesListErrors];
+
+export type RuntimesListResponses = {
+    /**
+     * Runtime versions, newest first
+     */
+    200: RuntimeVersionList;
+};
+
+export type RuntimesListResponse = RuntimesListResponses[keyof RuntimesListResponses];
+
+export type RuntimesGetData = {
+    body?: never;
+    path: {
+        /**
+         * Registry version id (ver_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/registry/runtimes/{id}';
+};
+
+export type RuntimesGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type RuntimesGetError = RuntimesGetErrors[keyof RuntimesGetErrors];
+
+export type RuntimesGetResponses = {
+    /**
+     * The version
+     */
+    200: RuntimeVersion;
+};
+
+export type RuntimesGetResponse = RuntimesGetResponses[keyof RuntimesGetResponses];
+
+export type ModelFamiliesListData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)
+         */
+        collection?: string;
+        /**
+         * Only versions in this state
+         */
+        state?: VersionState;
+    };
+    url: '/registry/model-families';
+};
+
+export type ModelFamiliesListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type ModelFamiliesListError = ModelFamiliesListErrors[keyof ModelFamiliesListErrors];
+
+export type ModelFamiliesListResponses = {
+    /**
+     * Model family versions, newest first
+     */
+    200: ModelFamilyVersionList;
+};
+
+export type ModelFamiliesListResponse = ModelFamiliesListResponses[keyof ModelFamiliesListResponses];
+
+export type ModelFamiliesGetData = {
+    body?: never;
+    path: {
+        /**
+         * Registry version id (ver_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/registry/model-families/{id}';
+};
+
+export type ModelFamiliesGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type ModelFamiliesGetError = ModelFamiliesGetErrors[keyof ModelFamiliesGetErrors];
+
+export type ModelFamiliesGetResponses = {
+    /**
+     * The version
+     */
+    200: ModelFamilyVersion;
+};
+
+export type ModelFamiliesGetResponse = ModelFamiliesGetResponses[keyof ModelFamiliesGetResponses];
+
+export type StepKindsListData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)
+         */
+        collection?: string;
+        /**
+         * Only versions in this state
+         */
+        state?: VersionState;
+    };
+    url: '/registry/step-kinds';
+};
+
+export type StepKindsListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type StepKindsListError = StepKindsListErrors[keyof StepKindsListErrors];
+
+export type StepKindsListResponses = {
+    /**
+     * Step kind versions, newest first
+     */
+    200: StepKindVersionList;
+};
+
+export type StepKindsListResponse = StepKindsListResponses[keyof StepKindsListResponses];
+
+export type StepKindsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Registry version id (ver_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/registry/step-kinds/{id}';
+};
+
+export type StepKindsGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type StepKindsGetError = StepKindsGetErrors[keyof StepKindsGetErrors];
+
+export type StepKindsGetResponses = {
+    /**
+     * The version
+     */
+    200: StepKindVersion;
+};
+
+export type StepKindsGetResponse = StepKindsGetResponses[keyof StepKindsGetResponses];
+
+export type JobsPauseData = {
+    body?: never;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/jobs/{id}:pause';
+};
+
+export type JobsPauseErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type JobsPauseError = JobsPauseErrors[keyof JobsPauseErrors];
+
+export type JobsPauseResponses = {
+    /**
+     * The job with pausedAt set
+     */
+    200: Job;
+};
+
+export type JobsPauseResponse = JobsPauseResponses[keyof JobsPauseResponses];
+
+export type JobsResumeData = {
+    body?: never;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/jobs/{id}:resume';
+};
+
+export type JobsResumeErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type JobsResumeError = JobsResumeErrors[keyof JobsResumeErrors];
+
+export type JobsResumeResponses = {
+    /**
+     * The job without pausedAt
+     */
+    200: Job;
+};
+
+export type JobsResumeResponse = JobsResumeResponses[keyof JobsResumeResponses];
+
+export type JobLogsListData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: {
+        /**
+         * Minimum level
+         */
+        level?: 'debug' | 'info' | 'warn' | 'error';
+        /**
+         * Text the message must contain (case-insensitive)
+         */
+        text?: string;
+        /**
+         * Only lines after this line number
+         */
+        after?: number;
+        /**
+         * The last matching lines instead of the first
+         */
+        tail?: boolean;
+        limit?: number;
+    };
+    url: '/jobs/{id}/job-logs';
+};
+
+export type JobLogsListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type JobLogsListError = JobLogsListErrors[keyof JobLogsListErrors];
+
+export type JobLogsListResponses = {
+    /**
+     * Matching lines in order
+     */
+    200: JobLogPage;
+};
+
+export type JobLogsListResponse = JobLogsListResponses[keyof JobLogsListResponses];
+
+export type QueueEntriesListData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Only this project's entries (slug)
+         */
+        project?: string;
+    };
+    url: '/queue-entries';
+};
+
+export type QueueEntriesListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type QueueEntriesListError = QueueEntriesListErrors[keyof QueueEntriesListErrors];
+
+export type QueueEntriesListResponses = {
+    /**
+     * Entries, running ones first, then in start order
+     */
+    200: QueueEntryList;
+};
+
+export type QueueEntriesListResponse = QueueEntriesListResponses[keyof QueueEntriesListResponses];
 
 export type MountsListData = {
     body?: never;

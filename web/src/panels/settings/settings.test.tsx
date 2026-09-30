@@ -33,7 +33,7 @@ const host: ComputeHost = {
   rev: 1,
   createdAt: "2026-09-30T00:00:00Z",
   updatedAt: "2026-09-30T00:00:00Z",
-  cards: [{ index: 0, name: "Staging card", cardClass: "blackwell-96gb", memoryGb: 96, memoryCapGb: 24, allowedJobKinds: ["training", "eval", "shadow", "export"] }],
+  cards: [{ index: 0, name: "Staging card", cardClass: "blackwell-48gb", memoryGb: 48, memoryCapGb: 24, allowedJobKinds: ["training", "eval", "shadow", "export"] }],
 };
 
 const defaults = {
@@ -47,7 +47,7 @@ const defaults = {
     gpu_hours_per_project_per_day: { value: 8, unit: "GPU-h", description: "GPU-hours a project may spend per day", source: "Cadence recommendation", range: { min: 0, max: 192 } },
     agent_turns_per_session: { value: 200, unit: "turns", description: "Turns per session", source: "Cadence recommendation", range: { min: 1, max: 2000 } },
   },
-  compute: { hosts: [{ name: "staging", description: "", source: "docs/spikes/A3", cards: [{ index: 0, name: "Staging card", card_class: "blackwell-96gb", memory_gb: 96, memory_cap_gb: 24, allowed_job_kinds: ["training"] }] }] },
+  compute: { hosts: [{ name: "staging", description: "", source: "docs/spikes/A3", cards: [{ index: 0, name: "Staging card", card_class: "blackwell-48gb", memory_gb: 48, memory_cap_gb: 24, allowed_job_kinds: ["training"] }] }] },
 } as unknown as Defaults;
 
 beforeEach(() => {
@@ -112,7 +112,7 @@ describe("compute", () => {
 
   it("explains the cap's default from the seeded host", () => {
     const d = capDefault(defaults.compute.hosts[0], host.cards[0]!);
-    expect(d).toMatchObject({ value: 24, unit: "GB", source: "docs/spikes/A3", range: { min: 1, max: 96 } });
+    expect(d).toMatchObject({ value: 24, unit: "GB", source: "docs/spikes/A3", range: { min: 1, max: 48 } });
   });
 
   it("a 412 on save keeps the edit and offers both ways out", async () => {

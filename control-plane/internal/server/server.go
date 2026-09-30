@@ -37,6 +37,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/sessions"
 	"github.com/usunrise88/cadence/control-plane/internal/steps"
 	"github.com/usunrise88/cadence/control-plane/internal/webui"
+	"github.com/usunrise88/cadence/control-plane/internal/workers"
 )
 
 // APIPrefix is where the contract's server URL (/api) is mounted.
@@ -76,8 +77,11 @@ type Config struct {
 	// StepHooks react to step outputs by artifact type (phase 2: dataset, checkpoint, calibration); New creates an
 	// empty registry when nil.
 	StepHooks *steps.Hooks
-	// Leases is the worker protocol as the pipeline engine sees it; steps.NoLeases when nil.
+	// Leases is the worker protocol as the pipeline engine sees it; Workers when nil and set, else steps.NoLeases.
 	Leases steps.Leases
+	// Workers is the worker protocol (registrations, leases, logs, metrics, the step queue); nil in tests that never
+	// reach it (its operations then answer 501).
+	Workers *workers.Service
 }
 
 // Server implements api.StrictServerInterface. Planned operations fall through to api.Planned (501).
@@ -111,6 +115,9 @@ func New(c Config) (*Server, error) {
 	}
 	if c.StepHooks == nil {
 		c.StepHooks = &steps.Hooks{}
+	}
+	if c.Leases == nil && c.Workers != nil {
+		c.Leases = c.Workers
 	}
 	if c.Leases == nil {
 		c.Leases = steps.NoLeases{}
@@ -174,9 +181,10 @@ func (s *Server) apiRouter(authenticate bool) http.Handler {
 	r := chi.NewRouter()
 	if authenticate {
 		r.Use(s.authenticator().Middleware)
+		r.Use(s.workerOnly)
 		r.Use(policyScope)
 	}
-	r.Use(commands.HashMiddleware(s.writeProblem))
+	r.Use(skipForUploads(commands.HashMiddleware(s.writeProblem)))
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
 		s.writeProblem(w, r, problems.NotFound.New("no API operation at %s %s", r.Method, r.URL.Path))
 	})

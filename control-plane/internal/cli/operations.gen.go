@@ -324,7 +324,7 @@ var Operations = []Operation{
 	},
 	{
 		ID: "compute.edit", Entity: "compute", Verb: "edit", Method: "PATCH", Path: "/compute/{id}",
-		Summary:        "Change a host's description or a card's memory cap and allowed job kinds",
+		Summary:        "Change a host's description or a card's name, class, memory, memory cap, allowed job kinds and availability windows",
 		IdempotencyKey: true,
 		Params: []Param{
 			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Host id (cmp_…) or name (staging)"},
@@ -466,6 +466,19 @@ var Operations = []Operation{
 		},
 	},
 	{
+		ID: "jobLogs.list", Entity: "jobLogs", Verb: "list", Method: "GET", Path: "/jobs/{id}/job-logs",
+		Summary:     "Read a job's log lines from its worker, filtered by level and text, after a line number",
+		Description: "Read the log of a job that ran on a worker: lines {seq, t, level, msg, fields}. level=warn keeps warn and error; text matches the message (case-insensitive); after=<seq> pages forward (nextAfter); tail=true returns the last lines instead of the first. Live lines stream on job.{id}.log.",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string"},
+			{Name: "level", In: "query", Flag: "level", Type: "string", Description: "Minimum level", Enum: []string{"debug", "info", "warn", "error"}},
+			{Name: "text", In: "query", Flag: "text", Type: "string", Description: "Text the message must contain (case-insensitive)"},
+			{Name: "after", In: "query", Flag: "after", Type: "integer", Description: "Only lines after this line number"},
+			{Name: "tail", In: "query", Flag: "tail", Type: "boolean", Description: "The last matching lines instead of the first", Default: "false"},
+			{Name: "limit", In: "query", Flag: "limit", Type: "integer", Default: "500"},
+		},
+	},
+	{
 		ID: "jobs.cancel", Entity: "jobs", Verb: "cancel", Method: "POST", Path: "/jobs/{id}:cancel",
 		Summary:        "Cancel a job; a queued job stops at once, a running one when its handler notices",
 		IdempotencyKey: true,
@@ -474,6 +487,19 @@ var Operations = []Operation{
 			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
 			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
 		},
+	},
+	{
+		ID: "jobs.edit", Entity: "jobs", Verb: "edit", Method: "PATCH", Path: "/jobs/{id}",
+		Summary:        "Change a step job's priority (higher starts first; the Queue's reorder)",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "priority", Required: true, Type: "integer", Description: "Start order in the queue, higher first"},
+		}},
 	},
 	{
 		ID: "jobs.get", Entity: "jobs", Verb: "get", Method: "GET", Path: "/jobs/{id}",
@@ -489,6 +515,27 @@ var Operations = []Operation{
 			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
 			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only jobs in this state", Enum: []string{"queued", "running", "done", "failed", "cancelled"}},
 			{Name: "limit", In: "query", Flag: "limit", Type: "integer", Default: "100"},
+		},
+	},
+	{
+		ID: "jobs.pause", Entity: "jobs", Verb: "pause", Method: "POST", Path: "/jobs/{id}:pause",
+		Summary:        "Pause a step job; a queued one is held back, a running one saves its state and returns to the queue",
+		Description:    "Pause a step job (training, eval, data). A queued job is not started until jobs.resume; a running one is told to stop at its next heartbeat, saves its training state and waits in the queue, resuming from that state. Only jobs that run on a worker can be paused.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+	},
+	{
+		ID: "jobs.resume", Entity: "jobs", Verb: "resume", Method: "POST", Path: "/jobs/{id}:resume",
+		Summary:        "Resume a paused step job; it waits in the queue for a free card (from its saved training state)",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
 		},
 	},
 	{
@@ -565,6 +612,22 @@ var Operations = []Operation{
 			{Name: "replayShare", Type: "number", Description: "Share of samples drawn from replay groups; mix.replay_share of defaults.yaml when the mix has a replay group, else 0"},
 			{Name: "temperature", Type: "number", Description: "Sampling temperature over group weights (probability ∝ weight^(1/temperature)); mix.temperature of defaults.yaml when omitted"},
 		}},
+	},
+	{
+		ID: "modelFamilies.get", Entity: "modelFamilies", Verb: "get", Method: "GET", Path: "/registry/model-families/{id}",
+		Summary: "Get a model family version",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Registry version id (ver_…)"},
+		},
+	},
+	{
+		ID: "modelFamilies.list", Entity: "modelFamilies", Verb: "list", Method: "GET", Path: "/registry/model-families",
+		Summary:     "List model family versions (architecture, capabilities, latency profiles, role step kinds) published by runtimes",
+		Description: "List model families: what a runtime can train and decode — framework, architecture, capabilities, latency profiles (e.g. 160 ms) and the step kind that fills each role (calibrate, train, average, transcribe). Render options from the descriptor; never assume a family by name.",
+		Params: []Param{
+			{Name: "collection", In: "query", Flag: "collection", Type: "string", Description: "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)"},
+			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated"}},
+		},
 	},
 	{
 		ID: "policies.edit", Entity: "policies", Verb: "edit", Method: "PATCH", Path: "/policies",
@@ -697,6 +760,14 @@ var Operations = []Operation{
 		},
 	},
 	{
+		ID: "queueEntries.list", Entity: "queueEntries", Verb: "list", Method: "GET", Path: "/queue-entries",
+		Summary:     "The step queue across projects — waiting, paused and running step jobs with their card and lease",
+		Description: "The GPU queue: step jobs waiting, paused or running on a worker, in start order (priority, then first come), with the card and worker holding each running one. Reorder with jobs.edit (priority), pause with jobs.pause. A project-scoped credential sees its own project's entries only.",
+		Params: []Param{
+			{Name: "project", In: "query", Flag: "project", Type: "string", Description: "Only this project's entries (slug)"},
+		},
+	},
+	{
 		ID: "recipes.get", Entity: "recipes", Verb: "get", Method: "GET", Path: "/projects/{p}/recipes/{path}",
 		Summary: "One file of the project repository at a branch or commit, with its commit history",
 		Params: []Param{
@@ -746,6 +817,22 @@ var Operations = []Operation{
 		}},
 	},
 	{
+		ID: "runtimes.get", Entity: "runtimes", Verb: "get", Method: "GET", Path: "/registry/runtimes/{id}",
+		Summary: "Get a runtime version with the workers that run it",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Registry version id (ver_…)"},
+		},
+	},
+	{
+		ID: "runtimes.list", Entity: "runtimes", Verb: "list", Method: "GET", Path: "/registry/runtimes",
+		Summary:     "List runtime versions (container image pinned by digest, environment lock, worker plugin) published by workers",
+		Description: "List runtimes: the container images step kinds run in, each pinned by digest with its environment lock (CUDA, PyTorch, framework versions). Workers publish them at start; a new digest is a new version. Filter collection=runtime/<name>.",
+		Params: []Param{
+			{Name: "collection", In: "query", Flag: "collection", Type: "string", Description: "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)"},
+			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated"}},
+		},
+	},
+	{
 		ID: "secrets.list", Entity: "secrets", Verb: "list", Method: "GET", Path: "/secrets",
 		Summary: "Named credentials (name, kind, scope, last use); values are never returned",
 	},
@@ -763,6 +850,22 @@ var Operations = []Operation{
 			{Name: "scope", Type: "string", Description: "instance, or project:<slug> when only that project's jobs and bootstrap may read it"},
 			{Name: "value", Required: true, Type: "string", Description: "Write-only; stored encrypted outside the database"},
 		}},
+	},
+	{
+		ID: "stepKinds.get", Entity: "stepKinds", Verb: "get", Method: "GET", Path: "/registry/step-kinds/{id}",
+		Summary: "Get a step kind version",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Registry version id (ver_…)"},
+		},
+	},
+	{
+		ID: "stepKinds.list", Entity: "stepKinds", Verb: "list", Method: "GET", Path: "/registry/step-kinds",
+		Summary:     "List step kind versions (parameter schema with defaults, inputs, outputs, resources, runtime)",
+		Description: "List step kinds a pipeline can pin as kind@version: the parameter schema (every parameter with its default, description, source and safe range), consumed and produced artifact types, resources and the runtime that runs it. Filter collection=step-kind/<name>.",
+		Params: []Param{
+			{Name: "collection", In: "query", Flag: "collection", Type: "string", Description: "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)"},
+			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated"}},
+		},
 	},
 	{
 		ID: "templates.get", Entity: "templates", Verb: "get", Method: "GET", Path: "/registry/templates/{id}",

@@ -56,6 +56,8 @@ func kindFor(token string, via auth.Via) (string, bool) {
 		return KindAgentHost, true
 	case via == auth.ViaBearer && strings.HasPrefix(token, auth.PrefixEgress):
 		return KindEgressProxy, true
+	case via == auth.ViaBearer && strings.HasPrefix(token, auth.PrefixWorker):
+		return KindWorker, true
 	}
 	return "", false
 }

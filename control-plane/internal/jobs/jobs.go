@@ -82,6 +82,8 @@ type Job struct {
 	StartedAt         *time.Time
 	FinishedAt        *time.Time
 	CancelRequestedAt *time.Time
+	Priority          int        // step jobs: start order in the queue, higher first
+	PausedAt          *time.Time // step jobs: held in the queue (jobs.pause)
 }
 
 // View is a job's JSON form: the contract's Job.
@@ -102,22 +104,27 @@ type View struct {
 	StartedAt         *time.Time      `json:"startedAt,omitempty"`
 	FinishedAt        *time.Time      `json:"finishedAt,omitempty"`
 	CancelRequestedAt *time.Time      `json:"cancelRequestedAt,omitempty"`
+	Priority          int             `json:"priority"`
+	PausedAt          *time.Time      `json:"pausedAt,omitempty"`
 }
 
 // JSON renders j as the contract's Job.
 func (j Job) JSON() View {
 	return View{ID: j.ID, Kind: j.Kind, ProjectID: j.ProjectID, State: j.State, Progress: j.Progress, Message: j.Message,
 		Result: j.Result, Error: j.Error, Attempt: j.Attempt, Rev: j.Rev, Actor: j.Actor, CreatedAt: j.CreatedAt,
-		UpdatedAt: j.UpdatedAt, StartedAt: j.StartedAt, FinishedAt: j.FinishedAt, CancelRequestedAt: j.CancelRequestedAt}
+		UpdatedAt: j.UpdatedAt, StartedAt: j.StartedAt, FinishedAt: j.FinishedAt, CancelRequestedAt: j.CancelRequestedAt,
+		Priority: j.Priority, PausedAt: j.PausedAt}
 }
 
 const cols = `id, river_id, kind, coalesce(project_id, ''), state, progress, coalesce(message, ''), result,
-	coalesce(error, ''), attempt, actor, rev, created_at, updated_at, started_at, finished_at, cancel_requested_at`
+	coalesce(error, ''), attempt, actor, rev, created_at, updated_at, started_at, finished_at, cancel_requested_at,
+	priority, paused_at`
 
 func scan(row pgx.CollectableRow) (Job, error) {
 	var j Job
 	err := row.Scan(&j.ID, &j.RiverID, &j.Kind, &j.ProjectID, &j.State, &j.Progress, &j.Message, &j.Result, &j.Error,
-		&j.Attempt, &j.Actor, &j.Rev, &j.CreatedAt, &j.UpdatedAt, &j.StartedAt, &j.FinishedAt, &j.CancelRequestedAt)
+		&j.Attempt, &j.Actor, &j.Rev, &j.CreatedAt, &j.UpdatedAt, &j.StartedAt, &j.FinishedAt, &j.CancelRequestedAt,
+		&j.Priority, &j.PausedAt)
 	return j, err
 }
 
@@ -200,6 +207,9 @@ type Handler func(ctx context.Context, run *Run) (result any, err error)
 type KindOptions struct {
 	MaxAttempts int           // default 1: in-process kinds are not retried unless they ask for it
 	Timeout     time.Duration // default 10 min
+	// Queue is the River queue the kind runs on: river.QueueDefault when empty, QueueSteps for kinds whose handler
+	// waits for a worker (they must not take the default queue's few slots from other work).
+	Queue string
 }
 
 // Run is one execution of a job, handed to its Handler.
@@ -307,7 +317,7 @@ func (s *Service) AddPeriodic(kind string, every time.Duration, fn func(ctx cont
 // Start creates the River client and starts working; it returns once River runs.
 func (s *Service) Start(ctx context.Context) error {
 	client, err := river.NewClient(riverpgxv5.New(s.pool), &river.Config{
-		Queues:            map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: 10}},
+		Queues:            map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: 10}, QueueSteps: {MaxWorkers: QueueStepsWorkers}},
 		Workers:           s.workers,
 		PeriodicJobs:      s.periodic,
 		Logger:            s.log,
@@ -364,7 +374,7 @@ func (s *Service) Enqueue(ctx context.Context, tx pgx.Tx, spec Spec) (Job, []eve
 	actor, _ := auth.FromContext(ctx)
 	id := "job_" + uuid.Must(uuid.NewV7()).String()
 	res, err := s.client.InsertTx(ctx, tx, riverArgs{K: spec.Kind, JobID: id, Args: args},
-		&river.InsertOpts{MaxAttempts: k.opts.MaxAttempts})
+		&river.InsertOpts{MaxAttempts: k.opts.MaxAttempts, Queue: k.opts.Queue})
 	if err != nil {
 		return Job{}, nil, fmt.Errorf("enqueue %s: %w", spec.Kind, err)
 	}

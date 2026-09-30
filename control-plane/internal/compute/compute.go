@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"time"
 
@@ -26,7 +27,7 @@ import (
 const Kind = "compute"
 
 // JobKinds are the kinds of work a card may accept (the contract's JobKind).
-var JobKinds = []string{"training", "eval", "shadow", "export"}
+var JobKinds = []string{"training", "eval", "shadow", "export", "data"}
 
 // JobTraining is the job kind of training runs.
 const JobTraining = "training"
@@ -39,6 +40,22 @@ type Card struct {
 	MemoryGB        float64  `json:"memoryGb"`
 	MemoryCapGB     float64  `json:"memoryCapGb"`
 	AllowedJobKinds []string `json:"allowedJobKinds"`
+	// Windows are the card's availability windows per job kind (R19); none means always open.
+	Windows Windows `json:"windows,omitempty"`
+	// Telemetry is the card's last report from a worker; filled on read (WithTelemetry), never stored in cards.
+	Telemetry *Telemetry `json:"telemetry,omitempty"`
+}
+
+// Telemetry is what a worker last reported about a card (the contract's CardTelemetryReport).
+type Telemetry struct {
+	Index         int       `json:"index"`
+	Name          string    `json:"name,omitempty"`
+	MemoryTotalMB *int      `json:"memoryTotalMb,omitempty"`
+	MemoryUsedMB  *int      `json:"memoryUsedMb,omitempty"`
+	Utilization   *float64  `json:"utilization,omitempty"`
+	TemperatureC  *float64  `json:"temperatureC,omitempty"`
+	PowerW        *float64  `json:"powerW,omitempty"`
+	ReportedAt    time.Time `json:"reportedAt"`
 }
 
 // Health is what the last check of a host found. Its JSON form is the contract's ComputeHealth.
@@ -104,8 +121,12 @@ func get(ctx context.Context, q storage.Querier, idOrName, lock string) (Host, e
 // CardEdit changes one card; nil fields stay as they are.
 type CardEdit struct {
 	Index           int
+	Name            *string
+	CardClass       *string
+	MemoryGB        *float64
 	MemoryCapGB     *float64
 	AllowedJobKinds *[]string
+	Windows         *Windows // replaces the card's windows; an empty map clears them
 }
 
 // EditInput is the body of compute.edit.
@@ -133,13 +154,28 @@ func Edit(ctx context.Context, tx pgx.Tx, idOrName string, rev int, in EditInput
 			continue
 		}
 		c := &h.Cards[at]
-		if e.MemoryCapGB != nil {
-			if *e.MemoryCapGB <= 0 || *e.MemoryCapGB > c.MemoryGB {
-				fields = append(fields, problems.FieldError{Path: fmt.Sprintf("/cards/%d/memoryCapGb", i),
-					Message: fmt.Sprintf("must be above 0 and at most the card's %v GB", c.MemoryGB)})
+		if e.Name != nil {
+			c.Name = *e.Name
+		}
+		if e.CardClass != nil {
+			c.CardClass = *e.CardClass
+		}
+		if e.MemoryGB != nil {
+			if *e.MemoryGB <= 0 {
+				fields = append(fields, problems.FieldError{Path: fmt.Sprintf("/cards/%d/memoryGb", i), Message: "must be above 0"})
 			} else {
-				c.MemoryCapGB = *e.MemoryCapGB
+				c.MemoryGB = *e.MemoryGB
 			}
+		}
+		capGB := c.MemoryCapGB
+		if e.MemoryCapGB != nil {
+			capGB = *e.MemoryCapGB
+		}
+		if capGB <= 0 || capGB > c.MemoryGB {
+			fields = append(fields, problems.FieldError{Path: fmt.Sprintf("/cards/%d/memoryCapGb", i),
+				Message: fmt.Sprintf("must be above 0 and at most the card's %v GB", c.MemoryGB)})
+		} else {
+			c.MemoryCapGB = capGB
 		}
 		if e.AllowedJobKinds != nil {
 			for j, k := range *e.AllowedJobKinds {
@@ -149,6 +185,16 @@ func Edit(ctx context.Context, tx pgx.Tx, idOrName string, rev int, in EditInput
 				}
 			}
 			c.AllowedJobKinds = append([]string{}, *e.AllowedJobKinds...)
+		}
+		if e.Windows != nil {
+			bad := ValidateWindows(*e.Windows)
+			for _, at := range slices.Sorted(maps.Keys(bad)) {
+				fields = append(fields, problems.FieldError{Path: fmt.Sprintf("/cards/%d/windows%s", i, at), Message: bad[at]})
+			}
+			c.Windows = *e.Windows
+			if len(c.Windows) == 0 {
+				c.Windows = nil
+			}
 		}
 	}
 	if len(fields) > 0 {
@@ -166,6 +212,64 @@ func Edit(ctx context.Context, tx pgx.Tx, idOrName string, rev int, in EditInput
 		return Host{}, nil, fmt.Errorf("update compute host: %w", err)
 	}
 	return h, []events.Draft{hostEvent(h, "compute.edited")}, nil
+}
+
+// WithTelemetry fills each card's last telemetry from the card slots the worker protocol keeps.
+func WithTelemetry(ctx context.Context, q storage.Querier, hosts []Host) error {
+	if len(hosts) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(hosts))
+	for _, h := range hosts {
+		ids = append(ids, h.ID)
+	}
+	rows, err := q.Query(ctx, `SELECT host_id, card_index, telemetry, reported_at FROM card_slots
+		WHERE host_id = ANY($1) AND telemetry IS NOT NULL AND reported_at IS NOT NULL`, ids)
+	if err != nil {
+		return fmt.Errorf("read card telemetry: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			hostID string
+			index  int
+			t      Telemetry
+			at     time.Time
+		)
+		if err := rows.Scan(&hostID, &index, &t, &at); err != nil {
+			return fmt.Errorf("read card telemetry: %w", err)
+		}
+		t.Index, t.ReportedAt = index, at
+		for hi := range hosts {
+			if hosts[hi].ID != hostID {
+				continue
+			}
+			for ci := range hosts[hi].Cards {
+				if hosts[hi].Cards[ci].Index == index {
+					tc := t
+					hosts[hi].Cards[ci].Telemetry = &tc
+				}
+			}
+		}
+	}
+	return rows.Err()
+}
+
+// SetHealth records what the last worker report says about a host; it emits compute.health on compute.{id} only
+// when the state changes, so heartbeats do not flood the stream. The host's revision does not move: health is not
+// a setting.
+func SetHealth(ctx context.Context, tx pgx.Tx, hostID string, h Health) ([]events.Draft, error) {
+	var prev Health
+	if err := tx.QueryRow(ctx, "SELECT health FROM compute_hosts WHERE id = $1 FOR UPDATE", hostID).Scan(&prev); err != nil {
+		return nil, fmt.Errorf("read compute health: %w", err)
+	}
+	if _, err := tx.Exec(ctx, "UPDATE compute_hosts SET health = $2 WHERE id = $1", hostID, h); err != nil {
+		return nil, fmt.Errorf("update compute health: %w", err)
+	}
+	if prev.State == h.State && prev.Detail == h.Detail {
+		return nil, nil
+	}
+	return []events.Draft{{Topic: "compute." + hostID, Type: "compute.health", Payload: map[string]any{"hostId": hostID, "health": h}}}, nil
 }
 
 // Compute events are instance-wide: no projectId.

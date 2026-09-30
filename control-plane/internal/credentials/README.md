@@ -2,7 +2,9 @@
 The one table of credentials (migration 0002) and the admin account's secrets.
 
 - Kinds: `session` (browser, cookie `cws_…`, 30-day sliding), `api_key` (`cdk_…`, one project and/or registry read),
-  `agent` (`cst_…`, one project + registry read + preset; dies with its agent session), `invitation` and `worker`
+  `agent` (`cst_…`, one project + registry read + preset; dies with its agent session), `agent_host` (`cah_…`),
+  `egress_proxy` (`cep_…`), `worker` (`cwk_…`, one per compute host, the host name as its subject: the worker
+  protocol only; `NewWorkerToken`, `EnsureWorkerTokenFile` for `CADENCE_WORKER_TOKEN_FILE`) and `invitation`
   (later phases). Only `sha256(token)` is stored; a token is shown once. `last_used_at` is written at most once a
   minute.
 - For other packages: `MintAgentToken(ctx, tx, sessionID, projectID, preset) (token, id, err)` and

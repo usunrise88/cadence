@@ -1762,8 +1762,8 @@
     },
     {
       "name": "compute.edit",
-      "title": "Change a host's description or a card's memory cap and allowed job kinds",
-      "description": "Change a host's description or a card's memory cap and allowed job kinds. Pass dryRun=true to see what would happen without changing anything.",
+      "title": "Change a host's description or a card's name, class, memory, memory cap, allowed job kinds and availability windows",
+      "description": "Change a host's description or a card's name, class, memory, memory cap, allowed job kinds and availability windows. Pass dryRun=true to see what would happen without changing anything.",
       "method": "PATCH",
       "path": "/compute/{id}",
       "inputSchema": {
@@ -1782,12 +1782,18 @@
                           "training",
                           "eval",
                           "shadow",
-                          "export"
+                          "export",
+                          "data"
                         ],
                         "type": "string"
                       },
                       "type": "array",
                       "uniqueItems": true
+                    },
+                    "cardClass": {
+                      "description": "Key into the estimate table in defaults.yaml (a corrected card: blackwell-48gb)",
+                      "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+                      "type": "string"
                     },
                     "index": {
                       "minimum": 0,
@@ -1797,6 +1803,70 @@
                       "exclusiveMinimum": 0,
                       "format": "double",
                       "type": "number"
+                    },
+                    "memoryGb": {
+                      "description": "The card's memory; the cap must stay at or below it",
+                      "exclusiveMinimum": 0,
+                      "format": "double",
+                      "type": "number"
+                    },
+                    "name": {
+                      "maxLength": 200,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "windows": {
+                      "additionalProperties": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "days": {
+                              "description": "Days the window opens on (a window past midnight belongs to the day it opens)",
+                              "items": {
+                                "enum": [
+                                  "mon",
+                                  "tue",
+                                  "wed",
+                                  "thu",
+                                  "fri",
+                                  "sat",
+                                  "sun"
+                                ],
+                                "type": "string"
+                              },
+                              "minItems": 1,
+                              "type": "array",
+                              "uniqueItems": true
+                            },
+                            "end": {
+                              "description": "Closes at HH:MM (24:00 = midnight); before start = the next day",
+                              "pattern": "^(([01][0-9]|2[0-3]):[0-5][0-9]|24:00)$",
+                              "type": "string"
+                            },
+                            "start": {
+                              "description": "Opens at HH:MM",
+                              "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+                              "type": "string"
+                            },
+                            "timezone": {
+                              "default": "UTC",
+                              "description": "IANA time zone, e.g. Europe/Berlin",
+                              "maxLength": 64,
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "days",
+                            "start",
+                            "end"
+                          ],
+                          "type": "object"
+                        },
+                        "maxItems": 28,
+                        "type": "array"
+                      },
+                      "description": "R19: job kind → the windows in which a job of that kind may run on the card. A kind without an entry may run any time. A job starts only when its estimate fits before its window closes; a running training job is paused at the close and resumes from its training state when a window opens.\n",
+                      "type": "object"
                     }
                   },
                   "required": [
@@ -2523,6 +2593,93 @@
       ]
     },
     {
+      "name": "jobLogs.list",
+      "title": "Read a job's log lines from its worker, filtered by level and text, after a line number",
+      "description": "Read the log of a job that ran on a worker: lines {seq, t, level, msg, fields}. level=warn keeps warn and error; text matches the message (case-insensitive); after=\u003cseq\u003e pages forward (nextAfter); tail=true returns the last lines instead of the first. Live lines stream on job.{id}.log.",
+      "method": "GET",
+      "path": "/jobs/{id}/job-logs",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "after": {
+            "description": "Only lines after this line number",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "level": {
+            "description": "Minimum level",
+            "enum": [
+              "debug",
+              "info",
+              "warn",
+              "error"
+            ],
+            "type": "string"
+          },
+          "limit": {
+            "default": 500,
+            "maximum": 5000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "tail": {
+            "default": false,
+            "description": "The last matching lines instead of the first",
+            "type": "boolean"
+          },
+          "text": {
+            "description": "Text the message must contain (case-insensitive)",
+            "maxLength": 200,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "level",
+          "in": "query",
+          "name": "level"
+        },
+        {
+          "property": "text",
+          "in": "query",
+          "name": "text"
+        },
+        {
+          "property": "after",
+          "in": "query",
+          "name": "after"
+        },
+        {
+          "property": "tail",
+          "in": "query",
+          "name": "tail"
+        },
+        {
+          "property": "limit",
+          "in": "query",
+          "name": "limit"
+        }
+      ]
+    },
+    {
       "name": "jobs.cancel",
       "title": "Cancel a job; a queued job stops at once, a running one when its handler notices",
       "description": "Cancel a job; a queued job stops at once, a running one when its handler notices. Pass dryRun=true to see what would happen without changing anything.",
@@ -2570,6 +2727,78 @@
           "property": "dryRun",
           "in": "query",
           "name": "dryRun"
+        }
+      ]
+    },
+    {
+      "name": "jobs.edit",
+      "title": "Change a step job's priority (higher starts first; the Queue's reorder)",
+      "description": "Change a step job's priority (higher starts first; the Queue's reorder). Pass dryRun=true to see what would happen without changing anything.",
+      "method": "PATCH",
+      "path": "/jobs/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "priority": {
+                "description": "Start order in the queue, higher first",
+                "maximum": 1000,
+                "minimum": -1000,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "priority"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
         }
       ]
     },
@@ -2661,6 +2890,108 @@
           "property": "limit",
           "in": "query",
           "name": "limit"
+        }
+      ]
+    },
+    {
+      "name": "jobs.pause",
+      "title": "Pause a step job; a queued one is held back, a running one saves its state and returns to the queue",
+      "description": "Pause a step job (training, eval, data). A queued job is not started until jobs.resume; a running one is told to stop at its next heartbeat, saves its training state and waits in the queue, resuming from that state. Only jobs that run on a worker can be paused. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/jobs/{id}:pause",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        }
+      ]
+    },
+    {
+      "name": "jobs.resume",
+      "title": "Resume a paused step job; it waits in the queue for a free card (from its saved training state)",
+      "description": "Resume a paused step job; it waits in the queue for a free card (from its saved training state). Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/jobs/{id}:resume",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
         }
       ]
     },
@@ -3136,6 +3467,81 @@
           "property": "body",
           "in": "body",
           "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "modelFamilies.get",
+      "title": "Get a model family version",
+      "description": "Get a model family version",
+      "method": "GET",
+      "path": "/registry/model-families/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Registry version id (ver_…)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        }
+      ]
+    },
+    {
+      "name": "modelFamilies.list",
+      "title": "List model family versions (architecture, capabilities, latency profiles, role step kinds) published by runtimes",
+      "description": "List model families: what a runtime can train and decode — framework, architecture, capabilities, latency profiles (e.g. 160 ms) and the step kind that fills each role (calibrate, train, average, transcribe). Render options from the descriptor; never assume a family by name.",
+      "method": "GET",
+      "path": "/registry/model-families",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "collection": {
+            "description": "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)",
+            "type": "string"
+          },
+          "state": {
+            "description": "Only versions in this state",
+            "enum": [
+              "draft",
+              "frozen",
+              "deprecated"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "collection",
+          "in": "query",
+          "name": "collection"
+        },
+        {
+          "property": "state",
+          "in": "query",
+          "name": "state"
         }
       ]
     },
@@ -3873,6 +4279,35 @@
       ]
     },
     {
+      "name": "queueEntries.list",
+      "title": "The step queue across projects — waiting, paused and running step jobs with their card and lease",
+      "description": "The GPU queue: step jobs waiting, paused or running on a worker, in start order (priority, then first come), with the card and worker holding each running one. Reorder with jobs.edit (priority), pause with jobs.pause. A project-scoped credential sees its own project's entries only.",
+      "method": "GET",
+      "path": "/queue-entries",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "project": {
+            "description": "Only this project's entries (slug)",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "project",
+          "in": "query",
+          "name": "project"
+        }
+      ]
+    },
+    {
       "name": "recipes.get",
       "title": "One file of the project repository at a branch or commit, with its commit history",
       "description": "One file of the project repository at a branch or commit, with its commit history",
@@ -4149,6 +4584,81 @@
       ]
     },
     {
+      "name": "runtimes.get",
+      "title": "Get a runtime version with the workers that run it",
+      "description": "Get a runtime version with the workers that run it",
+      "method": "GET",
+      "path": "/registry/runtimes/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Registry version id (ver_…)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        }
+      ]
+    },
+    {
+      "name": "runtimes.list",
+      "title": "List runtime versions (container image pinned by digest, environment lock, worker plugin) published by workers",
+      "description": "List runtimes: the container images step kinds run in, each pinned by digest with its environment lock (CUDA, PyTorch, framework versions). Workers publish them at start; a new digest is a new version. Filter collection=runtime/\u003cname\u003e.",
+      "method": "GET",
+      "path": "/registry/runtimes",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "collection": {
+            "description": "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)",
+            "type": "string"
+          },
+          "state": {
+            "description": "Only versions in this state",
+            "enum": [
+              "draft",
+              "frozen",
+              "deprecated"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "collection",
+          "in": "query",
+          "name": "collection"
+        },
+        {
+          "property": "state",
+          "in": "query",
+          "name": "state"
+        }
+      ]
+    },
+    {
       "name": "secrets.list",
       "title": "Named credentials (name, kind, scope, last use); values are never returned",
       "description": "Named credentials (name, kind, scope, last use); values are never returned",
@@ -4239,6 +4749,81 @@
           "property": "body",
           "in": "body",
           "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "stepKinds.get",
+      "title": "Get a step kind version",
+      "description": "Get a step kind version",
+      "method": "GET",
+      "path": "/registry/step-kinds/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Registry version id (ver_…)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        }
+      ]
+    },
+    {
+      "name": "stepKinds.list",
+      "title": "List step kind versions (parameter schema with defaults, inputs, outputs, resources, runtime)",
+      "description": "List step kinds a pipeline can pin as kind@version: the parameter schema (every parameter with its default, description, source and safe range), consumed and produced artifact types, resources and the runtime that runs it. Filter collection=step-kind/\u003cname\u003e.",
+      "method": "GET",
+      "path": "/registry/step-kinds",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "collection": {
+            "description": "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)",
+            "type": "string"
+          },
+          "state": {
+            "description": "Only versions in this state",
+            "enum": [
+              "draft",
+              "frozen",
+              "deprecated"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "collection",
+          "in": "query",
+          "name": "collection"
+        },
+        {
+          "property": "state",
+          "in": "query",
+          "name": "state"
         }
       ]
     },

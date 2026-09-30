@@ -517,7 +517,7 @@ func TestRunEstimate(t *testing.T) {
 		est.DurationSeconds.Value != 3000 || est.DurationSeconds.Low != 1500 || est.DurationSeconds.High != 4500 {
 		t.Fatalf("estimate numbers: %+v", est)
 	}
-	if est.Card.Host != "staging" || est.Card.Index != 0 || est.Card.CardClass != "blackwell-96gb" || est.Card.MemoryCapGb != 24 ||
+	if est.Card.Host != "staging" || est.Card.Index != 0 || est.Card.CardClass != "blackwell-48gb" || est.Card.MemoryCapGb != 24 ||
 		est.BaseModel.Name != "base-model/nemotron-3.5-asr-streaming-0.6b" {
 		t.Errorf("estimate card or base model: %+v", est)
 	}

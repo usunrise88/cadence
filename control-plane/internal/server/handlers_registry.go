@@ -493,6 +493,9 @@ func (s *Server) ComputeList(ctx context.Context, _ api.ComputeListRequestObject
 	if err != nil {
 		return nil, err
 	}
+	if err := compute.WithTelemetry(ctx, s.Pool, list); err != nil {
+		return nil, err
+	}
 	out := api.ComputeList200JSONResponse{Items: make([]api.ComputeHost, 0, len(list))}
 	for _, h := range list {
 		out.Items = append(out.Items, apiHost(h))
@@ -506,6 +509,11 @@ func (s *Server) ComputeGet(ctx context.Context, req api.ComputeGetRequestObject
 	if err != nil {
 		return nil, err
 	}
+	hosts := []compute.Host{h}
+	if err := compute.WithTelemetry(ctx, s.Pool, hosts); err != nil {
+		return nil, err
+	}
+	h = hosts[0]
 	etag := commands.ETag(h.Rev)
 	return api.ComputeGet200JSONResponse{Body: apiHost(h), Headers: api.ComputeGet200ResponseHeaders{ETag: &etag}}, nil
 }
@@ -521,13 +529,29 @@ func (s *Server) ComputeEdit(ctx context.Context, req api.ComputeEditRequestObje
 	}
 	in := compute.EditInput{Description: req.Body.Description}
 	for _, c := range deref(req.Body.Cards) {
-		e := compute.CardEdit{Index: c.Index, MemoryCapGB: c.MemoryCapGb}
+		e := compute.CardEdit{Index: c.Index, Name: c.Name, CardClass: c.CardClass, MemoryGB: c.MemoryGb, MemoryCapGB: c.MemoryCapGb}
 		if c.AllowedJobKinds != nil {
 			kinds := make([]string, 0, len(*c.AllowedJobKinds))
 			for _, k := range *c.AllowedJobKinds {
 				kinds = append(kinds, string(k))
 			}
 			e.AllowedJobKinds = &kinds
+		}
+		if c.Windows != nil {
+			ws := compute.Windows{}
+			for kind, list := range *c.Windows {
+				for _, w := range list {
+					days := make([]string, 0, len(w.Days))
+					for _, d := range w.Days {
+						days = append(days, string(d))
+					}
+					ws[kind] = append(ws[kind], compute.Window{Days: days, Start: w.Start, End: w.End, Timezone: deref(w.Timezone)})
+				}
+				if ws[kind] == nil {
+					ws[kind] = []compute.Window{}
+				}
+			}
+			e.Windows = &ws
 		}
 		in.Cards = append(in.Cards, e)
 	}
@@ -551,9 +575,29 @@ func apiHost(h compute.Host) api.ComputeHost {
 		for _, k := range c.AllowedJobKinds {
 			kinds = append(kinds, api.JobKind(k))
 		}
-		out.Cards = append(out.Cards, api.ComputeCard{
+		card := api.ComputeCard{
 			Index: c.Index, Name: c.Name, CardClass: c.CardClass, MemoryGb: c.MemoryGB, MemoryCapGb: c.MemoryCapGB, AllowedJobKinds: kinds,
-		})
+		}
+		if len(c.Windows) > 0 {
+			ws := api.AvailabilityWindows{}
+			for kind, list := range c.Windows {
+				for _, w := range list {
+					days := make([]api.AvailabilityWindowDays, 0, len(w.Days))
+					for _, d := range w.Days {
+						days = append(days, api.AvailabilityWindowDays(d))
+					}
+					ws[kind] = append(ws[kind], api.AvailabilityWindow{Days: days, Start: w.Start, End: w.End, Timezone: optional(w.Timezone)})
+				}
+			}
+			card.Windows = &ws
+		}
+		if t := c.Telemetry; t != nil {
+			card.Telemetry = &api.CardTelemetryReport{
+				Index: t.Index, Name: optional(t.Name), MemoryTotalMb: t.MemoryTotalMB, MemoryUsedMb: t.MemoryUsedMB,
+				Utilization: f32(t.Utilization), TemperatureC: f32(t.TemperatureC), PowerW: f32(t.PowerW), ReportedAt: t.ReportedAt,
+			}
+		}
+		out.Cards = append(out.Cards, card)
 	}
 	return out
 }

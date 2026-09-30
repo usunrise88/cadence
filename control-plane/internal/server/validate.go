@@ -39,6 +39,23 @@ var validationOptions = &openapi3filter.Options{
 	AuthenticationFunc:  openapi3filter.NoopAuthenticationFunc,
 }
 
+// streamedOptions validate parameters only: artifact uploads and NDJSON log batches are read by their handlers as
+// streams (and checked there: the content hash, each log line), never buffered by the validator.
+var streamedOptions = &openapi3filter.Options{
+	MultiError:          true,
+	SkipSettingDefaults: true,
+	ExcludeRequestBody:  true,
+	AuthenticationFunc:  openapi3filter.NoopAuthenticationFunc,
+}
+
+func streamedBody(op *openapi3.Operation) bool {
+	if op == nil || op.RequestBody == nil || op.RequestBody.Value == nil {
+		return false
+	}
+	c := op.RequestBody.Value.Content
+	return c.Get("application/octet-stream") != nil || c.Get("application/x-ndjson") != nil
+}
+
 func (v *validator) middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rc := chi.RouteContext(r.Context())
@@ -55,8 +72,12 @@ func (v *validator) middleware(next http.Handler) http.Handler {
 			}
 			params[k] = val
 		}
+		opts := validationOptions
+		if streamedBody(route.Operation) {
+			opts = streamedOptions
+		}
 		err := openapi3filter.ValidateRequest(r.Context(), &openapi3filter.RequestValidationInput{
-			Request: r, PathParams: params, Route: route, Options: validationOptions,
+			Request: r, PathParams: params, Route: route, Options: opts,
 		})
 		if err != nil {
 			v.onErr(w, r, requestProblem(err))

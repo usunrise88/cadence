@@ -87,9 +87,9 @@ Open questions:
       Confirm
 - [ ] Adoption checks: phase 1 accepts any frozen version; the licence and locale checks of 02 "Registry" wait for
       project locales (wizard) and a licence policy — which licences may a project adopt without a person?
-- [ ] An alias may point only at a version the project adopted (enforced by a foreign key); versions and the staging
-      card's class (`blackwell-96gb`, from spike A3's "96 GB" and the Blackwell toolchain note) are assumptions until
-      the staging host is inventoried
+- [ ] An alias may point only at a version the project adopted (enforced by a foreign key). The staging card was
+      inventoried in phase 2: an RTX PRO 5000 Blackwell 48 GB (`blackwell-48gb`, cap 24 GB beside the resident vLLM
+      service), no longer the `blackwell-96gb` assumption; installs seeded before phase 2 correct it with compute.edit
 - [ ] Secrets: no rotation or archive yet (`secrets.new` refuses a taken name); the master key defaults to
       `$CADENCE_DATA_DIR/master.key`, generated on first start, until the compose secret of R9 is wired
 - [ ] Identity (phase 1) assumptions, confirm: login throttling counts failed attempts only (5/min, 20/h per address and per username, in memory); `X-Forwarded-For`/`-Proto` are trusted from loopback and private peers (the host's Caddy, Docker's gateway); the TOTP secret lives in the `users` row, not the R9 file store (it is a sign-in factor, not a secret handed to jobs); passwords need 12+ characters; first start may rename the admin account; out-of-scope reads answer 403 `forbidden` rather than hiding the entity behind 404; a credential without a project may not open the event stream
@@ -282,6 +282,25 @@ Open questions:
       file's allow rules for shell commands, reads and edits are still not applied by Claude Code, so those keep going
       through the host's permission request and the preset (a round trip each, no person). Pre-allowing them the same
       way would need the host to trust the preset's shell rules without the per-call check
+- [ ] W · The step queue (phase 2, confirm): a `step` job's River handler waits in `steps.Leases.Await` on its own
+      River queue (`jobs.QueueSteps`, 500 waiting handlers) so it never starves the default queue; the queue itself is
+      the `step_jobs` table, filled when Await is first called. The job mirror stays `running` while its step waits
+      for a card (the Queue shows `waiting | paused | running | stopping`); priority and pause live on the job
+      (`jobs.edit`, `jobs.pause|resume`); a cancelled running step ends at once for the pipeline while its card frees
+      only on the worker's release or reaping
+- [ ] W · Card slots (confirm): a job reserves its declared `memoryGb`, or the card's whole remaining cap when it
+      declares none (so a training step that declares no memory takes the card alone); an idle card must also show
+      that much free memory in the worker's telemetry, with 1 GB of slack for driver bookkeeping. A step with
+      `gpu: false` takes no card and may go to a worker without cards. Only training is stopped at a window close;
+      an unknown estimate, or a step resuming from a training state, starts whenever its window is open (it is
+      paused at the close anyway), so a resumed run is never locked out by its original estimate
+- [ ] W · Workers (confirm): one worker row per runtime and host (a restart re-registers it; a new `instance`
+      reaps the old process's leases at once); a framework step kind `name@version` may be published by one runtime
+      only and neutral kinds must agree on their schema hash (`step-kind-conflict`); a `cwk_` token names its host
+      (the credential's subject), `CADENCE_WORKER_TOKEN_FILE` is issued for `CADENCE_WORKER_HOST` (default
+      `staging`). Secret names become environment variables in upper case with `-`/`.` as `_` (`hf-token` →
+      `HF_TOKEN`); a step whose secret is missing fails at lease time with error type `input`. Job logs are kept in
+      files only (the global search index of `warn`+ lines from R15 is not built yet)
 
 ## Sources
 
