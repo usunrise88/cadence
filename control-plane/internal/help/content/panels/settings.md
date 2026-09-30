@@ -31,7 +31,7 @@ server refuses values outside the ranges it enforces.
 
 | Field | Default | Source |
 | --- | --- | --- |
-| Memory cap (staging card) | 24 GB of 96 GB | docs/spikes/A3 (memory fraction 0.25) |
+| Memory cap (staging card) | 24 GB of 48 GB (vLLM stays resident on the rest) | docs/spikes/A3 (memory fraction 0.5) |
 | GPU-hours per project per day | 8 GPU-h (0–192) | Cadence recommendation |
 | Agent turns per session | 200 turns (1–2000) | Cadence recommendation |
 

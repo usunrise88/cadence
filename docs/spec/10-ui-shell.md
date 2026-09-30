@@ -217,6 +217,10 @@ Three state templates cover every kind: registry assets `draft → frozen → de
 | Latency profile | A named streaming setting of a model family with its latency in milliseconds: `160ms` is `[56,1]` for Nemotron (R43) | Latency to final (a measured metric) |
 | Model family | The framework and architecture a model belongs to, with its capabilities, latency profiles and step kinds (R41) | Base model (one upstream checkpoint of a family) |
 | Runtime | The pinned worker image a step kind runs in (R40) | Compute (the host and its cards) |
+| Framework pack | The unit of extension for a training framework: runtime image, step kinds, family descriptor, templates, defaults section, help and skill; proven by the conformance suite (R45) | Runtime (the image alone); Language pack |
+| Artifact | A step input or output in the content store, addressed by its BLAKE3 hash (`b3:…`), with a neutral type (R15, R42) | Version (a named registry entry that may reference artifacts) |
+| Lease | A worker's claim on one step job: spec, inputs, card and memory cap, kept alive by heartbeats and reaped after three missed beats (R14) | Job (the unit of work the lease runs); Approval |
+| Replay | Training samples from the base model's other locales, mixed in to stop forgetting (R17) | Shadow (replayed production calls) |
 | Track | One lane of the audio view on the shared time axis: waveform, spectrogram, words, timeline (R51) | Channel (one side of a stereo recording) |
 
 ## Window states

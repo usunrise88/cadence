@@ -272,19 +272,19 @@ Decide before starting:
       through `pipelines.run` (`pipelines/import:run`), registering a Source with the licence the format carries (03)
 
 Write before starting:
-- [ ] **spec** → *R14* Worker ↔ control-plane protocol: how a Python worker on another host leases River jobs it cannot
+- [x] **spec** → *R14* Worker ↔ control-plane protocol: how a Python worker on another host leases River jobs it cannot
       consume directly, reports progress, heartbeats, streams logs and metrics, and receives secrets; the worker's
       credential kind (missing from the credentials table)
-- [ ] **spec** → *R15* Artifact and content store: how step outputs (manifests, Shar shards, checkpoints, eval reports) are
+- [x] **spec** → *R15* Artifact and content store: how step outputs (manifests, Shar shards, checkpoints, eval reports) are
       written, addressed by hash, read by the next step and the UI; where it lives before mounts exist
-- [ ] **spec** → *R15* Metric and log storage: schema and retention for `run.{id}.metrics` points and `job.{id}.log` lines
-- [ ] **spec** → *R16* Playbook definition format: chain of pipelines, prefilled prompt, estimate, plan ticks; plus a
+- [x] **spec** → *R15* Metric and log storage: schema and retention for `run.{id}.metrics` points and `job.{id}.log` lines
+- [x] **spec** → *R16* Playbook definition format: chain of pipelines, prefilled prompt, estimate, plan ticks; plus a
       "Train from an imported dataset" playbook (mix → calibrate → train → register checkpoints) — none of the four v1
       playbooks can run before phase 4, yet the phase-2 gate is a playbook session
-- [ ] **spec** → *R17* Replay data: which corpus supplies the 15 % replay share across the base model's other 39 locales
+- [x] **spec** → *R17* Replay data: which corpus supplies the 15 % replay share across the base model's other 39 locales
       (e.g. FLEURS per locale), its sources and licences, and the replay-locale golden sets the phase-3 gate checks
-- [ ] **spec** → *R19* Compute availability windows on the shared staging card (07 "Also unspecified")
-- [ ] **spec** → *R40–R45* Extensibility seams, before step kinds and the worker harden: a runtime on every step kind
+- [x] **spec** → *R19* Compute availability windows on the shared staging card (07 "Also unspecified")
+- [x] **spec** → *R40–R45* Extensibility seams, before step kinds and the worker harden: a runtime on every step kind
       and in the lease; the Nemotron model-family descriptor (roles, latency profiles, capabilities, defaults section);
       neutral artifact types (`hypotheses`, `analysis`, `deployable`); `init` and `gpus` in the run and resource
       schemas; the conformance suite. Everything beyond the seams is deferred (owner, 2026-09-29)

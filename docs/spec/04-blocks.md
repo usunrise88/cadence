@@ -28,14 +28,14 @@ A run is one optimisation stage from a pinned base or checkpoint, on a frozen mi
 
 Process:
 
-1. Choose the start: the base model at its pinned revision, or a checkpoint for a new stage.
-2. Compose the mix: dataset versions, weights, temperature and a replay share of the model's other locales; the preview shows hours per language.
-3. Fill the recipe from the template: `init_from_nemo_model`, bf16, step budget, Noam schedule with the computed peak learning rate shown next to the scale factor, `target_lang` on every clip.
-4. Calibrate batch sizes with OOMptimizer on the target card under its memory cap (24 GB when the staging card is shared).
+1. Choose the start (`init`): the base model at its pinned revision (`base`), or a checkpoint for a new stage (`checkpoint`); the start fixes the model family (R44).
+2. Compose the mix: dataset versions, weights, temperature and a replay share of the model's other locales from `dataset/replay-base` (03 "Replay"); the preview shows hours per language.
+3. Fill the recipe from the family's train-stage template: its train step kind with parameters from the family's `defaults.yaml` section and a step budget. For Nemotron: `init_from_nemo_model`, bf16, Noam schedule with the computed peak learning rate shown next to the scale factor, `target_lang` on every clip.
+4. Calibrate with the family's calibrate step (OOMptimizer for Nemotron) on the target card under its memory cap (24 GB, fraction 0.5, on the shared 48 GB staging card); the measured seconds per step replace the table estimate (`basis: measured`).
 5. Dry run: GPU-hours, card and duration; over budget goes to approval.
-6. Launch; loss, validation WER and learning rate stream in through a Lightning logger that posts to the control plane.
-7. Register checkpoints with validation WER, keep the top k, optionally average them.
-8. Continue by resuming (same optimiser state) or starting a new stage from a checkpoint with an explicit peak learning rate.
+6. Launch: the run's train-stage pipeline goes to the queue, a worker of the family's runtime leases it, and loss, validation WER and learning rate stream in as metric batches through the worker protocol (for NeMo, a Lightning callback hands them to the worker).
+7. Register checkpoints (neutral `checkpoint` artifacts with step, validation WER, family and weights hash) through the `checkpoint` output hook, keep the top k, optionally average them with the family's average step.
+8. Continue by resuming (from the `training-state` artifact, same optimiser state; a window close or preemption resumes the same way) or starting a new stage from a checkpoint with an explicit peak learning rate.
 
 Windows: Mix, Run, Metrics, Checkpoints, Logs, Queue & GPU, Recipes, Library.
 

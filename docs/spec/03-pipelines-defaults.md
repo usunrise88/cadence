@@ -8,17 +8,80 @@ Every block's process is a pipeline of typed steps declared in the recipes repos
 
 ### Model
 
-- Pipeline: a YAML file in the recipes repository (`pipelines/data-ingest.yaml`, `pipelines/train-stage.yaml`, …) listing steps in order, each with a step kind, parameters and named inputs and outputs. A pipeline version is its commit SHA.
-- Step kind: a Python entry point in the worker (`cadence.steps` group, the same idea as SDP processors) declaring a JSON Schema for parameters, the artifact types it consumes and produces, resource needs (GPU, memory cap, disk) and a `run()`; the worker publishes the registry to the control plane at start.
-- Artifact types: manifest, Shar shard set, checkpoint, hypotheses, analysis arrays, waveform peaks, deployable bundle (ONNX, Triton repository), eval report, correction batch — each with a schema, so a pipeline is validated at plan time (`dryRun`), not at step 4 of a run. Framework-specific code stops at the role steps of a model family; everything after them reads these neutral types (R42).
-- Runtime: every step-kind version names the runtime (a pinned worker image) it runs in; a worker leases only its runtime's step kinds (R40).
-- Pipeline run: a job with per-step status, inputs, outputs and logs; a failed step can be retried alone, and outputs of finished steps are reused.
+- Pipeline: a YAML file in the recipes repository (`pipelines/data-ingest.yaml`, `pipelines/train-stage.yaml`, …) listing steps in order, each with a step kind pinned as `kind@version`, parameters and named inputs and outputs. A pipeline version is its commit SHA.
+- Step kind: a Python entry point in the worker (`cadence.steps` group, the same idea as SDP processors) declaring a JSON Schema for parameters (`x-cadence` on each, `defaultRef` into `defaults.yaml`), the artifact types it consumes and produces, resources (`gpu`, `gpus`, `memoryGb`, `diskGb`, `jobKind`), the family role it fills or `neutral`, the secret names it needs, a help slug and a `run()`; the worker publishes the registry to the control plane at start (06 "Worker protocol").
+- Runtime: every step-kind version names the runtime (a pinned worker image) it runs in; a worker leases only its runtime's step kinds (R40). Runtime-neutral core kinds (`echo`, `dataset_import`) ship in every runtime image, and the scheduler may lease one to any runtime that publishes the same kind, version and schema hash; framework step kinds exist in one runtime only.
+- Pipeline run: per-step status, inputs, outputs and logs; each step that runs on a worker is a River job of kind `step`. A failed step can be retried alone; a step whose `kind@version`, resolved parameters and input hashes match a finished step reuses its outputs; an `oom` error gets one automatic retry at 0.75× batch. After a step records its outputs, output hooks by artifact type (`dataset`, `checkpoint`, `calibration`) register entities in the same transaction.
+
+```yaml
+# pipelines/train-stage.yaml in the project repository
+name: train-stage
+inputs: { mix: mix, base: base_model }          # pipeline inputs by artifact type
+steps:
+  - id: calibrate
+    kind: oomptimizer_calibrate@1
+    in: { base: $inputs.base, data: $inputs.mix }
+  - id: train
+    kind: nemotron_finetune@1
+    in: { base: $inputs.base, data: $inputs.mix, calibration: calibrate.calibration }
+    params: { steps: 500 }                        # only departures from defaults are written
+```
+
+- Inputs: a pipeline input is an artifact reference resolved by the facade that starts the run — a mix revision renders to a `mix` artifact with its resolved `input_cfg`, a base model version to a `base_model` artifact. Types are checked at `dryRun` against the published kinds' `consumes` and `produces`, and the resolved parameters with their departures from defaults are recorded on the run.
+
+### Artifact types
+
+Framework code stops at the role steps of a model family; everything after them reads neutral, self-describing types (R42). An artifact is a blob or a directory manifest in the content store (06).
+
+| Type | Holds |
+| --- | --- |
+| `dataset` | JSON lines of utterances `{audio: b3 hash, duration, sampleRate, language, speaker?, text, origin}` under a header `{source: {name, licence, kind, languages}, splits}`; the `dataset` hook registers a dataset version from it (R18) |
+| `shar` | Lhotse Shar shards: audio and text only, never features (mel bins, frame rate and normalisation belong to a family) |
+| `mix` | A rendered mix revision: the resolved `input_cfg` and its content hash |
+| `base_model` | An upstream checkpoint at its pinned revision, with its family |
+| `calibration` | Measured bucket batch sizes and seconds per step for (base model, card class, cap, precision, bucket config); the `calibration` hook caches them for estimates |
+| `checkpoint` | The family's payload, what loading it needs (config, train arguments, tokenizer reference) and neutral metadata `{step, valWer, family, weightsHash}` |
+| `training-state` | Optimiser and sampler state, used only to resume |
+| `hypotheses` | JSON lines per utterance: text; words with start, end and confidence; the decoding config and its hash; family and weights hash; partial events (audio offset, emit time, text) for streaming decodes |
+| `analysis` | float16 arrays with frame rate and axis labels: model input features and per-frame emissions |
+| `eval-report`, `deployable` | Scores per cell; an export (format, files, serving metadata) |
+
+Also: manifest, waveform peaks, correction batch, text. Scorers, gates, Diff, Audio, Shadow, triage and the Transcription panel read only these types.
+
+### Runtimes, model families and latency profiles
+
+- A runtime is a registry version: a container image pinned by digest, its environment lock (CUDA, PyTorch, the framework, Lhotse) and the worker plugin version. A worker process lives in one runtime and advertises it with its cards; card slots belong to the control plane per host and card. A framework gets its own image even when its wheels would fit another's. v1 ships one, NeMo Speech 26.07 (`nvcr.io/nvidia/nemo-speech:26.07`); compose runs one worker service per runtime. Adding a runtime is `runtimes.new` with approval, deferred with the packs beyond NeMo (R40).
+- A model family is a versioned descriptor the runtime publishes beside its step kinds (R41): framework and architecture; checkpoint and export formats and what loading needs; input (sample rate, channels) and features; tokenizer kind; capabilities (streaming, word timestamps, confidence, boosting method, language prompting, train modes `finetune | adapter | scratch`); latency profiles; the step kind for each role (calibrate, train, average, transcribe, export, parity reference); its `defaults.yaml` section; help and skill slugs. Base models, checkpoints and model versions carry a family reference; the UI and MCP render family options from the descriptor's schemas.
+- No control-plane or web code branches on a family or runtime name; the Nemotron family is named only in the worker's NeMo pack, `defaults.yaml` data, templates and docs, and a test greps for it.
+- A latency profile has a name, the algorithmic latency, chunk and left context in milliseconds, the family parameters that realise it and a label. A family without streaming has one profile, `offline`. Eval matrices, the primary cell and eval records name profiles; families line up by milliseconds, not by parameter spelling (R43).
+
+The first family, Nemotron 3.5 streaming (cache-aware FastConformer RNNT, NeMo):
+
+| Profile | `att_context_size` | Label | Role |
+| --- | --- | --- | --- |
+| `80ms` | `[56,0]` | 80 ms · [56,0] | Eval axis |
+| `160ms` | `[56,1]` | 160 ms · [56,1] | Primary cell |
+| `320ms` | `[56,3]` | 320 ms · [56,3] | — |
+| `560ms` | `[56,6]` | 560 ms · [56,6] | — |
+| `1120ms` | `[56,13]` | 1120 ms · [56,13] | Eval axis |
+
+Latency is 80 × (r + 1) ms for `[56,r]`, with a left context of 56 frames (4.48 s). Its step kinds: `oomptimizer_calibrate` (calibrate), `nemotron_finetune` (train), `checkpoint_average` (average), `nemotron_transcribe` (transcribe: file decode in streaming simulation at a profile → `hypotheses`), plus `checkpoint_register`; export and parity join in phase 5.
+
+### Framework packs and the conformance suite
+
+- A framework pack is the unit of extension: a runtime image and its environment lock; the worker plugin (entry points `cadence.steps`, `cadence.families`); the role step kinds, exporters and the transcribe step; pipeline templates and playbooks; a `defaults.yaml` section; help articles and an agent skill. The worker publishes the whole pack at start, keyed by the runtime digest (R45).
+- Every pack passes one conformance suite on fixtures: calibrate → train a few steps → average → transcribe (file and streaming) → export → parity → score; it also checks schemas (`x-cadence` complete, help present, profiles declared). The NeMo pack's run grows with the phases.
+- CI runs it for two packs: a CPU `toy` pack (a tiny CTC model trained in seconds, existing only to keep the seams honest) on every pull request, and the NeMo pack nightly on the staging card. Packs beyond NeMo (sherpa-onnx first, then Hugging Face transformers, k2/icefall) are deferred without a phase.
+
+### Seams for later training modes
+
+Built in phase 2, used later (R44): `runs.new` carries `init: base | checkpoint`, an enum that can grow (`scratch`); step resources carry `gpus` (1 in v1); a checkpoint names the tokenizer it was trained with (the base model's). Deferred without a phase: training from scratch with a Tokenizer registry kind, gang leases of several cards, adapter (LoRA) runs, multi-node training.
 
 ### What derives from the schema
 
 | Surface | How it appears |
 | --- | --- |
-| API | `POST /projects/{p}/pipelines/{name}:run`, `GET /pipeline-runs/{id}`; block endpoints such as `runs.``new` or `evals.``new` are thin facades over the same engine |
+| API | `pipelines.list|run` (`POST /projects/{p}/pipelines/{name}:run`), `pipelineRuns.list|get|cancel|retry` (`GET /pipeline-runs/{id}`; retry re-runs one failed step), `artifacts.get`, `stepKinds.list|get`; block endpoints such as `runs.``new` or `evals.``new` are thin facades over the same engine |
 | MCP | `pipelines.list`, `pipelines.run`; each step kind's schema becomes the tool's parameter description |
 | UI | The Pipeline run panel shows any pipeline; Inspector renders parameters as a form from the schema; a dedicated panel is optional polish |
 | Events | `pipeline_run.{id}` carries step status changes |
@@ -57,10 +120,11 @@ Rules:
 | --- | --- | --- |
 | Base model | `nvidia/nemotron-3.5-asr-streaming-0.6b`, pinned revision | Model card |
 | Eval latency | `[56,1]` (160 ms) as the primary cell; `[56,0]` and `[56,13]` also run | NVIDIA guide: evaluate at deployment latency |
-| Training stage | `init_from_nemo_model`, bf16, 3 000 steps, peak LR 2e-4, warmup 100, grad clip 5, clips ≤ 40 s | Community fine-tune kit; North Sami fine-tune |
+| Training stage (Nemotron family) | `init_from_nemo_model`, bf16, 3 000 steps, peak LR 2e-4, warmup 100, grad clip 5, clips ≤ 40 s | Community fine-tune kit; North Sami fine-tune |
 | Continuation stage | New optimiser, peak LR 2e-5 | Community fine-tune kit (trial setting) |
-| Batch | Bucket sizes from OOMptimizer under the card's memory cap; 24 GB on the shared staging card | NeMo Lhotse docs; this deployment |
-| Replay | 15% of steps from the base model's other locales | NVIDIA guide recommends replay; share is a Cadence recommendation |
+| Batch | Bucket sizes from the family's calibrate step (OOMptimizer for Nemotron) under the card's memory cap; 24 GB on the shared staging card, an RTX PRO 5000 Blackwell 48 GB with vLLM resident (≈ 24 GB), so memory fraction 0.5 | NeMo Lhotse docs; this deployment (inventoried 2026-09-30) |
+| Replay | 15% of samples from the base model's other locales, drawn from `dataset/replay-base` (see Replay below); phase 2 caps it at ≈ 1 h per locale | NVIDIA guide recommends replay; share and caps are a Cadence recommendation |
+| Checkpoints and windows | A checkpoint and training state every 20 minutes, so a window close or a preemption loses at most 20 minutes; compute is always available unless windows are set (R19) | Cadence recommendation |
 | Data filters | 0.5–40 s, ≤ 30 characters per second, language-ID match, speaker-disjoint 2% validation | Cadence recommendation |
 | Text style | Punctuated, cased, spoken-form numbers; per-locale normalizer (ivrit.ai normalizer for he-IL) | NVIDIA guide; ivrit.ai leaderboard |
 | Golden set | ≥ 2 h stratified telephone sample from own calls plus the locale's FLEURS split | Cadence recommendation |
@@ -75,9 +139,18 @@ Rules:
 | Significance | 1 000-sample bootstrap 95% confidence interval on every WER delta, resampling whole calls (or speakers) rather than utterances (R54); a gate counts a gain or a regression only when the interval excludes zero | Bisani & Ney, ICASSP 2004; Liu & Peng, arXiv:1912.09508 (blockwise bootstrap) |
 | Cards | Every dataset version gets a generated dataset card and every registered model a model card: composition, licences, lineage, eval records, departures from defaults | Datasheets for Datasets (Gebru et al., CACM 2021); Model Cards (Mitchell et al., FAT* 2019) |
 
+### Replay
+
+Replay exists to stop catastrophic forgetting in the base model's other 39 locales, so it needs breadth, not volume (R17).
+
+- Corpus: a capped, licence-cleared sample per locale from public training splits (FLEURS train, Common Voice, Granary where it covers the locale), frozen as `dataset/replay-base` and adopted by every project; each source's licence is checked at adoption for commercial use.
+- Caps: the full corpus is ≈ 5 h per locale (≈ 195 h across 39 locales). Phase 2 imports a capped sample, ≈ 1 h per locale from FLEURS train, through the import pipeline; the ≈ 5 h corpus is a later re-freeze of `dataset/replay-base` by the same pipeline.
+- Replay golden sets: FLEURS test per locale, ≤ 300 utterances each, imported in phase 2 and evaluated at the primary latency only from phase 3. The gate measures the delta against the base model, so possible exposure of FLEURS in the base model's training does not bias it; 39 × 300 utterances is a small fraction of one eval run, and the bootstrap interval keeps small sets honest.
+- A mix takes replay as groups flagged `replay`, which together get the replay share.
+
 ### Playbooks
 
-A playbook is a pipeline chain with defaults filled in, a prefilled agent prompt, and an estimate; it appears as a button on the Project home and as an MCP tool. Version 1 ships four:
+A playbook is a pipeline chain with defaults filled in, a prefilled agent prompt, and an estimate; it appears as a button on the Project home and as an MCP tool (`playbooks.list|get|run`), and runs as a playbook session (05). Version 1 ships five:
 
 | Playbook | Chain | Typical cost |
 | --- | --- | --- |
@@ -85,6 +158,43 @@ A playbook is a pipeline chain with defaults filled in, a prefilled agent prompt
 | Improve on telephony | Attach call recordings → telephony augmentation → continuation stage → eval on the phone golden set | 2–4 GPU-hours |
 | Fix names and terms | Boost list from the project glossary → correction batch → short continuation | 1–2 GPU-hours |
 | Weekly flywheel | Schedule: replay → signals → triage → correction batch → continuation → eval → shadow | 2–3 GPU-hours per week |
+| Fine-tune from a dataset version | Mix with replay → calibrate → train → register checkpoints → (from phase 3) eval matrix → gate | 1–4 GPU-hours |
+
+"Fine-tune from a dataset version" is the phase-2 gate and the core that "Adapt a new language" later prefixes with ingest and freeze.
+
+Format (R16): a template version (`templateKind: playbook`) at `templates/playbooks/<name>.yaml`, copied into projects like other templates.
+
+```yaml
+name: finetune-from-dataset
+title: Fine-tune from a dataset version
+inputs:                                    # asked for, or taken from the project
+  dataset: { type: dataset_version, required: true }
+  base:    { type: base_model, from: project }   # the project's default base model
+  steps:   { type: integer, defaultRef: training.steps }
+  replayShare: { type: number, defaultRef: mix.replay_share }
+chain:                                     # pipeline runs or commands, in order
+  - id: mix
+    command: mixes.new                     # dataset + dataset/replay-base at the replay share
+  - id: calibrate
+    command: runs.calibrate
+  - id: train
+    command: runs.new                      # the train-stage pipeline; checkpoints register through its hook
+  - id: eval
+    command: evals.new                     # from phase 3
+    phase: 3
+  - id: gate
+    command: evals.gate
+    phase: 3
+stop:                                      # conditions that end the playbook
+  - gate: failed
+  - budget: exceeded
+prompt: |                                  # rendered with the inputs and the project facts
+  Fine-tune {{ base }} on {{ dataset }} …
+```
+
+- Inputs carry a type and either a `defaultRef` into `defaults.yaml` or `from: project` (a project fact), so a playbook asks only for what has neither.
+- The estimate is the sum of the chain's step estimates (R12), shown before the session starts; steps whose phase has not shipped are listed and skipped.
+- Stop conditions: a failed gate, an exhausted GPU or agent budget, a denied approval, a step failed after its retries.
 
 ### Smoke project
 

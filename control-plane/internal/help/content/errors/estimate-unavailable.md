@@ -11,7 +11,7 @@ combination the run would use, and nothing answers it. Until a card is calibrate
 estimate comes from the table in `defaults.yaml` (`estimates.training`), keyed by
 
 - the base model's registry collection (`base-model/nemotron-3.5-asr-streaming-0.6b`),
-- the card class of the chosen compute card (`blackwell-96gb`),
+- the card class of the chosen compute card (`blackwell-48gb`),
 - the card's memory cap in GB (24 on the shared staging card),
 - the precision (`bf16`).
 
