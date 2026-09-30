@@ -43,3 +43,13 @@ export function useLabelsVersion(): number {
 export function sessionLabel(s: Pick<AgentSession, "driver" | "number">): string {
   return `${s.driver} · session ${s.number}`;
 }
+
+/** Paused for idleness (R5): the session sleeps, and the next message in its Chat wakes it. */
+export function isAsleep(s: Pick<AgentSession, "state" | "pauseReason">): boolean {
+  return s.state === "paused" && s.pauseReason?.code === "idle";
+}
+
+/** The state as lists show it: "asleep" for an idle pause, else the state ("waiting approval", "paused", …). */
+export function sessionStateLabel(s: Pick<AgentSession, "state" | "pauseReason">): string {
+  return isAsleep(s) ? "asleep" : s.state.replace("_", " ");
+}

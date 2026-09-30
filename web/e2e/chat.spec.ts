@@ -134,6 +134,18 @@ test("Chat: new session, streamed reply, inline permission, tool call with badge
   await chatTab.click();
   await expect(unread).toHaveCount(0);
 
+  // Idleness pauses the session (R5): it reads as asleep, quietly, and the next message wakes it.
+  await host.report(sessionId, { state: { state: "paused", busy: false, turn: 1, reason: { code: "idle", message: "no message for 30 min" } } });
+  await expect(chat.locator('[data-slot="session-state"]')).toHaveText("asleep");
+  await expect(chat.locator('[data-slot="composer-notice"]')).toHaveText("Asleep — your next message wakes it");
+  await expect(tabIcon).toHaveAttribute("data-tone", "asleep");
+  await chat.getByLabel("Message to the agent").fill("Still there?");
+  await chat.getByRole("button", { name: "Send" }).click();
+  await host.control(sessionId, "resume");
+  await host.report(sessionId, { state: { state: "running", busy: false, turn: 1 } });
+  expect(await host.message(sessionId)).toBe("Still there?");
+  await expect(chat.locator('[data-slot="composer-notice"]')).toHaveCount(0);
+
   // End the session: the host is told, commits nothing more and reports done; the changes wait for a person.
   await chat.getByRole("button", { name: "End session…" }).click();
   await chat.getByRole("button", { name: "End the session" }).click();

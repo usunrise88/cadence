@@ -12,7 +12,8 @@ Agent sessions, an approval card or an attribution badge opens the session's own
 workspace's Chat already shows another session. Its tab names the session the short way — `CC · S4` is Claude Code
 session 4, `OC` is opencode — and shows a dot when a turn finished or the session wants you (an approval, a pause, a
 failure, its end) while the Chat was hidden; showing the Chat clears it. The chat icon is filled with the session's
-status: blue working, green waiting for your message, amber waiting for a decision, grey paused, red failed.
+status: blue working, green waiting for your message, amber waiting for a decision, grey paused or asleep, red
+failed. Falling asleep is not news: it leaves no dot.
 
 The transcript renders what the agent host reports on `agent.session.{id}`:
 
@@ -32,9 +33,14 @@ Tool calls stay one quiet line each until you open them; the attribution badge o
 anywhere in the Chat outside a field goes to the message box.
 
 The header is one line: the session (`claude-code · session 3`), its state (running, idle, waiting approval, paused,
-done, failed; hover it for the reason), the kind when it is not interactive, the model, and the session's controls as
+asleep, done, failed; hover it for the reason), the kind when it is not interactive, the model, and the session's controls as
 icons in the corner — stop the turn, pause or resume, end. Meters for turns and tokens against the session budget sit
 below it.
+
+An interactive session nobody wrote to for `timeouts.idle_session_minutes` (30 min) pauses and reads **asleep**; a
+quiet line above the message box says "Asleep — your next message wakes it", and sending a message resumes the
+session and delivers it. Any other pause (you, a runaway or stuck-turn check, a budget, a lost host) holds messages:
+the line says why and offers **Resume**.
 
 When an interactive session ends (or is paused), **Session changes** shows the merge state of its branch
 `session/<id>`: the changed files, **Diff in Recipe** (the branch's diff against main in the Recipe document), and

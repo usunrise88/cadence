@@ -502,7 +502,8 @@ export class HostSession {
   private async pause(reason: AgentPauseReason, note?: string): Promise<void> {
     if (this.phase !== "running") return;
     this.phase = "paused";
-    this.notice(`Paused: ${reason.message}`, reason.code === "user" || reason.code === "idle" ? "info" : "warning");
+    if (reason.code === "idle") this.notice(`Asleep: ${reason.message}; the next message wakes the session`, "info");
+    else this.notice(`Paused: ${reason.message}`, reason.code === "user" ? "info" : "warning");
     await this.stopAgent();
     await this.report({ state: { state: "paused", busy: false, turn: this.turn, reason }, ...(note ? { note } : {}) });
   }

@@ -1,5 +1,6 @@
 import type { AgentMessage, AgentSession, AgentToolCall } from "@/api/gen/types.gen";
 import { operations, type OperationId } from "@/api/operations.gen";
+import { isAsleep } from "@/shell/panel";
 
 // Pure presentation logic of the Chat panel (docs/spec/05-agents.md "What the Chat panel shows"): which transcript
 // entries render, the header's state and budget, what a tool call names, and the inline diff of a file edit.
@@ -20,17 +21,17 @@ export function tabLabel(s: Pick<AgentSession, "driver" | "number">): string {
   return `${short} · S${s.number}`;
 }
 
-/** The tab icon's colour: working, ready for you, wants a decision, paused, failed; none once it is over. */
-export type TabTone = "working" | "ready" | "attention" | "paused" | "failed" | "none";
+/** The tab icon's colour: working, ready for you, wants a decision, paused or asleep, failed; none once it is over. */
+export type TabTone = "working" | "ready" | "attention" | "paused" | "asleep" | "failed" | "none";
 
-export function tabTone(s: Pick<AgentSession, "state" | "busy">): TabTone {
+export function tabTone(s: Pick<AgentSession, "state" | "busy" | "pauseReason">): TabTone {
   switch (s.state) {
     case "running":
       return s.busy ? "working" : "ready";
     case "waiting_approval":
       return "attention";
     case "paused":
-      return "paused";
+      return isAsleep(s) ? "asleep" : "paused";
     case "failed":
       return "failed";
     default:
@@ -48,6 +49,7 @@ export function sessionStatus(s: AgentSession): { label: string; tone: Tone; det
     case "waiting_approval":
       return { label: `waiting approval${pending}`, tone: "warning", detail: "A request below waits for your decision" };
     case "paused":
+      if (isAsleep(s)) return { label: `asleep${pending}`, tone: "neutral", detail: ASLEEP };
       return { label: `paused${pending}`, tone: "warning", detail: s.pauseReason?.message };
     case "done":
       return { label: "done", tone: "done" };
@@ -56,6 +58,22 @@ export function sessionStatus(s: AgentSession): { label: string; tone: Tone; det
     case "cancelled":
       return { label: "cancelled", tone: "neutral" };
   }
+}
+
+export const ASLEEP = "Asleep — your next message wakes it";
+
+const BUDGET_PAUSES = new Set(["budget_turns", "budget_tokens", "project_tokens"]);
+
+/**
+ * The quiet line above the composer of a paused interactive session: an asleep (idle, R5) session wakes on the next
+ * message; any other pause holds messages until the session is resumed, and the line says why.
+ */
+export function composerNotice(s: AgentSession | undefined): { tone: "quiet" | "warning"; text: string; send: boolean } | undefined {
+  if (!s || s.state !== "paused" || s.kind !== "interactive" || s.pendingControl === "resume") return undefined;
+  if (isAsleep(s)) return { tone: "quiet", text: ASLEEP, send: true };
+  const why = s.pauseReason?.message ?? "paused";
+  const how = s.pauseReason && BUDGET_PAUSES.has(s.pauseReason.code) ? "resume it with a larger budget to send a message" : "resume it to send a message";
+  return { tone: "warning", text: `Paused (${why}): ${how}.`, send: false };
 }
 
 export type Meter = { used: number; limit: number; ratio: number };

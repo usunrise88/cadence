@@ -423,6 +423,11 @@ func TestAgentSessionLifecycle(t *testing.T) {
 	if !strings.Contains(h.recipe("hebrew", "NOTES.md", "").Content, "paused by the person") {
 		t.Error("the pause note is not in NOTES.md")
 	}
+	// A person's pause is not idleness: a message does not resume it and says why.
+	refused := expectProblem(t, h.do("POST", "/api/agent-sessions/"+s.ID+"/agent-messages", `{"text":"go on"}`, "Idempotency-Key", h.key()), 409, "conflict")
+	if !strings.Contains(refused.Detail, "paused by admin") {
+		t.Errorf("refusal %q does not name the reason", refused.Detail)
+	}
 	h.ok(h.do("POST", "/api/agent-sessions/"+s.ID+":resume", "", "Idempotency-Key", h.key(), "If-Match", ifMatch(s.Rev)), 200, &s)
 	w = h.claim("host-a")
 	if len(w.Controls) != 1 || w.Controls[0].Action != "resume" {
@@ -581,5 +586,44 @@ func TestAgentSessionIdlePause(t *testing.T) {
 	w := h.claim("host-a")
 	if len(w.Controls) != 1 || w.Controls[0].Action != "pause" {
 		t.Fatalf("idle pause %+v", w.Controls)
+	}
+	s = h.report(s.ID, map[string]any{"hostId": "host-a", "state": map[string]any{"state": "paused",
+		"reason": map[string]any{"code": "idle", "message": "no message for 30 min"}}})
+	if s.State != "paused" || s.PauseReason == nil || s.PauseReason.Code != "idle" {
+		t.Fatalf("asleep %+v", s)
+	}
+
+	// The next message wakes it: a resume is queued and the message is delivered after it.
+	var um messageView
+	h.ok(h.do("POST", "/api/agent-sessions/"+s.ID+"/agent-messages", `{"text":"still there?"}`, "Idempotency-Key", h.key()), 201, &um)
+	if s = h.session(s.ID); s.PendingControl != "resume" || um.Delivery != "pending" {
+		t.Fatalf("woken %+v, message %+v", s, um)
+	}
+	w = h.claim("host-a")
+	if len(w.Controls) != 1 || w.Controls[0].Action != "resume" {
+		t.Fatalf("wake control %+v", w.Controls)
+	}
+	h.report(s.ID, map[string]any{"hostId": "host-a", "state": map[string]any{"state": "running"}})
+	if w = h.claim("host-a"); len(w.Messages) != 1 || w.Messages[0].Text != "still there?" {
+		t.Fatalf("message after the wake %+v", w.Messages)
+	}
+
+	// An idle pause the host has not taken yet is withdrawn by a message.
+	if _, err := h.pool.Exec(context.Background(), `UPDATE agent_sessions SET last_message_at = now() - interval '2 hours' WHERE id = $1`, s.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.pool.Exec(context.Background(), `UPDATE agent_messages SET delivery = 'delivered' WHERE session_id = $1`, s.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.admin.SweepSessions(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if s = h.session(s.ID); s.PendingControl != "pause" {
+		t.Fatalf("second idle pause %+v", s)
+	}
+	h.ok(h.do("POST", "/api/agent-sessions/"+s.ID+"/agent-messages", `{"text":"one more"}`, "Idempotency-Key", h.key()), 201, &um)
+	w = h.claim("host-a")
+	if len(w.Controls) != 0 || len(w.Messages) != 1 {
+		t.Fatalf("the pending idle pause survived a message: %+v", w)
 	}
 }

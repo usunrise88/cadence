@@ -1688,7 +1688,9 @@ paths:
           description: Dry run — the entry with its expanded context; nothing was sent
           content: { application/json: { schema: { $ref: "#/components/schemas/AgentMessage" } } }
         "201":
-          description: Queued for the agent (delivery pending until the host takes it)
+          description: >
+            Queued for the agent (delivery pending until the host takes it). A session paused for idleness is resumed
+            first; a session paused for any other reason answers 409 conflict with the reason until it is resumed
           content: { application/json: { schema: { $ref: "#/components/schemas/AgentMessage" } } }
         default: { $ref: "#/components/responses/Problem" }
 

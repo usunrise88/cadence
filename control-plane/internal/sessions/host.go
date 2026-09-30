@@ -902,7 +902,7 @@ func (s *Service) Sweep(ctx context.Context) error {
 				return err
 			}
 			_, d, err := s.request(ctx, tx, sess, "pause", &Reason{Code: PauseIdle,
-				Message: fmt.Sprintf("no message for %s", idle)}, nil, System)
+				Message: fmt.Sprintf("no message for %d min", int(idle.Minutes()))}, nil, System)
 			if err != nil {
 				return err
 			}

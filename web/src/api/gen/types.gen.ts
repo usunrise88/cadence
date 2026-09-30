@@ -5929,7 +5929,8 @@ export type AgentMessagesNewResponses = {
      */
     200: AgentMessage;
     /**
-     * Queued for the agent (delivery pending until the host takes it)
+     * Queued for the agent (delivery pending until the host takes it). A session paused for idleness is resumed first; a session paused for any other reason answers 409 conflict with the reason until it is resumed
+     *
      */
     201: AgentMessage;
 };

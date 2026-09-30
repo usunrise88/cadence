@@ -14,7 +14,7 @@ from a Chat. It lists the project's sessions, those needing you first:
 | --- | --- |
 | Label | `claude-code · session 3` — the driver and the session's number in the project; agent badges use the same |
 | Kind | interactive (its own branch) or read-only (one turn, "Explain this") |
-| State | running (· working while a turn is in progress), waiting approval, paused (with the reason), done, failed, cancelled |
+| State | running (· working while a turn is in progress), waiting approval, paused (with the reason), asleep (paused for idleness; a message in its Chat wakes it), done, failed, cancelled |
 | Pending approvals | Requests of this session waiting in Approvals |
 | Model | The driver's model id |
 | Budget use | Turns and tokens used of the session budget |

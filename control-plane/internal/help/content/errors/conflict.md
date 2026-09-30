@@ -33,6 +33,9 @@ The command ran inside its transaction and was rolled back: nothing was written 
 
 - Pick another slug; slugs are permanent addresses (links, topics, repository branches), so Cadence does not reuse
   them (Cadence recommendation).
+- `agentMessages.new` on a paused agent session (paused by a person, a runaway or stuck-turn check, a budget or a lost
+  host): the `detail` names the reason. Resume the session (`agentSessions.resume`; a budget pause needs a larger
+  budget), then send again. A session asleep (paused for idleness) never answers this: the message wakes it.
 
 ## Sources
 
