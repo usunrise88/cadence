@@ -39,6 +39,7 @@ tags:
   - { name: pipelines, description: "Pipelines of typed steps pinned as kind@version, and their runs with per-step status (R11, R15)" }
   - { name: notifications, description: "The notification routing table, quiet hours, the daily digest and the Telegram bot" }
   - { name: backups, description: "Nightly backup sets (pg_dump plus the content store), the weekly restore test and retention" }
+  - { name: playbooks, description: "Prefilled chains of commands with inputs, stop conditions and an estimate, run as playbook sessions (R16)" }
   - { name: planned, description: Named now, implemented in a later phase (501 until then) }
 
 paths:
@@ -2727,6 +2728,73 @@ paths:
   # ---------------------------------------------------------------- runs, checkpoints, metrics (phase 2 · wave 2 · stream R) — add paths below this line
 
   # ---------------------------------------------------------------- playbooks (phase 2 · wave 2 · stream K) — add paths below this line
+  /playbooks:
+    x-cadence: { entity: playbooks }
+    get:
+      operationId: playbooks.list
+      summary: The playbooks Cadence ships, with their inputs, chain, stop conditions and estimate
+      tags: [playbooks]
+      x-cadence:
+        toolDescription: >
+          List the playbooks: prefilled chains of commands with inputs, stop conditions and an estimate (the sum of
+          the chain's step estimates). With project, inputs taken from the project (its base model, its adopted replay
+          corpus) are filled in and the estimate uses them. runnable says whether the playbook can run yet.
+      parameters:
+        - { name: project, in: query, description: "A project slug: fill project facts and estimate with them", schema: { $ref: "#/components/schemas/Slug" } }
+      responses:
+        "200":
+          description: Playbooks
+          content: { application/json: { schema: { $ref: "#/components/schemas/PlaybookList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /playbooks/{name}:
+    x-cadence: { entity: playbooks }
+    parameters:
+      - { name: name, in: path, required: true, description: "Playbook name (templates/playbooks/<name>.yaml)", schema: { type: string, pattern: "^[a-z][a-z0-9-]{0,62}$" } }
+    get:
+      operationId: playbooks.get
+      summary: One playbook with its inputs, chain, prompt template and estimate
+      tags: [playbooks]
+      parameters:
+        - { name: project, in: query, description: "A project slug: fill project facts and estimate with them", schema: { $ref: "#/components/schemas/Slug" } }
+      responses:
+        "200":
+          description: The playbook
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Playbook" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /projects/{p}/playbooks/{name}:run:
+    x-cadence: { entity: playbooks }
+    parameters:
+      - $ref: "#/components/parameters/ProjectSlug"
+      - { name: name, in: path, required: true, description: "Playbook name", schema: { type: string, pattern: "^[a-z][a-z0-9-]{0,62}$" } }
+    post:
+      operationId: playbooks.run
+      summary: Start a playbook session — dryRun answers the estimate, the plan and the rendered prompt without starting
+      tags: [playbooks]
+      x-cadence:
+        toolDescription: >
+          Run a playbook in a project: resolves its inputs (given, from defaults.yaml or from the project), renders its
+          prompt, sums the chain's estimate and starts an agent session of kind playbook whose plan is the chain. Call
+          it with dryRun=true first to see the estimate and the plan; ifMatch is the playbook's version (the etag of
+          playbooks.get) or "*". Agents cannot start playbook sessions; use playbooks.get for the estimate.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: false
+        content: { application/json: { schema: { $ref: "#/components/schemas/PlaybookRunNew" } } }
+      responses:
+        "200":
+          description: Dry run — the resolved inputs, estimate, plan and prompt; no session was started
+          content: { application/json: { schema: { $ref: "#/components/schemas/PlaybookRunResult" } } }
+        "201":
+          description: Started; the result carries the playbook session
+          content: { application/json: { schema: { $ref: "#/components/schemas/PlaybookRunResult" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
 
 
   # ---------------------------------------------------------------- planned (later phases)
@@ -3339,7 +3407,7 @@ components:
 
     TemplateKind:
       type: string
-      enum: [instructions, preset, skill, pipeline, agent-config]
+      enum: [instructions, preset, skill, pipeline, agent-config, playbook]
     TemplateFile:
       type: object
       required: [path, sha256, bytes]
@@ -4462,8 +4530,8 @@ components:
     # ---------------------------------------------------------------- agent sessions schemas (sessions stream) — add below
     AgentSessionKind:
       type: string
-      enum: [interactive, read-only]
-      description: "interactive: a conversation on its own branch; read-only: one turn under the read-only preset, no branch"
+      enum: [interactive, read-only, playbook]
+      description: "interactive: a conversation on its own branch; read-only: one turn under the read-only preset, no branch; playbook: started by playbooks.run, its plan is the playbook's chain (a branch like interactive)"
     AgentSessionState:
       type: string
       enum: [created, running, waiting_approval, paused, done, failed, cancelled]
@@ -4580,6 +4648,7 @@ components:
         startedAt: { type: string, format: date-time }
         endedAt: { type: string, format: date-time }
         lastMessageAt: { type: string, format: date-time, description: The last user message; the idle clock (R5) runs from it }
+        playbook: { $ref: "#/components/schemas/AgentPlaybook" }
     AgentSessionList:
       type: object
       required: [items]
@@ -5935,3 +6004,153 @@ components:
     # ---------------------------------------------------------------- runs, checkpoints, metrics schemas (wave 2 · stream R) — add below
 
     # ---------------------------------------------------------------- playbooks schemas (wave 2 · stream K) — add below
+    PlaybookInputType:
+      type: string
+      enum: [dataset_version, base_model, integer, number, string, boolean]
+    PlaybookInput:
+      type: object
+      required: [name, type, required, multiple]
+      properties:
+        name: { type: string }
+        type: { $ref: "#/components/schemas/PlaybookInputType" }
+        description: { type: string }
+        required: { type: boolean, description: "The caller must give it: it has neither a defaultRef nor a project fact" }
+        multiple: { type: boolean, description: A list of values (dataset versions) }
+        defaultRef: { type: string, description: "A defaults.yaml key (training.steps) the value defaults to" }
+        from: { type: string, enum: [project, adoption], description: "project: a project fact (the default base model); adoption: the project's adopted version of collection" }
+        collection: { type: string, description: "from adoption: the registry collection (dataset/replay-base)" }
+        default: { description: "The value it takes when not given: from defaults.yaml or the project (absent when there is none)" }
+        min: { type: number, format: double, description: The safe range from defaults.yaml }
+        max: { type: number, format: double }
+    PlaybookStep:
+      type: object
+      required: [id, title, command, spending, available]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        command: { type: string, description: "The operation (<entity>.<verb>) whose success ticks the step" }
+        accepts: { type: array, items: { type: string }, description: Other operations that tick it too (mixes.edit for the mix step) }
+        until: { type: string, enum: [terminal], description: "terminal: the step ticks when the job it waits for has ended (jobs.wait answered done; failed or cancelled fails it)" }
+        phase: { type: integer, description: The roadmap phase that ships the step; a later phase than the running one lists it as skipped }
+        spending: { type: boolean, description: "A GPU-spending command: in a playbook session it needs a successful dry run of the same operation first" }
+        available: { type: boolean, description: "The step can run now (its phase has shipped)" }
+    PlaybookStop:
+      type: object
+      required: [on, when]
+      properties:
+        on: { type: string, enum: [gate, budget, step, approval], description: What is watched }
+        when: { type: string, description: "The outcome that stops the playbook: gate failed, budget exceeded, step failed, approval denied" }
+    PlaybookStepEstimate:
+      type: object
+      required: [id, command, basis, skipped]
+      properties:
+        id: { type: string }
+        command: { type: string }
+        basis: { type: string, enum: [table, measured, hint, none], description: "table/measured: the operation's own dry-run estimate; hint: the playbook's estimate hint; none: spends no GPU time" }
+        gpuHours: { $ref: "#/components/schemas/EstimateRange" }
+        durationSeconds: { $ref: "#/components/schemas/EstimateRange" }
+        skipped: { type: boolean, description: "The step's phase has not shipped: listed, not counted" }
+        note: { type: string, description: Why a step has no estimate (e.g. the estimate table has no row) }
+    PlaybookEstimate:
+      type: object
+      required: [basis, plusMinus, gpuHours, durationSeconds, steps]
+      description: "The sum of the chain's step estimates (R12, R16); skipped steps are listed and not counted"
+      properties:
+        basis: { type: string, enum: [table, measured, mixed, hint, none] }
+        plusMinus: { type: number, format: double, description: "The largest relative uncertainty of a counted step" }
+        gpuHours: { $ref: "#/components/schemas/EstimateRange" }
+        durationSeconds: { $ref: "#/components/schemas/EstimateRange" }
+        budget:
+          type: object
+          required: [gpuHoursPerProjectPerDay, withinDailyBudget]
+          properties:
+            gpuHoursPerProjectPerDay: { type: number, format: double }
+            withinDailyBudget: { type: boolean }
+        steps: { type: array, items: { $ref: "#/components/schemas/PlaybookStepEstimate" } }
+    Playbook:
+      type: object
+      required: [name, title, description, availableFrom, runnable, inputs, chain, stop, prompt]
+      properties:
+        name: { type: string, description: "templates/playbooks/<name>.yaml" }
+        title: { type: string }
+        description: { type: string }
+        typicalCost: { type: string, description: "03 \"Playbooks\": the typical GPU-hours, as text" }
+        availableFrom: { type: integer, description: The roadmap phase from which the playbook runs }
+        runnable: { type: boolean, description: "It can run now (availableFrom has shipped)" }
+        unavailable: { type: string, description: "Why it cannot run yet" }
+        versionId: { type: string, description: "The registry template version (template/playbook-<name>)" }
+        version: { type: string }
+        inputs: { type: array, items: { $ref: "#/components/schemas/PlaybookInput" } }
+        chain: { type: array, items: { $ref: "#/components/schemas/PlaybookStep" } }
+        stop: { type: array, items: { $ref: "#/components/schemas/PlaybookStop" } }
+        prompt: { type: string, description: The prompt template (Go text/template over .Inputs and .Project) }
+        estimate: { $ref: "#/components/schemas/PlaybookEstimate" }
+        estimateError: { type: string, description: "Why no estimate was computed (a required input is missing, the estimate table has no row)" }
+    PlaybookList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Playbook" } }
+    PlaybookRunNew:
+      type: object
+      additionalProperties: false
+      properties:
+        inputs:
+          type: object
+          additionalProperties: true
+          description: "Input name → value (a dataset_version input with multiple takes a list); omitted inputs take their default or project fact"
+        driver: { $ref: "#/components/schemas/AgentDriver" }
+        model: { type: string, minLength: 1, maxLength: 200 }
+    PlaybookPlanItem:
+      type: object
+      required: [id, title, command, state, spending]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        command: { type: string }
+        accepts: { type: array, items: { type: string } }
+        until: { type: string, enum: [terminal] }
+        phase: { type: integer }
+        spending: { type: boolean }
+        state: { type: string, enum: [pending, running, done, failed, skipped] }
+        note: { type: string, description: "What ticked it: the entity or job, the dry run's estimate, why it failed" }
+        commandId: { type: string, description: The command that ticked it }
+        toolCallId: { type: string }
+        entityId: { type: string, description: The entity the command created (mix_…, run_…) }
+        jobId: { type: string, description: The job the command started (a later terminal step waits for it) }
+        at: { type: string, format: date-time }
+        estimate: { $ref: "#/components/schemas/PlaybookStepEstimate" }
+    PlaybookRunResult:
+      type: object
+      required: [playbook, inputs, estimate, plan, prompt]
+      properties:
+        playbook: { $ref: "#/components/schemas/Playbook" }
+        inputs: { type: object, additionalProperties: true, description: Every input resolved (given, default or project fact) }
+        estimate: { $ref: "#/components/schemas/PlaybookEstimate" }
+        plan: { type: array, items: { $ref: "#/components/schemas/PlaybookPlanItem" } }
+        prompt: { type: string, description: The rendered prompt the session starts with }
+        session: { $ref: "#/components/schemas/AgentSession" }
+    AgentPlaybook:
+      type: object
+      required: [name, title, state, inputs, estimate, plan]
+      description: "A playbook session's playbook: the plan ticks on the server when the session's matching command succeeds"
+      properties:
+        name: { type: string }
+        title: { type: string }
+        versionId: { type: string }
+        state: { type: string, enum: [running, done, stopped], description: "done: every available step ticked; stopped: a stop condition ended it" }
+        inputs: { type: object, additionalProperties: true }
+        estimate: { $ref: "#/components/schemas/PlaybookEstimate" }
+        plan: { type: array, items: { $ref: "#/components/schemas/PlaybookPlanItem" } }
+        stop:
+          type: object
+          required: [on, when, message]
+          properties:
+            on: { type: string, enum: [gate, budget, step, approval] }
+            when: { type: string }
+            message: { type: string }
+            at: { type: string, format: date-time }
+        summary: { type: string, description: What the chain did, written when it ended }
+        next: { type: string, description: The suggested next step }
+        dryRuns: { type: array, items: { type: string }, description: Spending operations with a successful dry run in this session }
+        nudges: { type: integer, description: Turns that ended without progress since the last tick (the server reminds the agent at most twice) }

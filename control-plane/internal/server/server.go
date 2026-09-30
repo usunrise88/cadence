@@ -33,6 +33,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/notify"
 	"github.com/usunrise88/cadence/control-plane/internal/obs"
 	"github.com/usunrise88/cadence/control-plane/internal/pipelines"
+	"github.com/usunrise88/cadence/control-plane/internal/playbooks"
 	"github.com/usunrise88/cadence/control-plane/internal/policy"
 	"github.com/usunrise88/cadence/control-plane/internal/problems"
 	"github.com/usunrise88/cadence/control-plane/internal/projects/bootstrap"
@@ -42,6 +43,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/steps"
 	"github.com/usunrise88/cadence/control-plane/internal/webui"
 	"github.com/usunrise88/cadence/control-plane/internal/workers"
+	"github.com/usunrise88/cadence/control-plane/templates"
 )
 
 // APIPrefix is where the contract's server URL (/api) is mounted.
@@ -111,6 +113,8 @@ type Server struct {
 	sessions *sessions.Service
 	// agentCreds is the agent host's side of agent credentials (claims, reports, the transit sweeper).
 	agentCreds *agentcreds.Service
+	// playbooks runs playbooks and ticks the plans of playbook sessions (R16).
+	playbooks *playbooks.Service
 }
 
 var _ api.StrictServerInterface = (*Server)(nil)
@@ -161,9 +165,16 @@ func New(c Config) (*Server, error) {
 	s.mixes = mixes.NewService(s.drafts, s.defaultsDoc)
 	s.sessions = &sessions.Service{Pool: c.Pool, Projects: c.Projects, Defaults: s.defaultsDoc, Log: c.Log, Attribution: s.drafts}
 	s.agentCreds = &agentcreds.Service{Pool: c.Pool, Transit: s.transit(), Log: c.Log}
+	lib, err := playbooks.Load(templates.FS, s.defaultsDoc(), playbooks.Known())
+	if err != nil {
+		return nil, fmt.Errorf("bundled playbooks: %w", err)
+	}
+	s.playbooks = &playbooks.Service{Pool: c.Pool, Sessions: s.sessions, Library: lib, Defaults: s.defaultsDoc, Log: c.Log}
+	s.sessions.Playbooks = s.playbooks
 	if c.Pipeline != nil {
 		s.sessions.Policy = c.Pipeline.Policy()
 		c.Pipeline.SetGateHook(s.sessions.GatedCommand)
+		c.Pipeline.SetSessionHook(s.playbooks)
 	}
 	if c.Selection == nil && c.Pool != nil {
 		c.Selection = sessions.Selection{Q: c.Pool}
@@ -221,13 +232,14 @@ func (s *Server) apiRouter(authenticate bool) http.Handler {
 		r.Use(policyScope)
 	}
 	r.Use(skipForUploads(commands.HashMiddleware(s.writeProblem)))
+	r.Use(s.observeReads)
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
 		s.writeProblem(w, r, problems.NotFound.New("no API operation at %s %s", r.Method, r.URL.Path))
 	})
 	r.MethodNotAllowed(func(w http.ResponseWriter, r *http.Request) {
 		s.writeProblem(w, r, problems.MethodNotAllowed.New("%s is not an operation on %s", r.Method, r.URL.Path))
 	})
-	strict := api.NewStrictHandlerWithOptions(s, nil, api.StrictHTTPServerOptions{
+	strict := api.NewStrictHandlerWithOptions(s, []api.StrictMiddlewareFunc{nameOperation}, api.StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
 			s.writeProblem(w, r, problems.BadRequest.New("%v", err))
 		},

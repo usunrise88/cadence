@@ -24,11 +24,12 @@ tools:
     operations: [drafts.accept]
     reason: drafts are accepted by a person
 
-  # Sessions are started, steered and merged by people: an agent never starts another session, sends a session
+  # Sessions are started, steered and merged by people: an agent never starts another session (a playbook session
+  # included: playbooks.get shows it the estimate), sends a session
   # messages, or accepts or reverts a session branch — its own included.
   - id: sessions-are-for-people
     class: forbidden
-    operations: ["agentSessions.*", "agentMessages.*"]
+    operations: ["agentSessions.*", "agentMessages.*", playbooks.run]
     verbClass: mutate
     reason: agent sessions are started, steered and merged by people
 
@@ -92,7 +93,7 @@ tools:
   # "GPU job within the session budget → allowed; over budget → approval" (the estimate comes from the dry run).
   - id: gpu-spend
     class: spend
-    operations: [runs.new, runs.resume, runs.stage, evals.new, pipelines.run, sweeps.run, playbooks.run]
+    operations: [runs.new, runs.resume, runs.stage, evals.new, pipelines.run, sweeps.run]
     reason: the job spends GPU time
 
   # "Read any entity, log, metric or result" → allowed.

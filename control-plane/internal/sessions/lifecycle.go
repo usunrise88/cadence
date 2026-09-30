@@ -2,6 +2,7 @@ package sessions
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -31,6 +32,10 @@ type NewInput struct {
 	Refs      []Reference
 	StartedBy auth.Actor
 	DryRun    bool
+	// Playbook is a playbook session's playbook (internal/playbooks) and Notice the transcript's first entry, before
+	// the prompt (the playbook's estimate).
+	Playbook json.RawMessage
+	Notice   string
 }
 
 // numberLockClass is the first key of the advisory lock that numbers a project's sessions.
@@ -48,7 +53,7 @@ func (s *Service) Create(ctx context.Context, tx pgx.Tx, in NewInput) (Session, 
 	}
 	id := newID("ses_")
 	branch := ""
-	if in.Kind == KindInteractive {
+	if in.Kind != KindReadOnly {
 		branch = repos.SessionBranch(id)
 	}
 	refs := in.Refs
@@ -61,10 +66,10 @@ func (s *Service) Create(ctx context.Context, tx pgx.Tx, in NewInput) (Session, 
 		lastMsg = &now
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO agent_sessions (id, project_id, number, kind, driver, model, preset, branch,
-		auto_merge, budget, prompt, refs, started_by, last_message_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NULLIF($11, ''), $12, $13, $14)`,
+		auto_merge, budget, prompt, refs, started_by, last_message_at, playbook)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NULLIF($11, ''), $12, $13, $14, $15)`,
 		id, in.Project.ID, n, in.Kind, in.Driver, in.Model, in.Preset, branch, in.AutoMerge, in.Budget, in.Prompt, refs,
-		in.StartedBy, lastMsg); err != nil {
+		in.StartedBy, lastMsg, in.Playbook); err != nil {
 		return Session{}, nil, fmt.Errorf("create agent session: %w", err)
 	}
 	sess, err := Lock(ctx, tx, id)
@@ -72,6 +77,15 @@ func (s *Service) Create(ctx context.Context, tx pgx.Tx, in NewInput) (Session, 
 		return Session{}, nil, err
 	}
 	drafts := changed(sess, EventCreated)
+	if in.Notice != "" {
+		d, err := notice(ctx, tx, sess, "playbook:estimate", "info", in.Notice, false)
+		if err != nil {
+			return Session{}, nil, err
+		}
+		if d != nil {
+			drafts = append(drafts, *d)
+		}
+	}
 	if in.Prompt != "" {
 		_, d, err := s.post(ctx, tx, sess, in.Prompt, refs, in.StartedBy)
 		if err != nil {

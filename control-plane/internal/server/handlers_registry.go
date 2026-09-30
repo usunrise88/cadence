@@ -722,10 +722,6 @@ func apiPolicies(p policies.Policies) api.Policies {
 // RunsNew implements runs.new. Phase 1 answers only the dry run, with the estimate (R12 table path); the run
 // itself arrives with training in phase 2.
 func (s *Server) RunsNew(ctx context.Context, req api.RunsNewRequestObject) (api.RunsNewResponseObject, error) {
-	if req.Params.DryRun == nil || !*req.Params.DryRun {
-		return nil, problems.NotImplemented.New(
-			"runs.new is implemented in roadmap phase 2; until then call it with dryRun=true for the estimate")
-	}
 	p, err := projects.Get(ctx, s.Pool, req.P)
 	if err != nil {
 		return nil, err
@@ -744,7 +740,12 @@ func (s *Server) RunsNew(ctx context.Context, req api.RunsNewRequestObject) (api
 	if b.Precision != nil {
 		in.Precision = string(*b.Precision)
 	}
-	return s.run(ctx, command(ctx, "runs.new", req.Params.IdempotencyKey, req.Params.DryRun), func(ctx context.Context, tx pgx.Tx) (commands.Result, []events.Draft, error) {
+	cmd := command(ctx, "runs.new", req.Params.IdempotencyKey, req.Params.DryRun)
+	return s.run(ctx, cmd, func(ctx context.Context, tx pgx.Tx) (commands.Result, []events.Draft, error) {
+		if !cmd.DryRun { // inside the pipeline, so a playbook session's dry-run rule is checked first
+			return commands.Result{}, nil, problems.NotImplemented.New(
+				"runs.new is implemented in roadmap phase 2; until then call it with dryRun=true for the estimate")
+		}
 		e, err := runs.EstimateRun(ctx, tx, s.defaultsDoc(), in)
 		if err != nil {
 			return commands.Result{}, nil, err

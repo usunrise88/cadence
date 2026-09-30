@@ -32,6 +32,7 @@ const (
 	OpencodeJSON   = "opencode.json"
 	SkillsDir      = ".claude/skills"
 	PipelinesDir   = "pipelines"
+	PlaybooksDir   = "playbooks"
 )
 
 // CustomInstructions is the instructions template of a project whose AGENTS.md was edited by hand: it is never
@@ -179,6 +180,11 @@ func (r Renderer) Render(f Facts) (Files, error) {
 	}
 	if err := r.copyDir("pipelines", PipelinesDir, out); err != nil {
 		return nil, err
+	}
+	if _, err := fs.Stat(r.Tree, "playbooks"); err == nil {
+		if err := r.copyDir("playbooks", PlaybooksDir, out); err != nil {
+			return nil, err
+		}
 	}
 	return out, nil
 }

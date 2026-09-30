@@ -625,10 +625,11 @@
               "kind": {
                 "allOf": [
                   {
-                    "description": "interactive: a conversation on its own branch; read-only: one turn under the read-only preset, no branch",
+                    "description": "interactive: a conversation on its own branch; read-only: one turn under the read-only preset, no branch; playbook: started by playbooks.run, its plan is the playbook's chain (a branch like interactive)",
                     "enum": [
                       "interactive",
-                      "read-only"
+                      "read-only",
+                      "playbook"
                     ],
                     "type": "string"
                   }
@@ -4395,6 +4396,171 @@
       ]
     },
     {
+      "name": "playbooks.get",
+      "title": "One playbook with its inputs, chain, prompt template and estimate",
+      "description": "One playbook with its inputs, chain, prompt template and estimate",
+      "method": "GET",
+      "path": "/playbooks/{name}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "Playbook name (templates/playbooks/\u003cname\u003e.yaml)",
+            "pattern": "^[a-z][a-z0-9-]{0,62}$",
+            "type": "string"
+          },
+          "project": {
+            "description": "A project slug: fill project facts and estimate with them",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "name",
+          "in": "path",
+          "name": "name"
+        },
+        {
+          "property": "project",
+          "in": "query",
+          "name": "project"
+        }
+      ]
+    },
+    {
+      "name": "playbooks.list",
+      "title": "The playbooks Cadence ships, with their inputs, chain, stop conditions and estimate",
+      "description": "List the playbooks: prefilled chains of commands with inputs, stop conditions and an estimate (the sum of the chain's step estimates). With project, inputs taken from the project (its base model, its adopted replay corpus) are filled in and the estimate uses them. runnable says whether the playbook can run yet.",
+      "method": "GET",
+      "path": "/playbooks",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "project": {
+            "description": "A project slug: fill project facts and estimate with them",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "project",
+          "in": "query",
+          "name": "project"
+        }
+      ]
+    },
+    {
+      "name": "playbooks.run",
+      "title": "Start a playbook session — dryRun answers the estimate, the plan and the rendered prompt without starting",
+      "description": "Run a playbook in a project: resolves its inputs (given, from defaults.yaml or from the project), renders its prompt, sums the chain's estimate and starts an agent session of kind playbook whose plan is the chain. Call it with dryRun=true first to see the estimate and the plan; ifMatch is the playbook's version (the etag of playbooks.get) or \"*\". Agents cannot start playbook sessions; use playbooks.get for the estimate. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/projects/{p}/playbooks/{name}:run",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "driver": {
+                "enum": [
+                  "claude-code",
+                  "opencode"
+                ],
+                "type": "string"
+              },
+              "inputs": {
+                "additionalProperties": true,
+                "description": "Input name → value (a dataset_version input with multiple takes a list); omitted inputs take their default or project fact",
+                "type": "object"
+              },
+              "model": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          },
+          "name": {
+            "description": "Playbook name",
+            "pattern": "^[a-z][a-z0-9-]{0,62}$",
+            "type": "string"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ifMatch",
+          "name",
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "name",
+          "in": "path",
+          "name": "name"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
       "name": "policies.edit",
       "title": "Change instance-wide policies; values must stay inside the ranges in defaults.yaml",
       "description": "Change instance-wide policies; values must stay inside the ranges in defaults.yaml. Pass dryRun=true to see what would happen without changing anything.",
@@ -6053,7 +6219,8 @@
               "preset",
               "skill",
               "pipeline",
-              "agent-config"
+              "agent-config",
+              "playbook"
             ],
             "type": "string"
           }

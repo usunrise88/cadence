@@ -71,6 +71,11 @@ var (
 	StepKindConflict     = Type{"step-kind-conflict", http.StatusConflict, "Step kind conflict"}
 	ArtifactHashMismatch = Type{"artifact-hash-mismatch", http.StatusUnprocessableEntity, "Artifact hash mismatch"}
 	ArtifactMissing      = Type{"artifact-missing", http.StatusConflict, "Artifact missing"}
+
+	// Playbooks (phase 2 · stream K).
+	PlaybookDryRunRequired = Type{"playbook-dry-run-required", http.StatusConflict, "Dry run required first"}
+	PlaybookStopped        = Type{"playbook-stopped", http.StatusConflict, "Playbook stopped"}
+	PlaybookUnavailable    = Type{"playbook-unavailable", http.StatusConflict, "Playbook not available yet"}
 )
 
 // Types lists every registered type.
@@ -81,6 +86,7 @@ func Types() []Type {
 		Internal, PolicyDenied, ReservedAlias, EstimateUnavailable, InvalidQuery, DraftStale, MergeConflict,
 		RepositoryUnavailable, EvalOnlyDataset, PipelineInvalid,
 		LeaseEnded, StepKindConflict, ArtifactHashMismatch, ArtifactMissing,
+		PlaybookDryRunRequired, PlaybookStopped, PlaybookUnavailable,
 	}
 }
 

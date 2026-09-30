@@ -788,6 +788,39 @@ var Operations = []Operation{
 		}},
 	},
 	{
+		ID: "playbooks.get", Entity: "playbooks", Verb: "get", Method: "GET", Path: "/playbooks/{name}",
+		Summary: "One playbook with its inputs, chain, prompt template and estimate",
+		Params: []Param{
+			{Name: "name", In: "path", Flag: "name", Required: true, Type: "string", Description: "Playbook name (templates/playbooks/<name>.yaml)"},
+			{Name: "project", In: "query", Flag: "project", Type: "string", Description: "A project slug: fill project facts and estimate with them"},
+		},
+	},
+	{
+		ID: "playbooks.list", Entity: "playbooks", Verb: "list", Method: "GET", Path: "/playbooks",
+		Summary:     "The playbooks Cadence ships, with their inputs, chain, stop conditions and estimate",
+		Description: "List the playbooks: prefilled chains of commands with inputs, stop conditions and an estimate (the sum of the chain's step estimates). With project, inputs taken from the project (its base model, its adopted replay corpus) are filled in and the estimate uses them. runnable says whether the playbook can run yet.",
+		Params: []Param{
+			{Name: "project", In: "query", Flag: "project", Type: "string", Description: "A project slug: fill project facts and estimate with them"},
+		},
+	},
+	{
+		ID: "playbooks.run", Entity: "playbooks", Verb: "run", Method: "POST", Path: "/projects/{p}/playbooks/{name}:run",
+		Summary:        "Start a playbook session — dryRun answers the estimate, the plan and the rendered prompt without starting",
+		Description:    "Run a playbook in a project: resolves its inputs (given, from defaults.yaml or from the project), renders its prompt, sums the chain's estimate and starts an agent session of kind playbook whose plan is the chain. Call it with dryRun=true first to see the estimate and the plan; ifMatch is the playbook's version (the etag of playbooks.get) or \"*\". Agents cannot start playbook sessions; use playbooks.get for the estimate.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "name", In: "path", Flag: "name", Required: true, Type: "string", Description: "Playbook name"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: false, Properties: []BodyProperty{
+			{Name: "driver", Type: "string"},
+			{Name: "inputs", Type: "object", Description: "Input name → value (a dataset_version input with multiple takes a list); omitted inputs take their default or project fact"},
+			{Name: "model", Type: "string"},
+		}},
+	},
+	{
 		ID: "policies.edit", Entity: "policies", Verb: "edit", Method: "PATCH", Path: "/policies",
 		Summary:        "Change instance-wide policies; values must stay inside the ranges in defaults.yaml",
 		IdempotencyKey: true,
@@ -1103,7 +1136,7 @@ var Operations = []Operation{
 		Params: []Param{
 			{Name: "collection", In: "query", Flag: "collection", Type: "string", Description: "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)"},
 			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated"}},
-			{Name: "templateKind", In: "query", Flag: "template-kind", Type: "string", Description: "Only templates of this kind", Enum: []string{"instructions", "preset", "skill", "pipeline", "agent-config"}},
+			{Name: "templateKind", In: "query", Flag: "template-kind", Type: "string", Description: "Only templates of this kind", Enum: []string{"instructions", "preset", "skill", "pipeline", "agent-config", "playbook"}},
 		},
 	},
 	{
