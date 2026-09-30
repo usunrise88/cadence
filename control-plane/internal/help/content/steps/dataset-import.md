@@ -61,6 +61,13 @@ language, the source ids, the licence, the artifact (`artifact.hash`, which trai
 | `text_normalisation` | `false` — `data.text_normalisation` | Nemotron 3.5 model card (cased, punctuated) | on: NFKC, case-folded, no punctuation |
 | `eval_only` | `false` | R17, R18 | golden and replay test sets |
 | `tags` | `[]` | Cadence recommendation | ≤ 20 tags |
+| `purpose` | `speech` | spec 02 entity Noise bank | `speech`; `noise`: background noise clips registered as a noise bank |
+
+**Noise banks.** With `purpose: noise` the step keeps clips without transcripts (language `und` unless given, all
+`train`, tag `noise-bank`, header `purpose: noise`), and a `folder-csv` folder needs no `metadata.csv`: every audio
+file under `path` is read. The hook then registers the Source and a frozen version in `noise-bank/<name>` (registry
+kind `noise_bank`, payload: clips, hours, licence, source, artifact, lineage) — no utterances or transcripts, and a
+noise bank never enters a mix. `pipelines/noise-bank.yaml` imports the noise part of MUSAN (CC BY 4.0).
 
 Speaker-disjoint split: a speaker is wholly in train or in validation, chosen by a stable hash of the speaker id;
 without speaker ids (FLEURS) the transcript is the group, so readings of the same sentence stay together. Clips with

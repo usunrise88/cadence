@@ -163,6 +163,35 @@ def test_text_normalisation() -> None:
     assert di.normalise_text("Šengenska zona, međutim.", True) == "šengenska zona međutim"
 
 
+def test_noise_purpose_imports_a_folder_of_clips_as_a_noise_bank(tmp_path: Path) -> None:
+    """purpose noise: every audio file of a folder without metadata.csv (MUSAN's noise/ as extracted), no transcripts,
+    all train, language und, tagged noise-bank; the control plane's hook registers it as a noise-bank version."""
+    folder = tmp_path / "musan" / "noise" / "free-sound"
+    folder.mkdir(parents=True)
+    for i, clip in enumerate(sorted((FIX / "audio").glob("*.wav"))[:2]):
+        (folder / f"noise-free-sound-{i:04d}.wav").write_bytes(clip.read_bytes())
+    (folder / "LICENSE").write_text("CC BY 4.0", encoding="utf-8")
+    p = di.DatasetImportParams(
+        format="folder-csv",
+        path=str(tmp_path / "musan" / "noise"),
+        purpose="noise",
+        name="musan-noise",
+        source_name="musan",
+        licence="CC-BY-4.0",
+        source_url="https://www.openslr.org/17/",
+    )
+    header, lines, _ = run(tmp_path, p)
+    assert header["purpose"] == "noise"
+    assert header["splitRule"] == "all-train"
+    assert header["tags"] == ["noise-bank"]
+    assert header["source"]["languages"] == ["und"]
+    assert len(lines) == 2
+    assert {(x["text"], x["split"], x["language"]) for x in lines} == {("", "train", "und")}
+    # Speech imports still drop clips without a transcript.
+    with pytest.raises(FileNotFoundError):
+        run(tmp_path / "speech", p.model_copy(update={"purpose": "speech"}))
+
+
 def test_params_need_a_source_and_its_licence() -> None:
     with pytest.raises(ValueError, match="licence"):
         di.DatasetImportParams(source_name="fleurs", format="folder-csv", path="x")

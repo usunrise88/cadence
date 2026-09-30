@@ -18,7 +18,8 @@
               "template",
               "runtime",
               "model_family",
-              "step_kind"
+              "step_kind",
+              "noise_bank"
             ],
             "type": "string"
           },
@@ -2092,7 +2093,8 @@
               "template",
               "runtime",
               "model_family",
-              "step_kind"
+              "step_kind",
+              "noise_bank"
             ],
             "type": "string"
           },
@@ -5876,14 +5878,15 @@
         "additionalProperties": false,
         "properties": {
           "kind": {
-            "description": "The kinds registered so far; runtime, model_family and step_kind are published by workers (R40, R41, R45); golden sets, normalizers and model versions join in later phases",
+            "description": "The kinds registered so far; runtime, model_family and step_kind are published by workers (R40, R41, R45); noise_bank holds background noise for augmentation, registered by dataset_import with purpose noise; golden sets, normalizers and model versions join in later phases",
             "enum": [
               "base_model",
               "dataset_version",
               "template",
               "runtime",
               "model_family",
-              "step_kind"
+              "step_kind",
+              "noise_bank"
             ],
             "type": "string"
           },

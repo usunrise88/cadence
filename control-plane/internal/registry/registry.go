@@ -34,6 +34,8 @@ const (
 	KindRuntime     = "runtime"
 	KindModelFamily = "model_family"
 	KindStepKind    = "step_kind"
+	// Background noise for augmentation (spec 02 entity Noise bank): a dataset_import with purpose noise.
+	KindNoiseBank = "noise_bank"
 )
 
 // CollectionKind is the EntityKind of collections.
@@ -54,6 +56,7 @@ var kinds = map[string]struct{ prefix, noun string }{
 	KindRuntime:     {"runtime/", "runtime"},
 	KindModelFamily: {"model-family/", "model family"},
 	KindStepKind:    {"step-kind/", "step kind"},
+	KindNoiseBank:   {"noise-bank/", "noise bank"},
 }
 
 // Known reports whether kind is a registry kind.
