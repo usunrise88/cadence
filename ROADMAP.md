@@ -227,8 +227,11 @@ Phase 1 notes (what differs from the plan above):
   (fast-forward or a merge commit, `409 merge-conflict`) or auto-merge when clean at session end; the Chat's "Session
   changes" shows the branch diff, not a three-way diff.
 - The gated command for tests is a real one: `aliases.set baseline` (R8) returns an approval.
-- The agent evals harness is not built: `agent-host/test/live.test.ts` (A1, `CADENCE_LIVE_AGENTS`) and the gate's
-  Playwright script stand in for it; phase 2 should turn the gate prompt into the first eval.
+- The agent evals harness is `agent-host/evals/` (`make evals`, after the gate): a fresh fixture project per eval ×
+  driver through `projects.new`, graders over the API (drafts, aliases, approvals, audit, session use), JSON results
+  plus a table. Offline (CI) a scripted ACP agent plays each prompt's reference answer through the real host, preset
+  and MCP; `CADENCE_LIVE_AGENTS=1` runs the real drivers. First evals: the gate prompt, a read-only "Explain this"
+  session, `aliases.set baseline` → approval. Live runs are still by hand: no model accounts on CI runners.
 - The owner's MiniMax model was not run: opencode ran on the free Zen model. `haiku` was too unreliable for the gate
   prompt (subagents, a runaway pause), so Claude ran on the profile default `sonnet`.
 - Open after the gate: opencode's MCP calls carry no tool-use id, so the badge cannot land on the tool call in Chat;
