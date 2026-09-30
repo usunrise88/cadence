@@ -18,6 +18,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/agentcreds"
 	"github.com/usunrise88/cadence/control-plane/internal/api"
 	"github.com/usunrise88/cadence/control-plane/internal/auth"
+	"github.com/usunrise88/cadence/control-plane/internal/cas"
 	"github.com/usunrise88/cadence/control-plane/internal/commands"
 	"github.com/usunrise88/cadence/control-plane/internal/credentials"
 	"github.com/usunrise88/cadence/control-plane/internal/defaults"
@@ -34,6 +35,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/repos"
 	"github.com/usunrise88/cadence/control-plane/internal/secrets"
 	"github.com/usunrise88/cadence/control-plane/internal/sessions"
+	"github.com/usunrise88/cadence/control-plane/internal/steps"
 	"github.com/usunrise88/cadence/control-plane/internal/webui"
 )
 
@@ -69,6 +71,13 @@ type Config struct {
 	// Projects bootstraps and commits to project repositories and serves them at /git; nil in tests that never
 	// reach a repository (projects.new then fails).
 	Projects *bootstrap.Service
+	// CAS is the content-addressed blob store under the artifact store (R15); nil in tests that never reach it.
+	CAS *cas.Store
+	// StepHooks react to step outputs by artifact type (phase 2: dataset, checkpoint, calibration); New creates an
+	// empty registry when nil.
+	StepHooks *steps.Hooks
+	// Leases is the worker protocol as the pipeline engine sees it; steps.NoLeases when nil.
+	Leases steps.Leases
 }
 
 // Server implements api.StrictServerInterface. Planned operations fall through to api.Planned (501).
@@ -99,6 +108,12 @@ func New(c Config) (*Server, error) {
 	}
 	if c.LoginLimiter == nil {
 		c.LoginLimiter = auth.NewLimiter(time.Now, auth.DefaultLoginLimits()...)
+	}
+	if c.StepHooks == nil {
+		c.StepHooks = &steps.Hooks{}
+	}
+	if c.Leases == nil {
+		c.Leases = steps.NoLeases{}
 	}
 	s := &Server{Config: c, spec: spec}
 	window := time.Duration(s.defaultsDoc().Drafts.PresenceSeconds.Value) * time.Second

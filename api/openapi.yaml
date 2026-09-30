@@ -2546,8 +2546,8 @@ components:
     #
     RegistryKind:
       type: string
-      enum: [base_model, dataset_version, template]
-      description: The kinds registered so far; golden sets, sources, normalizers and model versions join in later phases
+      enum: [base_model, dataset_version, template, runtime, model_family, step_kind]
+      description: "The kinds registered so far; runtime, model_family and step_kind are published by workers (R40, R41, R45); golden sets, normalizers and model versions join in later phases"
     VersionState:
       type: string
       enum: [draft, frozen, deprecated]

@@ -13,7 +13,8 @@
 // CADENCE_MASTER_KEY_FILE ($CADENCE_DATA_DIR/master.key; generated on first start when missing),
 // CADENCE_GITHUB_API (https://api.github.com; GitHub Enterprise: https://<host>/api/v3), CADENCE_HOST_TOKEN_FILE (where
 // the agent host's cah_ token is kept: a file on a volume both containers mount; see credentials.EnsureHostTokenFile),
-// CADENCE_EGRESS_TOKEN_FILE (the egress proxy's cep_ token, the same way).
+// CADENCE_EGRESS_TOKEN_FILE (the egress proxy's cep_ token, the same way), CADENCE_CAS_DIR ($CADENCE_DATA_DIR/cas: the
+// content-addressed artifact store, shared by volume with the worker).
 // Project repositories live under $CADENCE_DATA_DIR/repos (bare), work (working clones) and worktrees; the git binary
 // must be on PATH. `cadence egress-proxy` runs the agent sandbox's allowlisting proxy instead (internal/egress).
 package main
@@ -36,6 +37,7 @@ import (
 
 	"github.com/usunrise88/cadence/control-plane/internal/approvals"
 	"github.com/usunrise88/cadence/control-plane/internal/audit"
+	"github.com/usunrise88/cadence/control-plane/internal/cas"
 	"github.com/usunrise88/cadence/control-plane/internal/cli"
 	"github.com/usunrise88/cadence/control-plane/internal/commands"
 	"github.com/usunrise88/cadence/control-plane/internal/compute"
@@ -209,6 +211,14 @@ func serve(ctx context.Context, getenv func(string) string) error {
 
 	metrics := obs.NewMetrics()
 	hub := events.NewHub(256)
+	casDir := getenv("CADENCE_CAS_DIR")
+	if casDir == "" {
+		casDir = filepath.Join(cfg.dataDir, "cas")
+	}
+	blobs, err := cas.New(casDir)
+	if err != nil {
+		return err
+	}
 	srv, err := server.New(server.Config{
 		Pool:     pool,
 		Pipeline: commands.NewPipeline(pool, log, metrics.Commands, engine),
@@ -221,6 +231,7 @@ func serve(ctx context.Context, getenv func(string) string) error {
 		Jobs:     jobSvc,
 		Secrets:  store,
 		Projects: projectRepos,
+		CAS:      blobs,
 	})
 	if err != nil {
 		return err

@@ -421,9 +421,9 @@ export type CredentialList = {
 };
 
 /**
- * The kinds registered so far; golden sets, sources, normalizers and model versions join in later phases
+ * The kinds registered so far; runtime, model_family and step_kind are published by workers (R40, R41, R45); golden sets, normalizers and model versions join in later phases
  */
-export type RegistryKind = 'base_model' | 'dataset_version' | 'template';
+export type RegistryKind = 'base_model' | 'dataset_version' | 'template' | 'runtime' | 'model_family' | 'step_kind';
 
 /**
  * draft → frozen → deprecated; a frozen version never changes
