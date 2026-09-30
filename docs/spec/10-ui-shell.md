@@ -413,7 +413,9 @@ type Workspace = {
 };
 ```
 
-- Saved per user through the backend API, debounced 1 s after Dockview's layout-change event.
+- Saved per user through the backend API 2 s after the last layout change (Dockview's layout-change event, pins), only
+  when the serialized workspace differs from the stored one, and at once when the page is hidden or the workspace is
+  switched. A layout save is a preference, not a domain command: its committed runs are not in the audit log.
 - Migrations: an integer `schemaVersion` and a chain of migration functions. The panel registry keeps an alias map for renamed panel ids.
 - An unknown panel id restores as a placeholder panel ("Panel X no longer exists — remove"), never as a failed restore.
 - Default workspaces are built by code factories, not stored JSON, so "Reset to default" always matches the current registry.

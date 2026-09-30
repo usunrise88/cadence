@@ -6,7 +6,8 @@ contexts: [panel:approvals]
 
 ## What this is
 
-A tool panel (Ops workspace, right column; also floating from the **Approvals** badge in the status bar) listing
+A tool panel (Ops workspace, right column; the **Approvals** badge in the status bar opens a small popup of pending
+requests — each opens the requesting Chat or this panel — with a button that opens this panel floating) listing
 every request the policy engine stopped for a person, oldest first, with the decided history below. Each card
 shows:
 

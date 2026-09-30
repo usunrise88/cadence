@@ -11,7 +11,18 @@ import { join } from "node:path";
 import { after, afterEach, before, describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { driverFor } from "../src/drivers/index.ts";
-import type { AgentSession, ControlPlane, HostAsk, HostDecision, HostEntry, HostReport, HostStart, HostWork } from "../src/host/api.ts";
+import type {
+  AgentSession,
+  ControlPlane,
+  HostAsk,
+  HostDecision,
+  HostEntry,
+  HostRelease,
+  HostReleased,
+  HostReport,
+  HostStart,
+  HostWork,
+} from "../src/host/api.ts";
 import { FakeClock } from "../src/host/clock.ts";
 import { jsonLogger, silentLogger } from "../src/host/log.ts";
 import { SessionManager } from "../src/host/manager.ts";
@@ -29,6 +40,7 @@ function git(cwd: string, ...args: string[]): string {
 class FakeCP implements ControlPlane {
   reports: Array<{ id: string; body: HostReport }> = [];
   asks: HostAsk[] = [];
+  releases: HostRelease[] = [];
   answer: (a: HostAsk) => HostDecision = () => ({ outcome: "allow_once" });
 
   claim(): Promise<HostWork> {
@@ -41,6 +53,10 @@ class FakeCP implements ControlPlane {
   ask(_id: string, body: HostAsk): Promise<HostDecision> {
     this.asks.push(body);
     return Promise.resolve(this.answer(body));
+  }
+  release(body: HostRelease): Promise<HostReleased> {
+    this.releases.push(structuredClone(body));
+    return Promise.resolve({ released: [] });
   }
 
   entries(): HostEntry[] {
@@ -186,11 +202,40 @@ describe("session manager", () => {
     assert.ok(!JSON.stringify(h.cp.reports).includes("cst_aaaa"), "the value is never reported");
     assert.ok(h.cp.entries().some((e) => e.kind === "notice" && e.level === "error" && /not committed/.test(e.text ?? "")));
     assert.equal(git(root, "--git-dir", origin, "rev-parse", st.session.branch).trim(), before, "nothing was pushed");
+    const left = h.cp.last((b) => b.working !== undefined)?.working;
+    assert.deepEqual(left?.files.map((f) => [f.path, f.status]), [["leak.txt", "added"]], "the refused file stays a working change");
     say(h, st, "hello");
     await waitFor("the second turn", () => turnsEnded(h.cp) === 2 && h.cp.states().at(-1) === "running");
     await s.idle();
     const reply = h.cp.entries().filter((e) => e.kind === "agent_message").at(-1);
     assert.match(reply?.text ?? "", /were not committed because leak\.txt/, "the next prompt says why");
+    control(h, st, "end");
+    await waitFor("done", () => h.cp.states().at(-1) === "done");
+  });
+
+  test("the worktree watcher reports uncommitted files during a turn; the commit clears them", async () => {
+    const h = harness();
+    const st = startFor();
+    run(h, st);
+    await waitFor("running", () => h.cp.states().includes("running"));
+    say(h, st, "scribble draft.txt half done");
+    await waitFor("the turn start", () => h.cp.states().at(-1) === "running*");
+    const working = () => h.cp.reports.map((r) => r.body.working).filter((w) => w !== undefined);
+    // The watcher's window runs on the session clock: move it until fs.watch has seen the file.
+    const end = Date.now() + 10_000;
+    while (!working().some((w) => w.files.some((f) => f.path === "draft.txt"))) {
+      if (Date.now() > end) throw new Error(`no working report: ${JSON.stringify(working())}`);
+      h.clock.advance(300);
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    const live = working().find((w) => w.files.length > 0);
+    assert.deepEqual(live?.files, [{ path: "draft.txt", status: "added", bytes: "half done\n".length }]);
+    assert.equal(live?.turn, 1);
+    assert.equal(live?.truncated, false);
+    control(h, st, "cancel");
+    await waitFor("the turn end", () => turnsEnded(h.cp) === 1 && h.cp.states().at(-1) === "running");
+    await waitFor("the clean report", () => working().at(-1)?.files.length === 0);
+    assert.equal(git(root, "--git-dir", origin, "show", `${st.session.branch}:draft.txt`), "half done\n", "the cancelled turn committed it");
     control(h, st, "end");
     await waitFor("done", () => h.cp.states().at(-1) === "done");
   });
@@ -264,6 +309,26 @@ describe("session manager", () => {
     await waitFor("done", () => h.cp.states().at(-1) === "done");
   });
 
+  test("Cadence tools the preset allows are pre-allowed in the agent: no permission round trip; others still ask", async () => {
+    const h = harness();
+    const st = { ...startFor(), allowedTools: ["mixes.get", "mixes.edit"] };
+    run(h, st);
+    await waitFor("running", () => h.cp.states().includes("running"));
+    say(h, st, "mcp mixes_edit");
+    await waitFor("the first turn", () => h.cp.entries().some((e) => e.text?.startsWith("mcp:")) && turnsEnded(h.cp) === 1);
+    assert.ok(h.cp.entries().some((e) => e.text === "mcp:pre-allowed"));
+    assert.equal(h.cp.asks.length, 0, "an allowed Cadence tool never reaches the policy engine");
+    h.cp.answer = () => ({ outcome: "reject_once", rule: "admin-only" });
+    say(h, st, "mcp secrets_new");
+    await waitFor("the second turn", () => turnsEnded(h.cp) === 2);
+    assert.equal(h.cp.asks.length, 1, "a tool the preset does not allow still asks");
+    assert.equal(h.cp.asks[0]?.toolCall.class, "mcp");
+    assert.match(h.cp.asks[0]?.toolCall.operation ?? h.cp.asks[0]?.toolCall.title ?? "", /secrets[._]new/);
+    assert.ok(h.cp.entries().some((e) => e.text === "mcp:asked:no"));
+    control(h, st, "end");
+    await waitFor("done", () => h.cp.states().at(-1) === "done");
+  });
+
   test("a cancelled turn withdraws its pending permission", async () => {
     const h = harness();
     const st = startFor();
@@ -278,6 +343,94 @@ describe("session manager", () => {
     assert.ok(h.cp.reports.some((r) => r.body.withdraw?.includes("apr_9")));
     control(h, st, "end");
     await waitFor("done", () => h.cp.states().at(-1) === "done");
+  });
+
+  test("a Stop under a pending permission request: cancelled, not declined — the transcript and the agent say why", async () => {
+    const h = harness();
+    const st = startFor();
+    const s = run(h, st);
+    await waitFor("running", () => h.cp.states().includes("running"));
+    h.cp.answer = () => ({ outcome: "pending", approvalId: "apr_7" });
+    say(h, st, "ask rm -rf build");
+    await waitFor("the ask", () => h.cp.asks.length === 1);
+    control(h, st, "cancel");
+    await waitFor("the turn end", () => turnsEnded(h.cp) === 1 && h.cp.states().at(-1) === "running");
+    await s.idle();
+    const notice = h.cp.entries().find((e) => e.kind === "notice" && /rm -rf build/.test(e.text ?? ""));
+    assert.equal(notice?.text, "The permission request “rm -rf build” was cancelled because the person stopped your turn (Stop) — nobody declined it");
+    say(h, st, "hello");
+    await waitFor("the next turn", () => turnsEnded(h.cp) === 2 && h.cp.states().at(-1) === "running");
+    await s.idle();
+    const reply = h.cp.entries().filter((e) => e.kind === "agent_message").at(-1);
+    assert.match(
+      reply?.text ?? "",
+      /\[Cadence\] Your permission request for “rm -rf build” was cancelled because the person stopped your turn \(Stop\); the person did not decline it\./,
+    );
+    // Told once.
+    say(h, st, "again");
+    await waitFor("the third turn", () => turnsEnded(h.cp) === 3 && h.cp.states().at(-1) === "running");
+    await s.idle();
+    assert.doesNotMatch(h.cp.entries().filter((e) => e.kind === "agent_message").at(-1)?.text ?? "", /permission request/);
+    control(h, st, "end");
+    await waitFor("done", () => h.cp.states().at(-1) === "done");
+  });
+
+  test("a permission request rejected because the control plane could not be asked is not read as the person's", async () => {
+    const h = harness();
+    const st = startFor();
+    const s = run(h, st);
+    await waitFor("running", () => h.cp.states().includes("running"));
+    h.cp.answer = () => {
+      throw new Error("control plane down");
+    };
+    say(h, st, "ask pip install torch");
+    await waitFor("the rejection", () => h.cp.entries().some((e) => e.text === "permission:no") && turnsEnded(h.cp) === 1);
+    h.cp.answer = () => ({ outcome: "allow_once" });
+    say(h, st, "hello");
+    await waitFor("the next turn", () => turnsEnded(h.cp) === 2 && h.cp.states().at(-1) === "running");
+    await s.idle();
+    assert.ok(h.cp.entries().some((e) => e.kind === "notice" && /“pip install torch” was rejected because the agent host could not reach Cadence/.test(e.text ?? "")));
+    assert.match(h.cp.entries().filter((e) => e.kind === "agent_message").at(-1)?.text ?? "", /was rejected because the agent host could not reach Cadence to ask; the person did not decline it/);
+    control(h, st, "end");
+    await waitFor("done", () => h.cp.states().at(-1) === "done");
+  });
+
+  test("shutdown ends the turn in progress, reports nothing failed and releases the sessions with the unread messages", async () => {
+    const h = harness();
+    const st = startFor();
+    run(h, st);
+    await waitFor("running", () => h.cp.states().includes("running"));
+    say(h, st, "hang");
+    await waitFor("the turn start", () => h.cp.states().at(-1) === "running*");
+    say(h, st, "hello", "msg_unread");
+    await h.manager.shutdown();
+    assert.deepEqual(h.cp.releases, [{ hostId: "host-1", messages: ["msg_unread"] }]);
+    assert.ok(!h.cp.states().includes("failed"), `states ${h.cp.states().join(",")}`);
+    assert.ok(!h.cp.entries().some((e) => e.kind === "notice" && e.level === "error"), "no turn failure is reported");
+    assert.equal(h.manager.sessions.size, 0);
+  });
+
+  test("a session taken over after a restart: the agent reads why its last turn ended; a pause handed over with the start waits for it", async () => {
+    const h = harness();
+    const st = startFor();
+    st.session.state = "running";
+    st.resume = { note: "[Cadence] The agent host restarted while your turn 1 was running." };
+    h.manager.dispatch({ start: [st], messages: [], controls: [], decisions: [] });
+    await waitFor("running", () => h.cp.states().includes("running"));
+    say(h, st, "hello");
+    await waitFor("the turn", () => turnsEnded(h.cp) === 1 && h.cp.states().at(-1) === "running");
+    await h.manager.sessions.get(st.session.id)?.idle();
+    assert.match(h.cp.entries().find((e) => e.kind === "agent_message")?.text ?? "", /The agent host restarted while your turn 1 was running\./);
+    control(h, st, "end");
+    await waitFor("done", () => h.cp.states().at(-1) === "done");
+
+    const h2 = harness();
+    const st2 = startFor();
+    h2.manager.dispatch({ start: [st2], messages: [], decisions: [], controls: [{ id: "c1", sessionId: st2.session.id, action: "pause" }] });
+    await waitFor("paused after it ran", () => h2.cp.states().at(-1) === "paused");
+    assert.deepEqual(h2.cp.states(), ["running", "paused"]);
+    control(h2, st2, "end");
+    await waitFor("done", () => h2.cp.states().at(-1) === "done");
   });
 
   test("budgets: a turn over its token limit, the session's turns", async () => {

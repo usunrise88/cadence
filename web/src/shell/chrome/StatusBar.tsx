@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
-import { Bell, ChatBubble, CheckCircle, HalfMoon, SunLight } from "iconoir-react";
+import { createContext, useContext, useEffect, useState } from "react";
+import { Bell, ChatBubble, CheckCircle, HalfMoon, OpenInWindow, SunLight } from "iconoir-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import type { AgentSession, Approval } from "@/api/gen/types.gen";
 import { cn } from "@/lib/utils";
 import { useSnap } from "@/shell/floating-snap/dockview-adapter";
 import { useHelp } from "@/shell/help/store";
@@ -12,6 +13,8 @@ import { openPanel } from "@/shell/dock/layout";
 import { events } from "@/shell/registries";
 import { useTheme } from "@/shell/theme/store";
 import { useWorkspaceSync } from "@/shell/workspaces/persistence";
+import { openChat } from "@/shell/agents/bridge";
+import { isAsleep, sessionLabel } from "@/shell/agents/labels";
 import { useAgentSessions } from "@/shell/agents/sessions";
 import { useShell } from "@/shell/state";
 
@@ -56,50 +59,202 @@ export function StatusBar() {
   );
 }
 
-/** Live agent sessions of the project; opens Agent sessions floating (docs/spec/11-ui-panels.md "Default workspaces"). */
+// The status bar's popups share one shape (docs/spec/10-ui-shell.md "Status bar"): a small popover with a short
+// list, and — where a panel holds the full view — a button that opens that panel as a floating window.
+
+// A row that acts closes the popup it sits in.
+const ClosePopover = createContext<() => void>(() => {});
+
+const trigger = "h-5 gap-1 px-1.5 text-[11px] font-normal [&_svg]:size-3.5";
+
+function StatusPopover({
+  button,
+  title,
+  actions,
+  expand,
+  children,
+  onOpenChange,
+}: {
+  button: React.ReactElement;
+  title: string;
+  actions?: React.ReactNode;
+  /** Opens the full panel as a floating window. */
+  expand?: { label: string; panel: string };
+  children: React.ReactNode;
+  onOpenChange?: (open: boolean) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(o) => {
+        setOpen(o);
+        onOpenChange?.(o);
+      }}
+    >
+      <PopoverTrigger render={button} />
+      <PopoverContent align="end" className="w-96 gap-0 p-0" data-slot="status-popover" aria-label={title}>
+        <div className="flex h-9 items-center gap-1 border-b px-3 text-xs font-medium">
+          <span className="mr-auto">{title}</span>
+          {actions}
+          {expand ? (
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className="size-6 text-muted-foreground [&_svg]:size-3.5"
+              aria-label={expand.label}
+              title={expand.label}
+              data-slot="status-popover-expand"
+              onClick={() => {
+                setOpen(false);
+                openPanel(expand.panel, { location: "floating" });
+              }}
+            >
+              <OpenInWindow aria-hidden />
+            </Button>
+          ) : null}
+        </div>
+        <ClosePopover.Provider value={() => setOpen(false)}>
+          <div className="max-h-80 overflow-auto text-xs">{children}</div>
+        </ClosePopover.Provider>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+const SESSION_TONE: Record<string, string> = {
+  running: "bg-status-running",
+  created: "bg-muted-foreground",
+  waiting_approval: "bg-status-warning",
+  paused: "bg-status-warning",
+  asleep: "bg-muted-foreground",
+};
+
+/** Live agent sessions of the project: a popup listing them (click opens the session's Chat); expands into Agent sessions. */
 function AgentSessionsBadge() {
   const project = useShell((s) => s.project);
   const { data } = useAgentSessions(project);
   const items = data?.items ?? [];
+  const liveItems = items.filter((s) => ["created", "running", "waiting_approval", "paused"].includes(s.state));
   const running = items.filter((s) => s.state === "running" || s.state === "created").length;
   const waiting = items.filter((s) => s.state === "waiting_approval").length;
-  const paused = items.filter((s) => s.state === "paused").length;
-  const live = running + waiting + paused;
-  const parts = [running && `${running} running`, waiting && `${waiting} waiting for approval`, paused && `${paused} paused`].filter(Boolean).join(", ");
+  const asleep = items.filter(isAsleep).length;
+  const paused = items.filter((s) => s.state === "paused").length - asleep;
+  const live = running + waiting + paused + asleep;
+  const parts = [running && `${running} running`, waiting && `${waiting} waiting for approval`, paused && `${paused} paused`, asleep && `${asleep} asleep`].filter(Boolean).join(", ");
   return (
-    <Button
-      variant="ghost"
-      size="xs"
-      data-testid="agent-sessions-badge"
-      disabled={!project}
-      className={cn("h-5 gap-1 px-1.5 text-[11px] font-normal [&_svg]:size-3.5", waiting ? "text-status-warning-foreground" : live ? "text-foreground" : "text-muted-foreground")}
-      aria-label={live ? `Agent sessions: ${parts} — open Agent sessions` : "No live agent sessions — open Agent sessions"}
-      onClick={() => openPanel("agent-sessions", { location: "floating" })}
+    <StatusPopover
+      title="Agent sessions"
+      expand={{ label: "Open Agent sessions as a window", panel: "agent-sessions" }}
+      button={
+        <Button
+          variant="ghost"
+          size="xs"
+          data-testid="agent-sessions-badge"
+          disabled={!project}
+          className={cn(trigger, waiting ? "text-status-warning-foreground" : live ? "text-foreground" : "text-muted-foreground")}
+          aria-label={live ? `Agent sessions: ${parts}` : "No live agent sessions"}
+        >
+          <ChatBubble aria-hidden />
+          Agents
+          {live ? <span className={cn("min-w-4 rounded-full border px-1 text-center font-medium tabular-nums", waiting ? "border-status-warning" : "border-border")}>{live}</span> : null}
+        </Button>
+      }
     >
-      <ChatBubble aria-hidden />
-      Agents
-      {live ? <span className={cn("min-w-4 rounded-full border px-1 text-center font-medium tabular-nums", waiting ? "border-status-warning" : "border-border")}>{live}</span> : null}
-    </Button>
+      {liveItems.length === 0 ? <p className="p-3 text-muted-foreground">No live sessions. Write in Chat to start one.</p> : null}
+      <ul>
+        {liveItems.map((s) => (
+          <SessionRow key={s.id} s={s} />
+        ))}
+      </ul>
+    </StatusPopover>
   );
 }
 
-/** Pending approvals; opens Approvals floating (docs/spec/11-ui-panels.md "Default workspaces"), or focuses it. */
+/** Pending approvals: a popup listing them (click opens the requesting Chat or Approvals); expands into Approvals. */
 function ApprovalsBadge() {
   const { data } = usePendingApprovals();
-  const n = data?.items.length ?? 0;
+  const items = data?.items ?? [];
+  const n = items.length;
   return (
-    <Button
-      variant="ghost"
-      size="xs"
-      data-testid="approvals-badge"
-      className={cn("h-5 gap-1 px-1.5 text-[11px] font-normal [&_svg]:size-3.5", n ? "text-status-warning-foreground" : "text-muted-foreground")}
-      aria-label={n ? `${n} pending approval${n === 1 ? "" : "s"} — open Approvals` : "No pending approvals — open Approvals"}
-      onClick={() => openPanel("approvals", { location: "floating" })}
+    <StatusPopover
+      title="Pending approvals"
+      expand={{ label: "Open Approvals as a window", panel: "approvals" }}
+      button={
+        <Button
+          variant="ghost"
+          size="xs"
+          data-testid="approvals-badge"
+          className={cn(trigger, n ? "text-status-warning-foreground" : "text-muted-foreground")}
+          aria-label={n ? `${n} pending approval${n === 1 ? "" : "s"}` : "No pending approvals"}
+        >
+          <CheckCircle aria-hidden />
+          Approvals
+          {n ? <span className="min-w-4 rounded-full border border-status-warning px-1 text-center font-medium tabular-nums">{n}</span> : null}
+        </Button>
+      }
     >
-      <CheckCircle aria-hidden />
-      Approvals
-      {n ? <span className="min-w-4 rounded-full border border-status-warning px-1 text-center font-medium tabular-nums">{n}</span> : null}
-    </Button>
+      {n === 0 ? <p className="p-3 text-muted-foreground">Nothing waits for you.</p> : null}
+      <ul>
+        {items.map((a) => (
+          <ApprovalRow key={a.id} a={a} />
+        ))}
+      </ul>
+    </StatusPopover>
+  );
+}
+
+function SessionRow({ s }: { s: AgentSession }) {
+  const close = useContext(ClosePopover);
+  const state = isAsleep(s) ? "asleep" : s.state;
+  return (
+    <li className="border-b last:border-0">
+      <button
+        type="button"
+        className="flex w-full min-w-0 items-center gap-2 px-3 py-2 text-left hover:bg-hover focus-visible:bg-hover focus-visible:outline-none"
+        onClick={() => {
+          close();
+          openChat(s.id);
+        }}
+        data-session={s.id}
+      >
+        <span aria-hidden className={cn("size-2 shrink-0 rounded-full", SESSION_TONE[state] ?? "bg-muted-foreground", s.busy && "animate-pulse motion-reduce:animate-none")} />
+        <span className="shrink-0 font-medium">{sessionLabel(s)}</span>
+        <span className="min-w-0 truncate text-muted-foreground">
+          {state.replace("_", " ")}
+          {s.busy ? " · working" : ""} · {s.model}
+        </span>
+      </button>
+    </li>
+  );
+}
+
+function ApprovalRow({ a }: { a: Approval }) {
+  const close = useContext(ClosePopover);
+  return (
+    <li className="border-b last:border-0">
+      <button
+        type="button"
+        className="flex w-full min-w-0 flex-col gap-0.5 px-3 py-2 text-left hover:bg-hover focus-visible:bg-hover focus-visible:outline-none"
+        onClick={() => {
+          close();
+          if (a.permission?.sessionId) openChat(a.permission.sessionId);
+          else openPanel("approvals", { location: "floating" });
+        }}
+        data-approval={a.id}
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          <span aria-hidden className="size-2 shrink-0 rounded-full bg-status-warning" />
+          <span className="min-w-0 truncate font-medium">{a.permission?.title ?? a.operation}</span>
+          <time className="ml-auto shrink-0 text-muted-foreground" dateTime={a.createdAt}>
+            {new Date(a.createdAt).toLocaleTimeString()}
+          </time>
+        </span>
+        <span className="truncate pl-4 text-muted-foreground">
+          {a.actor.name ?? a.actor.kind} · {a.reason}
+        </span>
+      </button>
+    </li>
   );
 }
 
@@ -107,50 +262,52 @@ function NotificationHistory() {
   const { items, markAllRead, clear } = useNotices();
   const unread = items.filter((i) => !i.read).length;
   return (
-    <Popover onOpenChange={(open) => open || markAllRead()}>
-      <PopoverTrigger render={<Button variant="ghost" size="icon-xs" className="relative size-6 text-muted-foreground [&_svg]:size-3.5" aria-label={`Notifications${unread ? ` (${unread} unread)` : ""}`} />}>
-        <Bell aria-hidden />
-        {unread ? <span className="absolute top-0.5 right-0.5 size-1.5 rounded-full bg-status-failed" /> : null}
-      </PopoverTrigger>
-      <PopoverContent align="end" className="w-96 p-0">
-        <div className="flex items-center border-b px-3 py-2 text-xs font-medium">
-          Notifications
-          <Button variant="ghost" size="xs" className="ml-auto" onClick={clear}>
-            Clear
-          </Button>
-        </div>
-        <ul className="max-h-80 overflow-auto text-xs">
-          {items.length === 0 ? <li className="p-3 text-muted-foreground">Nothing yet.</li> : null}
-          {items.map((n) => (
-            <li key={n.id} className="border-b px-3 py-2 last:border-0">
-              <div className="flex items-center gap-2">
-                <span className={cn("size-2 rounded-full", n.level === "error" ? "bg-status-failed" : n.level === "warning" ? "bg-status-warning" : n.level === "success" ? "bg-status-done" : "bg-muted-foreground")} />
-                <span className="font-medium">{n.title}</span>
-                <time className="ml-auto text-muted-foreground">{new Date(n.at).toLocaleTimeString()}</time>
-              </div>
-              {n.detail ? <p className="mt-1 text-muted-foreground">{n.detail}</p> : null}
-              {n.open ? (
-                <button type="button" className="mt-1 mr-3 text-primary underline-offset-2 hover:underline" onClick={() => openPanel(n.open!.panel)}>
-                  {n.open.label}
-                </button>
-              ) : null}
-              {n.helpId ? (
-                <button
-                  type="button"
-                  className="mt-1 text-primary underline-offset-2 hover:underline"
-                  onClick={() => {
-                    useHelp.getState().show(n.helpId!);
-                    openPanel("help");
-                  }}
-                >
-                  What does this mean?
-                </button>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      </PopoverContent>
-    </Popover>
+    <StatusPopover
+      title="Notifications"
+      onOpenChange={(open) => open || markAllRead()}
+      actions={
+        <Button variant="ghost" size="xs" onClick={clear}>
+          Clear
+        </Button>
+      }
+      button={
+        <Button variant="ghost" size="icon-xs" className="relative size-6 text-muted-foreground [&_svg]:size-3.5" aria-label={`Notifications${unread ? ` (${unread} unread)` : ""}`}>
+          <Bell aria-hidden />
+          {unread ? <span className="absolute top-0.5 right-0.5 size-1.5 rounded-full bg-status-failed" /> : null}
+        </Button>
+      }
+    >
+      <ul>
+        {items.length === 0 ? <li className="p-3 text-muted-foreground">Nothing yet.</li> : null}
+        {items.map((n) => (
+          <li key={n.id} className="border-b px-3 py-2 last:border-0">
+            <div className="flex items-center gap-2">
+              <span className={cn("size-2 rounded-full", n.level === "error" ? "bg-status-failed" : n.level === "warning" ? "bg-status-warning" : n.level === "success" ? "bg-status-done" : "bg-muted-foreground")} />
+              <span className="font-medium">{n.title}</span>
+              <time className="ml-auto text-muted-foreground">{new Date(n.at).toLocaleTimeString()}</time>
+            </div>
+            {n.detail ? <p className="mt-1 text-muted-foreground">{n.detail}</p> : null}
+            {n.open ? (
+              <button type="button" className="mt-1 mr-3 text-primary underline-offset-2 hover:underline" onClick={() => openPanel(n.open!.panel)}>
+                {n.open.label}
+              </button>
+            ) : null}
+            {n.helpId ? (
+              <button
+                type="button"
+                className="mt-1 text-primary underline-offset-2 hover:underline"
+                onClick={() => {
+                  useHelp.getState().show(n.helpId!);
+                  openPanel("help");
+                }}
+              >
+                What does this mean?
+              </button>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </StatusPopover>
   );
 }
 

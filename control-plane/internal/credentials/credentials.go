@@ -151,7 +151,9 @@ type NewAPIKeyInput struct {
 	Name      string
 	ProjectID string // the one project it reaches; empty for none
 	Registry  bool   // may read the registry
-	ExpiresAt *time.Time
+	// AgentSessions: may run agent sessions in its project (opt-in; needs ProjectID).
+	AgentSessions bool
+	ExpiresAt     *time.Time
 }
 
 // NewAPIKey creates a personal API key (cdk_) and returns its token (shown once) and the credential.created event.
@@ -161,6 +163,11 @@ func NewAPIKey(ctx context.Context, tx pgx.Tx, in NewAPIKeyInput) (string, Crede
 			Path: "/scope", Message: "name a project, allow registry read, or both",
 		}})
 	}
+	if in.AgentSessions && in.ProjectID == "" {
+		return "", Credential{}, nil, problems.Validation([]problems.FieldError{{
+			Path: "/scope/agentSessions", Message: "agent sessions run in a project: name the project",
+		}})
+	}
 	if in.ExpiresAt != nil && !in.ExpiresAt.After(time.Now()) {
 		return "", Credential{}, nil, problems.Validation([]problems.FieldError{{
 			Path: "/expiresAt", Message: "must be in the future",
@@ -168,7 +175,7 @@ func NewAPIKey(ctx context.Context, tx pgx.Tx, in NewAPIKeyInput) (string, Crede
 	}
 	token, c, err := issue(ctx, tx, auth.PrefixAPIKey, Credential{
 		Kind: KindAPIKey, UserID: in.UserID, Name: in.Name, ExpiresAt: in.ExpiresAt,
-		Scope: auth.Scope{ProjectID: in.ProjectID, RegistryRead: in.Registry},
+		Scope: auth.Scope{ProjectID: in.ProjectID, RegistryRead: in.Registry, AgentSessions: in.AgentSessions},
 	})
 	if err != nil {
 		return "", Credential{}, nil, err

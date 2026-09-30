@@ -38,13 +38,25 @@ type ClaimInput struct {
 
 // Start is a session the host starts (or resumes after another host went silent, or after a pause).
 type Start struct {
-	Session  View        `json:"session"`
-	Token    string      `json:"token"`
-	CloneURL string      `json:"cloneUrl"`
-	MCPURL   string      `json:"mcpUrl"`
-	Budget   Budget      `json:"budget"`
-	Clocks   Clocks      `json:"clocks"`
-	Resume   *ResumeInfo `json:"resume,omitempty"`
+	Session  View   `json:"session"`
+	Token    string `json:"token"`
+	CloneURL string `json:"cloneUrl"`
+	MCPURL   string `json:"mcpUrl"`
+	Budget   Budget `json:"budget"`
+	Clocks   Clocks `json:"clocks"`
+	// AllowedTools are the Cadence tools the preset lets the agent call without a prompt (policy.AgentAllowed).
+	AllowedTools []string    `json:"allowedTools"`
+	Resume       *ResumeInfo `json:"resume,omitempty"`
+}
+
+// allowedTools is what the session's preset lets its agent call without a prompt; none for an unknown preset (the
+// agent then asks, and the host's permission request meets the same engine).
+func (s *Service) allowedTools(preset string) []string {
+	p, ok := s.Policy.Preset(preset)
+	if !ok || s.Projects == nil {
+		return []string{}
+	}
+	return policy.AgentAllowed(p, s.Projects.Renderer().Tools)
 }
 
 // Clocks are the host-side limits of a session (R5 and the runaway rule).
@@ -54,10 +66,12 @@ type Clocks struct {
 }
 
 // ResumeInfo lets the host restore the agent's context: ACP resume of the agent's own session, else a new ACP
-// session primed with the summary.
+// session primed with the summary. Note is what the agent reads before its next prompt (a turn interrupted by a
+// host restart).
 type ResumeInfo struct {
 	ACPSessionID string `json:"acpSessionId,omitempty"`
 	Summary      string `json:"summary,omitempty"`
+	Note         string `json:"note,omitempty"`
 }
 
 // Control is a request the host carries out.
@@ -130,13 +144,16 @@ func (s *Service) claimOnce(ctx context.Context, tx pgx.Tx, in ClaimInput) (Work
 		ON CONFLICT (id) DO UPDATE SET seen_at = now(), version = excluded.version`, in.HostID, in.CredentialID, in.Version); err != nil {
 		return w, fmt.Errorf("record the agent host: %w", err)
 	}
-	var drafts []events.Draft
+	drafts, err := s.claimBack(ctx, tx, in.HostID)
+	if err != nil {
+		return w, err
+	}
 	if in.Capacity > 0 {
 		starts, d, err := s.claimStarts(ctx, tx, in)
 		if err != nil {
 			return w, err
 		}
-		w.Start, drafts = starts, d
+		w.Start, drafts = starts, append(drafts, d...)
 	}
 	msgs, d, err := s.claimMessages(ctx, tx, in.HostID)
 	if err != nil {
@@ -157,6 +174,32 @@ func (s *Service) claimOnce(ctx context.Context, tx pgx.Tx, in ClaimInput) (Work
 		w.Decisions = []Decision{}
 	}
 	return w, events.Append(ctx, tx, System, nil, drafts)
+}
+
+// claimBack clears the lost mark of the host's own sessions: it answers again.
+func (s *Service) claimBack(ctx context.Context, tx pgx.Tx, hostID string) ([]events.Draft, error) {
+	rows, err := tx.Query(ctx, `SELECT id FROM agent_sessions WHERE host_id = $1 AND host_left_at IS NOT NULL
+		FOR UPDATE SKIP LOCKED`, hostID)
+	if err != nil {
+		return nil, fmt.Errorf("find the host's lost sessions: %w", err)
+	}
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return nil, fmt.Errorf("read the host's lost sessions: %w", err)
+	}
+	var drafts []events.Draft
+	for _, id := range ids {
+		sess, err := Lock(ctx, tx, id)
+		if err != nil {
+			return nil, err
+		}
+		_, d, err := reconnected(ctx, tx, sess)
+		if err != nil {
+			return nil, err
+		}
+		drafts = append(drafts, d...)
+	}
+	return drafts, nil
 }
 
 func (s *Service) claimStarts(ctx context.Context, tx pgx.Tx, in ClaimInput) ([]Start, []events.Draft, error) {
@@ -184,6 +227,48 @@ func (s *Service) claimStarts(ctx context.Context, tx pgx.Tx, in ClaimInput) ([]
 		if err != nil {
 			return nil, nil, err
 		}
+		previous, released := sess.HostID, sess.HostLeftAt != nil && sess.HostID == ""
+		note := sess.ResumeNote
+		if previous != "" {
+			// Its host went silent without releasing it: settle the turn and the requests it took with it.
+			agentNote, text, withdrawn, err := s.interrupted(ctx, tx, sess, "went silent")
+			if err != nil {
+				return nil, nil, err
+			}
+			if len(withdrawn) > 0 {
+				drafts = append(drafts, withdrawn...)
+				if sess, err = Lock(ctx, tx, id); err != nil {
+					return nil, nil, err
+				}
+			}
+			if text != "" {
+				if n, err := notice(ctx, tx, sess, newID("host:"), "warning", text, false); err != nil {
+					return nil, nil, err
+				} else if n != nil {
+					drafts = append(drafts, *n)
+				}
+			}
+			note = strings.TrimSpace(note + "\n\n" + agentNote)
+		}
+		if sess.State != StateCreated {
+			// A Stop pressed while no host ran the session meant a turn that ended with its host.
+			tag, err := tx.Exec(ctx, `UPDATE agent_session_controls SET delivered_at = now()
+				WHERE session_id = $1 AND action = 'cancel' AND delivered_at IS NULL`, sess.ID)
+			if err != nil {
+				return nil, nil, fmt.Errorf("drop the stale stops of %s: %w", sess.ID, err)
+			}
+			if tag.RowsAffected() > 0 {
+				if sess, err = Lock(ctx, tx, id); err != nil {
+					return nil, nil, err
+				}
+				if n, err := notice(ctx, tx, sess, newID("host:"), "info",
+					"Stop was dropped: the turn it meant ended with the agent host's restart", false); err != nil {
+					return nil, nil, err
+				} else if n != nil {
+					drafts = append(drafts, *n)
+				}
+			}
+		}
 		if sess.CredentialID != "" {
 			_ = credentials.Revoke(ctx, tx, sess.CredentialID) // the old host's token dies with it
 		}
@@ -191,11 +276,12 @@ func (s *Service) claimStarts(ctx context.Context, tx pgx.Tx, in ClaimInput) ([]
 		if err != nil {
 			return nil, nil, err
 		}
-		previous := sess.HostID
-		f := false
-		u := Update{CredentialID: &credID, HostID: &in.HostID, Busy: &f}
+		f, empty := false, ""
+		var back *time.Time
+		u := Update{CredentialID: &credID, HostID: &in.HostID, Busy: &f, HostLeftAt: &back, ResumeNote: &empty}
 		st := Start{Token: tok, CloneURL: projects.CloneURL(sess.ProjectSlug), MCPURL: mcp.Path, Budget: sess.Budget,
-			Clocks: Clocks{StuckTurnSeconds: d.Timeouts.StuckTurnMinutes.Value * 60, IdenticalCalls: IdenticalCalls}}
+			Clocks:       Clocks{StuckTurnSeconds: d.Timeouts.StuckTurnMinutes.Value * 60, IdenticalCalls: IdenticalCalls},
+			AllowedTools: s.allowedTools(sess.Preset)}
 		if sess.State == StatePaused {
 			// A resume nobody could deliver (the host that paused it is gone): take it here.
 			var budget *Budget
@@ -212,7 +298,7 @@ func (s *Service) claimStarts(ctx context.Context, tx pgx.Tx, in ClaimInput) ([]
 			if err != nil {
 				return nil, nil, err
 			}
-			st.Resume = &ResumeInfo{ACPSessionID: sess.ACPSessionID, Summary: sum}
+			st.Resume = &ResumeInfo{ACPSessionID: sess.ACPSessionID, Summary: sum, Note: note}
 		}
 		next, more, err := apply(ctx, tx, sess, u)
 		if err != nil {
@@ -220,8 +306,11 @@ func (s *Service) claimStarts(ctx context.Context, tx pgx.Tx, in ClaimInput) ([]
 		}
 		drafts = append(drafts, more...)
 		msg := "The agent host " + in.HostID + " took the session"
-		if previous != "" {
+		switch {
+		case previous != "":
 			msg = fmt.Sprintf("The agent host %s resumes the session: its host %s went silent", in.HostID, previous)
+		case released:
+			msg = fmt.Sprintf("The agent host %s resumes the session after the restart", in.HostID)
 		}
 		if n, err := notice(ctx, tx, next, newID("host:"), "info", msg, false); err != nil {
 			return nil, nil, err
@@ -398,6 +487,8 @@ type ReportInput struct {
 	ACPSessionID string
 	Note         string
 	Withdraw     []string
+	// Working is the worktree's uncommitted changes (nil: not reported; no files: clean).
+	Working *Working
 }
 
 // hostKinds are the entry kinds a host may report; user messages and permission entries are the server's.
@@ -421,6 +512,9 @@ func (s *Service) Report(ctx context.Context, id string, in ReportInput) (Sessio
 			return fmt.Errorf("touch the agent host: %w", err)
 		}
 		var agentDrafts, systemDrafts []events.Draft
+		if sess, systemDrafts, err = reconnected(ctx, tx, sess); err != nil {
+			return err
+		}
 		for _, e := range in.Entries {
 			if !hostKinds[e.Kind] {
 				return problems.BadRequest.New("a host does not report %s entries", e.Kind)
@@ -433,8 +527,16 @@ func (s *Service) Report(ctx context.Context, id string, in ReportInput) (Sessio
 			if err != nil {
 				return err
 			}
-			if d != nil {
-				agentDrafts = append(agentDrafts, *d)
+			if d == nil {
+				continue
+			}
+			agentDrafts = append(agentDrafts, *d)
+			if e.Kind == EntryToolCall {
+				more, err := s.attribute(ctx, tx, sess, e.Body)
+				if err != nil {
+					return err
+				}
+				systemDrafts = append(systemDrafts, more...)
 			}
 		}
 		u := Update{}
@@ -446,6 +548,13 @@ func (s *Service) Report(ctx context.Context, id string, in ReportInput) (Sessio
 		}
 		if st := in.State; st != nil {
 			u.Busy, u.Turn = st.Busy, st.Turn
+		}
+		if in.Working != nil && Live(sess.State) && sess.Branch != "" {
+			next := normalizeWorking(in.Working, s.now())
+			if !sameWorking(next, sess.Working) {
+				agentDrafts = append(agentDrafts, workingEvents(sess, sess.Working, next)...)
+				u.Working = &next
+			}
 		}
 		sess, d, err := apply(ctx, tx, sess, u)
 		if err != nil {
@@ -877,8 +986,8 @@ func (s *Service) ApprovalDecided(ctx context.Context, tx pgx.Tx, a approvals.Ap
 // ---------------------------------------------------------------- the idle clock and housekeeping
 
 // Sweep runs the server-side clocks: an interactive session idle (no turn, no pending approval) since its last
-// user message for timeouts.idle_session_minutes pauses (R5), and sessions whose approvals expired leave
-// waiting_approval.
+// user message for timeouts.idle_session_minutes pauses (R5), sessions whose approvals expired leave
+// waiting_approval, and live sessions whose host went silent past the lapse are marked lost.
 func (s *Service) Sweep(ctx context.Context) error {
 	idle := time.Duration(s.defaults().Timeouts.IdleSessionMinutes.Value) * time.Minute
 	return pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
@@ -902,7 +1011,7 @@ func (s *Service) Sweep(ctx context.Context) error {
 				return err
 			}
 			_, d, err := s.request(ctx, tx, sess, "pause", &Reason{Code: PauseIdle,
-				Message: fmt.Sprintf("no message for %s", idle)}, nil, System)
+				Message: fmt.Sprintf("no message for %d min", int(idle.Minutes()))}, nil, System)
 			if err != nil {
 				return err
 			}
@@ -923,6 +1032,24 @@ func (s *Service) Sweep(ctx context.Context) error {
 				return err
 			}
 			_, d, err := syncApprovals(ctx, tx, sess)
+			if err != nil {
+				return err
+			}
+			drafts = append(drafts, d...)
+		}
+		// Live sessions whose host went silent past the lapse show it (the Chat reads hostState lost) until a host
+		// takes them over or their own answers again.
+		rows, err = tx.Query(ctx, `SELECT s.id FROM agent_sessions s JOIN agent_hosts h ON h.id = s.host_id
+			WHERE s.state IN ('running', 'waiting_approval') AND s.host_left_at IS NULL AND h.seen_at < $1
+			FOR UPDATE OF s SKIP LOCKED`, s.now().Add(-s.hostLapse()))
+		if err != nil {
+			return fmt.Errorf("find sessions whose host went silent: %w", err)
+		}
+		if ids, err = pgx.CollectRows(rows, pgx.RowTo[string]); err != nil {
+			return fmt.Errorf("read sessions whose host went silent: %w", err)
+		}
+		for _, id := range ids {
+			d, err := s.markLost(ctx, tx, id)
 			if err != nil {
 				return err
 			}

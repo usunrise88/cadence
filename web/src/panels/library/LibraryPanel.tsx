@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Plus } from "iconoir-react";
 import { mixesListOptions, projectsSearchOptions, registrySearchOptions, viewsListOptions } from "@/api/gen/@tanstack/react-query.gen";
@@ -157,6 +157,8 @@ export function LibraryPanel(_props: PanelProps) {
   const problem = searching && search.error instanceof Error ? search.error.message : "";
   const savedViews = views.data?.items ?? [];
   const [current, setCurrent] = useState<ListRow | undefined>();
+  // Rows are rebuilt on every render: keep the highlighted one until another row is highlighted (else a render loop).
+  const onCursor = useCallback((r: ListRow | undefined) => setCurrent((p) => (p?.id === r?.id ? p : r)), []);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -277,14 +279,14 @@ export function LibraryPanel(_props: PanelProps) {
             <LibraryEmpty />
           )
         ) : searching ? (
-          <EntityList rows={rows} label="Search results" versionLabel="Kind" onOpen={(r) => openRef(r.id)} onPreview={(r) => previewRef(r.id)} onCursor={setCurrent} />
+          <EntityList rows={rows} label="Search results" versionLabel="Kind" onOpen={(r) => openRef(r.id)} onPreview={(r) => previewRef(r.id)} onCursor={onCursor} />
         ) : (
           <EntityList
             rows={rows}
             label="Project work and registry versions"
             onOpen={(r) => (r.id.startsWith("mix:") ? openDocument(r.id) : select(`registry:${r.id}`, undefined))}
             onPreview={(r) => select(r.id.startsWith("mix:") ? r.id : `registry:${r.id}`, undefined)}
-            onCursor={setCurrent}
+            onCursor={onCursor}
           />
         )}
       </div>

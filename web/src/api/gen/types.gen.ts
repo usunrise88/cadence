@@ -352,6 +352,10 @@ export type CredentialScope = {
      * Permission preset (agent session tokens)
      */
     preset?: string;
+    /**
+     * May start, message, stop and merge agent sessions in its project (API keys, opt-in)
+     */
+    agentSessions?: boolean;
 };
 
 export type Credential = {
@@ -387,11 +391,16 @@ export type Credential = {
 export type CredentialNew = {
     name: string;
     /**
-     * One project, registry read, or both
+     * One project, registry read, or both; agentSessions needs the project
      */
     scope: {
         project?: Slug;
         registryRead?: boolean;
+        /**
+         * May start, message, stop and merge agent sessions in its project (automation such as the agent evals); every other rule of the default preset still applies. Off unless asked for.
+         *
+         */
+        agentSessions?: boolean;
     };
     /**
      * Never expires when absent
@@ -1864,6 +1873,90 @@ export type BranchDiff = Branch & {
     truncated: boolean;
 };
 
+/**
+ * One version of a file in a three-way comparison
+ */
+export type MergeSide = {
+    /**
+     * The file exists in this version
+     */
+    exists: boolean;
+    /**
+     * The blob id
+     */
+    blob?: string;
+    bytes?: number;
+    binary?: boolean;
+    /**
+     * The content (conflicting text files only; absent when binary or cut)
+     */
+    text?: string;
+    /**
+     * The text was left out because it is over 128 KiB or the response budget ran out
+     */
+    cut?: boolean;
+};
+
+export type LineRange = {
+    /**
+     * 0-based index of the first line
+     */
+    start: number;
+    count: number;
+};
+
+/**
+ * One region of a file in all three versions; the hunks of a file cover every line of each, in order
+ */
+export type MergeHunk = {
+    /**
+     * Which side changed the region: neither (same), only main, only the branch, both alike, or both differently (conflict)
+     */
+    kind: 'same' | 'main' | 'branch' | 'both' | 'conflict';
+    base: LineRange;
+    main: LineRange;
+    branch: LineRange;
+};
+
+export type BranchCompareFile = {
+    path: string;
+    /**
+     * The file merges into main without a conflict
+     */
+    clean: boolean;
+    /**
+     * What kind of conflict (conflicting files only)
+     */
+    conflict?: 'content' | 'add/add' | 'modify/delete' | 'binary';
+    base: MergeSide;
+    main: MergeSide;
+    branch: MergeSide;
+    /**
+     * Conflicting text files whose three texts are present
+     */
+    hunks?: Array<MergeHunk>;
+};
+
+export type BranchCompare = {
+    name: BranchName;
+    kind: 'session' | 'sync' | 'other';
+    head: string;
+    main: string;
+    /**
+     * The merge base of the branch and main
+     */
+    base: string;
+    fastForward: boolean;
+    /**
+     * Every file the branch changed since the merge base, conflicting files first
+     */
+    files: Array<BranchCompareFile>;
+    /**
+     * Some conflicting files' texts were left out (1 MiB of text per response)
+     */
+    cut: boolean;
+};
+
 export type BranchMerge = {
     branch: string;
     /**
@@ -1946,6 +2039,40 @@ export type AgentMerge = {
     by?: Actor;
 };
 
+export type WorkingChange = {
+    path: string;
+    status: 'added' | 'modified' | 'deleted';
+    /**
+     * The file's size in the worktree (not for deleted files)
+     */
+    bytes?: number;
+    /**
+     * Lines added since the last commit (tracked text files)
+     */
+    additions?: number;
+    /**
+     * Lines removed since the last commit (tracked text files)
+     */
+    deletions?: number;
+};
+
+/**
+ * Uncommitted changes in the session's worktree while a turn runs, from the agent host's watcher (paths and sizes, no content); the turn's commit empties it
+ *
+ */
+export type AgentWorking = {
+    turn?: number;
+    files: Array<WorkingChange>;
+    /**
+     * More files changed than listed (the first 200 by path are)
+     */
+    truncated: boolean;
+    /**
+     * When the control plane received it
+     */
+    at?: string;
+};
+
 export type AgentReference = {
     /**
      * The textual reference: @run:123, @mix:mix_…, @utt:9f3c#t=1.5-3.0
@@ -1999,6 +2126,15 @@ export type AgentSession = {
      */
     pendingControl?: 'cancel' | 'pause' | 'resume' | 'end';
     /**
+     * Live sessions only. waiting: no agent host took it yet; connected: a host runs it; released: its host shut down (a restart) and the next host has not taken it yet; lost: its host stopped answering and the session moves to the next host that claims work. Requests (stop, pause, end) and messages wait for the next host.
+     *
+     */
+    hostState?: 'waiting' | 'connected' | 'released' | 'lost';
+    /**
+     * When the session's host released it or was found silent (released
+     */
+    hostLeftAt?: string;
+    /**
      * Why it failed
      */
     error?: string;
@@ -2007,6 +2143,7 @@ export type AgentSession = {
      */
     branch: string;
     merge: AgentMerge;
+    working?: AgentWorking;
     autoMerge: AutoMerge;
     budget: AgentBudget;
     use: AgentUse;
@@ -2286,6 +2423,11 @@ export type HostStart = {
         identicalCalls: number;
     };
     /**
+     * Cadence MCP tools (operation ids, e.g. mixes.get) the session's permission preset lets the agent call without a permission prompt; the driver pre-allows them in the agent (Claude Code does not apply allow rules from the repository's .claude/settings.json). The server still applies the preset to every call.
+     *
+     */
+    allowedTools?: Array<string>;
+    /**
      * The session ran before (host restart or resume after pause)
      */
     resume?: {
@@ -2294,6 +2436,10 @@ export type HostStart = {
          * A transcript summary for a new ACP session when resume fails
          */
         summary?: string;
+        /**
+         * What the agent is told before its next prompt, e.g. that its last turn was interrupted by a host restart
+         */
+        note?: string;
     };
 };
 
@@ -2375,6 +2521,22 @@ export type HostReport = {
      * Agent-permission approvals the agent no longer waits for (its turn was cancelled)
      */
     withdraw?: Array<string>;
+    working?: AgentWorking;
+};
+
+export type HostRelease = {
+    hostId: string;
+    /**
+     * Messages this host took but never gave its agent; they go back to pending for the next host
+     */
+    messages?: Array<string>;
+};
+
+export type HostReleased = {
+    /**
+     * The ids of the sessions released
+     */
+    released: Array<string>;
 };
 
 export type HostAsk = {
@@ -4925,6 +5087,40 @@ export type BranchesGetResponses = {
 
 export type BranchesGetResponse = BranchesGetResponses[keyof BranchesGetResponses];
 
+export type BranchesCompareData = {
+    body?: never;
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+        /**
+         * Branch name, URL-encoded (sync%2F2026-09-30, session%2F<id>)
+         */
+        name: BranchName;
+    };
+    query?: never;
+    url: '/projects/{p}/branches/{name}:compare';
+};
+
+export type BranchesCompareErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type BranchesCompareError = BranchesCompareErrors[keyof BranchesCompareErrors];
+
+export type BranchesCompareResponses = {
+    /**
+     * The comparison; ETag is the branch head
+     */
+    200: BranchCompare;
+};
+
+export type BranchesCompareResponse = BranchesCompareResponses[keyof BranchesCompareResponses];
+
 export type BranchesAcceptData = {
     body?: never;
     headers: {
@@ -5929,7 +6125,8 @@ export type AgentMessagesNewResponses = {
      */
     200: AgentMessage;
     /**
-     * Queued for the agent (delivery pending until the host takes it)
+     * Queued for the agent (delivery pending until the host takes it). A session paused for idleness is resumed first; a session paused for any other reason answers 409 conflict with the reason until it is resumed
+     *
      */
     201: AgentMessage;
 };
@@ -6352,6 +6549,31 @@ export type EgressHostsListResponses = {
 };
 
 export type EgressHostsListResponse = EgressHostsListResponses[keyof EgressHostsListResponses];
+
+export type HostSessionsReleaseData = {
+    body: HostRelease;
+    path?: never;
+    query?: never;
+    url: '/host-sessions:release';
+};
+
+export type HostSessionsReleaseErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type HostSessionsReleaseError = HostSessionsReleaseErrors[keyof HostSessionsReleaseErrors];
+
+export type HostSessionsReleaseResponses = {
+    /**
+     * The sessions released
+     */
+    200: HostReleased;
+};
+
+export type HostSessionsReleaseResponse = HostSessionsReleaseResponses[keyof HostSessionsReleaseResponses];
 
 export type MountsListData = {
     body?: never;

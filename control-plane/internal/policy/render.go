@@ -30,6 +30,19 @@ func agentSide(c Class) Access {
 	}
 }
 
+// AgentAllowed lists the tools of ops (sorted by name) the agent may call without a permission prompt under p: the
+// same set the rendered files allow. The agent host pre-allows them in agents that do not apply a repository's own
+// allow rules (Claude Code ignores permissions.allow in .claude/settings.json for its sessions, 2026-09-30).
+func AgentAllowed(p *Preset, ops []Operation) []string {
+	out := []string{}
+	for _, op := range sortedOps(ops) {
+		if c, _ := p.ClassOf(op.Name, op.VerbClass); agentSide(c) == AccessAllow {
+			out = append(out, op.Name)
+		}
+	}
+	return out
+}
+
 // ClaudeSettings is the rendered .claude/settings.json content (R7; code.claude.com/docs/en/permissions,
 // …/sandboxing). The MCP server itself is not in the file: it arrives through ACP session/new (R2).
 type ClaudeSettings struct {

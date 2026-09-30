@@ -8,7 +8,9 @@ contexts: [shell:workspaces]
 
 A workspace is a saved arrangement of panels for a task. Five ship by default — Training, Eval, Data, Triage, Ops —
 and are built from code, so "Reset to default" always matches the panels that exist. Your changes are saved per
-user per project, one second after the last change.
+user per project, two seconds after the last change (at once when you switch workspace or leave the page); a
+layout that ends where it started is not saved again. Layout saves are preferences, so they do not appear in the
+audit log.
 
 ## Place in the loop
 

@@ -3,6 +3,7 @@ import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-quer
 import { credentialsListOptions, projectsListOptions } from "@/api/gen/@tanstack/react-query.gen";
 import type { Credential, CredentialCreated, CredentialKind, CredentialList } from "@/api/gen/types.gen";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Input } from "@/components/ui/input";
 import { errorMessage, runCommand, useTopic } from "@/shell/panel";
@@ -37,7 +38,7 @@ function patchCredential(qc: QueryClient, c: Credential): void {
 function scopeLabel(c: Credential): string {
   const s = c.scope;
   if (s.all) return "everything";
-  const parts = [s.project ? `project ${s.project}` : s.projectId ? `project ${s.projectId}` : undefined, s.registryRead ? "registry read" : undefined, s.preset ? `preset ${s.preset}` : undefined];
+  const parts = [s.project ? `project ${s.project}` : s.projectId ? `project ${s.projectId}` : undefined, s.registryRead ? "registry read" : undefined, s.preset ? `preset ${s.preset}` : undefined, s.agentSessions ? "agent sessions" : undefined];
   return parts.filter(Boolean).join(" · ") || "—";
 }
 
@@ -81,6 +82,7 @@ function NewKeyForm({ projects, onCreated }: { projects: string[]; onCreated: (c
   const [name, setName] = useState("");
   const [project, setProject] = useState("");
   const [registryRead, setRegistryRead] = useState(false);
+  const [agentSessions, setAgentSessions] = useState(false);
   const [expires, setExpires] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -93,7 +95,7 @@ function NewKeyForm({ projects, onCreated }: { projects: string[]; onCreated: (c
       const created = await runCommand("credentials.new", {
         body: {
           name,
-          scope: { ...(project ? { project } : {}), ...(registryRead ? { registryRead } : {}) },
+          scope: { ...(project ? { project } : {}), ...(registryRead ? { registryRead } : {}), ...(project && agentSessions ? { agentSessions } : {}) },
           ...(expires ? { expiresAt: new Date(`${expires}T23:59:59`).toISOString() } : {}),
         },
       });
@@ -121,10 +123,19 @@ function NewKeyForm({ projects, onCreated }: { projects: string[]; onCreated: (c
           ))}
         </NativeSelect>
       </Field>
-      <label className="flex min-h-6 items-center gap-1.5 text-xs">
-        <input type="checkbox" className="size-3.5 accent-primary" checked={registryRead} onChange={(e) => setRegistryRead(e.target.checked)} />
-        May read the registry
-      </label>
+      <div className="flex flex-col gap-1 text-xs" role="group" aria-label="Permissions">
+        <label className="flex min-h-6 items-center gap-1.5">
+          <input type="checkbox" className="size-3.5 accent-primary" checked={registryRead} onChange={(e) => setRegistryRead(e.target.checked)} />
+          May read the registry
+        </label>
+        <label className={cn("flex min-h-6 items-center gap-1.5", !project && "text-muted-foreground")} title={project ? undefined : "Pick the project first"}>
+          <input type="checkbox" className="size-3.5 accent-primary" checked={!!project && agentSessions} disabled={!project} onChange={(e) => setAgentSessions(e.target.checked)} />
+          May run agent sessions in the project
+        </label>
+        {project && agentSessions ? (
+          <span className="text-muted-foreground">Start, message, stop and merge sessions (automation such as the agent evals); the agents use the accounts in Settings → Agents.</span>
+        ) : null}
+      </div>
       <Field label="Expires (optional)" htmlFor={`${uid}-expires`}>
         <Input id={`${uid}-expires`} type="date" value={expires} onChange={(e) => setExpires(e.target.value)} className="h-7 text-xs" />
       </Field>

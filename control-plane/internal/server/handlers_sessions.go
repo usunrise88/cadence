@@ -376,10 +376,11 @@ type hostReport struct {
 		Reason *sessions.Reason `json:"reason"`
 		Error  string           `json:"error"`
 	} `json:"state"`
-	Use          *sessions.Use `json:"use"`
-	ACPSessionID string        `json:"acpSessionId"`
-	Note         string        `json:"note"`
-	Withdraw     []string      `json:"withdraw"`
+	Use          *sessions.Use     `json:"use"`
+	ACPSessionID string            `json:"acpSessionId"`
+	Note         string            `json:"note"`
+	Withdraw     []string          `json:"withdraw"`
+	Working      *sessions.Working `json:"working"`
 }
 
 // HostSessionsReport implements hostSessions.report.
@@ -395,7 +396,8 @@ func (s *Server) HostSessionsReport(ctx context.Context, req api.HostSessionsRep
 	if err := json.Unmarshal(raw, &r); err != nil {
 		return nil, problems.BadRequest.New("read the report: %v", err)
 	}
-	in := sessions.ReportInput{HostID: r.HostID, Use: r.Use, ACPSessionID: r.ACPSessionID, Note: r.Note, Withdraw: r.Withdraw}
+	in := sessions.ReportInput{HostID: r.HostID, Use: r.Use, ACPSessionID: r.ACPSessionID, Note: r.Note, Withdraw: r.Withdraw,
+		Working: r.Working}
 	for _, body := range r.Entries {
 		key, _ := body["key"].(string)
 		kind, _ := body["kind"].(string)
@@ -463,6 +465,22 @@ func (s *Server) HostSessionsDecision(ctx context.Context, req api.HostSessionsD
 		return nil, err
 	}
 	return api.HostSessionsDecision200JSONResponse(out), nil
+}
+
+// HostSessionsRelease implements hostSessions.release.
+func (s *Server) HostSessionsRelease(ctx context.Context, req api.HostSessionsReleaseRequestObject) (api.HostSessionsReleaseResponseObject, error) {
+	if _, err := sessions.CheckHost(ctx, s.fixedActor()); err != nil {
+		return nil, err
+	}
+	in := sessions.ReleaseInput{HostID: req.Body.HostId}
+	if req.Body.Messages != nil {
+		in.Messages = *req.Body.Messages
+	}
+	ids, err := s.sessions.Release(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	return api.HostSessionsRelease200JSONResponse(api.HostReleased{Released: ids}), nil
 }
 
 // SweepSessions runs the server-side session clocks (the idle pause of R5, sessions whose approvals expired); main

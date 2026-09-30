@@ -6,7 +6,9 @@ import { ScriptedHost } from "./host";
 // Chat and the context bridge end to end, without a real agent: the spec plays the agent host through the host
 // protocol (e2e/host.ts). New session from Chat with the selection attached → the streamed reply renders with its
 // reference as a link → a permission request is allowed inline → a Cadence tool call drafts the mix and the draft's
-// badge jumps to the tool call in Chat → the session ends and its changes are accepted into main.
+// badge jumps to the tool call in Chat; an opencode-style call (no tool-use id) gets its tool call's id once the host
+// reports it → the host restarts: Chat says it is reconnecting until the next host takes the session → the session
+// ends and its changes are accepted into main.
 
 test.setTimeout(120_000);
 
@@ -54,6 +56,11 @@ test("Chat: new session, streamed reply, inline permission, tool call with badge
   await host.report(sessionId, { state: { state: "running", busy: true, turn: 1 }, entries: [{ key: "t1:start", kind: "turn", turn: 1, turnInfo: { state: "started" } }] });
   await expect(chat.locator('[data-slot="session-state"]')).toHaveText("running");
   const tabIcon = chatTab.locator('[data-slot="chat-tab-icon"]');
+  // The status bar's Agents opens a popup listing the live session; a click there goes to its Chat and closes it.
+  await page.getByTestId("agent-sessions-badge").click();
+  const agentsPopup = page.locator('[data-slot="status-popover"]');
+  await agentsPopup.locator(`[data-session="${sessionId}"]`).click();
+  await expect(agentsPopup).toHaveCount(0);
   await expect(tabIcon).toHaveAttribute("data-tone", "working");
   await host.entries(sessionId, 1, [{ key: "t1:m1", kind: "agent_message", text: "Looking at", final: false }]);
   const reply = chat.locator('[data-kind="agent_message"]');
@@ -75,6 +82,11 @@ test("Chat: new session, streamed reply, inline permission, tool call with badge
   // A Cadence tool call through MCP with the session token: the edit lands as a draft on the mix.
   const agent = await host.mcp(sessionId, slug);
   const read = await agent.call("mixes.get", { id: mix.id });
+  // An agent that still asks for a tool the preset allows (the host pre-allows them for Claude): the preset answers at
+  // once, and the answer is left out of the transcript once the call itself is there.
+  const auto = await host.ask(sessionId, 1, { id: "toolu_mix", title: "mcp__cadence__mixes_edit", class: "mcp", status: "pending", operation: "mixes.edit", server: "cadence" });
+  expect(auto.outcome).toBe("allow_once");
+  await expect(chat.locator('[data-kind="permission"]')).toHaveCount(2);
   const edit = await agent.call("mixes.edit", { id: mix.id, ifMatch: read.result.etag, body: { temperature: 2 } }, "toolu_mix");
   expect(edit.isError, JSON.stringify(edit.result)).toBe(false);
   await host.entries(sessionId, 1, [
@@ -85,6 +97,8 @@ test("Chat: new session, streamed reply, inline permission, tool call with badge
     },
   ]);
   const toolCall = chat.locator('[data-tool-call="toolu_mix"]');
+  await expect(toolCall).toHaveCount(1);
+  await expect(chat.locator('[data-kind="permission"]')).toHaveCount(1); // the person's approval stays
   // Collapsed to one line by default; a click opens the card.
   await expect(toolCall.locator('[data-slot="tool-operation"]')).toHaveText("mixes.edit");
   const toolLine = toolCall.locator('[data-slot="tool-line"]');
@@ -115,6 +129,23 @@ test("Chat: new session, streamed reply, inline permission, tool call with badge
   await expect(input).toBeFocused();
   await expect(input).toHaveValue("Thanks");
   await input.fill("");
+
+  // opencode sends no tool-use id: the draft first names the MCP call, then the agent's tool call once the host
+  // reports it — and the badge jumps there.
+  const edit2 = await agent.call("mixes.edit", { id: mix.id, ifMatch: read.result.etag, body: { temperature: 2.5 } });
+  expect(edit2.isError, JSON.stringify(edit2.result)).toBe(false);
+  await expect(badge).toHaveAttribute("data-tool-call", /^mcp:/);
+  await host.entries(sessionId, 1, [
+    {
+      key: "tool:call_oc",
+      kind: "tool_call",
+      toolCall: { id: "call_oc", title: "cadence.mixes_edit", class: "mcp", status: "completed", operation: "mixes.edit", server: "cadence", input: { id: mix.id, body: { temperature: 2.5 } }, output: edit2.result },
+    },
+  ]);
+  await expect(badge).toHaveAttribute("data-tool-call", "call_oc");
+  await chat.locator('[data-testid="chat-transcript"]').evaluate((el) => (el.scrollTop = 0));
+  await badge.click();
+  await expect(chat.locator('[data-tool-call="call_oc"]')).toHaveAttribute("data-highlighted", "true");
   await agent.close();
 
   // The turn ends with a commit on the session branch; the finished turn reaches the live region.
@@ -134,11 +165,35 @@ test("Chat: new session, streamed reply, inline permission, tool call with badge
   await chatTab.click();
   await expect(unread).toHaveCount(0);
 
+  // The agent host restarts: it releases the session, and Chat says so instead of looking hung until the next host
+  // takes it over — at once, without waiting for the old host's lapse.
+  expect(await host.release()).toEqual([sessionId]);
+  const hostLine = chat.locator('[data-slot="host-state"]');
+  await expect(hostLine).toHaveText("The agent host is restarting — reconnecting…");
+  await expect(chat.locator('[data-slot="session-state"]')).toHaveText("reconnecting");
+  await host.close();
+  const next = await ScriptedHost.connect("e2e-host-next");
+  await next.start(sessionId);
+  await expect(hostLine).toHaveCount(0);
+  await expect(chat.locator('[data-slot="session-state"]')).toHaveText("idle");
+
+  // Idleness pauses the session (R5): it reads as asleep, quietly, and the next message wakes it.
+  await next.report(sessionId, { state: { state: "paused", busy: false, turn: 1, reason: { code: "idle", message: "no message for 30 min" } } });
+  await expect(chat.locator('[data-slot="session-state"]')).toHaveText("asleep");
+  await expect(chat.locator('[data-slot="composer-notice"]')).toHaveText("Asleep — your next message wakes it");
+  await expect(tabIcon).toHaveAttribute("data-tone", "asleep");
+  await chat.getByLabel("Message to the agent").fill("Still there?");
+  await chat.getByRole("button", { name: "Send" }).click();
+  await next.control(sessionId, "resume");
+  await next.report(sessionId, { state: { state: "running", busy: false, turn: 1 } });
+  expect(await next.message(sessionId)).toBe("Still there?");
+  await expect(chat.locator('[data-slot="composer-notice"]')).toHaveCount(0);
+
   // End the session: the host is told, commits nothing more and reports done; the changes wait for a person.
   await chat.getByRole("button", { name: "End session…" }).click();
   await chat.getByRole("button", { name: "End the session" }).click();
-  await host.control(sessionId, "end");
-  await host.report(sessionId, { state: { state: "done" } });
+  await next.control(sessionId, "end");
+  await next.report(sessionId, { state: { state: "done" } });
   const merge = chat.locator('[data-slot="merge-area"]');
   await expect(merge).toHaveAttribute("data-merge", "pending");
   await expect(merge.getByLabel("Changed files")).toContainText("NOTES-agent.md");
@@ -155,5 +210,5 @@ test("Chat: new session, streamed reply, inline permission, tool call with badge
     .toBe(`agent_session:${sessionId}`);
   await page.reload();
   await expect(page.locator('[data-panel="chat"] [data-chat-session]').first()).toHaveAttribute("data-chat-session", sessionId);
-  await host.close();
+  await next.close();
 });

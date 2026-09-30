@@ -6,15 +6,16 @@ contexts: [panel:agent-sessions]
 
 ## What this is
 
-A tool panel that opens floating from the **Agents** badge in the status bar (the badge counts live sessions and
-turns amber while one waits for an approval), from the palette ("Open Agent sessions", "New agent session…") or
+A tool panel. The **Agents** badge in the status bar (it counts live sessions and turns amber while one waits for an
+approval) opens a small popup like Notifications: the live sessions, each opening its Chat, and a button that opens
+this panel as a floating window. It also opens from the palette ("Open Agent sessions", "New agent session…") or
 from a Chat. It lists the project's sessions, those needing you first:
 
 | Part | Meaning |
 | --- | --- |
 | Label | `claude-code · session 3` — the driver and the session's number in the project; agent badges use the same |
 | Kind | interactive (its own branch) or read-only (one turn, "Explain this") |
-| State | running (· working while a turn is in progress), waiting approval, paused (with the reason), done, failed, cancelled |
+| State | running (· working while a turn is in progress), waiting approval, paused (with the reason), asleep (paused for idleness; a message in its Chat wakes it), done, failed, cancelled |
 | Pending approvals | Requests of this session waiting in Approvals |
 | Model | The driver's model id |
 | Budget use | Turns and tokens used of the session budget |

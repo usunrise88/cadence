@@ -51,7 +51,7 @@ Topic scheme, canonical for both tabs:
 | `queue`, `gpu`, `mount.{id}` | Queue order; card memory and compute; mount health |
 | `triage.new`, `approvals` | New triage items; approval requests and decisions |
 | `agent.session.{id}`, `agent.sessions` | One transcript; the session list |
-| `recipe.{path}` | File changes in a project worktree, from the watcher |
+| `recipe.{path}` | File changes in the project repository: commits (`recipe.changed`) and, from the agent host's worktree watcher, a running turn's uncommitted edits (`recipe.working`) |
 | `compute.{id}` | Host and card health, slot occupancy |
 | `entity.agent_credential.{id}` | An agent credential set, verified, written or removed by the agent host (metadata without the value or its hint; the Agents settings refetch) |
 
@@ -66,7 +66,7 @@ One admin account, invitation links for reviewers, and opaque scoped tokens for 
 | Admin | Username and password (Argon2id) plus optional TOTP; a session cookie that is HttpOnly, Secure, SameSite=Lax | 30-day sliding session; everything |
 | Reviewer | A signed invitation link sent with the batch; no password | Expires when the batch closes, 14 days at most; one batch's triage or annotation items, play audio, no download |
 | Agent session | An opaque token minted when the session starts, passed to the agent as the MCP credential | Dies with the session; one project; the verbs of the project's permission preset; read access to the registry |
-| Automation and CLI | Personal API keys (`cdk_` prefix) created in Settings, used as Bearer | Until revoked; scoped to one project or to registry read; last-used time shown |
+| Automation and CLI | Personal API keys (`cdk_` prefix) created in Settings, used as Bearer | Until revoked; scoped to one project or to registry read; opt-in: may run agent sessions in its project (2026-09-30); last-used time shown |
 
 - Mutations require the session cookie plus a custom header, or a Bearer token; SameSite plus the header is the CSRF defence. The cookie is `cadence_session` (an opaque `cws_` token); the header is `Cadence-Client: web`; tokens are `cdk_` (API key), `cst_` (agent session), `cwk_` (worker), `cah_` (the agent host: its protocol only) and `cep_` (the egress proxy: its allowlist only, 2026-09-30), stored as SHA-256. Unauthenticated requests answer `401 unauthenticated`, out-of-scope ones `403 forbidden`.
 - All credentials live in one table: kind, scope, hash, expiry, last use; revocation is one click and is itself an audited command.
@@ -117,7 +117,7 @@ Every layer has a test that runs on every change, the smoke project is the night
 | UI | Playwright on the shell (drag, dock, float, popout, palette) and on the document anatomy of each panel | Every pull request |
 | Audio and charts | The audio view's FFT against librosa on fixtures (≤ 0.5 dB); track and chart screenshots in both themes; chart palettes in the contrast and colour-vision checks (R51–R53) | Every pull request |
 | Framework conformance | Each framework pack on fixtures: calibrate → train a few steps → average → transcribe (file and streaming) → export → parity → score (R45); the CPU `toy` pack keeps the seams honest | Toy pack every pull request; NeMo pack nightly on the staging card |
-| Agent evals | Skills and playbooks executed by both agents on a fixture project; pass criteria are the expected tool calls and outcomes, not the wording | Nightly and on skill changes |
+| Agent evals | Skills and playbooks executed by both agents on a fixture project; pass criteria are the expected tool calls and outcomes, not the wording (`agent-host/evals`, `make evals`) | Offline with a scripted agent on every pull request; live with both drivers nightly on the staging host and on skill changes |
 | End to end | The smoke project on the staging card: ingest, freeze, 300 steps, eval, gate, export, parity | Nightly |
 | Performance | Workspace restore, drag frame time, SSE fan-out, search latency against the budgets | Weekly |
 

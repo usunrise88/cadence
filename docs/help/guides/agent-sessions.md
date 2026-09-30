@@ -29,7 +29,7 @@ turn, gated commands and the agent's own permission requests wait for a person i
 | budget.tokens | 10 000 000 | `budgets.agent_tokens_per_session` (input + output, cached reads not counted) |
 | budget.tokensPerTurn | 1 000 000 | `budgets.agent_tokens_per_turn` |
 | stuck turn | 5 min | `timeouts.stuck_turn_minutes`: no update during a turn cancels it and pauses |
-| idle | 30 min | `timeouts.idle_session_minutes`: no message pauses an interactive session |
+| idle | 30 min | `timeouts.idle_session_minutes`: no message pauses an interactive session ("asleep"); the next message wakes it |
 | auto-merge | when-clean | the agent profile: at the end the branch merges if it applies cleanly |
 
 States: `created` → `running` ⇄ `waiting_approval` (a permission request or a gated command is pending; waiting never
@@ -45,8 +45,9 @@ pauses) → `paused` (a person, idleness, a stuck turn, three identical tool cal
   only with a larger budget (`{"budget": {"turns": …, "tokens": …}}`).
 - `agentSessions.accept` / `agentSessions.revert` merge or discard the session branch as a whole, once the session is
   paused or ended; a conflict answers [merge-conflict](../errors/merge-conflict.md) and changes nothing.
-- `agentMessages.new` sends a message; references such as `@mix:mix_…` or `@run:123` become a context block for the
-  agent and its `selection://current`.
+- `agentMessages.new` sends a message. A session asleep (paused for idleness) resumes first and then gets it; a
+  session paused for any other reason answers [conflict](../errors/conflict.md) with the reason until it is resumed.
+  References such as `@mix:mix_…` or `@run:123` become a context block for the agent and its `selection://current`.
 
 Agents cannot start, message, accept or revert sessions (the `sessions-are-for-people` rule).
 

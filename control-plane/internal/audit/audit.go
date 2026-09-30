@@ -1,5 +1,7 @@
 // Package audit is the audit log: one row per committed command, written in the command's own transaction, plus
-// one per denied, gated or failed attempt. It is kept one year (docs/spec/06-platform.md, Operations).
+// one per denied, gated or failed attempt. It is kept one year (docs/spec/06-platform.md, Operations). Personal
+// preferences a client saves on its own (the workspace layout autosave) are not domain commands: their successful
+// runs are not recorded (see Recorded).
 package audit
 
 import (
@@ -26,6 +28,18 @@ const (
 	OutcomeDenied   = "denied"   // refused by the policy engine
 	OutcomeExpired  = "expired"  // an approval nobody decided
 )
+
+// preferences are operations that store one user's own UI state, saved by the client without the person asking
+// (the web shell autosaves the workspace layout). A committed run changes nothing anyone else sees, so it gets no
+// row; a denied or failed attempt still does.
+var preferences = map[string]bool{
+	"workspaces.set": true,
+}
+
+// Recorded reports whether a run of operation with outcome gets an audit row.
+func Recorded(operation, outcome string) bool {
+	return !preferences[operation] || outcome != OutcomeOK
+}
 
 // Entry is one audit row. Its JSON form is the contract's AuditEntry.
 type Entry struct {
@@ -58,6 +72,16 @@ func Write(ctx context.Context, q storage.Querier, e Entry) error {
 		e.ID, e.CommandID, e.Operation, e.Actor, e.Actor.ID, e.Preset, e.ProjectID, e.Outcome, e.Status, e.Rule,
 		e.ToolCallID, e.ApprovalID, e.At); err != nil {
 		return fmt.Errorf("write audit entry for %s: %w", e.Operation, err)
+	}
+	return nil
+}
+
+// RetagToolCall gives the entries of an agent session's commands that carry the synthetic tool-call id from (an MCP
+// call without a tool-use id) the agent's own id to.
+func RetagToolCall(ctx context.Context, q storage.Querier, sessionID, from, to string) error {
+	if _, err := q.Exec(ctx, `UPDATE audit_log SET tool_call_id = $3 WHERE actor->>'sessionId' = $1 AND tool_call_id = $2
+		AND tool_call_id LIKE 'mcp:%'`, sessionID, from, to); err != nil {
+		return fmt.Errorf("retag tool call %s in the audit log: %w", from, err)
 	}
 	return nil
 }

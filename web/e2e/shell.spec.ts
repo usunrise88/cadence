@@ -17,8 +17,13 @@ test.describe("shell", () => {
   });
 
   test("Window → Reset layout restores the default workspace; the Library has the AI menu", async ({ page, request }) => {
+    const loops: string[] = [];
+    page.on("console", (m) => void (/Maximum update depth/.test(m.text()) && loops.push(m.text())));
     const slug = await newProject(request);
     await openWorkspace(page, slug);
+    // Moving the Library's highlight must not loop renders (rows are rebuilt on every render).
+    await page.locator('[data-slot="entity-list"] [role="row"]').nth(2).click();
+    await page.keyboard.press("ArrowDown");
     await page.locator('[data-tab="library"] button[aria-label^="Close"]').click();
     await expect(page.locator('[data-tab="library"]')).toHaveCount(0);
     await page.getByRole("navigation", { name: "Main menu" }).getByRole("button", { name: "Window", exact: true }).click();
@@ -28,6 +33,7 @@ test.describe("shell", () => {
     await expect(page.getByRole("menuitem", { name: "Explain the Library" })).toBeVisible();
     await expect(page.getByRole("menuitem", { name: /^Ask agent about / })).toBeVisible();
     await page.keyboard.press("Escape");
+    expect(loops).toEqual([]);
   });
 
   test("float from the tab menu, dock back, maximize is refused on floats", async ({ page, request }) => {

@@ -84,8 +84,12 @@ test.describe("approvals", () => {
     const { approvalId } = await gated.json();
 
     await openWorkspace(page, slug);
-    // The status-bar badge opens Approvals floating.
+    // The status-bar badge opens a small popup like Notifications; its expand button opens Approvals floating.
     await page.getByTestId("approvals-badge").click();
+    const popup = page.locator('[data-slot="status-popover"]');
+    await expect(popup.locator(`[data-approval="${approvalId}"]`)).toContainText("aliases.set");
+    await popup.getByRole("button", { name: "Open Approvals as a window" }).click();
+    await expect(popup).toHaveCount(0);
     await expect(page.locator(".dv-resize-container [data-approval-card]").first()).toBeVisible();
     const c = card(page, approvalId);
     await expect(c).toContainText("aliases.set");
@@ -116,7 +120,10 @@ test.describe("settings", () => {
     const name = key("key");
     const form = page.getByRole("form", { name: "Create API key" });
     await form.getByLabel("Name").fill(name);
-    await form.getByLabel("Project").selectOption(slug);
+    const sessions = form.getByLabel("May run agent sessions in the project");
+    await expect(sessions).toBeDisabled(); // agent sessions run in a project
+    await form.getByLabel("Project", { exact: true }).selectOption(slug);
+    await sessions.check();
     await form.getByRole("button", { name: "Create API key" }).click();
     const once = page.getByTestId("token-once");
     const token = await once.getByLabel("API key token").inputValue();
@@ -128,6 +135,7 @@ test.describe("settings", () => {
     await expect(once).toHaveCount(0);
 
     const row = page.getByTestId(`credential-${name}`);
+    await expect(row).toContainText("agent sessions");
     await expect(row).toContainText("API key");
     await row.getByRole("button", { name: "Revoke" }).click();
     await row.getByRole("button", { name: `Revoke ${name}` }).click();

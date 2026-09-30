@@ -1,15 +1,45 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
-import { branchesGetOptions, branchesListOptions, eventsListOptions, projectsGetOptions, recipesGetOptions, recipesListOptions } from "@/api/gen/@tanstack/react-query.gen";
-import type { Branch, BranchDiff, Recipe } from "@/api/gen/types.gen";
+import {
+  branchesCompareOptions,
+  branchesGetOptions,
+  branchesListOptions,
+  eventsListOptions,
+  projectsGetOptions,
+  recipesGetOptions,
+  recipesListOptions,
+} from "@/api/gen/@tanstack/react-query.gen";
+import type { AgentSession, Branch, BranchDiff, Recipe, WorkingChange } from "@/api/gen/types.gen";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { EmptyState, PanelToolbar } from "@/shell/entity/primitives";
-import { openDocument, runCommand, useProject, useSelection, useTopic, type PanelProps } from "@/shell/panel";
+import {
+  BranchConflicts,
+  isLive,
+  openChat,
+  openDocument,
+  runCommand,
+  sessionLabel,
+  useAgentSessions,
+  useProject,
+  useSelection,
+  useTopic,
+  type PanelProps,
+} from "@/shell/panel";
 
 // The Recipe document (docs/spec/11-ui-panels.md, Recipe): one file of the project repository with its commit
 // history, the repository's files to move between, and the open session and sync branches with their diff against
 // main. Sync branches are accepted or discarded here; session branches are accepted with their agent session.
+// While an agent's turn runs, the file's uncommitted state in that session's worktree shows above it (the agent
+// host's watcher: recipe.working events and AgentSession.working); conflicting files open a three-way view.
+
+// recipe.working events describe a worktree, not the repository: the sessions list carries them.
+const WORKING_EVENT = "recipe.working";
+
+function useWorking(project: string): Array<{ session: AgentSession; files: WorkingChange[] }> {
+  const q = useAgentSessions(project);
+  return (q.data?.items ?? []).flatMap((s) => (isLive(s) && s.working?.files.length ? [{ session: s, files: s.working.files }] : []));
+}
 
 const QUERY_IDS = new Set(["recipesGet", "recipesList", "branchesList", "branchesGet"]);
 
@@ -25,7 +55,9 @@ export function RecipePanel({ tab, entity, doc }: PanelProps) {
   const routeProject = useProject();
   const project = typeof entity?.project === "string" && entity.project ? entity.project : routeProject;
   const qc = useQueryClient();
-  useTopic(project ? ["recipe.*"] : null, () => invalidateRepository(qc));
+  useTopic(project ? ["recipe.*"] : null, (batch) => {
+    if (batch.some((e) => e.type !== WORKING_EVENT)) invalidateRepository(qc);
+  });
   if (!entity || !project) return <RecipeEmpty />;
   const path = entity.id;
   switch (tab) {
@@ -89,14 +121,44 @@ function decode(r: Recipe): string | null {
   return null;
 }
 
+function WorkingBanner({ project, path }: { project: string; path: string }) {
+  const working = useWorking(project).flatMap(({ session, files }) => files.filter((f) => f.path === path).map((f) => ({ session, f })));
+  if (working.length === 0) return null;
+  return (
+    <ul className="border-b bg-agent px-3 py-1.5 text-xs text-agent-foreground" aria-label="Uncommitted agent changes" data-slot="working-banner">
+      {working.map(({ session, f }) => (
+        <li key={session.id} className="flex flex-wrap items-center gap-x-2" data-session={session.id} data-status={f.status}>
+          <span className="font-medium">
+            {f.status === "added" ? "Created" : f.status === "deleted" ? "Deleted" : "Edited"} in {sessionLabel(session)}&apos;s worktree
+          </span>
+          <span className="tabular-nums">
+            {f.additions !== undefined || f.deletions !== undefined ? `+${f.additions ?? 0} −${f.deletions ?? 0}` : f.bytes !== undefined ? `${f.bytes.toLocaleString()} bytes` : ""}
+          </span>
+          <span className="text-muted-foreground">uncommitted; its diff appears here when the turn commits</span>
+          <button type="button" className="ml-auto min-h-6 underline-offset-2 hover:underline" onClick={() => openChat(session.id)}>
+            Open its Chat
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function FileView({ project, path }: { project: string; path: string }) {
   const q = useQuery(recipesGetOptions({ path: { p: project, path } }));
   const r = q.data;
-  if (!r) return <div className="p-3 text-xs text-muted-foreground">{q.error ? `${path} could not be read.` : "Loading…"}</div>;
+  if (!r)
+    return (
+      <div className="flex min-w-0 flex-col">
+        <WorkingBanner project={project} path={path} />
+        <div className="p-3 text-xs text-muted-foreground">{q.error ? `${path} is not on main yet.` : "Loading…"}</div>
+      </div>
+    );
   const text = decode(r);
   const lines = text?.replace(/\n$/, "").split("\n") ?? [];
   return (
     <div className="flex min-w-0 flex-col">
+      <WorkingBanner project={project} path={path} />
       {text === null ? (
         <p className="p-3 text-xs text-muted-foreground">Binary file ({r.bytes.toLocaleString()} bytes); not shown.</p>
       ) : (
@@ -140,6 +202,7 @@ function Branches({ project, doc }: { project: string; doc?: string }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ error: boolean; text: string } | null>(null);
   const items = list.data?.items ?? [];
+  const working = useWorking(project);
   const active = selected && items.some((b) => b.name === selected) ? selected : null;
   // "Diff in Recipe" from a Chat selects `branch:<name>` in this document: open that branch's diff.
   const wanted = useSelection((s) => (doc ? s.selections[doc] : undefined));
@@ -188,7 +251,13 @@ function Branches({ project, doc }: { project: string; doc?: string }) {
       ) : (
         <ul className="px-1 py-1 text-xs" aria-label="Branches">
           {items.map((b) => (
-            <BranchRow key={b.name} b={b} active={b.name === active} onSelect={() => setSelected(b.name === active ? null : b.name)} />
+            <BranchRow
+              key={b.name}
+              b={b}
+              uncommitted={working.find((w) => w.session.id === b.sessionId)?.files.length ?? 0}
+              active={b.name === active}
+              onSelect={() => setSelected(b.name === active ? null : b.name)}
+            />
           ))}
         </ul>
       )}
@@ -197,7 +266,7 @@ function Branches({ project, doc }: { project: string; doc?: string }) {
   );
 }
 
-function BranchRow({ b, active, onSelect }: { b: Branch; active: boolean; onSelect: () => void }) {
+function BranchRow({ b, active, uncommitted, onSelect }: { b: Branch; active: boolean; uncommitted: number; onSelect: () => void }) {
   return (
     <li>
       <button
@@ -209,6 +278,11 @@ function BranchRow({ b, active, onSelect }: { b: Branch; active: boolean; onSele
         <span className="min-w-0 truncate font-medium" title={b.subject}>
           {b.name}
           {b.subject ? <span className="ml-2 font-normal text-muted-foreground">{b.subject}</span> : null}
+          {uncommitted ? (
+            <span className="ml-2 rounded-full bg-agent px-1.5 text-[11px] font-normal text-agent-foreground" data-slot="uncommitted">
+              {uncommitted} uncommitted
+            </span>
+          ) : null}
         </span>
         <span className="rounded-full border px-1.5 text-[11px] text-muted-foreground">{b.kind}</span>
         <span className="text-muted-foreground tabular-nums" title="Commits ahead of / behind main">
@@ -232,6 +306,7 @@ function patchLineClass(l: string): string {
 function BranchDiffView({ project, name, onDone }: { project: string; name: string; onDone: () => void }) {
   const qc = useQueryClient();
   const q = useQuery(branchesGetOptions({ path: { p: project, name } }));
+  const compare = useQuery({ ...branchesCompareOptions({ path: { p: project, name } }), enabled: !!q.data?.conflicts.length });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const d: BranchDiff | undefined = q.data;
@@ -276,7 +351,13 @@ function BranchDiffView({ project, name, onDone }: { project: string; name: stri
         </p>
       ) : null}
       {d.conflicts.length ? (
-        <p className="px-2 pt-1.5 text-xs text-status-failed-foreground">Conflicts: {d.conflicts.join(", ")}</p>
+        <div className="flex flex-col gap-1 px-2 pt-1.5 text-xs">
+          <p className="text-status-warning-foreground">
+            {d.conflicts.length} file{d.conflicts.length === 1 ? "" : "s"} conflict with main: base, main and {d.kind === "session" ? "the session" : "the branch"} side by side below
+            {d.kind === "session" ? "; resolve them on the branch or discard the session's changes." : "."}
+          </p>
+          {compare.data ? <BranchConflicts compare={compare.data} branchLabel={d.kind === "session" ? "session" : d.name} openFirst /> : null}
+        </div>
       ) : null}
       <ul className="px-2 py-1.5 text-xs" aria-label="Changed files">
         {d.files.map((f) => (
@@ -342,11 +423,14 @@ function Activity({ path }: { path: string }) {
   return (
     <ol className="flex flex-col px-4 py-2 text-xs">
       {items.map((e) => {
-        const p = e.payload as { branch?: string; commit?: string; status?: string } | undefined;
+        const p = e.payload as { branch?: string; commit?: string; status?: string; working?: boolean } | undefined;
         return (
           <li key={e.seq} className="flex h-8 items-center gap-3 border-b last:border-0">
             <time className="text-muted-foreground tabular-nums">{new Date(e.at).toLocaleString()}</time>
-            <span className="font-medium">{p?.status ?? e.type}</span>
+            <span className="font-medium">
+              {p?.status ?? e.type}
+              {p?.working ? <span className="font-normal text-muted-foreground"> (uncommitted)</span> : null}
+            </span>
             <span className="text-muted-foreground">{p?.branch}</span>
             {p?.commit ? <code className="text-muted-foreground">{p.commit.slice(0, 7)}</code> : null}
             <span className="ml-auto text-muted-foreground">{e.actor.name ?? e.actor.id}</span>

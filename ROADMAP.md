@@ -160,9 +160,10 @@ Identity and access (06 Authentication)
 - [x] Admin: Argon2id password + optional TOTP, HttpOnly session cookie, custom-header CSRF rule, rate-limited login,
       `cadence admin reset-password`
 - [x] Credentials table (kind, scope, hash, expiry, last use); agent session tokens; `cdk_` API keys; revoke as a command
-- [ ] Exposure (B7, R39) on the staging stand: TLS at the host's Caddy, control plane on 127.0.0.1, Postgres unpublished
-      (in place since phase 0); once sign-in works, the owner drops basic auth from the Caddy site file (a root-owned
-      file); a Caddy compose profile stays the option for hosts without a proxy of their own
+- [x] Exposure (B7, R39) on the staging stand: TLS at the host's Caddy, control plane on 127.0.0.1, Postgres unpublished
+      (in place since phase 0); basic auth dropped from the Caddy site file on 2026-09-30 once sign-in and the admin's
+      two-factor were on (`/metrics` stays 404 outside); a Caddy compose profile stays the option for hosts without a
+      proxy of their own
 
 Registry core (completed in phase 4)
 - [x] Collections and immutable versions named `YYYY-MM-DD.<sha>`, tags, aliases per project, adoption by reference,
@@ -193,7 +194,7 @@ Agent host (05 Agent integration)
 - [x] Budgets (turns, tokens) and runaway checks (3 identical calls, token limit, inactivity) → pause with reason event;
       confirm in A1 that ACP reports token usage for both drivers
 - [x] Transcript persisted as `agent.session.{id}` events; permission requests mapped to approvals
-- [ ] Worktree watcher emitting `recipe.{path}` events; session branch merge: fast-forward when clean and allowed,
+- [x] Worktree watcher emitting `recipe.{path}` events; session branch merge: fast-forward when clean and allowed,
       else "Session changes" with three-way diff
 - [x] Per-session worktree mounts only; images install both agents; driver contract tests on recorded transcripts
 - [x] Session kinds: interactive and read-only ("Explain this") now; playbook in phase 2; scheduled in phase 5
@@ -218,25 +219,39 @@ Getting started, Project document, Mix (minimal), Recipe (read + session-branch 
 Tests: integration for tokens, approvals, drafts, `412`; agent evals harness on a fixture project with both drivers.
 
 Phase 1 notes (what differs from the plan above):
-- The agent host speaks its own protocol, `hostSessions.claim|report|ask|decision` with a `cah_` credential
-  (`CADENCE_HOST_TOKEN_FILE`), and the session token is minted at claim, not at create (05 "Phase 1 as built").
+- The agent host speaks its own protocol, `hostSessions.claim|report|ask|decision|release` with a `cah_` credential
+  (`CADENCE_HOST_TOKEN_FILE`), and the session token is minted at claim, not at create (05 "Phase 1 as built"). A host
+  that shuts down releases its sessions, so the next host takes them at once; the Chat reads "reconnecting" meanwhile,
+  and a turn or permission request the restart interrupted is reported to the agent as interrupted, not declined.
 - MCP tool names are sanitised by the agents: `mixes.get` is `mcp__cadence__mixes_get` in Claude and
   `cadence_mixes_get` in opencode; the renderer and the server map them back (A2).
-- `recipe.{path}` events come from pushes (a session's per-turn commit, UI commits, pushes to the internal repository),
-  not from a live worktree watcher; that watcher is still open. Session branches merge by `agentSessions.accept`
-  (fast-forward or a merge commit, `409 merge-conflict`) or auto-merge when clean at session end; the Chat's "Session
-  changes" shows the branch diff, not a three-way diff.
+- `recipe.{path}` events come from pushes (a session's per-turn commit, UI commits, pushes to the internal repository)
+  as `recipe.changed`, and from the agent host's worktree watcher while a turn runs as `recipe.working` (paths and
+  sizes of uncommitted files through `hostSessions.report` `working`, kept as `AgentSession.working`; no content, so
+  the diff shows once the turn commits). Session branches merge by `agentSessions.accept` (fast-forward or a merge
+  commit, `409 merge-conflict`) or auto-merge when clean at session end; a conflicting file opens in a three-way view
+  (`branches.compare`: base, main, branch and diff3 hunks) in the Chat's "Session changes" and the Recipe branch
+  view. Conflicts are resolved on the branch, not in the browser.
 - The gated command for tests is a real one: `aliases.set baseline` (R8) returns an approval.
-- The agent evals harness is not built: `agent-host/test/live.test.ts` (A1, `CADENCE_LIVE_AGENTS`) and the gate's
-  Playwright script stand in for it; phase 2 should turn the gate prompt into the first eval.
-- The owner's MiniMax model was not run: opencode ran on the free Zen model. `haiku` was too unreliable for the gate
-  prompt (subagents, a runaway pause), so Claude ran on the profile default `sonnet`.
-- Open after the gate: opencode's MCP calls carry no tool-use id, so the badge cannot land on the tool call in Chat;
-  in the development mode Claude reached the account's claude.ai connectors — check the `setup-token` mode before real
-  projects; Claude still raises a permission request per Cadence call (the preset answers it).
-- Owner actions before a compose deployment: `docker compose run --rm -it agent-host login claude`
-  (`claude setup-token` into the agent-credentials volume), `… login opencode` with the MiniMax Token Plan key, and
-  on the staging stand dropping basic auth from the Caddy site file once sign-in is live (Exposure, above).
+- The agent evals harness is `agent-host/evals/` (`make evals`, after the gate): a fresh fixture project per eval ×
+  driver through `projects.new`, graders over the API (drafts, aliases, approvals, audit, session use), JSON results
+  plus a table. Offline (CI) a scripted ACP agent plays each prompt's reference answer through the real host, preset
+  and MCP; `CADENCE_LIVE_AGENTS=1` runs the real drivers. First evals: the gate prompt, a read-only "Explain this"
+  session, `aliases.set baseline` → approval. Live runs are by hand (no model accounts on CI runners); they run on the
+  staging stand through its own agent host (`CADENCE_EVALS_TARGET`, a project key allowed agent sessions). First live
+  run, 2026-09-30: 6/6 — Claude `sonnet` and opencode `minimax/MiniMax-M3` (MiniMax found the earlier run's pending
+  baseline approval, named it and did not ask again; the grader accepts that on a shared project).
+- The gate ran opencode on the free Zen model; the owner then connected MiniMax (`minimax/MiniMax-M3`) in Settings →
+  Agents and checked both agents on the staging stand (2026-09-30). `haiku` was too unreliable for the gate prompt
+  (subagents, a runaway pause), so Claude runs on the profile default `sonnet`.
+- Closed after the gate (2026-09-30 punch list): opencode's commands get the agent's tool-call id once the host
+  reports the call, so the badge lands on it; claude.ai connectors are off in every Claude session (a setup-token
+  lacks the scope anyway, checked on the stand; `ENABLE_CLAUDEAI_MCP_SERVERS=false` covers an interactive login);
+  Claude no longer asks permission for the Cadence tools the preset allows (Claude Code ignores a repository's allow
+  rules, so the control plane sends them as `HostStart.allowedTools`); an idle-paused session reads "asleep" and wakes
+  on the next message; layout autosaves are debounced and not audited.
+- Agent accounts are connected in Settings → Agents (`agentCredentials.*`); `docker compose run --rm -it agent-host
+  login claude|opencode` stays as the CLI fallback. Basic auth is off the stand since 2026-09-30 (Exposure, above).
 
 ---
 

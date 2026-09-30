@@ -218,3 +218,30 @@ func (k kind) Apply(ctx context.Context, tx pgx.Tx, id string, content json.RawM
 	}
 	return next.Rev, v, evs, nil
 }
+
+// RetagToolCall gives the revisions whose cause names the synthetic tool-call id from (an MCP call without a
+// tool-use id) the agent's own id to; a mix whose current revision changed is sent again as mix.attributed.
+func (k kind) RetagToolCall(ctx context.Context, tx pgx.Tx, from, to string) ([]events.Draft, error) {
+	if _, err := tx.Exec(ctx, `UPDATE mix_revisions SET cause = jsonb_set(cause, '{toolCallId}', to_jsonb($2::text))
+		WHERE cause->>'toolCallId' = $1`, from, to); err != nil {
+		return nil, fmt.Errorf("retag tool call %s in mix revisions: %w", from, err)
+	}
+	rows, err := tx.Query(ctx, `UPDATE mixes SET cause = jsonb_set(cause, '{toolCallId}', to_jsonb($2::text))
+		WHERE cause->>'toolCallId' = $1 RETURNING `+mixCols, from, to)
+	if err != nil {
+		return nil, fmt.Errorf("retag tool call %s in mixes: %w", from, err)
+	}
+	list, err := pgx.CollectRows(rows, scan)
+	if err != nil {
+		return nil, fmt.Errorf("read retagged mixes: %w", err)
+	}
+	var out []events.Draft
+	for _, m := range list {
+		_, evs, err := k.s.revised(ctx, tx, m, EventAttributed)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, evs...)
+	}
+	return out, nil
+}

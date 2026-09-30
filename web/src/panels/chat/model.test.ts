@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { AgentToolCall } from "@/api/gen/types.gen";
+import type { AgentMessage, AgentToolCall } from "@/api/gen/types.gen";
 import { message, session } from "@/shell/agents/testdata";
-import { budgetUse, compact, diffStat, dryRunEstimate, lineDiff, rowOffsets, sessionStatus, tabLabel, tabTone, toolDraft, toolEntityRef, toolOperation, visibleEntries, visibleRange } from "./model";
+import { budgetUse, compact, composerNotice, diffStat, dryRunEstimate, hostAway, lineDiff, rowOffsets, sessionStatus, tabLabel, tabTone, toolDraft, toolEntityRef, toolOperation, visibleEntries, visibleRange } from "./model";
 
 const tool = (over: Partial<AgentToolCall>): AgentToolCall => ({ id: "toolu_1", title: "mixes.edit", class: "mcp", status: "completed", ...over });
 
@@ -16,6 +16,7 @@ describe("tab", () => {
     expect(tabTone(session({ busy: false }))).toBe("ready");
     expect(tabTone(session({ state: "waiting_approval" }))).toBe("attention");
     expect(tabTone(session({ state: "paused" }))).toBe("paused");
+    expect(tabTone(session({ state: "paused", pauseReason: { code: "idle", message: "no message for 30 min" } }))).toBe("asleep");
     expect(tabTone(session({ state: "failed" }))).toBe("failed");
     expect(tabTone(session({ state: "done" }))).toBe("none");
   });
@@ -25,8 +26,30 @@ describe("header", () => {
   it("reads the state chip: running, waiting approval, paused with the reason", () => {
     expect(sessionStatus(session({ busy: true, turn: 2 }))).toMatchObject({ label: "running", tone: "running", detail: "Turn 2 in progress" });
     expect(sessionStatus(session({ state: "waiting_approval" })).label).toBe("waiting approval");
-    expect(sessionStatus(session({ state: "paused", pauseReason: { code: "idle", message: "No message for 30 min" } }))).toMatchObject({ label: "paused", detail: "No message for 30 min" });
+    expect(sessionStatus(session({ state: "paused", pauseReason: { code: "runaway", message: "same call 3 times" } }))).toMatchObject({ label: "paused", tone: "warning", detail: "same call 3 times" });
+    expect(sessionStatus(session({ state: "paused", pauseReason: { code: "idle", message: "no message for 30 min" } }))).toMatchObject({ label: "asleep", tone: "neutral", detail: "Asleep — your next message wakes it" });
     expect(sessionStatus(session({ busy: true, pendingControl: "cancel" })).label).toBe("running · stopping…");
+  });
+
+  it("reads reconnecting while no agent host runs a live session", () => {
+    expect(sessionStatus(session({ hostState: "released" }))).toEqual({ label: "reconnecting", tone: "warning", detail: "The agent host is restarting — reconnecting…" });
+    expect(sessionStatus(session({ state: "waiting_approval", hostState: "lost", pendingControl: "pause" })).label).toBe("reconnecting · pausing…");
+    expect(hostAway(session({ hostState: "lost" }))).toMatch(/stopped answering/);
+    expect(hostAway(session({ hostState: "connected" }))).toBeUndefined();
+    expect(hostAway(session({ state: "paused", hostState: "released" }))).toBeUndefined();
+    expect(sessionStatus(session({ hostState: "connected", busy: true })).label).toBe("running");
+  });
+
+  it("tells the composer what a message does to a paused session", () => {
+    expect(composerNotice(session())).toBeUndefined();
+    expect(composerNotice(session({ state: "paused", pauseReason: { code: "idle", message: "no message for 30 min" } }))).toEqual({ tone: "quiet", text: "Asleep — your next message wakes it", send: true });
+    expect(composerNotice(session({ state: "paused", pauseReason: { code: "runaway", message: "same call 3 times" } }))).toEqual({
+      tone: "warning",
+      text: "Paused (same call 3 times): resume it to send a message.",
+      send: false,
+    });
+    expect(composerNotice(session({ state: "paused", pauseReason: { code: "budget_turns", message: "40 turns used" } }))?.text).toBe("Paused (40 turns used): resume it with a larger budget to send a message.");
+    expect(composerNotice(session({ state: "paused", pendingControl: "resume", pauseReason: { code: "user", message: "paused by admin" } }))).toBeUndefined();
   });
 
   it("meters turns and tokens against the budget", () => {
@@ -35,6 +58,18 @@ describe("header", () => {
     expect(b.tokens.ratio).toBe(1);
     expect(compact(1234)).toBe("1.2k");
     expect(compact(45_000)).toBe("45k");
+  });
+
+  it("leaves out permissions the preset allowed on its own for a call the transcript shows", () => {
+    const call = message({ kind: "tool_call", toolCall: tool({ id: "toolu_9" }) });
+    const perm = (over: Record<string, unknown>) =>
+      message({ kind: "permission", permission: { toolCallId: "toolu_9", state: "approved", rule: "tools.draft", ...over } as AgentMessage["permission"] });
+    const auto = perm({});
+    const person = perm({ approvalId: "apr_1", rule: undefined });
+    const denied = perm({ state: "denied" });
+    const pending = perm({ state: "pending", rule: undefined });
+    const orphan = perm({ toolCallId: "toolu_other" });
+    expect(visibleEntries([auto, call, person, denied, pending, orphan])).toEqual([call, person, denied, pending, orphan]);
   });
 
   it("hides turn starts; turn ends show usage", () => {

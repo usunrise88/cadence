@@ -11,12 +11,14 @@ import type {
   HostCredentialWork,
   HostClaim,
   HostDecision,
+  HostRelease,
+  HostReleased,
   HostReport,
   HostWork,
   Problem,
 } from "../api/gen/types.gen.ts";
 
-export type { AgentSession, HostAsk, HostClaim, HostDecision, HostReport, HostWork };
+export type { AgentSession, HostAsk, HostClaim, HostDecision, HostRelease, HostReleased, HostReport, HostWork };
 export type { HostCredentialAck, HostCredentialClaim, HostCredentialReport, HostCredentialTask, HostCredentialWork };
 export type {
   AgentPauseReason,
@@ -32,6 +34,8 @@ export interface ControlPlane {
   claim(req: HostClaim, signal?: AbortSignal): Promise<HostWork>;
   report(sessionId: string, body: HostReport): Promise<AgentSession>;
   ask(sessionId: string, body: HostAsk): Promise<HostDecision>;
+  // release gives every session of a host that shuts down back to the control plane (the next host takes them).
+  release(body: HostRelease): Promise<HostReleased>;
 }
 
 // The agent-credential side of the host protocol (hostCredentials.claim|report): values to write into the
@@ -101,5 +105,9 @@ export class HttpControlPlane implements ControlPlane, CredentialPlane {
 
   reportCredential(taskId: string, body: HostCredentialReport): Promise<HostCredentialAck> {
     return this.call("POST", `/host-credentials/${encodeURIComponent(taskId)}:report`, body);
+  }
+
+  release(body: HostRelease): Promise<HostReleased> {
+    return this.call("POST", "/host-sessions:release", body);
   }
 }

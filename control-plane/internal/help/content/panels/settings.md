@@ -13,11 +13,11 @@ A tool panel for the admin account only (it opens floating; View → Open Settin
 | Compute | Hosts and their cards: memory, memory cap per card, allowed job kinds (training, eval, shadow, export), health |
 | Agents | The agents' own model accounts, for the whole instance: the Claude Code subscription token and opencode's providers (MiniMax, Anthropic, OpenAI, OpenRouter, DeepSeek, or an OpenAI-compatible base URL such as a self-hosted vLLM); status, expected expiry, Verify, and the default opencode model of new projects. Values are write-only |
 | Secrets | Named credentials (Hugging Face, NGC, GitHub, S3, judge API): name, kind, scope, who added it, last use. The value is write-only |
-| Credentials | API keys (`cdk_…`) scoped to one project and/or registry read; your browser sessions; agent session tokens |
+| Credentials | API keys (`cdk_…`) scoped to one project and/or registry read — and, opt-in, **May run agent sessions in the project** (automation such as the agent evals; everything else stays under the default preset); your browser sessions; agent session tokens |
 | Policies | Default budgets: GPU-hours per project per day, agent turns per session |
 | Catalogues | Read-only: base models, instruction templates and permission presets in the registry |
-| Security | Two-factor sign-in (TOTP) for the admin account |
-| Audit log | Every command, denial and failed attempt with actor, outcome, rule and cause; filter by actor, operation and project |
+| Security | Two-factor sign-in (TOTP) for the admin account: **Set up** shows a QR code to scan with an authenticator app from the screen (drawn in the browser; the key never leaves the page), or the key in groups of four to type; confirm with the app's current code |
+| Audit log | Every command, denial and failed attempt with actor, outcome, rule and cause; filter by actor, operation and project. Workspace layout saves are preferences, not commands: they are not listed (a refused save still is) |
 
 ## Place in the loop
 

@@ -88,6 +88,13 @@ function toolName(call: RawToolCall): string | undefined {
   return isRecord(cc) && typeof cc.toolName === "string" ? cc.toolName : undefined;
 }
 
+// The name Claude gives an MCP tool in tool calls and permission rules: mcp__<server>__<tool>, characters outside
+// [A-Za-z0-9_-] replaced by underscores (mixes.get → mcp__cadence__mixes_get; policy.ClaudeMCPTool on the server).
+export function mcpToolName(server: string, tool: string): string {
+  const clean = (s: string) => s.replace(/[^A-Za-z0-9_-]/g, "_");
+  return `mcp__${clean(server)}__${clean(tool)}`;
+}
+
 export function parseMcpName(name: string): { server: string; tool: string } | undefined {
   const m = /^mcp__(.+?)__(.+)$/.exec(name);
   return m?.[1] && m[2] ? { server: m[1], tool: m[2] } : undefined;
@@ -117,9 +124,17 @@ export const claudeDriver: Driver = {
   },
 
   // Claude Agent SDK options travel in `_meta.claudeCode.options` (the adapter merges them into its query options).
+  // Claude Code applies the ask and deny rules of the worktree's .claude/settings.json but not its allow rules (a
+  // repository cannot widen its own permissions), so every Cadence call raised a permission request the preset then
+  // answered. The preset's allowed Cadence tools go in as `allowedTools` instead (a CLI-argument rule); the file's
+  // deny rules still win over them.
   sessionMeta(opts: LaunchOptions): Record<string, unknown> | undefined {
-    if (!opts.thoughts) return undefined;
-    return { claudeCode: { options: { thinking: { type: "adaptive", display: "summarized" } } } };
+    const options: Record<string, unknown> = {};
+    if (opts.thoughts) options.thinking = { type: "adaptive", display: "summarized" };
+    const pre = opts.preAllowed;
+    const allowed = pre ? pre.tools.map((t) => mcpToolName(pre.server, t)) : [];
+    if (allowed.length) options.allowedTools = allowed;
+    return Object.keys(options).length ? { claudeCode: { options } } : undefined;
   },
 
   // The agent-credentials volume holds `claude/`: either `oauth-token` (a long-lived token from `claude setup-token`,
@@ -127,13 +142,16 @@ export const claudeDriver: Driver = {
   // login. The session gets its own CLAUDE_CONFIG_DIR, so the user's ~/.claude (skills, plugins, e-mail) never
   // reaches it (A1 surprise 3).
   async prepareHome(home: string, credentials: string | undefined): Promise<NodeJS.ProcessEnv> {
-    if (!credentials) return {};
+    // Development without a credentials volume runs on the developer's own login: still no claude.ai connectors.
+    if (!credentials) return { ENABLE_CLAUDEAI_MCP_SERVERS: "false" };
     const dir = join(home, ".claude");
     await mkdir(dir, { recursive: true, mode: 0o700 });
     const src = join(credentials, "claude");
     await copyIfPresent(src, dir, (p) => !p.endsWith("/oauth-token"));
-    // No telemetry, error reports or auto-update: the egress proxy allows the model API only (R4).
-    const env: NodeJS.ProcessEnv = { CLAUDE_CONFIG_DIR: dir, CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1" };
+    // No telemetry, error reports or auto-update: the egress proxy allows the model API only (R4). No claude.ai
+    // connectors (the account's Gmail, Drive, …): a setup-token lacks the user:mcp_servers scope anyway (checked on
+    // the staging stand, 2026-09-30), but a config dir from an interactive login would carry it.
+    const env: NodeJS.ProcessEnv = { CLAUDE_CONFIG_DIR: dir, CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1", ENABLE_CLAUDEAI_MCP_SERVERS: "false" };
     const token = await readSecretFile(join(src, "oauth-token"));
     if (token) env.CLAUDE_CODE_OAUTH_TOKEN = token;
     return env;

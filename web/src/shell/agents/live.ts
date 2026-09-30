@@ -3,7 +3,7 @@ import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import type { AgentSession } from "@/api/gen/types.gen";
 import { announce, notify, type Notice } from "@/shell/notifications/store";
 import { events } from "@/shell/registries";
-import { sessionLabel } from "./labels";
+import { isAsleep, sessionLabel } from "./labels";
 import { isNews, noteNews } from "./unread";
 import { patchAgentBatch, splitBatch, SESSIONS_TOPIC, transcriptKey, useAgentSessions, type Transcript } from "./sessions";
 
@@ -25,6 +25,8 @@ export function sessionTransition(prev: AgentSession | undefined, next: AgentSes
   if (prev.state !== next.state) {
     switch (next.state) {
       case "paused":
+        // Idleness is routine, not news: said once, quietly; the next message wakes the session.
+        if (isAsleep(next)) return { announce: `${who} is asleep (${next.pauseReason?.message ?? "idle"}); your next message wakes it` };
         return {
           announce: `${who} paused: ${next.pauseReason?.message ?? "paused"}`,
           notice: { level: "warning", title: `${who} paused`, detail: next.pauseReason?.message, open: SESSIONS },
@@ -47,7 +49,14 @@ export function sessionTransition(prev: AgentSession | undefined, next: AgentSes
         return { announce: `${who} waits for your approval` };
     }
   }
-  if (prev.busy && !next.busy && (next.state === "running" || next.state === "waiting_approval")) {
+  const live = next.state === "running" || next.state === "waiting_approval";
+  if (live && prev.hostState !== next.hostState && (next.hostState === "released" || next.hostState === "lost")) {
+    // The turn did not finish: its host restarted or went silent.
+    return {
+      announce: next.hostState === "released" ? `${who}: the agent host is restarting — reconnecting` : `${who}: the agent host stopped answering`,
+    };
+  }
+  if (prev.busy && !next.busy && live) {
     const reply = lastReply ? `: ${lastReply.length > 200 ? `${lastReply.slice(0, 200)}…` : lastReply}` : "";
     return { announce: `${who} finished its turn${reply}` };
   }

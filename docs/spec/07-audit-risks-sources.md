@@ -53,6 +53,9 @@ Spikes:
 
 Open questions:
 
+- [ ] `audit.list` for scoped credentials (2026-09-30, for the evals on the staging stand): an API key or agent token
+  of one project reads that project's audit rows only (narrowed like `approvals.list`); a key without a project is
+  refused; the admin's session still reads everything. Agents may therefore read their own project's audit
 - [x] Add Chat, Agent sessions, Recipes, Sources, Golden sets and Approvals to the UI shell's panel catalogue
 - [x] Stress marking and TTS datasets from the July concept: later phase, or dropped? — deferred to a later phase, out of v1
 - [x] Default model for opencode sessions? — chosen per project in the wizard, editable in Agent settings
@@ -172,7 +175,8 @@ Open questions:
   - Development without the agent-credentials volume uses the agents' default login under the host user's HOME and
     no per-session users; the image always isolates
   - claude-agent-acp raises a permission request even for MCP tools the rendered settings allow (A2); the preset
-    answers them without a person
+    answers them without a person — resolved 2026-09-30: Claude Code ignores a project file's allow rules; the host
+    pre-allows the preset's Cadence tools (`HostStart.allowedTools` → `allowedTools`)
 - [ ] Chat, Agent sessions and the context bridge (phase 1, chat stream) assumptions, confirm:
   - "One Chat per agent session": the workspace's Chat (instance `chat`, in the right column of every default
     workspace) is pinned to a session through the selection bus pins, stored as `panels.chat.pinnedTo =
@@ -218,6 +222,66 @@ Open questions:
   - claude.ai connectors in Claude sessions under `setup-token` mode are still unchecked (open from phase 1)
   - A claimed credential task that is not acknowledged is offered again after 2 minutes; the transit copy of its value
     stays in the secret store until then (and is swept once a newer value supersedes it)
+- [ ] Agent-host restarts and opencode attribution (phase 1 punch list) assumptions, confirm:
+  - The host's shutdown call is `hostSessions.release` (tag `host`, exempt from the vocabulary like claim, report and
+    ask; `release` is the plain word for giving work back). It releases every live session of the host at once
+  - A turn a restart interrupts is not run again: its message stays delivered, the next host tells the agent before
+    its next prompt that the turn was interrupted (and which permission requests were withdrawn), and the person
+    sends the next message. Messages the host took but no turn started go back to pending and are delivered again
+  - Agent-permission requests pending at a restart (or when a silent host is taken over) are denied with the note
+    "interrupted by an agent-host restart; nobody declined it" rather than kept for the next host: the agent's
+    request died with its process
+  - A Stop (`cancel`) still queued when a host takes a session over is dropped with a transcript notice: the turn it
+    meant ended with the old host. Pause and end wait for the new host as before (the host carries them out once
+    the session runs)
+  - A host silent past the lapse (90 s) is shown as `lost` by the 30 s sweep, so the Chat can say so before another
+    host takes the session; the Chat does not guess earlier. Sessions keep their silent host until another host
+    claims them, so a host that answers again keeps them
+  - ACP has no message field on a permission outcome, so the reason a request was cancelled (Stop, pause, end,
+    Cadence's clocks) or rejected without a person (the control plane unreachable) reaches the agent as a
+    `[Cadence] …` line before its next prompt, and people as a transcript notice
+  - opencode attribution matches the host's completed Cadence tool call to the oldest command of the same operation
+    by the same session within 2 minutes that still carries the MCP server's synthetic id (`mcp:<session>/<rpc id>`);
+    parallel calls of one operation could swap ids. The outbox events of those commands are rewritten in place
+    (causedBy and payload), the one exception to an append-only outbox, and `mix.attributed` tells open panels that
+    the current revision's cause changed
+- [ ] Worktree watcher and three-way Session changes (phase 1, closing the roadmap line) assumptions, confirm:
+  - The watcher runs only while a turn runs (the worktree changes only then) and reports paths, status, size and
+    line counts, never content: `hostSessions.report` `working` (at most 200 files, `truncated` beyond). The live view
+    is "which files, how much"; the diff itself appears when the turn commits. Carrying content (or a patch) would make
+    every keystroke of a large file travel and land in the outbox
+  - Ignore rules are git's own (`.gitignore`, `.git/info/exclude`; the host sets no global excludes file), so the
+    watcher shows exactly what the turn's commit would take; the spec's "whatever the session's config excludes" has
+    no Cadence-specific list yet
+  - Working changes are events of type `recipe.working` on the existing `recipe.{path}` topic (payload `working:
+    true`, `sessionId`, `branch`, `status` — `clean` when a file leaves the set) rather than a new topic; the session
+    keeps the last report as `AgentSession.working` (so a Chat opened mid-turn sees it) and bumps its `rev` when it
+    changes. Ending the session clears it
+  - The three-way comparison is its own read, `branches.compare` (`GET /projects/{p}/branches/{name}:compare`, the
+    `compare` verb), not a larger `branches.get`: texts travel only when asked for, 128 KiB per version and 1 MiB per
+    response. Whether a file conflicts is git's merge (`merge-tree`); the hunks are Cadence's own diff3 over Myers line
+    diffs, so a whitespace-only or end-of-line conflict can show hunks that git would call differently
+  - Conflicts are resolved on the branch (a new turn, or a push), not in the UI: the three-way view is read-only and
+    Accept stays disabled while a conflict remains. Editing a resolution in the browser would need a commit command
+    on a session branch, which agents' tokens own
+- [ ] Workspace layout saves and the audit log (polish, 2026-09-30), confirm: the web saves a layout 2 s after the
+      last change, skips a save equal to the stored layout, and saves at once on page hide and workspace switch
+      (10 said "debounced 1 s"); committed `workspaces.set` runs get no audit row at all (a preference, not a domain
+      command: the log filled with a row per window move), chosen over "one row per user and workspace per N
+      minutes" because a throttled row says nothing the workspace's `rev` does not; refused attempts (412, denied)
+      are still recorded. The exemption list lives in `internal/audit` (`Recorded`); saved searches (`views.set`) stay
+      audited because a person names them on purpose
+- [ ] Asleep sessions (polish, 2026-09-30), confirm: only an idle pause (`pauseReason.code = idle`) wakes on
+      `agentMessages.new`; a pause by a person (`user`), a stuck turn, a runaway, a budget or a lost host now refuses
+      the message with `409 conflict` and the reason (before, every pause but a budget one resumed on a message).
+      A person's own pause could arguably wake on their message too — kept explicit (Resume) for now. An asleep
+      session gets no notification and no unread dot, only a polite live-region line; the reason text reads
+      "no message for 30 min" (was "30m0s")
+- [ ] Pre-allowed Cadence tools (polish, 2026-09-30), confirm: only Cadence MCP tools are pre-allowed for Claude
+      sessions (from the preset through the control plane, not from the repository file an agent can edit); the
+      file's allow rules for shell commands, reads and edits are still not applied by Claude Code, so those keep going
+      through the host's permission request and the preset (a round trip each, no person). Pre-allowing them the same
+      way would need the host to trust the preset's shell rules without the per-call check
 
 ## Sources
 

@@ -58,7 +58,9 @@ export async function main(): Promise<void> {
   });
   log.log("info", "cadence agent host started", { hostId: cfg.hostId, controlPlane: cfg.baseUrl, version: VERSION });
   await Promise.all([manager.run(stop.signal), credentialWorker.run(stop.signal)]);
+  // Stop the agents and release the sessions: the next host takes them at once (hostSessions.release).
   await manager.shutdown();
+  log.log("info", "agent host stopped", { hostId: cfg.hostId });
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

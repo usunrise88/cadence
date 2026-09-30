@@ -73,9 +73,9 @@ p95 56–68 ms. What exists now (details in `ROADMAP.md` "Phase 1 notes" and `do
   hosts to its static list by polling `egressHosts.list` (internal/agentcreds, internal/egress).
 - **Web.** Chat, Agent sessions, Approvals, Agent settings, Settings, Getting started, Project, Mix, Recipe panels;
   context bridge (Ctrl/Cmd+I, `@kind:id` chips, attribution badge → tool call in Chat).
-Open from phase 1: the live worktree watcher (recipe events come from pushes), a three-way "Session changes" diff, the
-agent evals harness, opencode tool-call ids for the badge link, claude.ai connectors in Claude sessions (check the
-`setup-token` mode), the owner's MiniMax model (not yet run), dropping basic auth on the staging stand.
+Phase 1 has nothing open (live evals on the stand: 6/6, 2026-09-30). Built after the gate: the worktree watcher (`recipe.working` events), the three-way Session changes
+(`branches.compare`), `hostSessions.release` on host shutdown, tool-call ids for opencode, the agent evals harness
+(`make evals`); claude.ai connectors are off in every Claude session.
 
 Known spec conflicts and gaps: `docs/review/2026-09-29-spec-kickoff-review.md` (statuses updated); assumptions made
 while building are in `docs/spec/07-audit-risks-sources.md` "Open questions".
@@ -100,8 +100,13 @@ Gotchas:
 - `make gen` also regenerates the agent host's contract types (`agent-host/src/api/gen`, `npm run gen`).
 - Claude streams a tool call's arguments into a pending call that starts as `{}`: read arguments only once the call
   has left `pending`. The agent runs in its own process group; the host ends the group before removing a session.
+- Claude Code ignores the `allow` rules of a repository's `.claude/settings.json` (it applies ask and deny): the
+  control plane sends the preset's allowed Cadence tools as `HostStart.allowedTools` and the driver passes them to the
+  agent. A new Cadence tool an agent should use without asking belongs in the preset, not only in the rendered file.
+- A stopping agent host calls `hostSessions.release`; compose gives it `stop_grace_period: 30s`. Restarting the stand's
+  agent host is therefore safe mid-session, but a running turn is interrupted (the agent is told, not re-run).
 - For live agent runs keep prompts tiny; Claude sessions use `sonnet` (`haiku` delegates to subagents and loops),
-  opencode the free `opencode/big-pickle` until the MiniMax key is installed.
+  opencode `minimax/MiniMax-M3` on the stand (the free `opencode/big-pickle` elsewhere).
 
 ## Commands
 
@@ -112,6 +117,7 @@ make lint              # golangci-lint, tsc + eslint (architecture rules), agent
 make test              # unit + contract: go test, vitest (jsdom + headless Chromium), contrast, pytest, agent host
 make test-integration  # control plane against Postgres (testcontainers, needs Docker)
 make ui-e2e            # Playwright on the shell against the real control plane (Postgres in Docker)
+make evals             # agent evals (agent-host/evals): fixture projects × both drivers; scripted agent, CADENCE_LIVE_AGENTS=1 live
 make spikes-measure    # S1/S3/S4 measurements → web/test-results/spikes/*.json
 make up                # docker compose: postgres + control plane (SPA embedded) + agent host, one CADENCE_VERSION
 make web               # build the SPA into the control plane's embed directory

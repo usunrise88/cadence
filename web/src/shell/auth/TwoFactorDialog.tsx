@@ -8,8 +8,14 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { notify } from "@/shell/notifications/store";
+import { QrCode } from "./QrCode";
 
 // Turn the signed-in user's TOTP second factor on (enroll → confirm with a code) or off (a current code).
+
+/** A base32 key in groups of four, easier to read and type. */
+function groups(secret: string): string {
+  return secret.replace(/(.{4})/g, "$1 ").trim();
+}
 
 function message(err: unknown): string {
   if (err instanceof ProblemError) return err.problem.detail ?? err.problem.title;
@@ -89,15 +95,32 @@ export function TwoFactorDialog({ onClose }: { onClose: () => void }) {
             </DialogDescription>
           </DialogHeader>
           {!enabled && enrollment ? (
-            <div className="flex flex-col gap-2 text-xs">
-              <p className="text-muted-foreground">Add this key to your authenticator app, then enter the code it shows.</p>
-              <code data-testid="totp-secret" className="rounded-md border bg-muted px-2 py-1 font-mono text-[13px] break-all select-all">
-                {enrollment.secret}
-              </code>
-              <details>
-                <summary className="cursor-pointer text-muted-foreground">Setup link (otpauth)</summary>
-                <code className="mt-1 block font-mono break-all select-all">{enrollment.uri}</code>
+            <div className="flex flex-col gap-3 text-xs">
+              <ol className="flex list-decimal flex-col gap-1 pl-4 text-muted-foreground">
+                <li>Open your authenticator app (Google Authenticator, Microsoft Authenticator, 1Password, Aegis, …) on your phone.</li>
+                <li>Add an account and scan this code from the screen.</li>
+                <li>Enter the six-digit code the app shows.</li>
+              </ol>
+              <div className="flex justify-center">
+                <QrCode text={enrollment.uri} label="QR code with the two-factor key for your authenticator app" />
+              </div>
+              <details className="rounded-md border px-2 py-1.5">
+                <summary className="cursor-pointer text-muted-foreground">Can’t scan? Type the key instead</summary>
+                <div className="mt-2 flex flex-col gap-1.5">
+                  <div className="flex items-center gap-2">
+                    <code data-testid="totp-secret" className="flex-1 rounded-md border bg-muted px-2 py-1 font-mono text-[13px] tracking-wide break-all select-all">
+                      {groups(enrollment.secret)}
+                    </code>
+                    <Button type="button" size="xs" variant="outline" onClick={() => void navigator.clipboard?.writeText(enrollment.secret)}>
+                      Copy
+                    </Button>
+                  </div>
+                  <span className="text-muted-foreground">Time-based, 6 digits, every 30 seconds. Spaces don’t matter.</span>
+                </div>
               </details>
+              <p className="text-muted-foreground">
+                The key is shown only here and now. Keep it out of chats and e-mail: scan it from this screen instead.
+              </p>
             </div>
           ) : null}
           {enabled || enrollment ? codeField : null}

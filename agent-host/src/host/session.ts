@@ -25,6 +25,7 @@ import { baseEnv, own, prepareDirs, removeDirs, type SessionDirs, type SessionUs
 import { errText, type Logger } from "./log.ts";
 import { RunawayDetector } from "./runaway.ts";
 import { toolCall, Transcript } from "./transcript.ts";
+import { type WatcherOptions, type WorkingReport, WorktreeWatcher } from "./watcher.ts";
 
 export interface SessionDeps {
   cp: ControlPlane;
@@ -47,14 +48,19 @@ export interface SessionDeps {
   thoughts?: boolean;
   flushMs?: number;
   onEnded?: (id: string) => void;
+  // Tests: replace fs.watch in the worktree watcher.
+  watchFn?: WatcherOptions["watchFn"];
 }
 
-type Phase = "starting" | "running" | "paused" | "ending" | "ended" | "failed";
+// detached: the host shuts down; the session moves to the next host (hostSessions.release).
+type Phase = "starting" | "running" | "paused" | "ending" | "ended" | "failed" | "detached";
 
 // What to do when the cancelled turn has ended.
 type After = { action: "pause"; reason: AgentPauseReason; note?: string } | { action: "end" } | { action: "none" };
 
 const READ_ONLY = "read-only";
+// The name agents know the Cadence MCP server by (policy.MCPServer on the control plane).
+const MCP_SERVER = "cadence";
 
 export class HostSession {
   readonly id: string;
@@ -66,6 +72,7 @@ export class HostSession {
   private dirs?: SessionDirs;
   private user?: SessionUser;
   private worktree?: Worktree;
+  private watcher?: WorktreeWatcher;
   private agentEnv: NodeJS.ProcessEnv = {};
   private homeEnv: NodeJS.ProcessEnv = {};
   private agent: Agent | undefined;
@@ -82,6 +89,16 @@ export class HostSession {
   private readonly early = new Map<string, HostDecision>();
   private readonly withdrawn: string[] = [];
   private readonly nextPrompt: string[] = [];
+  // Controls that arrived while the session was starting (a takeover hands over the start and a queued pause in one
+  // claim): carried out once it runs.
+  private readonly deferred: HostControl[] = [];
+  // Why the running turn is being cancelled, for the agent and the transcript (a cancelled permission request must
+  // not read as declined).
+  private cancelCause: string | undefined;
+  // Permission requests of the running turn that were answered `cancelled` (the turn ended under them) or rejected
+  // without a person (the control plane could not be reached).
+  private interrupted: Array<{ title: string; why?: string }> = [];
+  private turnDone: Promise<void> = Promise.resolve();
   private summary: string | undefined;
   private chain: Promise<void> = Promise.resolve();
   private flushTimer: NodeJS.Timeout | undefined;
@@ -140,15 +157,35 @@ export class HostSession {
           email: `${this.id}@cadence.local`,
         });
       }
+      if (!this.readOnly) this.watcher = this.watch(this.worktree);
       this.homeEnv = (await this.driver.prepareHome?.(this.dirs.home, this.deps.credentials)) ?? {};
       await own(this.dirs.home, this.user);
       await this.spawn(this.start.resume);
+      if (this.phase !== "starting") {
+        await this.stopAgent(); // the host shut down meanwhile
+        return;
+      }
+      // Why the last turn ended, when a host restart interrupted it: the agent reads it before its next prompt.
+      if (this.start.resume?.note) this.nextPrompt.push(this.start.resume.note);
       this.phase = "running";
       await this.report({ state: { state: "running", busy: false, turn: this.turn }, ...this.acpField() });
+      for (const c of this.deferred.splice(0)) await this.control(c);
       this.pump();
     } catch (err) {
       await this.fail(err);
     }
+  }
+
+  // watch reports the worktree's uncommitted changes while a turn runs (recipe.{path} events on the control plane).
+  private watch(wt: Worktree): WorktreeWatcher {
+    return new WorktreeWatcher({
+      dir: wt.dir,
+      clock: this.deps.clock,
+      scan: () => wt.status(),
+      onReport: (r: WorkingReport) => void this.report({ working: { turn: this.turn, ...r } }),
+      onError: (err) => this.log("warn", "worktree watcher", { err: errText(err) }),
+      ...(this.deps.watchFn ? { watchFn: this.deps.watchFn } : {}),
+    });
   }
 
   private acpField(): Partial<HostReport> {
@@ -159,7 +196,7 @@ export class HostSession {
     return [
       {
         type: "http",
-        name: "cadence",
+        name: MCP_SERVER,
         url: new URL(this.start.mcpUrl, this.deps.baseUrl).toString(),
         headers: [
           { name: "Authorization", value: `Bearer ${this.start.token}` },
@@ -182,6 +219,7 @@ export class HostSession {
       env: this.homeEnv,
       model: this.start.session.model,
       thoughts: this.deps.thoughts ?? true,
+      preAllowed: { server: MCP_SERVER, tools: this.start.allowedTools ?? [] },
       onPermission: (req, signal) => this.permission(req, signal),
       ...(this.user ? { user: this.user } : {}),
       ...(command ? { command } : {}),
@@ -233,13 +271,18 @@ export class HostSession {
 
   async control(c: HostControl): Promise<void> {
     this.log("info", "control", { action: c.action });
+    if (this.phase === "starting") {
+      this.deferred.push(c);
+      return;
+    }
+    if (this.phase === "detached") return;
     switch (c.action) {
       case "cancel":
-        if (this.turnRunning) await this.cancelTurn({ action: "none" });
+        if (this.turnRunning) await this.cancelTurn({ action: "none" }, "the person stopped your turn (Stop)");
         return;
       case "pause": {
         const reason = c.reason ?? { code: "user", message: "paused" };
-        if (this.turnRunning) await this.cancelTurn({ action: "pause", reason, note: pauseNote(reason) });
+        if (this.turnRunning) await this.cancelTurn({ action: "pause", reason, note: pauseNote(reason) }, pausedBecause(reason));
         else if (this.phase === "running") await this.pause(reason, pauseNote(reason));
         return;
       }
@@ -248,7 +291,7 @@ export class HostSession {
         if (this.phase === "paused") await this.resume(c.resume);
         return;
       case "end":
-        if (this.turnRunning) await this.cancelTurn({ action: "end" });
+        if (this.turnRunning) await this.cancelTurn({ action: "end" }, "the person ended the session");
         else await this.end();
         return;
     }
@@ -259,7 +302,7 @@ export class HostSession {
     const m = this.queue.shift();
     if (!m) return;
     this.turnRunning = true;
-    void this.runTurn(m)
+    this.turnDone = this.runTurn(m)
       .catch((err: unknown) => this.fail(err))
       .finally(() => {
         this.turnRunning = false;
@@ -287,11 +330,14 @@ export class HostSession {
     this.turn++;
     const turn = this.turn;
     if (m.kind === "user_message") this.runaway.reset();
+    this.cancelCause = undefined;
+    this.interrupted = [];
     this.transcript.startTurn(turn);
     this.transcript.put({ key: `t${turn}:start`, kind: "turn", turn, turnInfo: { state: "started", messageId: m.id } });
     this.contextAtTurnStart = this.use.contextUsed;
     await this.report({ state: { state: "running", busy: true, turn } });
     this.armStuck();
+    this.watcher?.start();
     let stopReason = "error";
     let usage: { inputTokens: number; outputTokens: number; cachedReadTokens?: number } | undefined;
     try {
@@ -304,8 +350,16 @@ export class HostSession {
       }
     } finally {
       this.disarmStuck();
+      await this.watcher?.stop();
     }
     if (this.phase === "failed" || this.phase === "ended") return;
+    if (this.phase === "detached") {
+      // The host shuts down: keep what the turn changed; the next host tells the agent the turn was interrupted.
+      this.transcript.close();
+      await this.commit(turn);
+      return;
+    }
+    this.explainInterrupted();
     this.transcript.close();
     this.use.turns = turn;
     if (usage) {
@@ -352,11 +406,32 @@ export class HostSession {
     else if (a.action === "end") await this.end();
   }
 
-  // cancelTurn stops the running turn (ACP session/cancel); `then` runs once it has ended.
-  private async cancelTurn(then: After): Promise<void> {
+  // cancelTurn stops the running turn (ACP session/cancel); `then` runs once it has ended. `why` finishes the sentence
+  // "… was cancelled because <why>" the agent and the person read about a permission request the turn left open.
+  private async cancelTurn(then: After, why: string): Promise<void> {
     if (then.action !== "none" && this.after.action === "none") this.after = then;
     else if (then.action === "end") this.after = then;
+    this.cancelCause ??= why;
     if (this.agent && this.acpId) await this.agent.cancel(this.acpId).catch(() => undefined);
+  }
+
+  // explainInterrupted tells why permission requests of the turn got no person's answer: ACP answers a request left
+  // open by a cancelled turn with `cancelled`, which agents report as "you declined". The transcript says what
+  // happened, and the agent reads it before its next prompt (none follows when the session ends).
+  private explainInterrupted(): void {
+    const list = this.interrupted.splice(0);
+    if (list.length === 0) return;
+    const why = this.cancelCause ?? "the turn was cancelled";
+    for (const r of list) {
+      const because = r.why ?? why;
+      this.notice(`The permission request “${r.title}” was ${r.why ? "rejected" : "cancelled"} because ${because} — nobody declined it`);
+      if (this.after.action === "end") continue;
+      this.nextPrompt.push(
+        r.why
+          ? `[Cadence] Your permission request for “${r.title}” was rejected because ${because}; the person did not decline it. Ask again if you still need it.`
+          : `[Cadence] Your permission request for “${r.title}” was cancelled because ${because}; the person did not decline it. Ask again if you still need it.`,
+      );
+    }
   }
 
   private async commit(turn: number): Promise<void> {
@@ -378,6 +453,9 @@ export class HostSession {
     } catch (err) {
       this.notice(`The changes of turn ${turn} could not be committed or pushed: ${errText(err)}`, "error");
     }
+    // What the turn left uncommitted (nothing, or files the credential scan refused): the control plane clears or
+    // keeps them.
+    await this.watcher?.flush().catch((err: unknown) => this.log("warn", "worktree status after the turn", { err: errText(err) }));
   }
 
   // ------------------------------------------------------------------ updates, clocks, runaway
@@ -394,7 +472,7 @@ export class HostSession {
             code: "turn_tokens",
             message: `turn ${this.turn} grew the context by ${grown} tokens, over the ${this.budget.tokensPerTurn} a turn may use`,
           };
-          void this.cancelTurn({ action: "pause", reason, note: pauseNote(reason) });
+          void this.cancelTurn({ action: "pause", reason, note: pauseNote(reason) }, pausedBecause(reason));
         }
       }
       if (u.cost) this.use.costUsd = u.cost.amount;
@@ -409,7 +487,7 @@ export class HostSession {
           code: "runaway",
           message: `${tool} was called ${n} times in a row with the same arguments`,
         };
-        void this.cancelTurn({ action: "pause", reason, note: pauseNote(reason) });
+        void this.cancelTurn({ action: "pause", reason, note: pauseNote(reason) }, pausedBecause(reason));
       }
     }
     this.transcript.apply(u);
@@ -427,7 +505,7 @@ export class HostSession {
         code: "stuck_turn",
         message: `no update from the agent for ${Math.round(secs / 60)} min during turn ${this.turn}`,
       };
-      void this.cancelTurn({ action: "pause", reason, note: pauseNote(reason) });
+      void this.cancelTurn({ action: "pause", reason, note: pauseNote(reason) }, pausedBecause(reason));
     });
   }
 
@@ -457,6 +535,10 @@ export class HostSession {
         approvalId = d.approvalId;
         outcome = (await this.waitDecision(d.approvalId, signal)).outcome;
       }
+      if (signal.aborted) {
+        this.interrupted.push({ title: req.call.title });
+        return "cancelled";
+      }
       switch (outcome) {
         case "allow_once":
         case "allow_always":
@@ -467,9 +549,11 @@ export class HostSession {
     } catch (err) {
       if (signal.aborted) {
         if (approvalId) this.withdrawn.push(approvalId);
+        this.interrupted.push({ title: req.call.title });
         return "cancelled";
       }
       this.log("warn", "permission request failed; rejecting", { err: errText(err) });
+      this.interrupted.push({ title: req.call.title, why: "the agent host could not reach Cadence to ask" });
       return { select: "reject_once" }; // fail closed
     } finally {
       this.permissions--;
@@ -502,7 +586,8 @@ export class HostSession {
   private async pause(reason: AgentPauseReason, note?: string): Promise<void> {
     if (this.phase !== "running") return;
     this.phase = "paused";
-    this.notice(`Paused: ${reason.message}`, reason.code === "user" || reason.code === "idle" ? "info" : "warning");
+    if (reason.code === "idle") this.notice(`Asleep: ${reason.message}; the next message wakes the session`, "info");
+    else this.notice(`Paused: ${reason.message}`, reason.code === "user" ? "info" : "warning");
     await this.stopAgent();
     await this.report({ state: { state: "paused", busy: false, turn: this.turn, reason }, ...(note ? { note } : {}) });
   }
@@ -538,7 +623,7 @@ export class HostSession {
 
   // fail marks the session failed; its worktree and branch stay (the branch is already pushed per turn).
   async fail(err: unknown): Promise<void> {
-    if (this.phase === "failed" || this.phase === "ended") return;
+    if (this.phase === "failed" || this.phase === "ended" || this.phase === "detached") return;
     this.phase = "failed";
     this.log("error", "session failed", { err: errText(err) });
     await this.stopAgent();
@@ -555,6 +640,7 @@ export class HostSession {
   // cleanup removes a finished session's directories, or keeps a failed one's worktree (handed back to the host
   // user so the uid can serve another session).
   private async cleanup(remove: boolean): Promise<void> {
+    await this.watcher?.stop();
     if (this.dirs) {
       if (remove) await removeDirs(this.dirs).catch(() => undefined);
       else if (this.user) await own(this.dirs.root, { uid: process.getuid?.() ?? 0, gid: process.getgid?.() ?? 0 }).catch(() => undefined);
@@ -618,9 +704,35 @@ export class HostSession {
     await this.report({});
   }
 
-  // detach stops the agent without ending the session (host shutdown): the next host resumes it.
+  // detach stops the agent without ending the session (host shutdown): a turn in progress ends there with its
+  // changes committed, what is pending is reported, and the manager releases the session to the next host.
   async detach(): Promise<void> {
+    if (this.phase === "ended" || this.phase === "failed" || this.phase === "detached") return;
+    this.phase = "detached";
     await this.stopAgent();
+    await this.turnDone;
+    await this.report({});
+  }
+
+  // unread gives back the messages the control plane handed over that no turn took yet (released with the session).
+  unread(): string[] {
+    return this.queue.splice(0).map((m) => m.id);
+  }
+}
+
+function pausedBecause(r: AgentPauseReason): string {
+  switch (r.code) {
+    case "user":
+      return "the person paused the session";
+    case "runaway":
+    case "stuck_turn":
+    case "turn_tokens":
+    case "budget_turns":
+    case "budget_tokens":
+    case "project_tokens":
+      return `Cadence paused the session (${r.message})`;
+    default:
+      return `the session was paused (${r.message})`;
   }
 }
 

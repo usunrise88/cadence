@@ -1,17 +1,28 @@
 import type { AgentMessage, AgentSession, AgentToolCall } from "@/api/gen/types.gen";
 import { operations, type OperationId } from "@/api/operations.gen";
+import { isAsleep } from "@/shell/panel";
 
 // Pure presentation logic of the Chat panel (docs/spec/05-agents.md "What the Chat panel shows"): which transcript
 // entries render, the header's state and budget, what a tool call names, and the inline diff of a file edit.
 
-/** Entries the transcript renders: a turn's start is implied by the next user message; its end shows usage. */
+/**
+ * Entries the transcript renders: a turn's start is implied by the next user message; its end shows usage. A
+ * permission the preset allowed on its own (a rule, no person) for a tool call the transcript shows is noise — the
+ * call's line says it ran — so it is left out; denied, pending, withdrawn and person-answered ones stay.
+ */
 export function visibleEntries(items: AgentMessage[]): AgentMessage[] {
-  return items.filter((m) => !(m.kind === "turn" && m.turnInfo?.state !== "ended"));
+  const calls = new Set<string>();
+  for (const m of items) if (m.kind === "tool_call" && m.toolCall) calls.add(m.toolCall.id);
+  return items.filter((m) => !(m.kind === "turn" && m.turnInfo?.state !== "ended") && !presetAllowed(m, calls));
+}
+
+function presetAllowed(m: AgentMessage, calls: Set<string>): boolean {
+  const p = m.permission;
+  return m.kind === "permission" && !!p && p.state === "approved" && !!p.rule && !p.approvalId && !!p.toolCallId && calls.has(p.toolCallId);
 }
 
 export type Tone = "neutral" | "running" | "done" | "warning" | "failed";
 
-/** The header chip: running / waiting approval / paused with the reason / ended. */
 const DRIVER_SHORT: Record<string, string> = { "claude-code": "CC", opencode: "OC" };
 
 /** The tab's short name: "CC · S4" (Claude Code, session 4), "OC · S1" (opencode). */
@@ -20,17 +31,17 @@ export function tabLabel(s: Pick<AgentSession, "driver" | "number">): string {
   return `${short} · S${s.number}`;
 }
 
-/** The tab icon's colour: working, ready for you, wants a decision, paused, failed; none once it is over. */
-export type TabTone = "working" | "ready" | "attention" | "paused" | "failed" | "none";
+/** The tab icon's colour: working, ready for you, wants a decision, paused or asleep, failed; none once it is over. */
+export type TabTone = "working" | "ready" | "attention" | "paused" | "asleep" | "failed" | "none";
 
-export function tabTone(s: Pick<AgentSession, "state" | "busy">): TabTone {
+export function tabTone(s: Pick<AgentSession, "state" | "busy" | "pauseReason">): TabTone {
   switch (s.state) {
     case "running":
       return s.busy ? "working" : "ready";
     case "waiting_approval":
       return "attention";
     case "paused":
-      return "paused";
+      return isAsleep(s) ? "asleep" : "paused";
     case "failed":
       return "failed";
     default:
@@ -38,8 +49,26 @@ export function tabTone(s: Pick<AgentSession, "state" | "busy">): TabTone {
   }
 }
 
+/**
+ * Why a live session looks quiet while its agent host is away: the host restarted (it released the session) or went
+ * silent; requests and messages wait for the next host. Undefined while a host runs the session.
+ */
+export function hostAway(s: AgentSession): string | undefined {
+  if (s.state !== "running" && s.state !== "waiting_approval") return undefined;
+  switch (s.hostState) {
+    case "released":
+      return "The agent host is restarting — reconnecting…";
+    case "lost":
+      return "The agent host stopped answering — the session moves to the next host that starts…";
+  }
+  return undefined;
+}
+
+/** The header chip: running / waiting approval / paused with the reason / ended; reconnecting while the host is away. */
 export function sessionStatus(s: AgentSession): { label: string; tone: Tone; detail?: string } {
   const pending = s.pendingControl ? ` · ${s.pendingControl === "cancel" ? "stopping" : s.pendingControl === "end" ? "ending" : `${s.pendingControl === "pause" ? "pausing" : "resuming"}`}…` : "";
+  const away = hostAway(s);
+  if (away) return { label: `reconnecting${pending}`, tone: "warning", detail: away };
   switch (s.state) {
     case "created":
       return { label: `starting${pending}`, tone: "neutral", detail: "Waiting for the agent host to take the session" };
@@ -48,6 +77,7 @@ export function sessionStatus(s: AgentSession): { label: string; tone: Tone; det
     case "waiting_approval":
       return { label: `waiting approval${pending}`, tone: "warning", detail: "A request below waits for your decision" };
     case "paused":
+      if (isAsleep(s)) return { label: `asleep${pending}`, tone: "neutral", detail: ASLEEP };
       return { label: `paused${pending}`, tone: "warning", detail: s.pauseReason?.message };
     case "done":
       return { label: "done", tone: "done" };
@@ -56,6 +86,22 @@ export function sessionStatus(s: AgentSession): { label: string; tone: Tone; det
     case "cancelled":
       return { label: "cancelled", tone: "neutral" };
   }
+}
+
+export const ASLEEP = "Asleep — your next message wakes it";
+
+const BUDGET_PAUSES = new Set(["budget_turns", "budget_tokens", "project_tokens"]);
+
+/**
+ * The quiet line above the composer of a paused interactive session: an asleep (idle, R5) session wakes on the next
+ * message; any other pause holds messages until the session is resumed, and the line says why.
+ */
+export function composerNotice(s: AgentSession | undefined): { tone: "quiet" | "warning"; text: string; send: boolean } | undefined {
+  if (!s || s.state !== "paused" || s.kind !== "interactive" || s.pendingControl === "resume") return undefined;
+  if (isAsleep(s)) return { tone: "quiet", text: ASLEEP, send: true };
+  const why = s.pauseReason?.message ?? "paused";
+  const how = s.pauseReason && BUDGET_PAUSES.has(s.pauseReason.code) ? "resume it with a larger budget to send a message" : "resume it to send a message";
+  return { tone: "warning", text: `Paused (${why}): ${how}.`, send: false };
 }
 
 export type Meter = { used: number; limit: number; ratio: number };

@@ -1,5 +1,6 @@
-# Nightly slot (docs/spec/06-platform.md): agent evals (skills and playbooks on a fixture project, both drivers) from
-# phase 1, and the smoke project on the staging card (`make e2e`) from phase 4. Until then the job only reports.
+# Nightly slot (docs/spec/06-platform.md): agent evals (skills and playbooks on a fixture project, both drivers) and
+# the smoke project on the staging card (`make e2e`) from phase 4. The offline evals run on every pull request (ci.yml);
+# live ones need the agents' model accounts, which GitHub runners never get: they run on the staging host.
 name: nightly
 on:
   schedule: [{ cron: "30 1 * * *" }]
@@ -9,7 +10,7 @@ jobs:
   agent-evals:
     runs-on: ubuntu-24.04
     steps:
-      - run: echo "Agent evals arrive with the agent loop (ROADMAP phase 1)."
+      - run: echo "Live agent evals run on the staging host (CADENCE_LIVE_AGENTS=1 make evals, agent-host/evals/README.md)."
   smoke:
     runs-on: ubuntu-24.04
     steps:

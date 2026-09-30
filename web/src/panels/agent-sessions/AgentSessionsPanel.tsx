@@ -11,10 +11,12 @@ import { cn } from "@/lib/utils";
 import { EmptyState, PanelToolbar } from "@/shell/entity/primitives";
 import {
   errorMessage,
+  isAsleep,
   isLive,
   openChat,
   runCommand,
   sessionLabel,
+  sessionStateLabel,
   SESSIONS_TOPIC,
   useAgentPatcher,
   useAgentSessions,
@@ -116,6 +118,8 @@ const STATE_CLASS: Record<string, string> = {
   cancelled: "text-muted-foreground",
 };
 
+const capitalize = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+
 function SessionRow({ s, approvals }: { s: AgentSession; approvals: number }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -132,19 +136,26 @@ function SessionRow({ s, approvals }: { s: AgentSession; approvals: number }) {
   };
   const tokens = s.use.inputTokens + s.use.outputTokens;
   const decidable = s.kind === "interactive" && (s.merge.state === "pending" || (s.state === "paused" && s.merge.state === "none"));
+  const asleep = isAsleep(s);
   return (
     <li className="flex flex-col gap-1.5 rounded-md border bg-background p-2 text-xs" data-session={s.id} data-state={s.state}>
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
         <span className="font-medium">{sessionLabel(s)}</span>
         <span className="rounded-full border px-1.5 text-[11px] text-muted-foreground">{s.kind}</span>
-        <span className={cn("font-medium", STATE_CLASS[s.state])}>
-          {s.state.replace("_", " ")}
+        <span className={cn("font-medium", asleep ? "text-muted-foreground" : STATE_CLASS[s.state])} data-slot="session-state">
+          {sessionStateLabel(s)}
           {s.busy ? " · working" : ""}
         </span>
         {approvals ? <span className="rounded-full border border-status-warning px-1.5 text-[11px] text-status-warning-foreground">{approvals} pending approval{approvals === 1 ? "" : "s"}</span> : null}
         <span className="ml-auto text-muted-foreground tabular-nums">{new Date(s.updatedAt).toLocaleString()}</span>
       </div>
-      {s.pauseReason && s.state === "paused" ? <p className="text-status-warning-foreground">{s.pauseReason.message}</p> : null}
+      {s.pauseReason && s.state === "paused" ? (
+        asleep ? (
+          <p className="text-muted-foreground">{`${capitalize(s.pauseReason.message)}; a message in its Chat wakes it.`}</p>
+        ) : (
+          <p className="text-status-warning-foreground">{s.pauseReason.message}</p>
+        )
+      ) : null}
       {s.error && s.state === "failed" ? <p className="text-status-failed-foreground">{s.error}</p> : null}
       <dl className="grid grid-cols-[5.5rem_1fr] gap-x-2 gap-y-0.5 text-[11px]">
         <dt className="text-muted-foreground">Model</dt>

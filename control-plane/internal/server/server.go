@@ -104,7 +104,7 @@ func New(c Config) (*Server, error) {
 	window := time.Duration(s.defaultsDoc().Drafts.PresenceSeconds.Value) * time.Second
 	s.drafts = drafts.NewStore(time.Now, window)
 	s.mixes = mixes.NewService(s.drafts, s.defaultsDoc)
-	s.sessions = &sessions.Service{Pool: c.Pool, Projects: c.Projects, Defaults: s.defaultsDoc, Log: c.Log}
+	s.sessions = &sessions.Service{Pool: c.Pool, Projects: c.Projects, Defaults: s.defaultsDoc, Log: c.Log, Attribution: s.drafts}
 	s.agentCreds = &agentcreds.Service{Pool: c.Pool, Transit: s.transit(), Log: c.Log}
 	if c.Pipeline != nil {
 		s.sessions.Policy = c.Pipeline.Policy()
@@ -234,7 +234,7 @@ func policyScope(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		ps := policy.Scope{RegistryRead: sc.RegistryRead || sc.All, Preset: sc.Preset}
+		ps := policy.Scope{RegistryRead: sc.RegistryRead || sc.All, Preset: sc.Preset, AgentSessions: sc.AgentSessions}
 		if !sc.All {
 			ps.ProjectID = sc.ProjectID
 		}

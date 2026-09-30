@@ -10,6 +10,8 @@ export interface ManagerOptions extends Omit<SessionDeps, "onEnded"> {
   capacity: number;
   version: string;
   waitSeconds?: number;
+  // How long shutdown waits for the agents to stop before it releases the sessions anyway (default 20 s).
+  shutdownMs?: number;
 }
 
 export class SessionManager {
@@ -73,13 +75,25 @@ export class SessionManager {
     return s;
   }
 
-  // shutdown reports what is pending and stops every agent (their sessions resume on the next host).
+  // shutdown stops every agent — a turn in progress ends there, its changes committed and reported — and releases
+  // the sessions (hostSessions.release): the next host takes them at once instead of after the host lapse, and the
+  // messages no agent read yet go back to it. The release goes out even when an agent is slow to stop.
   async shutdown(): Promise<void> {
-    await Promise.all(
-      [...this.sessions.values()].map(async (s) => {
-        await s.idle();
-        await s.detach();
-      }),
-    );
+    const sessions = [...this.sessions.values()];
+    let timer: NodeJS.Timeout | undefined;
+    const deadline = new Promise<void>((r) => {
+      timer = setTimeout(r, this.o.shutdownMs ?? 20_000);
+      timer.unref?.();
+    });
+    await Promise.race([Promise.all(sessions.map((s) => s.detach())), deadline]);
+    clearTimeout(timer);
+    const messages = sessions.flatMap((s) => s.unread());
+    try {
+      const r = await this.cp.release({ hostId: this.o.hostId, ...(messages.length ? { messages } : {}) });
+      this.o.log.log("info", "sessions released", { sessions: r.released.length, messages: messages.length });
+    } catch (err) {
+      this.o.log.log("warn", "release failed; the sessions move to the next host after the lapse", { err: errText(err) });
+    }
+    for (const s of sessions) this.sessions.delete(s.id);
   }
 }
