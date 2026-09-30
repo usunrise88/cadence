@@ -1,9 +1,13 @@
-// Command cadence is the Cadence control plane: the REST API, the event stream and the embedded web UI.
+// Command cadence is the Cadence control plane — the REST API, the event stream and the embedded web UI — and the
+// command line of its API (R34, docs/spec/08-resolutions.md).
 //
 //	cadence [serve]                     run the server (default)
 //	cadence admin reset-password [...]  set a user's password from the host shell (see admin.go)
 //	cadence version                     print the version
+//	cadence <entity> <verb> [flags]     call one API operation on a running server (internal/cli, generated)
+//	cadence help [<entity> [<verb>]]    list the generated commands and their flags
 //
+// The generated commands talk to CADENCE_URL (http://127.0.0.1:8080) with the API key in CADENCE_TOKEN.
 // Configuration comes from the environment: DATABASE_URL (required), CADENCE_ADDR (127.0.0.1:8080),
 // CADENCE_DATA_DIR (./data), CADENCE_LOG_DIR ($CADENCE_DATA_DIR/logs), CADENCE_LOG_LEVEL (info),
 // CADENCE_MASTER_KEY_FILE ($CADENCE_DATA_DIR/master.key; generated on first start when missing).
@@ -27,6 +31,7 @@ import (
 
 	"github.com/usunrise88/cadence/control-plane/internal/approvals"
 	"github.com/usunrise88/cadence/control-plane/internal/audit"
+	"github.com/usunrise88/cadence/control-plane/internal/cli"
 	"github.com/usunrise88/cadence/control-plane/internal/commands"
 	"github.com/usunrise88/cadence/control-plane/internal/compute"
 	"github.com/usunrise88/cadence/control-plane/internal/defaults"
@@ -70,8 +75,14 @@ func main() {
 	case "version":
 		fmt.Println(version)
 	default:
-		fmt.Fprintf(os.Stderr, "usage: cadence [serve|admin|version]\nunknown command %q\n", cmd)
-		os.Exit(2)
+		if cmd != "help" && cmd != "--help" && cmd != "-h" && !cli.Known(cmd) {
+			fmt.Fprintf(os.Stderr, "usage: cadence [serve|admin|version|help|<entity> <verb>]\nunknown command %q; `cadence help` lists the commands\n", cmd)
+			os.Exit(cli.ExitUsage)
+		}
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		code := cli.Run(ctx, os.Args[1:], os.Getenv, os.Stdin, os.Stdout, os.Stderr, cli.Options{})
+		stop()
+		os.Exit(code)
 	}
 }
 

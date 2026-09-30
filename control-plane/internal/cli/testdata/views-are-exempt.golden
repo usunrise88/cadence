@@ -1,0 +1,6 @@
+$ cadence views list
+exit 2
+--- requests
+--- stdout
+--- stderr
+cadence: unknown entity "views"; `cadence help` lists them

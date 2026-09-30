@@ -1,0 +1,14 @@
+$ cadence projects new --body @- --idempotency-key my-key-0001
+exit 0
+--- requests
+POST /api/projects
+  header Authorization: Bearer cdk_env
+  header Idempotency-Key: my-key-0001
+  header Content-Type: application/json
+  header Accept: application/json
+  body {"slug":"stdin","name":"S"}
+--- stdout
+{
+  "ok": true
+}
+--- stderr

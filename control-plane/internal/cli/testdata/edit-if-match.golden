@@ -1,0 +1,15 @@
+$ cadence projects edit --project alpha --if-match 3 --body {"name":"Alpha 2"}
+exit 0
+--- requests
+PATCH /api/projects/alpha
+  header Authorization: Bearer cdk_env
+  header Idempotency-Key: key-0001
+  header If-Match: "3"
+  header Content-Type: application/json
+  header Accept: application/json
+  body {"name":"Alpha 2"}
+--- stdout
+{
+  "ok": true
+}
+--- stderr

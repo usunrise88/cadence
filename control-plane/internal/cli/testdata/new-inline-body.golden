@@ -1,0 +1,14 @@
+$ cadence projects new --body {"slug":"alpha","name":"Alpha"}
+exit 0
+--- requests
+POST /api/projects
+  header Authorization: Bearer cdk_env
+  header Idempotency-Key: key-0001
+  header Content-Type: application/json
+  header Accept: application/json
+  body {"slug":"alpha","name":"Alpha"}
+--- stdout
+{
+  "ok": true
+}
+--- stderr

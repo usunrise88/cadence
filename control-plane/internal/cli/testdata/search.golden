@@ -1,0 +1,13 @@
+$ cadence projects search --project alpha --q fleurs kind:dataset_version --limit=5
+exit 0
+--- requests
+GET /api/projects/alpha:search
+  query limit=5
+  query q=fleurs kind:dataset_version
+  header Authorization: Bearer cdk_env
+  header Accept: application/json
+--- stdout
+{
+  "ok": true
+}
+--- stderr

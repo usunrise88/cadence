@@ -1,0 +1,19 @@
+$ cadence projects list --colour blue
+exit 2
+--- requests
+--- stdout
+--- stderr
+cadence projects list: unknown flag --colour
+
+usage: cadence projects list [--archived]
+
+List projects (GET /projects, operation projects.list)
+
+Flags:
+  --archived           Include archived projects [boolean; default false]
+
+Global flags:
+  --url URL               control plane (env CADENCE_URL, default http://127.0.0.1:8080; /api is appended)
+  --token TOKEN           API key, sent as a Bearer token (env CADENCE_TOKEN; create one with credentials new)
+  --idempotency-key KEY   commands only: reuse a key to replay a command's first result (default: a new key)
+  -h, --help              this command's flags

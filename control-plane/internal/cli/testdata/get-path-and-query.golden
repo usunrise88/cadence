@@ -1,0 +1,12 @@
+$ cadence adoptions list --project alpha --kind dataset_version
+exit 0
+--- requests
+GET /api/projects/alpha/adoptions
+  query kind=dataset_version
+  header Authorization: Bearer cdk_env
+  header Accept: application/json
+--- stdout
+{
+  "ok": true
+}
+--- stderr
