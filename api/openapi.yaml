@@ -1757,6 +1757,26 @@ paths:
           content: { application/json: { schema: { $ref: "#/components/schemas/HostDecision" } } }
         default: { $ref: "#/components/responses/Problem" }
 
+  /host-sessions:release:
+    x-cadence: { entity: hostSessions }
+    post:
+      operationId: hostSessions.release
+      summary: Give back every live session of a host that is shutting down, so the next host takes them at once
+      description: >
+        The host stops its agents first (their last turn is committed and reported), then releases. Each session
+        loses its host and token, a turn in progress counts as interrupted (the next host tells the agent, and its
+        pending permission requests are withdrawn as interrupted, not declined), messages the host took but never gave
+        the agent go back to pending, and the Chat shows the session as reconnecting until a host claims it.
+      tags: [host]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/HostRelease" } } }
+      responses:
+        "200":
+          description: The sessions released
+          content: { application/json: { schema: { $ref: "#/components/schemas/HostReleased" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
   # ---------------------------------------------------------------- planned (later phases)
   /mounts:
     x-cadence: { entity: mounts, planned: 4 }
@@ -3449,6 +3469,14 @@ components:
         turn: { type: integer, description: The current (or last) turn number }
         pauseReason: { $ref: "#/components/schemas/AgentPauseReason" }
         pendingControl: { type: string, enum: [cancel, pause, resume, end], description: A request the agent host has not carried out yet }
+        hostState:
+          type: string
+          enum: [waiting, connected, released, lost]
+          description: >
+            Live sessions only. waiting: no agent host took it yet; connected: a host runs it; released: its host shut
+            down (a restart) and the next host has not taken it yet; lost: its host stopped answering and the session
+            moves to the next host that claims work. Requests (stop, pause, end) and messages wait for the next host.
+        hostLeftAt: { type: string, format: date-time, description: When the session's host released it or was found silent (released, lost) }
         error: { type: string, description: Why it failed }
         branch: { type: string, description: "session/<id> (empty for read-only sessions)" }
         merge: { $ref: "#/components/schemas/AgentMerge" }
@@ -3654,6 +3682,7 @@ components:
           properties:
             acpSessionId: { type: string }
             summary: { type: string, description: A transcript summary for a new ACP session when resume fails }
+            note: { type: string, description: "What the agent is told before its next prompt, e.g. that its last turn was interrupted by a host restart" }
     HostControl:
       type: object
       required: [id, sessionId, action]
@@ -3732,6 +3761,18 @@ components:
         acpSessionId: { type: string, maxLength: 300 }
         note: { type: string, maxLength: 4000, description: "A note for the next session (projects.note), e.g. why the session paused" }
         withdraw: { type: array, items: { type: string }, description: "Agent-permission approvals the agent no longer waits for (its turn was cancelled)" }
+    HostRelease:
+      type: object
+      required: [hostId]
+      additionalProperties: false
+      properties:
+        hostId: { type: string, minLength: 1, maxLength: 200 }
+        messages: { type: array, maxItems: 1000, items: { type: string }, description: "Messages this host took but never gave its agent; they go back to pending for the next host" }
+    HostReleased:
+      type: object
+      required: [released]
+      properties:
+        released: { type: array, items: { type: string }, description: The ids of the sessions released }
     HostAsk:
       type: object
       required: [hostId, toolCall, options]

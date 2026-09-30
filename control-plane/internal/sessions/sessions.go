@@ -181,6 +181,34 @@ type Session struct {
 	LastMessageAt *time.Time
 	// PendingControl is the oldest request the host has not taken yet (read with the session).
 	PendingControl string
+	// HostLeftAt is when the host released the session (HostID is then empty) or was found silent past the lapse.
+	HostLeftAt *time.Time
+	// ResumeNote is what the next host tells the agent before its next prompt (set when a host releases the session).
+	ResumeNote string
+}
+
+// Host states of a live session (the contract's AgentSession.hostState).
+const (
+	HostWaiting   = "waiting"
+	HostConnected = "connected"
+	HostReleased  = "released"
+	HostLost      = "lost"
+)
+
+// HostState is where the session's agent host stands: none took it yet, one runs it, it released the session (a
+// restart) or it went silent. Empty for ended sessions.
+func (s Session) HostState() string {
+	switch {
+	case !Live(s.State):
+		return ""
+	case s.HostLeftAt != nil && s.HostID == "":
+		return HostReleased
+	case s.HostLeftAt != nil:
+		return HostLost
+	case s.HostID == "":
+		return HostWaiting
+	}
+	return HostConnected
 }
 
 // Agent is the actor of what the agent itself does in the session: the session token's credential, named after
@@ -208,6 +236,8 @@ type View struct {
 	Turn           int         `json:"turn"`
 	PauseReason    *Reason     `json:"pauseReason,omitempty"`
 	PendingControl string      `json:"pendingControl,omitempty"`
+	HostState      string      `json:"hostState,omitempty"`
+	HostLeftAt     *time.Time  `json:"hostLeftAt,omitempty"`
 	Error          string      `json:"error,omitempty"`
 	Branch         string      `json:"branch"`
 	Merge          Merge       `json:"merge"`
@@ -231,21 +261,25 @@ func (s Session) JSON() View {
 	if refs == nil {
 		refs = []Reference{}
 	}
-	return View{
+	v := View{
 		ID: s.ID, Number: s.Number, ProjectID: s.ProjectID, Project: s.ProjectSlug, Kind: s.Kind, Driver: s.Driver,
 		Model: s.Model, Preset: s.Preset, State: s.State, Busy: s.Busy, Turn: s.Turn, PauseReason: s.PauseReason,
-		PendingControl: s.PendingControl, Error: s.Error, Branch: s.Branch, Merge: s.Merge, AutoMerge: s.AutoMerge,
+		PendingControl: s.PendingControl, HostState: s.HostState(), Error: s.Error, Branch: s.Branch, Merge: s.Merge, AutoMerge: s.AutoMerge,
 		Budget: s.Budget, Use: s.Use, Prompt: s.Prompt, References: refs, StartedBy: s.StartedBy, Rev: s.Rev,
 		CreatedAt: s.CreatedAt, UpdatedAt: s.UpdatedAt, StartedAt: s.StartedAt, EndedAt: s.EndedAt,
 		LastMessageAt: s.LastMessageAt,
 	}
+	if v.HostState == HostReleased || v.HostState == HostLost {
+		v.HostLeftAt = s.HostLeftAt
+	}
+	return v
 }
 
 const cols = `s.id, s.project_id, p.slug, s.number, s.kind, s.driver, s.model, s.preset, s.state, s.busy, s.turn,
 	s.pause_reason, coalesce(s.error, ''), s.branch, s.merge, s.auto_merge, s.budget, s.use, coalesce(s.prompt, ''),
 	s.refs, s.started_by, coalesce(s.credential_id, ''), coalesce(s.acp_session_id, ''), coalesce(s.host_id, ''),
-	s.rev, s.created_at, s.updated_at, s.started_at, s.ended_at, s.last_message_at,
-	coalesce((SELECT c.action FROM agent_session_controls c WHERE c.session_id = s.id AND c.delivered_at IS NULL
+	s.rev, s.created_at, s.updated_at, s.started_at, s.ended_at, s.last_message_at, s.host_left_at,
+	coalesce(s.resume_note, ''), coalesce((SELECT c.action FROM agent_session_controls c WHERE c.session_id = s.id AND c.delivered_at IS NULL
 		ORDER BY c.created_at LIMIT 1), '')`
 
 const from = ` FROM agent_sessions s JOIN projects p ON p.id = s.project_id`
@@ -255,7 +289,7 @@ func scan(row pgx.CollectableRow) (Session, error) {
 	err := row.Scan(&s.ID, &s.ProjectID, &s.ProjectSlug, &s.Number, &s.Kind, &s.Driver, &s.Model, &s.Preset, &s.State,
 		&s.Busy, &s.Turn, &s.PauseReason, &s.Error, &s.Branch, &s.Merge, &s.AutoMerge, &s.Budget, &s.Use, &s.Prompt,
 		&s.Refs, &s.StartedBy, &s.CredentialID, &s.ACPSessionID, &s.HostID, &s.Rev, &s.CreatedAt, &s.UpdatedAt,
-		&s.StartedAt, &s.EndedAt, &s.LastMessageAt, &s.PendingControl)
+		&s.StartedAt, &s.EndedAt, &s.LastMessageAt, &s.HostLeftAt, &s.ResumeNote, &s.PendingControl)
 	return s, err
 }
 
@@ -341,6 +375,8 @@ type Update struct {
 	Started       bool
 	Ended         bool
 	LastMessageAt *time.Time
+	HostLeftAt    **time.Time
+	ResumeNote    *string
 }
 
 // apply writes u to the locked session and returns it with its changed events (none when nothing changed).
@@ -382,11 +418,19 @@ func apply(ctx context.Context, tx pgx.Tx, cur Session, u Update) (Session, []ev
 	if u.LastMessageAt != nil {
 		next.LastMessageAt = u.LastMessageAt
 	}
+	if u.HostLeftAt != nil {
+		next.HostLeftAt = *u.HostLeftAt
+	}
+	if u.ResumeNote != nil {
+		next.ResumeNote = *u.ResumeNote
+	}
 	visible := next.State != cur.State || next.Busy != cur.Busy || next.Turn != cur.Turn ||
 		!jsonEqual(next.PauseReason, cur.PauseReason) || next.Error != cur.Error || !jsonEqual(next.Merge, cur.Merge) ||
 		!jsonEqual(next.Budget, cur.Budget) || !jsonEqual(next.Use, cur.Use) || u.Started || u.Ended ||
-		u.LastMessageAt != nil
-	hidden := next.CredentialID != cur.CredentialID || next.ACPSessionID != cur.ACPSessionID || next.HostID != cur.HostID
+		u.LastMessageAt != nil || (next.HostLeftAt == nil) != (cur.HostLeftAt == nil) ||
+		(next.HostLeftAt != nil && next.HostID != cur.HostID)
+	hidden := next.CredentialID != cur.CredentialID || next.ACPSessionID != cur.ACPSessionID || next.HostID != cur.HostID ||
+		next.ResumeNote != cur.ResumeNote
 	if !visible && !hidden {
 		return cur, nil, nil
 	}
@@ -399,10 +443,11 @@ func apply(ctx context.Context, tx pgx.Tx, cur Session, u Update) (Session, []ev
 		acp_session_id = NULLIF($11, ''), host_id = NULLIF($12, ''), rev = $13, updated_at = now(),
 		started_at = CASE WHEN $14 AND started_at IS NULL THEN now() ELSE started_at END,
 		ended_at = CASE WHEN $15 THEN now() ELSE ended_at END,
-		last_message_at = coalesce($16, last_message_at)
+		last_message_at = coalesce($16, last_message_at), host_left_at = $17, resume_note = NULLIF($18, '')
 		WHERE id = $1`,
 		cur.ID, next.State, next.Busy, next.Turn, next.PauseReason, next.Error, next.Merge, next.Budget, next.Use,
-		next.CredentialID, next.ACPSessionID, next.HostID, rev, u.Started, u.Ended, u.LastMessageAt)
+		next.CredentialID, next.ACPSessionID, next.HostID, rev, u.Started, u.Ended, u.LastMessageAt, next.HostLeftAt,
+		next.ResumeNote)
 	if err != nil {
 		return Session{}, nil, fmt.Errorf("update agent session %s: %w", cur.ID, err)
 	}
