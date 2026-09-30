@@ -35,3 +35,7 @@ export {
 export { formatReference, linkifyReferences, parseReference, referenceChipLabel, referenceFromHref } from "@/shell/agents/references";
 // Branches: the three-way view of conflicting files (branches.compare) that Session changes and the Recipe document share.
 export { BranchConflicts, ThreeWayDiff, type BranchConflictsProps, type ThreeWayDiffProps } from "@/shell/diff/ThreeWayDiff";
+// Playbooks: the start form (inputs from the playbook's schema, the estimate before starting) that Agent sessions and
+// the Project home share, and a playbook session's plan as the server ticks it.
+export { PlaybookLauncher, type PlaybookLauncherProps } from "@/shell/agents/PlaybookLauncher";
+export { budgetNote, estimateLine, planProgress, playbookStateLabel } from "@/shell/agents/playbooks";

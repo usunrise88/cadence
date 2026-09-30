@@ -1,6 +1,6 @@
 import { ChatBubble, Check, Pause, Play, Plus, SendDiagonal, UndoAction, XmarkCircle } from "iconoir-react";
 import type { QueryClient } from "@tanstack/react-query";
-import { commandHeaders } from "@/api/client";
+import { commandHeaders, commandHeadersAt } from "@/api/client";
 import {
   agentMessagesNew,
   agentSessionsAccept,
@@ -10,8 +10,9 @@ import {
   agentSessionsPause,
   agentSessionsResume,
   agentSessionsRevert,
+  playbooksRun,
 } from "@/api/gen/sdk.gen";
-import type { AgentMessage, AgentReference, AgentSession, AgentSessionNew } from "@/api/gen/types.gen";
+import type { AgentMessage, AgentReference, AgentSession, AgentSessionNew, PlaybookRunNew, PlaybookRunResult } from "@/api/gen/types.gen";
 import { attachSelectionToChat, currentChatSession, openChat, SESSIONS_PANEL, useChatBridge } from "@/shell/agents/bridge";
 import { patchSessions } from "@/shell/agents/sessions";
 import { openPanel } from "@/shell/dock/layout";
@@ -27,6 +28,8 @@ export type SessionArgs = { session: AgentSession };
 export type SessionNewArgs = { project?: string; body: AgentSessionNew; /** Open the new session's Chat. */ open?: boolean };
 export type SessionCancelArgs = SessionArgs & { end?: boolean };
 export type MessageNewArgs = { sessionId: string; text: string; references?: AgentReference[] };
+/** playbooks.run: version is the playbook's (the ETag of playbooks.get; "*" when absent); dryRun answers the estimate and plan. */
+export type PlaybookRunArgs = { project?: string; name: string; version?: string; body: PlaybookRunNew; dryRun?: boolean; open?: boolean };
 
 let queryClient: QueryClient | null = null;
 /** The shell hands the query client over so command results patch the session caches at once. */
@@ -75,6 +78,37 @@ export function registerAgentCommands(): void {
         const { data } = await agentSessionsNew({ path: { p: project }, body: args.body, headers: commandHeaders(), throwOnError: true });
         patched(data);
         if (args.open) openChat(data.id);
+        return data;
+      },
+    },
+    {
+      id: "playbooks.run",
+      operation: "playbooks.run",
+      title: "Start a playbook…",
+      group: "Project",
+      icon: Play,
+      enabled: needProject,
+      run: async (ctx, raw): Promise<PlaybookRunResult | undefined> => {
+        const args = raw as PlaybookRunArgs | undefined;
+        const project = args?.project ?? ctx.project;
+        if (!project) return undefined;
+        if (!args?.name) {
+          openPanel(SESSIONS_PANEL, { location: "floating" });
+          useChatBridge.getState().openNewSessionForm("playbook");
+          return undefined;
+        }
+        const headers = args.version ? commandHeadersAt(args.version) : { ...commandHeaders(), "If-Match": "*" };
+        const { data } = await playbooksRun({
+          path: { p: project, name: args.name },
+          ...(args.dryRun ? { query: { dryRun: true } } : {}),
+          body: args.body,
+          headers,
+          throwOnError: true,
+        });
+        if (data.session) {
+          patched(data.session);
+          if (args.open) openChat(data.session.id);
+        }
         return data;
       },
     },

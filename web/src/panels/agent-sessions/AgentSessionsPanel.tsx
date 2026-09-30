@@ -14,6 +14,7 @@ import {
   isAsleep,
   isLive,
   openChat,
+  PlaybookLauncher,
   runCommand,
   sessionLabel,
   sessionStateLabel,
@@ -90,7 +91,7 @@ export function AgentSessionsPanel(_props: PanelProps) {
           New session
         </Button>
       </PanelToolbar>
-      {formOpen ? <NewSessionForm project={project} onDone={() => setFormOpen(false)} /> : null}
+      {formOpen ? <NewSessionForm key={formNonce} project={project} onDone={() => setFormOpen(false)} /> : null}
       <div className="min-h-0 flex-1 overflow-auto">
         {list.isLoading ? <p className="p-3 text-xs text-muted-foreground">Loading…</p> : null}
         {!list.isLoading && items.length === 0 ? (
@@ -135,7 +136,7 @@ function SessionRow({ s, approvals }: { s: AgentSession; approvals: number }) {
     }
   };
   const tokens = s.use.inputTokens + s.use.outputTokens;
-  const decidable = s.kind === "interactive" && (s.merge.state === "pending" || (s.state === "paused" && s.merge.state === "none"));
+  const decidable = s.kind !== "read-only" && (s.merge.state === "pending" || (s.state === "paused" && s.merge.state === "none"));
   const asleep = isAsleep(s);
   return (
     <li className="flex flex-col gap-1.5 rounded-md border bg-background p-2 text-xs" data-session={s.id} data-state={s.state}>
@@ -217,6 +218,7 @@ function NewSessionForm({ project, onDone }: { project: string; onDone: () => vo
   const [driver, setDriver] = useState<AgentDriver | null>(null);
   const [model, setModel] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
+  const [mode, setMode] = useState<"interactive" | "playbook">(() => useChatBridge.getState().newSessionMode);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const first = useRef<HTMLSelectElement>(null);
@@ -246,7 +248,27 @@ function NewSessionForm({ project, onDone }: { project: string; onDone: () => vo
     }
   };
   return (
-    <form onSubmit={(e) => void submit(e)} className="flex flex-col gap-2 border-b bg-chrome p-3 text-xs" aria-label="New agent session">
+    <div className="flex flex-col gap-2 border-b bg-chrome p-3 text-xs">
+      <div role="radiogroup" aria-label="Session kind" className="inline-flex self-start rounded-md border bg-background p-0.5">
+        {(
+          [
+            ["interactive", "Interactive"],
+            ["playbook", "From a playbook"],
+          ] as const
+        ).map(([k, label]) => (
+          <button
+            key={k}
+            type="button"
+            role="radio"
+            aria-checked={mode === k}
+            onClick={() => setMode(k)}
+            className={cn("h-6 rounded-[4px] px-2.5", mode === k ? "bg-selected font-medium text-foreground" : "text-muted-foreground hover:text-foreground")}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+    <form onSubmit={(e) => void submit(e)} className="flex flex-col gap-2" aria-label="New agent session">
       <div className="grid grid-cols-[4.5rem_1fr] items-center gap-2">
         <label htmlFor={`${id}-driver`} className="text-muted-foreground">
           Agent
@@ -292,24 +314,32 @@ function NewSessionForm({ project, onDone }: { project: string; onDone: () => vo
           </datalist>
         ) : null}
       </div>
+      {mode === "playbook" ? null : (
       <label className="flex flex-col gap-1">
         <span className="text-muted-foreground">First message (optional)</span>
         <Textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={2} className="min-h-12 text-xs" placeholder="What should the agent do?" />
       </label>
-      <p className="text-[11px] text-muted-foreground">Interactive, on its own branch; budget and permissions from the project's agent profile.</p>
-      <div className="flex items-center gap-1">
-        <Button type="submit" size="xs" disabled={busy}>
-          Start session
-        </Button>
-        <Button type="button" size="xs" variant="ghost" onClick={onDone}>
-          Cancel
-        </Button>
-      </div>
+      )}
+      {mode === "playbook" ? null : (
+        <>
+          <p className="text-[11px] text-muted-foreground">Interactive, on its own branch; budget and permissions from the project's agent profile.</p>
+          <div className="flex items-center gap-1">
+            <Button type="submit" size="xs" disabled={busy}>
+              Start session
+            </Button>
+            <Button type="button" size="xs" variant="ghost" onClick={onDone}>
+              Cancel
+            </Button>
+          </div>
+        </>
+      )}
       {error ? (
         <p role="alert" className="text-destructive">
           {error}
         </p>
       ) : null}
     </form>
+      {mode === "playbook" ? <PlaybookLauncher project={project} driver={d} {...(m ? { model: m } : {})} onStarted={onDone} onCancel={onDone} /> : null}
+    </div>
   );
 }

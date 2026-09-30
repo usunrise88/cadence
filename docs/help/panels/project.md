@@ -51,8 +51,10 @@ are accepted and appear as recipe changes.
 
 ## Playbooks
 
-Playbooks ("Adapt a new language", "Fine-tune from a dataset version") appear on the Project home with their
-estimate from phase 2.
+The Project home's **Playbooks** section offers the playbook this phase runs — "Fine-tune from a dataset version" in
+phase 2 — with its estimate from the defaults; Start playbook opens the same form as Agent sessions (inputs, the
+estimate before starting). The other v1 playbooks are listed with the phase they run from ("Adapt a new language"
+from phase 4). `playbooks.run` starts it.
 
 ## Sources
 

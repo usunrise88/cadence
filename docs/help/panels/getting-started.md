@@ -38,7 +38,9 @@ palette (Ctrl/Cmd+K) or an agent session once its phase lands.
 
 ## Playbooks
 
-After the project exists, the Project home offers the "Adapt a new language" playbook with its estimate.
+After the project exists, the Project home offers the playbook this phase runs with its estimate; the step "Finish
+the first training run" runs "Fine-tune from a dataset version" (`playbooks.run`). "Adapt a new language" follows in
+phase 4.
 
 ## Sources
 
