@@ -170,8 +170,8 @@ mix:
     range: { min: 0.001, max: 1000 }
 
 # Drafts (docs/spec/05-agents.md "Worktree, drafts and merge"): what an agent's edit of a draftable kind does —
-# `draft` lands as a draft a person accepts or reverts, `direct` applies at once (still attributed). The project's
-# agent profile overrides these per kind once it exists (Projects stream).
+# `draft` lands as a draft a person accepts or reverts, `direct` applies at once (still attributed). A project's
+# agent profile (draftPolicy, filled from agent.draft_policy) decides per kind; these apply to projects without one.
 drafts:
   mix:
     value: draft

@@ -115,8 +115,8 @@ Open questions:
   not migrated to add the Approvals panel (the stored shape did not change; the status-bar badge reaches it) — only
   "Reset to default" and new workspaces get it
 - [ ] Mixes and drafts (phase 1, mix stream) assumptions, confirm:
-      the draft policy per kind is read from `defaults.yaml` (`drafts.mix: draft | direct`) until the project's agent
-      profile carries it (Agent settings, Projects stream); an agent never accepts a draft (`drafts-are-for-people`
+      the draft policy per kind is the project's agent profile `draftPolicy` (Agent settings; the wizard fills it
+      from `agent.draft_policy`), and `defaults.yaml` `drafts.mix` only for a project without a profile; an agent never accepts a draft (`drafts-are-for-people`
       forbidden rule in `guardrails-default`) — auto-accept is the `direct` policy, not an agent's choice; one open
       draft per author (actor + session) and entity, whose later edits update it (the draft's own `rev` is the
       If-Match of accept and revert); an agent's edit on a newer revision carries its open draft over field by field

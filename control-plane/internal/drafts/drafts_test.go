@@ -39,16 +39,25 @@ func TestTransition(t *testing.T) {
 	}
 }
 
-func TestPolicy(t *testing.T) {
+func TestResolvePolicy(t *testing.T) {
 	d := *defaults.Get()
-	if got := Policy(&d, "prj_1", "mix"); got != PolicyDraft {
+	if got := resolvePolicy(nil, &d, "mix"); got != PolicyDraft {
 		t.Errorf("default mix policy = %s, want draft (defaults.yaml drafts.mix)", got)
 	}
-	d.Drafts.Mix.Value = PolicyDirect
-	if got := Policy(&d, "prj_1", "mix"); got != PolicyDirect {
-		t.Errorf("direct policy = %s", got)
+	if got := resolvePolicy(map[string]string{"mix": PolicyDirect}, &d, "mix"); got != PolicyDirect {
+		t.Errorf("the profile's direct policy = %s", got)
 	}
-	if got := Policy(&d, "prj_1", "gate"); got != PolicyDraft {
+	d.Drafts.Mix.Value = PolicyDirect
+	if got := resolvePolicy(nil, &d, "mix"); got != PolicyDirect {
+		t.Errorf("direct policy without a profile = %s", got)
+	}
+	if got := resolvePolicy(map[string]string{"mix": PolicyDraft}, &d, "mix"); got != PolicyDraft {
+		t.Errorf("the profile wins over defaults.yaml, got %s", got)
+	}
+	if got := resolvePolicy(map[string]string{"mix": "bogus"}, &d, "mix"); got != PolicyDirect {
+		t.Errorf("an unknown profile value falls back to defaults.yaml, got %s", got)
+	}
+	if got := resolvePolicy(nil, &d, "gate"); got != PolicyDraft {
 		t.Errorf("unknown kinds default to draft, got %s", got)
 	}
 }

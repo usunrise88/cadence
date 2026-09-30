@@ -29,8 +29,8 @@ type CadenceEvent = {
   `presence.changed`. `drafts.accept` (If-Match: the draft's `rev`) applies the draft as the entity's next revision
   attributed to the person, `causedBy.draftId` naming the draft; a draft whose base is no longer the entity's
   revision answers `412 draft-stale` with the current revision. `drafts.revert` discards it. Agents never accept
-  drafts. The policy per kind (`draft` or `direct`, i.e. auto-accept) comes from `defaults.yaml` `drafts.*` until
-  the project's agent profile carries it.
+  drafts. The policy per kind (`draft` or `direct`, i.e. auto-accept) comes from the project's agent profile
+  (`draftPolicy`, Agent settings); a project without a profile falls back to `defaults.yaml` `drafts.*`.
 - Concurrency: every entity has a revision; writes carry `If-Match`. A losing writer, person or agent, gets the current revision and a conflict error it must resolve, never a silent overwrite.
 - Presence: while an agent is mid-edit on an entity, its panel shows "agent editing" and disables conflicting controls instead of racing.
   An agent is mid-edit while it has an open draft on the entity, or for `drafts.presence_seconds` after a direct

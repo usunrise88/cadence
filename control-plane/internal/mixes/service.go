@@ -98,7 +98,15 @@ func (s *Service) Edit(ctx context.Context, tx pgx.Tx, id string, rev int, e Edi
 	if err := commands.CheckRev(Kind, rev, m.Rev); err != nil {
 		return EditResult{}, 0, nil, err
 	}
-	if actor.Kind != auth.KindAgent || drafts.Policy(s.Defaults(), m.ProjectID, Kind) == drafts.PolicyDirect {
+	direct := actor.Kind != auth.KindAgent
+	if !direct {
+		policy, err := drafts.Policy(ctx, tx, s.Defaults(), m.ProjectID, Kind)
+		if err != nil {
+			return EditResult{}, 0, nil, err
+		}
+		direct = policy == drafts.PolicyDirect
+	}
+	if direct {
 		in := m.Content.Input().Apply(e)
 		c, err := Normalize(ctx, tx, m.ProjectID, in, s.Defaults())
 		if err != nil {

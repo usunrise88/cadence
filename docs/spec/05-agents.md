@@ -87,7 +87,7 @@ Every mutating tool accepts `dryRun`; the verbs come from the vocabulary in the 
 
 ### Worktree, drafts and merge
 
-- Entity changes go through MCP and land directly, or as drafts with Accept and Revert on draftable kinds (mix, gate, note, language pack) when the project's policy says so. Accepting is a person's decision: `drafts.accept` is forbidden to agents; an agent may revert its own draft (phase 1: mixes; the policy per kind is `defaults.yaml` `drafts.*` until the agent profile carries it).
+- Entity changes go through MCP and land directly, or as drafts with Accept and Revert on draftable kinds (mix, gate, note, language pack) when the project's policy says so. Accepting is a person's decision: `drafts.accept` is forbidden to agents; an agent may revert its own draft (phase 1: mixes; the policy per kind is the project's agent profile `draftPolicy`, set in Agent settings and filled by the wizard from `defaults.yaml` `agent.draft_policy`; a project without a profile falls back to `defaults.yaml` `drafts.*`).
 - File changes commit on the session branch; the Recipe document lists open session branches and their diffs against `main`.
 - On session end the branch is merged fast-forward when it applies cleanly and the permission preset allows auto-merge; otherwise it stays as "Session changes" with a three-way diff for the user to accept or discard. Branches are kept 30 days after merge.
 - Parallel sessions never share a worktree; their conflicts appear only at merge, never at runtime.

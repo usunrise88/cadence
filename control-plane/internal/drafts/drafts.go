@@ -18,6 +18,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/defaults"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
 	"github.com/usunrise88/cadence/control-plane/internal/problems"
+	"github.com/usunrise88/cadence/control-plane/internal/projects"
 	"github.com/usunrise88/cadence/control-plane/internal/storage"
 )
 
@@ -50,11 +51,26 @@ func Transition(from, to string) error {
 	return problems.Conflict.New("a draft cannot become %q", to)
 }
 
-// Policy returns the draft policy for an agent's edit of kind in a project.
-//
-// TODO(projects stream): read the project's agent profile (draft policy per entity kind, Agent settings panel)
-// once it exists and fall back to defaults.yaml; until then every project uses defaults.yaml.
-func Policy(d *defaults.Defaults, _ string, kind string) string {
+// Policy returns the draft policy for an agent's edit of kind in a project: the one the project's agent profile
+// names for the kind (Agent settings; the wizard fills it from defaults.yaml agent.draft_policy), else — for a
+// project created before the wizard, without a profile — defaults.yaml drafts.<kind>.
+func Policy(ctx context.Context, q storage.Querier, d *defaults.Defaults, projectID, kind string) (string, error) {
+	a, err := projects.GetAgentProfile(ctx, q, projectID)
+	if err != nil {
+		if pe, ok := problems.As(err); !ok || pe.Type != problems.NotFound {
+			return "", err
+		}
+		return resolvePolicy(nil, d, kind), nil
+	}
+	return resolvePolicy(a.DraftPolicy, d, kind), nil
+}
+
+// resolvePolicy picks the profile's policy for kind when it names a known one, else the defaults.yaml one.
+func resolvePolicy(profile map[string]string, d *defaults.Defaults, kind string) string {
+	switch p := profile[kind]; p {
+	case PolicyDirect, PolicyDraft:
+		return p
+	}
 	if kind == "mix" && d.Drafts.Mix.Value == PolicyDirect {
 		return PolicyDirect
 	}

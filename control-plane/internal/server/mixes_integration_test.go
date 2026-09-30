@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -17,11 +16,9 @@ import (
 
 	"github.com/usunrise88/cadence/control-plane/internal/auth"
 	"github.com/usunrise88/cadence/control-plane/internal/credentials"
-	"github.com/usunrise88/cadence/control-plane/internal/defaults"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
 	"github.com/usunrise88/cadence/control-plane/internal/mcp"
 	"github.com/usunrise88/cadence/control-plane/internal/mcp/mcptest"
-	"github.com/usunrise88/cadence/control-plane/internal/obs"
 	"github.com/usunrise88/cadence/control-plane/internal/registry"
 	"github.com/usunrise88/cadence/control-plane/templates"
 )
@@ -371,14 +368,22 @@ func TestStaleDraftAccept(t *testing.T) {
 func TestAgentDirectPolicy(t *testing.T) {
 	e, _ := startMixes(t)
 	m := e.newMix(heMix)
-	d := *defaults.Get()
-	d.Drafts.Mix.Value = "direct"
-	direct := httptest.NewServer(newTestServer(t, e.pool, events.NewHub(1), obs.NewMetrics(), func(c *Config) {
-		c.Actor, c.Defaults = testAgent, &d
-	}).Handler())
-	defer direct.Close()
+	// Agent settings: the project's agent profile sends an agent's mix edits straight to a revision.
+	var ap struct {
+		Rev         int               `json:"rev"`
+		DraftPolicy map[string]string `json:"draftPolicy"`
+	}
+	e.ok(e.do("GET", "/api/projects/hebrew/agent-profile", ""), 200, &ap)
+	if ap.DraftPolicy["mix"] != "draft" {
+		t.Fatalf("the wizard's draft policy for mixes = %q, want draft (defaults.yaml agent.draft_policy)", ap.DraftPolicy["mix"])
+	}
+	e.ok(e.do("PATCH", "/api/projects/hebrew/agent-profile", `{"draftPolicy":{"mix":"direct"}}`, "Idempotency-Key", e.key(),
+		"If-Match", fmt.Sprintf(`"%d"`, ap.Rev)), 200, &ap)
+	if ap.DraftPolicy["mix"] != "direct" {
+		t.Fatalf("draft policy after the edit %v", ap.DraftPolicy)
+	}
 	var er editResult
-	e.ok(e.send(direct.URL, "PATCH", "/api/mixes/"+m.ID, `{"temperature":2}`, "Idempotency-Key", e.key(), "If-Match", `"1"`,
+	e.ok(e.agent("PATCH", "/api/mixes/"+m.ID, `{"temperature":2}`, "Idempotency-Key", e.key(), "If-Match", `"1"`,
 		"Cadence-Tool-Call-Id", "toolu_D"), 200, reset(&er))
 	if er.Draft != nil || er.Mix.Rev != 2 || er.Mix.UpdatedBy.Kind != "agent" || er.Mix.Cause == nil || er.Mix.Cause.ToolCallID != "toolu_D" {
 		t.Fatalf("direct agent edit %+v", er)
