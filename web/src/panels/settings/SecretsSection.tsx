@@ -1,8 +1,9 @@
-import { useId, useState, type FormEvent } from "react";
+import { useId, useState, type FormEvent, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { projectsListOptions, secretsListOptions, secretsListQueryKey } from "@/api/gen/@tanstack/react-query.gen";
 import type { Secret, SecretKind, SecretList } from "@/api/gen/types.gen";
 import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Input } from "@/components/ui/input";
 import { errorMessage, problemOf, runCommand, useTopic } from "@/shell/panel";
 import { Field, SectionHeading, Table, Td, when } from "./ui";
@@ -23,10 +24,12 @@ export function upsertSecret(list: SecretList | undefined, s: Secret): SecretLis
  * A write-only value: a password field that never echoes what was stored. The parent clears it after the command
  * went through; nothing reads it back.
  */
-export function WriteOnlyField({ id, label, value, onChange, required }: { id: string; label: string; value: string; onChange: (v: string) => void; required?: boolean }) {
+/** A write-only value field; `action` (the submit button) sits on the input's line, the hint below both. */
+export function WriteOnlyField({ id, label, value, onChange, required, action }: { id: string; label: string; value: string; onChange: (v: string) => void; required?: boolean; action?: ReactNode }) {
   const hint = `${id}-hint`;
   return (
     <Field label={label} htmlFor={id} hint="Write-only: stored encrypted, never shown again — not here, not in the API, not to agents.">
+      <div className="flex items-center gap-2">
       <Input
         id={id}
         name={id}
@@ -38,8 +41,10 @@ export function WriteOnlyField({ id, label, value, onChange, required }: { id: s
         onChange={(e) => onChange(e.target.value)}
         aria-describedby={hint}
         data-write-only=""
-        className="h-7 font-mono text-xs"
+        className="h-7 min-w-0 flex-1 font-mono text-xs"
       />
+      {action}
+      </div>
       <span id={hint} className="sr-only">
         Write-only value
       </span>
@@ -84,23 +89,23 @@ export function SecretForm({ projects, onStored }: { projects: string[]; onStore
         <Input id={`${uid}-name`} value={name} onChange={(e) => setName(e.target.value)} required placeholder="hf-token" className="h-7 text-xs" autoComplete="off" />
       </Field>
       <Field label="Kind" htmlFor={`${uid}-kind`}>
-        <select id={`${uid}-kind`} value={kind} onChange={(e) => setKind(e.target.value as SecretKind)} className="h-7 rounded-md border border-input bg-background px-2 text-xs">
+        <NativeSelect id={`${uid}-kind`} value={kind} onChange={(e) => setKind(e.target.value as SecretKind)} className="h-7 rounded-md border border-input bg-background px-2 text-xs">
           {SECRET_KINDS.map((k) => (
             <option key={k} value={k}>
               {k}
             </option>
           ))}
-        </select>
+        </NativeSelect>
       </Field>
       <Field label="Scope" htmlFor={`${uid}-scope`} hint="Instance: every project's jobs may read it. A project: only that project's jobs and bootstrap.">
-        <select id={`${uid}-scope`} value={scope} onChange={(e) => setScope(e.target.value)} className="h-7 rounded-md border border-input bg-background px-2 text-xs">
+        <NativeSelect id={`${uid}-scope`} value={scope} onChange={(e) => setScope(e.target.value)} className="h-7 rounded-md border border-input bg-background px-2 text-xs">
           <option value="instance">instance</option>
           {projects.map((p) => (
             <option key={p} value={`project:${p}`}>
               project:{p}
             </option>
           ))}
-        </select>
+        </NativeSelect>
       </Field>
       <WriteOnlyField id={`${uid}-value`} label="Value" value={value} onChange={setValue} required />
       <div className="flex items-center gap-2 @md:col-span-2">

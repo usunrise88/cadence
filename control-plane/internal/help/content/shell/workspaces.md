@@ -25,7 +25,7 @@ Pick the workspace for the block you are working on.
 ## Commands
 
 - `workspaces.set` — Save workspace (explicit save; saving is automatic otherwise)
-- `view.resetWorkspace` — Reset workspace to default
+- `view.resetWorkspace` — Reset workspace to default (also **Window → Reset layout**)
 - Ctrl/Cmd+Shift+1…5 — switch workspace
 
 ## Playbooks

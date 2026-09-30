@@ -34,7 +34,7 @@ import {
   type PanelProps,
 } from "@/shell/panel";
 import { Entry, RefChips } from "./entries";
-import { budgetUse, compact, entryMatchesToolCall, rowOffsets, sessionStatus, VIRTUALIZE_AFTER, visibleEntries, visibleRange, type Meter, type Tone } from "./model";
+import { budgetUse, compact, entryMatchesToolCall, rowOffsets, sessionStatus, tabLabel, VIRTUALIZE_AFTER, visibleEntries, visibleRange, type Meter, type Tone } from "./model";
 
 // Chat (docs/spec/11-ui-panels.md "Panel catalogue"; docs/spec/05-agents.md "What the Chat panel shows"): one agent
 // session's streaming transcript, its header (kind, state, budget; stop, pause or resume, end), the merge of its
@@ -188,18 +188,18 @@ function Header({ session: s, instanceId, switchable }: { session: AgentSession;
   }, [list.data, s]);
   const iconButton = "size-6 [&_svg]:size-3.5";
   return (
-    <div className="flex shrink-0 flex-col gap-1.5 border-b px-3 py-2" data-slot="chat-header">
+    <div className="@container flex shrink-0 flex-col gap-1.5 border-b px-3 py-2" data-slot="chat-header">
       <div className="flex min-w-0 items-center gap-2">
         {switchable ? (
           <NativeSelect
             aria-label="Session shown in this Chat"
-            className="h-6 w-auto max-w-44 min-w-0 text-xs font-medium"
+            className="h-6 w-auto max-w-56 min-w-0 shrink text-xs font-medium"
             value={s.id}
             onChange={(e) => pinChat(instanceId, e.target.value || null)}
           >
             {options.map((x) => (
               <option key={x.id} value={x.id}>
-                {sessionLabel(x)}
+                {tabLabel(x)} · {x.model}
                 {x.id !== s.id ? ` (${x.state.replace("_", " ")})` : ""}
               </option>
             ))}
@@ -209,10 +209,10 @@ function Header({ session: s, instanceId, switchable }: { session: AgentSession;
           <h3 className="min-w-0 truncate text-[13px] font-semibold">{sessionLabel(s)}</h3>
         )}
         <span
-          className={cn("inline-flex shrink-0 items-center gap-1.5 text-xs font-medium", TONE[status.tone])}
+          className={cn("inline-flex min-w-0 items-center gap-1.5 truncate text-xs font-medium", TONE[status.tone])}
           data-slot="session-state"
           data-state={s.state}
-          title={status.detail}
+          title={[status.detail, `${s.driver} · ${s.model} · ${s.kind} · preset ${s.preset}`].filter(Boolean).join("\n")}
         >
           <span aria-hidden className={cn("size-2 rounded-full", DOT[status.tone], s.busy && "animate-pulse motion-reduce:animate-none")} />
           {status.label}
@@ -222,9 +222,7 @@ function Header({ session: s, instanceId, switchable }: { session: AgentSession;
             {s.kind}
           </span>
         ) : null}
-        <span className="min-w-0 truncate text-[11px] text-muted-foreground" title={`${s.driver} · ${s.model} · ${s.kind} · preset ${s.preset}`}>
-          {s.model}
-        </span>
+        <span className="sr-only">{sessionLabel(s)}</span>
         {live ? (
           <div className="ml-auto flex shrink-0 items-center gap-0.5" role="toolbar" aria-label="Session">
             {confirmEnd ? (
@@ -599,15 +597,22 @@ function Composer({ instanceId, session, bound }: { instanceId: string; session:
         className="max-h-40 min-h-12 resize-none text-[13px]"
         disabled={!project}
       />
-      <div className="flex items-center gap-1">
-        <Button size="xs" variant="ghost" onClick={attach} title="Attach the current selection (Ctrl/Cmd+I)" disabled={!project}>
+      <div className="flex min-w-0 items-center gap-1">
+        <Button size="xs" variant="ghost" className="shrink-0" onClick={attach} title="Attach the current selection (Ctrl/Cmd+I)" disabled={!project}>
           <Attachment aria-hidden />
           Attach selection
         </Button>
-        <span className="ml-auto hidden items-center gap-1 text-[11px] text-muted-foreground @sm:flex">
+        <span className="ml-auto hidden items-center gap-1 text-[11px] whitespace-nowrap text-muted-foreground @lg:flex">
           <Kbd>Enter</Kbd> send · <Kbd>Shift+Enter</Kbd> new line
         </span>
-        <Button size="xs" disabled={!draft.text.trim() || sending || !project} onClick={() => void send()} data-command={continues ? "agentMessages.new" : "agentSessions.new"}>
+        <Button
+          size="xs"
+          className="ml-auto shrink-0 @lg:ml-0"
+          disabled={!draft.text.trim() || sending || !project}
+          onClick={() => void send()}
+          data-command={continues ? "agentMessages.new" : "agentSessions.new"}
+          title="Enter sends · Shift+Enter starts a new line"
+        >
           <SendDiagonal aria-hidden />
           {continues ? "Send" : "Start session"}
         </Button>

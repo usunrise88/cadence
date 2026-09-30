@@ -131,3 +131,28 @@
   border-radius: 3px;
   padding: 0 0.25em;
 }
+
+/* Streamdown frames a table twice (a padded wrapper and a scroller, each with a border): keep one frame, the panel's
+ * type size and the tab strip's header fill. */
+.cadence-prose [data-streamdown="table-wrapper"] {
+  margin: 0.5rem 0;
+  padding: 0;
+  gap: 0;
+  border: 0;
+  background: none;
+}
+.cadence-prose [data-streamdown="table-header"] {
+  background: var(--cadence-tool);
+}
+.cadence-prose [data-streamdown="table-header-cell"],
+.cadence-prose [data-streamdown="table-cell"] {
+  padding: 0.3rem 0.5rem;
+  font-size: var(--cadence-font-size-small);
+  line-height: 1.45;
+  vertical-align: top;
+  border-bottom: 0;
+}
+.cadence-prose [data-streamdown="table-header-cell"] {
+  color: var(--cadence-text-secondary);
+  font-weight: 500;
+}

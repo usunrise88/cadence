@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { verbs } from "@/api/operations.gen";
 import { Sparks } from "iconoir-react";
 import { Button } from "@/components/ui/button";
@@ -269,7 +269,7 @@ export async function explainThis(entity: { kind: string; id: string; label?: st
   }
 }
 
-export type AgentMenuItem = { label: string; run: () => void; command?: string };
+export type AgentMenuItem = { label: string; run: () => void; command?: string; disabled?: boolean };
 
 /**
  * The agent's actions on what a panel shows (Ask agent, Explain this) behind one AI icon in the corner, apart from
@@ -296,7 +296,7 @@ export function AgentMenu({ items, className }: { items: AgentMenuItem[]; classN
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-max min-w-52">
         {items.map((it) => (
-          <DropdownMenuItem key={it.label} onClick={it.run} data-command={it.command}>
+          <DropdownMenuItem key={it.label} onClick={it.run} disabled={it.disabled} data-command={it.command}>
             {it.label}
           </DropdownMenuItem>
         ))}
@@ -354,6 +354,7 @@ export function EntityList({
   label,
   onOpen,
   onPreview,
+  onCursor,
   height,
   versionLabel = "Version",
 }: {
@@ -361,12 +362,16 @@ export function EntityList({
   label: string;
   onOpen: (r: ListRow) => void;
   onPreview?: (r: ListRow) => void;
+  /** The highlighted row (click or arrows), for actions on "this row" outside the list. */
+  onCursor?: (r: ListRow | undefined) => void;
   /** Viewport height for virtualization; defaults to the container's. */
   height?: number;
   /** Heading of the second column; mixed-kind lists (search results) show the kind there. */
   versionLabel?: string;
 }) {
   const [cursor, setCursor] = useState(0);
+  const current = rows[cursor];
+  useEffect(() => onCursor?.(current), [current, onCursor]);
   const [scrollTop, setScrollTop] = useState(0);
   const virtual = rows.length > VIRTUALIZE_AFTER;
   const viewport = height ?? 480;
@@ -412,7 +417,7 @@ export function EntityList({
               onClick={() => setCursor(index)}
               onDoubleClick={() => onOpen(r)}
               style={virtual ? { position: "absolute", top: index * ROW_HEIGHT, left: 0, right: 0 } : undefined}
-              className={cn("grid h-7 grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr] items-center gap-2 px-2 hover:bg-hover", index === cursor && "bg-selected")}
+              className={cn("grid h-7 cursor-default grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr] items-center gap-2 px-2 select-none hover:bg-hover", index === cursor && "bg-selected")}
             >
               <span role="gridcell" className="truncate">
                 {r.name}

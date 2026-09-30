@@ -99,13 +99,10 @@ export function PresenceNotice({ presence, noun }: { presence: Presence[]; noun:
   if (presence.length === 0) return null;
   const p = presence[0]!;
   return (
-    <div data-slot="presence-notice" className="flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs">
-      <ActorBadge actor={p.actor} toolCallId={p.toolCallId} />
-      <span>
-        is editing this {noun}
-        {p.draftId ? ": its edits land as a draft. Editing here waits until the draft is accepted or reverted." : ". Editing here waits a few seconds."}
-      </span>
-    </div>
+    <p data-slot="presence-notice" className="rounded-md border bg-agent/40 px-3 py-2 text-xs leading-relaxed">
+      <ActorBadge actor={p.actor} toolCallId={p.toolCallId} /> is editing this {noun}
+      {p.draftId ? ": its edits land as a draft. Editing here waits until the draft is accepted or reverted." : ". Editing here waits a few seconds."}
+    </p>
   );
 }
 
@@ -182,7 +179,8 @@ export function DraftOutline({ draft, noun, children }: { draft: Draft; noun: st
           <PopoverTrigger openOnHover delay={150} render={<button type="button" className="h-6 rounded px-1.5 text-accent-text underline-offset-2 hover:underline" />}>
             {draft.changes.length} {draft.changes.length === 1 ? "change" : "changes"}
           </PopoverTrigger>
-          <PopoverContent align="start" className="w-80">
+          {/* Above the link: below it the diff would cover Revert and Accept on the way to them. */}
+          <PopoverContent side="top" align="start" className="w-80">
             <DraftDiff changes={draft.changes} />
           </PopoverContent>
         </Popover>

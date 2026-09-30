@@ -3,6 +3,7 @@ import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-quer
 import { agentCredentialsListOptions, agentCredentialsListQueryKey, agentProvidersListOptions } from "@/api/gen/@tanstack/react-query.gen";
 import type { AgentCredential, AgentCredentialList, AgentProvider, DefaultValue } from "@/api/gen/types.gen";
 import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Input } from "@/components/ui/input";
 import { errorMessage, lookupDefault, problemOf, runCommand, useDefaults, useTopic, WhyDefault } from "@/shell/panel";
 import { WriteOnlyField } from "./SecretsSection";
@@ -266,13 +267,20 @@ function ClaudeCard({ credential, provider, hostConnected }: { credential: Agent
           </li>
         </ol>
       </details>
-      <form onSubmit={submit} aria-label="Claude Code token" className="grid gap-2 @md:grid-cols-[1fr_auto] @md:items-end">
-        <WriteOnlyField id={`${uid}-token`} label={live ? "Replace token" : "Token"} value={value} onChange={setValue} />
-        <Button type="submit" size="xs" disabled={busy || !value.trim() || !!valueError} data-command="agentCredentials.set">
-          {live ? "Replace" : "Connect"}
-        </Button>
+      <form onSubmit={submit} aria-label="Claude Code token" className="flex flex-col gap-2">
+        <WriteOnlyField
+          id={`${uid}-token`}
+          label={live ? "Replace token" : "Token"}
+          value={value}
+          onChange={setValue}
+          action={
+            <Button type="submit" size="sm" className="shrink-0" disabled={busy || !value.trim() || !!valueError} data-command="agentCredentials.set">
+              {live ? "Replace" : "Connect"}
+            </Button>
+          }
+        />
         {valueError ? (
-          <span role="alert" className="text-xs text-destructive @md:col-span-2">
+          <span role="alert" className="text-xs text-destructive">
             {valueError}
           </span>
         ) : null}
@@ -400,13 +408,18 @@ function ProviderRow({ c, hostConnected }: { c: AgentCredential; hostConnected: 
         <tr id={`${uid}-replace`}>
           <td colSpan={7} className="px-2 py-1.5">
             {replacing ? (
-              <form onSubmit={replace} aria-label={`Replace the key of ${c.name}`} className="flex flex-wrap items-end gap-2">
-                <div className="min-w-60 flex-1">
-                  <WriteOnlyField id={`${uid}-key`} label={`New key for ${c.name}`} value={value} onChange={setValue} />
-                </div>
-                <Button type="submit" size="xs" disabled={busy || !value.trim()} data-command="agentCredentials.set">
-                  Save key
-                </Button>
+              <form onSubmit={replace} aria-label={`Replace the key of ${c.name}`}>
+                <WriteOnlyField
+                  id={`${uid}-key`}
+                  label={`New key for ${c.name}`}
+                  value={value}
+                  onChange={setValue}
+                  action={
+                    <Button type="submit" size="sm" className="shrink-0" disabled={busy || !value.trim()} data-command="agentCredentials.set">
+                      Save key
+                    </Button>
+                  }
+                />
               </form>
             ) : null}
             {error ? (
@@ -468,7 +481,7 @@ function DefaultModel({ list }: { list: AgentCredentialList }) {
         extra={<WhyDefault label="Default model for new projects" value={why} />}
         hint={`${list.opencodeDefault.source === "configured" ? "Chosen here" : "From defaults.yaml"}: ${current}. The wizard and the agent profile start from it.`}
       >
-        <select
+        <NativeSelect
           id={`${uid}-model`}
           value={selected}
           disabled={all.length === 0}
@@ -481,7 +494,7 @@ function DefaultModel({ list }: { list: AgentCredentialList }) {
               {m}
             </option>
           ))}
-        </select>
+        </NativeSelect>
       </Field>
       <Button type="submit" size="xs" disabled={busy || !target || unchanged} data-command="agentCredentials.set" title={!target ? "Configure and verify the model's provider first" : undefined}>
         Use as default
@@ -552,13 +565,13 @@ function AddProvider({ list, catalogue }: { list: AgentCredentialList; catalogue
   return (
     <form onSubmit={submit} aria-label="Add opencode provider" className="grid gap-2 rounded-md border border-dashed p-3 @md:grid-cols-2">
       <Field label="Provider" htmlFor={`${uid}-provider`} hint={entry.description}>
-        <select id={`${uid}-provider`} value={entry.id} onChange={(e) => setPick(e.target.value)} className="h-7 rounded-md border border-input bg-background px-2 text-xs">
+        <NativeSelect id={`${uid}-provider`} value={entry.id} onChange={(e) => setPick(e.target.value)} className="text-xs">
           {choices.map((p) => (
             <option key={p.id} value={p.id}>
               {p.name}
             </option>
           ))}
-        </select>
+        </NativeSelect>
       </Field>
       <WriteOnlyField id={`${uid}-key`} label={`${entry.keyLabel}${entry.keyRequired ? "" : " (optional)"}`} value={value} onChange={setValue} required={entry.keyRequired} />
       {custom ? (

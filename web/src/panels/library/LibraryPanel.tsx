@@ -2,16 +2,19 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Plus } from "iconoir-react";
 import { mixesListOptions, projectsSearchOptions, registrySearchOptions, viewsListOptions } from "@/api/gen/@tanstack/react-query.gen";
-import type { RegistryKind } from "@/api/gen/types.gen";
+import type { AgentReference, RegistryKind } from "@/api/gen/types.gen";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { EmptyState, EntityList, type ListRow } from "@/shell/entity/primitives";
+import { AgentMenu, EmptyState, EntityList, explainThis, type ListRow } from "@/shell/entity/primitives";
 import {
+  askAgent,
   chipLabel,
+  formatReference,
   kindNoun,
   openDocument,
   openRef,
+  parseReference,
   previewRef,
   runCommand,
   scopeOf,
@@ -153,6 +156,7 @@ export function LibraryPanel(_props: PanelProps) {
   // An invalid query (unknown qualifier) answers 400 with the list of qualifiers in its detail.
   const problem = searching && search.error instanceof Error ? search.error.message : "";
   const savedViews = views.data?.items ?? [];
+  const [current, setCurrent] = useState<ListRow | undefined>();
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -165,6 +169,7 @@ export function LibraryPanel(_props: PanelProps) {
             aria-label="Filter the library"
           />
           <NewMixButton />
+          <LibraryAgentMenu row={current} query={query} />
         </div>
         <div className="flex flex-wrap items-center gap-1 text-xs">
           <div role="radiogroup" aria-label="Scope" className="inline-flex rounded-md border bg-background p-0.5">
@@ -272,18 +277,50 @@ export function LibraryPanel(_props: PanelProps) {
             <LibraryEmpty />
           )
         ) : searching ? (
-          <EntityList rows={rows} label="Search results" versionLabel="Kind" onOpen={(r) => openRef(r.id)} onPreview={(r) => previewRef(r.id)} />
+          <EntityList rows={rows} label="Search results" versionLabel="Kind" onOpen={(r) => openRef(r.id)} onPreview={(r) => previewRef(r.id)} onCursor={setCurrent} />
         ) : (
           <EntityList
             rows={rows}
             label="Project work and registry versions"
             onOpen={(r) => (r.id.startsWith("mix:") ? openDocument(r.id) : select(`registry:${r.id}`, undefined))}
             onPreview={(r) => select(r.id.startsWith("mix:") ? r.id : `registry:${r.id}`, undefined)}
+            onCursor={setCurrent}
           />
         )}
       </div>
     </div>
   );
+}
+
+/** The agent's help on the Library: the highlighted row, a search in plain words, or what the Library is. */
+function LibraryAgentMenu({ row, query }: { row: ListRow | undefined; query: string }) {
+  const q = query.trim();
+  const ref = row ? rowReference(row) : undefined;
+  return (
+    <AgentMenu
+      items={[
+        {
+          label: row ? `Ask agent about ${row.name}` : "Ask agent about the highlighted row",
+          disabled: !row,
+          command: "view.askAgent",
+          run: () => row && askAgent({ refs: ref ? [ref] : [], intent: `Help me with ${row.name}${ref ? "" : ` (${row.id})`}` }),
+        },
+        {
+          label: q ? `Ask agent to find “${q.length > 32 ? `${q.slice(0, 32)}…` : q}”` : "Ask agent to find something",
+          command: "view.askAgent",
+          run: () => askAgent({ refs: [], intent: q ? `Find in the library: ${q}` : "Help me find what I need in the library: " }),
+        },
+        { label: "Explain the Library", command: "agentSessions.new", run: () => void explainThis(null, "panels.library", "the Library panel, its search qualifiers and saved views") },
+      ]}
+    />
+  );
+}
+
+/** A row attaches as its reference (`@mix:<id>`, `@version:<id>`; search hits already carry one); else it is named. */
+function rowReference(r: ListRow): AgentReference | undefined {
+  const at = r.id.indexOf(":");
+  const ref = r.id.startsWith("@") ? r.id : at > 0 ? formatReference(r.id.slice(0, at), r.id.slice(at + 1)) : undefined;
+  return ref && parseReference(ref) ? { ref, label: r.name } : undefined;
 }
 
 /** The project's work starts here: a visible way to create a mix (also in the palette as New mix…). */
