@@ -134,6 +134,7 @@ Phase 1 as built (2026-09-30):
 - An ACP permission request first goes to the preset (`policy.AnswerPermission`: tool classes, file rules, shell patterns, web); only an `ask` becomes an approval of kind `agent_permission`, answered back to the host (once → allow_once, for session → allow_always, deny or expiry → reject_once), never replayed.
 - Ending: `agentSessions.cancel {"end": true}`; accept/revert need the session paused or ended (a paused one ends). A decided gated command is told to the agent as a notice (its next turn).
 - Clocks: the stuck-turn clock and the runaway rule run in the host; the idle clock and the project's daily token budget on the server (a chore and each report).
+- Chat and the context bridge (web): the workspace's Chat is pinned to a session (`panels.chat.pinnedTo`), further sessions open their own Chat; the transcript is `agentMessages.list` paged by `after` and patched in place from `agent.session.{id}` (one cache write per animation frame, windowed past 200 entries); permission entries embed the Approvals card; Session changes show the branch diff and `agentSessions.accept|revert`. Ctrl/Cmd+I and Ask agent attach the selection as `@<kind>:<id>[#part]` chips with a prefilled intent; Explain this starts a read-only session with the entity and its help article; references in replies are links; an attribution badge opens the session's Chat at the tool call (`Cadence-Tool-Call-Id` = the transcript's tool-call id). The finished turn is announced in the polite live region, streamed tokens never.
 
 ## Guardrails
 
