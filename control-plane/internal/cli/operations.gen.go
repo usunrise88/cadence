@@ -254,6 +254,38 @@ var Operations = []Operation{
 		},
 	},
 	{
+		ID: "backups.get", Entity: "backups", Verb: "get", Method: "GET", Path: "/backups/{id}",
+		Summary: "Get a backup set with its manifest and last restore test report",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string"},
+		},
+	},
+	{
+		ID: "backups.list", Entity: "backups", Verb: "list", Method: "GET", Path: "/backups",
+		Summary: "Backup sets, newest first, with the schedule and the last restore test",
+		Params: []Param{
+			{Name: "limit", In: "query", Flag: "limit", Type: "integer", Default: "50"},
+		},
+	},
+	{
+		ID: "backups.new", Entity: "backups", Verb: "new", Method: "POST", Path: "/backups",
+		Summary:        "Take a backup set now (pg_dump plus the content store); answers the job",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+	},
+	{
+		ID: "backups.verify", Entity: "backups", Verb: "verify", Method: "POST", Path: "/backups/{id}:verify",
+		Summary:        "Restore the set into a scratch database and check it (the weekly restore test, now); answers the job",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+	},
+	{
 		ID: "baseModels.get", Entity: "baseModels", Verb: "get", Method: "GET", Path: "/registry/base-models/{id}",
 		Summary: "Get a base model version with the projects that use it",
 		Params: []Param{
@@ -640,6 +672,42 @@ var Operations = []Operation{
 		},
 	},
 	{
+		ID: "notificationRules.edit", Entity: "notificationRules", Verb: "edit", Method: "PATCH", Path: "/notification-rules/{id}",
+		Summary:        "Change which channels an event class reaches and when (admin only)",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "channels", Type: "object"},
+			{Name: "timing", Type: "string", Description: "immediate: sent as it happens; digest: held for the next daily digest; daily: the digest itself (its rule only); none: never sent"},
+		}},
+	},
+	{
+		ID: "notificationRules.list", Entity: "notificationRules", Verb: "list", Method: "GET", Path: "/notification-rules",
+		Summary: "The notification routing table — one rule per event class with its channels and timing",
+	},
+	{
+		ID: "notificationSettings.edit", Entity: "notificationSettings", Verb: "edit", Method: "PATCH", Path: "/notification-settings",
+		Summary:        "Change quiet hours, the digest time or the allow-listed Telegram chats (admin only)",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "digestTime", Type: "string", Description: "HH:MM on a 24-hour clock, in the instance timezone (policies)"},
+			{Name: "quietHours", Type: "object"},
+			{Name: "telegramChats", Type: "array of integer", Description: "The complete allowlist of Telegram chat ids"},
+		}},
+	},
+	{
+		ID: "notificationSettings.get", Entity: "notificationSettings", Verb: "get", Method: "GET", Path: "/notification-settings",
+		Summary: "Quiet hours, the digest time and the Telegram bot's allow-listed chats and status",
+	},
+	{
 		ID: "pipelineRuns.cancel", Entity: "pipelineRuns", Verb: "cancel", Method: "POST", Path: "/pipeline-runs/{id}:cancel",
 		Summary:        "Cancel a pipeline run; waiting steps never start and running step jobs are cancelled",
 		Description:    "Cancel a pipeline run: steps that have not started are cancelled, queued and running step jobs are cancelled (a running step stops on its worker), finished steps keep their outputs for reuse. Send ifMatch with the run's etag (rev) from pipelineRuns.get.",
@@ -729,6 +797,7 @@ var Operations = []Operation{
 		},
 		Body: &Body{Required: true, Properties: []BodyProperty{
 			{Name: "budgets", Type: "object"},
+			{Name: "timezone", Type: "string", Description: "IANA timezone name, e.g. Europe/Berlin or UTC"},
 		}},
 	},
 	{
@@ -998,6 +1067,27 @@ var Operations = []Operation{
 		Params: []Param{
 			{Name: "collection", In: "query", Flag: "collection", Type: "string", Description: "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)"},
 			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated"}},
+		},
+	},
+	{
+		ID: "telegramBot.set", Entity: "telegramBot", Verb: "set", Method: "PUT", Path: "/telegram-bot",
+		Summary:        "Store or replace the Telegram bot token (write-only, kept in the secret store as telegram-bot-token)",
+		Description:    "Store or replace the Telegram bot token. The value is write-only, encrypted in the secret store and never returned. Admin only; agents must not call this — secrets never enter an agent context.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "If-Match", In: "header", Flag: "if-match", Type: "string", Description: "The revision the change is based on; required unless the target does not exist yet"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "token", Required: true, Type: "string", Description: "Write-only: the token @BotFather issued (123456:ABC…)"},
+		}},
+	},
+	{
+		ID: "telegramBot.verify", Entity: "telegramBot", Verb: "verify", Method: "POST", Path: "/telegram-bot:verify",
+		Summary:        "Check the bot token with Telegram and send a test message to every allow-listed chat",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
 		},
 	},
 	{

@@ -48,6 +48,10 @@ export type Actor = {
     id: string;
     name?: string;
     sessionId?: string;
+    /**
+     * The channel a person acted through when it was not the web UI or the API (an approval decided from Telegram)
+     */
+    channel?: 'telegram';
 };
 
 export type Project = {
@@ -744,7 +748,7 @@ export type ComputeEdit = {
     cards?: Array<ComputeCardEdit>;
 };
 
-export type SecretKind = 'huggingface' | 'ngc' | 'github' | 's3' | 'judge-api' | 'other';
+export type SecretKind = 'huggingface' | 'ngc' | 'github' | 's3' | 'judge-api' | 'telegram' | 'other';
 
 export type SecretName = string;
 
@@ -862,6 +866,9 @@ export type Defaults = {
     drafts: DefaultSection;
     cache: DefaultSection;
     data?: DefaultSection;
+    operations?: DefaultSection;
+    notifications?: DefaultSection;
+    backups?: DefaultSection;
     estimates: {
         bytes_per_audio_hour: DefaultValue;
         training: Array<TrainingEstimateRow>;
@@ -887,6 +894,10 @@ export type Policies = {
     updatedAt: string;
     budgets: PolicyBudgets;
     /**
+     * The instance timezone (IANA, e.g. Europe/Berlin): quiet hours, the daily digest and the backup schedule follow it
+     */
+    timezone: string;
+    /**
      * Fields that differ from defaults.yaml, e.g. budgets.gpuHoursPerProjectPerDay
      */
     departures: Array<string>;
@@ -897,6 +908,10 @@ export type PoliciesEdit = {
         gpuHoursPerProjectPerDay?: number;
         agentTurnsPerSession?: number;
     };
+    /**
+     * IANA timezone name, e.g. Europe/Berlin or UTC
+     */
+    timezone?: string;
 };
 
 /**
@@ -3890,6 +3905,275 @@ export type DatasetLineage = {
     stepId?: string;
     projectId?: string;
     stepKind?: string;
+};
+
+/**
+ * Event class of the routing table: approval_requested (agent, automation, registry); failure (job failed, mount unhealthy, card closed, backup failed); outcome (gate verdict, promotion, schedule finished, batch closed); progress (step done, checkpoint saved, triage item added); digest (the daily digest)
+ *
+ */
+export type NotificationClass = 'approval_requested' | 'failure' | 'outcome' | 'progress' | 'digest';
+
+/**
+ * immediate: sent as it happens; digest: held for the next daily digest; daily: the digest itself (its rule only); none: never sent
+ */
+export type NotificationTiming = 'immediate' | 'digest' | 'daily' | 'none';
+
+export type NotificationChannels = {
+    /**
+     * The in-app notification history
+     */
+    inApp: boolean;
+    /**
+     * The Telegram bot (allow-listed chats only)
+     */
+    telegram: boolean;
+};
+
+export type NotificationRule = {
+    /**
+     * ntr_<class>
+     */
+    id: string;
+    eventClass: NotificationClass;
+    /**
+     * What the row covers
+     */
+    label: string;
+    /**
+     * The event types the class covers
+     */
+    events: Array<string>;
+    channels: NotificationChannels;
+    timing: NotificationTiming;
+    /**
+     * Failures reach Telegram even in quiet hours; fixed per class
+     */
+    bypassQuietHours: boolean;
+    rev: number;
+    updatedAt: string;
+    /**
+     * Fields that differ from the seeded table (channels.telegram, timing, …)
+     */
+    departures: Array<string>;
+};
+
+export type NotificationRuleList = {
+    items: Array<NotificationRule>;
+};
+
+export type NotificationRuleEdit = {
+    channels?: {
+        inApp?: boolean;
+        telegram?: boolean;
+    };
+    timing?: NotificationTiming;
+};
+
+/**
+ * HH:MM on a 24-hour clock, in the instance timezone (policies)
+ */
+export type ClockTime = string;
+
+export type QuietHours = {
+    enabled: boolean;
+    start: ClockTime;
+    end: ClockTime;
+};
+
+export type TelegramChat = {
+    /**
+     * Telegram chat id (negative for groups)
+     */
+    id: number;
+    /**
+     * Chat title or @username, as Telegram last reported it
+     */
+    title?: string;
+    seenAt?: string;
+};
+
+export type TelegramStatus = {
+    /**
+     * A token is stored (secret telegram-bot-token); the value is never returned
+     */
+    tokenSet: boolean;
+    /**
+     * @username from the last successful getMe
+     */
+    botUsername?: string;
+    /**
+     * Allow-listed chats; the bot talks to no one else
+     */
+    chats: Array<TelegramChat>;
+    /**
+     * Chats that wrote to the bot but are not allow-listed (the bot never answers them); add one to the allowlist to use it
+     */
+    pendingChats: Array<TelegramChat>;
+    /**
+     * The control plane is long-polling Telegram for button presses
+     */
+    polling: boolean;
+    /**
+     * The last Bot API error
+     */
+    lastError?: string;
+    lastSentAt?: string;
+};
+
+export type NotificationSettings = {
+    rev: number;
+    updatedAt: string;
+    /**
+     * The instance timezone quiet hours and the digest follow (policies.timezone)
+     */
+    timezone: string;
+    quietHours: QuietHours;
+    digestTime: ClockTime;
+    telegram: TelegramStatus;
+};
+
+export type NotificationSettingsEdit = {
+    quietHours?: {
+        enabled?: boolean;
+        start?: ClockTime;
+        end?: ClockTime;
+    };
+    digestTime?: ClockTime;
+    /**
+     * The complete allowlist of Telegram chat ids
+     */
+    telegramChats?: Array<number>;
+};
+
+export type TelegramBotSet = {
+    /**
+     * Write-only: the token @BotFather issued (123456:ABC…)
+     */
+    token: string;
+};
+
+export type TelegramBotVerify = {
+    /**
+     * The token works and every allow-listed chat got the test message
+     */
+    ok: boolean;
+    botUsername?: string;
+    /**
+     * Why the token check failed
+     */
+    error?: string;
+    chats: Array<{
+        id: number;
+        delivered: boolean;
+        error?: string;
+    }>;
+};
+
+export type BackupState = 'queued' | 'running' | 'succeeded' | 'failed';
+
+/**
+ * nightly and weekly are scheduled (the weekly set is the one taken on the restore-test day and is kept longer); manual is backups.new
+ */
+export type BackupTrigger = 'nightly' | 'weekly' | 'manual';
+
+export type RestoreTest = {
+    state: 'running' | 'passed' | 'failed';
+    startedAt: string;
+    finishedAt?: string;
+    durationMs?: number;
+    /**
+     * The scratch database (dropped afterwards)
+     */
+    database?: string;
+    /**
+     * The latest migration in the restored database
+     */
+    migrationVersion?: number;
+    tables?: Array<{
+        name: string;
+        /**
+         * Row count when the set was taken
+         */
+        backedUp: number;
+        /**
+         * Row count in the scratch database
+         */
+        restored: number;
+    }>;
+    /**
+     * Content-store blobs sampled and re-hashed
+     */
+    casChecked?: number;
+    error?: string;
+};
+
+export type Backup = {
+    /**
+     * bkp_…
+     */
+    id: string;
+    state: BackupState;
+    trigger: BackupTrigger;
+    rev: number;
+    jobId?: string;
+    createdAt: string;
+    startedAt?: string;
+    finishedAt?: string;
+    /**
+     * The set's directory under CADENCE_BACKUP_DIR
+     */
+    path?: string;
+    dumpBytes?: number;
+    dumpSha256?: string;
+    pgDumpVersion?: string;
+    serverVersion?: string;
+    migrationVersion?: number;
+    /**
+     * Row counts of the key tables when the set was taken
+     */
+    tables?: Array<{
+        name: string;
+        rows: number;
+    }>;
+    /**
+     * Blobs in the content store when the set was taken
+     */
+    casBlobs?: number;
+    /**
+     * New blobs copied by this set (blobs are immutable; older ones were copied before)
+     */
+    casCopied?: number;
+    casBytesCopied?: number;
+    error?: string;
+    restoreTest?: RestoreTest;
+    /**
+     * When retention removed the set's files (the record stays)
+     */
+    prunedAt?: string;
+};
+
+export type BackupSchedule = {
+    /**
+     * CADENCE_BACKUP_DIR
+     */
+    directory: string;
+    nightlyAt: ClockTime;
+    restoreTestWeekday: 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday';
+    restoreTestAt: ClockTime;
+    keepNightly: number;
+    keepWeekly: number;
+    timezone: string;
+    nextBackupAt?: string;
+    nextRestoreTestAt?: string;
+};
+
+export type BackupList = {
+    items: Array<Backup>;
+    schedule: BackupSchedule;
+    lastRestoreTest?: {
+        backupId: string;
+        report: RestoreTest;
+    };
 };
 
 export type SecretNewWritable = {
@@ -8853,6 +9137,354 @@ export type UtterancesGetResponses = {
 };
 
 export type UtterancesGetResponse = UtterancesGetResponses[keyof UtterancesGetResponses];
+
+export type NotificationRulesListData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/notification-rules';
+};
+
+export type NotificationRulesListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type NotificationRulesListError = NotificationRulesListErrors[keyof NotificationRulesListErrors];
+
+export type NotificationRulesListResponses = {
+    /**
+     * The rules in table order
+     */
+    200: NotificationRuleList;
+};
+
+export type NotificationRulesListResponse = NotificationRulesListResponses[keyof NotificationRulesListResponses];
+
+export type NotificationRulesEditData = {
+    body: NotificationRuleEdit;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/notification-rules/{id}';
+};
+
+export type NotificationRulesEditErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type NotificationRulesEditError = NotificationRulesEditErrors[keyof NotificationRulesEditErrors];
+
+export type NotificationRulesEditResponses = {
+    /**
+     * The edited rule (or, for a dry run, what it would become)
+     */
+    200: NotificationRule;
+};
+
+export type NotificationRulesEditResponse = NotificationRulesEditResponses[keyof NotificationRulesEditResponses];
+
+export type NotificationSettingsGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/notification-settings';
+};
+
+export type NotificationSettingsGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type NotificationSettingsGetError = NotificationSettingsGetErrors[keyof NotificationSettingsGetErrors];
+
+export type NotificationSettingsGetResponses = {
+    /**
+     * The settings; the bot token is never returned, only whether one is stored
+     */
+    200: NotificationSettings;
+};
+
+export type NotificationSettingsGetResponse = NotificationSettingsGetResponses[keyof NotificationSettingsGetResponses];
+
+export type NotificationSettingsEditData = {
+    body: NotificationSettingsEdit;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/notification-settings';
+};
+
+export type NotificationSettingsEditErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type NotificationSettingsEditError = NotificationSettingsEditErrors[keyof NotificationSettingsEditErrors];
+
+export type NotificationSettingsEditResponses = {
+    /**
+     * The edited settings (or, for a dry run, what they would become)
+     */
+    200: NotificationSettings;
+};
+
+export type NotificationSettingsEditResponse = NotificationSettingsEditResponses[keyof NotificationSettingsEditResponses];
+
+export type TelegramBotSetData = {
+    body: TelegramBotSet;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on; required unless the target does not exist yet
+         */
+        'If-Match'?: string;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/telegram-bot';
+};
+
+export type TelegramBotSetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type TelegramBotSetError = TelegramBotSetErrors[keyof TelegramBotSetErrors];
+
+export type TelegramBotSetResponses = {
+    /**
+     * The notification settings with the bot's status
+     */
+    200: NotificationSettings;
+};
+
+export type TelegramBotSetResponse = TelegramBotSetResponses[keyof TelegramBotSetResponses];
+
+export type TelegramBotVerifyData = {
+    body?: never;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/telegram-bot:verify';
+};
+
+export type TelegramBotVerifyErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type TelegramBotVerifyError = TelegramBotVerifyErrors[keyof TelegramBotVerifyErrors];
+
+export type TelegramBotVerifyResponses = {
+    /**
+     * What Telegram answered, per chat
+     */
+    200: TelegramBotVerify;
+};
+
+export type TelegramBotVerifyResponse = TelegramBotVerifyResponses[keyof TelegramBotVerifyResponses];
+
+export type BackupsListData = {
+    body?: never;
+    path?: never;
+    query?: {
+        limit?: number;
+    };
+    url: '/backups';
+};
+
+export type BackupsListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type BackupsListError = BackupsListErrors[keyof BackupsListErrors];
+
+export type BackupsListResponses = {
+    /**
+     * Backup sets and the schedule
+     */
+    200: BackupList;
+};
+
+export type BackupsListResponse = BackupsListResponses[keyof BackupsListResponses];
+
+export type BackupsNewData = {
+    body?: never;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/backups';
+};
+
+export type BackupsNewErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type BackupsNewError = BackupsNewErrors[keyof BackupsNewErrors];
+
+export type BackupsNewResponses = {
+    /**
+     * Dry run — the backup set that would be taken; nothing was written or queued
+     */
+    200: Backup;
+    /**
+     * Accepted; follow the job on job.{jobId}
+     */
+    202: JobAccepted;
+};
+
+export type BackupsNewResponse = BackupsNewResponses[keyof BackupsNewResponses];
+
+export type BackupsGetData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/backups/{id}';
+};
+
+export type BackupsGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type BackupsGetError = BackupsGetErrors[keyof BackupsGetErrors];
+
+export type BackupsGetResponses = {
+    /**
+     * The backup set
+     */
+    200: Backup;
+};
+
+export type BackupsGetResponse = BackupsGetResponses[keyof BackupsGetResponses];
+
+export type BackupsVerifyData = {
+    body?: never;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/backups/{id}:verify';
+};
+
+export type BackupsVerifyErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type BackupsVerifyError = BackupsVerifyErrors[keyof BackupsVerifyErrors];
+
+export type BackupsVerifyResponses = {
+    /**
+     * Dry run — the set that would be restored; nothing was queued
+     */
+    200: Backup;
+    /**
+     * Accepted; follow the job on job.{jobId}
+     */
+    202: JobAccepted;
+};
+
+export type BackupsVerifyResponse = BackupsVerifyResponses[keyof BackupsVerifyResponses];
 
 export type MountsListData = {
     body?: never;

@@ -16,7 +16,10 @@
 // CADENCE_EGRESS_TOKEN_FILE (the egress proxy's cep_ token, the same way), CADENCE_CAS_DIR ($CADENCE_DATA_DIR/cas: the
 // content-addressed artifact store, shared by volume with the worker), CADENCE_WORKER_TOKEN_FILE (the worker's cwk_
 // token for the compute host CADENCE_WORKER_HOST, default staging, the same way). Job logs from workers live under
-// $CADENCE_DATA_DIR/job-logs (14 days).
+// $CADENCE_DATA_DIR/job-logs (14 days). CADENCE_BACKUP_DIR ($CADENCE_DATA_DIR/backups:
+// backup sets and the content-store mirror; a mount in phase 4), CADENCE_PG_DUMP / CADENCE_PG_RESTORE (the client
+// commands, default pg_dump / pg_restore on PATH; their major version must be at least the server's),
+// CADENCE_TELEGRAM_API (https://api.telegram.org: the Bot API base URL; tests point it at a fake server).
 // Project repositories live under $CADENCE_DATA_DIR/repos (bare), work (working clones) and worktrees; the git binary
 // must be on PATH. `cadence egress-proxy` runs the agent sandbox's allowlisting proxy instead (internal/egress).
 package main
@@ -31,6 +34,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -39,6 +43,7 @@ import (
 
 	"github.com/usunrise88/cadence/control-plane/internal/approvals"
 	"github.com/usunrise88/cadence/control-plane/internal/audit"
+	"github.com/usunrise88/cadence/control-plane/internal/backups"
 	"github.com/usunrise88/cadence/control-plane/internal/cas"
 	"github.com/usunrise88/cadence/control-plane/internal/cli"
 	"github.com/usunrise88/cadence/control-plane/internal/commands"
@@ -48,6 +53,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/events"
 	"github.com/usunrise88/cadence/control-plane/internal/help"
 	"github.com/usunrise88/cadence/control-plane/internal/jobs"
+	"github.com/usunrise88/cadence/control-plane/internal/notify"
 	"github.com/usunrise88/cadence/control-plane/internal/obs"
 	"github.com/usunrise88/cadence/control-plane/internal/policy"
 	"github.com/usunrise88/cadence/control-plane/internal/projects/bootstrap"
@@ -225,6 +231,25 @@ func serve(ctx context.Context, getenv func(string) string) error {
 	workerSvc := workers.New(workers.Options{
 		Pool: pool, Secrets: store, CAS: blobs, LogDir: filepath.Join(cfg.dataDir, "job-logs"), Log: log,
 	})
+	backupDir := getenv("CADENCE_BACKUP_DIR")
+	if backupDir == "" {
+		backupDir = filepath.Join(cfg.dataDir, "backups")
+	}
+	backupSvc := &backups.Service{Pool: pool, Log: log, Jobs: jobSvc, Defaults: defaults.Get, Config: backups.Config{
+		Dir: backupDir, CASDir: casDir, SecretsDir: store.Dir(), DSN: cfg.databaseURL,
+		PgDump: strings.Fields(getenv("CADENCE_PG_DUMP")), PgRestore: strings.Fields(getenv("CADENCE_PG_RESTORE")),
+	}}
+	backupSvc.Register(jobSvc)
+	jobSvc.AddPeriodic("backups.schedule", time.Minute, backupSvc.Tick)
+	bot := notify.Bot{BaseURL: getenv("CADENCE_TELEGRAM_API"), Secrets: store}
+	signer := notify.NewSigner(store.DeriveKey("telegram-callback"))
+	notifyWake := make(chan struct{}, 1)
+	poller := &notify.Poller{Pool: pool, Log: log, Bot: bot, Signer: signer, Defaults: defaults.Get}
+	digester := &notify.Digester{Pool: pool, Log: log, Defaults: defaults.Get, Wake: notifyWake}
+	jobSvc.AddPeriodic("notifications.digest", time.Minute, func(ctx context.Context) error {
+		_, err := digester.Tick(ctx)
+		return err
+	})
 	srv, err := server.New(server.Config{
 		Pool:     pool,
 		Pipeline: commands.NewPipeline(pool, log, metrics.Commands, engine),
@@ -239,6 +264,9 @@ func serve(ctx context.Context, getenv func(string) string) error {
 		Projects: projectRepos,
 		CAS:      blobs,
 		Workers:  workerSvc,
+		Backups:  backupSvc,
+		Telegram: bot,
+		Poller:   poller,
 	})
 	if err != nil {
 		return err
@@ -268,6 +296,7 @@ func serve(ctx context.Context, getenv func(string) string) error {
 			log.Info("issued a new worker token; older ones of the host are revoked", "file", path, "host", host)
 		}
 	}
+	poller.Decider = srv
 	jobSvc.AddPeriodic("agentSessions.sweep", 30*time.Second, srv.SweepSessions)
 	jobSvc.AddPeriodic("agentCredentials.sweep", time.Minute, srv.SweepAgentCredentials)
 	if path := getenv("CADENCE_HOST_TOKEN_FILE"); path != "" {
@@ -311,6 +340,13 @@ func serve(ctx context.Context, getenv func(string) string) error {
 	g, gctx := errgroup.WithContext(runCtx)
 	g.Go(func() error { return events.NewDispatcher(pool, hub, log, metrics.EventsDispatched).Run(gctx) })
 	g.Go(func() error { return search.NewIndexer(pool, hub, log, search.Sources()).Run(gctx) })
+	g.Go(func() error {
+		return (&notify.Router{Pool: pool, Hub: hub, Log: log, Defaults: defaults.Get, Wake: notifyWake}).Run(gctx)
+	})
+	g.Go(func() error {
+		return (&notify.Sender{Pool: pool, Log: log, Bot: bot, Signer: signer, Defaults: defaults.Get, Wake: notifyWake}).Run(gctx)
+	})
+	g.Go(func() error { return poller.Run(gctx) })
 	g.Go(func() error {
 		if err := httpServer.Serve(listener); !errors.Is(err, http.ErrServerClosed) {
 			return fmt.Errorf("serve http: %w", err)

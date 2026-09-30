@@ -1,0 +1,188 @@
+package notify
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"strings"
+	"sync/atomic"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/usunrise88/cadence/control-plane/internal/defaults"
+	"github.com/usunrise88/cadence/control-plane/internal/notify/telegram"
+)
+
+// Decider decides an approval for a verified button press: as the admin, with channel telegram (the server runs
+// approvals.approve or approvals.deny through the command pipeline, so the audit log and the approval record the
+// decision like one from the UI). It returns the approval's state afterwards; ErrAlreadyDecided when a person
+// decided it elsewhere first.
+type Decider interface {
+	DecideApproval(ctx context.Context, approvalID string, approve bool, by Presser) (string, error)
+}
+
+// ErrAlreadyDecided is a press on an approval that is no longer pending.
+var ErrAlreadyDecided = errors.New("the approval is no longer pending")
+
+// Poller long-polls Telegram for updates (getUpdates; no public webhook): button presses of allow-listed chats
+// decide approvals; chats that are not allow-listed are remembered for Settings and never answered.
+type Poller struct {
+	Pool     *pgxpool.Pool
+	Log      *slog.Logger
+	Bot      Bot
+	Signer   *Signer
+	Decider  Decider
+	Defaults func() *defaults.Defaults
+	// Timeout is the long-poll wait in seconds (50 when zero); Idle is the pause while no token is stored or after
+	// an error (30 s when zero).
+	Timeout int
+	Idle    time.Duration
+
+	polling atomic.Bool
+	offset  int64
+}
+
+// Polling reports whether the poller is talking to Telegram.
+func (p *Poller) Polling() bool { return p.polling.Load() }
+
+// Run polls until ctx is cancelled.
+func (p *Poller) Run(ctx context.Context) error {
+	if p.Timeout <= 0 {
+		p.Timeout = 50
+	}
+	if p.Idle <= 0 {
+		p.Idle = 30 * time.Second
+	}
+	for ctx.Err() == nil {
+		if err := p.Poll(ctx); err != nil && ctx.Err() == nil {
+			p.polling.Store(false)
+			if !errors.Is(err, errNoToken) {
+				p.Log.WarnContext(ctx, "telegram: polling failed; retrying", "err", err)
+			}
+			select {
+			case <-ctx.Done():
+			case <-time.After(p.Idle):
+			}
+		}
+	}
+	p.polling.Store(false)
+	return nil
+}
+
+var errNoToken = errors.New("no telegram bot token")
+
+// Poll runs one getUpdates round and handles what it brings.
+func (p *Poller) Poll(ctx context.Context) error {
+	ok, err := TokenStored(ctx, p.Pool)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return errNoToken
+	}
+	c, err := p.Bot.Client(ctx)
+	if err != nil {
+		return err
+	}
+	updates, err := c.GetUpdates(ctx, p.offset, p.Timeout)
+	if err != nil {
+		_ = RecordBot(context.WithoutCancel(ctx), p.Pool, "", err, false)
+		return err
+	}
+	p.polling.Store(true)
+	for _, u := range updates {
+		if u.UpdateID >= p.offset {
+			p.offset = u.UpdateID + 1
+		}
+		if err := p.Handle(ctx, c, u); err != nil {
+			p.Log.WarnContext(ctx, "telegram: update not handled", "update", u.UpdateID, "err", err)
+		}
+	}
+	return nil
+}
+
+// Handle acts on one update.
+func (p *Poller) Handle(ctx context.Context, c *telegram.Client, u telegram.Update) error {
+	settings, err := LoadSettings(ctx, p.Pool, p.Defaults())
+	if err != nil {
+		return err
+	}
+	switch {
+	case u.CallbackQuery != nil:
+		q := u.CallbackQuery
+		if q.Message == nil {
+			return nil
+		}
+		if !settings.Allowed(q.Message.Chat.ID) {
+			return p.seen(ctx, q.Message.Chat)
+		}
+		toast, text := p.press(ctx, q)
+		if err := c.AnswerCallbackQuery(ctx, q.ID, toast); err != nil {
+			return err
+		}
+		if text != "" {
+			return c.EditMessageText(ctx, q.Message.Chat.ID, q.Message.MessageID, text)
+		}
+		return nil
+	case u.Message != nil:
+		if !settings.Allowed(u.Message.Chat.ID) {
+			return p.seen(ctx, u.Message.Chat)
+		}
+		if strings.HasPrefix(u.Message.Text, "/start") {
+			_, err := c.SendMessage(ctx, u.Message.Chat.ID, "Cadence notifications reach this chat. Approvals arrive with Approve and Deny buttons.", nil)
+			return err
+		}
+	}
+	return nil
+}
+
+func (p *Poller) seen(ctx context.Context, chat telegram.Chat) error {
+	now := time.Now()
+	return RecordSeen(ctx, p.Pool, Chat{ID: chat.ID, Title: chat.Label(), SeenAt: &now})
+}
+
+// press verifies and spends a button's token and decides its approval. It returns the toast for the presser and,
+// when the approval was decided (now or before), the message text without buttons.
+func (p *Poller) press(ctx context.Context, q *telegram.CallbackQuery) (toast, text string) {
+	id, action, err := p.Signer.Parse(q.Data)
+	if err != nil {
+		p.Log.WarnContext(ctx, "telegram: button with a bad signature", "chat", q.Message.Chat.ID)
+		return "This button is not valid.", ""
+	}
+	by := Presser{ChatID: q.Message.Chat.ID, UserID: q.From.ID, Username: q.From.Username}
+	var approvalID string
+	err = pgx.BeginFunc(ctx, p.Pool, func(tx pgx.Tx) error {
+		approvalID, err = p.Signer.Spend(ctx, tx, id, action, by)
+		return err
+	})
+	switch {
+	case errors.Is(err, ErrTokenSpent):
+		return "Already decided.", q.Message.Text + "\n\nAlready decided."
+	case errors.Is(err, ErrTokenExpired):
+		return "The approval expired.", q.Message.Text + "\n\nExpired — nobody decided in time."
+	case err != nil:
+		return "This button is not valid.", ""
+	}
+	state, err := p.Decider.DecideApproval(ctx, approvalID, action == ActionApprove, by)
+	who := by.Username
+	if who != "" {
+		who = " by @" + who
+	}
+	switch {
+	case errors.Is(err, ErrAlreadyDecided):
+		return "Already decided in Cadence.", q.Message.Text + fmt.Sprintf("\n\nAlready %s in Cadence.", state)
+	case err != nil:
+		// Nothing was decided: the buttons work again, and the approval can still be decided in Cadence.
+		_, _ = p.Pool.Exec(context.WithoutCancel(ctx), `UPDATE notification_tokens SET used_at = NULL, used_by = NULL
+			WHERE approval_id = $1`, approvalID)
+		p.Log.WarnContext(ctx, "telegram: deciding an approval failed", "approval", approvalID, "err", err)
+		return "Cadence could not record the decision; try again or decide in Cadence.", ""
+	case action == ActionApprove:
+		return "Approved.", q.Message.Text + "\n\nApproved from Telegram" + who + "."
+	default:
+		return "Denied.", q.Message.Text + "\n\nDenied from Telegram" + who + "."
+	}
+}

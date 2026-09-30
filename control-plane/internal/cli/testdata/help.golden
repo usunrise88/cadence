@@ -20,6 +20,7 @@ Entities:
   approvals      approve deny get list
   artifacts      get
   audit          list
+  backups        get list new verify
   baseModels     get list
   branches       accept compare get list revert
   collections    get list
@@ -34,6 +35,8 @@ Entities:
   jobs           cancel edit get list pause resume wait
   mixes          edit get list new preview
   modelFamilies  get list
+  notificationRules edit list
+  notificationSettings edit get
   pipelineRuns   cancel get list retry wait
   pipelines      list run
   policies       edit get
@@ -46,6 +49,7 @@ Entities:
   secrets        list new
   sources        archive edit get list
   stepKinds      get list
+  telegramBot    set verify
   templates      get list
   utterances     get list
 

@@ -6,16 +6,18 @@ import { EmptyState } from "@/shell/entity/primitives";
 import type { PanelProps } from "@/shell/panel";
 import { AgentsSection } from "./AgentsSection";
 import { AuditSection } from "./AuditSection";
+import { BackupsSection } from "./BackupsSection";
 import { CataloguesSection } from "./CataloguesSection";
 import { ComputeSection } from "./ComputeSection";
 import { CredentialsSection } from "./CredentialsSection";
+import { NotificationsSection } from "./NotificationsSection";
 import { PoliciesSection } from "./PoliciesSection";
 import { SecretsSection } from "./SecretsSection";
 import { SecuritySection } from "./SecuritySection";
 
 // Settings (docs/spec/11-ui-panels.md "Panel catalogue"; admin only): registry-level configuration in sections —
-// compute, agents (the agents' model accounts), secrets, credentials, policies, catalogues, security and the audit
-// log. Notification rules, the Telegram bot and backup status join in later phases.
+// compute, agents (the agents' model accounts), secrets, credentials, policies, notifications (the routing table,
+// quiet hours and the Telegram bot), backups, catalogues, security and the audit log.
 
 export const SECTIONS = [
   { id: "compute", label: "Compute", component: ComputeSection },
@@ -23,6 +25,8 @@ export const SECTIONS = [
   { id: "secrets", label: "Secrets", component: SecretsSection },
   { id: "credentials", label: "Credentials", component: CredentialsSection },
   { id: "policies", label: "Policies", component: PoliciesSection },
+  { id: "notifications", label: "Notifications", component: NotificationsSection },
+  { id: "backups", label: "Backups", component: BackupsSection },
   { id: "catalogues", label: "Catalogues", component: CataloguesSection },
   { id: "security", label: "Security", component: SecuritySection },
   { id: "audit", label: "Audit log", component: AuditSection },
@@ -30,7 +34,7 @@ export const SECTIONS = [
 type SectionId = (typeof SECTIONS)[number]["id"];
 
 export function SettingsEmpty() {
-  return <EmptyState step="prepare" title="Settings are the admin's" hint="Compute, secrets, credentials, policies and the audit log are changed by the admin account only." />;
+  return <EmptyState step="prepare" title="Settings are the admin's" hint="Compute, secrets, credentials, policies, notifications, backups and the audit log are changed by the admin account only." />;
 }
 
 export function SettingsPanel({ instanceId }: PanelProps) {

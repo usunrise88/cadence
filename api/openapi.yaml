@@ -37,6 +37,8 @@ tags:
   - { name: worker, description: "The GPU worker's protocol (registry, leases, logs, metrics, artifacts); exempt from the vocabulary and never MCP tools" }
   - { name: artifacts, description: "The content store: artifacts addressed by BLAKE3 hash, with type, size, metadata and producing step (R15)" }
   - { name: pipelines, description: "Pipelines of typed steps pinned as kind@version, and their runs with per-step status (R11, R15)" }
+  - { name: notifications, description: "The notification routing table, quiet hours, the daily digest and the Telegram bot" }
+  - { name: backups, description: "Nightly backup sets (pg_dump plus the content store), the weekly restore test and retention" }
   - { name: planned, description: Named now, implemented in a later phase (501 until then) }
 
 paths:
@@ -2561,6 +2563,167 @@ paths:
 
   # ---------------------------------------------------------------- notifications and operations (phase 2 · stream O) — add paths below this line
 
+  /notification-rules:
+    x-cadence: { entity: notificationRules, kind: notification_rule }
+    get:
+      operationId: notificationRules.list
+      summary: The notification routing table — one rule per event class with its channels and timing
+      tags: [notifications]
+      responses:
+        "200":
+          description: The rules in table order
+          content: { application/json: { schema: { $ref: "#/components/schemas/NotificationRuleList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /notification-rules/{id}:
+    x-cadence: { entity: notificationRules, kind: notification_rule }
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    patch:
+      operationId: notificationRules.edit
+      summary: Change which channels an event class reaches and when (admin only)
+      tags: [notifications]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/NotificationRuleEdit" } } }
+      responses:
+        "200":
+          description: The edited rule (or, for a dry run, what it would become)
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/NotificationRule" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /notification-settings:
+    x-cadence: { entity: notificationSettings, kind: notification_settings, singleton: true }
+    get:
+      operationId: notificationSettings.get
+      summary: Quiet hours, the digest time and the Telegram bot's allow-listed chats and status
+      tags: [notifications]
+      responses:
+        "200":
+          description: The settings; the bot token is never returned, only whether one is stored
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/NotificationSettings" } } }
+        default: { $ref: "#/components/responses/Problem" }
+    patch:
+      operationId: notificationSettings.edit
+      summary: Change quiet hours, the digest time or the allow-listed Telegram chats (admin only)
+      tags: [notifications]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/NotificationSettingsEdit" } } }
+      responses:
+        "200":
+          description: The edited settings (or, for a dry run, what they would become)
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/NotificationSettings" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /telegram-bot:
+    x-cadence: { entity: telegramBot, kind: telegram_bot, singleton: true }
+    put:
+      operationId: telegramBot.set
+      summary: Store or replace the Telegram bot token (write-only, kept in the secret store as telegram-bot-token)
+      tags: [notifications]
+      x-cadence:
+        toolDescription: >
+          Store or replace the Telegram bot token. The value is write-only, encrypted in the secret store and never
+          returned. Admin only; agents must not call this — secrets never enter an agent context.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatchOptional"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/TelegramBotSet" } } }
+      responses:
+        "200":
+          description: The notification settings with the bot's status
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/NotificationSettings" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /telegram-bot:verify:
+    x-cadence: { entity: telegramBot, kind: telegram_bot, singleton: true }
+    post:
+      operationId: telegramBot.verify
+      summary: Check the bot token with Telegram and send a test message to every allow-listed chat
+      tags: [notifications]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      responses:
+        "200":
+          description: What Telegram answered, per chat
+          content: { application/json: { schema: { $ref: "#/components/schemas/TelegramBotVerify" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /backups:
+    x-cadence: { entity: backups, kind: backup }
+    get:
+      operationId: backups.list
+      summary: Backup sets, newest first, with the schedule and the last restore test
+      tags: [backups]
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+      responses:
+        "200":
+          description: Backup sets and the schedule
+          content: { application/json: { schema: { $ref: "#/components/schemas/BackupList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+    post:
+      operationId: backups.new
+      summary: Take a backup set now (pg_dump plus the content store); answers the job
+      tags: [backups]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      responses:
+        "200":
+          description: Dry run — the backup set that would be taken; nothing was written or queued
+          content: { application/json: { schema: { $ref: "#/components/schemas/Backup" } } }
+        "202": { $ref: "#/components/responses/JobAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /backups/{id}:
+    x-cadence: { entity: backups, kind: backup }
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      operationId: backups.get
+      summary: Get a backup set with its manifest and last restore test report
+      tags: [backups]
+      responses:
+        "200":
+          description: The backup set
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Backup" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /backups/{id}:verify:
+    x-cadence: { entity: backups, kind: backup }
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      operationId: backups.verify
+      summary: Restore the set into a scratch database and check it (the weekly restore test, now); answers the job
+      tags: [backups]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      responses:
+        "200":
+          description: Dry run — the set that would be restored; nothing was queued
+          content: { application/json: { schema: { $ref: "#/components/schemas/Backup" } } }
+        "202": { $ref: "#/components/responses/JobAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
   # ---------------------------------------------------------------- runs, checkpoints, metrics (phase 2 · wave 2 · stream R) — add paths below this line
 
   # ---------------------------------------------------------------- playbooks (phase 2 · wave 2 · stream K) — add paths below this line
@@ -2764,6 +2927,7 @@ components:
         id: { type: string }
         name: { type: string }
         sessionId: { type: string }
+        channel: { type: string, enum: [telegram], description: "The channel a person acted through when it was not the web UI or the API (an approval decided from Telegram)" }
 
     Project:
       type: object
@@ -3317,7 +3481,7 @@ components:
 
     SecretKind:
       type: string
-      enum: [huggingface, ngc, github, s3, judge-api, other]
+      enum: [huggingface, ngc, github, s3, judge-api, telegram, other]
     SecretName:
       type: string
       pattern: "^[a-z][a-z0-9_-]{1,62}$"
@@ -3418,6 +3582,9 @@ components:
         drafts: { $ref: "#/components/schemas/DefaultSection" }
         cache: { $ref: "#/components/schemas/DefaultSection" }
         data: { $ref: "#/components/schemas/DefaultSection" }
+        operations: { $ref: "#/components/schemas/DefaultSection" }
+        notifications: { $ref: "#/components/schemas/DefaultSection" }
+        backups: { $ref: "#/components/schemas/DefaultSection" }
         estimates:
           type: object
           required: [bytes_per_audio_hour, training]
@@ -3438,11 +3605,12 @@ components:
         agentTurnsPerSession: { type: integer, description: "Default budgets.agent_turns_per_session" }
     Policies:
       type: object
-      required: [rev, updatedAt, budgets, departures]
+      required: [rev, updatedAt, budgets, timezone, departures]
       properties:
         rev: { type: integer }
         updatedAt: { type: string, format: date-time }
         budgets: { $ref: "#/components/schemas/PolicyBudgets" }
+        timezone: { type: string, description: "The instance timezone (IANA, e.g. Europe/Berlin): quiet hours, the daily digest and the backup schedule follow it" }
         departures:
           type: array
           items: { type: string }
@@ -3457,6 +3625,7 @@ components:
           properties:
             gpuHoursPerProjectPerDay: { type: number, format: double }
             agentTurnsPerSession: { type: integer }
+        timezone: { type: string, minLength: 1, maxLength: 64, description: "IANA timezone name, e.g. Europe/Berlin or UTC" }
 
     RunInit:
       type: string
@@ -5542,6 +5711,222 @@ components:
         stepKind: { type: string, example: dataset_import@1 }
 
     # ---------------------------------------------------------------- notifications and operations schemas (stream O) — add below
+
+    NotificationClass:
+      type: string
+      enum: [approval_requested, failure, outcome, progress, digest]
+      description: >
+        Event class of the routing table: approval_requested (agent, automation, registry); failure (job failed, mount
+        unhealthy, card closed, backup failed); outcome (gate verdict, promotion, schedule finished, batch closed);
+        progress (step done, checkpoint saved, triage item added); digest (the daily digest)
+    NotificationTiming:
+      type: string
+      enum: [immediate, digest, daily, none]
+      description: "immediate: sent as it happens; digest: held for the next daily digest; daily: the digest itself (its rule only); none: never sent"
+    NotificationChannels:
+      type: object
+      required: [inApp, telegram]
+      properties:
+        inApp: { type: boolean, description: The in-app notification history }
+        telegram: { type: boolean, description: The Telegram bot (allow-listed chats only) }
+    NotificationRule:
+      type: object
+      required: [id, eventClass, label, events, channels, timing, bypassQuietHours, rev, updatedAt, departures]
+      properties:
+        id: { type: string, description: "ntr_<class>" }
+        eventClass: { $ref: "#/components/schemas/NotificationClass" }
+        label: { type: string, description: What the row covers, as the Settings table shows it }
+        events: { type: array, items: { type: string }, description: The event types the class covers }
+        channels: { $ref: "#/components/schemas/NotificationChannels" }
+        timing: { $ref: "#/components/schemas/NotificationTiming" }
+        bypassQuietHours: { type: boolean, description: "Failures reach Telegram even in quiet hours; fixed per class" }
+        rev: { type: integer }
+        updatedAt: { type: string, format: date-time }
+        departures: { type: array, items: { type: string }, description: "Fields that differ from the seeded table (channels.telegram, timing, …)" }
+    NotificationRuleList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/NotificationRule" } }
+    NotificationRuleEdit:
+      type: object
+      additionalProperties: false
+      properties:
+        channels:
+          type: object
+          additionalProperties: false
+          properties:
+            inApp: { type: boolean }
+            telegram: { type: boolean }
+        timing: { $ref: "#/components/schemas/NotificationTiming" }
+    ClockTime:
+      type: string
+      pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+      description: "HH:MM on a 24-hour clock, in the instance timezone (policies)"
+    QuietHours:
+      type: object
+      required: [enabled, start, end]
+      properties:
+        enabled: { type: boolean }
+        start: { $ref: "#/components/schemas/ClockTime" }
+        end: { $ref: "#/components/schemas/ClockTime" }
+    TelegramChat:
+      type: object
+      required: [id]
+      properties:
+        id: { type: integer, format: int64, description: Telegram chat id (negative for groups) }
+        title: { type: string, description: "Chat title or @username, as Telegram last reported it" }
+        seenAt: { type: string, format: date-time }
+    TelegramStatus:
+      type: object
+      required: [tokenSet, chats, pendingChats, polling]
+      properties:
+        tokenSet: { type: boolean, description: "A token is stored (secret telegram-bot-token); the value is never returned" }
+        botUsername: { type: string, description: "@username from the last successful getMe" }
+        chats: { type: array, items: { $ref: "#/components/schemas/TelegramChat" }, description: Allow-listed chats; the bot talks to no one else }
+        pendingChats:
+          type: array
+          items: { $ref: "#/components/schemas/TelegramChat" }
+          description: Chats that wrote to the bot but are not allow-listed (the bot never answers them); add one to the allowlist to use it
+        polling: { type: boolean, description: The control plane is long-polling Telegram for button presses }
+        lastError: { type: string, description: The last Bot API error, if the last call failed }
+        lastSentAt: { type: string, format: date-time }
+    NotificationSettings:
+      type: object
+      required: [rev, updatedAt, timezone, quietHours, digestTime, telegram]
+      properties:
+        rev: { type: integer }
+        updatedAt: { type: string, format: date-time }
+        timezone: { type: string, description: The instance timezone quiet hours and the digest follow (policies.timezone) }
+        quietHours: { $ref: "#/components/schemas/QuietHours" }
+        digestTime: { $ref: "#/components/schemas/ClockTime" }
+        telegram: { $ref: "#/components/schemas/TelegramStatus" }
+    NotificationSettingsEdit:
+      type: object
+      additionalProperties: false
+      properties:
+        quietHours:
+          type: object
+          additionalProperties: false
+          properties:
+            enabled: { type: boolean }
+            start: { $ref: "#/components/schemas/ClockTime" }
+            end: { $ref: "#/components/schemas/ClockTime" }
+        digestTime: { $ref: "#/components/schemas/ClockTime" }
+        telegramChats:
+          type: array
+          maxItems: 20
+          items: { type: integer, format: int64 }
+          description: The complete allowlist of Telegram chat ids
+    TelegramBotSet:
+      type: object
+      required: [token]
+      additionalProperties: false
+      properties:
+        token: { type: string, writeOnly: true, minLength: 20, maxLength: 200, pattern: "^[0-9]+:[A-Za-z0-9_-]+$", description: "Write-only: the token @BotFather issued (123456:ABC…)" }
+    TelegramBotVerify:
+      type: object
+      required: [ok, chats]
+      properties:
+        ok: { type: boolean, description: The token works and every allow-listed chat got the test message }
+        botUsername: { type: string }
+        error: { type: string, description: Why the token check failed }
+        chats:
+          type: array
+          items:
+            type: object
+            required: [id, delivered]
+            properties:
+              id: { type: integer, format: int64 }
+              delivered: { type: boolean }
+              error: { type: string }
+
+    BackupState:
+      type: string
+      enum: [queued, running, succeeded, failed]
+    BackupTrigger:
+      type: string
+      enum: [nightly, weekly, manual]
+      description: "nightly and weekly are scheduled (the weekly set is the one taken on the restore-test day and is kept longer); manual is backups.new"
+    RestoreTest:
+      type: object
+      required: [state, startedAt]
+      properties:
+        state: { type: string, enum: [running, passed, failed] }
+        startedAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time }
+        durationMs: { type: integer, format: int64 }
+        database: { type: string, description: The scratch database (dropped afterwards) }
+        migrationVersion: { type: integer, format: int64, description: The latest migration in the restored database }
+        tables:
+          type: array
+          items:
+            type: object
+            required: [name, backedUp, restored]
+            properties:
+              name: { type: string }
+              backedUp: { type: integer, format: int64, description: Row count when the set was taken }
+              restored: { type: integer, format: int64, description: Row count in the scratch database }
+        casChecked: { type: integer, description: Content-store blobs sampled and re-hashed }
+        error: { type: string }
+    Backup:
+      type: object
+      required: [id, state, trigger, rev, createdAt]
+      properties:
+        id: { type: string, description: "bkp_…" }
+        state: { $ref: "#/components/schemas/BackupState" }
+        trigger: { $ref: "#/components/schemas/BackupTrigger" }
+        rev: { type: integer }
+        jobId: { type: string }
+        createdAt: { type: string, format: date-time }
+        startedAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time }
+        path: { type: string, description: The set's directory under CADENCE_BACKUP_DIR }
+        dumpBytes: { type: integer, format: int64 }
+        dumpSha256: { type: string }
+        pgDumpVersion: { type: string }
+        serverVersion: { type: string }
+        migrationVersion: { type: integer, format: int64 }
+        tables:
+          type: array
+          description: Row counts of the key tables when the set was taken
+          items:
+            type: object
+            required: [name, rows]
+            properties:
+              name: { type: string }
+              rows: { type: integer, format: int64 }
+        casBlobs: { type: integer, format: int64, description: Blobs in the content store when the set was taken }
+        casCopied: { type: integer, format: int64, description: New blobs copied by this set (blobs are immutable; older ones were copied before) }
+        casBytesCopied: { type: integer, format: int64 }
+        error: { type: string }
+        restoreTest: { $ref: "#/components/schemas/RestoreTest" }
+        prunedAt: { type: string, format: date-time, description: When retention removed the set's files (the record stays) }
+    BackupSchedule:
+      type: object
+      required: [directory, nightlyAt, restoreTestWeekday, restoreTestAt, keepNightly, keepWeekly, timezone]
+      properties:
+        directory: { type: string, description: CADENCE_BACKUP_DIR }
+        nightlyAt: { $ref: "#/components/schemas/ClockTime" }
+        restoreTestWeekday: { type: string, enum: [monday, tuesday, wednesday, thursday, friday, saturday, sunday] }
+        restoreTestAt: { $ref: "#/components/schemas/ClockTime" }
+        keepNightly: { type: integer }
+        keepWeekly: { type: integer }
+        timezone: { type: string }
+        nextBackupAt: { type: string, format: date-time }
+        nextRestoreTestAt: { type: string, format: date-time }
+    BackupList:
+      type: object
+      required: [items, schedule]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Backup" } }
+        schedule: { $ref: "#/components/schemas/BackupSchedule" }
+        lastRestoreTest:
+          type: object
+          required: [backupId, report]
+          properties:
+            backupId: { type: string }
+            report: { $ref: "#/components/schemas/RestoreTest" }
 
     # ---------------------------------------------------------------- runs, checkpoints, metrics schemas (wave 2 · stream R) — add below
 

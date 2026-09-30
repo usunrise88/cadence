@@ -32,14 +32,16 @@ tools:
     verbClass: mutate
     reason: agent sessions are started, steered and merged by people
 
-  # Secrets never enter an agent context; credentials, compute, policies and defaults are the admin's. The agents'
+  # Secrets never enter an agent context; credentials, compute, policies, notification routing, the Telegram bot
+  # and backups are the admin's. The agents'
   # own model accounts (agentCredentials, Settings → Agents) are not MCP tools at all (exempt tag); the rule is a
   # second fence.
   - id: admin-only
     class: forbidden
     operations: ["secrets.*", "credentials.*", "agentCredentials.*", "agentProviders.*", compute.new, compute.edit,
-                 compute.archive, policies.edit]
-    reason: secrets, credentials, agent model accounts, compute and policies are changed by the admin only
+                 compute.archive, policies.edit, notificationRules.edit, notificationSettings.edit, "telegramBot.*",
+                 backups.new, backups.verify]
+    reason: secrets, credentials, agent model accounts, compute, policies, notifications and backups are changed by the admin only
 
   # R8: the baseline alias is gated for everyone, people included (production moves only by promotion).
   - id: baseline-alias

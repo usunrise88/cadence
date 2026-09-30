@@ -20,6 +20,7 @@ export const BUDGET_FIELDS: { key: BudgetKey; ref: string; label: string; intege
 
 /** "budgets.gpuHoursPerProjectPerDay" → the field label. */
 export function departureLabel(path: string): string {
+  if (path === "timezone") return "Instance timezone";
   const key = path.split(".").pop();
   return BUDGET_FIELDS.find((f) => f.key === key)?.label ?? path;
 }
@@ -35,7 +36,7 @@ export function PoliciesSection() {
   });
   return (
     <section aria-labelledby="settings-policies" className="flex flex-col gap-3">
-      <SectionHeading id="settings-policies" title="Policies" hint="Default budgets every project and agent session starts with. Retention, PII redaction and cache quotas arrive with their blocks (phases 4–5)." />
+      <SectionHeading id="settings-policies" title="Policies" hint="Default budgets every project and agent session starts with, and the instance timezone. Retention, PII redaction and cache quotas arrive with their blocks (phases 4–5)." />
       {data ? <PoliciesForm key={data.rev} policies={data} /> : <p className="text-xs text-muted-foreground">Loading…</p>}
     </section>
   );
@@ -48,16 +49,17 @@ function PoliciesForm({ policies }: { policies: Policies }) {
     gpuHoursPerProjectPerDay: String(policies.budgets.gpuHoursPerProjectPerDay),
     agentTurnsPerSession: String(policies.budgets.agentTurnsPerSession),
   });
+  const [timezone, setTimezone] = useState(policies.timezone);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
 
-  const send = async (budgets: PolicyBudgets, what: string) => {
+  const send = async (budgets: PolicyBudgets, what: string, tz?: string) => {
     setBusy(true);
     setError(null);
     setSaved(null);
     try {
-      const next = await runCommand("policies.edit", { policies, body: { budgets } });
+      const next = await runCommand("policies.edit", { policies, body: { budgets, ...(tz !== undefined && tz !== policies.timezone ? { timezone: tz } : {}) } });
       qc.setQueryData(policiesGetQueryKey(), next);
       setSaved(what);
     } catch (err) {
@@ -71,7 +73,7 @@ function PoliciesForm({ policies }: { policies: Policies }) {
   };
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    void send({ gpuHoursPerProjectPerDay: Number(values.gpuHoursPerProjectPerDay), agentTurnsPerSession: Number(values.agentTurnsPerSession) }, "Saved");
+    void send({ gpuHoursPerProjectPerDay: Number(values.gpuHoursPerProjectPerDay), agentTurnsPerSession: Number(values.agentTurnsPerSession) }, "Saved", timezone.trim());
   };
   const recommended = (): PolicyBudgets | undefined => {
     const g = lookupDefault(defaults.data, "budgets.gpu_hours_per_project_per_day");
@@ -79,7 +81,8 @@ function PoliciesForm({ policies }: { policies: Policies }) {
     return g && t ? { gpuHoursPerProjectPerDay: Number(g.value), agentTurnsPerSession: Number(t.value) } : undefined;
   };
   const rec = recommended();
-  const dirty = BUDGET_FIELDS.some((f) => Number(values[f.key]) !== policies.budgets[f.key]);
+  const recTimezone = lookupDefault(defaults.data, "operations.timezone");
+  const dirty = BUDGET_FIELDS.some((f) => Number(values[f.key]) !== policies.budgets[f.key]) || timezone.trim() !== policies.timezone;
 
   return (
     <form onSubmit={submit} aria-label="Default budgets" className="flex flex-col gap-3 rounded-md border p-3">
@@ -118,12 +121,20 @@ function PoliciesForm({ policies }: { policies: Policies }) {
             </Field>
           );
         })}
+        <Field
+          label="Instance timezone"
+          htmlFor="policy-timezone"
+          hint={`IANA name, e.g. Europe/Berlin. Quiet hours, the daily digest and the backup schedule follow it.${recTimezone ? ` Default ${String(recTimezone.value)}.` : ""}`}
+          extra={<WhyDefault label="Instance timezone" value={recTimezone} />}
+        >
+          <Input id="policy-timezone" value={timezone} onChange={(e) => setTimezone(e.target.value)} className="h-7 w-40 font-mono text-xs" required spellCheck={false} />
+        </Field>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <Button type="submit" size="xs" disabled={busy || !dirty} data-command="policies.edit">
           Save
         </Button>
-        <Button type="button" size="xs" variant="outline" disabled={busy || !rec || policies.departures.length === 0} onClick={() => rec && void send(rec, "Reset to recommended")}>
+        <Button type="button" size="xs" variant="outline" disabled={busy || !rec || policies.departures.length === 0} onClick={() => rec && void send(rec, "Reset to recommended", recTimezone ? String(recTimezone.value) : undefined)}>
           Reset to recommended
         </Button>
         <span className="text-[11px] text-muted-foreground">

@@ -570,11 +570,16 @@ func TestWorkerTokenScope(t *testing.T) {
 func TestLeaseReaped(t *testing.T) {
 	w := startWorkers(t)
 	f := w.register(w.workerToken("staging"), "toy", map[string]any{"train_toy": kind("1", "training", true, false)})
-	first := w.enqueue(gpuSpec("train_toy"))
-	second := w.enqueue(gpuSpec("train_toy"))
+	a := w.enqueue(gpuSpec("train_toy"))
+	b := w.enqueue(gpuSpec("train_toy"))
 	l := f.claim(2)
-	if l == nil || l.JobID != first {
+	if l == nil || (l.JobID != a && l.JobID != b) {
 		t.Fatalf("lease = %+v", l)
+	}
+	// Both jobs enqueue at once, so either may reach the queue first; the other one waits for the card.
+	first, second := a, b
+	if l.JobID == b {
+		first, second = b, a
 	}
 	if again := f.claim(0); again != nil {
 		t.Fatalf("one training job per card, got a second lease %+v", again)

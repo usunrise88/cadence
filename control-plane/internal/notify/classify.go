@@ -1,0 +1,192 @@
+package notify
+
+import (
+	"encoding/json"
+	"fmt"
+	"maps"
+	"slices"
+	"strings"
+	"time"
+
+	"github.com/usunrise88/cadence/control-plane/internal/events"
+)
+
+// Notice is what one event says to a person on a channel.
+type Notice struct {
+	Class      string
+	Title      string
+	Body       string
+	ApprovalID string // an approval request: the Telegram message carries Approve / Deny buttons
+}
+
+// classTable names the event types of each class that need no look at the payload. Other streams add their event
+// types here as they emit them (mount health, card slots, gates, promotions, schedules, batches, checkpoints); the
+// web shell's in-app history mirrors this table (web/src/shell/notifications/classes.ts).
+var classTable = map[string]string{
+	// failure
+	"backup.failed":         ClassFailure,
+	"backup.restore_failed": ClassFailure,
+	"mount.unhealthy":       ClassFailure,
+	"compute.card_closed":   ClassFailure,
+	// outcome
+	"gate.verdict":        ClassOutcome,
+	"deployment.promoted": ClassOutcome,
+	"schedule.finished":   ClassOutcome,
+	"batch.closed":        ClassOutcome,
+	// progress
+	"backup.succeeded":      ClassProgress,
+	"backup.restore_passed": ClassProgress,
+	"pipeline_step.done":    ClassProgress,
+	"checkpoint.saved":      ClassProgress,
+	"triage.item_added":     ClassProgress,
+}
+
+// EventTypes lists the event types of class (for the Settings table), job failures and approvals included.
+func EventTypes(class string) []string {
+	out := []string{}
+	switch class {
+	case ClassApproval:
+		out = append(out, "approval.requested")
+	case ClassFailure:
+		out = append(out, "job.state_changed (failed)")
+	case ClassProgress:
+		out = append(out, "job.state_changed (done)")
+	case ClassDigest:
+		out = append(out, "notification.digest")
+	}
+	for _, t := range slices.Sorted(maps.Keys(classTable)) {
+		if classTable[t] == class {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+type approvalPayload struct {
+	Approval *struct {
+		ID        string `json:"id"`
+		Operation string `json:"operation"`
+		ProjectID string `json:"projectId"`
+		Reason    string `json:"reason"`
+		Actor     struct {
+			Kind string `json:"kind"`
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		} `json:"actor"`
+		Estimate *struct {
+			GPUHours          float64  `json:"gpuHours"`
+			RemainingGPUHours *float64 `json:"remainingGpuHours"`
+		} `json:"estimate"`
+		ExpiresAt time.Time `json:"expiresAt"`
+	} `json:"approval"`
+}
+
+type jobPayload struct {
+	Job *struct {
+		ID        string `json:"id"`
+		Kind      string `json:"kind"`
+		ProjectID string `json:"projectId"`
+		State     string `json:"state"`
+		Error     string `json:"error"`
+		Message   string `json:"message"`
+	} `json:"job"`
+}
+
+type genericPayload struct {
+	Title   string `json:"title"`
+	Message string `json:"message"`
+	Error   string `json:"error"`
+	Backup  *struct {
+		ID      string `json:"id"`
+		Trigger string `json:"trigger"`
+		Error   string `json:"error"`
+	} `json:"backup"`
+}
+
+// Classify says which class an event belongs to and what it tells a person; ok is false for events no one is
+// notified about. Approval events go out twice (the approvals topic and the entity topic): only the approvals topic
+// counts, and a job's state change counts on its job topic only. The other classified types count on any topic but
+// an entity topic (entity.{kind}.{id} repeats what a domain topic already carried).
+func Classify(r events.Record) (Notice, bool) {
+	switch r.Type {
+	case "approval.requested":
+		if r.Topic != "approvals" {
+			return Notice{}, false
+		}
+		var p approvalPayload
+		if json.Unmarshal(r.Payload, &p) != nil || p.Approval == nil {
+			return Notice{}, false
+		}
+		a := p.Approval
+		who := a.Actor.Name
+		if who == "" {
+			who = a.Actor.ID
+		}
+		lines := []string{fmt.Sprintf("%s %s asks: %s", a.Actor.Kind, who, a.Reason)}
+		if a.Estimate != nil {
+			est := fmt.Sprintf("Estimate: %.1f GPU-hours", a.Estimate.GPUHours)
+			if a.Estimate.RemainingGPUHours != nil {
+				est += fmt.Sprintf(" (%.1f left in today's budget)", *a.Estimate.RemainingGPUHours)
+			}
+			lines = append(lines, est)
+		}
+		if a.ProjectID != "" {
+			lines = append(lines, "Project: "+a.ProjectID)
+		}
+		if !a.ExpiresAt.IsZero() {
+			lines = append(lines, "Expires: "+a.ExpiresAt.UTC().Format("2006-01-02 15:04 UTC"))
+		}
+		return Notice{Class: ClassApproval, Title: "Approval requested: " + a.Operation, Body: strings.Join(lines, "\n"),
+			ApprovalID: a.ID}, true
+	case "job.state_changed":
+		if !strings.HasPrefix(r.Topic, "job.") {
+			return Notice{}, false
+		}
+		var p jobPayload
+		if json.Unmarshal(r.Payload, &p) != nil || p.Job == nil {
+			return Notice{}, false
+		}
+		j := p.Job
+		switch j.State {
+		case "failed":
+			return Notice{Class: ClassFailure, Title: "Job failed: " + j.Kind, Body: join(j.Error, j.Message, j.ID)}, true
+		case "done":
+			return Notice{Class: ClassProgress, Title: "Job done: " + j.Kind, Body: join(j.Message, j.ID)}, true
+		}
+		return Notice{}, false
+	}
+	class, ok := classTable[r.Type]
+	if !ok || strings.HasPrefix(r.Topic, "entity.") { // the entity topic repeats an event of a domain topic
+		return Notice{}, false
+	}
+	var p genericPayload
+	_ = json.Unmarshal(r.Payload, &p)
+	title := p.Title
+	body := join(p.Error, p.Message)
+	if p.Backup != nil {
+		body = join(p.Backup.Error, body, p.Backup.ID)
+	}
+	if title == "" {
+		title = humanize(r.Type)
+	}
+	return Notice{Class: class, Title: title, Body: body}, true
+}
+
+// humanize turns "backup.restore_failed" into "Backup restore failed".
+func humanize(typ string) string {
+	s := strings.NewReplacer(".", " ", "_", " ").Replace(typ)
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
+}
+
+func join(parts ...string) string {
+	var out []string
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return strings.Join(out, "\n")
+}

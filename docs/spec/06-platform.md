@@ -172,6 +172,27 @@ Cadence upgrades itself the way it upgrades models: versioned, forward-only, wit
 | Health | `/healthz` on the control plane, worker heartbeat, mount checks; a status card in Settings; a Prometheus endpoint |
 | Retention | Job log files are deleted 14 days after the job ends; metric points live as long as their run; content-store blobs are kept (v1); the audit log is kept one year; production audio follows the retention policy |
 
+Phase 2 as built (2026-09-30, stream O):
+
+- **Backups** (`internal/backups`, migration 0015 `backups`): a set is `CADENCE_BACKUP_DIR/sets/<time>-<trigger>-<id>/`
+  with `cadence.dump` (`pg_dump --format=custom` on a snapshot exported by a repeatable-read transaction that also
+  records the key tables' row counts and the latest migration), the sealed secret values (never the master key) and
+  `manifest.json`; content-store blobs are mirrored once into `CADENCE_BACKUP_DIR/cas/` (new blobs only — they are
+  immutable) and never pruned. Jobs `backup` and `backup.restore_test`; a periodic `backups.schedule` enqueues the
+  nightly set at `backups.nightly_at` (the set of the restore-test weekday is the weekly one) and the restore test at
+  `backups.restore_test_weekday` + `restore_test_at`, local to `policies.timezone`, catching up after downtime. The
+  restore test creates a scratch database on the same server, `pg_restore --no-owner --no-privileges
+  --exit-on-error`, compares row counts and the migration version with the manifest, re-hashes up to 20 mirrored
+  blobs, drops the scratch database and stores the report on the set. Retention keeps `backups.keep_nightly` (7)
+  nightly and manual sets and `backups.keep_weekly` (4) weekly sets; older sets lose their files, the rows stay
+  (`prunedAt`). Events `backup.queued|started|succeeded|failed|restore_queued|restore_passed|restore_failed|pruned` on
+  `backups` and `entity.backup.{id}`. API `backups.list|get|new|verify` (admin). The control-plane image ships
+  `postgresql-client-17`; `CADENCE_PG_DUMP` / `CADENCE_PG_RESTORE` override the commands, and a client older than the
+  server fails the set with the version to install. Compose mounts the `cadence-backups` volume at `/backups`.
+- **Retention**: the audit log is pruned daily after one year (`audit.prune`, phase 1). Job logs are stream W's.
+- **Upgrade**: `docs/help/guides/upgrading.md` (pull, compose up, migrations under the advisory lock, rollback = the
+  previous image plus the last backup, the release matrix); restoring by hand is in `docs/help/guides/backups.md`.
+
 ## Notifications
 
 Two channels — the in-app history and a Telegram bot — one routing table by event class, and approvals that can be decided from the phone with the same audit trail as from the UI.
@@ -187,6 +208,40 @@ Two channels — the in-app history and a Telegram bot — one routing table by 
 - The bot talks only to allow-listed chat ids; every inline action carries a single-use signed token, and an approval from Telegram is recorded with actor and channel like any other.
 - Quiet hours suppress Telegram except failures; reviewers get batch-assigned and batch-closing messages only.
 - Routing rules are a Settings table; each row is an event class, a channel set and a timing; email is a later channel behind the same table.
+
+Phase 2 as built (2026-09-30, stream O):
+
+- **Routing table** (`notification_rules`, ids `ntr_<class>`, seeded with the table above): classes
+  `approval_requested`, `failure` (the only class that ignores quiet hours), `outcome`, `progress`, `digest`; channels
+  `inApp` and `telegram`; timing `immediate | digest | daily | none`, which applies to Telegram (the in-app history is
+  always immediate; its checkbox switches a class off). `digest` holds an event for the next digest; `daily` belongs to
+  the digest row only; progress may reach Telegram only through the digest. `notificationRules.list|edit`.
+- **Settings** (`notification_settings`): quiet hours (off; 22:00–08:00), digest time (09:00), the allow-listed chat
+  ids (≤ 20), chats that wrote to the bot without being allowed, and the bot's status (username, last error, last
+  message, polling). Times are local to `policies.timezone` (new; `defaults.yaml` `operations.timezone` = UTC).
+  `notificationSettings.get|edit`; the token is the secret `telegram-bot-token` (kind `telegram`), set write-only by
+  `telegramBot.set` (If-Match on the settings once one exists); `telegramBot.verify` runs `getMe` and sends a test
+  message.
+- **Router, sender, poller** (`internal/notify`): the router reads the outbox after its own cursor (`event_cursors`
+  `notify`, started at the end of the outbox so history is never sent), classifies each event and writes a
+  `notification_deliveries` row per Telegram message in the transaction that advances the cursor (`queued`,
+  `suppressed` in quiet hours, `digest`); the sender delivers queued rows to every allowed chat with retries (5
+  attempts, exponential backoff); the poller long-polls `getUpdates` (no webhook; `CADENCE_TELEGRAM_API` sets the Bot
+  API base URL, a fake server in tests). The in-app history stays the web shell's, built from the event stream and
+  filtered by the same table (`web/src/shell/notifications/classes.ts` mirrors the classification).
+- **Approve / Deny from the phone**: each button's `callback_data` is `<a|d>.<id>.<mac>` (41 bytes): a 16-character
+  random id stored in `notification_tokens` with the approval and its expiry, and HMAC-SHA256 over action and id
+  under a key derived from the master key. A press from an allowed chat verifies the MAC, spends the token and its
+  sibling (single use), then runs `approvals.approve|deny` through the command pipeline as the admin with
+  `actor.channel = telegram` (new contract field), so the approval's `decidedBy`, the audit row and the replay are
+  the same as from the UI; the message loses its buttons and says who decided. Tampered, spent, expired or
+  foreign-chat presses decide nothing.
+- **Digest**: a periodic job sends it once a day after the digest time (`digest_sent_on`): jobs of the last 24 h by
+  kind (runs and evals are jobs until their entities land), each project's GPU-hours against its daily budget
+  (`notify.SpendFunc`; "not metered yet" until stream R plugs in the meter), open approvals, events held for the
+  digest and the last backup; in-app as `notification.digest` on `notifications`, on Telegram as a message.
+- The control plane reaches `api.telegram.org` over the compose `default` network (not internal); nothing else is
+  needed. Reviewer messages (batch assigned/closing) arrive with batches in phase 4.
 
 ## Testing strategy
 

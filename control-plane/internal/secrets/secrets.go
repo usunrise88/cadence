@@ -34,7 +34,7 @@ import (
 const Kind = "secret"
 
 // Kinds are the credential kinds (the contract's SecretKind).
-var Kinds = []string{"huggingface", "ngc", "github", "s3", "judge-api", "other"}
+var Kinds = []string{"huggingface", "ngc", "github", "s3", "judge-api", "telegram", "other"}
 
 // ScopeInstance is the scope of a secret every server-side consumer may read.
 const ScopeInstance = "instance"
@@ -140,6 +140,42 @@ func (s *Store) Create(ctx context.Context, tx pgx.Tx, in NewInput, actor auth.A
 	}}, nil
 }
 
+// Set stores the instance-scoped secret name with value, creating it or replacing the value of the existing one
+// (the Telegram bot token, set through telegramBot.set). Like Create, the value file is written before the
+// transaction commits; a replaced value is written under the same id.
+func (s *Store) Set(ctx context.Context, tx pgx.Tx, name, kind string, value []byte, actor auth.Actor, dryRun bool) (Secret, bool, []events.Draft, error) {
+	rows, err := tx.Query(ctx, "SELECT "+secretCols+" FROM secrets WHERE name = $1 FOR UPDATE", name)
+	if err != nil {
+		return Secret{}, false, nil, fmt.Errorf("look up secret %q: %w", name, err)
+	}
+	sec, err := pgx.CollectExactlyOneRow(rows, scanSecret)
+	if errors.Is(err, pgx.ErrNoRows) {
+		sec, drafts, err := s.Create(ctx, tx, NewInput{Name: name, Kind: kind, Value: value}, actor, dryRun)
+		return sec, true, drafts, err
+	}
+	if err != nil {
+		return Secret{}, false, nil, fmt.Errorf("look up secret %q: %w", name, err)
+	}
+	rows, err = tx.Query(ctx, `UPDATE secrets SET rev = rev + 1, kind = $2 WHERE id = $1 RETURNING `+secretCols, sec.ID, kind)
+	if err != nil {
+		return Secret{}, false, nil, fmt.Errorf("update secret %q: %w", name, err)
+	}
+	if sec, err = pgx.CollectExactlyOneRow(rows, scanSecret); err != nil {
+		return Secret{}, false, nil, fmt.Errorf("update secret %q: %w", name, err)
+	}
+	if !dryRun {
+		if err := s.write(sec.ID, value); err != nil {
+			return Secret{}, false, nil, err
+		}
+	}
+	return sec, false, []events.Draft{{
+		Topic:   events.EntityTopic(Kind, sec.ID),
+		Type:    "secret.replaced",
+		Entity:  &events.EntityRef{Kind: Kind, ID: sec.ID, Rev: sec.Rev},
+		Payload: map[string]any{"secret": sec},
+	}}, nil
+}
+
 // Read returns the value of the secret named name and records the use. It is for server-side consumers only
 // (bootstrap, the worker lease); never hand the value to an agent or put it in a response or log line.
 func (s *Store) Read(ctx context.Context, name string) ([]byte, error) {
@@ -160,6 +196,14 @@ func (s *Store) RequestMAC(value []byte) string {
 	m := hmac.New(sha256.New, s.key[:])
 	_, _ = m.Write(value)
 	return hex.EncodeToString(m.Sum(nil))
+}
+
+// DeriveKey returns a 32-byte key for one purpose, derived from the master key (HMAC-SHA256 over the purpose), so
+// signing keys (Telegram buttons) need no storage of their own and die with the master key.
+func (s *Store) DeriveKey(purpose string) []byte {
+	m := hmac.New(sha256.New, s.key[:])
+	_, _ = m.Write([]byte("cadence/derived-key/" + purpose))
+	return m.Sum(nil)
 }
 
 func (s *Store) path(id string) (string, error) {
