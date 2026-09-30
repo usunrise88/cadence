@@ -1,6 +1,6 @@
-"""The toy-ctc model: log-mel features computed on the fly (never stored, R42), a character tokenizer, a linear layer
-and a unidirectional GRU with a CTC head (≈ 60 k parameters). Unidirectional, so chunked decoding with the carried
-hidden state is genuinely streaming and gives the same result as the offline decode.
+"""The toy-ctc model: log-mel features computed on the fly (never stored, R42), a character tokenizer, a linear layer,
+a layer norm and a unidirectional GRU with a CTC head (≈ 60 k parameters). Unidirectional, so chunked decoding with the
+carried hidden state is genuinely streaming and gives the same result as the offline decode.
 """
 
 from __future__ import annotations
@@ -110,6 +110,10 @@ class ModelConfig:
     input_dim: int = N_MELS * STACK
     hidden: int = 96
     vocab: int = len(VOCAB)
+    # Layer norm on the GRU input. Without it the model sat on a loss plateau for ~150 steps and learned the word
+    # boundary last, so letters were right but words merged and the validation WER stayed near 1 at 300 steps.
+    # Frame-local, so the streaming decode still equals the offline one. Checkpoints written before it load without.
+    input_norm: bool = True
 
 
 class TinyCTC(nn.Module):
@@ -117,12 +121,13 @@ class TinyCTC(nn.Module):
         super().__init__()
         self.cfg = cfg or ModelConfig()
         self.proj = nn.Linear(self.cfg.input_dim, self.cfg.hidden)
+        self.norm: nn.Module = nn.LayerNorm(self.cfg.hidden) if self.cfg.input_norm else nn.Identity()
         self.gru = nn.GRU(self.cfg.hidden, self.cfg.hidden, batch_first=True)
         self.head = nn.Linear(self.cfg.hidden, self.cfg.vocab)
 
     def forward(self, x: torch.Tensor, h: torch.Tensor | None = None) -> tuple[torch.Tensor, torch.Tensor]:
         """x: (batch, frames, input_dim) → log-probabilities (batch, frames, vocab) and the GRU state."""
-        y, h_out = self.gru(torch.relu(self.proj(x)), h)
+        y, h_out = self.gru(self.norm(torch.relu(self.proj(x))), h)
         return torch.log_softmax(self.head(y), dim=-1), h_out
 
 
@@ -139,7 +144,7 @@ def load_checkpoint(d: Path) -> tuple[TinyCTC, CharTokenizer]:
 
     cfg = json.loads((d / "config.json").read_text(encoding="utf-8"))
     tok = json.loads((d / "tokenizer.json").read_text(encoding="utf-8"))
-    model = TinyCTC(ModelConfig(**cfg["model"]))
+    model = TinyCTC(ModelConfig(**({"input_norm": False} | cfg["model"])))
     model.load_state_dict(torch.load(d / "model.pt", weights_only=True))
     model.eval()
     return model, CharTokenizer(tok["vocab"])
