@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
 	"github.com/usunrise88/cadence/control-plane/internal/auth"
 	"github.com/usunrise88/cadence/control-plane/internal/cas"
@@ -54,6 +56,8 @@ type wenv struct {
 	workers  *workers.Service
 	clock    *testClock
 	blobs    *cas.Store
+	spans    *tracetest.SpanRecorder // the job spans (jobs.Service.Tracer)
+	tracer   *sdktrace.TracerProvider
 	outcomes sync.Map // job id → steps.Outcome (or error)
 }
 
@@ -83,9 +87,11 @@ func startWorkers(t *testing.T) *wenv {
 	clk := &testClock{now: time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)} // a Wednesday, noon
 	svc := workers.New(workers.Options{Pool: pool, Secrets: store, CAS: blobs, LogDir: t.TempDir(), Log: quiet,
 		Now: clk.Now, Poll: 50 * time.Millisecond})
-	w := &wenv{workers: svc, clock: clk, blobs: blobs}
+	spans := tracetest.NewSpanRecorder()
+	w := &wenv{workers: svc, clock: clk, blobs: blobs, spans: spans, tracer: sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spans))}
 	js := jobs.New(pool, quiet)
 	js.FetchPollInterval = 100 * time.Millisecond
+	js.Tracer = w.tracer
 	js.Register(steps.JobKind, func(ctx context.Context, run *jobs.Run) (any, error) {
 		o, err := svc.Await(ctx, run.Job.ID)
 		if err != nil {

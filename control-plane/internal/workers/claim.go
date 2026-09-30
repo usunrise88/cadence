@@ -105,6 +105,7 @@ func (s *Service) Claim(ctx context.Context, c Caller, in Claim) (*Grant, error)
 type candidate struct {
 	jobID string
 	spec  steps.Spec
+	trace string // the job span's traceparent, "" when it was queued without one
 }
 
 func (s *Service) claimOnce(ctx context.Context, tx pgx.Tx, c Caller, in Claim, telemetry bool) (*Grant, []events.Draft, error) {
@@ -193,7 +194,7 @@ func defaultProjectPriority() int { return defaults.Get().Budgets.QueuePriorityP
 // the job's priority, then first come (spec 02 "Budgets": the queue interleaves projects by priority). Rows are
 // locked, skipping those another claim holds.
 func waiting(ctx context.Context, tx pgx.Tx, kinds []string) ([]candidate, error) {
-	rows, err := tx.Query(ctx, `SELECT s.job_id, s.spec FROM step_jobs s JOIN jobs j ON j.id = s.job_id
+	rows, err := tx.Query(ctx, `SELECT s.job_id, s.spec, coalesce(s.traceparent, '') FROM step_jobs s JOIN jobs j ON j.id = s.job_id
 		LEFT JOIN projects p ON p.id = s.project_id
 		WHERE s.state = 'waiting' AND s.kind_ref = ANY($1) AND j.paused_at IS NULL AND j.cancel_requested_at IS NULL
 		ORDER BY `+projectPriority("$2")+` DESC, j.priority DESC, s.enqueued_at, s.job_id
@@ -206,7 +207,7 @@ func waiting(ctx context.Context, tx pgx.Tx, kinds []string) ([]candidate, error
 			c   candidate
 			raw []byte
 		)
-		if err := row.Scan(&c.jobID, &raw); err != nil {
+		if err := row.Scan(&c.jobID, &raw, &c.trace); err != nil {
 			return c, err
 		}
 		return c, json.Unmarshal(raw, &c.spec)
@@ -345,7 +346,7 @@ func (s *Service) lease(ctx context.Context, tx pgx.Tx, w Worker, host compute.H
 		inputs[name] = "cas://" + ref.Hash
 	}
 	return &Grant{ID: id, JobID: cand.jobID, Spec: cand.spec, Inputs: inputs, Card: gc,
-		Traceparent: traceparent(cand.jobID, id), HeartbeatSeconds: s.beat}, drafts, nil
+		Traceparent: leaseTrace(cand, id), HeartbeatSeconds: s.beat}, drafts, nil
 }
 
 func queueEvent(jobID, projectID, change string, extra map[string]any) events.Draft {

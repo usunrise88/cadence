@@ -27,6 +27,7 @@ from cadence_worker.protocol_gen import ArtifactRef, Lease, MetricPoint, StepErr
 from cadence_worker.registry import KindEntry
 from cadence_worker.run_step import EVENT_FD_ENV, MEMORY_CAP_ENV
 from cadence_worker.steps.context import now_iso
+from cadence_worker.tracing import Span
 
 TRAINING_STATE = "training-state"
 # Never handed to a step: the worker's own credential and where the control plane is.
@@ -98,17 +99,32 @@ class LeaseRunner:
         self._threads: list[threading.Thread] = []
         self._secrets = sorted((v for v in (lease.get("env") or {}).values() if len(v) >= 4), key=len, reverse=True)
         self.last_progress: tuple[float, str] | None = None
+        spec = lease["spec"]
+        self.span = Span.child_of(
+            lease.get("traceparent"),
+            f"step {spec['kind']}@{spec['kindVersion']}",
+            **{
+                "cadence.lease.id": lease["id"],
+                "cadence.job.id": lease["jobId"],
+                "cadence.step.attempt": spec.get("attempt", 1),
+            },
+        )
 
     # ---------------------------------------------------------------- lifecycle
 
     def run(self) -> StepOutcome:
+        out: StepOutcome = failed("step", "the worker stopped before the step ended")
         try:
             prepared = self.prepare()
             if isinstance(prepared, dict):
-                return prepared
+                out = prepared
+                return out
             self.start()
-            return self.wait()
+            out = self.wait()
+            return out
         finally:
+            err = out.get("error")
+            self.span.end(out["state"], err["message"] if err else "")
             if not self.keep_scratch:
                 shutil.rmtree(self.dir, ignore_errors=True)
 
@@ -165,8 +181,7 @@ class LeaseRunner:
             env[MEMORY_CAP_ENV] = str(card["memoryCapMb"])
         else:
             env["CUDA_VISIBLE_DEVICES"] = ""  # CPU steps stay off the card
-        if tp := self.lease.get("traceparent"):
-            env["TRACEPARENT"] = tp
+        env["TRACEPARENT"] = self.span.traceparent  # the step span, a child of the lease's (the job span)
         return env
 
     def start(self) -> None:
@@ -248,7 +263,14 @@ class LeaseRunner:
             for raw in stream:
                 text = raw.decode("utf-8", "replace").rstrip("\n")
                 if text:
-                    self.sink.log({"t": now_iso(), "level": "info", "msg": self.redact(text)[:16000]})
+                    self.sink.log(
+                        {
+                            "t": now_iso(),
+                            "level": "info",
+                            "msg": self.redact(text)[:16000],
+                            "fields": self.span.fields(),
+                        }
+                    )
 
     def _read_events(self, stream: IO[bytes]) -> None:
         with stream:
@@ -268,8 +290,10 @@ class LeaseRunner:
                 "level": ev.get("level", "info") if ev.get("level") in ("debug", "info", "warn", "error") else "info",
                 "msg": self.redact(str(ev.get("msg", "")))[:16000],
             }
+            fields: dict[str, Any] = {}
             if isinstance(ev.get("fields"), dict):
-                line["fields"] = json.loads(self.redact(json.dumps(ev["fields"], default=str)))
+                fields = json.loads(self.redact(json.dumps(ev["fields"], default=str)))
+            line["fields"] = {**fields, **self.span.fields()}
             self.sink.log(line)
         elif kind == "metric":
             point: MetricPoint = {"name": str(ev["name"]), "value": float(ev["value"]), "wallTime": str(ev["wallTime"])}

@@ -12,6 +12,7 @@
 | CADENCE_WORKER_MAX_LEASES | 2 | Leases run at once; the control plane decides what fits on a card |
 | CADENCE_STOP_GRACE_SECONDS | 60 | How long a stopping step may take to checkpoint before it is killed |
 | CADENCE_CLAIM_WAIT_SECONDS | 20 | Long-poll wait of a claim (≤ 30) |
+| CADENCE_WORKER_TRACE_FILE | (unset) | Append each finished step span here as a JSON line (cadence_worker.tracing) |
 """
 
 from __future__ import annotations

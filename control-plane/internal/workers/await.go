@@ -11,6 +11,7 @@ import (
 
 	"github.com/usunrise88/cadence/control-plane/internal/events"
 	"github.com/usunrise88/cadence/control-plane/internal/jobs"
+	"github.com/usunrise88/cadence/control-plane/internal/obs"
 	"github.com/usunrise88/cadence/control-plane/internal/queue"
 	"github.com/usunrise88/cadence/control-plane/internal/steps"
 )
@@ -71,10 +72,11 @@ func (s *Service) enqueue(ctx context.Context, jobID string) error {
 		}
 		need := queue.NeedOf(spec)
 		now := s.now()
-		if _, err := tx.Exec(ctx, `INSERT INTO step_jobs (job_id, project_id, spec, kind_ref, job_kind, gpu, memory_mb,
+		if _, err := tx.Exec(ctx, `INSERT INTO step_jobs (job_id, project_id, spec, kind_ref, job_kind, gpu, memory_mb, traceparent,
 				estimate_seconds, enqueued_at, updated_at)
-			VALUES ($1, NULLIF($2, ''), $3, $4, $5, $6, $7, $8, $9, $9)`,
-			jobID, spec.ProjectID, spec, spec.KindRef(), need.JobKind, spec.Resources.GPU, need.MemoryMB, spec.EstimateSeconds, now); err != nil {
+			VALUES ($1, NULLIF($2, ''), $3, $4, $5, $6, $7, NULLIF($10, ''), $8, $9, $9)`,
+			jobID, spec.ProjectID, spec, spec.KindRef(), need.JobKind, spec.Resources.GPU, need.MemoryMB, spec.EstimateSeconds, now,
+			obs.Traceparent(ctx)); err != nil {
 			return fmt.Errorf("await %s: enqueue: %w", jobID, err)
 		}
 		if _, err := tx.Exec(ctx, `UPDATE jobs SET priority = $2 WHERE id = $1`, jobID, spec.Priority); err != nil {
