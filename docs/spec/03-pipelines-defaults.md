@@ -59,6 +59,12 @@ Every block's process is a pipeline of typed steps declared in the recipes repos
   through the Go API, `pipelines.Engine.Start` with a pipeline name or a parsed pipeline, inputs, parameter overrides,
   per-step estimates, the run id, priority and `fresh`. A run whose training step reads an eval-only dataset version
   (a `dataset` input, or a `mix` input referencing one) is refused with `eval-only-dataset` (R18).
+- For facades (phase 2, stream R): a step input may take several artifacts as `<input>.<n>` (averaging wires
+  `checkpoints.0`, `checkpoints.1`, … as the step contract has it); an input declared `base_model` also accepts a
+  `checkpoint` (R44: one train-stage recipe for `init: base` and `init: checkpoint`; the step reads its input's type);
+  a facade is told about every change of a pipeline run with a run id inside the changing transaction (the run
+  observer); `pipelineRuns` retries can continue a step from a `training-state` artifact (`overrides.resumeFrom`,
+  attempt reason `resume`, kept by the automatic OOM and lost retries).
 
 ```yaml
 # pipelines/train-stage.yaml in the project repository

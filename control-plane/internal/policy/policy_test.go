@@ -110,6 +110,47 @@ func TestDecideOverBudgetExplains(t *testing.T) {
 	}
 }
 
+// sessionBudget has a project allowance and a smaller session allowance.
+type sessionBudget struct{ project, session float64 }
+
+func (b sessionBudget) RemainingGPUHours(context.Context, string) (float64, error) {
+	return b.project, nil
+}
+func (b sessionBudget) RemainingSessionGPUHours(context.Context, string) (float64, error) {
+	return b.session, nil
+}
+
+func TestDecideSessionBudget(t *testing.T) {
+	b := sessionBudget{project: 8, session: 1}
+	inSession := agent // ses_1
+	automation := auth.Actor{Kind: auth.KindAutomation, ID: "key_1"}
+	tests := []struct {
+		name     string
+		actor    auth.Actor
+		estimate float64
+		want     Outcome
+		reason   string
+	}{
+		{"within both", inSession, 0.5, Allow, ""},
+		{"over the session's", inSession, 2, Approval, "agent session's budget"},
+		{"over the project's first", inSession, 9, Approval, "today's budget"},
+		{"no session: only the project's", automation, 2, Allow, ""},
+		{"a person is not budget-gated", person, 20, Allow, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d, err := engine(t, b).Decide(context.Background(),
+				Input{Actor: tt.actor, Operation: "runs.calibrate", VerbClass: "mutate", Estimate: &Estimate{GPUHours: tt.estimate}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if d.Outcome != tt.want || !strings.Contains(d.Reason, tt.reason) {
+				t.Fatalf("decision %+v", d)
+			}
+		})
+	}
+}
+
 type failingBudget struct{}
 
 func (failingBudget) RemainingGPUHours(context.Context, string) (float64, error) {

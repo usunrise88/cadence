@@ -534,7 +534,7 @@ func TestRunEstimate(t *testing.T) {
 		t.Errorf("long run: %+v", est.GpuHours)
 	}
 
-	expectProblem(t, e.do("POST", "/api/projects/hebrew/runs", `{}`, "Idempotency-Key", e.key()), 501, "not-implemented")
+	expectProblem(t, e.do("POST", "/api/projects/hebrew/runs", `{}`, "Idempotency-Key", e.key()), 422, "validation-failed") // a real run needs a mix
 	expectProblem(t, dry(`{"gpus":2}`), 422, "validation-failed")
 	expectProblem(t, dry(`{"init":"checkpoint"}`), 422, "validation-failed")
 	expectProblem(t, dry(`{"init":"checkpoint","checkpoint":"ckp_1"}`), 404, "not-found")

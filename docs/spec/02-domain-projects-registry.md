@@ -15,9 +15,9 @@ Forty-seven entities across the five blocks, the project layer and the registry 
 | Dataset version | Data | Immutable, fingerprinted selection with splits, statistics and lineage | Utterances, Recipe |
 | Base model | Training | Upstream checkpoint: Hugging Face repo, revision, licence, model family | Model family |
 | Mix | Training | Groups, weights, temperature and replay share over dataset versions | Dataset versions, Recipe |
-| Run | Training | One optimisation stage: `init` (`base` or `checkpoint`, R44), mix, recipe, card, step budget, seed, runtime version (image digest), status; a facade over one pipeline run | Base model or Checkpoint, Mix, Recipe, Pipeline run |
+| Run | Training | One optimisation stage (`run_…`): `init` (`base` or `checkpoint`, R44), model family, mix revision with the content hash of its rendered `input_cfg`, recipe (pipeline at a commit), card, step budget, seed, runtime version (image digest), status mirrored from its pipeline run, parent run for a stage | Base model or Checkpoint, Mix, Recipe, Pipeline run, parent Run |
 | Job | All | A unit of work: a River job (`job_`); a pipeline step runs as a job of kind `step` that waits in the step queue and is leased to a worker (`lse_`) on one card, with resources (`gpu`, `gpus`, memory, disk, job kind), priority, pause, a log file, state | Run, Eval run, Export, Pipeline run |
-| Checkpoint | Training | A `checkpoint` artifact at a step: the family's payload, what loading it needs, the tokenizer it was trained with, validation WER; optimiser state is a separate `training-state` artifact (R42) | Run, Model family, Artifact |
+| Checkpoint | Training | A `checkpoint` artifact at a step (`ckp_…`): the family's payload, what loading it needs, the tokenizer it was trained with, validation WER, weights hash; trained or averaged (from other checkpoints of the run); ranked by validation WER with the top k kept; optimiser state is a separate `training-state` artifact (R42) | Run, Model family, Artifact, averaged-from Checkpoints |
 | Golden set | Eval | Frozen held-out test set per language and domain, never trainable | Dataset version, Normalizer |
 | Normalizer | Eval | Versioned text normalisation used for scoring one language | — |
 | Eval run | Eval | Checkpoint × golden sets × latency settings | Checkpoint, Golden sets |
