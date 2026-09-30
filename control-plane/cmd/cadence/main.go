@@ -11,8 +11,10 @@
 // Configuration comes from the environment: DATABASE_URL (required), CADENCE_ADDR (127.0.0.1:8080),
 // CADENCE_DATA_DIR (./data), CADENCE_LOG_DIR ($CADENCE_DATA_DIR/logs), CADENCE_LOG_LEVEL (info),
 // CADENCE_MASTER_KEY_FILE ($CADENCE_DATA_DIR/master.key; generated on first start when missing),
-// CADENCE_GITHUB_API (https://api.github.com; GitHub Enterprise: https://<host>/api/v3). Project repositories live
-// under $CADENCE_DATA_DIR/repos (bare), work (working clones) and worktrees; the git binary must be on PATH.
+// CADENCE_GITHUB_API (https://api.github.com; GitHub Enterprise: https://<host>/api/v3), CADENCE_HOST_TOKEN_FILE (where
+// the agent host's cah_ token is kept: a file on a volume both containers mount; see credentials.EnsureHostTokenFile).
+// Project repositories live under $CADENCE_DATA_DIR/repos (bare), work (working clones) and worktrees; the git binary
+// must be on PATH. `cadence egress-proxy` runs the agent sandbox's allowlisting proxy instead (internal/egress).
 package main
 
 import (
@@ -36,6 +38,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/cli"
 	"github.com/usunrise88/cadence/control-plane/internal/commands"
 	"github.com/usunrise88/cadence/control-plane/internal/compute"
+	"github.com/usunrise88/cadence/control-plane/internal/credentials"
 	"github.com/usunrise88/cadence/control-plane/internal/defaults"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
 	"github.com/usunrise88/cadence/control-plane/internal/help"
@@ -78,9 +81,16 @@ func main() {
 		}
 	case "version":
 		fmt.Println(version)
+	case "egress-proxy":
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		if err := egressProxy(ctx, os.Getenv); err != nil {
+			fmt.Fprintln(os.Stderr, "cadence egress-proxy:", err)
+			os.Exit(1)
+		}
 	default:
 		if cmd != "help" && cmd != "--help" && cmd != "-h" && !cli.Known(cmd) {
-			fmt.Fprintf(os.Stderr, "usage: cadence [serve|admin|version|help|<entity> <verb>]\nunknown command %q; `cadence help` lists the commands\n", cmd)
+			fmt.Fprintf(os.Stderr, "usage: cadence [serve|admin|egress-proxy|version|help|<entity> <verb>]\nunknown command %q; `cadence help` lists the commands\n", cmd)
 			os.Exit(cli.ExitUsage)
 		}
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -213,6 +223,16 @@ func serve(ctx context.Context, getenv func(string) string) error {
 	})
 	if err != nil {
 		return err
+	}
+	jobSvc.AddPeriodic("agentSessions.sweep", 30*time.Second, srv.SweepSessions)
+	if path := getenv("CADENCE_HOST_TOKEN_FILE"); path != "" {
+		issued, err := credentials.EnsureHostTokenFile(ctx, pool, path)
+		if err != nil {
+			return fmt.Errorf("agent host token: %w", err)
+		}
+		if issued {
+			log.Info("issued a new agent host token; older host tokens are revoked", "file", path)
+		}
 	}
 	httpServer := &http.Server{
 		Addr:              cfg.addr,

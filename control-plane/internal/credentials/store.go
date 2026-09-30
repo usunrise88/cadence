@@ -52,6 +52,8 @@ func kindFor(token string, via auth.Via) (string, bool) {
 		return KindAPIKey, true
 	case via == auth.ViaBearer && strings.HasPrefix(token, auth.PrefixAgent):
 		return KindAgent, true
+	case via == auth.ViaBearer && strings.HasPrefix(token, auth.PrefixHost):
+		return KindAgentHost, true
 	}
 	return "", false
 }

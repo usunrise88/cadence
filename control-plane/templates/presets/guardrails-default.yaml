@@ -24,6 +24,14 @@ tools:
     operations: [drafts.accept]
     reason: drafts are accepted by a person
 
+  # Sessions are started, steered and merged by people: an agent never starts another session, sends a session
+  # messages, or accepts or reverts a session branch — its own included.
+  - id: sessions-are-for-people
+    class: forbidden
+    operations: ["agentSessions.*", "agentMessages.*"]
+    verbClass: mutate
+    reason: agent sessions are started, steered and merged by people
+
   # Secrets never enter an agent context; credentials, compute, policies and defaults are the admin's.
   - id: admin-only
     class: forbidden

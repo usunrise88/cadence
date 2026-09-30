@@ -32,6 +32,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/projects/bootstrap"
 	"github.com/usunrise88/cadence/control-plane/internal/repos"
 	"github.com/usunrise88/cadence/control-plane/internal/secrets"
+	"github.com/usunrise88/cadence/control-plane/internal/sessions"
 	"github.com/usunrise88/cadence/control-plane/internal/webui"
 )
 
@@ -73,12 +74,13 @@ type Config struct {
 type Server struct {
 	api.Planned
 	Config
-	spec   *openapi3.T
-	api    http.Handler // the contract, routed relative to APIPrefix
-	mcp    *mcp.Server
-	replay http.Handler // the API without authentication, for replaying approved requests as their actor
-	drafts *drafts.Store
-	mixes  *mixes.Service
+	spec     *openapi3.T
+	api      http.Handler // the contract, routed relative to APIPrefix
+	mcp      *mcp.Server
+	replay   http.Handler // the API without authentication, for replaying approved requests as their actor
+	drafts   *drafts.Store
+	mixes    *mixes.Service
+	sessions *sessions.Service
 }
 
 var _ api.StrictServerInterface = (*Server)(nil)
@@ -99,6 +101,15 @@ func New(c Config) (*Server, error) {
 	window := time.Duration(s.defaultsDoc().Drafts.PresenceSeconds.Value) * time.Second
 	s.drafts = drafts.NewStore(time.Now, window)
 	s.mixes = mixes.NewService(s.drafts, s.defaultsDoc)
+	s.sessions = &sessions.Service{Pool: c.Pool, Projects: c.Projects, Defaults: s.defaultsDoc, Log: c.Log}
+	if c.Pipeline != nil {
+		s.sessions.Policy = c.Pipeline.Policy()
+		c.Pipeline.SetGateHook(s.sessions.GatedCommand)
+	}
+	if c.Selection == nil && c.Pool != nil {
+		c.Selection = sessions.Selection{Q: c.Pool}
+		s.Selection = c.Selection
+	}
 	s.api = s.APIHandler()
 	apiRouter := chi.NewRouter()
 	apiRouter.Mount(APIPrefix, s.api)
