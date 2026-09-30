@@ -3058,6 +3058,9 @@ components:
         mix: { $ref: "#/components/schemas/DefaultSection" }
         drafts: { $ref: "#/components/schemas/DefaultSection" }
         cache: { $ref: "#/components/schemas/DefaultSection" }
+        operations: { $ref: "#/components/schemas/DefaultSection" }
+        notifications: { $ref: "#/components/schemas/DefaultSection" }
+        backups: { $ref: "#/components/schemas/DefaultSection" }
         estimates:
           type: object
           required: [bytes_per_audio_hour, training]

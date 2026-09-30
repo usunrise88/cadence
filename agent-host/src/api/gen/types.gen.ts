@@ -826,6 +826,9 @@ export type Defaults = {
     mix: DefaultSection;
     drafts: DefaultSection;
     cache: DefaultSection;
+    operations?: DefaultSection;
+    notifications?: DefaultSection;
+    backups?: DefaultSection;
     estimates: {
         bytes_per_audio_hour: DefaultValue;
         training: Array<TrainingEstimateRow>;
