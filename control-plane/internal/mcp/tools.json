@@ -1879,6 +1879,7 @@
               "api_key",
               "agent",
               "agent_host",
+              "egress_proxy",
               "invitation",
               "worker"
             ],

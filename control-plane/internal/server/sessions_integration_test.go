@@ -108,7 +108,7 @@ type hostEnv struct {
 func startHost(t *testing.T) *hostEnv {
 	e := start(t)
 	authed := newTestServer(t, e.pool, events.NewHub(8), obs.NewMetrics(), func(c *Config) {
-		c.Actor, c.Jobs, c.Projects = auth.Actor{}, e.jobs, e.repos
+		c.Actor, c.Jobs, c.Projects, c.Secrets = auth.Actor{}, e.jobs, e.repos, e.admin.Secrets
 	})
 	srv := httptest.NewServer(authed.Handler())
 	t.Cleanup(srv.Close)

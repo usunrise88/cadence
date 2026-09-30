@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/usunrise88/cadence/control-plane/internal/agentcreds"
 	"github.com/usunrise88/cadence/control-plane/internal/api"
 	"github.com/usunrise88/cadence/control-plane/internal/auth"
 	"github.com/usunrise88/cadence/control-plane/internal/commands"
@@ -81,6 +82,8 @@ type Server struct {
 	drafts   *drafts.Store
 	mixes    *mixes.Service
 	sessions *sessions.Service
+	// agentCreds is the agent host's side of agent credentials (claims, reports, the transit sweeper).
+	agentCreds *agentcreds.Service
 }
 
 var _ api.StrictServerInterface = (*Server)(nil)
@@ -102,6 +105,7 @@ func New(c Config) (*Server, error) {
 	s.drafts = drafts.NewStore(time.Now, window)
 	s.mixes = mixes.NewService(s.drafts, s.defaultsDoc)
 	s.sessions = &sessions.Service{Pool: c.Pool, Projects: c.Projects, Defaults: s.defaultsDoc, Log: c.Log}
+	s.agentCreds = &agentcreds.Service{Pool: c.Pool, Transit: s.transit(), Log: c.Log}
 	if c.Pipeline != nil {
 		s.sessions.Policy = c.Pipeline.Policy()
 		c.Pipeline.SetGateHook(s.sessions.GatedCommand)

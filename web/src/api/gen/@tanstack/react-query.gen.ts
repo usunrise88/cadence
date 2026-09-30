@@ -3,8 +3,8 @@
 import { type InfiniteData, infiniteQueryOptions, queryOptions, type UseMutationOptions } from '@tanstack/react-query';
 
 import { client } from '../client.gen';
-import { adoptionsList, agentMessagesList, agentMessagesNew, agentModelsList, agentProfileEdit, agentProfileGet, agentSessionsAccept, agentSessionsCancel, agentSessionsGet, agentSessionsList, agentSessionsNew, agentSessionsPause, agentSessionsResume, agentSessionsRevert, aliasesGet, aliasesList, aliasesSet, approvalsApprove, approvalsDeny, approvalsGet, approvalsList, auditList, authGet, authLogin, authLogout, authSetup, baseModelsGet, baseModelsList, branchesAccept, branchesGet, branchesList, branchesRevert, collectionsGet, collectionsList, computeEdit, computeGet, computeList, credentialsList, credentialsNew, credentialsRevoke, datasetsGet, datasetsList, defaultsGet, draftsAccept, draftsGet, draftsList, draftsRevert, eventsList, helpGet, helpSearch, hostSessionsAsk, hostSessionsClaim, hostSessionsDecision, hostSessionsReport, jobsCancel, jobsGet, jobsList, jobsWait, meGet, mixesEdit, mixesGet, mixesList, mixesNew, mixesPreview, mountsList, mountsNew, type Options, policiesEdit, policiesGet, projectsAdopt, projectsArchive, projectsEdit, projectsGet, projectsList, projectsNew, projectsNote, projectsSearch, projectsSync, recipesGet, recipesList, registrySearch, runsNew, secretsList, secretsNew, templatesGet, templatesList, totpConfirm, totpDisable, totpEnroll, viewsGet, viewsList, viewsSet, workspacesGet, workspacesList, workspacesSet } from '../sdk.gen';
-import type { AdoptionsListData, AdoptionsListError, AdoptionsListResponse, AgentMessagesListData, AgentMessagesListError, AgentMessagesListResponse, AgentMessagesNewData, AgentMessagesNewError, AgentMessagesNewResponse, AgentModelsListData, AgentModelsListError, AgentModelsListResponse, AgentProfileEditData, AgentProfileEditError, AgentProfileEditResponse, AgentProfileGetData, AgentProfileGetError, AgentProfileGetResponse, AgentSessionsAcceptData, AgentSessionsAcceptError, AgentSessionsAcceptResponse, AgentSessionsCancelData, AgentSessionsCancelError, AgentSessionsCancelResponse, AgentSessionsGetData, AgentSessionsGetError, AgentSessionsGetResponse, AgentSessionsListData, AgentSessionsListError, AgentSessionsListResponse, AgentSessionsNewData, AgentSessionsNewError, AgentSessionsNewResponse, AgentSessionsPauseData, AgentSessionsPauseError, AgentSessionsPauseResponse, AgentSessionsResumeData, AgentSessionsResumeError, AgentSessionsResumeResponse, AgentSessionsRevertData, AgentSessionsRevertError, AgentSessionsRevertResponse, AliasesGetData, AliasesGetError, AliasesGetResponse, AliasesListData, AliasesListError, AliasesListResponse, AliasesSetData, AliasesSetError, AliasesSetResponse, ApprovalsApproveData, ApprovalsApproveError, ApprovalsApproveResponse, ApprovalsDenyData, ApprovalsDenyError, ApprovalsDenyResponse, ApprovalsGetData, ApprovalsGetError, ApprovalsGetResponse, ApprovalsListData, ApprovalsListError, ApprovalsListResponse, AuditListData, AuditListError, AuditListResponse, AuthGetData, AuthGetError, AuthGetResponse, AuthLoginData, AuthLoginError, AuthLoginResponse, AuthLogoutData, AuthLogoutError, AuthLogoutResponse, AuthSetupData, AuthSetupError, AuthSetupResponse, BaseModelsGetData, BaseModelsGetError, BaseModelsGetResponse, BaseModelsListData, BaseModelsListError, BaseModelsListResponse, BranchesAcceptData, BranchesAcceptError, BranchesAcceptResponse, BranchesGetData, BranchesGetError, BranchesGetResponse, BranchesListData, BranchesListError, BranchesListResponse, BranchesRevertData, BranchesRevertError, BranchesRevertResponse, CollectionsGetData, CollectionsGetError, CollectionsGetResponse, CollectionsListData, CollectionsListError, CollectionsListResponse, ComputeEditData, ComputeEditError, ComputeEditResponse, ComputeGetData, ComputeGetError, ComputeGetResponse, ComputeListData, ComputeListError, ComputeListResponse, CredentialsListData, CredentialsListError, CredentialsListResponse, CredentialsNewData, CredentialsNewError, CredentialsNewResponse, CredentialsRevokeData, CredentialsRevokeError, CredentialsRevokeResponse, DatasetsGetData, DatasetsGetError, DatasetsGetResponse, DatasetsListData, DatasetsListError, DatasetsListResponse, DefaultsGetData, DefaultsGetError, DefaultsGetResponse, DraftsAcceptData, DraftsAcceptError, DraftsAcceptResponse, DraftsGetData, DraftsGetError, DraftsGetResponse, DraftsListData, DraftsListError, DraftsListResponse, DraftsRevertData, DraftsRevertError, DraftsRevertResponse, EventsListData, EventsListError, EventsListResponse, HelpGetData, HelpGetError, HelpGetResponse, HelpSearchData, HelpSearchError, HelpSearchResponse, HostSessionsAskData, HostSessionsAskError, HostSessionsAskResponse, HostSessionsClaimData, HostSessionsClaimError, HostSessionsClaimResponse, HostSessionsDecisionData, HostSessionsDecisionError, HostSessionsDecisionResponse, HostSessionsReportData, HostSessionsReportError, HostSessionsReportResponse, JobsCancelData, JobsCancelError, JobsCancelResponse, JobsGetData, JobsGetError, JobsGetResponse, JobsListData, JobsListError, JobsListResponse, JobsWaitData, JobsWaitError, JobsWaitResponse, MeGetData, MeGetError, MeGetResponse, MixesEditData, MixesEditError, MixesEditResponse, MixesGetData, MixesGetError, MixesGetResponse, MixesListData, MixesListError, MixesListResponse, MixesNewData, MixesNewError, MixesNewResponse, MixesPreviewData, MixesPreviewError, MixesPreviewResponse, MountsListData, MountsListError, MountsListResponse, MountsNewData, MountsNewError, MountsNewResponse, PoliciesEditData, PoliciesEditError, PoliciesEditResponse, PoliciesGetData, PoliciesGetError, PoliciesGetResponse, ProjectsAdoptData, ProjectsAdoptError, ProjectsAdoptResponse, ProjectsArchiveData, ProjectsArchiveError, ProjectsArchiveResponse, ProjectsEditData, ProjectsEditError, ProjectsEditResponse, ProjectsGetData, ProjectsGetError, ProjectsGetResponse, ProjectsListData, ProjectsListError, ProjectsListResponse, ProjectsNewData, ProjectsNewError, ProjectsNewResponse, ProjectsNoteData, ProjectsNoteError, ProjectsNoteResponse, ProjectsSearchData, ProjectsSearchError, ProjectsSearchResponse, ProjectsSyncData, ProjectsSyncError, ProjectsSyncResponse, RecipesGetData, RecipesGetError, RecipesGetResponse, RecipesListData, RecipesListError, RecipesListResponse, RegistrySearchData, RegistrySearchError, RegistrySearchResponse, RunsNewData, RunsNewError, RunsNewResponse, SecretsListData, SecretsListError, SecretsListResponse, SecretsNewData, SecretsNewError, SecretsNewResponse, TemplatesGetData, TemplatesGetError, TemplatesGetResponse, TemplatesListData, TemplatesListError, TemplatesListResponse, TotpConfirmData, TotpConfirmError, TotpConfirmResponse, TotpDisableData, TotpDisableError, TotpDisableResponse, TotpEnrollData, TotpEnrollError, TotpEnrollResponse, ViewsGetData, ViewsGetError, ViewsGetResponse, ViewsListData, ViewsListError, ViewsListResponse, ViewsSetData, ViewsSetError, ViewsSetResponse, WorkspacesGetData, WorkspacesGetError, WorkspacesGetResponse, WorkspacesListData, WorkspacesListError, WorkspacesListResponse, WorkspacesSetData, WorkspacesSetError, WorkspacesSetResponse } from '../types.gen';
+import { adoptionsList, agentCredentialsArchive, agentCredentialsGet, agentCredentialsList, agentCredentialsSet, agentCredentialsVerify, agentMessagesList, agentMessagesNew, agentModelsList, agentProfileEdit, agentProfileGet, agentProvidersList, agentSessionsAccept, agentSessionsCancel, agentSessionsGet, agentSessionsList, agentSessionsNew, agentSessionsPause, agentSessionsResume, agentSessionsRevert, aliasesGet, aliasesList, aliasesSet, approvalsApprove, approvalsDeny, approvalsGet, approvalsList, auditList, authGet, authLogin, authLogout, authSetup, baseModelsGet, baseModelsList, branchesAccept, branchesGet, branchesList, branchesRevert, collectionsGet, collectionsList, computeEdit, computeGet, computeList, credentialsList, credentialsNew, credentialsRevoke, datasetsGet, datasetsList, defaultsGet, draftsAccept, draftsGet, draftsList, draftsRevert, egressHostsList, eventsList, helpGet, helpSearch, hostCredentialsClaim, hostCredentialsReport, hostSessionsAsk, hostSessionsClaim, hostSessionsDecision, hostSessionsReport, jobsCancel, jobsGet, jobsList, jobsWait, meGet, mixesEdit, mixesGet, mixesList, mixesNew, mixesPreview, mountsList, mountsNew, type Options, policiesEdit, policiesGet, projectsAdopt, projectsArchive, projectsEdit, projectsGet, projectsList, projectsNew, projectsNote, projectsSearch, projectsSync, recipesGet, recipesList, registrySearch, runsNew, secretsList, secretsNew, templatesGet, templatesList, totpConfirm, totpDisable, totpEnroll, viewsGet, viewsList, viewsSet, workspacesGet, workspacesList, workspacesSet } from '../sdk.gen';
+import type { AdoptionsListData, AdoptionsListError, AdoptionsListResponse, AgentCredentialsArchiveData, AgentCredentialsArchiveError, AgentCredentialsArchiveResponse, AgentCredentialsGetData, AgentCredentialsGetError, AgentCredentialsGetResponse, AgentCredentialsListData, AgentCredentialsListError, AgentCredentialsListResponse, AgentCredentialsSetData, AgentCredentialsSetError, AgentCredentialsSetResponse, AgentCredentialsVerifyData, AgentCredentialsVerifyError, AgentCredentialsVerifyResponse, AgentMessagesListData, AgentMessagesListError, AgentMessagesListResponse, AgentMessagesNewData, AgentMessagesNewError, AgentMessagesNewResponse, AgentModelsListData, AgentModelsListError, AgentModelsListResponse, AgentProfileEditData, AgentProfileEditError, AgentProfileEditResponse, AgentProfileGetData, AgentProfileGetError, AgentProfileGetResponse, AgentProvidersListData, AgentProvidersListError, AgentProvidersListResponse, AgentSessionsAcceptData, AgentSessionsAcceptError, AgentSessionsAcceptResponse, AgentSessionsCancelData, AgentSessionsCancelError, AgentSessionsCancelResponse, AgentSessionsGetData, AgentSessionsGetError, AgentSessionsGetResponse, AgentSessionsListData, AgentSessionsListError, AgentSessionsListResponse, AgentSessionsNewData, AgentSessionsNewError, AgentSessionsNewResponse, AgentSessionsPauseData, AgentSessionsPauseError, AgentSessionsPauseResponse, AgentSessionsResumeData, AgentSessionsResumeError, AgentSessionsResumeResponse, AgentSessionsRevertData, AgentSessionsRevertError, AgentSessionsRevertResponse, AliasesGetData, AliasesGetError, AliasesGetResponse, AliasesListData, AliasesListError, AliasesListResponse, AliasesSetData, AliasesSetError, AliasesSetResponse, ApprovalsApproveData, ApprovalsApproveError, ApprovalsApproveResponse, ApprovalsDenyData, ApprovalsDenyError, ApprovalsDenyResponse, ApprovalsGetData, ApprovalsGetError, ApprovalsGetResponse, ApprovalsListData, ApprovalsListError, ApprovalsListResponse, AuditListData, AuditListError, AuditListResponse, AuthGetData, AuthGetError, AuthGetResponse, AuthLoginData, AuthLoginError, AuthLoginResponse, AuthLogoutData, AuthLogoutError, AuthLogoutResponse, AuthSetupData, AuthSetupError, AuthSetupResponse, BaseModelsGetData, BaseModelsGetError, BaseModelsGetResponse, BaseModelsListData, BaseModelsListError, BaseModelsListResponse, BranchesAcceptData, BranchesAcceptError, BranchesAcceptResponse, BranchesGetData, BranchesGetError, BranchesGetResponse, BranchesListData, BranchesListError, BranchesListResponse, BranchesRevertData, BranchesRevertError, BranchesRevertResponse, CollectionsGetData, CollectionsGetError, CollectionsGetResponse, CollectionsListData, CollectionsListError, CollectionsListResponse, ComputeEditData, ComputeEditError, ComputeEditResponse, ComputeGetData, ComputeGetError, ComputeGetResponse, ComputeListData, ComputeListError, ComputeListResponse, CredentialsListData, CredentialsListError, CredentialsListResponse, CredentialsNewData, CredentialsNewError, CredentialsNewResponse, CredentialsRevokeData, CredentialsRevokeError, CredentialsRevokeResponse, DatasetsGetData, DatasetsGetError, DatasetsGetResponse, DatasetsListData, DatasetsListError, DatasetsListResponse, DefaultsGetData, DefaultsGetError, DefaultsGetResponse, DraftsAcceptData, DraftsAcceptError, DraftsAcceptResponse, DraftsGetData, DraftsGetError, DraftsGetResponse, DraftsListData, DraftsListError, DraftsListResponse, DraftsRevertData, DraftsRevertError, DraftsRevertResponse, EgressHostsListData, EgressHostsListError, EgressHostsListResponse, EventsListData, EventsListError, EventsListResponse, HelpGetData, HelpGetError, HelpGetResponse, HelpSearchData, HelpSearchError, HelpSearchResponse, HostCredentialsClaimData, HostCredentialsClaimError, HostCredentialsClaimResponse, HostCredentialsReportData, HostCredentialsReportError, HostCredentialsReportResponse, HostSessionsAskData, HostSessionsAskError, HostSessionsAskResponse, HostSessionsClaimData, HostSessionsClaimError, HostSessionsClaimResponse, HostSessionsDecisionData, HostSessionsDecisionError, HostSessionsDecisionResponse, HostSessionsReportData, HostSessionsReportError, HostSessionsReportResponse, JobsCancelData, JobsCancelError, JobsCancelResponse, JobsGetData, JobsGetError, JobsGetResponse, JobsListData, JobsListError, JobsListResponse, JobsWaitData, JobsWaitError, JobsWaitResponse, MeGetData, MeGetError, MeGetResponse, MixesEditData, MixesEditError, MixesEditResponse, MixesGetData, MixesGetError, MixesGetResponse, MixesListData, MixesListError, MixesListResponse, MixesNewData, MixesNewError, MixesNewResponse, MixesPreviewData, MixesPreviewError, MixesPreviewResponse, MountsListData, MountsListError, MountsListResponse, MountsNewData, MountsNewError, MountsNewResponse, PoliciesEditData, PoliciesEditError, PoliciesEditResponse, PoliciesGetData, PoliciesGetError, PoliciesGetResponse, ProjectsAdoptData, ProjectsAdoptError, ProjectsAdoptResponse, ProjectsArchiveData, ProjectsArchiveError, ProjectsArchiveResponse, ProjectsEditData, ProjectsEditError, ProjectsEditResponse, ProjectsGetData, ProjectsGetError, ProjectsGetResponse, ProjectsListData, ProjectsListError, ProjectsListResponse, ProjectsNewData, ProjectsNewError, ProjectsNewResponse, ProjectsNoteData, ProjectsNoteError, ProjectsNoteResponse, ProjectsSearchData, ProjectsSearchError, ProjectsSearchResponse, ProjectsSyncData, ProjectsSyncError, ProjectsSyncResponse, RecipesGetData, RecipesGetError, RecipesGetResponse, RecipesListData, RecipesListError, RecipesListResponse, RegistrySearchData, RegistrySearchError, RegistrySearchResponse, RunsNewData, RunsNewError, RunsNewResponse, SecretsListData, SecretsListError, SecretsListResponse, SecretsNewData, SecretsNewError, SecretsNewResponse, TemplatesGetData, TemplatesGetError, TemplatesGetResponse, TemplatesListData, TemplatesListError, TemplatesListResponse, TotpConfirmData, TotpConfirmError, TotpConfirmResponse, TotpDisableData, TotpDisableError, TotpDisableResponse, TotpEnrollData, TotpEnrollError, TotpEnrollResponse, ViewsGetData, ViewsGetError, ViewsGetResponse, ViewsListData, ViewsListError, ViewsListResponse, ViewsSetData, ViewsSetError, ViewsSetResponse, WorkspacesGetData, WorkspacesGetError, WorkspacesGetResponse, WorkspacesListData, WorkspacesListError, WorkspacesListResponse, WorkspacesSetData, WorkspacesSetError, WorkspacesSetResponse } from '../types.gen';
 
 export type QueryKey<TOptions extends Options> = [
     Pick<TOptions, 'baseUrl' | 'body' | 'headers' | 'path' | 'query'> & {
@@ -1770,6 +1770,163 @@ export const hostSessionsDecisionOptions = (options: Options<HostSessionsDecisio
         return data;
     },
     queryKey: hostSessionsDecisionQueryKey(options)
+});
+
+export const agentCredentialsListQueryKey = (options?: Options<AgentCredentialsListData>) => createQueryKey('agentCredentialsList', options);
+
+/**
+ * The agents' model accounts (metadata only), whether an agent host is connected, and opencode's default model
+ */
+export const agentCredentialsListOptions = (options?: Options<AgentCredentialsListData>) => queryOptions<AgentCredentialsListResponse, AgentCredentialsListError, AgentCredentialsListResponse, ReturnType<typeof agentCredentialsListQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await agentCredentialsList({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: agentCredentialsListQueryKey(options)
+});
+
+export const agentCredentialsGetQueryKey = (options: Options<AgentCredentialsGetData>) => createQueryKey('agentCredentialsGet', options);
+
+/**
+ * One agent credential's metadata (never its value)
+ */
+export const agentCredentialsGetOptions = (options: Options<AgentCredentialsGetData>) => queryOptions<AgentCredentialsGetResponse, AgentCredentialsGetError, AgentCredentialsGetResponse, ReturnType<typeof agentCredentialsGetQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await agentCredentialsGet({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: agentCredentialsGetQueryKey(options)
+});
+
+/**
+ * Connect or change an agent's model account (write-only value) or choose opencode's default model
+ */
+export const agentCredentialsSetMutation = (options?: Partial<Options<AgentCredentialsSetData>>): UseMutationOptions<AgentCredentialsSetResponse, AgentCredentialsSetError, Options<AgentCredentialsSetData>> => {
+    const mutationOptions: UseMutationOptions<AgentCredentialsSetResponse, AgentCredentialsSetError, Options<AgentCredentialsSetData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await agentCredentialsSet({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Ask the agent host for a tiny real request through the agent (and opencode's model list); the result arrives as an event
+ */
+export const agentCredentialsVerifyMutation = (options?: Partial<Options<AgentCredentialsVerifyData>>): UseMutationOptions<AgentCredentialsVerifyResponse, AgentCredentialsVerifyError, Options<AgentCredentialsVerifyData>> => {
+    const mutationOptions: UseMutationOptions<AgentCredentialsVerifyResponse, AgentCredentialsVerifyError, Options<AgentCredentialsVerifyData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await agentCredentialsVerify({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Disconnect an agent's model account; the agent host removes it from the agent-credentials volume
+ */
+export const agentCredentialsArchiveMutation = (options?: Partial<Options<AgentCredentialsArchiveData>>): UseMutationOptions<AgentCredentialsArchiveResponse, AgentCredentialsArchiveError, Options<AgentCredentialsArchiveData>> => {
+    const mutationOptions: UseMutationOptions<AgentCredentialsArchiveResponse, AgentCredentialsArchiveError, Options<AgentCredentialsArchiveData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await agentCredentialsArchive({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+export const agentProvidersListQueryKey = (options?: Options<AgentProvidersListData>) => createQueryKey('agentProvidersList', options);
+
+/**
+ * The provider catalogue the Agents settings choose from (Claude subscription; opencode providers and their API hosts)
+ */
+export const agentProvidersListOptions = (options?: Options<AgentProvidersListData>) => queryOptions<AgentProvidersListResponse, AgentProvidersListError, AgentProvidersListResponse, ReturnType<typeof agentProvidersListQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await agentProvidersList({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: agentProvidersListQueryKey(options)
+});
+
+/**
+ * Long-poll for agent credential tasks — values to write into the agent-credentials volume, removals, verifications
+ */
+export const hostCredentialsClaimMutation = (options?: Partial<Options<HostCredentialsClaimData>>): UseMutationOptions<HostCredentialsClaimResponse, HostCredentialsClaimError, Options<HostCredentialsClaimData>> => {
+    const mutationOptions: UseMutationOptions<HostCredentialsClaimResponse, HostCredentialsClaimError, Options<HostCredentialsClaimData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await hostCredentialsClaim({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Acknowledge an agent credential task with its outcome (written, removed, verified with the model list)
+ */
+export const hostCredentialsReportMutation = (options?: Partial<Options<HostCredentialsReportData>>): UseMutationOptions<HostCredentialsReportResponse, HostCredentialsReportError, Options<HostCredentialsReportData>> => {
+    const mutationOptions: UseMutationOptions<HostCredentialsReportResponse, HostCredentialsReportError, Options<HostCredentialsReportData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await hostCredentialsReport({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+export const egressHostsListQueryKey = (options?: Options<EgressHostsListData>) => createQueryKey('egressHostsList', options);
+
+/**
+ * The hosts the agent sandbox may reach beyond the proxy's static list (configured providers, custom base URLs)
+ */
+export const egressHostsListOptions = (options?: Options<EgressHostsListData>) => queryOptions<EgressHostsListResponse, EgressHostsListError, EgressHostsListResponse, ReturnType<typeof egressHostsListQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await egressHostsList({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: egressHostsListQueryKey(options)
 });
 
 export const mountsListQueryKey = (options?: Options<MountsListData>) => createQueryKey('mountsList', options);

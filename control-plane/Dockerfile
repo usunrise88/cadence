@@ -36,6 +36,8 @@ COPY --from=build /out/cadence /cadence
 COPY --from=build --chown=65532:65532 /out/data /data
 # Where the agent host's token is kept (CADENCE_HOST_TOKEN_FILE): a volume only the control plane writes.
 COPY --from=build --chown=65532:65532 /out/data /host-credential
+# Where the egress proxy's token is kept (CADENCE_EGRESS_TOKEN_FILE): written by the control plane, read by the proxy.
+COPY --from=build --chown=65532:65532 /out/data /egress-credential
 ENV CADENCE_ADDR=0.0.0.0:8080 \
     CADENCE_DATA_DIR=/data
 USER 65532:65532

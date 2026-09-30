@@ -342,7 +342,7 @@ var Operations = []Operation{
 		ID: "credentials.list", Entity: "credentials", Verb: "list", Method: "GET", Path: "/credentials",
 		Summary: "List credentials (sessions, API keys, agent tokens) without their secrets",
 		Params: []Param{
-			{Name: "kind", In: "query", Flag: "kind", Type: "string", Description: "Only this kind", Enum: []string{"session", "api_key", "agent", "agent_host", "invitation", "worker"}},
+			{Name: "kind", In: "query", Flag: "kind", Type: "string", Description: "Only this kind", Enum: []string{"session", "api_key", "agent", "agent_host", "egress_proxy", "invitation", "worker"}},
 			{Name: "revoked", In: "query", Flag: "revoked", Type: "boolean", Description: "Include revoked and expired credentials", Default: "false"},
 		},
 	},
