@@ -36,6 +36,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/obs"
 	"github.com/usunrise88/cadence/control-plane/internal/policy"
 	"github.com/usunrise88/cadence/control-plane/internal/registry"
+	"github.com/usunrise88/cadence/control-plane/internal/search"
 	"github.com/usunrise88/cadence/control-plane/internal/secrets"
 	"github.com/usunrise88/cadence/control-plane/internal/server"
 	"github.com/usunrise88/cadence/control-plane/internal/storage"
@@ -153,6 +154,9 @@ func serve(ctx context.Context, getenv func(string) string) error {
 	if err != nil {
 		return err
 	}
+	if err := search.IndexHelp(ctx, pool, library.All(), time.Now()); err != nil {
+		return fmt.Errorf("index help: %w", err)
+	}
 	store, err := openSecrets(pool, cfg, log)
 	if err != nil {
 		return err
@@ -204,6 +208,7 @@ func serve(ctx context.Context, getenv func(string) string) error {
 	}
 	g, gctx := errgroup.WithContext(runCtx)
 	g.Go(func() error { return events.NewDispatcher(pool, hub, log, metrics.EventsDispatched).Run(gctx) })
+	g.Go(func() error { return search.NewIndexer(pool, hub, log, search.Sources()).Run(gctx) })
 	g.Go(func() error {
 		if err := httpServer.Serve(listener); !errors.Is(err, http.ErrServerClosed) {
 			return fmt.Errorf("serve http: %w", err)
