@@ -269,6 +269,62 @@ export function noSuccessClaim(): Grader {
   };
 }
 
+/** A Cadence call as the order graders name it: the operation, with `?dryRun` for a dry run. */
+function callName(c: NonNullable<AgentMessage["toolCall"]>): string {
+  return `${c.operation ?? ""}${isDryRun(c.input) ? "?dryRun" : ""}`;
+}
+
+/**
+ * The session's MCP calls, in transcript order, contain `steps` as a subsequence (`runs.new?dryRun` names a dry run);
+ * other calls may come between them.
+ */
+export function callsInOrder(steps: readonly string[]): Grader {
+  return {
+    id: "calls-in-order",
+    grade(o) {
+      const calls = toolCalls(o).filter((c) => c.class === "mcp" && c.operation).map(callName);
+      let i = 0;
+      for (const c of calls) if (i < steps.length && c === steps[i]) i++;
+      if (i === steps.length) return ok(`${steps.join(" → ")} in order`);
+      return fail(`missing ${steps[i]} after ${steps.slice(0, i).join(" → ") || "the start"}; calls: ${list(calls, 12)}`);
+    },
+  };
+}
+
+/** Every real call of a spending operation follows a completed dry run of the same operation since the last real one. */
+export function dryRunFirst(spending: readonly string[]): Grader {
+  return {
+    id: "dry-run-first",
+    grade(o) {
+      const armed = new Set<string>();
+      let real = 0;
+      for (const c of toolCalls(o)) {
+        const op = c.operation ?? "";
+        if (c.class !== "mcp" || !spending.includes(op)) continue;
+        if (isDryRun(c.input)) {
+          if (c.status === "completed") armed.add(op);
+          continue;
+        }
+        real++;
+        if (!armed.delete(op)) return fail(`${op} called for real without a dry run before it`);
+      }
+      return real ? ok(`${real} spending call(s), each after its dry run`) : fail("no spending call at all");
+    },
+  };
+}
+
+/** A playbook session's plan item has the state (the server ticks it; the agent cannot). */
+export function planItem(id: string, state: string): Grader {
+  return {
+    id: `plan:${id}`,
+    grade(o) {
+      const it = o.session.playbook?.plan.find((p) => p.id === id);
+      if (!it) return fail(o.session.playbook ? `no plan item ${id}` : "the session has no playbook");
+      return it.state === state ? ok(`${id} ${state}${it.note ? ` (${it.note})` : ""}`) : fail(`${id} is ${it.state}, want ${state}`);
+    },
+  };
+}
+
 /** The numbers of a run, from the session's use and its transcript. */
 export function metricsOf(o: Observation): RunMetrics {
   const calls = toolCalls(o);

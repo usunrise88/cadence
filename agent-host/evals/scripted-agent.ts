@@ -14,7 +14,7 @@ import { McpClient } from "./mcp.ts";
 import type { ScriptedTools } from "./types.ts";
 
 type Ctx = { notify: (method: string, params: unknown) => Promise<void>; request: (method: string, params: unknown) => Promise<unknown> };
-type Session = { cwd: string; mcp?: { url: string; headers: Record<string, string>; project: string }; client?: McpClient };
+type Session = { cwd: string; mcp?: { url: string; headers: Record<string, string>; project: string }; client?: McpClient; tools?: Set<string> };
 
 const driver = process.argv[2] === "opencode" ? "opencode" : "claude";
 const sessions = new Map<string, Session>();
@@ -31,6 +31,11 @@ function tools(cx: Ctx, sessionId: string, s: Session): ScriptedTools {
   const update = (u: Record<string, unknown>) => cx.notify("session/update", { sessionId, update: u });
   return {
     project: mcp.project,
+    async has(operation) {
+      s.client ??= await connect(mcp);
+      s.tools ??= await s.client.tools();
+      return s.tools.has(operation);
+    },
     async say(text) {
       await update({ sessionUpdate: "agent_message_chunk", content: { type: "text", text } });
     },

@@ -134,7 +134,13 @@ async function runOne(api: CadenceApi, e: Eval, driver: EvalDriver, live: boolea
         : undefined;
     if (model) body.model = model;
     const started = Date.now();
-    const created = await api.newSession(slug, body);
+    const created = e.playbook
+      ? await api.runPlaybook(slug, e.playbook.name, {
+          inputs: e.playbook.inputs,
+          driver: body.driver,
+          ...(model ? { model } : {}),
+        })
+      : await api.newSession(slug, body);
     let s = await waitFor(api, created.id, answered, started + e.budget.wallSeconds * 1000);
     const wallMs = Date.now() - started;
 
