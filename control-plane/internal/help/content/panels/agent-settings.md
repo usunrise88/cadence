@@ -16,7 +16,8 @@ rendered from the profile — `.claude/settings.json` and `opencode.json` (permi
 
 The profile is set by the project wizard and changed here. **Save** commits the rendered files to `main` of the
 project repository; running sessions pick them up at their next turn. The files only reduce the agent's own
-prompts: the server's policy engine decides what a session may do, from the preset in its token, whatever the files
+prompts (Claude Code applies their ask and deny rules; the Cadence tools the preset allows are pre-allowed by the
+agent host when a session starts, because Claude Code does not take allow rules from a repository's own file): the server's policy engine decides what a session may do, from the preset in its token, whatever the files
 say. The Cadence MCP server and the session token reach the agent through the session, never through a file in the
 repository.
 

@@ -27,6 +27,10 @@ export interface LaunchOptions {
   // Stream the model's reasoning as thought chunks when the agent can (Claude: summarized thinking display;
   // recent Claude models omit thinking text by default). opencode streams reasoning whenever the model emits it.
   thoughts?: boolean;
+  // MCP tools the permission preset lets the agent call without a permission prompt (HostStart.allowedTools, named
+  // as the server lists them, e.g. mixes.get). A driver whose agent ignores the allow rules in the repository's own
+  // config pre-allows them at launch; everything else still reaches the host's permission request.
+  preAllowed?: { server: string; tools: readonly string[] };
 }
 
 // What the Chat panel distinguishes (docs/spec/05-agents.md "What the Chat panel shows").

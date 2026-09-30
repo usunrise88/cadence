@@ -58,7 +58,9 @@ Surprises:
 2. **Claude still asks for allowed MCP tools.** Even with the corrected allow rules the adapter raised a permission
    request per Cadence call. The preset answers them at once (`tools.read`, `tools.draft`, `tools.spend`), so no
    person sees them, but each costs a round trip. Open: whether claude-agent-acp applies project `permissions.allow`
-   to MCP tools.
+   to MCP tools. Answered 2026-09-30: Claude Code does not load a project file's allow rules at all (only its ask and
+   deny rules); the host now pre-allows the preset's Cadence tools through `allowedTools` (docs/spec/05-agents.md,
+   "Phase 1 as built").
 3. **Claude loads the product skill first** (`cadence-train`) and defers MCP tools behind ToolSearch, as A1 saw.
 4. **`runs.new` dry runs did not name the mix.** Claude sent `{init: base}`, opencode `{datasets: [ver_…]}`; the
    estimate is the table estimate either way. The runs.new description should say to pass the mix (phase 2 wires

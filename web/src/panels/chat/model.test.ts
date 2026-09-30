@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AgentToolCall } from "@/api/gen/types.gen";
+import type { AgentMessage, AgentToolCall } from "@/api/gen/types.gen";
 import { message, session } from "@/shell/agents/testdata";
 import { budgetUse, compact, composerNotice, diffStat, dryRunEstimate, lineDiff, rowOffsets, sessionStatus, tabLabel, tabTone, toolDraft, toolEntityRef, toolOperation, visibleEntries, visibleRange } from "./model";
 
@@ -49,6 +49,18 @@ describe("header", () => {
     expect(b.tokens.ratio).toBe(1);
     expect(compact(1234)).toBe("1.2k");
     expect(compact(45_000)).toBe("45k");
+  });
+
+  it("leaves out permissions the preset allowed on its own for a call the transcript shows", () => {
+    const call = message({ kind: "tool_call", toolCall: tool({ id: "toolu_9" }) });
+    const perm = (over: Record<string, unknown>) =>
+      message({ kind: "permission", permission: { toolCallId: "toolu_9", state: "approved", rule: "tools.draft", ...over } as AgentMessage["permission"] });
+    const auto = perm({});
+    const person = perm({ approvalId: "apr_1", rule: undefined });
+    const denied = perm({ state: "denied" });
+    const pending = perm({ state: "pending", rule: undefined });
+    const orphan = perm({ toolCallId: "toolu_other" });
+    expect(visibleEntries([auto, call, person, denied, pending, orphan])).toEqual([call, person, denied, pending, orphan]);
   });
 
   it("hides turn starts; turn ends show usage", () => {

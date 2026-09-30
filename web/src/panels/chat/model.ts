@@ -5,9 +5,20 @@ import { isAsleep } from "@/shell/panel";
 // Pure presentation logic of the Chat panel (docs/spec/05-agents.md "What the Chat panel shows"): which transcript
 // entries render, the header's state and budget, what a tool call names, and the inline diff of a file edit.
 
-/** Entries the transcript renders: a turn's start is implied by the next user message; its end shows usage. */
+/**
+ * Entries the transcript renders: a turn's start is implied by the next user message; its end shows usage. A
+ * permission the preset allowed on its own (a rule, no person) for a tool call the transcript shows is noise — the
+ * call's line says it ran — so it is left out; denied, pending, withdrawn and person-answered ones stay.
+ */
 export function visibleEntries(items: AgentMessage[]): AgentMessage[] {
-  return items.filter((m) => !(m.kind === "turn" && m.turnInfo?.state !== "ended"));
+  const calls = new Set<string>();
+  for (const m of items) if (m.kind === "tool_call" && m.toolCall) calls.add(m.toolCall.id);
+  return items.filter((m) => !(m.kind === "turn" && m.turnInfo?.state !== "ended") && !presetAllowed(m, calls));
+}
+
+function presetAllowed(m: AgentMessage, calls: Set<string>): boolean {
+  const p = m.permission;
+  return m.kind === "permission" && !!p && p.state === "approved" && !!p.rule && !p.approvalId && !!p.toolCallId && calls.has(p.toolCallId);
 }
 
 export type Tone = "neutral" | "running" | "done" | "warning" | "failed";

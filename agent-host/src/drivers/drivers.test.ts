@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import type * as acp from "@agentclientprotocol/sdk";
 import { pickOption } from "./agent.ts";
-import { claudeDriver, parseMcpName } from "./claude.ts";
+import { claudeDriver, mcpToolName, parseMcpName } from "./claude.ts";
 import { UpdateNormalizer } from "./normalize.ts";
 import { makeOpencodeDriver, opencodeDriver, todosToPlan } from "./opencode.ts";
 import type { HostUpdate } from "./types.ts";
@@ -91,6 +91,19 @@ describe("claude driver", () => {
     assert.deepEqual(claudeDriver.sessionMeta?.({ cwd: "/w", thoughts: true }), {
       claudeCode: { options: { thinking: { type: "adaptive", display: "summarized" } } },
     });
+  });
+
+  test("the preset's allowed Cadence tools are pre-allowed in Claude's own naming (no permission round trip)", () => {
+    assert.equal(mcpToolName("cadence", "mixes.get"), "mcp__cadence__mixes_get");
+    assert.deepEqual(claudeDriver.sessionMeta?.({ cwd: "/w", thoughts: true, preAllowed: { server: "cadence", tools: ["mixes.get", "goldenSets.freeze"] } }), {
+      claudeCode: {
+        options: {
+          thinking: { type: "adaptive", display: "summarized" },
+          allowedTools: ["mcp__cadence__mixes_get", "mcp__cadence__goldenSets_freeze"],
+        },
+      },
+    });
+    assert.equal(claudeDriver.sessionMeta?.({ cwd: "/w", preAllowed: { server: "cadence", tools: [] } }), undefined);
   });
 
   test("model goes to ANTHROPIC_MODEL", () => {

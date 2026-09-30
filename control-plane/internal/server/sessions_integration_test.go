@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -86,6 +87,7 @@ type hostWork struct {
 			ACPSessionID string `json:"acpSessionId"`
 			Summary      string `json:"summary"`
 		} `json:"resume"`
+		AllowedTools []string `json:"allowedTools"`
 	} `json:"start"`
 	Messages []struct {
 		ID, SessionID, Kind, Text, Context string
@@ -207,6 +209,11 @@ func TestAgentSessionLifecycle(t *testing.T) {
 	}
 	if len(w.Messages) != 0 {
 		t.Fatalf("messages before the host reported running: %+v", w.Messages)
+	}
+	// The preset's pre-allowed Cadence tools travel with the start (Claude ignores the repository's allow rules).
+	if at := w.Start[0].AllowedTools; !slices.Contains(at, "mixes.get") || !slices.Contains(at, "mixes.edit") ||
+		slices.Contains(at, "secrets.new") || slices.Contains(at, "approvals.approve") {
+		t.Errorf("allowed tools %v", at)
 	}
 	token := w.Start[0].Token
 	expectProblem(t, h.send(h.url, "POST", "/api/host-sessions:claim", `{"hostId":"x"}`, "Authorization", "Bearer "+token), 403, "forbidden")

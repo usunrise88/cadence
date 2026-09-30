@@ -2286,6 +2286,11 @@ export type HostStart = {
         identicalCalls: number;
     };
     /**
+     * Cadence MCP tools (operation ids, e.g. mixes.get) the session's permission preset lets the agent call without a permission prompt; the driver pre-allows them in the agent (Claude Code does not apply allow rules from the repository's .claude/settings.json). The server still applies the preset to every call.
+     *
+     */
+    allowedTools?: Array<string>;
+    /**
      * The session ran before (host restart or resume after pause)
      */
     resume?: {
