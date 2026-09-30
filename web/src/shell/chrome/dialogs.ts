@@ -4,6 +4,7 @@ import { create } from "zustand";
 export type DialogRequest =
   | { kind: "newProject" }
   | { kind: "editProject"; slug: string }
+  | { kind: "newMix" }
   | { kind: "confirm"; title: string; detail?: string; confirmLabel: string; onConfirm: () => Promise<unknown> | void }
   | { kind: "shortcuts" }
   | { kind: "twoFactor" }

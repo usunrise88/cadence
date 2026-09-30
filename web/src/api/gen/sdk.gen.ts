@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AdoptionsListData, AdoptionsListErrors, AdoptionsListResponses, AgentMessagesNewData, AgentMessagesNewErrors, AgentMessagesNewResponses, AgentSessionsCancelData, AgentSessionsCancelErrors, AgentSessionsCancelResponses, AgentSessionsNewData, AgentSessionsNewErrors, AgentSessionsNewResponses, AliasesGetData, AliasesGetErrors, AliasesGetResponses, AliasesListData, AliasesListErrors, AliasesListResponses, AliasesSetData, AliasesSetErrors, AliasesSetResponses, ApprovalsApproveData, ApprovalsApproveErrors, ApprovalsApproveResponses, ApprovalsDenyData, ApprovalsDenyErrors, ApprovalsDenyResponses, ApprovalsGetData, ApprovalsGetErrors, ApprovalsGetResponses, ApprovalsListData, ApprovalsListErrors, ApprovalsListResponses, AuditListData, AuditListErrors, AuditListResponses, AuthGetData, AuthGetErrors, AuthGetResponses, AuthLoginData, AuthLoginErrors, AuthLoginResponses, AuthLogoutData, AuthLogoutErrors, AuthLogoutResponses, AuthSetupData, AuthSetupErrors, AuthSetupResponses, BaseModelsGetData, BaseModelsGetErrors, BaseModelsGetResponses, BaseModelsListData, BaseModelsListErrors, BaseModelsListResponses, CollectionsGetData, CollectionsGetErrors, CollectionsGetResponses, CollectionsListData, CollectionsListErrors, CollectionsListResponses, ComputeEditData, ComputeEditErrors, ComputeEditResponses, ComputeGetData, ComputeGetErrors, ComputeGetResponses, ComputeListData, ComputeListErrors, ComputeListResponses, CredentialsListData, CredentialsListErrors, CredentialsListResponses, CredentialsNewData, CredentialsNewErrors, CredentialsNewResponses, CredentialsRevokeData, CredentialsRevokeErrors, CredentialsRevokeResponses, DatasetsGetData, DatasetsGetErrors, DatasetsGetResponses, DatasetsListData, DatasetsListErrors, DatasetsListResponses, DefaultsGetData, DefaultsGetErrors, DefaultsGetResponses, EventsListData, EventsListErrors, EventsListResponses, HelpGetData, HelpGetErrors, HelpGetResponses, HelpSearchData, HelpSearchErrors, HelpSearchResponses, JobsCancelData, JobsCancelErrors, JobsCancelResponses, JobsGetData, JobsGetErrors, JobsGetResponses, JobsListData, JobsListErrors, JobsListResponses, JobsWaitData, JobsWaitErrors, JobsWaitResponses, MeGetData, MeGetErrors, MeGetResponses, MixesEditData, MixesEditErrors, MixesEditResponses, MixesNewData, MixesNewErrors, MixesNewResponses, MixesPreviewData, MixesPreviewErrors, MixesPreviewResponses, MountsListData, MountsListErrors, MountsListResponses, MountsNewData, MountsNewErrors, MountsNewResponses, PoliciesEditData, PoliciesEditErrors, PoliciesEditResponses, PoliciesGetData, PoliciesGetErrors, PoliciesGetResponses, ProjectsAdoptData, ProjectsAdoptErrors, ProjectsAdoptResponses, ProjectsArchiveData, ProjectsArchiveErrors, ProjectsArchiveResponses, ProjectsEditData, ProjectsEditErrors, ProjectsEditResponses, ProjectsGetData, ProjectsGetErrors, ProjectsGetResponses, ProjectsListData, ProjectsListErrors, ProjectsListResponses, ProjectsNewData, ProjectsNewErrors, ProjectsNewResponses, ProjectsSearchData, ProjectsSearchErrors, ProjectsSearchResponses, RegistrySearchData, RegistrySearchErrors, RegistrySearchResponses, RunsNewData, RunsNewErrors, RunsNewResponses, SecretsListData, SecretsListErrors, SecretsListResponses, SecretsNewData, SecretsNewErrors, SecretsNewResponses, TemplatesGetData, TemplatesGetErrors, TemplatesGetResponses, TemplatesListData, TemplatesListErrors, TemplatesListResponses, TotpConfirmData, TotpConfirmErrors, TotpConfirmResponses, TotpDisableData, TotpDisableErrors, TotpDisableResponses, TotpEnrollData, TotpEnrollErrors, TotpEnrollResponses, ViewsGetData, ViewsGetErrors, ViewsGetResponses, ViewsListData, ViewsListErrors, ViewsListResponses, ViewsSetData, ViewsSetErrors, ViewsSetResponses, WorkspacesGetData, WorkspacesGetErrors, WorkspacesGetResponses, WorkspacesListData, WorkspacesListErrors, WorkspacesListResponses, WorkspacesSetData, WorkspacesSetErrors, WorkspacesSetResponses } from './types.gen';
+import type { AdoptionsListData, AdoptionsListErrors, AdoptionsListResponses, AgentMessagesNewData, AgentMessagesNewErrors, AgentMessagesNewResponses, AgentSessionsCancelData, AgentSessionsCancelErrors, AgentSessionsCancelResponses, AgentSessionsNewData, AgentSessionsNewErrors, AgentSessionsNewResponses, AliasesGetData, AliasesGetErrors, AliasesGetResponses, AliasesListData, AliasesListErrors, AliasesListResponses, AliasesSetData, AliasesSetErrors, AliasesSetResponses, ApprovalsApproveData, ApprovalsApproveErrors, ApprovalsApproveResponses, ApprovalsDenyData, ApprovalsDenyErrors, ApprovalsDenyResponses, ApprovalsGetData, ApprovalsGetErrors, ApprovalsGetResponses, ApprovalsListData, ApprovalsListErrors, ApprovalsListResponses, AuditListData, AuditListErrors, AuditListResponses, AuthGetData, AuthGetErrors, AuthGetResponses, AuthLoginData, AuthLoginErrors, AuthLoginResponses, AuthLogoutData, AuthLogoutErrors, AuthLogoutResponses, AuthSetupData, AuthSetupErrors, AuthSetupResponses, BaseModelsGetData, BaseModelsGetErrors, BaseModelsGetResponses, BaseModelsListData, BaseModelsListErrors, BaseModelsListResponses, CollectionsGetData, CollectionsGetErrors, CollectionsGetResponses, CollectionsListData, CollectionsListErrors, CollectionsListResponses, ComputeEditData, ComputeEditErrors, ComputeEditResponses, ComputeGetData, ComputeGetErrors, ComputeGetResponses, ComputeListData, ComputeListErrors, ComputeListResponses, CredentialsListData, CredentialsListErrors, CredentialsListResponses, CredentialsNewData, CredentialsNewErrors, CredentialsNewResponses, CredentialsRevokeData, CredentialsRevokeErrors, CredentialsRevokeResponses, DatasetsGetData, DatasetsGetErrors, DatasetsGetResponses, DatasetsListData, DatasetsListErrors, DatasetsListResponses, DefaultsGetData, DefaultsGetErrors, DefaultsGetResponses, DraftsAcceptData, DraftsAcceptErrors, DraftsAcceptResponses, DraftsGetData, DraftsGetErrors, DraftsGetResponses, DraftsListData, DraftsListErrors, DraftsListResponses, DraftsRevertData, DraftsRevertErrors, DraftsRevertResponses, EventsListData, EventsListErrors, EventsListResponses, HelpGetData, HelpGetErrors, HelpGetResponses, HelpSearchData, HelpSearchErrors, HelpSearchResponses, JobsCancelData, JobsCancelErrors, JobsCancelResponses, JobsGetData, JobsGetErrors, JobsGetResponses, JobsListData, JobsListErrors, JobsListResponses, JobsWaitData, JobsWaitErrors, JobsWaitResponses, MeGetData, MeGetErrors, MeGetResponses, MixesEditData, MixesEditErrors, MixesEditResponses, MixesGetData, MixesGetErrors, MixesGetResponses, MixesListData, MixesListErrors, MixesListResponses, MixesNewData, MixesNewErrors, MixesNewResponses, MixesPreviewData, MixesPreviewErrors, MixesPreviewResponses, MountsListData, MountsListErrors, MountsListResponses, MountsNewData, MountsNewErrors, MountsNewResponses, PoliciesEditData, PoliciesEditErrors, PoliciesEditResponses, PoliciesGetData, PoliciesGetErrors, PoliciesGetResponses, ProjectsAdoptData, ProjectsAdoptErrors, ProjectsAdoptResponses, ProjectsArchiveData, ProjectsArchiveErrors, ProjectsArchiveResponses, ProjectsEditData, ProjectsEditErrors, ProjectsEditResponses, ProjectsGetData, ProjectsGetErrors, ProjectsGetResponses, ProjectsListData, ProjectsListErrors, ProjectsListResponses, ProjectsNewData, ProjectsNewErrors, ProjectsNewResponses, ProjectsSearchData, ProjectsSearchErrors, ProjectsSearchResponses, RegistrySearchData, RegistrySearchErrors, RegistrySearchResponses, RunsNewData, RunsNewErrors, RunsNewResponses, SecretsListData, SecretsListErrors, SecretsListResponses, SecretsNewData, SecretsNewErrors, SecretsNewResponses, TemplatesGetData, TemplatesGetErrors, TemplatesGetResponses, TemplatesListData, TemplatesListErrors, TemplatesListResponses, TotpConfirmData, TotpConfirmErrors, TotpConfirmResponses, TotpDisableData, TotpDisableErrors, TotpDisableResponses, TotpEnrollData, TotpEnrollErrors, TotpEnrollResponses, ViewsGetData, ViewsGetErrors, ViewsGetResponses, ViewsListData, ViewsListErrors, ViewsListResponses, ViewsSetData, ViewsSetErrors, ViewsSetResponses, WorkspacesGetData, WorkspacesGetErrors, WorkspacesGetResponses, WorkspacesListData, WorkspacesListErrors, WorkspacesListResponses, WorkspacesSetData, WorkspacesSetErrors, WorkspacesSetResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -428,7 +428,12 @@ export const viewsSet = <ThrowOnError extends boolean = false>(options: Options<
 });
 
 /**
- * Save a mix (input_cfg groups, weights, temperature, replay share)
+ * The project's mixes, most recently changed first
+ */
+export const mixesList = <ThrowOnError extends boolean = false>(options: Options<MixesListData, ThrowOnError>): RequestResult<MixesListResponses, MixesListErrors, ThrowOnError> => (options.client ?? client).get<MixesListResponses, MixesListErrors, ThrowOnError>({ url: '/projects/{p}/mixes', ...options });
+
+/**
+ * Save a new mix (groups over dataset versions, weights, temperature, replay share) at revision 1
  */
 export const mixesNew = <ThrowOnError extends boolean = false>(options: Options<MixesNewData, ThrowOnError>): RequestResult<MixesNewResponses, MixesNewErrors, ThrowOnError> => (options.client ?? client).post<MixesNewResponses, MixesNewErrors, ThrowOnError>({
     url: '/projects/{p}/mixes',
@@ -440,7 +445,7 @@ export const mixesNew = <ThrowOnError extends boolean = false>(options: Options<
 });
 
 /**
- * Hours per language for a mix without saving it
+ * Hours per language and sampling shares of a mix without saving it (metadata only, no GPU)
  */
 export const mixesPreview = <ThrowOnError extends boolean = false>(options: Options<MixesPreviewData, ThrowOnError>): RequestResult<MixesPreviewResponses, MixesPreviewErrors, ThrowOnError> => (options.client ?? client).post<MixesPreviewResponses, MixesPreviewErrors, ThrowOnError>({
     url: '/projects/{p}/mixes:preview',
@@ -452,7 +457,12 @@ export const mixesPreview = <ThrowOnError extends boolean = false>(options: Opti
 });
 
 /**
- * Edit a mix; agent edits land as drafts
+ * Get a mix at its current revision, with its preview and who is editing it
+ */
+export const mixesGet = <ThrowOnError extends boolean = false>(options: Options<MixesGetData, ThrowOnError>): RequestResult<MixesGetResponses, MixesGetErrors, ThrowOnError> => (options.client ?? client).get<MixesGetResponses, MixesGetErrors, ThrowOnError>({ url: '/mixes/{id}', ...options });
+
+/**
+ * Edit a mix; a person's edit makes a new revision, an agent's lands as a draft when the draft policy says so
  */
 export const mixesEdit = <ThrowOnError extends boolean = false>(options: Options<MixesEditData, ThrowOnError>): RequestResult<MixesEditResponses, MixesEditErrors, ThrowOnError> => (options.client ?? client).patch<MixesEditResponses, MixesEditErrors, ThrowOnError>({
     url: '/mixes/{id}',
@@ -462,6 +472,26 @@ export const mixesEdit = <ThrowOnError extends boolean = false>(options: Options
         ...options.headers
     }
 });
+
+/**
+ * Drafts of one entity (open ones by default), newest first
+ */
+export const draftsList = <ThrowOnError extends boolean = false>(options: Options<DraftsListData, ThrowOnError>): RequestResult<DraftsListResponses, DraftsListErrors, ThrowOnError> => (options.client ?? client).get<DraftsListResponses, DraftsListErrors, ThrowOnError>({ url: '/drafts', ...options });
+
+/**
+ * Get a draft with its changes against the revision it was based on
+ */
+export const draftsGet = <ThrowOnError extends boolean = false>(options: Options<DraftsGetData, ThrowOnError>): RequestResult<DraftsGetResponses, DraftsGetErrors, ThrowOnError> => (options.client ?? client).get<DraftsGetResponses, DraftsGetErrors, ThrowOnError>({ url: '/drafts/{id}', ...options });
+
+/**
+ * Apply a draft as a new revision of its entity, attributed to the person who accepts it
+ */
+export const draftsAccept = <ThrowOnError extends boolean = false>(options: Options<DraftsAcceptData, ThrowOnError>): RequestResult<DraftsAcceptResponses, DraftsAcceptErrors, ThrowOnError> => (options.client ?? client).post<DraftsAcceptResponses, DraftsAcceptErrors, ThrowOnError>({ url: '/drafts/{id}:accept', ...options });
+
+/**
+ * Discard a draft; its entity stays as it is
+ */
+export const draftsRevert = <ThrowOnError extends boolean = false>(options: Options<DraftsRevertData, ThrowOnError>): RequestResult<DraftsRevertResponses, DraftsRevertErrors, ThrowOnError> => (options.client ?? client).post<DraftsRevertResponses, DraftsRevertErrors, ThrowOnError>({ url: '/drafts/{id}:revert', ...options });
 
 /**
  * Launch Claude Code or opencode in a project worktree

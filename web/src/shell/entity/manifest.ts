@@ -1,4 +1,6 @@
 import type { IconoirIcon } from "@/shell/registry/panels";
+import type { QueryClient } from "@tanstack/react-query";
+import type { CadenceEvent, Presence } from "@/api/gen/types.gen";
 import type { Verb } from "@/api/operations.gen";
 
 // docs/spec/10-ui-shell.md "Uniform workflow": every entity is worked through the same loop, rendered from one
@@ -62,7 +64,12 @@ export type EntityData = {
   rev?: number;
   version?: string;
   updatedAt?: string;
-  actor?: { kind: string; id: string; name?: string };
+  /** Who made the current revision; an agent shows as its session badge. */
+  actor?: { kind: string; id: string; name?: string; sessionId?: string };
+  /** The agent tool call behind the current revision (the badge's click-through). */
+  toolCallId?: string;
+  /** Agents editing the entity now (draftable kinds); the header shows "agent editing". */
+  presence?: Presence[];
   [field: string]: unknown;
 };
 
@@ -79,6 +86,11 @@ export type EntityManifest = {
   loopStep: (e: EntityData) => LoopStep;
   nextStep: (e: EntityData) => Suggestion;
   icon: IconoirIcon;
+  /**
+   * Live updates of one open document: the topics its events arrive on and how they patch the query cache. The
+   * shell subscribes while the document is visible and, for draftable kinds, patches its drafts too.
+   */
+  live?: { topics: (id: string) => string[]; patch: (qc: QueryClient, batch: CadenceEvent[], id: string) => void };
   /** Loads one entity through the generated query layer (a React hook). */
   useData: (id: string) => { data?: EntityData; error?: unknown; isLoading: boolean };
 };

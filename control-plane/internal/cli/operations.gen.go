@@ -206,6 +206,44 @@ var Operations = []Operation{
 		Description: "The defaults every parameter, form, budget and estimate starts from (defaults.yaml): each value with its description, source and safe range. A value written anywhere else that differs is a departure from default.",
 	},
 	{
+		ID: "drafts.accept", Entity: "drafts", Verb: "accept", Method: "POST", Path: "/drafts/{id}:accept",
+		Summary:        "Apply a draft as a new revision of its entity, attributed to the person who accepts it",
+		Description:    "Accept a draft: its content becomes a new revision of the entity, attributed to the caller, with causedBy naming the draft. Send ifMatch with the draft's etag (rev). A draft whose entity moved on since it was made fails with draft-stale and the entity's current revision. Agents may not accept drafts: a person decides.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Draft id (drf_…)"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+	},
+	{
+		ID: "drafts.get", Entity: "drafts", Verb: "get", Method: "GET", Path: "/drafts/{id}",
+		Summary: "Get a draft with its changes against the revision it was based on",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Draft id (drf_…)"},
+		},
+	},
+	{
+		ID: "drafts.list", Entity: "drafts", Verb: "list", Method: "GET", Path: "/drafts",
+		Summary: "Drafts of one entity (open ones by default), newest first",
+		Params: []Param{
+			{Name: "entityKind", In: "query", Flag: "entity-kind", Required: true, Type: "string", Description: "Kind of the drafted entity", Enum: []string{"mix"}},
+			{Name: "entityId", In: "query", Flag: "entity-id", Required: true, Type: "string", Description: "Id of the drafted entity (mix_…)"},
+			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only drafts in this state; all lists every state", Default: "open", Enum: []string{"open", "accepted", "reverted", "all"}},
+		},
+	},
+	{
+		ID: "drafts.revert", Entity: "drafts", Verb: "revert", Method: "POST", Path: "/drafts/{id}:revert",
+		Summary:        "Discard a draft; its entity stays as it is",
+		Description:    "Revert (discard) a draft; the entity does not change. Send ifMatch with the draft's etag (rev).",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Draft id (drf_…)"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+	},
+	{
 		ID: "events.list", Entity: "events", Verb: "list", Method: "GET", Path: "/events",
 		Summary:     "Events after a sequence number; with Accept text/event-stream, the live stream",
 		Description: "Events after a sequence number, oldest first, optionally filtered by topic patterns (a trailing * matches the remaining segments, e.g. run.123.*) and project. Use the last seq as `after` to continue.",
@@ -267,6 +305,72 @@ var Operations = []Operation{
 			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string"},
 			{Name: "timeout", In: "query", Flag: "timeout", Type: "integer", Description: "Seconds to wait at most", Default: "30"},
 		},
+	},
+	{
+		ID: "mixes.edit", Entity: "mixes", Verb: "edit", Method: "PATCH", Path: "/mixes/{id}",
+		Summary:        "Edit a mix; a person's edit makes a new revision, an agent's lands as a draft when the draft policy says so",
+		Description:    "Edit a mix: the fields you send replace the current ones (groups as a whole list). Send ifMatch with the etag (or rev) of your last mixes.get; a stale revision fails with precondition-failed and the current revision. Under the project's draft policy (the default for agents) the edit does not change the mix: it lands as a draft (result.draft) that a person accepts or reverts, and your later edits update the same draft. mixes.get shows your open draft under presence.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Mix id (mix_…)"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "description", Type: "string"},
+			{Name: "groups", Type: "array of object"},
+			{Name: "name", Type: "string"},
+			{Name: "replayShare", Type: "number"},
+			{Name: "temperature", Type: "number"},
+		}},
+	},
+	{
+		ID: "mixes.get", Entity: "mixes", Verb: "get", Method: "GET", Path: "/mixes/{id}",
+		Summary: "Get a mix at its current revision, with its preview and who is editing it",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Mix id (mix_…)"},
+		},
+	},
+	{
+		ID: "mixes.list", Entity: "mixes", Verb: "list", Method: "GET", Path: "/projects/{p}/mixes",
+		Summary: "The project's mixes, most recently changed first",
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+		},
+	},
+	{
+		ID: "mixes.new", Entity: "mixes", Verb: "new", Method: "POST", Path: "/projects/{p}/mixes",
+		Summary:        "Save a new mix (groups over dataset versions, weights, temperature, replay share) at revision 1",
+		Description:    "Save a new mix: named groups of frozen dataset versions (ver_…, @alias or a collection name such as dataset/fleurs-he-smoke, resolved to its newest frozen version), each with a weight, plus the sampling temperature and the replay share. Omitted values come from defaults.yaml (defaults://). Call mixes.preview first to see hours per language. A mix is project work with revisions (R13).",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "description", Type: "string"},
+			{Name: "groups", Required: true, Type: "array of object"},
+			{Name: "name", Required: true, Type: "string", Description: "Unique within the project"},
+			{Name: "replayShare", Type: "number", Description: "Share of samples drawn from replay groups; mix.replay_share of defaults.yaml when the mix has a replay group, else 0"},
+			{Name: "temperature", Type: "number", Description: "Sampling temperature over group weights (probability ∝ weight^(1/temperature)); mix.temperature of defaults.yaml when omitted"},
+		}},
+	},
+	{
+		ID: "mixes.preview", Entity: "mixes", Verb: "preview", Method: "POST", Path: "/projects/{p}/mixes:preview",
+		Summary:        "Hours per language and sampling shares of a mix without saving it (metadata only, no GPU)",
+		Description:    "Preview a mix without saving it: the source hours of every group and language and the share of training samples each would get under the weights, temperature and replay share. Reads dataset-version metadata only; nothing is written and no GPU is used.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "description", Type: "string"},
+			{Name: "groups", Required: true, Type: "array of object"},
+			{Name: "name", Required: true, Type: "string", Description: "Unique within the project"},
+			{Name: "replayShare", Type: "number", Description: "Share of samples drawn from replay groups; mix.replay_share of defaults.yaml when the mix has a replay group, else 0"},
+			{Name: "temperature", Type: "number", Description: "Sampling temperature over group weights (probability ∝ weight^(1/temperature)); mix.temperature of defaults.yaml when omitted"},
+		}},
 	},
 	{
 		ID: "policies.edit", Entity: "policies", Verb: "edit", Method: "PATCH", Path: "/policies",

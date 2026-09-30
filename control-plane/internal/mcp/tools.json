@@ -1067,6 +1067,203 @@
       "params": null
     },
     {
+      "name": "drafts.accept",
+      "title": "Apply a draft as a new revision of its entity, attributed to the person who accepts it",
+      "description": "Accept a draft: its content becomes a new revision of the entity, attributed to the caller, with causedBy naming the draft. Send ifMatch with the draft's etag (rev). A draft whose entity moved on since it was made fails with draft-stale and the entity's current revision. Agents may not accept drafts: a person decides. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/drafts/{id}:accept",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Draft id (drf_…)",
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        }
+      ]
+    },
+    {
+      "name": "drafts.get",
+      "title": "Get a draft with its changes against the revision it was based on",
+      "description": "Get a draft with its changes against the revision it was based on",
+      "method": "GET",
+      "path": "/drafts/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Draft id (drf_…)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        }
+      ]
+    },
+    {
+      "name": "drafts.list",
+      "title": "Drafts of one entity (open ones by default), newest first",
+      "description": "Drafts of one entity (open ones by default), newest first",
+      "method": "GET",
+      "path": "/drafts",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "entityId": {
+            "description": "Id of the drafted entity (mix_…)",
+            "type": "string"
+          },
+          "entityKind": {
+            "description": "Kind of the drafted entity",
+            "enum": [
+              "mix"
+            ],
+            "type": "string"
+          },
+          "state": {
+            "default": "open",
+            "description": "Only drafts in this state; all lists every state",
+            "enum": [
+              "open",
+              "accepted",
+              "reverted",
+              "all"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "entityId",
+          "entityKind"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "entityKind",
+          "in": "query",
+          "name": "entityKind"
+        },
+        {
+          "property": "entityId",
+          "in": "query",
+          "name": "entityId"
+        },
+        {
+          "property": "state",
+          "in": "query",
+          "name": "state"
+        }
+      ]
+    },
+    {
+      "name": "drafts.revert",
+      "title": "Discard a draft; its entity stays as it is",
+      "description": "Revert (discard) a draft; the entity does not change. Send ifMatch with the draft's etag (rev). Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/drafts/{id}:revert",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Draft id (drf_…)",
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        }
+      ]
+    },
+    {
       "name": "events.list",
       "title": "Events after a sequence number; with Accept text/event-stream, the live stream",
       "description": "Events after a sequence number, oldest first, optionally filtered by topic patterns (a trailing * matches the remaining segments, e.g. run.123.*) and project. Use the last seq as `after` to continue.",
@@ -1391,6 +1588,438 @@
           "property": "timeout",
           "in": "query",
           "name": "timeout"
+        }
+      ]
+    },
+    {
+      "name": "mixes.edit",
+      "title": "Edit a mix; a person's edit makes a new revision, an agent's lands as a draft when the draft policy says so",
+      "description": "Edit a mix: the fields you send replace the current ones (groups as a whole list). Send ifMatch with the etag (or rev) of your last mixes.get; a stale revision fails with precondition-failed and the current revision. Under the project's draft policy (the default for agents) the edit does not change the mix: it lands as a draft (result.draft) that a person accepts or reverts, and your later edits update the same draft. mixes.get shows your open draft under presence. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "PATCH",
+      "path": "/mixes/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "description": "The fields to change; groups replace the whole list",
+            "minProperties": 1,
+            "properties": {
+              "description": {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              "groups": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "datasets": {
+                      "description": "Frozen dataset versions: ver_…, @alias or a collection name (its newest frozen version); stored as ver_ ids",
+                      "items": {
+                        "maxLength": 200,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "maxItems": 50,
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "name": {
+                      "description": "Unique within the mix, e.g. target or replay-ru",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9 ._-]{0,59}$",
+                      "type": "string"
+                    },
+                    "replay": {
+                      "description": "A replay group (other locales of the base model): replay groups together get replayShare of the samples",
+                      "type": "boolean"
+                    },
+                    "weight": {
+                      "description": "Relative sampling weight; mix.group_weight of defaults.yaml when omitted",
+                      "exclusiveMinimum": 0,
+                      "format": "double",
+                      "maximum": 1000,
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "datasets"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 20,
+                "minItems": 1,
+                "type": "array"
+              },
+              "name": {
+                "maxLength": 120,
+                "minLength": 1,
+                "type": "string"
+              },
+              "replayShare": {
+                "format": "double",
+                "type": "number"
+              },
+              "temperature": {
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Mix id (mix_…)",
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "mixes.get",
+      "title": "Get a mix at its current revision, with its preview and who is editing it",
+      "description": "Get a mix at its current revision, with its preview and who is editing it",
+      "method": "GET",
+      "path": "/mixes/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Mix id (mix_…)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        }
+      ]
+    },
+    {
+      "name": "mixes.list",
+      "title": "The project's mixes, most recently changed first",
+      "description": "The project's mixes, most recently changed first",
+      "method": "GET",
+      "path": "/projects/{p}/mixes",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        }
+      ]
+    },
+    {
+      "name": "mixes.new",
+      "title": "Save a new mix (groups over dataset versions, weights, temperature, replay share) at revision 1",
+      "description": "Save a new mix: named groups of frozen dataset versions (ver_…, @alias or a collection name such as dataset/fleurs-he-smoke, resolved to its newest frozen version), each with a weight, plus the sampling temperature and the replay share. Omitted values come from defaults.yaml (defaults://). Call mixes.preview first to see hours per language. A mix is project work with revisions (R13). Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/projects/{p}/mixes",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "description": {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              "groups": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "datasets": {
+                      "description": "Frozen dataset versions: ver_…, @alias or a collection name (its newest frozen version); stored as ver_ ids",
+                      "items": {
+                        "maxLength": 200,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "maxItems": 50,
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "name": {
+                      "description": "Unique within the mix, e.g. target or replay-ru",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9 ._-]{0,59}$",
+                      "type": "string"
+                    },
+                    "replay": {
+                      "description": "A replay group (other locales of the base model): replay groups together get replayShare of the samples",
+                      "type": "boolean"
+                    },
+                    "weight": {
+                      "description": "Relative sampling weight; mix.group_weight of defaults.yaml when omitted",
+                      "exclusiveMinimum": 0,
+                      "format": "double",
+                      "maximum": 1000,
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "datasets"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 20,
+                "minItems": 1,
+                "type": "array"
+              },
+              "name": {
+                "description": "Unique within the project",
+                "maxLength": 120,
+                "minLength": 1,
+                "type": "string"
+              },
+              "replayShare": {
+                "description": "Share of samples drawn from replay groups; mix.replay_share of defaults.yaml when the mix has a replay group, else 0",
+                "format": "double",
+                "type": "number"
+              },
+              "temperature": {
+                "description": "Sampling temperature over group weights (probability ∝ weight^(1/temperature)); mix.temperature of defaults.yaml when omitted",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "name",
+              "groups"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "mixes.preview",
+      "title": "Hours per language and sampling shares of a mix without saving it (metadata only, no GPU)",
+      "description": "Preview a mix without saving it: the source hours of every group and language and the share of training samples each would get under the weights, temperature and replay share. Reads dataset-version metadata only; nothing is written and no GPU is used. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/projects/{p}/mixes:preview",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "description": {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              "groups": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "datasets": {
+                      "description": "Frozen dataset versions: ver_…, @alias or a collection name (its newest frozen version); stored as ver_ ids",
+                      "items": {
+                        "maxLength": 200,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "maxItems": 50,
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "name": {
+                      "description": "Unique within the mix, e.g. target or replay-ru",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9 ._-]{0,59}$",
+                      "type": "string"
+                    },
+                    "replay": {
+                      "description": "A replay group (other locales of the base model): replay groups together get replayShare of the samples",
+                      "type": "boolean"
+                    },
+                    "weight": {
+                      "description": "Relative sampling weight; mix.group_weight of defaults.yaml when omitted",
+                      "exclusiveMinimum": 0,
+                      "format": "double",
+                      "maximum": 1000,
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "datasets"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 20,
+                "minItems": 1,
+                "type": "array"
+              },
+              "name": {
+                "description": "Unique within the project",
+                "maxLength": 120,
+                "minLength": 1,
+                "type": "string"
+              },
+              "replayShare": {
+                "description": "Share of samples drawn from replay groups; mix.replay_share of defaults.yaml when the mix has a replay group, else 0",
+                "format": "double",
+                "type": "number"
+              },
+              "temperature": {
+                "description": "Sampling temperature over group weights (probability ∝ weight^(1/temperature)); mix.temperature of defaults.yaml when omitted",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "name",
+              "groups"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
         }
       ]
     },

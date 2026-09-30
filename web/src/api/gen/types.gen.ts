@@ -150,6 +150,10 @@ export type CadenceEvent = {
          * The approval a person granted for this command
          */
         approvalId?: string;
+        /**
+         * The draft a person accepted (drafts.accept)
+         */
+        draftId?: string;
     };
     payload?: {
         [key: string]: unknown;
@@ -772,6 +776,8 @@ export type Defaults = {
     budgets: DefaultSection;
     timeouts: DefaultSection;
     training: DefaultSection;
+    mix: DefaultSection;
+    drafts: DefaultSection;
     cache: DefaultSection;
     estimates: {
         bytes_per_audio_hour: DefaultValue;
@@ -1185,6 +1191,256 @@ export type SavedViewList = {
     items: Array<SavedView>;
 };
 
+export type MixGroup = {
+    /**
+     * Unique within the mix, e.g. target or replay-ru
+     */
+    name: string;
+    /**
+     * Relative sampling weight; mix.group_weight of defaults.yaml when omitted
+     */
+    weight?: number;
+    /**
+     * A replay group (other locales of the base model): replay groups together get replayShare of the samples
+     */
+    replay?: boolean;
+    /**
+     * Frozen dataset versions: ver_…, @alias or a collection name (its newest frozen version); stored as ver_ ids
+     */
+    datasets: Array<string>;
+};
+
+export type MixNew = {
+    /**
+     * Unique within the project
+     */
+    name: string;
+    description?: string;
+    groups: Array<MixGroup>;
+    /**
+     * Sampling temperature over group weights (probability ∝ weight^(1/temperature)); mix.temperature of defaults.yaml when omitted
+     */
+    temperature?: number;
+    /**
+     * Share of samples drawn from replay groups; mix.replay_share of defaults.yaml when the mix has a replay group, else 0
+     */
+    replayShare?: number;
+};
+
+/**
+ * The fields to change; groups replace the whole list
+ */
+export type MixEdit = {
+    name?: string;
+    description?: string;
+    groups?: Array<MixGroup>;
+    temperature?: number;
+    replayShare?: number;
+};
+
+/**
+ * Project work with revisions (R13); a run records the revision it trained on
+ */
+export type Mix = {
+    /**
+     * mix_<uuidv7>
+     */
+    id: string;
+    projectId: string;
+    name: string;
+    description?: string;
+    /**
+     * Weights and replay flags filled in
+     */
+    groups: Array<MixGroup>;
+    temperature: number;
+    replayShare: number;
+    rev: number;
+    createdBy: Actor;
+    updatedBy: Actor;
+    cause?: RevisionCause;
+    createdAt: string;
+    updatedAt: string;
+    /**
+     * Agents editing the mix now
+     */
+    presence: Array<Presence>;
+    preview: MixPreview;
+};
+
+/**
+ * Why the current revision exists beyond its actor (updatedBy is the person who accepted a draft)
+ */
+export type RevisionCause = {
+    /**
+     * The accepted draft this revision applied
+     */
+    draftId?: string;
+    draftAuthor?: Actor;
+    /**
+     * The agent tool call that wrote the revision or the draft
+     */
+    toolCallId?: string;
+};
+
+export type MixList = {
+    items: Array<Mix>;
+};
+
+export type MixEditResult = {
+    mix: Mix;
+    draft?: Draft;
+};
+
+/**
+ * Hours per language and sampling shares from dataset-version metadata (no audio is read)
+ */
+export type MixPreview = {
+    /**
+     * Train-split hours of every referenced dataset version
+     */
+    totalHours: number;
+    languages: Array<MixPreviewLanguage>;
+    groups: Array<MixPreviewGroup>;
+    datasets: Array<MixPreviewDataset>;
+    warnings: Array<string>;
+    basis: 'metadata';
+};
+
+export type MixPreviewLanguage = {
+    locale: string;
+    /**
+     * Train-split hours in this locale
+     */
+    hours: number;
+    /**
+     * Expected share of training samples
+     */
+    share: number;
+};
+
+export type MixPreviewGroup = {
+    name: string;
+    replay: boolean;
+    weight: number;
+    hours: number;
+    /**
+     * Probability that a sample comes from this group
+     */
+    share: number;
+    locales: Array<string>;
+};
+
+export type MixPreviewDataset = {
+    id: string;
+    name: string;
+    version: string;
+    locales: Array<string>;
+    hours: number;
+    /**
+     * The project adopted this version (otherwise it is adoptable)
+     */
+    adopted: boolean;
+};
+
+/**
+ * An agent editing an entity (an open draft, or a direct edit in the last seconds)
+ */
+export type Presence = {
+    actor: Actor;
+    toolCallId?: string;
+    draftId?: string;
+    since: string;
+    /**
+     * When a direct edit stops counting as editing; absent while a draft is open
+     */
+    until?: string;
+};
+
+/**
+ * Kinds whose agent edits can land as drafts (gate, note and language pack follow)
+ */
+export type DraftableKind = 'mix';
+
+/**
+ * An unaccepted change to a draftable entity, usually by an agent
+ */
+export type Draft = {
+    /**
+     * drf_<uuidv7>
+     */
+    id: string;
+    projectId: string;
+    entityKind: DraftableKind;
+    entityId: string;
+    /**
+     * The entity revision the draft is based on
+     */
+    baseRev: number;
+    /**
+     * The entity's revision now; the draft is stale when it differs from baseRev
+     */
+    currentRev: number;
+    /**
+     * The draft's own revision (If-Match for drafts.accept and drafts.revert)
+     */
+    rev: number;
+    state: 'open' | 'accepted' | 'reverted';
+    /**
+     * The entity content the draft proposes (for a mix
+     */
+    content: {
+        [key: string]: unknown;
+    };
+    changes: Array<DraftChange>;
+    author: Actor;
+    /**
+     * The tool call of the draft's latest edit
+     */
+    toolCallId?: string;
+    /**
+     * The entity moved on since the draft's base; accepting fails with draft-stale
+     */
+    stale: boolean;
+    createdAt: string;
+    updatedAt: string;
+    decidedBy?: Actor;
+    decidedAt?: string;
+    /**
+     * The entity revision an accepted draft produced
+     */
+    appliedRev?: number;
+};
+
+/**
+ * One changed field, as a JSON pointer into the content, with its value before and after
+ */
+export type DraftChange = {
+    path: string;
+    /**
+     * Absent when the field was added
+     */
+    before?: unknown;
+    /**
+     * Absent when the field was removed
+     */
+    after?: unknown;
+};
+
+export type DraftList = {
+    items: Array<Draft>;
+};
+
+export type DraftAccepted = {
+    draft: Draft;
+    /**
+     * The entity at its new revision (a Mix for mix drafts)
+     */
+    entity: {
+        [key: string]: unknown;
+    };
+};
+
 export type SecretNewWritable = {
     name: SecretName;
     kind: SecretKind;
@@ -1221,6 +1477,16 @@ export type DryRun = boolean;
 export type ProjectSlug = Slug;
 
 export type Id = string;
+
+/**
+ * Mix id (mix_…)
+ */
+export type MixId = string;
+
+/**
+ * Draft id (drf_…)
+ */
+export type DraftId = string;
 
 /**
  * Registry version id (ver_…)
@@ -3236,8 +3502,38 @@ export type ViewsSetResponses = {
 
 export type ViewsSetResponse = ViewsSetResponses[keyof ViewsSetResponses];
 
+export type MixesListData = {
+    body?: never;
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: never;
+    url: '/projects/{p}/mixes';
+};
+
+export type MixesListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type MixesListError = MixesListErrors[keyof MixesListErrors];
+
+export type MixesListResponses = {
+    /**
+     * Mixes
+     */
+    200: MixList;
+};
+
+export type MixesListResponse = MixesListResponses[keyof MixesListResponses];
+
 export type MixesNewData = {
-    body?: PlannedBody;
+    body: MixNew;
     headers: {
         /**
          * Client-chosen key; a repeat with the same key returns the original result
@@ -3270,17 +3566,19 @@ export type MixesNewError = MixesNewErrors[keyof MixesNewErrors];
 
 export type MixesNewResponses = {
     /**
-     * Shape defined when the operation's phase implements it
+     * Dry run — the mix that would be saved; nothing was written
      */
-    201: {
-        [key: string]: unknown;
-    };
+    200: Mix;
+    /**
+     * Saved
+     */
+    201: Mix;
 };
 
 export type MixesNewResponse = MixesNewResponses[keyof MixesNewResponses];
 
 export type MixesPreviewData = {
-    body?: PlannedBody;
+    body: MixNew;
     headers: {
         /**
          * Client-chosen key; a repeat with the same key returns the original result
@@ -3313,17 +3611,45 @@ export type MixesPreviewError = MixesPreviewErrors[keyof MixesPreviewErrors];
 
 export type MixesPreviewResponses = {
     /**
-     * Shape defined when the operation's phase implements it
+     * The preview
      */
-    200: {
-        [key: string]: unknown;
-    };
+    200: MixPreview;
 };
 
 export type MixesPreviewResponse = MixesPreviewResponses[keyof MixesPreviewResponses];
 
+export type MixesGetData = {
+    body?: never;
+    path: {
+        /**
+         * Mix id (mix_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/mixes/{id}';
+};
+
+export type MixesGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type MixesGetError = MixesGetErrors[keyof MixesGetErrors];
+
+export type MixesGetResponses = {
+    /**
+     * The mix
+     */
+    200: Mix;
+};
+
+export type MixesGetResponse = MixesGetResponses[keyof MixesGetResponses];
+
 export type MixesEditData = {
-    body?: PlannedBody;
+    body: MixEdit;
     headers: {
         /**
          * Client-chosen key; a repeat with the same key returns the original result
@@ -3335,6 +3661,9 @@ export type MixesEditData = {
         'If-Match': string;
     };
     path: {
+        /**
+         * Mix id (mix_…)
+         */
         id: string;
     };
     query?: {
@@ -3357,14 +3686,171 @@ export type MixesEditError = MixesEditErrors[keyof MixesEditErrors];
 
 export type MixesEditResponses = {
     /**
-     * Shape defined when the operation's phase implements it
+     * The mix, plus the draft when the edit landed as one (the mix is then unchanged and ETag is its revision); for a dry run, what would happen
+     *
      */
-    200: {
-        [key: string]: unknown;
-    };
+    200: MixEditResult;
 };
 
 export type MixesEditResponse = MixesEditResponses[keyof MixesEditResponses];
+
+export type DraftsListData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Kind of the drafted entity
+         */
+        entityKind: DraftableKind;
+        /**
+         * Id of the drafted entity (mix_…)
+         */
+        entityId: string;
+        /**
+         * Only drafts in this state; all lists every state
+         */
+        state?: 'open' | 'accepted' | 'reverted' | 'all';
+    };
+    url: '/drafts';
+};
+
+export type DraftsListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type DraftsListError = DraftsListErrors[keyof DraftsListErrors];
+
+export type DraftsListResponses = {
+    /**
+     * Drafts
+     */
+    200: DraftList;
+};
+
+export type DraftsListResponse = DraftsListResponses[keyof DraftsListResponses];
+
+export type DraftsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Draft id (drf_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/drafts/{id}';
+};
+
+export type DraftsGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type DraftsGetError = DraftsGetErrors[keyof DraftsGetErrors];
+
+export type DraftsGetResponses = {
+    /**
+     * The draft
+     */
+    200: Draft;
+};
+
+export type DraftsGetResponse = DraftsGetResponses[keyof DraftsGetResponses];
+
+export type DraftsAcceptData = {
+    body?: never;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Draft id (drf_…)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/drafts/{id}:accept';
+};
+
+export type DraftsAcceptErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type DraftsAcceptError = DraftsAcceptErrors[keyof DraftsAcceptErrors];
+
+export type DraftsAcceptResponses = {
+    /**
+     * The accepted draft and the entity at its new revision; ETag is the draft's revision
+     */
+    200: DraftAccepted;
+};
+
+export type DraftsAcceptResponse = DraftsAcceptResponses[keyof DraftsAcceptResponses];
+
+export type DraftsRevertData = {
+    body?: never;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Draft id (drf_…)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/drafts/{id}:revert';
+};
+
+export type DraftsRevertErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type DraftsRevertError = DraftsRevertErrors[keyof DraftsRevertErrors];
+
+export type DraftsRevertResponses = {
+    /**
+     * The reverted draft
+     */
+    200: Draft;
+};
+
+export type DraftsRevertResponse = DraftsRevertResponses[keyof DraftsRevertResponses];
 
 export type AgentSessionsNewData = {
     body?: PlannedBody;

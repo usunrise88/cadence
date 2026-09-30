@@ -61,6 +61,8 @@ type Defaults struct {
 	Timeouts  Timeouts  `yaml:"timeouts"`
 	Training  Training  `yaml:"training"`
 	Estimates Estimates `yaml:"estimates"`
+	Mix       Mix       `yaml:"mix"`
+	Drafts    Drafts    `yaml:"drafts"`
 	Cache     Cache     `yaml:"cache"`
 	Compute   Compute   `yaml:"compute"`
 
@@ -116,6 +118,19 @@ type EstimateRow struct {
 	PlusMinus      float64 `yaml:"plus_minus"`
 	Description    string  `yaml:"description"`
 	Source         string  `yaml:"source"`
+}
+
+// Mix holds the values a new mix starts from (R13).
+type Mix struct {
+	Temperature Param[float64] `yaml:"temperature"`
+	ReplayShare Param[float64] `yaml:"replay_share"`
+	GroupWeight Param[float64] `yaml:"group_weight"`
+}
+
+// Drafts holds the draft policy per draftable kind and the presence window of direct agent edits.
+type Drafts struct {
+	Mix             Param[string] `yaml:"mix"`
+	PresenceSeconds Param[int]    `yaml:"presence_seconds"`
 }
 
 // Cache holds the local cache limits.

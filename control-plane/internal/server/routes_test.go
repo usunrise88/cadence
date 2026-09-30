@@ -55,7 +55,6 @@ func TestPlannedOperationsAnswer501(t *testing.T) {
 	srv := httptest.NewServer(newTestServer(t, nil, events.NewHub(1), obs.NewMetrics()).Handler())
 	defer srv.Close()
 	tests := []struct{ method, path string }{
-		{http.MethodPost, "/api/projects/demo/mixes"},
 		{http.MethodPost, "/api/projects/demo/runs"},
 		{http.MethodPost, "/api/projects/demo/agent-sessions"},
 		{http.MethodGet, "/api/mounts"},

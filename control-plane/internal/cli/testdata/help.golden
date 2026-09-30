@@ -21,9 +21,11 @@ Entities:
   credentials    list new revoke
   datasets       get list
   defaults       get
+  drafts         accept get list revert
   events         list
   help           get search
   jobs           cancel get list wait
+  mixes          edit get list new preview
   policies       edit get
   projects       adopt archive edit get list new search
   registry       search

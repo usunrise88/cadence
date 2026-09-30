@@ -30,12 +30,13 @@ func TestMCPToolsAreTheImplementedOperations(t *testing.T) {
 	for _, tl := range res.Tools {
 		names = append(names, tl.Name)
 	}
-	for _, want := range []string{"projects.list", "projects.new", "projects.get", "projects.edit", "projects.archive", "help.get"} {
+	for _, want := range []string{"projects.list", "projects.new", "projects.get", "projects.edit", "projects.archive", "help.get",
+		"mixes.new", "mixes.edit", "mixes.preview", "drafts.accept", "drafts.revert"} {
 		if !slices.Contains(names, want) {
 			t.Errorf("tool %s missing from %v", want, names)
 		}
 	}
-	for _, never := range []string{"me.get", "workspaces.set", "mixes.new"} { // exempt or planned
+	for _, never := range []string{"me.get", "workspaces.set", "mounts.new"} { // exempt or planned
 		if slices.Contains(names, never) {
 			t.Errorf("tool %s must not be listed", never)
 		}

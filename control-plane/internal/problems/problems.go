@@ -52,6 +52,9 @@ var (
 
 	// Search (phase 1 · wave 2).
 	InvalidQuery = Type{"invalid-query", http.StatusBadRequest, "Invalid search query"}
+
+	// Drafts (phase 1 · mix stream).
+	DraftStale = Type{"draft-stale", http.StatusPreconditionFailed, "Draft is stale"}
 )
 
 // Types lists every registered type.
@@ -59,7 +62,7 @@ func Types() []Type {
 	return []Type{
 		BadRequest, ValidationFailed, NotFound, MethodNotAllowed, Conflict, PreconditionFailed,
 		PreconditionRequired, IdempotencyKeyReused, Unauthenticated, TOTPRequired, Forbidden, RateLimited, NotImplemented,
-		Internal, PolicyDenied, ReservedAlias, EstimateUnavailable, InvalidQuery,
+		Internal, PolicyDenied, ReservedAlias, EstimateUnavailable, InvalidQuery, DraftStale,
 	}
 }
 

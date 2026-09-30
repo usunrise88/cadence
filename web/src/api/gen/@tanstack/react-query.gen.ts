@@ -3,8 +3,8 @@
 import { type InfiniteData, infiniteQueryOptions, queryOptions, type UseMutationOptions } from '@tanstack/react-query';
 
 import { client } from '../client.gen';
-import { adoptionsList, agentMessagesNew, agentSessionsCancel, agentSessionsNew, aliasesGet, aliasesList, aliasesSet, approvalsApprove, approvalsDeny, approvalsGet, approvalsList, auditList, authGet, authLogin, authLogout, authSetup, baseModelsGet, baseModelsList, collectionsGet, collectionsList, computeEdit, computeGet, computeList, credentialsList, credentialsNew, credentialsRevoke, datasetsGet, datasetsList, defaultsGet, eventsList, helpGet, helpSearch, jobsCancel, jobsGet, jobsList, jobsWait, meGet, mixesEdit, mixesNew, mixesPreview, mountsList, mountsNew, type Options, policiesEdit, policiesGet, projectsAdopt, projectsArchive, projectsEdit, projectsGet, projectsList, projectsNew, projectsSearch, registrySearch, runsNew, secretsList, secretsNew, templatesGet, templatesList, totpConfirm, totpDisable, totpEnroll, viewsGet, viewsList, viewsSet, workspacesGet, workspacesList, workspacesSet } from '../sdk.gen';
-import type { AdoptionsListData, AdoptionsListError, AdoptionsListResponse, AgentMessagesNewData, AgentMessagesNewError, AgentMessagesNewResponse, AgentSessionsCancelData, AgentSessionsCancelError, AgentSessionsCancelResponse, AgentSessionsNewData, AgentSessionsNewError, AgentSessionsNewResponse, AliasesGetData, AliasesGetError, AliasesGetResponse, AliasesListData, AliasesListError, AliasesListResponse, AliasesSetData, AliasesSetError, AliasesSetResponse, ApprovalsApproveData, ApprovalsApproveError, ApprovalsApproveResponse, ApprovalsDenyData, ApprovalsDenyError, ApprovalsDenyResponse, ApprovalsGetData, ApprovalsGetError, ApprovalsGetResponse, ApprovalsListData, ApprovalsListError, ApprovalsListResponse, AuditListData, AuditListError, AuditListResponse, AuthGetData, AuthGetError, AuthGetResponse, AuthLoginData, AuthLoginError, AuthLoginResponse, AuthLogoutData, AuthLogoutError, AuthLogoutResponse, AuthSetupData, AuthSetupError, AuthSetupResponse, BaseModelsGetData, BaseModelsGetError, BaseModelsGetResponse, BaseModelsListData, BaseModelsListError, BaseModelsListResponse, CollectionsGetData, CollectionsGetError, CollectionsGetResponse, CollectionsListData, CollectionsListError, CollectionsListResponse, ComputeEditData, ComputeEditError, ComputeEditResponse, ComputeGetData, ComputeGetError, ComputeGetResponse, ComputeListData, ComputeListError, ComputeListResponse, CredentialsListData, CredentialsListError, CredentialsListResponse, CredentialsNewData, CredentialsNewError, CredentialsNewResponse, CredentialsRevokeData, CredentialsRevokeError, CredentialsRevokeResponse, DatasetsGetData, DatasetsGetError, DatasetsGetResponse, DatasetsListData, DatasetsListError, DatasetsListResponse, DefaultsGetData, DefaultsGetError, DefaultsGetResponse, EventsListData, EventsListError, EventsListResponse, HelpGetData, HelpGetError, HelpGetResponse, HelpSearchData, HelpSearchError, HelpSearchResponse, JobsCancelData, JobsCancelError, JobsCancelResponse, JobsGetData, JobsGetError, JobsGetResponse, JobsListData, JobsListError, JobsListResponse, JobsWaitData, JobsWaitError, JobsWaitResponse, MeGetData, MeGetError, MeGetResponse, MixesEditData, MixesEditError, MixesEditResponse, MixesNewData, MixesNewError, MixesNewResponse, MixesPreviewData, MixesPreviewError, MixesPreviewResponse, MountsListData, MountsListError, MountsListResponse, MountsNewData, MountsNewError, MountsNewResponse, PoliciesEditData, PoliciesEditError, PoliciesEditResponse, PoliciesGetData, PoliciesGetError, PoliciesGetResponse, ProjectsAdoptData, ProjectsAdoptError, ProjectsAdoptResponse, ProjectsArchiveData, ProjectsArchiveError, ProjectsArchiveResponse, ProjectsEditData, ProjectsEditError, ProjectsEditResponse, ProjectsGetData, ProjectsGetError, ProjectsGetResponse, ProjectsListData, ProjectsListError, ProjectsListResponse, ProjectsNewData, ProjectsNewError, ProjectsNewResponse, ProjectsSearchData, ProjectsSearchError, ProjectsSearchResponse, RegistrySearchData, RegistrySearchError, RegistrySearchResponse, RunsNewData, RunsNewError, RunsNewResponse, SecretsListData, SecretsListError, SecretsListResponse, SecretsNewData, SecretsNewError, SecretsNewResponse, TemplatesGetData, TemplatesGetError, TemplatesGetResponse, TemplatesListData, TemplatesListError, TemplatesListResponse, TotpConfirmData, TotpConfirmError, TotpConfirmResponse, TotpDisableData, TotpDisableError, TotpDisableResponse, TotpEnrollData, TotpEnrollError, TotpEnrollResponse, ViewsGetData, ViewsGetError, ViewsGetResponse, ViewsListData, ViewsListError, ViewsListResponse, ViewsSetData, ViewsSetError, ViewsSetResponse, WorkspacesGetData, WorkspacesGetError, WorkspacesGetResponse, WorkspacesListData, WorkspacesListError, WorkspacesListResponse, WorkspacesSetData, WorkspacesSetError, WorkspacesSetResponse } from '../types.gen';
+import { adoptionsList, agentMessagesNew, agentSessionsCancel, agentSessionsNew, aliasesGet, aliasesList, aliasesSet, approvalsApprove, approvalsDeny, approvalsGet, approvalsList, auditList, authGet, authLogin, authLogout, authSetup, baseModelsGet, baseModelsList, collectionsGet, collectionsList, computeEdit, computeGet, computeList, credentialsList, credentialsNew, credentialsRevoke, datasetsGet, datasetsList, defaultsGet, draftsAccept, draftsGet, draftsList, draftsRevert, eventsList, helpGet, helpSearch, jobsCancel, jobsGet, jobsList, jobsWait, meGet, mixesEdit, mixesGet, mixesList, mixesNew, mixesPreview, mountsList, mountsNew, type Options, policiesEdit, policiesGet, projectsAdopt, projectsArchive, projectsEdit, projectsGet, projectsList, projectsNew, projectsSearch, registrySearch, runsNew, secretsList, secretsNew, templatesGet, templatesList, totpConfirm, totpDisable, totpEnroll, viewsGet, viewsList, viewsSet, workspacesGet, workspacesList, workspacesSet } from '../sdk.gen';
+import type { AdoptionsListData, AdoptionsListError, AdoptionsListResponse, AgentMessagesNewData, AgentMessagesNewError, AgentMessagesNewResponse, AgentSessionsCancelData, AgentSessionsCancelError, AgentSessionsCancelResponse, AgentSessionsNewData, AgentSessionsNewError, AgentSessionsNewResponse, AliasesGetData, AliasesGetError, AliasesGetResponse, AliasesListData, AliasesListError, AliasesListResponse, AliasesSetData, AliasesSetError, AliasesSetResponse, ApprovalsApproveData, ApprovalsApproveError, ApprovalsApproveResponse, ApprovalsDenyData, ApprovalsDenyError, ApprovalsDenyResponse, ApprovalsGetData, ApprovalsGetError, ApprovalsGetResponse, ApprovalsListData, ApprovalsListError, ApprovalsListResponse, AuditListData, AuditListError, AuditListResponse, AuthGetData, AuthGetError, AuthGetResponse, AuthLoginData, AuthLoginError, AuthLoginResponse, AuthLogoutData, AuthLogoutError, AuthLogoutResponse, AuthSetupData, AuthSetupError, AuthSetupResponse, BaseModelsGetData, BaseModelsGetError, BaseModelsGetResponse, BaseModelsListData, BaseModelsListError, BaseModelsListResponse, CollectionsGetData, CollectionsGetError, CollectionsGetResponse, CollectionsListData, CollectionsListError, CollectionsListResponse, ComputeEditData, ComputeEditError, ComputeEditResponse, ComputeGetData, ComputeGetError, ComputeGetResponse, ComputeListData, ComputeListError, ComputeListResponse, CredentialsListData, CredentialsListError, CredentialsListResponse, CredentialsNewData, CredentialsNewError, CredentialsNewResponse, CredentialsRevokeData, CredentialsRevokeError, CredentialsRevokeResponse, DatasetsGetData, DatasetsGetError, DatasetsGetResponse, DatasetsListData, DatasetsListError, DatasetsListResponse, DefaultsGetData, DefaultsGetError, DefaultsGetResponse, DraftsAcceptData, DraftsAcceptError, DraftsAcceptResponse, DraftsGetData, DraftsGetError, DraftsGetResponse, DraftsListData, DraftsListError, DraftsListResponse, DraftsRevertData, DraftsRevertError, DraftsRevertResponse, EventsListData, EventsListError, EventsListResponse, HelpGetData, HelpGetError, HelpGetResponse, HelpSearchData, HelpSearchError, HelpSearchResponse, JobsCancelData, JobsCancelError, JobsCancelResponse, JobsGetData, JobsGetError, JobsGetResponse, JobsListData, JobsListError, JobsListResponse, JobsWaitData, JobsWaitError, JobsWaitResponse, MeGetData, MeGetError, MeGetResponse, MixesEditData, MixesEditError, MixesEditResponse, MixesGetData, MixesGetError, MixesGetResponse, MixesListData, MixesListError, MixesListResponse, MixesNewData, MixesNewError, MixesNewResponse, MixesPreviewData, MixesPreviewError, MixesPreviewResponse, MountsListData, MountsListError, MountsListResponse, MountsNewData, MountsNewError, MountsNewResponse, PoliciesEditData, PoliciesEditError, PoliciesEditResponse, PoliciesGetData, PoliciesGetError, PoliciesGetResponse, ProjectsAdoptData, ProjectsAdoptError, ProjectsAdoptResponse, ProjectsArchiveData, ProjectsArchiveError, ProjectsArchiveResponse, ProjectsEditData, ProjectsEditError, ProjectsEditResponse, ProjectsGetData, ProjectsGetError, ProjectsGetResponse, ProjectsListData, ProjectsListError, ProjectsListResponse, ProjectsNewData, ProjectsNewError, ProjectsNewResponse, ProjectsSearchData, ProjectsSearchError, ProjectsSearchResponse, RegistrySearchData, RegistrySearchError, RegistrySearchResponse, RunsNewData, RunsNewError, RunsNewResponse, SecretsListData, SecretsListError, SecretsListResponse, SecretsNewData, SecretsNewError, SecretsNewResponse, TemplatesGetData, TemplatesGetError, TemplatesGetResponse, TemplatesListData, TemplatesListError, TemplatesListResponse, TotpConfirmData, TotpConfirmError, TotpConfirmResponse, TotpDisableData, TotpDisableError, TotpDisableResponse, TotpEnrollData, TotpEnrollError, TotpEnrollResponse, ViewsGetData, ViewsGetError, ViewsGetResponse, ViewsListData, ViewsListError, ViewsListResponse, ViewsSetData, ViewsSetError, ViewsSetResponse, WorkspacesGetData, WorkspacesGetError, WorkspacesGetResponse, WorkspacesListData, WorkspacesListError, WorkspacesListResponse, WorkspacesSetData, WorkspacesSetError, WorkspacesSetResponse } from '../types.gen';
 
 export type QueryKey<TOptions extends Options> = [
     Pick<TOptions, 'baseUrl' | 'body' | 'headers' | 'path' | 'query'> & {
@@ -1150,8 +1150,26 @@ export const viewsSetMutation = (options?: Partial<Options<ViewsSetData>>): UseM
     return mutationOptions;
 };
 
+export const mixesListQueryKey = (options: Options<MixesListData>) => createQueryKey('mixesList', options);
+
 /**
- * Save a mix (input_cfg groups, weights, temperature, replay share)
+ * The project's mixes, most recently changed first
+ */
+export const mixesListOptions = (options: Options<MixesListData>) => queryOptions<MixesListResponse, MixesListError, MixesListResponse, ReturnType<typeof mixesListQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await mixesList({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: mixesListQueryKey(options)
+});
+
+/**
+ * Save a new mix (groups over dataset versions, weights, temperature, replay share) at revision 1
  */
 export const mixesNewMutation = (options?: Partial<Options<MixesNewData>>): UseMutationOptions<MixesNewResponse, MixesNewError, Options<MixesNewData>> => {
     const mutationOptions: UseMutationOptions<MixesNewResponse, MixesNewError, Options<MixesNewData>> = {
@@ -1168,7 +1186,7 @@ export const mixesNewMutation = (options?: Partial<Options<MixesNewData>>): UseM
 };
 
 /**
- * Hours per language for a mix without saving it
+ * Hours per language and sampling shares of a mix without saving it (metadata only, no GPU)
  */
 export const mixesPreviewMutation = (options?: Partial<Options<MixesPreviewData>>): UseMutationOptions<MixesPreviewResponse, MixesPreviewError, Options<MixesPreviewData>> => {
     const mutationOptions: UseMutationOptions<MixesPreviewResponse, MixesPreviewError, Options<MixesPreviewData>> = {
@@ -1184,13 +1202,101 @@ export const mixesPreviewMutation = (options?: Partial<Options<MixesPreviewData>
     return mutationOptions;
 };
 
+export const mixesGetQueryKey = (options: Options<MixesGetData>) => createQueryKey('mixesGet', options);
+
 /**
- * Edit a mix; agent edits land as drafts
+ * Get a mix at its current revision, with its preview and who is editing it
+ */
+export const mixesGetOptions = (options: Options<MixesGetData>) => queryOptions<MixesGetResponse, MixesGetError, MixesGetResponse, ReturnType<typeof mixesGetQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await mixesGet({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: mixesGetQueryKey(options)
+});
+
+/**
+ * Edit a mix; a person's edit makes a new revision, an agent's lands as a draft when the draft policy says so
  */
 export const mixesEditMutation = (options?: Partial<Options<MixesEditData>>): UseMutationOptions<MixesEditResponse, MixesEditError, Options<MixesEditData>> => {
     const mutationOptions: UseMutationOptions<MixesEditResponse, MixesEditError, Options<MixesEditData>> = {
         mutationFn: async (fnOptions) => {
             const { data } = await mixesEdit({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+export const draftsListQueryKey = (options: Options<DraftsListData>) => createQueryKey('draftsList', options);
+
+/**
+ * Drafts of one entity (open ones by default), newest first
+ */
+export const draftsListOptions = (options: Options<DraftsListData>) => queryOptions<DraftsListResponse, DraftsListError, DraftsListResponse, ReturnType<typeof draftsListQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await draftsList({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: draftsListQueryKey(options)
+});
+
+export const draftsGetQueryKey = (options: Options<DraftsGetData>) => createQueryKey('draftsGet', options);
+
+/**
+ * Get a draft with its changes against the revision it was based on
+ */
+export const draftsGetOptions = (options: Options<DraftsGetData>) => queryOptions<DraftsGetResponse, DraftsGetError, DraftsGetResponse, ReturnType<typeof draftsGetQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await draftsGet({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: draftsGetQueryKey(options)
+});
+
+/**
+ * Apply a draft as a new revision of its entity, attributed to the person who accepts it
+ */
+export const draftsAcceptMutation = (options?: Partial<Options<DraftsAcceptData>>): UseMutationOptions<DraftsAcceptResponse, DraftsAcceptError, Options<DraftsAcceptData>> => {
+    const mutationOptions: UseMutationOptions<DraftsAcceptResponse, DraftsAcceptError, Options<DraftsAcceptData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await draftsAccept({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Discard a draft; its entity stays as it is
+ */
+export const draftsRevertMutation = (options?: Partial<Options<DraftsRevertData>>): UseMutationOptions<DraftsRevertResponse, DraftsRevertError, Options<DraftsRevertData>> => {
+    const mutationOptions: UseMutationOptions<DraftsRevertResponse, DraftsRevertError, Options<DraftsRevertData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await draftsRevert({
                 ...options,
                 ...fnOptions,
                 throwOnError: true

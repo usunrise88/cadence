@@ -100,6 +100,7 @@ type trace struct {
 	projectID  string
 	toolCallID string
 	approvalID string
+	draftID    string
 	decision   policy.Decision
 	status     int
 }
@@ -114,7 +115,7 @@ type trace struct {
 //     so in the Cadence-Policy header. A session-scoped approval of the same operation on the same path allows it.
 //  3. Run fn.
 //  4. A dry run rolls back here and answers 200 with the would-be result; nothing is written, no event emitted.
-//  5. Append fn's events to the outbox with causedBy (command, tool call, approval), write the audit row, store the
+//  5. Append fn's events to the outbox with causedBy (command, tool call, approval, draft), write the audit row, store the
 //     response under the key, commit.
 //
 // Failed and denied commands roll back entirely and store nothing, so a retry with the same key runs again; their
@@ -126,7 +127,7 @@ func (p *Pipeline) Run(ctx context.Context, cmd Command, fn Func) (Response, err
 	if cmd.VerbClass == "" {
 		cmd.VerbClass = "mutate"
 	}
-	tr := &trace{projectID: ProjectFromContext(ctx), toolCallID: ToolCallFromContext(ctx)}
+	tr := &trace{projectID: ProjectFromContext(ctx), toolCallID: ToolCallFromContext(ctx), draftID: DraftFromContext(ctx)}
 	resp, outcome, err := p.run(ctx, cmd, id, fn, tr)
 	p.commands.WithLabelValues(cmd.Operation, outcome).Inc()
 	if err != nil && !cmd.DryRun && outcome != outcomeReplayed {
@@ -138,7 +139,7 @@ func (p *Pipeline) Run(ctx context.Context, cmd Command, fn Func) (Response, err
 	}
 	for _, kv := range [][2]string{
 		{"projectId", tr.projectID}, {"toolCallId", tr.toolCallID}, {"approvalId", tr.approvalID},
-		{"rule", tr.decision.Rule},
+		{"rule", tr.decision.Rule}, {"draftId", tr.draftID},
 	} {
 		if kv[1] != "" {
 			attrs = append(attrs, kv[0], kv[1])
@@ -286,7 +287,7 @@ func (p *Pipeline) gate(ctx context.Context, tx pgx.Tx, cmd Command, id string, 
 // commit appends the events, writes the audit row, stores the response under the key and commits.
 func (p *Pipeline) commit(ctx context.Context, tx pgx.Tx, cmd Command, id string, tr *trace, outcome string,
 	drafts []events.Draft, resp Response, useKey bool) error {
-	cause := &events.CausedBy{CommandID: id, ToolCallID: tr.toolCallID, ApprovalID: tr.approvalID}
+	cause := &events.CausedBy{CommandID: id, ToolCallID: tr.toolCallID, ApprovalID: tr.approvalID, DraftID: tr.draftID}
 	if err := events.Append(ctx, tx, cmd.Actor, cause, drafts); err != nil {
 		return err
 	}

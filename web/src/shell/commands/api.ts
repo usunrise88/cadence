@@ -8,6 +8,7 @@ import type {
   Credential,
   CredentialCreated,
   CredentialNew,
+  MixEditResult,
   Policies,
   PoliciesEdit,
   Secret,
@@ -18,6 +19,7 @@ import { useDialogs } from "@/shell/chrome/dialogs";
 import { useFocusedApproval } from "@/shell/approvals/store";
 import { commands } from "@/shell/registries";
 import { commandContext } from "@/shell/state";
+import type { MixEditArgs } from "./entities";
 import type { Command } from "./registry";
 
 // Commands behind the Approvals, Settings and Getting started panels (phase 1). Each mutating command is exactly
@@ -38,6 +40,7 @@ export type ApiCommands = {
   "policies.edit": { args: { policies: Policies; body: PoliciesEdit }; result: Policies };
   "view.twoFactor": { args: undefined; result: void };
   "views.set": { args: { name: string; query: string }; result: SavedView | undefined };
+  "mixes.edit": { args: MixEditArgs; result: MixEditResult | undefined };
 };
 export type ApiCommandId = keyof ApiCommands;
 

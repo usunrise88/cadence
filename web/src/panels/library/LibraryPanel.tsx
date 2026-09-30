@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { projectsSearchOptions, registrySearchOptions, viewsListOptions } from "@/api/gen/@tanstack/react-query.gen";
+import { mixesListOptions, projectsSearchOptions, registrySearchOptions, viewsListOptions } from "@/api/gen/@tanstack/react-query.gen";
 import type { RegistryKind } from "@/api/gen/types.gen";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,7 @@ import { EmptyState, EntityList, type ListRow } from "@/shell/entity/primitives"
 import {
   chipLabel,
   kindNoun,
+  openDocument,
   openRef,
   previewRef,
   runCommand,
@@ -85,6 +86,19 @@ export function LibraryPanel(_props: PanelProps) {
   useTopic(["entity.base_model.*", "entity.dataset_version.*", "entity.template.*"], () => void (searching ? search.refetch() : browse.refetch()));
   useTopic(project ? ["entity.saved_search.*"] : null, () => void views.refetch());
 
+  // The project's work (mixes now; runs and evals as they land) lists before the registry and opens as documents.
+  const mixes = useQuery({ ...mixesListOptions({ path: { p: project ?? "" } }), enabled: !!project && !searching && !kind });
+  useTopic(project ? ["entity.mix.*"] : null, () => void mixes.refetch());
+  const work: ListRow[] = (mixes.data?.items ?? []).map((m) => ({
+    id: `mix:${m.id}`,
+    name: m.name,
+    version: `rev ${m.rev}`,
+    state: "active",
+    tags: ["mix"],
+    actor: m.cause?.draftAuthor ?? m.updatedBy,
+    updatedAt: m.updatedAt,
+  }));
+
   const hits = useMemo(() => (searching ? (search.data?.groups ?? []).flatMap((g) => g.items) : []), [searching, search.data]);
   useEffect(() => remember(hits), [hits, remember]);
 
@@ -98,15 +112,18 @@ export function LibraryPanel(_props: PanelProps) {
         actor: h.actor,
         updatedAt: h.updatedAt,
       }))
-    : (browse.data?.items ?? []).map((r) => ({
-        id: `${r.kind}:${r.id}`,
-        name: r.name,
-        version: r.version,
-        state: r.state,
-        tags: r.tags,
-        actor: r.actor,
-        updatedAt: r.updatedAt,
-      }));
+    : [
+        ...(kind ? [] : work),
+        ...(browse.data?.items ?? []).map((r) => ({
+          id: `${r.kind}:${r.id}`,
+          name: r.name,
+          version: r.version,
+          state: r.state,
+          tags: r.tags,
+          actor: r.actor,
+          updatedAt: r.updatedAt,
+        })),
+      ];
   const select = useSelection((s) => s.select);
 
   const scope = searching ? (scopeOf(query) === "all" ? "all" : "project") : browseScope;
@@ -254,9 +271,9 @@ export function LibraryPanel(_props: PanelProps) {
         ) : (
           <EntityList
             rows={rows}
-            label="Registry versions"
-            onOpen={(r) => select(`registry:${r.id}`, undefined)}
-            onPreview={(r) => select(`registry:${r.id}`, undefined)}
+            label="Project work and registry versions"
+            onOpen={(r) => (r.id.startsWith("mix:") ? openDocument(r.id) : select(`registry:${r.id}`, undefined))}
+            onPreview={(r) => select(r.id.startsWith("mix:") ? r.id : `registry:${r.id}`, undefined)}
           />
         )}
       </div>

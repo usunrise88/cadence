@@ -16,6 +16,7 @@ type (
 	projectKey  struct{}
 	estimateKey struct{}
 	toolCallKey struct{}
+	draftKey    struct{}
 	replayKey   struct{}
 )
 
@@ -51,6 +52,17 @@ func WithToolCall(ctx context.Context, id string) context.Context {
 // ToolCallFromContext returns the tool call id, or "".
 func ToolCallFromContext(ctx context.Context) string {
 	id, _ := ctx.Value(toolCallKey{}).(string)
+	return id
+}
+
+// WithDraft records the draft a command applies (drafts.accept); its events carry it as causedBy.draftId.
+func WithDraft(ctx context.Context, id string) context.Context {
+	return context.WithValue(ctx, draftKey{}, id)
+}
+
+// DraftFromContext returns the draft id set by WithDraft, or "".
+func DraftFromContext(ctx context.Context) string {
+	id, _ := ctx.Value(draftKey{}).(string)
 	return id
 }
 

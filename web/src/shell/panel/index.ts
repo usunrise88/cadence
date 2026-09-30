@@ -13,3 +13,4 @@ export { ApprovalCard, type ApprovalCardProps } from "@/shell/approvals/Approval
 export { useDecidedApprovals, usePendingApprovals } from "@/shell/approvals/cache";
 // Defaults: "Why this default?" and the safe-range warning for any form field (defaults.yaml via defaults.get).
 export { formatDefault, formatRange, lookupDefault, rangeWarning, useDefaults, WhyDefault } from "@/shell/entity/defaults";
+export { useEditRequest } from "@/shell/entity/edits";
