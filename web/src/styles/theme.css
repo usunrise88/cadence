@@ -81,6 +81,9 @@
   --cadence-diff-removed: var(--red-3);
   --cadence-diff-removed-text: var(--red-11);
   --cadence-shadow: 0 8px 24px var(--slate-a7), 0 2px 6px var(--slate-a5);
+  /* QR codes stay dark-on-light in both themes: scanners read inverted codes poorly. */
+  --cadence-qr-dark: black;
+  --cadence-qr-light: white;
 
   /* ---- density ---- */
   --cadence-font-size: 13px;

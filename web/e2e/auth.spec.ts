@@ -81,7 +81,10 @@ test.describe("sign-in", () => {
     await page.getByRole("menuitem", { name: /Two-factor authentication/ }).click();
     const dialog = page.getByRole("dialog");
     await dialog.getByRole("button", { name: "Set up" }).click();
-    const secret = (await dialog.getByTestId("totp-secret").textContent())!.trim();
+    // The key arrives as a QR code to scan from the screen; typing it is the fallback (grouped by four).
+    await expect(dialog.getByRole("img", { name: /QR code with the two-factor key/ })).toBeVisible();
+    await dialog.getByText("Can’t scan? Type the key instead").click();
+    const secret = (await dialog.getByTestId("totp-secret").textContent())!.replace(/\s/g, "");
     const s0 = stepNow();
     await dialog.locator('input[name="code"]').fill(totp(secret, s0));
     await dialog.getByRole("button", { name: "Confirm and turn on" }).click();

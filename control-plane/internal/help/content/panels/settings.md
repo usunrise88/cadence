@@ -16,7 +16,7 @@ A tool panel for the admin account only (it opens floating; View → Open Settin
 | Credentials | API keys (`cdk_…`) scoped to one project and/or registry read; your browser sessions; agent session tokens |
 | Policies | Default budgets: GPU-hours per project per day, agent turns per session |
 | Catalogues | Read-only: base models, instruction templates and permission presets in the registry |
-| Security | Two-factor sign-in (TOTP) for the admin account |
+| Security | Two-factor sign-in (TOTP) for the admin account: **Set up** shows a QR code to scan with an authenticator app from the screen (drawn in the browser; the key never leaves the page), or the key in groups of four to type; confirm with the app's current code |
 | Audit log | Every command, denial and failed attempt with actor, outcome, rule and cause; filter by actor, operation and project. Workspace layout saves are preferences, not commands: they are not listed (a refused save still is) |
 
 ## Place in the loop
