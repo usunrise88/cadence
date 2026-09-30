@@ -23,14 +23,20 @@ COPY --from=web /src/web/dist/ internal/webui/dist/
 RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${CADENCE_VERSION}" -o /out/cadence ./cmd/cadence \
  && mkdir -p /out/data
 
-# ---- runtime: static, non-root (uid 65532). The data volume must be writable by that uid.
-FROM gcr.io/distroless/static-debian12:nonroot
+# ---- runtime: slim Debian with git (project repositories, R10: merges, hooks and smart HTTP need the real git) and
+# the CA bundle (GitHub over HTTPS); non-root (uid 65532). The data volume must be writable by that uid.
+FROM debian:bookworm-slim
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends git ca-certificates \
+ && rm -rf /var/lib/apt/lists/* /usr/share/doc /usr/share/man \
+ && groupadd --gid 65532 nonroot \
+ && useradd --uid 65532 --gid 65532 --no-create-home --home-dir /data --shell /usr/sbin/nologin nonroot
 COPY --from=build /out/cadence /cadence
 # An empty /data owned by the runtime uid, so a fresh named volume starts writable.
 COPY --from=build --chown=65532:65532 /out/data /data
 ENV CADENCE_ADDR=0.0.0.0:8080 \
     CADENCE_DATA_DIR=/data
-USER nonroot:nonroot
+USER 65532:65532
 EXPOSE 8080
 ENTRYPOINT ["/cadence"]
 CMD ["serve"]
