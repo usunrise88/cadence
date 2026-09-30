@@ -36,6 +36,11 @@
   --color-accent-line: var(--cadence-accent-line);
   --color-agent: var(--cadence-agent-fill);
   --color-agent-foreground: var(--cadence-agent-text);
+  --color-draft-outline: var(--cadence-draft-outline);
+  --color-diff-added: var(--cadence-diff-added);
+  --color-diff-added-foreground: var(--cadence-diff-added-text);
+  --color-diff-removed: var(--cadence-diff-removed);
+  --color-diff-removed-foreground: var(--cadence-diff-removed-text);
   --color-status-running: var(--cadence-status-running);
   --color-status-running-foreground: var(--cadence-status-running-text);
   --color-status-done: var(--cadence-status-done);
@@ -44,6 +49,10 @@
   --color-status-warning-foreground: var(--cadence-status-warning-text);
   --color-status-failed: var(--cadence-status-failed);
   --color-status-failed-foreground: var(--cadence-status-failed-text);
+  --color-diff-added: var(--cadence-diff-added);
+  --color-diff-added-foreground: var(--cadence-diff-added-text);
+  --color-diff-removed: var(--cadence-diff-removed);
+  --color-diff-removed-foreground: var(--cadence-diff-removed-text);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);

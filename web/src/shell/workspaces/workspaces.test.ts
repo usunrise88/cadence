@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { SerializedDockview } from "dockview-core";
 import { planDefaultLayout } from "./defaults";
-import { DEFAULT_WORKSPACES, migrate, normalizeLayout, parseWorkspace, WorkspaceSchemaError, type WorkspaceData } from "./schema";
+import { addChatToRightColumn, DEFAULT_WORKSPACES, isPlaceholderLayout, migrate, normalizeLayout, parseWorkspace, WorkspaceSchemaError, type WorkspaceData } from "./schema";
 import legacy from "./fixtures/legacy-training.json";
 import { headlessDockview, phase0Registry } from "./testkit";
 
@@ -34,6 +34,31 @@ describe("migrate", () => {
   });
 });
 
+describe("schema 2: Chat in the right column", () => {
+  type Leaf = { type: "leaf"; data: { views: string[]; activeView: string } };
+  const leaves = (w: WorkspaceData) => ((w.layout.grid as { root: { data: Leaf[] } }).root.data as Leaf[]).map((l) => l.data);
+
+  it("adds Chat as an inactive tab of the right-column group of a layout saved before it existed", () => {
+    const ws = migrate(parseWorkspace(legacy));
+    expect(ws.schemaVersion).toBe(2);
+    expect(ws.layout.panels?.chat).toEqual({ id: "chat", contentComponent: "panel", title: "Chat", params: { panel: "chat", loc: "right" } });
+    const right = leaves(ws).find((l) => l.views.includes("properties"))!;
+    expect(right.views).toEqual(["properties", "old-metrics", "chat"]);
+    expect(right.activeView).toBe("properties");
+    expect(leaves(ws).filter((l) => l.views.includes("chat"))).toHaveLength(1);
+    expect(ws.panels).toEqual(parseWorkspace(legacy).panels); // pins (and a Chat's session) are kept
+  });
+
+  it("leaves placeholders, layouts with a Chat and layouts without a right column alone", () => {
+    const placeholder = parseWorkspace({ name: "Ops", schemaVersion: 1, layout: {}, panels: {} });
+    expect(migrate(placeholder).layout).toEqual({});
+    const once = migrate(parseWorkspace(legacy));
+    expect(addChatToRightColumn(once.layout)).toBe(once.layout);
+    const noRight = { ...legacy.layout, panels: { library: legacy.layout.panels.library } };
+    expect(addChatToRightColumn(noRight as WorkspaceData["layout"])).toBe(noRight);
+  });
+});
+
 describe("normalizeLayout", () => {
   it("resolves renamed panels through the alias map and turns unknown ones into placeholders", () => {
     const ws = parseWorkspace(legacy);
@@ -46,11 +71,30 @@ describe("normalizeLayout", () => {
   });
 });
 
+describe("placeholder workspaces from the project bootstrap", () => {
+  it("treats a stored layout without a grid as the default plan", () => {
+    const ws = parseWorkspace({ name: "Training", schemaVersion: 1, layout: {}, panels: {}, rev: 1 });
+    expect(isPlaceholderLayout(ws.layout)).toBe(true);
+    expect(isPlaceholderLayout({ grid: { root: {}, width: 1, height: 1, orientation: "HORIZONTAL" }, panels: {} })).toBe(false);
+  });
+});
+
 describe("default workspaces", () => {
   it.each(DEFAULT_WORKSPACES)("%s opens only registered panels, centre first", (name) => {
     const plan = planDefaultLayout(name, registry, "demo");
     expect(plan[0]).toEqual({ panel: "project", location: "centre", doc: "project:demo" });
     for (const p of plan) expect(registry.get(p.panel), p.panel).toBeDefined();
+  });
+
+  it("phase-1 panels join their columns: Approvals in Ops right, Getting started in Training right until dismissed", () => {
+    const r = phase0Registry();
+    let dismissed = false;
+    r.register({ ...r.get("help")!, id: "approvals", help: "panels.approvals" });
+    r.register({ ...r.get("help")!, id: "getting-started", help: "panels.getting-started", inDefaults: () => !dismissed });
+    expect(planDefaultLayout("Ops", r, "demo")).toContainEqual({ panel: "approvals", location: "right" });
+    expect(planDefaultLayout("Training", r, "demo").at(-1)).toEqual({ panel: "getting-started", location: "right" });
+    dismissed = true;
+    expect(planDefaultLayout("Training", r, "demo").map((p) => p.panel)).not.toContain("getting-started");
   });
 });
 
@@ -73,7 +117,8 @@ describe("Dockview round-trip (runs on every Dockview upgrade)", () => {
     const { layout } = normalizeLayout(ws.layout, registry);
     const { first, second } = roundTrip(layout as unknown as SerializedDockview);
     expect(second).toEqual(first);
-    expect(Object.keys(first.panels).sort()).toEqual(["library", "old-metrics", "project:project:demo", "properties"]);
+    // Schema 2 added Chat to the right column.
+    expect(Object.keys(first.panels).sort()).toEqual(["chat", "library", "old-metrics", "project:project:demo", "properties"]);
   });
 
   it.each(DEFAULT_WORKSPACES)("default %s survives fromJSON(toJSON())", (name) => {

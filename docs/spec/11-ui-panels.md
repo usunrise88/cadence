@@ -40,7 +40,7 @@ One search box finds anything Cadence knows — entities, utterance text, logs, 
 | Palette, plain text | Ctrl/Cmd+K | Entities across the registry and the current project; `>` prefix switches to commands, `?` to help (the VS Code convention) |
 | Library filter bar | — | The same query language, as a persistent list with saved views |
 | Find in panel | Ctrl/Cmd+F | Inside the focused panel: log lines, utterances in a Diff or Triage list, rows in a table |
-| Agent | `search.query` tool | The same index and grammar; the tool description carries the qualifier list |
+| Agent and CLI | `projects.search` tool (R1; `cadence projects search`) | The same index and grammar; the tool description carries the qualifier list |
 
 ### Query language
 
@@ -51,6 +51,13 @@ Free text plus qualifiers, autocompleted as chips: `kind:run status:running`, `l
 - Results are grouped by kind, ranked by recency within the current project first; Enter opens the document, Space previews in Inspector, Ctrl/Cmd+Enter opens Compare with the pinned selection.
 - "Open as list" turns any search into a Library view; saved searches are per user per project and appear in the palette.
 - The index is fed from the event stream, so a frozen dataset or a finished run is searchable within seconds.
+  The indexer keeps its own cursor over the outbox (`event_cursors`), reloads each entity an event names and
+  upserts its document; a restart resumes after the last committed batch. A kind joins the index by one row in
+  the registration table (`internal/search.Sources`); help articles are indexed at start.
+- Scope follows the credential: without a scope qualifier a search covers the current project, the registry (with
+  registry read) and help; `project:<slug>` searches the named projects, `scope:all` every project the credential
+  reaches — a project-bound token never sees another project's work, and registry hits need registry read. An
+  unknown qualifier is an `invalid-query` error listing the qualifiers, never free text.
 - Logs are structured JSON lines, so log search filters by field (`level:error step:train`), not only by substring.
 - Version 1: Postgres full-text search with trigram matching for typos and identifiers; version 2 adds embedding search over transcripts and notes ("utterances like this one") with pgvector, still self-hosted.
 
@@ -94,7 +101,7 @@ Version 1 has 33 panels: 13 documents that open in the centre and 20 tools that 
 | Run | Document | Config diff against the parent run, status, stage timeline, final metrics | Pause, resume, stop; resume from checkpoint; new stage from checkpoint with an explicit peak LR | `run.{id}.``status`, `run.{id}.``metrics` |
 | Eval report | Document | Matrix of languages and golden sets × latency profiles (`80ms`, `160ms`, `1120ms`; R43); WER/CER with delta to production and gate colour; charts: WER deltas with confidence intervals, S/D/I, duration and SNR buckets, latency to final, WER against latency (R53) | Open a cell in Diff; re-run; set as baseline; edit gate thresholds | `eval.{id}.progress` |
 | Dataset version | Document | Fingerprint, hours by language and source, applied filters, lineage; statistics charts: duration, characters per second, level and SNR, sample rates, speakers (R53) | Diff two versions; export to Shar | `entity.dataset_version.{id}`, `job.{id}` |
-| Mix | Document | Groups, weights, temperature, replay share; preview of hours per language | Save as version; launch a run with this mix | `entity.mix.{id}` (drafts arrive here) |
+| Mix | Document | Groups, weights, temperature, replay share; preview of hours per language; agents' drafts (dashed outline, diff on hover) and "agent editing" presence | Save (a new revision; 412 conflict notice with reload / reapply); accept or revert an agent draft; launch a run with this mix (phase 2) | `entity.mix.{id}` (drafts arrive here) |
 | Triage queue | Document | Disputed production utterances: audio with a channel switch, hypotheses from several models, consensus, the item's signals; an Annotate mode for annotation batches with an editable transcript, tags and a keyboard-first flow | Accept, correct, reject; send to the next dataset version | `triage.new` |
 | Model | Document | Checkpoint → ONNX → Triton repository; stage: shadow, canary, prod | Export; promote; roll back | `deploy.{id}` |
 | Recipe | Document | A recipe file (SDP config, pipeline, mix, training or eval YAML, augmentation profile) with its commit history; open session branches and their diffs against `main`; agent edits stream in as a live diff | Edit; accept or revert an agent draft; accept or discard session changes (three-way diff on conflict); commit | `recipe.{path}` |
@@ -118,7 +125,7 @@ Version 1 has 33 panels: 13 documents that open in the centre and 20 tools that 
 | Project | Document | Overview of one project: locales, base model revision, repository and branch, agent profile, budgets and today's use, gates, mounts, decision log | Edit any wizard choice; open Agent settings; archive | `entity.project.{id}` |
 | Agent settings | Tool | The project's agent profile: driver, model, permission preset with a preview of the rendered `.claude/settings.json` and `opencode.json`, auto-merge policy for session branches, draft policy per entity kind; raw config editors with schema validation; `AGENTS.md` editor | Save (commits to the project repository); reset to template; test-launch a session | `entity.project.{id}` |
 | Lineage | Tool | Graph around the selection: sources → dataset versions → mix and recipe SHA → run → checkpoint → model version → deployments; "used by" for registry entries | Open any node as document; copy version id | — |
-| Settings | Tool, admin only | Registry-level configuration: compute (hosts, cards, memory caps, allowed job kinds), secrets (names only, write-only values), catalogues (base models, agent models, instruction templates, permission presets), policies (retention, PII redaction, default budgets, cache quotas), notification rules and the Telegram bot, credentials (API keys, active sessions, invitations), backup status | Edit; add secret; sync templates across projects | `compute.{id}` |
+| Settings | Tool, admin only | Registry-level configuration: compute (hosts, cards, memory caps, allowed job kinds), secrets (names only, write-only values), catalogues (base models, agent models, instruction templates, permission presets), policies (retention, PII redaction, default budgets, cache quotas), notification rules and the Telegram bot, credentials (API keys, active sessions, invitations), backup status, the audit log (read-only; filter by actor, operation, project) | Edit; add secret; create API key; revoke; sync templates across projects | `compute.{id}` |
 | Getting started | Tool, until the first gate passes | Setup checklist with state: mount attached, project created, first dataset frozen, first run done, first gate passed; each step with its playbook or command | Run the step; dismiss | `entity.project.{id}` |
 | Help | Tool, follows focus unless pinned | The article for the focused panel, field or error: what it is, its place in the loop, fields and defaults from the schema, live commands, playbooks, sources | Search help; pin; Explain this (agent) | — |
 | Language pack | Document | One locale of the project: normalizer, inverse normalisation, transliteration, LID config, boost lists with weights, golden-set recipe, README; commit history | Edit; test a phrase with and without boosting; sync from the shipped pack | `recipe.{path}` |
@@ -133,7 +140,7 @@ Five workspaces ship by default, and Chat sits in the right column of every one,
 
 | Workspace | Centre (documents) | Left | Right | Bottom | Floating |
 | --- | --- | --- | --- | --- | --- |
-| Training | Run, Mix, Experiment | Library | Chat, Checkpoints | Metrics, Logs | — |
+| Training | Run, Mix, Experiment | Library | Chat, Checkpoints, Getting started (until dismissed) | Metrics, Logs | — |
 | Eval | Eval report, Annotation batch | Library | Chat, Inspector | Diff | Audio |
 | Data | Dataset version, Source, Recipe, Language pack | Library | Chat, Inspector, Pipeline run | Logs | Audio |
 | Triage | Triage queue | — | Chat, Diff | Inspector | Audio |
@@ -164,15 +171,15 @@ Commands are the only way the UI changes anything: menus, buttons, shortcuts and
 | Cancel job | — | `POST /jobs/{id}:cancel` — inline confirm |
 | Run eval matrix | — | `POST /``projects/{p}/``evals` |
 | Set eval baseline | — | `PATCH /``projects/{p}/baseline — approval` |
-| Save mix as version | — | `POST /``projects/{p}/``mixes` |
+| New mix / Edit mix | — | `POST /projects/{p}/mixes` (`mixes.new`); `PATCH /mixes/{id}` (`mixes.edit`) — R13: a mix is saved as a revision, not a version |
 | Export dataset version to Shar | — | `POST /``projects/{p}/datasets/{id``}:export` |
 | Accept / correct / reject triage item | Enter / E / Backspace in Triage queue | `PATCH /triage/{id}` |
 | Export model to ONNX | — | `POST /models/{id}:export` |
 | Promote to shadow / canary / prod | — | `POST /`projects/{p}/deployments — approval; confirm modal for production |
 | Roll back deployment | — | `POST /`projects/{p}/deployments/{id}:rollback — approval, confirm modal |
 | New agent session (Claude Code or opencode) | — | `POST /agent-sessions` |
-| Ask agent about the selection | Ctrl/Cmd+I | `POST /agent-sessions/{id}/messages` with references |
-| Stop the agent's turn | Ctrl/Cmd+. | `POST /agent-sessions/{id}:cancel` |
+| Ask agent about the selection | Ctrl/Cmd+I | Focus Chat and attach the selection (client); Send is `agentMessages.new` (`POST /agent-sessions/{id}/agent-messages`) with references |
+| Stop the agent's turn | Ctrl/Cmd+. | `agentSessions.cancel` (`POST /agent-sessions/{id}:cancel`) |
 | Approve / deny a request | Enter / Backspace on a focused approval card | `POST /approvals/{id}:approve`, `:deny` |
 | Accept / revert an agent draft | — | `POST /drafts/{id}:accept`, `:revert` |
 | New source | — | `POST /projects/{p}/sources` |
@@ -207,7 +214,7 @@ Commands are the only way the UI changes anything: menus, buttons, shortcuts and
 | Create API key / Revoke credential | — | `POST /credentials`; `POST /credentials/{id}:revoke` |
 | Start playbook | — | `POST /projects/{p}/playbooks/{name}:run` (shows the estimate first) |
 | Pause / resume agent session | — | `POST /agent-sessions/{id}:pause`, `:resume` |
-| Merge / discard session changes | — | `POST /agent-sessions/{id}:merge` — three-way diff shown on conflict |
+| Merge / discard session changes | — | `agentSessions.accept`, `agentSessions.revert` (`POST /agent-sessions/{id}:accept`, `:revert`) — the session paused or ended; a conflict blocks accept |
 
 Rules:
 
@@ -226,7 +233,7 @@ The shell needs fourteen things from the Go control plane, all in the OpenAPI 3.
 | Live events | `GET /events?topics=…` (server-sent events) | Global `seq` as the event id; resume with `Last-Event-ID`; topic wildcards such as `run.123.*` |
 | Commands | `POST` / `PATCH` on resources; actions as `POST /{resource}/{id}:{verb}` | `Idempotency-Key` header, `If-Match` revision, `?dryRun=true` returns an estimate; long work returns `202 Accepted` with a job id |
 | Agent sessions | `POST /``projects/{p}/``agent-sessions` (kind, driver, model, prompt, references); `GET /agent-sessions/{id}/transcript`; `POST /agent-sessions/{id}/messages`; `:cancel`, `:pause`, `:resume`, `:merge`; `POST /projects/{p}/playbooks/{name}:run` | Messages carry text plus entity references; updates, state changes and budget use arrive on `agent.session.{id}`; session branches on `recipe.{path``}` |
-| Approvals and drafts | `GET /approvals?state=pending`; `POST /approvals/{id}:approve` or `:deny`; `GET /{kind}/{id}/drafts`; `POST /drafts/{id}:accept` or `:revert` | Approval scope: once or for the session. A gated command returns `202 Accepted` with the approval id and runs when approved |
+| Approvals and drafts | `GET /approvals?state=pending`; `POST /approvals/{id}:approve` or `:deny`; `GET /drafts?entityKind=&entityId=`; `POST /drafts/{id}:accept` or `:revert` | Approval scope: once or for the session. A gated command returns `202 Accepted` with the approval id and runs when approved |
 | Errors | Every endpoint | `application/problem+json`; a stale revision returns `412` with the current revision in the body |
 | Projects | `GET /projects`, `POST /projects`; every project-scoped path lives under `/projects/{p}/…`; workspaces at `PUT /me/projects/{p}/workspaces/{name}` | Events carry projectId; the client filters the stream to the current project |
 | Mounts and materialisation | `GET` / `POST /mounts`; `POST /mounts/{id}:scan`; `POST /projects/{p}/datasets/{id}:materialize`, `:evict` | Health on mount.{id}; materialisation progress on job.{id} |

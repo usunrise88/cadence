@@ -13,7 +13,7 @@ type CadenceEvent = {
   type: string;                // "mix.revised", "run.status_changed", "recipe.file_changed"
   entity?: { kind: string; id: string; rev: number };
   actor: { kind: "user" | "agent" | "automation"; id: string; sessionId?: string };
-  causedBy?: { commandId: string; toolCallId?: string };
+  causedBy?: { commandId: string; toolCallId?: string; approvalId?: string; draftId?: string };
   payload: unknown;
   at: string;
 };
@@ -23,8 +23,18 @@ type CadenceEvent = {
 - Cache patching: the UI applies events to the TanStack Query cache; a panel re-fetches only when an event says its data is too big to carry.
 - Attribution: a change made by an agent shows a small badge ("opencode · session 9"); clicking it scrolls the Chat panel to the tool call that caused it.
 - Drafts: agent edits to mixes, recipes and gates land as draft revisions; the panel shows the diff as it grows and offers Accept or Revert. A per-entity policy can auto-accept.
+  Phase 1 (mixes): a draft (`drf_…`) belongs to one entity and one author (actor + agent session), is based on one
+  entity revision and has its own `rev`; the author's later edits update it. Events on `entity.{kind}.{id}`:
+  `draft.created|updated|accepted|reverted` (payload `{draft}` with its `changes` against the base) and
+  `presence.changed`. `drafts.accept` (If-Match: the draft's `rev`) applies the draft as the entity's next revision
+  attributed to the person, `causedBy.draftId` naming the draft; a draft whose base is no longer the entity's
+  revision answers `412 draft-stale` with the current revision. `drafts.revert` discards it. Agents never accept
+  drafts. The policy per kind (`draft` or `direct`, i.e. auto-accept) comes from the project's agent profile
+  (`draftPolicy`, Agent settings); a project without a profile falls back to `defaults.yaml` `drafts.*`.
 - Concurrency: every entity has a revision; writes carry `If-Match`. A losing writer, person or agent, gets the current revision and a conflict error it must resolve, never a silent overwrite.
 - Presence: while an agent is mid-edit on an entity, its panel shows "agent editing" and disables conflicting controls instead of racing.
+  An agent is mid-edit while it has an open draft on the entity, or for `drafts.presence_seconds` after a direct
+  edit; the entity carries `presence` (actor, tool call, draft) and `presence.changed` sends the whole list.
 - Agent transcripts are events too (`agent.session.{id}`), so a chat is durable and can be opened from any tab or after a restart.
 - Audio is not an event. The manual transcription test (R48) is the one media channel: a WebSocket per session carries audio up and words down, relayed by the control plane to a worker job; the job reports its state on `job.{id}` like any job, and nothing of the session is stored.
 
@@ -57,7 +67,7 @@ One admin account, invitation links for reviewers, and opaque scoped tokens for 
 | Agent session | An opaque token minted when the session starts, passed to the agent as the MCP credential | Dies with the session; one project; the verbs of the project's permission preset; read access to the registry |
 | Automation and CLI | Personal API keys (`cdk_` prefix) created in Settings, used as Bearer | Until revoked; scoped to one project or to registry read; last-used time shown |
 
-- Mutations require the session cookie plus a custom header, or a Bearer token; SameSite plus the header is the CSRF defence.
+- Mutations require the session cookie plus a custom header, or a Bearer token; SameSite plus the header is the CSRF defence. The cookie is `cadence_session` (an opaque `cws_` token); the header is `Cadence-Client: web`; tokens are `cdk_` (API key), `cst_` (agent session), `cwk_` (worker), stored as SHA-256. Unauthenticated requests answer `401 unauthenticated`, out-of-scope ones `403 forbidden`.
 - All credentials live in one table: kind, scope, hash, expiry, last use; revocation is one click and is itself an audited command.
 - TLS terminates at a reverse proxy in the compose file (Caddy with an internal certificate); the control plane listens on localhost only.
 - Login attempts are rate-limited; a lost admin password is reset from the host shell (`cadence admin reset-password`), never by email.

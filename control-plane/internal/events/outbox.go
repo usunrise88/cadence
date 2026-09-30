@@ -33,10 +33,13 @@ type EntityRef struct {
 	Rev  int    `json:"rev"`
 }
 
-// CausedBy links an event to the command (and, for agents, the tool call) that produced it.
+// CausedBy links an event to the command (and, for agents, the tool call) that produced it, to the approval a
+// person granted for it, and to the draft a person accepted.
 type CausedBy struct {
 	CommandID  string `json:"commandId"`
 	ToolCallID string `json:"toolCallId,omitempty"`
+	ApprovalID string `json:"approvalId,omitempty"`
+	DraftID    string `json:"draftId,omitempty"`
 }
 
 // Draft is an event a command wants to emit; Append fills in actor, cause, seq and time.

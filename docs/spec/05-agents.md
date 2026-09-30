@@ -43,7 +43,7 @@ Cadence launches Claude Code or opencode inside a project worktree, hands it the
 ### What the agent sees
 
 - Files in the worktree: the project facts, notes, the data lockfile, language packs, pipelines, augmentation profile, skills.
-- MCP resources: `project://summary` (locales, base model, aliases, budgets and today's use, open approvals), `selection://current` (the references the user attached), `help://{slug}`, `defaults://`.
+- MCP resources: `project://summary` (locales, base model, aliases, budgets and today's use, open approvals; the connection's project, or `project://{p}/summary`), `selection://current` (the references the user attached), `help://{slug}` (`help://errors.not-found`), `defaults://`.
 - The tool catalogue below; every tool description carries the parameter docs from the step schemas.
 - Not: secrets, other projects' work (the registry is readable, their work is not), production hosts, raw audio bytes; audio-level checks run as scorer steps the agent can start.
 
@@ -53,7 +53,7 @@ Cadence launches Claude Code or opencode inside a project worktree, hands it the
 | --- | --- |
 | Project and registry | `projects.get`, `projects.note`, `projects.sync`, `projects.adopt`, `aliases.set`, `registry.search`, `search.query`, `help.get`, `playbooks.run`, `experiments.new`, `experiments.get`, `sweeps.run` |
 | Data | `sources.new`, `mounts.list`, `mounts.scan`, `pipelines.run`, `datasets.preview`, `datasets.freeze`, `datasets.materialize`, `datasets.evict`, `datasets.export`, `utterances.search`, `langpacks.get`, `langpacks.edit`, `boost.edit`, `boost.evaluate`, `augment.preview` |
-| Training | `mixes.new`, `mixes.preview`, `runs.calibrate`, `runs.new`, `runs.resume`, `runs.stage`, `jobs.pause`, `jobs.resume`, `jobs.cancel`, `jobs.wait`, `metrics.get`, `checkpoints.list`, `checkpoints.average` |
+| Training | `mixes.new`, `mixes.get`, `mixes.list`, `mixes.edit`, `mixes.preview`, `drafts.list`, `drafts.get`, `drafts.revert`, `runs.calibrate`, `runs.new`, `runs.resume`, `runs.stage`, `jobs.pause`, `jobs.resume`, `jobs.cancel`, `jobs.wait`, `metrics.get`, `checkpoints.list`, `checkpoints.average` |
 | Evaluation | `goldenSets.list`, `goldenSets.freeze`, `evals.new`, `evals.get`, `evals.gate`, `gates.edit`, `baselines.set`, `augment.evaluate`, `batches.new`, `batches.get`, `batches.freeze` |
 | Deployment | `models.register`, `models.export`, `models.parity`, `models.benchmark`, `deployments.promote`, `deployments.rollback` |
 | Flywheel | `samples.query`, `signals.list`, `triage.next`, `triage.accept`, `triage.correct`, `triage.reject`, `corrections.package`, `schedules.new` |
@@ -87,7 +87,7 @@ Every mutating tool accepts `dryRun`; the verbs come from the vocabulary in the 
 
 ### Worktree, drafts and merge
 
-- Entity changes go through MCP and land directly, or as drafts with Accept and Revert on draftable kinds (mix, gate, note, language pack) when the project's policy says so.
+- Entity changes go through MCP and land directly, or as drafts with Accept and Revert on draftable kinds (mix, gate, note, language pack) when the project's policy says so. Accepting is a person's decision: `drafts.accept` is forbidden to agents; an agent may revert its own draft (phase 1: mixes; the policy per kind is the project's agent profile `draftPolicy`, set in Agent settings and filled by the wizard from `defaults.yaml` `agent.draft_policy`; a project without a profile falls back to `defaults.yaml` `drafts.*`).
 - File changes commit on the session branch; the Recipe document lists open session branches and their diffs against `main`.
 - On session end the branch is merged fast-forward when it applies cleanly and the permission preset allows auto-merge; otherwise it stays as "Session changes" with a three-way diff for the user to accept or discard. Branches are kept 30 days after merge.
 - Parallel sessions never share a worktree; their conflicts appear only at merge, never at runtime.
@@ -102,7 +102,7 @@ Every mutating tool accepts `dryRun`; the verbs come from the vocabulary in the 
 |  | Claude Code | opencode |
 | --- | --- | --- |
 | Launch | `claude-agent-acp` adapter | `opencode acp` |
-| Authentication | The user's Claude subscription, as the CLI | Providers configured in the project's `opencode.json`, including self-hosted vLLM |
+| Authentication | The owner's Claude subscription, as the CLI, for every session kind (R6) | MiniMax through its Token Plan by default; other providers configured in the project's `opencode.json`, including self-hosted vLLM (R6) |
 | Permissions | `.claude/settings.json` rendered from the preset | `permission` block rendered from the preset |
 | Skills | `.claude/skills` | `.claude/skills` (Claude-compatible path, [docs](https://opencode.ai/docs/skills)) |
 | Resume | Where the adapter supports it; otherwise summary injection | Native session resume |
@@ -125,7 +125,16 @@ Cadence ships `cadence-data`, `cadence-train`, `cadence-eval`, `cadence-deploy`,
 
 ### Entities and contract
 
-Agent session: kind, driver, model, project, prompt, references, state, branch, merge state, budget and use, transcript (events), started by. Agent profile: driver, model, permission preset, config file references. Endpoints: `POST /projects/{p}/agent-sessions`, `GET /agent-sessions/{id}/transcript`, `POST /agent-sessions/{id}/messages`, `:cancel`, `:pause`, `:resume`, `:merge`; topics `agent.session.{id}`, `agent.sessions`, `recipe.{path}`, `approvals`.
+Agent session: kind, driver, model, project, prompt, references, state, branch, merge state, budget and use, transcript (events), started by. Agent profile: driver, model, permission preset, config file references. Operations (R1): `agentSessions.new|list|get` (`/projects/{p}/agent-sessions`, `/agent-sessions/{id}`), `agentSessions.cancel|pause|resume|accept|revert` (`/agent-sessions/{id}:<verb>`; accept/revert merge or discard the branch as a whole), `agentMessages.new|list` (`/agent-sessions/{id}/agent-messages`, the transcript paged by `seq`); topics `agent.session.{id}` (transcript entries `agent_message.created|updated` and the session header `agent_session.changed`), `agent.sessions` (`agent_session.created|changed`), `recipe.{path}`, `approvals`.
+
+Phase 1 as built (2026-09-30):
+- The agent host speaks `hostSessions.claim|report|ask|decision` (tag `host`, R1) with its own credential (`cah_`, minted into `CADENCE_HOST_TOKEN_FILE` at start or by `cadence admin host-token`). A claim long-polls for sessions to start, messages, controls and permission decisions; everything it returns is taken once.
+- The session token is minted when a host claims the session (and again, the old one revoked, when another host takes it over), not at create: it then exists only in the host's memory and the agent's `session/new`.
+- Transcript entries are coalesced by the host: one entry per text block, one per tool call updated in place, one plan per turn, turn start/end with usage, commits. Permission entries are the server's (from `ask` and from gated commands through a pipeline hook), so ACP permission requests and gated commands share the transcript and the Approvals panel.
+- An ACP permission request first goes to the preset (`policy.AnswerPermission`: tool classes, file rules, shell patterns, web); only an `ask` becomes an approval of kind `agent_permission`, answered back to the host (once → allow_once, for session → allow_always, deny or expiry → reject_once), never replayed.
+- Ending: `agentSessions.cancel {"end": true}`; accept/revert need the session paused or ended (a paused one ends). A decided gated command is told to the agent as a notice (its next turn).
+- Clocks: the stuck-turn clock and the runaway rule run in the host; the idle clock and the project's daily token budget on the server (a chore and each report).
+- Chat and the context bridge (web): the workspace's Chat is pinned to a session (`panels.chat.pinnedTo`), further sessions open their own Chat; the transcript is `agentMessages.list` paged by `after` and patched in place from `agent.session.{id}` (one cache write per animation frame, windowed past 200 entries); permission entries embed the Approvals card; Session changes show the branch diff and `agentSessions.accept|revert`. Ctrl/Cmd+I and Ask agent attach the selection as `@<kind>:<id>[#part]` chips with a prefilled intent; Explain this starts a read-only session with the entity and its help article; references in replies are links; an attribution badge opens the session's Chat at the tool call (`Cadence-Tool-Call-Id` = the transcript's tool-call id). The finished turn is announced in the polite live region, streamed tokens never.
 
 ## Guardrails
 
@@ -159,6 +168,6 @@ Agents may do anything reversible on their own; anything that spends real GPU ti
 Cadence does not build its own agent sandbox: Claude Code and opencode each ship a permission system, and Cadence configures those from the project's permission preset; Cadence adds only what the agents cannot know — token scope, secret isolation, and approvals for GPU spend and production.
 
 - The permission preset renders into `.claude/settings.json` (allow, deny and ask rules, sandbox settings) and `opencode.json` (`permission` block); the agent enforces them, Cadence shows what was rendered in Agent settings.
-- Tool results that carry content from data — transcripts, notes, help articles, search hits — are marked as data in the MCP response so the agent's own injection defences apply; no Cadence tool ever executes an instruction found in data, and anything that could reach production sits behind an approval a person decides.
+- Tool results that carry content from data — transcripts, notes, help articles, search hits — are marked as data in the MCP response so the agent's own injection defences apply (every result is JSON with the content under `data` or `error` and a `note` saying it is data, not instructions); no Cadence tool ever executes an instruction found in data, and anything that could reach production sits behind an approval a person decides.
 - Secrets never appear in an agent context: jobs receive them from the control plane at start; the MCP token is the only credential an agent holds.
 - Container images are pinned by digest, dependencies by lockfiles; updates arrive as reviewed pull requests.

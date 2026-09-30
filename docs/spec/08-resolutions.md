@@ -29,6 +29,8 @@ Guiding choices, applied throughout:
   `/registry/models/{id}:export`).
 - Exempt from the vocabulary and from MCP: operations tagged `auth` (`login`, `logout`, invitations) and `me`
   (workspaces, saved views); they keep `<entity>.<verb>` ids but the generator doesn't publish them as tools.
+  Phase 1 adds `host`: the agent host's protocol (`hostSessions.claim|report|ask|decision`), authenticated by the
+  agent-host credential only; like `auth` its operations are not commands.
 - Renames that make the spec pass its own rule:
 
 | Spec says | Becomes | Why |
@@ -79,10 +81,12 @@ Three different clocks: *stuck turn* — no ACP update for 5 min during a turn �
 pauses the session; the approval itself expires after 24 h → treated as deny, Telegram notified. Defaults live in
 `defaults.yaml`.
 
-**R6 · Claude authentication** (00 decision log) — **confirm**
-Driver supports two auth modes per profile: subscription login and API key. Default: subscription for interactive
-and read-only sessions; API key for playbook and scheduled sessions (no person present) until the subscription terms
-are confirmed to cover them. Budgets count turns/tokens in both modes; money only for API key.
+**R6 · Agent authentication** (00 decision log) — confirmed by the owner, 2026-09-29
+Claude Code sessions of every kind — interactive, read-only, playbook and scheduled — use the owner's Claude
+subscription. The driver keeps an API-key mode per profile as a fallback; budgets count turns and tokens in both
+modes, money only for an API key. opencode sessions use MiniMax through its Token Plan: the provider key lives with the
+agent's own configuration in the `agent-credentials` volume (R3), never in Cadence's secrets or an agent context. The
+free OpenCode Zen model used in spike A1 is for spikes and gated live tests only; it sends prompts to a third party.
 
 **R7 · Permission presets and policy engine** (spec gap)
 - Preset = `control-plane/templates/presets/<name>.yaml`, Cadence-level rules in three classes:
@@ -92,6 +96,7 @@ are confirmed to cover them. Budgets count turns/tokens in both modes; money onl
 - Policy engine runs server-side on every command: input = actor, verb class, entity, scope, estimate vs remaining
   budget; output = `allow` | `approval` | `deny`. Rules are data (same YAML), evaluated in order, first match wins;
   default `deny`. Agent-side files never widen what the server allows.
+- Built in phase 1 (stream C): presets `guardrails-default` and `read-only` in `control-plane/templates/presets/`, the engine and the renderer in `control-plane/internal/policy`, the guide `docs/help/guides/approvals.md`. Rules marked `everyone` apply to people too (R8 `baseline`); agent-side files allow every Cadence tool the server may run (spend and gated ones answer with an approval id) and deny the rest.
 
 **R8 · Reserved aliases** (B3)
 `baseline` and `production` are reserved. `aliases.set baseline` is a gated command (returns `202 {approvalId}`);
@@ -275,6 +280,10 @@ person pastes it into Cadence to confirm, which proves the script that ran is th
 
 - **R34 · CLI**: `cadence <entity> <verb>` generated from the contract, same Go binary as the server
   (`cadence serve`), hand-written `admin` and `smoke` subcommands; generated commands in phase 1, `smoke` in phase 4.
+  Built in phase 1: `make gen` writes the command table from the contract (exempt `auth`/`me` and planned operations
+  left out); flags come from parameters (`p` → `--project`, `If-Match` → `--if-match`), `--body` takes JSON,
+  `@file` or `@-`, the Idempotency-Key is generated; `CADENCE_URL`/`CADENCE_TOKEN` or `--url`/`--token`; JSON on
+  stdout, the problem on stderr with exit 1, usage errors exit 2 (help article `guides.cli`).
 - **R35 · Agent budget in `project.yaml`** (C4): `agent_budget: {turns_per_day: 200, tokens_per_turn: …}`; money
   appears only with API-key auth.
 - **R36 · Versions** (C6): a pipeline version is its commit SHA; `YYYY-MM-DD.<sha>` is for registry assets only.
@@ -666,7 +675,6 @@ none of them.
 
 | # | Question | Default built meanwhile |
 | --- | --- | --- |
-| R6 | Do the Claude subscription terms cover ACP-driven and scheduled headless sessions? | API key for playbook/scheduled sessions |
 | R28 | Legal basis and term for keeping curated call audio | 90 days captured, 24 months curated |
 | R26 | Licences of the auxiliary models | Adopt only what passes the check |
 | R31 | Peak concurrent streams per card at Эра | 32 |

@@ -1,30 +1,55 @@
-// Cadence agent host — spike A1 skeleton.
+// Cadence agent host (docs/spec/05-agents.md "Agent integration"): claims agent sessions from the control plane and
+// runs each one — a worktree of the project repository on session/<id>, Claude Code (claude-agent-acp) or opencode
+// (`opencode acp`) spawned through one ACP client (src/acp, src/drivers) as the session's own Unix user with the
+// Cadence MCP server, a commit per turn, budgets, runaway checks and the stuck-turn clock — and reports every
+// transcript entry and state change back (src/host).
 //
-// Responsibilities (see system spec, "Agent integration"):
-//   1. create a worktree of the project's recipes branch with AGENTS.md, CLAUDE.md, .claude/skills
-//   2. spawn the agent: `opencode acp` or the claude-agent-acp adapter
-//   3. ACP: initialize → session/new (cwd = worktree, mcpServers = [Cadence MCP + session token])
-//   4. relay: user messages → session/prompt; session/update → POST /agent-sessions/{id}/events
-//   5. permissions: session/request_permission → approval card; policy engine answers the routine ones
-//   6. cancel: POST /agent-sessions/{id}:cancel → session/cancel
-//
-// The driver interface is ACP-shaped; a native Claude Agent SDK driver may replace step 2–3 for named gaps only.
+//   npx tsx src/index.ts          run the host (configuration: src/host/config.ts)
+//   npx tsx src/login.ts claude   put the Claude login into the agent-credentials volume (once)
 
-export type Driver = "claude" | "opencode";
+import { driverFor } from "./drivers/index.ts";
+import { HttpControlPlane } from "./host/api.ts";
+import { realClock } from "./host/clock.ts";
+import { loadConfig } from "./host/config.ts";
+import { jsonLogger } from "./host/log.ts";
+import { SessionManager } from "./host/manager.ts";
 
-export interface AgentSession {
-  id: string;
-  driver: Driver;
-  projectId: string;
-  worktree: string;
-}
-
-export function describe(s: AgentSession): string {
-  return `${s.driver} session ${s.id} in ${s.worktree} (project ${s.projectId})`;
-}
+export const VERSION = process.env.CADENCE_VERSION ?? "dev";
 
 export async function main(): Promise<void> {
-  console.log("cadence agent host stub — run spike A1 (docs/spikes/A1-acp-client.md) to fill this in");
+  const log = jsonLogger((process.env.CADENCE_LOG_LEVEL as "info" | "debug" | undefined) ?? "info");
+  const cfg = loadConfig(process.env);
+  if (!cfg.uids) log.log("warn", "sessions run as the host's own user (not root, or CADENCE_SESSION_UIDS=off): no per-session isolation");
+  if (!cfg.credentials) log.log("warn", "CADENCE_AGENT_CREDENTIALS is not set: agents use their default login (development only, R3)");
+  const manager = new SessionManager({
+    cp: new HttpControlPlane(cfg.baseUrl, cfg.token),
+    clock: realClock,
+    hostId: cfg.hostId,
+    baseUrl: cfg.baseUrl,
+    dataDir: cfg.dataDir,
+    ...(cfg.credentials ? { credentials: cfg.credentials } : {}),
+    ...(cfg.uids ? { uids: cfg.uids } : {}),
+    hostEnv: process.env,
+    log,
+    driverFor,
+    capacity: cfg.capacity,
+    version: VERSION,
+  });
+  const stop = new AbortController();
+  for (const sig of ["SIGINT", "SIGTERM"] as const) {
+    process.once(sig, () => {
+      log.log("info", "shutting down", { signal: sig });
+      stop.abort();
+    });
+  }
+  log.log("info", "cadence agent host started", { hostId: cfg.hostId, controlPlane: cfg.baseUrl, version: VERSION });
+  await manager.run(stop.signal);
+  await manager.shutdown();
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) void main();
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main().catch((err: unknown) => {
+    process.stderr.write(`cadence agent host: ${err instanceof Error ? err.message : String(err)}\n`);
+    process.exit(1);
+  });
+}

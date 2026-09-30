@@ -1,0 +1,11 @@
+$ cadence projects get --project alpha --url {server}/api/ --token cdk_flag
+exit 0
+--- requests
+GET /api/projects/alpha
+  header Authorization: Bearer cdk_flag
+  header Accept: application/json
+--- stdout
+{
+  "ok": true
+}
+--- stderr

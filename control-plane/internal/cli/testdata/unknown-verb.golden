@@ -1,0 +1,30 @@
+$ cadence projects explode
+exit 2
+--- requests
+--- stdout
+--- stderr
+cadence: projects has no verb "explode"
+
+usage: cadence projects <verb> [flags]
+
+Verbs:
+  adopt      Adopt a registry version into the project by reference
+             --project PROJECT --if-match IF_MATCH [--dry-run] --body JSON
+  archive    Archive a project (soft; reversible)
+             --project PROJECT --if-match IF_MATCH [--dry-run]
+  edit       Change a project's name, description, locales, domain, base model or budgets
+             --project PROJECT --if-match IF_MATCH [--dry-run] --body JSON
+  get        Get a project
+             --project PROJECT
+  list       List projects
+             [--archived]
+  new        Create a project from the wizard's choices and bootstrap its repository (202 with the bootstrap job)
+             [--dry-run] --body JSON
+  note       Append a dated learning to the project's NOTES.md and commit it to main
+             --project PROJECT --if-match IF_MATCH [--dry-run] --body JSON
+  search     Search entities of this project and the registry with free text and qualifiers
+             --project PROJECT [--q Q] [--limit N]
+  sync       Diff the project against Cadence's current templates and skills and offer the update as a draft branch
+             --project PROJECT --if-match IF_MATCH [--dry-run]
+
+`cadence projects <verb> --help` describes one verb's flags and body.

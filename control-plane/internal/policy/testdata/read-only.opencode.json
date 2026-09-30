@@ -1,0 +1,35 @@
+{
+  "read": {
+    "*": "allow",
+    ".env": "deny",
+    ".env.*": "deny",
+    "**/*.pem": "deny",
+    "**/*.key": "deny"
+  },
+  "edit": {
+    "*": "deny",
+    ".env": "deny",
+    ".env.*": "deny",
+    "**/*.pem": "deny",
+    "**/*.key": "deny"
+  },
+  "glob": "allow",
+  "grep": "allow",
+  "list": "allow",
+  "bash": {
+    "*": "deny",
+    "git status": "allow",
+    "git diff *": "allow",
+    "git log *": "allow",
+    "git show *": "allow"
+  },
+  "webfetch": "deny",
+  "websearch": "deny",
+  "external_directory": "deny",
+  "cadence_*": "deny",
+  "cadence_approvals_list": "allow",
+  "cadence_help_get": "allow",
+  "cadence_jobs_wait": "allow",
+  "cadence_projects_get": "allow",
+  "cadence_projects_list": "allow"
+}

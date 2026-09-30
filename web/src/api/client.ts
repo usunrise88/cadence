@@ -46,17 +46,41 @@ export function newIdempotencyKey(): string {
   return crypto.randomUUID();
 }
 
+/** The CSRF header: every browser request carries it; the server requires it on cookie-authenticated mutations. */
+export const CLIENT_HEADER = "Cadence-Client";
+
+const unauthenticatedListeners = new Set<() => void>();
+
+/**
+ * Called when a request outside sign-in answers 401: the session expired, was signed out elsewhere or revoked.
+ * The app shows the sign-in screen.
+ */
+export function onUnauthenticated(fn: () => void): () => void {
+  unauthenticatedListeners.add(fn);
+  return () => unauthenticatedListeners.delete(fn);
+}
+
+/** Sign-in operations answer 401 for a wrong password; that is the form's business, not a lost session. */
+function isAuthRequest(request: Request | undefined): boolean {
+  if (!request) return false;
+  const path = new URL(request.url, location.origin).pathname;
+  return /\/auth(?:[:/]|$)/.test(path);
+}
+
 let configured = false;
 
 export function configureApiClient(baseUrl = "/api"): void {
   if (configured) return;
   configured = true;
-  client.setConfig({ baseUrl, throwOnError: true });
+  // Same-origin cookies carry the session; the SPA never sees the token (HttpOnly).
+  client.setConfig({ baseUrl, throwOnError: true, credentials: "same-origin" });
   client.interceptors.request.use((request) => {
     if (!request.headers.has("traceparent")) request.headers.set("traceparent", newTraceparent());
+    request.headers.set(CLIENT_HEADER, "web");
     return request;
   });
-  client.interceptors.error.use((error, response) => {
+  client.interceptors.error.use((error, response, request) => {
+    if (response?.status === 401 && !isAuthRequest(request)) for (const fn of unauthenticatedListeners) fn();
     if (isProblem(error)) return new ProblemError(error);
     const status = response?.status ?? 0;
     return new ProblemError({
@@ -73,6 +97,11 @@ export function commandHeaders(rev?: number): { "Idempotency-Key": string; "If-M
   const h: Record<string, string> = { "Idempotency-Key": newIdempotencyKey(), traceparent: newTraceparent() };
   if (rev !== undefined) h["If-Match"] = `"${rev}"`;
   return h as { "Idempotency-Key": string; "If-Match": string; traceparent: string };
+}
+
+/** Headers for a command based on an opaque version (a branch head sha): If-Match carries it quoted. */
+export function commandHeadersAt(etag: string): { "Idempotency-Key": string; "If-Match": string; traceparent: string } {
+  return { "Idempotency-Key": newIdempotencyKey(), traceparent: newTraceparent(), "If-Match": `"${etag}"` };
 }
 
 /** Parses an ETag ("3", W/"3") into a revision number. */

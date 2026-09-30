@@ -10,6 +10,10 @@ export type Notice = {
   detail?: string;
   /** Help article for the notice, e.g. errors.precondition-failed. */
   helpId?: string;
+  /** A panel that shows what the notice is about (Approvals for an approval request). */
+  open?: { label: string; panel: string };
+  /** Where the notice came from: a live event (its seq) is recorded once. */
+  seq?: number;
   at: string;
   read: boolean;
 };
@@ -29,7 +33,7 @@ export const useNotices = create<NoticeState>((set) => ({
   items: [],
   announcement: "",
   push: (n) =>
-    set((s) => ({
+    set((s) => (n.seq !== undefined && s.items.some((i) => i.seq === n.seq) ? s : {
       items: [{ ...n, id: nextId++, at: new Date().toISOString(), read: false }, ...s.items].slice(0, 200),
       announcement: `${n.title}${n.detail ? `: ${n.detail}` : ""}`,
     })),

@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AgentMessagesNewData, AgentMessagesNewErrors, AgentMessagesNewResponses, AgentSessionsCancelData, AgentSessionsCancelErrors, AgentSessionsCancelResponses, AgentSessionsNewData, AgentSessionsNewErrors, AgentSessionsNewResponses, AliasesSetData, AliasesSetErrors, AliasesSetResponses, ApprovalsApproveData, ApprovalsApproveErrors, ApprovalsApproveResponses, ApprovalsDenyData, ApprovalsDenyErrors, ApprovalsDenyResponses, ApprovalsListData, ApprovalsListErrors, ApprovalsListResponses, EventsListData, EventsListErrors, EventsListResponses, HelpGetData, HelpGetErrors, HelpGetResponses, HelpSearchData, HelpSearchErrors, HelpSearchResponses, JobsCancelData, JobsCancelErrors, JobsCancelResponses, JobsGetData, JobsGetErrors, JobsGetResponses, MeGetData, MeGetErrors, MeGetResponses, MixesEditData, MixesEditErrors, MixesEditResponses, MixesNewData, MixesNewErrors, MixesNewResponses, MixesPreviewData, MixesPreviewErrors, MixesPreviewResponses, MountsListData, MountsListErrors, MountsListResponses, MountsNewData, MountsNewErrors, MountsNewResponses, ProjectsArchiveData, ProjectsArchiveErrors, ProjectsArchiveResponses, ProjectsEditData, ProjectsEditErrors, ProjectsEditResponses, ProjectsGetData, ProjectsGetErrors, ProjectsGetResponses, ProjectsListData, ProjectsListErrors, ProjectsListResponses, ProjectsNewData, ProjectsNewErrors, ProjectsNewResponses, RegistrySearchData, RegistrySearchErrors, RegistrySearchResponses, RunsNewData, RunsNewErrors, RunsNewResponses, WorkspacesGetData, WorkspacesGetErrors, WorkspacesGetResponses, WorkspacesListData, WorkspacesListErrors, WorkspacesListResponses, WorkspacesSetData, WorkspacesSetErrors, WorkspacesSetResponses } from './types.gen';
+import type { AdoptionsListData, AdoptionsListErrors, AdoptionsListResponses, AgentMessagesListData, AgentMessagesListErrors, AgentMessagesListResponses, AgentMessagesNewData, AgentMessagesNewErrors, AgentMessagesNewResponses, AgentModelsListData, AgentModelsListErrors, AgentModelsListResponses, AgentProfileEditData, AgentProfileEditErrors, AgentProfileEditResponses, AgentProfileGetData, AgentProfileGetErrors, AgentProfileGetResponses, AgentSessionsAcceptData, AgentSessionsAcceptErrors, AgentSessionsAcceptResponses, AgentSessionsCancelData, AgentSessionsCancelErrors, AgentSessionsCancelResponses, AgentSessionsGetData, AgentSessionsGetErrors, AgentSessionsGetResponses, AgentSessionsListData, AgentSessionsListErrors, AgentSessionsListResponses, AgentSessionsNewData, AgentSessionsNewErrors, AgentSessionsNewResponses, AgentSessionsPauseData, AgentSessionsPauseErrors, AgentSessionsPauseResponses, AgentSessionsResumeData, AgentSessionsResumeErrors, AgentSessionsResumeResponses, AgentSessionsRevertData, AgentSessionsRevertErrors, AgentSessionsRevertResponses, AliasesGetData, AliasesGetErrors, AliasesGetResponses, AliasesListData, AliasesListErrors, AliasesListResponses, AliasesSetData, AliasesSetErrors, AliasesSetResponses, ApprovalsApproveData, ApprovalsApproveErrors, ApprovalsApproveResponses, ApprovalsDenyData, ApprovalsDenyErrors, ApprovalsDenyResponses, ApprovalsGetData, ApprovalsGetErrors, ApprovalsGetResponses, ApprovalsListData, ApprovalsListErrors, ApprovalsListResponses, AuditListData, AuditListErrors, AuditListResponses, AuthGetData, AuthGetErrors, AuthGetResponses, AuthLoginData, AuthLoginErrors, AuthLoginResponses, AuthLogoutData, AuthLogoutErrors, AuthLogoutResponses, AuthSetupData, AuthSetupErrors, AuthSetupResponses, BaseModelsGetData, BaseModelsGetErrors, BaseModelsGetResponses, BaseModelsListData, BaseModelsListErrors, BaseModelsListResponses, BranchesAcceptData, BranchesAcceptErrors, BranchesAcceptResponses, BranchesGetData, BranchesGetErrors, BranchesGetResponses, BranchesListData, BranchesListErrors, BranchesListResponses, BranchesRevertData, BranchesRevertErrors, BranchesRevertResponses, CollectionsGetData, CollectionsGetErrors, CollectionsGetResponses, CollectionsListData, CollectionsListErrors, CollectionsListResponses, ComputeEditData, ComputeEditErrors, ComputeEditResponses, ComputeGetData, ComputeGetErrors, ComputeGetResponses, ComputeListData, ComputeListErrors, ComputeListResponses, CredentialsListData, CredentialsListErrors, CredentialsListResponses, CredentialsNewData, CredentialsNewErrors, CredentialsNewResponses, CredentialsRevokeData, CredentialsRevokeErrors, CredentialsRevokeResponses, DatasetsGetData, DatasetsGetErrors, DatasetsGetResponses, DatasetsListData, DatasetsListErrors, DatasetsListResponses, DefaultsGetData, DefaultsGetErrors, DefaultsGetResponses, DraftsAcceptData, DraftsAcceptErrors, DraftsAcceptResponses, DraftsGetData, DraftsGetErrors, DraftsGetResponses, DraftsListData, DraftsListErrors, DraftsListResponses, DraftsRevertData, DraftsRevertErrors, DraftsRevertResponses, EventsListData, EventsListErrors, EventsListResponses, HelpGetData, HelpGetErrors, HelpGetResponses, HelpSearchData, HelpSearchErrors, HelpSearchResponses, HostSessionsAskData, HostSessionsAskErrors, HostSessionsAskResponses, HostSessionsClaimData, HostSessionsClaimErrors, HostSessionsClaimResponses, HostSessionsDecisionData, HostSessionsDecisionErrors, HostSessionsDecisionResponses, HostSessionsReportData, HostSessionsReportErrors, HostSessionsReportResponses, JobsCancelData, JobsCancelErrors, JobsCancelResponses, JobsGetData, JobsGetErrors, JobsGetResponses, JobsListData, JobsListErrors, JobsListResponses, JobsWaitData, JobsWaitErrors, JobsWaitResponses, MeGetData, MeGetErrors, MeGetResponses, MixesEditData, MixesEditErrors, MixesEditResponses, MixesGetData, MixesGetErrors, MixesGetResponses, MixesListData, MixesListErrors, MixesListResponses, MixesNewData, MixesNewErrors, MixesNewResponses, MixesPreviewData, MixesPreviewErrors, MixesPreviewResponses, MountsListData, MountsListErrors, MountsListResponses, MountsNewData, MountsNewErrors, MountsNewResponses, PoliciesEditData, PoliciesEditErrors, PoliciesEditResponses, PoliciesGetData, PoliciesGetErrors, PoliciesGetResponses, ProjectsAdoptData, ProjectsAdoptErrors, ProjectsAdoptResponses, ProjectsArchiveData, ProjectsArchiveErrors, ProjectsArchiveResponses, ProjectsEditData, ProjectsEditErrors, ProjectsEditResponses, ProjectsGetData, ProjectsGetErrors, ProjectsGetResponses, ProjectsListData, ProjectsListErrors, ProjectsListResponses, ProjectsNewData, ProjectsNewErrors, ProjectsNewResponses, ProjectsNoteData, ProjectsNoteErrors, ProjectsNoteResponses, ProjectsSearchData, ProjectsSearchErrors, ProjectsSearchResponses, ProjectsSyncData, ProjectsSyncErrors, ProjectsSyncResponses, RecipesGetData, RecipesGetErrors, RecipesGetResponses, RecipesListData, RecipesListErrors, RecipesListResponses, RegistrySearchData, RegistrySearchErrors, RegistrySearchResponses, RunsNewData, RunsNewErrors, RunsNewResponses, SecretsListData, SecretsListErrors, SecretsListResponses, SecretsNewData, SecretsNewErrors, SecretsNewResponses, TemplatesGetData, TemplatesGetErrors, TemplatesGetResponses, TemplatesListData, TemplatesListErrors, TemplatesListResponses, TotpConfirmData, TotpConfirmErrors, TotpConfirmResponses, TotpDisableData, TotpDisableErrors, TotpDisableResponses, TotpEnrollData, TotpEnrollErrors, TotpEnrollResponses, ViewsGetData, ViewsGetErrors, ViewsGetResponses, ViewsListData, ViewsListErrors, ViewsListResponses, ViewsSetData, ViewsSetErrors, ViewsSetResponses, WorkspacesGetData, WorkspacesGetErrors, WorkspacesGetResponses, WorkspacesListData, WorkspacesListErrors, WorkspacesListResponses, WorkspacesSetData, WorkspacesSetErrors, WorkspacesSetResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -24,7 +24,7 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
 export const projectsList = <ThrowOnError extends boolean = false>(options?: Options<ProjectsListData, ThrowOnError>): RequestResult<ProjectsListResponses, ProjectsListErrors, ThrowOnError> => (options?.client ?? client).get<ProjectsListResponses, ProjectsListErrors, ThrowOnError>({ url: '/projects', ...options });
 
 /**
- * Create a project
+ * Create a project from the wizard's choices and bootstrap its repository (202 with the bootstrap job)
  */
 export const projectsNew = <ThrowOnError extends boolean = false>(options: Options<ProjectsNewData, ThrowOnError>): RequestResult<ProjectsNewResponses, ProjectsNewErrors, ThrowOnError> => (options.client ?? client).post<ProjectsNewResponses, ProjectsNewErrors, ThrowOnError>({
     url: '/projects',
@@ -41,7 +41,7 @@ export const projectsNew = <ThrowOnError extends boolean = false>(options: Optio
 export const projectsGet = <ThrowOnError extends boolean = false>(options: Options<ProjectsGetData, ThrowOnError>): RequestResult<ProjectsGetResponses, ProjectsGetErrors, ThrowOnError> => (options.client ?? client).get<ProjectsGetResponses, ProjectsGetErrors, ThrowOnError>({ url: '/projects/{p}', ...options });
 
 /**
- * Rename or re-describe a project
+ * Change a project's name, description, locales, domain, base model or budgets
  */
 export const projectsEdit = <ThrowOnError extends boolean = false>(options: Options<ProjectsEditData, ThrowOnError>): RequestResult<ProjectsEditResponses, ProjectsEditErrors, ThrowOnError> => (options.client ?? client).patch<ProjectsEditResponses, ProjectsEditErrors, ThrowOnError>({
     url: '/projects/{p}',
@@ -100,15 +100,20 @@ export const helpSearch = <ThrowOnError extends boolean = false>(options?: Optio
 export const helpGet = <ThrowOnError extends boolean = false>(options: Options<HelpGetData, ThrowOnError>): RequestResult<HelpGetResponses, HelpGetErrors, ThrowOnError> => (options.client ?? client).get<HelpGetResponses, HelpGetErrors, ThrowOnError>({ url: '/help/{id}', ...options });
 
 /**
- * Search registry versions of every kind (empty until phase 1 registers kinds)
+ * Search registry versions of every kind by text and qualifiers (kind:, tag:, locale:, state:)
  */
 export const registrySearch = <ThrowOnError extends boolean = false>(options?: Options<RegistrySearchData, ThrowOnError>): RequestResult<RegistrySearchResponses, RegistrySearchErrors, ThrowOnError> => (options?.client ?? client).get<RegistrySearchResponses, RegistrySearchErrors, ThrowOnError>({ url: '/registry', ...options });
 
 /**
- * Save a mix (input_cfg groups, weights, temperature, replay share)
+ * Sign-in state — whether first start is pending and who is signed in
  */
-export const mixesNew = <ThrowOnError extends boolean = false>(options: Options<MixesNewData, ThrowOnError>): RequestResult<MixesNewResponses, MixesNewErrors, ThrowOnError> => (options.client ?? client).post<MixesNewResponses, MixesNewErrors, ThrowOnError>({
-    url: '/projects/{p}/mixes',
+export const authGet = <ThrowOnError extends boolean = false>(options?: Options<AuthGetData, ThrowOnError>): RequestResult<AuthGetResponses, AuthGetErrors, ThrowOnError> => (options?.client ?? client).get<AuthGetResponses, AuthGetErrors, ThrowOnError>({ url: '/auth', ...options });
+
+/**
+ * First start — set the admin password once and sign in; refused (409) once a password is set
+ */
+export const authSetup = <ThrowOnError extends boolean = false>(options: Options<AuthSetupData, ThrowOnError>): RequestResult<AuthSetupResponses, AuthSetupErrors, ThrowOnError> => (options.client ?? client).post<AuthSetupResponses, AuthSetupErrors, ThrowOnError>({
+    url: '/auth:setup',
     ...options,
     headers: {
         'Content-Type': 'application/json',
@@ -117,10 +122,10 @@ export const mixesNew = <ThrowOnError extends boolean = false>(options: Options<
 });
 
 /**
- * Hours per language for a mix without saving it
+ * Sign in with username, password and, when enabled, a TOTP code; rate-limited per address and username
  */
-export const mixesPreview = <ThrowOnError extends boolean = false>(options: Options<MixesPreviewData, ThrowOnError>): RequestResult<MixesPreviewResponses, MixesPreviewErrors, ThrowOnError> => (options.client ?? client).post<MixesPreviewResponses, MixesPreviewErrors, ThrowOnError>({
-    url: '/projects/{p}/mixes:preview',
+export const authLogin = <ThrowOnError extends boolean = false>(options: Options<AuthLoginData, ThrowOnError>): RequestResult<AuthLoginResponses, AuthLoginErrors, ThrowOnError> => (options.client ?? client).post<AuthLoginResponses, AuthLoginErrors, ThrowOnError>({
+    url: '/auth:login',
     ...options,
     headers: {
         'Content-Type': 'application/json',
@@ -129,10 +134,20 @@ export const mixesPreview = <ThrowOnError extends boolean = false>(options: Opti
 });
 
 /**
- * Edit a mix; agent edits land as drafts
+ * Sign out — revoke this browser's session and clear its cookie
  */
-export const mixesEdit = <ThrowOnError extends boolean = false>(options: Options<MixesEditData, ThrowOnError>): RequestResult<MixesEditResponses, MixesEditErrors, ThrowOnError> => (options.client ?? client).patch<MixesEditResponses, MixesEditErrors, ThrowOnError>({
-    url: '/mixes/{id}',
+export const authLogout = <ThrowOnError extends boolean = false>(options?: Options<AuthLogoutData, ThrowOnError>): RequestResult<AuthLogoutResponses, AuthLogoutErrors, ThrowOnError> => (options?.client ?? client).post<AuthLogoutResponses, AuthLogoutErrors, ThrowOnError>({ url: '/auth:logout', ...options });
+
+/**
+ * Start TOTP enrollment for the signed-in user — a new secret, active once confirmed
+ */
+export const totpEnroll = <ThrowOnError extends boolean = false>(options?: Options<TotpEnrollData, ThrowOnError>): RequestResult<TotpEnrollResponses, TotpEnrollErrors, ThrowOnError> => (options?.client ?? client).post<TotpEnrollResponses, TotpEnrollErrors, ThrowOnError>({ url: '/auth/totp:enroll', ...options });
+
+/**
+ * Confirm TOTP enrollment with a current code; sign-in asks for a code from then on
+ */
+export const totpConfirm = <ThrowOnError extends boolean = false>(options: Options<TotpConfirmData, ThrowOnError>): RequestResult<TotpConfirmResponses, TotpConfirmErrors, ThrowOnError> => (options.client ?? client).post<TotpConfirmResponses, TotpConfirmErrors, ThrowOnError>({
+    url: '/auth/totp:confirm',
     ...options,
     headers: {
         'Content-Type': 'application/json',
@@ -141,7 +156,181 @@ export const mixesEdit = <ThrowOnError extends boolean = false>(options: Options
 });
 
 /**
- * Start a training run; ?dryRun=true returns GPU-hours, card and duration
+ * Turn TOTP off for the signed-in user with a current code
+ */
+export const totpDisable = <ThrowOnError extends boolean = false>(options: Options<TotpDisableData, ThrowOnError>): RequestResult<TotpDisableResponses, TotpDisableErrors, ThrowOnError> => (options.client ?? client).post<TotpDisableResponses, TotpDisableErrors, ThrowOnError>({
+    url: '/auth/totp:disable',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * List credentials (sessions, API keys, agent tokens) without their secrets
+ */
+export const credentialsList = <ThrowOnError extends boolean = false>(options?: Options<CredentialsListData, ThrowOnError>): RequestResult<CredentialsListResponses, CredentialsListErrors, ThrowOnError> => (options?.client ?? client).get<CredentialsListResponses, CredentialsListErrors, ThrowOnError>({ url: '/credentials', ...options });
+
+/**
+ * Create a personal API key (cdk_) scoped to one project or to registry read
+ */
+export const credentialsNew = <ThrowOnError extends boolean = false>(options: Options<CredentialsNewData, ThrowOnError>): RequestResult<CredentialsNewResponses, CredentialsNewErrors, ThrowOnError> => (options.client ?? client).post<CredentialsNewResponses, CredentialsNewErrors, ThrowOnError>({
+    url: '/credentials',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Revoke a credential; requests carrying it are refused from now on (irreversible)
+ */
+export const credentialsRevoke = <ThrowOnError extends boolean = false>(options: Options<CredentialsRevokeData, ThrowOnError>): RequestResult<CredentialsRevokeResponses, CredentialsRevokeErrors, ThrowOnError> => (options.client ?? client).post<CredentialsRevokeResponses, CredentialsRevokeErrors, ThrowOnError>({ url: '/credentials/{id}:revoke', ...options });
+
+/**
+ * List registry collections (named series of immutable versions), optionally of one kind or tag
+ */
+export const collectionsList = <ThrowOnError extends boolean = false>(options?: Options<CollectionsListData, ThrowOnError>): RequestResult<CollectionsListResponses, CollectionsListErrors, ThrowOnError> => (options?.client ?? client).get<CollectionsListResponses, CollectionsListErrors, ThrowOnError>({ url: '/registry/collections', ...options });
+
+/**
+ * Get a registry collection with its versions, newest first
+ */
+export const collectionsGet = <ThrowOnError extends boolean = false>(options: Options<CollectionsGetData, ThrowOnError>): RequestResult<CollectionsGetResponses, CollectionsGetErrors, ThrowOnError> => (options.client ?? client).get<CollectionsGetResponses, CollectionsGetErrors, ThrowOnError>({ url: '/registry/collections/{id}', ...options });
+
+/**
+ * List base model versions (Hugging Face repository at a pinned revision, licence, model family)
+ */
+export const baseModelsList = <ThrowOnError extends boolean = false>(options?: Options<BaseModelsListData, ThrowOnError>): RequestResult<BaseModelsListResponses, BaseModelsListErrors, ThrowOnError> => (options?.client ?? client).get<BaseModelsListResponses, BaseModelsListErrors, ThrowOnError>({ url: '/registry/base-models', ...options });
+
+/**
+ * Get a base model version with the projects that use it
+ */
+export const baseModelsGet = <ThrowOnError extends boolean = false>(options: Options<BaseModelsGetData, ThrowOnError>): RequestResult<BaseModelsGetResponses, BaseModelsGetErrors, ThrowOnError> => (options.client ?? client).get<BaseModelsGetResponses, BaseModelsGetErrors, ThrowOnError>({ url: '/registry/base-models/{id}', ...options });
+
+/**
+ * List dataset versions (immutable, fingerprinted selections with splits and statistics)
+ */
+export const datasetsList = <ThrowOnError extends boolean = false>(options?: Options<DatasetsListData, ThrowOnError>): RequestResult<DatasetsListResponses, DatasetsListErrors, ThrowOnError> => (options?.client ?? client).get<DatasetsListResponses, DatasetsListErrors, ThrowOnError>({ url: '/registry/datasets', ...options });
+
+/**
+ * Get a dataset version with its splits, statistics and the projects that use it
+ */
+export const datasetsGet = <ThrowOnError extends boolean = false>(options: Options<DatasetsGetData, ThrowOnError>): RequestResult<DatasetsGetResponses, DatasetsGetErrors, ThrowOnError> => (options.client ?? client).get<DatasetsGetResponses, DatasetsGetErrors, ThrowOnError>({ url: '/registry/datasets/{id}', ...options });
+
+/**
+ * List template versions (instruction templates, permission presets, skills, pipeline templates, agent config)
+ */
+export const templatesList = <ThrowOnError extends boolean = false>(options?: Options<TemplatesListData, ThrowOnError>): RequestResult<TemplatesListResponses, TemplatesListErrors, ThrowOnError> => (options?.client ?? client).get<TemplatesListResponses, TemplatesListErrors, ThrowOnError>({ url: '/registry/templates', ...options });
+
+/**
+ * Get a template version with its files (paths and hashes) and the projects that use it
+ */
+export const templatesGet = <ThrowOnError extends boolean = false>(options: Options<TemplatesGetData, ThrowOnError>): RequestResult<TemplatesGetResponses, TemplatesGetErrors, ThrowOnError> => (options.client ?? client).get<TemplatesGetResponses, TemplatesGetErrors, ThrowOnError>({ url: '/registry/templates/{id}', ...options });
+
+/**
+ * Adopt a registry version into the project by reference
+ */
+export const projectsAdopt = <ThrowOnError extends boolean = false>(options: Options<ProjectsAdoptData, ThrowOnError>): RequestResult<ProjectsAdoptResponses, ProjectsAdoptErrors, ThrowOnError> => (options.client ?? client).post<ProjectsAdoptResponses, ProjectsAdoptErrors, ThrowOnError>({
+    url: '/projects/{p}:adopt',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Registry versions the project adopted, with the aliases pointing at each
+ */
+export const adoptionsList = <ThrowOnError extends boolean = false>(options: Options<AdoptionsListData, ThrowOnError>): RequestResult<AdoptionsListResponses, AdoptionsListErrors, ThrowOnError> => (options.client ?? client).get<AdoptionsListResponses, AdoptionsListErrors, ThrowOnError>({ url: '/projects/{p}/adoptions', ...options });
+
+/**
+ * The project's aliases (train-current, baseline, production, …) and the versions they point at
+ */
+export const aliasesList = <ThrowOnError extends boolean = false>(options: Options<AliasesListData, ThrowOnError>): RequestResult<AliasesListResponses, AliasesListErrors, ThrowOnError> => (options.client ?? client).get<AliasesListResponses, AliasesListErrors, ThrowOnError>({ url: '/projects/{p}/aliases', ...options });
+
+/**
+ * Get one project alias and the version it points at
+ */
+export const aliasesGet = <ThrowOnError extends boolean = false>(options: Options<AliasesGetData, ThrowOnError>): RequestResult<AliasesGetResponses, AliasesGetErrors, ThrowOnError> => (options.client ?? client).get<AliasesGetResponses, AliasesGetErrors, ThrowOnError>({ url: '/projects/{p}/aliases/{name}', ...options });
+
+/**
+ * Point a project alias at an adopted registry version (baseline is gated, production moves only by promotion)
+ */
+export const aliasesSet = <ThrowOnError extends boolean = false>(options: Options<AliasesSetData, ThrowOnError>): RequestResult<AliasesSetResponses, AliasesSetErrors, ThrowOnError> => (options.client ?? client).put<AliasesSetResponses, AliasesSetErrors, ThrowOnError>({
+    url: '/projects/{p}/aliases/{name}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Hosts and their cards (memory cap per card, allowed job kinds) with health
+ */
+export const computeList = <ThrowOnError extends boolean = false>(options?: Options<ComputeListData, ThrowOnError>): RequestResult<ComputeListResponses, ComputeListErrors, ThrowOnError> => (options?.client ?? client).get<ComputeListResponses, ComputeListErrors, ThrowOnError>({ url: '/compute', ...options });
+
+/**
+ * Get a host and its cards
+ */
+export const computeGet = <ThrowOnError extends boolean = false>(options: Options<ComputeGetData, ThrowOnError>): RequestResult<ComputeGetResponses, ComputeGetErrors, ThrowOnError> => (options.client ?? client).get<ComputeGetResponses, ComputeGetErrors, ThrowOnError>({ url: '/compute/{id}', ...options });
+
+/**
+ * Change a host's description or a card's memory cap and allowed job kinds
+ */
+export const computeEdit = <ThrowOnError extends boolean = false>(options: Options<ComputeEditData, ThrowOnError>): RequestResult<ComputeEditResponses, ComputeEditErrors, ThrowOnError> => (options.client ?? client).patch<ComputeEditResponses, ComputeEditErrors, ThrowOnError>({
+    url: '/compute/{id}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Named credentials (name, kind, scope, last use); values are never returned
+ */
+export const secretsList = <ThrowOnError extends boolean = false>(options?: Options<SecretsListData, ThrowOnError>): RequestResult<SecretsListResponses, SecretsListErrors, ThrowOnError> => (options?.client ?? client).get<SecretsListResponses, SecretsListErrors, ThrowOnError>({ url: '/secrets', ...options });
+
+/**
+ * Store a named credential; the value is write-only and never returned
+ */
+export const secretsNew = <ThrowOnError extends boolean = false>(options: Options<SecretsNewData, ThrowOnError>): RequestResult<SecretsNewResponses, SecretsNewErrors, ThrowOnError> => (options.client ?? client).post<SecretsNewResponses, SecretsNewErrors, ThrowOnError>({
+    url: '/secrets',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * The versioned defaults (defaults.yaml) every form, budget and estimate starts from
+ */
+export const defaultsGet = <ThrowOnError extends boolean = false>(options?: Options<DefaultsGetData, ThrowOnError>): RequestResult<DefaultsGetResponses, DefaultsGetErrors, ThrowOnError> => (options?.client ?? client).get<DefaultsGetResponses, DefaultsGetErrors, ThrowOnError>({ url: '/defaults', ...options });
+
+/**
+ * Instance-wide policies (budgets now; retention, PII and cache quotas later)
+ */
+export const policiesGet = <ThrowOnError extends boolean = false>(options?: Options<PoliciesGetData, ThrowOnError>): RequestResult<PoliciesGetResponses, PoliciesGetErrors, ThrowOnError> => (options?.client ?? client).get<PoliciesGetResponses, PoliciesGetErrors, ThrowOnError>({ url: '/policies', ...options });
+
+/**
+ * Change instance-wide policies; values must stay inside the ranges in defaults.yaml
+ */
+export const policiesEdit = <ThrowOnError extends boolean = false>(options: Options<PoliciesEditData, ThrowOnError>): RequestResult<PoliciesEditResponses, PoliciesEditErrors, ThrowOnError> => (options.client ?? client).patch<PoliciesEditResponses, PoliciesEditErrors, ThrowOnError>({
+    url: '/policies',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Start a training run; until phase 2 only ?dryRun=true answers, with GPU-hours, card, duration and data
  */
 export const runsNew = <ThrowOnError extends boolean = false>(options: Options<RunsNewData, ThrowOnError>): RequestResult<RunsNewResponses, RunsNewErrors, ThrowOnError> => (options.client ?? client).post<RunsNewResponses, RunsNewErrors, ThrowOnError>({
     url: '/projects/{p}/runs',
@@ -153,17 +342,233 @@ export const runsNew = <ThrowOnError extends boolean = false>(options: Options<R
 });
 
 /**
+ * Approvals, pending first, then the most recently decided
+ */
+export const approvalsList = <ThrowOnError extends boolean = false>(options?: Options<ApprovalsListData, ThrowOnError>): RequestResult<ApprovalsListResponses, ApprovalsListErrors, ThrowOnError> => (options?.client ?? client).get<ApprovalsListResponses, ApprovalsListErrors, ThrowOnError>({ url: '/approvals', ...options });
+
+/**
+ * Get an approval with its stored request and, once approved, the replay's result
+ */
+export const approvalsGet = <ThrowOnError extends boolean = false>(options: Options<ApprovalsGetData, ThrowOnError>): RequestResult<ApprovalsGetResponses, ApprovalsGetErrors, ThrowOnError> => (options.client ?? client).get<ApprovalsGetResponses, ApprovalsGetErrors, ThrowOnError>({ url: '/approvals/{id}', ...options });
+
+/**
+ * Approve a pending request; the stored request runs as its original actor
+ */
+export const approvalsApprove = <ThrowOnError extends boolean = false>(options: Options<ApprovalsApproveData, ThrowOnError>): RequestResult<ApprovalsApproveResponses, ApprovalsApproveErrors, ThrowOnError> => (options.client ?? client).post<ApprovalsApproveResponses, ApprovalsApproveErrors, ThrowOnError>({
+    url: '/approvals/{id}:approve',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Deny a pending request; it never runs
+ */
+export const approvalsDeny = <ThrowOnError extends boolean = false>(options: Options<ApprovalsDenyData, ThrowOnError>): RequestResult<ApprovalsDenyResponses, ApprovalsDenyErrors, ThrowOnError> => (options.client ?? client).post<ApprovalsDenyResponses, ApprovalsDenyErrors, ThrowOnError>({
+    url: '/approvals/{id}:deny',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * The audit log, newest first — every command, denial and failed attempt with its actor and cause
+ */
+export const auditList = <ThrowOnError extends boolean = false>(options?: Options<AuditListData, ThrowOnError>): RequestResult<AuditListResponses, AuditListErrors, ThrowOnError> => (options?.client ?? client).get<AuditListResponses, AuditListErrors, ThrowOnError>({ url: '/audit', ...options });
+
+/**
+ * Jobs of a project, newest first
+ */
+export const jobsList = <ThrowOnError extends boolean = false>(options: Options<JobsListData, ThrowOnError>): RequestResult<JobsListResponses, JobsListErrors, ThrowOnError> => (options.client ?? client).get<JobsListResponses, JobsListErrors, ThrowOnError>({ url: '/projects/{p}/jobs', ...options });
+
+/**
  * Get a job
  */
 export const jobsGet = <ThrowOnError extends boolean = false>(options: Options<JobsGetData, ThrowOnError>): RequestResult<JobsGetResponses, JobsGetErrors, ThrowOnError> => (options.client ?? client).get<JobsGetResponses, JobsGetErrors, ThrowOnError>({ url: '/jobs/{id}', ...options });
 
 /**
- * Cancel a job
+ * Cancel a job; a queued job stops at once, a running one when its handler notices
  */
 export const jobsCancel = <ThrowOnError extends boolean = false>(options: Options<JobsCancelData, ThrowOnError>): RequestResult<JobsCancelResponses, JobsCancelErrors, ThrowOnError> => (options.client ?? client).post<JobsCancelResponses, JobsCancelErrors, ThrowOnError>({ url: '/jobs/{id}:cancel', ...options });
 
 /**
- * Launch Claude Code or opencode in a project worktree
+ * Wait until a job ends or the timeout passes, then return it (agents)
+ */
+export const jobsWait = <ThrowOnError extends boolean = false>(options: Options<JobsWaitData, ThrowOnError>): RequestResult<JobsWaitResponses, JobsWaitErrors, ThrowOnError> => (options.client ?? client).get<JobsWaitResponses, JobsWaitErrors, ThrowOnError>({ url: '/jobs/{id}:wait', ...options });
+
+/**
+ * Append a dated learning to the project's NOTES.md and commit it to main
+ */
+export const projectsNote = <ThrowOnError extends boolean = false>(options: Options<ProjectsNoteData, ThrowOnError>): RequestResult<ProjectsNoteResponses, ProjectsNoteErrors, ThrowOnError> => (options.client ?? client).post<ProjectsNoteResponses, ProjectsNoteErrors, ThrowOnError>({
+    url: '/projects/{p}:note',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Diff the project against Cadence's current templates and skills and offer the update as a draft branch
+ */
+export const projectsSync = <ThrowOnError extends boolean = false>(options: Options<ProjectsSyncData, ThrowOnError>): RequestResult<ProjectsSyncResponses, ProjectsSyncErrors, ThrowOnError> => (options.client ?? client).post<ProjectsSyncResponses, ProjectsSyncErrors, ThrowOnError>({ url: '/projects/{p}:sync', ...options });
+
+/**
+ * The project's agent profile with the config files rendered from it
+ */
+export const agentProfileGet = <ThrowOnError extends boolean = false>(options: Options<AgentProfileGetData, ThrowOnError>): RequestResult<AgentProfileGetResponses, AgentProfileGetErrors, ThrowOnError> => (options.client ?? client).get<AgentProfileGetResponses, AgentProfileGetErrors, ThrowOnError>({ url: '/projects/{p}/agent-profile', ...options });
+
+/**
+ * Change the agent profile; the rendered config files and AGENTS.md are committed to main
+ */
+export const agentProfileEdit = <ThrowOnError extends boolean = false>(options: Options<AgentProfileEditData, ThrowOnError>): RequestResult<AgentProfileEditResponses, AgentProfileEditErrors, ThrowOnError> => (options.client ?? client).patch<AgentProfileEditResponses, AgentProfileEditErrors, ThrowOnError>({
+    url: '/projects/{p}/agent-profile',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Agent models per driver, with the default the wizard picks
+ */
+export const agentModelsList = <ThrowOnError extends boolean = false>(options?: Options<AgentModelsListData, ThrowOnError>): RequestResult<AgentModelsListResponses, AgentModelsListErrors, ThrowOnError> => (options?.client ?? client).get<AgentModelsListResponses, AgentModelsListErrors, ThrowOnError>({ url: '/catalog/agent-models', ...options });
+
+/**
+ * Files of the project repository at a branch or commit
+ */
+export const recipesList = <ThrowOnError extends boolean = false>(options: Options<RecipesListData, ThrowOnError>): RequestResult<RecipesListResponses, RecipesListErrors, ThrowOnError> => (options.client ?? client).get<RecipesListResponses, RecipesListErrors, ThrowOnError>({ url: '/projects/{p}/recipes', ...options });
+
+/**
+ * One file of the project repository at a branch or commit, with its commit history
+ */
+export const recipesGet = <ThrowOnError extends boolean = false>(options: Options<RecipesGetData, ThrowOnError>): RequestResult<RecipesGetResponses, RecipesGetErrors, ThrowOnError> => (options.client ?? client).get<RecipesGetResponses, RecipesGetErrors, ThrowOnError>({ url: '/projects/{p}/recipes/{path}', ...options });
+
+/**
+ * Open branches of the project repository (session and sync branches not merged into main)
+ */
+export const branchesList = <ThrowOnError extends boolean = false>(options: Options<BranchesListData, ThrowOnError>): RequestResult<BranchesListResponses, BranchesListErrors, ThrowOnError> => (options.client ?? client).get<BranchesListResponses, BranchesListErrors, ThrowOnError>({ url: '/projects/{p}/branches', ...options });
+
+/**
+ * A branch with its diff against main and the conflicts a merge would meet
+ */
+export const branchesGet = <ThrowOnError extends boolean = false>(options: Options<BranchesGetData, ThrowOnError>): RequestResult<BranchesGetResponses, BranchesGetErrors, ThrowOnError> => (options.client ?? client).get<BranchesGetResponses, BranchesGetErrors, ThrowOnError>({ url: '/projects/{p}/branches/{name}', ...options });
+
+/**
+ * Merge a sync branch into main (fast-forward when possible, otherwise a merge commit)
+ */
+export const branchesAccept = <ThrowOnError extends boolean = false>(options: Options<BranchesAcceptData, ThrowOnError>): RequestResult<BranchesAcceptResponses, BranchesAcceptErrors, ThrowOnError> => (options.client ?? client).post<BranchesAcceptResponses, BranchesAcceptErrors, ThrowOnError>({ url: '/projects/{p}/branches/{name}:accept', ...options });
+
+/**
+ * Discard a sync branch without merging it
+ */
+export const branchesRevert = <ThrowOnError extends boolean = false>(options: Options<BranchesRevertData, ThrowOnError>): RequestResult<BranchesRevertResponses, BranchesRevertErrors, ThrowOnError> => (options.client ?? client).post<BranchesRevertResponses, BranchesRevertErrors, ThrowOnError>({ url: '/projects/{p}/branches/{name}:revert', ...options });
+
+/**
+ * Search entities of this project and the registry with free text and qualifiers
+ */
+export const projectsSearch = <ThrowOnError extends boolean = false>(options: Options<ProjectsSearchData, ThrowOnError>): RequestResult<ProjectsSearchResponses, ProjectsSearchErrors, ThrowOnError> => (options.client ?? client).get<ProjectsSearchResponses, ProjectsSearchErrors, ThrowOnError>({ url: '/projects/{p}:search', ...options });
+
+/**
+ * The user's saved searches in a project, by name
+ */
+export const viewsList = <ThrowOnError extends boolean = false>(options: Options<ViewsListData, ThrowOnError>): RequestResult<ViewsListResponses, ViewsListErrors, ThrowOnError> => (options.client ?? client).get<ViewsListResponses, ViewsListErrors, ThrowOnError>({ url: '/me/projects/{p}/views', ...options });
+
+/**
+ * Get a saved search
+ */
+export const viewsGet = <ThrowOnError extends boolean = false>(options: Options<ViewsGetData, ThrowOnError>): RequestResult<ViewsGetResponses, ViewsGetErrors, ThrowOnError> => (options.client ?? client).get<ViewsGetResponses, ViewsGetErrors, ThrowOnError>({ url: '/me/projects/{p}/views/{name}', ...options });
+
+/**
+ * Save a search under a name (If-Match; omit it only to create)
+ */
+export const viewsSet = <ThrowOnError extends boolean = false>(options: Options<ViewsSetData, ThrowOnError>): RequestResult<ViewsSetResponses, ViewsSetErrors, ThrowOnError> => (options.client ?? client).put<ViewsSetResponses, ViewsSetErrors, ThrowOnError>({
+    url: '/me/projects/{p}/views/{name}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * The project's mixes, most recently changed first
+ */
+export const mixesList = <ThrowOnError extends boolean = false>(options: Options<MixesListData, ThrowOnError>): RequestResult<MixesListResponses, MixesListErrors, ThrowOnError> => (options.client ?? client).get<MixesListResponses, MixesListErrors, ThrowOnError>({ url: '/projects/{p}/mixes', ...options });
+
+/**
+ * Save a new mix (groups over dataset versions, weights, temperature, replay share) at revision 1
+ */
+export const mixesNew = <ThrowOnError extends boolean = false>(options: Options<MixesNewData, ThrowOnError>): RequestResult<MixesNewResponses, MixesNewErrors, ThrowOnError> => (options.client ?? client).post<MixesNewResponses, MixesNewErrors, ThrowOnError>({
+    url: '/projects/{p}/mixes',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Hours per language and sampling shares of a mix without saving it (metadata only, no GPU)
+ */
+export const mixesPreview = <ThrowOnError extends boolean = false>(options: Options<MixesPreviewData, ThrowOnError>): RequestResult<MixesPreviewResponses, MixesPreviewErrors, ThrowOnError> => (options.client ?? client).post<MixesPreviewResponses, MixesPreviewErrors, ThrowOnError>({
+    url: '/projects/{p}/mixes:preview',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Get a mix at its current revision, with its preview and who is editing it
+ */
+export const mixesGet = <ThrowOnError extends boolean = false>(options: Options<MixesGetData, ThrowOnError>): RequestResult<MixesGetResponses, MixesGetErrors, ThrowOnError> => (options.client ?? client).get<MixesGetResponses, MixesGetErrors, ThrowOnError>({ url: '/mixes/{id}', ...options });
+
+/**
+ * Edit a mix; a person's edit makes a new revision, an agent's lands as a draft when the draft policy says so
+ */
+export const mixesEdit = <ThrowOnError extends boolean = false>(options: Options<MixesEditData, ThrowOnError>): RequestResult<MixesEditResponses, MixesEditErrors, ThrowOnError> => (options.client ?? client).patch<MixesEditResponses, MixesEditErrors, ThrowOnError>({
+    url: '/mixes/{id}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Drafts of one entity (open ones by default), newest first
+ */
+export const draftsList = <ThrowOnError extends boolean = false>(options: Options<DraftsListData, ThrowOnError>): RequestResult<DraftsListResponses, DraftsListErrors, ThrowOnError> => (options.client ?? client).get<DraftsListResponses, DraftsListErrors, ThrowOnError>({ url: '/drafts', ...options });
+
+/**
+ * Get a draft with its changes against the revision it was based on
+ */
+export const draftsGet = <ThrowOnError extends boolean = false>(options: Options<DraftsGetData, ThrowOnError>): RequestResult<DraftsGetResponses, DraftsGetErrors, ThrowOnError> => (options.client ?? client).get<DraftsGetResponses, DraftsGetErrors, ThrowOnError>({ url: '/drafts/{id}', ...options });
+
+/**
+ * Apply a draft as a new revision of its entity, attributed to the person who accepts it
+ */
+export const draftsAccept = <ThrowOnError extends boolean = false>(options: Options<DraftsAcceptData, ThrowOnError>): RequestResult<DraftsAcceptResponses, DraftsAcceptErrors, ThrowOnError> => (options.client ?? client).post<DraftsAcceptResponses, DraftsAcceptErrors, ThrowOnError>({ url: '/drafts/{id}:accept', ...options });
+
+/**
+ * Discard a draft; its entity stays as it is
+ */
+export const draftsRevert = <ThrowOnError extends boolean = false>(options: Options<DraftsRevertData, ThrowOnError>): RequestResult<DraftsRevertResponses, DraftsRevertErrors, ThrowOnError> => (options.client ?? client).post<DraftsRevertResponses, DraftsRevertErrors, ThrowOnError>({ url: '/drafts/{id}:revert', ...options });
+
+/**
+ * The project's agent sessions, live ones first, then the most recently changed
+ */
+export const agentSessionsList = <ThrowOnError extends boolean = false>(options: Options<AgentSessionsListData, ThrowOnError>): RequestResult<AgentSessionsListResponses, AgentSessionsListErrors, ThrowOnError> => (options.client ?? client).get<AgentSessionsListResponses, AgentSessionsListErrors, ThrowOnError>({ url: '/projects/{p}/agent-sessions', ...options });
+
+/**
+ * Start Claude Code or opencode on its own branch session/<id> of the project repository
  */
 export const agentSessionsNew = <ThrowOnError extends boolean = false>(options: Options<AgentSessionsNewData, ThrowOnError>): RequestResult<AgentSessionsNewResponses, AgentSessionsNewErrors, ThrowOnError> => (options.client ?? client).post<AgentSessionsNewResponses, AgentSessionsNewErrors, ThrowOnError>({
     url: '/projects/{p}/agent-sessions',
@@ -175,12 +580,56 @@ export const agentSessionsNew = <ThrowOnError extends boolean = false>(options: 
 });
 
 /**
- * Stop the session's current turn
+ * Get an agent session with its state, budget and use, branch and merge state
  */
-export const agentSessionsCancel = <ThrowOnError extends boolean = false>(options: Options<AgentSessionsCancelData, ThrowOnError>): RequestResult<AgentSessionsCancelResponses, AgentSessionsCancelErrors, ThrowOnError> => (options.client ?? client).post<AgentSessionsCancelResponses, AgentSessionsCancelErrors, ThrowOnError>({ url: '/agent-sessions/{id}:cancel', ...options });
+export const agentSessionsGet = <ThrowOnError extends boolean = false>(options: Options<AgentSessionsGetData, ThrowOnError>): RequestResult<AgentSessionsGetResponses, AgentSessionsGetErrors, ThrowOnError> => (options.client ?? client).get<AgentSessionsGetResponses, AgentSessionsGetErrors, ThrowOnError>({ url: '/agent-sessions/{id}', ...options });
 
 /**
- * User message with entity references; updates arrive on agent.session.{id}
+ * Stop the session's current turn; with end, also end the session
+ */
+export const agentSessionsCancel = <ThrowOnError extends boolean = false>(options: Options<AgentSessionsCancelData, ThrowOnError>): RequestResult<AgentSessionsCancelResponses, AgentSessionsCancelErrors, ThrowOnError> => (options.client ?? client).post<AgentSessionsCancelResponses, AgentSessionsCancelErrors, ThrowOnError>({
+    url: '/agent-sessions/{id}:cancel',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Pause a session; the current turn stops, the worktree is committed and the agent process ends
+ */
+export const agentSessionsPause = <ThrowOnError extends boolean = false>(options: Options<AgentSessionsPauseData, ThrowOnError>): RequestResult<AgentSessionsPauseResponses, AgentSessionsPauseErrors, ThrowOnError> => (options.client ?? client).post<AgentSessionsPauseResponses, AgentSessionsPauseErrors, ThrowOnError>({ url: '/agent-sessions/{id}:pause', ...options });
+
+/**
+ * Resume a paused session (ACP session/resume, else a new ACP session with a transcript summary)
+ */
+export const agentSessionsResume = <ThrowOnError extends boolean = false>(options: Options<AgentSessionsResumeData, ThrowOnError>): RequestResult<AgentSessionsResumeResponses, AgentSessionsResumeErrors, ThrowOnError> => (options.client ?? client).post<AgentSessionsResumeResponses, AgentSessionsResumeErrors, ThrowOnError>({
+    url: '/agent-sessions/{id}:resume',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Merge the session branch into main as a whole and end the session
+ */
+export const agentSessionsAccept = <ThrowOnError extends boolean = false>(options: Options<AgentSessionsAcceptData, ThrowOnError>): RequestResult<AgentSessionsAcceptResponses, AgentSessionsAcceptErrors, ThrowOnError> => (options.client ?? client).post<AgentSessionsAcceptResponses, AgentSessionsAcceptErrors, ThrowOnError>({ url: '/agent-sessions/{id}:accept', ...options });
+
+/**
+ * Discard the session branch as a whole and end the session
+ */
+export const agentSessionsRevert = <ThrowOnError extends boolean = false>(options: Options<AgentSessionsRevertData, ThrowOnError>): RequestResult<AgentSessionsRevertResponses, AgentSessionsRevertErrors, ThrowOnError> => (options.client ?? client).post<AgentSessionsRevertResponses, AgentSessionsRevertErrors, ThrowOnError>({ url: '/agent-sessions/{id}:revert', ...options });
+
+/**
+ * The session transcript in order, one page after a sequence number
+ */
+export const agentMessagesList = <ThrowOnError extends boolean = false>(options: Options<AgentMessagesListData, ThrowOnError>): RequestResult<AgentMessagesListResponses, AgentMessagesListErrors, ThrowOnError> => (options.client ?? client).get<AgentMessagesListResponses, AgentMessagesListErrors, ThrowOnError>({ url: '/agent-sessions/{id}/agent-messages', ...options });
+
+/**
+ * Send a user message with entity references; the agent answers on agent.session.{id}
  */
 export const agentMessagesNew = <ThrowOnError extends boolean = false>(options: Options<AgentMessagesNewData, ThrowOnError>): RequestResult<AgentMessagesNewResponses, AgentMessagesNewErrors, ThrowOnError> => (options.client ?? client).post<AgentMessagesNewResponses, AgentMessagesNewErrors, ThrowOnError>({
     url: '/agent-sessions/{id}/agent-messages',
@@ -192,19 +641,45 @@ export const agentMessagesNew = <ThrowOnError extends boolean = false>(options: 
 });
 
 /**
- * Approvals, pending first
+ * Long-poll for work — sessions to start, messages to deliver, controls and permission decisions
  */
-export const approvalsList = <ThrowOnError extends boolean = false>(options?: Options<ApprovalsListData, ThrowOnError>): RequestResult<ApprovalsListResponses, ApprovalsListErrors, ThrowOnError> => (options?.client ?? client).get<ApprovalsListResponses, ApprovalsListErrors, ThrowOnError>({ url: '/approvals', ...options });
+export const hostSessionsClaim = <ThrowOnError extends boolean = false>(options: Options<HostSessionsClaimData, ThrowOnError>): RequestResult<HostSessionsClaimResponses, HostSessionsClaimErrors, ThrowOnError> => (options.client ?? client).post<HostSessionsClaimResponses, HostSessionsClaimErrors, ThrowOnError>({
+    url: '/host-sessions:claim',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
 
 /**
- * Approve a pending request
+ * Post a batch of transcript entries, the session state, usage and the ACP session id
  */
-export const approvalsApprove = <ThrowOnError extends boolean = false>(options: Options<ApprovalsApproveData, ThrowOnError>): RequestResult<ApprovalsApproveResponses, ApprovalsApproveErrors, ThrowOnError> => (options.client ?? client).post<ApprovalsApproveResponses, ApprovalsApproveErrors, ThrowOnError>({ url: '/approvals/{id}:approve', ...options });
+export const hostSessionsReport = <ThrowOnError extends boolean = false>(options: Options<HostSessionsReportData, ThrowOnError>): RequestResult<HostSessionsReportResponses, HostSessionsReportErrors, ThrowOnError> => (options.client ?? client).post<HostSessionsReportResponses, HostSessionsReportErrors, ThrowOnError>({
+    url: '/host-sessions/{id}:report',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
 
 /**
- * Deny a pending request
+ * Raise an ACP permission request; the preset answers it or it becomes an agent-permission approval
  */
-export const approvalsDeny = <ThrowOnError extends boolean = false>(options: Options<ApprovalsDenyData, ThrowOnError>): RequestResult<ApprovalsDenyResponses, ApprovalsDenyErrors, ThrowOnError> => (options.client ?? client).post<ApprovalsDenyResponses, ApprovalsDenyErrors, ThrowOnError>({ url: '/approvals/{id}:deny', ...options });
+export const hostSessionsAsk = <ThrowOnError extends boolean = false>(options: Options<HostSessionsAskData, ThrowOnError>): RequestResult<HostSessionsAskResponses, HostSessionsAskErrors, ThrowOnError> => (options.client ?? client).post<HostSessionsAskResponses, HostSessionsAskErrors, ThrowOnError>({
+    url: '/host-sessions/{id}:ask',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Read (or wait for) the decision on an agent-permission approval
+ */
+export const hostSessionsDecision = <ThrowOnError extends boolean = false>(options: Options<HostSessionsDecisionData, ThrowOnError>): RequestResult<HostSessionsDecisionResponses, HostSessionsDecisionErrors, ThrowOnError> => (options.client ?? client).get<HostSessionsDecisionResponses, HostSessionsDecisionErrors, ThrowOnError>({ url: '/host-sessions/{id}:decision', ...options });
 
 /**
  * Registered mounts and their health
@@ -216,18 +691,6 @@ export const mountsList = <ThrowOnError extends boolean = false>(options?: Optio
  */
 export const mountsNew = <ThrowOnError extends boolean = false>(options: Options<MountsNewData, ThrowOnError>): RequestResult<MountsNewResponses, MountsNewErrors, ThrowOnError> => (options.client ?? client).post<MountsNewResponses, MountsNewErrors, ThrowOnError>({
     url: '/mounts',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
-});
-
-/**
- * Point a project alias at a registry version (baseline is gated, production moves only by promotion)
- */
-export const aliasesSet = <ThrowOnError extends boolean = false>(options: Options<AliasesSetData, ThrowOnError>): RequestResult<AliasesSetResponses, AliasesSetErrors, ThrowOnError> => (options.client ?? client).put<AliasesSetResponses, AliasesSetErrors, ThrowOnError>({
-    url: '/projects/{p}/aliases/{name}',
     ...options,
     headers: {
         'Content-Type': 'application/json',

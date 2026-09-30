@@ -1,5 +1,6 @@
 # Cadence — one version for every image: `make up` sets CADENCE_VERSION from git.
-# Phase 1 adds Caddy TLS in front of the control plane and the agent host's sandbox (R3, R4, B7).
+# The agent host runs on an internal network whose only way out is the egress proxy (R3, R4); Caddy TLS in front of
+# the control plane is the host's own (R39, B7).
 x-version: &version
   CADENCE_VERSION: ${CADENCE_VERSION:-dev}
 
@@ -28,20 +29,58 @@ services:
     environment:
       DATABASE_URL: postgres://cadence:${POSTGRES_PASSWORD}@postgres:5432/cadence?sslmode=disable
       CADENCE_LOG_LEVEL: ${CADENCE_LOG_LEVEL:-info}
+      # Secret-store master key (R9); generated on first start when the file is missing — back it up.
+      CADENCE_MASTER_KEY_FILE: ${CADENCE_MASTER_KEY_FILE:-/data/master.key}
+      # The agent host's token (cah_…): issued at start when the file holds none that works; the host reads it.
+      CADENCE_HOST_TOKEN_FILE: /host-credential/token
     volumes:
       - cadence-data:/data # the image runs as uid 65532; a named volume is writable by it
-    ports: ["127.0.0.1:${CADENCE_PORT:-8080}:8080"] # localhost only until Caddy lands (phase 1)
+      - host-credential:/host-credential
+    ports: ["127.0.0.1:${CADENCE_PORT:-8080}:8080"] # localhost only; TLS ends at the host's Caddy (R39)
+    networks: [default, agents]
     depends_on:
       postgres: { condition: service_healthy }
 
+  # Runs the agent sessions (docs/spec/05-agents.md). Root inside the container only to start each session as its
+  # own Unix user (R3); no host mounts: the agent's own login lives in the agent-credentials volume (put it there
+  # once: `docker compose run --rm -it agent-host login claude`, `… login opencode`), worktrees in agent-sessions.
   agent-host:
     image: cadence/agent-host:${CADENCE_VERSION:-dev}
     build:
       context: ./agent-host
       args: *version
     environment:
-      CADENCE_API: http://control-plane:8080
-    # No host mounts: credentials get their own volume and sessions their own worktrees in phase 1 (R3).
+      CADENCE_URL: http://control-plane:8080
+      CADENCE_HOST_TOKEN_FILE: /host-credential/token
+      CADENCE_AGENT_CREDENTIALS: /agent-credentials
+      CADENCE_LOG_LEVEL: ${CADENCE_LOG_LEVEL:-info}
+      # Everything but the control plane leaves through the allowlisting proxy (R4); agents inherit these.
+      HTTPS_PROXY: http://egress-proxy:3128
+      HTTP_PROXY: http://egress-proxy:3128
+      NO_PROXY: control-plane,localhost,127.0.0.1
+    volumes:
+      - host-credential:/host-credential:ro
+      - agent-credentials:/agent-credentials
+      - agent-sessions:/var/lib/cadence-host
+    networks: [agents]
+    depends_on: [control-plane, egress-proxy]
+
+  # The agent sandbox's only egress (R4): HTTP CONNECT to the listed hosts, 403 for anything else. It is the control
+  # plane binary (`cadence egress-proxy`, internal/egress); the list is the whole policy — model providers, Hugging
+  # Face, PyPI and NGC. The control plane itself is reached directly on the agents network.
+  egress-proxy:
+    image: cadence/control-plane:${CADENCE_VERSION:-dev}
+    command: ["egress-proxy"]
+    environment:
+      CADENCE_EGRESS_ALLOW: >-
+        api.anthropic.com console.anthropic.com claude.ai
+        api.minimax.io api.minimaxi.com
+        opencode.ai models.dev
+        huggingface.co *.huggingface.co *.hf.co
+        pypi.org files.pythonhosted.org
+        nvcr.io *.nvcr.io ngc.nvidia.com *.ngc.nvidia.com
+      # opencode.ai serves OpenCode Zen, the free model of development and gated live tests only (R6).
+    networks: [agents, default]
     depends_on: [control-plane]
 
   # GPU worker: runs on the staging host inside the NeMo Speech container.
@@ -63,6 +102,14 @@ services:
   #             count: 1
   #             capabilities: [gpu]
 
+networks:
+  # No route out: the agent host reaches the control plane here and everything else through egress-proxy.
+  agents:
+    internal: true
+
 volumes:
   pgdata:
   cadence-data:
+  host-credential:
+  agent-credentials:
+  agent-sessions:

@@ -22,9 +22,13 @@ import { useHelp } from "@/shell/help/store";
 import { notify, notifyError } from "@/shell/notifications/store";
 import { commands, panels } from "@/shell/registries";
 import { useShell } from "@/shell/state";
+import { isSaveViewArgs, saveView } from "@/shell/search/views";
 import { useTheme } from "@/shell/theme/store";
 import { DEFAULT_WORKSPACES } from "@/shell/workspaces/schema";
 import { applyPlan, defaultPlan, restoreWorkspace, saveWorkspace } from "@/shell/workspaces/persistence";
+import { registerAgentCommands } from "./agents";
+import { registerApiCommands } from "./api";
+import { registerProjectCommands } from "./projects";
 import type { Command } from "./registry";
 
 // Built-in commands. Window and view commands are client-only (`view.*`); project and workspace commands call
@@ -153,12 +157,33 @@ export function registerBuiltinCommands(): void {
       }),
     ),
 
+    // ---- saved searches (per user per project; the Library's "Save view" runs this with { name, query })
+    {
+      id: "views.set",
+      operation: "views.set",
+      title: "Save search",
+      group: "Go",
+      hidden: true,
+      enabled: needProject,
+      run: async (ctx, args) => {
+        if (!ctx.project || !isSaveViewArgs(args)) return undefined;
+        try {
+          const view = await saveView(ctx.project, args);
+          notify({ level: "success", title: `Saved search “${args.name}”` });
+          return view;
+        } catch (err) {
+          notifyError(`Saved search “${args.name}” was not saved`, err);
+          throw err;
+        }
+      },
+    },
+
     // ---- projects
     { id: "projects.new", operation: "projects.new", title: "New project…", group: "Project", icon: Plus, run: () => useDialogs.getState().show({ kind: "newProject" }) },
     {
       id: "projects.edit",
       operation: "projects.edit",
-      title: "Rename project…",
+      title: "Edit project…",
       group: "Project",
       icon: EditPencil,
       enabled: needProject,
@@ -193,6 +218,9 @@ export function registerBuiltinCommands(): void {
     },
   ];
   for (const c of list) commands.register(c);
+  registerApiCommands();
+  registerProjectCommands();
+  registerAgentCommands();
 
   // One "Open <panel>" command per registered tool panel.
   for (const m of panels.all()) {

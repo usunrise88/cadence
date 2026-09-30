@@ -12,7 +12,7 @@ const manifest: PanelManifest = {
   defaultLocation: "centre",
   entity: "project",
   help: "panels.project",
-  commands: ["projects.edit", "projects.archive"],
+  commands: ["projects.edit", "projects.note", "projects.sync", "projects.archive"],
   empty: ProjectEmpty,
   component: ProjectPanel,
 };

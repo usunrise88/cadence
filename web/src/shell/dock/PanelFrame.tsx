@@ -1,11 +1,13 @@
 import { Component, useEffect, useLayoutEffect, useRef, useState, type ErrorInfo, type ReactNode } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { PortalContainerContext } from "@/lib/portal";
 import { cn } from "@/lib/utils";
 import { EmptyState, EntityHeader, EntityTabs, NextStep, type DocTab } from "@/shell/entity/primitives";
-import { parseDocRef } from "@/shell/entity/manifest";
-import { PanelContext } from "@/shell/panel/context";
+import { parseDocRef, type EntityManifest } from "@/shell/entity/manifest";
+import { patchDrafts } from "@/shell/entity/drafts";
+import { PanelContext, useTopic } from "@/shell/panel/context";
 import { entities, panels } from "@/shell/registries";
 import { PLACEHOLDER_PANEL, type PanelManifest, type PanelParams } from "@/shell/registry/panels";
 
@@ -73,6 +75,7 @@ function DocumentFrame({ manifest, doc, instanceId }: { manifest: PanelManifest;
   const ref = doc ? parseDocRef(doc) : undefined;
   const [tab, setTab] = useState<DocTab>("overview");
   const { data, error, isLoading } = (em?.useData ?? noData)(ref?.id ?? "");
+  useDocumentLive(em, ref?.id);
   if (!em) return <EmptyState step="prepare" title={`No entity manifest for ${manifest.entity ?? manifest.id}`} />;
   if (!ref) {
     const Empty = manifest.empty;
@@ -93,6 +96,22 @@ function DocumentFrame({ manifest, doc, instanceId }: { manifest: PanelManifest;
       <NextStep manifest={em} entity={data} />
     </>
   );
+}
+
+/**
+ * Live updates of an open document (docs/spec/06-platform.md "Cache patching"): while the document is visible the
+ * shell subscribes to its entity's topics and patches the query cache with the manifest's patcher, and the drafts
+ * of a draftable kind with the shared one — so an agent's draft appears without a re-fetch.
+ */
+function useDocumentLive(em: EntityManifest | undefined, id: string | undefined): void {
+  const qc = useQueryClient();
+  const live = em?.live;
+  const topics = live && id ? live.topics(id) : null;
+  useTopic(topics, (batch) => {
+    if (!live || !id) return;
+    live.patch(qc, batch, id);
+    if (em?.draftable) patchDrafts(qc, batch);
+  });
 }
 
 function noData(): { data?: undefined; error?: undefined; isLoading: boolean } {

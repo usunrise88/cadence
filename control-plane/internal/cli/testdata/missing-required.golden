@@ -1,0 +1,37 @@
+$ cadence projects edit --project alpha
+exit 2
+--- requests
+--- stdout
+--- stderr
+cadence projects edit: missing --if-match, --body
+
+usage: cadence projects edit --project PROJECT --if-match IF_MATCH [--dry-run] --body JSON
+
+Change a project's name, description, locales, domain, base model or budgets (PATCH /projects/{p}, operation projects.edit)
+
+Change what the wizard set: name, description, locales, domain, the default base model (a frozen
+base-model version id; it is adopted when it is not yet) and budgets. Changes to project facts
+re-render project.yaml and AGENTS.md and commit them to main. Send ifMatch with the etag (or rev) of
+your last projects.get; a stale revision fails with precondition-failed and the current revision to
+re-read.
+
+Flags:
+  --project            Project slug [required]
+  --if-match           The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev [required]
+  --dry-run            Validate and report what would happen without changing anything [boolean; default false]
+
+Body (--body JSON, --body @file or --body @- for standard input; required):
+  baseModel            (string) A frozen base-model version id (ver_…); adopted when the project has not yet
+  budgets              (object)
+  description          (string)
+  domain               (string)
+  locales              (array of string)
+  name                 (string)
+
+A command: an Idempotency-Key is generated for each call; --dry-run shows the result without a change.
+
+Global flags:
+  --url URL               control plane (env CADENCE_URL, default http://127.0.0.1:8080; /api is appended)
+  --token TOKEN           API key, sent as a Bearer token (env CADENCE_TOKEN; create one with credentials new)
+  --idempotency-key KEY   commands only: reuse a key to replay a command's first result (default: a new key)
+  -h, --help              this command's flags

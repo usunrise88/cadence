@@ -39,7 +39,12 @@ func TestGeneratedFilesInSync(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	cli, err := c.CLIGo()
+	if err != nil {
+		t.Fatal(err)
+	}
 	for path, want := range map[string][]byte{
+		"../cli/operations.gen.go":               cli,
 		"../mcp/tools.json":                      tools,
 		"../api/planned.gen.go":                  planned,
 		"../../../web/src/api/operations.gen.ts": c.OperationsTS(),
@@ -196,6 +201,15 @@ func TestCheckRejects(t *testing.T) {
 		{"exempt tag may use any verb", `  /sessions/{id}:login:
     x-cadence: { entity: sessions }
     post: { operationId: sessions.login, summary: s, tags: [auth], ` + sprintf(mut, ifm) + `, ` + resp + ` }`, ""},
+		{"auth operations are not commands", `  /auth:login:
+    x-cadence: { entity: auth, singleton: true }
+    post: { operationId: auth.login, summary: s, tags: [auth], ` + resp + ` }`, ""},
+		{"host operations are not commands", `  /host-sessions:claim:
+    x-cadence: { entity: hostSessions }
+    post: { operationId: hostSessions.claim, summary: s, tags: [host], ` + resp + ` }`, ""},
+		{"me mutations stay commands", `  /me:login:
+    x-cadence: { entity: me, singleton: true }
+    post: { operationId: me.login, summary: s, tags: [me], ` + resp + ` }`, "IdempotencyKey"},
 	}
 	vocab, err := filepath.Abs(vocabPath)
 	if err != nil {
@@ -230,4 +244,57 @@ func TestCheckRejects(t *testing.T) {
 
 func sprintf(format string, a ...any) string {
 	return strings.Replace(format, "%s", a[0].(string), 1)
+}
+
+// The CLI table names flags after parameters (p → --project, dryRun → --dry-run, If-Match → --if-match), leaves
+// out the Idempotency-Key, and refuses a parameter whose flag another parameter or a global flag already has.
+func TestCLIFlags(t *testing.T) {
+	vocab, err := filepath.Abs(vocabPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp := `responses: { "200": { description: ok }, default: { $ref: "#/components/responses/Problem" } }`
+	load := func(t *testing.T, path string) *Contract {
+		t.Helper()
+		f := filepath.Join(t.TempDir(), "openapi.yaml")
+		if err := os.WriteFile(f, []byte(header+path+"\n"+components), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		c, err := Load(f, vocab)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c
+	}
+	ok := load(t, `  /projects/{p}/runs/{runId}:cancel:
+    x-cadence: { entity: runs }
+    parameters: [{ name: p, in: path, required: true, schema: { type: string } }, { name: runId, in: path, required: true, schema: { type: string } }]
+    post: { operationId: runs.cancel, summary: s, tags: [x], `+sprintf(mut, `, { $ref: "#/components/parameters/IfMatch" }`)+`, `+resp+` }`)
+	src, err := ok.CLIGo()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`Flag: "project"`, `Flag: "run-id"`, `Flag: "if-match"`, `Flag: "dry-run"`, "IdempotencyKey: true"} {
+		if !strings.Contains(string(src), want) {
+			t.Errorf("CLI table lacks %s:\n%s", want, src)
+		}
+	}
+	if strings.Contains(string(src), `"Idempotency-Key"`) {
+		t.Error("Idempotency-Key must not be a flag")
+	}
+	for name, path := range map[string]string{
+		"collides with --project": `  /projects/{p}/runs:
+    x-cadence: { entity: runs }
+    parameters: [{ name: p, in: path, required: true, schema: { type: string } }]
+    get: { operationId: runs.list, summary: s, tags: [x], parameters: [{ name: project, in: query, schema: { type: string } }], ` + resp + ` }`,
+		"collides with a global flag": `  /runs:
+    x-cadence: { entity: runs }
+    get: { operationId: runs.list, summary: s, tags: [x], parameters: [{ name: token, in: query, schema: { type: string } }], ` + resp + ` }`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := load(t, path).CLIGo(); err == nil || !strings.Contains(err.Error(), "already") {
+				t.Errorf("CLIGo = %v, want a collision error", err)
+			}
+		})
+	}
 }

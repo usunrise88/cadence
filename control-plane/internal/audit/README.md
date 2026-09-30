@@ -1,0 +1,2 @@
+# internal/audit
+The audit log (`aud_<uuidv7>`, id order = time order): one row per committed command written in the command's transaction, plus one per denied, gated, expired or failed attempt, with actor, preset, project, outcome, HTTP status, rule and cause (command, tool call, approval). `List` pages newest first with a `before` cursor; `Prune` enforces the one-year retention (a daily River periodic job).

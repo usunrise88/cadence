@@ -6,17 +6,19 @@ up:            ## build all images with one version and start postgres, control 
 down:
 	docker compose down
 
-gen:           ## regenerate Go server stubs, MCP tool manifest, TS client and bundled help from api/ and docs/help
+gen:           ## regenerate Go server stubs, MCP tool manifest, CLI table, TS client and bundled help from api/ and docs/help
 	cd control-plane && go tool oapi-codegen -config oapi-codegen.yaml ../api/openapi.yaml
 	cd control-plane && go run ./cmd/mcpgen
 	cd web && npx openapi-ts
+	cd agent-host && npx openapi-ts
 	cd control-plane && go run ./cmd/helpsync
 
 check-gen: gen ## CI: fail when generated files are not committed
-	git diff --exit-code -- control-plane/internal/api control-plane/internal/mcp control-plane/internal/help/content web/src/api \
+	git diff --exit-code -- control-plane/internal/api control-plane/internal/mcp control-plane/internal/cli control-plane/internal/help/content web/src/api agent-host/src/api \
 	  || (echo "generated files are stale: run make gen and commit" && exit 1)
 
 lint:          ## golangci-lint, eslint (panel, Dockview and Base UI rules), tsc, ruff, mypy --strict
+	@! git grep -nE '^(<<<<<<<|>>>>>>>)( |$$)' -- ':!*.gen.*' || { echo 'merge conflict markers left in the files above'; exit 1; }
 	cd control-plane && golangci-lint run ./...
 	cd web && npx tsc -b && npx eslint . --max-warnings 0
 	cd agent-host && npm run typecheck
@@ -31,11 +33,11 @@ test:          ## unit + contract (no Docker): Go, Vitest (jsdom + headless Chro
 test-integration: ## control plane against Postgres in Docker (testcontainers): commands, outbox → SSE, workspaces
 	cd control-plane && go test -tags integration ./...
 
-ui-e2e:        ## Playwright on the shell against the real control plane (Postgres in Docker)
-	cd web && npx playwright test e2e/shell.spec.ts
+ui-e2e:        ## Playwright on sign-in and the shell against the real control plane (Postgres in Docker)
+	cd web && npx playwright test e2e/auth.spec.ts e2e/panels.spec.ts e2e/shell.spec.ts e2e/search.spec.ts e2e/mix.spec.ts e2e/chat.spec.ts
 
-spikes-measure: ## S1, S3, S4 measurements (weekly performance job); results in web/test-results/spikes
-	cd web && npx playwright test e2e/spikes.spec.ts
+spikes-measure: ## S1, S3, S4 and A4 measurements (weekly performance job); results in web/test-results/spikes
+	cd web && npx playwright test e2e/spikes.spec.ts e2e/a4-live-events.spec.ts
 
 contrast:      ## contrast of every Theming pairing, light and dark
 	cd web && node scripts/contrast.mjs

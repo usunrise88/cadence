@@ -82,8 +82,10 @@ export function DockHost({ onReady }: { onReady: (e: DockviewReadyEvent) => void
     onReady(e);
   };
 
+  // `isolate`: Dockview stacks floats at z-index 997-999; the dock is its own stacking context so those numbers stay
+  // inside it and menus, popovers and dialogs (portalled to the body at z-50) open above a float, not under it.
   return (
-    <div ref={root} className="relative h-full w-full" data-testid="dock">
+    <div ref={root} className="relative isolate h-full w-full" data-testid="dock">
       <DockviewReact
         theme={theme}
         components={{ panel: PanelFrame }}

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/usunrise88/cadence/control-plane/internal/api"
+	"github.com/usunrise88/cadence/control-plane/internal/auth"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
 	"github.com/usunrise88/cadence/control-plane/internal/problems"
 	"github.com/usunrise88/cadence/control-plane/internal/projects"
@@ -77,6 +78,18 @@ func (s *Server) eventQuery(ctx context.Context, p api.EventsListParams) (eventQ
 			return q, err
 		}
 		project = pr.ID
+	}
+	// A scoped credential sees its own project's events (and registry events) only.
+	scope, _ := auth.ScopeFromContext(ctx)
+	if !scope.All {
+		switch {
+		case scope.ProjectID == "":
+			return q, problems.Forbidden.New("this credential reaches no project; the event stream is filtered per project")
+		case project == "":
+			project = scope.ProjectID
+		case project != scope.ProjectID:
+			return q, problems.Forbidden.New("this credential does not reach project %s", deref(p.Project))
+		}
 	}
 	f, err := events.ParseFilter(deref(p.Topics), project)
 	if err != nil {

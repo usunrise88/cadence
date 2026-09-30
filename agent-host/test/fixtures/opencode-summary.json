@@ -1,0 +1,401 @@
+{
+  "driver": "opencode",
+  "initializeMs": 2277,
+  "newSessionMs": 1338,
+  "sessionId": "ses_f107bcd8effe5dzDDn7FhTVbF0",
+  "steps": [
+    {
+      "name": "mcp",
+      "prompt": "Call the tool \"echo\" of the MCP server \"cadence\" with text \"ping\". Then reply with the exact text the tool returned and nothing else.",
+      "stopReason": "end_turn",
+      "ms": 4091,
+      "text": "echo:ping:c3495f",
+      "firstUpdateMs": 16,
+      "firstTokenMs": 3998
+    },
+    {
+      "name": "edit",
+      "prompt": "First create a task list (todo list) with two tasks: \"edit notes.txt\" and \"reply\". Then in notes.txt replace the word \"alpha\" with \"beta\" using your file edit tool (no shell), mark both tasks done, and reply \"done\".",
+      "stopReason": "end_turn",
+      "ms": 11494,
+      "text": "done",
+      "firstUpdateMs": 1365,
+      "firstThoughtMs": 1365,
+      "firstTokenMs": 11417
+    },
+    {
+      "name": "shell",
+      "prompt": "Run this shell command exactly: echo a1-shell-ok > shell.txt. Reply \"done\".",
+      "stopReason": "end_turn",
+      "ms": 2661,
+      "text": "done",
+      "firstUpdateMs": 1048,
+      "firstTokenMs": 2564
+    },
+    {
+      "name": "cancel",
+      "prompt": "Without using any tool, write the numbers from one to three hundred as English words in your reply, one per line, with no other text.",
+      "stopReason": "cancelled",
+      "ms": 1085,
+      "text": "",
+      "firstUpdateMs": 1025,
+      "firstThoughtMs": 1025,
+      "cancelToStopMs": 60
+    },
+    {
+      "name": "restore",
+      "prompt": "What exact text did the echo tool return earlier in this conversation? Reply with that text only.",
+      "stopReason": "end_turn",
+      "ms": 3801,
+      "text": "echo:ping:c3495f",
+      "firstUpdateMs": 2,
+      "firstThoughtMs": 2147,
+      "firstTokenMs": 3775
+    }
+  ],
+  "hostKinds": {
+    "state": 10,
+    "info": 2,
+    "tool_call": 20,
+    "permission": 3,
+    "permission_decided": 3,
+    "message": 5,
+    "usage": 10,
+    "thought": 29,
+    "plan": 2
+  },
+  "acpKinds": {
+    "available_commands_update": 2,
+    "tool_call": 6,
+    "tool_call_update": 14,
+    "agent_message_chunk": 5,
+    "usage_update": 5,
+    "agent_thought_chunk": 29
+  },
+  "permissions": [
+    {
+      "step": "mcp",
+      "title": "cadence.echo",
+      "class": "mcp",
+      "options": [
+        "allow_once",
+        "allow_always",
+        "reject_once"
+      ],
+      "answered": "allow_once"
+    },
+    {
+      "step": "edit",
+      "title": "/workspace/notes.txt",
+      "class": "edit",
+      "options": [
+        "allow_once",
+        "allow_always",
+        "reject_once"
+      ],
+      "answered": "allow_once"
+    },
+    {
+      "step": "shell",
+      "title": "echo a1-shell-ok > shell.txt",
+      "class": "shell",
+      "options": [
+        "allow_once",
+        "allow_always",
+        "reject_once"
+      ],
+      "answered": "allow_once"
+    }
+  ],
+  "mcpCalls": [
+    {
+      "id": "call-5187916c-9848-40fb-83e3-c5344e498e1a",
+      "title": "cadence.echo",
+      "acpKind": "other",
+      "class": "mcp",
+      "status": "completed",
+      "diffs": [],
+      "locations": [],
+      "text": "echo:ping:c3495f",
+      "mcp": {
+        "server": "cadence",
+        "tool": "echo"
+      },
+      "rawInput": {
+        "text": "ping"
+      },
+      "rawOutput": {
+        "output": "echo:ping:c3495f",
+        "metadata": {
+          "truncated": false
+        }
+      }
+    }
+  ],
+  "editCalls": [
+    {
+      "id": "call-66a5a8c7-7a64-403f-bda7-4f1d1962fa4e",
+      "title": "tmp/a1-opencode-EprJ9B/workspace/notes.txt",
+      "acpKind": "edit",
+      "class": "edit",
+      "status": "completed",
+      "diffs": [
+        {
+          "path": "/workspace/notes.txt",
+          "oldText": "alpha",
+          "newText": "beta"
+        }
+      ],
+      "locations": [
+        "/workspace/notes.txt"
+      ],
+      "text": "Edit applied successfully.",
+      "rawInput": {
+        "filePath": "/workspace/notes.txt",
+        "oldString": "alpha",
+        "newString": "beta"
+      },
+      "rawOutput": {
+        "output": "Edit applied successfully.",
+        "metadata": {
+          "diagnostics": {},
+          "diff": "Index: /workspace/notes.txt\n===================================================================\n--- /workspace/notes.txt\n+++ /workspace/notes.txt\n@@ -1,1 +1,1 @@\n-alpha\n+beta\n",
+          "filediff": {
+            "file": "/workspace/notes.txt",
+            "patch": "Index: /workspace/notes.txt\n===================================================================\n--- /workspace/notes.txt\n+++ /workspace/notes.txt\n@@ -1,1 +1,1 @@\n-alpha\n+beta\n",
+            "additions": 1,
+            "deletions": 1
+          },
+          "truncated": false
+        }
+      }
+    }
+  ],
+  "shellCalls": [
+    {
+      "id": "call-1d042464-610a-4011-b92b-bbe85a576ced",
+      "title": "echo a1-shell-ok > shell.txt",
+      "acpKind": "execute",
+      "class": "shell",
+      "status": "completed",
+      "diffs": [],
+      "locations": [
+        "/workspace"
+      ],
+      "text": "(no output)",
+      "shell": {
+        "command": "echo a1-shell-ok > shell.txt",
+        "output": "(no output)",
+        "exitCode": 0
+      },
+      "rawInput": {
+        "command": "echo a1-shell-ok > shell.txt",
+        "workdir": "/workspace"
+      },
+      "rawOutput": {
+        "output": "(no output)",
+        "metadata": {
+          "output": "(no output)",
+          "exit": 0,
+          "truncated": false
+        }
+      }
+    }
+  ],
+  "diffs": [
+    {
+      "path": "/workspace/notes.txt",
+      "oldText": "alpha",
+      "newText": "beta"
+    }
+  ],
+  "plans": [
+    [
+      {
+        "content": "edit notes.txt",
+        "status": "in_progress",
+        "priority": "high"
+      },
+      {
+        "content": "reply",
+        "status": "pending",
+        "priority": "high"
+      }
+    ],
+    [
+      {
+        "content": "edit notes.txt",
+        "status": "completed",
+        "priority": "high"
+      },
+      {
+        "content": "reply",
+        "status": "completed",
+        "priority": "high"
+      }
+    ]
+  ],
+  "usage": [
+    {
+      "kind": "usage",
+      "sessionId": "ses_f107bcd8effe5dzDDn7FhTVbF0",
+      "context": {
+        "used": 10018,
+        "size": 200000
+      },
+      "cost": {
+        "amount": 0,
+        "currency": "USD"
+      }
+    },
+    {
+      "kind": "usage",
+      "sessionId": "ses_f107bcd8effe5dzDDn7FhTVbF0",
+      "turn": {
+        "inputTokens": 34,
+        "outputTokens": 9,
+        "totalTokens": 10027,
+        "cachedReadTokens": 9984
+      }
+    },
+    {
+      "kind": "usage",
+      "sessionId": "ses_f107bcd8effe5dzDDn7FhTVbF0",
+      "context": {
+        "used": 10631,
+        "size": 200000
+      },
+      "cost": {
+        "amount": 0,
+        "currency": "USD"
+      }
+    },
+    {
+      "kind": "usage",
+      "sessionId": "ses_f107bcd8effe5dzDDn7FhTVbF0",
+      "turn": {
+        "inputTokens": 135,
+        "outputTokens": 3,
+        "totalTokens": 10634,
+        "cachedReadTokens": 10496
+      }
+    },
+    {
+      "kind": "usage",
+      "sessionId": "ses_f107bcd8effe5dzDDn7FhTVbF0",
+      "context": {
+        "used": 10737,
+        "size": 200000
+      },
+      "cost": {
+        "amount": 0,
+        "currency": "USD"
+      }
+    },
+    {
+      "kind": "usage",
+      "sessionId": "ses_f107bcd8effe5dzDDn7FhTVbF0",
+      "turn": {
+        "inputTokens": 113,
+        "outputTokens": 3,
+        "totalTokens": 10740,
+        "cachedReadTokens": 10624
+      }
+    },
+    {
+      "kind": "usage",
+      "sessionId": "ses_f107bcd8effe5dzDDn7FhTVbF0",
+      "context": {
+        "used": 0,
+        "size": 200000
+      },
+      "cost": {
+        "amount": 0,
+        "currency": "USD"
+      }
+    },
+    {
+      "kind": "usage",
+      "sessionId": "ses_f107bcd8effe5dzDDn7FhTVbF0",
+      "turn": {
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "totalTokens": 0
+      }
+    },
+    {
+      "kind": "usage",
+      "sessionId": "ses_f107bcd8effe5dzDDn7FhTVbF0",
+      "context": {
+        "used": 10802,
+        "size": 200000
+      },
+      "cost": {
+        "amount": 0,
+        "currency": "USD"
+      }
+    },
+    {
+      "kind": "usage",
+      "sessionId": "ses_f107bcd8effe5dzDDn7FhTVbF0",
+      "turn": {
+        "inputTokens": 50,
+        "outputTokens": 104,
+        "totalTokens": 10906,
+        "cachedReadTokens": 10752
+      }
+    }
+  ],
+  "restore": {
+    "mode": "resume",
+    "ms": 969,
+    "replayedUpdates": 0
+  },
+  "clientFsCalls": [
+    "fs/write_text_file"
+  ],
+  "agentInfo": {
+    "name": "OpenCode",
+    "version": "1.18.33"
+  },
+  "capabilities": {
+    "loadSession": true,
+    "mcpCapabilities": {
+      "http": true,
+      "sse": true
+    },
+    "promptCapabilities": {
+      "embeddedContext": true,
+      "image": true
+    },
+    "sessionCapabilities": {
+      "close": {},
+      "fork": {},
+      "list": {},
+      "resume": {}
+    }
+  },
+  "mcpLog": {
+    "requests": 10,
+    "unauthorized": 0,
+    "methods": [
+      "initialize",
+      "notifications/initialized",
+      "tools/list",
+      "tools/call",
+      "notifications/cancelled",
+      "initialize",
+      "notifications/initialized",
+      "tools/list"
+    ],
+    "calls": [
+      {
+        "text": "ping",
+        "reply": "echo:ping:c3495f"
+      }
+    ]
+  },
+  "notesAfter": "beta\n",
+  "model": "opencode/big-pickle",
+  "nonce": "c3495f"
+}

@@ -1,0 +1,32 @@
+# written by Cadence — permission preset (docs/spec/08-resolutions.md R7). Keys are stable; keep prose in comments.
+#
+# "Explain this" sessions (docs/spec/05-agents.md, Session kinds: Read-only): one turn, no mutating verbs. The agent
+# may read entities, help and files in its worktree; every command is denied.
+name: read-only
+description: Read entities, help and the worktree; change nothing.
+
+tools:
+  - id: read
+    class: read
+    verbClass: read
+
+  - id: no-changes
+    class: forbidden
+    verbClass: mutate
+    reason: read-only sessions change nothing
+
+files:
+  worktree: true
+  read: allow
+  edit: deny
+  deny: [".env", ".env.*", "**/*.pem", "**/*.key"]
+
+shell:
+  default: deny
+  allow: ["git status", "git diff *", "git log *", "git show *"]
+
+web: deny
+
+sandbox:
+  enabled: true
+  network: []

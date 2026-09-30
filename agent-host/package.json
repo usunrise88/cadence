@@ -5,21 +5,27 @@
   "type": "module",
   "scripts": {
     "start": "tsx src/index.ts",
+    "login": "tsx src/login.ts",
+    "gen": "openapi-ts",
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit",
-    "test": "node --import tsx --test \"src/**/*.test.ts\""
+    "test": "node --import tsx --test \"src/**/*.test.ts\" \"test/**/*.test.ts\"",
+    "spike:a1": "tsx src/spikes/a1.ts"
   },
   "dependencies": {
     "@agentclientprotocol/claude-agent-acp": "0.84.0",
-    "@agentclientprotocol/sdk": "1.5.1"
+    "@agentclientprotocol/sdk": "1.5.1",
+    "opencode-ai": "1.18.33",
+    "tsx": "4.23.15"
   },
   "devDependencies": {
+    "@hey-api/openapi-ts": "0.99.0",
     "@types/node": "22.20.4",
-    "tsx": "4.23.15",
     "typescript": "6.0.3"
   },
   "x-notes": [
     "Versions are pinned (exact + package-lock.json); bump them with spike A1's findings.",
-    "opencode runs as `opencode acp` inside the agent-host image (installed there in phase 1, R3/R4); Claude Code through claude-agent-acp."
+    "The image runs both agents: opencode as `opencode acp` (opencode-ai), Claude Code through claude-agent-acp (the Agent SDK bundles the CLI). tsx runs the TypeScript sources.",
+    "src/api/gen holds the contract's types (make gen: npm run gen); never edit it by hand."
   ]
 }

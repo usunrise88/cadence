@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/usunrise88/cadence/control-plane/internal/api"
@@ -16,17 +18,39 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/help"
 	"github.com/usunrise88/cadence/control-plane/internal/problems"
 	"github.com/usunrise88/cadence/control-plane/internal/projects"
+	"github.com/usunrise88/cadence/control-plane/internal/storage"
 )
 
 // ---------------------------------------------------------------- commands
 
-// command builds the pipeline input from the request context.
+// command builds the pipeline input from the request context: actor, key, dry run, fingerprint and the route's
+// path parameters (policy rules can match them, e.g. aliases.set name=baseline).
 func command(ctx context.Context, op, key string, dryRun *bool) commands.Command {
 	actor, _ := auth.FromContext(ctx)
-	return commands.Command{
+	cmd := commands.Command{
 		Operation: op, Actor: actor, IdempotencyKey: key, DryRun: dryRun != nil && *dryRun,
 		RequestHash: commands.RequestHash(ctx),
 	}
+	if rc := chi.RouteContext(ctx); rc != nil && len(rc.URLParams.Keys) > 0 {
+		cmd.PathParams = make(map[string]string, len(rc.URLParams.Keys))
+		for i, k := range rc.URLParams.Keys {
+			v, err := url.PathUnescape(rc.URLParams.Values[i])
+			if err != nil {
+				v = rc.URLParams.Values[i]
+			}
+			cmd.PathParams[k] = v
+		}
+	}
+	return cmd
+}
+
+// withProject resolves the project slug of a project command and names it to the pipeline (commands.WithProject).
+func (s *Server) withProject(ctx context.Context, slug string) (context.Context, error) {
+	p, err := projects.Get(ctx, s.Pool, slug)
+	if err != nil {
+		return ctx, err
+	}
+	return commands.WithProject(ctx, p.ID), nil
 }
 
 // commandResponse writes a pipeline response verbatim; it satisfies the response interface of every command, so
@@ -42,99 +66,40 @@ func (c commandResponse) write(w http.ResponseWriter) error {
 	return err
 }
 
-func (c commandResponse) VisitProjectsNewResponse(w http.ResponseWriter) error     { return c.write(w) }
-func (c commandResponse) VisitProjectsEditResponse(w http.ResponseWriter) error    { return c.write(w) }
-func (c commandResponse) VisitProjectsArchiveResponse(w http.ResponseWriter) error { return c.write(w) }
-func (c commandResponse) VisitWorkspacesSetResponse(w http.ResponseWriter) error   { return c.write(w) }
-
-func projectResult(status int) func(projects.Project, []events.Draft, error) (commands.Result, []events.Draft, error) {
-	return func(p projects.Project, drafts []events.Draft, err error) (commands.Result, []events.Draft, error) {
-		if err != nil {
-			return commands.Result{}, nil, err
-		}
-		return commands.Result{Status: status, Body: apiProject(p), ETag: commands.ETag(p.Rev)}, drafts, nil
-	}
+func (c commandResponse) VisitWorkspacesSetResponse(w http.ResponseWriter) error { return c.write(w) }
+func (c commandResponse) VisitApprovalsApproveResponse(w http.ResponseWriter) error {
+	return c.write(w)
 }
+func (c commandResponse) VisitApprovalsDenyResponse(w http.ResponseWriter) error { return c.write(w) }
+func (c commandResponse) VisitJobsCancelResponse(w http.ResponseWriter) error    { return c.write(w) }
 
 // ---------------------------------------------------------------- projects
 
 // ProjectsList implements projects.list.
 func (s *Server) ProjectsList(ctx context.Context, req api.ProjectsListRequestObject) (api.ProjectsListResponseObject, error) {
+	scope, _ := auth.ScopeFromContext(ctx)
 	list, err := projects.List(ctx, s.Pool, req.Params.Archived != nil && *req.Params.Archived)
 	if err != nil {
 		return nil, err
 	}
 	items := make([]api.Project, 0, len(list))
 	for _, p := range list {
+		if !scope.AllowsProject(p.ID) {
+			continue
+		}
 		items = append(items, apiProject(p))
 	}
 	return api.ProjectsList200JSONResponse{Items: items}, nil
 }
 
-// ProjectsNew implements projects.new.
-func (s *Server) ProjectsNew(ctx context.Context, req api.ProjectsNewRequestObject) (api.ProjectsNewResponseObject, error) {
-	in := projects.NewInput{Slug: req.Body.Slug, Name: req.Body.Name, Description: deref(req.Body.Description)}
-	resp, err := s.Pipeline.Run(ctx, command(ctx, "projects.new", req.Params.IdempotencyKey, req.Params.DryRun),
-		func(ctx context.Context, tx pgx.Tx) (commands.Result, []events.Draft, error) {
-			return projectResult(http.StatusCreated)(projects.Create(ctx, tx, in))
-		})
-	if err != nil {
-		return nil, err
-	}
-	return commandResponse(resp), nil
-}
-
 // ProjectsGet implements projects.get.
 func (s *Server) ProjectsGet(ctx context.Context, req api.ProjectsGetRequestObject) (api.ProjectsGetResponseObject, error) {
-	p, err := projects.Get(ctx, s.Pool, req.P)
+	p, err := scopedProject(ctx, s.Pool, req.P)
 	if err != nil {
 		return nil, err
 	}
 	etag := commands.ETag(p.Rev)
 	return api.ProjectsGet200JSONResponse{Body: apiProject(p), Headers: api.ProjectsGet200ResponseHeaders{ETag: &etag}}, nil
-}
-
-// ProjectsEdit implements projects.edit.
-func (s *Server) ProjectsEdit(ctx context.Context, req api.ProjectsEditRequestObject) (api.ProjectsEditResponseObject, error) {
-	rev, err := commands.ParseIfMatch(req.Params.IfMatch)
-	if err != nil {
-		return nil, err
-	}
-	in := projects.EditInput{Name: req.Body.Name, Description: req.Body.Description}
-	resp, err := s.Pipeline.Run(ctx, command(ctx, "projects.edit", req.Params.IdempotencyKey, req.Params.DryRun),
-		func(ctx context.Context, tx pgx.Tx) (commands.Result, []events.Draft, error) {
-			return projectResult(http.StatusOK)(projects.Edit(ctx, tx, req.P, rev, in))
-		})
-	if err != nil {
-		return nil, err
-	}
-	return commandResponse(resp), nil
-}
-
-// ProjectsArchive implements projects.archive.
-func (s *Server) ProjectsArchive(ctx context.Context, req api.ProjectsArchiveRequestObject) (api.ProjectsArchiveResponseObject, error) {
-	rev, err := commands.ParseIfMatch(req.Params.IfMatch)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := s.Pipeline.Run(ctx, command(ctx, "projects.archive", req.Params.IdempotencyKey, req.Params.DryRun),
-		func(ctx context.Context, tx pgx.Tx) (commands.Result, []events.Draft, error) {
-			return projectResult(http.StatusOK)(projects.Archive(ctx, tx, req.P, rev))
-		})
-	if err != nil {
-		return nil, err
-	}
-	return commandResponse(resp), nil
-}
-
-func apiProject(p projects.Project) api.Project {
-	out := api.Project{
-		Id: p.ID, Slug: p.Slug, Name: p.Name, Rev: p.Rev, ArchivedAt: p.ArchivedAt, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt,
-	}
-	if p.Description != "" {
-		out.Description = &p.Description
-	}
-	return out
 }
 
 // ---------------------------------------------------------------- me and workspaces
@@ -143,7 +108,7 @@ func apiProject(p projects.Project) api.Project {
 func (s *Server) MeGet(ctx context.Context, _ api.MeGetRequestObject) (api.MeGetResponseObject, error) {
 	a, ok := auth.FromContext(ctx)
 	if !ok {
-		return nil, fmt.Errorf("no actor in request context")
+		return nil, problems.Unauthenticated.New("sign in or send a Bearer token")
 	}
 	return api.MeGet200JSONResponse(apiActor(a)), nil
 }
@@ -162,7 +127,7 @@ func apiActor(a auth.Actor) api.Actor {
 // WorkspacesList implements workspaces.list.
 func (s *Server) WorkspacesList(ctx context.Context, req api.WorkspacesListRequestObject) (api.WorkspacesListResponseObject, error) {
 	actor, _ := auth.FromContext(ctx)
-	p, err := projects.Get(ctx, s.Pool, req.P)
+	p, err := scopedProject(ctx, s.Pool, req.P)
 	if err != nil {
 		return nil, err
 	}
@@ -180,7 +145,7 @@ func (s *Server) WorkspacesList(ctx context.Context, req api.WorkspacesListReque
 // WorkspacesGet implements workspaces.get.
 func (s *Server) WorkspacesGet(ctx context.Context, req api.WorkspacesGetRequestObject) (api.WorkspacesGetResponseObject, error) {
 	actor, _ := auth.FromContext(ctx)
-	p, err := projects.Get(ctx, s.Pool, req.P)
+	p, err := scopedProject(ctx, s.Pool, req.P)
 	if err != nil {
 		return nil, err
 	}
@@ -215,9 +180,13 @@ func (s *Server) WorkspacesSet(ctx context.Context, req api.WorkspacesSetRequest
 		return nil, fmt.Errorf("marshal panels: %w", err)
 	}
 	in := projects.WorkspaceInput{SchemaVersion: req.Body.SchemaVersion, Layout: layout, Panels: panels}
+	ctx, err = s.withProject(ctx, req.P)
+	if err != nil {
+		return nil, err
+	}
 	cmd := command(ctx, "workspaces.set", req.Params.IdempotencyKey, req.Params.DryRun)
 	resp, err := s.Pipeline.Run(ctx, cmd, func(ctx context.Context, tx pgx.Tx) (commands.Result, []events.Draft, error) {
-		p, err := projects.Get(ctx, tx, req.P)
+		p, err := scopedProject(ctx, tx, req.P)
 		if err != nil {
 			return commands.Result{}, nil, err
 		}
@@ -248,7 +217,7 @@ func apiWorkspace(w projects.Workspace) (api.Workspace, error) {
 	return out, nil
 }
 
-// ---------------------------------------------------------------- help and registry
+// ---------------------------------------------------------------- help
 
 // HelpSearch implements help.search.
 func (s *Server) HelpSearch(_ context.Context, req api.HelpSearchRequestObject) (api.HelpSearchResponseObject, error) {
@@ -283,11 +252,6 @@ func apiArticle(a help.Article) api.HelpArticle {
 	return out
 }
 
-// RegistrySearch implements registry.search. Registry kinds arrive in phase 1; until then the registry is empty.
-func (s *Server) RegistrySearch(_ context.Context, _ api.RegistrySearchRequestObject) (api.RegistrySearchResponseObject, error) {
-	return api.RegistrySearch200JSONResponse{Items: []api.RegistryVersion{}, Kinds: []api.RegistryKindCount{}}, nil
-}
-
 // ---------------------------------------------------------------- helpers
 
 func deref[T any](p *T) T {
@@ -314,4 +278,16 @@ func writeJSON(w http.ResponseWriter, r *http.Request, log *slog.Logger, status 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_, _ = w.Write(append(b, '\n'))
+}
+
+// scopedProject reads the project with slug and checks that the request's scope reaches it (403 otherwise).
+func scopedProject(ctx context.Context, q storage.Querier, slug string) (projects.Project, error) {
+	p, err := projects.Get(ctx, q, slug)
+	if err != nil {
+		return projects.Project{}, err
+	}
+	if err := auth.CheckProject(ctx, p.ID); err != nil {
+		return projects.Project{}, err
+	}
+	return p, nil
 }

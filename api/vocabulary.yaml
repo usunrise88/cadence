@@ -24,7 +24,7 @@ verbs:
   resume:      { class: mutate, shape: action,          reversible: null,  confirm: none,     icon: Forward }
   cancel:      { class: mutate, shape: action,          reversible: false, confirm: inline,   icon: Xmark }
   retry:       { class: mutate, shape: action,          reversible: null,  confirm: none,     icon: Restart }
-  wait:        { class: mutate, shape: action,          reversible: null,  confirm: none,     icon: Hourglass, agentOnly: true }
+  wait:        { class: read,   shape: action,          reversible: null,  confirm: none,     icon: Hourglass, agentOnly: true }
   stage:       { class: mutate, shape: action,          reversible: null,  confirm: none,     icon: StatUp }
   freeze:      { class: mutate, shape: action,          reversible: false, confirm: inline,   icon: Lock }
   materialize: { class: mutate, shape: action,          reversible: null,  confirm: none,     icon: Download }
@@ -54,5 +54,6 @@ verbs:
   revoke:      { class: mutate, shape: action,          reversible: false, confirm: inline,   icon: KeyMinus }
 
 # Operations tagged with these tags keep <entity>.<verb> ids but are exempt from the vocabulary and never become
-# MCP tools (R1).
-exemptTags: [auth, me]
+# MCP tools (R1). `host` is the agent host's protocol (claim work, report, ask), authenticated by the agent-host
+# credential only; like `auth` its operations are not commands (no Idempotency-Key, If-Match or dryRun).
+exemptTags: [auth, me, host]

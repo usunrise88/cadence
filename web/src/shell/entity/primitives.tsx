@@ -3,8 +3,14 @@ import { verbs } from "@/api/operations.gen";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { commands } from "@/shell/registries";
-import { commandContext } from "@/shell/state";
+import type { AgentReference } from "@/api/gen/types.gen";
+import { askAgent, currentSelectionReferences, explainPrompt, explainReferences } from "@/shell/agents/bridge";
+import { formatReference } from "@/shell/agents/references";
+import { notifyError } from "@/shell/notifications/store";
+import { commands, panels } from "@/shell/registries";
+import { commandContext, useShell } from "@/shell/state";
+import { ActorBadge } from "./actor";
+import { PresenceChip } from "./drafts";
 import { verbIconComponents } from "./icons";
 import {
   LOOP_STEPS,
@@ -41,22 +47,7 @@ export function StatusChip({ state }: { state: string }) {
   );
 }
 
-/** Marks changes an agent made; click jumps to the tool call in Chat (phase 1). */
-export function ActorBadge({ actor }: { actor?: EntityData["actor"] }) {
-  if (!actor) return null;
-  const agent = actor.kind === "agent";
-  return (
-    <span
-      data-slot="actor-badge"
-      className={cn(
-        "inline-flex h-5 items-center rounded px-1.5 text-xs",
-        agent ? "bg-agent text-agent-foreground" : "text-muted-foreground",
-      )}
-    >
-      {actor.name ?? actor.id}
-    </span>
-  );
-}
+export { ActorBadge };
 
 function commandIdFor(m: EntityManifest, v: EntityVerb): string {
   return `${m.apiEntity}.${v.verb}`;
@@ -130,15 +121,17 @@ export function EntityHeader({ manifest, entity }: { manifest: EntityManifest; e
   const Icon = manifest.icon;
   return (
     <header data-slot="entity-header" className="flex flex-col gap-2.5 border-b px-4 pt-3 pb-2.5">
-      <div className="flex min-w-0 items-center gap-2">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5">
         <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-accent-soft text-accent-text">
           <Icon aria-hidden className="size-3.5" />
         </span>
         <h2 className="truncate text-sm font-semibold">{entity.name}</h2>
         {entity.version ? <span className="text-xs text-muted-foreground tabular-nums">{entity.version}</span> : null}
         <StatusChip state={entity.state} />
-        <ActorBadge actor={entity.actor} />
-        <div className="ml-auto flex shrink-0 items-center gap-1">
+        <ActorBadge actor={entity.actor} toolCallId={entity.toolCallId} />
+        {entity.presence ? <PresenceChip presence={entity.presence} /> : null}
+        <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1">
+          <AgentActions manifest={manifest} entity={entity} />
           <ActionBar manifest={manifest} entity={entity} />
           {primary ? <VerbButton m={manifest} v={primary} entity={entity} variant="default" /> : null}
         </div>
@@ -212,23 +205,84 @@ export function NextStep({ manifest, entity }: { manifest: EntityManifest; entit
             {cmd.title}
           </Button>
         ) : null}
-        <AskAgentButton />
+        <AskAgentButton refs={[entityReference(manifest, entity)]} intent={`${capitalise(s.step)}: ${s.title}`} />
       </div>
     </div>
   );
 }
 
-/** Agents arrive in phase 1; the button is present everywhere it will be, disabled with the reason. */
-export function AskAgentButton() {
+function capitalise(t: string): string {
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
+/** The reference an entity attaches to a prompt (`@mix:mix_1`), labelled with its name. */
+export function entityReference(m: EntityManifest, e: EntityData): AgentReference {
+  return { ref: formatReference(m.kind, e.id), label: `${m.kind} ${e.name}` };
+}
+
+/** The help article of an entity kind: its document panel's. */
+function helpOf(kind: string): string | undefined {
+  return panels.all().find((p) => p.kind === "document" && p.entity === kind)?.help;
+}
+
+/**
+ * Ask agent (docs/spec/05-agents.md "Context bridge"): Chat opens with the references attached and a prefilled prompt
+ * naming them and the intent — never blank. Without references it attaches the current selection.
+ */
+export function AskAgentButton({ refs, intent, variant = "outline" }: { refs?: AgentReference[]; intent?: string; variant?: "outline" | "ghost" }) {
+  const project = useShell((st) => st.project);
+  const button = (
+    <Button
+      size="xs"
+      variant={variant}
+      disabled={!project}
+      className="text-xs"
+      data-command="view.askAgent"
+      onClick={() => askAgent({ refs: refs ?? currentSelectionReferences(), intent: intent ?? "Help me with this" })}
+    >
+      Ask agent
+    </Button>
+  );
+  if (project) return button;
   return (
     <Tooltip>
-      <TooltipTrigger render={<span tabIndex={0} />}>
-        <Button size="xs" variant="outline" disabled className="text-xs">
-          Ask agent
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>Agent sessions arrive in phase 1</TooltipContent>
+      <TooltipTrigger render={<span tabIndex={0} />}>{button}</TooltipTrigger>
+      <TooltipContent>Open a project first</TooltipContent>
     </Tooltip>
+  );
+}
+
+/**
+ * Explain this (docs/spec/11-ui-panels.md "Help"): a read-only agent session — one turn, no mutating verbs — with
+ * the entity and its help article attached, shown in Chat.
+ */
+export function ExplainThisButton({ entity, article, what, variant = "ghost" }: { entity: { kind: string; id: string; label?: string } | null; article?: string; what: string; variant?: "outline" | "ghost" }) {
+  const project = useShell((st) => st.project);
+  const run = async () => {
+    try {
+      await commands.run("agentSessions.new", commandContext(), {
+        body: { kind: "read-only", prompt: explainPrompt(what, article), references: explainReferences(entity, article) },
+        open: true,
+      });
+    } catch (err) {
+      notifyError("Explain this could not start", err);
+    }
+  };
+  return (
+    <Button size="xs" variant={variant} disabled={!project} className="text-xs" data-command="agentSessions.new" onClick={() => void run()}>
+      Explain this
+    </Button>
+  );
+}
+
+/** The header's agent actions: Ask agent about this entity, Explain this. */
+function AgentActions({ manifest, entity }: { manifest: EntityManifest; entity: EntityData }) {
+  const ref = entityReference(manifest, entity);
+  return (
+    <div role="group" aria-label="Agent" className="flex items-center gap-1">
+      <AskAgentButton variant="ghost" refs={[ref]} intent={`Help me with the ${manifest.kind} ${entity.name}`} />
+      <ExplainThisButton entity={{ kind: manifest.kind, id: entity.id, label: ref.label }} article={helpOf(manifest.kind)} what={`the ${manifest.kind} ${entity.name} (${ref.ref})`} />
+    </div>
   );
 }
 
@@ -241,7 +295,7 @@ export function EmptyState({ step, title, hint, action }: { step: LoopStep; titl
       {hint ? <p className="max-w-72 text-xs leading-relaxed text-muted-foreground">{hint}</p> : null}
       <div className="mt-2 flex gap-2">
         {action}
-        <AskAgentButton />
+        <AskAgentButton intent={`Help me with the next step (${step}): ${title}`} />
       </div>
     </div>
   );
@@ -263,6 +317,7 @@ export function EntityList({
   onOpen,
   onPreview,
   height,
+  versionLabel = "Version",
 }: {
   rows: ListRow[];
   label: string;
@@ -270,6 +325,8 @@ export function EntityList({
   onPreview?: (r: ListRow) => void;
   /** Viewport height for virtualization; defaults to the container's. */
   height?: number;
+  /** Heading of the second column; mixed-kind lists (search results) show the kind there. */
+  versionLabel?: string;
 }) {
   const [cursor, setCursor] = useState(0);
   const [scrollTop, setScrollTop] = useState(0);
@@ -299,7 +356,7 @@ export function EntityList({
       data-slot="entity-list"
     >
       <div role="row" className="sticky top-0 z-10 grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr] gap-2 border-b bg-tool px-2 py-1 text-muted-foreground">
-        {["Name", "Version", "Status", "Actor", "Updated", "Tags"].map((h) => (
+        {["Name", versionLabel, "Status", "Actor", "Updated", "Tags"].map((h) => (
           <span key={h} role="columnheader">
             {h}
           </span>

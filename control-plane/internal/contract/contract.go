@@ -35,23 +35,22 @@ type Vocabulary struct {
 
 // Operation is one operation of the contract with its derived names.
 type Operation struct {
-	ID          string // <entity>.<verb>
-	Entity      string // lowerCamel plural, as in the operationId
-	Verb        string
-	Kind        string // snake singular: EntityKind and topic segment
-	Segment     string // kebab plural: path segment
-	Method      string
-	Path        string
-	Summary     string
-	ToolDesc    string
-	Tags        []string
-	Planned     int // phase that implements it; 0 = implemented
-	Exempt      bool
-	Mutation    bool
-	op          *openapi3.Operation
-	pathItem    *openapi3.PathItem
-	pathEntity  pathExt
-	resolvedVrb Verb
+	ID         string // <entity>.<verb>
+	Entity     string // lowerCamel plural, as in the operationId
+	Verb       string
+	Kind       string // snake singular: EntityKind and topic segment
+	Segment    string // kebab plural: path segment
+	Method     string
+	Path       string
+	Summary    string
+	ToolDesc   string
+	Tags       []string
+	Planned    int // phase that implements it; 0 = implemented
+	Exempt     bool
+	Mutation   bool
+	op         *openapi3.Operation
+	pathItem   *openapi3.PathItem
+	pathEntity pathExt
 }
 
 type pathExt struct {
@@ -246,7 +245,6 @@ func (c *Contract) Check() []error {
 		if !known && !o.Exempt {
 			fail(o, "verb %q is not in api/vocabulary.yaml (add it to docs/spec/10-ui-shell.md first)", o.Verb)
 		}
-		o.resolvedVrb = verb
 		sh, actionVerb, segment := shape(o)
 		if segment != o.Segment && !(o.pathEntity.Singleton && segment == o.pathEntity.Entity) {
 			fail(o, "path segment %q must be the kebab plural of the entity (%q)", segment, o.Segment)
@@ -289,6 +287,16 @@ func (c *Contract) Check() []error {
 
 func (c *Contract) checkCommand(o *Operation, sh string, fail func(*Operation, string, ...any)) {
 	const comp = "#/components/parameters/"
+	if hasTag(o, "auth") && o.Mutation {
+		// Sign-in operations are not commands: there is no actor before sign-in to key idempotency on, and a
+		// browser session is not an entity with a revision (docs/spec/06-platform.md "Authentication and access").
+		return
+	}
+	if hasTag(o, "host") && o.Exempt {
+		// The agent host's protocol is not commands either: a report upserts entries under keys the host chose, so
+		// a retry is idempotent by construction, and nothing a host posts is dry-run or based on a revision.
+		return
+	}
 	ref, hasKey := o.paramRef("header", "Idempotency-Key")
 	_, hasDry := o.paramRef("query", "dryRun")
 	ifRef, hasIf := o.paramRef("header", "If-Match")

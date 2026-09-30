@@ -1,0 +1,227 @@
+# written by Cadence — the defaults every form, pipeline, budget and estimate starts from.
+#
+# docs/spec/03-pipelines-defaults.md "Defaults" and docs/spec/08-resolutions.md R11: one versioned file, embedded in
+# the control-plane binary and packaged with the worker. Every value carries a description, a source and, where it
+# applies, a safe range; a value without a published source is a "Cadence recommendation" re-checked after the spikes.
+# Keys are addressed as <section>.<key> (x-cadence.defaultRef: training.steps). Bump `version` on every change.
+version: 3
+
+# The project wizard's Recommended mode (docs/spec/02-domain-projects-registry.md "Project wizard").
+wizard:
+  locale:
+    value: he-IL
+    description: Locale of the project's target language (BCP 47)
+    source: docs/spec/02-domain-projects-registry.md "First project"
+  domain:
+    value: telephony
+    description: Acoustic domain the project adapts to; picks the augmentation profile and golden-set recipe
+    source: docs/spec/02-domain-projects-registry.md "First project"
+  base_model:
+    value: base-model/nemotron-3.5-asr-streaming-0.6b
+    description: Registry collection of the default base model; the wizard pins its newest frozen version
+    source: Model card (huggingface.co/nvidia/nemotron-3.5-asr-streaming-0.6b); docs/spec/03 "Key defaults"
+  driver:
+    value: claude-code
+    description: Agent driver for the project's sessions
+    source: Cadence recommendation
+    range: { values: [claude-code, opencode] }
+  claude_code_model:
+    value: sonnet
+    description: Model of Claude Code sessions, as a Claude Code alias (the subscription resolves it to the current model)
+    source: docs/spec/08-resolutions.md R6 (Claude subscription); Cadence recommendation for the alias
+    range: { values: [sonnet, opus, haiku] }
+  opencode_model:
+    value: minimax/MiniMax-M2
+    description: Model of opencode sessions as provider/model; any provider configured in the agent-credentials volume is accepted
+    source: docs/spec/08-resolutions.md R6 (MiniMax Token Plan); model id as models.dev names it — confirm against the plan
+    range: { values: [minimax/MiniMax-M2] }
+  auto_merge:
+    value: when-clean
+    description: Whether a session branch merges into main at session end when it applies cleanly (when-clean) or always waits for a person (never)
+    source: docs/spec/05-agents.md "Worktree, drafts and merge"
+    range: { values: [when-clean, never] }
+  draft_policy:
+    value: { mix: draft, gate: draft, note: direct, language_pack: draft }
+    description: Per draftable kind, whether agent changes land at once (direct) or as drafts to accept or revert (draft)
+    source: docs/spec/05-agents.md "Worktree, drafts and merge"; Cadence recommendation (notes are append-only learnings)
+  permission_preset:
+    value: guardrails-default
+    description: Permission preset rendered into the agent config and used by the policy engine
+    source: docs/spec/08-resolutions.md R7
+  instructions_template:
+    value: default
+    description: Template for the project's AGENTS.md
+    source: docs/spec/02-domain-projects-registry.md "Project wizard"
+    range: { values: [default, minimal] }
+  repository:
+    value: internal
+    description: Where the project repository lives — the internal bare repository, a new GitHub repository, or an existing URL
+    source: docs/spec/08-resolutions.md R10
+    range: { values: [internal, github, url] }
+
+# Per-project and per-session budgets; policies.edit changes the instance-wide values inside these ranges.
+budgets:
+  gpu_hours_per_project_per_day:
+    value: 8
+    unit: GPU-h
+    description: GPU-hours a project may spend per day before a run needs an approval
+    source: Cadence recommendation (docs/spec/03 "Key defaults")
+    range: { min: 0, max: 192 }
+  agent_tokens_per_project_per_day:
+    value: 20000000
+    unit: tokens
+    description: Agent spend a project may use per day, in tokens (money counts only in API-key mode, R6)
+    source: Cadence recommendation — re-check after spike A2 measures a playbook session
+    range: { min: 0, max: 1000000000 }
+  agent_turns_per_session:
+    value: 200
+    unit: turns
+    description: Turns an agent session may take before it pauses with a budget reason
+    source: Cadence recommendation (docs/spec/03 "Key defaults")
+    range: { min: 1, max: 2000 }
+  agent_tokens_per_session:
+    value: 10000000
+    unit: tokens
+    description: Input plus output tokens (cached reads not counted) an agent session may use before it pauses with a budget reason
+    source: Cadence recommendation — re-check after spike A2 measures a playbook session
+    range: { min: 1000, max: 1000000000 }
+  agent_tokens_per_turn:
+    value: 1000000
+    unit: tokens
+    description: A turn that uses more input plus output tokens than this is cancelled and the session pauses (runaway check)
+    source: docs/spec/05-agents.md "Budgets and runaway protection"; Cadence recommendation for the value
+    range: { min: 1000, max: 100000000 }
+  manual_test_gpu_hours_per_project_per_day:
+    value: 1
+    unit: GPU-h
+    description: GPU-hours of manual transcription tests per project per day
+    source: docs/spec/08-resolutions.md R47–R49 (Cadence recommendation)
+    range: { min: 0, max: 24 }
+
+# The three session clocks of R5.
+timeouts:
+  stuck_turn_minutes:
+    value: 5
+    unit: min
+    description: No ACP update for this long during a turn cancels the turn and pauses the session
+    source: docs/spec/08-resolutions.md R5
+    range: { min: 1, max: 60 }
+  idle_session_minutes:
+    value: 30
+    unit: min
+    description: An interactive session without a user message for this long pauses (cheap resume)
+    source: docs/spec/08-resolutions.md R5
+    range: { min: 5, max: 480 }
+  approval_expiry_hours:
+    value: 24
+    unit: h
+    description: A pending approval expires after this long and counts as denied
+    source: docs/spec/08-resolutions.md R5
+    range: { min: 1, max: 168 }
+
+# Training-run defaults the estimate needs now; the full x-cadence coverage of step parameters follows in phase 2.
+training:
+  init:
+    value: base
+    description: Where a run's weights start
+    source: docs/spec/08-resolutions.md R44
+    range: { values: [base, checkpoint] }
+  steps:
+    value: 3000
+    unit: steps
+    description: Optimiser steps of one training stage
+    source: Community fine-tune kit; North Sami fine-tune (docs/spec/03 "Key defaults")
+    range: { min: 1, max: 200000 }
+  precision:
+    value: bf16
+    description: Training precision
+    source: Community fine-tune kit (docs/spec/03 "Key defaults")
+    range: { values: [bf16, fp16, fp32] }
+  gpus:
+    value: 1
+    unit: cards
+    description: Cards per run; gang leases of several cards are deferred
+    source: docs/spec/08-resolutions.md R44
+    range: { min: 1, max: 1 }
+
+# R12, table path: what an estimate answers before runs.calibrate has measured anything (phase 2).
+estimates:
+  bytes_per_audio_hour:
+    value: 115200000
+    unit: bytes
+    description: Bytes of one hour of 16 kHz 16-bit mono PCM; the upper bound for data volume before shards exist
+    source: Arithmetic (16 000 samples/s × 2 bytes × 3 600 s)
+    range: { min: 1 }
+  training:
+    - base_model: base-model/nemotron-3.5-asr-streaming-0.6b
+      card_class: blackwell-96gb
+      memory_cap_gb: 24
+      precision: bf16
+      seconds_per_step: 1.0
+      plus_minus: 0.5
+      description: Seconds per optimiser step under OOMptimizer bucket sizes for the capped card
+      source: Cadence recommendation — a placeholder until spike A3 measures steps per second on the staging card
+
+# Mixes (docs/spec/08-resolutions.md R13): the values a new mix starts from.
+mix:
+  temperature:
+    value: 1.0
+    description: Sampling temperature over group weights; a group is drawn with probability ∝ weight^(1/temperature), so 1 follows the weights and larger values flatten towards uniform
+    source: Cadence recommendation (temperature-based sampling over data groups, as in multilingual ASR training)
+    range: { min: 0.1, max: 10 }
+  replay_share:
+    value: 0.15
+    unit: fraction
+    description: Share of training samples drawn from replay groups (the base model's other locales) when a mix has one
+    source: docs/spec/03-pipelines-defaults.md "Key defaults" (replay 15 % of steps; NVIDIA recommends replay, the share is a Cadence recommendation)
+    range: { min: 0, max: 0.9 }
+  group_weight:
+    value: 1.0
+    description: Weight of a mix group that gives none
+    source: Cadence recommendation
+    range: { min: 0.001, max: 1000 }
+
+# Drafts (docs/spec/05-agents.md "Worktree, drafts and merge"): what an agent's edit of a draftable kind does —
+# `draft` lands as a draft a person accepts or reverts, `direct` applies at once (still attributed). A project's
+# agent profile (draftPolicy, filled from agent.draft_policy) decides per kind; these apply to projects without one.
+drafts:
+  mix:
+    value: draft
+    description: What an agent's edit of a mix does
+    source: docs/spec/08-resolutions.md R13 (mixes are draftable; agent edits land as drafts)
+    range: { values: [draft, direct] }
+  presence_seconds:
+    value: 30
+    unit: s
+    description: How long an agent's direct edit keeps the entity marked "agent editing" (an open draft keeps it until accepted or reverted)
+    source: Cadence recommendation
+    range: { min: 1, max: 600 }
+
+# Local NVMe cache (docs/spec/02 "Materialisation").
+cache:
+  high_water_mark:
+    value: 0.8
+    unit: fraction
+    description: Share of the local cache above which unpinned shards are evicted, least recently used first
+    source: Cadence recommendation (docs/spec/03 "Key defaults")
+    range: { min: 0.5, max: 0.95 }
+  project_quota:
+    value: 0.4
+    unit: fraction
+    description: Share of the local cache one project's frozen shards may occupy
+    source: Cadence recommendation (docs/spec/03 "Key defaults")
+    range: { min: 0.05, max: 1 }
+
+# Hosts seeded into the compute entity at first start; Settings edits them afterwards (compute.edit).
+compute:
+  hosts:
+    - name: staging
+      description: The shared staging host; other services stay resident on the card
+      source: docs/spikes/A3-nemotron-finetune.md (memory fraction 0.25 of 96 GB); docs/spec/03 "Key defaults" (Batch)
+      cards:
+        - index: 0
+          name: Staging card (96 GB, Blackwell)
+          card_class: blackwell-96gb
+          memory_gb: 96
+          memory_cap_gb: 24
+          allowed_job_kinds: [training, eval, shadow, export]

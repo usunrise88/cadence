@@ -1,0 +1,49 @@
+{
+  "permissions": {
+    "defaultMode": "dontAsk",
+    "allow": [
+      "mcp__cadence__approvals_list",
+      "mcp__cadence__help_get",
+      "mcp__cadence__jobs_wait",
+      "mcp__cadence__projects_get",
+      "mcp__cadence__projects_list",
+      "Read(/**)",
+      "Bash(git status)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git show *)"
+    ],
+    "ask": [],
+    "deny": [
+      "mcp__cadence__aliases_set",
+      "mcp__cadence__approvals_approve",
+      "mcp__cadence__credentials_revoke",
+      "mcp__cadence__goldenSets_freeze",
+      "mcp__cadence__jobs_cancel",
+      "mcp__cadence__mixes_edit",
+      "mcp__cadence__projects_archive",
+      "mcp__cadence__projects_edit",
+      "mcp__cadence__runs_new",
+      "mcp__cadence__secrets_new",
+      "mcp__cadence__sources_archive",
+      "Edit(/**)",
+      "Read(/.env)",
+      "Edit(/.env)",
+      "Read(/.env.*)",
+      "Edit(/.env.*)",
+      "Read(/**/*.pem)",
+      "Edit(/**/*.pem)",
+      "Read(/**/*.key)",
+      "Edit(/**/*.key)",
+      "WebFetch",
+      "WebSearch"
+    ]
+  },
+  "sandbox": {
+    "enabled": true,
+    "allowUnsandboxedCommands": false,
+    "network": {
+      "allowedDomains": []
+    }
+  }
+}

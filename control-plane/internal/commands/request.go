@@ -51,7 +51,10 @@ func canonicalJSON(body []byte) []byte {
 	return out
 }
 
-type hashKey struct{}
+type (
+	hashKey    struct{}
+	requestKey struct{}
+)
 
 // RequestHash returns the fingerprint HashMiddleware stored for this request.
 func RequestHash(ctx context.Context) string {
@@ -59,15 +62,35 @@ func RequestHash(ctx context.Context) string {
 	return h
 }
 
-// HashMiddleware buffers the body of mutating requests (POST, PUT, PATCH), caps it at MaxBodyBytes and stores
-// the request fingerprint in the context.
+// Request is a mutating request as received, kept so a gated command can be stored and replayed.
+type Request struct {
+	Method string
+	Path   string // escaped, including the API prefix
+	Query  string // raw
+	Header http.Header
+	Body   []byte
+}
+
+// RequestFromContext returns the request HashMiddleware kept; ok is false outside a mutating HTTP request.
+func RequestFromContext(ctx context.Context) (Request, bool) {
+	r, ok := ctx.Value(requestKey{}).(Request)
+	return r, ok
+}
+
+// HashMiddleware reads the Cadence-Tool-Call-Id header of every request into the context; for mutating requests
+// (POST, PUT, PATCH) it also buffers the body, caps it at MaxBodyBytes, stores the request fingerprint and keeps
+// the request (RequestFromContext).
 func HashMiddleware(onErr func(http.ResponseWriter, *http.Request, error)) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := r.Context()
+			if id := strings.TrimSpace(r.Header.Get(HeaderToolCallID)); id != "" {
+				ctx = WithToolCall(ctx, id)
+			}
 			switch r.Method {
 			case http.MethodPost, http.MethodPut, http.MethodPatch:
 			default:
-				next.ServeHTTP(w, r)
+				next.ServeHTTP(w, r.WithContext(ctx))
 				return
 			}
 			body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, MaxBodyBytes))
@@ -77,7 +100,11 @@ func HashMiddleware(onErr func(http.ResponseWriter, *http.Request, error)) func(
 			}
 			r.Body = io.NopCloser(bytes.NewReader(body))
 			hash := HashRequest(r.Method, r.URL.EscapedPath(), r.URL.Query(), r.Header.Get("If-Match"), body)
-			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), hashKey{}, hash)))
+			ctx = context.WithValue(ctx, hashKey{}, hash)
+			ctx = context.WithValue(ctx, requestKey{}, Request{
+				Method: r.Method, Path: r.URL.EscapedPath(), Query: r.URL.RawQuery, Header: r.Header.Clone(), Body: body,
+			})
+			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 }

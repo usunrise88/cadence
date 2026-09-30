@@ -1,10 +1,15 @@
-import { useQuery } from "@tanstack/react-query";
-import { eventsListOptions } from "@/api/gen/@tanstack/react-query.gen";
+import { useState, type FormEvent, type ReactNode } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Streamdown } from "streamdown";
+import { agentProfileGetOptions, branchesListOptions, eventsListOptions, projectsGetOptions, recipesGetOptions } from "@/api/gen/@tanstack/react-query.gen";
+import type { Project } from "@/api/gen/types.gen";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { EmptyState, StatusChip } from "@/shell/entity/primitives";
-import { useTopic, type PanelProps } from "@/shell/panel";
+import { openDocument, openPanelById, runCommand, useTopic, type PanelProps } from "@/shell/panel";
 
-// The Project document is the home: the five blocks as a checklist with counts, the last decisions, open approvals
-// and notes (docs/spec/10-ui-shell.md "Lists, compare, drafts, empty states"). In phase 0 the blocks are empty.
+// The Project document is the home: the project's facts (locales, base model, repository, agent profile, budgets),
+// the five blocks as a checklist with counts, gates and notes (docs/spec/11-ui-panels.md "Panel catalogue", Project).
 
 const BLOCKS = [
   { name: "Data", what: "Sources, dataset versions, golden sets", phase: 4 },
@@ -19,57 +24,217 @@ export function ProjectEmpty() {
 }
 
 export function ProjectPanel({ tab, entity }: PanelProps) {
+  const slug = entity?.id ?? "";
+  const q = useQuery({ ...projectsGetOptions({ path: { p: slug } }), enabled: !!slug });
   if (!entity) return <ProjectEmpty />;
+  const project = q.data;
   switch (tab) {
     case "details":
       return <Details entity={entity} />;
     case "activity":
       return <Activity projectId={String(entity.projectId ?? "")} />;
     case "lineage":
-      return <EmptyState step="record" title="Lineage arrives with the registry" hint="Adopted versions and what the project produced will draw here (phase 1)." />;
+      return <EmptyState step="record" title="Lineage arrives with the registry" hint="Adopted versions and what the project produced will draw here." />;
     case "notes":
-      return <EmptyState step="record" title="No notes yet" hint="Notes are dated learnings committed to the project repository (phase 1)." />;
+      return project ? <Notes project={project} /> : null;
     default:
-      return (
-        <div className="@container">
-          <div className="grid gap-6 p-4 @3xl:grid-cols-[3fr_2fr]">
-            <section aria-labelledby="blocks">
-              <h3 id="blocks" className="mb-2 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-                The five blocks
-              </h3>
-              <ul className="divide-y rounded-md border">
-                {BLOCKS.map((b) => (
-                  <li key={b.name} className="grid h-10 grid-cols-[6.5rem_1fr_auto] items-center gap-3 px-3">
-                    <span className="text-[13px] font-medium">{b.name}</span>
-                    <span className="truncate text-xs text-muted-foreground" title={b.what}>
-                      {b.what}
-                    </span>
-                    <span className="flex items-center gap-2 text-xs">
-                      <span className="tabular-nums">0</span>
-                      <span className="rounded-full border px-1.5 text-[11px] text-muted-foreground">phase {b.phase}</span>
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </section>
-            <section aria-labelledby="decisions" className="flex flex-col gap-4">
-              <div>
-                <h3 id="decisions" className="mb-2 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-                  Decisions and approvals
-                </h3>
-                <p className="text-xs text-muted-foreground">None yet — approvals arrive with the agent loop (phase 1).</p>
-              </div>
-              {entity.description ? (
-                <div>
-                  <h3 className="mb-2 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">About</h3>
-                  <p className="text-[13px]">{String(entity.description)}</p>
-                </div>
-              ) : null}
-            </section>
-          </div>
-        </div>
-      );
+      return project ? <Overview project={project} /> : null;
   }
+}
+
+function Heading({ id, children }: { id: string; children: ReactNode }) {
+  return (
+    <h3 id={id} className="mb-2 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+      {children}
+    </h3>
+  );
+}
+
+function Facts({ rows }: { rows: [string, ReactNode][] }) {
+  return (
+    <dl className="grid grid-cols-[8rem_1fr] gap-x-3 gap-y-1.5 text-xs">
+      {rows.map(([k, v]) => (
+        <div key={k} className="contents">
+          <dt className="text-muted-foreground">{k}</dt>
+          <dd className="min-w-0 break-all">{v ?? "—"}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+const sha = (s?: string) => (s ? <code className="tabular-nums">{s.slice(0, 12)}</code> : "—");
+
+function Overview({ project }: { project: Project }) {
+  const qc = useQueryClient();
+  const ready = project.state === "active" && !project.archivedAt;
+  const profile = useQuery({ ...agentProfileGetOptions({ path: { p: project.slug } }), enabled: ready });
+  const branches = useQuery({ ...branchesListOptions({ path: { p: project.slug } }), enabled: ready });
+  useTopic([`entity.project.${project.id}`], () => void qc.invalidateQueries({ queryKey: agentProfileGetOptions({ path: { p: project.slug } }).queryKey }));
+  const repo = project.repository;
+  const clone = repo?.cloneUrl ? new URL(repo.cloneUrl, window.location.origin).toString() : undefined;
+  const bm = project.baseModel;
+  const p = profile.data;
+  return (
+    <div className="@container">
+      {project.state === "bootstrapping" ? (
+        <p role="status" className="mx-4 mt-3 rounded-md border px-3 py-2 text-xs">
+          <StatusChip state="bootstrapping" /> The bootstrap job is writing the repository, adopting the base model and creating the default workspaces.
+        </p>
+      ) : null}
+      {project.state === "failed" ? (
+        <p role="alert" className="mx-4 mt-3 rounded-md border border-destructive/40 px-3 py-2 text-xs text-destructive">
+          The bootstrap failed: {project.bootstrapError ?? "no reason recorded"}. Check the job{project.bootstrapJobId ? ` ${project.bootstrapJobId}` : ""} and archive
+          the project to start again.
+        </p>
+      ) : null}
+      <div className="grid gap-6 p-4 @3xl:grid-cols-[3fr_2fr]">
+        <div className="flex flex-col gap-6">
+          <section aria-labelledby="project-facts">
+            <Heading id="project-facts">Project</Heading>
+            <Facts
+              rows={[
+                ["Locales", project.locales.join(", ") || "—"],
+                ["Domain", project.domain || "—"],
+                ["Base model", bm ? `${bm.hfRepo} @ ${bm.revision.slice(0, 12)}` : "—"],
+                ["Registry version", bm ? `${bm.name} ${bm.version}` : "—"],
+                ["Budgets", `${project.budgets.gpuHoursPerDay} GPU-h/day · ${project.budgets.agentTokensPerDay.toLocaleString()} agent tokens/day`],
+              ]}
+            />
+          </section>
+          <section aria-labelledby="project-repository">
+            <div className="mb-2 flex items-center gap-2">
+              <Heading id="project-repository">Repository</Heading>
+              <Button size="xs" variant="outline" className="ml-auto" disabled={!ready} onClick={() => openDocument("recipe:project.yaml")}>
+                Browse files
+              </Button>
+            </div>
+            <Facts
+              rows={[
+                ["Kind", repo?.kind ?? "—"],
+                ["Branch", repo?.branch ?? "main"],
+                ["Head of main", sha(branches.data?.main)],
+                ["Clone", clone ? <code className="select-all">{clone}</code> : "—"],
+                ["Remote", repo?.remote ?? "—"],
+                ...(repo?.pushError ? ([["Last push", <span className="text-destructive">{repo.pushError}</span>]] as [string, ReactNode][]) : []),
+              ]}
+            />
+            {clone ? <p className="mt-1.5 text-[11px] text-muted-foreground">git clone with an API key (cdk_…) as the password; pushes to main appear here as recipe changes.</p> : null}
+          </section>
+          <section aria-labelledby="blocks">
+            <Heading id="blocks">The five blocks</Heading>
+            <ul className="divide-y rounded-md border">
+              {BLOCKS.map((b) => (
+                <li key={b.name} className="grid h-10 grid-cols-[6.5rem_1fr_auto] items-center gap-3 px-3">
+                  <span className="text-[13px] font-medium">{b.name}</span>
+                  <span className="truncate text-xs text-muted-foreground" title={b.what}>
+                    {b.what}
+                  </span>
+                  <span className="flex items-center gap-2 text-xs">
+                    <span className="tabular-nums">0</span>
+                    <span className="rounded-full border px-1.5 text-[11px] text-muted-foreground">phase {b.phase}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        </div>
+        <div className="flex flex-col gap-6">
+          <section aria-labelledby="project-agent">
+            <div className="mb-2 flex items-center gap-2">
+              <Heading id="project-agent">Agent profile</Heading>
+              <Button size="xs" variant="outline" className="ml-auto" onClick={() => openPanelById("agent-settings")}>
+                Open Agent settings
+              </Button>
+            </div>
+            {p ? (
+              <Facts
+                rows={[
+                  ["Driver", p.driver === "claude-code" ? "Claude Code" : "opencode"],
+                  ["Model", p.model],
+                  ["Permission preset", p.permissionPreset],
+                  ["Instructions", p.instructionsTemplate],
+                  ["Session branches", p.autoMerge === "when-clean" ? "merge when clean" : "always wait for a person"],
+                ]}
+              />
+            ) : (
+              <p className="text-xs text-muted-foreground">{ready ? "Loading…" : "Available once the repository is bootstrapped."}</p>
+            )}
+          </section>
+          <section aria-labelledby="project-gates">
+            <Heading id="project-gates">Gates</Heading>
+            <p className="text-xs text-muted-foreground">Gates and thresholds per language arrive with the Evaluation block (phase 3).</p>
+          </section>
+          <section aria-labelledby="decisions">
+            <Heading id="decisions">Decisions and approvals</Heading>
+            <p className="text-xs text-muted-foreground">Open approvals for this project appear in the Approvals panel.</p>
+          </section>
+          {project.description ? (
+            <section aria-labelledby="about">
+              <Heading id="about">About</Heading>
+              <p className="text-[13px]">{project.description}</p>
+            </section>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Notes({ project }: { project: Project }) {
+  const qc = useQueryClient();
+  const ready = project.state === "active" && !project.archivedAt;
+  const opts = recipesGetOptions({ path: { p: project.slug, path: "NOTES.md" } });
+  const notes = useQuery({ ...opts, enabled: ready, retry: false });
+  useTopic(["recipe.*"], (batch) => {
+    if (batch.some((e) => e.topic === "recipe.NOTES.md")) void qc.invalidateQueries({ queryKey: opts.queryKey });
+  });
+  const [text, setText] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await runCommand("projects.note", { project: project.slug, text, rev: project.rev });
+      setText("");
+      await qc.invalidateQueries({ queryKey: opts.queryKey });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="flex flex-col gap-4 p-4">
+      {ready ? (
+        <form onSubmit={submit} className="flex flex-col gap-2" aria-label="Add a note">
+          <label className="flex flex-col gap-1 text-xs">
+            <span className="text-muted-foreground">New note — one learning; filed under today's date in NOTES.md and committed to main</span>
+            <Textarea value={text} onChange={(e) => setText(e.target.value)} rows={3} maxLength={4000} className="text-[13px]" name="note" />
+          </label>
+          {error ? (
+            <p role="alert" className="text-xs text-destructive">
+              {error}
+            </p>
+          ) : null}
+          <div>
+            <Button type="submit" size="sm" disabled={busy || !text.trim()}>
+              Add note
+            </Button>
+          </div>
+        </form>
+      ) : null}
+      {notes.data ? (
+        <article className="prose-sm max-w-none text-[13px]" data-testid="project-notes">
+          <Streamdown>{notes.data.encoding === "utf-8" ? notes.data.content : ""}</Streamdown>
+        </article>
+      ) : (
+        <EmptyState step="record" title="No notes yet" hint="Notes are dated learnings committed to NOTES.md; every agent session reads them." />
+      )}
+    </div>
+  );
 }
 
 function Details({ entity }: Pick<Required<PanelProps>, "entity">) {

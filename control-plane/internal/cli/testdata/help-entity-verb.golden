@@ -1,0 +1,11 @@
+$ cadence help get --id errors.not-found
+exit 0
+--- requests
+GET /api/help/errors.not-found
+  header Authorization: Bearer cdk_env
+  header Accept: application/json
+--- stdout
+{
+  "ok": true
+}
+--- stderr

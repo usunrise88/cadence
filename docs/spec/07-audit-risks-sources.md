@@ -63,6 +63,136 @@ Open questions:
 - [ ] Unknown `/api` path answers 404 `not-found`, wrong method 405 `method-not-allowed` (a tenth error type with its article); the review proposed 400 for both
 - [x] Training from scratch or a second framework (k2/icefall) in v1? — Only the seams, in phase 2; training from scratch, packs beyond NeMo and spike F1 are deferred (owner, 2026-09-29; R44, R45)
 - [x] Keep uploads and microphone recordings? — No: a transcription is a manual test and stores nothing (owner, 2026-09-29; R47)
+- [ ] `project://summary` needs the connection's project, which the spec does not say how to name. Phase 1 reads a
+  `Cadence-Project: <slug>` header that the agent host sends next to `Authorization` in ACP `session/new` →
+  `mcpServers` (R2); once `cst_` tokens are project-bound, the token's scope decides and the header must agree.
+  `project://{p}/summary` reads any project the token may see. Confirm
+- [ ] MCP tool names keep the dotted `<entity>.<verb>` on the wire, but both agents rewrite them: Claude Code shows
+  `mcp__cadence__projects_new`, opencode `cadence_projects_new` (model APIs allow only `[a-zA-Z0-9_-]` in tool names).
+  Spike A2 checks whether agents still map them to the names in help, errors and skills, or whether the vocabulary
+  should use `_` in tool names
+- [ ] Automation keys (`cdk_`) follow the agent rules of their scope's preset (default deny), like agent sessions; people are allowed everything except the `everyone` rules (phase 1, stream C). Confirm, or treat a person's API key as the person
+- [ ] `jobs.wait` is a read verb (a `GET` action, no Idempotency-Key): waiting changes nothing. `api/vocabulary.yaml` now says `class: read` for `wait`; the spec table groups it with run/pause/resume
+- [ ] A dry run of a gated command runs as a dry run and answers `Cadence-Policy: approval; rule=<id>` instead of creating an approval, so an agent can see the estimate first (R7 is silent)
+- [ ] The phase-1 fixture gates `projects.archive` for agents (`archive-project` rule); the Guardrails table says "delete anything: not allowed" — once real gated commands exist, move `projects.archive` to `no-deletes`
+- [ ] Until phase 2 meters GPU use, the budget check uses a fixed 8 GPU-hours per day (`policy.StubBudget`); the value should come from `defaults.yaml` budgets (R11)
+- [ ] opencode names MCP tools `<server>_<tool>` with other characters replaced by `_` (`cadence_projects_get`); the rendered `permission` block assumes it — verify in spike A1 with both drivers
+- [ ] Registry API shape (phase 1): versions are served per kind (`baseModels`, `datasets`, `templates` under
+      `/registry/<kind>`, so `datasets.materialize` and `models.export` fit later) and collections generically
+      (`collections.list|get`); a collection name in a path escapes its slash (`dataset%2Ffleurs-he-smoke`). Adoption is
+      `POST /projects/{p}:adopt` (`projects.adopt`, If-Match on the project) instead of `POST /projects/{p}/adoptions`.
+      Confirm
+- [ ] Adoption checks: phase 1 accepts any frozen version; the licence and locale checks of 02 "Registry" wait for
+      project locales (wizard) and a licence policy — which licences may a project adopt without a person?
+- [ ] An alias may point only at a version the project adopted (enforced by a foreign key); versions and the staging
+      card's class (`blackwell-96gb`, from spike A3's "96 GB" and the Blackwell toolchain note) are assumptions until
+      the staging host is inventoried
+- [ ] Secrets: no rotation or archive yet (`secrets.new` refuses a taken name); the master key defaults to
+      `$CADENCE_DATA_DIR/master.key`, generated on first start, until the compose secret of R9 is wired
+- [ ] Identity (phase 1) assumptions, confirm: login throttling counts failed attempts only (5/min, 20/h per address and per username, in memory); `X-Forwarded-For`/`-Proto` are trusted from loopback and private peers (the host's Caddy, Docker's gateway); the TOTP secret lives in the `users` row, not the R9 file store (it is a sign-in factor, not a secret handed to jobs); passwords need 12+ characters; first start may rename the admin account; out-of-scope reads answer 403 `forbidden` rather than hiding the entity behind 404; a credential without a project may not open the event stream
+- [ ] Search (phase 1, wave 2): `projects.search` is `GET /projects/{p}:search` (a read action; `/projects/{p}/search`
+      fails R1's path rule). Without a scope qualifier it covers the current project, the registry (with registry
+      read) and help; instance-wide work (jobs and approvals without a project) only for full scope. `project:<slug>`
+      replaces the current project (each checked against the credential); `scope:all` never widens a project-bound
+      token beyond its project. Unknown qualifiers are a 400 `invalid-query`, never text. Confirm
+- [ ] Search typo tolerance uses pg_trgm word similarity above 0.4 (one transposition in a six-letter word); the
+      Hebrew fold is niqqud stripping plus a ten-word ktiv male/haser stub list until the Hebrew language pack
+      (phase 3) brings a lexicon
+- [ ] Saved searches belong to the actor id (a person, or an API key acting as itself), like workspaces; there is no
+      way to remove one yet (removal would be an `archive` verb under `me`)
+- [ ] CLI (R34): generated commands exclude the exempt tags (`auth`, `me`) and planned operations; `cadence help`
+      is both the help command and the `help` entity, so `cadence help get|search` call `help.get|search` and
+      `cadence help <entity>` describes an entity
+- [ ] The palette's text box keeps focus, so Space previews a hit in the Inspector only after the highlight was moved
+      with the arrow keys (typing resets it); Enter opens a hit's document where its kind has one, else the Inspector
+      (10 "Every list" assumes list focus, not a text box)
+- [ ] Phase-1 panels (wave 2), confirm: the audit log is a Settings section (11 names no panel of its own);
+  Getting started sits in the Training workspace's right column (Training is where a newcomer lands; 11 lists it
+  in no workspace) and "Dismiss" is remembered per browser, not per user, until a user-preferences entity exists;
+  "first dataset frozen" counts a dataset version frozen by a person or an agent (bundled fixtures do not);
+  Settings opens floating and shows to any signed-in person (v1 has one admin; the reviewer role hides it later);
+  "Approve for this session" is offered only for requests carrying an agent session id; stored Ops workspaces are
+  not migrated to add the Approvals panel (the stored shape did not change; the status-bar badge reaches it) — only
+  "Reset to default" and new workspaces get it
+- [ ] Mixes and drafts (phase 1, mix stream) assumptions, confirm:
+      the draft policy per kind is the project's agent profile `draftPolicy` (Agent settings; the wizard fills it
+      from `agent.draft_policy`), and `defaults.yaml` `drafts.mix` only for a project without a profile; an agent never accepts a draft (`drafts-are-for-people`
+      forbidden rule in `guardrails-default`) — auto-accept is the `direct` policy, not an agent's choice; one open
+      draft per author (actor + session) and entity, whose later edits update it (the draft's own `rev` is the
+      If-Match of accept and revert); an agent's edit on a newer revision carries its open draft over field by field
+      (top-level fields the draft changed win); accepting a draft whose base is no longer current answers `412
+      draft-stale` (a new error type) with the entity's revision instead of merging; presence is the authors of open
+      drafts plus an agent's direct edit for `drafts.presence_seconds` (30 s), sent whole as `presence.changed`;
+      `drafts.list` is `GET /drafts?entityKind=&entityId=` (one operation for every draftable kind) rather than
+      `GET /{kind}/{id}/drafts`
+- [ ] Mix shape (R13), confirm: groups of frozen dataset versions (`ver_…`, `@alias` or a collection name, stored
+      resolved) with a weight and a replay flag; a group is sampled with probability ∝ weight^(1/temperature) among
+      its kind and replay groups together get `replayShare`; a dataset version belongs to one group; names are unique
+      per project; the preview uses each version's train split hours and splits a multi-locale version evenly.
+      Mixes use the `container` state template (active) like projects; "Save mix as version" is `mixes.new` (save)
+- [ ] Chromium's offline emulation does not drop an open event stream, so spike A4 drops it in the page and the
+      shell's own reconnect resumes with `?after=`; EventSource's native retry with `Last-Event-ID` is covered by the
+      control plane's integration test only
+- [ ] Projects (phase 1, wave 2) assumptions, confirm:
+  - The bare repository on the control plane is the canonical copy for every repository kind; GitHub and linked
+    repositories get `main` mirrored after each change (never force-pushed; a failed push is recorded on the project
+    as `repository.pushError`). Changes pushed to GitHub directly are not pulled back yet
+  - Agent hosts clone from and push to `/git/<slug>.git` with the session's `cst_` token, which may push only
+    `refs/heads/session/<session id>` (R3 "the host clones from the control plane"); `main` moves only by merge
+  - Linking an existing repository uses its `main`; a repository whose default branch has another name gets a new
+    `main` from the bootstrap commit. SSH remotes are refused (https only)
+  - Creating a GitHub repository is tested against a fake of the REST API only, not against GitHub itself
+  - The default opencode model is `minimax/MiniMax-M2` (models.dev naming of the MiniMax provider, R6) — check the
+    exact id against the Token Plan; Claude Code models are the aliases `sonnet` (default), `opus`, `haiku`
+  - The per-project agent budget is in tokens per day (`budgets.agent_tokens_per_project_per_day`, 20 M), since money
+    counts only in API-key mode (R6); the draft policy defaults are mix, gate and language pack as drafts, notes direct
+  - A failed bootstrap leaves the project in state `failed` with the reason; retrying needs a new project (no
+    `projects.retry` yet), and its slug stays taken while the repository directory exists
+  - The Agent settings live topic is `entity.project.{id}` (11-ui-panels); profile changes are `agent_profile.edited`
+    events there, with entity kind `agent_profile`
+  - The default workspaces are created by the bootstrap as placeholders (an empty layout) that the web shell fills
+    with its code-defined default layout on first open
+- [ ] Agent sessions (phase 1, wave 2) assumptions, confirm:
+  - Ending an interactive session is `agentSessions.cancel` with `{"end": true}` (the vocabulary has no end/close
+    verb); the session is `done`, `cancelled` only when it never started
+  - `agentSessions.accept|revert` need the session paused or ended; a paused one ends. Accepting a running session
+    would race the host's last commit
+  - The session token is minted when a host claims the session, not at `agentSessions.new`, and re-minted (the old
+    one revoked) when another host takes the session over; nothing stores it in plaintext
+  - What a claim hands the host is taken at most once: a host that crashes between claim and delivery loses those
+    messages (the user sends again); its sessions resume on the next host after 90 s of silence
+  - A message to a paused session resumes it unless it paused on its budget; read-only sessions take one message
+  - Every pause writes a note to NOTES.md on `main` as Cadence (R5 "writes a note"), the person's own pauses included
+  - Budgets: 10 M input+output tokens per session and 1 M per turn (cached reads not counted; mid-turn the host uses
+    the growth of the context window, which underestimates) — Cadence recommendations until measured
+  - The idle clock runs from the last user message (or the start) and only while no approval is pending and no turn
+    runs; waiting for a person never pauses
+  - An agent-permission approval shows its ACP request as the approval's `request` (method `ACP`, path
+    `session/request_permission`) so existing Approvals cards render it; `kind` and `permission` tell them apart
+  - Development without the agent-credentials volume uses the agents' default login under the host user's HOME and
+    no per-session users; the image always isolates
+  - claude-agent-acp raises a permission request even for MCP tools the rendered settings allow (A2); the preset
+    answers them without a person
+- [ ] Chat, Agent sessions and the context bridge (phase 1, chat stream) assumptions, confirm:
+  - "One Chat per agent session": the workspace's Chat (instance `chat`, in the right column of every default
+    workspace) is pinned to a session through the selection bus pins, stored as `panels.chat.pinnedTo =
+    agent_session:<id>`; a session opened while that Chat shows another one gets its own Chat (`chat:agent_session:<id>`)
+    in the same group. A message in a Chat without a live session starts a new interactive session with the
+    profile's driver and model
+  - Workspace schema 2 adds Chat to the right-column group of layouts stored before Chat existed (the stored shape
+    of `panels` did not change; the layout did)
+  - The header meters turns and tokens only: a session carries no GPU-hours of its own (05 and 11 name GPU-hours in
+    the meter); GPU spend stays with the project budget and its approvals
+  - Enter sends and Shift+Enter starts a new line; Ctrl/Cmd+. and Ctrl/Cmd+I act on the Chat that last had focus
+  - "Explain this" (document headers and help articles) starts a read-only session whose prompt asks what the thing
+    is, where it sits in the loop and what to do next, with the entity and its panel's help article (`@help:<id>`)
+    attached; "Ask agent" prefills `<intent> (<references>)` and never sends by itself
+  - References in agent Markdown become links for `@<kind>:<id>[#part]` outside code; a kind without a document opens
+    its preview in the Inspector, `@session:` a Chat and `@help:` the Help panel
+  - The finished turn (busy → idle), pauses, failures and ends reach the polite live region from the shell's
+    `agent.sessions` subscription; pauses, failures and sessions ending with changes also go to the notification
+    history. Agent sessions has no column in the default workspaces: it opens floating from the status bar's Agents
+    badge (11 "Default workspaces")
 
 ## Sources
 

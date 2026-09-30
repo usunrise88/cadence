@@ -85,9 +85,12 @@ func (c *Contract) Tools() []Tool {
 			desc = o.Summary
 		}
 		if o.Mutation {
+			if !strings.HasSuffix(desc, ".") {
+				desc += "."
+			}
 			desc += " Pass dryRun=true to see what would happen without changing anything."
 		}
-		v := o.resolvedVrb
+		v := c.Vocab.Verbs[o.Verb] // from the vocabulary, not from Check: generation must not depend on call order
 		tools = append(tools, Tool{
 			Name: o.ID, Title: o.Summary, Description: desc, Method: o.Method, Path: o.Path,
 			InputSchema: schema, Params: params,

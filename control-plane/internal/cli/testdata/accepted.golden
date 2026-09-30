@@ -1,0 +1,13 @@
+$ cadence projects archive --project alpha --if-match "2"
+exit 0
+--- requests
+POST /api/projects/alpha:archive
+  header Authorization: Bearer cdk_env
+  header Idempotency-Key: key-0001
+  header If-Match: "2"
+  header Accept: application/json
+--- stdout
+{
+  "approvalId": "apr_1"
+}
+--- stderr

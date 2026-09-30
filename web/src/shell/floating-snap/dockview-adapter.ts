@@ -245,10 +245,14 @@ export function installAdapter(api: DockviewApi, root: HTMLElement, opts: Adapte
 function updateYield(api: DockviewApi, target: Element | null): void {
   for (const f of floats(api)) {
     const el = f.overlay.element;
+    // Only the work surface lies under floats: popovers, menus and dialogs portal above them (a "Why this default?"
+    // popover opened from a floating Settings must not fade its own window).
+    const surface = el.closest(".dv-shell, .dv-dockview");
     const covering =
       !!target &&
       target instanceof HTMLElement &&
       !el.contains(target) &&
+      (!surface || surface.contains(target)) &&
       el.ownerDocument === target.ownerDocument &&
       intersects(el.getBoundingClientRect(), target.getBoundingClientRect());
     el.classList.toggle("cadence-float-yield", covering);

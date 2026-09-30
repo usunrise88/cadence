@@ -73,7 +73,7 @@ test.describe("shell", () => {
     expect(after.top - before.top).toBe(10);
     await page.keyboard.press("F6");
     await page.keyboard.press("Alt+w");
-    await expect(page.locator("[data-tab]")).toHaveCount(3);
+    await expect(page.locator("[data-tab]")).toHaveCount(5); // Training: project, library, chat, inspector, help, getting started; one closed
   });
 
   test("popout: panel, theme, menus and return to grid", async ({ page, request }) => {
@@ -143,10 +143,55 @@ test.describe("shell", () => {
     await openWorkspace(page, slug);
     await runCommand(page, "New project");
     const dialog = page.getByRole("dialog");
-    await dialog.getByRole("textbox", { name: "Name" }).fill("Duplicate");
+    await dialog.getByRole("textbox", { name: "Name", exact: true }).fill("Duplicate");
+    await dialog.getByRole("button", { name: "Customise" }).click();
     await dialog.getByRole("textbox", { name: /Slug/ }).fill(slug);
     await page.getByRole("button", { name: "Create project" }).click();
-    await expect(dialog.getByRole("alert")).toBeVisible();
-    await expect(dialog).toBeVisible(); // nothing was created; the dialog stays open
+    await expect(dialog.getByRole("alert").first()).toBeVisible();
+    await expect(dialog.getByRole("heading", { name: "New project" })).toBeVisible(); // nothing was created; the form stays open
+  });
+
+  test("wizard: three fields create a project, bootstrap runs and the Project document opens", async ({ page, request }) => {
+    const first = await newProject(request);
+    await openWorkspace(page, first);
+    await runCommand(page, "New project");
+    const dialog = page.getByRole("dialog");
+    const name = `Wizard ${Date.now().toString(36)}`;
+    await dialog.getByRole("textbox", { name: "Name", exact: true }).fill(name);
+    await dialog.getByRole("textbox", { name: "Language" }).fill("he-IL");
+    await expect(dialog.getByRole("textbox", { name: /recordings/ })).toBeDisabled();
+    await expect(dialog.getByRole("heading", { name: "Recommended defaults" })).toBeVisible();
+    await dialog.getByRole("button", { name: "Create project" }).click();
+    // Bootstrap done: the wizard closes and the new project's workspace opens with its Project document.
+    await expect(page).toHaveURL(new RegExp(`/p/${name.toLowerCase().replace(/ /g, "-")}/w/`), { timeout: 60_000 });
+    await expect(page.getByTestId("project-wizard")).toHaveCount(0);
+    const doc = page.locator('[data-panel="project"]');
+    await expect(doc.getByRole("heading", { name, exact: true })).toBeVisible();
+    await expect(doc.locator('[data-slot="entity-header"] [data-slot="status-chip"]')).toHaveText(/active/i);
+    await expect(doc.getByText("he-IL").first()).toBeVisible();
+    await expect(doc.getByText("guardrails-default")).toBeVisible();
+  });
+
+  test("project repository: note, agent settings and the recipe document", async ({ page, request }) => {
+    const slug = await newProject(request);
+    await openWorkspace(page, slug);
+    const doc = page.locator('[data-panel="project"]');
+    await doc.getByRole("tab", { name: "Notes" }).click();
+    await doc.getByRole("textbox").fill("FLEURS he alone overfits after 2k steps; mix in replay from the start.");
+    await doc.getByRole("button", { name: "Add note" }).click();
+    await expect(doc.getByTestId("project-notes")).toContainText("FLEURS he alone overfits", { timeout: 10_000 });
+
+    await doc.getByRole("tab", { name: "Overview" }).click();
+    await doc.getByRole("button", { name: "Open Agent settings" }).click();
+    const settings = page.locator('[data-panel="agent-settings"]');
+    await expect(settings.getByTestId("rendered-file")).toContainText('"permissions"');
+    await settings.getByRole("tab", { name: "opencode.json" }).click();
+    await expect(settings.getByTestId("rendered-file")).toContainText('"permission"');
+
+    await doc.getByRole("button", { name: "Browse files" }).click();
+    const recipe = page.locator('[data-panel="recipe"]:visible');
+    await expect(recipe.getByTestId("recipe-content")).toContainText(slug);
+    await recipe.getByRole("button", { name: /^AGENTS\.md/ }).click();
+    await expect(page.locator('[data-panel="recipe"]:visible').getByRole("heading", { name: "AGENTS.md" })).toBeVisible();
   });
 });

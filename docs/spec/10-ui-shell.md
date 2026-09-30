@@ -147,7 +147,7 @@ One word per action, everywhere: in menus, the palette, API operation ids and MC
 | get, list, search, compare, lineage | Every kind (read verbs; `search` includes `registry.search`, `utterances.search`) | — | None |
 | new, open, edit | Every mutable kind; `edit` covers gates and agent profiles | edit yes | None |
 | preview, calibrate | Anything that spends: mixes, datasets, runs | — | None |
-| run, pause, resume, cancel, retry, wait | Jobs, pipelines, runs, evals; `wait` is agent-only | cancel is not | cancel: inline confirm |
+| run, pause, resume, cancel, retry, wait | Jobs, pipelines, runs, evals; `wait` is agent-only and a read (a `GET` action that returns when the job ends or its timeout passes) | cancel is not | cancel: inline confirm |
 | stage | Runs: a new stage from a checkpoint | — | None |
 | freeze | Dataset versions, golden sets | No | Inline confirm; golden sets need approval |
 | materialize, evict, scan, export | Dataset versions, mounts, models | evict yes | None |

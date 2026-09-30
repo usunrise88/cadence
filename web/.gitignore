@@ -1,3 +1,4 @@
 .vitest/
 test-results/
 playwright-report/
+.e2e/

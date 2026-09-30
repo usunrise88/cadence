@@ -7,7 +7,7 @@ import { panels } from "@/shell/registries";
 import { useSelection } from "@/shell/selection/store";
 import { notifyError } from "@/shell/notifications/store";
 import { isDefaultWorkspace, planDefaultLayout, type Placement } from "./defaults";
-import { migrate, normalizeLayout, parseWorkspace, WORKSPACE_SCHEMA_VERSION, type PanelState, type SerializedLayout } from "./schema";
+import { isPlaceholderLayout, migrate, normalizeLayout, parseWorkspace, WORKSPACE_SCHEMA_VERSION, type PanelState, type SerializedLayout } from "./schema";
 
 // Workspaces are saved per user per project through the API, debounced 1 s after Dockview's layout-change event,
 // with If-Match on the revision. A losing tab (412) gets an inline notice instead of overwriting.
@@ -15,6 +15,8 @@ import { migrate, normalizeLayout, parseWorkspace, WORKSPACE_SCHEMA_VERSION, typ
 type SyncState = {
   key: string | null; // `${project}/${name}`
   rev: number | undefined;
+  /** The stored workspace is the bootstrap's placeholder: shown from the default plan, not saved by anyone yet. */
+  placeholder: boolean;
   restoring: boolean;
   conflict: boolean;
   saving: boolean;
@@ -25,6 +27,7 @@ type SyncState = {
 export const useWorkspaceSync = create<SyncState>(() => ({
   key: null,
   rev: undefined,
+  placeholder: false,
   restoring: false,
   conflict: false,
   saving: false,
@@ -62,18 +65,22 @@ function pinsOf(api: DockviewApi): Record<string, PanelState> {
 /** Loads a workspace (or builds its default) into Dockview. Measures `cadence:restore` for the S4 budget. */
 export async function restoreWorkspace(api: DockviewApi, project: string, name: string): Promise<void> {
   const key = `${project}/${name}`;
-  useWorkspaceSync.setState({ key, restoring: true, conflict: false, rev: undefined, missingPanels: [] });
+  useWorkspaceSync.setState({ key, restoring: true, conflict: false, rev: undefined, placeholder: false, missingPanels: [] });
   let layout: SerializedLayout | null = null;
   let rev: number | undefined;
   let pinned: Record<string, PanelState> = {};
   try {
     const res = await workspacesGet({ path: { p: project, name } });
     const ws = migrate(parseWorkspace(res.data));
-    const norm = normalizeLayout(ws.layout, panels);
-    layout = norm.layout;
     rev = res.data?.rev;
     pinned = ws.panels;
-    useWorkspaceSync.setState({ missingPanels: norm.missing });
+    if (isPlaceholderLayout(ws.layout)) {
+      useWorkspaceSync.setState({ placeholder: true });
+    } else {
+      const norm = normalizeLayout(ws.layout, panels);
+      layout = norm.layout;
+      useWorkspaceSync.setState({ missingPanels: norm.missing });
+    }
   } catch (err) {
     if (!(err instanceof ProblemError && err.status === 404)) {
       notifyError(`Workspace “${name}” could not be loaded; showing the default`, err);
@@ -112,7 +119,7 @@ export async function saveWorkspace(api: DockviewApi, project: string, name: str
       body: { schemaVersion: WORKSPACE_SCHEMA_VERSION, layout: api.toJSON() as unknown as Record<string, unknown>, panels: pinsOf(api) },
       headers: commandHeaders(rev),
     });
-    useWorkspaceSync.setState({ rev: res.data?.rev, conflict: false });
+    useWorkspaceSync.setState({ rev: res.data?.rev, conflict: false, placeholder: false });
   } catch (err) {
     if (err instanceof ProblemError && (err.status === 412 || err.status === 428)) {
       useWorkspaceSync.setState({ conflict: true });
@@ -127,14 +134,20 @@ export async function saveWorkspace(api: DockviewApi, project: string, name: str
 /** Debounced autosave on every layout change; returns the unsubscribe. */
 export function startAutosave(api: DockviewApi, project: string, name: string): () => void {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const sub = api.onDidLayoutChange(() => {
+  const schedule = () => {
     const st = useWorkspaceSync.getState();
     if (st.restoring || st.conflict) return;
     clearTimeout(timer);
     timer = setTimeout(() => void saveWorkspace(api, project, name), SAVE_DEBOUNCE_MS);
+  };
+  const sub = api.onDidLayoutChange(schedule);
+  // A pin (a tool pinned to a document, Chat pinned to its agent session) is workspace state too.
+  const offPins = useSelection.subscribe((s, prev) => {
+    if (s.pins !== prev.pins) schedule();
   });
   return () => {
     clearTimeout(timer);
     sub.dispose();
+    offPins();
   };
 }

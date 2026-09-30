@@ -3,7 +3,7 @@ import { PLACEHOLDER_PANEL, type PanelParams, type PanelRegistry } from "@/shell
 // docs/spec/10-ui-shell.md "Persistence": a workspace is versioned data that survives panel renames and Dockview
 // upgrades. The layout is Dockview's own serialization; everything else is ours.
 
-export const WORKSPACE_SCHEMA_VERSION = 1;
+export const WORKSPACE_SCHEMA_VERSION = 2;
 export const DEFAULT_WORKSPACES = ["Training", "Eval", "Data", "Triage", "Ops"] as const;
 export type DefaultWorkspaceName = (typeof DEFAULT_WORKSPACES)[number];
 
@@ -35,11 +35,45 @@ export type WorkspaceData = {
 
 type Migration = (w: WorkspaceData) => WorkspaceData;
 
+type GridNode = { type: "branch"; data: GridNode[]; [k: string]: unknown } | { type: "leaf"; data: { views: string[]; activeView?: string; id: string }; [k: string]: unknown };
+
+/**
+ * Schema 2: Chat sits in the right column of every workspace (docs/spec/11-ui-panels.md "Default workspaces"). Layouts
+ * saved before the Chat panel existed get it as an inactive tab of their right-column group; a layout that already
+ * has a Chat, has no right-column group, or is a bootstrap placeholder stays as it is.
+ */
+export function addChatToRightColumn(layout: SerializedLayout): SerializedLayout {
+  const panels = layout.panels ?? {};
+  if (isPlaceholderLayout(layout) || Object.values(panels).some((p) => p.params?.panel === "chat")) return layout;
+  const right = new Set(Object.entries(panels).filter(([, p]) => p.params?.loc === "right").map(([id]) => id));
+  if (right.size === 0) return layout;
+  let done = false;
+  const visit = (n: GridNode): GridNode => {
+    if (done) return n;
+    if (n.type === "leaf") {
+      if (!n.data.views.some((v) => right.has(v))) return n;
+      done = true;
+      return { ...n, data: { ...n.data, views: [...n.data.views, "chat"] } };
+    }
+    return { ...n, data: n.data.map(visit) };
+  };
+  const grid = layout.grid as { root: GridNode; [k: string]: unknown };
+  const root = visit(grid.root);
+  if (!done) return layout;
+  return {
+    ...layout,
+    grid: { ...grid, root },
+    panels: { ...panels, chat: { id: "chat", contentComponent: "panel", title: "Chat", params: { panel: "chat", loc: "right" } } },
+  };
+}
+
 /**
  * migrations[n] upgrades a workspace from schema n to n+1. Add one when the stored shape changes; never edit an
  * existing one. Version 1 is the first stored shape.
  */
-export const migrations: Readonly<Record<number, Migration>> = {};
+export const migrations: Readonly<Record<number, Migration>> = {
+  1: (w) => ({ ...w, layout: addChatToRightColumn(w.layout) }),
+};
 
 export class WorkspaceSchemaError extends Error {}
 
@@ -83,6 +117,15 @@ export function normalizeLayout(layout: SerializedLayout, registry: PanelRegistr
     }
   }
   return { layout: { ...layout, panels }, renamed, missing };
+}
+
+/**
+ * A stored workspace whose layout has no grid is a placeholder: the project bootstrap records the default workspaces
+ * with an empty layout, and the client builds them from the code factories on first open (then saves over the
+ * placeholder with its revision).
+ */
+export function isPlaceholderLayout(layout: SerializedLayout): boolean {
+  return !layout.grid || typeof layout.grid !== "object";
 }
 
 /** Parses what the API returned (or a fixture) into WorkspaceData, rejecting shapes we cannot restore. */

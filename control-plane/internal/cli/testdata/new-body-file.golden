@@ -1,0 +1,15 @@
+$ cadence projects new --body @<file> --dry-run
+exit 0
+--- requests
+POST /api/projects
+  query dryRun=true
+  header Authorization: Bearer cdk_env
+  header Idempotency-Key: key-0001
+  header Content-Type: application/json
+  header Accept: application/json
+  body {"slug": "from-file", "name": "From a file"}
+--- stdout
+{
+  "ok": true
+}
+--- stderr

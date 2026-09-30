@@ -1,0 +1,698 @@
+{
+  "driver": "claude",
+  "initializeMs": 457,
+  "newSessionMs": 834,
+  "sessionId": "a8a66a8f-8f8e-49e5-9eee-b12f20191c33",
+  "steps": [
+    {
+      "name": "mcp",
+      "prompt": "Call the tool \"echo\" of the MCP server \"cadence\" with text \"ping\". Then reply with the exact text the tool returned and nothing else.",
+      "stopReason": "end_turn",
+      "ms": 5350,
+      "text": "echo:ping:8b8a9f",
+      "firstUpdateMs": 36,
+      "firstThoughtMs": 1417,
+      "firstTokenMs": 5216
+    },
+    {
+      "name": "edit",
+      "prompt": "First create a task list (todo list) with two tasks: \"edit notes.txt\" and \"reply\". Then in notes.txt replace the word \"alpha\" with \"beta\" using your file edit tool (no shell), mark both tasks done, and reply \"done\".",
+      "stopReason": "end_turn",
+      "ms": 11934,
+      "text": "done",
+      "firstUpdateMs": 17,
+      "firstThoughtMs": 509,
+      "firstTokenMs": 11895
+    },
+    {
+      "name": "shell",
+      "prompt": "Run this shell command exactly: echo a1-shell-ok > shell.txt. Reply \"done\".",
+      "stopReason": "end_turn",
+      "ms": 2265,
+      "text": "done",
+      "firstUpdateMs": 486,
+      "firstThoughtMs": 486,
+      "firstTokenMs": 2227
+    },
+    {
+      "name": "cancel",
+      "prompt": "Without using any tool, write the numbers from one to three hundred as English words in your reply, one per line, with no other text.",
+      "stopReason": "cancelled",
+      "ms": 509,
+      "text": "",
+      "firstUpdateMs": 498,
+      "firstThoughtMs": 498,
+      "cancelToStopMs": 11
+    },
+    {
+      "name": "restore",
+      "prompt": "What exact text did the echo tool return earlier in this conversation? Reply with that text only.",
+      "stopReason": "end_turn",
+      "ms": 2952,
+      "text": "echo:ping:8b8a9f",
+      "firstUpdateMs": 20,
+      "firstThoughtMs": 1441,
+      "firstTokenMs": 2844
+    }
+  ],
+  "hostKinds": {
+    "state": 10,
+    "info": 5,
+    "usage": 39,
+    "thought": 283,
+    "tool_call": 34,
+    "permission": 3,
+    "permission_decided": 3,
+    "message": 9,
+    "plan": 8
+  },
+  "acpKinds": {
+    "available_commands_update": 4,
+    "usage_update": 34,
+    "agent_thought_chunk": 283,
+    "tool_call": 7,
+    "tool_call_update": 27,
+    "agent_message_chunk": 9,
+    "session_info_update": 1,
+    "plan": 8
+  },
+  "permissions": [
+    {
+      "step": "mcp",
+      "title": "cadence.echo",
+      "class": "mcp",
+      "options": [
+        "allow_once",
+        "allow_always",
+        "reject_once"
+      ],
+      "answered": "allow_once"
+    },
+    {
+      "step": "edit",
+      "title": "Edit notes.txt",
+      "class": "edit",
+      "options": [
+        "allow_once",
+        "allow_always",
+        "reject_once"
+      ],
+      "answered": "allow_once"
+    },
+    {
+      "step": "shell",
+      "title": "echo a1-shell-ok > shell.txt",
+      "class": "shell",
+      "options": [
+        "allow_once",
+        "allow_always",
+        "reject_once"
+      ],
+      "answered": "allow_once"
+    }
+  ],
+  "mcpCalls": [
+    {
+      "id": "toolu_01CcCBJMcfmyY1GFryDJnx8m",
+      "title": "cadence.echo",
+      "acpKind": "other",
+      "class": "mcp",
+      "status": "completed",
+      "diffs": [],
+      "locations": [],
+      "text": "echo:ping:8b8a9f",
+      "mcp": {
+        "server": "cadence",
+        "tool": "echo"
+      },
+      "rawInput": {
+        "text": "ping"
+      },
+      "rawOutput": [
+        {
+          "type": "text",
+          "text": "echo:ping:8b8a9f"
+        }
+      ]
+    }
+  ],
+  "editCalls": [
+    {
+      "id": "toolu_01X3wzgSaVhQEsQapNQP52hV",
+      "title": "Edit notes.txt",
+      "acpKind": "edit",
+      "class": "edit",
+      "status": "completed",
+      "diffs": [
+        {
+          "path": "/workspace/notes.txt",
+          "oldText": "alpha",
+          "newText": "beta"
+        }
+      ],
+      "locations": [
+        "/workspace/notes.txt"
+      ],
+      "text": "",
+      "rawInput": {
+        "file_path": "/workspace/notes.txt",
+        "old_string": "alpha",
+        "new_string": "beta",
+        "replace_all": false
+      },
+      "rawOutput": "The file /workspace/notes.txt has been updated successfully. (file state is current in your context — no need to Read it back)"
+    }
+  ],
+  "shellCalls": [
+    {
+      "id": "toolu_012he5prmx4uMRngpJ9ikLdP",
+      "title": "echo a1-shell-ok > shell.txt",
+      "acpKind": "execute",
+      "class": "shell",
+      "status": "completed",
+      "diffs": [],
+      "locations": [
+        "/workspace/shell.txt"
+      ],
+      "text": "Write to shell.txt",
+      "shell": {
+        "command": "echo a1-shell-ok > shell.txt",
+        "output": "(Bash completed with no output)"
+      },
+      "rawInput": {
+        "command": "echo a1-shell-ok > shell.txt",
+        "description": "Write to shell.txt"
+      },
+      "rawOutput": "(Bash completed with no output)"
+    }
+  ],
+  "diffs": [
+    {
+      "path": "/workspace/notes.txt",
+      "oldText": "alpha",
+      "newText": "beta"
+    }
+  ],
+  "plans": [
+    [
+      {
+        "content": "edit notes.txt",
+        "priority": "medium",
+        "status": "pending"
+      }
+    ],
+    [
+      {
+        "content": "edit notes.txt",
+        "priority": "medium",
+        "status": "pending"
+      }
+    ],
+    [
+      {
+        "content": "edit notes.txt",
+        "priority": "medium",
+        "status": "pending"
+      },
+      {
+        "content": "reply",
+        "priority": "medium",
+        "status": "pending"
+      }
+    ],
+    [
+      {
+        "content": "edit notes.txt",
+        "priority": "medium",
+        "status": "pending"
+      },
+      {
+        "content": "reply",
+        "priority": "medium",
+        "status": "pending"
+      }
+    ],
+    [
+      {
+        "content": "edit notes.txt",
+        "priority": "medium",
+        "status": "completed"
+      },
+      {
+        "content": "reply",
+        "priority": "medium",
+        "status": "pending"
+      }
+    ],
+    [
+      {
+        "content": "edit notes.txt",
+        "priority": "medium",
+        "status": "completed"
+      },
+      {
+        "content": "reply",
+        "priority": "medium",
+        "status": "pending"
+      }
+    ],
+    [
+      {
+        "content": "edit notes.txt",
+        "priority": "medium",
+        "status": "completed"
+      },
+      {
+        "content": "reply",
+        "priority": "medium",
+        "status": "completed"
+      }
+    ],
+    [
+      {
+        "content": "edit notes.txt",
+        "priority": "medium",
+        "status": "completed"
+      },
+      {
+        "content": "reply",
+        "priority": "medium",
+        "status": "completed"
+      }
+    ]
+  ],
+  "usage": [
+    {
+      "kind": "usage",
+      "sessionId": "a8a66a8f-8f8e-49e5-9eee-b12f20191c33",
+      "context": {
+        "used": 22212,
+        "size": 200000
+      }
+    },
+    {
+      "kind": "usage",
+      "sessionId": "a8a66a8f-8f8e-49e5-9eee-b12f20191c33",
+      "context": {
+        "used": 22212,
+        "size": 200000
+      }
+    },
+    {
+      "kind": "usage",
+      "sessionId": "a8a66a8f-8f8e-49e5-9eee-b12f20191c33",
+      "context": {
+        "used": 22385,
+        "size": 200000
+      }
+    },
+    {
+      "kind": "usage",
+      "sessionId": "a8a66a8f-8f8e-49e5-9eee-b12f20191c33",
+      "context": {
+        "used": 22520,
+        "size": 200000
+      }
+    },
+    {
+      "kind": "usage",
+      "sessionId": "a8a66a8f-8f8e-49e5-9eee-b12f20191c33",
+      "context": {
+        "used": 22612,
+        "size": 200000
+      }
+    },
+    {
+      "kind": "usage",
+      "sessionId": "a8a66a8f-8f8e-49e5-9eee-b12f20191c33",
+      "context": {
+        "used": 22670,
+        "size": 200000
+      }
+    },
+    {
+      "kind": "usage",
+      "sessionId": "a8a66a8f-8f8e-49e5-9eee-b12f20191c33",
+      "context": {
+        "used": 22722,
+        "size": 200000
+      }
+    },
+    {
+      "kind": "usage",
+      "sessionId": "a8a66a8f-8f8e-49e5-9eee-b12f20191c33",
+      "context": {
+        "used": 22722,
+        "size": 200000
+      },
+      "cost": {
+        "amount": 0.0264216,
+        "currency": "USD"
+      }
+    },
+    {
+      "kind": "usage",
+      "sessionId": "a8a66a8f-8f8e-49e5-9eee-b12f20191c33",
+      "turn": {
+        "inputTokens": 28,
+        "outputTokens": 323,
+        "totalTokens": 67719,
+        "cachedReadTokens": 58396,
+        "cachedWriteTokens": 8972
+      }
+    },
+    {
+      "kind": "usage",
+      "sessionId": "a8a66a8f-8f8e-49e5-9eee-b12f20191c33",
+      "context": {
+        "used": 22822,
+        "size": 200000
+      }
+    },
+    {
+      "kind": "usage",
+      "sessionId": "a8a66a8f-8f8e-49e5-9eee-b12f20191c33",
+      "context": {
+        "used": 23000,
+        "size": 200000
+      }
+    },
+    {
+      "kind": "usage",
+      "sessionId": "a8a66a8f-8f8e-49e5-9eee-b12f20191c33",
+      "context": {
+        "used": 23772,
+        "size": 200000
+      }
+    },
+    {
+      "kind": "usage",
+      "sessionId": "a8a66a8f-8f8e-49e5-9eee-b12f20191c33",
+      "context": {
+        "used": 23878,
+        "size": 200000
+      }
+    },
+    {
+      "kind": "usage",
+      "sessionId": "a8a66a8f-8f8e-49e5-9eee-b12f20191c33",
+      "context": {
+        "used": 23931,
+        "size": 200000
+      }
+    },
+    {
+      "kind": "usage",
+      "sessionId": "a8a66a8f-8f8e-49e5-9eee-b12f20191c33",
+      "context": {
+        "used": 24142,
+        "size": 200000
+      }
+    },
+    {
+      "kind": "usage",
+      "sessionId": "a8a66a8f-8f8e-49e5-9eee-b12f20191c33",
+      "context": {
+        "used": 24260,
+        "size": 200000
+      }
+    },
+    {
+      "kind": "usage",
+      "sessionId": "a8a66a8f-8f8e-49e5-9eee-b12f20191c33",
+      "context": {
+        "used": 24420,
+        "size": 200000
+      }
+    },
+    {
+      "kind": "usage",
+      "sessionId": "a8a66a8f-8f8e-49e5-9eee-b12f20191c33",
+      "context": {
+        "used": 24510,
+        "size": 200000
+      }
+    },
+    {
+      "kind": "usage",
+      "sessionId": "a8a66a8f-8f8e-49e5-9eee-b12f20191c33",
+      "context": {
+        "used": 24614,
+        "size": 200000
+      }
+    },
+    {
+      "kind": "usage",
+      "sessionId": "a8a66a8f-8f8e-49e5-9eee-b12f20191c33",
+      "context": {
+        "used": 25721,
+        "size": 200000
+      }
+    },
+    {
+      "kind": "usage",
+      "sessionId": "a8a66a8f-8f8e-49e5-9eee-b12f20191c33",
+      "context": {
+        "used": 25898,
+        "size": 200000
+      }
+    },
+    {
+      "kind": "usage",
+      "sessionId": "a8a66a8f-8f8e-49e5-9eee-b12f20191c33",
+      "context": {
+        "used": 26009,
+        "size": 200000
+      }
+    },
+    {
+      "kind": "usage",
+      "sessionId": "a8a66a8f-8f8e-49e5-9eee-b12f20191c33",
+      "context": {
+        "used": 26083,
+        "size": 200000
+      }
+    },
+    {
+      "kind": "usage",
+      "sessionId": "a8a66a8f-8f8e-49e5-9eee-b12f20191c33",
+      "context": {
+        "used": 26083,
+        "size": 200000
+      },
+      "cost": {
+        "amount": 0.0550388,
+        "currency": "USD"
+      }
+    },
+    {
+      "kind": "usage",
+      "sessionId": "a8a66a8f-8f8e-49e5-9eee-b12f20191c33",
+      "turn": {
+        "inputTokens": 62,
+        "outputTokens": 1024,
+        "totalTokens": 172035,
+        "cachedReadTokens": 167612,
+        "cachedWriteTokens": 3337
+      }
+    },
+    {
+      "kind": "usage",
+      "sessionId": "a8a66a8f-8f8e-49e5-9eee-b12f20191c33",
+      "context": {
+        "used": 26148,
+        "size": 200000
+      }
+    },
+    {
+      "kind": "usage",
+      "sessionId": "a8a66a8f-8f8e-49e5-9eee-b12f20191c33",
+      "context": {
+        "used": 26279,
+        "size": 200000
+      }
+    },
+    {
+      "kind": "usage",
+      "sessionId": "a8a66a8f-8f8e-49e5-9eee-b12f20191c33",
+      "context": {
+        "used": 26336,
+        "size": 200000
+      }
+    },
+    {
+      "kind": "usage",
+      "sessionId": "a8a66a8f-8f8e-49e5-9eee-b12f20191c33",
+      "context": {
+        "used": 26358,
+        "size": 200000
+      }
+    },
+    {
+      "kind": "usage",
+      "sessionId": "a8a66a8f-8f8e-49e5-9eee-b12f20191c33",
+      "context": {
+        "used": 26358,
+        "size": 200000
+      },
+      "cost": {
+        "amount": 0.061724,
+        "currency": "USD"
+      }
+    },
+    {
+      "kind": "usage",
+      "sessionId": "a8a66a8f-8f8e-49e5-9eee-b12f20191c33",
+      "turn": {
+        "inputTokens": 18,
+        "outputTokens": 160,
+        "totalTokens": 52637,
+        "cachedReadTokens": 52132,
+        "cachedWriteTokens": 327
+      }
+    },
+    {
+      "kind": "usage",
+      "sessionId": "a8a66a8f-8f8e-49e5-9eee-b12f20191c33",
+      "context": {
+        "used": 26427,
+        "size": 200000
+      }
+    },
+    {
+      "kind": "usage",
+      "sessionId": "a8a66a8f-8f8e-49e5-9eee-b12f20191c33",
+      "context": {
+        "used": 26427,
+        "size": 200000
+      },
+      "cost": {
+        "amount": 0.061724,
+        "currency": "USD"
+      }
+    },
+    {
+      "kind": "usage",
+      "sessionId": "a8a66a8f-8f8e-49e5-9eee-b12f20191c33",
+      "turn": {
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "totalTokens": 0,
+        "cachedReadTokens": 0,
+        "cachedWriteTokens": 0
+      }
+    },
+    {
+      "kind": "usage",
+      "sessionId": "a8a66a8f-8f8e-49e5-9eee-b12f20191c33",
+      "context": {
+        "used": 26495,
+        "size": 200000
+      }
+    },
+    {
+      "kind": "usage",
+      "sessionId": "a8a66a8f-8f8e-49e5-9eee-b12f20191c33",
+      "context": {
+        "used": 26632,
+        "size": 200000
+      }
+    },
+    {
+      "kind": "usage",
+      "sessionId": "a8a66a8f-8f8e-49e5-9eee-b12f20191c33",
+      "context": {
+        "used": 26632,
+        "size": 200000
+      }
+    },
+    {
+      "kind": "usage",
+      "sessionId": "a8a66a8f-8f8e-49e5-9eee-b12f20191c33",
+      "context": {
+        "used": 26632,
+        "size": 200000
+      },
+      "cost": {
+        "amount": 0.0653835,
+        "currency": "USD"
+      }
+    },
+    {
+      "kind": "usage",
+      "sessionId": "a8a66a8f-8f8e-49e5-9eee-b12f20191c33",
+      "turn": {
+        "inputTokens": 10,
+        "outputTokens": 141,
+        "totalTokens": 26632,
+        "cachedReadTokens": 26325,
+        "cachedWriteTokens": 156
+      }
+    }
+  ],
+  "restore": {
+    "mode": "resume",
+    "ms": 815,
+    "replayedUpdates": 0
+  },
+  "clientFsCalls": [],
+  "agentInfo": {
+    "name": "@agentclientprotocol/claude-agent-acp",
+    "title": "Claude Agent",
+    "version": "0.84.0"
+  },
+  "capabilities": {
+    "_meta": {
+      "claudeCode": {
+        "promptQueueing": true
+      },
+      "authStatus": {}
+    },
+    "promptCapabilities": {
+      "image": true,
+      "embeddedContext": true
+    },
+    "mcpCapabilities": {
+      "http": true,
+      "sse": true
+    },
+    "auth": {
+      "logout": {}
+    },
+    "providers": {},
+    "loadSession": true,
+    "sessionCapabilities": {
+      "additionalDirectories": {},
+      "close": {},
+      "delete": {},
+      "fork": {},
+      "list": {},
+      "resume": {},
+      "subagents": {}
+    }
+  },
+  "mcpLog": {
+    "requests": 11,
+    "unauthorized": 0,
+    "methods": [
+      "server/discover",
+      "initialize",
+      "notifications/initialized",
+      "tools/list",
+      "tools/call",
+      "server/discover",
+      "initialize",
+      "notifications/initialized",
+      "tools/list"
+    ],
+    "calls": [
+      {
+        "text": "ping",
+        "reply": "echo:ping:8b8a9f"
+      }
+    ]
+  },
+  "notesAfter": "beta\n",
+  "model": "haiku",
+  "nonce": "8b8a9f"
+}

@@ -79,3 +79,19 @@ func TestRegistryIsConsistent(t *testing.T) {
 		}
 	}
 }
+
+func TestRetryAfterHeader(t *testing.T) {
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	e := RateLimited.New("wait")
+	e.RetryAfter = 42
+	rec := httptest.NewRecorder()
+	Write(rec, httptest.NewRequest(http.MethodPost, "/api/auth:login", nil), log, e)
+	if rec.Code != http.StatusTooManyRequests || rec.Header().Get("Retry-After") != "42" {
+		t.Errorf("status %d, Retry-After %q", rec.Code, rec.Header().Get("Retry-After"))
+	}
+	rec = httptest.NewRecorder()
+	Write(rec, httptest.NewRequest(http.MethodGet, "/api/x", nil), log, NotFound.New("x"))
+	if rec.Header().Get("Retry-After") != "" {
+		t.Error("Retry-After on a problem without it")
+	}
+}

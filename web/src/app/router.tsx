@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { createRootRoute, createRoute, createRouter, Outlet, useNavigate } from "@tanstack/react-router";
 import { projectsListOptions } from "@/api/gen/@tanstack/react-query.gen";
 import { Button } from "@/components/ui/button";
+import { AuthGate } from "@/shell/auth/AuthGate";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Dialogs } from "@/shell/chrome/Dialogs";
 import { useDialogs } from "@/shell/chrome/dialogs";
@@ -33,7 +34,9 @@ function recall(): { project: string; workspace: string } | null {
 const rootRoute = createRootRoute({
   component: () => (
     <TooltipProvider delay={400}>
-      <Outlet />
+      <AuthGate>
+        <Outlet />
+      </AuthGate>
     </TooltipProvider>
   ),
 });
@@ -60,8 +63,10 @@ function Home() {
       ) : null}
       {data && data.items.length === 0 ? (
         <>
-          <p className="max-w-md text-sm text-muted-foreground">No projects yet. A project is a unit of work with its own repository, budgets and gates.</p>
-          <Button onClick={() => useDialogs.getState().show({ kind: "newProject" })}>Create a project</Button>
+          <p className="max-w-md text-sm text-muted-foreground">
+            No projects yet. A project is a unit of work with its own repository, budgets and gates; the wizard needs three fields.
+          </p>
+          <Button onClick={() => useDialogs.getState().show({ kind: "newProject" })}>New project</Button>
         </>
       ) : null}
       <Dialogs onSwitchProject={(slug) => go(slug)} />

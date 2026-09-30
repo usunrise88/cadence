@@ -3,8 +3,8 @@
 import { type InfiniteData, infiniteQueryOptions, queryOptions, type UseMutationOptions } from '@tanstack/react-query';
 
 import { client } from '../client.gen';
-import { agentMessagesNew, agentSessionsCancel, agentSessionsNew, aliasesSet, approvalsApprove, approvalsDeny, approvalsList, eventsList, helpGet, helpSearch, jobsCancel, jobsGet, meGet, mixesEdit, mixesNew, mixesPreview, mountsList, mountsNew, type Options, projectsArchive, projectsEdit, projectsGet, projectsList, projectsNew, registrySearch, runsNew, workspacesGet, workspacesList, workspacesSet } from '../sdk.gen';
-import type { AgentMessagesNewData, AgentMessagesNewError, AgentMessagesNewResponse, AgentSessionsCancelData, AgentSessionsCancelError, AgentSessionsCancelResponse, AgentSessionsNewData, AgentSessionsNewError, AgentSessionsNewResponse, AliasesSetData, AliasesSetError, AliasesSetResponse, ApprovalsApproveData, ApprovalsApproveError, ApprovalsApproveResponse, ApprovalsDenyData, ApprovalsDenyError, ApprovalsDenyResponse, ApprovalsListData, ApprovalsListError, ApprovalsListResponse, EventsListData, EventsListError, EventsListResponse, HelpGetData, HelpGetError, HelpGetResponse, HelpSearchData, HelpSearchError, HelpSearchResponse, JobsCancelData, JobsCancelError, JobsCancelResponse, JobsGetData, JobsGetError, JobsGetResponse, MeGetData, MeGetError, MeGetResponse, MixesEditData, MixesEditError, MixesEditResponse, MixesNewData, MixesNewError, MixesNewResponse, MixesPreviewData, MixesPreviewError, MixesPreviewResponse, MountsListData, MountsListError, MountsListResponse, MountsNewData, MountsNewError, MountsNewResponse, ProjectsArchiveData, ProjectsArchiveError, ProjectsArchiveResponse, ProjectsEditData, ProjectsEditError, ProjectsEditResponse, ProjectsGetData, ProjectsGetError, ProjectsGetResponse, ProjectsListData, ProjectsListError, ProjectsListResponse, ProjectsNewData, ProjectsNewError, ProjectsNewResponse, RegistrySearchData, RegistrySearchError, RegistrySearchResponse, RunsNewData, RunsNewError, RunsNewResponse, WorkspacesGetData, WorkspacesGetError, WorkspacesGetResponse, WorkspacesListData, WorkspacesListError, WorkspacesListResponse, WorkspacesSetData, WorkspacesSetError, WorkspacesSetResponse } from '../types.gen';
+import { adoptionsList, agentMessagesList, agentMessagesNew, agentModelsList, agentProfileEdit, agentProfileGet, agentSessionsAccept, agentSessionsCancel, agentSessionsGet, agentSessionsList, agentSessionsNew, agentSessionsPause, agentSessionsResume, agentSessionsRevert, aliasesGet, aliasesList, aliasesSet, approvalsApprove, approvalsDeny, approvalsGet, approvalsList, auditList, authGet, authLogin, authLogout, authSetup, baseModelsGet, baseModelsList, branchesAccept, branchesGet, branchesList, branchesRevert, collectionsGet, collectionsList, computeEdit, computeGet, computeList, credentialsList, credentialsNew, credentialsRevoke, datasetsGet, datasetsList, defaultsGet, draftsAccept, draftsGet, draftsList, draftsRevert, eventsList, helpGet, helpSearch, hostSessionsAsk, hostSessionsClaim, hostSessionsDecision, hostSessionsReport, jobsCancel, jobsGet, jobsList, jobsWait, meGet, mixesEdit, mixesGet, mixesList, mixesNew, mixesPreview, mountsList, mountsNew, type Options, policiesEdit, policiesGet, projectsAdopt, projectsArchive, projectsEdit, projectsGet, projectsList, projectsNew, projectsNote, projectsSearch, projectsSync, recipesGet, recipesList, registrySearch, runsNew, secretsList, secretsNew, templatesGet, templatesList, totpConfirm, totpDisable, totpEnroll, viewsGet, viewsList, viewsSet, workspacesGet, workspacesList, workspacesSet } from '../sdk.gen';
+import type { AdoptionsListData, AdoptionsListError, AdoptionsListResponse, AgentMessagesListData, AgentMessagesListError, AgentMessagesListResponse, AgentMessagesNewData, AgentMessagesNewError, AgentMessagesNewResponse, AgentModelsListData, AgentModelsListError, AgentModelsListResponse, AgentProfileEditData, AgentProfileEditError, AgentProfileEditResponse, AgentProfileGetData, AgentProfileGetError, AgentProfileGetResponse, AgentSessionsAcceptData, AgentSessionsAcceptError, AgentSessionsAcceptResponse, AgentSessionsCancelData, AgentSessionsCancelError, AgentSessionsCancelResponse, AgentSessionsGetData, AgentSessionsGetError, AgentSessionsGetResponse, AgentSessionsListData, AgentSessionsListError, AgentSessionsListResponse, AgentSessionsNewData, AgentSessionsNewError, AgentSessionsNewResponse, AgentSessionsPauseData, AgentSessionsPauseError, AgentSessionsPauseResponse, AgentSessionsResumeData, AgentSessionsResumeError, AgentSessionsResumeResponse, AgentSessionsRevertData, AgentSessionsRevertError, AgentSessionsRevertResponse, AliasesGetData, AliasesGetError, AliasesGetResponse, AliasesListData, AliasesListError, AliasesListResponse, AliasesSetData, AliasesSetError, AliasesSetResponse, ApprovalsApproveData, ApprovalsApproveError, ApprovalsApproveResponse, ApprovalsDenyData, ApprovalsDenyError, ApprovalsDenyResponse, ApprovalsGetData, ApprovalsGetError, ApprovalsGetResponse, ApprovalsListData, ApprovalsListError, ApprovalsListResponse, AuditListData, AuditListError, AuditListResponse, AuthGetData, AuthGetError, AuthGetResponse, AuthLoginData, AuthLoginError, AuthLoginResponse, AuthLogoutData, AuthLogoutError, AuthLogoutResponse, AuthSetupData, AuthSetupError, AuthSetupResponse, BaseModelsGetData, BaseModelsGetError, BaseModelsGetResponse, BaseModelsListData, BaseModelsListError, BaseModelsListResponse, BranchesAcceptData, BranchesAcceptError, BranchesAcceptResponse, BranchesGetData, BranchesGetError, BranchesGetResponse, BranchesListData, BranchesListError, BranchesListResponse, BranchesRevertData, BranchesRevertError, BranchesRevertResponse, CollectionsGetData, CollectionsGetError, CollectionsGetResponse, CollectionsListData, CollectionsListError, CollectionsListResponse, ComputeEditData, ComputeEditError, ComputeEditResponse, ComputeGetData, ComputeGetError, ComputeGetResponse, ComputeListData, ComputeListError, ComputeListResponse, CredentialsListData, CredentialsListError, CredentialsListResponse, CredentialsNewData, CredentialsNewError, CredentialsNewResponse, CredentialsRevokeData, CredentialsRevokeError, CredentialsRevokeResponse, DatasetsGetData, DatasetsGetError, DatasetsGetResponse, DatasetsListData, DatasetsListError, DatasetsListResponse, DefaultsGetData, DefaultsGetError, DefaultsGetResponse, DraftsAcceptData, DraftsAcceptError, DraftsAcceptResponse, DraftsGetData, DraftsGetError, DraftsGetResponse, DraftsListData, DraftsListError, DraftsListResponse, DraftsRevertData, DraftsRevertError, DraftsRevertResponse, EventsListData, EventsListError, EventsListResponse, HelpGetData, HelpGetError, HelpGetResponse, HelpSearchData, HelpSearchError, HelpSearchResponse, HostSessionsAskData, HostSessionsAskError, HostSessionsAskResponse, HostSessionsClaimData, HostSessionsClaimError, HostSessionsClaimResponse, HostSessionsDecisionData, HostSessionsDecisionError, HostSessionsDecisionResponse, HostSessionsReportData, HostSessionsReportError, HostSessionsReportResponse, JobsCancelData, JobsCancelError, JobsCancelResponse, JobsGetData, JobsGetError, JobsGetResponse, JobsListData, JobsListError, JobsListResponse, JobsWaitData, JobsWaitError, JobsWaitResponse, MeGetData, MeGetError, MeGetResponse, MixesEditData, MixesEditError, MixesEditResponse, MixesGetData, MixesGetError, MixesGetResponse, MixesListData, MixesListError, MixesListResponse, MixesNewData, MixesNewError, MixesNewResponse, MixesPreviewData, MixesPreviewError, MixesPreviewResponse, MountsListData, MountsListError, MountsListResponse, MountsNewData, MountsNewError, MountsNewResponse, PoliciesEditData, PoliciesEditError, PoliciesEditResponse, PoliciesGetData, PoliciesGetError, PoliciesGetResponse, ProjectsAdoptData, ProjectsAdoptError, ProjectsAdoptResponse, ProjectsArchiveData, ProjectsArchiveError, ProjectsArchiveResponse, ProjectsEditData, ProjectsEditError, ProjectsEditResponse, ProjectsGetData, ProjectsGetError, ProjectsGetResponse, ProjectsListData, ProjectsListError, ProjectsListResponse, ProjectsNewData, ProjectsNewError, ProjectsNewResponse, ProjectsNoteData, ProjectsNoteError, ProjectsNoteResponse, ProjectsSearchData, ProjectsSearchError, ProjectsSearchResponse, ProjectsSyncData, ProjectsSyncError, ProjectsSyncResponse, RecipesGetData, RecipesGetError, RecipesGetResponse, RecipesListData, RecipesListError, RecipesListResponse, RegistrySearchData, RegistrySearchError, RegistrySearchResponse, RunsNewData, RunsNewError, RunsNewResponse, SecretsListData, SecretsListError, SecretsListResponse, SecretsNewData, SecretsNewError, SecretsNewResponse, TemplatesGetData, TemplatesGetError, TemplatesGetResponse, TemplatesListData, TemplatesListError, TemplatesListResponse, TotpConfirmData, TotpConfirmError, TotpConfirmResponse, TotpDisableData, TotpDisableError, TotpDisableResponse, TotpEnrollData, TotpEnrollError, TotpEnrollResponse, ViewsGetData, ViewsGetError, ViewsGetResponse, ViewsListData, ViewsListError, ViewsListResponse, ViewsSetData, ViewsSetError, ViewsSetResponse, WorkspacesGetData, WorkspacesGetError, WorkspacesGetResponse, WorkspacesListData, WorkspacesListError, WorkspacesListResponse, WorkspacesSetData, WorkspacesSetError, WorkspacesSetResponse } from '../types.gen';
 
 export type QueryKey<TOptions extends Options> = [
     Pick<TOptions, 'baseUrl' | 'body' | 'headers' | 'path' | 'query'> & {
@@ -58,7 +58,7 @@ export const projectsListOptions = (options?: Options<ProjectsListData>) => quer
 });
 
 /**
- * Create a project
+ * Create a project from the wizard's choices and bootstrap its repository (202 with the bootstrap job)
  */
 export const projectsNewMutation = (options?: Partial<Options<ProjectsNewData>>): UseMutationOptions<ProjectsNewResponse, ProjectsNewError, Options<ProjectsNewData>> => {
     const mutationOptions: UseMutationOptions<ProjectsNewResponse, ProjectsNewError, Options<ProjectsNewData>> = {
@@ -93,7 +93,7 @@ export const projectsGetOptions = (options: Options<ProjectsGetData>) => queryOp
 });
 
 /**
- * Rename or re-describe a project
+ * Change a project's name, description, locales, domain, base model or budgets
  */
 export const projectsEditMutation = (options?: Partial<Options<ProjectsEditData>>): UseMutationOptions<ProjectsEditResponse, ProjectsEditError, Options<ProjectsEditData>> => {
     const mutationOptions: UseMutationOptions<ProjectsEditResponse, ProjectsEditError, Options<ProjectsEditData>> = {
@@ -313,7 +313,7 @@ export const helpGetOptions = (options: Options<HelpGetData>) => queryOptions<He
 export const registrySearchQueryKey = (options?: Options<RegistrySearchData>) => createQueryKey('registrySearch', options);
 
 /**
- * Search registry versions of every kind (empty until phase 1 registers kinds)
+ * Search registry versions of every kind by text and qualifiers (kind:, tag:, locale:, state:)
  */
 export const registrySearchOptions = (options?: Options<RegistrySearchData>) => queryOptions<RegistrySearchResponse, RegistrySearchError, RegistrySearchResponse, ReturnType<typeof registrySearchQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {
@@ -328,13 +328,31 @@ export const registrySearchOptions = (options?: Options<RegistrySearchData>) => 
     queryKey: registrySearchQueryKey(options)
 });
 
+export const authGetQueryKey = (options?: Options<AuthGetData>) => createQueryKey('authGet', options);
+
 /**
- * Save a mix (input_cfg groups, weights, temperature, replay share)
+ * Sign-in state — whether first start is pending and who is signed in
  */
-export const mixesNewMutation = (options?: Partial<Options<MixesNewData>>): UseMutationOptions<MixesNewResponse, MixesNewError, Options<MixesNewData>> => {
-    const mutationOptions: UseMutationOptions<MixesNewResponse, MixesNewError, Options<MixesNewData>> = {
+export const authGetOptions = (options?: Options<AuthGetData>) => queryOptions<AuthGetResponse, AuthGetError, AuthGetResponse, ReturnType<typeof authGetQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await authGet({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: authGetQueryKey(options)
+});
+
+/**
+ * First start — set the admin password once and sign in; refused (409) once a password is set
+ */
+export const authSetupMutation = (options?: Partial<Options<AuthSetupData>>): UseMutationOptions<AuthSetupResponse, AuthSetupError, Options<AuthSetupData>> => {
+    const mutationOptions: UseMutationOptions<AuthSetupResponse, AuthSetupError, Options<AuthSetupData>> = {
         mutationFn: async (fnOptions) => {
-            const { data } = await mixesNew({
+            const { data } = await authSetup({
                 ...options,
                 ...fnOptions,
                 throwOnError: true
@@ -346,12 +364,12 @@ export const mixesNewMutation = (options?: Partial<Options<MixesNewData>>): UseM
 };
 
 /**
- * Hours per language for a mix without saving it
+ * Sign in with username, password and, when enabled, a TOTP code; rate-limited per address and username
  */
-export const mixesPreviewMutation = (options?: Partial<Options<MixesPreviewData>>): UseMutationOptions<MixesPreviewResponse, MixesPreviewError, Options<MixesPreviewData>> => {
-    const mutationOptions: UseMutationOptions<MixesPreviewResponse, MixesPreviewError, Options<MixesPreviewData>> = {
+export const authLoginMutation = (options?: Partial<Options<AuthLoginData>>): UseMutationOptions<AuthLoginResponse, AuthLoginError, Options<AuthLoginData>> => {
+    const mutationOptions: UseMutationOptions<AuthLoginResponse, AuthLoginError, Options<AuthLoginData>> = {
         mutationFn: async (fnOptions) => {
-            const { data } = await mixesPreview({
+            const { data } = await authLogin({
                 ...options,
                 ...fnOptions,
                 throwOnError: true
@@ -363,12 +381,12 @@ export const mixesPreviewMutation = (options?: Partial<Options<MixesPreviewData>
 };
 
 /**
- * Edit a mix; agent edits land as drafts
+ * Sign out — revoke this browser's session and clear its cookie
  */
-export const mixesEditMutation = (options?: Partial<Options<MixesEditData>>): UseMutationOptions<MixesEditResponse, MixesEditError, Options<MixesEditData>> => {
-    const mutationOptions: UseMutationOptions<MixesEditResponse, MixesEditError, Options<MixesEditData>> = {
+export const authLogoutMutation = (options?: Partial<Options<AuthLogoutData>>): UseMutationOptions<AuthLogoutResponse, AuthLogoutError, Options<AuthLogoutData>> => {
+    const mutationOptions: UseMutationOptions<AuthLogoutResponse, AuthLogoutError, Options<AuthLogoutData>> = {
         mutationFn: async (fnOptions) => {
-            const { data } = await mixesEdit({
+            const { data } = await authLogout({
                 ...options,
                 ...fnOptions,
                 throwOnError: true
@@ -380,7 +398,483 @@ export const mixesEditMutation = (options?: Partial<Options<MixesEditData>>): Us
 };
 
 /**
- * Start a training run; ?dryRun=true returns GPU-hours, card and duration
+ * Start TOTP enrollment for the signed-in user — a new secret, active once confirmed
+ */
+export const totpEnrollMutation = (options?: Partial<Options<TotpEnrollData>>): UseMutationOptions<TotpEnrollResponse, TotpEnrollError, Options<TotpEnrollData>> => {
+    const mutationOptions: UseMutationOptions<TotpEnrollResponse, TotpEnrollError, Options<TotpEnrollData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await totpEnroll({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Confirm TOTP enrollment with a current code; sign-in asks for a code from then on
+ */
+export const totpConfirmMutation = (options?: Partial<Options<TotpConfirmData>>): UseMutationOptions<TotpConfirmResponse, TotpConfirmError, Options<TotpConfirmData>> => {
+    const mutationOptions: UseMutationOptions<TotpConfirmResponse, TotpConfirmError, Options<TotpConfirmData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await totpConfirm({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Turn TOTP off for the signed-in user with a current code
+ */
+export const totpDisableMutation = (options?: Partial<Options<TotpDisableData>>): UseMutationOptions<TotpDisableResponse, TotpDisableError, Options<TotpDisableData>> => {
+    const mutationOptions: UseMutationOptions<TotpDisableResponse, TotpDisableError, Options<TotpDisableData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await totpDisable({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+export const credentialsListQueryKey = (options?: Options<CredentialsListData>) => createQueryKey('credentialsList', options);
+
+/**
+ * List credentials (sessions, API keys, agent tokens) without their secrets
+ */
+export const credentialsListOptions = (options?: Options<CredentialsListData>) => queryOptions<CredentialsListResponse, CredentialsListError, CredentialsListResponse, ReturnType<typeof credentialsListQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await credentialsList({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: credentialsListQueryKey(options)
+});
+
+/**
+ * Create a personal API key (cdk_) scoped to one project or to registry read
+ */
+export const credentialsNewMutation = (options?: Partial<Options<CredentialsNewData>>): UseMutationOptions<CredentialsNewResponse, CredentialsNewError, Options<CredentialsNewData>> => {
+    const mutationOptions: UseMutationOptions<CredentialsNewResponse, CredentialsNewError, Options<CredentialsNewData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await credentialsNew({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Revoke a credential; requests carrying it are refused from now on (irreversible)
+ */
+export const credentialsRevokeMutation = (options?: Partial<Options<CredentialsRevokeData>>): UseMutationOptions<CredentialsRevokeResponse, CredentialsRevokeError, Options<CredentialsRevokeData>> => {
+    const mutationOptions: UseMutationOptions<CredentialsRevokeResponse, CredentialsRevokeError, Options<CredentialsRevokeData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await credentialsRevoke({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+export const collectionsListQueryKey = (options?: Options<CollectionsListData>) => createQueryKey('collectionsList', options);
+
+/**
+ * List registry collections (named series of immutable versions), optionally of one kind or tag
+ */
+export const collectionsListOptions = (options?: Options<CollectionsListData>) => queryOptions<CollectionsListResponse, CollectionsListError, CollectionsListResponse, ReturnType<typeof collectionsListQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await collectionsList({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: collectionsListQueryKey(options)
+});
+
+export const collectionsGetQueryKey = (options: Options<CollectionsGetData>) => createQueryKey('collectionsGet', options);
+
+/**
+ * Get a registry collection with its versions, newest first
+ */
+export const collectionsGetOptions = (options: Options<CollectionsGetData>) => queryOptions<CollectionsGetResponse, CollectionsGetError, CollectionsGetResponse, ReturnType<typeof collectionsGetQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await collectionsGet({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: collectionsGetQueryKey(options)
+});
+
+export const baseModelsListQueryKey = (options?: Options<BaseModelsListData>) => createQueryKey('baseModelsList', options);
+
+/**
+ * List base model versions (Hugging Face repository at a pinned revision, licence, model family)
+ */
+export const baseModelsListOptions = (options?: Options<BaseModelsListData>) => queryOptions<BaseModelsListResponse, BaseModelsListError, BaseModelsListResponse, ReturnType<typeof baseModelsListQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await baseModelsList({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: baseModelsListQueryKey(options)
+});
+
+export const baseModelsGetQueryKey = (options: Options<BaseModelsGetData>) => createQueryKey('baseModelsGet', options);
+
+/**
+ * Get a base model version with the projects that use it
+ */
+export const baseModelsGetOptions = (options: Options<BaseModelsGetData>) => queryOptions<BaseModelsGetResponse, BaseModelsGetError, BaseModelsGetResponse, ReturnType<typeof baseModelsGetQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await baseModelsGet({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: baseModelsGetQueryKey(options)
+});
+
+export const datasetsListQueryKey = (options?: Options<DatasetsListData>) => createQueryKey('datasetsList', options);
+
+/**
+ * List dataset versions (immutable, fingerprinted selections with splits and statistics)
+ */
+export const datasetsListOptions = (options?: Options<DatasetsListData>) => queryOptions<DatasetsListResponse, DatasetsListError, DatasetsListResponse, ReturnType<typeof datasetsListQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await datasetsList({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: datasetsListQueryKey(options)
+});
+
+export const datasetsGetQueryKey = (options: Options<DatasetsGetData>) => createQueryKey('datasetsGet', options);
+
+/**
+ * Get a dataset version with its splits, statistics and the projects that use it
+ */
+export const datasetsGetOptions = (options: Options<DatasetsGetData>) => queryOptions<DatasetsGetResponse, DatasetsGetError, DatasetsGetResponse, ReturnType<typeof datasetsGetQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await datasetsGet({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: datasetsGetQueryKey(options)
+});
+
+export const templatesListQueryKey = (options?: Options<TemplatesListData>) => createQueryKey('templatesList', options);
+
+/**
+ * List template versions (instruction templates, permission presets, skills, pipeline templates, agent config)
+ */
+export const templatesListOptions = (options?: Options<TemplatesListData>) => queryOptions<TemplatesListResponse, TemplatesListError, TemplatesListResponse, ReturnType<typeof templatesListQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await templatesList({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: templatesListQueryKey(options)
+});
+
+export const templatesGetQueryKey = (options: Options<TemplatesGetData>) => createQueryKey('templatesGet', options);
+
+/**
+ * Get a template version with its files (paths and hashes) and the projects that use it
+ */
+export const templatesGetOptions = (options: Options<TemplatesGetData>) => queryOptions<TemplatesGetResponse, TemplatesGetError, TemplatesGetResponse, ReturnType<typeof templatesGetQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await templatesGet({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: templatesGetQueryKey(options)
+});
+
+/**
+ * Adopt a registry version into the project by reference
+ */
+export const projectsAdoptMutation = (options?: Partial<Options<ProjectsAdoptData>>): UseMutationOptions<ProjectsAdoptResponse, ProjectsAdoptError, Options<ProjectsAdoptData>> => {
+    const mutationOptions: UseMutationOptions<ProjectsAdoptResponse, ProjectsAdoptError, Options<ProjectsAdoptData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await projectsAdopt({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+export const adoptionsListQueryKey = (options: Options<AdoptionsListData>) => createQueryKey('adoptionsList', options);
+
+/**
+ * Registry versions the project adopted, with the aliases pointing at each
+ */
+export const adoptionsListOptions = (options: Options<AdoptionsListData>) => queryOptions<AdoptionsListResponse, AdoptionsListError, AdoptionsListResponse, ReturnType<typeof adoptionsListQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await adoptionsList({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: adoptionsListQueryKey(options)
+});
+
+export const aliasesListQueryKey = (options: Options<AliasesListData>) => createQueryKey('aliasesList', options);
+
+/**
+ * The project's aliases (train-current, baseline, production, …) and the versions they point at
+ */
+export const aliasesListOptions = (options: Options<AliasesListData>) => queryOptions<AliasesListResponse, AliasesListError, AliasesListResponse, ReturnType<typeof aliasesListQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await aliasesList({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: aliasesListQueryKey(options)
+});
+
+export const aliasesGetQueryKey = (options: Options<AliasesGetData>) => createQueryKey('aliasesGet', options);
+
+/**
+ * Get one project alias and the version it points at
+ */
+export const aliasesGetOptions = (options: Options<AliasesGetData>) => queryOptions<AliasesGetResponse, AliasesGetError, AliasesGetResponse, ReturnType<typeof aliasesGetQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await aliasesGet({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: aliasesGetQueryKey(options)
+});
+
+/**
+ * Point a project alias at an adopted registry version (baseline is gated, production moves only by promotion)
+ */
+export const aliasesSetMutation = (options?: Partial<Options<AliasesSetData>>): UseMutationOptions<AliasesSetResponse, AliasesSetError, Options<AliasesSetData>> => {
+    const mutationOptions: UseMutationOptions<AliasesSetResponse, AliasesSetError, Options<AliasesSetData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await aliasesSet({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+export const computeListQueryKey = (options?: Options<ComputeListData>) => createQueryKey('computeList', options);
+
+/**
+ * Hosts and their cards (memory cap per card, allowed job kinds) with health
+ */
+export const computeListOptions = (options?: Options<ComputeListData>) => queryOptions<ComputeListResponse, ComputeListError, ComputeListResponse, ReturnType<typeof computeListQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await computeList({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: computeListQueryKey(options)
+});
+
+export const computeGetQueryKey = (options: Options<ComputeGetData>) => createQueryKey('computeGet', options);
+
+/**
+ * Get a host and its cards
+ */
+export const computeGetOptions = (options: Options<ComputeGetData>) => queryOptions<ComputeGetResponse, ComputeGetError, ComputeGetResponse, ReturnType<typeof computeGetQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await computeGet({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: computeGetQueryKey(options)
+});
+
+/**
+ * Change a host's description or a card's memory cap and allowed job kinds
+ */
+export const computeEditMutation = (options?: Partial<Options<ComputeEditData>>): UseMutationOptions<ComputeEditResponse, ComputeEditError, Options<ComputeEditData>> => {
+    const mutationOptions: UseMutationOptions<ComputeEditResponse, ComputeEditError, Options<ComputeEditData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await computeEdit({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+export const secretsListQueryKey = (options?: Options<SecretsListData>) => createQueryKey('secretsList', options);
+
+/**
+ * Named credentials (name, kind, scope, last use); values are never returned
+ */
+export const secretsListOptions = (options?: Options<SecretsListData>) => queryOptions<SecretsListResponse, SecretsListError, SecretsListResponse, ReturnType<typeof secretsListQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await secretsList({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: secretsListQueryKey(options)
+});
+
+/**
+ * Store a named credential; the value is write-only and never returned
+ */
+export const secretsNewMutation = (options?: Partial<Options<SecretsNewData>>): UseMutationOptions<SecretsNewResponse, SecretsNewError, Options<SecretsNewData>> => {
+    const mutationOptions: UseMutationOptions<SecretsNewResponse, SecretsNewError, Options<SecretsNewData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await secretsNew({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+export const defaultsGetQueryKey = (options?: Options<DefaultsGetData>) => createQueryKey('defaultsGet', options);
+
+/**
+ * The versioned defaults (defaults.yaml) every form, budget and estimate starts from
+ */
+export const defaultsGetOptions = (options?: Options<DefaultsGetData>) => queryOptions<DefaultsGetResponse, DefaultsGetError, DefaultsGetResponse, ReturnType<typeof defaultsGetQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await defaultsGet({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: defaultsGetQueryKey(options)
+});
+
+export const policiesGetQueryKey = (options?: Options<PoliciesGetData>) => createQueryKey('policiesGet', options);
+
+/**
+ * Instance-wide policies (budgets now; retention, PII and cache quotas later)
+ */
+export const policiesGetOptions = (options?: Options<PoliciesGetData>) => queryOptions<PoliciesGetResponse, PoliciesGetError, PoliciesGetResponse, ReturnType<typeof policiesGetQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await policiesGet({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: policiesGetQueryKey(options)
+});
+
+/**
+ * Change instance-wide policies; values must stay inside the ranges in defaults.yaml
+ */
+export const policiesEditMutation = (options?: Partial<Options<PoliciesEditData>>): UseMutationOptions<PoliciesEditResponse, PoliciesEditError, Options<PoliciesEditData>> => {
+    const mutationOptions: UseMutationOptions<PoliciesEditResponse, PoliciesEditError, Options<PoliciesEditData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await policiesEdit({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Start a training run; until phase 2 only ?dryRun=true answers, with GPU-hours, card, duration and data
  */
 export const runsNewMutation = (options?: Partial<Options<RunsNewData>>): UseMutationOptions<RunsNewResponse, RunsNewError, Options<RunsNewData>> => {
     const mutationOptions: UseMutationOptions<RunsNewResponse, RunsNewError, Options<RunsNewData>> = {
@@ -395,6 +889,142 @@ export const runsNewMutation = (options?: Partial<Options<RunsNewData>>): UseMut
     };
     return mutationOptions;
 };
+
+export const approvalsListQueryKey = (options?: Options<ApprovalsListData>) => createQueryKey('approvalsList', options);
+
+/**
+ * Approvals, pending first, then the most recently decided
+ */
+export const approvalsListOptions = (options?: Options<ApprovalsListData>) => queryOptions<ApprovalsListResponse, ApprovalsListError, ApprovalsListResponse, ReturnType<typeof approvalsListQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await approvalsList({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: approvalsListQueryKey(options)
+});
+
+export const approvalsGetQueryKey = (options: Options<ApprovalsGetData>) => createQueryKey('approvalsGet', options);
+
+/**
+ * Get an approval with its stored request and, once approved, the replay's result
+ */
+export const approvalsGetOptions = (options: Options<ApprovalsGetData>) => queryOptions<ApprovalsGetResponse, ApprovalsGetError, ApprovalsGetResponse, ReturnType<typeof approvalsGetQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await approvalsGet({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: approvalsGetQueryKey(options)
+});
+
+/**
+ * Approve a pending request; the stored request runs as its original actor
+ */
+export const approvalsApproveMutation = (options?: Partial<Options<ApprovalsApproveData>>): UseMutationOptions<ApprovalsApproveResponse, ApprovalsApproveError, Options<ApprovalsApproveData>> => {
+    const mutationOptions: UseMutationOptions<ApprovalsApproveResponse, ApprovalsApproveError, Options<ApprovalsApproveData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await approvalsApprove({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Deny a pending request; it never runs
+ */
+export const approvalsDenyMutation = (options?: Partial<Options<ApprovalsDenyData>>): UseMutationOptions<ApprovalsDenyResponse, ApprovalsDenyError, Options<ApprovalsDenyData>> => {
+    const mutationOptions: UseMutationOptions<ApprovalsDenyResponse, ApprovalsDenyError, Options<ApprovalsDenyData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await approvalsDeny({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+export const auditListQueryKey = (options?: Options<AuditListData>) => createQueryKey('auditList', options);
+
+/**
+ * The audit log, newest first — every command, denial and failed attempt with its actor and cause
+ */
+export const auditListOptions = (options?: Options<AuditListData>) => queryOptions<AuditListResponse, AuditListError, AuditListResponse, ReturnType<typeof auditListQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await auditList({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: auditListQueryKey(options)
+});
+
+export const auditListInfiniteQueryKey = (options?: Options<AuditListData>): QueryKey<Options<AuditListData>> => createQueryKey('auditList', options, true);
+
+/**
+ * The audit log, newest first — every command, denial and failed attempt with its actor and cause
+ */
+export const auditListInfiniteOptions = (options?: Options<AuditListData>) => {
+    const opts = infiniteQueryOptions<AuditListResponse, AuditListError, InfiniteData<AuditListResponse>, QueryKey<Options<AuditListData>>, string | Pick<QueryKey<Options<AuditListData>>[0], 'body' | 'headers' | 'path' | 'query'>>(
+    // @ts-ignore
+    {
+        queryFn: async ({ pageParam, queryKey, signal }) => {
+            // @ts-ignore
+            const page: Pick<QueryKey<Options<AuditListData>>[0], 'body' | 'headers' | 'path' | 'query'> = typeof pageParam === 'object' ? pageParam : {
+                query: {
+                    before: pageParam
+                }
+            };
+            const params = createInfiniteParams(queryKey, page);
+            const { data } = await auditList({
+                ...options,
+                ...params,
+                signal,
+                throwOnError: true
+            });
+            return data;
+        },
+        queryKey: auditListInfiniteQueryKey(options)
+    });
+    return opts as Omit<typeof opts, 'initialData'>;
+};
+
+export const jobsListQueryKey = (options: Options<JobsListData>) => createQueryKey('jobsList', options);
+
+/**
+ * Jobs of a project, newest first
+ */
+export const jobsListOptions = (options: Options<JobsListData>) => queryOptions<JobsListResponse, JobsListError, JobsListResponse, ReturnType<typeof jobsListQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await jobsList({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: jobsListQueryKey(options)
+});
 
 export const jobsGetQueryKey = (options: Options<JobsGetData>) => createQueryKey('jobsGet', options);
 
@@ -415,7 +1045,7 @@ export const jobsGetOptions = (options: Options<JobsGetData>) => queryOptions<Jo
 });
 
 /**
- * Cancel a job
+ * Cancel a job; a queued job stops at once, a running one when its handler notices
  */
 export const jobsCancelMutation = (options?: Partial<Options<JobsCancelData>>): UseMutationOptions<JobsCancelResponse, JobsCancelError, Options<JobsCancelData>> => {
     const mutationOptions: UseMutationOptions<JobsCancelResponse, JobsCancelError, Options<JobsCancelData>> = {
@@ -431,8 +1061,465 @@ export const jobsCancelMutation = (options?: Partial<Options<JobsCancelData>>): 
     return mutationOptions;
 };
 
+export const jobsWaitQueryKey = (options: Options<JobsWaitData>) => createQueryKey('jobsWait', options);
+
 /**
- * Launch Claude Code or opencode in a project worktree
+ * Wait until a job ends or the timeout passes, then return it (agents)
+ */
+export const jobsWaitOptions = (options: Options<JobsWaitData>) => queryOptions<JobsWaitResponse, JobsWaitError, JobsWaitResponse, ReturnType<typeof jobsWaitQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await jobsWait({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: jobsWaitQueryKey(options)
+});
+
+/**
+ * Append a dated learning to the project's NOTES.md and commit it to main
+ */
+export const projectsNoteMutation = (options?: Partial<Options<ProjectsNoteData>>): UseMutationOptions<ProjectsNoteResponse, ProjectsNoteError, Options<ProjectsNoteData>> => {
+    const mutationOptions: UseMutationOptions<ProjectsNoteResponse, ProjectsNoteError, Options<ProjectsNoteData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await projectsNote({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Diff the project against Cadence's current templates and skills and offer the update as a draft branch
+ */
+export const projectsSyncMutation = (options?: Partial<Options<ProjectsSyncData>>): UseMutationOptions<ProjectsSyncResponse, ProjectsSyncError, Options<ProjectsSyncData>> => {
+    const mutationOptions: UseMutationOptions<ProjectsSyncResponse, ProjectsSyncError, Options<ProjectsSyncData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await projectsSync({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+export const agentProfileGetQueryKey = (options: Options<AgentProfileGetData>) => createQueryKey('agentProfileGet', options);
+
+/**
+ * The project's agent profile with the config files rendered from it
+ */
+export const agentProfileGetOptions = (options: Options<AgentProfileGetData>) => queryOptions<AgentProfileGetResponse, AgentProfileGetError, AgentProfileGetResponse, ReturnType<typeof agentProfileGetQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await agentProfileGet({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: agentProfileGetQueryKey(options)
+});
+
+/**
+ * Change the agent profile; the rendered config files and AGENTS.md are committed to main
+ */
+export const agentProfileEditMutation = (options?: Partial<Options<AgentProfileEditData>>): UseMutationOptions<AgentProfileEditResponse, AgentProfileEditError, Options<AgentProfileEditData>> => {
+    const mutationOptions: UseMutationOptions<AgentProfileEditResponse, AgentProfileEditError, Options<AgentProfileEditData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await agentProfileEdit({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+export const agentModelsListQueryKey = (options?: Options<AgentModelsListData>) => createQueryKey('agentModelsList', options);
+
+/**
+ * Agent models per driver, with the default the wizard picks
+ */
+export const agentModelsListOptions = (options?: Options<AgentModelsListData>) => queryOptions<AgentModelsListResponse, AgentModelsListError, AgentModelsListResponse, ReturnType<typeof agentModelsListQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await agentModelsList({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: agentModelsListQueryKey(options)
+});
+
+export const recipesListQueryKey = (options: Options<RecipesListData>) => createQueryKey('recipesList', options);
+
+/**
+ * Files of the project repository at a branch or commit
+ */
+export const recipesListOptions = (options: Options<RecipesListData>) => queryOptions<RecipesListResponse, RecipesListError, RecipesListResponse, ReturnType<typeof recipesListQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await recipesList({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: recipesListQueryKey(options)
+});
+
+export const recipesGetQueryKey = (options: Options<RecipesGetData>) => createQueryKey('recipesGet', options);
+
+/**
+ * One file of the project repository at a branch or commit, with its commit history
+ */
+export const recipesGetOptions = (options: Options<RecipesGetData>) => queryOptions<RecipesGetResponse, RecipesGetError, RecipesGetResponse, ReturnType<typeof recipesGetQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await recipesGet({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: recipesGetQueryKey(options)
+});
+
+export const branchesListQueryKey = (options: Options<BranchesListData>) => createQueryKey('branchesList', options);
+
+/**
+ * Open branches of the project repository (session and sync branches not merged into main)
+ */
+export const branchesListOptions = (options: Options<BranchesListData>) => queryOptions<BranchesListResponse, BranchesListError, BranchesListResponse, ReturnType<typeof branchesListQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await branchesList({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: branchesListQueryKey(options)
+});
+
+export const branchesGetQueryKey = (options: Options<BranchesGetData>) => createQueryKey('branchesGet', options);
+
+/**
+ * A branch with its diff against main and the conflicts a merge would meet
+ */
+export const branchesGetOptions = (options: Options<BranchesGetData>) => queryOptions<BranchesGetResponse, BranchesGetError, BranchesGetResponse, ReturnType<typeof branchesGetQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await branchesGet({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: branchesGetQueryKey(options)
+});
+
+/**
+ * Merge a sync branch into main (fast-forward when possible, otherwise a merge commit)
+ */
+export const branchesAcceptMutation = (options?: Partial<Options<BranchesAcceptData>>): UseMutationOptions<BranchesAcceptResponse, BranchesAcceptError, Options<BranchesAcceptData>> => {
+    const mutationOptions: UseMutationOptions<BranchesAcceptResponse, BranchesAcceptError, Options<BranchesAcceptData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await branchesAccept({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Discard a sync branch without merging it
+ */
+export const branchesRevertMutation = (options?: Partial<Options<BranchesRevertData>>): UseMutationOptions<BranchesRevertResponse, BranchesRevertError, Options<BranchesRevertData>> => {
+    const mutationOptions: UseMutationOptions<BranchesRevertResponse, BranchesRevertError, Options<BranchesRevertData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await branchesRevert({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+export const projectsSearchQueryKey = (options: Options<ProjectsSearchData>) => createQueryKey('projectsSearch', options);
+
+/**
+ * Search entities of this project and the registry with free text and qualifiers
+ */
+export const projectsSearchOptions = (options: Options<ProjectsSearchData>) => queryOptions<ProjectsSearchResponse, ProjectsSearchError, ProjectsSearchResponse, ReturnType<typeof projectsSearchQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await projectsSearch({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: projectsSearchQueryKey(options)
+});
+
+export const viewsListQueryKey = (options: Options<ViewsListData>) => createQueryKey('viewsList', options);
+
+/**
+ * The user's saved searches in a project, by name
+ */
+export const viewsListOptions = (options: Options<ViewsListData>) => queryOptions<ViewsListResponse, ViewsListError, ViewsListResponse, ReturnType<typeof viewsListQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await viewsList({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: viewsListQueryKey(options)
+});
+
+export const viewsGetQueryKey = (options: Options<ViewsGetData>) => createQueryKey('viewsGet', options);
+
+/**
+ * Get a saved search
+ */
+export const viewsGetOptions = (options: Options<ViewsGetData>) => queryOptions<ViewsGetResponse, ViewsGetError, ViewsGetResponse, ReturnType<typeof viewsGetQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await viewsGet({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: viewsGetQueryKey(options)
+});
+
+/**
+ * Save a search under a name (If-Match; omit it only to create)
+ */
+export const viewsSetMutation = (options?: Partial<Options<ViewsSetData>>): UseMutationOptions<ViewsSetResponse, ViewsSetError, Options<ViewsSetData>> => {
+    const mutationOptions: UseMutationOptions<ViewsSetResponse, ViewsSetError, Options<ViewsSetData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await viewsSet({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+export const mixesListQueryKey = (options: Options<MixesListData>) => createQueryKey('mixesList', options);
+
+/**
+ * The project's mixes, most recently changed first
+ */
+export const mixesListOptions = (options: Options<MixesListData>) => queryOptions<MixesListResponse, MixesListError, MixesListResponse, ReturnType<typeof mixesListQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await mixesList({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: mixesListQueryKey(options)
+});
+
+/**
+ * Save a new mix (groups over dataset versions, weights, temperature, replay share) at revision 1
+ */
+export const mixesNewMutation = (options?: Partial<Options<MixesNewData>>): UseMutationOptions<MixesNewResponse, MixesNewError, Options<MixesNewData>> => {
+    const mutationOptions: UseMutationOptions<MixesNewResponse, MixesNewError, Options<MixesNewData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await mixesNew({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Hours per language and sampling shares of a mix without saving it (metadata only, no GPU)
+ */
+export const mixesPreviewMutation = (options?: Partial<Options<MixesPreviewData>>): UseMutationOptions<MixesPreviewResponse, MixesPreviewError, Options<MixesPreviewData>> => {
+    const mutationOptions: UseMutationOptions<MixesPreviewResponse, MixesPreviewError, Options<MixesPreviewData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await mixesPreview({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+export const mixesGetQueryKey = (options: Options<MixesGetData>) => createQueryKey('mixesGet', options);
+
+/**
+ * Get a mix at its current revision, with its preview and who is editing it
+ */
+export const mixesGetOptions = (options: Options<MixesGetData>) => queryOptions<MixesGetResponse, MixesGetError, MixesGetResponse, ReturnType<typeof mixesGetQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await mixesGet({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: mixesGetQueryKey(options)
+});
+
+/**
+ * Edit a mix; a person's edit makes a new revision, an agent's lands as a draft when the draft policy says so
+ */
+export const mixesEditMutation = (options?: Partial<Options<MixesEditData>>): UseMutationOptions<MixesEditResponse, MixesEditError, Options<MixesEditData>> => {
+    const mutationOptions: UseMutationOptions<MixesEditResponse, MixesEditError, Options<MixesEditData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await mixesEdit({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+export const draftsListQueryKey = (options: Options<DraftsListData>) => createQueryKey('draftsList', options);
+
+/**
+ * Drafts of one entity (open ones by default), newest first
+ */
+export const draftsListOptions = (options: Options<DraftsListData>) => queryOptions<DraftsListResponse, DraftsListError, DraftsListResponse, ReturnType<typeof draftsListQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await draftsList({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: draftsListQueryKey(options)
+});
+
+export const draftsGetQueryKey = (options: Options<DraftsGetData>) => createQueryKey('draftsGet', options);
+
+/**
+ * Get a draft with its changes against the revision it was based on
+ */
+export const draftsGetOptions = (options: Options<DraftsGetData>) => queryOptions<DraftsGetResponse, DraftsGetError, DraftsGetResponse, ReturnType<typeof draftsGetQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await draftsGet({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: draftsGetQueryKey(options)
+});
+
+/**
+ * Apply a draft as a new revision of its entity, attributed to the person who accepts it
+ */
+export const draftsAcceptMutation = (options?: Partial<Options<DraftsAcceptData>>): UseMutationOptions<DraftsAcceptResponse, DraftsAcceptError, Options<DraftsAcceptData>> => {
+    const mutationOptions: UseMutationOptions<DraftsAcceptResponse, DraftsAcceptError, Options<DraftsAcceptData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await draftsAccept({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Discard a draft; its entity stays as it is
+ */
+export const draftsRevertMutation = (options?: Partial<Options<DraftsRevertData>>): UseMutationOptions<DraftsRevertResponse, DraftsRevertError, Options<DraftsRevertData>> => {
+    const mutationOptions: UseMutationOptions<DraftsRevertResponse, DraftsRevertError, Options<DraftsRevertData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await draftsRevert({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+export const agentSessionsListQueryKey = (options: Options<AgentSessionsListData>) => createQueryKey('agentSessionsList', options);
+
+/**
+ * The project's agent sessions, live ones first, then the most recently changed
+ */
+export const agentSessionsListOptions = (options: Options<AgentSessionsListData>) => queryOptions<AgentSessionsListResponse, AgentSessionsListError, AgentSessionsListResponse, ReturnType<typeof agentSessionsListQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await agentSessionsList({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: agentSessionsListQueryKey(options)
+});
+
+/**
+ * Start Claude Code or opencode on its own branch session/<id> of the project repository
  */
 export const agentSessionsNewMutation = (options?: Partial<Options<AgentSessionsNewData>>): UseMutationOptions<AgentSessionsNewResponse, AgentSessionsNewError, Options<AgentSessionsNewData>> => {
     const mutationOptions: UseMutationOptions<AgentSessionsNewResponse, AgentSessionsNewError, Options<AgentSessionsNewData>> = {
@@ -448,8 +1535,26 @@ export const agentSessionsNewMutation = (options?: Partial<Options<AgentSessions
     return mutationOptions;
 };
 
+export const agentSessionsGetQueryKey = (options: Options<AgentSessionsGetData>) => createQueryKey('agentSessionsGet', options);
+
 /**
- * Stop the session's current turn
+ * Get an agent session with its state, budget and use, branch and merge state
+ */
+export const agentSessionsGetOptions = (options: Options<AgentSessionsGetData>) => queryOptions<AgentSessionsGetResponse, AgentSessionsGetError, AgentSessionsGetResponse, ReturnType<typeof agentSessionsGetQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await agentSessionsGet({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: agentSessionsGetQueryKey(options)
+});
+
+/**
+ * Stop the session's current turn; with end, also end the session
  */
 export const agentSessionsCancelMutation = (options?: Partial<Options<AgentSessionsCancelData>>): UseMutationOptions<AgentSessionsCancelResponse, AgentSessionsCancelError, Options<AgentSessionsCancelData>> => {
     const mutationOptions: UseMutationOptions<AgentSessionsCancelResponse, AgentSessionsCancelError, Options<AgentSessionsCancelData>> = {
@@ -466,7 +1571,123 @@ export const agentSessionsCancelMutation = (options?: Partial<Options<AgentSessi
 };
 
 /**
- * User message with entity references; updates arrive on agent.session.{id}
+ * Pause a session; the current turn stops, the worktree is committed and the agent process ends
+ */
+export const agentSessionsPauseMutation = (options?: Partial<Options<AgentSessionsPauseData>>): UseMutationOptions<AgentSessionsPauseResponse, AgentSessionsPauseError, Options<AgentSessionsPauseData>> => {
+    const mutationOptions: UseMutationOptions<AgentSessionsPauseResponse, AgentSessionsPauseError, Options<AgentSessionsPauseData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await agentSessionsPause({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Resume a paused session (ACP session/resume, else a new ACP session with a transcript summary)
+ */
+export const agentSessionsResumeMutation = (options?: Partial<Options<AgentSessionsResumeData>>): UseMutationOptions<AgentSessionsResumeResponse, AgentSessionsResumeError, Options<AgentSessionsResumeData>> => {
+    const mutationOptions: UseMutationOptions<AgentSessionsResumeResponse, AgentSessionsResumeError, Options<AgentSessionsResumeData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await agentSessionsResume({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Merge the session branch into main as a whole and end the session
+ */
+export const agentSessionsAcceptMutation = (options?: Partial<Options<AgentSessionsAcceptData>>): UseMutationOptions<AgentSessionsAcceptResponse, AgentSessionsAcceptError, Options<AgentSessionsAcceptData>> => {
+    const mutationOptions: UseMutationOptions<AgentSessionsAcceptResponse, AgentSessionsAcceptError, Options<AgentSessionsAcceptData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await agentSessionsAccept({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Discard the session branch as a whole and end the session
+ */
+export const agentSessionsRevertMutation = (options?: Partial<Options<AgentSessionsRevertData>>): UseMutationOptions<AgentSessionsRevertResponse, AgentSessionsRevertError, Options<AgentSessionsRevertData>> => {
+    const mutationOptions: UseMutationOptions<AgentSessionsRevertResponse, AgentSessionsRevertError, Options<AgentSessionsRevertData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await agentSessionsRevert({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+export const agentMessagesListQueryKey = (options: Options<AgentMessagesListData>) => createQueryKey('agentMessagesList', options);
+
+/**
+ * The session transcript in order, one page after a sequence number
+ */
+export const agentMessagesListOptions = (options: Options<AgentMessagesListData>) => queryOptions<AgentMessagesListResponse, AgentMessagesListError, AgentMessagesListResponse, ReturnType<typeof agentMessagesListQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await agentMessagesList({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: agentMessagesListQueryKey(options)
+});
+
+export const agentMessagesListInfiniteQueryKey = (options: Options<AgentMessagesListData>): QueryKey<Options<AgentMessagesListData>> => createQueryKey('agentMessagesList', options, true);
+
+/**
+ * The session transcript in order, one page after a sequence number
+ */
+export const agentMessagesListInfiniteOptions = (options: Options<AgentMessagesListData>) => {
+    const opts = infiniteQueryOptions<AgentMessagesListResponse, AgentMessagesListError, InfiniteData<AgentMessagesListResponse>, QueryKey<Options<AgentMessagesListData>>, number | Pick<QueryKey<Options<AgentMessagesListData>>[0], 'body' | 'headers' | 'path' | 'query'>>(
+    // @ts-ignore
+    {
+        queryFn: async ({ pageParam, queryKey, signal }) => {
+            // @ts-ignore
+            const page: Pick<QueryKey<Options<AgentMessagesListData>>[0], 'body' | 'headers' | 'path' | 'query'> = typeof pageParam === 'object' ? pageParam : {
+                query: {
+                    after: pageParam
+                }
+            };
+            const params = createInfiniteParams(queryKey, page);
+            const { data } = await agentMessagesList({
+                ...options,
+                ...params,
+                signal,
+                throwOnError: true
+            });
+            return data;
+        },
+        queryKey: agentMessagesListInfiniteQueryKey(options)
+    });
+    return opts as Omit<typeof opts, 'initialData'>;
+};
+
+/**
+ * Send a user message with entity references; the agent answers on agent.session.{id}
  */
 export const agentMessagesNewMutation = (options?: Partial<Options<AgentMessagesNewData>>): UseMutationOptions<AgentMessagesNewResponse, AgentMessagesNewError, Options<AgentMessagesNewData>> => {
     const mutationOptions: UseMutationOptions<AgentMessagesNewResponse, AgentMessagesNewError, Options<AgentMessagesNewData>> = {
@@ -482,14 +1703,65 @@ export const agentMessagesNewMutation = (options?: Partial<Options<AgentMessages
     return mutationOptions;
 };
 
-export const approvalsListQueryKey = (options?: Options<ApprovalsListData>) => createQueryKey('approvalsList', options);
+/**
+ * Long-poll for work — sessions to start, messages to deliver, controls and permission decisions
+ */
+export const hostSessionsClaimMutation = (options?: Partial<Options<HostSessionsClaimData>>): UseMutationOptions<HostSessionsClaimResponse, HostSessionsClaimError, Options<HostSessionsClaimData>> => {
+    const mutationOptions: UseMutationOptions<HostSessionsClaimResponse, HostSessionsClaimError, Options<HostSessionsClaimData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await hostSessionsClaim({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
 
 /**
- * Approvals, pending first
+ * Post a batch of transcript entries, the session state, usage and the ACP session id
  */
-export const approvalsListOptions = (options?: Options<ApprovalsListData>) => queryOptions<ApprovalsListResponse, ApprovalsListError, ApprovalsListResponse, ReturnType<typeof approvalsListQueryKey>>({
+export const hostSessionsReportMutation = (options?: Partial<Options<HostSessionsReportData>>): UseMutationOptions<HostSessionsReportResponse, HostSessionsReportError, Options<HostSessionsReportData>> => {
+    const mutationOptions: UseMutationOptions<HostSessionsReportResponse, HostSessionsReportError, Options<HostSessionsReportData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await hostSessionsReport({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Raise an ACP permission request; the preset answers it or it becomes an agent-permission approval
+ */
+export const hostSessionsAskMutation = (options?: Partial<Options<HostSessionsAskData>>): UseMutationOptions<HostSessionsAskResponse, HostSessionsAskError, Options<HostSessionsAskData>> => {
+    const mutationOptions: UseMutationOptions<HostSessionsAskResponse, HostSessionsAskError, Options<HostSessionsAskData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await hostSessionsAsk({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+export const hostSessionsDecisionQueryKey = (options: Options<HostSessionsDecisionData>) => createQueryKey('hostSessionsDecision', options);
+
+/**
+ * Read (or wait for) the decision on an agent-permission approval
+ */
+export const hostSessionsDecisionOptions = (options: Options<HostSessionsDecisionData>) => queryOptions<HostSessionsDecisionResponse, HostSessionsDecisionError, HostSessionsDecisionResponse, ReturnType<typeof hostSessionsDecisionQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {
-        const { data } = await approvalsList({
+        const { data } = await hostSessionsDecision({
             ...options,
             ...queryKey[0],
             signal,
@@ -497,42 +1769,8 @@ export const approvalsListOptions = (options?: Options<ApprovalsListData>) => qu
         });
         return data;
     },
-    queryKey: approvalsListQueryKey(options)
+    queryKey: hostSessionsDecisionQueryKey(options)
 });
-
-/**
- * Approve a pending request
- */
-export const approvalsApproveMutation = (options?: Partial<Options<ApprovalsApproveData>>): UseMutationOptions<ApprovalsApproveResponse, ApprovalsApproveError, Options<ApprovalsApproveData>> => {
-    const mutationOptions: UseMutationOptions<ApprovalsApproveResponse, ApprovalsApproveError, Options<ApprovalsApproveData>> = {
-        mutationFn: async (fnOptions) => {
-            const { data } = await approvalsApprove({
-                ...options,
-                ...fnOptions,
-                throwOnError: true
-            });
-            return data;
-        }
-    };
-    return mutationOptions;
-};
-
-/**
- * Deny a pending request
- */
-export const approvalsDenyMutation = (options?: Partial<Options<ApprovalsDenyData>>): UseMutationOptions<ApprovalsDenyResponse, ApprovalsDenyError, Options<ApprovalsDenyData>> => {
-    const mutationOptions: UseMutationOptions<ApprovalsDenyResponse, ApprovalsDenyError, Options<ApprovalsDenyData>> = {
-        mutationFn: async (fnOptions) => {
-            const { data } = await approvalsDeny({
-                ...options,
-                ...fnOptions,
-                throwOnError: true
-            });
-            return data;
-        }
-    };
-    return mutationOptions;
-};
 
 export const mountsListQueryKey = (options?: Options<MountsListData>) => createQueryKey('mountsList', options);
 
@@ -559,23 +1797,6 @@ export const mountsNewMutation = (options?: Partial<Options<MountsNewData>>): Us
     const mutationOptions: UseMutationOptions<MountsNewResponse, MountsNewError, Options<MountsNewData>> = {
         mutationFn: async (fnOptions) => {
             const { data } = await mountsNew({
-                ...options,
-                ...fnOptions,
-                throwOnError: true
-            });
-            return data;
-        }
-    };
-    return mutationOptions;
-};
-
-/**
- * Point a project alias at a registry version (baseline is gated, production moves only by promotion)
- */
-export const aliasesSetMutation = (options?: Partial<Options<AliasesSetData>>): UseMutationOptions<AliasesSetResponse, AliasesSetError, Options<AliasesSetData>> => {
-    const mutationOptions: UseMutationOptions<AliasesSetResponse, AliasesSetError, Options<AliasesSetData>> = {
-        mutationFn: async (fnOptions) => {
-            const { data } = await aliasesSet({
                 ...options,
                 ...fnOptions,
                 throwOnError: true

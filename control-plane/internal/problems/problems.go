@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 
 	"github.com/usunrise88/cadence/control-plane/internal/api"
 )
@@ -37,15 +38,36 @@ var (
 	PreconditionFailed   = Type{"precondition-failed", http.StatusPreconditionFailed, "Precondition failed"}
 	PreconditionRequired = Type{"precondition-required", http.StatusPreconditionRequired, "Precondition required"}
 	IdempotencyKeyReused = Type{"idempotency-key-reused", http.StatusUnprocessableEntity, "Idempotency key reused"}
+	Unauthenticated      = Type{"unauthenticated", http.StatusUnauthorized, "Not signed in"}
+	TOTPRequired         = Type{"totp-required", http.StatusUnauthorized, "TOTP code required"}
+	Forbidden            = Type{"forbidden", http.StatusForbidden, "Forbidden"}
+	RateLimited          = Type{"rate-limited", http.StatusTooManyRequests, "Too many attempts"}
 	NotImplemented       = Type{"not-implemented", http.StatusNotImplemented, "Not implemented"}
 	Internal             = Type{"internal", http.StatusInternalServerError, "Internal error"}
+	PolicyDenied         = Type{"policy-denied", http.StatusForbidden, "Denied by policy"}
+
+	// Registry and estimates (phase 1 · stream B).
+	ReservedAlias       = Type{"reserved-alias", http.StatusConflict, "Reserved alias"}
+	EstimateUnavailable = Type{"estimate-unavailable", http.StatusUnprocessableEntity, "Estimate unavailable"}
+
+	// Search (phase 1 · wave 2).
+	InvalidQuery = Type{"invalid-query", http.StatusBadRequest, "Invalid search query"}
+
+	// Drafts (phase 1 · mix stream).
+	DraftStale = Type{"draft-stale", http.StatusPreconditionFailed, "Draft is stale"}
+
+	// Project repositories (phase 1 · wave 2, projects).
+	MergeConflict         = Type{"merge-conflict", http.StatusConflict, "Merge conflict"}
+	RepositoryUnavailable = Type{"repository-unavailable", http.StatusBadGateway, "Repository unavailable"}
 )
 
 // Types lists every registered type.
 func Types() []Type {
 	return []Type{
 		BadRequest, ValidationFailed, NotFound, MethodNotAllowed, Conflict, PreconditionFailed,
-		PreconditionRequired, IdempotencyKeyReused, NotImplemented, Internal,
+		PreconditionRequired, IdempotencyKeyReused, Unauthenticated, TOTPRequired, Forbidden, RateLimited, NotImplemented,
+		Internal, PolicyDenied, ReservedAlias, EstimateUnavailable, InvalidQuery, DraftStale, MergeConflict,
+		RepositoryUnavailable,
 	}
 }
 
@@ -66,6 +88,8 @@ type Error struct {
 	Detail     string
 	CurrentRev *int
 	Errors     []FieldError
+	// RetryAfter, when positive, is sent as the Retry-After header (seconds), e.g. on rate-limited.
+	RetryAfter int
 }
 
 func (e *Error) Error() string { return e.Type.Slug + ": " + e.Detail }
@@ -124,6 +148,9 @@ func Write(w http.ResponseWriter, r *http.Request, log *slog.Logger, err error) 
 	}
 	w.Header().Set("Content-Type", ContentType)
 	w.Header().Set("Cache-Control", "no-store")
+	if pe.RetryAfter > 0 {
+		w.Header().Set("Retry-After", strconv.Itoa(pe.RetryAfter))
+	}
 	w.WriteHeader(pe.Type.Status)
 	if _, werr := w.Write(append(b, '\n')); werr != nil {
 		log.DebugContext(r.Context(), "write problem", "err", werr)

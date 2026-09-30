@@ -1,16 +1,21 @@
 # {{ .Name }} — agent instructions
 
 Cadence project `{{ .Slug }}`: locales {{ .Locales }}, domain {{ .Domain }}.
-Base model: `{{ .BaseModel.Repo }}` at revision `{{ .BaseModel.Revision }}`.
+Base model: `{{ .BaseModel.Repo }}` at revision `{{ .BaseModel.Revision }}` (registry version {{ .BaseModel.Version }}).
+Agent: {{ .Agent.Driver }} ({{ .Agent.Model }}) under the `{{ .Agent.PermissionPreset }}` permission preset.
 
 ## How to work here
 
 - Use the Cadence MCP tools for every change to runs, mixes, datasets, evals and deployments; never edit the database.
-- Recipes and pipelines live in this repository; commit after each change with a one-line message.
+- Recipes and pipelines live in this repository; your worktree is on your session branch and every turn is
+  committed there. `main` changes only by merge.
 - Before any GPU job, call the command with `dryRun` and check the estimate against the project budget
   ({{ .Budgets.GPUHoursPerDay }} GPU-hours per day).
 - Evaluate only in true streaming at deployment latency; never reference golden sets from a run.
 - Ask for approval when a tool returns an approval id; do not retry the same request.
+- Read `NOTES.md` before you start: it holds what earlier sessions learned. Record a new learning with
+  `projects.note` (one or two sentences: what you tried, what happened, what to do next time).
+- `data.lock` lists every registry version this project depends on; it is written by Cadence, never by hand.
 
 ## Skills
 
