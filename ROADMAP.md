@@ -261,7 +261,7 @@ Phase 1 notes (what differs from the plan above):
 step budget — scheduled on a card under its memory cap, watched live and continued by resume or a new stage.
 
 **Gate.** The agent (a session running the phase-2 playbook below) calibrates and runs a Nemotron 3.5 fine-tune on the staging card under the
-24 GB cap from a dataset version, with a dry-run estimate shown first; metrics stream to the Run panel; checkpoints
+memory cap (22 GB on the 48 GB staging card beside vLLM; the spec's 24 GB did not fit, spike A3) from a dataset version, with a dry-run estimate shown first; metrics stream to the Run panel; checkpoints
 are registered with validation WER. A3 acceptance met (incl. ONNX parity numbers recorded for phase 5). The seams
 hold: the CPU toy pack passes the conformance suite in CI, and no control-plane or web code names the Nemotron family
 (R40–R45).

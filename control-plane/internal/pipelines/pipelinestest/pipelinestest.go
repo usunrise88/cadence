@@ -59,7 +59,7 @@ var Fixtures = []map[string]any{
 			},
 		},
 		"consumes": map[string]string{"text": "text"}, "produces": map[string]string{"tally": "tally"},
-		"resources": map[string]any{"gpu": true, "gpus": 1, "memoryGb": 24, "jobKind": "training"}, "help": "steps.tally",
+		"resources": map[string]any{"gpu": true, "gpus": 1, "memoryGb": 20, "jobKind": "training"}, "help": "steps.tally",
 		"estimateSeconds": 1800,
 	},
 }

@@ -35,8 +35,8 @@ func TestEmbeddedDefaultsParse(t *testing.T) {
 		}
 	}
 	if len(d.Compute.Hosts) != 1 || d.Compute.Hosts[0].Name != "staging" || len(d.Compute.Hosts[0].Cards) != 1 ||
-		d.Compute.Hosts[0].Cards[0].MemoryCapGB != 24 {
-		t.Errorf("compute hosts = %+v, want staging with one card capped at 24 GB", d.Compute.Hosts)
+		d.Compute.Hosts[0].Cards[0].MemoryCapGB != 22 {
+		t.Errorf("compute hosts = %+v, want staging with one card capped at 22 GB", d.Compute.Hosts)
 	}
 	card := d.Compute.Hosts[0].Cards[0]
 	if _, ok := d.TrainingEstimate(d.Wizard.BaseModel.Value, card.CardClass, card.MemoryCapGB, d.Training.Precision.Value); !ok {

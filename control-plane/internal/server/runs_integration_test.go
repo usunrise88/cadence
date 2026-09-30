@@ -159,7 +159,7 @@ func TestRunsEndToEnd(t *testing.T) {
 	e.ok(e.do("POST", "/api/projects/train/runs:calibrate?dryRun=true", `{"baseModel":"`+pipelinestest.BaseModel+`","mix":"he-mix"}`,
 		"Idempotency-Key", e.key()), 200, &cal)
 	if cal.Family != pipelinestest.FamilyName || cal.Step != "fx_calibrate@1" || len(cal.Plan.Steps) != 1 || cal.Key.CardClass != "blackwell-48gb" ||
-		cal.Key.MemoryCapGb != 24 || cal.Key.BaseModel != pipelinestest.BaseModel {
+		cal.Key.MemoryCapGb != 22 || cal.Key.BaseModel != pipelinestest.BaseModel {
 		t.Fatalf("calibration dry run %+v", cal)
 	}
 	e.ok(e.do("POST", "/api/projects/train/runs:calibrate", `{"baseModel":"`+pipelinestest.BaseModel+`","mix":"`+mixID+`"}`,

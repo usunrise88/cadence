@@ -395,7 +395,7 @@ func TestWorkerProtocolEndToEnd(t *testing.T) {
 	jobID := w.enqueue(spec)
 
 	l := f.claim(2)
-	if l == nil || l.JobID != jobID || l.Card.Index != 0 || l.Card.MemoryCapMb != 24*1024 || l.HeartbeatSeconds != 10 ||
+	if l == nil || l.JobID != jobID || l.Card.Index != 0 || l.Card.MemoryCapMb != 22*1024 || l.HeartbeatSeconds != 10 ||
 		l.Env["HF_TOKEN"] != "hf_secret_value" || l.Inputs["data"] != "cas://"+input || !strings.HasPrefix(l.Traceparent, "00-") {
 		t.Fatalf("lease = %+v", l)
 	}
