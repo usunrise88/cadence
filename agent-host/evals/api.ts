@@ -37,12 +37,17 @@ export class CadenceError extends Error {
 export class CadenceApi {
   private cookie = "";
 
-  constructor(readonly baseUrl: string) {}
+  /** token: an API key (cdk_) for a Cadence that is already running (the staging stand); else sign in as the admin. */
+  constructor(
+    readonly baseUrl: string,
+    private readonly token?: string,
+  ) {}
 
   // req throws on every error status except 404 when missingOk (a read of something that may not exist).
   private async req<T>(method: string, path: string, body?: unknown, headers: Record<string, string> = {}, missingOk = false): Promise<{ status: number; data: T }> {
     const h: Record<string, string> = { Accept: "application/json", "Cadence-Client": "web", ...headers };
-    if (this.cookie) h.Cookie = this.cookie;
+    if (this.token) h.Authorization = `Bearer ${this.token}`;
+    else if (this.cookie) h.Cookie = this.cookie;
     if (body !== undefined) h["Content-Type"] = "application/json";
     if (method !== "GET" && !h["Idempotency-Key"]) h["Idempotency-Key"] = `evals-${randomUUID()}`;
     const res = await fetch(new URL(`/api${path}`, this.baseUrl), { method, headers: h, body: body === undefined ? null : JSON.stringify(body) });
@@ -62,6 +67,10 @@ export class CadenceApi {
     const status = await this.get<{ setupRequired?: boolean }>("/auth");
     if (status.setupRequired) await this.req("POST", "/auth:setup", { username, password });
     else await this.req("POST", "/auth:login", { username, password });
+  }
+
+  async project(slug: string): Promise<Project> {
+    return this.get<Project>(`/projects/${slug}`);
   }
 
   /** projects.new, then waits for its bootstrap job (the internal repository, the agent profile). */

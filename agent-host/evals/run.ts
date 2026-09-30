@@ -9,9 +9,16 @@
 // Environment: CADENCE_LIVE_AGENTS (1 or all = both drivers, or a list: claude,opencode), CADENCE_LIVE_CLAUDE_MODEL
 // (default sonnet), CADENCE_LIVE_OPENCODE_MODEL (default: the project's configured opencode model), E2E_PG_PORT and
 // E2E_API_PORT (default 55437 / 18087), EVALS_KEEP_LOGS=1 keeps the stack and host logs of a passing run.
+//
+// Against a running Cadence (the staging stand), whose own agent host and agent accounts run the sessions:
+//   CADENCE_EVALS_TARGET=https://cadence.example CADENCE_EVALS_PROJECT=evals CADENCE_EVALS_KEY_FILE=~/.cadence-evals-key \
+//     npm run evals
+// The key is an API key of that one project with registry read (Settings → Credentials). Every run adds its fixture
+// mixes to the project under a unique name (evals-he-smoke-<tag>) and sends the prompt with that name; nothing else
+// is created there. Live by definition: CADENCE_LIVE_AGENTS only narrows the drivers.
 
 import { createWriteStream, existsSync } from "node:fs";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -86,16 +93,45 @@ async function waitFor(api: CadenceApi, id: string, until: (s: AgentSession) => 
 
 let projectSeq = 0;
 
-async function runOne(api: CadenceApi, e: Eval, driver: EvalDriver, live: boolean): Promise<RunResult> {
+/** A Cadence that is already running (CADENCE_EVALS_TARGET): its URL, the evals' project and that project's API key. */
+type Target = { url: string; project: string; token: string };
+
+async function targetFromEnv(): Promise<Target | undefined> {
+  const url = process.env.CADENCE_EVALS_TARGET;
+  if (!url) return undefined;
+  const project = process.env.CADENCE_EVALS_PROJECT;
+  const file = process.env.CADENCE_EVALS_KEY_FILE?.replace(/^~(?=\/)/, homedir());
+  if (!project || !file) throw new Error("CADENCE_EVALS_TARGET needs CADENCE_EVALS_PROJECT and CADENCE_EVALS_KEY_FILE");
+  const token = (await readFile(file, "utf8")).trim();
+  if (!/^cdk_\S+$/.test(token)) throw new Error(`${file} does not hold one cdk_ API key`);
+  return { url, project, token };
+}
+
+/** The prompt with each fixture mix's name swapped for this run's copy. */
+function renamed(prompt: string, names: Map<string, string>): string {
+  let out = prompt;
+  for (const [from, to] of names) out = out.replace(new RegExp(`(?<![\\w-])${from.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`, "g"), to);
+  return out;
+}
+
+async function runOne(api: CadenceApi, e: Eval, driver: EvalDriver, live: boolean, target?: Target): Promise<RunResult> {
   const mode = live ? "live" : "offline";
   const base = { eval: e.id, driver, model: live ? (liveModel(driver) ?? "profile default") : "scripted", mode } as const;
   try {
-    const slug = `ev-${++projectSeq}-${Date.now().toString(36)}`;
-    const project = await api.newProject(slug, `Evals: ${e.id} (${driver})`);
-    for (const m of e.fixture.mixes) await api.newMix(slug, m);
+    const tag = `${Date.now().toString(36)}${++projectSeq}`;
+    const slug = target?.project ?? `ev-${projectSeq}-${Date.now().toString(36)}`;
+    const project = target ? await api.project(slug) : await api.newProject(slug, `Evals: ${e.id} (${driver})`);
+    // On a shared project every run gets its own copy of the fixture mixes; the graders still name the originals.
+    const names = new Map(e.fixture.mixes.map((m) => [m.name, target ? `evals-${m.name}-${tag}` : m.name]));
+    for (const m of e.fixture.mixes) await api.newMix(slug, { ...m, name: names.get(m.name)! });
 
-    const body: AgentSessionNew = { kind: e.kind, driver: driver === "claude" ? "claude-code" : "opencode", prompt: e.prompt };
-    const model = live ? liveModel(driver) : undefined;
+    const body: AgentSessionNew = { kind: e.kind, driver: driver === "claude" ? "claude-code" : "opencode", prompt: renamed(e.prompt, names) };
+    // On a target the server picks the driver's model (Settings → Agents) unless one is named explicitly.
+    const model = target
+      ? process.env[driver === "claude" ? "CADENCE_LIVE_CLAUDE_MODEL" : "CADENCE_LIVE_OPENCODE_MODEL"]
+      : live
+        ? liveModel(driver)
+        : undefined;
     if (model) body.model = model;
     const started = Date.now();
     const created = await api.newSession(slug, body);
@@ -111,7 +147,7 @@ async function runOne(api: CadenceApi, e: Eval, driver: EvalDriver, live: boolea
     const mixes: Observation["mixes"] = {};
     const all = await api.mixes(slug);
     for (const name of e.observe.mixes) {
-      const mix = all.find((m) => m.name === name);
+      const mix = all.find((m) => m.name === (names.get(name) ?? name));
       mixes[name] = mix ? { mix, drafts: await api.drafts(mix.id) } : null;
     }
     const aliases: Observation["aliases"] = {};
@@ -151,6 +187,7 @@ async function main(): Promise<number> {
   const pick = (values.eval ?? []).flatMap((v) => v.split(","));
   const evals = pick.length ? EVALS.filter((e) => pick.includes(e.id)) : [...EVALS];
   if (pick.length && evals.length !== pick.length) throw new Error(`unknown eval in ${pick.join(", ")}; --list shows them`);
+  const target = await targetFromEnv();
   const live = liveDrivers(process.env.CADENCE_LIVE_AGENTS);
   const wanted = (values.driver ?? []).flatMap((v) => v.split(","));
   let drivers = live.length ? live : [...DRIVERS];
@@ -161,45 +198,58 @@ async function main(): Promise<number> {
   const name = reportName(startedAt);
   await mkdir(RESULTS, { recursive: true });
   const stackLog = join(RESULTS, name.replace(/\.json$/, ".stack.log"));
-  const hostLog = fileLogger(join(RESULTS, name.replace(/\.json$/, ".host.log")));
-  const mode = live.length ? "live" : "offline";
-  console.log(`cadence evals (${mode}): ${evals.length} eval(s) × ${drivers.join(", ")}; starting Postgres and the control plane…`);
-
-  const stack = await startStack({
-    pgPort: Number(process.env.E2E_PG_PORT ?? 55437),
-    apiPort: Number(process.env.E2E_API_PORT ?? 18087),
-    logFile: stackLog,
-  });
+  const hostLogPath = join(RESULTS, name.replace(/\.json$/, ".host.log"));
+  const mode = target || live.length ? "live" : "offline";
   const runs: RunResult[] = [];
-  try {
-    const api = new CadenceApi(stack.url);
-    await api.signIn(ADMIN.username, ADMIN.password);
-    const host = await startHost({ url: stack.url, token: stack.hostToken, offline: !live.length, log: hostLog });
+  const runAll = async (api: CadenceApi) => {
+    for (const e of evals) {
+      for (const d of drivers) {
+        const missing = !target && live.length ? missingCredentials(d) : undefined;
+        const r = missing
+          ? runResult({ eval: e.id, driver: d, model: liveModel(d) ?? "profile default", mode: "live", graders: [], metrics: EMPTY_METRICS, error: missing })
+          : await runOne(api, e, d, mode === "live", target);
+        runs.push(r);
+        console.log(`  ${r.pass ? "PASS" : "FAIL"}  ${e.id} × ${d}${r.error ? ` (${r.error})` : ""}`);
+      }
+    }
+  };
+
+  let controlPlane: string;
+  if (target) {
+    // The target's own agent host and agent accounts run the sessions; nothing starts here.
+    controlPlane = target.url;
+    console.log(`cadence evals (live, ${target.url}, project ${target.project}): ${evals.length} eval(s) × ${drivers.join(", ")}`);
+    await runAll(new CadenceApi(target.url, target.token));
+  } else {
+    const hostLog = fileLogger(hostLogPath);
+    console.log(`cadence evals (${mode}): ${evals.length} eval(s) × ${drivers.join(", ")}; starting Postgres and the control plane…`);
+    const stack = await startStack({
+      pgPort: Number(process.env.E2E_PG_PORT ?? 55437),
+      apiPort: Number(process.env.E2E_API_PORT ?? 18087),
+      logFile: stackLog,
+    });
+    controlPlane = stack.url;
     try {
-      for (const e of evals) {
-        for (const d of drivers) {
-          const missing = live.length ? missingCredentials(d) : undefined;
-          const r = missing
-            ? runResult({ eval: e.id, driver: d, model: liveModel(d) ?? "profile default", mode: "live", graders: [], metrics: EMPTY_METRICS, error: missing })
-            : await runOne(api, e, d, live.length > 0);
-          runs.push(r);
-          console.log(`  ${r.pass ? "PASS" : "FAIL"}  ${e.id} × ${d}${r.error ? ` (${r.error})` : ""}`);
-        }
+      const api = new CadenceApi(stack.url);
+      await api.signIn(ADMIN.username, ADMIN.password);
+      const host = await startHost({ url: stack.url, token: stack.hostToken, offline: !live.length, log: hostLog });
+      try {
+        await runAll(api);
+      } finally {
+        await host.stop();
       }
     } finally {
-      await host.stop();
+      await stack.stop();
+      hostLog.close();
     }
-  } finally {
-    await stack.stop();
-    hostLog.close();
   }
-  const report = buildReport({ startedAt: startedAt.toISOString(), finishedAt: new Date().toISOString(), mode, controlPlane: stack.url, runs });
+  const report = buildReport({ startedAt: startedAt.toISOString(), finishedAt: new Date().toISOString(), mode, controlPlane, runs });
   const out = join(RESULTS, name);
   await writeFile(out, `${JSON.stringify(report, null, 2)}\n`);
   console.log(`\n${formatTable(report)}\n\nresults: ${out}`);
   const failed = report.summary.failed > 0;
-  if (failed || process.env.EVALS_KEEP_LOGS === "1") console.log(`logs: ${stackLog}, ${join(RESULTS, name.replace(/\.json$/, ".host.log"))}`);
-  else await Promise.all([rm(stackLog, { force: true }), rm(join(RESULTS, name.replace(/\.json$/, ".host.log")), { force: true })]);
+  if (!target && (failed || process.env.EVALS_KEEP_LOGS === "1")) console.log(`logs: ${stackLog}, ${hostLogPath}`);
+  else await Promise.all([rm(stackLog, { force: true }), rm(hostLogPath, { force: true })]);
   return failed ? 1 : 0;
 }
 

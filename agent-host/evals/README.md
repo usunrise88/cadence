@@ -11,6 +11,8 @@ make evals                                              # offline, both drivers 
 cd agent-host && npm run evals -- --list                # the evals
 cd agent-host && npm run evals -- --eval gated-baseline --driver opencode
 CADENCE_LIVE_AGENTS=1 make evals                        # live: Claude Code and opencode with real models
+CADENCE_EVALS_TARGET=https://cadence.llmto.day CADENCE_EVALS_PROJECT=evals \
+  CADENCE_EVALS_KEY_FILE=~/.cadence-evals-key make evals  # live on the staging stand, its own agent host and accounts
 CADENCE_LIVE_AGENTS=claude CADENCE_LIVE_CLAUDE_MODEL=opus make evals
 ```
 
@@ -61,3 +63,13 @@ The harness lives in `agent-host/evals/`, not a top-level `evals/`: it runs the 
 drivers in-process and its scripted agent speaks ACP with the host's pinned SDK, so it shares the package, its
 `node_modules`, its contract types (`src/api/gen`) and its `tsc`/`npm test` (which `make lint test` already run).
 A separate package would duplicate the dependencies and import the host across package boundaries.
+
+## On a running Cadence (the staging stand)
+
+`CADENCE_EVALS_TARGET` points the harness at a Cadence that already runs; its own agent host runs the sessions with the
+accounts connected in Settings → Agents, inside the sandbox and behind the egress proxy — the production path, and no
+agent credential leaves the agent-credentials volume. The harness needs one project for the evals and an API key of
+that project with registry read (Settings → Credentials), kept in a file only you can read (`CADENCE_EVALS_KEY_FILE`).
+Every run adds its fixture mixes to that project as `evals-<name>-<tag>` and sends the prompt with that name, so runs
+never see each other's drafts; the graders read that project's approvals and audit rows (a project key reads its own
+project's audit, never another's). Mixes have no archive verb yet, so the copies stay in the project.

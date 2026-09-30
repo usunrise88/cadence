@@ -231,13 +231,14 @@ func (s *Server) replayApproved(ctx context.Context, tx pgx.Tx, a approvals.Appr
 
 // ---------------------------------------------------------------- audit
 
-// AuditList implements audit.list.
+// AuditList implements audit.list. The admin's session reads everything; a credential scoped to one project reads
+// that project's rows only (the evals grade a session through its project key), like approvals.list.
 func (s *Server) AuditList(ctx context.Context, req api.AuditListRequestObject) (api.AuditListResponseObject, error) {
-	if err := auth.CheckAll(ctx); err != nil {
-		return nil, err
-	}
 	projectID, err := s.projectID(ctx, deref(req.Params.Project))
 	if err != nil {
+		return nil, err
+	}
+	if projectID, err = narrowToScope(ctx, projectID); err != nil {
 		return nil, err
 	}
 	list, next, err := audit.List(ctx, s.Pool, audit.Filter{

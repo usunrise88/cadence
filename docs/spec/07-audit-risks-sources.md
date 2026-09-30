@@ -53,6 +53,9 @@ Spikes:
 
 Open questions:
 
+- [ ] `audit.list` for scoped credentials (2026-09-30, for the evals on the staging stand): an API key or agent token
+  of one project reads that project's audit rows only (narrowed like `approvals.list`); a key without a project is
+  refused; the admin's session still reads everything. Agents may therefore read their own project's audit
 - [x] Add Chat, Agent sessions, Recipes, Sources, Golden sets and Approvals to the UI shell's panel catalogue
 - [x] Stress marking and TTS datasets from the July concept: later phase, or dropped? — deferred to a later phase, out of v1
 - [x] Default model for opencode sessions? — chosen per project in the wizard, editable in Agent settings
