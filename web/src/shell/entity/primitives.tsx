@@ -1,6 +1,8 @@
 import { useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { verbs } from "@/api/operations.gen";
+import { Sparks } from "iconoir-react";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { AgentReference } from "@/api/gen/types.gen";
@@ -82,11 +84,14 @@ function VerbButton({ m, v, entity, variant }: { m: EntityManifest; v: EntityVer
   );
 }
 
+/** The entity's verbs in one wrapping row: the primary first, then the rest. */
 export function ActionBar({ manifest, entity }: { manifest: EntityManifest; entity: EntityData }) {
+  if (manifest.verbs.length === 0) return null;
+  const primary = manifest.verbs.find((v) => v.primary);
   const secondary = manifest.verbs.filter((v) => !v.primary);
-  if (secondary.length === 0) return null;
   return (
-    <div data-slot="action-bar" role="toolbar" aria-label="Actions" className="flex items-center gap-1">
+    <div data-slot="action-bar" role="toolbar" aria-label="Actions" className="flex min-w-0 flex-wrap items-center gap-1">
+      {primary ? <VerbButton m={manifest} v={primary} entity={entity} variant="default" /> : null}
       {secondary.map((v) => (
         <VerbButton key={v.verb} m={manifest} v={v} entity={entity} variant="outline" />
       ))}
@@ -117,7 +122,6 @@ export function LoopStepper({ current }: { current: LoopStep }) {
 }
 
 export function EntityHeader({ manifest, entity }: { manifest: EntityManifest; entity: EntityData }) {
-  const primary = manifest.verbs.find((v) => v.primary);
   const Icon = manifest.icon;
   return (
     <header data-slot="entity-header" className="flex flex-col gap-2.5 border-b px-4 pt-3 pb-2.5">
@@ -130,12 +134,11 @@ export function EntityHeader({ manifest, entity }: { manifest: EntityManifest; e
         <StatusChip state={entity.state} />
         <ActorBadge actor={entity.actor} toolCallId={entity.toolCallId} />
         {entity.presence ? <PresenceChip presence={entity.presence} /> : null}
-        <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1">
-          <AgentActions manifest={manifest} entity={entity} />
-          <ActionBar manifest={manifest} entity={entity} />
-          {primary ? <VerbButton m={manifest} v={primary} entity={entity} variant="default" /> : null}
+        <div className="ml-auto flex shrink-0 items-center">
+          <EntityAgentMenu manifest={manifest} entity={entity} />
         </div>
       </div>
+      <ActionBar manifest={manifest} entity={entity} />
       <LoopStepper current={manifest.loopStep(entity)} />
       <dl data-slot="facts" className="grid grid-cols-4 gap-3">
         {manifest.facts.map((f) => (
@@ -205,7 +208,6 @@ export function NextStep({ manifest, entity }: { manifest: EntityManifest; entit
             {cmd.title}
           </Button>
         ) : null}
-        <AskAgentButton refs={[entityReference(manifest, entity)]} intent={`${capitalise(s.step)}: ${s.title}`} />
       </div>
     </div>
   );
@@ -256,33 +258,69 @@ export function AskAgentButton({ refs, intent, variant = "outline" }: { refs?: A
  * Explain this (docs/spec/11-ui-panels.md "Help"): a read-only agent session — one turn, no mutating verbs — with
  * the entity and its help article attached, shown in Chat.
  */
-export function ExplainThisButton({ entity, article, what, variant = "ghost" }: { entity: { kind: string; id: string; label?: string } | null; article?: string; what: string; variant?: "outline" | "ghost" }) {
+export async function explainThis(entity: { kind: string; id: string; label?: string } | null, article: string | undefined, what: string): Promise<void> {
+  try {
+    await commands.run("agentSessions.new", commandContext(), {
+      body: { kind: "read-only", prompt: explainPrompt(what, article), references: explainReferences(entity, article) },
+      open: true,
+    });
+  } catch (err) {
+    notifyError("Explain this could not start", err);
+  }
+}
+
+export type AgentMenuItem = { label: string; run: () => void; command?: string };
+
+/**
+ * The agent's actions on what a panel shows (Ask agent, Explain this) behind one AI icon in the corner, apart from
+ * the entity's own verbs.
+ */
+export function AgentMenu({ items, className }: { items: AgentMenuItem[]; className?: string }) {
   const project = useShell((st) => st.project);
-  const run = async () => {
-    try {
-      await commands.run("agentSessions.new", commandContext(), {
-        body: { kind: "read-only", prompt: explainPrompt(what, article), references: explainReferences(entity, article) },
-        open: true,
-      });
-    } catch (err) {
-      notifyError("Explain this could not start", err);
-    }
-  };
   return (
-    <Button size="xs" variant={variant} disabled={!project} className="text-xs" data-command="agentSessions.new" onClick={() => void run()}>
-      Explain this
-    </Button>
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            size="icon-xs"
+            variant="ghost"
+            className={cn("size-6 text-accent-text [&_svg]:size-3.5", className)}
+            disabled={!project}
+            aria-label="Agent"
+            title={project ? "Ask the agent" : "Open a project first"}
+            data-slot="agent-menu"
+          />
+        }
+      >
+        <Sparks aria-hidden />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-max min-w-52">
+        {items.map((it) => (
+          <DropdownMenuItem key={it.label} onClick={it.run} data-command={it.command}>
+            {it.label}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
-/** The header's agent actions: Ask agent about this entity, Explain this. */
-function AgentActions({ manifest, entity }: { manifest: EntityManifest; entity: EntityData }) {
+/** The header's agent menu: ask about this entity or its next step, or explain it. */
+function EntityAgentMenu({ manifest, entity }: { manifest: EntityManifest; entity: EntityData }) {
   const ref = entityReference(manifest, entity);
+  const next = manifest.nextStep(entity);
   return (
-    <div role="group" aria-label="Agent" className="flex items-center gap-1">
-      <AskAgentButton variant="ghost" refs={[ref]} intent={`Help me with the ${manifest.kind} ${entity.name}`} />
-      <ExplainThisButton entity={{ kind: manifest.kind, id: entity.id, label: ref.label }} article={helpOf(manifest.kind)} what={`the ${manifest.kind} ${entity.name} (${ref.ref})`} />
-    </div>
+    <AgentMenu
+      items={[
+        { label: `Ask agent about this ${manifest.kind}`, command: "view.askAgent", run: () => askAgent({ refs: [ref], intent: `Help me with the ${manifest.kind} ${entity.name}` }) },
+        { label: `Ask agent about the next step`, command: "view.askAgent", run: () => askAgent({ refs: [ref], intent: `${capitalise(next.step)}: ${next.title}` }) },
+        {
+          label: "Explain this",
+          command: "agentSessions.new",
+          run: () => void explainThis({ kind: manifest.kind, id: entity.id, label: ref.label }, helpOf(manifest.kind), `the ${manifest.kind} ${entity.name} (${ref.ref})`),
+        },
+      ]}
+    />
   );
 }
 

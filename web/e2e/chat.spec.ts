@@ -53,6 +53,8 @@ test("Chat: new session, streamed reply, inline permission, tool call with badge
   expect(await host.message(sessionId)).toBe("Make the mix warmer");
   await host.report(sessionId, { state: { state: "running", busy: true, turn: 1 }, entries: [{ key: "t1:start", kind: "turn", turn: 1, turnInfo: { state: "started" } }] });
   await expect(chat.locator('[data-slot="session-state"]')).toHaveText("running");
+  const tabIcon = chatTab.locator('[data-slot="chat-tab-icon"]');
+  await expect(tabIcon).toHaveAttribute("data-tone", "working");
   await host.entries(sessionId, 1, [{ key: "t1:m1", kind: "agent_message", text: "Looking at", final: false }]);
   const reply = chat.locator('[data-kind="agent_message"]');
   await expect(reply).toContainText("Looking at");
@@ -128,11 +130,12 @@ test("Chat: new session, streamed reply, inline permission, tool call with badge
   await expect(page.getByTestId("live-region")).toContainText(`${label} finished its turn`);
   const unread = chatTab.locator('[data-slot="chat-tab-unread"]');
   await expect(unread).toBeVisible();
+  await expect(tabIcon).toHaveAttribute("data-tone", "ready");
   await chatTab.click();
   await expect(unread).toHaveCount(0);
 
   // End the session: the host is told, commits nothing more and reports done; the changes wait for a person.
-  await chat.getByRole("button", { name: "End…" }).click();
+  await chat.getByRole("button", { name: "End session…" }).click();
   await chat.getByRole("button", { name: "End the session" }).click();
   await host.control(sessionId, "end");
   await host.report(sessionId, { state: { state: "done" } });

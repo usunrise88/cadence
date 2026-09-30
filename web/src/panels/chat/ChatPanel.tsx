@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type UIEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Attachment, Pause, Play, SendDiagonal, Square } from "iconoir-react";
+import { Attachment, Eject, Pause, Play, SendDiagonal, Square } from "iconoir-react";
 import { branchesGetOptions } from "@/api/gen/@tanstack/react-query.gen";
 import type { AgentMessage, AgentSession } from "@/api/gen/types.gen";
 import { Button } from "@/components/ui/button";
@@ -186,13 +186,14 @@ function Header({ session: s, instanceId, switchable }: { session: AgentSession;
     const items = list.data?.items ?? [];
     return items.some((x) => x.id === s.id) ? items : [s, ...items];
   }, [list.data, s]);
+  const iconButton = "size-6 [&_svg]:size-3.5";
   return (
-    <div className="flex shrink-0 flex-col gap-2 border-b px-3 py-2" data-slot="chat-header">
-      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+    <div className="flex shrink-0 flex-col gap-1.5 border-b px-3 py-2" data-slot="chat-header">
+      <div className="flex min-w-0 items-center gap-2">
         {switchable ? (
           <NativeSelect
             aria-label="Session shown in this Chat"
-            className="h-6 w-auto max-w-52 text-xs font-medium"
+            className="h-6 w-auto max-w-44 min-w-0 text-xs font-medium"
             value={s.id}
             onChange={(e) => pinChat(instanceId, e.target.value || null)}
           >
@@ -205,21 +206,95 @@ function Header({ session: s, instanceId, switchable }: { session: AgentSession;
             <option value="">New session…</option>
           </NativeSelect>
         ) : (
-          <h3 className="text-[13px] font-semibold">{sessionLabel(s)}</h3>
+          <h3 className="min-w-0 truncate text-[13px] font-semibold">{sessionLabel(s)}</h3>
         )}
-        <span className="rounded-full border px-2 py-0.5 text-[11px] text-muted-foreground" data-slot="session-kind">
-          {s.kind}
-        </span>
-        <span className={cn("inline-flex items-center gap-1.5 text-xs font-medium", TONE[status.tone])} data-slot="session-state" data-state={s.state}>
+        <span
+          className={cn("inline-flex shrink-0 items-center gap-1.5 text-xs font-medium", TONE[status.tone])}
+          data-slot="session-state"
+          data-state={s.state}
+          title={status.detail}
+        >
           <span aria-hidden className={cn("size-2 rounded-full", DOT[status.tone], s.busy && "animate-pulse motion-reduce:animate-none")} />
           {status.label}
         </span>
-        <span className="min-w-0 truncate text-[11px] text-muted-foreground" title={`${s.driver} · ${s.model} · preset ${s.preset}`}>
+        {s.kind !== "interactive" ? (
+          <span className="shrink-0 rounded-full border px-1.5 text-[11px] text-muted-foreground" data-slot="session-kind">
+            {s.kind}
+          </span>
+        ) : null}
+        <span className="min-w-0 truncate text-[11px] text-muted-foreground" title={`${s.driver} · ${s.model} · ${s.kind} · preset ${s.preset}`}>
           {s.model}
         </span>
+        {live ? (
+          <div className="ml-auto flex shrink-0 items-center gap-0.5" role="toolbar" aria-label="Session">
+            {confirmEnd ? (
+              <>
+                <Button size="xs" variant="destructive" disabled={busy} onClick={() => void act(() => runCommand("agentSessions.cancel", { session: s, end: true }))} autoFocus>
+                  End the session
+                </Button>
+                <Button size="xs" variant="ghost" onClick={() => setConfirmEnd(false)}>
+                  Keep it
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button
+                  size="icon-xs"
+                  variant="ghost"
+                  className={iconButton}
+                  disabled={busy || !s.busy}
+                  onClick={() => void act(() => runCommand("agentSessions.cancel", { session: s }))}
+                  data-command="agentSessions.cancel"
+                  aria-label="Stop turn"
+                  title="Stop the agent's turn (Ctrl/Cmd+.)"
+                >
+                  <Square aria-hidden />
+                </Button>
+                {s.state === "paused" ? (
+                  <Button
+                    size="icon-xs"
+                    variant="ghost"
+                    className={iconButton}
+                    disabled={busy || s.pendingControl === "resume"}
+                    onClick={() => void act(() => runCommand("agentSessions.resume", { session: s }))}
+                    data-command="agentSessions.resume"
+                    aria-label="Resume"
+                    title="Resume the session"
+                  >
+                    <Play aria-hidden />
+                  </Button>
+                ) : (
+                  <Button
+                    size="icon-xs"
+                    variant="ghost"
+                    className={iconButton}
+                    disabled={busy || s.state === "created" || !!s.pendingControl}
+                    onClick={() => void act(() => runCommand("agentSessions.pause", { session: s }))}
+                    data-command="agentSessions.pause"
+                    aria-label="Pause"
+                    title="Pause the session"
+                  >
+                    <Pause aria-hidden />
+                  </Button>
+                )}
+                <Button
+                  size="icon-xs"
+                  variant="ghost"
+                  className={iconButton}
+                  disabled={busy || s.pendingControl === "end"}
+                  onClick={() => setConfirmEnd(true)}
+                  aria-label="End session…"
+                  title="End the session"
+                >
+                  <Eject aria-hidden />
+                </Button>
+              </>
+            )}
+          </div>
+        ) : null}
       </div>
-      {status.detail && (s.state === "paused" || s.state === "failed") ? (
-        <p className={cn("text-xs", TONE[status.tone])} data-slot="pause-reason">
+      {s.state === "failed" && status.detail ? (
+        <p className={cn("text-xs", TONE[status.tone])} data-slot="session-error">
           {status.detail}
         </p>
       ) : null}
@@ -227,46 +302,6 @@ function Header({ session: s, instanceId, switchable }: { session: AgentSession;
         <BudgetMeter label="Turns" m={budget.turns} format={String} />
         <BudgetMeter label="Tokens" m={budget.tokens} format={compact} />
       </div>
-      {live ? (
-        <div className="flex flex-wrap items-center gap-1" role="toolbar" aria-label="Session">
-          <Button
-            size="xs"
-            variant="outline"
-            disabled={busy || !s.busy}
-            onClick={() => void act(() => runCommand("agentSessions.cancel", { session: s }))}
-            data-command="agentSessions.cancel"
-            title="Stop the agent's turn (Ctrl/Cmd+.)"
-          >
-            <Square aria-hidden />
-            Stop turn
-          </Button>
-          {s.state === "paused" ? (
-            <Button size="xs" variant="outline" disabled={busy || s.pendingControl === "resume"} onClick={() => void act(() => runCommand("agentSessions.resume", { session: s }))} data-command="agentSessions.resume">
-              <Play aria-hidden />
-              Resume
-            </Button>
-          ) : (
-            <Button size="xs" variant="outline" disabled={busy || s.state === "created" || !!s.pendingControl} onClick={() => void act(() => runCommand("agentSessions.pause", { session: s }))} data-command="agentSessions.pause">
-              <Pause aria-hidden />
-              Pause
-            </Button>
-          )}
-          {confirmEnd ? (
-            <>
-              <Button size="xs" variant="destructive" disabled={busy} onClick={() => void act(() => runCommand("agentSessions.cancel", { session: s, end: true }))} autoFocus>
-                End the session
-              </Button>
-              <Button size="xs" variant="ghost" onClick={() => setConfirmEnd(false)}>
-                Keep it
-              </Button>
-            </>
-          ) : (
-            <Button size="xs" variant="ghost" disabled={busy || s.pendingControl === "end"} onClick={() => setConfirmEnd(true)}>
-              End…
-            </Button>
-          )}
-        </div>
-      ) : null}
       {error ? (
         <p role="alert" className="text-xs text-destructive">
           {error}

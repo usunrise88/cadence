@@ -84,7 +84,8 @@ Every mutating tool accepts `dryRun`; the verbs come from the vocabulary in the 
 | Tool call: shell | One line with the command and a failed exit code that opens into its output |
 | Permission or approval request | Inline Allow once / Allow for session / Deny, mirrored in Approvals and on Telegram |
 | Session state | Header chip: running, waiting approval, paused with the reason; budget meter for turns, tokens and GPU-hours |
-| Tab | The session the short way (`CC · S4` for Claude Code session 4, `OC` for opencode) and a dot while a finished turn or a session wanting attention (approval, pause, failure, end) has not been seen |
+| Header | One line: the session, its state (the reason of a pause as its tooltip), the model, and Stop, Pause or Resume, End as icons in the corner; the budget meters below |
+| Tab | The chat icon filled with the session's status colour, the session the short way (`CC · S4` for Claude Code session 4, `OC` for opencode) and a dot while a finished turn or a session wanting attention (approval, pause, failure, end) has not been seen |
 
 Every tool call starts collapsed; the attribution badge's jump opens the one it lands on. Keys typed anywhere in the Chat outside a field go to the composer.
 

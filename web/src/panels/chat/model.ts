@@ -20,6 +20,24 @@ export function tabLabel(s: Pick<AgentSession, "driver" | "number">): string {
   return `${short} · S${s.number}`;
 }
 
+/** The tab icon's colour: working, ready for you, wants a decision, paused, failed; none once it is over. */
+export type TabTone = "working" | "ready" | "attention" | "paused" | "failed" | "none";
+
+export function tabTone(s: Pick<AgentSession, "state" | "busy">): TabTone {
+  switch (s.state) {
+    case "running":
+      return s.busy ? "working" : "ready";
+    case "waiting_approval":
+      return "attention";
+    case "paused":
+      return "paused";
+    case "failed":
+      return "failed";
+    default:
+      return "none";
+  }
+}
+
 export function sessionStatus(s: AgentSession): { label: string; tone: Tone; detail?: string } {
   const pending = s.pendingControl ? ` · ${s.pendingControl === "cancel" ? "stopping" : s.pendingControl === "end" ? "ending" : `${s.pendingControl === "pause" ? "pausing" : "resuming"}`}…` : "";
   switch (s.state) {

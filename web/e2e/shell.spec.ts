@@ -170,6 +170,12 @@ test.describe("shell", () => {
     await expect(doc.locator('[data-slot="entity-header"] [data-slot="status-chip"]')).toHaveText(/active/i);
     await expect(doc.getByText("he-IL").first()).toBeVisible();
     await expect(doc.getByText("guardrails-default")).toBeVisible();
+    // The agent's actions sit behind the AI icon in the header's corner, apart from the project's own verbs.
+    await expect(doc.locator('[data-slot="entity-header"]').getByRole("button", { name: "Explain this" })).toHaveCount(0);
+    await doc.locator('[data-slot="entity-header"] [data-slot="agent-menu"]').click();
+    await expect(page.getByRole("menuitem", { name: "Ask agent about this project" })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: "Explain this" })).toBeVisible();
+    await page.keyboard.press("Escape");
   });
 
   test("project repository: note, agent settings and the recipe document", async ({ page, request }) => {

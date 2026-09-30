@@ -29,7 +29,7 @@ Any step: press `?` with a panel focused, or search with `?` in the palette (Ctr
 
 ## Playbooks
 
-"Explain this" (a read-only agent session with the article attached) arrives in phase 1.
+"Explain this" in the AI menu (the sparks icon in the toolbar) starts a read-only agent session with the article attached.
 
 ## Sources
 
