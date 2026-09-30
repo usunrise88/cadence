@@ -22,6 +22,7 @@ import { useHelp } from "@/shell/help/store";
 import { notify, notifyError } from "@/shell/notifications/store";
 import { commands, panels } from "@/shell/registries";
 import { useShell } from "@/shell/state";
+import { isSaveViewArgs, saveView } from "@/shell/search/views";
 import { useTheme } from "@/shell/theme/store";
 import { DEFAULT_WORKSPACES } from "@/shell/workspaces/schema";
 import { applyPlan, defaultPlan, restoreWorkspace, saveWorkspace } from "@/shell/workspaces/persistence";
@@ -152,6 +153,27 @@ export function registerBuiltinCommands(): void {
         run: (ctx) => ctx.project && nav.toWorkspace(ctx.project, name),
       }),
     ),
+
+    // ---- saved searches (per user per project; the Library's "Save view" runs this with { name, query })
+    {
+      id: "views.set",
+      operation: "views.set",
+      title: "Save search",
+      group: "Go",
+      hidden: true,
+      enabled: needProject,
+      run: async (ctx, args) => {
+        if (!ctx.project || !isSaveViewArgs(args)) return undefined;
+        try {
+          const view = await saveView(ctx.project, args);
+          notify({ level: "success", title: `Saved search “${args.name}”` });
+          return view;
+        } catch (err) {
+          notifyError(`Saved search “${args.name}” was not saved`, err);
+          throw err;
+        }
+      },
+    },
 
     // ---- projects
     { id: "projects.new", operation: "projects.new", title: "New project…", group: "Project", icon: Plus, run: () => useDialogs.getState().show({ kind: "newProject" }) },

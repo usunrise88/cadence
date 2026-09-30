@@ -1,14 +1,28 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { registrySearchOptions } from "@/api/gen/@tanstack/react-query.gen";
+import { projectsSearchOptions, registrySearchOptions, viewsListOptions } from "@/api/gen/@tanstack/react-query.gen";
 import type { RegistryKind } from "@/api/gen/types.gen";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { EmptyState, EntityList, type ListRow } from "@/shell/entity/primitives";
-import { useProject, useSelection, useTopic, type PanelProps } from "@/shell/panel";
+import {
+  chipLabel,
+  kindNoun,
+  openRef,
+  previewRef,
+  runCommand,
+  scopeOf,
+  useProject,
+  useSearch,
+  useSelection,
+  useTopic,
+  withScope,
+  type PanelProps,
+} from "@/shell/panel";
 
-// Library: browses the Cadence-wide registry with a this-project / all filter (docs/spec/11-ui-panels.md).
-// Registry kinds register in phase 1; until then the list is empty and says what comes next.
+// Library: browses the Cadence-wide registry with a this-project / all filter, and lists any search in the query
+// language ("Open as list" from the palette, a saved view). docs/spec/11-ui-panels.md "Library", "Search".
 
 export function LibraryEmpty() {
   return (
@@ -20,20 +34,116 @@ export function LibraryEmpty() {
   );
 }
 
+function useDebounced<T>(v: T, ms: number): T {
+  const [d, setD] = useState(v);
+  useEffect(() => {
+    const t = setTimeout(() => setD(v), ms);
+    return () => clearTimeout(t);
+  }, [v, ms]);
+  return d;
+}
+
+const pill = (on: boolean) =>
+  cn("h-6 rounded-full border px-2", on ? "border-accent-line bg-accent-soft text-accent-text" : "text-muted-foreground hover:bg-hover");
+
 export function LibraryPanel(_props: PanelProps) {
   const project = useProject();
-  const [scope, setScope] = useState<"project" | "all">("all");
-  const [q, setQ] = useState("");
+  const query = useSearch((s) => s.libraryQuery);
+  const activeView = useSearch((s) => s.activeView);
+  const setQuery = useSearch((s) => s.setLibraryQuery);
+  const remember = useSearch((s) => s.remember);
+  const [browseScope, setBrowseScope] = useState<"project" | "all">("all");
   const [kind, setKind] = useState<RegistryKind | undefined>(undefined);
-  const query = registrySearchOptions({ query: { q: q || undefined, kind, project: scope === "project" ? project : undefined, limit: 500 } });
-  const { data, refetch } = useQuery(query);
-  useTopic(["entity.base_model.*", "entity.dataset_version.*", "entity.template.*"], () => void refetch());
-  const rows: ListRow[] = (data?.items ?? []).map((r) => ({ id: `${r.kind}:${r.id}`, name: r.name, version: r.version, state: r.state, tags: r.tags, actor: r.actor, updatedAt: r.updatedAt }));
+  const debounced = useDebounced(query.trim(), 150);
+  const searching = !!project && debounced.length > 0;
+
+  // Registry browse (no query): the registry's own search with its kind chips.
+  const browse = useQuery({
+    ...registrySearchOptions({
+      query: {
+        kind,
+        project: browseScope === "project" ? project : undefined,
+        limit: 500,
+      },
+    }),
+    enabled: !searching,
+  });
+  // A query: projects.search, the same index and grammar as the palette and the agent's tool.
+  const search = useQuery({
+    ...projectsSearchOptions({
+      path: { p: project ?? "" },
+      query: { q: debounced, limit: 200 },
+    }),
+    enabled: searching,
+    retry: false,
+  });
+  const views = useQuery({
+    ...viewsListOptions({ path: { p: project ?? "" } }),
+    enabled: !!project,
+  });
+
+  useTopic(["entity.base_model.*", "entity.dataset_version.*", "entity.template.*"], () => void (searching ? search.refetch() : browse.refetch()));
+  useTopic(project ? ["entity.saved_search.*"] : null, () => void views.refetch());
+
+  const hits = useMemo(() => (searching ? (search.data?.groups ?? []).flatMap((g) => g.items) : []), [searching, search.data]);
+  useEffect(() => remember(hits), [hits, remember]);
+
+  const rows: ListRow[] = searching
+    ? hits.map((h) => ({
+        id: h.ref,
+        name: h.title,
+        version: kindNoun(h.kind),
+        state: h.status ?? "—",
+        tags: h.tags,
+        actor: h.actor,
+        updatedAt: h.updatedAt,
+      }))
+    : (browse.data?.items ?? []).map((r) => ({
+        id: `${r.kind}:${r.id}`,
+        name: r.name,
+        version: r.version,
+        state: r.state,
+        tags: r.tags,
+        actor: r.actor,
+        updatedAt: r.updatedAt,
+      }));
   const select = useSelection((s) => s.select);
+
+  const scope = searching ? (scopeOf(query) === "all" ? "all" : "project") : browseScope;
+  const setScope = (s: "project" | "all") => {
+    if (searching) setQuery(withScope(query, s === "all" ? "all" : undefined));
+    else setBrowseScope(s);
+  };
+
+  const [naming, setNaming] = useState(false);
+  const [name, setName] = useState("");
+  const save = async () => {
+    const n = name.trim();
+    if (!n || !query.trim()) return;
+    try {
+      await runCommand("views.set", { name: n, query: query.trim() });
+      setQuery(query, n);
+      setNaming(false);
+      setName("");
+      void views.refetch();
+    } catch {
+      /* the command reported it */
+    }
+  };
+
+  // An invalid query (unknown qualifier) answers 400 with the list of qualifiers in its detail.
+  const problem = searching && search.error instanceof Error ? search.error.message : "";
+  const savedViews = views.data?.items ?? [];
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 flex-col gap-2 border-b p-2">
-        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filter — text, kind:, tag:, locale:" aria-label="Filter the library" />
+        <Input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Filter — text, kind:, tag:, status:, updated:>…"
+          aria-label="Filter the library"
+        />
         <div className="flex flex-wrap items-center gap-1 text-xs">
           <div role="radiogroup" aria-label="Scope" className="inline-flex rounded-md border bg-background p-0.5">
             {(["project", "all"] as const).map((s) => (
@@ -43,30 +153,111 @@ export function LibraryPanel(_props: PanelProps) {
                 aria-checked={scope === s}
                 type="button"
                 onClick={() => setScope(s)}
-                className={cn("h-6 rounded-[4px] px-2.5", scope === s ? "bg-selected font-medium text-foreground" : "text-muted-foreground hover:text-foreground")}
+                className={cn(
+                  "h-6 rounded-[4px] px-2.5",
+                  scope === s ? "bg-selected font-medium text-foreground" : "text-muted-foreground hover:text-foreground",
+                )}
               >
                 {s === "project" ? "This project" : "All"}
               </button>
             ))}
           </div>
-          {(data?.kinds ?? []).map((k) => (
-            <button
-              key={k.kind}
-              type="button"
-              aria-pressed={kind === k.kind}
-              onClick={() => setKind(kind === k.kind ? undefined : k.kind)}
-              className={cn("h-6 rounded-full border px-2", kind === k.kind ? "border-accent-line bg-accent-soft text-accent-text" : "text-muted-foreground hover:bg-hover")}
-            >
-              {k.kind} {k.count}
-            </button>
-          ))}
+          {searching
+            ? (search.data?.qualifiers ?? []).map((f) => (
+                <span key={f.raw} className="inline-flex h-6 items-center rounded-full border border-accent-line bg-accent-soft px-2 text-accent-text">
+                  {chipLabel(f)}
+                </span>
+              ))
+            : (browse.data?.kinds ?? []).map((k) => (
+                <button
+                  key={k.kind}
+                  type="button"
+                  aria-pressed={kind === k.kind}
+                  onClick={() => setKind(kind === k.kind ? undefined : k.kind)}
+                  className={pill(kind === k.kind)}
+                >
+                  {k.kind} {k.count}
+                </button>
+              ))}
         </div>
+        {project ? (
+          <div className="flex flex-wrap items-center gap-1 text-xs" role="group" aria-label="Saved searches">
+            <span className="text-muted-foreground">Views</span>
+            {savedViews.map((v) => (
+              <button
+                key={v.id}
+                type="button"
+                aria-pressed={activeView === v.name}
+                title={v.query}
+                onClick={() => setQuery(activeView === v.name ? "" : v.query, activeView === v.name ? null : v.name)}
+                className={pill(activeView === v.name)}
+              >
+                {v.name}
+              </button>
+            ))}
+            {naming ? (
+              <form
+                className="flex items-center gap-1"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void save();
+                }}
+              >
+                <Input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="View name"
+                  aria-label="View name"
+                  autoFocus
+                  className="h-6 w-32 text-xs"
+                />
+                <Button type="submit" size="xs" disabled={!name.trim()}>
+                  Save
+                </Button>
+                <Button type="button" size="xs" variant="ghost" onClick={() => setNaming(false)}>
+                  Cancel
+                </Button>
+              </form>
+            ) : (
+              <Button
+                type="button"
+                size="xs"
+                variant="ghost"
+                disabled={!query.trim()}
+                title={query.trim() ? undefined : "Type a query to save it"}
+                onClick={() => setNaming(true)}
+              >
+                Save view
+              </Button>
+            )}
+          </div>
+        ) : null}
+        {problem ? (
+          <p role="alert" className="text-xs text-destructive">
+            {problem}
+          </p>
+        ) : null}
       </div>
       <div className="min-h-0 flex-1">
         {rows.length === 0 ? (
-          <LibraryEmpty />
+          searching ? (
+            <EmptyState
+              step="prepare"
+              title={search.isFetching ? "Searching…" : "No matches"}
+              hint="Try fewer words, scope:all, or check the qualifiers (Help: Search)."
+            />
+          ) : (
+            <LibraryEmpty />
+          )
+        ) : searching ? (
+          <EntityList rows={rows} label="Search results" versionLabel="Kind" onOpen={(r) => openRef(r.id)} onPreview={(r) => previewRef(r.id)} />
         ) : (
-          <EntityList rows={rows} label="Registry versions" onOpen={(r) => select(`registry:${r.id}`, undefined)} onPreview={(r) => select(`registry:${r.id}`, undefined)} />
+          <EntityList
+            rows={rows}
+            label="Registry versions"
+            onOpen={(r) => select(`registry:${r.id}`, undefined)}
+            onPreview={(r) => select(`registry:${r.id}`, undefined)}
+          />
         )}
       </div>
     </div>
