@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { Logo } from "@/components/brand/Logo";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { onUnauthenticated, ProblemError } from "@/api/client";
 import { authGetOptions } from "@/api/gen/@tanstack/react-query.gen";
@@ -40,7 +41,7 @@ function Screen({ title, subtitle, busy, children }: { title: string; subtitle?:
       <section aria-labelledby="auth-title" className="flex w-full max-w-sm flex-col gap-4 rounded-lg border bg-card p-6 text-card-foreground shadow-sm">
         <div className="flex flex-col gap-1">
           <span className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
-            <span aria-hidden className="size-3 rounded-sm bg-primary" />
+            <Logo className="size-4" />
             Cadence
           </span>
           <h1 id="auth-title" className="text-lg font-semibold">

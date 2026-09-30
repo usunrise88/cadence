@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { Logo } from "@/components/brand/Logo";
 import { NavArrowDown } from "iconoir-react";
 import { projectsListOptions } from "@/api/gen/@tanstack/react-query.gen";
 import { Button } from "@/components/ui/button";
@@ -99,7 +100,7 @@ export function MenuBar({ onSwitchProject }: { onSwitchProject: (slug: string) =
   return (
     <nav aria-label="Main menu" className="flex h-8 shrink-0 items-center gap-0.5 border-b bg-chrome px-1.5">
       <span className="mr-1 flex items-center gap-1.5 px-1.5 text-xs font-semibold">
-        <span aria-hidden className="size-3 rounded-sm bg-primary" />
+        <Logo className="size-4" />
         Cadence
       </span>
       <span aria-hidden className="mx-1 h-4 w-px bg-border" />
