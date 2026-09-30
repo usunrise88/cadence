@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Plus } from "iconoir-react";
 import { mixesListOptions, projectsSearchOptions, registrySearchOptions, viewsListOptions } from "@/api/gen/@tanstack/react-query.gen";
 import type { RegistryKind } from "@/api/gen/types.gen";
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,7 @@ import {
   previewRef,
   runCommand,
   scopeOf,
+  useCommand,
   useProject,
   useSearch,
   useSelection,
@@ -155,12 +157,15 @@ export function LibraryPanel(_props: PanelProps) {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 flex-col gap-2 border-b p-2">
-        <Input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Filter — text, kind:, tag:, status:, updated:>…"
-          aria-label="Filter the library"
-        />
+        <div className="flex items-center gap-1.5">
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Filter — text, kind:, tag:, status:, updated:>…"
+            aria-label="Filter the library"
+          />
+          <NewMixButton />
+        </div>
         <div className="flex flex-wrap items-center gap-1 text-xs">
           <div role="radiogroup" aria-label="Scope" className="inline-flex rounded-md border bg-background p-0.5">
             {(["project", "all"] as const).map((s) => (
@@ -278,5 +283,26 @@ export function LibraryPanel(_props: PanelProps) {
         )}
       </div>
     </div>
+  );
+}
+
+/** The project's work starts here: a visible way to create a mix (also in the palette as New mix…). */
+function NewMixButton() {
+  const cmd = useCommand("mixes.new");
+  if (!cmd) return null;
+  const disabled = cmd.enabled !== true;
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant="outline"
+      className="shrink-0"
+      disabled={disabled}
+      title={typeof cmd.enabled === "string" ? cmd.enabled : undefined}
+      onClick={() => void cmd.run()}
+    >
+      <Plus aria-hidden="true" />
+      New mix
+    </Button>
   );
 }

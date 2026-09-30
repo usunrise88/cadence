@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { DraftOutline, PresenceNotice, changed, presenceLabel, useActivePresence, useDrafts } from "@/shell/entity/drafts";
 import { ActorBadge, EmptyState, StatusChip } from "@/shell/entity/primitives";
-import { runCommand, useEditRequest, useTopic, type PanelProps } from "@/shell/panel";
+import { runCommand, useCommand, useEditRequest, useTopic, type PanelProps } from "@/shell/panel";
 
 // The Mix document (docs/spec/11-ui-panels.md): groups, weights, temperature and replay share over dataset
 // versions, and the preview of hours per language. A person edits the table directly (a new revision); an agent's
@@ -15,7 +15,21 @@ import { runCommand, useEditRequest, useTopic, type PanelProps } from "@/shell/p
 // waits. A save on a revision that moved on shows the conflict notice instead of overwriting.
 
 export function MixEmpty() {
-  return <EmptyState step="prepare" title="No mix open" hint="Open a mix from the Library, or create one with New mix… in the palette." />;
+  const cmd = useCommand("mixes.new");
+  return (
+    <EmptyState
+      step="prepare"
+      title="No mix open"
+      hint="Open a mix from the Library, or create a new one."
+      action={
+        cmd ? (
+          <Button type="button" size="sm" disabled={cmd.enabled !== true} onClick={() => void cmd.run()}>
+            New mix
+          </Button>
+        ) : undefined
+      }
+    />
+  );
 }
 
 export function MixPanel({ tab, entity, doc }: PanelProps) {
