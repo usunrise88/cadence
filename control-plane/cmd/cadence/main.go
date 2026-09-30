@@ -236,6 +236,7 @@ func serve(ctx context.Context, getenv func(string) string) error {
 	if err != nil {
 		return err
 	}
+	srv.RegisterJobs(jobSvc) // the pipeline engine's step jobs (phase 2)
 	jobSvc.AddPeriodic("agentSessions.sweep", 30*time.Second, srv.SweepSessions)
 	jobSvc.AddPeriodic("agentCredentials.sweep", time.Minute, srv.SweepAgentCredentials)
 	if path := getenv("CADENCE_HOST_TOKEN_FILE"); path != "" {

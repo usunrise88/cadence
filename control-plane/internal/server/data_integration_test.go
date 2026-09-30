@@ -179,11 +179,10 @@ type datasetView struct {
 
 func startData(t *testing.T) (*env, *cas.Store) {
 	t.Helper()
-	store, err := cas.New(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	return startWith(t, func(c *Config) { c.CAS = store }), store
+	// Use the environment's own store: both test servers register their dataset hooks on the shared registry.
+	var store *cas.Store
+	e := startWith(t, func(c *Config) { store = c.CAS })
+	return e, store
 }
 
 func (e *env) datasetIn(collection string) datasetView {

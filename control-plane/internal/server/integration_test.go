@@ -22,13 +22,17 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
 	"github.com/usunrise88/cadence/control-plane/internal/auth"
+	"github.com/usunrise88/cadence/control-plane/internal/cas"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
 	"github.com/usunrise88/cadence/control-plane/internal/jobs"
 	"github.com/usunrise88/cadence/control-plane/internal/obs"
+	"github.com/usunrise88/cadence/control-plane/internal/pipelines"
+	"github.com/usunrise88/cadence/control-plane/internal/pipelines/pipelinestest"
 	"github.com/usunrise88/cadence/control-plane/internal/projects/bootstrap"
 	"github.com/usunrise88/cadence/control-plane/internal/registry"
 	"github.com/usunrise88/cadence/control-plane/internal/repos"
 	"github.com/usunrise88/cadence/control-plane/internal/search"
+	"github.com/usunrise88/cadence/control-plane/internal/steps"
 	"github.com/usunrise88/cadence/control-plane/internal/storage"
 	"github.com/usunrise88/cadence/control-plane/internal/testdb"
 	"github.com/usunrise88/cadence/control-plane/migrations"
@@ -44,8 +48,9 @@ type env struct {
 	pool     *pgxpool.Pool
 	metrics  *obs.Metrics
 	jobs     *jobs.Service
-	admin    *Server            // the admin server (its secret store and repositories are inspected by tests)
-	repos    *bootstrap.Service // project repositories under a temporary data directory
+	admin    *Server               // the admin server (its secret store and repositories are inspected by tests)
+	repos    *bootstrap.Service    // project repositories under a temporary data directory
+	leases   *pipelinestest.Leases // the fake worker protocol the pipeline engine waits on
 	keys     atomic.Int64
 }
 
@@ -94,10 +99,19 @@ func startWith(t *testing.T, adjust func(*Config)) *env {
 		t.Fatal(err)
 	}
 	svc.Register(js)
+	// The pipeline engine runs steps through an in-process fake of the worker protocol (pipelinestest).
+	blobs, err := cas.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	hooks, leases := &steps.Hooks{}, &pipelinestest.Leases{Pool: pool, CAS: blobs}
+	eng := pipelines.New(pipelines.Options{Pool: pool, CAS: blobs, Hooks: hooks, Leases: leases, Repos: store, Log: quiet})
+	leases.Engine = eng
+	eng.Register(js)
 	if err := js.Start(ctx); err != nil {
 		t.Fatal(err)
 	}
-	withJobs := func(c *Config) { c.Jobs, c.Projects = js, svc }
+	withJobs := func(c *Config) { c.Jobs, c.Projects, c.CAS, c.StepHooks, c.Pipelines = js, svc, blobs, hooks, eng }
 	asAgent := func(c *Config) { c.Actor = testAgent }
 	opts := []func(*Config){withJobs}
 	if adjust != nil {
@@ -119,7 +133,7 @@ func startWith(t *testing.T, adjust func(*Config)) *env {
 		<-indexed
 		pool.Close()
 	})
-	return &env{t: t, url: srv.URL, agentURL: agentSrv.URL, pool: pool, metrics: metrics, jobs: js, admin: admin, repos: svc}
+	return &env{t: t, url: srv.URL, agentURL: agentSrv.URL, pool: pool, metrics: metrics, jobs: js, admin: admin, repos: svc, leases: leases}
 }
 
 func (e *env) key() string { return fmt.Sprintf("test-key-%08d", e.keys.Add(1)) }

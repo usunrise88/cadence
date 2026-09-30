@@ -1,0 +1,12 @@
+# Starter pipeline: the smallest end-to-end check that a worker runs steps — copy a text artifact through echo@1 twice.
+name: echo
+description: Copy a text artifact through two echo steps (checks that workers lease, run and complete steps)
+inputs: { text: text }
+steps:
+  - id: first
+    kind: echo@1
+    in: { text: $inputs.text }
+  - id: second
+    kind: echo@1
+    in: { text: first.text }
+    params: { prefix: "echo: " }

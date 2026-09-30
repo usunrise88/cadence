@@ -35,6 +35,8 @@ tags:
   - { name: host, description: The agent host's protocol (claim work, report, ask); exempt from the vocabulary and never MCP tools }
   - { name: egress, description: The egress proxy's protocol (the allowlist it learns); exempt from the vocabulary and never MCP tools }
   - { name: worker, description: "The GPU worker's protocol (registry, leases, logs, metrics, artifacts); exempt from the vocabulary and never MCP tools" }
+  - { name: artifacts, description: "The content store: artifacts addressed by BLAKE3 hash, with type, size, metadata and producing step (R15)" }
+  - { name: pipelines, description: "Pipelines of typed steps pinned as kind@version, and their runs with per-step status (R11, R15)" }
   - { name: planned, description: Named now, implemented in a later phase (501 until then) }
 
 paths:
@@ -2054,6 +2056,188 @@ paths:
   # ---------------------------------------------------------------- worker, queue, telemetry, runtimes (phase 2 · stream W) — add paths below this line
 
   # ---------------------------------------------------------------- artifacts and pipelines (phase 2 · stream P) — add paths below this line
+  /artifacts/{hash}:
+    x-cadence: { entity: artifacts }
+    parameters: [{ $ref: "#/components/parameters/ArtifactHash" }]
+    get:
+      operationId: artifacts.get
+      summary: Get an artifact by hash — type, size, metadata, producing step, a directory's files, and small content
+      tags: [artifacts]
+      x-cadence:
+        toolDescription: >
+          Read an artifact of the content store by its hash (b3:<64 hex>): type, size, neutral metadata, the pipeline
+          step that produced it and, for a directory artifact, its file list. With content=true a file artifact of at
+          most 1 MiB comes back inline (utf8 or base64); for a directory pass path to read one of its files. Larger
+          content is omitted (contentOmitted says why) — artifacts are read by steps, not copied into a context.
+      parameters:
+        - { name: content, in: query, description: "Include the content when it is at most 1 MiB", schema: { type: boolean, default: false } }
+        - { name: path, in: query, description: "With content=true on a directory artifact: the file to read", schema: { type: string, maxLength: 1000 } }
+      responses:
+        "200":
+          description: The artifact
+          content: { application/json: { schema: { $ref: "#/components/schemas/Artifact" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /projects/{p}/pipelines:
+    x-cadence: { entity: pipelines }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    get:
+      operationId: pipelines.list
+      summary: The project's pipelines (pipelines/*.yaml at a ref) and the bundled templates it does not override
+      tags: [pipelines]
+      x-cadence:
+        toolDescription: >
+          List the pipelines this project can run: every pipelines/<name>.yaml of the project repository at ref
+          (default main) plus the bundled templates it has no file for. Each has its version (the commit that last
+          changed the file; send it as ifMatch to pipelines.run), its inputs by artifact type and its steps pinned as
+          kind@version with only the parameters that depart from defaults. A file that does not parse carries error.
+      parameters:
+        - { name: ref, in: query, description: "Branch, tag or commit (default main)", schema: { type: string, maxLength: 200 } }
+      responses:
+        "200":
+          description: Pipelines by name
+          content: { application/json: { schema: { $ref: "#/components/schemas/PipelineList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /projects/{p}/pipelines/{name}:run:
+    x-cadence: { entity: pipelines }
+    parameters:
+      - $ref: "#/components/parameters/ProjectSlug"
+      - { name: name, in: path, required: true, description: "Pipeline name (pipelines/<name>.yaml)", schema: { type: string, pattern: "^[a-z][a-z0-9-]{0,62}$" } }
+    post:
+      operationId: pipelines.run
+      summary: Validate a pipeline against the step registry and start a pipeline run (dryRun validates and estimates)
+      tags: [pipelines]
+      x-cadence:
+        toolDescription: >
+          Run a pipeline of this project. Always call it with dryRun=true first: that validates the pipeline against
+          the published step kinds (kind@version exists, input and output artifact types match, parameters fit each
+          kind's schema, no cycles), resolves every parameter from defaults.yaml, lists the departures from defaults
+          and sums the known estimates, without starting anything; a broken pipeline answers pipeline-invalid with one
+          error per problem. Then run it for real with the same body and ifMatch = the pipeline's version from
+          pipelines.list (or "*" for whatever is at ref). inputs maps each pipeline input to an artifact {hash, type};
+          params overrides parameters per step id; finished steps with the same input hash are reused unless fresh.
+          The answer is the pipeline run (plr_…): follow pipeline_run.{id} or call pipelineRuns.wait. Spending GPU time
+          over the budget answers 202 with an approvalId instead.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/PipelineRunNew" } } }
+      responses:
+        "200":
+          description: Dry run — the validated plan with resolved parameters, departures and the estimate; nothing started
+          content: { application/json: { schema: { $ref: "#/components/schemas/PipelinePlan" } } }
+        "201":
+          description: Started; the pipeline run with its steps (ready steps are queued as step jobs)
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/PipelineRun" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /projects/{p}/pipeline-runs:
+    x-cadence: { entity: pipelineRuns }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    get:
+      operationId: pipelineRuns.list
+      summary: Pipeline runs of a project, newest first
+      tags: [pipelines]
+      parameters:
+        - { name: state, in: query, description: Only runs in this state, schema: { $ref: "#/components/schemas/PipelineRunState" } }
+        - { name: pipeline, in: query, description: Only runs of this pipeline, schema: { type: string, maxLength: 63 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+      responses:
+        "200":
+          description: Pipeline runs, newest first (without their steps)
+          content: { application/json: { schema: { $ref: "#/components/schemas/PipelineRunList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /pipeline-runs/{id}:
+    x-cadence: { entity: pipelineRuns }
+    parameters: [{ name: id, in: path, required: true, description: "Pipeline run id (plr_…)", schema: { type: string } }]
+    get:
+      operationId: pipelineRuns.get
+      summary: Get a pipeline run with the status, inputs, outputs, attempts and departures of every step
+      tags: [pipelines]
+      responses:
+        "200":
+          description: The pipeline run
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/PipelineRun" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /pipeline-runs/{id}:cancel:
+    x-cadence: { entity: pipelineRuns }
+    parameters: [{ name: id, in: path, required: true, description: "Pipeline run id (plr_…)", schema: { type: string } }]
+    post:
+      operationId: pipelineRuns.cancel
+      summary: Cancel a pipeline run; waiting steps never start and running step jobs are cancelled
+      tags: [pipelines]
+      x-cadence:
+        toolDescription: >
+          Cancel a pipeline run: steps that have not started are cancelled, queued and running step jobs are
+          cancelled (a running step stops on its worker), finished steps keep their outputs for reuse. Send ifMatch
+          with the run's etag (rev) from pipelineRuns.get.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      responses:
+        "200":
+          description: The cancelled pipeline run
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/PipelineRun" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /pipeline-runs/{id}:retry:
+    x-cadence: { entity: pipelineRuns }
+    parameters: [{ name: id, in: path, required: true, description: "Pipeline run id (plr_…)", schema: { type: string } }]
+    post:
+      operationId: pipelineRuns.retry
+      summary: Retry a failed step of a pipeline run as a new attempt; the run continues from there
+      tags: [pipelines]
+      x-cadence:
+        toolDescription: >
+          Retry one failed (or cancelled) step of a pipeline run as a new attempt, with the same resolved parameters
+          and inputs; finished steps are not re-run and the run continues after it. Without step, every failed step
+          is retried. batchScale (0–1] shrinks the batch after an out-of-memory failure. Send ifMatch with the run's
+          etag (rev).
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: false
+        content: { application/json: { schema: { $ref: "#/components/schemas/PipelineRunRetry" } } }
+      responses:
+        "200":
+          description: The pipeline run with the step queued again
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/PipelineRun" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /pipeline-runs/{id}:wait:
+    x-cadence: { entity: pipelineRuns }
+    parameters: [{ name: id, in: path, required: true, description: "Pipeline run id (plr_…)", schema: { type: string } }]
+    get:
+      operationId: pipelineRuns.wait
+      summary: Wait until a pipeline run ends or the timeout passes, then return it (agents)
+      tags: [pipelines]
+      x-cadence:
+        toolDescription: >
+          Wait for a pipeline run started by pipelines.run. Returns the run as soon as it is done, failed or
+          cancelled, or when the timeout (seconds, at most 60) passes — check state and call again while it is running.
+      parameters:
+        - { name: timeout, in: query, description: Seconds to wait, schema: { type: integer, minimum: 0, maximum: 60, default: 30 } }
+      responses:
+        "200":
+          description: The pipeline run, ended or as it is at the timeout
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/PipelineRun" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
 
   # ---------------------------------------------------------------- data entities and imports (phase 2 · stream D) — add paths below this line
 
@@ -4704,6 +4888,205 @@ components:
     # ---------------------------------------------------------------- worker, queue, telemetry, runtimes schemas (stream W) — add below
 
     # ---------------------------------------------------------------- artifacts and pipelines schemas (stream P) — add below
+    Artifact:
+      type: object
+      required: [hash, type, size, directory, meta, createdAt]
+      properties:
+        hash: { type: string, description: "b3:<64 hex>, BLAKE3-256 of the content (of the manifest for a directory)" }
+        type: { type: string, description: "Artifact type (text, dataset, mix, base_model, checkpoint, calibration, …)" }
+        size: { type: integer, format: int64, description: "Bytes: the file's, or the sum of a directory's files" }
+        directory: { type: boolean, description: "A directory artifact: a manifest of files, each its own blob" }
+        meta: { type: object, description: "Neutral, self-describing metadata of the type (R42)" }
+        projectId: { type: string, description: "The project that first produced it; absent for a registry artifact" }
+        producer: { $ref: "#/components/schemas/ArtifactProducer" }
+        createdAt: { type: string, format: date-time }
+        files:
+          type: array
+          description: A directory artifact's files, by path
+          items:
+            type: object
+            required: [path, hash, size]
+            properties:
+              path: { type: string }
+              hash: { type: string }
+              size: { type: integer, format: int64 }
+        encoding: { type: string, description: "How content is encoded (content=true): utf8 or base64" }
+        content: { type: string, description: "The content (content=true, at most 1 MiB)" }
+        contentOmitted: { type: string, description: "Why content was not included (too large, a directory without path, …)" }
+    ArtifactProducer:
+      type: object
+      required: [pipelineRunId, stepId, step, output]
+      description: The pipeline step whose output first recorded this artifact
+      properties:
+        pipelineRunId: { type: string }
+        stepId: { type: string, description: "pls_…" }
+        step: { type: string, description: "The step's id in the pipeline file" }
+        output: { type: string }
+    PipelineList:
+      type: object
+      required: [ref, items]
+      properties:
+        ref: { type: string }
+        commit: { type: string, description: "The commit ref resolved to; absent when the project has no repository" }
+        items: { type: array, items: { $ref: "#/components/schemas/Pipeline" } }
+    Pipeline:
+      type: object
+      required: [name, source, path, version, inputs, steps]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        source: { type: string, enum: [repository, template], description: "The project repository, or a bundled template the repository has no file for" }
+        path: { type: string, description: "pipelines/<name>.yaml" }
+        version: { type: string, description: "The commit that last changed the file (a template: template-<sha256 prefix>); pipelines.run takes it as If-Match" }
+        inputs: { type: object, additionalProperties: { type: string }, description: Pipeline input → artifact type }
+        steps: { type: array, items: { $ref: "#/components/schemas/PipelineStepDefinition" } }
+        error: { type: string, description: The file does not parse (steps and inputs are then empty) }
+    PipelineStepDefinition:
+      type: object
+      required: [id, kind]
+      properties:
+        id: { type: string }
+        kind: { type: string, description: "kind@version, pinned" }
+        in: { type: object, additionalProperties: { type: string }, description: "Step input → $inputs.<name> or <step>.<output>" }
+        params: { type: object, description: Only the parameters that depart from defaults }
+    PipelineRunNew:
+      type: object
+      additionalProperties: false
+      properties:
+        ref: { type: string, maxLength: 200, description: "Branch, tag or commit to read the pipeline at (default main)" }
+        inputs:
+          type: object
+          description: Pipeline input → artifact (it must be in the content store)
+          additionalProperties: { $ref: "#/components/schemas/ArtifactRef" }
+        params:
+          type: object
+          description: "Step id → parameter overrides (recorded as departures when they differ from the default)"
+          additionalProperties: { type: object }
+        fresh: { type: boolean, default: false, description: Run every step even when a finished step has the same input hash }
+        priority: { type: integer, minimum: -100, maximum: 100, default: 0, description: "Queue priority of the step jobs (higher first)" }
+    PipelinePlan:
+      type: object
+      required: [pipeline, source, version, steps, estimate]
+      properties:
+        pipeline: { type: string }
+        source: { type: string, enum: [repository, template] }
+        ref: { type: string }
+        commit: { type: string }
+        version: { type: string }
+        steps: { type: array, items: { $ref: "#/components/schemas/PipelinePlanStep" } }
+        estimate: { $ref: "#/components/schemas/PipelineEstimate" }
+    PipelinePlanStep:
+      type: object
+      required: [step, kind, kindVersion, params, departures, in, produces, resources]
+      properties:
+        step: { type: string }
+        kind: { type: string }
+        kindVersion: { type: string }
+        stepKindVersionId: { type: string, description: "The step kind's registry version (ver_…)" }
+        runtime: { type: string }
+        params: { type: object, description: Resolved parameters (defaults applied) }
+        departures: { type: array, items: { $ref: "#/components/schemas/ParamDeparture" } }
+        in: { type: object, additionalProperties: { type: string } }
+        produces: { type: object, additionalProperties: { type: string }, description: Output → artifact type }
+        resources: { $ref: "#/components/schemas/StepResources" }
+        estimateSeconds: { type: number, description: Absent when unknown }
+    PipelineEstimate:
+      type: object
+      required: [known, unknownSteps]
+      properties:
+        known: { type: boolean, description: Every step has an estimate }
+        seconds: { type: number, description: Sum of the known step estimates }
+        gpuHours: { type: number, description: Sum over the steps that need a card }
+        unknownSteps: { type: array, items: { type: string }, description: Steps without an estimate }
+    ParamDeparture:
+      type: object
+      required: [param, value]
+      properties:
+        param: { type: string }
+        value: { description: The value the step runs with }
+        default: { description: "The default (x-cadence.defaultRef in defaults.yaml, else x-cadence.default); absent when the parameter has none" }
+    PipelineRunState: { type: string, enum: [running, done, failed, cancelled] }
+    PipelineStepState: { type: string, enum: [waiting, queued, running, done, reused, failed, skipped, cancelled] }
+    PipelineRunSummary:
+      type: object
+      required: [id, projectId, pipeline, source, version, state, rev, actor, createdAt, updatedAt]
+      properties:
+        id: { type: string, description: "plr_…" }
+        projectId: { type: string }
+        pipeline: { type: string }
+        source: { type: string, enum: [repository, template, inline] }
+        ref: { type: string }
+        commit: { type: string, description: The commit the pipeline was read at }
+        version: { type: string, description: "The pipeline's version (commit that last changed its file)" }
+        state: { $ref: "#/components/schemas/PipelineRunState" }
+        runId: { type: string, description: "The training run this pipeline run belongs to (run_…), when a facade started it" }
+        fresh: { type: boolean }
+        priority: { type: integer }
+        inputs: { type: object, additionalProperties: { $ref: "#/components/schemas/ArtifactRef" } }
+        error: { type: string, description: Why the run failed }
+        rev: { type: integer }
+        actor: { $ref: "#/components/schemas/Actor" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time }
+    PipelineRun:
+      allOf:
+        - $ref: "#/components/schemas/PipelineRunSummary"
+        - type: object
+          required: [steps]
+          properties:
+            steps: { type: array, items: { $ref: "#/components/schemas/PipelineStep" } }
+    PipelineRunList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/PipelineRunSummary" } }
+    PipelineStep:
+      type: object
+      required: [id, step, position, kind, kindVersion, state, params, departures, in, produces, attempts, attemptLog]
+      properties:
+        id: { type: string, description: "pls_…" }
+        step: { type: string, description: The step's id in the pipeline file }
+        position: { type: integer, description: Order of execution (topological) }
+        kind: { type: string }
+        kindVersion: { type: string }
+        stepKindVersionId: { type: string }
+        state: { $ref: "#/components/schemas/PipelineStepState" }
+        params: { type: object, description: Resolved parameters }
+        departures: { type: array, items: { $ref: "#/components/schemas/ParamDeparture" } }
+        in: { type: object, additionalProperties: { type: string }, description: Wiring from the pipeline file }
+        inputs: { type: object, additionalProperties: { $ref: "#/components/schemas/ArtifactRef" }, description: Resolved inputs once the step is ready }
+        produces: { type: object, additionalProperties: { type: string } }
+        outputs: { type: object, additionalProperties: { $ref: "#/components/schemas/ArtifactRef" } }
+        resources: { $ref: "#/components/schemas/StepResources" }
+        estimateSeconds: { type: number }
+        inputHash: { type: string, description: "Hash of kind, version, resolved parameters and input hashes: a finished step with the same one is reused" }
+        reusedFrom: { type: string, description: "The finished step (pls_…) whose outputs were reused" }
+        attempts: { type: integer }
+        jobId: { type: string, description: The current attempt's step job }
+        error: { $ref: "#/components/schemas/StepError" }
+        metrics: { type: object, additionalProperties: { type: number } }
+        attemptLog: { type: array, items: { $ref: "#/components/schemas/PipelineStepAttempt" } }
+        startedAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time }
+    PipelineStepAttempt:
+      type: object
+      required: [attempt, jobId, reason, state]
+      properties:
+        attempt: { type: integer }
+        jobId: { type: string }
+        reason: { type: string, enum: [initial, oom, lost, retry], description: "Why the attempt started: the first, the automatic OOM retry at 0.75× batch, the retry after a lost lease, or pipelineRuns.retry" }
+        batchScale: { type: number }
+        state: { type: string, enum: [queued, running, done, failed, cancelled] }
+        error: { $ref: "#/components/schemas/StepError" }
+        startedAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time }
+    PipelineRunRetry:
+      type: object
+      additionalProperties: false
+      properties:
+        step: { type: string, maxLength: 63, description: "The step id to retry (default: every failed step)" }
+        batchScale: { type: number, format: double, exclusiveMinimum: 0, maximum: 1, description: "Batch scale of the new attempt (1 = full batch)" }
 
     # ---------------------------------------------------------------- data entities and imports schemas (stream D) — add below
     SourceKind:

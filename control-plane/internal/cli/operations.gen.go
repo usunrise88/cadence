@@ -233,6 +233,16 @@ var Operations = []Operation{
 		},
 	},
 	{
+		ID: "artifacts.get", Entity: "artifacts", Verb: "get", Method: "GET", Path: "/artifacts/{hash}",
+		Summary:     "Get an artifact by hash — type, size, metadata, producing step, a directory's files, and small content",
+		Description: "Read an artifact of the content store by its hash (b3:<64 hex>): type, size, neutral metadata, the pipeline step that produced it and, for a directory artifact, its file list. With content=true a file artifact of at most 1 MiB comes back inline (utf8 or base64); for a directory pass path to read one of its files. Larger content is omitted (contentOmitted says why) — artifacts are read by steps, not copied into a context.",
+		Params: []Param{
+			{Name: "hash", In: "path", Flag: "hash", Required: true, Type: "string", Description: "Artifact hash (b3:<64 hex>, BLAKE3-256 of the content)"},
+			{Name: "content", In: "query", Flag: "content", Type: "boolean", Description: "Include the content when it is at most 1 MiB", Default: "false"},
+			{Name: "path", In: "query", Flag: "path", Type: "string", Description: "With content=true on a directory artifact: the file to read"},
+		},
+	},
+	{
 		ID: "audit.list", Entity: "audit", Verb: "list", Method: "GET", Path: "/audit",
 		Summary: "The audit log, newest first — every command, denial and failed attempt with its actor and cause",
 		Params: []Param{
@@ -564,6 +574,86 @@ var Operations = []Operation{
 			{Name: "name", Required: true, Type: "string", Description: "Unique within the project"},
 			{Name: "replayShare", Type: "number", Description: "Share of samples drawn from replay groups; mix.replay_share of defaults.yaml when the mix has a replay group, else 0"},
 			{Name: "temperature", Type: "number", Description: "Sampling temperature over group weights (probability ∝ weight^(1/temperature)); mix.temperature of defaults.yaml when omitted"},
+		}},
+	},
+	{
+		ID: "pipelineRuns.cancel", Entity: "pipelineRuns", Verb: "cancel", Method: "POST", Path: "/pipeline-runs/{id}:cancel",
+		Summary:        "Cancel a pipeline run; waiting steps never start and running step jobs are cancelled",
+		Description:    "Cancel a pipeline run: steps that have not started are cancelled, queued and running step jobs are cancelled (a running step stops on its worker), finished steps keep their outputs for reuse. Send ifMatch with the run's etag (rev) from pipelineRuns.get.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Pipeline run id (plr_…)"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+	},
+	{
+		ID: "pipelineRuns.get", Entity: "pipelineRuns", Verb: "get", Method: "GET", Path: "/pipeline-runs/{id}",
+		Summary: "Get a pipeline run with the status, inputs, outputs, attempts and departures of every step",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Pipeline run id (plr_…)"},
+		},
+	},
+	{
+		ID: "pipelineRuns.list", Entity: "pipelineRuns", Verb: "list", Method: "GET", Path: "/projects/{p}/pipeline-runs",
+		Summary: "Pipeline runs of a project, newest first",
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only runs in this state", Enum: []string{"running", "done", "failed", "cancelled"}},
+			{Name: "pipeline", In: "query", Flag: "pipeline", Type: "string", Description: "Only runs of this pipeline"},
+			{Name: "limit", In: "query", Flag: "limit", Type: "integer", Default: "100"},
+		},
+	},
+	{
+		ID: "pipelineRuns.retry", Entity: "pipelineRuns", Verb: "retry", Method: "POST", Path: "/pipeline-runs/{id}:retry",
+		Summary:        "Retry a failed step of a pipeline run as a new attempt; the run continues from there",
+		Description:    "Retry one failed (or cancelled) step of a pipeline run as a new attempt, with the same resolved parameters and inputs; finished steps are not re-run and the run continues after it. Without step, every failed step is retried. batchScale (0–1] shrinks the batch after an out-of-memory failure. Send ifMatch with the run's etag (rev).",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Pipeline run id (plr_…)"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: false, Properties: []BodyProperty{
+			{Name: "batchScale", Type: "number", Description: "Batch scale of the new attempt (1 = full batch)"},
+			{Name: "step", Type: "string", Description: "The step id to retry (default: every failed step)"},
+		}},
+	},
+	{
+		ID: "pipelineRuns.wait", Entity: "pipelineRuns", Verb: "wait", Method: "GET", Path: "/pipeline-runs/{id}:wait",
+		Summary:     "Wait until a pipeline run ends or the timeout passes, then return it (agents)",
+		Description: "Wait for a pipeline run started by pipelines.run. Returns the run as soon as it is done, failed or cancelled, or when the timeout (seconds, at most 60) passes — check state and call again while it is running.",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Pipeline run id (plr_…)"},
+			{Name: "timeout", In: "query", Flag: "timeout", Type: "integer", Description: "Seconds to wait", Default: "30"},
+		},
+	},
+	{
+		ID: "pipelines.list", Entity: "pipelines", Verb: "list", Method: "GET", Path: "/projects/{p}/pipelines",
+		Summary:     "The project's pipelines (pipelines/*.yaml at a ref) and the bundled templates it does not override",
+		Description: "List the pipelines this project can run: every pipelines/<name>.yaml of the project repository at ref (default main) plus the bundled templates it has no file for. Each has its version (the commit that last changed the file; send it as ifMatch to pipelines.run), its inputs by artifact type and its steps pinned as kind@version with only the parameters that depart from defaults. A file that does not parse carries error.",
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "ref", In: "query", Flag: "ref", Type: "string", Description: "Branch, tag or commit (default main)"},
+		},
+	},
+	{
+		ID: "pipelines.run", Entity: "pipelines", Verb: "run", Method: "POST", Path: "/projects/{p}/pipelines/{name}:run",
+		Summary:        "Validate a pipeline against the step registry and start a pipeline run (dryRun validates and estimates)",
+		Description:    "Run a pipeline of this project. Always call it with dryRun=true first: that validates the pipeline against the published step kinds (kind@version exists, input and output artifact types match, parameters fit each kind's schema, no cycles), resolves every parameter from defaults.yaml, lists the departures from defaults and sums the known estimates, without starting anything; a broken pipeline answers pipeline-invalid with one error per problem. Then run it for real with the same body and ifMatch = the pipeline's version from pipelines.list (or \"*\" for whatever is at ref). inputs maps each pipeline input to an artifact {hash, type}; params overrides parameters per step id; finished steps with the same input hash are reused unless fresh. The answer is the pipeline run (plr_…): follow pipeline_run.{id} or call pipelineRuns.wait. Spending GPU time over the budget answers 202 with an approvalId instead.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "name", In: "path", Flag: "name", Required: true, Type: "string", Description: "Pipeline name (pipelines/<name>.yaml)"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "fresh", Type: "boolean", Description: "Run every step even when a finished step has the same input hash"},
+			{Name: "inputs", Type: "object", Description: "Pipeline input → artifact (it must be in the content store)"},
+			{Name: "params", Type: "object", Description: "Step id → parameter overrides (recorded as departures when they differ from the default)"},
+			{Name: "priority", Type: "integer", Description: "Queue priority of the step jobs (higher first)"},
+			{Name: "ref", Type: "string", Description: "Branch, tag or commit to read the pipeline at (default main)"},
 		}},
 	},
 	{

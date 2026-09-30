@@ -200,7 +200,14 @@ type Handler func(ctx context.Context, run *Run) (result any, err error)
 type KindOptions struct {
 	MaxAttempts int           // default 1: in-process kinds are not retried unless they ask for it
 	Timeout     time.Duration // default 10 min
+	// Queue is the River queue the kind's jobs run in (default river.QueueDefault). A kind whose jobs wait for
+	// long (the pipeline engine's step jobs wait on their worker lease) takes its own queue so it cannot starve
+	// the others.
+	Queue string
 }
+
+// queueWorkers is how many jobs of a named queue other than the default run at once.
+const queueWorkers = 100
 
 // Run is one execution of a job, handed to its Handler.
 type Run struct {
@@ -290,6 +297,9 @@ func (s *Service) Register(kind string, h Handler, opts KindOptions) {
 	if opts.Timeout <= 0 {
 		opts.Timeout = 10 * time.Minute
 	}
+	if opts.Queue == "" {
+		opts.Queue = river.QueueDefault
+	}
 	s.kinds[kind] = kindEntry{handler: h, opts: opts}
 	river.AddWorkerArgs(s.workers, riverArgs{K: kind}, &worker{svc: s, timeout: opts.Timeout})
 }
@@ -306,8 +316,14 @@ func (s *Service) AddPeriodic(kind string, every time.Duration, fn func(ctx cont
 
 // Start creates the River client and starts working; it returns once River runs.
 func (s *Service) Start(ctx context.Context) error {
+	queues := map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: 10}}
+	for _, k := range s.kinds {
+		if _, ok := queues[k.opts.Queue]; !ok {
+			queues[k.opts.Queue] = river.QueueConfig{MaxWorkers: queueWorkers}
+		}
+	}
 	client, err := river.NewClient(riverpgxv5.New(s.pool), &river.Config{
-		Queues:            map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: 10}},
+		Queues:            queues,
 		Workers:           s.workers,
 		PeriodicJobs:      s.periodic,
 		Logger:            s.log,
@@ -364,7 +380,7 @@ func (s *Service) Enqueue(ctx context.Context, tx pgx.Tx, spec Spec) (Job, []eve
 	actor, _ := auth.FromContext(ctx)
 	id := "job_" + uuid.Must(uuid.NewV7()).String()
 	res, err := s.client.InsertTx(ctx, tx, riverArgs{K: spec.Kind, JobID: id, Args: args},
-		&river.InsertOpts{MaxAttempts: k.opts.MaxAttempts})
+		&river.InsertOpts{MaxAttempts: k.opts.MaxAttempts, Queue: k.opts.Queue})
 	if err != nil {
 		return Job{}, nil, fmt.Errorf("enqueue %s: %w", spec.Kind, err)
 	}

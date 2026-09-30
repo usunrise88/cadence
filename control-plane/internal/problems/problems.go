@@ -62,6 +62,9 @@ var (
 
 	// Data entities (phase 2 · stream D).
 	EvalOnlyDataset = Type{"eval-only-dataset", http.StatusUnprocessableEntity, "Eval-only dataset"}
+
+	// Pipelines (phase 2 · stream P).
+	PipelineInvalid = Type{"pipeline-invalid", http.StatusUnprocessableEntity, "Pipeline invalid"}
 )
 
 // Types lists every registered type.
@@ -70,7 +73,7 @@ func Types() []Type {
 		BadRequest, ValidationFailed, NotFound, MethodNotAllowed, Conflict, PreconditionFailed,
 		PreconditionRequired, IdempotencyKeyReused, Unauthenticated, TOTPRequired, Forbidden, RateLimited, NotImplemented,
 		Internal, PolicyDenied, ReservedAlias, EstimateUnavailable, InvalidQuery, DraftStale, MergeConflict,
-		RepositoryUnavailable, EvalOnlyDataset,
+		RepositoryUnavailable, EvalOnlyDataset, PipelineInvalid,
 	}
 }
 
