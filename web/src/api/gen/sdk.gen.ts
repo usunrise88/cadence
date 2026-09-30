@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AdoptionsListData, AdoptionsListErrors, AdoptionsListResponses, AgentCredentialsArchiveData, AgentCredentialsArchiveErrors, AgentCredentialsArchiveResponses, AgentCredentialsGetData, AgentCredentialsGetErrors, AgentCredentialsGetResponses, AgentCredentialsListData, AgentCredentialsListErrors, AgentCredentialsListResponses, AgentCredentialsSetData, AgentCredentialsSetErrors, AgentCredentialsSetResponses, AgentCredentialsVerifyData, AgentCredentialsVerifyErrors, AgentCredentialsVerifyResponses, AgentMessagesListData, AgentMessagesListErrors, AgentMessagesListResponses, AgentMessagesNewData, AgentMessagesNewErrors, AgentMessagesNewResponses, AgentModelsListData, AgentModelsListErrors, AgentModelsListResponses, AgentProfileEditData, AgentProfileEditErrors, AgentProfileEditResponses, AgentProfileGetData, AgentProfileGetErrors, AgentProfileGetResponses, AgentProvidersListData, AgentProvidersListErrors, AgentProvidersListResponses, AgentSessionsAcceptData, AgentSessionsAcceptErrors, AgentSessionsAcceptResponses, AgentSessionsCancelData, AgentSessionsCancelErrors, AgentSessionsCancelResponses, AgentSessionsGetData, AgentSessionsGetErrors, AgentSessionsGetResponses, AgentSessionsListData, AgentSessionsListErrors, AgentSessionsListResponses, AgentSessionsNewData, AgentSessionsNewErrors, AgentSessionsNewResponses, AgentSessionsPauseData, AgentSessionsPauseErrors, AgentSessionsPauseResponses, AgentSessionsResumeData, AgentSessionsResumeErrors, AgentSessionsResumeResponses, AgentSessionsRevertData, AgentSessionsRevertErrors, AgentSessionsRevertResponses, AliasesGetData, AliasesGetErrors, AliasesGetResponses, AliasesListData, AliasesListErrors, AliasesListResponses, AliasesSetData, AliasesSetErrors, AliasesSetResponses, ApprovalsApproveData, ApprovalsApproveErrors, ApprovalsApproveResponses, ApprovalsDenyData, ApprovalsDenyErrors, ApprovalsDenyResponses, ApprovalsGetData, ApprovalsGetErrors, ApprovalsGetResponses, ApprovalsListData, ApprovalsListErrors, ApprovalsListResponses, AuditListData, AuditListErrors, AuditListResponses, AuthGetData, AuthGetErrors, AuthGetResponses, AuthLoginData, AuthLoginErrors, AuthLoginResponses, AuthLogoutData, AuthLogoutErrors, AuthLogoutResponses, AuthSetupData, AuthSetupErrors, AuthSetupResponses, BaseModelsGetData, BaseModelsGetErrors, BaseModelsGetResponses, BaseModelsListData, BaseModelsListErrors, BaseModelsListResponses, BranchesAcceptData, BranchesAcceptErrors, BranchesAcceptResponses, BranchesCompareData, BranchesCompareErrors, BranchesCompareResponses, BranchesGetData, BranchesGetErrors, BranchesGetResponses, BranchesListData, BranchesListErrors, BranchesListResponses, BranchesRevertData, BranchesRevertErrors, BranchesRevertResponses, CollectionsGetData, CollectionsGetErrors, CollectionsGetResponses, CollectionsListData, CollectionsListErrors, CollectionsListResponses, ComputeEditData, ComputeEditErrors, ComputeEditResponses, ComputeGetData, ComputeGetErrors, ComputeGetResponses, ComputeListData, ComputeListErrors, ComputeListResponses, CredentialsListData, CredentialsListErrors, CredentialsListResponses, CredentialsNewData, CredentialsNewErrors, CredentialsNewResponses, CredentialsRevokeData, CredentialsRevokeErrors, CredentialsRevokeResponses, DatasetsGetData, DatasetsGetErrors, DatasetsGetResponses, DatasetsListData, DatasetsListErrors, DatasetsListResponses, DefaultsGetData, DefaultsGetErrors, DefaultsGetResponses, DraftsAcceptData, DraftsAcceptErrors, DraftsAcceptResponses, DraftsGetData, DraftsGetErrors, DraftsGetResponses, DraftsListData, DraftsListErrors, DraftsListResponses, DraftsRevertData, DraftsRevertErrors, DraftsRevertResponses, EgressHostsListData, EgressHostsListErrors, EgressHostsListResponses, EventsListData, EventsListErrors, EventsListResponses, HelpGetData, HelpGetErrors, HelpGetResponses, HelpSearchData, HelpSearchErrors, HelpSearchResponses, HostCredentialsClaimData, HostCredentialsClaimErrors, HostCredentialsClaimResponses, HostCredentialsReportData, HostCredentialsReportErrors, HostCredentialsReportResponses, HostSessionsAskData, HostSessionsAskErrors, HostSessionsAskResponses, HostSessionsClaimData, HostSessionsClaimErrors, HostSessionsClaimResponses, HostSessionsDecisionData, HostSessionsDecisionErrors, HostSessionsDecisionResponses, HostSessionsReleaseData, HostSessionsReleaseErrors, HostSessionsReleaseResponses, HostSessionsReportData, HostSessionsReportErrors, HostSessionsReportResponses, JobsCancelData, JobsCancelErrors, JobsCancelResponses, JobsGetData, JobsGetErrors, JobsGetResponses, JobsListData, JobsListErrors, JobsListResponses, JobsWaitData, JobsWaitErrors, JobsWaitResponses, MeGetData, MeGetErrors, MeGetResponses, MixesEditData, MixesEditErrors, MixesEditResponses, MixesGetData, MixesGetErrors, MixesGetResponses, MixesListData, MixesListErrors, MixesListResponses, MixesNewData, MixesNewErrors, MixesNewResponses, MixesPreviewData, MixesPreviewErrors, MixesPreviewResponses, MountsListData, MountsListErrors, MountsListResponses, MountsNewData, MountsNewErrors, MountsNewResponses, PoliciesEditData, PoliciesEditErrors, PoliciesEditResponses, PoliciesGetData, PoliciesGetErrors, PoliciesGetResponses, ProjectsAdoptData, ProjectsAdoptErrors, ProjectsAdoptResponses, ProjectsArchiveData, ProjectsArchiveErrors, ProjectsArchiveResponses, ProjectsEditData, ProjectsEditErrors, ProjectsEditResponses, ProjectsGetData, ProjectsGetErrors, ProjectsGetResponses, ProjectsListData, ProjectsListErrors, ProjectsListResponses, ProjectsNewData, ProjectsNewErrors, ProjectsNewResponses, ProjectsNoteData, ProjectsNoteErrors, ProjectsNoteResponses, ProjectsSearchData, ProjectsSearchErrors, ProjectsSearchResponses, ProjectsSyncData, ProjectsSyncErrors, ProjectsSyncResponses, RecipesGetData, RecipesGetErrors, RecipesGetResponses, RecipesListData, RecipesListErrors, RecipesListResponses, RegistrySearchData, RegistrySearchErrors, RegistrySearchResponses, RunsNewData, RunsNewErrors, RunsNewResponses, SecretsListData, SecretsListErrors, SecretsListResponses, SecretsNewData, SecretsNewErrors, SecretsNewResponses, TemplatesGetData, TemplatesGetErrors, TemplatesGetResponses, TemplatesListData, TemplatesListErrors, TemplatesListResponses, TotpConfirmData, TotpConfirmErrors, TotpConfirmResponses, TotpDisableData, TotpDisableErrors, TotpDisableResponses, TotpEnrollData, TotpEnrollErrors, TotpEnrollResponses, ViewsGetData, ViewsGetErrors, ViewsGetResponses, ViewsListData, ViewsListErrors, ViewsListResponses, ViewsSetData, ViewsSetErrors, ViewsSetResponses, WorkspacesGetData, WorkspacesGetErrors, WorkspacesGetResponses, WorkspacesListData, WorkspacesListErrors, WorkspacesListResponses, WorkspacesSetData, WorkspacesSetErrors, WorkspacesSetResponses } from './types.gen';
+import type { AdoptionsListData, AdoptionsListErrors, AdoptionsListResponses, AgentCredentialsArchiveData, AgentCredentialsArchiveErrors, AgentCredentialsArchiveResponses, AgentCredentialsGetData, AgentCredentialsGetErrors, AgentCredentialsGetResponses, AgentCredentialsListData, AgentCredentialsListErrors, AgentCredentialsListResponses, AgentCredentialsSetData, AgentCredentialsSetErrors, AgentCredentialsSetResponses, AgentCredentialsVerifyData, AgentCredentialsVerifyErrors, AgentCredentialsVerifyResponses, AgentMessagesListData, AgentMessagesListErrors, AgentMessagesListResponses, AgentMessagesNewData, AgentMessagesNewErrors, AgentMessagesNewResponses, AgentModelsListData, AgentModelsListErrors, AgentModelsListResponses, AgentProfileEditData, AgentProfileEditErrors, AgentProfileEditResponses, AgentProfileGetData, AgentProfileGetErrors, AgentProfileGetResponses, AgentProvidersListData, AgentProvidersListErrors, AgentProvidersListResponses, AgentSessionsAcceptData, AgentSessionsAcceptErrors, AgentSessionsAcceptResponses, AgentSessionsCancelData, AgentSessionsCancelErrors, AgentSessionsCancelResponses, AgentSessionsGetData, AgentSessionsGetErrors, AgentSessionsGetResponses, AgentSessionsListData, AgentSessionsListErrors, AgentSessionsListResponses, AgentSessionsNewData, AgentSessionsNewErrors, AgentSessionsNewResponses, AgentSessionsPauseData, AgentSessionsPauseErrors, AgentSessionsPauseResponses, AgentSessionsResumeData, AgentSessionsResumeErrors, AgentSessionsResumeResponses, AgentSessionsRevertData, AgentSessionsRevertErrors, AgentSessionsRevertResponses, AliasesGetData, AliasesGetErrors, AliasesGetResponses, AliasesListData, AliasesListErrors, AliasesListResponses, AliasesSetData, AliasesSetErrors, AliasesSetResponses, ApprovalsApproveData, ApprovalsApproveErrors, ApprovalsApproveResponses, ApprovalsDenyData, ApprovalsDenyErrors, ApprovalsDenyResponses, ApprovalsGetData, ApprovalsGetErrors, ApprovalsGetResponses, ApprovalsListData, ApprovalsListErrors, ApprovalsListResponses, AuditListData, AuditListErrors, AuditListResponses, AuthGetData, AuthGetErrors, AuthGetResponses, AuthLoginData, AuthLoginErrors, AuthLoginResponses, AuthLogoutData, AuthLogoutErrors, AuthLogoutResponses, AuthSetupData, AuthSetupErrors, AuthSetupResponses, BaseModelsGetData, BaseModelsGetErrors, BaseModelsGetResponses, BaseModelsListData, BaseModelsListErrors, BaseModelsListResponses, BranchesAcceptData, BranchesAcceptErrors, BranchesAcceptResponses, BranchesCompareData, BranchesCompareErrors, BranchesCompareResponses, BranchesGetData, BranchesGetErrors, BranchesGetResponses, BranchesListData, BranchesListErrors, BranchesListResponses, BranchesRevertData, BranchesRevertErrors, BranchesRevertResponses, CollectionsGetData, CollectionsGetErrors, CollectionsGetResponses, CollectionsListData, CollectionsListErrors, CollectionsListResponses, ComputeEditData, ComputeEditErrors, ComputeEditResponses, ComputeGetData, ComputeGetErrors, ComputeGetResponses, ComputeListData, ComputeListErrors, ComputeListResponses, CredentialsListData, CredentialsListErrors, CredentialsListResponses, CredentialsNewData, CredentialsNewErrors, CredentialsNewResponses, CredentialsRevokeData, CredentialsRevokeErrors, CredentialsRevokeResponses, DatasetsGetData, DatasetsGetErrors, DatasetsGetResponses, DatasetsListData, DatasetsListErrors, DatasetsListResponses, DefaultsGetData, DefaultsGetErrors, DefaultsGetResponses, DraftsAcceptData, DraftsAcceptErrors, DraftsAcceptResponses, DraftsGetData, DraftsGetErrors, DraftsGetResponses, DraftsListData, DraftsListErrors, DraftsListResponses, DraftsRevertData, DraftsRevertErrors, DraftsRevertResponses, EgressHostsListData, EgressHostsListErrors, EgressHostsListResponses, EventsListData, EventsListErrors, EventsListResponses, HelpGetData, HelpGetErrors, HelpGetResponses, HelpSearchData, HelpSearchErrors, HelpSearchResponses, HostCredentialsClaimData, HostCredentialsClaimErrors, HostCredentialsClaimResponses, HostCredentialsReportData, HostCredentialsReportErrors, HostCredentialsReportResponses, HostSessionsAskData, HostSessionsAskErrors, HostSessionsAskResponses, HostSessionsClaimData, HostSessionsClaimErrors, HostSessionsClaimResponses, HostSessionsDecisionData, HostSessionsDecisionErrors, HostSessionsDecisionResponses, HostSessionsReleaseData, HostSessionsReleaseErrors, HostSessionsReleaseResponses, HostSessionsReportData, HostSessionsReportErrors, HostSessionsReportResponses, JobsCancelData, JobsCancelErrors, JobsCancelResponses, JobsGetData, JobsGetErrors, JobsGetResponses, JobsListData, JobsListErrors, JobsListResponses, JobsWaitData, JobsWaitErrors, JobsWaitResponses, MeGetData, MeGetErrors, MeGetResponses, MixesEditData, MixesEditErrors, MixesEditResponses, MixesGetData, MixesGetErrors, MixesGetResponses, MixesListData, MixesListErrors, MixesListResponses, MixesNewData, MixesNewErrors, MixesNewResponses, MixesPreviewData, MixesPreviewErrors, MixesPreviewResponses, MountsListData, MountsListErrors, MountsListResponses, MountsNewData, MountsNewErrors, MountsNewResponses, PoliciesEditData, PoliciesEditErrors, PoliciesEditResponses, PoliciesGetData, PoliciesGetErrors, PoliciesGetResponses, ProjectsAdoptData, ProjectsAdoptErrors, ProjectsAdoptResponses, ProjectsArchiveData, ProjectsArchiveErrors, ProjectsArchiveResponses, ProjectsEditData, ProjectsEditErrors, ProjectsEditResponses, ProjectsGetData, ProjectsGetErrors, ProjectsGetResponses, ProjectsListData, ProjectsListErrors, ProjectsListResponses, ProjectsNewData, ProjectsNewErrors, ProjectsNewResponses, ProjectsNoteData, ProjectsNoteErrors, ProjectsNoteResponses, ProjectsSearchData, ProjectsSearchErrors, ProjectsSearchResponses, ProjectsSyncData, ProjectsSyncErrors, ProjectsSyncResponses, RecipesGetData, RecipesGetErrors, RecipesGetResponses, RecipesListData, RecipesListErrors, RecipesListResponses, RegistrySearchData, RegistrySearchErrors, RegistrySearchResponses, RunsNewData, RunsNewErrors, RunsNewResponses, SecretsListData, SecretsListErrors, SecretsListResponses, SecretsNewData, SecretsNewErrors, SecretsNewResponses, TemplatesGetData, TemplatesGetErrors, TemplatesGetResponses, TemplatesListData, TemplatesListErrors, TemplatesListResponses, TotpConfirmData, TotpConfirmErrors, TotpConfirmResponses, TotpDisableData, TotpDisableErrors, TotpDisableResponses, TotpEnrollData, TotpEnrollErrors, TotpEnrollResponses, ViewsGetData, ViewsGetErrors, ViewsGetResponses, ViewsListData, ViewsListErrors, ViewsListResponses, ViewsSetData, ViewsSetErrors, ViewsSetResponses, WorkerArtifactsSetData, WorkerArtifactsSetErrors, WorkerArtifactsSetResponses, WorkerLeasesClaimData, WorkerLeasesClaimErrors, WorkerLeasesClaimResponses, WorkerLeasesReleaseData, WorkerLeasesReleaseErrors, WorkerLeasesReleaseResponses, WorkerLeasesReportData, WorkerLeasesReportErrors, WorkerLeasesReportResponses, WorkerLogsNewData, WorkerLogsNewErrors, WorkerLogsNewResponses, WorkerMetricsNewData, WorkerMetricsNewErrors, WorkerMetricsNewResponses, WorkerRegistrationsNewData, WorkerRegistrationsNewErrors, WorkerRegistrationsNewResponses, WorkspacesGetData, WorkspacesGetErrors, WorkspacesGetResponses, WorkspacesListData, WorkspacesListErrors, WorkspacesListResponses, WorkspacesSetData, WorkspacesSetErrors, WorkspacesSetResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -763,6 +763,91 @@ export const hostSessionsRelease = <ThrowOnError extends boolean = false>(option
     ...options,
     headers: {
         'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Publish the worker's runtime, step kinds and model families at start; answers the worker id
+ */
+export const workerRegistrationsNew = <ThrowOnError extends boolean = false>(options: Options<WorkerRegistrationsNewData, ThrowOnError>): RequestResult<WorkerRegistrationsNewResponses, WorkerRegistrationsNewErrors, ThrowOnError> => (options.client ?? client).post<WorkerRegistrationsNewResponses, WorkerRegistrationsNewErrors, ThrowOnError>({
+    url: '/worker-registrations',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Long-poll for a step to run on one of this worker's cards
+ */
+export const workerLeasesClaim = <ThrowOnError extends boolean = false>(options: Options<WorkerLeasesClaimData, ThrowOnError>): RequestResult<WorkerLeasesClaimResponses, WorkerLeasesClaimErrors, ThrowOnError> => (options.client ?? client).post<WorkerLeasesClaimResponses, WorkerLeasesClaimErrors, ThrowOnError>({
+    url: '/worker-leases:claim',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Heartbeat with progress and card telemetry; three missed beats reap the lease
+ */
+export const workerLeasesReport = <ThrowOnError extends boolean = false>(options: Options<WorkerLeasesReportData, ThrowOnError>): RequestResult<WorkerLeasesReportResponses, WorkerLeasesReportErrors, ThrowOnError> => (options.client ?? client).post<WorkerLeasesReportResponses, WorkerLeasesReportErrors, ThrowOnError>({
+    url: '/worker-leases/{id}:report',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Append NDJSON log lines to the job's log; they stream on job.{id}.log
+ */
+export const workerLogsNew = <ThrowOnError extends boolean = false>(options: Options<WorkerLogsNewData, ThrowOnError>): RequestResult<WorkerLogsNewResponses, WorkerLogsNewErrors, ThrowOnError> => (options.client ?? client).post<WorkerLogsNewResponses, WorkerLogsNewErrors, ThrowOnError>({
+    url: '/worker-leases/{id}/worker-logs',
+    ...options,
+    headers: {
+        'Content-Type': 'application/x-ndjson',
+        ...options.headers
+    }
+});
+
+/**
+ * Append a batch of metric points (loss, validation WER, LR, throughput, card memory)
+ */
+export const workerMetricsNew = <ThrowOnError extends boolean = false>(options: Options<WorkerMetricsNewData, ThrowOnError>): RequestResult<WorkerMetricsNewResponses, WorkerMetricsNewErrors, ThrowOnError> => (options.client ?? client).post<WorkerMetricsNewResponses, WorkerMetricsNewErrors, ThrowOnError>({
+    url: '/worker-leases/{id}/worker-metrics',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Complete a lease with the step's outcome, its output artifacts and final metrics, or a typed error
+ */
+export const workerLeasesRelease = <ThrowOnError extends boolean = false>(options: Options<WorkerLeasesReleaseData, ThrowOnError>): RequestResult<WorkerLeasesReleaseResponses, WorkerLeasesReleaseErrors, ThrowOnError> => (options.client ?? client).post<WorkerLeasesReleaseResponses, WorkerLeasesReleaseErrors, ThrowOnError>({
+    url: '/worker-leases/{id}:release',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Upload a blob into the content store (workers without the shared volume); the hash is verified
+ */
+export const workerArtifactsSet = <ThrowOnError extends boolean = false>(options: Options<WorkerArtifactsSetData, ThrowOnError>): RequestResult<WorkerArtifactsSetResponses, WorkerArtifactsSetErrors, ThrowOnError> => (options.client ?? client).put<WorkerArtifactsSetResponses, WorkerArtifactsSetErrors, ThrowOnError>({
+    bodySerializer: null,
+    url: '/worker-artifacts/{hash}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/octet-stream',
         ...options.headers
     }
 });

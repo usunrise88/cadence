@@ -2793,6 +2793,385 @@ export type EgressHostList = {
     hosts: Array<string>;
 };
 
+export type WorkerRegistration = {
+    /**
+     * The compute host this worker runs on (compute entity name, e.g. staging)
+     */
+    host: string;
+    /**
+     * This worker process (hostname and boot id), so a restart is told apart from a second worker
+     */
+    instance?: string;
+    runtime: RuntimeDescriptor;
+    /**
+     * Step kinds this runtime can run, by name
+     */
+    stepKinds: {
+        [key: string]: StepKindDescriptor;
+    };
+    modelFamilies?: Array<ModelFamilyDescriptor>;
+};
+
+export type RuntimeDescriptor = {
+    /**
+     * Runtime name (nemo-speech, toy)
+     */
+    name: string;
+    /**
+     * The runtime's own version (26.07)
+     */
+    version: string;
+    /**
+     * Container image reference
+     */
+    image?: string;
+    /**
+     * Image digest (sha256:…); empty for a development worker outside a container
+     */
+    digest?: string;
+    /**
+     * Environment lock: framework and library versions (cuda, torch, nemo, lhotse, …)
+     */
+    environment?: {
+        [key: string]: string;
+    };
+    /**
+     * Version of the cadence-worker plugin the image carries
+     */
+    plugin?: string;
+};
+
+export type StepKindDescriptor = {
+    version: string;
+    /**
+     * JSON Schema of the parameters; every property carries x-cadence {default, description, source, range[, defaultRef]}
+     */
+    params: {
+        [key: string]: unknown;
+    };
+    /**
+     * Input name → artifact type
+     */
+    consumes: {
+        [key: string]: string;
+    };
+    /**
+     * Output name → artifact type
+     */
+    produces: {
+        [key: string]: string;
+    };
+    resources: StepResources;
+    /**
+     * The model-family role this kind fills (calibrate, train, average, transcribe, export, parity), empty for neutral kinds
+     */
+    role?: string;
+    /**
+     * Runtime-neutral core kind shipped in every runtime image
+     */
+    neutral?: boolean;
+    /**
+     * Secret names the step needs as environment variables
+     */
+    secrets?: Array<string>;
+    /**
+     * Help slug (steps.<name>)
+     */
+    help: string;
+};
+
+export type StepResources = {
+    gpu?: boolean;
+    /**
+     * Cards (1 in v1, R44)
+     */
+    gpus?: number;
+    /**
+     * Card memory the step needs; a training step takes the card's whole cap
+     */
+    memoryGb?: number;
+    diskGb?: number;
+    /**
+     * Which compute job kinds may take it
+     */
+    jobKind?: 'training' | 'eval' | 'export' | 'data';
+};
+
+export type ModelFamilyDescriptor = {
+    name: string;
+    version: string;
+    title?: string;
+    framework: string;
+    architecture: string;
+    /**
+     * Checkpoint and export formats (.nemo, onnx, …)
+     */
+    formats?: Array<string>;
+    input?: {
+        sampleRate?: number;
+        channels?: number;
+    };
+    /**
+     * Feature extraction the family computes itself (R42: never stored in shar)
+     */
+    features?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Tokenizer kind (sentencepiece-bpe, chars, …)
+     */
+    tokenizer?: string;
+    capabilities?: {
+        streaming?: boolean;
+        wordTimestamps?: boolean;
+        confidence?: boolean;
+        /**
+         * Boosting method, empty when none
+         */
+        boosting?: string;
+        languagePrompt?: boolean;
+        trainModes?: Array<'finetune' | 'adapter' | 'scratch'>;
+    };
+    latencyProfiles: Array<LatencyProfile>;
+    /**
+     * Role → step kind (calibrate, train, average, transcribe, export, parity)
+     */
+    roles: {
+        [key: string]: string;
+    };
+    /**
+     * The defaults.yaml section of this family
+     */
+    defaultsSection?: string;
+    help?: string;
+    skill?: string;
+};
+
+export type LatencyProfile = {
+    /**
+     * 80ms, 160ms, …, offline
+     */
+    name: string;
+    /**
+     * Algorithmic latency
+     */
+    latencyMs: number;
+    chunkMs?: number;
+    leftContextMs?: number;
+    /**
+     * Family parameters that realise it, e.g. {att_context_size: [56, 1]}
+     */
+    params?: {
+        [key: string]: unknown;
+    };
+    /**
+     * How the UI shows it: 160 ms · [56,1]
+     */
+    label?: string;
+};
+
+export type Worker = {
+    /**
+     * wrk_…
+     */
+    id: string;
+    host: string;
+    /**
+     * cmp_… of the compute host
+     */
+    hostId?: string;
+    instance?: string;
+    runtime: RuntimeDescriptor;
+    /**
+     * The runtime's registry version (ver_…)
+     */
+    runtimeVersionId?: string;
+    /**
+     * kind@version this worker may lease
+     */
+    stepKinds?: Array<string>;
+    state: 'online' | 'offline';
+    lastSeenAt?: string;
+};
+
+export type WorkerClaim = {
+    workerId: string;
+    /**
+     * Seconds to wait for work
+     */
+    wait?: number;
+    cards: Array<CardTelemetry>;
+};
+
+export type CardTelemetry = {
+    index: number;
+    name?: string;
+    memoryTotalMb?: number;
+    /**
+     * Used by every process on the card
+     */
+    memoryUsedMb?: number;
+    utilization?: number;
+    temperatureC?: number;
+    powerW?: number;
+};
+
+export type WorkerClaimResult = {
+    lease?: Lease;
+};
+
+export type Lease = {
+    /**
+     * lse_…
+     */
+    id: string;
+    jobId: string;
+    spec: StepSpec;
+    /**
+     * Input name → where to read it (cas://b3:<hash> in v1)
+     */
+    inputs?: {
+        [key: string]: string;
+    };
+    card: {
+        index: number;
+        memoryCapMb: number;
+    };
+    /**
+     * Secret environment for the step subprocess only; never logged
+     */
+    env?: {
+        [key: string]: string;
+    };
+    /**
+     * W3C trace context of the job
+     */
+    traceparent?: string;
+    heartbeatSeconds: number;
+};
+
+export type StepSpec = {
+    stepId: string;
+    pipelineRunId: string;
+    projectId?: string;
+    /**
+     * The training run this step belongs to, when it does (metrics go to run.{id}.metrics)
+     */
+    runId?: string;
+    kind: string;
+    kindVersion: string;
+    /**
+     * Resolved parameters (defaults applied)
+     */
+    params: {
+        [key: string]: unknown;
+    };
+    inputs: {
+        [key: string]: ArtifactRef;
+    };
+    /**
+     * Output name → artifact type
+     */
+    outputs: {
+        [key: string]: string;
+    };
+    resources: StepResources;
+    priority?: number;
+    /**
+     * Estimated wall time (availability windows, R19); absent when unknown
+     */
+    estimateSeconds?: number;
+    overrides?: {
+        /**
+         * 0.75 on the automatic OOM retry
+         */
+        batchScale?: number;
+        /**
+         * b3 hash of a training-state artifact to resume from
+         */
+        resumeFrom?: string;
+    };
+    attempt: number;
+};
+
+export type ArtifactRef = {
+    hash: string;
+    /**
+     * shar, dataset, mix, base_model, checkpoint, training-state, calibration, hypotheses, analysis, eval-report, deployable, text
+     */
+    type: string;
+    size?: number;
+    /**
+     * Neutral, self-describing metadata of the type (R42)
+     */
+    meta?: {
+        [key: string]: unknown;
+    };
+};
+
+export type WorkerReport = {
+    progress?: {
+        fraction?: number;
+        message?: string;
+    };
+    cards?: Array<CardTelemetry>;
+};
+
+export type WorkerReportAck = {
+    /**
+     * Stop the step now (checkpoint first when it can)
+     */
+    stop: boolean;
+    reason?: 'cancelled' | 'paused' | 'window-closed';
+};
+
+export type WorkerLogLine = {
+    t: string;
+    level?: 'debug' | 'info' | 'warn' | 'error';
+    msg: string;
+    fields?: {
+        [key: string]: unknown;
+    };
+};
+
+export type WorkerMetricBatch = {
+    points: Array<MetricPoint>;
+};
+
+export type MetricPoint = {
+    /**
+     * loss, val_wer, lr, grad_norm, throughput_audio_s_per_s, gpu_memory_mb, …
+     */
+    name: string;
+    step?: number;
+    epoch?: number;
+    value: number;
+    wallTime: string;
+};
+
+export type StepOutcome = {
+    state: 'done' | 'failed' | 'cancelled';
+    error?: StepError;
+    outputs?: {
+        [key: string]: ArtifactRef;
+    };
+    /**
+     * Final values (val_wer, seconds_per_step, …)
+     */
+    metrics?: {
+        [key: string]: number;
+    };
+};
+
+export type StepError = {
+    /**
+     * oom gets one automatic retry at 0.75× batch; lost = reaped after missed heartbeats
+     */
+    type: 'oom' | 'step' | 'lost' | 'cancelled' | 'input';
+    message: string;
+    retryable?: boolean;
+};
+
 export type SecretNewWritable = {
     name: SecretName;
     kind: SecretKind;
@@ -2862,6 +3241,16 @@ export type AgentCredentialId = AgentCredentialIdValue;
  * Mix id (mix_…)
  */
 export type MixId = string;
+
+/**
+ * Lease id (lse_…)
+ */
+export type LeaseId = string;
+
+/**
+ * Artifact hash (b3:<64 hex>, BLAKE3-256 of the content)
+ */
+export type ArtifactHash = string;
 
 /**
  * Agent session id (ses_…)
@@ -6574,6 +6963,209 @@ export type HostSessionsReleaseResponses = {
 };
 
 export type HostSessionsReleaseResponse = HostSessionsReleaseResponses[keyof HostSessionsReleaseResponses];
+
+export type WorkerRegistrationsNewData = {
+    body: WorkerRegistration;
+    path?: never;
+    query?: never;
+    url: '/worker-registrations';
+};
+
+export type WorkerRegistrationsNewErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type WorkerRegistrationsNewError = WorkerRegistrationsNewErrors[keyof WorkerRegistrationsNewErrors];
+
+export type WorkerRegistrationsNewResponses = {
+    /**
+     * The worker as registered, with the registry versions its publication resolved to
+     */
+    200: Worker;
+};
+
+export type WorkerRegistrationsNewResponse = WorkerRegistrationsNewResponses[keyof WorkerRegistrationsNewResponses];
+
+export type WorkerLeasesClaimData = {
+    body: WorkerClaim;
+    path?: never;
+    query?: never;
+    url: '/worker-leases:claim';
+};
+
+export type WorkerLeasesClaimErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type WorkerLeasesClaimError = WorkerLeasesClaimErrors[keyof WorkerLeasesClaimErrors];
+
+export type WorkerLeasesClaimResponses = {
+    /**
+     * A lease (absent when the wait passed with nothing this worker may run)
+     */
+    200: WorkerClaimResult;
+};
+
+export type WorkerLeasesClaimResponse = WorkerLeasesClaimResponses[keyof WorkerLeasesClaimResponses];
+
+export type WorkerLeasesReportData = {
+    body: WorkerReport;
+    path: {
+        /**
+         * Lease id (lse_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/worker-leases/{id}:report';
+};
+
+export type WorkerLeasesReportErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type WorkerLeasesReportError = WorkerLeasesReportErrors[keyof WorkerLeasesReportErrors];
+
+export type WorkerLeasesReportResponses = {
+    /**
+     * Whether the worker must stop the step (the job was cancelled or paused)
+     */
+    200: WorkerReportAck;
+};
+
+export type WorkerLeasesReportResponse = WorkerLeasesReportResponses[keyof WorkerLeasesReportResponses];
+
+export type WorkerLogsNewData = {
+    /**
+     * One WorkerLogLine JSON object per line; at most 1 MiB per request
+     */
+    body: string;
+    path: {
+        /**
+         * Lease id (lse_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/worker-leases/{id}/worker-logs';
+};
+
+export type WorkerLogsNewErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type WorkerLogsNewError = WorkerLogsNewErrors[keyof WorkerLogsNewErrors];
+
+export type WorkerLogsNewResponses = {
+    /**
+     * Appended
+     */
+    204: void;
+};
+
+export type WorkerLogsNewResponse = WorkerLogsNewResponses[keyof WorkerLogsNewResponses];
+
+export type WorkerMetricsNewData = {
+    body: WorkerMetricBatch;
+    path: {
+        /**
+         * Lease id (lse_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/worker-leases/{id}/worker-metrics';
+};
+
+export type WorkerMetricsNewErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type WorkerMetricsNewError = WorkerMetricsNewErrors[keyof WorkerMetricsNewErrors];
+
+export type WorkerMetricsNewResponses = {
+    /**
+     * Stored
+     */
+    204: void;
+};
+
+export type WorkerMetricsNewResponse = WorkerMetricsNewResponses[keyof WorkerMetricsNewResponses];
+
+export type WorkerLeasesReleaseData = {
+    body: StepOutcome;
+    path: {
+        /**
+         * Lease id (lse_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/worker-leases/{id}:release';
+};
+
+export type WorkerLeasesReleaseErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type WorkerLeasesReleaseError = WorkerLeasesReleaseErrors[keyof WorkerLeasesReleaseErrors];
+
+export type WorkerLeasesReleaseResponses = {
+    /**
+     * Recorded; the control plane advances the pipeline
+     */
+    204: void;
+};
+
+export type WorkerLeasesReleaseResponse = WorkerLeasesReleaseResponses[keyof WorkerLeasesReleaseResponses];
+
+export type WorkerArtifactsSetData = {
+    body: Blob | File;
+    path: {
+        /**
+         * Artifact hash (b3:<64 hex>, BLAKE3-256 of the content)
+         */
+        hash: string;
+    };
+    query?: never;
+    url: '/worker-artifacts/{hash}';
+};
+
+export type WorkerArtifactsSetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type WorkerArtifactsSetError = WorkerArtifactsSetErrors[keyof WorkerArtifactsSetErrors];
+
+export type WorkerArtifactsSetResponses = {
+    /**
+     * Stored (or already present)
+     */
+    204: void;
+};
+
+export type WorkerArtifactsSetResponse = WorkerArtifactsSetResponses[keyof WorkerArtifactsSetResponses];
 
 export type MountsListData = {
     body?: never;

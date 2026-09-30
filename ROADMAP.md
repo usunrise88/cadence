@@ -267,7 +267,7 @@ hold: the CPU toy pack passes the conformance suite in CI, and no control-plane 
 (R40–R45).
 
 Decide before starting:
-- [ ] **decide** → *R18* How phase 2 gets training data before the Data phase — proposed: an import step that registers a
+- [x] **decide** → *R18* How phase 2 gets training data before the Data phase — proposed: an import step that registers a
       pre-built Shar / NeMo manifest (FLEURS subset, the A3 Hebrew subset) as a frozen, fingerprinted dataset version
       through `pipelines.run` (`pipelines/import:run`), registering a Source with the licence the format carries (03)
 

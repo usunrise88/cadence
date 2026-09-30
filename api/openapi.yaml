@@ -34,6 +34,7 @@ tags:
   - { name: agentCredentials, description: "The agents' own model accounts (instance-wide, admin only); values are write-only and never MCP tools" }
   - { name: host, description: The agent host's protocol (claim work, report, ask); exempt from the vocabulary and never MCP tools }
   - { name: egress, description: The egress proxy's protocol (the allowlist it learns); exempt from the vocabulary and never MCP tools }
+  - { name: worker, description: "The GPU worker's protocol (registry, leases, logs, metrics, artifacts); exempt from the vocabulary and never MCP tools" }
   - { name: planned, description: Named now, implemented in a later phase (501 until then) }
 
 paths:
@@ -1945,6 +1946,124 @@ paths:
           content: { application/json: { schema: { $ref: "#/components/schemas/HostReleased" } } }
         default: { $ref: "#/components/responses/Problem" }
 
+  # ---------------------------------------------------------------- worker protocol (exempt: tag worker, never MCP tools; phase 2 · wave 0)
+  /worker-registrations:
+    x-cadence: { entity: workerRegistrations }
+    post:
+      operationId: workerRegistrations.new
+      summary: Publish the worker's runtime, step kinds and model families at start; answers the worker id
+      tags: [worker]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/WorkerRegistration" } } }
+      responses:
+        "200":
+          description: The worker as registered, with the registry versions its publication resolved to
+          content: { application/json: { schema: { $ref: "#/components/schemas/Worker" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /worker-leases:claim:
+    x-cadence: { entity: workerLeases }
+    post:
+      operationId: workerLeases.claim
+      summary: Long-poll for a step to run on one of this worker's cards
+      tags: [worker]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/WorkerClaim" } } }
+      responses:
+        "200":
+          description: A lease (absent when the wait passed with nothing this worker may run)
+          content: { application/json: { schema: { $ref: "#/components/schemas/WorkerClaimResult" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /worker-leases/{id}:report:
+    x-cadence: { entity: workerLeases }
+    parameters: [{ $ref: "#/components/parameters/LeaseId" }]
+    post:
+      operationId: workerLeases.report
+      summary: Heartbeat with progress and card telemetry; three missed beats reap the lease
+      tags: [worker]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/WorkerReport" } } }
+      responses:
+        "200":
+          description: Whether the worker must stop the step (the job was cancelled or paused)
+          content: { application/json: { schema: { $ref: "#/components/schemas/WorkerReportAck" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /worker-leases/{id}/worker-logs:
+    x-cadence: { entity: workerLogs }
+    parameters: [{ $ref: "#/components/parameters/LeaseId" }]
+    post:
+      operationId: workerLogs.new
+      summary: Append NDJSON log lines to the job's log; they stream on job.{id}.log
+      tags: [worker]
+      requestBody:
+        required: true
+        content:
+          application/x-ndjson:
+            schema: { type: string, description: "One WorkerLogLine JSON object per line; at most 1 MiB per request" }
+      responses:
+        "204": { description: Appended }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /worker-leases/{id}/worker-metrics:
+    x-cadence: { entity: workerMetrics }
+    parameters: [{ $ref: "#/components/parameters/LeaseId" }]
+    post:
+      operationId: workerMetrics.new
+      summary: Append a batch of metric points (loss, validation WER, LR, throughput, card memory)
+      tags: [worker]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/WorkerMetricBatch" } } }
+      responses:
+        "204": { description: Stored }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /worker-leases/{id}:release:
+    x-cadence: { entity: workerLeases }
+    parameters: [{ $ref: "#/components/parameters/LeaseId" }]
+    post:
+      operationId: workerLeases.release
+      summary: Complete a lease with the step's outcome, its output artifacts and final metrics, or a typed error
+      tags: [worker]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/StepOutcome" } } }
+      responses:
+        "204": { description: Recorded; the control plane advances the pipeline }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /worker-artifacts/{hash}:
+    x-cadence: { entity: workerArtifacts }
+    parameters: [{ $ref: "#/components/parameters/ArtifactHash" }]
+    put:
+      operationId: workerArtifacts.set
+      summary: Upload a blob into the content store (workers without the shared volume); the hash is verified
+      tags: [worker]
+      requestBody:
+        required: true
+        content: { application/octet-stream: { schema: { type: string, format: binary } } }
+      responses:
+        "204": { description: Stored (or already present) }
+        default: { $ref: "#/components/responses/Problem" }
+
+  # ---------------------------------------------------------------- worker, queue, telemetry, runtimes (phase 2 · stream W) — add paths below this line
+
+  # ---------------------------------------------------------------- artifacts and pipelines (phase 2 · stream P) — add paths below this line
+
+  # ---------------------------------------------------------------- data entities and imports (phase 2 · stream D) — add paths below this line
+
+  # ---------------------------------------------------------------- notifications and operations (phase 2 · stream O) — add paths below this line
+
+  # ---------------------------------------------------------------- runs, checkpoints, metrics (phase 2 · wave 2 · stream R) — add paths below this line
+
+  # ---------------------------------------------------------------- playbooks (phase 2 · wave 2 · stream K) — add paths below this line
+
+
   # ---------------------------------------------------------------- planned (later phases)
   /mounts:
     x-cadence: { entity: mounts, planned: 4 }
@@ -2010,6 +2129,18 @@ components:
       required: true
       description: Mix id (mix_…)
       schema: { type: string }
+    LeaseId:
+      name: id
+      in: path
+      required: true
+      description: Lease id (lse_…)
+      schema: { type: string }
+    ArtifactHash:
+      name: hash
+      in: path
+      required: true
+      description: "Artifact hash (b3:<64 hex>, BLAKE3-256 of the content)"
+      schema: { type: string, pattern: "^b3:[0-9a-f]{64}$" }
     AgentSessionId:
       name: id
       in: path
@@ -4208,3 +4339,242 @@ components:
       required: [hosts]
       properties:
         hosts: { type: array, items: { type: string }, description: "Host names, *.domain patterns or host:port (a custom base URL with a port)" }
+
+    # ---------------------------------------------------------------- worker protocol schemas (tag worker; phase 2 · wave 0)
+    WorkerRegistration:
+      type: object
+      required: [host, runtime, stepKinds]
+      additionalProperties: false
+      properties:
+        host: { type: string, minLength: 1, maxLength: 200, description: "The compute host this worker runs on (compute entity name, e.g. staging)" }
+        instance: { type: string, maxLength: 200, description: "This worker process (hostname and boot id), so a restart is told apart from a second worker" }
+        runtime: { $ref: "#/components/schemas/RuntimeDescriptor" }
+        stepKinds:
+          type: object
+          description: Step kinds this runtime can run, by name
+          additionalProperties: { $ref: "#/components/schemas/StepKindDescriptor" }
+        modelFamilies:
+          type: array
+          maxItems: 50
+          items: { $ref: "#/components/schemas/ModelFamilyDescriptor" }
+    RuntimeDescriptor:
+      type: object
+      required: [name, version]
+      properties:
+        name: { type: string, pattern: "^[a-z][a-z0-9-]{1,62}$", description: "Runtime name (nemo-speech, toy)" }
+        version: { type: string, maxLength: 100, description: "The runtime's own version (26.07)" }
+        image: { type: string, maxLength: 500, description: "Container image reference" }
+        digest: { type: string, maxLength: 100, description: "Image digest (sha256:…); empty for a development worker outside a container" }
+        environment:
+          type: object
+          description: "Environment lock: framework and library versions (cuda, torch, nemo, lhotse, …)"
+          additionalProperties: { type: string }
+        plugin: { type: string, maxLength: 100, description: "Version of the cadence-worker plugin the image carries" }
+    StepKindDescriptor:
+      type: object
+      required: [version, params, consumes, produces, resources, help]
+      properties:
+        version: { type: string, maxLength: 20 }
+        params: { type: object, description: "JSON Schema of the parameters; every property carries x-cadence {default, description, source, range[, defaultRef]}" }
+        consumes: { type: object, additionalProperties: { type: string }, description: "Input name → artifact type" }
+        produces: { type: object, additionalProperties: { type: string }, description: "Output name → artifact type" }
+        resources: { $ref: "#/components/schemas/StepResources" }
+        role: { type: string, maxLength: 40, description: "The model-family role this kind fills (calibrate, train, average, transcribe, export, parity), empty for neutral kinds" }
+        neutral: { type: boolean, description: "Runtime-neutral core kind shipped in every runtime image" }
+        secrets: { type: array, items: { type: string }, description: Secret names the step needs as environment variables }
+        help: { type: string, description: "Help slug (steps.<name>)" }
+    StepResources:
+      type: object
+      properties:
+        gpu: { type: boolean }
+        gpus: { type: integer, minimum: 0, maximum: 1, description: "Cards (1 in v1, R44)" }
+        memoryGb: { type: number, minimum: 0, description: Card memory the step needs; a training step takes the card's whole cap }
+        diskGb: { type: number, minimum: 0 }
+        jobKind: { type: string, enum: [training, eval, export, data], description: "Which compute job kinds may take it" }
+    ModelFamilyDescriptor:
+      type: object
+      required: [name, version, framework, architecture, latencyProfiles, roles]
+      properties:
+        name: { type: string, pattern: "^[a-z][a-z0-9.-]{1,62}$" }
+        version: { type: string, maxLength: 20 }
+        title: { type: string, maxLength: 200 }
+        framework: { type: string, maxLength: 100 }
+        architecture: { type: string, maxLength: 200 }
+        formats: { type: array, items: { type: string }, description: "Checkpoint and export formats (.nemo, onnx, …)" }
+        input: { type: object, properties: { sampleRate: { type: integer }, channels: { type: integer } } }
+        features: { type: object, description: "Feature extraction the family computes itself (R42: never stored in shar)" }
+        tokenizer: { type: string, description: "Tokenizer kind (sentencepiece-bpe, chars, …)" }
+        capabilities:
+          type: object
+          properties:
+            streaming: { type: boolean }
+            wordTimestamps: { type: boolean }
+            confidence: { type: boolean }
+            boosting: { type: string, description: "Boosting method, empty when none" }
+            languagePrompt: { type: boolean }
+            trainModes: { type: array, items: { type: string, enum: [finetune, adapter, scratch] } }
+        latencyProfiles:
+          type: array
+          minItems: 1
+          items: { $ref: "#/components/schemas/LatencyProfile" }
+        roles:
+          type: object
+          description: "Role → step kind (calibrate, train, average, transcribe, export, parity)"
+          additionalProperties: { type: string }
+        defaultsSection: { type: string, description: "The defaults.yaml section of this family" }
+        help: { type: string }
+        skill: { type: string }
+    LatencyProfile:
+      type: object
+      required: [name, latencyMs]
+      properties:
+        name: { type: string, description: "80ms, 160ms, …, offline" }
+        latencyMs: { type: integer, minimum: 0, description: Algorithmic latency }
+        chunkMs: { type: integer, minimum: 0 }
+        leftContextMs: { type: integer, minimum: 0 }
+        params: { type: object, description: "Family parameters that realise it, e.g. {att_context_size: [56, 1]}" }
+        label: { type: string, description: "How the UI shows it: 160 ms · [56,1]" }
+    Worker:
+      type: object
+      required: [id, host, runtime, state]
+      properties:
+        id: { type: string, description: "wrk_…" }
+        host: { type: string }
+        hostId: { type: string, description: "cmp_… of the compute host" }
+        instance: { type: string }
+        runtime: { $ref: "#/components/schemas/RuntimeDescriptor" }
+        runtimeVersionId: { type: string, description: "The runtime's registry version (ver_…)" }
+        stepKinds: { type: array, items: { type: string }, description: "kind@version this worker may lease" }
+        state: { type: string, enum: [online, offline] }
+        lastSeenAt: { type: string, format: date-time }
+    WorkerClaim:
+      type: object
+      required: [workerId, cards]
+      additionalProperties: false
+      properties:
+        workerId: { type: string }
+        wait: { type: integer, minimum: 0, maximum: 30, default: 20, description: Seconds to wait for work }
+        cards: { type: array, maxItems: 16, items: { $ref: "#/components/schemas/CardTelemetry" } }
+    CardTelemetry:
+      type: object
+      required: [index]
+      properties:
+        index: { type: integer, minimum: 0 }
+        name: { type: string }
+        memoryTotalMb: { type: integer, minimum: 0 }
+        memoryUsedMb: { type: integer, minimum: 0, description: Used by every process on the card, resident services included }
+        utilization: { type: number, minimum: 0, maximum: 1 }
+        temperatureC: { type: number }
+        powerW: { type: number }
+    WorkerClaimResult:
+      type: object
+      properties:
+        lease: { $ref: "#/components/schemas/Lease" }
+    Lease:
+      type: object
+      required: [id, jobId, spec, card, heartbeatSeconds]
+      properties:
+        id: { type: string, description: "lse_…" }
+        jobId: { type: string }
+        spec: { $ref: "#/components/schemas/StepSpec" }
+        inputs:
+          type: object
+          description: Input name → where to read it (cas://b3:<hash> in v1)
+          additionalProperties: { type: string }
+        card: { type: object, required: [index, memoryCapMb], properties: { index: { type: integer }, memoryCapMb: { type: integer } } }
+        env: { type: object, additionalProperties: { type: string }, description: "Secret environment for the step subprocess only; never logged" }
+        traceparent: { type: string, description: W3C trace context of the job }
+        heartbeatSeconds: { type: integer }
+    StepSpec:
+      type: object
+      required: [stepId, pipelineRunId, kind, kindVersion, params, inputs, outputs, resources, attempt]
+      properties:
+        stepId: { type: string }
+        pipelineRunId: { type: string }
+        projectId: { type: string }
+        runId: { type: string, description: "The training run this step belongs to, when it does (metrics go to run.{id}.metrics)" }
+        kind: { type: string }
+        kindVersion: { type: string }
+        params: { type: object, description: Resolved parameters (defaults applied) }
+        inputs: { type: object, additionalProperties: { $ref: "#/components/schemas/ArtifactRef" } }
+        outputs: { type: object, additionalProperties: { type: string }, description: Output name → artifact type }
+        resources: { $ref: "#/components/schemas/StepResources" }
+        priority: { type: integer }
+        estimateSeconds: { type: number, description: "Estimated wall time (availability windows, R19); absent when unknown" }
+        overrides:
+          type: object
+          properties:
+            batchScale: { type: number, exclusiveMinimum: 0, maximum: 1, description: "0.75 on the automatic OOM retry" }
+            resumeFrom: { type: string, description: "b3 hash of a training-state artifact to resume from" }
+        attempt: { type: integer, minimum: 1 }
+    ArtifactRef:
+      type: object
+      required: [hash, type]
+      properties:
+        hash: { type: string, pattern: "^b3:[0-9a-f]{64}$" }
+        type: { type: string, description: "shar, dataset, mix, base_model, checkpoint, training-state, calibration, hypotheses, analysis, eval-report, deployable, text" }
+        size: { type: integer, format: int64, minimum: 0 }
+        meta: { type: object, description: "Neutral, self-describing metadata of the type (R42)" }
+    WorkerReport:
+      type: object
+      additionalProperties: false
+      properties:
+        progress: { type: object, properties: { fraction: { type: number, minimum: 0, maximum: 1 }, message: { type: string, maxLength: 500 } } }
+        cards: { type: array, maxItems: 16, items: { $ref: "#/components/schemas/CardTelemetry" } }
+    WorkerReportAck:
+      type: object
+      required: [stop]
+      properties:
+        stop: { type: boolean, description: "Stop the step now (checkpoint first when it can)" }
+        reason: { type: string, enum: [cancelled, paused, window-closed] }
+    WorkerLogLine:
+      type: object
+      required: [t, msg]
+      properties:
+        t: { type: string, format: date-time }
+        level: { type: string, enum: [debug, info, warn, error], default: info }
+        msg: { type: string, maxLength: 16000 }
+        fields: { type: object }
+    WorkerMetricBatch:
+      type: object
+      required: [points]
+      additionalProperties: false
+      properties:
+        points: { type: array, minItems: 1, maxItems: 5000, items: { $ref: "#/components/schemas/MetricPoint" } }
+    MetricPoint:
+      type: object
+      required: [name, value, wallTime]
+      properties:
+        name: { type: string, pattern: "^[a-z][a-z0-9_./]{0,99}$", description: "loss, val_wer, lr, grad_norm, throughput_audio_s_per_s, gpu_memory_mb, …" }
+        step: { type: integer, format: int64, minimum: 0 }
+        epoch: { type: number }
+        value: { type: number }
+        wallTime: { type: string, format: date-time }
+    StepOutcome:
+      type: object
+      required: [state]
+      additionalProperties: false
+      properties:
+        state: { type: string, enum: [done, failed, cancelled] }
+        error: { $ref: "#/components/schemas/StepError" }
+        outputs: { type: object, additionalProperties: { $ref: "#/components/schemas/ArtifactRef" } }
+        metrics: { type: object, additionalProperties: { type: number }, description: "Final values (val_wer, seconds_per_step, …)" }
+    StepError:
+      type: object
+      required: [type, message]
+      properties:
+        type: { type: string, enum: [oom, step, lost, cancelled, input], description: "oom gets one automatic retry at 0.75× batch; lost = reaped after missed heartbeats" }
+        message: { type: string, maxLength: 4000 }
+        retryable: { type: boolean }
+
+    # ---------------------------------------------------------------- worker, queue, telemetry, runtimes schemas (stream W) — add below
+
+    # ---------------------------------------------------------------- artifacts and pipelines schemas (stream P) — add below
+
+    # ---------------------------------------------------------------- data entities and imports schemas (stream D) — add below
+
+    # ---------------------------------------------------------------- notifications and operations schemas (stream O) — add below
+
+    # ---------------------------------------------------------------- runs, checkpoints, metrics schemas (wave 2 · stream R) — add below
+
+    # ---------------------------------------------------------------- playbooks schemas (wave 2 · stream K) — add below
