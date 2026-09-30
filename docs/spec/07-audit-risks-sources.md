@@ -53,6 +53,19 @@ Spikes:
 
 Open questions:
 
+- [ ] K (2026-09-30, playbooks): agents cannot start playbook sessions — `playbooks.run` joined the preset rule
+  `sessions-are-for-people` (05 lists it among the agent tools; an agent starting a session contradicts "sessions are
+  started by people"); `playbooks.get` gives an agent the estimate.
+- [ ] K: the dry-run rule is per operation and used up by the real call (two training runs need two dry runs); it is
+  enforced only in playbook sessions, not in interactive ones.
+- [ ] K: "budget: exceeded" stops a playbook when the session pauses on its turn, token or project token budget; an
+  over-budget GPU spend waits for its approval as in any session, and stops the playbook only when denied.
+- [ ] K: playbooks run from the bundled templates; the copies in a project's `playbooks/` are for reading and editing,
+  and project overrides of a playbook are not read yet.
+- [ ] K: the watch step ticks from `jobs.wait` answering the run's job ended; once stream R's `runs.get` reports a
+  terminal run it can be accepted too. The calibrate step's estimate is a hint (0.1 GPU-hours) until `runs.calibrate`
+  has an estimator (`playbooks.Service.Estimators`).
+
 - [ ] Y (2026-09-30, worker harness): a directory artifact is recognised by `meta.layout: dir|file`, which the worker
   adds to every output it releases; an input without it is sniffed (a blob that parses as exactly the manifest shape
   and whose files are all present is a directory). The control plane should keep `layout` in stored artifact meta.

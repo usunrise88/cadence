@@ -39,6 +39,7 @@ Entities:
   notificationSettings edit get
   pipelineRuns   cancel get list retry wait
   pipelines      list run
+  playbooks      get list run
   policies       edit get
   projects       adopt archive edit get list new note search sync
   queueEntries   list
