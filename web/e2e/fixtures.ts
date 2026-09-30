@@ -16,7 +16,8 @@ export async function newProject(request: APIRequestContext, name = "E2E"): Prom
 
 export async function openWorkspace(page: Page, slug: string, workspace = "Training", query = ""): Promise<void> {
   await page.goto(`/p/${slug}/w/${workspace}${query}`);
-  await expect(page.locator('[data-tab="library"]')).toBeVisible();
+  // Every default workspace has tabs (Ops has no Library); the restore flag below says the layout is complete.
+  await expect(page.locator("[data-tab]").first()).toBeVisible();
   await page.waitForFunction(() => {
     const c = (window as unknown as { __cadence?: { sync: { getState(): { restoring: boolean; key: string | null } } } }).__cadence;
     return !!c && !c.sync.getState().restoring && !!c.sync.getState().key;
