@@ -6,7 +6,9 @@
 //
 // Configuration comes from the environment: DATABASE_URL (required), CADENCE_ADDR (127.0.0.1:8080),
 // CADENCE_DATA_DIR (./data), CADENCE_LOG_DIR ($CADENCE_DATA_DIR/logs), CADENCE_LOG_LEVEL (info),
-// CADENCE_MASTER_KEY_FILE ($CADENCE_DATA_DIR/master.key; generated on first start when missing).
+// CADENCE_MASTER_KEY_FILE ($CADENCE_DATA_DIR/master.key; generated on first start when missing),
+// CADENCE_GITHUB_API (https://api.github.com; GitHub Enterprise: https://<host>/api/v3). Project repositories live
+// under $CADENCE_DATA_DIR/repos (bare), work (working clones) and worktrees; the git binary must be on PATH.
 package main
 
 import (
@@ -35,7 +37,9 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/jobs"
 	"github.com/usunrise88/cadence/control-plane/internal/obs"
 	"github.com/usunrise88/cadence/control-plane/internal/policy"
+	"github.com/usunrise88/cadence/control-plane/internal/projects/bootstrap"
 	"github.com/usunrise88/cadence/control-plane/internal/registry"
+	"github.com/usunrise88/cadence/control-plane/internal/repos"
 	"github.com/usunrise88/cadence/control-plane/internal/secrets"
 	"github.com/usunrise88/cadence/control-plane/internal/server"
 	"github.com/usunrise88/cadence/control-plane/internal/storage"
@@ -164,6 +168,18 @@ func serve(ctx context.Context, getenv func(string) string) error {
 	}
 	jobSvc := jobs.New(pool, log)
 	registerChores(jobSvc, pool, log)
+	repoStore, err := repos.NewStore(cfg.dataDir)
+	if err != nil {
+		return err
+	}
+	projectRepos, err := bootstrap.New(bootstrap.Options{
+		Pool: pool, Repos: repoStore, Secrets: store, Log: log,
+		GitHub: repos.GitHub{BaseURL: getenv("CADENCE_GITHUB_API")},
+	})
+	if err != nil {
+		return err
+	}
+	projectRepos.Register(jobSvc)
 
 	metrics := obs.NewMetrics()
 	hub := events.NewHub(256)
@@ -178,6 +194,7 @@ func serve(ctx context.Context, getenv func(string) string) error {
 		Version:  version,
 		Jobs:     jobSvc,
 		Secrets:  store,
+		Projects: projectRepos,
 	})
 	if err != nil {
 		return err

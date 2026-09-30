@@ -4,7 +4,7 @@
 # the control-plane binary and packaged with the worker. Every value carries a description, a source and, where it
 # applies, a safe range; a value without a published source is a "Cadence recommendation" re-checked after the spikes.
 # Keys are addressed as <section>.<key> (x-cadence.defaultRef: training.steps). Bump `version` on every change.
-version: 1
+version: 2
 
 # The project wizard's Recommended mode (docs/spec/02-domain-projects-registry.md "Project wizard").
 wizard:
@@ -25,6 +25,25 @@ wizard:
     description: Agent driver for the project's sessions
     source: Cadence recommendation
     range: { values: [claude-code, opencode] }
+  claude_code_model:
+    value: sonnet
+    description: Model of Claude Code sessions, as a Claude Code alias (the subscription resolves it to the current model)
+    source: docs/spec/08-resolutions.md R6 (Claude subscription); Cadence recommendation for the alias
+    range: { values: [sonnet, opus, haiku] }
+  opencode_model:
+    value: minimax/MiniMax-M2
+    description: Model of opencode sessions as provider/model; any provider configured in the agent-credentials volume is accepted
+    source: docs/spec/08-resolutions.md R6 (MiniMax Token Plan); model id as models.dev names it — confirm against the plan
+    range: { values: [minimax/MiniMax-M2] }
+  auto_merge:
+    value: when-clean
+    description: Whether a session branch merges into main at session end when it applies cleanly (when-clean) or always waits for a person (never)
+    source: docs/spec/05-agents.md "Worktree, drafts and merge"
+    range: { values: [when-clean, never] }
+  draft_policy:
+    value: { mix: draft, gate: draft, note: direct, language_pack: draft }
+    description: Per draftable kind, whether agent changes land at once (direct) or as drafts to accept or revert (draft)
+    source: docs/spec/05-agents.md "Worktree, drafts and merge"; Cadence recommendation (notes are append-only learnings)
   permission_preset:
     value: guardrails-default
     description: Permission preset rendered into the agent config and used by the policy engine
@@ -48,6 +67,12 @@ budgets:
     description: GPU-hours a project may spend per day before a run needs an approval
     source: Cadence recommendation (docs/spec/03 "Key defaults")
     range: { min: 0, max: 192 }
+  agent_tokens_per_project_per_day:
+    value: 20000000
+    unit: tokens
+    description: Agent spend a project may use per day, in tokens (money counts only in API-key mode, R6)
+    source: Cadence recommendation — re-check after spike A2 measures a playbook session
+    range: { min: 0, max: 1000000000 }
   agent_turns_per_session:
     value: 200
     unit: turns

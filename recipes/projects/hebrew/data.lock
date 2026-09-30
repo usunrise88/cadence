@@ -1,10 +1,9 @@
-# Written by Cadence, never by hand. Every registry version this project depends on,
-# resolved from aliases at the time of the last run/mix save. Same idea as DVC pointer files.
+# written by Cadence — every registry version this project depends on (docs/spec/02-domain-projects-registry.md
+# "Registry", lockfile). Never edited by hand.
 version: 1
-resolved: []
-# example after the first mix:
-# - kind: dataset
-#   collection: hebrew-calls
-#   version: 2026-10-05.1f2e3d4
-#   alias: train-current
-#   fingerprint: blake3:...
+resolved:
+  - kind: base_model
+    collection: base-model/nemotron-3.5-asr-streaming-0.6b
+    version: "2026-09-29.6733473ea7a9"
+    id: ver_01a0e000-0000-7000-8000-000000000001
+templates: []

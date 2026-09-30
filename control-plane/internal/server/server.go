@@ -27,6 +27,8 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/obs"
 	"github.com/usunrise88/cadence/control-plane/internal/policy"
 	"github.com/usunrise88/cadence/control-plane/internal/problems"
+	"github.com/usunrise88/cadence/control-plane/internal/projects/bootstrap"
+	"github.com/usunrise88/cadence/control-plane/internal/repos"
 	"github.com/usunrise88/cadence/control-plane/internal/secrets"
 	"github.com/usunrise88/cadence/control-plane/internal/webui"
 )
@@ -60,6 +62,9 @@ type Config struct {
 	Credentials *credentials.Store
 	// LoginLimiter throttles failed sign-ins per address and per username; New creates the default when nil.
 	LoginLimiter *auth.Limiter
+	// Projects bootstraps and commits to project repositories and serves them at /git; nil in tests that never
+	// reach a repository (projects.new then fails).
+	Projects *bootstrap.Service
 }
 
 // Server implements api.StrictServerInterface. Planned operations fall through to api.Planned (501).
@@ -107,8 +112,8 @@ func New(c Config) (*Server, error) {
 	return s, nil
 }
 
-// Handler is the whole HTTP surface: /api (the contract), /mcp (the same operations as MCP tools), /healthz,
-// /metrics, and the SPA for every other path.
+// Handler is the whole HTTP surface: /api (the contract), /mcp (the same operations as MCP tools), /git (the
+// project repositories over smart HTTP), /healthz, /metrics, and the SPA for every other path.
 func (s *Server) Handler() http.Handler {
 	root := chi.NewRouter()
 	root.Use(obs.RequestLog(s.Log, s.Metrics))
@@ -116,6 +121,9 @@ func (s *Server) Handler() http.Handler {
 	root.Handle("/metrics", s.Metrics.Handler())
 	root.Mount(APIPrefix, s.api)
 	root.Handle(mcp.Path, s.mcp.Handler())
+	if s.Projects != nil {
+		root.Handle(repos.HTTPPath+"/*", s.gitHandler())
+	}
 	root.Handle("/*", webui.Handler())
 	return obs.Trace(root, s.Tracer)
 }

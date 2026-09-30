@@ -37,6 +37,13 @@ tools:
     operations: [goldenSets.freeze, gates.edit]
     reason: golden sets and gates decide what counts as better
 
+  # The agent profile renders the agent's own permission files and instructions: an agent changing it waits for a
+  # person (the server-side scope of its token does not change either way).
+  - id: agent-profile
+    class: gated
+    operations: [agentProfile.edit]
+    reason: the agent profile decides what agents may do and what they are told
+
   # "Canary, production, rollback" → approval (shadow is decided by the promotion's own stage check, phase 5).
   - id: deployments
     class: gated

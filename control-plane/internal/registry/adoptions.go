@@ -291,3 +291,20 @@ func Resolve(ctx context.Context, q storage.Querier, projectID, kind, ref string
 		return Latest(ctx, q, kind, ref)
 	}
 }
+
+// AdoptQuietly records that the project uses these frozen versions, without a revision or an event of its own:
+// projects.new, the bootstrap job and a template sync call it for the versions they write into data.lock, inside a
+// command or job that emits its own events. Versions already adopted are skipped; it returns how many were added.
+func AdoptQuietly(ctx context.Context, tx pgx.Tx, projectID string, versionIDs []string, actor auth.Actor) (int, error) {
+	added := 0
+	for _, id := range versionIDs {
+		tag, err := tx.Exec(ctx, `INSERT INTO adoptions (project_id, version_id, adopted_by)
+			SELECT $1, v.id, $3 FROM registry_versions v WHERE v.id = $2 AND v.state = 'frozen'
+			ON CONFLICT DO NOTHING`, projectID, id, actor)
+		if err != nil {
+			return added, fmt.Errorf("adopt %s: %w", id, err)
+		}
+		added += int(tag.RowsAffected())
+	}
+	return added, nil
+}
