@@ -5163,6 +5163,98 @@
       ]
     },
     {
+      "name": "recipes.edit",
+      "title": "Write one text file of the project repository and commit it to main (the Recipe document's edits)",
+      "description": "Change one UTF-8 text file of the project repository and commit it to main as the caller. Send ifMatch with the commit that last changed the file (history[0].sha from recipes.get); recipes.new creates a file. Files rendered from the agent profile (AGENTS.md, CLAUDE.md, .claude/settings.json, opencode.json) change through agentProfile.edit instead. Agents edit files in their session worktree; the default preset does not allow this tool. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "PATCH",
+      "path": "/projects/{p}/recipes/{path}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "content": {
+                "description": "The file's new content (UTF-8 text)",
+                "maxLength": 1048576,
+                "type": "string"
+              },
+              "message": {
+                "description": "Commit message (default: edit \u003cpath\u003e)",
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "content"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          },
+          "path": {
+            "description": "File path in the repository, URL-encoded (pipelines%2Ftrain-stage.yaml)",
+            "maxLength": 400,
+            "minLength": 1,
+            "pattern": "^[^/\\x00][^\\x00]*$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "ifMatch",
+          "p",
+          "path"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "path",
+          "in": "path",
+          "name": "path"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
       "name": "recipes.get",
       "title": "One file of the project repository at a branch or commit, with its commit history",
       "description": "One file of the project repository at a branch or commit, with its commit history",
@@ -5268,6 +5360,83 @@
           "property": "prefix",
           "in": "query",
           "name": "prefix"
+        }
+      ]
+    },
+    {
+      "name": "recipes.new",
+      "title": "Create one text file in the project repository and commit it to main",
+      "description": "Create one UTF-8 text file in the project repository and commit it to main as the caller; a path that exists answers 409 (change it with recipes.edit). Agents create files in their session worktree; the default preset does not allow this tool. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/projects/{p}/recipes",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "content": {
+                "description": "The file's content (UTF-8 text)",
+                "maxLength": 1048576,
+                "type": "string"
+              },
+              "message": {
+                "description": "Commit message (default: add \u003cpath\u003e)",
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "path": {
+                "description": "A path relative to the repository root",
+                "maxLength": 400,
+                "minLength": 1,
+                "pattern": "^[^/\\x00][^\\x00]*$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "content"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
         }
       ]
     },

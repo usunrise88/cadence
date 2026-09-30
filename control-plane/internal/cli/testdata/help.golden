@@ -42,7 +42,7 @@ Entities:
   policies       edit get
   projects       adopt archive edit get list new note search sync
   queueEntries   list
-  recipes        get list
+  recipes        edit get list new
   registry       search
   runs           new
   runtimes       get list

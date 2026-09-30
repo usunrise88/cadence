@@ -927,6 +927,22 @@ var Operations = []Operation{
 		},
 	},
 	{
+		ID: "recipes.edit", Entity: "recipes", Verb: "edit", Method: "PATCH", Path: "/projects/{p}/recipes/{path}",
+		Summary:        "Write one text file of the project repository and commit it to main (the Recipe document's edits)",
+		Description:    "Change one UTF-8 text file of the project repository and commit it to main as the caller. Send ifMatch with the commit that last changed the file (history[0].sha from recipes.get); recipes.new creates a file. Files rendered from the agent profile (AGENTS.md, CLAUDE.md, .claude/settings.json, opencode.json) change through agentProfile.edit instead. Agents edit files in their session worktree; the default preset does not allow this tool.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "path", In: "path", Flag: "path", Required: true, Type: "string", Description: "File path in the repository, URL-encoded (pipelines%2Ftrain-stage.yaml)"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "content", Required: true, Type: "string", Description: "The file's new content (UTF-8 text)"},
+			{Name: "message", Type: "string", Description: "Commit message (default: edit <path>)"},
+		}},
+	},
+	{
 		ID: "recipes.get", Entity: "recipes", Verb: "get", Method: "GET", Path: "/projects/{p}/recipes/{path}",
 		Summary: "One file of the project repository at a branch or commit, with its commit history",
 		Params: []Param{
@@ -943,6 +959,21 @@ var Operations = []Operation{
 			{Name: "ref", In: "query", Flag: "ref", Type: "string", Description: "Branch (main, session/<id>, sync/<date>) or commit sha to read at; main when absent"},
 			{Name: "prefix", In: "query", Flag: "prefix", Type: "string", Description: "Only files under this directory, e.g. pipelines/"},
 		},
+	},
+	{
+		ID: "recipes.new", Entity: "recipes", Verb: "new", Method: "POST", Path: "/projects/{p}/recipes",
+		Summary:        "Create one text file in the project repository and commit it to main",
+		Description:    "Create one UTF-8 text file in the project repository and commit it to main as the caller; a path that exists answers 409 (change it with recipes.edit). Agents create files in their session worktree; the default preset does not allow this tool.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "content", Required: true, Type: "string", Description: "The file's content (UTF-8 text)"},
+			{Name: "message", Type: "string", Description: "Commit message (default: add <path>)"},
+			{Name: "path", Required: true, Type: "string", Description: "A path relative to the repository root"},
+		}},
 	},
 	{
 		ID: "registry.search", Entity: "registry", Verb: "search", Method: "GET", Path: "/registry",

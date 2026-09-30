@@ -83,6 +83,14 @@ tools:
     operations: [projects.archive]
     reason: archiving a project hides its work from every panel
 
+  # An agent edits recipe files in its session worktree, where every turn is a commit on the session branch that
+  # merges through the project's auto-merge policy; recipes.new and recipes.edit commit straight to main and are the
+  # Recipe document's (a person's) path.
+  - id: recipes-through-the-worktree
+    class: forbidden
+    operations: [recipes.new, recipes.edit]
+    reason: agents change recipe files in their session worktree, not directly on main
+
   # "Delete anything" → not allowed; revoking credentials is the admin's.
   - id: no-deletes
     class: forbidden
