@@ -1,8 +1,8 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Play, Plus, Trash } from "iconoir-react";
-import { datasetsListOptions, eventsListOptions, mixesGetQueryKey } from "@/api/gen/@tanstack/react-query.gen";
-import type { DraftChange, Mix, MixGroup, MixPreview, Problem } from "@/api/gen/types.gen";
+import { datasetsListOptions, eventsListOptions, mixesGetQueryKey, projectsGetOptions } from "@/api/gen/@tanstack/react-query.gen";
+import type { DraftChange, Mix, MixGroup, MixPreview, Problem, RunEstimate, RunNew } from "@/api/gen/types.gen";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -11,7 +11,7 @@ import { AnalyticsChart, type AnalyticsSpec } from "@/shell/charts";
 import { cn } from "@/lib/utils";
 import { DraftOutline, PresenceNotice, changed, presenceLabel, useActivePresence, useDrafts } from "@/shell/entity/drafts";
 import { ActorBadge, EmptyState } from "@/shell/entity/primitives";
-import { errorMessage, lookupDefault, rangeWarning, runCommand, useCommand, useDefaults, useEditRequest, useProject, useTopic, WhyDefault, type PanelProps } from "@/shell/panel";
+import { errorMessage, lookupDefault, openDocument, rangeWarning, runCommand, useCommand, useDefaults, useEditRequest, useProject, useTopic, WhyDefault, type PanelProps } from "@/shell/panel";
 
 // The Mix document (docs/spec/11-ui-panels.md): groups, weights, temperature and replay share over dataset
 // versions, and the preview of hours per language. A person edits the table directly (a new revision); an agent's
@@ -81,6 +81,7 @@ function Overview({ mix, doc }: { mix: Mix; doc?: string }) {
   const [conflict, setConflict] = useState<{ currentRev: number } | null>(null);
   const [problem, setProblem] = useState<Problem | null>(null);
   const [saving, setSaving] = useState(false);
+  const [launch, setLaunch] = useState(false);
   const first = useRef<HTMLInputElement>(null);
   useEditRequest(doc, () => first.current?.focus());
 
@@ -159,7 +160,7 @@ function Overview({ mix, doc }: { mix: Mix; doc?: string }) {
           <NumberField label="Temperature" value={working.temperature} step={0.1} min={0.1} max={10} disabled={blocked} onChange={(v) => edit({ temperature: v })} />
           <ReplayShare value={working.replayShare} hasReplay={working.groups.some((g) => g.replay)} disabled={blocked} onChange={(v) => edit({ replayShare: v })} />
           <div className="ml-auto flex flex-wrap items-center gap-1">
-            <LaunchRun mix={mix} dirty={dirty} />
+            <LaunchRun dirty={dirty} open={launch} onOpen={() => setLaunch(true)} />
             <Button size="xs" variant="outline" disabled={!dirty || saving} onClick={discard}>
               Discard
             </Button>
@@ -195,6 +196,8 @@ function Overview({ mix, doc }: { mix: Mix; doc?: string }) {
           </div>
         ) : null}
       </section>
+
+      {launch ? <RunLaunch mix={mix} onClose={() => setLaunch(false)} /> : null}
 
       <Preview mix={mix} working={local ?? {}} dirty={dirty} />
     </div>
@@ -532,44 +535,120 @@ function ReplayShare({ value, hasReplay, disabled, onChange }: { value: number; 
 }
 
 /**
- * "Launch a run with this mix" (docs/spec/11-ui-panels.md, Mix, phase 2): runs the `runs.new` command once one is
- * registered (the run form arrives with the Run panel); until then the button waits with the reason.
+ * "Launch a run with this mix" (docs/spec/11-ui-panels.md, Mix, phase 2): opens the launch card, which asks for the
+ * estimate first (runs.new?dryRun=true) and starts the run only when the person confirms it.
  */
-function LaunchRun({ mix, dirty }: { mix: Mix; dirty: boolean }) {
+function LaunchRun({ dirty, open, onOpen }: { dirty: boolean; open: boolean; onOpen: () => void }) {
   const cmd = useCommand("runs.new");
-  const [error, setError] = useState<string | null>(null);
   const reason = !cmd ? "Arrives with runs" : dirty ? "Save the mix first: a run trains on a saved revision" : cmd.enabled === true ? undefined : cmd.enabled;
   const button = (
-    <Button
-      size="xs"
-      variant="outline"
-      disabled={!!reason}
-      onClick={() => {
-        setError(null);
-        runCommand("runs.new", { mix: { id: mix.id, rev: mix.rev } }).catch((err: unknown) => setError(errorMessage(err)));
-      }}
-      data-command="runs.new"
-    >
+    <Button size="xs" variant="outline" disabled={!!reason} aria-expanded={open} onClick={onOpen} data-command="runs.new">
       <Play aria-hidden />
       Launch a run with this mix
     </Button>
   );
+  if (!reason) return button;
   return (
-    <>
-      {reason ? (
-        <Tooltip>
-          <TooltipTrigger render={<span tabIndex={0} className="inline-flex rounded-md" aria-label={`Launch a run with this mix: ${reason}`} data-slot="launch-run" />}>{button}</TooltipTrigger>
-          <TooltipContent>{reason}</TooltipContent>
-        </Tooltip>
-      ) : (
-        button
-      )}
-      {error ? (
-        <span role="alert" className="text-xs text-destructive">
-          {error}
-        </span>
+    <Tooltip>
+      <TooltipTrigger render={<span tabIndex={0} className="inline-flex rounded-md" aria-label={`Launch a run with this mix: ${reason}`} data-slot="launch-run" />}>{button}</TooltipTrigger>
+      <TooltipContent>{reason}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+const hoursRange = (r: { value: number; low: number; high: number }, unit: string, f = (v: number) => (Math.round(v * 100) / 100).toString()) =>
+  `${f(r.value)} ${unit} (${f(r.low)}–${f(r.high)})`;
+const minutes = (s: number) => (s < 3600 ? `${Math.round(s / 60)} min` : `${Math.round((s / 3600) * 10) / 10} h`);
+
+/** The launch card: the estimate of a run on this mix revision, then Start run (runs.new). */
+function RunLaunch({ mix, onClose }: { mix: Mix; onClose: () => void }) {
+  const project = useProject();
+  // The run trains the project's base model (the wizard's choice), not the instance default.
+  const base = useQuery({ ...projectsGetOptions({ path: { p: project ?? "" } }), enabled: !!project }).data?.baseModel?.versionId;
+  const [steps, setSteps] = useState("");
+  const [estimate, setEstimate] = useState<RunEstimate | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ error: boolean; text: string } | null>(null);
+  const body = (): RunNew => ({ mix: mix.id, mixRevision: mix.rev, ...(base ? { baseModel: base } : {}), ...(Number(steps) > 0 ? { steps: Math.round(Number(steps)) } : {}) });
+  const act = async (dryRun: boolean) => {
+    if (!project) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const res = await runCommand("runs.new", { project, body: body(), dryRun });
+      if ("approvalId" in res) setMessage({ error: false, text: `The run waits for an approval (${res.approvalId}); it starts when a person approves it in Approvals.` });
+      else if ("basis" in res) setEstimate(res);
+      else {
+        openDocument(`run:${res.id}`);
+        onClose();
+      }
+    } catch (err) {
+      setMessage({ error: true, text: errorMessage(err) });
+    } finally {
+      setBusy(false);
+    }
+  };
+  useEffect(() => {
+    void act(true);
+    // the estimate is asked for once when the card opens; Estimate again re-asks with the edited steps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return (
+    <section aria-labelledby="mix-launch" className="flex flex-col gap-2 rounded-md border bg-tool p-3 text-xs" data-slot="run-launch">
+      <div className="flex items-center gap-2">
+        <h3 id="mix-launch" className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+          New run · {mix.name} rev {mix.rev}
+        </h3>
+        <Button size="xs" variant="ghost" className="ml-auto" onClick={onClose}>
+          Close
+        </Button>
+      </div>
+      <label className="flex items-center gap-2">
+        <span className="text-muted-foreground">Steps</span>
+        <Input type="number" min={1} className="h-6 w-28 text-xs tabular-nums" placeholder={estimate ? String(estimate.steps) : "default"} value={steps} onChange={(e) => setSteps(e.target.value)} />
+        <Button size="xs" variant="outline" disabled={busy} onClick={() => void act(true)}>
+          Estimate again
+        </Button>
+      </label>
+      {estimate ? (
+        <dl className="grid grid-cols-[8rem_1fr] gap-x-3 gap-y-0.5" data-slot="run-estimate">
+          <dt className="text-muted-foreground">GPU-hours</dt>
+          <dd className="tabular-nums">{hoursRange(estimate.gpuHours, "GPU-h")}</dd>
+          <dt className="text-muted-foreground">Duration</dt>
+          <dd className="tabular-nums">{hoursRange(estimate.durationSeconds, "", minutes)}</dd>
+          <dt className="text-muted-foreground">Steps</dt>
+          <dd className="tabular-nums">
+            {estimate.steps} × {Math.round(estimate.secondsPerStep * 100) / 100} s ({estimate.basis === "measured" ? "measured by calibration" : "from the estimate table"})
+          </dd>
+          <dt className="text-muted-foreground">Card</dt>
+          <dd>
+            {estimate.card.host} #{estimate.card.index} · {estimate.card.cardClass}, cap {estimate.card.memoryCapGb} GB
+          </dd>
+          <dt className="text-muted-foreground">Data</dt>
+          <dd className="tabular-nums">{Math.round(estimate.data.hours * 100) / 100} h</dd>
+          <dt className="text-muted-foreground">Today's budget</dt>
+          <dd className={estimate.budget.withinDailyBudget ? undefined : "text-status-warning-foreground"}>
+            {estimate.budget.remainingGpuHours !== undefined ? `${Math.round(estimate.budget.remainingGpuHours * 100) / 100} of ${estimate.budget.gpuHoursPerProjectPerDay} GPU-h left` : `${estimate.budget.gpuHoursPerProjectPerDay} GPU-h per day`}
+            {estimate.budget.withinDailyBudget ? "" : " — over today's budget"}
+          </dd>
+          <dt className="text-muted-foreground">Source</dt>
+          <dd className="text-muted-foreground">{estimate.source}</dd>
+        </dl>
+      ) : busy ? (
+        <p className="text-muted-foreground">Estimating…</p>
       ) : null}
-    </>
+      <div className="flex gap-1">
+        <Button size="xs" disabled={busy || !estimate} onClick={() => void act(false)} data-command="runs.new">
+          <Play aria-hidden />
+          Start run
+        </Button>
+      </div>
+      {message ? (
+        <p role={message.error ? "alert" : "status"} className={message.error ? "text-destructive" : "text-muted-foreground"}>
+          {message.text}
+        </p>
+      ) : null}
+    </section>
   );
 }
 

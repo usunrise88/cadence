@@ -12,8 +12,10 @@ R13): every save is a new revision, and a run records the revision it trained on
 hours per language, source (dataset version) or group as a bar chart and a table, with the share of samples each
 language and group gets — computed from dataset-version metadata, without reading audio or using a GPU. While you edit,
 the preview follows your unsaved values (`mixes.preview`, nothing is saved) and says so; the chart has a table view with
-CSV copy. **Launch a run with this mix** starts the run form once runs arrive (phase 2); until then it says why it waits,
-and a mix with unsaved changes must be saved first.
+CSV copy. **Launch a run with this mix** opens the launch card: the estimate first (`runs.new?dryRun=true`: GPU-hours and
+duration with their range, steps × seconds per step and whether that is measured or from the table, the card, the
+data hours, today's budget), an optional step budget, then **Start run**, which opens the new Run document. A mix with
+unsaved changes must be saved first; an agent's run over budget waits for an approval.
 
 An agent's edit does not change the mix: it lands as a **draft** — the dashed accent outline above the table, with
 the agent's badge (for example "opencode · session 9"), the changes on hover, and **Accept** and **Revert**. While an
@@ -46,7 +48,7 @@ must exist and be frozen; a replay share needs a replay group; a mix needs a gro
   revision for another Save. Nothing is ever overwritten silently.
 - `mixes.new` — New mix… (palette): a name, a target dataset version and an optional replay one.
 - `mixes.preview` — the preview without saving: the panel calls it while you edit; agents use it before editing.
-- `runs.new` — Launch a run with this mix (arrives with the Run panel).
+- `runs.new` — Launch a run with this mix: a dry run for the estimate, then the run on this revision.
 - `drafts.accept` — Accept an agent's draft: it becomes the next revision, attributed to you, with the draft as its
   cause. A draft made on an older revision is stale (`412 draft-stale`): revert it or ask the agent to redo the edit.
 - `drafts.revert` — Revert (discard) the draft; the mix stays as it is.

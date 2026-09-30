@@ -5,11 +5,16 @@ import { datasetsListQueryKey, defaultsGetQueryKey } from "@/api/gen/@tanstack/r
 import type { Defaults, Mix, MixPreview } from "@/api/gen/types.gen";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { PanelContext } from "@/shell/panel/context";
+import { registerTrainingCommands } from "@/shell/commands/training";
+import { commands } from "@/shell/registries";
 import { MixPanel, previewRows } from "./MixPanel";
 
 const runCommand = vi.fn();
 vi.mock("@/shell/panel/commands", async (orig) => ({ ...(await orig<object>()), runCommand: (...a: unknown[]) => runCommand(...a) }));
-vi.mock("@/shell/panel/actions", async (orig) => ({ ...(await orig<object>()), useProject: () => "demo" }));
+// ECharts needs a canvas (browser tests cover the chart); a stand-in keeps the spec it was given.
+vi.mock("@/shell/charts", () => ({ AnalyticsChart: (p: { spec: { title: string } }) => <figure data-title={p.spec.title} /> }));
+const openDocument = vi.fn();
+vi.mock("@/shell/panel/actions", async (orig) => ({ ...(await orig<object>()), useProject: () => "demo", openDocument: (d: string) => openDocument(d) }));
 
 const preview: MixPreview = {
   totalHours: 12,
@@ -102,5 +107,30 @@ describe("mix preview", () => {
     const launch = screen.getByRole("button", { name: "Launch a run with this mix" });
     expect(launch).toHaveProperty("disabled", true);
     expect(document.querySelector('[data-slot="launch-run"]')!.getAttribute("aria-label")).toContain("Arrives with runs");
+  });
+
+  it("launches a run: the estimate first, then the run opens", async () => {
+    if (!commands.get("runs.new")) registerTrainingCommands();
+    runCommand.mockResolvedValueOnce({
+      basis: "table",
+      plusMinus: 0.5,
+      gpuHours: { value: 0.8, low: 0.4, high: 1.2 },
+      durationSeconds: { value: 3000, low: 1500, high: 4500 },
+      secondsPerStep: 1,
+      steps: 3000,
+      card: { host: "staging", index: 0, cardClass: "blackwell-48gb", memoryCapGb: 24 },
+      data: { hours: 12 },
+      budget: { gpuHoursPerProjectPerDay: 8, remainingGpuHours: 8, withinDailyBudget: true },
+      source: "defaults.yaml estimates.training",
+    });
+    wrap();
+    fireEvent.click(screen.getByRole("button", { name: "Launch a run with this mix" }));
+    await waitFor(() => expect(runCommand).toHaveBeenCalledWith("runs.new", { project: "demo", body: { mix: "mix_1", mixRevision: 1 }, dryRun: true }));
+    const est = await screen.findByText(/0.8 GPU-h/);
+    expect(est.closest('[data-slot="run-estimate"]')!.textContent).toContain("from the estimate table");
+    runCommand.mockResolvedValueOnce({ id: "run_new" });
+    fireEvent.click(screen.getByRole("button", { name: "Start run" }));
+    await waitFor(() => expect(runCommand).toHaveBeenLastCalledWith("runs.new", { project: "demo", body: { mix: "mix_1", mixRevision: 1 }, dryRun: false }));
+    await waitFor(() => expect(openDocument).toHaveBeenCalledWith("run:run_new"));
   });
 });

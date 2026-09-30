@@ -43,3 +43,5 @@ export { departuresOf, recommended, type ParamSchema, type Values } from "@/shel
 export { AUGMENT_DIR, AUGMENTATION_PROFILE_SCHEMA, isAugmentationProfile, newProfile, parseProfile, writeProfile } from "@/shell/forms/augmentation";
 export { focusJob, focusPipelineRun, useFocusedJob, useFocusedPipelineRun, type FocusedJob } from "@/shell/training/focus";
 export { DAY_LABEL, DAYS, formatDays, formatWindows, windowError } from "@/shell/training/windows";
+export { runIdOfDoc, runLabel } from "@/shell/training/runs";
+export { useActiveRun } from "@/shell/training/useActiveRun";

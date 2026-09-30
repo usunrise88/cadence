@@ -17,7 +17,13 @@ const sdk = vi.hoisted(() => ({
   mixesPreview: vi.fn(),
   recipesEdit: vi.fn(),
   recipesNew: vi.fn(),
+  runsNew: vi.fn(),
+  runsResume: vi.fn(),
+  runsStage: vi.fn(),
+  checkpointsAverage: vi.fn(),
 }));
+const openDocument = vi.hoisted(() => vi.fn());
+vi.mock("@/shell/panel/actions", async (orig) => ({ ...(await orig<object>()), openDocument }));
 vi.mock("@/api/gen/sdk.gen", async (orig) => ({ ...(await orig<object>()), ...sdk }));
 
 beforeAll(() => {
@@ -64,5 +70,20 @@ describe("training commands", () => {
 
   it("refuses to run from the palette without arguments", async () => {
     await expect(run("jobs.cancel", undefined)).rejects.toThrow(/from its panel/);
+  });
+
+  it("run commands: dry runs by query, the run's revision as If-Match, the stage form without a body", async () => {
+    await run("runs.new", { project: "demo", body: { mix: "mix_1" }, dryRun: true });
+    expect(sdk.runsNew.mock.calls[0]![0]).toMatchObject({ path: { p: "demo" }, body: { mix: "mix_1" }, query: { dryRun: true } });
+    expect(sdk.runsNew.mock.calls[0]![0].headers["If-Match"]).toBeUndefined();
+    await run("runs.resume", { entity: { id: "run_1", name: "r", state: "failed", rev: 3 } });
+    expect(sdk.runsResume.mock.calls[0]![0]).toMatchObject({ path: { id: "run_1" }, headers: { "If-Match": '"3"' } });
+    await run("runs.stage", { run: { id: "run_1", rev: 3 }, body: { peakLr: 0.0001 } });
+    expect(sdk.runsStage.mock.calls[0]![0]).toMatchObject({ body: { peakLr: 0.0001 }, headers: { "If-Match": '"3"' } });
+    expect(await run("runs.stage", { entity: { id: "run_1", name: "r", state: "done", rev: 3 } })).toBeUndefined();
+    expect(openDocument).toHaveBeenCalledWith("run:run_1");
+    expect(sdk.runsStage).toHaveBeenCalledTimes(1);
+    await run("checkpoints.average", { runId: "run_1", body: { checkpoints: ["ckp_a", "ckp_b"] } });
+    expect(sdk.checkpointsAverage.mock.calls[0]![0]).toMatchObject({ path: { id: "run_1" }, body: { checkpoints: ["ckp_a", "ckp_b"] } });
   });
 });

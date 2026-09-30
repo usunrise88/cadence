@@ -93,7 +93,7 @@ test.describe("shell", () => {
     expect(after.top - before.top).toBe(10);
     await page.keyboard.press("F6");
     await page.keyboard.press("Alt+w");
-    await expect(page.locator("[data-tab]")).toHaveCount(6); // Training: project, library, chat, inspector, help, getting started, logs; one closed
+    await expect(page.locator("[data-tab]")).toHaveCount(8); // Training: project, library, chat, checkpoints, inspector, help, getting started, metrics, logs; one closed
   });
 
   test("popout: panel, theme, menus and return to grid", async ({ page, request }) => {

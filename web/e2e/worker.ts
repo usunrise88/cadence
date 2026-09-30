@@ -34,6 +34,46 @@ const DATASET_IMPORT: StepKindDescriptor = {
   help: "steps.dataset-import",
 };
 
+// The test fixture family (control-plane/internal/pipelines/pipelinestest "training fixtures"): its train role, so a
+// training run can start on the seeded base model (e2e/stack.sh seed-training) and this worker can lease its step.
+const xc = (def: unknown, description: string, range: object) => ({ default: def, description, source: "Cadence recommendation (test fixture)", range });
+const FX_TRAIN: StepKindDescriptor = {
+  version: "1",
+  role: "train",
+  params: {
+    type: "object",
+    required: ["steps"],
+    properties: {
+      steps: { type: "integer", minimum: 1, "x-cadence": { defaultRef: "training.steps", ...xc(3000, "Optimiser steps", { min: 1, max: 200000 }) } },
+      peak_lr: { type: "number", default: 0.0002, "x-cadence": xc(0.0002, "Peak learning rate", { min: 1e-7, max: 1 }) },
+      seed: { type: "integer", default: 0, "x-cadence": xc(0, "Seed", { min: 0, max: 2147483647 }) },
+    },
+  },
+  consumes: { base: "base_model", data: "mix" },
+  produces: { checkpoint: "checkpoint", state: "training-state" },
+  resources: { gpu: true, gpus: 1, memoryGb: 24, jobKind: "training" },
+  help: "steps.fx-train",
+};
+const FAMILY = {
+  name: "fixture-family",
+  version: "1",
+  title: "Fixture family (tests)",
+  framework: "none",
+  architecture: "none",
+  latencyProfiles: [{ name: "offline", latencyMs: 0 }],
+  roles: { train: "fx_train" },
+};
+
+/** A train-stage recipe of the fixture family: one train step (the calibration is seeded). */
+export const FIXTURE_TRAIN_STAGE = `name: train-stage
+description: One stage of the fixture family (e2e)
+inputs: { mix: mix, base: base_model }
+steps:
+  - id: train
+    kind: fx_train@1
+    in: { base: $inputs.base, data: $inputs.mix }
+`;
+
 export class ScriptedWorker {
   private readonly ctx: APIRequestContext;
   readonly worker: Worker;
@@ -47,7 +87,7 @@ export class ScriptedWorker {
     const token = readFileSync(TOKEN_FILE, "utf8").trim();
     const ctx = await playwrightRequest.newContext({ baseURL: API_URL, extraHTTPHeaders: { Authorization: `Bearer ${token}` } });
     const res = await ctx.post("/api/worker-registrations", {
-      data: { host: "staging", instance: `e2e-${process.pid}`, runtime: { name: "e2e", version: "1" }, stepKinds: { dataset_import: DATASET_IMPORT } },
+      data: { host: "staging", instance: `e2e-${process.pid}`, runtime: { name: "e2e", version: "1" }, stepKinds: { dataset_import: DATASET_IMPORT, fx_train: FX_TRAIN }, modelFamilies: [FAMILY] },
     });
     expect(res.status(), await res.text()).toBeLessThan(300);
     return new ScriptedWorker(ctx, (await res.json()) as Worker);
@@ -86,6 +126,12 @@ export class ScriptedWorker {
   async log(lease: Lease, lines: { level?: "debug" | "info" | "warn" | "error"; msg: string }[]): Promise<void> {
     const body = lines.map((l) => JSON.stringify({ t: new Date().toISOString(), level: l.level ?? "info", msg: l.msg })).join("\n");
     const res = await this.ctx.post(`/api/worker-leases/${lease.id}/worker-logs`, { data: body, headers: { "Content-Type": "application/x-ndjson" } });
+    expect(res.status(), await res.text()).toBeLessThan(300);
+  }
+
+  async metrics(lease: Lease, points: { name: string; step: number; value: number }[]): Promise<void> {
+    const at = new Date().toISOString();
+    const res = await this.ctx.post(`/api/worker-leases/${lease.id}/worker-metrics`, { data: { points: points.map((p) => ({ ...p, wallTime: at })) } });
     expect(res.status(), await res.text()).toBeLessThan(300);
   }
 

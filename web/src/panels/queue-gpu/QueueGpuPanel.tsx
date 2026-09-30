@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { EmptyState, PanelToolbar, StatusChip } from "@/shell/entity/primitives";
 import { TimeSeriesChart, type TimeSeries } from "@/shell/charts";
-import { errorMessage, focusJob, focusPipelineRun, formatWindows, openPanelById, runCommand, useProject, useTopic, type PanelProps } from "@/shell/panel";
+import { errorMessage, focusJob, focusPipelineRun, formatWindows, openDocument, openPanelById, runCommand, useProject, useTopic, type PanelProps } from "@/shell/panel";
 import { appendTelemetry, cardKey, formatDuration, groupEntries, reorderPriority, seedTelemetry, splitMemory, trainingSlot, type Sample, type Telemetry } from "./model";
 
 // Queue & GPU (docs/spec/11-ui-panels.md "Panel catalogue"): the step queue per card — waiting, paused, running and
@@ -372,6 +372,11 @@ function EntryRow({ e, slugOf, queue }: { e: QueueEntry; slugOf: Map<string, str
             }}
           >
             Pipeline run
+          </Button>
+        ) : null}
+        {e.runId ? (
+          <Button size="xs" variant="ghost" onClick={() => openDocument(`run:${e.runId}`)}>
+            Run
           </Button>
         ) : null}
       </div>

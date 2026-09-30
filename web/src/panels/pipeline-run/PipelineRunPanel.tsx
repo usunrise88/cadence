@@ -144,6 +144,11 @@ function RunView({ id }: { id: string }) {
             <OpenNewWindow aria-hidden />
             Open pipeline file
           </Button>
+          {run.runId ? (
+            <Button size="xs" variant="outline" onClick={() => openDocument(`run:${run.runId}`)}>
+              Open run
+            </Button>
+          ) : null}
           {run.state === "running" ? (
             <Button size="xs" variant={confirm ? "destructive" : "ghost"} disabled={busy} onClick={() => (confirm ? void cancel() : setConfirm(true))} data-command="pipelineRuns.cancel">
               <Xmark aria-hidden />
