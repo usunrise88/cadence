@@ -177,6 +177,21 @@ export function Palette({ prefix, onClose, onSwitchProject }: { prefix: string; 
           ) : null}
           <CommandList className="max-h-96">
             <CommandEmpty>{text ? (entitySearch && search.isFetching ? "Searching…" : "No matches.") : "Type to search."}</CommandEmpty>
+            {cmds.length > 0 ? (
+              <CommandGroup heading="Commands">
+                {cmds.map((c) => {
+                  const ok = commands.isEnabled(c, ctx);
+                  return (
+                    <CommandItem key={c.id} value={c.id} disabled={ok !== true} onSelect={() => run(c.id)} title={ok === true ? undefined : ok}>
+                      {c.icon ? <c.icon aria-hidden /> : null}
+                      <span>{c.title}</span>
+                      <span className="text-xs text-muted-foreground">{c.id}</span>
+                      {c.keys?.[0] ? <CommandShortcut>{chordLabel(c.keys[0])}</CommandShortcut> : null}
+                    </CommandItem>
+                  );
+                })}
+              </CommandGroup>
+            ) : null}
             {entitySearch
               ? (search.data?.groups ?? []).map((g) =>
                   debounced.length > 1 && g.items.length > 0 ? (
@@ -224,21 +239,6 @@ export function Palette({ prefix, onClose, onSwitchProject }: { prefix: string; 
                     <span className="truncate text-xs text-muted-foreground">{v.query}</span>
                   </CommandItem>
                 ))}
-              </CommandGroup>
-            ) : null}
-            {cmds.length > 0 ? (
-              <CommandGroup heading="Commands">
-                {cmds.map((c) => {
-                  const ok = commands.isEnabled(c, ctx);
-                  return (
-                    <CommandItem key={c.id} value={c.id} disabled={ok !== true} onSelect={() => run(c.id)} title={ok === true ? undefined : ok}>
-                      {c.icon ? <c.icon aria-hidden /> : null}
-                      <span>{c.title}</span>
-                      <span className="text-xs text-muted-foreground">{c.id}</span>
-                      {c.keys?.[0] ? <CommandShortcut>{chordLabel(c.keys[0])}</CommandShortcut> : null}
-                    </CommandItem>
-                  );
-                })}
               </CommandGroup>
             ) : null}
             {switchable.length > 0 ? (
