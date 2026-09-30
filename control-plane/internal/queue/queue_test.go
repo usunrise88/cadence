@@ -87,6 +87,35 @@ func TestAvailability(t *testing.T) {
 	}
 }
 
+// A window naming no time zone follows the instance time zone (policies.timezone) once resolved through InZone; an
+// explicit zone is kept.
+func TestWindowsInInstanceZone(t *testing.T) {
+	ws := compute.Windows{"training": {
+		{Days: []string{"wed"}, Start: "22:00", End: "08:00"},
+		{Days: []string{"sun"}, Start: "10:00", End: "11:00", Timezone: "UTC"},
+	}}
+	berlin := ws.InZone("Europe/Berlin")
+	if berlin["training"][0].Timezone != "Europe/Berlin" || berlin["training"][1].Timezone != "UTC" {
+		t.Fatalf("InZone = %+v", berlin)
+	}
+	if ws["training"][0].Timezone != "" {
+		t.Fatal("InZone changed its receiver")
+	}
+	// Wednesday 21:00 UTC is 23:00 in Berlin (UTC+2 in September): the window resolved to Berlin is open (until
+	// 08:00 Berlin, 06:00 UTC); read as UTC it would not open before 22:00.
+	at := time.Date(2026, 9, 30, 21, 0, 0, 0, time.UTC)
+	if open, _, _ := ws.Availability("training", at); open {
+		t.Fatal("an unresolved window reads as UTC: 21:00 is before 22:00")
+	}
+	open, _, closes := berlin.Availability("training", at)
+	if !open || !closes.Equal(time.Date(2026, 10, 1, 6, 0, 0, 0, time.UTC)) {
+		t.Fatalf("window in the instance zone: open %v closes %v", open, closes)
+	}
+	if compute.Windows(nil).InZone("Europe/Berlin") != nil {
+		t.Fatal("no windows stay no windows")
+	}
+}
+
 func TestValidateWindows(t *testing.T) {
 	bad := compute.ValidateWindows(compute.Windows{
 		"training": {{Days: []string{"mon", "funday"}, Start: "25:00", End: "24:00", Timezone: "Mars/Olympus"}},

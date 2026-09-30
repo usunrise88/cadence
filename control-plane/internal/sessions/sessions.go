@@ -111,6 +111,9 @@ type Budget struct {
 	Turns         int   `json:"turns"`
 	Tokens        int64 `json:"tokens"`
 	TokensPerTurn int64 `json:"tokensPerTurn"`
+	// GPUHours is what the session's spending commands may use on GPU cards before one waits for an approval
+	// (budgets.agent_gpu_hours_per_session; the server meters it, internal/runs.Meter).
+	GPUHours float64 `json:"gpuHours,omitempty"`
 }
 
 // Use is what a session has spent so far (as the agent host counts it).

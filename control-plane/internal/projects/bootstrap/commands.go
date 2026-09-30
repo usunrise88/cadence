@@ -48,6 +48,7 @@ type Wizard struct {
 	Private                 *bool
 	GPUHoursPerDay          *float64
 	AgentTokensPerDay       *int64
+	QueuePriority           *int
 }
 
 // Plan is a wizard with every default applied and every choice checked.
@@ -112,6 +113,9 @@ func (s *Service) PlanProject(ctx context.Context, q storage.Querier, w Wizard) 
 	}
 	if w.AgentTokensPerDay != nil {
 		budgets.AgentTokensPerDay = *w.AgentTokensPerDay
+	}
+	if w.QueuePriority != nil {
+		budgets.QueuePriority = *w.QueuePriority
 	}
 	profile := projects.AgentProfile{
 		Driver: or(w.Driver, d.Wizard.Driver.Value), PermissionPreset: or(w.PermissionPreset, d.Wizard.PermissionPreset.Value),

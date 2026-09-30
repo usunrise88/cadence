@@ -4,7 +4,7 @@
 # the control-plane binary and packaged with the worker. Every value carries a description, a source and, where it
 # applies, a safe range; a value without a published source is a "Cadence recommendation" re-checked after the spikes.
 # Keys are addressed as <section>.<key> (x-cadence.defaultRef: training.steps). Bump `version` on every change.
-version: 7
+version: 8
 
 # The project wizard's Recommended mode (docs/spec/02-domain-projects-registry.md "Project wizard").
 wizard:
@@ -91,12 +91,24 @@ budgets:
     description: A turn that uses more input plus output tokens than this is cancelled and the session pauses (runaway check)
     source: docs/spec/05-agents.md "Budgets and runaway protection"; Cadence recommendation for the value
     range: { min: 1000, max: 100000000 }
+  agent_gpu_hours_per_session:
+    value: 4
+    unit: GPU-h
+    description: GPU-hours one agent session's commands may spend (lease time on GPU cards) before a spending command waits for a person's approval
+    source: docs/spec/05-agents.md "Guardrails" (GPU job within the session budget allowed, over budget approval); Cadence recommendation for the value (half the project's daily budget)
+    range: { min: 0, max: 192 }
   manual_test_gpu_hours_per_project_per_day:
     value: 1
     unit: GPU-h
     description: GPU-hours of manual transcription tests per project per day
     source: docs/spec/08-resolutions.md R47–R49 (Cadence recommendation)
     range: { min: 0, max: 24 }
+  queue_priority_per_project:
+    value: 0
+    unit: priority
+    description: A project's queue priority; waiting step jobs start by project priority (higher first), then the job's own priority, then first come
+    source: docs/spec/02-domain-projects-registry.md "Budgets" (the queue interleaves projects by priority)
+    range: { min: -100, max: 100 }
 
 # The three session clocks of R5.
 timeouts:
@@ -143,9 +155,25 @@ training:
     description: Cards per run; gang leases of several cards are deferred
     source: docs/spec/08-resolutions.md R44
     range: { min: 1, max: 1 }
+  keep_top_k:
+    value: 3
+    unit: checkpoints
+    description: Checkpoints per run kept in its top k by validation WER (the ones listed as kept and offered for averaging)
+    source: Cadence recommendation (NeMo's checkpoint callback keeps the best k by the monitored metric; averaging the best few is the usual practice)
+    range: { min: 1, max: 50 }
+  pipeline:
+    value: train-stage
+    description: The recipe a run executes — a pipeline of the project repository whose steps include the model family's train role
+    source: docs/spec/03-pipelines-defaults.md "Pipelines as built" (the train-stage starter)
 
 # R12, table path: what an estimate answers before runs.calibrate has measured anything (phase 2).
 estimates:
+  measured_plus_minus:
+    value: 0.15
+    unit: fraction
+    description: Relative uncertainty of a measured estimate when the calibration reports no spread of its own
+    source: Cadence recommendation (step times vary with the bucket drawn; re-check against spike A3's timed steps)
+    range: { min: 0, max: 1 }
   bytes_per_audio_hour:
     value: 115200000
     unit: bytes

@@ -28,20 +28,25 @@ from cadence_toy.steps.transcribe import TranscribeParams, TranscribeStep
 from cadence_worker.cas import Store
 from cadence_worker.steps.base import StepInputError
 from cadence_worker.steps.context import StepContext
+from cadence_worker.steps.dataset_import import DatasetImportParams, records, write_dataset
 
 FIXTURES = Path(__file__).resolve().parents[1] / "cadence_toy" / "fixtures"
 
 
 @pytest.fixture
 def dataset(tmp_path: Path) -> tuple[Path, Store]:
-    store = Store(tmp_path / "cas")
-    lines = [json.dumps({"source": {"name": "fixtures"}})]
-    for row in map(json.loads, (FIXTURES / "manifest.jsonl").read_text().splitlines()):
-        h, _ = store.put_file(FIXTURES / row["audio"])
-        lines.append(json.dumps({"audio": h, "text": row["text"]}))
-    p = tmp_path / "dataset.jsonl"
-    p.write_text("\n".join(lines) + "\n")
-    return p, store
+    """The fixtures imported by dataset_import (folder-csv) into the directory artifact the steps read."""
+    params = DatasetImportParams(
+        format="folder-csv",
+        path=str(FIXTURES),
+        source_name="fixtures",
+        licence="CC0-1.0",
+        locale="und",
+        split_rule="source",
+    )
+    out = tmp_path / "dataset"
+    write_dataset(params, records(params), out)
+    return out, Store(tmp_path / "cas")
 
 
 def context(tmp: Path, store: Store, events: list[dict[str, Any]]) -> StepContext:
@@ -171,8 +176,28 @@ def test_averaging_needs_two(tmp_path: Path) -> None:
         )
 
 
+def test_the_dataset_is_read_from_the_import_directory(dataset: tuple[Path, Store]) -> None:
+    data, _ = dataset
+    utts = read_dataset(data)
+    assert [u.text for u in utts][:2] == ["a bad cab", "dead beef"]
+    assert all(u.audio.startswith("b3:") and u.split == "train" for u in utts)
+
+
 def test_a_dataset_without_utterances_is_an_input_error(tmp_path: Path) -> None:
-    p = tmp_path / "d.jsonl"
-    p.write_text('{"source": {}}\n')
-    with pytest.raises(StepInputError):
-        read_dataset(p, lambda h: tmp_path / h)
+    (tmp_path / "dataset.json").write_text('{"format": "cadence.dataset/1"}')
+    (tmp_path / "manifest.jsonl").write_text("")
+    with pytest.raises(StepInputError, match="no utterances"):
+        read_dataset(tmp_path)
+
+
+def test_a_dataset_file_or_escaping_path_is_an_input_error(tmp_path: Path) -> None:
+    f = tmp_path / "d.jsonl"
+    f.write_text('{"audio": "b3:00", "text": "a"}\n')
+    with pytest.raises(StepInputError, match="directory"):
+        read_dataset(f)
+    d = tmp_path / "d"
+    d.mkdir()
+    (d / "dataset.json").write_text('{"format": "cadence.dataset/1"}')
+    (d / "manifest.jsonl").write_text('{"audio": "../x.wav", "text": "a"}\n')
+    with pytest.raises(StepInputError, match="inside the artifact"):
+        read_dataset(d)

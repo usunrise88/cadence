@@ -91,7 +91,8 @@ python -m cadence_worker.conformance --runtime nemo-speech   # a pack's own imag
 ```
 
 The suite checks the schemas (complete `x-cadence`, help articles, declared profiles, every required role mapped to a
-published kind that declares it), then runs calibrate → train → stop → resume → average → transcribe (every latency
+published kind that declares it), then imports the pack's fixtures (a `folder-csv` folder with `metadata.csv`) with
+`dataset_import` and runs calibrate → train → stop → resume → average → transcribe (every latency
 profile; partial events for streaming ones) → score through the real harness path with a local store and no control
 plane. Export and parity join in phase 5.
 

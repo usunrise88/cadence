@@ -40,7 +40,7 @@ class CalibrateStep:
         use_one_thread()
         p = CalibrateParams.model_validate(params.model_dump())
         torch.manual_seed(0)
-        train, _ = splits(read_dataset(inputs["data"], ctx.blob))
+        train, _ = splits(read_dataset(inputs["data"]))
         tok = CharTokenizer()
         model = TinyCTC()
         opt = torch.optim.Adam(model.parameters(), lr=1e-3)

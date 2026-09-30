@@ -18,6 +18,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/help"
 	"github.com/usunrise88/cadence/control-plane/internal/obs"
 	"github.com/usunrise88/cadence/control-plane/internal/policy"
+	"github.com/usunrise88/cadence/control-plane/internal/runs"
 	"github.com/usunrise88/cadence/control-plane/internal/secrets"
 )
 
@@ -27,7 +28,11 @@ var testMasterKey = [secrets.KeySize]byte{1, 2, 3, 4, 5, 6, 7, 8}
 // newTestServer wires a server like main does; pool may be nil for tests that never reach the database.
 func newTestServer(t *testing.T, pool *pgxpool.Pool, hub *events.Hub, metrics *obs.Metrics, opts ...func(*Config)) *Server {
 	t.Helper()
-	engine, err := policy.Embedded(policy.StubBudget{GPUHoursPerDay: 8})
+	var budget policy.Budget = policy.StubBudget{GPUHoursPerDay: 8}
+	if pool != nil {
+		budget = runs.Meter{Pool: pool}
+	}
+	engine, err := policy.Embedded(budget)
 	if err != nil {
 		t.Fatal(err)
 	}

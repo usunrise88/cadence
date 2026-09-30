@@ -20,13 +20,13 @@ export function formatDays(days: AvailabilityWindow["days"]): string {
   return runs.map((r) => (r.length >= 3 ? `${DAY_LABEL[r[0]!]}–${DAY_LABEL[r[r.length - 1]!]}` : r.map((i) => DAY_LABEL[i]).join(", "))).join(", ");
 }
 
-/** "training: Mon–Fri 20:00–08:00 (next day) UTC" per job kind; empty when every kind may run any time. */
+/** "training: Mon–Fri 20:00–08:00 (next day) (instance time)" per job kind; empty when every kind may run any time. */
 export function formatWindows(w: AvailabilityWindows | undefined): string[] {
   if (!w) return [];
   const out: string[] = [];
   for (const [kind, list] of Object.entries(w)) {
     if (!list?.length) continue;
-    const parts = list.map((x) => `${formatDays(x.days)} ${x.start}–${x.end}${x.end !== "24:00" && x.end <= x.start ? " (next day)" : ""} ${x.timezone ?? "UTC"}`);
+    const parts = list.map((x) => `${formatDays(x.days)} ${x.start}–${x.end}${x.end !== "24:00" && x.end <= x.start ? " (next day)" : ""} ${x.timezone ?? "(instance time)"}`);
     out.push(`${kind}: ${parts.join("; ")}`);
   }
   return out;

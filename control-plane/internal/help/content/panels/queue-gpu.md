@@ -14,7 +14,7 @@ queue shared by all projects. The panel shows it per card:
 | Card header | Card name, host and card class, the host's health (from the worker's reports), and **Training slot**: the job holding the card's one training slot, or "free" |
 | Memory bar | The card's memory: **resident services** (processes outside Cadence, such as the vLLM service on the staging card) and **Cadence**, with the line where Cadence's memory cap starts |
 | Charts | Memory (used by every process, and Cadence's share) and utilisation over the last 30 minutes, live; each has a table view with CSV copy |
-| Availability | The card's availability windows per job kind ("training: Mon–Fri 20:00–08:00 (next day) UTC"), or "any time" |
+| Availability | The card's availability windows per job kind ("training: Mon–Fri 20:00–08:00 (next day) Europe/Berlin"; a window without a time zone follows the instance time zone), or "any time" |
 | Jobs on the card | Leased jobs: running, or stopping (cancelled, paused, or its window closed) |
 | Waiting for a card | Queued jobs in the order the scheduler starts them: priority (higher first), then first in, first out; paused jobs last |
 

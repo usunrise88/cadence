@@ -11,8 +11,9 @@ import (
 )
 
 // Window is one availability window of a card for a job kind (R19): the days it opens on, when it opens and closes
-// (HH:MM; an end at or before the start closes the next day; 24:00 is midnight) and its IANA time zone (UTC when
-// empty). Its JSON form is the contract's AvailabilityWindow.
+// (HH:MM; an end at or before the start closes the next day; 24:00 is midnight) and its IANA time zone (empty: the
+// instance time zone, policies.timezone — see InZone; UTC when nothing resolved it). Its JSON form is the contract's
+// AvailabilityWindow.
 type Window struct {
 	Days     []string `json:"days"`
 	Start    string   `json:"start"`
@@ -23,6 +24,25 @@ type Window struct {
 // Windows maps a job kind to the windows in which jobs of that kind may run on a card. A kind without an entry may
 // run any time.
 type Windows map[string][]Window
+
+// InZone is ws with tz — the instance time zone (policies.timezone) — for every window that names none. The
+// scheduler resolves windows through it before checking them; ws itself is not changed.
+func (ws Windows) InZone(tz string) Windows {
+	if ws == nil {
+		return nil
+	}
+	out := make(Windows, len(ws))
+	for kind, list := range ws {
+		cp := slices.Clone(list)
+		for i := range cp {
+			if cp[i].Timezone == "" {
+				cp[i].Timezone = tz
+			}
+		}
+		out[kind] = cp
+	}
+	return out
+}
 
 // Days in Window.Days, in time.Weekday order.
 var weekdays = []string{"sun", "mon", "tue", "wed", "thu", "fri", "sat"}

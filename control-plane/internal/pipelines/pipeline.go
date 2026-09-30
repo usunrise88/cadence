@@ -25,7 +25,36 @@ var (
 	kindRe   = regexp.MustCompile(`^([a-z][a-z0-9_]{0,62})@([0-9A-Za-z][0-9A-Za-z._-]{0,19})$`)
 	portRe   = regexp.MustCompile(`^[a-z][a-z0-9_]{0,62}$`)
 	artTypRe = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,62}$`)
+	// A step input name is a consumed input, or <consumed>.<n> when one input receives several artifacts
+	// (checkpoints.0, checkpoints.1 for an average step; docs/spec/03 "Step contract").
+	stepInRe = regexp.MustCompile(`^([a-z][a-z0-9_]{0,62})(\.(0|[1-9][0-9]{0,2}))?$`)
 )
+
+// ConsumedName is the consumed input a step input name feeds: checkpoints for checkpoints.1, name itself otherwise.
+func ConsumedName(in string) string {
+	if m := stepInRe.FindStringSubmatch(in); m != nil {
+		return m[1]
+	}
+	return in
+}
+
+// acceptsInstead lists the artifact types a consumer accepts in place of the one it declares (R44: a checkpoint is
+// a model of its family, so a step that initialises from a base_model also starts from a checkpoint; the step
+// reads its input's type to tell them apart).
+var acceptsInstead = map[string][]string{"base_model": {"checkpoint"}}
+
+// Accepts reports whether an artifact of type got may feed an input that declares type want.
+func Accepts(want, got string) bool {
+	if want == got {
+		return true
+	}
+	for _, t := range acceptsInstead[want] {
+		if t == got {
+			return true
+		}
+	}
+	return false
+}
 
 // ValidName reports whether n is a pipeline name.
 func ValidName(n string) bool { return nameRe.MatchString(n) }
@@ -183,8 +212,8 @@ func (p Pipeline) Check(file string) error {
 			path := fmt.Sprintf("steps[%d].in.%s", i, name)
 			w, ok := ParseWire(s.In[name])
 			switch {
-			case !portRe.MatchString(name):
-				errs.Add(path, "%q is not an input name", name)
+			case !stepInRe.MatchString(name):
+				errs.Add(path, "%q is not an input name (a name, or name.<n> when one input takes several artifacts)", name)
 			case !ok:
 				errs.Add(path, "%q must be $inputs.<name> or <step>.<output>", s.In[name])
 			case w.Input != "":

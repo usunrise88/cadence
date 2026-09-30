@@ -12,7 +12,7 @@ describe("availability windows", () => {
   it("formats windows per job kind, marking a close after midnight", () => {
     expect(formatWindows(undefined)).toEqual([]);
     expect(formatWindows({ training: [{ days: ["mon", "tue", "wed", "thu", "fri"], start: "20:00", end: "08:00" }], eval: [] })).toEqual([
-      "training: Mon–Fri 20:00–08:00 (next day) UTC",
+      "training: Mon–Fri 20:00–08:00 (next day) (instance time)",
     ]);
     expect(formatWindows({ export: [{ days: ["sat"], start: "00:00", end: "24:00", timezone: "Europe/Berlin" }] })).toEqual(["export: Sat 00:00–24:00 Europe/Berlin"]);
   });

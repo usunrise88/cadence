@@ -47,7 +47,6 @@ export function WindowsEditor({
             days: ["mon", "tue", "wed", "thu", "fri"],
             start: "20:00",
             end: "08:00",
-            timezone: "UTC",
           },
         },
       ]),
@@ -120,7 +119,7 @@ export function WindowsEditor({
             <Input
               className="h-6 w-36 text-xs"
               aria-label="Time zone"
-              placeholder="UTC"
+              placeholder="instance time zone"
               value={r.window.timezone ?? ""}
               onChange={(e) =>
                 set(i, {

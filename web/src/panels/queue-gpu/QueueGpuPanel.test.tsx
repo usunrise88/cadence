@@ -92,7 +92,7 @@ describe("Queue & GPU", () => {
     const card = container.querySelector('[data-card="staging#0"]') as HTMLElement;
     expect(within(card).getByText(/Training slot/).textContent).toContain("demo · tally");
     expect(card.querySelector('[data-slot="memory"]')!.textContent).toContain("Cadence");
-    expect(card.textContent).toContain("training: Mon–Fri 20:00–08:00 (next day) UTC");
+    expect(card.textContent).toContain("training: Mon–Fri 20:00–08:00 (next day) (instance time)");
     expect(within(card).getByText("40 %")).toBeTruthy();
     const waiting = screen.getByRole("list", { name: "Waiting jobs" });
     expect([...waiting.querySelectorAll("[data-job]")].map((e) => e.getAttribute("data-job"))).toEqual(["job_a", "job_b", "job_p"]);

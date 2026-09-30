@@ -151,7 +151,7 @@ describe("compute", () => {
     await waitFor(() =>
       expect(runCommand).toHaveBeenCalledWith("compute.edit", {
         host,
-        body: { cards: [{ index: 0, windows: { training: [{ days: ["mon"], start: "20:00", end: "08:00", timezone: "UTC" }] } }] },
+        body: { cards: [{ index: 0, windows: { training: [{ days: ["mon"], start: "20:00", end: "08:00" }] } }] },
       }),
     );
   });

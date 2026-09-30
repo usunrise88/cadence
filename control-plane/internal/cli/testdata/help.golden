@@ -23,6 +23,7 @@ Entities:
   backups        get list new verify
   baseModels     get list
   branches       accept compare get list revert
+  checkpoints    average get list
   collections    get list
   compute        edit get list
   credentials    list new revoke
@@ -33,6 +34,7 @@ Entities:
   help           get search
   jobLogs        list
   jobs           cancel edit get list pause resume wait
+  metrics        get
   mixes          edit get list new preview
   modelFamilies  get list
   notificationRules edit list
@@ -44,7 +46,7 @@ Entities:
   queueEntries   list
   recipes        edit get list new
   registry       search
-  runs           new
+  runs           calibrate get list new resume stage
   runtimes       get list
   secrets        list new
   sources        archive edit get list
