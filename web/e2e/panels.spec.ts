@@ -33,6 +33,8 @@ test.describe("approvals", () => {
   test("an automation's gated request appears live, is approved with Enter and runs", async ({ page, request, playwright, baseURL }) => {
     const slug = await newProject(request, "Approvals");
     await openWorkspace(page, slug, "Ops");
+    // Chat leads Ops' right column (11 "Default workspaces"); Approvals is the next tab.
+    await page.locator('[data-tab="approvals"]').click();
     const panel = page.locator('[data-testid="approvals-pending-count"]');
     await expect(panel).toBeVisible();
 
