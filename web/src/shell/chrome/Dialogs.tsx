@@ -1,14 +1,17 @@
 import { useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { commandHeaders, ProblemError } from "@/api/client";
-import { projectsGetOptions, projectsListQueryKey } from "@/api/gen/@tanstack/react-query.gen";
-import { projectsEdit, projectsNew } from "@/api/gen/sdk.gen";
+import { datasetsListOptions, projectsGetOptions, projectsListQueryKey } from "@/api/gen/@tanstack/react-query.gen";
+import { mixesNew, projectsEdit, projectsNew } from "@/api/gen/sdk.gen";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { chordLabel } from "@/shell/commands/keymap";
 import { commands } from "@/shell/registries";
 import { notify } from "@/shell/notifications/store";
+import { docRef } from "@/shell/entity/manifest";
+import { openDocument } from "@/shell/panel/actions";
+import { useShell } from "@/shell/state";
 import { PortalContainerContext } from "@/lib/portal";
 import { useDialogs, useFocusedDocument, type DialogRequest } from "./dialogs";
 import { TwoFactorDialog } from "@/shell/auth/TwoFactorDialog";
@@ -35,6 +38,8 @@ function DialogSwitch({ onSwitchProject }: { onSwitchProject: (slug: string) => 
       return <Palette prefix={open.prefix} onClose={close} onSwitchProject={onSwitchProject} />;
     case "newProject":
       return <NewProjectDialog onClose={close} onCreated={onSwitchProject} />;
+    case "newMix":
+      return <NewMixDialog onClose={close} />;
     case "editProject":
       return <EditProjectDialog slug={open.slug} onClose={close} />;
     case "confirm":
@@ -87,7 +92,7 @@ function NewProjectDialog({ onClose, onCreated }: { onClose: () => void; onCreat
     setBusy(true);
     setError(null);
     try {
-      await projectsNew({ body: { name, slug: effectiveSlug, ...(description ? { description } : {}) }, headers: commandHeaders() });
+      await projectsNew({ body: { name, slug: effectiveSlug, ...(description ? { description } : {}) }, headers: commandHeaders(), throwOnError: true });
       await qc.invalidateQueries({ queryKey: projectsListQueryKey() });
       notify({ level: "success", title: `Project “${name}” created` });
       onClose();
@@ -182,6 +187,87 @@ function EditProjectDialog({ slug, onClose }: { slug: string; onClose: () => voi
               Cancel
             </Button>
             <Button type="submit">Save</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** mixes.new: a name, the target dataset version and, optionally, a replay one; the rest starts from defaults.yaml. */
+function NewMixDialog({ onClose }: { onClose: () => void }) {
+  const project = useShell((s) => s.project);
+  const { data } = useQuery(datasetsListOptions({ query: { state: "frozen" } }));
+  const datasets = data?.items ?? [];
+  const [name, setName] = useState("");
+  const [target, setTarget] = useState("");
+  const [replay, setReplay] = useState("");
+  const [error, setError] = useState<unknown>(null);
+  const [busy, setBusy] = useState(false);
+  const chosenTarget = target || datasets[0]?.id || "";
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!project) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const groups = [{ name: "target", datasets: [chosenTarget] }, ...(replay ? [{ name: "replay", replay: true, datasets: [replay] }] : [])];
+      const { data: mix } = await mixesNew({ path: { p: project }, body: { name, groups }, headers: commandHeaders(), throwOnError: true });
+      notify({ level: "success", title: `Mix “${mix.name}” saved` });
+      onClose();
+      openDocument(docRef("mix", mix.id));
+    } catch (err) {
+      setError(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const errs = fieldErrors(error);
+  const select = "h-7 rounded-md border bg-background px-2 text-[13px]";
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <form onSubmit={submit} className="flex flex-col gap-3">
+          <DialogHeader>
+            <DialogTitle>New mix</DialogTitle>
+            <DialogDescription>Groups of frozen dataset versions with weights; weights, temperature and replay share start from defaults.yaml.</DialogDescription>
+          </DialogHeader>
+          <Field label="Name" error={errs.name}>
+            <Input value={name} onChange={(e) => setName(e.target.value)} required autoFocus name="name" />
+          </Field>
+          <Field label="Target dataset version" error={errs["groups/0/datasets/0"]}>
+            <select className={select} value={chosenTarget} onChange={(e) => setTarget(e.target.value)} required name="target">
+              {datasets.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name} · {d.version}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Replay dataset version (optional)" error={errs["groups/1/datasets/0"]}>
+            <select className={select} value={replay} onChange={(e) => setReplay(e.target.value)} name="replay">
+              <option value="">None</option>
+              {datasets
+                .filter((d) => d.id !== chosenTarget)
+                .map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name} · {d.version}
+                  </option>
+                ))}
+            </select>
+          </Field>
+          {error && Object.keys(errs).length === 0 ? (
+            <p role="alert" className="text-xs text-destructive">
+              {error instanceof Error ? error.message : String(error)}
+            </p>
+          ) : null}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={busy || !name || !chosenTarget || !project}>
+              Save mix
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>

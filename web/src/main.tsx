@@ -7,6 +7,7 @@ import { router } from "@/app/router";
 import { registerEntities } from "@/entities";
 import { registerPanels } from "@/panels";
 import { registerBuiltinCommands } from "@/shell/commands/builtin";
+import { registerEntityCommands } from "@/shell/commands/entities";
 import { registerSpikePanels } from "@/spikes/stubs";
 import { dockApi } from "@/shell/dock/store";
 import { commands, events, panels } from "@/shell/registries";
@@ -21,6 +22,7 @@ registerPanels();
 const spikes = new URLSearchParams(location.search).get("spikes");
 if (spikes !== null) registerSpikePanels(spikes === "always" ? "always" : "onlyWhenVisible");
 registerBuiltinCommands();
+registerEntityCommands();
 installTheme(document);
 
 const queryClient = new QueryClient({

@@ -5,6 +5,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { cn } from "@/lib/utils";
 import { commands } from "@/shell/registries";
 import { commandContext } from "@/shell/state";
+import { ActorBadge } from "./actor";
+import { PresenceChip } from "./drafts";
 import { verbIconComponents } from "./icons";
 import {
   LOOP_STEPS,
@@ -41,22 +43,7 @@ export function StatusChip({ state }: { state: string }) {
   );
 }
 
-/** Marks changes an agent made; click jumps to the tool call in Chat (phase 1). */
-export function ActorBadge({ actor }: { actor?: EntityData["actor"] }) {
-  if (!actor) return null;
-  const agent = actor.kind === "agent";
-  return (
-    <span
-      data-slot="actor-badge"
-      className={cn(
-        "inline-flex h-5 items-center rounded px-1.5 text-xs",
-        agent ? "bg-agent text-agent-foreground" : "text-muted-foreground",
-      )}
-    >
-      {actor.name ?? actor.id}
-    </span>
-  );
-}
+export { ActorBadge };
 
 function commandIdFor(m: EntityManifest, v: EntityVerb): string {
   return `${m.apiEntity}.${v.verb}`;
@@ -137,7 +124,8 @@ export function EntityHeader({ manifest, entity }: { manifest: EntityManifest; e
         <h2 className="truncate text-sm font-semibold">{entity.name}</h2>
         {entity.version ? <span className="text-xs text-muted-foreground tabular-nums">{entity.version}</span> : null}
         <StatusChip state={entity.state} />
-        <ActorBadge actor={entity.actor} />
+        <ActorBadge actor={entity.actor} toolCallId={entity.toolCallId} />
+        {entity.presence ? <PresenceChip presence={entity.presence} /> : null}
         <div className="ml-auto flex shrink-0 items-center gap-1">
           <ActionBar manifest={manifest} entity={entity} />
           {primary ? <VerbButton m={manifest} v={primary} entity={entity} variant="default" /> : null}
