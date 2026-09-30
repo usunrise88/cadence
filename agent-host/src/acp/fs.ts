@@ -2,7 +2,7 @@
 // (its cwd plus any additional directories). Paths must be absolute; symlinks are resolved before the check so a
 // link inside the worktree cannot reach outside it.
 
-import { mkdir, readFile, realpath, writeFile } from "node:fs/promises";
+import { chown, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 
 export class OutsideWorkspaceError extends Error {
@@ -35,13 +35,23 @@ async function resolveExisting(path: string): Promise<string> {
   }
 }
 
-export class WorkspaceFs {
-  private constructor(private readonly roots: readonly string[]) {}
+// The Unix user files written for an agent belong to (R3: the host writes as root for an agent running as its
+// session user, so the agent can change the file afterwards).
+export interface FileOwner {
+  uid: number;
+  gid: number;
+}
 
-  static async create(roots: readonly string[]): Promise<WorkspaceFs> {
+export class WorkspaceFs {
+  private constructor(
+    private readonly roots: readonly string[],
+    private readonly owner?: FileOwner,
+  ) {}
+
+  static async create(roots: readonly string[], owner?: FileOwner): Promise<WorkspaceFs> {
     if (roots.length === 0) throw new Error("WorkspaceFs needs at least one root");
     for (const r of roots) if (!isAbsolute(r)) throw new Error(`workspace root must be absolute: ${r}`);
-    return new WorkspaceFs(await Promise.all(roots.map((r) => realpath(r))));
+    return new WorkspaceFs(await Promise.all(roots.map((r) => realpath(r))), owner);
   }
 
   async check(path: string): Promise<string> {
@@ -64,7 +74,17 @@ export class WorkspaceFs {
 
   async write(path: string, content: string): Promise<void> {
     const real = await this.check(path);
-    await mkdir(dirname(real), { recursive: true });
+    const created = await mkdir(dirname(real), { recursive: true });
     await writeFile(real, content, "utf8");
+    if (!this.owner) return;
+    const { uid, gid } = this.owner;
+    await chown(real, uid, gid);
+    // The directories mkdir made, from the deepest up to the first one it created.
+    if (created) {
+      for (let d = dirname(real); d.length >= created.length; d = dirname(d)) {
+        await chown(d, uid, gid);
+        if (d === created) break;
+      }
+    }
   }
 }

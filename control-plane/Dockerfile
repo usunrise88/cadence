@@ -34,6 +34,8 @@ RUN apt-get update \
 COPY --from=build /out/cadence /cadence
 # An empty /data owned by the runtime uid, so a fresh named volume starts writable.
 COPY --from=build --chown=65532:65532 /out/data /data
+# Where the agent host's token is kept (CADENCE_HOST_TOKEN_FILE): a volume only the control plane writes.
+COPY --from=build --chown=65532:65532 /out/data /host-credential
 ENV CADENCE_ADDR=0.0.0.0:8080 \
     CADENCE_DATA_DIR=/data
 USER 65532:65532
