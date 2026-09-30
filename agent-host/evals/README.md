@@ -32,7 +32,9 @@ the table is printed. Exit code 1 when a run failed, 2 when the harness could no
   `opencode acp`. Claude uses `CADENCE_LIVE_CLAUDE_MODEL` (default `sonnet`, the profile default) and the machine's
   Claude login (`~/.claude`, `CLAUDE_CODE_OAUTH_TOKEN`); opencode uses `CADENCE_LIVE_OPENCODE_MODEL` or the
   project's configured model (defaults.yaml `opencode_model`) with `opencode auth login`'s key, or a free
-  `opencode/*` model. A driver without a login is reported as an error, not run. Live runs cost tokens.
+  `opencode/*` model. `CADENCE_AGENT_CREDENTIALS=<dir>` uses an agent-credentials directory in the host's volume
+  layout (`claude/oauth-token`, `opencode/auth.json` + `opencode.json`) instead — the accounts connected in Settings →
+  Agents. A driver without a login is reported as an error, not run. Live runs cost tokens.
 
 ## The evals
 

@@ -45,6 +45,8 @@ function liveModel(d: EvalDriver): string | undefined {
 /** Why a live driver cannot run here (no login it could use), or undefined. */
 function missingCredentials(d: EvalDriver): string | undefined {
   const env = process.env;
+  const vol = env.CADENCE_AGENT_CREDENTIALS;
+  if (vol && existsSync(join(vol, d === "claude" ? "claude/oauth-token" : "opencode/auth.json"))) return undefined;
   if (d === "claude") {
     const dir = env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude");
     if (env.CLAUDE_CODE_OAUTH_TOKEN || env.ANTHROPIC_API_KEY || existsSync(join(dir, ".credentials.json"))) return undefined;

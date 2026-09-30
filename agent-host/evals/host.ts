@@ -34,6 +34,9 @@ export async function startHost(opts: { url: string; token: string; offline: boo
     capacity: 2,
     version: "evals",
     waitSeconds: 2,
+    // Live runs may use an agent-credentials directory (the stand's volume layout: claude/, opencode/) instead of the
+    // machine's own logins, the way the production host does.
+    ...(!opts.offline && process.env.CADENCE_AGENT_CREDENTIALS ? { credentials: process.env.CADENCE_AGENT_CREDENTIALS } : {}),
     ...(opts.offline ? { launch: (d) => ({ command: process.execPath, args: ["--import", TSX, SCRIPTED, d.name] }) } : {}),
   });
   const stop = new AbortController();
