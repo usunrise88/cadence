@@ -4,6 +4,7 @@ import { authGetOptions } from "@/api/gen/@tanstack/react-query.gen";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "@/shell/entity/primitives";
 import type { PanelProps } from "@/shell/panel";
+import { AgentsSection } from "./AgentsSection";
 import { AuditSection } from "./AuditSection";
 import { CataloguesSection } from "./CataloguesSection";
 import { ComputeSection } from "./ComputeSection";
@@ -13,11 +14,12 @@ import { SecretsSection } from "./SecretsSection";
 import { SecuritySection } from "./SecuritySection";
 
 // Settings (docs/spec/11-ui-panels.md "Panel catalogue"; admin only): registry-level configuration in sections —
-// compute, secrets, credentials, policies, catalogues, security and the audit log. Notification rules, the
-// Telegram bot and backup status join in later phases.
+// compute, agents (the agents' model accounts), secrets, credentials, policies, catalogues, security and the audit
+// log. Notification rules, the Telegram bot and backup status join in later phases.
 
 export const SECTIONS = [
   { id: "compute", label: "Compute", component: ComputeSection },
+  { id: "agents", label: "Agents", component: AgentsSection },
   { id: "secrets", label: "Secrets", component: SecretsSection },
   { id: "credentials", label: "Credentials", component: CredentialsSection },
   { id: "policies", label: "Policies", component: PoliciesSection },
