@@ -9,6 +9,7 @@ dependencies = ["httpx>=0.28,<1", "pydantic>=2.11,<3", "pyyaml>=6,<7"]
 
 [project.entry-points."cadence.steps"]
 echo = "cadence_worker.steps.echo:EchoStep"
+dataset_import = "cadence_worker.steps.dataset_import:DatasetImportStep"
 # nemotron_finetune = "cadence_worker.steps.nemotron_finetune:FinetuneStep"   # spike A3
 # export_onnx = "cadence_worker.steps.export_onnx:ExportOnnxStep"             # spike A3
 
