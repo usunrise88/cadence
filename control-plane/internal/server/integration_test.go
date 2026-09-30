@@ -448,6 +448,21 @@ func TestWorkspaces(t *testing.T) {
 	expectProblem(t, e.do("PUT", "/api/me/projects/nope/workspaces/x", layout, "Idempotency-Key", e.key()), 404, "not-found")
 	expectProblem(t, e.do("PUT", "/api/me/projects/wsp/workspaces/bad.name", layout, "Idempotency-Key", e.key()), 422, "validation-failed")
 
+	// Layout saves are preferences: the committed ones leave no audit row, the refused ones (412) still do.
+	saves := e.audit("operation=workspaces.set")
+	conflicts := 0
+	for _, it := range saves.Items {
+		if it.Outcome == "ok" {
+			t.Errorf("a committed workspaces.set was audited: %+v", it)
+		}
+		if it.Status == 412 {
+			conflicts++
+		}
+	}
+	if conflicts != 2 {
+		t.Errorf("audited workspaces.set attempts %+v, want the two 412s", saves.Items)
+	}
+
 	var page struct {
 		Items []struct {
 			Topic     string

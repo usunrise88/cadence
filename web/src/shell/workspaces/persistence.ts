@@ -6,11 +6,14 @@ import { openPanel } from "@/shell/dock/layout";
 import { panels } from "@/shell/registries";
 import { useSelection } from "@/shell/selection/store";
 import { notifyError } from "@/shell/notifications/store";
+import { createAutosaver } from "./autosave";
 import { isDefaultWorkspace, planDefaultLayout, type Placement } from "./defaults";
 import { isPlaceholderLayout, migrate, normalizeLayout, parseWorkspace, WORKSPACE_SCHEMA_VERSION, type PanelState, type SerializedLayout } from "./schema";
 
-// Workspaces are saved per user per project through the API, debounced 1 s after Dockview's layout-change event,
-// with If-Match on the revision. A losing tab (412) gets an inline notice instead of overwriting.
+// Workspaces are saved per user per project through the API, 2 s after the last layout change (a window being
+// dragged fires many), only when the layout differs from the stored one, and at once when the page is hidden or the
+// workspace is switched; with If-Match on the revision. A losing tab (412) gets an inline notice instead of
+// overwriting.
 
 type SyncState = {
   key: string | null; // `${project}/${name}`
@@ -22,6 +25,8 @@ type SyncState = {
   saving: boolean;
   lastRestoreMs: number | undefined;
   missingPanels: string[];
+  /** The serialized body the server holds for `key` (after a restore or a save); autosave skips when unchanged. */
+  savedSnapshot: string | undefined;
 };
 
 export const useWorkspaceSync = create<SyncState>(() => ({
@@ -33,9 +38,12 @@ export const useWorkspaceSync = create<SyncState>(() => ({
   saving: false,
   lastRestoreMs: undefined,
   missingPanels: [],
+  savedSnapshot: undefined,
 }));
 
-const SAVE_DEBOUNCE_MS = 1000;
+export const SAVE_QUIET_MS = 2000;
+/** Browsers cap keepalive request bodies at 64 KiB; a larger layout is sent as a normal request. */
+const KEEPALIVE_MAX_BYTES = 60_000;
 
 function nextFrame(): Promise<void> {
   return new Promise((r) => requestAnimationFrame(() => r()));
@@ -62,10 +70,18 @@ function pinsOf(api: DockviewApi): Record<string, PanelState> {
   return out;
 }
 
+type WorkspaceBody = { schemaVersion: number; layout: Record<string, unknown>; panels: Record<string, PanelState> };
+
+/** The request body for the layout on screen, serialized (the autosave compares these strings). */
+function serialize(api: DockviewApi): string {
+  const body: WorkspaceBody = { schemaVersion: WORKSPACE_SCHEMA_VERSION, layout: api.toJSON() as unknown as Record<string, unknown>, panels: pinsOf(api) };
+  return JSON.stringify(body);
+}
+
 /** Loads a workspace (or builds its default) into Dockview. Measures `cadence:restore` for the S4 budget. */
 export async function restoreWorkspace(api: DockviewApi, project: string, name: string): Promise<void> {
   const key = `${project}/${name}`;
-  useWorkspaceSync.setState({ key, restoring: true, conflict: false, rev: undefined, placeholder: false, missingPanels: [] });
+  useWorkspaceSync.setState({ key, restoring: true, conflict: false, rev: undefined, placeholder: false, missingPanels: [], savedSnapshot: undefined });
   let layout: SerializedLayout | null = null;
   let rev: number | undefined;
   let pinned: Record<string, PanelState> = {};
@@ -98,12 +114,14 @@ export async function restoreWorkspace(api: DockviewApi, project: string, name: 
   await nextFrame();
   performance.mark("cadence:restore:end");
   const m = performance.measure("cadence:restore", "cadence:restore:start", "cadence:restore:end");
-  useWorkspaceSync.setState({ restoring: false, rev, lastRestoreMs: m.duration });
+  if (useWorkspaceSync.getState().key !== key) return;
+  useWorkspaceSync.setState({ restoring: false, rev, lastRestoreMs: m.duration, savedSnapshot: serialize(api) });
 }
 
 export async function saveWorkspace(api: DockviewApi, project: string, name: string, opts: { force?: boolean } = {}): Promise<void> {
   const st = useWorkspaceSync.getState();
   if (st.key !== `${project}/${name}` || st.restoring) return;
+  const snapshot = serialize(api);
   let rev = st.rev;
   if (opts.force) {
     try {
@@ -112,17 +130,26 @@ export async function saveWorkspace(api: DockviewApi, project: string, name: str
       rev = undefined;
     }
   }
+  await put(project, name, snapshot, rev, false);
+}
+
+/** Stores a serialized workspace on `rev`; state updates are dropped when the shell has moved to another workspace. */
+async function put(project: string, name: string, snapshot: string, rev: number | undefined, urgent: boolean): Promise<void> {
+  const key = `${project}/${name}`;
+  const current = () => useWorkspaceSync.getState().key === key;
   useWorkspaceSync.setState({ saving: true });
   try {
     const res = await workspacesSet({
       path: { p: project, name },
-      body: { schemaVersion: WORKSPACE_SCHEMA_VERSION, layout: api.toJSON() as unknown as Record<string, unknown>, panels: pinsOf(api) },
+      body: JSON.parse(snapshot) as WorkspaceBody,
       headers: commandHeaders(rev),
+      // Page hidden or closing: let the request outlive the page.
+      keepalive: urgent && snapshot.length < KEEPALIVE_MAX_BYTES,
     });
-    useWorkspaceSync.setState({ rev: res.data?.rev, conflict: false, placeholder: false });
+    if (current()) useWorkspaceSync.setState({ rev: res.data?.rev, conflict: false, placeholder: false, savedSnapshot: snapshot });
   } catch (err) {
     if (err instanceof ProblemError && (err.status === 412 || err.status === 428)) {
-      useWorkspaceSync.setState({ conflict: true });
+      if (current()) useWorkspaceSync.setState({ conflict: true });
     } else {
       notifyError(`Workspace “${name}” was not saved`, err);
     }
@@ -131,23 +158,38 @@ export async function saveWorkspace(api: DockviewApi, project: string, name: str
   }
 }
 
-/** Debounced autosave on every layout change; returns the unsubscribe. */
+/**
+ * Autosave on layout and pin changes (quiet period, skip-unchanged, flush on page hide); returns the stop function,
+ * which saves a pending change before unsubscribing (a workspace switch or leaving the shell).
+ */
 export function startAutosave(api: DockviewApi, project: string, name: string): () => void {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const schedule = () => {
-    const st = useWorkspaceSync.getState();
-    if (st.restoring || st.conflict) return;
-    clearTimeout(timer);
-    timer = setTimeout(() => void saveWorkspace(api, project, name), SAVE_DEBOUNCE_MS);
-  };
-  const sub = api.onDidLayoutChange(schedule);
+  const key = `${project}/${name}`;
+  const saver = createAutosaver({
+    delayMs: SAVE_QUIET_MS,
+    snapshot: () => {
+      const st = useWorkspaceSync.getState();
+      return st.key === key && !st.restoring && !st.conflict ? serialize(api) : undefined;
+    },
+    saved: () => useWorkspaceSync.getState().savedSnapshot,
+    save: (snapshot, urgent) => put(project, name, snapshot, useWorkspaceSync.getState().rev, urgent),
+  });
+  const sub = api.onDidLayoutChange(() => saver.schedule());
   // A pin (a tool pinned to a document, Chat pinned to its agent session) is workspace state too.
   const offPins = useSelection.subscribe((s, prev) => {
-    if (s.pins !== prev.pins) schedule();
+    if (s.pins !== prev.pins) saver.schedule();
   });
+  const onHide = () => {
+    if (document.visibilityState === "hidden") void saver.flush(true);
+  };
+  const onPageHide = () => void saver.flush(true);
+  document.addEventListener("visibilitychange", onHide);
+  window.addEventListener("pagehide", onPageHide);
   return () => {
-    clearTimeout(timer);
+    void saver.flush();
+    saver.dispose();
     sub.dispose();
     offPins();
+    document.removeEventListener("visibilitychange", onHide);
+    window.removeEventListener("pagehide", onPageHide);
   };
 }

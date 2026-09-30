@@ -17,7 +17,7 @@ A tool panel for the admin account only (it opens floating; View → Open Settin
 | Policies | Default budgets: GPU-hours per project per day, agent turns per session |
 | Catalogues | Read-only: base models, instruction templates and permission presets in the registry |
 | Security | Two-factor sign-in (TOTP) for the admin account |
-| Audit log | Every command, denial and failed attempt with actor, outcome, rule and cause; filter by actor, operation and project |
+| Audit log | Every command, denial and failed attempt with actor, outcome, rule and cause; filter by actor, operation and project. Workspace layout saves are preferences, not commands: they are not listed (a refused save still is) |
 
 ## Place in the loop
 
