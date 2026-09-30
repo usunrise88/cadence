@@ -116,30 +116,41 @@ Phase 0 notes (what differs from the plan above):
 **Goal.** Claude Code and opencode run as supervised sessions inside a project worktree, act only through generated MCP
 tools, and every change they make reaches open panels live and attributed; gated actions stop at an approval.
 
-**Gate.** An agent session (both drivers) edits a mix through MCP; the open Mix panel shows the change as a draft
+**Gate — passed 2026-09-30** (branch `feat/phase-1-agent-loop`): A1, A2 and A4 `Status: done`, numbers in each spike's
+Result. Run on the real system (Postgres in Docker, `cadence serve`, the SPA on Vite, the agent host with tsx in its
+unprivileged mode), a fresh project from `projects.new` per run and the Mix panel open in Chromium. One prompt per
+session had the agent set a mix's temperature five times and ask for a training-run estimate. Commit → draft visible
+with the session badge, 20 edits per driver: Claude Code (claude-agent-acp, `sonnet`, the owner's subscription) p50 37 ms
+/ p95 56 ms; opencode (`opencode/big-pickle`, the free OpenCode Zen model — the owner's MiniMax key is not installed
+yet) p50 47 ms / p95 68 ms. The person's concurrent table edit got `412` and the conflict notice in 8 of 8 runs, with
+nothing overwritten. Every run ended with a `runs.new` dry-run estimate (0.83 GPU-h, basis table), every mutation was
+attributed to its session and tool call, and no permission request reached a person. Two host bugs were found and
+fixed on the way (the runaway rule, session cleanup; A4 Result).
+
+Original gate: an agent session (both drivers) edits a mix through MCP; the open Mix panel shows the change as a draft
 with the session badge within 300 ms; a concurrent UI edit gets a `412` conflict, not an overwrite (A4 acceptance);
 A1 and A2 acceptance met, including a dry-run estimate for a training run.
 
 Decide before starting:
-- [ ] **decide** → *R2* Session token never lands in git: env substitution / ACP `session/new`, config paths excluded (B1)
-- [ ] **decide** → *R3* Agent credential isolation: per-session `CLAUDE_CONFIG_DIR`, no host `~/.claude` in the agent's reach (B2)
-- [ ] **decide** → *R4* Network sandbox for the shell: container egress proxy vs Claude-only guardrail (B4)
-- [ ] **decide** → *R8* Reserved aliases (`baseline`, `production`) not settable via `aliases.set` (B3)
+- [x] **decide** → *R2* Session token never lands in git: env substitution / ACP `session/new`, config paths excluded (B1)
+- [x] **decide** → *R3* Agent credential isolation: per-session `CLAUDE_CONFIG_DIR`, no host `~/.claude` in the agent's reach (B2)
+- [x] **decide** → *R4* Network sandbox for the shell: container egress proxy vs Claude-only guardrail (B4)
+- [x] **decide** → *R8* Reserved aliases (`baseline`, `production`) not settable via `aliases.set` (B3)
 - [x] **decide** → *R6* Claude subscription for every session kind; opencode on MiniMax Token Plan (owner, 2026-09-29)
-- [ ] **decide** → *R5* Separate timeouts for idle-in-turn vs waiting-for-approval (C3)
-- [ ] **decide** → *R11* `defaults.yaml` location and loading — the wizard's Recommended mode and the budgets read it here,
+- [x] **decide** → *R5* Separate timeouts for idle-in-turn vs waiting-for-approval (C3)
+- [x] **decide** → *R11* `defaults.yaml` location and loading — the wizard's Recommended mode and the budgets read it here,
       and pipelines stop hard-coding defaults (C1)
-- [ ] **decide** → *R13* Mix: saved as a revision of a project entity or frozen as a version (C5) — before the Mix entity
+- [x] **decide** → *R13* Mix: saved as a revision of a project entity or frozen as a version (C5) — before the Mix entity
 
 Write before starting:
-- [ ] **spec** → *R7* Permission presets and the policy engine: the preset format, how the Guardrails table renders into
+- [x] **spec** → *R7* Permission presets and the policy engine: the preset format, how the Guardrails table renders into
       `.claude/settings.json` allow/deny/ask rules and opencode's `permission` block, and the rule format the policy
       engine uses to answer requests the table already decides
-- [ ] **spec** → *R9* Secret storage: where write-only values from `POST /secrets` live (the proposed default "compose env
+- [x] **spec** → *R9* Secret storage: where write-only values from `POST /secrets` live (the proposed default "compose env
       file" cannot be written from the UI), how jobs and bootstrap read them
 - [x] **spec** → *R10* The internal bare repository: where it lives, how the server clones and pushes, how a person reaches
       it (git over SSH/HTTP or not at all); GitHub repository creation with the stored token
-- [ ] **spec** → *R12* Estimate model: how `dryRun` computes GPU-hours, duration and data volume (calibration throughput ×
+- [x] **spec** → *R12* Estimate model: how `dryRun` computes GPU-hours, duration and data volume (calibration throughput ×
       steps, or a table in `defaults.yaml`) — needed by the phase-1 estimate-only dry run and A2
 - [x] **spec** → *R13* `mixes.edit`: the gate has an agent edit a mix, but the spec's tool catalogue has only `mixes.new` and
       `mixes.preview` (05); add the tool and its API operation
@@ -154,24 +165,24 @@ Identity and access (06 Authentication)
       file); a Caddy compose profile stays the option for hosts without a proxy of their own
 
 Registry core (completed in phase 4)
-- [ ] Collections and immutable versions named `YYYY-MM-DD.<sha>`, tags, aliases per project, adoption by reference,
+- [x] Collections and immutable versions named `YYYY-MM-DD.<sha>`, tags, aliases per project, adoption by reference,
       "used by"; registry events without `projectId`
-- [ ] Kinds needed now: base model (catalogue, pinned HF revision, its model family id — R41; the descriptor arrives
+- [x] Kinds needed now: base model (catalogue, pinned HF revision, its model family id — R41; the descriptor arrives
       with the worker in phase 2), dataset version (registered from fixtures so a mix has something to reference),
       template (instruction templates, permission presets, skills)
-- [ ] Compute entity (hosts, cards, memory caps, allowed job kinds) — Settings edits it now, the queue uses it in phase 2
-- [ ] Secrets entity (names only; values per the **spec** above)
-- [ ] Minimal `defaults.yaml` (wizard fields, budgets, the estimate table) + the `defaults://` resource; full
+- [x] Compute entity (hosts, cards, memory caps, allowed job kinds) — Settings edits it now, the queue uses it in phase 2
+- [x] Secrets entity (names only; values per the **spec** above)
+- [x] Minimal `defaults.yaml` (wizard fields, budgets, the estimate table) + the `defaults://` resource; full
       `x-cadence` coverage of step parameters follows in phase 2
-- [ ] Policies `GET/PATCH /policies` (default budgets now; retention, PII and cache quotas added in phases 4–5)
+- [x] Policies `GET/PATCH /policies` (default budgets now; retention, PII and cache quotas added in phases 4–5)
 
 MCP and approvals
-- [ ] MCP server (Streamable HTTP) generated from operations, curated descriptions, data-marked tool results
-- [ ] MCP resources: `project://summary`, `selection://current`, `help://{slug}`, `defaults://`
-- [ ] Approvals (project/registry scope, once / for session), policy engine; in-app notification history for them;
+- [x] MCP server (Streamable HTTP) generated from operations, curated descriptions, data-marked tool results
+- [x] MCP resources: `project://summary`, `selection://current`, `help://{slug}`, `defaults://`
+- [x] Approvals (project/registry scope, once / for session), policy engine; in-app notification history for them;
       a gated fixture command for integration tests until real gated commands arrive (over-budget runs in phase 2)
 - [x] Drafts on draftable kinds with Accept/Revert; presence ("agent editing"); audit log with `causedBy`
-- [ ] Training-run dry run ahead of phase 2: `runs.new?dryRun=true` returns an estimate from defaults and the compute
+- [x] Training-run dry run ahead of phase 2: `runs.new?dryRun=true` returns an estimate from defaults and the compute
       entity (A2 acceptance); the real run lands in phase 2. Its request carries `init: base | checkpoint` and `gpus`
       from the start (R44), so phase 2 does not change the shape
 
@@ -205,6 +216,27 @@ Panels: Chat, Agent sessions, Approvals, Agent settings, Settings (compute, secr
 Getting started, Project document, Mix (minimal), Recipe (read + session-branch diffs).
 
 Tests: integration for tokens, approvals, drafts, `412`; agent evals harness on a fixture project with both drivers.
+
+Phase 1 notes (what differs from the plan above):
+- The agent host speaks its own protocol, `hostSessions.claim|report|ask|decision` with a `cah_` credential
+  (`CADENCE_HOST_TOKEN_FILE`), and the session token is minted at claim, not at create (05 "Phase 1 as built").
+- MCP tool names are sanitised by the agents: `mixes.get` is `mcp__cadence__mixes_get` in Claude and
+  `cadence_mixes_get` in opencode; the renderer and the server map them back (A2).
+- `recipe.{path}` events come from pushes (a session's per-turn commit, UI commits, pushes to the internal repository),
+  not from a live worktree watcher; that watcher is still open. Session branches merge by `agentSessions.accept`
+  (fast-forward or a merge commit, `409 merge-conflict`) or auto-merge when clean at session end; the Chat's "Session
+  changes" shows the branch diff, not a three-way diff.
+- The gated command for tests is a real one: `aliases.set baseline` (R8) returns an approval.
+- The agent evals harness is not built: `agent-host/test/live.test.ts` (A1, `CADENCE_LIVE_AGENTS`) and the gate's
+  Playwright script stand in for it; phase 2 should turn the gate prompt into the first eval.
+- The owner's MiniMax model was not run: opencode ran on the free Zen model. `haiku` was too unreliable for the gate
+  prompt (subagents, a runaway pause), so Claude ran on the profile default `sonnet`.
+- Open after the gate: opencode's MCP calls carry no tool-use id, so the badge cannot land on the tool call in Chat;
+  in the development mode Claude reached the account's claude.ai connectors — check the `setup-token` mode before real
+  projects; Claude still raises a permission request per Cadence call (the preset answers it).
+- Owner actions before a compose deployment: `docker compose run --rm -it agent-host login claude`
+  (`claude setup-token` into the agent-credentials volume), `… login opencode` with the MiniMax Token Plan key, and
+  on the staging stand dropping basic auth from the Caddy site file once sign-in is live (Exposure, above).
 
 ---
 

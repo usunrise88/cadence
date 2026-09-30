@@ -29,7 +29,7 @@ docs/spec/      The specification (read before changing behaviour); docs/spikes/
                 control-plane/templates/skills/ and copied into project repos at bootstrap
 ```
 
-## Current state (phase 0 done; phase 1 next)
+## Current state (phases 0 and 1 done; phase 2 next)
 
 Work follows `ROADMAP.md`: six phases (0 Shell → 1 Agent loop → 2 Training → 3 Evaluation → 4 Data → 5 Deploy and
 flywheel), each closed by a gate. Pick work from the current phase; tick items there as they merge; don't start an
@@ -50,7 +50,27 @@ Phase 0 (shell) passed its gate on 2026-09-29: spikes S1–S4 are done with numb
 - **Web shell.** Dockview host + adapter, panel and entity registries, selection bus, command registry + palette,
   workspaces with migrations, SSE client, theme, Library / Inspector / Help / Project panels. Panels use only
   `@/shell/panel`, the entity primitives and `@/components/ui`; ESLint enforces it.
-- **Worker / agent host.** Step-kind contract with `x-cadence` and input hash; the agent host is still the A1 stub.
+- **Worker.** Step-kind contract with `x-cadence` and input hash.
+
+Phase 1 (agent loop) passed its gate on 2026-09-30: A1, A2 and A4 are done with numbers in `docs/spikes/`; Claude Code
+and opencode sessions edit a mix through MCP and the open Mix panel shows the draft with the session badge in
+p95 56–68 ms. What exists now (details in `ROADMAP.md` "Phase 1 notes" and `docs/spec/05-agents.md` "Phase 1 as built"):
+- **Identity.** First-start admin, Argon2id + TOTP, session cookie + `Cadence-Client: web` CSRF header, credentials
+  (`cdk_` API keys, `cst_` agent session tokens, `cah_` agent-host token), `cadence admin reset-password|host-token`.
+- **Registry and policy.** Collections/versions (`YYYY-MM-DD.<sha>`), adoption, aliases (`baseline` gated,
+  `production` reserved), compute, secrets (secretbox files, master key), `defaults.yaml` + `defaults://`, policies,
+  presets + policy engine (`internal/policy`), approvals, audit, River jobs, `runs.new?dryRun=true` estimate (table).
+- **Projects.** Wizard + `projects:bootstrap` (internal bare repo served over smart HTTP, or GitHub), agent profile,
+  notes, sync, archive, mixes with revisions and drafts/presence, search index, saved searches.
+- **MCP.** Streamable HTTP on `/mcp`, tools generated from the contract, data-marked results, four resources.
+- **Agent host.** One ACP client, drivers for claude-agent-acp and `opencode acp`, session manager (worktree on
+  `session/<id>`, commit + push per turn, budgets, runaway and stuck-turn clocks, permissions → preset → approvals),
+  per-session Unix users when root; `login` puts agent logins into the agent-credentials volume.
+- **Web.** Chat, Agent sessions, Approvals, Agent settings, Settings, Getting started, Project, Mix, Recipe panels;
+  context bridge (Ctrl/Cmd+I, `@kind:id` chips, attribution badge → tool call in Chat).
+Open from phase 1: the live worktree watcher (recipe events come from pushes), a three-way "Session changes" diff, the
+agent evals harness, opencode tool-call ids for the badge link, claude.ai connectors in Claude sessions (check the
+`setup-token` mode), the owner's MiniMax model (not yet run), dropping basic auth on the staging stand.
 
 Known spec conflicts and gaps: `docs/review/2026-09-29-spec-kickoff-review.md` (statuses updated); assumptions made
 while building are in `docs/spec/07-audit-risks-sources.md` "Open questions".
@@ -65,6 +85,18 @@ Gotchas:
 - Client-only commands are `view.<name>`; everything else is an API operationId.
 - Toolchain: Go 1.27, Node 22, TypeScript 6.0 (typescript-eslint does not support 7), Python 3.12 via `uv`.
 - Performance measurements run with Playwright tracing off; tracing alone drops frames.
+- e2e stacks use private ports (`E2E_PG_PORT`, `E2E_API_PORT`, `E2E_WEB_PORT`; defaults 55433/18081/5174); pick
+  your own when another worktree may be running one. Leftover `cadence-e2e-pg-*` containers are per port.
+- Agents sanitise MCP tool names: `mixes.get` is `mcp__cadence__mixes_get` (Claude) and `cadence_mixes_get`
+  (opencode); permission rules and the server's operation lookup use those forms (verbs never contain `_`).
+- The agent host authenticates with the `cah_` token the control plane writes to `CADENCE_HOST_TOKEN_FILE` at start
+  (a restart issues a new one and revokes the old). Run it locally with `CADENCE_URL`, `CADENCE_HOST_TOKEN_FILE`,
+  `CADENCE_HOST_DATA` and `CADENCE_SESSION_UIDS=off` (no root; Claude then uses your own login — development only).
+- `make gen` also regenerates the agent host's contract types (`agent-host/src/api/gen`, `npm run gen`).
+- Claude streams a tool call's arguments into a pending call that starts as `{}`: read arguments only once the call
+  has left `pending`. The agent runs in its own process group; the host ends the group before removing a session.
+- For live agent runs keep prompts tiny; Claude sessions use `sonnet` (`haiku` delegates to subagents and loops),
+  opencode the free `opencode/big-pickle` until the MiniMax key is installed.
 
 ## Commands
 
