@@ -25,6 +25,7 @@ import { useShell } from "@/shell/state";
 import { useTheme } from "@/shell/theme/store";
 import { DEFAULT_WORKSPACES } from "@/shell/workspaces/schema";
 import { applyPlan, defaultPlan, restoreWorkspace, saveWorkspace } from "@/shell/workspaces/persistence";
+import { registerApiCommands } from "./api";
 import type { Command } from "./registry";
 
 // Built-in commands. Window and view commands are client-only (`view.*`); project and workspace commands call
@@ -193,6 +194,7 @@ export function registerBuiltinCommands(): void {
     },
   ];
   for (const c of list) commands.register(c);
+  registerApiCommands();
 
   // One "Open <panel>" command per registered tool panel.
   for (const m of panels.all()) {

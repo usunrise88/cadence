@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Bell, HalfMoon, SunLight } from "iconoir-react";
+import { Bell, CheckCircle, HalfMoon, SunLight } from "iconoir-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -7,6 +7,7 @@ import { useSnap } from "@/shell/floating-snap/dockview-adapter";
 import { useHelp } from "@/shell/help/store";
 import type { ConnectionState } from "@/shell/live/events";
 import { useNotices } from "@/shell/notifications/store";
+import { usePendingApprovals } from "@/shell/approvals/cache";
 import { openPanel } from "@/shell/dock/layout";
 import { events } from "@/shell/registries";
 import { useTheme } from "@/shell/theme/store";
@@ -39,6 +40,7 @@ export function StatusBar() {
       <span title="The job queue arrives with the agent loop (phase 1)">Queue —</span>
       <span title="Agent sessions arrive in phase 1">Agent —</span>
       <div className="ml-auto flex items-center gap-1">
+        <ApprovalsBadge />
         <Button variant="ghost" size="xs" className="h-5 px-1.5 text-[11px] font-normal text-muted-foreground" onClick={() => useSnap.getState().setEnabled(!snap)} aria-pressed={snap}>
           Snap {snap ? "on" : "off"}
         </Button>
@@ -49,6 +51,26 @@ export function StatusBar() {
       </div>
       <LiveRegion />
     </footer>
+  );
+}
+
+/** Pending approvals; opens Approvals floating (docs/spec/11-ui-panels.md "Default workspaces"), or focuses it. */
+function ApprovalsBadge() {
+  const { data } = usePendingApprovals();
+  const n = data?.items.length ?? 0;
+  return (
+    <Button
+      variant="ghost"
+      size="xs"
+      data-testid="approvals-badge"
+      className={cn("h-5 gap-1 px-1.5 text-[11px] font-normal [&_svg]:size-3.5", n ? "text-status-warning-foreground" : "text-muted-foreground")}
+      aria-label={n ? `${n} pending approval${n === 1 ? "" : "s"} — open Approvals` : "No pending approvals — open Approvals"}
+      onClick={() => openPanel("approvals", { location: "floating" })}
+    >
+      <CheckCircle aria-hidden />
+      Approvals
+      {n ? <span className="min-w-4 rounded-full border border-status-warning px-1 text-center font-medium tabular-nums">{n}</span> : null}
+    </Button>
   );
 }
 
@@ -78,6 +100,11 @@ function NotificationHistory() {
                 <time className="ml-auto text-muted-foreground">{new Date(n.at).toLocaleTimeString()}</time>
               </div>
               {n.detail ? <p className="mt-1 text-muted-foreground">{n.detail}</p> : null}
+              {n.open ? (
+                <button type="button" className="mt-1 mr-3 text-primary underline-offset-2 hover:underline" onClick={() => openPanel(n.open!.panel)}>
+                  {n.open.label}
+                </button>
+              ) : null}
               {n.helpId ? (
                 <button
                   type="button"

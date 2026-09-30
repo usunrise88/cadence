@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { LogOut, User } from "iconoir-react";
+import { LogOut, Settings, User } from "iconoir-react";
 import { authGetOptions } from "@/api/gen/@tanstack/react-query.gen";
 import { authLogout } from "@/api/gen/sdk.gen";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { markSignedOut } from "@/shell/auth/session";
+import { openPanel } from "@/shell/dock/layout";
 import { notifyError } from "@/shell/notifications/store";
 import { useDialogs } from "./dialogs";
 
@@ -44,6 +45,12 @@ export function UserMenu() {
         <DropdownMenuGroup>
           <DropdownMenuLabel>Signed in as {name}</DropdownMenuLabel>
         </DropdownMenuGroup>
+        {actor.kind === "user" ? (
+          <DropdownMenuItem onClick={() => openPanel("settings")}>
+            <Settings aria-hidden className="size-3.5" />
+            Settings
+          </DropdownMenuItem>
+        ) : null}
         {actor.kind === "user" ? (
           <DropdownMenuItem onClick={() => useDialogs.getState().show({ kind: "twoFactor" })}>
             Two-factor authentication…

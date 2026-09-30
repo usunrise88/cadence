@@ -34,6 +34,11 @@ export type PanelManifest = {
   acceptsDrafts?: EntityKind[];
   /** Documents: the entity manifest that renders header, actions and next step. */
   entity?: EntityKind;
+  /**
+   * Default workspaces skip the panel while this answers false (Getting started once dismissed). Opening it by
+   * command still works.
+   */
+  inDefaults?: () => boolean;
   /** Help article id (`panels.<id>`); CI fails when the article is missing. */
   help: string;
   empty: ComponentType;

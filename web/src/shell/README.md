@@ -16,6 +16,7 @@ selection bus · workspaces · commands · agent bridge · chrome.
 | `live/` | One multiplexed SSE stream, topic patterns, per-frame coalescing, cache patching |
 | `chrome/` | Menu bar with project switcher and user menu, status bar with notification history and live region, palette, dialogs |
 | `auth/` | `AuthGate` (first start, sign-in, back to sign-in on any 401), the session helpers that reset the cache and the event stream, the two-factor dialog |
-| `theme/`, `help/`, `notifications/` | Theme mode (and popout injection), Help panel state, notices |
+| `approvals/` | `ApprovalCard` (the Approvals panel lists it, Chat embeds it), the approvals cache patching, `usePendingApprovals` / `useDecidedApprovals`, the palette's focused approval |
+| `theme/`, `help/`, `notifications/` | Theme mode (and popout injection), Help panel state, notices; `notifications/live.ts` turns approval, job and credential events into notification history and the polite live region |
 
 Agent bridge (Chat, attribution badges, drafts) arrives in phase 1 under `agent/`.
