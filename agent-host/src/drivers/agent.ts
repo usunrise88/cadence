@@ -183,12 +183,17 @@ export class Agent {
     return this.client.cancel(sessionId);
   }
 
+  // close ends the agent and every process it started (its process group), so the session's directories can go.
   async close(): Promise<void> {
     this.client.close();
     this.proc.kill();
     const timer = setTimeout(() => this.proc.kill("SIGKILL"), 5000);
     await this.proc.exited;
     clearTimeout(timer);
+    if (!(await this.proc.groupGone(5000))) {
+      this.proc.kill("SIGKILL");
+      await this.proc.groupGone(1000);
+    }
   }
 
   private emit(u: HostUpdate): void {

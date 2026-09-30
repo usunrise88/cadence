@@ -24,7 +24,10 @@ export interface AgentProcess {
   pid: number | undefined;
   exited: Promise<{ code: number | null; signal: NodeJS.Signals | null }>;
   stderr: () => string;
+  // Signals the agent's whole process group: the adapter, the CLI it spawned, and anything the agent started.
   kill: (signal?: NodeJS.Signals) => void;
+  // Resolves once no process of the group is left (after the agent itself exited), false on timeout.
+  groupGone: (timeoutMs: number) => Promise<boolean>;
 }
 
 const STDERR_KEEP = 64 * 1024;
@@ -52,6 +55,9 @@ export function launch(spec: LaunchSpec, tap?: MessageTap): AgentProcess {
     cwd: spec.cwd,
     env: spec.env,
     stdio: ["pipe", "pipe", "pipe"],
+    // Its own process group, so ending the session reaches every descendant: Claude's CLI outlives the adapter by
+    // a moment and wrote its MCP logs into the session's HOME after the host had removed it.
+    detached: true,
     ...(spec.uid !== undefined ? { uid: spec.uid } : {}),
     ...(spec.gid !== undefined ? { gid: spec.gid } : {}),
   });
@@ -76,7 +82,27 @@ export function launch(spec: LaunchSpec, tap?: MessageTap): AgentProcess {
     exited,
     stderr: () => stderr,
     kill: (signal = "SIGTERM") => {
+      if (child.pid !== undefined && signalGroup(child.pid, signal)) return;
       if (child.exitCode === null && child.signalCode === null) child.kill(signal);
     },
+    groupGone: async (timeoutMs) => {
+      if (child.pid === undefined) return true;
+      const until = Date.now() + timeoutMs;
+      while (signalGroup(child.pid, 0)) {
+        if (Date.now() >= until) return false;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      return true;
+    },
   };
+}
+
+// signalGroup sends a signal to the process group led by pid; false when no process of the group is left.
+function signalGroup(pid: number, signal: NodeJS.Signals | 0): boolean {
+  try {
+    process.kill(-pid, signal);
+    return true;
+  } catch {
+    return false;
+  }
 }
