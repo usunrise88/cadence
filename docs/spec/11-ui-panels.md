@@ -94,7 +94,7 @@ Version 1 has 33 panels: 13 documents that open in the centre and 20 tools that 
 | Run | Document | Config diff against the parent run, status, stage timeline, final metrics | Pause, resume, stop; resume from checkpoint; new stage from checkpoint with an explicit peak LR | `run.{id}.``status`, `run.{id}.``metrics` |
 | Eval report | Document | Matrix of languages and golden sets × latency profiles (`80ms`, `160ms`, `1120ms`; R43); WER/CER with delta to production and gate colour; charts: WER deltas with confidence intervals, S/D/I, duration and SNR buckets, latency to final, WER against latency (R53) | Open a cell in Diff; re-run; set as baseline; edit gate thresholds | `eval.{id}.progress` |
 | Dataset version | Document | Fingerprint, hours by language and source, applied filters, lineage; statistics charts: duration, characters per second, level and SNR, sample rates, speakers (R53) | Diff two versions; export to Shar | `entity.dataset_version.{id}`, `job.{id}` |
-| Mix | Document | Groups, weights, temperature, replay share; preview of hours per language | Save as version; launch a run with this mix | `entity.mix.{id}` (drafts arrive here) |
+| Mix | Document | Groups, weights, temperature, replay share; preview of hours per language; agents' drafts (dashed outline, diff on hover) and "agent editing" presence | Save (a new revision; 412 conflict notice with reload / reapply); accept or revert an agent draft; launch a run with this mix (phase 2) | `entity.mix.{id}` (drafts arrive here) |
 | Triage queue | Document | Disputed production utterances: audio with a channel switch, hypotheses from several models, consensus, the item's signals; an Annotate mode for annotation batches with an editable transcript, tags and a keyboard-first flow | Accept, correct, reject; send to the next dataset version | `triage.new` |
 | Model | Document | Checkpoint → ONNX → Triton repository; stage: shadow, canary, prod | Export; promote; roll back | `deploy.{id}` |
 | Recipe | Document | A recipe file (SDP config, pipeline, mix, training or eval YAML, augmentation profile) with its commit history; open session branches and their diffs against `main`; agent edits stream in as a live diff | Edit; accept or revert an agent draft; accept or discard session changes (three-way diff on conflict); commit | `recipe.{path}` |
@@ -164,7 +164,7 @@ Commands are the only way the UI changes anything: menus, buttons, shortcuts and
 | Cancel job | — | `POST /jobs/{id}:cancel` — inline confirm |
 | Run eval matrix | — | `POST /``projects/{p}/``evals` |
 | Set eval baseline | — | `PATCH /``projects/{p}/baseline — approval` |
-| Save mix as version | — | `POST /``projects/{p}/``mixes` |
+| New mix / Edit mix | — | `POST /projects/{p}/mixes` (`mixes.new`); `PATCH /mixes/{id}` (`mixes.edit`) — R13: a mix is saved as a revision, not a version |
 | Export dataset version to Shar | — | `POST /``projects/{p}/datasets/{id``}:export` |
 | Accept / correct / reject triage item | Enter / E / Backspace in Triage queue | `PATCH /triage/{id}` |
 | Export model to ONNX | — | `POST /models/{id}:export` |
@@ -226,7 +226,7 @@ The shell needs fourteen things from the Go control plane, all in the OpenAPI 3.
 | Live events | `GET /events?topics=…` (server-sent events) | Global `seq` as the event id; resume with `Last-Event-ID`; topic wildcards such as `run.123.*` |
 | Commands | `POST` / `PATCH` on resources; actions as `POST /{resource}/{id}:{verb}` | `Idempotency-Key` header, `If-Match` revision, `?dryRun=true` returns an estimate; long work returns `202 Accepted` with a job id |
 | Agent sessions | `POST /``projects/{p}/``agent-sessions` (kind, driver, model, prompt, references); `GET /agent-sessions/{id}/transcript`; `POST /agent-sessions/{id}/messages`; `:cancel`, `:pause`, `:resume`, `:merge`; `POST /projects/{p}/playbooks/{name}:run` | Messages carry text plus entity references; updates, state changes and budget use arrive on `agent.session.{id}`; session branches on `recipe.{path``}` |
-| Approvals and drafts | `GET /approvals?state=pending`; `POST /approvals/{id}:approve` or `:deny`; `GET /{kind}/{id}/drafts`; `POST /drafts/{id}:accept` or `:revert` | Approval scope: once or for the session. A gated command returns `202 Accepted` with the approval id and runs when approved |
+| Approvals and drafts | `GET /approvals?state=pending`; `POST /approvals/{id}:approve` or `:deny`; `GET /drafts?entityKind=&entityId=`; `POST /drafts/{id}:accept` or `:revert` | Approval scope: once or for the session. A gated command returns `202 Accepted` with the approval id and runs when approved |
 | Errors | Every endpoint | `application/problem+json`; a stale revision returns `412` with the current revision in the body |
 | Projects | `GET /projects`, `POST /projects`; every project-scoped path lives under `/projects/{p}/…`; workspaces at `PUT /me/projects/{p}/workspaces/{name}` | Events carry projectId; the client filters the stream to the current project |
 | Mounts and materialisation | `GET` / `POST /mounts`; `POST /mounts/{id}:scan`; `POST /projects/{p}/datasets/{id}:materialize`, `:evict` | Health on mount.{id}; materialisation progress on job.{id} |

@@ -63,7 +63,6 @@ Open questions:
 - [ ] Unknown `/api` path answers 404 `not-found`, wrong method 405 `method-not-allowed` (a tenth error type with its article); the review proposed 400 for both
 - [x] Training from scratch or a second framework (k2/icefall) in v1? — Only the seams, in phase 2; training from scratch, packs beyond NeMo and spike F1 are deferred (owner, 2026-09-29; R44, R45)
 - [x] Keep uploads and microphone recordings? — No: a transcription is a manual test and stores nothing (owner, 2026-09-29; R47)
-<<<<<<< HEAD
 - [ ] `project://summary` needs the connection's project, which the spec does not say how to name. Phase 1 reads a
   `Cadence-Project: <slug>` header that the agent host sends next to `Authorization` in ACP `session/new` →
   `mcpServers` (R2); once `cst_` tokens are project-bound, the token's scope decides and the header must agree.
@@ -90,9 +89,26 @@ Open questions:
       the staging host is inventoried
 - [ ] Secrets: no rotation or archive yet (`secrets.new` refuses a taken name); the master key defaults to
       `$CADENCE_DATA_DIR/master.key`, generated on first start, until the compose secret of R9 is wired
-=======
 - [ ] Identity (phase 1) assumptions, confirm: login throttling counts failed attempts only (5/min, 20/h per address and per username, in memory); `X-Forwarded-For`/`-Proto` are trusted from loopback and private peers (the host's Caddy, Docker's gateway); the TOTP secret lives in the `users` row, not the R9 file store (it is a sign-in factor, not a secret handed to jobs); passwords need 12+ characters; first start may rename the admin account; out-of-scope reads answer 403 `forbidden` rather than hiding the entity behind 404; a credential without a project may not open the event stream
->>>>>>> phase1/identity
+- [ ] Mixes and drafts (phase 1, mix stream) assumptions, confirm:
+      the draft policy per kind is read from `defaults.yaml` (`drafts.mix: draft | direct`) until the project's agent
+      profile carries it (Agent settings, Projects stream); an agent never accepts a draft (`drafts-are-for-people`
+      forbidden rule in `guardrails-default`) — auto-accept is the `direct` policy, not an agent's choice; one open
+      draft per author (actor + session) and entity, whose later edits update it (the draft's own `rev` is the
+      If-Match of accept and revert); an agent's edit on a newer revision carries its open draft over field by field
+      (top-level fields the draft changed win); accepting a draft whose base is no longer current answers `412
+      draft-stale` (a new error type) with the entity's revision instead of merging; presence is the authors of open
+      drafts plus an agent's direct edit for `drafts.presence_seconds` (30 s), sent whole as `presence.changed`;
+      `drafts.list` is `GET /drafts?entityKind=&entityId=` (one operation for every draftable kind) rather than
+      `GET /{kind}/{id}/drafts`
+- [ ] Mix shape (R13), confirm: groups of frozen dataset versions (`ver_…`, `@alias` or a collection name, stored
+      resolved) with a weight and a replay flag; a group is sampled with probability ∝ weight^(1/temperature) among
+      its kind and replay groups together get `replayShare`; a dataset version belongs to one group; names are unique
+      per project; the preview uses each version's train split hours and splits a multi-locale version evenly.
+      Mixes use the `container` state template (active) like projects; "Save mix as version" is `mixes.new` (save)
+- [ ] Chromium's offline emulation does not drop an open event stream, so spike A4 drops it in the page and the
+      shell's own reconnect resumes with `?after=`; EventSource's native retry with `Last-Event-ID` is covered by the
+      control plane's integration test only
 
 ## Sources
 

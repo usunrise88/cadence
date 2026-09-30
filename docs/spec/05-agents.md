@@ -53,7 +53,7 @@ Cadence launches Claude Code or opencode inside a project worktree, hands it the
 | --- | --- |
 | Project and registry | `projects.get`, `projects.note`, `projects.sync`, `projects.adopt`, `aliases.set`, `registry.search`, `search.query`, `help.get`, `playbooks.run`, `experiments.new`, `experiments.get`, `sweeps.run` |
 | Data | `sources.new`, `mounts.list`, `mounts.scan`, `pipelines.run`, `datasets.preview`, `datasets.freeze`, `datasets.materialize`, `datasets.evict`, `datasets.export`, `utterances.search`, `langpacks.get`, `langpacks.edit`, `boost.edit`, `boost.evaluate`, `augment.preview` |
-| Training | `mixes.new`, `mixes.preview`, `runs.calibrate`, `runs.new`, `runs.resume`, `runs.stage`, `jobs.pause`, `jobs.resume`, `jobs.cancel`, `jobs.wait`, `metrics.get`, `checkpoints.list`, `checkpoints.average` |
+| Training | `mixes.new`, `mixes.get`, `mixes.list`, `mixes.edit`, `mixes.preview`, `drafts.list`, `drafts.get`, `drafts.revert`, `runs.calibrate`, `runs.new`, `runs.resume`, `runs.stage`, `jobs.pause`, `jobs.resume`, `jobs.cancel`, `jobs.wait`, `metrics.get`, `checkpoints.list`, `checkpoints.average` |
 | Evaluation | `goldenSets.list`, `goldenSets.freeze`, `evals.new`, `evals.get`, `evals.gate`, `gates.edit`, `baselines.set`, `augment.evaluate`, `batches.new`, `batches.get`, `batches.freeze` |
 | Deployment | `models.register`, `models.export`, `models.parity`, `models.benchmark`, `deployments.promote`, `deployments.rollback` |
 | Flywheel | `samples.query`, `signals.list`, `triage.next`, `triage.accept`, `triage.correct`, `triage.reject`, `corrections.package`, `schedules.new` |
@@ -87,7 +87,7 @@ Every mutating tool accepts `dryRun`; the verbs come from the vocabulary in the 
 
 ### Worktree, drafts and merge
 
-- Entity changes go through MCP and land directly, or as drafts with Accept and Revert on draftable kinds (mix, gate, note, language pack) when the project's policy says so.
+- Entity changes go through MCP and land directly, or as drafts with Accept and Revert on draftable kinds (mix, gate, note, language pack) when the project's policy says so. Accepting is a person's decision: `drafts.accept` is forbidden to agents; an agent may revert its own draft (phase 1: mixes; the policy per kind is `defaults.yaml` `drafts.*` until the agent profile carries it).
 - File changes commit on the session branch; the Recipe document lists open session branches and their diffs against `main`.
 - On session end the branch is merged fast-forward when it applies cleanly and the permission preset allows auto-merge; otherwise it stays as "Session changes" with a three-way diff for the user to accept or discard. Branches are kept 30 days after merge.
 - Parallel sessions never share a worktree; their conflicts appear only at merge, never at runtime.

@@ -141,7 +141,7 @@ Write before starting:
       it (git over SSH/HTTP or not at all); GitHub repository creation with the stored token
 - [ ] **spec** → *R12* Estimate model: how `dryRun` computes GPU-hours, duration and data volume (calibration throughput ×
       steps, or a table in `defaults.yaml`) — needed by the phase-1 estimate-only dry run and A2
-- [ ] **spec** → *R13* `mixes.edit`: the gate has an agent edit a mix, but the spec's tool catalogue has only `mixes.new` and
+- [x] **spec** → *R13* `mixes.edit`: the gate has an agent edit a mix, but the spec's tool catalogue has only `mixes.new` and
       `mixes.preview` (05); add the tool and its API operation
 
 Identity and access (06 Authentication)
@@ -170,7 +170,7 @@ MCP and approvals
 - [ ] MCP resources: `project://summary`, `selection://current`, `help://{slug}`, `defaults://`
 - [ ] Approvals (project/registry scope, once / for session), policy engine; in-app notification history for them;
       a gated fixture command for integration tests until real gated commands arrive (over-budget runs in phase 2)
-- [ ] Drafts on draftable kinds with Accept/Revert; presence ("agent editing"); audit log with `causedBy`
+- [x] Drafts on draftable kinds with Accept/Revert; presence ("agent editing"); audit log with `causedBy`
 - [ ] Training-run dry run ahead of phase 2: `runs.new?dryRun=true` returns an estimate from defaults and the compute
       entity (A2 acceptance); the real run lands in phase 2. Its request carries `init: base | checkpoint` and `gpus`
       from the start (R44), so phase 2 does not change the shape
@@ -194,7 +194,7 @@ Projects
       starter pipelines, default workspaces (language packs join via `projects.sync` in phase 3)
 - [ ] Agent profile + `PATCH /projects/{p}/agent-profile`; catalogues (base models, agent models, instruction templates)
 - [ ] `projects.note` → `NOTES.md`; `projects.sync` / template sync as a draft commit
-- [ ] Mix entity, minimal (enough for the gate): `mixes.new|edit` with revisions and drafts over fixture dataset versions
+- [x] Mix entity, minimal (enough for the gate): `mixes.new|edit` with revisions and drafts over fixture dataset versions
 - [ ] Context bridge: selection → prompt references (`@run:123`), Ask agent / Ctrl/Cmd+I, references in replies as
       links, attribution badge → tool call in Chat
 - [ ] Project archive (read-only artifacts, worktrees removed); source archive comes with Sources in phase 2
