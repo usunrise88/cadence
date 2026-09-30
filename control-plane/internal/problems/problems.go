@@ -55,6 +55,10 @@ var (
 
 	// Drafts (phase 1 · mix stream).
 	DraftStale = Type{"draft-stale", http.StatusPreconditionFailed, "Draft is stale"}
+
+	// Project repositories (phase 1 · wave 2, projects).
+	MergeConflict         = Type{"merge-conflict", http.StatusConflict, "Merge conflict"}
+	RepositoryUnavailable = Type{"repository-unavailable", http.StatusBadGateway, "Repository unavailable"}
 )
 
 // Types lists every registered type.
@@ -62,7 +66,8 @@ func Types() []Type {
 	return []Type{
 		BadRequest, ValidationFailed, NotFound, MethodNotAllowed, Conflict, PreconditionFailed,
 		PreconditionRequired, IdempotencyKeyReused, Unauthenticated, TOTPRequired, Forbidden, RateLimited, NotImplemented,
-		Internal, PolicyDenied, ReservedAlias, EstimateUnavailable, InvalidQuery, DraftStale,
+		Internal, PolicyDenied, ReservedAlias, EstimateUnavailable, InvalidQuery, DraftStale, MergeConflict,
+		RepositoryUnavailable,
 	}
 }
 

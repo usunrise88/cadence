@@ -60,7 +60,7 @@ func TestMCPProjectsThroughTools(t *testing.T) {
 	// The transport sends the call twice (a lost response); the second answer is the stored first one.
 	r, isErr = mcptest.Call(t, cs, "projects.new", map[string]any{"body": body},
 		sdk.Meta{"claudecode/toolUseId": "toolu_01MCPTEST"})
-	if isErr || r.Status != 201 || !r.Replayed || r.ETag != `"1"` || !strings.Contains(r.Next, "replay") {
+	if isErr || r.Status != 202 || !r.Replayed || r.JobID == "" || !strings.Contains(r.Next, "jobs.wait") {
 		t.Fatalf("create with retry: %+v", r)
 	}
 	if tr.ToolCalls() != 4 { // the dry run and the create, each sent twice

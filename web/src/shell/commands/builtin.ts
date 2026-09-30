@@ -27,6 +27,7 @@ import { useTheme } from "@/shell/theme/store";
 import { DEFAULT_WORKSPACES } from "@/shell/workspaces/schema";
 import { applyPlan, defaultPlan, restoreWorkspace, saveWorkspace } from "@/shell/workspaces/persistence";
 import { registerApiCommands } from "./api";
+import { registerProjectCommands } from "./projects";
 import type { Command } from "./registry";
 
 // Built-in commands. Window and view commands are client-only (`view.*`); project and workspace commands call
@@ -181,7 +182,7 @@ export function registerBuiltinCommands(): void {
     {
       id: "projects.edit",
       operation: "projects.edit",
-      title: "Rename project…",
+      title: "Edit project…",
       group: "Project",
       icon: EditPencil,
       enabled: needProject,
@@ -217,6 +218,7 @@ export function registerBuiltinCommands(): void {
   ];
   for (const c of list) commands.register(c);
   registerApiCommands();
+  registerProjectCommands();
 
   // One "Open <panel>" command per registered tool panel.
   for (const m of panels.all()) {

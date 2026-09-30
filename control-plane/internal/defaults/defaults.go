@@ -69,20 +69,33 @@ type Defaults struct {
 	document map[string]any
 }
 
+// ModelFor returns the default model of an agent driver.
+func (w Wizard) ModelFor(driver string) Param[string] {
+	if driver == "opencode" {
+		return w.OpencodeModel
+	}
+	return w.ClaudeCodeModel
+}
+
 // Wizard holds the project wizard's Recommended values.
 type Wizard struct {
-	Locale               Param[string] `yaml:"locale"`
-	Domain               Param[string] `yaml:"domain"`
-	BaseModel            Param[string] `yaml:"base_model"`
-	Driver               Param[string] `yaml:"driver"`
-	PermissionPreset     Param[string] `yaml:"permission_preset"`
-	InstructionsTemplate Param[string] `yaml:"instructions_template"`
-	Repository           Param[string] `yaml:"repository"`
+	Locale               Param[string]            `yaml:"locale"`
+	Domain               Param[string]            `yaml:"domain"`
+	BaseModel            Param[string]            `yaml:"base_model"`
+	Driver               Param[string]            `yaml:"driver"`
+	ClaudeCodeModel      Param[string]            `yaml:"claude_code_model"`
+	OpencodeModel        Param[string]            `yaml:"opencode_model"`
+	AutoMerge            Param[string]            `yaml:"auto_merge"`
+	DraftPolicy          Param[map[string]string] `yaml:"draft_policy"`
+	PermissionPreset     Param[string]            `yaml:"permission_preset"`
+	InstructionsTemplate Param[string]            `yaml:"instructions_template"`
+	Repository           Param[string]            `yaml:"repository"`
 }
 
 // Budgets holds per-project and per-session budgets.
 type Budgets struct {
 	GPUHoursPerProjectPerDay           Param[float64] `yaml:"gpu_hours_per_project_per_day"`
+	AgentTokensPerProjectPerDay        Param[int64]   `yaml:"agent_tokens_per_project_per_day"`
 	AgentTurnsPerSession               Param[int]     `yaml:"agent_turns_per_session"`
 	ManualTestGPUHoursPerProjectPerDay Param[float64] `yaml:"manual_test_gpu_hours_per_project_per_day"`
 }

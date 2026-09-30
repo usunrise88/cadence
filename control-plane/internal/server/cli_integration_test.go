@@ -35,17 +35,26 @@ func TestCLIAgainstServer(t *testing.T) {
 		t.Fatalf("a dry run created the project (exit %d)", code)
 	}
 
+	// projects.new answers 202 with the bootstrap job; jobs wait follows it to the end (the project is then at rev 2).
 	code, out, errOut := run("projects", "new", "--body", `{"slug":"cli","name":"CLI"}`)
-	var p project
-	if code != 0 || json.Unmarshal([]byte(out), &p) != nil || p.Slug != "cli" || p.Rev != 1 {
+	var acc struct {
+		JobID string `json:"jobId"`
+	}
+	if code != 0 || json.Unmarshal([]byte(out), &acc) != nil || acc.JobID == "" {
 		t.Fatalf("projects new: exit %d\n%s%s", code, out, errOut)
 	}
+	code, out, errOut = run("jobs", "wait", "--id", acc.JobID)
+	var j jobView
+	if code != 0 || json.Unmarshal([]byte(out), &j) != nil || j.State != "done" {
+		t.Fatalf("jobs wait: exit %d\n%s%s", code, out, errOut)
+	}
 	code, out, errOut = run("projects", "get", "--project", "cli")
-	if code != 0 || json.Unmarshal([]byte(out), &p) != nil || p.Name != "CLI" {
+	var p project
+	if code != 0 || json.Unmarshal([]byte(out), &p) != nil || p.Slug != "cli" || p.Name != "CLI" || p.Rev != 2 {
 		t.Fatalf("projects get: exit %d\n%s%s", code, out, errOut)
 	}
-	code, out, errOut = run("projects", "edit", "--project", "cli", "--if-match", "1", "--body", `{"name":"CLI 2"}`)
-	if code != 0 || json.Unmarshal([]byte(out), &p) != nil || p.Name != "CLI 2" || p.Rev != 2 {
+	code, out, errOut = run("projects", "edit", "--project", "cli", "--if-match", "2", "--body", `{"name":"CLI 2"}`)
+	if code != 0 || json.Unmarshal([]byte(out), &p) != nil || p.Name != "CLI 2" || p.Rev != 3 {
 		t.Fatalf("projects edit: exit %d\n%s%s", code, out, errOut)
 	}
 

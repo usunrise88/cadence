@@ -108,13 +108,13 @@ func TestGatedCommandApproveReplays(t *testing.T) {
 	e := start(t)
 	e.newProject("demo")
 	key := e.key()
-	id := e.gateArchive("demo", key, 1, "Cadence-Tool-Call-Id", "toolu_1",
+	id := e.gateArchive("demo", key, 2, "Cadence-Tool-Call-Id", "toolu_1",
 		"Authorization", "Bearer cst_secret", "Cookie", "cadence_session=abc")
 
 	// Nothing ran; the approval holds the request without credentials.
 	var p project
 	e.ok(e.do("GET", "/api/projects/demo", ""), 200, &p)
-	if p.ArchivedAt != "" || p.Rev != 1 {
+	if p.ArchivedAt != "" || p.Rev != 2 {
 		t.Fatalf("gated command ran: %+v", p)
 	}
 	a := e.approval(id)
@@ -138,7 +138,7 @@ func TestGatedCommandApproveReplays(t *testing.T) {
 
 	// A repeat with the same key answers the stored 202.
 	var again accepted
-	resp := e.ok(e.agent("POST", "/api/projects/demo:archive", "", "Idempotency-Key", key, "If-Match", `"1"`,
+	resp := e.ok(e.agent("POST", "/api/projects/demo:archive", "", "Idempotency-Key", key, "If-Match", `"2"`,
 		"Cadence-Tool-Call-Id", "toolu_1"), 202, &again)
 	if again.ApprovalID != id || resp.Header.Get("Idempotent-Replayed") != "true" {
 		t.Fatalf("repeat answered %+v", again)
@@ -165,7 +165,7 @@ func TestGatedCommandApproveReplays(t *testing.T) {
 		t.Fatalf("decided %+v", decided)
 	}
 	var replayed project
-	if err := json.Unmarshal(decided.Result.Body, &replayed); err != nil || replayed.ArchivedAt == "" || replayed.Rev != 2 {
+	if err := json.Unmarshal(decided.Result.Body, &replayed); err != nil || replayed.ArchivedAt == "" || replayed.Rev != 3 {
 		t.Fatalf("replay result %s (%v)", decided.Result.Body, err)
 	}
 	archived := e.events("entity.project." + p.ID)
@@ -181,7 +181,7 @@ func TestGatedCommandApproveReplays(t *testing.T) {
 
 	// The original key now answers the real result; the approval cannot be decided twice.
 	var p2 project
-	e.ok(e.agent("POST", "/api/projects/demo:archive", "", "Idempotency-Key", key, "If-Match", `"1"`,
+	e.ok(e.agent("POST", "/api/projects/demo:archive", "", "Idempotency-Key", key, "If-Match", `"2"`,
 		"Cadence-Tool-Call-Id", "toolu_1"), 200, &p2)
 	if p2.ArchivedAt == "" {
 		t.Fatalf("original key after approval answered %+v", p2)
@@ -191,7 +191,7 @@ func TestGatedCommandApproveReplays(t *testing.T) {
 
 	// "Once" does not carry over: the same operation asks again.
 	e.newProject("second")
-	e.gateArchive("second", e.key(), 1)
+	e.gateArchive("second", e.key(), 2)
 
 	// The audit log has every step with its cause.
 	au := e.audit("operation=projects.archive")
@@ -218,8 +218,8 @@ func TestDenyAndList(t *testing.T) {
 	e := start(t)
 	e.newProject("demo")
 	e.newProject("other")
-	first := e.gateArchive("demo", e.key(), 1)
-	second := e.gateArchive("other", e.key(), 1)
+	first := e.gateArchive("demo", e.key(), 2)
+	second := e.gateArchive("other", e.key(), 2)
 
 	var denied approvalView
 	e.ok(e.do("POST", "/api/approvals/"+first+":deny", `{"note":"not now"}`, "Idempotency-Key", e.key(), "If-Match", `"1"`),
@@ -249,7 +249,7 @@ func TestDenyAndList(t *testing.T) {
 	expectProblem(t, e.do("GET", "/api/approvals/apr_nope", ""), 404, "not-found")
 
 	// A dry run of a gated command runs as a dry run and says a person would decide.
-	resp := e.ok(e.agent("POST", "/api/projects/other:archive?dryRun=true", "", "Idempotency-Key", e.key(), "If-Match", `"1"`),
+	resp := e.ok(e.agent("POST", "/api/projects/other:archive?dryRun=true", "", "Idempotency-Key", e.key(), "If-Match", `"2"`),
 		200, nil)
 	if !strings.HasPrefix(resp.Header.Get("Cadence-Policy"), "approval; rule=archive-project") {
 		t.Fatalf("Cadence-Policy = %q", resp.Header.Get("Cadence-Policy"))
@@ -258,13 +258,13 @@ func TestDenyAndList(t *testing.T) {
 		t.Fatalf("dry run stored an approval (%d)", n)
 	}
 	// People are not gated by the fixture rule.
-	e.ok(e.do("POST", "/api/projects/other:archive", "", "Idempotency-Key", e.key(), "If-Match", `"1"`), 200, nil)
+	e.ok(e.do("POST", "/api/projects/other:archive", "", "Idempotency-Key", e.key(), "If-Match", `"2"`), 200, nil)
 }
 
 func TestApprovalExpires(t *testing.T) {
 	e := start(t)
 	e.newProject("demo")
-	id := e.gateArchive("demo", e.key(), 1)
+	id := e.gateArchive("demo", e.key(), 2)
 
 	ctx := context.Background()
 	if n, err := approvals.Sweep(ctx, e.pool, time.Now().Add(time.Hour)); err != nil || n != 0 {
@@ -300,7 +300,7 @@ func TestSessionScopedApproval(t *testing.T) {
 	e := start(t)
 	e.newProject("demo")
 	e.newProject("other")
-	id := e.gateArchive("demo", e.key(), 1)
+	id := e.gateArchive("demo", e.key(), 2)
 	var a approvalView
 	e.ok(e.do("POST", "/api/approvals/"+id+":approve", `{"grant":"session"}`, "Idempotency-Key", e.key(),
 		"If-Match", `"1"`), 200, &a)
@@ -309,7 +309,7 @@ func TestSessionScopedApproval(t *testing.T) {
 	}
 	// The same operation on the same path now runs without asking: the project is already archived, so the
 	// command itself answers 409 (it ran), not 202.
-	expectProblem(t, e.agent("POST", "/api/projects/demo:archive", "", "Idempotency-Key", e.key(), "If-Match", `"2"`),
+	expectProblem(t, e.agent("POST", "/api/projects/demo:archive", "", "Idempotency-Key", e.key(), "If-Match", `"3"`),
 		409, "conflict")
 	if n := e.count("SELECT count(*) FROM approvals"); n != 1 {
 		t.Fatalf("%d approvals, want 1", n)
@@ -326,7 +326,7 @@ func TestSessionScopedApproval(t *testing.T) {
 		t.Fatalf("second page %+v", older.Items)
 	}
 	// Another path still asks.
-	e.gateArchive("other", e.key(), 1)
+	e.gateArchive("other", e.key(), 2)
 }
 
 // enqueue starts a noop job as testAgent in project p, the way a command would.
@@ -437,7 +437,7 @@ func TestJobsLifecycle(t *testing.T) {
 
 	var list struct{ Items []jobView }
 	e.ok(e.do("GET", "/api/projects/demo/jobs", ""), 200, &list)
-	if len(list.Items) != 3 || list.Items[0].ID != c.ID {
+	if len(list.Items) != 4 || list.Items[0].ID != c.ID || list.Items[3].Kind != "projects.bootstrap" { // and the bootstrap
 		t.Fatalf("jobs.list %+v", list.Items)
 	}
 	e.ok(e.do("GET", "/api/projects/demo/jobs?state=failed", ""), 200, &list)

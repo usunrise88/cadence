@@ -61,6 +61,29 @@ func ListWorkspaces(ctx context.Context, q storage.Querier, userID, projectID st
 	return out, nil
 }
 
+// DefaultWorkspaces are the five workspaces every project starts with (docs/spec/11-ui-panels.md "Default
+// workspaces"); their layouts are code factories in the web shell.
+var DefaultWorkspaces = []string{"Training", "Eval", "Data", "Triage", "Ops"}
+
+// CreateDefaultWorkspaces creates the default workspaces of a user in a project as placeholders — schema version
+// 1, an empty layout, no panels — which the web shell fills with the default layout on first open and saves over
+// with If-Match. Existing workspaces are left alone; it returns the names it created.
+func CreateDefaultWorkspaces(ctx context.Context, tx pgx.Tx, userID, projectID string) ([]string, error) {
+	var created []string
+	for _, name := range DefaultWorkspaces {
+		id := "wsp_" + uuid.Must(uuid.NewV7()).String()
+		tag, err := tx.Exec(ctx, `INSERT INTO workspaces (id, user_id, project_id, name, schema_version, layout, panels)
+			VALUES ($1, $2, $3, $4, 1, '{}', '{}') ON CONFLICT (user_id, project_id, name) DO NOTHING`, id, userID, projectID, name)
+		if err != nil {
+			return created, fmt.Errorf("create workspace %s: %w", name, err)
+		}
+		if tag.RowsAffected() > 0 {
+			created = append(created, name)
+		}
+	}
+	return created, nil
+}
+
 // GetWorkspace returns one workspace, or not-found.
 func GetWorkspace(ctx context.Context, q storage.Querier, userID, projectID, name string) (Workspace, error) {
 	w, found, err := getWorkspace(ctx, q, userID, projectID, name, "")

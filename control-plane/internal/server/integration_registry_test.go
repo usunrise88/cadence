@@ -3,11 +3,8 @@
 package server
 
 import (
-	"context"
 	"io"
-	"log/slog"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
@@ -17,12 +14,7 @@ import (
 
 	"github.com/usunrise88/cadence/control-plane/internal/compute"
 	"github.com/usunrise88/cadence/control-plane/internal/defaults"
-	"github.com/usunrise88/cadence/control-plane/internal/events"
-	"github.com/usunrise88/cadence/control-plane/internal/obs"
 	"github.com/usunrise88/cadence/control-plane/internal/registry"
-	"github.com/usunrise88/cadence/control-plane/internal/storage"
-	"github.com/usunrise88/cadence/control-plane/internal/testdb"
-	"github.com/usunrise88/cadence/control-plane/migrations"
 	"github.com/usunrise88/cadence/control-plane/templates"
 )
 
@@ -30,34 +22,11 @@ import (
 // server too (its secret store is inspected by the tests).
 func startSeeded(t *testing.T) (*env, *Server) {
 	t.Helper()
-	ctx, cancel := context.WithCancel(context.Background())
-	pool, err := storage.Open(ctx, testdb.New(t))
-	if err != nil {
+	e := start(t)
+	if _, err := compute.Seed(t.Context(), e.pool, defaults.Get().Compute.Hosts, registry.Bundled()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := storage.Migrate(ctx, pool, migrations.FS); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := registry.Seed(ctx, pool, templates.FS, time.Now()); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := compute.Seed(ctx, pool, defaults.Get().Compute.Hosts, registry.Bundled()); err != nil {
-		t.Fatal(err)
-	}
-	hub, metrics := events.NewHub(64), obs.NewMetrics()
-	d := events.NewDispatcher(pool, hub, slog.New(slog.NewTextHandler(io.Discard, nil)), metrics.EventsDispatched)
-	done := make(chan struct{})
-	go func() { defer close(done); _ = d.Run(ctx) }()
-	s := newTestServer(t, pool, hub, metrics)
-	srv := httptest.NewServer(s.Handler())
-	t.Cleanup(func() {
-		hub.Close()
-		srv.Close()
-		cancel()
-		<-done
-		pool.Close()
-	})
-	return &env{t: t, url: srv.URL, pool: pool, metrics: metrics}, s
+	return e, e.admin
 }
 
 type version struct {
@@ -250,22 +219,26 @@ func TestAdoptionAndAliases(t *testing.T) {
 	nemo := e.versionID("base-models", "base-model/nemotron-3.5-asr-streaming-0.6b")
 
 	expectProblem(t, e.do("POST", "/api/projects/hebrew:adopt", `{"version":"`+he+`"}`, "Idempotency-Key", e.key()), 428, "precondition-required")
-	e.ok(e.do("POST", "/api/projects/hebrew:adopt?dryRun=true", `{"version":"`+he+`"}`, "Idempotency-Key", e.key(), "If-Match", `"1"`), 200, nil)
-	if n := e.count("SELECT count(*) FROM adoptions"); n != 0 {
+	e.ok(e.do("POST", "/api/projects/hebrew:adopt?dryRun=true", `{"version":"`+he+`"}`, "Idempotency-Key", e.key(), "If-Match", `"2"`), 200, nil)
+	if n := e.count("SELECT count(*) FROM adoptions WHERE version_id = '" + he + "'"); n != 0 {
 		t.Fatalf("dry run adopted")
 	}
 	var a struct {
 		ProjectID string  `json:"projectId"`
 		Version   version `json:"version"`
 	}
-	resp := e.ok(e.do("POST", "/api/projects/hebrew:adopt", `{"version":"`+he+`"}`, "Idempotency-Key", e.key(), "If-Match", `"1"`), 200, &a)
-	if resp.Header.Get("ETag") != `"2"` || a.ProjectID != p.ID || a.Version.ID != he {
+	resp := e.ok(e.do("POST", "/api/projects/hebrew:adopt", `{"version":"`+he+`"}`, "Idempotency-Key", e.key(), "If-Match", `"2"`), 200, &a)
+	if resp.Header.Get("ETag") != `"3"` || a.ProjectID != p.ID || a.Version.ID != he {
 		t.Fatalf("adopt: %+v etag %s", a, resp.Header.Get("ETag"))
 	}
-	expectProblem(t, e.do("POST", "/api/projects/hebrew:adopt", `{"version":"`+he+`"}`, "Idempotency-Key", e.key(), "If-Match", `"2"`), 409, "conflict")
+	if lock := e.recipe("hebrew", "data.lock", ""); !strings.Contains(lock.Content, he) || lock.History[0].Message != "adopt dataset/fleurs-he-smoke "+a.Version.Version {
+		t.Errorf("data.lock after the adoption: %+v", lock)
+	}
+	expectProblem(t, e.do("POST", "/api/projects/hebrew:adopt", `{"version":"`+he+`"}`, "Idempotency-Key", e.key(), "If-Match", `"3"`), 409, "conflict")
 	expectProblem(t, e.do("POST", "/api/projects/hebrew:adopt", `{"version":"`+nemo+`"}`, "Idempotency-Key", e.key(), "If-Match", `"1"`), 412, "precondition-failed")
-	expectProblem(t, e.do("POST", "/api/projects/hebrew:adopt", `{"version":"ver_nope"}`, "Idempotency-Key", e.key(), "If-Match", `"2"`), 404, "not-found")
-	e.ok(e.do("POST", "/api/projects/hebrew:adopt", `{"version":"`+nemo+`"}`, "Idempotency-Key", e.key(), "If-Match", `"2"`), 200, nil)
+	expectProblem(t, e.do("POST", "/api/projects/hebrew:adopt", `{"version":"ver_nope"}`, "Idempotency-Key", e.key(), "If-Match", `"3"`), 404, "not-found")
+	// The wizard adopted the project's base model already.
+	expectProblem(t, e.do("POST", "/api/projects/hebrew:adopt", `{"version":"`+nemo+`"}`, "Idempotency-Key", e.key(), "If-Match", `"3"`), 409, "conflict")
 
 	var adoptions struct{ Items []struct{ Version version } }
 	e.ok(e.do("GET", "/api/projects/hebrew/adoptions?kind=dataset_version", ""), 200, &adoptions)
@@ -336,12 +309,17 @@ func TestAdoptionAndAliases(t *testing.T) {
 	}
 	var search versionList
 	e.ok(e.do("GET", "/api/registry?project=hebrew", ""), 200, &search)
-	if len(search.Items) != 2 {
-		t.Errorf("registry.search project=hebrew: %d items", len(search.Items))
+	// The dataset and the base model, plus the templates the bootstrap rendered from.
+	byKind := map[string]int{}
+	for _, it := range search.Items {
+		byKind[it.Kind]++
+	}
+	if byKind["dataset_version"] != 1 || byKind["base_model"] != 1 || byKind["template"] == 0 {
+		t.Errorf("registry.search project=hebrew: %v", byKind)
 	}
 
 	// Adoption and alias events are project work; the registry's own are not.
-	if n := e.count(`SELECT count(*) FROM events WHERE type = 'project.adopted' AND project_id IS NOT NULL`); n != 2 {
+	if n := e.count(`SELECT count(*) FROM events WHERE type = 'project.adopted' AND project_id IS NOT NULL`); n != 1 {
 		t.Errorf("%d adoption events", n)
 	}
 	if n := e.count(`SELECT count(*) FROM events WHERE type = 'alias.set' AND topic LIKE 'entity.alias.als_%' AND project_id IS NOT NULL`); n != 3 {
@@ -568,7 +546,6 @@ func TestRunEstimate(t *testing.T) {
 
 	// An alias resolves; a card whose cap the table does not know has no estimate.
 	nemo := e.versionID("base-models", "base-model/nemotron-3.5-asr-streaming-0.6b")
-	e.ok(e.do("POST", "/api/projects/hebrew:adopt", `{"version":"`+nemo+`"}`, "Idempotency-Key", e.key(), "If-Match", `"1"`), 200, nil)
 	e.ok(e.do("PUT", "/api/projects/hebrew/aliases/train-base", `{"version":"`+nemo+`"}`, "Idempotency-Key", e.key()), 200, nil)
 	e.ok(dry(`{"baseModel":"@train-base"}`), 200, &est)
 	if est.BaseModel.ID != nemo {

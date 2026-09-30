@@ -99,6 +99,11 @@ export function commandHeaders(rev?: number): { "Idempotency-Key": string; "If-M
   return h as { "Idempotency-Key": string; "If-Match": string; traceparent: string };
 }
 
+/** Headers for a command based on an opaque version (a branch head sha): If-Match carries it quoted. */
+export function commandHeadersAt(etag: string): { "Idempotency-Key": string; "If-Match": string; traceparent: string } {
+  return { "Idempotency-Key": newIdempotencyKey(), traceparent: newTraceparent(), "If-Match": `"${etag}"` };
+}
+
 /** Parses an ETag ("3", W/"3") into a revision number. */
 export function revFromEtag(etag: string | null | undefined): number | undefined {
   if (!etag) return undefined;

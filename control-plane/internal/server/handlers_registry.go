@@ -364,6 +364,13 @@ func (s *Server) ProjectsAdopt(ctx context.Context, req api.ProjectsAdoptRequest
 		if err != nil {
 			return commands.Result{}, nil, err
 		}
+		if s.Projects != nil { // data.lock lists every adopted version
+			more, err := s.Projects.CommitFacts(ctx, tx, p, cmd.Actor, "adopt "+a.Version.Name+" "+a.Version.Version, cmd.DryRun)
+			if err != nil {
+				return commands.Result{}, nil, err
+			}
+			drafts = append(drafts, more...)
+		}
 		return commands.Result{Status: http.StatusOK, Body: apiAdoption(a), ETag: commands.ETag(p.Rev)}, drafts, nil
 	})
 }

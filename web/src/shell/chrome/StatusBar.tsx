@@ -35,7 +35,7 @@ export function StatusBar() {
         <span aria-hidden className={cn("size-2 rounded-full", conn === "open" ? "bg-status-done" : conn === "error" ? "bg-status-failed" : "bg-muted-foreground")} />
         {CONN_LABEL[conn]}
       </span>
-      <span data-testid="workspace-sync">{sync.restoring ? "Restoring…" : sync.saving ? "Saving…" : sync.rev ? `Saved · rev ${sync.rev}` : "Not saved yet"}</span>
+      <span data-testid="workspace-sync">{sync.restoring ? "Restoring…" : sync.saving ? "Saving…" : sync.rev && !sync.placeholder ? `Saved · rev ${sync.rev}` : "Not saved yet"}</span>
       <span title="GPU memory and compute arrive with training (phase 2)">GPU —</span>
       <span title="The job queue arrives with the agent loop (phase 1)">Queue —</span>
       <span title="Agent sessions arrive in phase 1">Agent —</span>

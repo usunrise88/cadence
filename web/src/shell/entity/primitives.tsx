@@ -117,7 +117,7 @@ export function EntityHeader({ manifest, entity }: { manifest: EntityManifest; e
   const Icon = manifest.icon;
   return (
     <header data-slot="entity-header" className="flex flex-col gap-2.5 border-b px-4 pt-3 pb-2.5">
-      <div className="flex min-w-0 items-center gap-2">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5">
         <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-accent-soft text-accent-text">
           <Icon aria-hidden className="size-3.5" />
         </span>
@@ -126,7 +126,7 @@ export function EntityHeader({ manifest, entity }: { manifest: EntityManifest; e
         <StatusChip state={entity.state} />
         <ActorBadge actor={entity.actor} toolCallId={entity.toolCallId} />
         {entity.presence ? <PresenceChip presence={entity.presence} /> : null}
-        <div className="ml-auto flex shrink-0 items-center gap-1">
+        <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1">
           <ActionBar manifest={manifest} entity={entity} />
           {primary ? <VerbButton m={manifest} v={primary} entity={entity} variant="default" /> : null}
         </div>

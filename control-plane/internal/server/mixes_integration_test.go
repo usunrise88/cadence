@@ -400,8 +400,7 @@ func TestMixDraftThroughMCP(t *testing.T) {
 	if _, err := registry.Seed(ctx, e.pool, templates.FS, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	var p project
-	e.ok(e.do("POST", "/api/projects", `{"slug":"hebrew","name":"Hebrew"}`, web(cookie, "Idempotency-Key", e.key())...), 201, &p)
+	p := e.createProject(`{"slug":"hebrew","name":"Hebrew"}`, "hebrew", web(cookie)...)
 	var m mixView
 	e.ok(e.do("POST", "/api/projects/hebrew/mixes", heMix, web(cookie, "Idempotency-Key", e.key())...), 201, &m)
 	var token string

@@ -7,10 +7,13 @@ cadence projects edit: missing --if-match, --body
 
 usage: cadence projects edit --project PROJECT --if-match IF_MATCH [--dry-run] --body JSON
 
-Rename or re-describe a project (PATCH /projects/{p}, operation projects.edit)
+Change a project's name, description, locales, domain, base model or budgets (PATCH /projects/{p}, operation projects.edit)
 
-Rename or re-describe a project. Send ifMatch with the etag (or rev) of your last projects.get; a
-stale revision fails with precondition-failed and the current revision to re-read.
+Change what the wizard set: name, description, locales, domain, the default base model (a frozen
+base-model version id; it is adopted when it is not yet) and budgets. Changes to project facts
+re-render project.yaml and AGENTS.md and commit them to main. Send ifMatch with the etag (or rev) of
+your last projects.get; a stale revision fails with precondition-failed and the current revision to
+re-read.
 
 Flags:
   --project            Project slug [required]
@@ -18,7 +21,11 @@ Flags:
   --dry-run            Validate and report what would happen without changing anything [boolean; default false]
 
 Body (--body JSON, --body @file or --body @- for standard input; required):
+  baseModel            (string) A frozen base-model version id (ver_…); adopted when the project has not yet
+  budgets              (object)
   description          (string)
+  domain               (string)
+  locales              (array of string)
   name                 (string)
 
 A command: an Idempotency-Key is generated for each call; --dry-run shows the result without a change.

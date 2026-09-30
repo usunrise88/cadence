@@ -85,6 +85,15 @@ export function normalizeLayout(layout: SerializedLayout, registry: PanelRegistr
   return { layout: { ...layout, panels }, renamed, missing };
 }
 
+/**
+ * A stored workspace whose layout has no grid is a placeholder: the project bootstrap records the default workspaces
+ * with an empty layout, and the client builds them from the code factories on first open (then saves over the
+ * placeholder with its revision).
+ */
+export function isPlaceholderLayout(layout: SerializedLayout): boolean {
+  return !layout.grid || typeof layout.grid !== "object";
+}
+
 /** Parses what the API returned (or a fixture) into WorkspaceData, rejecting shapes we cannot restore. */
 export function parseWorkspace(raw: unknown): WorkspaceData {
   if (!raw || typeof raw !== "object") throw new WorkspaceSchemaError("workspace is not an object");

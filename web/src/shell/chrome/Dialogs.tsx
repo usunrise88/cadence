@@ -1,11 +1,14 @@
 import { useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { commandHeaders, ProblemError } from "@/api/client";
-import { datasetsListOptions, projectsGetOptions, projectsListQueryKey } from "@/api/gen/@tanstack/react-query.gen";
-import { mixesNew, projectsEdit, projectsNew } from "@/api/gen/sdk.gen";
+import { baseModelsListOptions, datasetsListOptions, projectsGetOptions, projectsListQueryKey } from "@/api/gen/@tanstack/react-query.gen";
+import type { ProjectEdit } from "@/api/gen/types.gen";
+import { mixesNew, projectsEdit, projectsNote } from "@/api/gen/sdk.gen";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
+import { Textarea } from "@/components/ui/textarea";
 import { chordLabel } from "@/shell/commands/keymap";
 import { commands } from "@/shell/registries";
 import { notify } from "@/shell/notifications/store";
@@ -16,6 +19,7 @@ import { PortalContainerContext } from "@/lib/portal";
 import { useDialogs, useFocusedDocument, type DialogRequest } from "./dialogs";
 import { TwoFactorDialog } from "@/shell/auth/TwoFactorDialog";
 import { Palette } from "./Palette";
+import { Field, fieldErrors, ProjectWizard } from "./ProjectWizard";
 
 // Modal flows opened by commands. Each submits exactly one API command.
 
@@ -37,7 +41,9 @@ function DialogSwitch({ onSwitchProject }: { onSwitchProject: (slug: string) => 
     case "palette":
       return <Palette prefix={open.prefix} onClose={close} onSwitchProject={onSwitchProject} />;
     case "newProject":
-      return <NewProjectDialog onClose={close} onCreated={onSwitchProject} />;
+      return <ProjectWizard onClose={close} onCreated={onSwitchProject} />;
+    case "projectNote":
+      return <NoteDialog slug={open.slug} rev={open.rev} onClose={close} />;
     case "newMix":
       return <NewMixDialog onClose={close} />;
     case "editProject":
@@ -51,85 +57,93 @@ function DialogSwitch({ onSwitchProject }: { onSwitchProject: (slug: string) => 
   }
 }
 
-export function slugify(name: string): string {
-  return name
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 40);
-}
+type EditValues = { name: string; description: string; locales: string; domain: string; baseModel: string; gpuHoursPerDay: string; agentTokensPerDay: string };
 
-function Field({ label, error, children }: { label: string; error?: string; children: React.ReactNode }) {
-  return (
-    <label className="flex flex-col gap-1 text-xs">
-      <span className="text-muted-foreground">{label}</span>
-      {children}
-      {error ? <span className="text-destructive">{error}</span> : null}
-    </label>
-  );
-}
-
-function fieldErrors(err: unknown): Record<string, string> {
-  if (!(err instanceof ProblemError)) return {};
-  const out: Record<string, string> = {};
-  for (const e of err.problem.errors ?? []) out[e.path.replace(/^\/?(body\/)?/, "")] = e.message;
-  return out;
-}
-
-function NewProjectDialog({ onClose, onCreated }: { onClose: () => void; onCreated: (slug: string) => void }) {
+/** projects.edit: what the wizard set and a person may change later (name, locales, domain, base model, budgets). */
+function EditProjectDialog({ slug, onClose }: { slug: string; onClose: () => void }) {
   const qc = useQueryClient();
-  const [name, setName] = useState("");
-  const [slug, setSlug] = useState("");
-  const [slugTouched, setSlugTouched] = useState(false);
-  const [description, setDescription] = useState("");
+  const { data } = useQuery(projectsGetOptions({ path: { p: slug } }));
+  const baseModels = useQuery(baseModelsListOptions({ query: { state: "frozen" } }));
+  const [edits, setEdits] = useState<Partial<EditValues>>({});
   const [error, setError] = useState<unknown>(null);
-  const [busy, setBusy] = useState(false);
-  const effectiveSlug = slugTouched ? slug : slugify(name);
-  const errs = fieldErrors(error);
+  if (!data) return null;
+  const initial: EditValues = {
+    name: data.name,
+    description: data.description ?? "",
+    locales: data.locales.join(", "),
+    domain: data.domain,
+    baseModel: data.baseModel?.versionId ?? "",
+    gpuHoursPerDay: String(data.budgets.gpuHoursPerDay),
+    agentTokensPerDay: String(data.budgets.agentTokensPerDay),
+  };
+  const v = { ...initial, ...edits };
+  const set = (patch: Partial<EditValues>) => setEdits((e) => ({ ...e, ...patch }));
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    setBusy(true);
-    setError(null);
+    const body: ProjectEdit = {};
+    if (v.name !== initial.name) body.name = v.name;
+    if (v.description !== initial.description) body.description = v.description;
+    if (v.locales !== initial.locales) body.locales = v.locales.split(/[\s,]+/).filter(Boolean);
+    if (v.domain !== initial.domain) body.domain = v.domain;
+    if (v.baseModel !== initial.baseModel && v.baseModel) body.baseModel = v.baseModel;
+    const budgets: NonNullable<ProjectEdit["budgets"]> = {};
+    if (v.gpuHoursPerDay !== initial.gpuHoursPerDay) budgets.gpuHoursPerDay = Number(v.gpuHoursPerDay);
+    if (v.agentTokensPerDay !== initial.agentTokensPerDay) budgets.agentTokensPerDay = Number(v.agentTokensPerDay);
+    if (Object.keys(budgets).length) body.budgets = budgets;
+    if (Object.keys(body).length === 0) return onClose();
     try {
-      await projectsNew({ body: { name, slug: effectiveSlug, ...(description ? { description } : {}) }, headers: commandHeaders(), throwOnError: true });
+      await projectsEdit({ path: { p: slug }, body, headers: commandHeaders(data.rev) });
       await qc.invalidateQueries({ queryKey: projectsListQueryKey() });
-      notify({ level: "success", title: `Project “${name}” created` });
       onClose();
-      onCreated(effectiveSlug);
     } catch (err) {
       setError(err);
-    } finally {
-      setBusy(false);
     }
   };
+  const conflict = error instanceof ProblemError && error.status === 412;
+  const errs = fieldErrors(error);
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
+      <DialogContent className="sm:max-w-lg">
         <form onSubmit={submit} className="flex flex-col gap-3">
           <DialogHeader>
-            <DialogTitle>New project</DialogTitle>
-            <DialogDescription>A unit of work with its own repository, budgets and gates. Repository bootstrap arrives in phase 1.</DialogDescription>
+            <DialogTitle>Edit project</DialogTitle>
+            <DialogDescription>{slug} — changes to project facts re-render project.yaml and AGENTS.md and commit them to main.</DialogDescription>
           </DialogHeader>
           <Field label="Name" error={errs.name}>
-            <Input value={name} onChange={(e) => setName(e.target.value)} required autoFocus name="name" />
+            <Input value={v.name} onChange={(e) => set({ name: e.target.value })} required autoFocus />
           </Field>
-          <Field label="Slug (lowercase, digits, dashes)" error={errs.slug}>
-            <Input
-              value={effectiveSlug}
-              onChange={(e) => {
-                setSlugTouched(true);
-                setSlug(e.target.value);
-              }}
-              pattern="[a-z][a-z0-9\-]{1,38}[a-z0-9]"
-              required
-              name="slug"
-            />
+          <Field label="Description" error={errs.description}>
+            <Input value={v.description} onChange={(e) => set({ description: e.target.value })} />
           </Field>
-          <Field label="Description (optional)" error={errs.description}>
-            <Input value={description} onChange={(e) => setDescription(e.target.value)} name="description" />
-          </Field>
-          {error && Object.keys(errs).length === 0 ? (
+          <div className="grid grid-cols-2 gap-2.5">
+            <Field label="Locales (comma-separated)" error={errs.locales}>
+              <Input value={v.locales} onChange={(e) => set({ locales: e.target.value })} required />
+            </Field>
+            <Field label="Domain" error={errs.domain}>
+              <Input value={v.domain} onChange={(e) => set({ domain: e.target.value })} required />
+            </Field>
+            <Field label="Base model" error={errs.baseModel} className="col-span-2">
+              <NativeSelect value={v.baseModel} onChange={(e) => set({ baseModel: e.target.value })}>
+                {!v.baseModel ? <option value="">—</option> : null}
+                {(baseModels.data?.items ?? []).map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.baseModel.hfRepo} · {b.version}
+                  </option>
+                ))}
+              </NativeSelect>
+            </Field>
+            <Field label="GPU-hours per day" error={errs.budgets}>
+              <Input type="number" min={0} max={192} step="0.5" value={v.gpuHoursPerDay} onChange={(e) => set({ gpuHoursPerDay: e.target.value })} />
+            </Field>
+            <Field label="Agent tokens per day">
+              <Input type="number" min={0} step={1000} value={v.agentTokensPerDay} onChange={(e) => set({ agentTokensPerDay: e.target.value })} />
+            </Field>
+          </div>
+          {conflict ? (
+            <p role="alert" className="text-xs text-destructive">
+              Someone changed this project meanwhile (now rev {error.problem.currentRev}). Close and try again.
+            </p>
+          ) : error && Object.keys(errs).length === 0 ? (
             <p role="alert" className="text-xs text-destructive">
               {error instanceof Error ? error.message : String(error)}
             </p>
@@ -138,9 +152,7 @@ function NewProjectDialog({ onClose, onCreated }: { onClose: () => void; onCreat
             <Button type="button" variant="outline" onClick={onClose}>
               Cancel
             </Button>
-            <Button type="submit" disabled={busy || !name || !effectiveSlug}>
-              Create project
-            </Button>
+            <Button type="submit">Save</Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -148,45 +160,50 @@ function NewProjectDialog({ onClose, onCreated }: { onClose: () => void; onCreat
   );
 }
 
-function EditProjectDialog({ slug, onClose }: { slug: string; onClose: () => void }) {
+/** projects.note from a document header or the palette: one dated learning, committed to NOTES.md. */
+function NoteDialog({ slug, rev, onClose }: { slug: string; rev?: number; onClose: () => void }) {
   const qc = useQueryClient();
-  const { data } = useQuery(projectsGetOptions({ path: { p: slug } }));
-  const [name, setName] = useState<string | null>(null);
+  const project = useQuery({ ...projectsGetOptions({ path: { p: slug } }), enabled: rev === undefined });
+  const [text, setText] = useState("");
   const [error, setError] = useState<unknown>(null);
-  if (!data) return null;
-  const value = name ?? data.name;
+  const [busy, setBusy] = useState(false);
   const submit = async (e: FormEvent) => {
     e.preventDefault();
+    setBusy(true);
     try {
-      await projectsEdit({ path: { p: slug }, body: { name: value }, headers: commandHeaders(data.rev) });
-      await qc.invalidateQueries({ queryKey: projectsListQueryKey() });
+      await projectsNote({ path: { p: slug }, body: { text }, headers: commandHeaders(rev ?? project.data?.rev) });
+      await qc.invalidateQueries({ queryKey: projectsGetOptions({ path: { p: slug } }).queryKey });
+      notify({ level: "success", title: "Note committed to NOTES.md" });
       onClose();
     } catch (err) {
       setError(err);
+    } finally {
+      setBusy(false);
     }
   };
-  const conflict = error instanceof ProblemError && error.status === 412;
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
+      <DialogContent className="sm:max-w-lg">
         <form onSubmit={submit} className="flex flex-col gap-3">
           <DialogHeader>
-            <DialogTitle>Rename project</DialogTitle>
-            <DialogDescription>{slug}</DialogDescription>
+            <DialogTitle>Add a project note</DialogTitle>
+            <DialogDescription>One learning in a sentence or two: what was tried, what happened, what to do next time. Every agent session reads NOTES.md.</DialogDescription>
           </DialogHeader>
-          <Field label="Name" error={fieldErrors(error).name}>
-            <Input value={value} onChange={(e) => setName(e.target.value)} required autoFocus />
+          <Field label="Note" error={fieldErrors(error).text}>
+            <Textarea value={text} onChange={(e) => setText(e.target.value)} required autoFocus maxLength={4000} rows={4} className="text-[13px]" />
           </Field>
-          {conflict ? (
+          {error && !fieldErrors(error).text ? (
             <p role="alert" className="text-xs text-destructive">
-              Someone changed this project meanwhile (now rev {error.problem.currentRev}). Close and try again.
+              {error instanceof Error ? error.message : String(error)}
             </p>
           ) : null}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>
               Cancel
             </Button>
-            <Button type="submit">Save</Button>
+            <Button type="submit" disabled={busy || !text.trim()}>
+              Commit note
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>

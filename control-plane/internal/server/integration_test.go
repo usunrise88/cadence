@@ -25,10 +25,14 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/events"
 	"github.com/usunrise88/cadence/control-plane/internal/jobs"
 	"github.com/usunrise88/cadence/control-plane/internal/obs"
+	"github.com/usunrise88/cadence/control-plane/internal/projects/bootstrap"
+	"github.com/usunrise88/cadence/control-plane/internal/registry"
+	"github.com/usunrise88/cadence/control-plane/internal/repos"
 	"github.com/usunrise88/cadence/control-plane/internal/search"
 	"github.com/usunrise88/cadence/control-plane/internal/storage"
 	"github.com/usunrise88/cadence/control-plane/internal/testdb"
 	"github.com/usunrise88/cadence/control-plane/migrations"
+	"github.com/usunrise88/cadence/control-plane/templates"
 )
 
 func TestMain(m *testing.M) { testdb.Main(m) }
@@ -40,6 +44,8 @@ type env struct {
 	pool     *pgxpool.Pool
 	metrics  *obs.Metrics
 	jobs     *jobs.Service
+	admin    *Server            // the admin server (its secret store and repositories are inspected by tests)
+	repos    *bootstrap.Service // project repositories under a temporary data directory
 	keys     atomic.Int64
 }
 
@@ -68,6 +74,9 @@ func startWith(t *testing.T, adjust func(*Config)) *env {
 	d.PollInterval = 200 * time.Millisecond
 	done, indexed := make(chan struct{}), make(chan struct{})
 	go func() { defer close(done); _ = d.Run(ctx) }()
+	if _, err := registry.Seed(ctx, pool, templates.FS, time.Now()); err != nil {
+		t.Fatal(err)
+	}
 	if err := search.IndexHelp(ctx, pool, mustHelp(t).All(), time.Now()); err != nil {
 		t.Fatal(err)
 	}
@@ -76,16 +85,27 @@ func startWith(t *testing.T, adjust func(*Config)) *env {
 	go func() { defer close(indexed); _ = ix.Run(ctx) }()
 	js := jobs.New(pool, quiet)
 	js.FetchPollInterval = 100 * time.Millisecond
+	store, err := repos.NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc, err := bootstrap.New(bootstrap.Options{Pool: pool, Repos: store, Log: quiet, AllowLocalRemotes: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc.Register(js)
 	if err := js.Start(ctx); err != nil {
 		t.Fatal(err)
 	}
-	withJobs := func(c *Config) { c.Jobs = js }
+	withJobs := func(c *Config) { c.Jobs, c.Projects = js, svc }
 	asAgent := func(c *Config) { c.Actor = testAgent }
 	opts := []func(*Config){withJobs}
 	if adjust != nil {
 		opts = append(opts, adjust)
 	}
-	srv := httptest.NewServer(newTestServer(t, pool, hub, metrics, opts...).Handler())
+	admin := newTestServer(t, pool, hub, metrics, opts...)
+	svc.SetSecrets(admin.Secrets)
+	srv := httptest.NewServer(admin.Handler())
 	agentSrv := httptest.NewServer(newTestServer(t, pool, hub, obs.NewMetrics(), withJobs, asAgent).Handler())
 	t.Cleanup(func() {
 		hub.Close()
@@ -99,7 +119,7 @@ func startWith(t *testing.T, adjust func(*Config)) *env {
 		<-indexed
 		pool.Close()
 	})
-	return &env{t: t, url: srv.URL, agentURL: agentSrv.URL, pool: pool, metrics: metrics, jobs: js}
+	return &env{t: t, url: srv.URL, agentURL: agentSrv.URL, pool: pool, metrics: metrics, jobs: js, admin: admin, repos: svc}
 }
 
 func (e *env) key() string { return fmt.Sprintf("test-key-%08d", e.keys.Add(1)) }
@@ -170,44 +190,74 @@ type project struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	Rev         int    `json:"rev"`
+	State       string `json:"state"`
 	ArchivedAt  string `json:"archivedAt"`
+	Repository  struct {
+		Kind, CloneURL, Remote, PushError string
+	} `json:"repository"`
+	BaseModel struct {
+		VersionID, Name, Revision string
+	} `json:"baseModel"`
 }
 
 func (e *env) newProject(slug string) project {
 	e.t.Helper()
+	return e.createProject(`{"slug":"`+slug+`","name":"`+slug+`"}`, slug)
+}
+
+// createProject sends projects.new with body, waits for the bootstrap job and returns the project with slug.
+func (e *env) createProject(body, slug string, hdr ...string) project {
+	e.t.Helper()
+	var acc struct {
+		JobID string `json:"jobId"`
+	}
+	e.ok(e.do("POST", "/api/projects", body, append([]string{"Idempotency-Key", e.key()}, hdr...)...), 202, &acc)
+	e.waitJob(acc.JobID, "done", hdr...)
 	var p project
-	e.ok(e.do("POST", "/api/projects", `{"slug":"`+slug+`","name":"`+slug+`"}`, "Idempotency-Key", e.key()), 201, &p)
+	e.ok(e.do("GET", "/api/projects/"+slug, "", hdr...), 200, &p)
 	return p
+}
+
+// waitJob waits for a job to end and checks its state.
+func (e *env) waitJob(id, state string, hdr ...string) jobView {
+	e.t.Helper()
+	var j jobView
+	e.ok(e.do("GET", "/api/jobs/"+id+":wait?timeout=30", "", hdr...), 200, &j)
+	if j.State != state {
+		e.t.Fatalf("job %s ended %s (%s), want %s", id, j.State, j.Error, state)
+	}
+	return j
 }
 
 func TestProjectsRevisions(t *testing.T) {
 	e := start(t)
-	var p project
+	var acc struct {
+		JobID string `json:"jobId"`
+	}
 	resp := e.ok(e.do("POST", "/api/projects", `{"slug":"demo","name":"Demo","description":"first"}`,
-		"Idempotency-Key", e.key()), 201, &p)
-	if p.Rev != 1 || !strings.HasPrefix(p.ID, "prj_") || resp.Header.Get("ETag") != `"1"` {
-		t.Fatalf("created %+v etag %s", p, resp.Header.Get("ETag"))
+		"Idempotency-Key", e.key()), 202, &acc)
+	if !strings.HasPrefix(acc.JobID, "job_") || !strings.HasPrefix(resp.Header.Get("Cadence-Command-Id"), "cmd_") {
+		t.Fatalf("accepted %+v, command id %q", acc, resp.Header.Get("Cadence-Command-Id"))
 	}
-	if !strings.HasPrefix(resp.Header.Get("Cadence-Command-Id"), "cmd_") {
-		t.Errorf("no command id header")
-	}
-
+	e.waitJob(acc.JobID, "done")
+	var p project
+	// Created at 1, bootstrapped at 2.
 	resp = e.ok(e.do("GET", "/api/projects/demo", ""), 200, &p)
-	if resp.Header.Get("ETag") != `"1"` || p.Description != "first" {
+	if resp.Header.Get("ETag") != `"2"` || p.Description != "first" || p.Rev != 2 || !strings.HasPrefix(p.ID, "prj_") {
 		t.Fatalf("get: %+v %s", p, resp.Header.Get("ETag"))
 	}
 
-	for i, ifMatch := range []string{`"1"`, `2`, `W/"3"`} {
+	for i, ifMatch := range []string{`"2"`, `3`, `W/"4"`} {
 		resp = e.ok(e.do("PATCH", "/api/projects/demo", fmt.Sprintf(`{"name":"Demo %d"}`, i),
 			"Idempotency-Key", e.key(), "If-Match", ifMatch), 200, &p)
-		if p.Rev != i+2 || resp.Header.Get("ETag") != strconv.Quote(strconv.Itoa(i+2)) || p.Description != "first" {
+		if p.Rev != i+3 || resp.Header.Get("ETag") != strconv.Quote(strconv.Itoa(i+3)) || p.Description != "first" {
 			t.Fatalf("edit with If-Match %s: %+v %s", ifMatch, p, resp.Header.Get("ETag"))
 		}
 	}
 
 	pr := expectProblem(t, e.do("PATCH", "/api/projects/demo", `{"name":"late"}`,
 		"Idempotency-Key", e.key(), "If-Match", `"2"`), 412, "precondition-failed")
-	if pr.CurrentRev == nil || *pr.CurrentRev != 4 {
+	if pr.CurrentRev == nil || *pr.CurrentRev != 5 {
 		t.Fatalf("412 currentRev = %v", pr.CurrentRev)
 	}
 	expectProblem(t, e.do("PATCH", "/api/projects/demo", `{"name":"x"}`, "Idempotency-Key", e.key()), 428, "precondition-required")
@@ -226,11 +276,11 @@ func TestProjectsRevisions(t *testing.T) {
 	}
 	expectProblem(t, e.do("POST", "/api/projects", `{"slug":`, "Idempotency-Key", e.key()), 400, "bad-request")
 
-	e.ok(e.do("POST", "/api/projects/demo:archive", "", "Idempotency-Key", e.key(), "If-Match", `"4"`), 200, &p)
-	if p.ArchivedAt == "" || p.Rev != 5 {
+	e.ok(e.do("POST", "/api/projects/demo:archive", "", "Idempotency-Key", e.key(), "If-Match", `"5"`), 200, &p)
+	if p.ArchivedAt == "" || p.Rev != 6 {
 		t.Fatalf("archive: %+v", p)
 	}
-	expectProblem(t, e.do("POST", "/api/projects/demo:archive", "", "Idempotency-Key", e.key(), "If-Match", `"5"`), 409, "conflict")
+	expectProblem(t, e.do("POST", "/api/projects/demo:archive", "", "Idempotency-Key", e.key(), "If-Match", `"6"`), 409, "conflict")
 	var list struct{ Items []project }
 	e.ok(e.do("GET", "/api/projects", ""), 200, &list)
 	if len(list.Items) != 0 {
@@ -240,9 +290,9 @@ func TestProjectsRevisions(t *testing.T) {
 	if len(list.Items) != 1 {
 		t.Errorf("archived=true: %+v", list.Items)
 	}
-	// One event per successful mutation: created, 3 edits, archived.
-	if n := e.count("SELECT count(*) FROM events"); n != 5 {
-		t.Errorf("%d events, want 5", n)
+	// One project event per successful mutation: created, bootstrapped, 3 edits, archived.
+	if n := e.count("SELECT count(*) FROM events WHERE topic LIKE 'entity.project.%'"); n != 6 {
+		t.Errorf("%d project events, want 6", n)
 	}
 }
 
@@ -256,10 +306,10 @@ func TestIdempotency(t *testing.T) {
 	again := e.do("POST", "/api/projects", `{ "name": "Idem", "slug": "idem" }`, "Idempotency-Key", "same-key-1")
 	againBody, _ := io.ReadAll(again.Body)
 	_ = again.Body.Close()
-	if first.StatusCode != 201 || again.StatusCode != 201 || string(firstBody) != string(againBody) {
+	if first.StatusCode != 202 || again.StatusCode != 202 || string(firstBody) != string(againBody) {
 		t.Fatalf("replay: %d %s / %d %s", first.StatusCode, firstBody, again.StatusCode, againBody)
 	}
-	for _, h := range []string{"ETag", "Cadence-Command-Id", "Content-Type"} {
+	for _, h := range []string{"Cadence-Command-Id", "Content-Type"} {
 		if first.Header.Get(h) != again.Header.Get(h) {
 			t.Errorf("header %s: %q vs %q", h, first.Header.Get(h), again.Header.Get(h))
 		}
@@ -270,8 +320,8 @@ func TestIdempotency(t *testing.T) {
 	if n := e.count("SELECT count(*) FROM projects"); n != 1 {
 		t.Fatalf("%d projects after a replay", n)
 	}
-	if n := e.count("SELECT count(*) FROM events"); n != 1 {
-		t.Fatalf("%d events after a replay", n)
+	if n := e.count("SELECT count(*) FROM events WHERE type = 'project.created'"); n != 1 {
+		t.Fatalf("%d creations after a replay", n)
 	}
 
 	expectProblem(t, e.do("POST", "/api/projects", `{"slug":"other","name":"Other"}`, "Idempotency-Key", "same-key-1"),
@@ -304,7 +354,7 @@ func TestIdempotency(t *testing.T) {
 	close(bodies)
 	want := <-bodies
 	for b := range bodies {
-		if b != want || !strings.HasPrefix(b, "201 ") {
+		if b != want || !strings.HasPrefix(b, "202 ") {
 			t.Fatalf("concurrent repeats differ: %q vs %q", b, want)
 		}
 	}
@@ -317,24 +367,27 @@ func TestDryRunWritesNothing(t *testing.T) {
 	e := start(t)
 	var p project
 	resp := e.ok(e.do("POST", "/api/projects?dryRun=true", `{"slug":"dry","name":"Dry"}`, "Idempotency-Key", e.key()), 200, &p)
-	if p.Slug != "dry" || p.Rev != 1 || resp.Header.Get("ETag") != `"1"` {
+	if p.Slug != "dry" || p.Rev != 1 || resp.Header.Get("ETag") != `"1"` || p.State != "bootstrapping" {
 		t.Fatalf("dry run result %+v", p)
 	}
 	e.newProject("real")
-	e.ok(e.do("PATCH", "/api/projects/real?dryRun=true", `{"name":"Renamed"}`, "Idempotency-Key", e.key(), "If-Match", `"1"`), 200, &p)
-	if p.Name != "Renamed" || p.Rev != 2 {
+	e.ok(e.do("PATCH", "/api/projects/real?dryRun=true", `{"name":"Renamed"}`, "Idempotency-Key", e.key(), "If-Match", `"2"`), 200, &p)
+	if p.Name != "Renamed" || p.Rev != 3 {
 		t.Fatalf("dry edit %+v", p)
 	}
 	// Dry runs still validate against the state: a taken slug is reported.
 	expectProblem(t, e.do("POST", "/api/projects?dryRun=true", `{"slug":"real","name":"x"}`, "Idempotency-Key", e.key()), 409, "conflict")
 
 	e.ok(e.do("GET", "/api/projects/real", ""), 200, &p)
-	if p.Name != "real" || p.Rev != 1 {
+	if p.Name != "real" || p.Rev != 2 {
 		t.Fatalf("dry edit changed the project: %+v", p)
 	}
 	expectProblem(t, e.do("GET", "/api/projects/dry", ""), 404, "not-found")
-	if n := e.count("SELECT count(*) FROM events"); n != 1 {
-		t.Fatalf("%d events, want only real's creation", n)
+	if n := e.count("SELECT count(*) FROM events WHERE topic LIKE 'entity.project.%'"); n != 2 {
+		t.Fatalf("%d project events, want only real's creation and bootstrap", n)
+	}
+	if n := e.count("SELECT count(*) FROM jobs"); n != 1 {
+		t.Fatalf("%d jobs: a dry run queued one", n)
 	}
 	if n := e.count("SELECT count(*) FROM idempotency_keys"); n != 1 {
 		t.Fatalf("dry runs stored idempotency keys")
@@ -384,7 +437,11 @@ func TestWorkspaces(t *testing.T) {
 		}
 	}
 	e.ok(e.do("GET", "/api/me/projects/wsp/workspaces", ""), 200, &list)
-	if len(list.Items) != 1 || list.Items[0].Name != "Training set" || list.Items[0].Rev != 2 {
+	found := false
+	for _, it := range list.Items {
+		found = found || (it.Name == "Training set" && it.Rev == 2)
+	}
+	if len(list.Items) != 6 || !found { // the five default workspaces of the bootstrap, and this one
 		t.Fatalf("list %+v", list)
 	}
 	expectProblem(t, e.do("GET", "/api/me/projects/nope/workspaces", ""), 404, "not-found")
@@ -494,50 +551,64 @@ func TestEventStreamFilterAndResume(t *testing.T) {
 	a := e.newProject("alpha")
 	e.ok(e.do("PUT", "/api/me/projects/alpha/workspaces/Main", `{"schemaVersion":1,"layout":{},"panels":{}}`,
 		"Idempotency-Key", e.key()), 200, nil) // entity.workspace.*: filtered out
-	e.ok(e.do("PATCH", "/api/projects/alpha", `{"name":"Alpha"}`, "Idempotency-Key", e.key(), "If-Match", `"1"`), 200, nil)
-	got := expectFrames(t, frames, 2)
-	if got[0].data["type"] != "project.created" || got[1].data["type"] != "project.edited" {
+	e.ok(e.do("PATCH", "/api/projects/alpha", `{"name":"Alpha"}`, "Idempotency-Key", e.key(), "If-Match", `"2"`), 200, nil)
+	got := expectFrames(t, frames, 3)
+	if got[0].data["type"] != "project.created" || got[1].data["type"] != "project.bootstrapped" || got[2].data["type"] != "project.edited" {
 		t.Fatalf("frames %+v", got)
 	}
 	causedBy, _ := got[0].data["causedBy"].(map[string]any)
 	actor, _ := got[0].data["actor"].(map[string]any)
-	payload, _ := got[1].data["payload"].(map[string]any)
+	payload, _ := got[2].data["payload"].(map[string]any)
 	proj, _ := payload["project"].(map[string]any)
 	if got[0].data["projectId"] != a.ID || actor["id"] != "usr_admin" || !strings.HasPrefix(fmt.Sprint(causedBy["commandId"]), "cmd_") ||
-		proj["name"] != "Alpha" || proj["rev"] != float64(2) || float64(got[1].id) != got[1].data["seq"] {
+		proj["name"] != "Alpha" || proj["rev"] != float64(3) || float64(got[2].id) != got[2].data["seq"] {
 		t.Fatalf("event shape %+v", got)
 	}
 	expectQuiet(t, frames)
-	lastSeen := got[1].id
+	lastSeen := got[2].id
 	disconnect()
 
 	// While disconnected: two project events and one workspace event.
 	e.newProject("gamma")
 	e.ok(e.do("PUT", "/api/me/projects/gamma/workspaces/Main", `{"schemaVersion":1,"layout":{},"panels":{}}`,
 		"Idempotency-Key", e.key()), 200, nil)
-	e.ok(e.do("PATCH", "/api/projects/alpha", `{"description":"d"}`, "Idempotency-Key", e.key(), "If-Match", `"2"`), 200, nil)
+	e.ok(e.do("PATCH", "/api/projects/alpha", `{"description":"d"}`, "Idempotency-Key", e.key(), "If-Match", `"3"`), 200, nil)
 
 	// Reconnect with Last-Event-ID (it wins over ?after): exactly the missed matching events, in order, then live.
 	frames, disconnect = e.openStream("/api/events?topics=entity.project.*&after=0", "Last-Event-ID", strconv.FormatInt(lastSeen, 10))
 	defer disconnect()
-	got = expectFrames(t, frames, 2)
-	if got[0].data["type"] != "project.created" || got[1].data["type"] != "project.edited" ||
-		got[0].id <= lastSeen || got[1].id <= got[0].id {
+	got = expectFrames(t, frames, 3)
+	if got[0].data["type"] != "project.created" || got[1].data["type"] != "project.bootstrapped" || got[2].data["type"] != "project.edited" ||
+		got[0].id <= lastSeen || got[1].id <= got[0].id || got[2].id <= got[1].id {
 		t.Fatalf("resumed frames %+v", got)
 	}
 	expectQuiet(t, frames)
 	e.newProject("delta")
-	if f := expectFrames(t, frames, 1)[0]; f.id <= got[1].id || f.data["type"] != "project.created" {
+	if f := expectFrames(t, frames, 1)[0]; f.id <= got[2].id || f.data["type"] != "project.created" {
 		t.Fatalf("live after replay %+v", f)
 	}
 
-	// Project filter keeps that project's events (and events without a projectId).
+	// Project filter keeps that project's events (and events without a projectId: the registry's).
 	byProject, stop := e.openStream("/api/events?project=before&after=0")
 	defer stop()
-	if f := expectFrames(t, byProject, 1)[0]; f.data["projectId"] != before.ID {
-		t.Fatalf("project filter %+v", f)
+	own := 0
+	for quiet := false; !quiet; {
+		select {
+		case f := <-byProject:
+			switch f.data["projectId"] {
+			case before.ID:
+				own++
+			case nil:
+			default:
+				t.Fatalf("project filter let through %+v", f)
+			}
+		case <-time.After(700 * time.Millisecond):
+			quiet = true
+		}
 	}
-	expectQuiet(t, byProject)
+	if own == 0 {
+		t.Fatal("project filter dropped the project's own events")
+	}
 
 	// JSON form: paging with lastSeq.
 	var page struct {

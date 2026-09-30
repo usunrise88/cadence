@@ -13,6 +13,37 @@ var Operations = []Operation{
 		},
 	},
 	{
+		ID: "agentModels.list", Entity: "agentModels", Verb: "list", Method: "GET", Path: "/catalog/agent-models",
+		Summary: "Agent models per driver, with the default the wizard picks",
+	},
+	{
+		ID: "agentProfile.edit", Entity: "agentProfile", Verb: "edit", Method: "PATCH", Path: "/projects/{p}/agent-profile",
+		Summary:        "Change the agent profile; the rendered config files and AGENTS.md are committed to main",
+		Description:    "Change the project's agent profile: driver (claude-code or opencode), model, permission preset, auto-merge policy for session branches, draft policy per entity kind, instructions template, or the AGENTS.md text itself (which makes the instructions custom). The rendered .claude/settings.json, opencode.json, AGENTS.md and CLAUDE.md are committed to main; running sessions pick them up at their next turn. Agents changing their own profile wait for an approval. Send ifMatch with the profile's etag.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "agentsMd", Type: "string", Description: "The AGENTS.md text; setting it makes the instructions custom (instructionsTemplate becomes custom)"},
+			{Name: "autoMerge", Type: "string", Description: "when-clean: a session branch merges into main at session end when it applies cleanly; never: it always waits as Session changes"},
+			{Name: "draftPolicy", Type: "object"},
+			{Name: "driver", Type: "string"},
+			{Name: "instructionsTemplate", Type: "string", Description: "An instructions template (templates.list templateKind=instructions): default or minimal; custom once AGENTS.md was edited by hand"},
+			{Name: "model", Type: "string", Description: "The driver's own model id: a Claude Code alias (sonnet, opus, haiku) or opencode's provider/model"},
+			{Name: "permissionPreset", Type: "string", Description: "A permission preset (templates.list templateKind=preset), e.g. guardrails-default"},
+		}},
+	},
+	{
+		ID: "agentProfile.get", Entity: "agentProfile", Verb: "get", Method: "GET", Path: "/projects/{p}/agent-profile",
+		Summary: "The project's agent profile with the config files rendered from it",
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+		},
+	},
+	{
 		ID: "aliases.get", Entity: "aliases", Verb: "get", Method: "GET", Path: "/projects/{p}/aliases/{name}",
 		Summary: "Get one project alias and the version it points at",
 		Params: []Param{
@@ -110,6 +141,45 @@ var Operations = []Operation{
 		Params: []Param{
 			{Name: "collection", In: "query", Flag: "collection", Type: "string", Description: "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)"},
 			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated"}},
+		},
+	},
+	{
+		ID: "branches.accept", Entity: "branches", Verb: "accept", Method: "POST", Path: "/projects/{p}/branches/{name}:accept",
+		Summary:        "Merge a sync branch into main (fast-forward when possible, otherwise a merge commit)",
+		Description:    "Merge a draft branch (sync/<date>) into main: fast-forward when main has not moved, otherwise a merge commit. A conflict answers 409 merge-conflict with the conflicting files and leaves main unchanged. Session branches are merged with agentSessions.accept. Send ifMatch with the branch head from branches.get, so you accept exactly what you reviewed.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "name", In: "path", Flag: "name", Required: true, Type: "string", Description: "Branch name, URL-encoded (sync%2F2026-09-30, session%2F<id>)"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+	},
+	{
+		ID: "branches.get", Entity: "branches", Verb: "get", Method: "GET", Path: "/projects/{p}/branches/{name}",
+		Summary: "A branch with its diff against main and the conflicts a merge would meet",
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "name", In: "path", Flag: "name", Required: true, Type: "string", Description: "Branch name, URL-encoded (sync%2F2026-09-30, session%2F<id>)"},
+		},
+	},
+	{
+		ID: "branches.list", Entity: "branches", Verb: "list", Method: "GET", Path: "/projects/{p}/branches",
+		Summary: "Open branches of the project repository (session and sync branches not merged into main)",
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+		},
+	},
+	{
+		ID: "branches.revert", Entity: "branches", Verb: "revert", Method: "POST", Path: "/projects/{p}/branches/{name}:revert",
+		Summary:        "Discard a sync branch without merging it",
+		Description:    "Discard a draft branch (sync/<date>): the branch is deleted and main is unchanged. Session branches are discarded with agentSessions.revert. Send ifMatch with the branch head from branches.get.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "name", In: "path", Flag: "name", Required: true, Type: "string", Description: "Branch name, URL-encoded (sync%2F2026-09-30, session%2F<id>)"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
 		},
 	},
 	{
@@ -405,7 +475,7 @@ var Operations = []Operation{
 	{
 		ID: "projects.archive", Entity: "projects", Verb: "archive", Method: "POST", Path: "/projects/{p}:archive",
 		Summary:        "Archive a project (soft; reversible)",
-		Description:    "Archive a project (soft; reversible): it leaves the default projects.list but still resolves by slug. Send ifMatch with the etag (or rev) of your last projects.get.",
+		Description:    "Archive a project (soft; reversible): it leaves the default projects.list but still resolves by slug; its server-side worktrees and working clone are removed and its repository becomes read-only (no more commits or pushes). Send ifMatch with the etag (or rev) of your last projects.get.",
 		IdempotencyKey: true,
 		Params: []Param{
 			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
@@ -415,8 +485,8 @@ var Operations = []Operation{
 	},
 	{
 		ID: "projects.edit", Entity: "projects", Verb: "edit", Method: "PATCH", Path: "/projects/{p}",
-		Summary:        "Rename or re-describe a project",
-		Description:    "Rename or re-describe a project. Send ifMatch with the etag (or rev) of your last projects.get; a stale revision fails with precondition-failed and the current revision to re-read.",
+		Summary:        "Change a project's name, description, locales, domain, base model or budgets",
+		Description:    "Change what the wizard set: name, description, locales, domain, the default base model (a frozen base-model version id; it is adopted when it is not yet) and budgets. Changes to project facts re-render project.yaml and AGENTS.md and commit them to main. Send ifMatch with the etag (or rev) of your last projects.get; a stale revision fails with precondition-failed and the current revision to re-read.",
 		IdempotencyKey: true,
 		Params: []Param{
 			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
@@ -424,7 +494,11 @@ var Operations = []Operation{
 			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
 		},
 		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "baseModel", Type: "string", Description: "A frozen base-model version id (ver_…); adopted when the project has not yet"},
+			{Name: "budgets", Type: "object"},
 			{Name: "description", Type: "string"},
+			{Name: "domain", Type: "string"},
+			{Name: "locales", Type: "array of string"},
 			{Name: "name", Type: "string"},
 		}},
 	},
@@ -444,16 +518,37 @@ var Operations = []Operation{
 	},
 	{
 		ID: "projects.new", Entity: "projects", Verb: "new", Method: "POST", Path: "/projects",
-		Summary:        "Create a project",
-		Description:    "Create a project: a unit of work with its own repository, budgets and gates. Phase 0 creates the record only; bootstrap (repository, templates) arrives in phase 1 and then answers 202 with a job id.",
+		Summary:        "Create a project from the wizard's choices and bootstrap its repository (202 with the bootstrap job)",
+		Description:    "Create a project: a unit of work with its own repository, budgets and gates. Only name is required; every other wizard choice (slug, locales, domain, base model, agent driver and model, permission preset, instructions template, repository, budgets) defaults from defaults.yaml (defaults.get, section wizard). The project is created in state bootstrapping and the answer is 202 with the bootstrap job's id: follow job.{jobId} (jobs.wait) until the repository is written and the project is active. A dry run answers 200 with the project that would be created and queues nothing.",
 		IdempotencyKey: true,
 		Params: []Param{
 			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
 		},
 		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "agent", Type: "object"},
+			{Name: "baseModel", Type: "string", Description: "A frozen base-model version id (ver_…) or collection name (its newest frozen version)"},
+			{Name: "budgets", Type: "object"},
 			{Name: "description", Type: "string"},
+			{Name: "domain", Type: "string"},
+			{Name: "instructionsTemplate", Type: "string", Description: "An instructions template (templates.list templateKind=instructions): default or minimal; custom once AGENTS.md was edited by hand"},
+			{Name: "locales", Type: "array of string"},
 			{Name: "name", Required: true, Type: "string"},
-			{Name: "slug", Required: true, Type: "string", Description: "Lowercase letters, digits and dashes; 3–40 characters"},
+			{Name: "repository", Type: "object"},
+			{Name: "slug", Type: "string", Description: "Lowercase letters, digits and dashes; 3–40 characters"},
+		}},
+	},
+	{
+		ID: "projects.note", Entity: "projects", Verb: "note", Method: "POST", Path: "/projects/{p}:note",
+		Summary:        "Append a dated learning to the project's NOTES.md and commit it to main",
+		Description:    "Record a learning for the next session: the text is appended to NOTES.md under today's date and committed to main; AGENTS.md tells every session to read NOTES.md. Keep one learning per note, in a sentence or two (what was tried, what happened, what to do next time). Send ifMatch with the project's etag (projects.get); the project's revision goes up by one.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "text", Required: true, Type: "string", Description: "One learning in a sentence or two; Markdown"},
 		}},
 	},
 	{
@@ -464,6 +559,35 @@ var Operations = []Operation{
 			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
 			{Name: "q", In: "query", Flag: "q", Type: "string", Description: "Free text plus qualifiers, e.g. `fleurs kind:dataset_version tag:telephony updated:>2026-09-01`"},
 			{Name: "limit", In: "query", Flag: "limit", Type: "integer", Description: "Most hits returned over all groups", Default: "50"},
+		},
+	},
+	{
+		ID: "projects.sync", Entity: "projects", Verb: "sync", Method: "POST", Path: "/projects/{p}:sync",
+		Summary:        "Diff the project against Cadence's current templates and skills and offer the update as a draft branch",
+		Description:    "Re-render every file the bootstrap wrote from templates (skills, starter pipelines, agent config, AGENTS.md unless it is custom, data.lock) with the current template versions and compare with main. When anything differs the update is committed on a new branch sync/<date> as a draft: review it with branches.get and apply it with branches.accept or drop it with branches.revert. A dry run lists the changes only. Send ifMatch with the project's etag (projects.get).",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+	},
+	{
+		ID: "recipes.get", Entity: "recipes", Verb: "get", Method: "GET", Path: "/projects/{p}/recipes/{path}",
+		Summary: "One file of the project repository at a branch or commit, with its commit history",
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "path", In: "path", Flag: "path", Required: true, Type: "string", Description: "File path in the repository, URL-encoded (pipelines%2Ftrain-stage.yaml)"},
+			{Name: "ref", In: "query", Flag: "ref", Type: "string", Description: "Branch (main, session/<id>, sync/<date>) or commit sha to read at; main when absent"},
+		},
+	},
+	{
+		ID: "recipes.list", Entity: "recipes", Verb: "list", Method: "GET", Path: "/projects/{p}/recipes",
+		Summary: "Files of the project repository at a branch or commit",
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "ref", In: "query", Flag: "ref", Type: "string", Description: "Branch (main, session/<id>, sync/<date>) or commit sha to read at; main when absent"},
+			{Name: "prefix", In: "query", Flag: "prefix", Type: "string", Description: "Only files under this directory, e.g. pipelines/"},
 		},
 	},
 	{

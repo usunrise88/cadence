@@ -122,7 +122,7 @@ func TestFirstStartSignInAndOut(t *testing.T) {
 	}
 	expectProblem(t, e.do("POST", "/api/projects", `{"slug":"csrf","name":"x"}`, "Cookie", auth.CookieName+"="+cookie,
 		"Idempotency-Key", e.key()), 403, "forbidden")
-	e.ok(e.do("POST", "/api/projects", `{"slug":"csrf","name":"x"}`, web(cookie, "Idempotency-Key", e.key())...), 201, nil)
+	e.createProject(`{"slug":"csrf","name":"x"}`, "csrf", web(cookie)...)
 
 	// Sign in again (behind TLS at the proxy: the cookie is Secure), sign out, and the old session is gone.
 	expectProblem(t, e.do("POST", "/api/auth:login", `{"username":"admin","password":"wrong password"}`,
@@ -279,8 +279,8 @@ func TestAPIKeysAndScope(t *testing.T) {
 	e, _ := startAuth(t)
 	cookie := e.setup()
 	var a, b project
-	e.ok(e.do("POST", "/api/projects", `{"slug":"alpha","name":"A"}`, web(cookie, "Idempotency-Key", e.key())...), 201, &a)
-	e.ok(e.do("POST", "/api/projects", `{"slug":"beta","name":"B"}`, web(cookie, "Idempotency-Key", e.key())...), 201, &b)
+	a = e.createProject(`{"slug":"alpha","name":"A"}`, "alpha", web(cookie)...)
+	b = e.createProject(`{"slug":"beta","name":"B"}`, "beta", web(cookie)...)
 
 	expectProblem(t, e.do("POST", "/api/credentials", `{"name":"none","scope":{}}`, web(cookie, "Idempotency-Key", e.key())...),
 		422, "validation-failed")
@@ -325,8 +325,8 @@ func TestAPIKeysAndScope(t *testing.T) {
 	}
 	e.ok(e.do("GET", "/api/projects/alpha", "", bearer(tok)...), 200, nil)
 	expectProblem(t, e.do("GET", "/api/projects/beta", "", bearer(tok)...), 403, "forbidden")
-	e.ok(e.do("PATCH", "/api/projects/alpha", `{"name":"A2"}`, bearer(tok, "Idempotency-Key", e.key(), "If-Match", `"1"`)...), 200, nil)
-	expectProblem(t, e.do("PATCH", "/api/projects/beta", `{"name":"B2"}`, bearer(tok, "Idempotency-Key", e.key(), "If-Match", `"1"`)...), 403, "forbidden")
+	e.ok(e.do("PATCH", "/api/projects/alpha", `{"name":"A2"}`, bearer(tok, "Idempotency-Key", e.key(), "If-Match", `"2"`)...), 200, nil)
+	expectProblem(t, e.do("PATCH", "/api/projects/beta", `{"name":"B2"}`, bearer(tok, "Idempotency-Key", e.key(), "If-Match", `"2"`)...), 403, "forbidden")
 	expectProblem(t, e.do("POST", "/api/projects", `{"slug":"gamma","name":"G"}`, bearer(tok, "Idempotency-Key", e.key())...), 403, "forbidden")
 	expectProblem(t, e.do("GET", "/api/credentials", "", bearer(tok)...), 403, "forbidden")
 	expectProblem(t, e.do("GET", "/api/registry", "", bearer(tok)...), 403, "forbidden")
@@ -406,8 +406,7 @@ func TestAPIKeysAndScope(t *testing.T) {
 func TestAgentToken(t *testing.T) {
 	e, _ := startAuth(t)
 	cookie := e.setup()
-	var a project
-	e.ok(e.do("POST", "/api/projects", `{"slug":"alpha","name":"A"}`, web(cookie, "Idempotency-Key", e.key())...), 201, &a)
+	a := e.createProject(`{"slug":"alpha","name":"A"}`, "alpha", web(cookie)...)
 	ctx := context.Background()
 	var token, id string
 	if err := pgx.BeginFunc(ctx, e.pool, func(tx pgx.Tx) error {

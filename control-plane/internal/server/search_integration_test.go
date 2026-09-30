@@ -99,9 +99,7 @@ func eventually(t *testing.T, what string, cond func() bool) {
 
 func TestSearchFollowsEvents(t *testing.T) {
 	e := start(t)
-	var p project
-	e.ok(e.do("POST", "/api/projects", `{"slug":"alpha","name":"Hebrew telephony","description":"Call-centre audio"}`,
-		"Idempotency-Key", e.key()), 201, &p)
+	p := e.createProject(`{"slug":"alpha","name":"Hebrew telephony","description":"Call-centre audio"}`, "alpha")
 	eventually(t, "the new project in the index", func() bool { return e.search("alpha", "telephony").has("project", "Hebrew telephony") })
 
 	// Typos and identifiers.
@@ -118,10 +116,10 @@ func TestSearchFollowsEvents(t *testing.T) {
 		t.Errorf("hit = %+v", h)
 	}
 
-	// An edit and an archive are searchable within seconds.
-	e.ok(e.do("PATCH", "/api/projects/alpha", `{"name":"Hebrew call centre"}`, "Idempotency-Key", e.key(), "If-Match", `"1"`), 200, nil)
+	// An edit and an archive are searchable within seconds (the bootstrap left the project at rev 2).
+	e.ok(e.do("PATCH", "/api/projects/alpha", `{"name":"Hebrew call centre"}`, "Idempotency-Key", e.key(), "If-Match", `"2"`), 200, nil)
 	eventually(t, "the rename", func() bool { return e.search("alpha", "kind:project").has("project", "Hebrew call centre") })
-	e.ok(e.do("POST", "/api/projects/alpha:archive", "", "Idempotency-Key", e.key(), "If-Match", `"2"`), 200, nil)
+	e.ok(e.do("POST", "/api/projects/alpha:archive", "", "Idempotency-Key", e.key(), "If-Match", `"3"`), 200, nil)
 	eventually(t, "the archive", func() bool { return e.search("alpha", "status:archived").has("project", "Hebrew call centre") })
 
 	// Registry versions and collections (registered at start by Seed) join through their events.
@@ -144,9 +142,9 @@ func TestSearchFollowsEvents(t *testing.T) {
 		t.Errorf("updated:<2000 found %d hits", r.Total)
 	}
 
-	// Jobs carry numbers; project work ranks before the registry.
+	// Jobs carry numbers; project work ranks before the registry. The project's bootstrap job is the first.
 	j := e.enqueue(p.ID, map[string]any{})
-	eventually(t, "the job", func() bool { return e.search("alpha", "kind:job progress>=0").Total == 1 })
+	eventually(t, "the job", func() bool { return e.search("alpha", "kind:job progress>=0").Total == 2 })
 	r = e.search("alpha", "")
 	if r.Groups[0].Kind != "project" && r.Groups[0].Kind != "job" {
 		t.Errorf("the current project's work should come first, groups %v", r.kinds())
@@ -172,9 +170,8 @@ func TestSearchFollowsEvents(t *testing.T) {
 func TestSearchScope(t *testing.T) {
 	e, _ := startAuth(t)
 	cookie := e.setup()
-	var a, b project
-	e.ok(e.do("POST", "/api/projects", `{"slug":"alpha","name":"Alpha voice"}`, web(cookie, "Idempotency-Key", e.key())...), 201, &a)
-	e.ok(e.do("POST", "/api/projects", `{"slug":"beta","name":"Beta voice"}`, web(cookie, "Idempotency-Key", e.key())...), 201, &b)
+	e.createProject(`{"slug":"alpha","name":"Alpha voice"}`, "alpha", web(cookie)...)
+	b := e.createProject(`{"slug":"beta","name":"Beta voice"}`, "beta", web(cookie)...)
 	if _, err := registry.Seed(context.Background(), e.pool, templates.FS, time.Now()); err != nil {
 		t.Fatal(err)
 	}

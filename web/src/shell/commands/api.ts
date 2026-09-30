@@ -3,6 +3,8 @@ import { commandHeaders } from "@/api/client";
 import { approvalsApprove, approvalsDeny, computeEdit, credentialsNew, credentialsRevoke, policiesEdit, secretsNew } from "@/api/gen/sdk.gen";
 import type {
   Approval,
+  Branch,
+  BranchMerge,
   ComputeEdit,
   ComputeHost,
   Credential,
@@ -11,6 +13,8 @@ import type {
   MixEditResult,
   Policies,
   PoliciesEdit,
+  ProjectNote,
+  ProjectSync,
   Secret,
   SavedView,
   SecretNewWritable,
@@ -20,6 +24,7 @@ import { useFocusedApproval } from "@/shell/approvals/store";
 import { commands } from "@/shell/registries";
 import { commandContext } from "@/shell/state";
 import type { MixEditArgs } from "./entities";
+import type { BranchArgs, NoteArgs, ProfileEditArgs, ProfileEditResult, SyncArgs } from "./projects";
 import type { Command } from "./registry";
 
 // Commands behind the Approvals, Settings and Getting started panels (phase 1). Each mutating command is exactly
@@ -41,6 +46,11 @@ export type ApiCommands = {
   "view.twoFactor": { args: undefined; result: void };
   "views.set": { args: { name: string; query: string }; result: SavedView | undefined };
   "mixes.edit": { args: MixEditArgs; result: MixEditResult | undefined };
+  "projects.note": { args: NoteArgs; result: ProjectNote | undefined };
+  "projects.sync": { args: SyncArgs; result: ProjectSync | undefined };
+  "agentProfile.edit": { args: ProfileEditArgs; result: ProfileEditResult | undefined };
+  "branches.accept": { args: BranchArgs; result: BranchMerge | undefined };
+  "branches.revert": { args: BranchArgs; result: Branch | undefined };
 };
 export type ApiCommandId = keyof ApiCommands;
 

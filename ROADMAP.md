@@ -137,7 +137,7 @@ Write before starting:
       engine uses to answer requests the table already decides
 - [ ] **spec** → *R9* Secret storage: where write-only values from `POST /secrets` live (the proposed default "compose env
       file" cannot be written from the UI), how jobs and bootstrap read them
-- [ ] **spec** → *R10* The internal bare repository: where it lives, how the server clones and pushes, how a person reaches
+- [x] **spec** → *R10* The internal bare repository: where it lives, how the server clones and pushes, how a person reaches
       it (git over SSH/HTTP or not at all); GitHub repository creation with the stored token
 - [ ] **spec** → *R12* Estimate model: how `dryRun` computes GPU-hours, duration and data volume (calibration throughput ×
       steps, or a table in `defaults.yaml`) — needed by the phase-1 estimate-only dry run and A2
@@ -188,16 +188,16 @@ Agent host (05 Agent integration)
 - [ ] Session kinds: interactive and read-only ("Explain this") now; playbook in phase 2; scheduled in phase 5
 
 Projects
-- [ ] Wizard (Recommended three fields + Customise; the recordings-mount field is skippable until phase 4) and
+- [x] Wizard (Recommended three fields + Customise; the recordings-mount field is skippable until phase 4) and
       `projects:bootstrap` job: repository (GitHub or internal bare), `project.yaml`, `AGENTS.md`/`CLAUDE.md` from
       instruction templates, agent config from permission presets, product skills from `control-plane/templates/skills/`,
       starter pipelines, default workspaces (language packs join via `projects.sync` in phase 3)
-- [ ] Agent profile + `PATCH /projects/{p}/agent-profile`; catalogues (base models, agent models, instruction templates)
-- [ ] `projects.note` → `NOTES.md`; `projects.sync` / template sync as a draft commit
+- [x] Agent profile + `PATCH /projects/{p}/agent-profile`; catalogues (base models, agent models, instruction templates)
+- [x] `projects.note` → `NOTES.md`; `projects.sync` / template sync as a draft commit
 - [x] Mix entity, minimal (enough for the gate): `mixes.new|edit` with revisions and drafts over fixture dataset versions
 - [ ] Context bridge: selection → prompt references (`@run:123`), Ask agent / Ctrl/Cmd+I, references in replies as
       links, attribution badge → tool call in Chat
-- [ ] Project archive (read-only artifacts, worktrees removed); source archive comes with Sources in phase 2
+- [x] Project archive (read-only artifacts, worktrees removed); source archive comes with Sources in phase 2
 - [x] Saved searches: Saved search entity, `PUT /me/projects/{p}/views/{name}`, Library views and palette entries
 - [x] Search index fed from the outbox (Postgres FTS + trigram), qualifier grammar, `search.query` (`projects.search`, R1), palette entity search
 

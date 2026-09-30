@@ -1,33 +1,32 @@
-# Written by the project wizard (bootstrap job). Edit through the Project document, not by hand.
+# written by Cadence — the project wizard's choices; change them in the Project document or Agent
+# settings, which commit this file again. Keys are stable; keep prose out of this file.
 version: 1
 name: Hebrew telephony
 slug: hebrew
+description: ""
 locales: [he-IL]
 domain: telephony
 base_model:
+  version_id: ver_01a0e000-0000-7000-8000-000000000001
+  collection: base-model/nemotron-3.5-asr-streaming-0.6b
+  version: 2026-09-29.6733473ea7a9
   repo: nvidia/nemotron-3.5-asr-streaming-0.6b
-  revision: PIN_ME            # the wizard pins the current Hugging Face revision hash
-  license: OpenMDW-1.1
+  revision: ea30d66debe3740a08b573244286791d423d6b3e
+  licence: openmdw-1.1
 agent:
-  driver: claude              # claude | opencode
-  model: default              # opencode: provider/model id; claude: subscription default
+  driver: claude-code
+  model: sonnet
   permission_preset: guardrails-default
   instructions_template: default
+  auto_merge: when-clean
+  draft_policy: {mix: draft, gate: draft, note: direct, language_pack: draft}
 repository:
-  kind: github                # github | internal
-  url: PIN_ME
+  kind: internal
+  clone_url: /git/hebrew.git
+  remote: ""
   branch: main
 storage:
-  mounts: []                  # mount ids attached in the wizard
+  mounts: []
 budgets:
   gpu_hours_per_day: 8
-  agent_spend_per_day: 0      # 0 = subscription, counted in turns
-replay:
-  share: 0.15
-  locales: all                # the base model's other 39 locales
-adoptions:                    # registry versions this project references (see also data.lock)
-  golden_sets: []             # e.g. golden-set/hebrew-phone@2026-10-05.1f2e3d4
-  datasets: []                # adopted dataset versions the Mix editor may use
-aliases:                      # project-scoped pointers into the registry; versions never change, aliases move
-  train-current: null
-  baseline: null
+  agent_tokens_per_day: 20000000

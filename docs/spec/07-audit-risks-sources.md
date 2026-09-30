@@ -133,6 +133,25 @@ Open questions:
 - [ ] Chromium's offline emulation does not drop an open event stream, so spike A4 drops it in the page and the
       shell's own reconnect resumes with `?after=`; EventSource's native retry with `Last-Event-ID` is covered by the
       control plane's integration test only
+- [ ] Projects (phase 1, wave 2) assumptions, confirm:
+  - The bare repository on the control plane is the canonical copy for every repository kind; GitHub and linked
+    repositories get `main` mirrored after each change (never force-pushed; a failed push is recorded on the project
+    as `repository.pushError`). Changes pushed to GitHub directly are not pulled back yet
+  - Agent hosts clone from and push to `/git/<slug>.git` with the session's `cst_` token, which may push only
+    `refs/heads/session/<session id>` (R3 "the host clones from the control plane"); `main` moves only by merge
+  - Linking an existing repository uses its `main`; a repository whose default branch has another name gets a new
+    `main` from the bootstrap commit. SSH remotes are refused (https only)
+  - Creating a GitHub repository is tested against a fake of the REST API only, not against GitHub itself
+  - The default opencode model is `minimax/MiniMax-M2` (models.dev naming of the MiniMax provider, R6) — check the
+    exact id against the Token Plan; Claude Code models are the aliases `sonnet` (default), `opus`, `haiku`
+  - The per-project agent budget is in tokens per day (`budgets.agent_tokens_per_project_per_day`, 20 M), since money
+    counts only in API-key mode (R6); the draft policy defaults are mix, gate and language pack as drafts, notes direct
+  - A failed bootstrap leaves the project in state `failed` with the reason; retrying needs a new project (no
+    `projects.retry` yet), and its slug stays taken while the repository directory exists
+  - The Agent settings live topic is `entity.project.{id}` (11-ui-panels); profile changes are `agent_profile.edited`
+    events there, with entity kind `agent_profile`
+  - The default workspaces are created by the bootstrap as placeholders (an empty layout) that the web shell fills
+    with its code-defined default layout on first open
 
 ## Sources
 

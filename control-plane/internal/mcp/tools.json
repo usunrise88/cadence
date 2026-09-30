@@ -49,6 +49,196 @@
       ]
     },
     {
+      "name": "agentModels.list",
+      "title": "Agent models per driver, with the default the wizard picks",
+      "description": "Agent models per driver, with the default the wizard picks",
+      "method": "GET",
+      "path": "/catalog/agent-models",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": null
+    },
+    {
+      "name": "agentProfile.edit",
+      "title": "Change the agent profile; the rendered config files and AGENTS.md are committed to main",
+      "description": "Change the project's agent profile: driver (claude-code or opencode), model, permission preset, auto-merge policy for session branches, draft policy per entity kind, instructions template, or the AGENTS.md text itself (which makes the instructions custom). The rendered .claude/settings.json, opencode.json, AGENTS.md and CLAUDE.md are committed to main; running sessions pick them up at their next turn. Agents changing their own profile wait for an approval. Send ifMatch with the profile's etag. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "PATCH",
+      "path": "/projects/{p}/agent-profile",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "agentsMd": {
+                "description": "The AGENTS.md text; setting it makes the instructions custom (instructionsTemplate becomes custom)",
+                "maxLength": 100000,
+                "minLength": 1,
+                "type": "string"
+              },
+              "autoMerge": {
+                "description": "when-clean: a session branch merges into main at session end when it applies cleanly; never: it always waits as Session changes",
+                "enum": [
+                  "when-clean",
+                  "never"
+                ],
+                "type": "string"
+              },
+              "draftPolicy": {
+                "additionalProperties": false,
+                "properties": {
+                  "gate": {
+                    "description": "direct: agent changes land at once; draft: they land as drafts to accept or revert",
+                    "enum": [
+                      "direct",
+                      "draft"
+                    ],
+                    "type": "string"
+                  },
+                  "language_pack": {
+                    "description": "direct: agent changes land at once; draft: they land as drafts to accept or revert",
+                    "enum": [
+                      "direct",
+                      "draft"
+                    ],
+                    "type": "string"
+                  },
+                  "mix": {
+                    "description": "direct: agent changes land at once; draft: they land as drafts to accept or revert",
+                    "enum": [
+                      "direct",
+                      "draft"
+                    ],
+                    "type": "string"
+                  },
+                  "note": {
+                    "description": "direct: agent changes land at once; draft: they land as drafts to accept or revert",
+                    "enum": [
+                      "direct",
+                      "draft"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "driver": {
+                "enum": [
+                  "claude-code",
+                  "opencode"
+                ],
+                "type": "string"
+              },
+              "instructionsTemplate": {
+                "description": "An instructions template (templates.list templateKind=instructions): default or minimal; custom once AGENTS.md was edited by hand",
+                "pattern": "^[a-z][a-z0-9-]{0,62}$",
+                "type": "string"
+              },
+              "model": {
+                "description": "The driver's own model id: a Claude Code alias (sonnet, opus, haiku) or opencode's provider/model",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@-]{0,119}$",
+                "type": "string"
+              },
+              "permissionPreset": {
+                "description": "A permission preset (templates.list templateKind=preset), e.g. guardrails-default",
+                "pattern": "^[a-z][a-z0-9-]{0,62}$",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "ifMatch",
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "agentProfile.get",
+      "title": "The project's agent profile with the config files rendered from it",
+      "description": "The project's agent profile with the config files rendered from it",
+      "method": "GET",
+      "path": "/projects/{p}/agent-profile",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        }
+      ]
+    },
+    {
       "name": "aliases.get",
       "title": "Get one project alias and the version it points at",
       "description": "Get one project alias and the version it points at",
@@ -572,6 +762,211 @@
           "property": "state",
           "in": "query",
           "name": "state"
+        }
+      ]
+    },
+    {
+      "name": "branches.accept",
+      "title": "Merge a sync branch into main (fast-forward when possible, otherwise a merge commit)",
+      "description": "Merge a draft branch (sync/\u003cdate\u003e) into main: fast-forward when main has not moved, otherwise a merge commit. A conflict answers 409 merge-conflict with the conflicting files and leaves main unchanged. Session branches are merged with agentSessions.accept. Send ifMatch with the branch head from branches.get, so you accept exactly what you reviewed. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/projects/{p}/branches/{name}:accept",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          },
+          "name": {
+            "description": "Branch name, URL-encoded (sync%2F2026-09-30, session%2F\u003cid\u003e)",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$",
+            "type": "string"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ifMatch",
+          "name",
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "name",
+          "in": "path",
+          "name": "name"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        }
+      ]
+    },
+    {
+      "name": "branches.get",
+      "title": "A branch with its diff against main and the conflicts a merge would meet",
+      "description": "A branch with its diff against main and the conflicts a merge would meet",
+      "method": "GET",
+      "path": "/projects/{p}/branches/{name}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "Branch name, URL-encoded (sync%2F2026-09-30, session%2F\u003cid\u003e)",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$",
+            "type": "string"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "name",
+          "in": "path",
+          "name": "name"
+        }
+      ]
+    },
+    {
+      "name": "branches.list",
+      "title": "Open branches of the project repository (session and sync branches not merged into main)",
+      "description": "Open branches of the project repository (session and sync branches not merged into main)",
+      "method": "GET",
+      "path": "/projects/{p}/branches",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        }
+      ]
+    },
+    {
+      "name": "branches.revert",
+      "title": "Discard a sync branch without merging it",
+      "description": "Discard a draft branch (sync/\u003cdate\u003e): the branch is deleted and main is unchanged. Session branches are discarded with agentSessions.revert. Send ifMatch with the branch head from branches.get. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/projects/{p}/branches/{name}:revert",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          },
+          "name": {
+            "description": "Branch name, URL-encoded (sync%2F2026-09-30, session%2F\u003cid\u003e)",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$",
+            "type": "string"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ifMatch",
+          "name",
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "name",
+          "in": "path",
+          "name": "name"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
         }
       ]
     },
@@ -2183,7 +2578,7 @@
     {
       "name": "projects.archive",
       "title": "Archive a project (soft; reversible)",
-      "description": "Archive a project (soft; reversible): it leaves the default projects.list but still resolves by slug. Send ifMatch with the etag (or rev) of your last projects.get. Pass dryRun=true to see what would happen without changing anything.",
+      "description": "Archive a project (soft; reversible): it leaves the default projects.list but still resolves by slug; its server-side worktrees and working clone are removed and its repository becomes read-only (no more commits or pushes). Send ifMatch with the etag (or rev) of your last projects.get. Pass dryRun=true to see what would happen without changing anything.",
       "method": "POST",
       "path": "/projects/{p}:archive",
       "inputSchema": {
@@ -2235,8 +2630,8 @@
     },
     {
       "name": "projects.edit",
-      "title": "Rename or re-describe a project",
-      "description": "Rename or re-describe a project. Send ifMatch with the etag (or rev) of your last projects.get; a stale revision fails with precondition-failed and the current revision to re-read. Pass dryRun=true to see what would happen without changing anything.",
+      "title": "Change a project's name, description, locales, domain, base model or budgets",
+      "description": "Change what the wizard set: name, description, locales, domain, the default base model (a frozen base-model version id; it is adopted when it is not yet) and budgets. Changes to project facts re-render project.yaml and AGENTS.md and commit them to main. Send ifMatch with the etag (or rev) of your last projects.get; a stale revision fails with precondition-failed and the current revision to re-read. Pass dryRun=true to see what would happen without changing anything.",
       "method": "PATCH",
       "path": "/projects/{p}",
       "inputSchema": {
@@ -2245,9 +2640,46 @@
           "body": {
             "additionalProperties": false,
             "properties": {
+              "baseModel": {
+                "description": "A frozen base-model version id (ver_…); adopted when the project has not yet",
+                "maxLength": 200,
+                "type": "string"
+              },
+              "budgets": {
+                "additionalProperties": false,
+                "properties": {
+                  "agentTokensPerDay": {
+                    "maximum": 1000000000,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "gpuHoursPerDay": {
+                    "format": "double",
+                    "maximum": 192,
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                },
+                "type": "object"
+              },
               "description": {
                 "maxLength": 2000,
                 "type": "string"
+              },
+              "domain": {
+                "maxLength": 60,
+                "minLength": 1,
+                "type": "string"
+              },
+              "locales": {
+                "items": {
+                  "description": "BCP 47 locale, e.g. he-IL",
+                  "pattern": "^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$",
+                  "type": "string"
+                },
+                "maxItems": 50,
+                "minItems": 1,
+                "type": "array"
               },
               "name": {
                 "maxLength": 120,
@@ -2372,8 +2804,8 @@
     },
     {
       "name": "projects.new",
-      "title": "Create a project",
-      "description": "Create a project: a unit of work with its own repository, budgets and gates. Phase 0 creates the record only; bootstrap (repository, templates) arrives in phase 1 and then answers 202 with a job id. Pass dryRun=true to see what would happen without changing anything.",
+      "title": "Create a project from the wizard's choices and bootstrap its repository (202 with the bootstrap job)",
+      "description": "Create a project: a unit of work with its own repository, budgets and gates. Only name is required; every other wizard choice (slug, locales, domain, base model, agent driver and model, permission preset, instructions template, repository, budgets) defaults from defaults.yaml (defaults.get, section wizard). The project is created in state bootstrapping and the answer is 202 with the bootstrap job's id: follow job.{jobId} (jobs.wait) until the repository is written and the project is active. A dry run answers 200 with the project that would be created and queues nothing. Pass dryRun=true to see what would happen without changing anything.",
       "method": "POST",
       "path": "/projects",
       "inputSchema": {
@@ -2381,15 +2813,121 @@
         "properties": {
           "body": {
             "additionalProperties": false,
+            "description": "The wizard's choices; everything but name defaults from defaults.yaml (section wizard, budgets)",
             "properties": {
+              "agent": {
+                "additionalProperties": false,
+                "properties": {
+                  "driver": {
+                    "enum": [
+                      "claude-code",
+                      "opencode"
+                    ],
+                    "type": "string"
+                  },
+                  "model": {
+                    "description": "The driver's own model id: a Claude Code alias (sonnet, opus, haiku) or opencode's provider/model",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@-]{0,119}$",
+                    "type": "string"
+                  },
+                  "permissionPreset": {
+                    "description": "A permission preset (templates.list templateKind=preset), e.g. guardrails-default",
+                    "pattern": "^[a-z][a-z0-9-]{0,62}$",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "baseModel": {
+                "description": "A frozen base-model version id (ver_…) or collection name (its newest frozen version)",
+                "maxLength": 200,
+                "type": "string"
+              },
+              "budgets": {
+                "additionalProperties": false,
+                "properties": {
+                  "agentTokensPerDay": {
+                    "maximum": 1000000000,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "gpuHoursPerDay": {
+                    "format": "double",
+                    "maximum": 192,
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                },
+                "type": "object"
+              },
               "description": {
                 "maxLength": 2000,
                 "type": "string"
+              },
+              "domain": {
+                "maxLength": 60,
+                "minLength": 1,
+                "type": "string"
+              },
+              "instructionsTemplate": {
+                "description": "An instructions template (templates.list templateKind=instructions): default or minimal; custom once AGENTS.md was edited by hand",
+                "pattern": "^[a-z][a-z0-9-]{0,62}$",
+                "type": "string"
+              },
+              "locales": {
+                "items": {
+                  "description": "BCP 47 locale, e.g. he-IL",
+                  "pattern": "^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$",
+                  "type": "string"
+                },
+                "maxItems": 50,
+                "minItems": 1,
+                "type": "array"
               },
               "name": {
                 "maxLength": 120,
                 "minLength": 1,
                 "type": "string"
+              },
+              "repository": {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "description": "internal: the bare repository on the control plane; github: a new GitHub repository created with a stored token; url: an existing repository to link",
+                    "enum": [
+                      "internal",
+                      "github",
+                      "url"
+                    ],
+                    "type": "string"
+                  },
+                  "name": {
+                    "description": "github: the repository name; the project slug when absent",
+                    "maxLength": 100,
+                    "type": "string"
+                  },
+                  "owner": {
+                    "description": "github: the organisation to create the repository in; the token's user when absent",
+                    "maxLength": 100,
+                    "type": "string"
+                  },
+                  "private": {
+                    "default": true,
+                    "description": "github: create the repository private",
+                    "type": "boolean"
+                  },
+                  "secret": {
+                    "description": "Name of the stored secret (secrets.new) holding the token for github or a private url",
+                    "maxLength": 120,
+                    "type": "string"
+                  },
+                  "url": {
+                    "description": "url: the repository to link (https://…, ssh is not supported)",
+                    "maxLength": 500,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
               },
               "slug": {
                 "description": "Lowercase letters, digits and dashes; 3–40 characters",
@@ -2398,7 +2936,6 @@
               }
             },
             "required": [
-              "slug",
               "name"
             ],
             "type": "object"
@@ -2420,6 +2957,80 @@
         "idempotentHint": false
       },
       "params": [
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "projects.note",
+      "title": "Append a dated learning to the project's NOTES.md and commit it to main",
+      "description": "Record a learning for the next session: the text is appended to NOTES.md under today's date and committed to main; AGENTS.md tells every session to read NOTES.md. Keep one learning per note, in a sentence or two (what was tried, what happened, what to do next time). Send ifMatch with the project's etag (projects.get); the project's revision goes up by one. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/projects/{p}:note",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "text": {
+                "description": "One learning in a sentence or two; Markdown",
+                "maxLength": 4000,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "text"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "ifMatch",
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
         {
           "property": "dryRun",
           "in": "query",
@@ -2484,6 +3095,168 @@
           "property": "limit",
           "in": "query",
           "name": "limit"
+        }
+      ]
+    },
+    {
+      "name": "projects.sync",
+      "title": "Diff the project against Cadence's current templates and skills and offer the update as a draft branch",
+      "description": "Re-render every file the bootstrap wrote from templates (skills, starter pipelines, agent config, AGENTS.md unless it is custom, data.lock) with the current template versions and compare with main. When anything differs the update is committed on a new branch sync/\u003cdate\u003e as a draft: review it with branches.get and apply it with branches.accept or drop it with branches.revert. A dry run lists the changes only. Send ifMatch with the project's etag (projects.get). Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/projects/{p}:sync",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ifMatch",
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        }
+      ]
+    },
+    {
+      "name": "recipes.get",
+      "title": "One file of the project repository at a branch or commit, with its commit history",
+      "description": "One file of the project repository at a branch or commit, with its commit history",
+      "method": "GET",
+      "path": "/projects/{p}/recipes/{path}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          },
+          "path": {
+            "description": "File path in the repository, URL-encoded (pipelines%2Ftrain-stage.yaml)",
+            "maxLength": 400,
+            "minLength": 1,
+            "pattern": "^[^/\\x00][^\\x00]*$",
+            "type": "string"
+          },
+          "ref": {
+            "description": "Branch (main, session/\u003cid\u003e, sync/\u003cdate\u003e) or commit sha to read at; main when absent",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "p",
+          "path"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "path",
+          "in": "path",
+          "name": "path"
+        },
+        {
+          "property": "ref",
+          "in": "query",
+          "name": "ref"
+        }
+      ]
+    },
+    {
+      "name": "recipes.list",
+      "title": "Files of the project repository at a branch or commit",
+      "description": "Files of the project repository at a branch or commit",
+      "method": "GET",
+      "path": "/projects/{p}/recipes",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          },
+          "prefix": {
+            "description": "Only files under this directory, e.g. pipelines/",
+            "maxLength": 400,
+            "type": "string"
+          },
+          "ref": {
+            "description": "Branch (main, session/\u003cid\u003e, sync/\u003cdate\u003e) or commit sha to read at; main when absent",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "ref",
+          "in": "query",
+          "name": "ref"
+        },
+        {
+          "property": "prefix",
+          "in": "query",
+          "name": "prefix"
         }
       ]
     },

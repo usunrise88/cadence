@@ -1,8 +1,16 @@
 # recipes/ — example of a project repository after bootstrap
 
-In production each project has its own repository (GitHub or the internal bare repo) created by the
-project wizard. `projects/hebrew/` shows what the bootstrap job writes.
+In production each project has its own repository (the internal bare repository served at `/git/<slug>.git`, or a
+GitHub / linked repository that Cadence mirrors `main` to) created by the project wizard's bootstrap job.
+`projects/hebrew/` is what that job writes for the wizard's defaults (rendered by `internal/projects/layout`; the
+registry version ids in `project.yaml` and `data.lock` are examples):
+
+- `project.yaml` — the wizard's facts; `AGENTS.md` (instructions template) and `CLAUDE.md` (`@AGENTS.md`)
+- `NOTES.md` — dated learnings (`projects.note`)
+- `data.lock` — every registry version the project depends on, including the templates its files came from
+- `.claude/settings.json`, `opencode.json` — permissions rendered from the permission preset (no MCP section, R2)
+- `.claude/skills/` — Cadence's product skills; `pipelines/` — the starter pipelines
 
 Data never lives here. Datasets, golden sets, models and other reusable assets are immutable versions in
-the Cadence-wide registry; the project references them through `project.yaml` adoptions and aliases, and
-`data.lock` records the exact versions resolved for reproducibility.
+the Cadence-wide registry; the project references them through adoptions and aliases, and `data.lock` records the
+exact versions resolved for reproducibility.

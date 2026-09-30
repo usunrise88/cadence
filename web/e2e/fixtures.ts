@@ -4,13 +4,24 @@ import { test as base, expect, type APIRequestContext, type Page } from "@playwr
 
 let counter = 0;
 
+/** Creates a project through projects.new (202 + bootstrap job) and waits until the bootstrap job ends. */
 export async function newProject(request: APIRequestContext, name = "E2E"): Promise<string> {
   const slug = `e2e-${Date.now().toString(36)}-${counter++}`;
   const res = await request.post("/api/projects", {
     data: { slug, name: `${name} ${slug}` },
     headers: { "Idempotency-Key": `key-${slug}` },
   });
-  expect(res.status()).toBe(201);
+  expect(res.status(), await res.text()).toBe(202);
+  const { jobId } = (await res.json()) as { jobId: string };
+  await expect
+    .poll(
+      async () => {
+        const job = await request.get(`/api/jobs/${jobId}:wait`, { params: { timeout: 10 } });
+        return ((await job.json()) as { state: string }).state;
+      },
+      { timeout: 60_000, intervals: [100] },
+    )
+    .toBe("done");
   return slug;
 }
 

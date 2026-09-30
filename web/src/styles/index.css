@@ -49,6 +49,10 @@
   --color-status-warning-foreground: var(--cadence-status-warning-text);
   --color-status-failed: var(--cadence-status-failed);
   --color-status-failed-foreground: var(--cadence-status-failed-text);
+  --color-diff-added: var(--cadence-diff-added);
+  --color-diff-added-foreground: var(--cadence-diff-added-text);
+  --color-diff-removed: var(--cadence-diff-removed);
+  --color-diff-removed-foreground: var(--cadence-diff-removed-text);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
