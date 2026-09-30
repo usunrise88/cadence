@@ -61,7 +61,7 @@ func (e *Engine) Plan(ctx context.Context, q storage.Querier, p Pipeline, in Pla
 		switch {
 		case !given:
 			errs.Add("inputs."+name, "the pipeline needs input %q (an artifact of type %s)", name, p.Inputs[name])
-		case ref.Type != p.Inputs[name]:
+		case !Accepts(p.Inputs[name], ref.Type):
 			errs.Add("inputs."+name, "input %q must be a %s artifact, not %s", name, p.Inputs[name], ref.Type)
 		case !steps.ValidHash(ref.Hash):
 			errs.Add("inputs."+name, "%q is not an artifact hash (b3:<64 hex>)", ref.Hash)
@@ -105,13 +105,17 @@ func (e *Engine) Plan(ctx context.Context, q storage.Querier, p Pipeline, in Pla
 			continue
 		}
 		path := fmt.Sprintf("steps[%d]", i)
+		wired := map[string]bool{}
+		for name := range s.In {
+			wired[ConsumedName(name)] = true
+		}
 		for _, name := range sortedKeys(k.Consumes) {
-			if _, wired := s.In[name]; !wired {
+			if !wired[name] {
 				errs.Add(path+".in."+name, "%s consumes %q (%s); wire it from $inputs.<name> or <step>.<output>", s.Kind, name, k.Consumes[name])
 			}
 		}
 		for _, name := range sortedKeys(s.In) {
-			want, consumed := k.Consumes[name]
+			want, consumed := k.Consumes[ConsumedName(name)]
 			if !consumed {
 				errs.Add(path+".in."+name, "%s has no input %q (it consumes %s)", s.Kind, name, listOr(sortedKeys(k.Consumes), "nothing"))
 				continue
@@ -132,7 +136,7 @@ func (e *Engine) Plan(ctx context.Context, q storage.Querier, p Pipeline, in Pla
 				}
 				got = t
 			}
-			if got != want {
+			if !Accepts(want, got) {
 				errs.Add(path+".in."+name, "%s consumes a %s artifact as %q, but %s is a %s", s.Kind, want, name, s.In[name], got)
 			}
 		}

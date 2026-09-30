@@ -240,3 +240,38 @@ func TestDefaultsLookup(t *testing.T) {
 		}
 	}
 }
+
+func TestSeveralArtifactsPerInput(t *testing.T) {
+	ok := "name: avg\ninputs: {a: checkpoint, b: checkpoint}\nsteps:\n  - {id: s, kind: x@1, in: {checkpoints.0: $inputs.a, checkpoints.1: $inputs.b}}\n"
+	if _, err := Parse([]byte(ok), "avg"); err != nil {
+		t.Fatalf("name.<n> inputs: %v", err)
+	}
+	for _, bad := range []string{"checkpoints.x", "checkpoints.01", "Checkpoints", "checkpoints.1.2"} {
+		doc := "name: avg\ninputs: {a: checkpoint}\nsteps:\n  - {id: s, kind: x@1, in: {" + bad + ": $inputs.a}}\n"
+		if _, err := Parse([]byte(doc), "avg"); err == nil {
+			t.Errorf("%q accepted as an input name", bad)
+		}
+	}
+	for in, want := range map[string]string{"checkpoints.3": "checkpoints", "data": "data", "x.10": "x"} {
+		if got := ConsumedName(in); got != want {
+			t.Errorf("ConsumedName(%q) = %q", in, got)
+		}
+	}
+}
+
+func TestAccepts(t *testing.T) {
+	tests := []struct {
+		want, got string
+		ok        bool
+	}{
+		{"mix", "mix", true},
+		{"base_model", "checkpoint", true}, // R44: a checkpoint starts a stage like a base model
+		{"checkpoint", "base_model", false},
+		{"dataset", "mix", false},
+	}
+	for _, tt := range tests {
+		if Accepts(tt.want, tt.got) != tt.ok {
+			t.Errorf("Accepts(%s, %s) != %v", tt.want, tt.got, tt.ok)
+		}
+	}
+}

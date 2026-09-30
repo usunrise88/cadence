@@ -19,6 +19,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -64,7 +65,28 @@ type Options struct {
 }
 
 // Engine runs pipelines.
-type Engine struct{ o Options }
+type Engine struct {
+	o        Options
+	observer atomic.Pointer[RunObserver]
+}
+
+// RunObserver is told about every change of a pipeline run that belongs to a training run (RunID set), inside the
+// transaction that made it, after the run and its steps were saved; the events it returns join that transaction's.
+// A facade (internal/runs) uses it to mirror the pipeline run's state onto its own entity. It is called after
+// Start, after a step outcome is applied, when a worker leases a step (Leased), and after Cancel and Retry.
+type RunObserver func(ctx context.Context, tx pgx.Tx, r Run) ([]events.Draft, error)
+
+// SetObserver installs the run observer (one per engine; a later call replaces it).
+func (e *Engine) SetObserver(fn RunObserver) { e.observer.Store(&fn) }
+
+// observe calls the observer for a run that belongs to a training run.
+func (e *Engine) observe(ctx context.Context, tx pgx.Tx, r Run) ([]events.Draft, error) {
+	fn := e.observer.Load()
+	if fn == nil || r.RunID == "" {
+		return nil, nil
+	}
+	return (*fn)(ctx, tx, r)
+}
 
 // New returns an engine; call Register before the job service starts.
 func New(o Options) *Engine {
@@ -212,8 +234,14 @@ func (e *Engine) Start(ctx context.Context, tx pgx.Tx, in StartInput) (Run, []ev
 	if err != nil {
 		return Run{}, nil, err
 	}
-	r.Steps, err = stepsOf(ctx, tx, r.ID, false)
-	return r, append(drafts, more...), err
+	if r.Steps, err = stepsOf(ctx, tx, r.ID, false); err != nil {
+		return Run{}, nil, err
+	}
+	obs, err := e.observe(ctx, tx, r)
+	if err != nil {
+		return Run{}, nil, err
+	}
+	return r, append(append(drafts, more...), obs...), nil
 }
 
 // ---------------------------------------------------------------- advancing
@@ -256,7 +284,7 @@ func (e *Engine) advance(ctx context.Context, tx pgx.Tx, r *Run, sts []StepRow) 
 				if s.Attempts > 0 {
 					reason = ReasonRetry
 				}
-				if ev, err = e.enqueue(ctx, tx, *r, s, reason, 0); err != nil {
+				if ev, err = e.enqueue(ctx, tx, *r, s, reason, steps.Overrides{}); err != nil {
 					return nil, err
 				}
 			}
@@ -347,12 +375,12 @@ func (e *Engine) reuse(ctx context.Context, tx pgx.Tx, r *Run, s *StepRow) ([]ev
 	return append(drafts, stepDraft(*r, *s)), true, nil
 }
 
-// enqueue starts a new attempt of s as a step job.
-func (e *Engine) enqueue(ctx context.Context, tx pgx.Tx, r Run, s *StepRow, reason string, batchScale float64) ([]events.Draft, error) {
+// enqueue starts a new attempt of s as a step job with overrides ov (batch scale, training state to resume from).
+func (e *Engine) enqueue(ctx context.Context, tx pgx.Tx, r Run, s *StepRow, reason string, ov steps.Overrides) ([]events.Draft, error) {
 	spec := steps.Spec{
 		StepID: s.ID, PipelineRunID: r.ID, ProjectID: r.ProjectID, RunID: r.RunID, Kind: s.Kind, KindVersion: s.KindVersion,
 		Params: mustJSON(s.Params), Inputs: s.Inputs, Outputs: s.Produces, Resources: s.Resources, Priority: r.Priority,
-		EstimateSeconds: s.EstimateSeconds, Overrides: steps.Overrides{BatchScale: batchScale}, SecretNames: s.SecretNames,
+		EstimateSeconds: s.EstimateSeconds, Overrides: ov, SecretNames: s.SecretNames,
 		Attempt: s.Attempts + 1,
 	}
 	if spec.Inputs == nil {
@@ -371,7 +399,8 @@ func (e *Engine) enqueue(ctx context.Context, tx pgx.Tx, r Run, s *StepRow, reas
 	}
 	s.Attempts = spec.Attempt
 	s.JobID, s.State, s.Error, s.FinishedAt = j.ID, StepQueued, nil, nil
-	s.AttemptLog = append(s.AttemptLog, Attempt{Attempt: spec.Attempt, JobID: j.ID, Reason: reason, BatchScale: batchScale, State: StepQueued})
+	s.AttemptLog = append(s.AttemptLog, Attempt{Attempt: spec.Attempt, JobID: j.ID, Reason: reason, BatchScale: ov.BatchScale,
+		ResumeFrom: ov.ResumeFrom, State: StepQueued})
 	saved, err := saveStep(ctx, tx, *s)
 	if err != nil {
 		return nil, err
@@ -452,7 +481,11 @@ func (e *Engine) Leased(ctx context.Context, tx pgx.Tx, jobID string) ([]events.
 	if err != nil {
 		return nil, err
 	}
-	return []events.Draft{stepDraft(r, saved)}, nil
+	obs, err := e.observe(ctx, tx, r)
+	if err != nil {
+		return nil, err
+	}
+	return append([]events.Draft{stepDraft(r, saved)}, obs...), nil
 }
 
 // complete applies a lease outcome to the step of job jobID in one transaction.
@@ -486,7 +519,11 @@ func (e *Engine) complete(ctx context.Context, jobID string, spec steps.Spec, ou
 		if err != nil {
 			return err
 		}
-		return events.Append(ctx, tx, jobs.System, nil, drafts)
+		obs, err := e.observe(ctx, tx, r)
+		if err != nil {
+			return err
+		}
+		return events.Append(ctx, tx, jobs.System, nil, append(drafts, obs...))
 	})
 }
 
@@ -585,17 +622,17 @@ func (e *Engine) runHooks(ctx context.Context, tx pgx.Tx, r Run, s StepRow, spec
 func (e *Engine) fail(ctx context.Context, tx pgx.Tx, r *Run, sts []StepRow, i int, se steps.StepError) ([]events.Draft, error) {
 	s := &sts[i]
 	now := time.Now()
-	scale := 0.0
+	var last steps.Overrides // an automatic retry resumes from what the failed attempt resumed from
 	if a := s.lastAttempt(); a != nil {
-		scale = a.BatchScale
+		last = steps.Overrides{BatchScale: a.BatchScale, ResumeFrom: a.ResumeFrom}
 		a.State, a.Error, a.FinishedAt = StepFailed, &se, &now
 	}
 	if r.State == RunRunning {
 		switch {
 		case se.Type == steps.ErrOOM && !s.hadAttempt(ReasonOOM):
-			return e.enqueue(ctx, tx, *r, s, ReasonOOM, steps.OOMBatchScale)
+			return e.enqueue(ctx, tx, *r, s, ReasonOOM, steps.Overrides{BatchScale: steps.OOMBatchScale, ResumeFrom: last.ResumeFrom})
 		case se.Type == steps.ErrLost && !s.hadAttempt(ReasonLost):
-			return e.enqueue(ctx, tx, *r, s, ReasonLost, scale)
+			return e.enqueue(ctx, tx, *r, s, ReasonLost, last)
 		}
 	}
 	s.State, s.Error, s.FinishedAt = StepFailed, &se, &now
@@ -703,7 +740,11 @@ func (e *Engine) Cancel(ctx context.Context, tx pgx.Tx, id string, rev int) (Run
 		return Run{}, nil, err
 	}
 	r.Steps = sts
-	return r, drafts, nil
+	obs, err := e.observe(ctx, tx, r)
+	if err != nil {
+		return Run{}, nil, err
+	}
+	return r, append(drafts, obs...), nil
 }
 
 func actorName(ctx context.Context) string {
@@ -721,7 +762,13 @@ func actorName(ctx context.Context) string {
 type RetryInput struct {
 	Step       string   // "" = every failed step
 	BatchScale *float64 // nil = full batch
+	// ResumeFrom, with Step, continues that step from a training-state artifact (runs.resume): the attempt's
+	// overrides.resumeFrom, reason resume.
+	ResumeFrom string
 }
+
+// AnyRev skips Retry's revision check: a facade that checked its own entity's revision (runs.resume).
+const AnyRev = -1
 
 // Retry runs failed (or cancelled) steps of pipeline run id again as new attempts and reopens the run.
 func (e *Engine) Retry(ctx context.Context, tx pgx.Tx, id string, rev int, in RetryInput) (Run, []events.Draft, error) {
@@ -729,8 +776,13 @@ func (e *Engine) Retry(ctx context.Context, tx pgx.Tx, id string, rev int, in Re
 	if err != nil {
 		return Run{}, nil, err
 	}
-	if err := commands.CheckRev("pipeline run", rev, r.Rev); err != nil {
-		return Run{}, nil, err
+	if rev != AnyRev {
+		if err := commands.CheckRev("pipeline run", rev, r.Rev); err != nil {
+			return Run{}, nil, err
+		}
+	}
+	if in.ResumeFrom != "" && (in.Step == "" || !steps.ValidHash(in.ResumeFrom)) {
+		return Run{}, nil, problems.BadRequest.New("resuming needs the step and a training-state artifact hash")
 	}
 	sts, err := stepsOf(ctx, tx, id, true)
 	if err != nil {
@@ -784,7 +836,11 @@ func (e *Engine) Retry(ctx context.Context, tx pgx.Tx, id string, rev int, in Re
 			drafts = append(drafts, stepDraft(r, *s))
 			continue
 		}
-		ev, err := e.enqueue(ctx, tx, r, s, ReasonRetry, scale)
+		reason, ov := ReasonRetry, steps.Overrides{BatchScale: scale}
+		if in.ResumeFrom != "" {
+			reason, ov.ResumeFrom = ReasonResume, in.ResumeFrom
+		}
+		ev, err := e.enqueue(ctx, tx, r, s, reason, ov)
 		if err != nil {
 			return Run{}, nil, err
 		}
@@ -805,8 +861,14 @@ func (e *Engine) Retry(ctx context.Context, tx pgx.Tx, id string, rev int, in Re
 	if err != nil {
 		return Run{}, nil, err
 	}
-	r.Steps, err = stepsOf(ctx, tx, id, false)
-	return r, append(drafts, more...), err
+	if r.Steps, err = stepsOf(ctx, tx, id, false); err != nil {
+		return Run{}, nil, err
+	}
+	obs, err := e.observe(ctx, tx, r)
+	if err != nil {
+		return Run{}, nil, err
+	}
+	return r, append(append(drafts, more...), obs...), nil
 }
 
 // Wait returns the run once it ends or when timeout passes.
