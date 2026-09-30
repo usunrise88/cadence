@@ -291,30 +291,44 @@ Write before starting:
 
 Environment
 - [ ] Staging host ready: GPU card with the 24 GB cap, NeMo Speech 26.07 container pinned by digest, the base model
-      at its pinned revision, other resident services left intact (A3 setup)
-- [ ] GPU telemetry for the `gpu` topic and the status bar (card memory and compute per card)
+      at its pinned revision, other resident services left intact (A3 setup) — the gate wave does it on the stand;
+      the cap is 22 GB (A3), the runtime descriptor pins the image digest (`worker/runtime/nemo-speech.json`)
+- [x] GPU telemetry for the `gpu` topic and the status bar (card memory and compute per card) — rides on claims and
+      heartbeats (no separate collector), `gpu.telemetry` throttled per host; the status bar's GPU badge (memory
+      used/total and utilisation per card, stale after 2 min) opens Queue & GPU
 
 Worker and jobs
-- [ ] Worker per the protocol above: publishes the step registry at start, runs steps as subprocesses, heartbeat,
-      reaping after 3 missed beats; secrets injected into jobs only
-- [ ] River queue: one training slot per card, per-project priorities, pause/resume/cancel, `jobs.wait`
-- [ ] Artifact store per the **spec**; OpenTelemetry trace carried into jobs
-- [ ] Pipeline engine: YAML pipelines pinning `kind@version`, artifact types validated at `dryRun`, per-step status,
-      retry one step, input-hash idempotence
-- [ ] `defaults.yaml` + `x-cadence` on every step parameter; "departures from defaults" recorded on entities
-- [ ] OOM → typed error → one retry at 0.75× batch
-- [ ] Playbook engine and playbook sessions (plan from the chain, `dryRun` before each spending step, estimate first);
-      the fifth v1 playbook "Fine-tune from a dataset version" (R16) — the gate runs it
+- [x] Worker per the protocol above: publishes the step registry at start, runs steps as subprocesses, heartbeat,
+      reaping after 3 missed beats; secrets injected into jobs only — an HTTP long-poll protocol (`worker` tag, `cwk_`),
+      not River leases (notes)
+- [x] River queue: one training slot per card, per-project priorities, pause/resume/cancel, `jobs.wait` — the waiting
+      queue is the `step_jobs` table; order: project `queuePriority`, job priority, first come
+- [x] Artifact store per the **spec**; OpenTelemetry trace carried into jobs — request → `job <kind>` span → the
+      worker's `step <kind>@<version>` span (`TRACEPARENT`, log fields, optional span file)
+- [x] Pipeline engine: YAML pipelines pinning `kind@version`, artifact types validated at `dryRun`, per-step status,
+      retry one step, input-hash idempotence — `pipelineRuns.list|get|cancel|retry|wait`; reuse is per project
+- [x] `defaults.yaml` + `x-cadence` on every step parameter; "departures from defaults" recorded on entities — the
+      worker refuses to publish a kind with an incomplete `x-cadence` and the conformance suite checks it
+- [x] OOM → typed error → one retry at 0.75× batch
+- [x] Playbook engine and playbook sessions (plan from the chain, `dryRun` before each spending step, estimate first);
+      the fifth v1 playbook "Fine-tune from a dataset version" (R16) — the gate runs it (`templates/playbooks/
+      finetune-from-dataset.yaml`; people start playbook sessions, agents do not)
 - [x] Minimal data entities for imports: Source (licence, eval-only until cleared, archive), Utterance, Transcript,
       per-utterance fingerprints — the full ingest path arrives in phase 4 (stream D: internal/data, `sources.*`,
       `utterances.*`, the `dataset` output hook)
-- [ ] Replay corpus and replay golden sets imported per the **spec** above
-- [ ] Runtimes (R40): the worker announces `runtime@version` and the NeMo runtime is registered from it;
+- [ ] Replay corpus and replay golden sets imported per the **spec** above — `pipelines/replay-base.yaml` is ready
+      (≈ 1 h per locale, golden sets ≤ 300 per locale); the gate wave runs it on the stand
+- [x] Runtimes (R40): the worker announces `runtime@version` and the NeMo runtime is registered from it;
       `runtimes.list|get`; card slots are owned per host and card, so two runtimes could share a card; `runtimes.new`
-      (a second runtime, with approval) waits with the deferred packs
+      (a second runtime, with approval) waits with the deferred packs — `nemo-speech` registers when its worker
+      starts (stream N image); `toy` registers in CI
 - [ ] Model families (R41, R43): published by the runtime; Nemotron 3.5 streaming first, with latency profiles
-      `80ms`–`1120ms`; base models and checkpoints carry their family; no code branches on a family name
+      `80ms`–`1120ms`; base models and checkpoints carry their family; no code branches on a family name — the seams
+      are built (entry point `cadence.families`, `modelFamilies.list|get`, `family` on runs and checkpoints, a test
+      that no control-plane or web source names the family or runtime); the Nemotron descriptor is stream N's
 - [ ] CPU `toy` framework pack (a tiny CTC model) and the conformance suite in CI; the NeMo pack runs it nightly (R45)
+      — the toy half is built (`make conformance` in CI; the trained model must beat a one-step baseline and reach
+      WER ≤ 0.1); the nightly NeMo run is stream N's (`nightly.yml` holds placeholders)
 
 Step kinds: `oomptimizer_calibrate`, `nemotron_finetune` (bf16, Noam with computed peak LR shown, `target_lang`),
 `checkpoint_register` (top-k), `checkpoint_average`, minimal dataset import, `nemotron_transcribe` (file decode in
@@ -335,6 +349,47 @@ Also:
 
 Panels: Run, Mix (full, with preview), Queue & GPU, Metrics, Checkpoints, Logs; Training workspace. Metrics is the first
 chart on the stack and tokens of R53 (chart colours join the contrast and colour-vision checks).
+
+Phase 2 notes (what differs from the plan above):
+- Audit of 2026-09-30 (stream H): every API/MCP operation above is served (no 501s); the Also items and the panels
+  are built (plus a Pipeline run panel); the framework step kinds, the family descriptor and the augmentation
+  transforms are the NeMo pack's (stream N); `dataset_import` and the updated `echo` are built.
+- Workers do not lease River jobs: they long-poll an exempt `worker` tag with a `cwk_` credential (one per host,
+  `cadence admin worker-token`); a River `step` job's handler waits on its own queue for the outcome and the waiting
+  queue is the `step_jobs` table (06 "Worker protocol"). Completion is `workerLeases.release`; a heartbeat answers
+  `stop` with a reason (`cancelled`, `paused`, `window-closed`); one subprocess per lease; packs are separate Python
+  distributions and runtime-neutral core kinds (`echo`, `dataset_import`) ship in every image.
+- `pipelines.run` answers 201 with the pipeline run, not 202 with a job; `pipelineRuns.list|get|cancel|retry|wait` carry
+  the rest. Output hooks run in a savepoint of the step's `done` transaction and also for reused outputs, so they are
+  idempotent. Runs are facades over one `train-stage` pipeline run: there is no `runs.pause|cancel` (the Run panel
+  uses `jobs.*` on the run's current job) and `runs.resume` takes a failed or cancelled run. `checkpoint_register` is
+  not a step kind: the control plane's `checkpoint` output hook registers checkpoints and keeps the top k
+  (`training.keep_top_k`). A `base_model` input accepts a checkpoint, so one recipe serves both inits.
+- GPU spend is lease time on GPU cards, per project per day (instance time zone) and per agent session; the policy
+  engine gates an agent's spending command over budget with an approval; people are not gated; calibration and
+  averaging count. The staging card is a 48 GB Blackwell and its training cap 22 GB at a measured 0.7 s/step (A3).
+- Data: imports are canonical 16 kHz 16-bit WAV named by BLAKE3; the `dataset` artifact is a directory with
+  `manifest.jsonl`, fingerprinted over (audio, split, text); new sources start eval-only. Replay is capped at ≈ 1 h per
+  locale from FLEURS (34 of 39 locales, five through a sister variant); golden sets are dataset versions for now.
+  Background noise is its own registry kind `noise_bank` (`dataset_import` with `purpose: noise`,
+  `pipelines/noise-bank` for the MUSAN noise subset); applying it on the fly joins the NeMo pack's codec, band-limit,
+  level and speed transforms.
+- Playbooks run from the bundled templates; people start playbook sessions (`playbooks.run` is under
+  `sessions-are-for-people`); the dry-run rule is per operation, used up by the real call, and enforced in playbook
+  sessions only.
+- Telegram is long-polled from an outbox cursor (no webhook); quiet hours drop Telegram messages rather than defer
+  them; a button press decides as `usr_admin`. Backups are `pg_dump` custom format plus the content-store mirror and
+  the sealed secrets (never the master key); job logs are NDJSON files kept 14 days; content-store blobs and metric
+  points are never deleted. The chart palette adjusts R53's step-9 rule (00 decision log) and neighbouring series
+  differ by dash as well as colour.
+- Closed in hardening (stream H, 2026-09-30): the status bar's GPU and Queue badges; one trace from the request
+  through the job span to the worker's step span (`step_jobs.traceparent`); the noise bank; the R41 seam test (no
+  control-plane or web source names the family or runtime); a job cancelled between River's fetch and its handler
+  now ends cancelled (the flaky pipeline-run cancel); the toy model converges (a layer norm: WER 0 at 300 steps on
+  every seed tried) and the conformance suite requires the trained model to beat a one-step baseline.
+- Still open, not small (07 "Open questions"): per-card health and `compute.card_closed`; a checkpoint and training
+  state every 20 minutes (no key, no kind yet); job-log field search; the NeMo pack, its nightly conformance run and
+  the gate wave's stand work (staging host, replay and noise imports).
 
 ---
 
