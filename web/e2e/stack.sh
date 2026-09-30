@@ -9,9 +9,9 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 DATA="$(mktemp -d)"
 cleanup() { docker rm -f "$NAME" >/dev/null 2>&1 || true; rm -rf "$DATA"; }
 trap cleanup EXIT INT TERM
-# A previous run on this port killed hard leaves its database behind; remove it so the port is free. Runs on other
-# ports (parallel worktrees) keep theirs.
-docker ps -aq --filter "label=cadence-e2e=${PG_PORT}" | xargs -r docker rm -f >/dev/null
+# A previous run killed hard leaves its database behind; remove it so the port is free. Only this port's: runs on
+# other ports (parallel worktrees, E2E_PG_PORT) keep theirs.
+docker ps -aq --filter "label=cadence-e2e=${PG_PORT}" | xargs -r docker rm -f >/dev/null 2>&1 || true
 docker run -d --rm --name "$NAME" --label "cadence-e2e=${PG_PORT}" -e POSTGRES_USER=cadence -e POSTGRES_PASSWORD=e2e -e POSTGRES_DB=cadence \
   -p "127.0.0.1:${PG_PORT}:5432" postgres:17 >/dev/null
 for _ in $(seq 1 60); do docker exec "$NAME" pg_isready -h 127.0.0.1 -U cadence >/dev/null 2>&1 && break; sleep 0.5; done

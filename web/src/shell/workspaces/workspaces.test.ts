@@ -52,6 +52,17 @@ describe("default workspaces", () => {
     expect(plan[0]).toEqual({ panel: "project", location: "centre", doc: "project:demo" });
     for (const p of plan) expect(registry.get(p.panel), p.panel).toBeDefined();
   });
+
+  it("phase-1 panels join their columns: Approvals in Ops right, Getting started in Training right until dismissed", () => {
+    const r = phase0Registry();
+    let dismissed = false;
+    r.register({ ...r.get("help")!, id: "approvals", help: "panels.approvals" });
+    r.register({ ...r.get("help")!, id: "getting-started", help: "panels.getting-started", inDefaults: () => !dismissed });
+    expect(planDefaultLayout("Ops", r, "demo")).toContainEqual({ panel: "approvals", location: "right" });
+    expect(planDefaultLayout("Training", r, "demo").at(-1)).toEqual({ panel: "getting-started", location: "right" });
+    dismissed = true;
+    expect(planDefaultLayout("Training", r, "demo").map((p) => p.panel)).not.toContain("getting-started");
+  });
 });
 
 describe("Dockview round-trip (runs on every Dockview upgrade)", () => {

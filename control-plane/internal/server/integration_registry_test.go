@@ -305,6 +305,12 @@ func TestAdoptionAndAliases(t *testing.T) {
 	if gated.ApprovalID == "" {
 		t.Fatal("aliases.set baseline answered 202 without an approval id")
 	}
+	// An alias is project work: the approval is project-scoped and carries the project.
+	var apr struct{ Scope, ProjectID string }
+	e.ok(e.do("GET", "/api/approvals/"+gated.ApprovalID, ""), 200, &apr)
+	if apr.Scope != "project" || apr.ProjectID == "" {
+		t.Errorf("baseline approval scope %q project %q, want a project-scoped approval", apr.Scope, apr.ProjectID)
+	}
 	e.ok(e.do("POST", "/api/approvals/"+gated.ApprovalID+":approve", "{}", "Idempotency-Key", "approve-baseline-0001",
 		"If-Match", `"1"`), 200, nil)
 	e.ok(e.do("GET", "/api/projects/hebrew/aliases/baseline", ""), 200, &al)

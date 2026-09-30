@@ -10,6 +10,7 @@ import { DockHost } from "@/shell/dock/DockHost";
 import { openPanel } from "@/shell/dock/layout";
 import { useDock } from "@/shell/dock/store";
 import { useCachePatching } from "@/shell/live/patching";
+import { useLiveNotifications } from "@/shell/notifications/live";
 import { openDocument } from "@/shell/panel/actions";
 import { commands, events } from "@/shell/registries";
 import { useSelection } from "@/shell/selection/store";
@@ -31,6 +32,7 @@ export function Shell({ project, workspace, doc, sel, onNavigate }: ShellProps) 
   const [restoredKey, setRestoredKey] = useState<string | null>(null);
   const deepLinked = useRef<string | null>(null);
   useCachePatching();
+  useLiveNotifications();
 
   useEffect(() => {
     useShell.getState().setRoute(project, workspace);

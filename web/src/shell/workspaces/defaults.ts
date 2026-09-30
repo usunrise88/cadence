@@ -15,6 +15,8 @@ const TABLE: Record<DefaultWorkspaceName, Slot[]> = {
     { panel: "checkpoints", location: "right" },
     { panel: "inspector", location: "right" },
     { panel: "help", location: "right" },
+    // Getting started is shown until the first gate passes (11 "Panel catalogue"); Training is where a newcomer lands.
+    { panel: "getting-started", location: "right" },
     { panel: "metrics", location: "bottom" },
     { panel: "logs", location: "bottom" },
   ],
@@ -64,6 +66,7 @@ export function planDefaultLayout(name: DefaultWorkspaceName, registry: PanelReg
   for (const s of TABLE[name]) {
     const m = registry.get(s.panel);
     if (!m || m.kind === "document") continue; // documents need an entity; they open from Library or links
+    if (m.inDefaults && !m.inDefaults()) continue;
     out.push({ panel: s.panel, location: s.location });
   }
   return out.sort((a, b) => ORDER.indexOf(a.location) - ORDER.indexOf(b.location));

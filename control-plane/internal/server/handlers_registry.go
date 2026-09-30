@@ -357,6 +357,7 @@ func (s *Server) ProjectsAdopt(ctx context.Context, req api.ProjectsAdoptRequest
 	if err := auth.CheckProject(ctx, pr.ID); err != nil {
 		return nil, err
 	}
+	ctx = commands.WithProject(ctx, pr.ID) // project work: the policy engine, audit and approvals see the project
 	cmd := command(ctx, "projects.adopt", req.Params.IdempotencyKey, req.Params.DryRun)
 	return s.run(ctx, cmd, func(ctx context.Context, tx pgx.Tx) (commands.Result, []events.Draft, error) {
 		a, p, drafts, err := registry.Adopt(ctx, tx, req.P, rev, req.Body.Version, cmd.Actor)
@@ -447,6 +448,11 @@ func (s *Server) AliasesSet(ctx context.Context, req api.AliasesSetRequestObject
 			return nil, err
 		}
 		ifMatch = &rev
+	}
+	// Aliases are project work: a gated move of baseline is a project-scope approval, not a registry one.
+	ctx, err := s.withProject(ctx, req.P)
+	if err != nil {
+		return nil, err
 	}
 	cmd := command(ctx, "aliases.set", req.Params.IdempotencyKey, req.Params.DryRun)
 	return s.run(ctx, cmd, func(ctx context.Context, tx pgx.Tx) (commands.Result, []events.Draft, error) {

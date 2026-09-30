@@ -106,6 +106,14 @@ Open questions:
 - [ ] The palette's text box keeps focus, so Space previews a hit in the Inspector only after the highlight was moved
       with the arrow keys (typing resets it); Enter opens a hit's document where its kind has one, else the Inspector
       (10 "Every list" assumes list focus, not a text box)
+- [ ] Phase-1 panels (wave 2), confirm: the audit log is a Settings section (11 names no panel of its own);
+  Getting started sits in the Training workspace's right column (Training is where a newcomer lands; 11 lists it
+  in no workspace) and "Dismiss" is remembered per browser, not per user, until a user-preferences entity exists;
+  "first dataset frozen" counts a dataset version frozen by a person or an agent (bundled fixtures do not);
+  Settings opens floating and shows to any signed-in person (v1 has one admin; the reviewer role hides it later);
+  "Approve for this session" is offered only for requests carrying an agent session id; stored Ops workspaces are
+  not migrated to add the Approvals panel (the stored shape did not change; the status-bar badge reaches it) — only
+  "Reset to default" and new workspaces get it
 
 ## Sources
 

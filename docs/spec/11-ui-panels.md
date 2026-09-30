@@ -125,7 +125,7 @@ Version 1 has 33 panels: 13 documents that open in the centre and 20 tools that 
 | Project | Document | Overview of one project: locales, base model revision, repository and branch, agent profile, budgets and today's use, gates, mounts, decision log | Edit any wizard choice; open Agent settings; archive | `entity.project.{id}` |
 | Agent settings | Tool | The project's agent profile: driver, model, permission preset with a preview of the rendered `.claude/settings.json` and `opencode.json`, auto-merge policy for session branches, draft policy per entity kind; raw config editors with schema validation; `AGENTS.md` editor | Save (commits to the project repository); reset to template; test-launch a session | `entity.project.{id}` |
 | Lineage | Tool | Graph around the selection: sources → dataset versions → mix and recipe SHA → run → checkpoint → model version → deployments; "used by" for registry entries | Open any node as document; copy version id | — |
-| Settings | Tool, admin only | Registry-level configuration: compute (hosts, cards, memory caps, allowed job kinds), secrets (names only, write-only values), catalogues (base models, agent models, instruction templates, permission presets), policies (retention, PII redaction, default budgets, cache quotas), notification rules and the Telegram bot, credentials (API keys, active sessions, invitations), backup status | Edit; add secret; sync templates across projects | `compute.{id}` |
+| Settings | Tool, admin only | Registry-level configuration: compute (hosts, cards, memory caps, allowed job kinds), secrets (names only, write-only values), catalogues (base models, agent models, instruction templates, permission presets), policies (retention, PII redaction, default budgets, cache quotas), notification rules and the Telegram bot, credentials (API keys, active sessions, invitations), backup status, the audit log (read-only; filter by actor, operation, project) | Edit; add secret; create API key; revoke; sync templates across projects | `compute.{id}` |
 | Getting started | Tool, until the first gate passes | Setup checklist with state: mount attached, project created, first dataset frozen, first run done, first gate passed; each step with its playbook or command | Run the step; dismiss | `entity.project.{id}` |
 | Help | Tool, follows focus unless pinned | The article for the focused panel, field or error: what it is, its place in the loop, fields and defaults from the schema, live commands, playbooks, sources | Search help; pin; Explain this (agent) | — |
 | Language pack | Document | One locale of the project: normalizer, inverse normalisation, transliteration, LID config, boost lists with weights, golden-set recipe, README; commit history | Edit; test a phrase with and without boosting; sync from the shipped pack | `recipe.{path}` |
@@ -140,7 +140,7 @@ Five workspaces ship by default, and Chat sits in the right column of every one,
 
 | Workspace | Centre (documents) | Left | Right | Bottom | Floating |
 | --- | --- | --- | --- | --- | --- |
-| Training | Run, Mix, Experiment | Library | Chat, Checkpoints | Metrics, Logs | — |
+| Training | Run, Mix, Experiment | Library | Chat, Checkpoints, Getting started (until dismissed) | Metrics, Logs | — |
 | Eval | Eval report, Annotation batch | Library | Chat, Inspector | Diff | Audio |
 | Data | Dataset version, Source, Recipe, Language pack | Library | Chat, Inspector, Pipeline run | Logs | Audio |
 | Triage | Triage queue | — | Chat, Diff | Inspector | Audio |

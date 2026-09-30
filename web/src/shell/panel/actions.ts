@@ -1,7 +1,6 @@
 import { useParams } from "@tanstack/react-router";
 import { openPanel } from "@/shell/dock/layout";
-import { commands, panels } from "@/shell/registries";
-import { commandContext } from "@/shell/state";
+import { panels } from "@/shell/registries";
 import { parseDocRef } from "@/shell/entity/manifest";
 
 /** Opens (or focuses) the document panel registered for an entity kind. */
@@ -20,9 +19,4 @@ export function openPanelById(panelId: string): void {
 export function useProject(): string | undefined {
   const params = useParams({ strict: false }) as { project?: string };
   return params.project;
-}
-
-/** Runs a registered command (API-backed or view.*) with the current context, as a button would. */
-export function runCommand(id: string, args?: unknown): Promise<unknown> {
-  return commands.run(id, commandContext(), args);
 }
