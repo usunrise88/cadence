@@ -1,5 +1,8 @@
-// Package runs holds training runs. Phase 1 has only the estimate a dry run answers (docs/spec/08-resolutions.md
-// R12, table path; R44 for init and gpus); the run itself, its job and its checkpoints arrive in phase 2.
+// Package runs holds training runs (docs/spec/04-blocks.md Block 2): a run is one optimisation stage — a pinned
+// start (base model or checkpoint, R44), a mix revision rendered as a content-hashed artifact (R13), a recipe (a
+// pipeline of the project repository at a commit), a step budget and a seed — executed as one pipeline run whose
+// state the run mirrors. Estimates come from calibrations (basis measured) or the defaults table (R12); checkpoints
+// and calibrations come from output hooks; GPU spend is metered from leases on GPU cards.
 package runs
 
 import (
@@ -8,11 +11,11 @@ import (
 	"fmt"
 	"math"
 	"slices"
+	"time"
 
 	"github.com/usunrise88/cadence/control-plane/internal/compute"
 	datasets "github.com/usunrise88/cadence/control-plane/internal/data"
 	"github.com/usunrise88/cadence/control-plane/internal/defaults"
-	"github.com/usunrise88/cadence/control-plane/internal/policies"
 	"github.com/usunrise88/cadence/control-plane/internal/problems"
 	"github.com/usunrise88/cadence/control-plane/internal/registry"
 	"github.com/usunrise88/cadence/control-plane/internal/storage"
@@ -30,7 +33,7 @@ const (
 	BasisMeasured = "measured"
 )
 
-// Input is the body of runs.new; empty fields take their defaults.
+// Input is what an estimate is made for; empty fields take their defaults.
 type Input struct {
 	ProjectID  string
 	Init       string
@@ -41,6 +44,14 @@ type Input struct {
 	GPUs       *int
 	Compute    string // host id or name
 	Datasets   []string
+
+	// Base is the resolved base model when the caller has it (init checkpoint: the checkpoint's run's).
+	Base *registry.Version
+	// Mix, when set, gives the data volume instead of Datasets.
+	Mix *RenderedMix
+	// SessionID is the agent session asking; its GPU budget is reported beside the project's.
+	SessionID string
+	Now       time.Time
 }
 
 // Range is a value with its low and high bound.
@@ -72,12 +83,19 @@ type Estimate struct {
 	Slot            compute.Slot
 	Data            Data
 	DailyBudget     float64
+	UsedToday       float64
 	WithinBudget    bool
+	SessionBudget   *SessionBudget
 	Source          string
+	MeasuredAt      *time.Time
+	Mix             *MixRef
 }
 
-// EstimateRun answers runs.new?dryRun=true from the estimate table in d, the compute entity and the policies. Field
-// problems answer validation-failed; a combination the table does not cover answers estimate-unavailable.
+// EstimateRun answers the estimate of a run (runs.new?dryRun=true, and every spending command's policy check): steps
+// × seconds per step from the newest calibration of (base model collection, card class, memory cap, precision) —
+// basis measured — or else from the estimate table in d — basis table —, the card from the compute entity, the data
+// volume from the mix (or the named dataset versions), and today's GPU spend against the project's daily budget.
+// Field problems answer validation-failed; a combination nothing covers answers estimate-unavailable.
 func EstimateRun(ctx context.Context, q storage.Querier, d *defaults.Defaults, in Input) (Estimate, error) {
 	e := Estimate{Basis: BasisTable, Init: or(in.Init, d.Training.Init.Value), Precision: or(in.Precision, d.Training.Precision.Value),
 		Steps: d.Training.Steps.Value, GPUs: d.Training.GPUs.Value}
@@ -109,39 +127,84 @@ func EstimateRun(ctx context.Context, q storage.Querier, d *defaults.Defaults, i
 	if len(fields) > 0 {
 		return Estimate{}, problems.Validation(fields)
 	}
-	if e.Init == InitCheckpoint {
-		return Estimate{}, problems.NotFound.New("no checkpoint %q: checkpoints arrive with training runs in roadmap phase 2", in.Checkpoint)
-	}
 
 	var err error
-	if e.BaseModel, err = registry.Resolve(ctx, q, in.ProjectID, registry.KindBaseModel, or(in.BaseModel, d.Wizard.BaseModel.Value)); err != nil {
-		return Estimate{}, err
+	switch {
+	case in.Base != nil:
+		e.BaseModel = *in.Base
+	case e.Init == InitCheckpoint:
+		if e.BaseModel, err = checkpointBase(ctx, q, in.ProjectID, in.Checkpoint); err != nil {
+			return Estimate{}, err
+		}
+	default:
+		if e.BaseModel, err = registry.Resolve(ctx, q, in.ProjectID, registry.KindBaseModel, or(in.BaseModel, d.Wizard.BaseModel.Value)); err != nil {
+			return Estimate{}, err
+		}
 	}
 	if e.Slot, err = compute.ForJob(ctx, q, in.Compute, compute.JobTraining); err != nil {
 		return Estimate{}, err
 	}
 	card := e.Slot.Card
-	row, ok := d.TrainingEstimate(e.BaseModel.Name, card.CardClass, card.MemoryCapGB, e.Precision)
-	if !ok {
-		return Estimate{}, problems.EstimateUnavailable.New(
-			"the estimate table in defaults.yaml has no row for %s on card class %s at %v GB in %s; add one, or calibrate on the card (runs.calibrate, phase 2)",
-			e.BaseModel.Name, card.CardClass, card.MemoryCapGB, e.Precision)
-	}
-	e.SecondsPerStep, e.PlusMinus, e.Source = row.SecondsPerStep, row.PlusMinus, row.Source
-	seconds := float64(e.Steps) * row.SecondsPerStep
-	e.DurationSeconds = spread(math.Round(seconds), row.PlusMinus, 0)
-	e.GPUHours = spread(seconds*float64(e.GPUs)/3600, row.PlusMinus, 3)
-
-	if e.Data, err = data(ctx, q, d, in.ProjectID, in.Datasets); err != nil {
-		return Estimate{}, err
-	}
-	pol, err := policies.Get(ctx, q, d)
+	cal, found, err := LatestCalibration(ctx, q, Key{BaseModel: e.BaseModel.Name, CardClass: card.CardClass, MemoryCapGB: card.MemoryCapGB, Precision: e.Precision})
 	if err != nil {
 		return Estimate{}, err
 	}
-	e.DailyBudget = pol.Budgets.GPUHoursPerProjectPerDay
-	e.WithinBudget = e.GPUHours.High <= e.DailyBudget
+	if found {
+		at := cal.MeasuredAt
+		e.Basis, e.SecondsPerStep, e.PlusMinus, e.MeasuredAt = BasisMeasured, cal.SecondsPerStep, cal.PlusMinus, &at
+		e.Source = "runs.calibrate at " + at.UTC().Format(time.RFC3339) + " (calibration " + cal.ArtifactHash + ")"
+	} else {
+		row, ok := d.TrainingEstimate(e.BaseModel.Name, card.CardClass, card.MemoryCapGB, e.Precision)
+		if !ok {
+			return Estimate{}, problems.EstimateUnavailable.New(
+				"no calibration and no row of the estimate table in defaults.yaml for %s on card class %s at %v GB in %s; calibrate on the card first (runs.calibrate)",
+				e.BaseModel.Name, card.CardClass, card.MemoryCapGB, e.Precision)
+		}
+		e.SecondsPerStep, e.PlusMinus, e.Source = row.SecondsPerStep, row.PlusMinus, row.Source
+	}
+	seconds := float64(e.Steps) * e.SecondsPerStep
+	e.DurationSeconds = spread(math.Round(seconds), e.PlusMinus, 0)
+	e.GPUHours = spread(seconds*float64(e.GPUs)/3600, e.PlusMinus, 3)
+
+	if in.Mix != nil {
+		e.Data, e.Mix = in.Mix.Data, &in.Mix.Ref
+	} else if e.Data, err = data(ctx, q, d, in.ProjectID, in.Datasets); err != nil {
+		return Estimate{}, err
+	}
+	now := in.Now
+	if now.IsZero() {
+		now = time.Now()
+	}
+	b, err := ProjectBudgetOf(ctx, q, d, in.ProjectID, now)
+	if err != nil {
+		return Estimate{}, err
+	}
+	e.DailyBudget, e.UsedToday = b.PerDay, b.Used
+	e.WithinBudget = b.Used+e.GPUHours.Value <= b.PerDay
+	if in.SessionID != "" {
+		sb, err := SessionBudgetOf(ctx, q, d, in.SessionID)
+		if err != nil {
+			return Estimate{}, err
+		}
+		e.SessionBudget = &sb
+	}
 	return e, nil
+}
+
+// checkpointBase is the base model of the run a checkpoint of the project belongs to.
+func checkpointBase(ctx context.Context, q storage.Querier, projectID, id string) (registry.Version, error) {
+	c, err := GetCheckpoint(ctx, q, id)
+	if err != nil {
+		return registry.Version{}, err
+	}
+	if c.ProjectID != projectID {
+		return registry.Version{}, problems.NotFound.New("the project has no checkpoint %q", id)
+	}
+	r, err := getRow(ctx, q, c.RunID)
+	if err != nil {
+		return registry.Version{}, err
+	}
+	return registry.GetVersion(ctx, q, registry.KindBaseModel, r.BaseVersionID)
 }
 
 // data resolves the dataset references and sums their hours and bytes; a fixture without a size counts

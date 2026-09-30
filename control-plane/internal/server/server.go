@@ -37,6 +37,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/problems"
 	"github.com/usunrise88/cadence/control-plane/internal/projects/bootstrap"
 	"github.com/usunrise88/cadence/control-plane/internal/repos"
+	"github.com/usunrise88/cadence/control-plane/internal/runs"
 	"github.com/usunrise88/cadence/control-plane/internal/secrets"
 	"github.com/usunrise88/cadence/control-plane/internal/sessions"
 	"github.com/usunrise88/cadence/control-plane/internal/steps"
@@ -111,6 +112,8 @@ type Server struct {
 	sessions *sessions.Service
 	// agentCreds is the agent host's side of agent credentials (claims, reports, the transit sweeper).
 	agentCreds *agentcreds.Service
+	// runs are training runs over the pipeline engine (checkpoint and calibration hooks, run status).
+	runs *runs.Service
 }
 
 var _ api.StrictServerInterface = (*Server)(nil)
@@ -156,6 +159,8 @@ func New(c Config) (*Server, error) {
 		c.Workers.OnLeased(c.Pipelines.Leased) // a granted lease marks its pipeline step running
 	}
 	s := &Server{Config: c, spec: spec}
+	s.runs = s.newRunsService()
+	s.runs.Install(c.StepHooks) // checkpoint and calibration outputs; the engine reports run status changes
 	window := time.Duration(s.defaultsDoc().Drafts.PresenceSeconds.Value) * time.Second
 	s.drafts = drafts.NewStore(time.Now, window)
 	s.mixes = mixes.NewService(s.drafts, s.defaultsDoc)

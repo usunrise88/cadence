@@ -245,7 +245,8 @@ func (s *Server) jobCommand(ctx context.Context, op, id, ifMatch, key string, dr
 func (s *Server) JobsPause(ctx context.Context, req api.JobsPauseRequestObject) (api.JobsPauseResponseObject, error) {
 	return s.jobCommand(ctx, "jobs.pause", req.Id, req.Params.IfMatch, req.Params.IdempotencyKey, req.Params.DryRun,
 		func(ctx context.Context, tx pgx.Tx, rev int) (jobs.Job, []events.Draft, error) {
-			return s.Workers.Pause(ctx, tx, req.Id, rev)
+			j, drafts, err := s.Workers.Pause(ctx, tx, req.Id, rev)
+			return s.withRunStatus(ctx, tx, j, drafts, err)
 		})
 }
 
@@ -253,7 +254,8 @@ func (s *Server) JobsPause(ctx context.Context, req api.JobsPauseRequestObject) 
 func (s *Server) JobsResume(ctx context.Context, req api.JobsResumeRequestObject) (api.JobsResumeResponseObject, error) {
 	return s.jobCommand(ctx, "jobs.resume", req.Id, req.Params.IfMatch, req.Params.IdempotencyKey, req.Params.DryRun,
 		func(ctx context.Context, tx pgx.Tx, rev int) (jobs.Job, []events.Draft, error) {
-			return s.Workers.Resume(ctx, tx, req.Id, rev)
+			j, drafts, err := s.Workers.Resume(ctx, tx, req.Id, rev)
+			return s.withRunStatus(ctx, tx, j, drafts, err)
 		})
 }
 

@@ -71,6 +71,11 @@ var (
 	StepKindConflict     = Type{"step-kind-conflict", http.StatusConflict, "Step kind conflict"}
 	ArtifactHashMismatch = Type{"artifact-hash-mismatch", http.StatusUnprocessableEntity, "Artifact hash mismatch"}
 	ArtifactMissing      = Type{"artifact-missing", http.StatusConflict, "Artifact missing"}
+
+	// Runs, checkpoints and metrics (phase 2 · wave 2 · stream R).
+	FamilyUnavailable = Type{"family-unavailable", http.StatusUnprocessableEntity, "Model family unavailable"}
+	RecipeMismatch    = Type{"recipe-mismatch", http.StatusUnprocessableEntity, "Recipe does not fit the run"}
+	NoTrainingState   = Type{"no-training-state", http.StatusConflict, "No training state"}
 )
 
 // Types lists every registered type.
@@ -81,6 +86,7 @@ func Types() []Type {
 		Internal, PolicyDenied, ReservedAlias, EstimateUnavailable, InvalidQuery, DraftStale, MergeConflict,
 		RepositoryUnavailable, EvalOnlyDataset, PipelineInvalid,
 		LeaseEnded, StepKindConflict, ArtifactHashMismatch, ArtifactMissing,
+		FamilyUnavailable, RecipeMismatch, NoTrainingState,
 	}
 }
 

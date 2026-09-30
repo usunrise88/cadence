@@ -3,8 +3,8 @@
 import { type InfiniteData, infiniteQueryOptions, queryOptions, type UseMutationOptions } from '@tanstack/react-query';
 
 import { client } from '../client.gen';
-import { adoptionsList, agentCredentialsArchive, agentCredentialsGet, agentCredentialsList, agentCredentialsSet, agentCredentialsVerify, agentMessagesList, agentMessagesNew, agentModelsList, agentProfileEdit, agentProfileGet, agentProvidersList, agentSessionsAccept, agentSessionsCancel, agentSessionsGet, agentSessionsList, agentSessionsNew, agentSessionsPause, agentSessionsResume, agentSessionsRevert, aliasesGet, aliasesList, aliasesSet, approvalsApprove, approvalsDeny, approvalsGet, approvalsList, artifactsGet, auditList, authGet, authLogin, authLogout, authSetup, backupsGet, backupsList, backupsNew, backupsVerify, baseModelsGet, baseModelsList, branchesAccept, branchesCompare, branchesGet, branchesList, branchesRevert, collectionsGet, collectionsList, computeEdit, computeGet, computeList, credentialsList, credentialsNew, credentialsRevoke, datasetsGet, datasetsList, defaultsGet, draftsAccept, draftsGet, draftsList, draftsRevert, egressHostsList, eventsList, helpGet, helpSearch, hostCredentialsClaim, hostCredentialsReport, hostSessionsAsk, hostSessionsClaim, hostSessionsDecision, hostSessionsRelease, hostSessionsReport, jobLogsList, jobsCancel, jobsEdit, jobsGet, jobsList, jobsPause, jobsResume, jobsWait, meGet, mixesEdit, mixesGet, mixesList, mixesNew, mixesPreview, modelFamiliesGet, modelFamiliesList, mountsList, mountsNew, notificationRulesEdit, notificationRulesList, notificationSettingsEdit, notificationSettingsGet, type Options, pipelineRunsCancel, pipelineRunsGet, pipelineRunsList, pipelineRunsRetry, pipelineRunsWait, pipelinesList, pipelinesRun, policiesEdit, policiesGet, projectsAdopt, projectsArchive, projectsEdit, projectsGet, projectsList, projectsNew, projectsNote, projectsSearch, projectsSync, queueEntriesList, recipesGet, recipesList, registrySearch, runsNew, runtimesGet, runtimesList, secretsList, secretsNew, sourcesArchive, sourcesEdit, sourcesGet, sourcesList, stepKindsGet, stepKindsList, telegramBotSet, telegramBotVerify, templatesGet, templatesList, totpConfirm, totpDisable, totpEnroll, utterancesGet, utterancesList, viewsGet, viewsList, viewsSet, workerArtifactsSet, workerLeasesClaim, workerLeasesRelease, workerLeasesReport, workerLogsNew, workerMetricsNew, workerRegistrationsNew, workspacesGet, workspacesList, workspacesSet } from '../sdk.gen';
-import type { AdoptionsListData, AdoptionsListError, AdoptionsListResponse, AgentCredentialsArchiveData, AgentCredentialsArchiveError, AgentCredentialsArchiveResponse, AgentCredentialsGetData, AgentCredentialsGetError, AgentCredentialsGetResponse, AgentCredentialsListData, AgentCredentialsListError, AgentCredentialsListResponse, AgentCredentialsSetData, AgentCredentialsSetError, AgentCredentialsSetResponse, AgentCredentialsVerifyData, AgentCredentialsVerifyError, AgentCredentialsVerifyResponse, AgentMessagesListData, AgentMessagesListError, AgentMessagesListResponse, AgentMessagesNewData, AgentMessagesNewError, AgentMessagesNewResponse, AgentModelsListData, AgentModelsListError, AgentModelsListResponse, AgentProfileEditData, AgentProfileEditError, AgentProfileEditResponse, AgentProfileGetData, AgentProfileGetError, AgentProfileGetResponse, AgentProvidersListData, AgentProvidersListError, AgentProvidersListResponse, AgentSessionsAcceptData, AgentSessionsAcceptError, AgentSessionsAcceptResponse, AgentSessionsCancelData, AgentSessionsCancelError, AgentSessionsCancelResponse, AgentSessionsGetData, AgentSessionsGetError, AgentSessionsGetResponse, AgentSessionsListData, AgentSessionsListError, AgentSessionsListResponse, AgentSessionsNewData, AgentSessionsNewError, AgentSessionsNewResponse, AgentSessionsPauseData, AgentSessionsPauseError, AgentSessionsPauseResponse, AgentSessionsResumeData, AgentSessionsResumeError, AgentSessionsResumeResponse, AgentSessionsRevertData, AgentSessionsRevertError, AgentSessionsRevertResponse, AliasesGetData, AliasesGetError, AliasesGetResponse, AliasesListData, AliasesListError, AliasesListResponse, AliasesSetData, AliasesSetError, AliasesSetResponse, ApprovalsApproveData, ApprovalsApproveError, ApprovalsApproveResponse, ApprovalsDenyData, ApprovalsDenyError, ApprovalsDenyResponse, ApprovalsGetData, ApprovalsGetError, ApprovalsGetResponse, ApprovalsListData, ApprovalsListError, ApprovalsListResponse, ArtifactsGetData, ArtifactsGetError, ArtifactsGetResponse, AuditListData, AuditListError, AuditListResponse, AuthGetData, AuthGetError, AuthGetResponse, AuthLoginData, AuthLoginError, AuthLoginResponse, AuthLogoutData, AuthLogoutError, AuthLogoutResponse, AuthSetupData, AuthSetupError, AuthSetupResponse, BackupsGetData, BackupsGetError, BackupsGetResponse, BackupsListData, BackupsListError, BackupsListResponse, BackupsNewData, BackupsNewError, BackupsNewResponse, BackupsVerifyData, BackupsVerifyError, BackupsVerifyResponse, BaseModelsGetData, BaseModelsGetError, BaseModelsGetResponse, BaseModelsListData, BaseModelsListError, BaseModelsListResponse, BranchesAcceptData, BranchesAcceptError, BranchesAcceptResponse, BranchesCompareData, BranchesCompareError, BranchesCompareResponse, BranchesGetData, BranchesGetError, BranchesGetResponse, BranchesListData, BranchesListError, BranchesListResponse, BranchesRevertData, BranchesRevertError, BranchesRevertResponse, CollectionsGetData, CollectionsGetError, CollectionsGetResponse, CollectionsListData, CollectionsListError, CollectionsListResponse, ComputeEditData, ComputeEditError, ComputeEditResponse, ComputeGetData, ComputeGetError, ComputeGetResponse, ComputeListData, ComputeListError, ComputeListResponse, CredentialsListData, CredentialsListError, CredentialsListResponse, CredentialsNewData, CredentialsNewError, CredentialsNewResponse, CredentialsRevokeData, CredentialsRevokeError, CredentialsRevokeResponse, DatasetsGetData, DatasetsGetError, DatasetsGetResponse, DatasetsListData, DatasetsListError, DatasetsListResponse, DefaultsGetData, DefaultsGetError, DefaultsGetResponse, DraftsAcceptData, DraftsAcceptError, DraftsAcceptResponse, DraftsGetData, DraftsGetError, DraftsGetResponse, DraftsListData, DraftsListError, DraftsListResponse, DraftsRevertData, DraftsRevertError, DraftsRevertResponse, EgressHostsListData, EgressHostsListError, EgressHostsListResponse, EventsListData, EventsListError, EventsListResponse, HelpGetData, HelpGetError, HelpGetResponse, HelpSearchData, HelpSearchError, HelpSearchResponse, HostCredentialsClaimData, HostCredentialsClaimError, HostCredentialsClaimResponse, HostCredentialsReportData, HostCredentialsReportError, HostCredentialsReportResponse, HostSessionsAskData, HostSessionsAskError, HostSessionsAskResponse, HostSessionsClaimData, HostSessionsClaimError, HostSessionsClaimResponse, HostSessionsDecisionData, HostSessionsDecisionError, HostSessionsDecisionResponse, HostSessionsReleaseData, HostSessionsReleaseError, HostSessionsReleaseResponse, HostSessionsReportData, HostSessionsReportError, HostSessionsReportResponse, JobLogsListData, JobLogsListError, JobLogsListResponse, JobsCancelData, JobsCancelError, JobsCancelResponse, JobsEditData, JobsEditError, JobsEditResponse, JobsGetData, JobsGetError, JobsGetResponse, JobsListData, JobsListError, JobsListResponse, JobsPauseData, JobsPauseError, JobsPauseResponse, JobsResumeData, JobsResumeError, JobsResumeResponse, JobsWaitData, JobsWaitError, JobsWaitResponse, MeGetData, MeGetError, MeGetResponse, MixesEditData, MixesEditError, MixesEditResponse, MixesGetData, MixesGetError, MixesGetResponse, MixesListData, MixesListError, MixesListResponse, MixesNewData, MixesNewError, MixesNewResponse, MixesPreviewData, MixesPreviewError, MixesPreviewResponse, ModelFamiliesGetData, ModelFamiliesGetError, ModelFamiliesGetResponse, ModelFamiliesListData, ModelFamiliesListError, ModelFamiliesListResponse, MountsListData, MountsListError, MountsListResponse, MountsNewData, MountsNewError, MountsNewResponse, NotificationRulesEditData, NotificationRulesEditError, NotificationRulesEditResponse, NotificationRulesListData, NotificationRulesListError, NotificationRulesListResponse, NotificationSettingsEditData, NotificationSettingsEditError, NotificationSettingsEditResponse, NotificationSettingsGetData, NotificationSettingsGetError, NotificationSettingsGetResponse, PipelineRunsCancelData, PipelineRunsCancelError, PipelineRunsCancelResponse, PipelineRunsGetData, PipelineRunsGetError, PipelineRunsGetResponse, PipelineRunsListData, PipelineRunsListError, PipelineRunsListResponse, PipelineRunsRetryData, PipelineRunsRetryError, PipelineRunsRetryResponse, PipelineRunsWaitData, PipelineRunsWaitError, PipelineRunsWaitResponse, PipelinesListData, PipelinesListError, PipelinesListResponse, PipelinesRunData, PipelinesRunError, PipelinesRunResponse, PoliciesEditData, PoliciesEditError, PoliciesEditResponse, PoliciesGetData, PoliciesGetError, PoliciesGetResponse, ProjectsAdoptData, ProjectsAdoptError, ProjectsAdoptResponse, ProjectsArchiveData, ProjectsArchiveError, ProjectsArchiveResponse, ProjectsEditData, ProjectsEditError, ProjectsEditResponse, ProjectsGetData, ProjectsGetError, ProjectsGetResponse, ProjectsListData, ProjectsListError, ProjectsListResponse, ProjectsNewData, ProjectsNewError, ProjectsNewResponse, ProjectsNoteData, ProjectsNoteError, ProjectsNoteResponse, ProjectsSearchData, ProjectsSearchError, ProjectsSearchResponse, ProjectsSyncData, ProjectsSyncError, ProjectsSyncResponse, QueueEntriesListData, QueueEntriesListError, QueueEntriesListResponse, RecipesGetData, RecipesGetError, RecipesGetResponse, RecipesListData, RecipesListError, RecipesListResponse, RegistrySearchData, RegistrySearchError, RegistrySearchResponse, RunsNewData, RunsNewError, RunsNewResponse, RuntimesGetData, RuntimesGetError, RuntimesGetResponse, RuntimesListData, RuntimesListError, RuntimesListResponse, SecretsListData, SecretsListError, SecretsListResponse, SecretsNewData, SecretsNewError, SecretsNewResponse, SourcesArchiveData, SourcesArchiveError, SourcesArchiveResponse, SourcesEditData, SourcesEditError, SourcesEditResponse, SourcesGetData, SourcesGetError, SourcesGetResponse, SourcesListData, SourcesListError, SourcesListResponse, StepKindsGetData, StepKindsGetError, StepKindsGetResponse, StepKindsListData, StepKindsListError, StepKindsListResponse, TelegramBotSetData, TelegramBotSetError, TelegramBotSetResponse, TelegramBotVerifyData, TelegramBotVerifyError, TelegramBotVerifyResponse, TemplatesGetData, TemplatesGetError, TemplatesGetResponse, TemplatesListData, TemplatesListError, TemplatesListResponse, TotpConfirmData, TotpConfirmError, TotpConfirmResponse, TotpDisableData, TotpDisableError, TotpDisableResponse, TotpEnrollData, TotpEnrollError, TotpEnrollResponse, UtterancesGetData, UtterancesGetError, UtterancesGetResponse, UtterancesListData, UtterancesListError, UtterancesListResponse, ViewsGetData, ViewsGetError, ViewsGetResponse, ViewsListData, ViewsListError, ViewsListResponse, ViewsSetData, ViewsSetError, ViewsSetResponse, WorkerArtifactsSetData, WorkerArtifactsSetError, WorkerArtifactsSetResponse, WorkerLeasesClaimData, WorkerLeasesClaimError, WorkerLeasesClaimResponse, WorkerLeasesReleaseData, WorkerLeasesReleaseError, WorkerLeasesReleaseResponse, WorkerLeasesReportData, WorkerLeasesReportError, WorkerLeasesReportResponse, WorkerLogsNewData, WorkerLogsNewError, WorkerLogsNewResponse, WorkerMetricsNewData, WorkerMetricsNewError, WorkerMetricsNewResponse, WorkerRegistrationsNewData, WorkerRegistrationsNewError, WorkerRegistrationsNewResponse, WorkspacesGetData, WorkspacesGetError, WorkspacesGetResponse, WorkspacesListData, WorkspacesListError, WorkspacesListResponse, WorkspacesSetData, WorkspacesSetError, WorkspacesSetResponse } from '../types.gen';
+import { adoptionsList, agentCredentialsArchive, agentCredentialsGet, agentCredentialsList, agentCredentialsSet, agentCredentialsVerify, agentMessagesList, agentMessagesNew, agentModelsList, agentProfileEdit, agentProfileGet, agentProvidersList, agentSessionsAccept, agentSessionsCancel, agentSessionsGet, agentSessionsList, agentSessionsNew, agentSessionsPause, agentSessionsResume, agentSessionsRevert, aliasesGet, aliasesList, aliasesSet, approvalsApprove, approvalsDeny, approvalsGet, approvalsList, artifactsGet, auditList, authGet, authLogin, authLogout, authSetup, backupsGet, backupsList, backupsNew, backupsVerify, baseModelsGet, baseModelsList, branchesAccept, branchesCompare, branchesGet, branchesList, branchesRevert, checkpointsAverage, checkpointsGet, checkpointsList, collectionsGet, collectionsList, computeEdit, computeGet, computeList, credentialsList, credentialsNew, credentialsRevoke, datasetsGet, datasetsList, defaultsGet, draftsAccept, draftsGet, draftsList, draftsRevert, egressHostsList, eventsList, helpGet, helpSearch, hostCredentialsClaim, hostCredentialsReport, hostSessionsAsk, hostSessionsClaim, hostSessionsDecision, hostSessionsRelease, hostSessionsReport, jobLogsList, jobsCancel, jobsEdit, jobsGet, jobsList, jobsPause, jobsResume, jobsWait, meGet, metricsGet, mixesEdit, mixesGet, mixesList, mixesNew, mixesPreview, modelFamiliesGet, modelFamiliesList, mountsList, mountsNew, notificationRulesEdit, notificationRulesList, notificationSettingsEdit, notificationSettingsGet, type Options, pipelineRunsCancel, pipelineRunsGet, pipelineRunsList, pipelineRunsRetry, pipelineRunsWait, pipelinesList, pipelinesRun, policiesEdit, policiesGet, projectsAdopt, projectsArchive, projectsEdit, projectsGet, projectsList, projectsNew, projectsNote, projectsSearch, projectsSync, queueEntriesList, recipesGet, recipesList, registrySearch, runsCalibrate, runsGet, runsList, runsNew, runsResume, runsStage, runtimesGet, runtimesList, secretsList, secretsNew, sourcesArchive, sourcesEdit, sourcesGet, sourcesList, stepKindsGet, stepKindsList, telegramBotSet, telegramBotVerify, templatesGet, templatesList, totpConfirm, totpDisable, totpEnroll, utterancesGet, utterancesList, viewsGet, viewsList, viewsSet, workerArtifactsSet, workerLeasesClaim, workerLeasesRelease, workerLeasesReport, workerLogsNew, workerMetricsNew, workerRegistrationsNew, workspacesGet, workspacesList, workspacesSet } from '../sdk.gen';
+import type { AdoptionsListData, AdoptionsListError, AdoptionsListResponse, AgentCredentialsArchiveData, AgentCredentialsArchiveError, AgentCredentialsArchiveResponse, AgentCredentialsGetData, AgentCredentialsGetError, AgentCredentialsGetResponse, AgentCredentialsListData, AgentCredentialsListError, AgentCredentialsListResponse, AgentCredentialsSetData, AgentCredentialsSetError, AgentCredentialsSetResponse, AgentCredentialsVerifyData, AgentCredentialsVerifyError, AgentCredentialsVerifyResponse, AgentMessagesListData, AgentMessagesListError, AgentMessagesListResponse, AgentMessagesNewData, AgentMessagesNewError, AgentMessagesNewResponse, AgentModelsListData, AgentModelsListError, AgentModelsListResponse, AgentProfileEditData, AgentProfileEditError, AgentProfileEditResponse, AgentProfileGetData, AgentProfileGetError, AgentProfileGetResponse, AgentProvidersListData, AgentProvidersListError, AgentProvidersListResponse, AgentSessionsAcceptData, AgentSessionsAcceptError, AgentSessionsAcceptResponse, AgentSessionsCancelData, AgentSessionsCancelError, AgentSessionsCancelResponse, AgentSessionsGetData, AgentSessionsGetError, AgentSessionsGetResponse, AgentSessionsListData, AgentSessionsListError, AgentSessionsListResponse, AgentSessionsNewData, AgentSessionsNewError, AgentSessionsNewResponse, AgentSessionsPauseData, AgentSessionsPauseError, AgentSessionsPauseResponse, AgentSessionsResumeData, AgentSessionsResumeError, AgentSessionsResumeResponse, AgentSessionsRevertData, AgentSessionsRevertError, AgentSessionsRevertResponse, AliasesGetData, AliasesGetError, AliasesGetResponse, AliasesListData, AliasesListError, AliasesListResponse, AliasesSetData, AliasesSetError, AliasesSetResponse, ApprovalsApproveData, ApprovalsApproveError, ApprovalsApproveResponse, ApprovalsDenyData, ApprovalsDenyError, ApprovalsDenyResponse, ApprovalsGetData, ApprovalsGetError, ApprovalsGetResponse, ApprovalsListData, ApprovalsListError, ApprovalsListResponse, ArtifactsGetData, ArtifactsGetError, ArtifactsGetResponse, AuditListData, AuditListError, AuditListResponse, AuthGetData, AuthGetError, AuthGetResponse, AuthLoginData, AuthLoginError, AuthLoginResponse, AuthLogoutData, AuthLogoutError, AuthLogoutResponse, AuthSetupData, AuthSetupError, AuthSetupResponse, BackupsGetData, BackupsGetError, BackupsGetResponse, BackupsListData, BackupsListError, BackupsListResponse, BackupsNewData, BackupsNewError, BackupsNewResponse, BackupsVerifyData, BackupsVerifyError, BackupsVerifyResponse, BaseModelsGetData, BaseModelsGetError, BaseModelsGetResponse, BaseModelsListData, BaseModelsListError, BaseModelsListResponse, BranchesAcceptData, BranchesAcceptError, BranchesAcceptResponse, BranchesCompareData, BranchesCompareError, BranchesCompareResponse, BranchesGetData, BranchesGetError, BranchesGetResponse, BranchesListData, BranchesListError, BranchesListResponse, BranchesRevertData, BranchesRevertError, BranchesRevertResponse, CheckpointsAverageData, CheckpointsAverageError, CheckpointsAverageResponse, CheckpointsGetData, CheckpointsGetError, CheckpointsGetResponse, CheckpointsListData, CheckpointsListError, CheckpointsListResponse, CollectionsGetData, CollectionsGetError, CollectionsGetResponse, CollectionsListData, CollectionsListError, CollectionsListResponse, ComputeEditData, ComputeEditError, ComputeEditResponse, ComputeGetData, ComputeGetError, ComputeGetResponse, ComputeListData, ComputeListError, ComputeListResponse, CredentialsListData, CredentialsListError, CredentialsListResponse, CredentialsNewData, CredentialsNewError, CredentialsNewResponse, CredentialsRevokeData, CredentialsRevokeError, CredentialsRevokeResponse, DatasetsGetData, DatasetsGetError, DatasetsGetResponse, DatasetsListData, DatasetsListError, DatasetsListResponse, DefaultsGetData, DefaultsGetError, DefaultsGetResponse, DraftsAcceptData, DraftsAcceptError, DraftsAcceptResponse, DraftsGetData, DraftsGetError, DraftsGetResponse, DraftsListData, DraftsListError, DraftsListResponse, DraftsRevertData, DraftsRevertError, DraftsRevertResponse, EgressHostsListData, EgressHostsListError, EgressHostsListResponse, EventsListData, EventsListError, EventsListResponse, HelpGetData, HelpGetError, HelpGetResponse, HelpSearchData, HelpSearchError, HelpSearchResponse, HostCredentialsClaimData, HostCredentialsClaimError, HostCredentialsClaimResponse, HostCredentialsReportData, HostCredentialsReportError, HostCredentialsReportResponse, HostSessionsAskData, HostSessionsAskError, HostSessionsAskResponse, HostSessionsClaimData, HostSessionsClaimError, HostSessionsClaimResponse, HostSessionsDecisionData, HostSessionsDecisionError, HostSessionsDecisionResponse, HostSessionsReleaseData, HostSessionsReleaseError, HostSessionsReleaseResponse, HostSessionsReportData, HostSessionsReportError, HostSessionsReportResponse, JobLogsListData, JobLogsListError, JobLogsListResponse, JobsCancelData, JobsCancelError, JobsCancelResponse, JobsEditData, JobsEditError, JobsEditResponse, JobsGetData, JobsGetError, JobsGetResponse, JobsListData, JobsListError, JobsListResponse, JobsPauseData, JobsPauseError, JobsPauseResponse, JobsResumeData, JobsResumeError, JobsResumeResponse, JobsWaitData, JobsWaitError, JobsWaitResponse, MeGetData, MeGetError, MeGetResponse, MetricsGetData, MetricsGetError, MetricsGetResponse, MixesEditData, MixesEditError, MixesEditResponse, MixesGetData, MixesGetError, MixesGetResponse, MixesListData, MixesListError, MixesListResponse, MixesNewData, MixesNewError, MixesNewResponse, MixesPreviewData, MixesPreviewError, MixesPreviewResponse, ModelFamiliesGetData, ModelFamiliesGetError, ModelFamiliesGetResponse, ModelFamiliesListData, ModelFamiliesListError, ModelFamiliesListResponse, MountsListData, MountsListError, MountsListResponse, MountsNewData, MountsNewError, MountsNewResponse, NotificationRulesEditData, NotificationRulesEditError, NotificationRulesEditResponse, NotificationRulesListData, NotificationRulesListError, NotificationRulesListResponse, NotificationSettingsEditData, NotificationSettingsEditError, NotificationSettingsEditResponse, NotificationSettingsGetData, NotificationSettingsGetError, NotificationSettingsGetResponse, PipelineRunsCancelData, PipelineRunsCancelError, PipelineRunsCancelResponse, PipelineRunsGetData, PipelineRunsGetError, PipelineRunsGetResponse, PipelineRunsListData, PipelineRunsListError, PipelineRunsListResponse, PipelineRunsRetryData, PipelineRunsRetryError, PipelineRunsRetryResponse, PipelineRunsWaitData, PipelineRunsWaitError, PipelineRunsWaitResponse, PipelinesListData, PipelinesListError, PipelinesListResponse, PipelinesRunData, PipelinesRunError, PipelinesRunResponse, PoliciesEditData, PoliciesEditError, PoliciesEditResponse, PoliciesGetData, PoliciesGetError, PoliciesGetResponse, ProjectsAdoptData, ProjectsAdoptError, ProjectsAdoptResponse, ProjectsArchiveData, ProjectsArchiveError, ProjectsArchiveResponse, ProjectsEditData, ProjectsEditError, ProjectsEditResponse, ProjectsGetData, ProjectsGetError, ProjectsGetResponse, ProjectsListData, ProjectsListError, ProjectsListResponse, ProjectsNewData, ProjectsNewError, ProjectsNewResponse, ProjectsNoteData, ProjectsNoteError, ProjectsNoteResponse, ProjectsSearchData, ProjectsSearchError, ProjectsSearchResponse, ProjectsSyncData, ProjectsSyncError, ProjectsSyncResponse, QueueEntriesListData, QueueEntriesListError, QueueEntriesListResponse, RecipesGetData, RecipesGetError, RecipesGetResponse, RecipesListData, RecipesListError, RecipesListResponse, RegistrySearchData, RegistrySearchError, RegistrySearchResponse, RunsCalibrateData, RunsCalibrateError, RunsCalibrateResponse, RunsGetData, RunsGetError, RunsGetResponse, RunsListData, RunsListError, RunsListResponse, RunsNewData, RunsNewError, RunsNewResponse, RunsResumeData, RunsResumeError, RunsResumeResponse, RunsStageData, RunsStageError, RunsStageResponse, RuntimesGetData, RuntimesGetError, RuntimesGetResponse, RuntimesListData, RuntimesListError, RuntimesListResponse, SecretsListData, SecretsListError, SecretsListResponse, SecretsNewData, SecretsNewError, SecretsNewResponse, SourcesArchiveData, SourcesArchiveError, SourcesArchiveResponse, SourcesEditData, SourcesEditError, SourcesEditResponse, SourcesGetData, SourcesGetError, SourcesGetResponse, SourcesListData, SourcesListError, SourcesListResponse, StepKindsGetData, StepKindsGetError, StepKindsGetResponse, StepKindsListData, StepKindsListError, StepKindsListResponse, TelegramBotSetData, TelegramBotSetError, TelegramBotSetResponse, TelegramBotVerifyData, TelegramBotVerifyError, TelegramBotVerifyResponse, TemplatesGetData, TemplatesGetError, TemplatesGetResponse, TemplatesListData, TemplatesListError, TemplatesListResponse, TotpConfirmData, TotpConfirmError, TotpConfirmResponse, TotpDisableData, TotpDisableError, TotpDisableResponse, TotpEnrollData, TotpEnrollError, TotpEnrollResponse, UtterancesGetData, UtterancesGetError, UtterancesGetResponse, UtterancesListData, UtterancesListError, UtterancesListResponse, ViewsGetData, ViewsGetError, ViewsGetResponse, ViewsListData, ViewsListError, ViewsListResponse, ViewsSetData, ViewsSetError, ViewsSetResponse, WorkerArtifactsSetData, WorkerArtifactsSetError, WorkerArtifactsSetResponse, WorkerLeasesClaimData, WorkerLeasesClaimError, WorkerLeasesClaimResponse, WorkerLeasesReleaseData, WorkerLeasesReleaseError, WorkerLeasesReleaseResponse, WorkerLeasesReportData, WorkerLeasesReportError, WorkerLeasesReportResponse, WorkerLogsNewData, WorkerLogsNewError, WorkerLogsNewResponse, WorkerMetricsNewData, WorkerMetricsNewError, WorkerMetricsNewResponse, WorkerRegistrationsNewData, WorkerRegistrationsNewError, WorkerRegistrationsNewResponse, WorkspacesGetData, WorkspacesGetError, WorkspacesGetResponse, WorkspacesListData, WorkspacesListError, WorkspacesListResponse, WorkspacesSetData, WorkspacesSetError, WorkspacesSetResponse } from '../types.gen';
 
 export type QueryKey<TOptions extends Options> = [
     Pick<TOptions, 'baseUrl' | 'body' | 'headers' | 'path' | 'query'> & {
@@ -863,23 +863,6 @@ export const policiesEditMutation = (options?: Partial<Options<PoliciesEditData>
     const mutationOptions: UseMutationOptions<PoliciesEditResponse, PoliciesEditError, Options<PoliciesEditData>> = {
         mutationFn: async (fnOptions) => {
             const { data } = await policiesEdit({
-                ...options,
-                ...fnOptions,
-                throwOnError: true
-            });
-            return data;
-        }
-    };
-    return mutationOptions;
-};
-
-/**
- * Start a training run; until phase 2 only ?dryRun=true answers, with GPU-hours, card, duration and data
- */
-export const runsNewMutation = (options?: Partial<Options<RunsNewData>>): UseMutationOptions<RunsNewResponse, RunsNewError, Options<RunsNewData>> => {
-    const mutationOptions: UseMutationOptions<RunsNewResponse, RunsNewError, Options<RunsNewData>> = {
-        mutationFn: async (fnOptions) => {
-            const { data } = await runsNew({
                 ...options,
                 ...fnOptions,
                 throwOnError: true
@@ -2761,6 +2744,181 @@ export const backupsVerifyMutation = (options?: Partial<Options<BackupsVerifyDat
     };
     return mutationOptions;
 };
+
+export const runsListQueryKey = (options: Options<RunsListData>) => createQueryKey('runsList', options);
+
+/**
+ * Training runs of a project, newest first
+ */
+export const runsListOptions = (options: Options<RunsListData>) => queryOptions<RunsListResponse, RunsListError, RunsListResponse, ReturnType<typeof runsListQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await runsList({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: runsListQueryKey(options)
+});
+
+/**
+ * Start a training run (one optimisation stage); ?dryRun=true answers the estimate first
+ */
+export const runsNewMutation = (options?: Partial<Options<RunsNewData>>): UseMutationOptions<RunsNewResponse, RunsNewError, Options<RunsNewData>> => {
+    const mutationOptions: UseMutationOptions<RunsNewResponse, RunsNewError, Options<RunsNewData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await runsNew({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Measure seconds per step and batch sizes for a base model on the training card (the family's calibrate step)
+ */
+export const runsCalibrateMutation = (options?: Partial<Options<RunsCalibrateData>>): UseMutationOptions<RunsCalibrateResponse, RunsCalibrateError, Options<RunsCalibrateData>> => {
+    const mutationOptions: UseMutationOptions<RunsCalibrateResponse, RunsCalibrateError, Options<RunsCalibrateData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await runsCalibrate({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+export const runsGetQueryKey = (options: Options<RunsGetData>) => createQueryKey('runsGet', options);
+
+/**
+ * Get a run with its stage timeline, final metrics, departures from defaults and parent run
+ */
+export const runsGetOptions = (options: Options<RunsGetData>) => queryOptions<RunsGetResponse, RunsGetError, RunsGetResponse, ReturnType<typeof runsGetQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await runsGet({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: runsGetQueryKey(options)
+});
+
+/**
+ * Continue a stopped or failed run from its last training state (same stage, same optimiser state)
+ */
+export const runsResumeMutation = (options?: Partial<Options<RunsResumeData>>): UseMutationOptions<RunsResumeResponse, RunsResumeError, Options<RunsResumeData>> => {
+    const mutationOptions: UseMutationOptions<RunsResumeResponse, RunsResumeError, Options<RunsResumeData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await runsResume({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Start a new stage from a checkpoint of this run with an explicit peak learning rate
+ */
+export const runsStageMutation = (options?: Partial<Options<RunsStageData>>): UseMutationOptions<RunsStageResponse, RunsStageError, Options<RunsStageData>> => {
+    const mutationOptions: UseMutationOptions<RunsStageResponse, RunsStageError, Options<RunsStageData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await runsStage({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+export const checkpointsListQueryKey = (options: Options<CheckpointsListData>) => createQueryKey('checkpointsList', options);
+
+/**
+ * Checkpoints of a project or of one run, best validation WER first
+ */
+export const checkpointsListOptions = (options: Options<CheckpointsListData>) => queryOptions<CheckpointsListResponse, CheckpointsListError, CheckpointsListResponse, ReturnType<typeof checkpointsListQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await checkpointsList({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: checkpointsListQueryKey(options)
+});
+
+export const checkpointsGetQueryKey = (options: Options<CheckpointsGetData>) => createQueryKey('checkpointsGet', options);
+
+/**
+ * Get a checkpoint with its artifact, metrics and lineage
+ */
+export const checkpointsGetOptions = (options: Options<CheckpointsGetData>) => queryOptions<CheckpointsGetResponse, CheckpointsGetError, CheckpointsGetResponse, ReturnType<typeof checkpointsGetQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await checkpointsGet({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: checkpointsGetQueryKey(options)
+});
+
+/**
+ * Average chosen checkpoints of a run with the family's average step; the result is a new checkpoint of the run
+ */
+export const checkpointsAverageMutation = (options?: Partial<Options<CheckpointsAverageData>>): UseMutationOptions<CheckpointsAverageResponse, CheckpointsAverageError, Options<CheckpointsAverageData>> => {
+    const mutationOptions: UseMutationOptions<CheckpointsAverageResponse, CheckpointsAverageError, Options<CheckpointsAverageData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await checkpointsAverage({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+export const metricsGetQueryKey = (options: Options<MetricsGetData>) => createQueryKey('metricsGet', options);
+
+/**
+ * A run's metric series, binned server-side for charts (min and max per bucket), with checkpoint marks
+ */
+export const metricsGetOptions = (options: Options<MetricsGetData>) => queryOptions<MetricsGetResponse, MetricsGetError, MetricsGetResponse, ReturnType<typeof metricsGetQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await metricsGet({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: metricsGetQueryKey(options)
+});
 
 export const mountsListQueryKey = (options?: Options<MountsListData>) => createQueryKey('mountsList', options);
 

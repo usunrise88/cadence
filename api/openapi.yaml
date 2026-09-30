@@ -39,6 +39,7 @@ tags:
   - { name: pipelines, description: "Pipelines of typed steps pinned as kind@version, and their runs with per-step status (R11, R15)" }
   - { name: notifications, description: "The notification routing table, quiet hours, the daily digest and the Telegram bot" }
   - { name: backups, description: "Nightly backup sets (pg_dump plus the content store), the weekly restore test and retention" }
+  - { name: runs, description: "Training runs (one optimisation stage each), calibration, checkpoints and metric series (R12, R13, R44)" }
   - { name: planned, description: Named now, implemented in a later phase (501 until then) }
 
 paths:
@@ -810,30 +811,7 @@ paths:
           content: { application/json: { schema: { $ref: "#/components/schemas/Policies" } } }
         default: { $ref: "#/components/responses/Problem" }
 
-  /projects/{p}/runs:
-    x-cadence: { entity: runs }
-    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
-    post:
-      operationId: runs.new
-      summary: Start a training run; until phase 2 only ?dryRun=true answers, with GPU-hours, card, duration and data
-      tags: [projects]
-      x-cadence:
-        toolDescription: >
-          Start a training run from a base model (init base) or a checkpoint. Until phase 2 only the dry run works:
-          call it with dryRun=true to get the estimate (GPU-hours, duration, card, data volume, basis and ±) from the
-          defaults table and the compute entity; without dryRun it answers 501.
-      parameters:
-        - $ref: "#/components/parameters/IdempotencyKey"
-        - $ref: "#/components/parameters/DryRun"
-      requestBody:
-        required: true
-        content: { application/json: { schema: { $ref: "#/components/schemas/RunNew" } } }
-      responses:
-        "200":
-          description: Dry run — the estimate; nothing was written or queued
-          content: { application/json: { schema: { $ref: "#/components/schemas/RunEstimate" } } }
-        "202": { $ref: "#/components/responses/JobAccepted" }
-        default: { $ref: "#/components/responses/Problem" }
+  # runs.new moved to the stream R section (phase 2 · wave 2) with the rest of runs.*
 
   # ---------------------------------------------------------------- approvals, policy engine, audit, jobs (phase 1 · stream C) — add paths below this line
   #
@@ -2725,6 +2703,254 @@ paths:
         default: { $ref: "#/components/responses/Problem" }
 
   # ---------------------------------------------------------------- runs, checkpoints, metrics (phase 2 · wave 2 · stream R) — add paths below this line
+  /projects/{p}/runs:
+    x-cadence: { entity: runs }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    get:
+      operationId: runs.list
+      summary: Training runs of a project, newest first
+      tags: [runs]
+      x-cadence:
+        toolDescription: >
+          List the project's training runs, newest first: status (queued, running, paused, done, failed, cancelled),
+          start (base model or checkpoint), mix revision, step budget, final metrics and the best checkpoint. Filter
+          by status. Open one with runs.get.
+      parameters:
+        - { name: status, in: query, description: Only runs in this status, schema: { $ref: "#/components/schemas/RunStatus" } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+      responses:
+        "200":
+          description: Runs, newest first
+          content: { application/json: { schema: { $ref: "#/components/schemas/RunList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+    post:
+      operationId: runs.new
+      summary: Start a training run (one optimisation stage); ?dryRun=true answers the estimate first
+      tags: [runs]
+      x-cadence:
+        toolDescription: >
+          Start one training stage: a base model (init base) or a checkpoint (init checkpoint, ckp_…), a mix (mix_…
+          or its name, at its current revision unless mixRevision), the project's train-stage pipeline at a commit,
+          a step budget and a seed. Always call it with dryRun=true first: the answer is the estimate (GPU-hours,
+          duration, card, data volume, basis table or measured, ±, today's GPU spend against the project's budget).
+          Without dryRun it answers 201 with the run, or 202 with an approvalId when the estimate exceeds today's
+          remaining GPU budget of the project or of your session — then wait for approval.decided. Eval-only
+          datasets are refused. Follow the run with runs.get and metrics.get; checkpoints arrive on checkpoints.list.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/RunNew" } } }
+      responses:
+        "200":
+          description: Dry run — the estimate; nothing was written or queued
+          content: { application/json: { schema: { $ref: "#/components/schemas/RunEstimate" } } }
+        "201":
+          description: The run, queued
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Run" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /projects/{p}/runs:calibrate:
+    x-cadence: { entity: runs }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    post:
+      operationId: runs.calibrate
+      summary: Measure seconds per step and batch sizes for a base model on the training card (the family's calibrate step)
+      tags: [runs]
+      x-cadence:
+        toolDescription: >
+          Calibrate before the first run of a base model on a card: runs the model family's calibrate step on the
+          mix's data under the card's memory cap. When it finishes, runs.new?dryRun=true estimates switch from basis
+          table to basis measured for that base model, card class, memory cap and precision. Answers 201 with the
+          pipeline run (follow it with pipelineRuns.wait), or 202 with an approvalId when today's GPU budget is spent.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/RunCalibrate" } } }
+      responses:
+        "200":
+          description: Dry run — the calibration's key and plan; nothing was queued
+          content: { application/json: { schema: { $ref: "#/components/schemas/RunCalibration" } } }
+        "201":
+          description: The calibration's pipeline run, queued
+          content: { application/json: { schema: { $ref: "#/components/schemas/RunCalibration" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /runs/{id}:
+    x-cadence: { entity: runs }
+    parameters: [{ name: id, in: path, required: true, description: "Run id (run_…)", schema: { type: string } }]
+    get:
+      operationId: runs.get
+      summary: Get a run with its stage timeline, final metrics, departures from defaults and parent run
+      tags: [runs]
+      x-cadence:
+        toolDescription: >
+          A training run: status, the stage timeline (calibrate, train, … with their states and attempts), the job
+          to pause or cancel (currentJobId, via jobs.pause | jobs.resume | jobs.cancel), OOM retries (batch scale),
+          final metrics, departures from defaults, the parent run and the config diff against it, the best
+          checkpoint and the estimate it started with.
+      responses:
+        "200":
+          description: The run
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Run" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /runs/{id}:resume:
+    x-cadence: { entity: runs }
+    parameters: [{ name: id, in: path, required: true, description: "Run id (run_…)", schema: { type: string } }]
+    post:
+      operationId: runs.resume
+      summary: Continue a stopped or failed run from its last training state (same stage, same optimiser state)
+      tags: [runs]
+      x-cadence:
+        toolDescription: >
+          Continue the same stage of a cancelled or failed run from its last saved training-state (same optimiser
+          and sampler state, same step budget). A paused step job resumes with jobs.resume instead. Send ifMatch with
+          the run's etag. Answers the run (queued again), 409 no-training-state when it never saved one (start a new
+          run), or 202 with an approvalId when the remaining steps exceed today's GPU budget.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      responses:
+        "200":
+          description: The run, queued again (or, for a dry run, what it would be)
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Run" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /runs/{id}:stage:
+    x-cadence: { entity: runs }
+    parameters: [{ name: id, in: path, required: true, description: "The parent run (run_…)", schema: { type: string } }]
+    post:
+      operationId: runs.stage
+      summary: Start a new stage from a checkpoint of this run with an explicit peak learning rate
+      tags: [runs]
+      x-cadence:
+        toolDescription: >
+          Start the next training stage from a checkpoint of this run (default its best kept checkpoint): a new run
+          with init checkpoint, a new optimiser and the peak learning rate you give (peakLr, e.g. 2e-5 for a
+          continuation), on the parent's mix unless you name another. The new run records the parent, and runs.get
+          shows the config diff against it. Send ifMatch with the parent's etag; dryRun=true answers the estimate.
+          Answers 201 with the new run or 202 with an approvalId over budget.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/RunStage" } } }
+      responses:
+        "200":
+          description: Dry run — the new stage's estimate
+          content: { application/json: { schema: { $ref: "#/components/schemas/RunEstimate" } } }
+        "201":
+          description: The new run, queued
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Run" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /projects/{p}/checkpoints:
+    x-cadence: { entity: checkpoints }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    get:
+      operationId: checkpoints.list
+      summary: Checkpoints of a project or of one run, best validation WER first
+      tags: [runs]
+      x-cadence:
+        toolDescription: >
+          Checkpoints registered by training runs (step, validation WER, family, weights hash; trained or averaged),
+          best validation WER first. Filter by run; kept=true lists only the top k per run (training.keep_top_k).
+          Average some with checkpoints.average; start a new stage from one with runs.stage.
+      parameters:
+        - { name: run, in: query, description: "Only this run's checkpoints (run_…)", schema: { type: string } }
+        - { name: kept, in: query, description: Only the checkpoints in their run's top k, schema: { type: boolean } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+      responses:
+        "200":
+          description: Checkpoints, best validation WER first
+          content: { application/json: { schema: { $ref: "#/components/schemas/CheckpointList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /checkpoints/{id}:
+    x-cadence: { entity: checkpoints }
+    parameters: [{ name: id, in: path, required: true, description: "Checkpoint id (ckp_…)", schema: { type: string } }]
+    get:
+      operationId: checkpoints.get
+      summary: Get a checkpoint with its artifact, metrics and lineage
+      tags: [runs]
+      responses:
+        "200":
+          description: The checkpoint
+          content: { application/json: { schema: { $ref: "#/components/schemas/Checkpoint" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /runs/{id}/checkpoints:average:
+    x-cadence: { entity: checkpoints }
+    parameters: [{ name: id, in: path, required: true, description: "Run id (run_…)", schema: { type: string } }]
+    post:
+      operationId: checkpoints.average
+      summary: Average chosen checkpoints of a run with the family's average step; the result is a new checkpoint of the run
+      tags: [runs]
+      x-cadence:
+        toolDescription: >
+          Average two or more checkpoints of one run (ids from checkpoints.list, typically the top k) with the model
+          family's average step. Answers 201 with the pipeline run; when it finishes the averaged checkpoint appears
+          in checkpoints.list (kind averaged, averagedFrom) with its own validation WER when the step measures one.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/CheckpointAverage" } } }
+      responses:
+        "200":
+          description: Dry run — the plan; nothing was queued
+          content: { application/json: { schema: { $ref: "#/components/schemas/CheckpointAverageStarted" } } }
+        "201":
+          description: The averaging pipeline run, queued
+          content: { application/json: { schema: { $ref: "#/components/schemas/CheckpointAverageStarted" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /metrics/{id}:
+    x-cadence: { entity: metrics }
+    parameters: [{ name: id, in: path, required: true, description: "The run whose metrics to read (run_…)", schema: { type: string } }]
+    get:
+      operationId: metrics.get
+      summary: A run's metric series, binned server-side for charts (min and max per bucket), with checkpoint marks
+      tags: [runs]
+      x-cadence:
+        toolDescription: >
+          Metric series of a training run (loss, val_wer, lr, …) for charts and for judging progress: choose names,
+          the x axis (step, epoch, wall seconds since the first point, or GPU-hours), and maxPoints — longer series
+          are binned server-side, each point carrying the bucket's mean value with min and max. afterStep returns
+          only newer points (live append). Checkpoint marks come along.
+      parameters:
+        - name: names
+          in: query
+          description: Metric names (all when absent)
+          style: form
+          explode: false
+          schema: { type: array, maxItems: 50, items: { type: string, maxLength: 100 } }
+        - { name: x, in: query, description: The x axis, schema: { $ref: "#/components/schemas/MetricAxis" } }
+        - { name: maxPoints, in: query, description: Points per series at most; longer series are binned, schema: { type: integer, minimum: 2, maximum: 10000, default: 1000 } }
+        - { name: afterStep, in: query, description: Only points after this optimiser step (live append), schema: { type: integer, format: int64, minimum: 0 } }
+      responses:
+        "200":
+          description: The series
+          content: { application/json: { schema: { $ref: "#/components/schemas/MetricSeriesSet" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
 
   # ---------------------------------------------------------------- playbooks (phase 2 · wave 2 · stream K) — add paths below this line
 
@@ -3590,6 +3816,7 @@ components:
           required: [bytes_per_audio_hour, training]
           properties:
             bytes_per_audio_hour: { $ref: "#/components/schemas/DefaultValue" }
+            measured_plus_minus: { $ref: "#/components/schemas/DefaultValue" }
             training: { type: array, items: { $ref: "#/components/schemas/TrainingEstimateRow" } }
         compute:
           type: object
@@ -3646,8 +3873,8 @@ components:
         baseModel:
           type: string
           description: "Base model version (ver_…), collection name (its newest frozen version) or @alias; default the defaults' base model"
-        checkpoint: { type: string, description: "Required when init is checkpoint (checkpoints arrive in phase 2)" }
-        steps: { type: integer, minimum: 1, description: "Default training.steps" }
+        checkpoint: { type: string, description: "The checkpoint to start from (ckp_…); required when init is checkpoint. The run's base model is then the checkpoint's" }
+        steps: { type: integer, minimum: 1, description: "Step budget of the stage (default training.steps); the train step's steps parameter" }
         precision: { $ref: "#/components/schemas/Precision" }
         gpus: { type: integer, minimum: 1, description: "Cards for the run; v1 accepts 1 (training.gpus)" }
         compute: { type: string, description: "Host id or name; default the first host whose card allows training" }
@@ -3655,7 +3882,16 @@ components:
           type: array
           maxItems: 100
           items: { type: string }
-          description: "Dataset versions (ver_… or @alias) the run reads, for the data volume; the mix replaces this in phase 2"
+          description: "Dry runs without a mix only: dataset versions (ver_… or @alias) for the data volume"
+        mix: { type: string, maxLength: 200, description: "The mix to train on (mix_… or its name); required unless dryRun with datasets" }
+        mixRevision: { type: integer, minimum: 1, description: "The mix revision (default its current one)" }
+        seed: { type: integer, minimum: 0, maximum: 2147483647, description: "The train step's seed parameter, when its kind has one (default: the kind's default)" }
+        pipeline: { type: string, maxLength: 63, description: "The recipe: a pipeline of the project repository (default training.pipeline, train-stage)" }
+        ref: { type: string, maxLength: 200, description: "Branch, tag or commit to read the pipeline at (default main)" }
+        params:
+          type: object
+          description: "Overrides of the train step's parameters (recorded as departures when they differ from the default)"
+        priority: { type: integer, minimum: -100, maximum: 100, default: 0, description: "Queue priority of the run's step jobs (higher first)" }
     EstimateRange:
       type: object
       required: [value, low, high]
@@ -3698,9 +3934,23 @@ components:
           type: object
           required: [gpuHoursPerProjectPerDay, withinDailyBudget]
           properties:
-            gpuHoursPerProjectPerDay: { type: number, format: double }
-            withinDailyBudget: { type: boolean, description: "The upper bound fits the project's daily GPU-hour budget" }
-        source: { type: string, description: The source of the estimate-table row }
+            gpuHoursPerProjectPerDay: { type: number, format: double, description: "The project's daily GPU-hour budget" }
+            usedTodayGpuHours: { type: number, format: double, description: "GPU-hours the project's leases on GPU cards used today (policies timezone)" }
+            remainingGpuHours: { type: number, format: double, description: "Budget minus today's use (negative when overspent)" }
+            withinDailyBudget: { type: boolean, description: "Today's use plus the estimate fits the project's daily budget (over it, an agent's run waits for an approval)" }
+            sessionGpuHours: { type: number, format: double, description: "An agent session's GPU-hour budget (budgets.agent_gpu_hours_per_session), for a session's request" }
+            sessionUsedGpuHours: { type: number, format: double, description: "GPU-hours the session's leases used so far" }
+        source: { type: string, description: "The source of the estimate-table row, or the calibration it was measured by" }
+        measuredAt: { type: string, format: date-time, description: "basis measured: when the calibration ran" }
+        mix:
+          type: object
+          required: [id, name, revision, hash]
+          description: "The mix revision the run trains on, rendered as a mix artifact (its hash is the content hash of the resolved input_cfg)"
+          properties:
+            id: { type: string }
+            name: { type: string }
+            revision: { type: integer }
+            hash: { type: string }
 
     # ---------------------------------------------------------------- approvals, audit, jobs schemas (stream C) — add below
     #
@@ -4483,6 +4733,7 @@ components:
         turns: { type: integer, description: "Turns before the session pauses (budgets.agent_turns_per_session)" }
         tokens: { type: integer, format: int64, description: "Input + output tokens before it pauses (budgets.agent_tokens_per_session)" }
         tokensPerTurn: { type: integer, format: int64, description: "A turn over this is cancelled and the session pauses (budgets.agent_tokens_per_turn)" }
+        gpuHours: { type: number, format: double, description: "GPU-hours the session's commands may spend before a spending one waits for an approval (budgets.agent_gpu_hours_per_session)" }
     AgentUse:
       type: object
       required: [turns, inputTokens, outputTokens]
@@ -5596,8 +5847,9 @@ components:
       properties:
         attempt: { type: integer }
         jobId: { type: string }
-        reason: { type: string, enum: [initial, oom, lost, retry], description: "Why the attempt started: the first, the automatic OOM retry at 0.75× batch, the retry after a lost lease, or pipelineRuns.retry" }
+        reason: { type: string, enum: [initial, oom, lost, retry, resume], description: "Why the attempt started: the first, the automatic OOM retry at 0.75× batch, the retry after a lost lease, pipelineRuns.retry, or runs.resume" }
         batchScale: { type: number }
+        resumeFrom: { type: string, description: "The training-state artifact the attempt resumes from (runs.resume)" }
         state: { type: string, enum: [queued, running, done, failed, cancelled] }
         error: { $ref: "#/components/schemas/StepError" }
         startedAt: { type: string, format: date-time }
@@ -5933,5 +6185,267 @@ components:
             report: { $ref: "#/components/schemas/RestoreTest" }
 
     # ---------------------------------------------------------------- runs, checkpoints, metrics schemas (wave 2 · stream R) — add below
+    RunStatus:
+      type: string
+      enum: [queued, running, paused, done, failed, cancelled]
+      description: "Mirrors the run's pipeline run: queued (a step waits for a card), running (a worker holds a step), paused (its step job is paused), done, failed, cancelled"
+    RunMixRef:
+      type: object
+      required: [id, name, revision, hash]
+      properties:
+        id: { type: string, description: "mix_…" }
+        name: { type: string }
+        revision: { type: integer, description: The mix revision the run trains on }
+        hash: { type: string, description: "The mix artifact (b3:…): the content hash of the resolved input_cfg (R13)" }
+    RunRecipe:
+      type: object
+      required: [pipeline, source, version]
+      description: "The pipeline the run executes, read at a commit of the project repository"
+      properties:
+        pipeline: { type: string }
+        source: { type: string, enum: [repository, template, inline] }
+        ref: { type: string }
+        commit: { type: string }
+        version: { type: string }
+    RunStage:
+      type: object
+      additionalProperties: false
+      required: [peakLr]
+      properties:
+        checkpoint: { type: string, description: "The checkpoint to start from (ckp_… of this run); default the run's best kept checkpoint" }
+        peakLr: { type: number, format: double, exclusiveMinimum: 0, maximum: 1, description: "The new stage's peak learning rate (the train step's peak_lr, learning_rate or lr parameter)" }
+        mix: { type: string, maxLength: 200, description: "The mix (default the parent's)" }
+        mixRevision: { type: integer, minimum: 1, description: "The mix revision (default the named mix's current one, or the parent's revision when the mix is the parent's)" }
+        steps: { type: integer, minimum: 1, description: "Step budget (default training.steps)" }
+        seed: { type: integer, minimum: 0, maximum: 2147483647 }
+        precision: { $ref: "#/components/schemas/Precision" }
+        compute: { type: string }
+        pipeline: { type: string, maxLength: 63, description: "The recipe (default the parent's pipeline)" }
+        ref: { type: string, maxLength: 200 }
+        params: { type: object, description: "More overrides of the train step's parameters" }
+        priority: { type: integer, minimum: -100, maximum: 100, default: 0 }
+    RunCalibrate:
+      type: object
+      additionalProperties: false
+      required: [mix]
+      properties:
+        baseModel: { type: string, description: "Base model version (ver_…), collection name or @alias; default the defaults' base model" }
+        mix: { type: string, maxLength: 200, description: "The mix whose data the calibration measures on (mix_… or name)" }
+        mixRevision: { type: integer, minimum: 1 }
+        precision: { $ref: "#/components/schemas/Precision" }
+        compute: { type: string, description: "Host id or name; default the first host whose card allows training" }
+        params: { type: object, description: "Overrides of the calibrate step's parameters" }
+    CalibrationKey:
+      type: object
+      required: [baseModel, cardClass, memoryCapGb, precision]
+      description: "What a measured estimate is cached by (R12); the bucket configuration is part of the measurement"
+      properties:
+        baseModel: { type: string, description: The base model's registry collection }
+        cardClass: { type: string }
+        memoryCapGb: { type: number, format: double }
+        precision: { $ref: "#/components/schemas/Precision" }
+    RunCalibration:
+      type: object
+      required: [key, family, step]
+      properties:
+        key: { $ref: "#/components/schemas/CalibrationKey" }
+        family: { type: string, description: The model family whose calibrate role runs }
+        step: { type: string, description: "The calibrate step kind (kind@version)" }
+        mix: { $ref: "#/components/schemas/RunMixRef" }
+        pipelineRun: { $ref: "#/components/schemas/PipelineRun" }
+        plan: { $ref: "#/components/schemas/PipelinePlan" }
+        current:
+          type: object
+          description: The calibration cached for the key so far, when there is one
+          properties:
+            secondsPerStep: { type: number, format: double }
+            plusMinus: { type: number, format: double }
+            measuredAt: { type: string, format: date-time }
+    RunStageEntry:
+      type: object
+      required: [step, kind, kindVersion, state, attempts]
+      description: One step of the run's pipeline run, for the Run panel's stage timeline
+      properties:
+        step: { type: string }
+        kind: { type: string }
+        kindVersion: { type: string }
+        role: { type: string, description: "The family role the step fills (calibrate, train, average, …), when it fills one" }
+        state: { $ref: "#/components/schemas/PipelineStepState" }
+        attempts: { type: integer }
+        batchScale: { type: number, format: double, description: "The current attempt's batch scale (0.75 after an out-of-memory retry)" }
+        oomRetries: { type: integer, description: Attempts started by the automatic OOM retry }
+        jobId: { type: string }
+        paused: { type: boolean, description: The step's job is paused (jobs.pause) }
+        estimateSeconds: { type: number, format: double }
+        startedAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time }
+        error: { $ref: "#/components/schemas/StepError" }
+    RunDeparture:
+      type: object
+      required: [step, param, value]
+      properties:
+        step: { type: string, description: The pipeline step the parameter belongs to }
+        param: { type: string }
+        value: { description: The value the step runs with }
+        default: { description: "The default; absent when the parameter has none" }
+    RunParentDiff:
+      type: object
+      required: [param, value]
+      properties:
+        param: { type: string, description: "A resolved train-step parameter, or a run field (init, mix, pipeline)" }
+        value: { description: This run's value }
+        parentValue: { description: "The parent's value; absent when the parent had none" }
+    Run:
+      type: object
+      required: [id, projectId, status, init, baseModel, family, mix, recipe, pipelineRunId, trainStep, steps, gpus, precision,
+        timeline, departures, finalMetrics, checkpointCount, rev, actor, createdAt, updatedAt]
+      properties:
+        id: { type: string, description: "run_…" }
+        projectId: { type: string }
+        status: { $ref: "#/components/schemas/RunStatus" }
+        init: { $ref: "#/components/schemas/RunInit" }
+        baseModel: { $ref: "#/components/schemas/RegistryVersion" }
+        checkpointId: { type: string, description: "init checkpoint: the checkpoint the run starts from" }
+        parentRunId: { type: string, description: "The run the start checkpoint came from (runs.stage)" }
+        family:
+          type: object
+          required: [name, versionId]
+          properties:
+            name: { type: string, description: The model family of the base model (R41) }
+            versionId: { type: string, description: "The family descriptor's registry version (ver_…)" }
+        mix: { $ref: "#/components/schemas/RunMixRef" }
+        recipe: { $ref: "#/components/schemas/RunRecipe" }
+        pipelineRunId: { type: string, description: "The pipeline run the run mirrors (plr_…)" }
+        trainStep: { type: string, description: "The step of the pipeline that fills the family's train role" }
+        steps: { type: integer, description: Step budget }
+        seed: { type: integer }
+        gpus: { type: integer }
+        precision: { $ref: "#/components/schemas/Precision" }
+        runtime:
+          type: object
+          description: "The runtime the train step runs in: registry version and image digest"
+          properties:
+            name: { type: string }
+            versionId: { type: string }
+            digest: { type: string }
+        card:
+          type: object
+          description: The card the estimate was made for
+          properties:
+            computeId: { type: string }
+            host: { type: string }
+            index: { type: integer }
+            cardClass: { type: string }
+            memoryCapGb: { type: number, format: double }
+        estimate: { $ref: "#/components/schemas/RunEstimate" }
+        timeline: { type: array, items: { $ref: "#/components/schemas/RunStageEntry" } }
+        currentJobId: { type: string, description: "The step job to pause, resume or cancel (jobs.pause | jobs.resume | jobs.cancel)" }
+        resumedFrom: { type: string, description: "The training-state the last runs.resume continued from" }
+        departures: { type: array, items: { $ref: "#/components/schemas/RunDeparture" }, description: "Parameters that differ from defaults.yaml, per step" }
+        parentDiff: { type: array, items: { $ref: "#/components/schemas/RunParentDiff" }, description: "Where this run's train-step parameters differ from the parent's" }
+        finalMetrics: { type: object, additionalProperties: { type: number }, description: "The train step's final metrics (val_wer, …)" }
+        bestCheckpointId: { type: string, description: The kept checkpoint with the lowest validation WER }
+        checkpointCount: { type: integer }
+        gpuHours: { type: number, format: double, description: "GPU-hours the run's leases on GPU cards used so far" }
+        error: { type: string }
+        rev: { type: integer }
+        actor: { $ref: "#/components/schemas/Actor" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time }
+    RunList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Run" } }
+    Checkpoint:
+      type: object
+      required: [id, runId, projectId, artifact, kind, kept, createdAt]
+      properties:
+        id: { type: string, description: "ckp_…" }
+        runId: { type: string }
+        projectId: { type: string }
+        artifact: { type: string, description: "The checkpoint artifact (b3:…); artifacts.get lists its files" }
+        kind: { type: string, enum: [trained, averaged] }
+        step: { type: integer, format: int64, description: The optimiser step it was saved at }
+        valWer: { type: number, format: double, description: "Validation WER the step measured (0–1)" }
+        family: { type: string }
+        weightsHash: { type: string }
+        averagedFrom: { type: array, items: { type: string }, description: "The checkpoints an averaged one was made from (ckp_…)" }
+        kept: { type: boolean, description: "In its run's top k by validation WER (training.keep_top_k)" }
+        rank: { type: integer, description: "1 = the run's best by validation WER" }
+        pipelineRunId: { type: string }
+        stepId: { type: string }
+        meta: { type: object, description: The artifact's neutral metadata (R42) }
+        createdAt: { type: string, format: date-time }
+    CheckpointList:
+      type: object
+      required: [items, keepTopK]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Checkpoint" } }
+        keepTopK: { type: integer, description: "training.keep_top_k" }
+    CheckpointAverage:
+      type: object
+      additionalProperties: false
+      required: [checkpoints]
+      properties:
+        checkpoints: { type: array, minItems: 2, maxItems: 20, items: { type: string }, description: "Checkpoints of the run (ckp_…)" }
+        params: { type: object, description: "Overrides of the average step's parameters" }
+    CheckpointAverageStarted:
+      type: object
+      required: [runId, step, checkpoints]
+      properties:
+        runId: { type: string }
+        step: { type: string, description: "The average step kind (kind@version)" }
+        checkpoints: { type: array, items: { type: string } }
+        pipelineRun: { $ref: "#/components/schemas/PipelineRun" }
+        plan: { $ref: "#/components/schemas/PipelinePlan" }
+    MetricAxis:
+      type: string
+      enum: [step, epoch, wall, gpuHours]
+      default: step
+      description: "step: optimiser step; epoch; wall: seconds since the run's first point; gpuHours: GPU-hours of the run's leases on GPU cards up to the point (wall hours when it had none)"
+    MetricBin:
+      type: object
+      required: [x, value, min, max, count]
+      description: "One point, or the bucket of points a long series was binned into: mean value with min and max (R53)"
+      properties:
+        x: { type: number, format: double }
+        value: { type: number, format: double }
+        min: { type: number, format: double }
+        max: { type: number, format: double }
+        count: { type: integer }
+        step: { type: integer, format: int64, description: The last optimiser step in the bucket }
+        epoch: { type: number, format: double }
+        wallTime: { type: string, format: date-time, description: The last point's wall time }
+    MetricSeriesView:
+      type: object
+      required: [name, total, binned, points]
+      properties:
+        name: { type: string }
+        total: { type: integer, description: Points the series has (after afterStep) }
+        binned: { type: boolean, description: The points are buckets }
+        points: { type: array, items: { $ref: "#/components/schemas/MetricBin" } }
+    MetricSeriesSet:
+      type: object
+      required: [runId, x, maxPoints, series, checkpoints]
+      properties:
+        runId: { type: string }
+        x: { $ref: "#/components/schemas/MetricAxis" }
+        maxPoints: { type: integer }
+        lastStep: { type: integer, format: int64, description: "The highest optimiser step returned; pass it as afterStep to append" }
+        series: { type: array, items: { $ref: "#/components/schemas/MetricSeriesView" } }
+        checkpoints:
+          type: array
+          description: Checkpoint marks for the chart
+          items:
+            type: object
+            required: [id, kept]
+            properties:
+              id: { type: string }
+              step: { type: integer, format: int64 }
+              valWer: { type: number, format: double }
+              kind: { type: string }
+              kept: { type: boolean }
 
     # ---------------------------------------------------------------- playbooks schemas (wave 2 · stream K) — add below

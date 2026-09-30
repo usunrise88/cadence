@@ -89,10 +89,13 @@ tools:
     verbs: [archive, revoke]
     reason: removing things is left to people
 
-  # "GPU job within the session budget → allowed; over budget → approval" (the estimate comes from the dry run).
+  # "GPU job within the session budget → allowed; over budget → approval" (the estimate comes from the dry run; the
+  # budget is the project's GPU-hours per day and the session's, metered from lease time on GPU cards). A dry run
+  # never waits: it answers the estimate with a Cadence-Policy header naming the approval the real call would need.
   - id: gpu-spend
     class: spend
-    operations: [runs.new, runs.resume, runs.stage, evals.new, pipelines.run, sweeps.run, playbooks.run]
+    operations: [runs.new, runs.calibrate, runs.resume, runs.stage, checkpoints.average, evals.new, pipelines.run, sweeps.run,
+                 playbooks.run]
     reason: the job spends GPU time
 
   # "Read any entity, log, metric or result" → allowed.

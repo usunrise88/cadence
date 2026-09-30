@@ -109,6 +109,7 @@ type Budgets struct {
 	AgentTurnsPerSession               Param[int]     `yaml:"agent_turns_per_session"`
 	AgentTokensPerSession              Param[int64]   `yaml:"agent_tokens_per_session"`
 	AgentTokensPerTurn                 Param[int64]   `yaml:"agent_tokens_per_turn"`
+	AgentGPUHoursPerSession            Param[float64] `yaml:"agent_gpu_hours_per_session"`
 	ManualTestGPUHoursPerProjectPerDay Param[float64] `yaml:"manual_test_gpu_hours_per_project_per_day"`
 }
 
@@ -125,12 +126,15 @@ type Training struct {
 	Steps     Param[int]    `yaml:"steps"`
 	Precision Param[string] `yaml:"precision"`
 	GPUs      Param[int]    `yaml:"gpus"`
+	KeepTopK  Param[int]    `yaml:"keep_top_k"`
+	Pipeline  Param[string] `yaml:"pipeline"`
 }
 
 // Estimates holds the R12 estimate table.
 type Estimates struct {
-	BytesPerAudioHour Param[int64]  `yaml:"bytes_per_audio_hour"`
-	Training          []EstimateRow `yaml:"training"`
+	BytesPerAudioHour Param[int64]   `yaml:"bytes_per_audio_hour"`
+	MeasuredPlusMinus Param[float64] `yaml:"measured_plus_minus"`
+	Training          []EstimateRow  `yaml:"training"`
 }
 
 // EstimateRow is the measured-or-assumed speed of one base model on one card class under one memory cap.
