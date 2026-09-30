@@ -65,6 +65,25 @@ describe("Chat entries by kind", () => {
     expect(screen.getByRole("img", { name: "in progress" })).toBeTruthy();
   });
 
+  it("tool calls: one collapsed line that opens into the card on click", () => {
+    entry(message({ kind: "tool_call", toolCall: { id: "toolu_1", title: "mixes.get", class: "mcp", status: "completed", operation: "mixes.get", input: { id: "mix_1" } } }));
+    const card = document.querySelector('[data-tool-call="toolu_1"]')!;
+    const line = card.querySelector<HTMLButtonElement>('[data-slot="tool-line"]')!;
+    expect(line.textContent).toBe("mixes.get");
+    expect(line.getAttribute("aria-expanded")).toBe("false");
+    expect(card.textContent).not.toContain("Arguments");
+    fireEvent.click(line);
+    expect(line.getAttribute("aria-expanded")).toBe("true");
+    expect(card.textContent).toContain("Arguments");
+    fireEvent.click(line);
+    expect(card.textContent).not.toContain("Arguments");
+  });
+
+  it("a highlighted tool call (the badge's jump) opens itself", () => {
+    wrap(<Entry m={message({ kind: "tool_call", toolCall: { id: "toolu_2", title: "mixes.edit", class: "mcp", status: "completed", input: { id: "mix_1" } } })} highlighted />);
+    expect(document.querySelector('[data-tool-call="toolu_2"] [data-slot="tool-line"]')!.getAttribute("aria-expanded")).toBe("true");
+  });
+
   it("Cadence tool call: operation, entity link, draft and dry-run estimate", () => {
     entry(
       message({
@@ -82,6 +101,8 @@ describe("Chat entries by kind", () => {
     );
     const card = document.querySelector('[data-tool-call="toolu_9"]')!;
     expect(card.querySelector('[data-slot="tool-operation"]')!.textContent).toBe("runs.new");
+    expect(card.querySelector('[data-slot="tool-line"]')!.textContent).toContain("dry run");
+    fireEvent.click(card.querySelector('[data-slot="tool-line"]')!);
     expect(card.querySelector('[data-slot="dry-run"]')!.textContent).toBe("Dry run: 2.0 GPU-h ±50%");
     entry(
       message({
@@ -89,17 +110,23 @@ describe("Chat entries by kind", () => {
         toolCall: { id: "toolu_10", title: "mixes.edit", class: "mcp", status: "completed", operation: "mixes.edit", input: { id: "mix_1" }, output: { status: 200, data: { draft: { id: "drf_1", rev: 3 } } } },
       }),
     );
+    fireEvent.click(document.querySelector('[data-tool-call="toolu_10"] [data-slot="tool-line"]')!);
     expect(document.querySelector('[data-tool-call="toolu_10"] [data-ref="@mix:mix_1"]')).not.toBeNull();
     expect(document.querySelector('[data-tool-call="toolu_10"] [data-slot="tool-draft"]')!.textContent).toContain("Draft rev 3");
   });
 
-  it("file edit: an inline diff; shell: command, exit code and collapsible output", () => {
+  it("file edit: +/− on the line and an inline diff; shell: command and exit code on the line, output inside", () => {
     entry(message({ kind: "tool_call", toolCall: { id: "e1", title: "Edit NOTES.md", class: "edit", status: "completed", diffs: [{ path: "NOTES.md", oldText: "a\nb\n", newText: "a\nc\n" }] } }));
+    const edit = document.querySelector('[data-tool-call="e1"] [data-slot="tool-line"]')!;
+    expect(edit.textContent).toBe("Edit NOTES.md+1 −1");
+    fireEvent.click(edit);
     expect(screen.getByLabelText("Diff of NOTES.md").textContent).toContain("removed: b");
     entry(message({ kind: "tool_call", toolCall: { id: "s1", title: "ls", class: "shell", status: "failed", shell: { command: "ls /nope", exitCode: 2, output: "ls: cannot access" } } }));
     expect(document.querySelector('[data-slot="shell-command"]')!.textContent).toBe("$ ls /nope");
     expect(screen.getByText("exit 2")).toBeTruthy();
-    expect(screen.getByText("Output (1 lines)").closest("details")!.open).toBe(false);
+    expect(document.querySelector('[data-slot="shell-output"]')).toBeNull();
+    fireEvent.click(document.querySelector('[data-tool-call="s1"] [data-slot="tool-line"]')!);
+    expect(document.querySelector('[data-slot="shell-output"]')!.textContent).toBe("ls: cannot access");
   });
 
   it("permission: the approval card inline with Allow once / for the session / Deny", () => {

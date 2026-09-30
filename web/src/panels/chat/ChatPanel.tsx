@@ -55,7 +55,13 @@ export function ChatPanel({ instanceId, doc }: PanelProps) {
   }, [instanceId, setLast]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col" onFocusCapture={() => setLast(instanceId)} onPointerDownCapture={() => setLast(instanceId)} data-chat-session={sessionId}>
+    <div
+      className="flex h-full min-h-0 flex-col"
+      onFocusCapture={() => setLast(instanceId)}
+      onPointerDownCapture={() => setLast(instanceId)}
+      onKeyDown={typeIntoComposer}
+      data-chat-session={sessionId}
+    >
       {sessionId && session.data ? (
         <>
           <Header session={session.data} instanceId={instanceId} switchable={!doc} />
@@ -70,6 +76,20 @@ export function ChatPanel({ instanceId, doc }: PanelProps) {
       <Composer instanceId={instanceId} session={session.data} bound={!!doc} />
     </div>
   );
+}
+
+/** Typing anywhere in the Chat outside a field goes to the composer: the key lands in it once it has focus. Space
+ * still presses the button or link it is on. */
+function typeIntoComposer(e: KeyboardEvent<HTMLDivElement>) {
+  if (e.defaultPrevented || e.nativeEvent.isComposing || e.ctrlKey || e.metaKey || e.altKey || e.key.length !== 1) return;
+  const t = e.target as HTMLElement;
+  if (t.isContentEditable || t.closest("input, textarea, select")) return;
+  if (e.key === " " && t.closest("button, a, summary, [role=button]")) return;
+  const input = e.currentTarget.querySelector<HTMLTextAreaElement>('[data-slot="composer"] textarea');
+  if (!input || input.disabled) return;
+  const end = input.value.length;
+  input.focus({ preventScroll: true });
+  input.setSelectionRange(end, end);
 }
 
 // ---------------------------------------------------------------- no session yet
@@ -346,8 +366,16 @@ function Transcript({ session }: { session: AgentSession }) {
   const bottom = (offsets[items.length] ?? 0) - (offsets[range.last] ?? 0);
   return (
     // Not role="log": a log is a live region, and streamed tokens must not be announced (WCAG 4.1.3; the finished
-    // turn is announced by the shell).
-    <div ref={scroller} onScroll={onScroll} className="@container min-h-0 flex-1 overflow-auto px-2 py-2" role="region" aria-label="Transcript" data-testid="chat-transcript">
+    // turn is announced by the shell). Focusable on click so the keys typed after it reach the composer.
+    <div
+      ref={scroller}
+      onScroll={onScroll}
+      tabIndex={-1}
+      className="@container min-h-0 flex-1 overflow-auto px-2 py-2 outline-none"
+      role="region"
+      aria-label="Transcript"
+      data-testid="chat-transcript"
+    >
       {items.length === 0 ? <p className="p-2 text-xs text-muted-foreground">{session.prompt ? "Waiting for the agent…" : "No messages yet."}</p> : null}
       <div style={virtual ? { paddingTop: top, paddingBottom: bottom } : undefined} className="flex flex-col gap-2">
         {items.slice(range.first, range.last).map((m: AgentMessage) => (

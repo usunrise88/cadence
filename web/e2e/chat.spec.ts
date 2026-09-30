@@ -80,9 +80,16 @@ test("Chat: new session, streamed reply, inline permission, tool call with badge
     },
   ]);
   const toolCall = chat.locator('[data-tool-call="toolu_mix"]');
+  // Collapsed to one line by default; a click opens the card.
   await expect(toolCall.locator('[data-slot="tool-operation"]')).toHaveText("mixes.edit");
+  const toolLine = toolCall.locator('[data-slot="tool-line"]');
+  await expect(toolLine).toHaveAttribute("aria-expanded", "false");
+  await expect(toolCall.locator('[data-slot="tool-draft"]')).toHaveCount(0);
+  await toolLine.click();
   await expect(toolCall.locator(`[data-ref="@mix:${mix.id}"]`)).toBeVisible();
   await expect(toolCall.locator('[data-slot="tool-draft"]')).toBeVisible();
+  await toolLine.click();
+  await expect(toolLine).toHaveAttribute("aria-expanded", "false");
 
   // The draft on the open Mix carries the session's badge; its click jumps to the tool call in Chat.
   const draft = page.locator('[data-panel="mix"] [data-slot="draft"]');
@@ -94,6 +101,15 @@ test("Chat: new session, streamed reply, inline permission, tool call with badge
   await badge.click();
   await expect(toolCall).toHaveAttribute("data-highlighted", "true");
   await expect(toolCall).toBeFocused();
+  await expect(toolLine).toHaveAttribute("aria-expanded", "true");
+
+  // A click in the transcript, then typing: the keys go to the composer.
+  const input = chat.getByLabel("Message to the agent");
+  await reply.click({ position: { x: 2, y: 2 } });
+  await page.keyboard.type("Thanks");
+  await expect(input).toBeFocused();
+  await expect(input).toHaveValue("Thanks");
+  await input.fill("");
   await agent.close();
 
   // The turn ends with a commit on the session branch; the finished turn reaches the live region.
