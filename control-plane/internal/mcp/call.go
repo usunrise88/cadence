@@ -24,6 +24,11 @@ import (
 // preference. Claude Code sends "claudecode/toolUseId" (toolu_…) on every tools/call; opencode sends no _meta.
 var toolUseMetaKeys = []string{"claudecode/toolUseId", "toolUseId", "toolCallId"}
 
+// SyntheticToolCallPrefix starts the tool-call id of a call whose client sent no tool-use id (opencode): the MCP
+// session and JSON-RPC id stand in until the agent host reports the agent's own tool call, which then replaces it
+// (sessions.Service attribution).
+const SyntheticToolCallPrefix = "mcp:"
+
 // apiCall is a tool call translated to an HTTP request.
 type apiCall struct {
 	path   string
@@ -126,9 +131,9 @@ func (c callIDs) toolCallID() string {
 	case c.toolUse != "":
 		return c.toolUse
 	case c.rpc != "" && c.session != "":
-		return "mcp:" + c.session + "/" + strings.Trim(c.rpc, `"`)
+		return SyntheticToolCallPrefix + c.session + "/" + strings.Trim(c.rpc, `"`)
 	case c.rpc != "":
-		return "mcp:" + strings.Trim(c.rpc, `"`)
+		return SyntheticToolCallPrefix + strings.Trim(c.rpc, `"`)
 	}
 	return ""
 }

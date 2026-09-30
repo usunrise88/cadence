@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -328,6 +329,59 @@ func (s *Store) Revert(ctx context.Context, tx pgx.Tx, id string, rev int, actor
 		return Draft{}, nil, err
 	}
 	return closed, evs, nil
+}
+
+// ToolCallRetagger is a draftable kind that keeps tool-call ids in its revisions (the revision's cause).
+type ToolCallRetagger interface {
+	RetagToolCall(ctx context.Context, tx pgx.Tx, from, to string) ([]events.Draft, error)
+}
+
+// RetagToolCall gives the drafts, and the revisions of the kinds that keep one, whose tool-call id is from (an MCP
+// call without a tool-use id) the agent's own id to. Each changed draft is sent again as draft.updated (its rev
+// stays: the content did not change, and a person's accept keeps its If-Match) with presence.changed.
+func (s *Store) RetagToolCall(ctx context.Context, tx pgx.Tx, from, to string) ([]events.Draft, error) {
+	rows, err := tx.Query(ctx, `UPDATE drafts SET tool_call_id = $2 WHERE tool_call_id = $1 RETURNING `+draftCols, from, to)
+	if err != nil {
+		return nil, fmt.Errorf("retag tool call %s in drafts: %w", from, err)
+	}
+	list, err := pgx.CollectRows(rows, scan)
+	if err != nil {
+		return nil, fmt.Errorf("read retagged drafts: %w", err)
+	}
+	var out []events.Draft
+	for _, d := range list {
+		k, err := s.kind(d.EntityKind)
+		if err != nil {
+			return nil, err
+		}
+		e, err := k.Get(ctx, tx, d.EntityID)
+		if err != nil {
+			return nil, err
+		}
+		if d, err = s.complete(ctx, tx, d, e.Rev); err != nil {
+			return nil, err
+		}
+		evs, err := s.draftEvents(ctx, tx, d, e, EventUpdated)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, evs...)
+	}
+	names := make([]string, 0, len(s.kinds))
+	for name := range s.kinds {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		if r, ok := s.kinds[name].(ToolCallRetagger); ok {
+			more, err := r.RetagToolCall(ctx, tx, from, to)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, more...)
+		}
+	}
+	return out, nil
 }
 
 // Presence lists the agents editing the entity: authors of open drafts, then an agent whose direct edit wrote the

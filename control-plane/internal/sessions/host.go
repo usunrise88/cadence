@@ -516,6 +516,13 @@ func (s *Service) Report(ctx context.Context, id string, in ReportInput) (Sessio
 				continue
 			}
 			agentDrafts = append(agentDrafts, *d)
+			if e.Kind == EntryToolCall {
+				more, err := s.attribute(ctx, tx, sess, e.Body)
+				if err != nil {
+					return err
+				}
+				systemDrafts = append(systemDrafts, more...)
+			}
 		}
 		u := Update{}
 		if in.Use != nil {

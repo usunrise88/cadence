@@ -110,6 +110,31 @@ func Append(ctx context.Context, tx pgx.Tx, actor auth.Actor, cause *CausedBy, d
 	return nil
 }
 
+// RetagToolCall gives the events caused by a command with the synthetic tool-call id from (an MCP call without a
+// tool-use id) the agent's own id to: their causedBy and every place their payload names it (a draft's or a
+// revision's toolCallId, presence). The one rewrite of the outbox: history keeps the same events, now linked to the
+// tool call the transcript shows. Clients that already received them learn it from the events the retag emits.
+func RetagToolCall(ctx context.Context, tx pgx.Tx, from, to string) error {
+	quoted := func(s string) (string, error) {
+		b, err := json.Marshal(s)
+		return string(b), err
+	}
+	qf, err := quoted(from)
+	if err != nil {
+		return fmt.Errorf("quote %s: %w", from, err)
+	}
+	qt, err := quoted(to)
+	if err != nil {
+		return fmt.Errorf("quote %s: %w", to, err)
+	}
+	if _, err := tx.Exec(ctx, `UPDATE events SET caused_by = jsonb_set(caused_by, '{toolCallId}', to_jsonb($2::text)),
+		payload = replace(payload::text, $3, $4)::jsonb
+		WHERE caused_by->>'toolCallId' = $1 AND caused_by->>'toolCallId' LIKE 'mcp:%'`, from, to, qf, qt); err != nil {
+		return fmt.Errorf("retag tool call %s in the outbox: %w", from, err)
+	}
+	return nil
+}
+
 // List returns up to limit events with seq > after that pass f, oldest first.
 func List(ctx context.Context, q storage.Querier, f Filter, after int64, limit int) ([]Record, error) {
 	where, args := f.sql(after)

@@ -101,7 +101,7 @@ func New(c Config) (*Server, error) {
 	window := time.Duration(s.defaultsDoc().Drafts.PresenceSeconds.Value) * time.Second
 	s.drafts = drafts.NewStore(time.Now, window)
 	s.mixes = mixes.NewService(s.drafts, s.defaultsDoc)
-	s.sessions = &sessions.Service{Pool: c.Pool, Projects: c.Projects, Defaults: s.defaultsDoc, Log: c.Log}
+	s.sessions = &sessions.Service{Pool: c.Pool, Projects: c.Projects, Defaults: s.defaultsDoc, Log: c.Log, Attribution: s.drafts}
 	if c.Pipeline != nil {
 		s.sessions.Policy = c.Pipeline.Policy()
 		c.Pipeline.SetGateHook(s.sessions.GatedCommand)

@@ -482,6 +482,8 @@ type Service struct {
 	HostLapse time.Duration
 	// ClaimPoll is how often a waiting claim looks for work (default 200 ms).
 	ClaimPoll time.Duration
+	// Attribution renames a command's synthetic tool-call id in drafts and revisions (the draft store).
+	Attribution ToolCallRetagger
 }
 
 func (s *Service) now() time.Time {

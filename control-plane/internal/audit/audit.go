@@ -62,6 +62,16 @@ func Write(ctx context.Context, q storage.Querier, e Entry) error {
 	return nil
 }
 
+// RetagToolCall gives the entries of an agent session's commands that carry the synthetic tool-call id from (an MCP
+// call without a tool-use id) the agent's own id to.
+func RetagToolCall(ctx context.Context, q storage.Querier, sessionID, from, to string) error {
+	if _, err := q.Exec(ctx, `UPDATE audit_log SET tool_call_id = $3 WHERE actor->>'sessionId' = $1 AND tool_call_id = $2
+		AND tool_call_id LIKE 'mcp:%'`, sessionID, from, to); err != nil {
+		return fmt.Errorf("retag tool call %s in the audit log: %w", from, err)
+	}
+	return nil
+}
+
 // Filter selects entries; empty fields match everything. Before is a cursor (an entry id): only older entries.
 type Filter struct {
 	ActorID, ProjectID, Operation, Before string
