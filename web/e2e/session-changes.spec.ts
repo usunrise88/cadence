@@ -69,7 +69,7 @@ test("Session changes: live working changes, then a conflict in the three-way vi
   // Main moves on the same file; the session ends with changes that conflict.
   await note(request, slug, "Main moved: the 8 kHz augmentation helped.");
   await page.locator('[data-tab="chat"]').click();
-  await chat.getByRole("button", { name: "End…" }).click();
+  await chat.getByRole("button", { name: "End session…" }).click();
   await chat.getByRole("button", { name: "End the session" }).click();
   await host.control(sessionId, "end");
   await host.report(sessionId, { state: { state: "done" } });
