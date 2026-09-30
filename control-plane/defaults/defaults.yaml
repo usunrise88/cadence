@@ -4,7 +4,7 @@
 # the control-plane binary and packaged with the worker. Every value carries a description, a source and, where it
 # applies, a safe range; a value without a published source is a "Cadence recommendation" re-checked after the spikes.
 # Keys are addressed as <section>.<key> (x-cadence.defaultRef: training.steps). Bump `version` on every change.
-version: 5
+version: 6
 
 # The project wizard's Recommended mode (docs/spec/02-domain-projects-registry.md "Project wizard").
 wizard:
@@ -310,3 +310,48 @@ data:
     value: false
     description: Whether an import normalises transcripts; off keeps the source's cased, punctuated text, the style the base model is trained on
     source: nvidia/nemotron-3.5-asr-streaming-0.6b model card (punctuated, cased output); .claude/rules/worker.md
+
+# Framework packs (R45): one section per pack, read by its step kinds through x-cadence defaultRef packs.<pack>.<key>.
+packs:
+  # The CPU toy pack (runtime `toy`, family `toy-ctc`): a tiny CTC model trained in seconds that exists only to keep the
+  # framework seams honest in CI.
+  toy:
+    train_steps:
+      value: 300
+      unit: steps
+      description: Optimiser steps of a toy training run (a resumed run continues up to this total)
+      source: Cadence recommendation (the fixtures reach a WER of 0 in about 300 steps, eight seconds on one CPU thread)
+      range: { min: 1, max: 5000 }
+    learning_rate:
+      value: 0.003
+      description: Adam learning rate of the toy model
+      source: Cadence recommendation
+      range: { min: 0.00001, max: 0.1 }
+    batch_size:
+      value: 8
+      unit: utterances
+      description: Utterances per optimiser step before the OOM retry's batch scale
+      source: Cadence recommendation
+      range: { min: 1, max: 64 }
+    val_every:
+      value: 20
+      unit: steps
+      description: Steps between validation passes (validation WER is also measured at the end)
+      source: Cadence recommendation
+      range: { min: 1, max: 5000 }
+    seed:
+      value: 0
+      description: Random seed of initialisation and batch order
+      source: Cadence recommendation
+      range: { min: 0, max: 2147483647 }
+    calibrate_steps:
+      value: 3
+      unit: steps
+      description: Timed optimiser steps the calibration averages after one warm-up step
+      source: Cadence recommendation
+      range: { min: 1, max: 50 }
+    profile:
+      value: offline
+      description: Latency profile a toy transcription decodes with
+      source: The toy-ctc family descriptor (latency profiles offline and 320ms)
+      range: { values: [offline, 320ms] }

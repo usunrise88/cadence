@@ -126,17 +126,11 @@ class DatasetImportParams(BaseModel):
         range={"maxLength": 100},
     )
     max_hours: float = cadence_field(
-        0.0,
         description="Cap on audio hours per language, in source order; 0 takes everything",
-        source="Cadence recommendation (R17 replay caps)",
-        range={"min": 0, "max": 10000},
         default_ref="data.max_hours",
     )
     max_utterances: int = cadence_field(
-        0,
         description="Cap on utterances per language, in source order; 0 takes everything",
-        source="Cadence recommendation (R17 replay golden sets ≤ 300 per locale)",
-        range={"min": 0, "max": 10000000},
         default_ref="data.max_utterances",
     )
     split_rule: Literal["speaker-disjoint", "source", "all-train", "all-validation", "all-test"] = cadence_field(
@@ -146,24 +140,15 @@ class DatasetImportParams(BaseModel):
         range={"values": list(SPLIT_RULES)},
     )
     validation_share: float = cadence_field(
-        0.02,
         description="Share of speakers (or distinct transcripts without speakers) held out for validation",
-        source="Cadence recommendation (docs/spec/03-pipelines-defaults.md, val_share 0.02)",
-        range={"min": 0, "max": 0.5},
         default_ref="data.validation_share",
     )
     sample_rate: int = cadence_field(
-        16000,
         description="Sample rate the audio is stored at (16-bit PCM WAV, mono)",
-        source="nvidia/nemotron-3.5-asr-streaming-0.6b model card (16 kHz mono)",
-        range={"min": 8000, "max": 48000},
         default_ref="data.sample_rate",
     )
     text_normalisation: bool = cadence_field(
-        False,
         description="Normalise transcripts (NFKC, case-folded, no punctuation); off keeps cased, punctuated text",
-        source="nvidia/nemotron-3.5-asr-streaming-0.6b model card (punctuated, cased output)",
-        range={"values": [True, False]},
         default_ref="data.text_normalisation",
     )
     eval_only: bool = cadence_field(

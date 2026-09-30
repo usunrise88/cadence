@@ -112,6 +112,15 @@ Rules: step kinds are versioned and a pipeline pins the versions it was validate
 - Artifacts: the `artifacts` table indexes the content store (hash, type, size, directory, meta, producing step, project or registry); `artifacts.get` shows metadata, a directory's files and, with `content=true`, content of at most 1 MiB. A directory artifact's size is the sum of its files.
 - Facades start pipeline runs through the Go API (`pipelines.Engine.Start` with a pipeline name or a parsed pipeline, inputs, parameter overrides, per-step estimates and the run id).
 
+### Step contract (phase 2, as built)
+
+- A step runs in its own process per lease. Its inputs are materialised from the content store into a scratch directory (hard links; a directory artifact is a manifest of blobs); its outputs are hashed into the store at release with neutral meta (R42) and `layout: file|dir`. An input name may receive several artifacts as `<name>.0`, `<name>.1`, ….
+- The step context reports progress, metric points (`name, value, step, epoch`), log lines and output meta, and exposes the card, its memory cap (applied with `set_per_process_memory_fraction`), the OOM retry's batch scale and the training state to resume from.
+- Errors are typed: card out-of-memory → `oom` (one retry at 0.75× batch), bad inputs or parameters → `input`, anything else → `step`. A stop request (cancel, pause, a closing window) reaches the step as `should_stop()`; a training step writes its `training-state` and the lease is released `cancelled` with it.
+- Every parameter's default either is a literal with its source or comes from `defaults.yaml` through `x-cadence.defaultRef`; pack defaults sit under `packs.<pack>`. Ranges are enforced before `run`.
+- Secrets named by the kind reach only the step process's environment and are redacted from its forwarded logs.
+- A framework pack passes the conformance suite (`python -m cadence_worker.conformance --runtime <runtime>`, R45); the CPU toy pack (runtime `toy`, family `toy-ctc`) runs it on every pull request.
+
 ## Defaults
 
 Every parameter in Cadence ships with a default, a one-line description, a source and a safe range, so a person who is not deep in ASR can create a project with three fields and run the whole loop; experts change what they want, and every change is visible as a departure from the default.

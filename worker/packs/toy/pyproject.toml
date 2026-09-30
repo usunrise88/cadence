@@ -1,0 +1,27 @@
+[project]
+name = "cadence-toy"
+version = "0.1.0"
+description = "Cadence CPU toy pack (R45): a tiny CTC model that keeps the framework seams honest; never a real model"
+requires-python = ">=3.12"
+dependencies = ["cadence-worker", "torch>=2.4", "numpy>=1.26"]
+
+# The toy pack's step kinds (runtime `toy`) and its model family.
+[project.entry-points."cadence.steps"]
+toy_calibrate = "cadence_toy.steps.calibrate:CalibrateStep"
+toy_train = "cadence_toy.steps.train:TrainStep"
+toy_average = "cadence_toy.steps.average:AverageStep"
+toy_transcribe = "cadence_toy.steps.transcribe:TranscribeStep"
+
+[project.entry-points."cadence.families"]
+toy-ctc = "cadence_toy.family:FAMILY"
+
+[tool.uv.sources]
+cadence-worker = { workspace = true }
+torch = { index = "pytorch-cpu" }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["cadence_toy"]

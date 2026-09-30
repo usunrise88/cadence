@@ -35,7 +35,7 @@ def run(tmp_path: Path, p: di.DatasetImportParams) -> tuple[dict[str, Any], list
 def test_registry_publishes_the_new_contract_shape() -> None:
     reg = registry()["dataset_import"]
     assert reg["version"] == "1"
-    assert reg["produces"] == ["dataset"]
+    assert reg["produces"] == {"dataset": "dataset"}
     assert di.DatasetImportStep.produces == {"dataset": "dataset"}
     assert di.DatasetImportStep.consumes == {}
     assert di.DatasetImportStep.neutral is True

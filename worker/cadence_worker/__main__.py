@@ -1,45 +1,37 @@
-"""Cadence worker: discovers step kinds through the `cadence.steps` entry-point group,
-publishes their schemas to the control plane, and runs pipeline steps as subprocesses."""
+"""Cadence worker command line.
+
+python -m cadence_worker                     print the step-kind registry (every installed kind)
+python -m cadence_worker registry [RUNTIME]  the same, limited to what a worker of RUNTIME publishes
+python -m cadence_worker families [RUNTIME]  the model families
+python -m cadence_worker serve               register with the control plane and run leases (cadence_worker.config)
+"""
 
 from __future__ import annotations
 
 import json
-from importlib.metadata import entry_points
-from typing import Any
+import sys
 
-from cadence_worker.steps.base import StepKind, implements_step_kind, missing_metadata, params_schema
+from cadence_worker.registry import RegistryError, load_families, registry
 
-
-class RegistryError(Exception):
-    pass
+__all__ = ["RegistryError", "main", "registry"]
 
 
-def load_kinds() -> dict[str, type[StepKind]]:
-    kinds: dict[str, type[StepKind]] = {}
-    for ep in entry_points(group="cadence.steps"):
-        cls = ep.load()
-        if not implements_step_kind(cls):
-            raise RegistryError(f"step kind {ep.name!r} does not implement the StepKind contract")
-        kinds[ep.name] = cls
-    return kinds
+def main(argv: list[str]) -> int:
+    cmd = argv[1] if len(argv) > 1 else "registry"
+    runtime = argv[2] if len(argv) > 2 else None
+    if cmd == "registry":
+        print(json.dumps(registry(runtime), indent=2))
+        return 0
+    if cmd == "families":
+        print(json.dumps([f.descriptor for f in load_families(runtime)], indent=2))
+        return 0
+    if cmd == "serve":
+        from cadence_worker.serve import serve
 
-
-def registry() -> dict[str, dict[str, Any]]:
-    """The registry the worker publishes to the control plane (phase 2 posts it; phase 0 prints it)."""
-    out: dict[str, dict[str, Any]] = {}
-    for name, cls in sorted(load_kinds().items()):
-        if bad := missing_metadata(cls):
-            raise RegistryError(f"step kind {name!r}: parameters without complete x-cadence metadata: {bad}")
-        out[name] = {
-            "version": cls.version,
-            "params": params_schema(cls),
-            "consumes": list(cls.consumes),
-            "produces": list(cls.produces),
-            "resources": dict(cls.resources),
-            "help": f"steps.{name.replace('_', '-')}",  # help slugs use dashes
-        }
-    return out
+        return serve()
+    print(__doc__, file=sys.stderr)
+    return 2
 
 
 if __name__ == "__main__":
-    print(json.dumps(registry(), indent=2))
+    raise SystemExit(main(sys.argv))

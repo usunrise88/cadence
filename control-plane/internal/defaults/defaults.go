@@ -72,6 +72,10 @@ type Defaults struct {
 	Notifications Notifications `yaml:"notifications"`
 	Backups       Backups       `yaml:"backups"`
 
+	// Packs holds one section per framework pack (R45), addressed as packs.<pack>.<key> by the step kinds'
+	// x-cadence defaultRef. The control plane serves and validates these sections and never branches on a pack.
+	Packs map[string]map[string]any `yaml:"packs"`
+
 	document map[string]any
 }
 
