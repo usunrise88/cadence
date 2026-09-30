@@ -352,6 +352,10 @@ export type CredentialScope = {
      * Permission preset (agent session tokens)
      */
     preset?: string;
+    /**
+     * May start, message, stop and merge agent sessions in its project (API keys, opt-in)
+     */
+    agentSessions?: boolean;
 };
 
 export type Credential = {
@@ -387,11 +391,16 @@ export type Credential = {
 export type CredentialNew = {
     name: string;
     /**
-     * One project, registry read, or both
+     * One project, registry read, or both; agentSessions needs the project
      */
     scope: {
         project?: Slug;
         registryRead?: boolean;
+        /**
+         * May start, message, stop and merge agent sessions in its project (automation such as the agent evals); every other rule of the default preset still applies. Off unless asked for.
+         *
+         */
+        agentSessions?: boolean;
     };
     /**
      * Never expires when absent

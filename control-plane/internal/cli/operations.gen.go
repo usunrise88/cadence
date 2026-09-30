@@ -366,7 +366,7 @@ var Operations = []Operation{
 		Body: &Body{Required: true, Properties: []BodyProperty{
 			{Name: "expiresAt", Type: "string", Description: "Never expires when absent"},
 			{Name: "name", Required: true, Type: "string"},
-			{Name: "scope", Required: true, Type: "object", Description: "One project, registry read, or both"},
+			{Name: "scope", Required: true, Type: "object", Description: "One project, registry read, or both; agentSessions needs the project"},
 		}},
 	},
 	{

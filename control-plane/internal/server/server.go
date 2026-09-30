@@ -234,7 +234,7 @@ func policyScope(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		ps := policy.Scope{RegistryRead: sc.RegistryRead || sc.All, Preset: sc.Preset}
+		ps := policy.Scope{RegistryRead: sc.RegistryRead || sc.All, Preset: sc.Preset, AgentSessions: sc.AgentSessions}
 		if !sc.All {
 			ps.ProjectID = sc.ProjectID
 		}

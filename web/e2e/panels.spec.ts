@@ -116,7 +116,10 @@ test.describe("settings", () => {
     const name = key("key");
     const form = page.getByRole("form", { name: "Create API key" });
     await form.getByLabel("Name").fill(name);
-    await form.getByLabel("Project").selectOption(slug);
+    const sessions = form.getByLabel("May run agent sessions in the project");
+    await expect(sessions).toBeDisabled(); // agent sessions run in a project
+    await form.getByLabel("Project", { exact: true }).selectOption(slug);
+    await sessions.check();
     await form.getByRole("button", { name: "Create API key" }).click();
     const once = page.getByTestId("token-once");
     const token = await once.getByLabel("API key token").inputValue();
@@ -128,6 +131,7 @@ test.describe("settings", () => {
     await expect(once).toHaveCount(0);
 
     const row = page.getByTestId(`credential-${name}`);
+    await expect(row).toContainText("agent sessions");
     await expect(row).toContainText("API key");
     await row.getByRole("button", { name: "Revoke" }).click();
     await row.getByRole("button", { name: `Revoke ${name}` }).click();

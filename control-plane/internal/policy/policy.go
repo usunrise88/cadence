@@ -11,6 +11,7 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"strings"
 
 	"github.com/usunrise88/cadence/control-plane/internal/auth"
 	"github.com/usunrise88/cadence/control-plane/templates"
@@ -35,6 +36,8 @@ const (
 	RuleTokenScope = "token-scope" // the command touches a project outside the credential's scope
 	RuleNoMatch    = "no-match"    // an agent command no rule allows (default deny)
 	RuleNoPreset   = "no-preset"   // the scope names a preset that does not exist
+	// RuleKeyAgentSessions: an API key allowed to run agent sessions in its project (auth.Scope.AgentSessions).
+	RuleKeyAgentSessions = "key-agent-sessions"
 )
 
 // Scope is what a credential may reach. Stream A's auth.Scope carries the same facts; until it lands the pipeline
@@ -43,6 +46,8 @@ type Scope struct {
 	ProjectID    string `json:"projectId,omitempty"`    // empty: every project
 	RegistryRead bool   `json:"registryRead,omitempty"` // may read the registry
 	Preset       string `json:"preset,omitempty"`       // permission preset; empty: DefaultPreset
+	// AgentSessions: an automation key the admin allowed to run agent sessions in its project.
+	AgentSessions bool `json:"agentSessions,omitempty"`
 }
 
 type scopeKey struct{}
@@ -146,6 +151,10 @@ func (e *Engine) Decide(ctx context.Context, in Input) (Decision, error) {
 	if in.Actor.Kind == auth.KindUser {
 		return e.decidePerson(in), nil
 	}
+	if in.Actor.Kind == auth.KindAutomation && in.Scope.AgentSessions && in.Scope.ProjectID != "" && sessionOperation(in.Operation) {
+		return Decision{Outcome: Allow, Rule: RuleKeyAgentSessions,
+			Reason: "the API key may run agent sessions in its project"}, nil
+	}
 	name := in.Scope.Preset
 	if name == "" {
 		name = DefaultPreset
@@ -176,6 +185,11 @@ func (e *Engine) Decide(ctx context.Context, in Input) (Decision, error) {
 	}
 	return Decision{Outcome: Deny, Rule: RuleNoMatch, Preset: p.Name,
 		Reason: fmt.Sprintf("no rule of the %q preset allows %s", p.Name, in.Operation)}, nil
+}
+
+// sessionOperation: the operations that start, steer and end agent sessions (the preset's sessions-are-for-people).
+func sessionOperation(op string) bool {
+	return strings.HasPrefix(op, "agentSessions.") || strings.HasPrefix(op, "agentMessages.")
 }
 
 // decidePerson applies only the default preset's `everyone` rules.

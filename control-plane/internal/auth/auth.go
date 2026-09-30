@@ -43,6 +43,8 @@ type Scope struct {
 	RegistryRead bool `json:"registryRead,omitempty"`
 	// Preset is the permission preset of an agent session token (docs/spec/08-resolutions.md R7).
 	Preset string `json:"preset,omitempty"`
+	// AgentSessions lets an API key of one project run agent sessions there (opt-in; automation such as the evals).
+	AgentSessions bool `json:"agentSessions,omitempty"`
 }
 
 // FullScope is the scope of the admin's sessions and of the fixed actor.

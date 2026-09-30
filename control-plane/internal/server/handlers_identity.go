@@ -278,6 +278,7 @@ func (s *Server) CredentialsNew(ctx context.Context, req api.CredentialsNewReque
 	resp, err := s.Pipeline.Run(ctx, cmd, func(ctx context.Context, tx pgx.Tx) (commands.Result, []events.Draft, error) {
 		in := credentials.NewAPIKeyInput{
 			UserID: p.UserID, Name: req.Body.Name, Registry: deref(req.Body.Scope.RegistryRead), ExpiresAt: req.Body.ExpiresAt,
+			AgentSessions: deref(req.Body.Scope.AgentSessions),
 		}
 		slugs := map[string]string{}
 		if req.Body.Scope.Project != nil {
@@ -387,6 +388,9 @@ func apiCredential(c credentials.Credential, slugs map[string]string, current st
 		out.Scope.RegistryRead = &c.Scope.RegistryRead
 	}
 	out.Scope.Preset = optional(c.Scope.Preset)
+	if c.Scope.AgentSessions {
+		out.Scope.AgentSessions = &c.Scope.AgentSessions
+	}
 	if current != "" && current == c.ID {
 		t := true
 		out.Current = &t

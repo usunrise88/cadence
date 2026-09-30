@@ -1979,8 +1979,12 @@
               },
               "scope": {
                 "additionalProperties": false,
-                "description": "One project, registry read, or both",
+                "description": "One project, registry read, or both; agentSessions needs the project",
                 "properties": {
+                  "agentSessions": {
+                    "description": "May start, message, stop and merge agent sessions in its project (automation such as the agent evals); every other rule of the default preset still applies. Off unless asked for.\n",
+                    "type": "boolean"
+                  },
                   "project": {
                     "description": "Lowercase letters, digits and dashes; 3–40 characters",
                     "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",

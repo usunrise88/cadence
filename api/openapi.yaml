@@ -2360,6 +2360,7 @@ components:
         project: { $ref: "#/components/schemas/Slug" }
         registryRead: { type: boolean, description: May read the registry }
         preset: { type: string, description: Permission preset (agent session tokens) }
+        agentSessions: { type: boolean, description: "May start, message, stop and merge agent sessions in its project (API keys, opt-in)" }
     Credential:
       type: object
       required: [id, kind, name, scope, rev, createdAt]
@@ -2385,10 +2386,15 @@ components:
         scope:
           type: object
           additionalProperties: false
-          description: One project, registry read, or both
+          description: One project, registry read, or both; agentSessions needs the project
           properties:
             project: { $ref: "#/components/schemas/Slug" }
             registryRead: { type: boolean }
+            agentSessions:
+              type: boolean
+              description: >
+                May start, message, stop and merge agent sessions in its project (automation such as the agent evals);
+                every other rule of the default preset still applies. Off unless asked for.
         expiresAt: { type: string, format: date-time, description: Never expires when absent }
     CredentialCreated:
       type: object

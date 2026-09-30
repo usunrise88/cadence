@@ -54,3 +54,27 @@ type auditPage struct {
 		ProjectID string `json:"projectId"`
 	} `json:"items"`
 }
+
+// An API key of one project may run agent sessions there only when the admin allowed it (scope.agentSessions);
+// the flag needs the project, and it opens nothing else.
+func TestAPIKeyAgentSessions(t *testing.T) {
+	h := startHost(t)
+	e := h.env
+	h.newProject("hebrew")
+	var plain, allowed struct {
+		Token string `json:"token"`
+	}
+	e.ok(e.do("POST", "/api/credentials", `{"name":"ci","scope":{"project":"hebrew","registryRead":true}}`, "Idempotency-Key", e.key()), 201, &plain)
+	e.ok(e.do("POST", "/api/credentials", `{"name":"evals","scope":{"project":"hebrew","registryRead":true,"agentSessions":true}}`, "Idempotency-Key", e.key()), 201, &allowed)
+	expectProblem(t, e.do("POST", "/api/credentials", `{"name":"x","scope":{"registryRead":true,"agentSessions":true}}`, "Idempotency-Key", e.key()), 422, "validation-failed")
+
+	body := `{"prompt":"Say hi"}`
+	expectProblem(t, h.send(h.url, "POST", "/api/projects/hebrew/agent-sessions", body, append(bearer(plain.Token), "Idempotency-Key", e.key())...), 403, "policy-denied")
+	var s sessionView
+	h.ok(h.send(h.url, "POST", "/api/projects/hebrew/agent-sessions", body, append(bearer(allowed.Token), "Idempotency-Key", e.key())...), 201, &s)
+	if s.ID == "" {
+		t.Fatal("no session")
+	}
+	// Everything else still follows the default preset: archiving the project waits for a person.
+	h.ok(h.send(h.url, "POST", "/api/projects/hebrew:archive", "", append(bearer(allowed.Token), "Idempotency-Key", e.key(), "If-Match", `"1"`)...), 202, nil)
+}
