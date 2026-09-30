@@ -115,8 +115,10 @@ Rules:
   under its memory cap, shows that much free memory in the last telemetry when no Cadence step runs on it (1 GB
   slack for resident services and the driver), and the kind's availability window is open with the estimate ending
   before it closes (R19). The reservation is the step's declared `memoryGb`, or the card's whole remaining cap when it
-  declares none, so a training step takes the card alone. Candidates are taken by the job's priority (higher first;
-  set from the pipeline run's `priority`, changed with `jobs.edit`) and then first come. Card slots (`card_slots`) belong to the control
+  declares none, so a training step takes the card alone. Candidates are taken by the project's queue priority (higher first;
+  `budgets.queuePriority`, read live from the project so `projects.edit` reorders waiting jobs; a job without a project
+  takes the `defaults.yaml` default), then the job's priority (higher first; set from the pipeline run's `priority`,
+  changed with `jobs.edit`), then first come. Card slots (`card_slots`) belong to the control
   plane per host and card, not per worker, so two runtimes never double-book a card. A step with `gpu: false` takes
   no card (lease card index -1) and may go to a worker that reported no cards (the CPU toy runtime).
 - Lease: `lse_` id, the job id, the step spec (resolved parameters, input artifact refs, output types, resources,
@@ -209,7 +211,7 @@ Cadence upgrades itself the way it upgrades models: versioned, forward-only, wit
 | Upgrade | Pull the release, `compose up`; a failed migration stops the start and leaves the previous image runnable; rollback is the previous image plus, if data changed, the last backup |
 | Backups | Nightly `pg_dump` and a content-store mirror into `CADENCE_BACKUP_DIR` (the `cadence-backups` volume; a mount from phase 4); a weekly automated restore into a scratch database with a report; targets: 24 h RPO, 1 h RTO (as built below) |
 | Failures | River retries with backoff; a worker heartbeat every 10 s, leases reaped after three missed beats (step error `lost`, one retry); an OOM gets one automatic retry at 0.75× batch; a host whose workers went quiet turns `unreachable` (`compute.health`); a full cache pauses freezes (phase 4); an unhealthy card closes its slot (not built: card health is per host today) — every case is an event, so it notifies |
-| Availability windows | Each compute card has windows per job kind (training, eval, shadow, export, data; none means always open, the default): each window is a set of weekdays, an opening and a closing time `HH:MM` (an end at or before the start closes the next day, `24:00` is midnight; a window past midnight belongs to the day it opens) and an IANA time zone per window (default UTC), edited with `compute.edit`. The queue starts a job only if its estimate fits before the window closes; a job without an estimate, or one resuming from a training state, starts in any open window. Training saves a checkpoint and its training state every 20 minutes (the training step's duty; the NeMo pack's); at a close the heartbeat answers `stop: window-closed` to training steps only (other kinds finish), the step saves and releases, and the job waits in its place for the next window and resumes from the last training state (`resumeFrom`). The same path makes long runs preemption-safe on the shared staging card (R19) |
+| Availability windows | Each compute card has windows per job kind (training, eval, shadow, export, data; none means always open, the default): each window is a set of weekdays, an opening and a closing time `HH:MM` (an end at or before the start closes the next day, `24:00` is midnight; a window past midnight belongs to the day it opens) and an IANA time zone per window (default: the instance time zone, `policies.timezone`, resolved when the queue checks the window — so a policy change moves windows that name none), edited with `compute.edit`. The queue starts a job only if its estimate fits before the window closes; a job without an estimate, or one resuming from a training state, starts in any open window. Training saves a checkpoint and its training state every 20 minutes (the training step's duty; the NeMo pack's); at a close the heartbeat answers `stop: window-closed` to training steps only (other kinds finish), the step saves and releases, and the job waits in its place for the next window and resumes from the last training state (`resumeFrom`). The same path makes long runs preemption-safe on the shared staging card (R19) |
 | Health | `/healthz` on the control plane, worker heartbeat, mount checks; a status card in Settings; a Prometheus endpoint |
 | Retention | Job log files are deleted 14 days after their last line (a daily chore); metric points live as long as their run; content-store blobs are kept (v1); the audit log is kept one year; production audio follows the retention policy |
 
@@ -242,7 +244,7 @@ Two channels — the in-app history and a Telegram bot — one routing table by 
 | Event class | In-app | Telegram | Timing |
 | --- | --- | --- | --- |
 | Approval requested (agent, automation, registry) | Yes | Message with inline Approve / Deny buttons and the estimate | Immediate |
-| Job failed, mount unhealthy, card closed, backup failed | Yes | Yes | Immediate |
+| Job or pipeline step failed, compute host unreachable, mount unhealthy, card closed (not built), backup failed | Yes | Yes | Immediate |
 | Gate verdict, promotion, schedule finished, batch closed | Yes | Yes | Immediate |
 | Progress (step done, checkpoint saved, triage item added) | Yes | No | — |
 | Daily digest: runs, evals, spend against budgets, open approvals | Yes | Yes | 09:00 local |
@@ -282,12 +284,14 @@ Phase 2 as built (2026-09-30, stream O):
   kind (runs and evals are jobs until their entities land), each project's GPU-hours against its daily budget
   (`notify.SpendFunc`; "not metered yet" until stream R plugs in the meter), open approvals, events held for the
   digest and the last backup; in-app as `notification.digest` on `notifications`, on Telegram as a message.
-- Classification (`internal/notify/classify.go`): approvals on `approvals`; a job's `job.state_changed` on its job
-  topic (`failed` → failure, `done` → progress; step jobs included); backups by type. The table also names types no
-  stream emits yet — `mount.unhealthy`, `gate.verdict`, `deployment.promoted`, `schedule.finished`, `batch.closed`,
-  `checkpoint.saved`, `triage.item_added` arrive with their phases; `compute.card_closed` and `pipeline_step.done`
-  have no emitter (the engine emits `pipeline_run.step_changed`, the worker protocol `compute.health` with state
-  `unreachable`, and neither is classified).
+- Classification (`internal/notify/classify.go`, mirrored by `web/src/shell/notifications/classes.ts`; a test keeps
+  the two tables equal): approvals on `approvals`; a job's `job.state_changed` on its job topic (`failed` → failure,
+  `done` → progress) except step jobs, whose pipeline step tells them — `pipeline_run.step_changed` on
+  `pipeline_run.{id}` (step `done` → progress, `failed` with no retry left → failure); a host turning `unreachable`
+  (`compute.health` on `compute.{id}`) → failure; backups by type. The table also names types no stream emits yet —
+  `mount.unhealthy`, `gate.verdict`, `deployment.promoted`, `schedule.finished`, `batch.closed`, `checkpoint.saved`,
+  `triage.item_added` arrive with their phases; `compute.card_closed` joins when per-card health closes a card's slot
+  (not built).
 - The control plane reaches `api.telegram.org` over the compose `default` network (not internal); nothing else is
   needed. Reviewer messages (batch assigned/closing) arrive with batches in phase 4.
 
@@ -302,7 +306,7 @@ Every layer has a test that runs on every change, the smoke project is the night
 | Integration | Control plane with Postgres and a worker stub: commands, outbox, SSE resume, approvals, tokens | Every pull request |
 | UI | Playwright on the shell (drag, dock, float, popout, palette) and on the document anatomy of each panel | Every pull request |
 | Audio and charts | The audio view's FFT against librosa on fixtures (≤ 0.5 dB); track and chart screenshots in both themes; chart palettes in the contrast and colour-vision checks (R51–R53) | Every pull request |
-| Framework conformance | Each framework pack on fixtures through the real harness path with a local store (`python -m cadence_worker.conformance --runtime <runtime>`, `make conformance`): schemas (complete `x-cadence`, help, declared profiles, every role mapped), then calibrate → train a few steps → stop → resume → average → transcribe (every latency profile; partial events for streaming ones) → score; export and parity join in phase 5 (R45). The CPU `toy` pack keeps the seams honest | Toy pack every pull request; NeMo pack nightly on the staging card |
+| Framework conformance | Each framework pack on fixtures through the real harness path with a local store (`python -m cadence_worker.conformance --runtime <runtime>`, `make conformance`): schemas (complete `x-cadence`, help, declared profiles, every role mapped), then `dataset_import` of the fixtures → calibrate → train a few steps → stop → resume → average → transcribe (every latency profile; partial events for streaming ones) → score; export and parity join in phase 5 (R45). The CPU `toy` pack keeps the seams honest | Toy pack every pull request; NeMo pack nightly on the staging card |
 | Agent evals | Skills and playbooks executed by both agents on a fixture project; pass criteria are the expected tool calls and outcomes, not the wording (`agent-host/evals`, `make evals`) | Offline with a scripted agent on every pull request; live with both drivers nightly on the staging host and on skill changes |
 | End to end | The smoke project on the staging card: ingest, freeze, 300 steps, eval, gate, export, parity | Nightly |
 | Performance | Workspace restore, drag frame time, SSE fan-out, search latency against the budgets | Weekly |

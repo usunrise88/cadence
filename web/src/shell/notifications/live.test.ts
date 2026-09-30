@@ -29,6 +29,12 @@ describe("noticeFor", () => {
     expect(noticeFor(ev({ topic: "job.job_1", type: "job.state_changed", payload: { job: { ...job, state: "failed", error: "boom" } } }))).toMatchObject({ level: "error", title: "Job failed: bootstrap", detail: "boom" });
     expect(noticeFor(ev({ topic: "job.job_1", type: "job.state_changed", payload: { job: { ...job, state: "done" } } }))!.level).toBe("success");
     expect(noticeFor(ev({ topic: "job.job_1", type: "job.state_changed", payload: { job: { ...job, state: "running" } } }))).toBeUndefined();
+    expect(noticeFor(ev({ topic: "job.job_1", type: "job.state_changed", payload: { job: { ...job, kind: "step", state: "failed" } } }))).toBeUndefined();
+    const step = { step: "train", kind: "toy_train", state: "failed", error: { type: "oom", message: "out of memory" } };
+    expect(noticeFor(ev({ topic: "pipeline_run.plr_1", type: "pipeline_run.step_changed", payload: { pipelineRunId: "plr_1", step } }))).toMatchObject({ level: "error", title: "Step failed: train (toy_train)", detail: "oom: out of memory" });
+    expect(noticeFor(ev({ topic: "pipeline_run.plr_1", type: "pipeline_run.step_changed", payload: { pipelineRunId: "plr_1", step: { ...step, state: "done" } } }))!.level).toBe("success");
+    expect(noticeFor(ev({ topic: "compute.cmp_1", type: "compute.health", payload: { hostId: "cmp_1", health: { state: "unreachable", detail: "quiet" } } }))).toMatchObject({ level: "error", detail: "quiet" });
+    expect(noticeFor(ev({ topic: "compute.cmp_1", type: "compute.health", payload: { hostId: "cmp_1", health: { state: "healthy" } } }))).toBeUndefined();
     expect(noticeFor(ev({ topic: "job.job_1", type: "job.progress", payload: { job: { ...job, state: "running" } } }))).toBeUndefined();
   });
 

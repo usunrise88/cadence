@@ -51,7 +51,7 @@ class TrainStep:
         use_one_thread()
         p = TrainParams.model_validate(params.model_dump())
         torch.manual_seed(p.seed)
-        train, val = splits(read_dataset(inputs["data"], ctx.blob))
+        train, val = splits(read_dataset(inputs["data"]))
         tok = CharTokenizer()
         model = TinyCTC()
         opt = torch.optim.Adam(model.parameters(), lr=p.learning_rate)

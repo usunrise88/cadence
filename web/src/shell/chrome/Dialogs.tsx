@@ -57,7 +57,7 @@ function DialogSwitch({ onSwitchProject }: { onSwitchProject: (slug: string) => 
   }
 }
 
-type EditValues = { name: string; description: string; locales: string; domain: string; baseModel: string; gpuHoursPerDay: string; agentTokensPerDay: string };
+type EditValues = { name: string; description: string; locales: string; domain: string; baseModel: string; gpuHoursPerDay: string; agentTokensPerDay: string; queuePriority: string };
 
 /** projects.edit: what the wizard set and a person may change later (name, locales, domain, base model, budgets). */
 function EditProjectDialog({ slug, onClose }: { slug: string; onClose: () => void }) {
@@ -75,6 +75,7 @@ function EditProjectDialog({ slug, onClose }: { slug: string; onClose: () => voi
     baseModel: data.baseModel?.versionId ?? "",
     gpuHoursPerDay: String(data.budgets.gpuHoursPerDay),
     agentTokensPerDay: String(data.budgets.agentTokensPerDay),
+    queuePriority: String(data.budgets.queuePriority),
   };
   const v = { ...initial, ...edits };
   const set = (patch: Partial<EditValues>) => setEdits((e) => ({ ...e, ...patch }));
@@ -89,6 +90,7 @@ function EditProjectDialog({ slug, onClose }: { slug: string; onClose: () => voi
     const budgets: NonNullable<ProjectEdit["budgets"]> = {};
     if (v.gpuHoursPerDay !== initial.gpuHoursPerDay) budgets.gpuHoursPerDay = Number(v.gpuHoursPerDay);
     if (v.agentTokensPerDay !== initial.agentTokensPerDay) budgets.agentTokensPerDay = Number(v.agentTokensPerDay);
+    if (v.queuePriority !== initial.queuePriority) budgets.queuePriority = Number(v.queuePriority);
     if (Object.keys(budgets).length) body.budgets = budgets;
     if (Object.keys(body).length === 0) return onClose();
     try {
@@ -137,6 +139,9 @@ function EditProjectDialog({ slug, onClose }: { slug: string; onClose: () => voi
             </Field>
             <Field label="Agent tokens per day">
               <Input type="number" min={0} step={1000} value={v.agentTokensPerDay} onChange={(e) => set({ agentTokensPerDay: e.target.value })} />
+            </Field>
+            <Field label="Queue priority (higher starts first)">
+              <Input type="number" min={-100} max={100} step={1} value={v.queuePriority} onChange={(e) => set({ queuePriority: e.target.value })} />
             </Field>
           </div>
           {conflict ? (

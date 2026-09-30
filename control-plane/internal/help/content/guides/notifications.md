@@ -15,9 +15,9 @@ the Approvals panel.
 | Event class | Covers | In-app | Telegram | Timing (seeded) |
 | --- | --- | --- | --- | --- |
 | Approval requested | agent, automation and registry approvals | yes | message with the estimate and Approve / Deny | as it happens |
-| Failure | job failed, mount unhealthy, card closed, backup or restore test failed | yes | yes, even in quiet hours | as it happens |
+| Failure | job failed, pipeline step failed (no retry left), compute host unreachable, mount unhealthy, backup or restore test failed | yes | yes, even in quiet hours | as it happens |
 | Outcome | gate verdict, promotion, schedule finished, batch closed | yes | yes | as it happens |
-| Progress | step done, checkpoint saved, triage item added, backup taken | yes | no | — |
+| Progress | job done, pipeline step done, checkpoint saved, triage item added, backup taken | yes | no | — |
 | Daily digest | runs and evals (their jobs), GPU spend against budgets, open approvals, events held for it, the last backup | yes | yes | 09:00 local |
 
 ## Place in the loop

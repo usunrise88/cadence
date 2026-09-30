@@ -2246,9 +2246,9 @@ paths:
       tags: [jobs]
       x-cadence:
         toolDescription: >
-          The GPU queue: step jobs waiting, paused or running on a worker, in start order (priority, then first
-          come), with the card and worker holding each running one. Reorder with jobs.edit (priority), pause with
-          jobs.pause. A project-scoped credential sees its own project's entries only.
+          The GPU queue: step jobs waiting, paused or running on a worker, in start order (the project's queue
+          priority, then the job's priority, then first come), with the card and worker holding each running one.
+          Reorder with jobs.edit (a job's priority) or projects.edit (budgets.queuePriority), pause with jobs.pause. A project-scoped credential sees its own project's entries only.
       parameters:
         - { name: project, in: query, description: Only this project's entries (slug), schema: { type: string } }
       responses:
@@ -2320,7 +2320,8 @@ paths:
           pipelines.list (or "*" for whatever is at ref). inputs maps each pipeline input to an artifact {hash, type};
           params overrides parameters per step id; finished steps with the same input hash are reused unless fresh.
           The answer is the pipeline run (plr_…): follow pipeline_run.{id} or call pipelineRuns.wait. Spending GPU time
-          over the budget answers 202 with an approvalId instead.
+          over the budget answers 202 with an approvalId instead. A dataset input of an eval-only version (or a mix
+          input referencing one) that a training step reads answers eval-only-dataset.
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
         - $ref: "#/components/parameters/IfMatch"
@@ -4162,16 +4163,22 @@ components:
         revision: { type: string, description: The pinned Hugging Face revision }
     ProjectBudgets:
       type: object
-      required: [gpuHoursPerDay, agentTokensPerDay]
+      required: [gpuHoursPerDay, agentTokensPerDay, queuePriority]
       properties:
         gpuHoursPerDay: { type: number, format: double, minimum: 0, description: "Default budgets.gpu_hours_per_project_per_day" }
         agentTokensPerDay: { type: integer, minimum: 0, description: "Agent spend per day in tokens; default budgets.agent_tokens_per_project_per_day" }
+        queuePriority:
+          type: integer
+          minimum: -100
+          maximum: 100
+          description: "The project's queue priority: waiting step jobs start by project priority (higher first), then the job's priority, then first come; default budgets.queue_priority_per_project"
     ProjectBudgetsEdit:
       type: object
       additionalProperties: false
       properties:
         gpuHoursPerDay: { type: number, format: double, minimum: 0, maximum: 192 }
         agentTokensPerDay: { type: integer, minimum: 0, maximum: 1000000000 }
+        queuePriority: { type: integer, minimum: -100, maximum: 100, description: "Queue priority of the project's step jobs against other projects (higher first)" }
     AgentChoice:
       type: object
       additionalProperties: false
@@ -5366,6 +5373,7 @@ components:
         memoryGb: { type: number }
         state: { type: string, enum: [waiting, paused, running, stopping] }
         priority: { type: integer }
+        projectPriority: { type: integer, description: "The project's queue priority (budgets.queuePriority): the first sort key, before priority" }
         enqueuedAt: { type: string, format: date-time }
         estimateSeconds: { type: number }
         attempt: { type: integer }
@@ -5389,7 +5397,7 @@ components:
           description: Days the window opens on (a window past midnight belongs to the day it opens)
         start: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$", description: "Opens at HH:MM" }
         end: { type: string, pattern: "^(([01][0-9]|2[0-3]):[0-5][0-9]|24:00)$", description: "Closes at HH:MM (24:00 = midnight); before start = the next day" }
-        timezone: { type: string, maxLength: 64, default: UTC, description: "IANA time zone, e.g. Europe/Berlin" }
+        timezone: { type: string, maxLength: 64, description: "IANA time zone, e.g. Europe/Berlin; empty follows the instance time zone (policies.timezone)" }
     AvailabilityWindows:
       type: object
       description: >

@@ -110,6 +110,7 @@ type Budgets struct {
 	AgentTokensPerSession              Param[int64]   `yaml:"agent_tokens_per_session"`
 	AgentTokensPerTurn                 Param[int64]   `yaml:"agent_tokens_per_turn"`
 	ManualTestGPUHoursPerProjectPerDay Param[float64] `yaml:"manual_test_gpu_hours_per_project_per_day"`
+	QueuePriorityPerProject            Param[int]     `yaml:"queue_priority_per_project"`
 }
 
 // Timeouts holds the session clocks of R5.

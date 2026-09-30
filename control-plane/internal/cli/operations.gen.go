@@ -771,7 +771,7 @@ var Operations = []Operation{
 	{
 		ID: "pipelines.run", Entity: "pipelines", Verb: "run", Method: "POST", Path: "/projects/{p}/pipelines/{name}:run",
 		Summary:        "Validate a pipeline against the step registry and start a pipeline run (dryRun validates and estimates)",
-		Description:    "Run a pipeline of this project. Always call it with dryRun=true first: that validates the pipeline against the published step kinds (kind@version exists, input and output artifact types match, parameters fit each kind's schema, no cycles), resolves every parameter from defaults.yaml, lists the departures from defaults and sums the known estimates, without starting anything; a broken pipeline answers pipeline-invalid with one error per problem. Then run it for real with the same body and ifMatch = the pipeline's version from pipelines.list (or \"*\" for whatever is at ref). inputs maps each pipeline input to an artifact {hash, type}; params overrides parameters per step id; finished steps with the same input hash are reused unless fresh. The answer is the pipeline run (plr_…): follow pipeline_run.{id} or call pipelineRuns.wait. Spending GPU time over the budget answers 202 with an approvalId instead.",
+		Description:    "Run a pipeline of this project. Always call it with dryRun=true first: that validates the pipeline against the published step kinds (kind@version exists, input and output artifact types match, parameters fit each kind's schema, no cycles), resolves every parameter from defaults.yaml, lists the departures from defaults and sums the known estimates, without starting anything; a broken pipeline answers pipeline-invalid with one error per problem. Then run it for real with the same body and ifMatch = the pipeline's version from pipelines.list (or \"*\" for whatever is at ref). inputs maps each pipeline input to an artifact {hash, type}; params overrides parameters per step id; finished steps with the same input hash are reused unless fresh. The answer is the pipeline run (plr_…): follow pipeline_run.{id} or call pipelineRuns.wait. Spending GPU time over the budget answers 202 with an approvalId instead. A dataset input of an eval-only version (or a mix input referencing one) that a training step reads answers eval-only-dataset.",
 		IdempotencyKey: true,
 		Params: []Param{
 			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
@@ -921,7 +921,7 @@ var Operations = []Operation{
 	{
 		ID: "queueEntries.list", Entity: "queueEntries", Verb: "list", Method: "GET", Path: "/queue-entries",
 		Summary:     "The step queue across projects — waiting, paused and running step jobs with their card and lease",
-		Description: "The GPU queue: step jobs waiting, paused or running on a worker, in start order (priority, then first come), with the card and worker holding each running one. Reorder with jobs.edit (priority), pause with jobs.pause. A project-scoped credential sees its own project's entries only.",
+		Description: "The GPU queue: step jobs waiting, paused or running on a worker, in start order (the project's queue priority, then the job's priority, then first come), with the card and worker holding each running one. Reorder with jobs.edit (a job's priority) or projects.edit (budgets.queuePriority), pause with jobs.pause. A project-scoped credential sees its own project's entries only.",
 		Params: []Param{
 			{Name: "project", In: "query", Flag: "project", Type: "string", Description: "Only this project's entries (slug)"},
 		},

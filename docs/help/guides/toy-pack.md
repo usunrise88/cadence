@@ -12,11 +12,14 @@ runtime `toy` (python:3.12-slim with CPU PyTorch, image `cadence/worker-toy`), f
 unidirectional GRU with a CTC head, character tokenizer, log-mel features computed on the fly), latency profiles
 `offline` and a simulated streaming `320ms`, and the step kinds `toy_calibrate`, `toy_train`, `toy_average` and
 `toy_transcribe`. It trains in seconds on synthetic tone clips and exists only to keep the seams honest; NeMo is the
-only real pack.
+only real pack. Its kinds read the `dataset` directory artifact `dataset_import` writes (`dataset.json`,
+`manifest.jsonl` with `audio` as a path inside the artifact, the audio files) and name each utterance by the BLAKE3
+hash of its audio file.
 
 The conformance suite (`python -m cadence_worker.conformance --runtime <runtime>`, `make conformance` for the toy
 pack) checks the schemas (complete `x-cadence`, help articles, declared profiles, every role mapped to a published
-kind that declares that role) and then runs calibrate → train → stop (training state on cancel) → resume → average →
+kind that declares that role) and then imports the pack's fixtures with `dataset_import` (a `folder-csv` folder)
+into a `dataset` artifact and runs calibrate → train → stop (training state on cancel) → resume → average →
 transcribe for every profile → score through the real harness path, with a local content store and no control plane.
 Export and parity join in phase 5.
 

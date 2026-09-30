@@ -57,7 +57,8 @@ Every block's process is a pipeline of typed steps declared in the recipes repos
   resolved by the facade that starts the run — a mix revision renders to a `mix` artifact with its resolved
   `input_cfg`, a base model version to a `base_model` artifact. Facades (runs, evals, playbooks) start pipeline runs
   through the Go API, `pipelines.Engine.Start` with a pipeline name or a parsed pipeline, inputs, parameter overrides,
-  per-step estimates, the run id, priority and `fresh`.
+  per-step estimates, the run id, priority and `fresh`. A run whose training step reads an eval-only dataset version
+  (a `dataset` input, or a `mix` input referencing one) is refused with `eval-only-dataset` (R18).
 
 ```yaml
 # pipelines/train-stage.yaml in the project repository
@@ -116,7 +117,7 @@ The toy pack's family `toy-ctc` (runtime `toy`) has the profiles `offline` and `
 ### Framework packs and the conformance suite
 
 - A framework pack is the unit of extension: a runtime image and its environment lock; the worker plugin (entry points `cadence.steps`, `cadence.families`); the role step kinds, exporters and the transcribe step; pipeline templates and playbooks; a `defaults.yaml` section; help articles and an agent skill. The worker publishes the whole pack at start; each runtime, family and step kind is a registry version named by its published JSON, so a new digest or a changed kind is a new version (R45).
-- Every pack passes one conformance suite on fixtures (`python -m cadence_worker.conformance --runtime <runtime>`, through the real harness path with a local store and no control plane): it checks schemas (`x-cadence` complete, help present, profiles declared, every required role mapped to a published kind that declares it), then runs calibrate → train a few steps → stop → resume → average → transcribe (every latency profile; partial events for streaming ones) → score. Export and parity join in phase 5; the NeMo pack's run grows with the phases.
+- Every pack passes one conformance suite on fixtures (`python -m cadence_worker.conformance --runtime <runtime>`, through the real harness path with a local store and no control plane): it checks schemas (`x-cadence` complete, help present, profiles declared, every required role mapped to a published kind that declares it), then imports the pack's fixtures with `dataset_import` (a `folder-csv` folder) and runs calibrate → train a few steps → stop → resume → average → transcribe (every latency profile; partial events for streaming ones) → score. Export and parity join in phase 5; the NeMo pack's run grows with the phases.
 - CI runs it for two packs: a CPU `toy` pack (a tiny CTC model trained in seconds, existing only to keep the seams honest) on every pull request, and the NeMo pack nightly on the staging card. Packs beyond NeMo (sherpa-onnx first, then Hugging Face transformers, k2/icefall) are deferred without a phase.
 
 ### Step contract (phase 2, as built)

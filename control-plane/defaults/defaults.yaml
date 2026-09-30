@@ -97,6 +97,12 @@ budgets:
     description: GPU-hours of manual transcription tests per project per day
     source: docs/spec/08-resolutions.md R47–R49 (Cadence recommendation)
     range: { min: 0, max: 24 }
+  queue_priority_per_project:
+    value: 0
+    unit: priority
+    description: A project's queue priority; waiting step jobs start by project priority (higher first), then the job's own priority, then first come
+    source: docs/spec/02-domain-projects-registry.md "Budgets" (the queue interleaves projects by priority)
+    range: { min: -100, max: 100 }
 
 # The three session clocks of R5.
 timeouts:

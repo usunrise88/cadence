@@ -2045,8 +2045,7 @@
                               "type": "string"
                             },
                             "timezone": {
-                              "default": "UTC",
-                              "description": "IANA time zone, e.g. Europe/Berlin",
+                              "description": "IANA time zone, e.g. Europe/Berlin; empty follows the instance time zone (policies.timezone)",
                               "maxLength": 64,
                               "type": "string"
                             }
@@ -4267,7 +4266,7 @@
     {
       "name": "pipelines.run",
       "title": "Validate a pipeline against the step registry and start a pipeline run (dryRun validates and estimates)",
-      "description": "Run a pipeline of this project. Always call it with dryRun=true first: that validates the pipeline against the published step kinds (kind@version exists, input and output artifact types match, parameters fit each kind's schema, no cycles), resolves every parameter from defaults.yaml, lists the departures from defaults and sums the known estimates, without starting anything; a broken pipeline answers pipeline-invalid with one error per problem. Then run it for real with the same body and ifMatch = the pipeline's version from pipelines.list (or \"*\" for whatever is at ref). inputs maps each pipeline input to an artifact {hash, type}; params overrides parameters per step id; finished steps with the same input hash are reused unless fresh. The answer is the pipeline run (plr_…): follow pipeline_run.{id} or call pipelineRuns.wait. Spending GPU time over the budget answers 202 with an approvalId instead. Pass dryRun=true to see what would happen without changing anything.",
+      "description": "Run a pipeline of this project. Always call it with dryRun=true first: that validates the pipeline against the published step kinds (kind@version exists, input and output artifact types match, parameters fit each kind's schema, no cycles), resolves every parameter from defaults.yaml, lists the departures from defaults and sums the known estimates, without starting anything; a broken pipeline answers pipeline-invalid with one error per problem. Then run it for real with the same body and ifMatch = the pipeline's version from pipelines.list (or \"*\" for whatever is at ref). inputs maps each pipeline input to an artifact {hash, type}; params overrides parameters per step id; finished steps with the same input hash are reused unless fresh. The answer is the pipeline run (plr_…): follow pipeline_run.{id} or call pipelineRuns.wait. Spending GPU time over the budget answers 202 with an approvalId instead. A dataset input of an eval-only version (or a mix input referencing one) that a training step reads answers eval-only-dataset. Pass dryRun=true to see what would happen without changing anything.",
       "method": "POST",
       "path": "/projects/{p}/pipelines/{name}:run",
       "inputSchema": {
@@ -4640,6 +4639,12 @@
                     "maximum": 192,
                     "minimum": 0,
                     "type": "number"
+                  },
+                  "queuePriority": {
+                    "description": "Queue priority of the project's step jobs against other projects (higher first)",
+                    "maximum": 100,
+                    "minimum": -100,
+                    "type": "integer"
                   }
                 },
                 "type": "object"
@@ -4838,6 +4843,12 @@
                     "maximum": 192,
                     "minimum": 0,
                     "type": "number"
+                  },
+                  "queuePriority": {
+                    "description": "Queue priority of the project's step jobs against other projects (higher first)",
+                    "maximum": 100,
+                    "minimum": -100,
+                    "type": "integer"
                   }
                 },
                 "type": "object"
@@ -5136,7 +5147,7 @@
     {
       "name": "queueEntries.list",
       "title": "The step queue across projects — waiting, paused and running step jobs with their card and lease",
-      "description": "The GPU queue: step jobs waiting, paused or running on a worker, in start order (priority, then first come), with the card and worker holding each running one. Reorder with jobs.edit (priority), pause with jobs.pause. A project-scoped credential sees its own project's entries only.",
+      "description": "The GPU queue: step jobs waiting, paused or running on a worker, in start order (the project's queue priority, then the job's priority, then first come), with the card and worker holding each running one. Reorder with jobs.edit (a job's priority) or projects.edit (budgets.queuePriority), pause with jobs.pause. A project-scoped credential sees its own project's entries only.",
       "method": "GET",
       "path": "/queue-entries",
       "inputSchema": {
