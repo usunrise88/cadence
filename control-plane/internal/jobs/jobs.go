@@ -482,6 +482,12 @@ func (w *worker) Work(ctx context.Context, rj *river.Job[riverArgs]) error {
 		return events.Append(ctx, tx, System, nil, stateDraft(j, EventState))
 	})
 	if errors.Is(err, errCancelled) {
+		// Cancelled after River fetched the job but before this handler marked it running: jobs.cancel saw a
+		// running River job and only set cancel_requested_at, so the mirror is still queued. End it here, or it
+		// stays queued forever (end skips a job that already ended).
+		if err := s.end(context.WithoutCancel(ctx), id, StateCancelled, "cancelled before it started"); err != nil {
+			return err
+		}
 		return river.JobCancel(err)
 	}
 	if err != nil {
