@@ -571,6 +571,54 @@ func (s *Server) BranchesGet(ctx context.Context, req api.BranchesGetRequestObje
 	return api.BranchesGet200JSONResponse{Body: body, Headers: api.BranchesGet200ResponseHeaders{ETag: &etag}}, nil
 }
 
+// BranchesCompare implements branches.compare: the three-way comparison behind Session changes.
+func (s *Server) BranchesCompare(ctx context.Context, req api.BranchesCompareRequestObject) (api.BranchesCompareResponseObject, error) {
+	p, svc, err := s.projectRepo(ctx, req.P)
+	if err != nil {
+		return nil, err
+	}
+	c, err := svc.Repos().CompareBranch(ctx, p.Slug, req.Name)
+	if err != nil {
+		return nil, notFoundOr(err)
+	}
+	body := api.BranchCompare{Name: c.Branch.Name, Kind: api.BranchCompareKind(c.Branch.Kind()), Head: c.Branch.Head,
+		Main: c.Main, Base: c.Base, FastForward: c.FastForward, Cut: c.Cut, Files: make([]api.BranchCompareFile, 0, len(c.Files))}
+	for _, f := range c.Files {
+		out := api.BranchCompareFile{Path: f.Path, Clean: f.Clean, Base: apiSide(f.Base), Main: apiSide(f.Main), Branch: apiSide(f.Branch)}
+		if f.Conflict != "" {
+			k := api.BranchCompareFileConflict(f.Conflict)
+			out.Conflict = &k
+		}
+		if f.Hunks != nil {
+			hunks := make([]api.MergeHunk, 0, len(f.Hunks))
+			for _, h := range f.Hunks {
+				hunks = append(hunks, api.MergeHunk{Kind: api.MergeHunkKind(h.Kind),
+					Base:   api.LineRange{Start: h.Base.Start, Count: h.Base.Count},
+					Main:   api.LineRange{Start: h.Main.Start, Count: h.Main.Count},
+					Branch: api.LineRange{Start: h.Branch.Start, Count: h.Branch.Count}})
+			}
+			out.Hunks = &hunks
+		}
+		body.Files = append(body.Files, out)
+	}
+	etag := `"` + c.Branch.Head + `"`
+	return api.BranchesCompare200JSONResponse{Body: body, Headers: api.BranchesCompare200ResponseHeaders{ETag: &etag}}, nil
+}
+
+func apiSide(sd repos.Side) api.MergeSide {
+	out := api.MergeSide{Exists: sd.Exists, Text: sd.Text}
+	if sd.Exists {
+		out.Blob, out.Bytes = &sd.Blob, &sd.Bytes
+	}
+	if sd.Binary {
+		out.Binary = &sd.Binary
+	}
+	if sd.Cut {
+		out.Cut = &sd.Cut
+	}
+	return out
+}
+
 // headOf reads an If-Match that names a branch head (the ETag of branches.get).
 func headOf(ifMatch string) (string, error) {
 	v := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(ifMatch), "W/"))

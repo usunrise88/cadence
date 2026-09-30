@@ -20,7 +20,7 @@ Entities:
   approvals      approve deny get list
   audit          list
   baseModels     get list
-  branches       accept get list revert
+  branches       accept compare get list revert
   collections    get list
   compute        edit get list
   credentials    list new revoke

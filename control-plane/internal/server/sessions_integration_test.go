@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -513,6 +514,20 @@ func TestAgentSessionMergeConflictAcceptRevert(t *testing.T) {
 	p := expectProblem(t, h.do("POST", "/api/agent-sessions/"+s2.ID+":accept", "", "Idempotency-Key", h.key(), "If-Match", ifMatch(s2.Rev)), 409, "merge-conflict")
 	if !strings.Contains(p.Detail, "AGENTS.md") {
 		t.Errorf("conflict detail %q", p.Detail)
+	}
+	// The Session changes' three-way view: base, main (s1's merge) and the session's version with a conflict hunk.
+	var cmp struct {
+		Files []struct {
+			Path               string
+			Clean              bool
+			Base, Main, Branch struct{ Text *string }
+			Hunks              []struct{ Kind string }
+		}
+	}
+	h.ok(h.do("GET", "/api/projects/demo/branches/"+url.PathEscape(s2.Branch)+":compare", ""), 200, &cmp)
+	if len(cmp.Files) != 1 || cmp.Files[0].Path != "AGENTS.md" || cmp.Files[0].Clean || cmp.Files[0].Main.Text == nil ||
+		*cmp.Files[0].Main.Text != "one\n" || *cmp.Files[0].Branch.Text != "two\n" || len(cmp.Files[0].Hunks) == 0 {
+		t.Fatalf("session branch compare %+v", cmp)
 	}
 	expectProblem(t, h.do("POST", "/api/agent-sessions/"+s2.ID+":accept", "", "Idempotency-Key", h.key(), "If-Match", ifMatch(s2.Rev-1)), 412, "precondition-failed")
 	h.ok(h.do("POST", "/api/agent-sessions/"+s2.ID+":revert", "", "Idempotency-Key", h.key(), "If-Match", ifMatch(s2.Rev)), 200, &s2)

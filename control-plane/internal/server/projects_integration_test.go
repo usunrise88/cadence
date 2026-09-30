@@ -334,6 +334,39 @@ func TestAgentProfileNotesSyncAndBranches(t *testing.T) {
 	if diff.FastForward || !slices.Equal(diff.Conflicts, []string{"pipelines/train-stage.yaml"}) {
 		t.Fatalf("conflicting diff %+v", diff)
 	}
+	// branches.compare: the conflicting file with its three versions and hunks.
+	var cmp struct {
+		Head, Base  string
+		FastForward bool
+		Files       []struct {
+			Path, Conflict     string
+			Clean              bool
+			Base, Main, Branch struct {
+				Exists bool
+				Text   *string
+			}
+			Hunks []struct{ Kind string }
+		}
+	}
+	resp = e.ok(e.do("GET", branchPath+":compare", ""), 200, &cmp)
+	if cmp.FastForward || cmp.Head != diff.Head || resp.Header.Get("ETag") != `"`+diff.Head+`"` || len(cmp.Files) == 0 {
+		t.Fatalf("compare %+v", cmp)
+	}
+	cf := cmp.Files[0]
+	if cf.Path != "pipelines/train-stage.yaml" || cf.Clean || cf.Conflict != "content" || cf.Main.Text == nil ||
+		*cf.Main.Text != "mine: 2\n" || cf.Branch.Text == nil || cf.Base.Text == nil || *cf.Base.Text != "mine: 1\n" {
+		t.Fatalf("compared file %+v", cf)
+	}
+	conflictHunks := 0
+	for _, h := range cf.Hunks {
+		if h.Kind == "conflict" {
+			conflictHunks++
+		}
+	}
+	if conflictHunks == 0 {
+		t.Fatalf("no conflict hunk in %+v", cf.Hunks)
+	}
+	expectProblem(t, e.do("GET", "/api/projects/demo/branches/nope:compare", ""), 404, "not-found")
 	before, _ := store.Head(t.Context(), "demo")
 	expectProblem(t, e.do("POST", branchPath+":accept", "", "Idempotency-Key", e.key(), "If-Match", `"`+diff.Head+`"`), 409, "merge-conflict")
 	if after, _ := store.Head(t.Context(), "demo"); after != before {

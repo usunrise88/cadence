@@ -71,6 +71,7 @@
     "cadence_baseModels_get": "allow",
     "cadence_baseModels_list": "allow",
     "cadence_branches_accept": "allow",
+    "cadence_branches_compare": "allow",
     "cadence_branches_get": "allow",
     "cadence_branches_list": "allow",
     "cadence_branches_revert": "allow",
