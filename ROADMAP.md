@@ -218,8 +218,10 @@ Getting started, Project document, Mix (minimal), Recipe (read + session-branch 
 Tests: integration for tokens, approvals, drafts, `412`; agent evals harness on a fixture project with both drivers.
 
 Phase 1 notes (what differs from the plan above):
-- The agent host speaks its own protocol, `hostSessions.claim|report|ask|decision` with a `cah_` credential
-  (`CADENCE_HOST_TOKEN_FILE`), and the session token is minted at claim, not at create (05 "Phase 1 as built").
+- The agent host speaks its own protocol, `hostSessions.claim|report|ask|decision|release` with a `cah_` credential
+  (`CADENCE_HOST_TOKEN_FILE`), and the session token is minted at claim, not at create (05 "Phase 1 as built"). A host
+  that shuts down releases its sessions, so the next host takes them at once; the Chat reads "reconnecting" meanwhile,
+  and a turn or permission request the restart interrupted is reported to the agent as interrupted, not declined.
 - MCP tool names are sanitised by the agents: `mixes.get` is `mcp__cadence__mixes_get` in Claude and
   `cadence_mixes_get` in opencode; the renderer and the server map them back (A2).
 - `recipe.{path}` events come from pushes (a session's per-turn commit, UI commits, pushes to the internal repository)
@@ -235,14 +237,18 @@ Phase 1 notes (what differs from the plan above):
   plus a table. Offline (CI) a scripted ACP agent plays each prompt's reference answer through the real host, preset
   and MCP; `CADENCE_LIVE_AGENTS=1` runs the real drivers. First evals: the gate prompt, a read-only "Explain this"
   session, `aliases.set baseline` → approval. Live runs are still by hand: no model accounts on CI runners.
-- The owner's MiniMax model was not run: opencode ran on the free Zen model. `haiku` was too unreliable for the gate
-  prompt (subagents, a runaway pause), so Claude ran on the profile default `sonnet`.
-- Open after the gate: opencode's MCP calls carry no tool-use id, so the badge cannot land on the tool call in Chat;
-  in the development mode Claude reached the account's claude.ai connectors — check the `setup-token` mode before real
-  projects; Claude still raises a permission request per Cadence call (the preset answers it).
-- Owner actions before a compose deployment: `docker compose run --rm -it agent-host login claude`
-  (`claude setup-token` into the agent-credentials volume), `… login opencode` with the MiniMax Token Plan key, and
-  on the staging stand dropping basic auth from the Caddy site file once sign-in is live (Exposure, above).
+- The gate ran opencode on the free Zen model; the owner then connected MiniMax (`minimax/MiniMax-M3`) in Settings →
+  Agents and checked both agents on the staging stand (2026-09-30). `haiku` was too unreliable for the gate prompt
+  (subagents, a runaway pause), so Claude runs on the profile default `sonnet`.
+- Closed after the gate (2026-09-30 punch list): opencode's commands get the agent's tool-call id once the host
+  reports the call, so the badge lands on it; claude.ai connectors are off in every Claude session (a setup-token
+  lacks the scope anyway, checked on the stand; `ENABLE_CLAUDEAI_MCP_SERVERS=false` covers an interactive login);
+  Claude no longer asks permission for the Cadence tools the preset allows (Claude Code ignores a repository's allow
+  rules, so the control plane sends them as `HostStart.allowedTools`); an idle-paused session reads "asleep" and wakes
+  on the next message; layout autosaves are debounced and not audited.
+- Agent accounts are connected in Settings → Agents (`agentCredentials.*`); `docker compose run --rm -it agent-host
+  login claude|opencode` stays as the CLI fallback. Still the owner's: dropping basic auth from the stand's Caddy site
+  file (Exposure, above) — turn on two-factor sign-in first.
 
 ---
 

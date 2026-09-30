@@ -101,8 +101,13 @@ Gotchas:
 - `make gen` also regenerates the agent host's contract types (`agent-host/src/api/gen`, `npm run gen`).
 - Claude streams a tool call's arguments into a pending call that starts as `{}`: read arguments only once the call
   has left `pending`. The agent runs in its own process group; the host ends the group before removing a session.
+- Claude Code ignores the `allow` rules of a repository's `.claude/settings.json` (it applies ask and deny): the
+  control plane sends the preset's allowed Cadence tools as `HostStart.allowedTools` and the driver passes them to the
+  agent. A new Cadence tool an agent should use without asking belongs in the preset, not only in the rendered file.
+- A stopping agent host calls `hostSessions.release`; compose gives it `stop_grace_period: 30s`. Restarting the stand's
+  agent host is therefore safe mid-session, but a running turn is interrupted (the agent is told, not re-run).
 - For live agent runs keep prompts tiny; Claude sessions use `sonnet` (`haiku` delegates to subagents and loops),
-  opencode the free `opencode/big-pickle` until the MiniMax key is installed.
+  opencode `minimax/MiniMax-M3` on the stand (the free `opencode/big-pickle` elsewhere).
 
 ## Commands
 
