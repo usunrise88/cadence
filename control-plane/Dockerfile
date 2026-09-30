@@ -38,6 +38,9 @@ COPY --from=build --chown=65532:65532 /out/data /data
 COPY --from=build --chown=65532:65532 /out/data /host-credential
 # Where the egress proxy's token is kept (CADENCE_EGRESS_TOKEN_FILE): written by the control plane, read by the proxy.
 COPY --from=build --chown=65532:65532 /out/data /egress-credential
+# Where the workers' token is kept (CADENCE_WORKER_TOKEN_FILE) and the content store shared with them by volume.
+COPY --from=build --chown=65532:65532 /out/data /worker-credential
+COPY --from=build --chown=65532:65532 /out/data /var/lib/cadence
 ENV CADENCE_ADDR=0.0.0.0:8080 \
     CADENCE_DATA_DIR=/data
 USER 65532:65532

@@ -1,0 +1,6 @@
+{
+  "name": "toy",
+  "version": "1",
+  "image": "cadence/worker-toy",
+  "environmentPackages": ["torch", "numpy", "pydantic", "cadence-worker", "cadence-toy"]
+}
