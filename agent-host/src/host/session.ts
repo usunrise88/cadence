@@ -120,6 +120,9 @@ export class HostSession {
       this.user = this.deps.uids?.acquire(this.id);
       this.dirs = await prepareDirs(this.deps.dataDir, this.id, this.user);
       this.agentEnv = baseEnv(this.dirs, this.deps.hostEnv);
+      // Development without the agent-credentials volume: agents find their default login under the host's HOME
+      // (the host warns at start; never in the image, R3).
+      if (!this.deps.credentials && this.deps.hostEnv.HOME) this.agentEnv.HOME = this.deps.hostEnv.HOME;
       const branch = this.start.session.branch || "main";
       this.worktree = new Worktree(this.dirs.worktree, branch, {
         token: this.start.token,

@@ -62,7 +62,7 @@ func RenderClaude(p *Preset, ops []Operation) ClaudeSettings {
 	perm := ClaudePermissions{DefaultMode: "default", Allow: []string{}, Ask: []string{}, Deny: []string{}}
 	for _, op := range sortedOps(ops) {
 		c, _ := p.ClassOf(op.Name, op.VerbClass)
-		rule := "mcp__" + MCPServer + "__" + op.Name
+		rule := ClaudeMCPTool(op.Name)
 		if agentSide(c) == AccessAllow {
 			perm.Allow = append(perm.Allow, rule)
 		} else {
@@ -107,6 +107,13 @@ func RenderClaude(p *Preset, ops []Operation) ClaudeSettings {
 		out.Sandbox = &ClaudeSandbox{Enabled: true, Network: ClaudeSandboxNetwork{AllowedDomains: nonNil(p.Sandbox.Network)}}
 	}
 	return out
+}
+
+// ClaudeMCPTool is the name Claude Code gives an MCP tool in permission rules and tool calls:
+// mcp__<server>__<tool> with characters outside [A-Za-z0-9_-] replaced by underscores (mixes.get → mixes_get; the
+// live A2 run showed that rules with the dotted name never match).
+func ClaudeMCPTool(op string) string {
+	return "mcp__" + MCPServer + "__" + strings.TrimPrefix(OpencodeMCPTool(op), MCPServer+"_")
 }
 
 // OpencodeMCPTool is the name opencode gives an MCP tool: <server>_<tool> with characters outside

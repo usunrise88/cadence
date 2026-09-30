@@ -26,13 +26,19 @@ function capJSON(v: unknown): unknown {
 const APPROVAL_RE = /\\?"approvalId\\?"\s*:\s*\\?"(apr_[A-Za-z0-9-]+)/;
 const JOB_RE = /\\?"jobId\\?"\s*:\s*\\?"(job_[A-Za-z0-9-]+)/;
 
+// operationOf turns an MCP tool name back into its Cadence operation: agents replace the dot of <entity>.<verb>
+// with an underscore (mixes.get → mixes_get); verbs have no underscores, so the last one was the dot.
+export function operationOf(tool: string): string {
+  return tool.includes(".") ? tool : tool.replace(/_([a-z]+)$/, ".$1");
+}
+
 // toolCall renders a snapshot as the contract's AgentToolCall, with worktree-relative paths and capped payloads.
 export function toolCall(c: ToolCallSnapshot, root: string): AgentToolCall {
   const rel = (p: string): string => (isAbsolute(p) && root ? relative(root, p) || "." : p);
   const out: AgentToolCall = { id: c.id, title: c.title, class: c.class, status: c.status };
   if (c.mcp) {
     out.server = c.mcp.server;
-    out.operation = c.mcp.tool;
+    out.operation = operationOf(c.mcp.tool);
   }
   if (c.diffs.length) {
     out.diffs = c.diffs.map((d) => {

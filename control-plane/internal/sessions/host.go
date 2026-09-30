@@ -149,6 +149,13 @@ func (s *Service) claimOnce(ctx context.Context, tx pgx.Tx, in ClaimInput) (Work
 	if w.Decisions, err = claimDecisions(ctx, tx, in.HostID); err != nil {
 		return w, err
 	}
+	// Lists are never null on the wire.
+	if w.Start == nil {
+		w.Start = []Start{}
+	}
+	if w.Decisions == nil {
+		w.Decisions = []Decision{}
+	}
 	return w, events.Append(ctx, tx, System, nil, drafts)
 }
 
@@ -581,6 +588,18 @@ type AskInput struct {
 	Options  []map[string]any
 }
 
+// operationOf turns an MCP tool name as agents report it back into the operation: Claude Code and opencode replace
+// the dot of <entity>.<verb> with an underscore (mixes_get), and verbs have no underscores.
+func operationOf(tool string) string {
+	if tool == "" || strings.Contains(tool, ".") {
+		return tool
+	}
+	if i := strings.LastIndex(tool, "_"); i > 0 {
+		return tool[:i] + "." + tool[i+1:]
+	}
+	return tool
+}
+
 // manifestVerbClass maps MCP tool names to their verb class (read for read-only tools).
 func manifestVerbClass(op string) string {
 	m, err := mcp.LoadManifest()
@@ -616,7 +635,7 @@ func (s *Service) Ask(ctx context.Context, id string, in AskInput) (Decision, er
 		}
 		str := func(k string) string { v, _ := in.ToolCall[k].(string); return v }
 		toolCallID, class, title := str("id"), str("class"), str("title")
-		req := policy.PermissionRequest{Class: class, Operation: str("operation")}
+		req := policy.PermissionRequest{Class: class, Operation: operationOf(str("operation"))}
 		if req.Operation != "" {
 			req.VerbClass = manifestVerbClass(req.Operation)
 		}

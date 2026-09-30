@@ -55,16 +55,16 @@ export class SessionManager {
 
   // dispatch hands one claim's work to the sessions; starts run in the background.
   dispatch(work: HostWork): void {
-    for (const st of work.start) {
+    for (const st of work.start ?? []) {
       if (this.sessions.has(st.session.id)) continue;
       const s = new HostSession({ ...this.o, onEnded: (id) => this.sessions.delete(id) }, st);
       this.sessions.set(s.id, s);
       this.o.log.log("info", "session start", { session: s.id, driver: st.session.driver, kind: st.session.kind });
       void s.begin();
     }
-    for (const m of work.messages) this.session(m.sessionId)?.enqueue(m);
-    for (const c of work.controls) void this.session(c.sessionId)?.control(c);
-    for (const d of work.decisions) if (d.sessionId) this.session(d.sessionId)?.decision(d);
+    for (const m of work.messages ?? []) this.session(m.sessionId)?.enqueue(m);
+    for (const c of work.controls ?? []) void this.session(c.sessionId)?.control(c);
+    for (const d of work.decisions ?? []) if (d.sessionId) this.session(d.sessionId)?.decision(d);
   }
 
   private session(id: string): HostSession | undefined {

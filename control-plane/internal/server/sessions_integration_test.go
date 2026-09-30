@@ -213,6 +213,13 @@ func TestAgentSessionLifecycle(t *testing.T) {
 	if again := h.claim("host-b"); len(again.Start) != 0 {
 		t.Fatalf("a live host's session was offered again: %+v", again.Start)
 	}
+	var raw map[string]json.RawMessage
+	h.ok(h.host("POST", "/api/host-sessions:claim", map[string]any{"hostId": "host-b", "wait": 0, "capacity": 4}), 200, &raw)
+	for _, k := range []string{"start", "messages", "controls", "decisions"} {
+		if string(raw[k]) != "[]" {
+			t.Errorf("an empty claim's %s is %s, want []", k, raw[k])
+		}
+	}
 	var preset string
 	if err := h.pool.QueryRow(t.Context(), `SELECT scope->>'preset' FROM credentials WHERE subject = $1 AND revoked_at IS NULL`, s.ID).Scan(&preset); err != nil || preset != "guardrails-default" {
 		t.Fatalf("session token preset %q %v", preset, err)

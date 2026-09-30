@@ -71,7 +71,7 @@ func TestBootstrapFiles(t *testing.T) {
 	perm, _ := settings["permissions"].(map[string]any)
 	allow, _ := perm["allow"].([]any)
 	deny, _ := perm["deny"].([]any)
-	if !contains(allow, "mcp__cadence__projects.note") || !contains(deny, "mcp__cadence__approvals.approve") {
+	if !contains(allow, "mcp__cadence__projects_note") || !contains(deny, "mcp__cadence__approvals_approve") {
 		t.Errorf("permissions not rendered from the preset: %v", perm)
 	}
 

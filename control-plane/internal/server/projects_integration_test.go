@@ -136,7 +136,7 @@ func TestBootstrapEndToEnd(t *testing.T) {
 		t.Errorf("CLAUDE.md = %q", c)
 	}
 	settings := e.recipe("hebrew-telephony", ".claude/settings.json", "")
-	if strings.Contains(settings.Content, "mcpServers") || !strings.Contains(settings.Content, "mcp__cadence__projects.note") {
+	if strings.Contains(settings.Content, "mcpServers") || !strings.Contains(settings.Content, "mcp__cadence__projects_note") {
 		t.Errorf(".claude/settings.json:\n%s", settings.Content)
 	}
 	if oc := e.recipe("hebrew-telephony", "opencode.json", ""); !strings.Contains(oc.Content, `"model": "minimax/MiniMax-M2"`) ||
