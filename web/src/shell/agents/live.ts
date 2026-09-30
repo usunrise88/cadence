@@ -4,12 +4,13 @@ import type { AgentSession } from "@/api/gen/types.gen";
 import { announce, notify, type Notice } from "@/shell/notifications/store";
 import { events } from "@/shell/registries";
 import { sessionLabel } from "./labels";
+import { isNews, noteNews } from "./unread";
 import { patchAgentBatch, splitBatch, SESSIONS_TOPIC, transcriptKey, useAgentSessions, type Transcript } from "./sessions";
 
 // The chrome's own agent subscription (not a panel's): keeps every session list and header live, names sessions
 // for attribution badges, and tells assistive technology what agents did (docs/spec/10-ui-shell.md, WCAG 4.1.3):
 // the finished turn is announced in the polite live region; streamed tokens never are. Pauses and failures also
-// land in the notification history.
+// land in the notification history. A turn finished or a session wanting attention marks its Chat unread.
 
 type NoticeInput = Omit<Notice, "id" | "at" | "read">;
 export type Transition = { announce?: string; notice?: NoticeInput };
@@ -87,6 +88,7 @@ export function useAgentLive(project: string | undefined): void {
             const prev = lastSeen.get(s.id);
             if (prev && prev.rev >= s.rev) continue;
             lastSeen.set(s.id, s);
+            if (isNews(prev, s)) noteNews(s.id);
             const t = sessionTransition(prev, s, lastReplyOf(qc, s.id));
             if (t.notice) notify(t.notice);
             if (t.announce) announce(t.announce);

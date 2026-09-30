@@ -31,6 +31,7 @@
   --color-chrome: var(--cadence-chrome);
   --color-selected: var(--cadence-selected);
   --color-hover: var(--cadence-hover);
+  --color-hover-strong: var(--cadence-hover-strong);
   --color-accent-soft: var(--cadence-accent-soft);
   --color-accent-text: var(--cadence-accent-text);
   --color-accent-line: var(--cadence-accent-line);

@@ -28,7 +28,9 @@ import {
   useProject,
   useSelection,
   useTopic,
+  usePanel,
   useTranscript,
+  viewSession,
   type PanelProps,
 } from "@/shell/panel";
 import { Entry, RefChips } from "./entries";
@@ -49,6 +51,11 @@ export function ChatPanel({ instanceId, doc }: PanelProps) {
   const session = useAgentSession(sessionId);
   const patch = useAgentPatcher();
   useTopic(sessionId ? [sessionTopic(sessionId)] : null, patch);
+  const { visible } = usePanel();
+  // While this Chat is on screen its session's news counts as read (the tab's dot).
+  useEffect(() => {
+    if (visible && sessionId) return viewSession(sessionId);
+  }, [visible, sessionId]);
   const setLast = useChatBridge((s) => s.setLastChat);
   useEffect(() => {
     if (!useChatBridge.getState().lastChat) setLast(instanceId);
@@ -56,7 +63,7 @@ export function ChatPanel({ instanceId, doc }: PanelProps) {
 
   return (
     <div
-      className="flex h-full min-h-0 flex-col"
+      className="cadence-chat flex h-full min-h-0 flex-col"
       onFocusCapture={() => setLast(instanceId)}
       onPointerDownCapture={() => setLast(instanceId)}
       onKeyDown={typeIntoComposer}

@@ -9,7 +9,9 @@ contexts: [panel:chat]
 A tool panel, one per agent session. Every default workspace has one in its right column; the workspace remembers
 which session it is pinned to (pick another from the session menu in its header, or "New session…"). "Open Chat" in
 Agent sessions, an approval card or an attribution badge opens the session's own Chat next to it when the
-workspace's Chat already shows another session.
+workspace's Chat already shows another session. Its tab names the session the short way — `CC · S4` is Claude Code
+session 4, `OC` is opencode — and shows a dot when a turn finished or the session wants you (an approval, a pause, a
+failure, its end) while the Chat was hidden; showing the Chat clears it.
 
 The transcript renders what the agent host reports on `agent.session.{id}`:
 
@@ -18,12 +20,15 @@ The transcript renders what the agent host reports on `agent.session.{id}`:
 | Agent reply | Streaming Markdown; references such as `@mix:mix_…` or `@recipe:project.yaml` are links that open the document |
 | Thought | A collapsed "Thinking" block |
 | Plan | A checklist that ticks as the agent works |
-| Cadence tool call (MCP) | Card with the operation (`mixes.edit`), the entity as a link, the draft it left, a dry run's estimate (GPU-hours ±, duration, card, audio hours), the approval or job it returned, and the arguments and result |
-| File edit | Card with an inline diff per file (added and removed lines are marked by `+`/`−` as well as colour) |
-| Shell | Card with the command, the exit code (or status) and the output, collapsed |
+| Cadence tool call (MCP) | One line with the operation; click it for the card with the operation (`mixes.edit`), the entity as a link, the draft it left, a dry run's estimate (GPU-hours ±, duration, card, audio hours), the approval or job it returned, and the arguments and result |
+| File edit | One line with the +/− counts; click it for an inline diff per file (added and removed lines are marked by `+`/`−` as well as colour) |
+| Shell | One line with the command and a failed exit code; click it for the output |
 | Permission or approval request | The approval card inline: **Allow once**, **Allow for this session**, **Deny** for the agent's own requests; Approve / Deny for gated Cadence commands. The same request is in Approvals |
 | Commit | The commit on the session branch and its files, or why nothing was committed (a credential in the diff) |
 | Turn end | Stop reason and tokens in / out |
+
+Tool calls stay one quiet line each until you open them; the attribution badge opens the one it jumps to. Typing
+anywhere in the Chat outside a field goes to the message box.
 
 The header shows the session (`claude-code · session 3`), its kind (interactive or read-only), its state (running,
 idle, waiting approval, paused with the reason, done, failed), the model, and meters for turns and tokens against

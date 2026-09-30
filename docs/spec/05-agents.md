@@ -79,11 +79,14 @@ Every mutating tool accepts `dryRun`; the verbs come from the vocabulary in the 
 | Agent message chunk | Streaming Markdown; entity references as links |
 | Thought chunk | Collapsed "thinking" block |
 | Plan | Checklist that ticks as the agent works; a playbook's chain is the initial plan |
-| Tool call: Cadence MCP | Card naming the operation and the entity with a link; dry-run estimates inline |
-| Tool call: file edit | Card with an inline diff; the Recipe document shows the same diff live |
-| Tool call: shell | Card with command, exit code and collapsible output |
+| Tool call: Cadence MCP | One quiet line naming the operation (draft, dry run, a failed status) that opens into a card with the entity link and the dry-run estimate |
+| Tool call: file edit | One line with its +/− counts that opens into an inline diff; the Recipe document shows the same diff live |
+| Tool call: shell | One line with the command and a failed exit code that opens into its output |
 | Permission or approval request | Inline Allow once / Allow for session / Deny, mirrored in Approvals and on Telegram |
 | Session state | Header chip: running, waiting approval, paused with the reason; budget meter for turns, tokens and GPU-hours |
+| Tab | The session the short way (`CC · S4` for Claude Code session 4, `OC` for opencode) and a dot while a finished turn or a session wanting attention (approval, pause, failure, end) has not been seen |
+
+Every tool call starts collapsed; the attribution badge's jump opens the one it lands on. Keys typed anywhere in the Chat outside a field go to the composer.
 
 ### Worktree, drafts and merge
 

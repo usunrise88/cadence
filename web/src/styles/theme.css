@@ -49,6 +49,7 @@
   --cadence-document: var(--slate-1);
   --cadence-tool: var(--slate-2);
   --cadence-chrome: var(--slate-2);
+  --cadence-chat: var(--slate-3); /* dark: slate-2; set apart from the documents around it */
   --cadence-hover: var(--slate-3);
   --cadence-hover-strong: var(--slate-4);
   --cadence-selected: var(--slate-5);
@@ -96,6 +97,22 @@
   /* S3: indigo-9 is 2.8:1 on dark slate-4 */
   --cadence-focus: var(--indigo-10);
   --ring: var(--indigo-10);
+  --cadence-chat: var(--slate-2);
+}
+
+/* ---- the Chat: set apart from the documents around it (slate-3; dark: slate-2). On light slate-3, blue-11 and
+ * grass-11 fall under 4.5:1, so running and done text and diff counts take step 12 there, as warning text does. */
+.cadence-chat {
+  background-color: var(--cadence-chat);
+  --cadence-status-running-text: var(--blue-12);
+  --cadence-status-done-text: var(--grass-12);
+  --cadence-diff-added-text: var(--grass-12);
+}
+.dark .cadence-chat,
+.dark.cadence-chat {
+  --cadence-status-running-text: var(--blue-11);
+  --cadence-status-done-text: var(--grass-11);
+  --cadence-diff-added-text: var(--grass-11);
 }
 
 /* ---- Dockview theme: pinned to dockview 8.3.1's --dv-* list (see docs/spikes/S3-slate-theme.md) ---- */

@@ -378,7 +378,7 @@ function ToolCall({ m, highlighted }: { m: AgentMessage; highlighted: boolean })
           type="button"
           aria-expanded={open}
           onClick={() => setOpen((o) => !o)}
-          className={cn(lineClass, "cursor-pointer hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none")}
+          className={cn(lineClass, "cursor-pointer hover:bg-hover-strong hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none")}
           data-slot="tool-line"
         >
           {line}

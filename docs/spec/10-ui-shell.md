@@ -313,6 +313,7 @@ Step roles follow Radix's [scale guide](https://radix-ui.com/colors/docs/palette
 | --- | --- | --- |
 | Empty desktop, document panels | slate-1 | Centre work area |
 | Tool panels, tab bars, menus, popovers | slate-2 | Slightly set back from documents, Photoshop-style |
+| Chat | slate-3 (dark: slate-2) | Set apart from the documents around it; messages, cards and the composer stay on slate-1. Running and done text and diff counts take step 12 on light slate-3 (step 11 is under 4.5:1 there) |
 | Inactive tab hover, list row hover | slate-3 / slate-4 |  |
 | Selected row, pressed control | slate-5 |  |
 | Group separators, panel borders | slate-6 | Decorative, 1 px |

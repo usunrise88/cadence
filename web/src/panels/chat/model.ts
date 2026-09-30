@@ -12,6 +12,14 @@ export function visibleEntries(items: AgentMessage[]): AgentMessage[] {
 export type Tone = "neutral" | "running" | "done" | "warning" | "failed";
 
 /** The header chip: running / waiting approval / paused with the reason / ended. */
+const DRIVER_SHORT: Record<string, string> = { "claude-code": "CC", opencode: "OC" };
+
+/** The tab's short name: "CC · S4" (Claude Code, session 4), "OC · S1" (opencode). */
+export function tabLabel(s: Pick<AgentSession, "driver" | "number">): string {
+  const short = DRIVER_SHORT[s.driver] ?? s.driver.split(/[^a-z0-9]+/i).map((w) => w.charAt(0).toUpperCase()).join("");
+  return `${short} · S${s.number}`;
+}
+
 export function sessionStatus(s: AgentSession): { label: string; tone: Tone; detail?: string } {
   const pending = s.pendingControl ? ` · ${s.pendingControl === "cancel" ? "stopping" : s.pendingControl === "end" ? "ending" : `${s.pendingControl === "pause" ? "pausing" : "resuming"}`}…` : "";
   switch (s.state) {

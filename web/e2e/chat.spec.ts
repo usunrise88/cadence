@@ -42,6 +42,9 @@ test("Chat: new session, streamed reply, inline permission, tool call with badge
   const sessionId = (await root.getAttribute("data-chat-session"))!;
   const session = (await (await request.get(`/api/agent-sessions/${sessionId}`)).json()) as AgentSession;
   const label = `${session.driver} · session ${session.number}`;
+  // The tab names the session the short way.
+  const chatTab = page.locator('[data-tab="chat"]');
+  await expect(chatTab.locator('[data-slot="chat-tab-label"]')).toHaveText(`${session.driver === "opencode" ? "OC" : "CC"} · S${session.number}`);
   await expect(chat.locator('[data-kind="user_message"]')).toContainText("Make the mix warmer");
   await expect(chat.locator(`[data-kind="user_message"] [data-ref="@mix:${mix.id}"]`)).toBeVisible();
 
@@ -118,9 +121,15 @@ test("Chat: new session, streamed reply, inline permission, tool call with badge
     { key: "t1:commit", kind: "commit", commit: { sha, files: ["NOTES-agent.md"] } },
     { key: "t1:end", kind: "turn", turnInfo: { state: "ended", stopReason: "end_turn", inputTokens: 1200, outputTokens: 80 } },
   ]);
+  await expect(chat.locator('[data-slot="commit"]')).toContainText(sha.slice(0, 7));
+  // The turn finishes while another tab hides the Chat: its tab gets the unread dot until the Chat is shown again.
+  await page.locator('[data-tab="inspector"]').click();
   await host.report(sessionId, { state: { state: "running", busy: false, turn: 1 }, use: { turns: 1, inputTokens: 1200, outputTokens: 80 } });
   await expect(page.getByTestId("live-region")).toContainText(`${label} finished its turn`);
-  await expect(chat.locator('[data-slot="commit"]')).toContainText(sha.slice(0, 7));
+  const unread = chatTab.locator('[data-slot="chat-tab-unread"]');
+  await expect(unread).toBeVisible();
+  await chatTab.click();
+  await expect(unread).toHaveCount(0);
 
   // End the session: the host is told, commits nothing more and reports done; the changes wait for a person.
   await chat.getByRole("button", { name: "End…" }).click();

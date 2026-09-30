@@ -1,7 +1,7 @@
 // The panel SDK: the only shell surface panels import (besides the entity primitives and components/ui).
 export { usePanel, useTopic } from "./context";
 export { useFollowedDoc, useCurrentSelection, useSelection } from "@/shell/selection/store";
-export type { PanelManifest, PanelProps } from "@/shell/registry/panels";
+export type { PanelManifest, PanelProps, PanelTabProps } from "@/shell/registry/panels";
 export type { DocTab } from "@/shell/entity/primitives";
 export { openDocument, openPanelById, useProject } from "./actions";
 export { openInLibrary, openRef, previewRef } from "@/shell/search/actions";
@@ -18,6 +18,7 @@ export { useEditRequest } from "@/shell/entity/edits";
 // which session, composer drafts, Ask agent, badge → tool call) and references as links.
 export { isLive, sessionTopic, SESSIONS_TOPIC, useAgentPatcher, useAgentSession, useAgentSessions, useTranscript } from "@/shell/agents/sessions";
 export { sessionLabel } from "@/shell/agents/labels";
+export { useUnread, viewSession } from "@/shell/agents/unread";
 export {
   askAgent,
   CHAT_PANEL,
