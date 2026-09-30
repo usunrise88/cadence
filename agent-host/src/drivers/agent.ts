@@ -85,7 +85,9 @@ export class Agent {
   }
 
   static async start(driver: Driver, opts: StartOptions): Promise<Agent> {
-    const proc = launch(driver.launch(opts), opts.tap);
+    const spec = driver.launch(opts);
+    if (opts.user) Object.assign(spec, { uid: opts.user.uid, gid: opts.user.gid });
+    const proc = launch(spec, opts.tap);
     const normalizer = new UpdateNormalizer(driver);
     let self: Agent | undefined;
     const client = new AcpClient(proc.stream, {
@@ -96,6 +98,7 @@ export class Agent {
         if (!self) return Promise.resolve({ outcome: { outcome: "cancelled" } });
         return self.permission(req, signal);
       },
+      ...(opts.user ? { fileOwner: opts.user } : {}),
     });
     self = new Agent(driver, opts, proc, client, normalizer);
     try {

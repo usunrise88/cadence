@@ -29,6 +29,8 @@ Guiding choices, applied throughout:
   `/registry/models/{id}:export`).
 - Exempt from the vocabulary and from MCP: operations tagged `auth` (`login`, `logout`, invitations) and `me`
   (workspaces, saved views); they keep `<entity>.<verb>` ids but the generator doesn't publish them as tools.
+  Phase 1 adds `host`: the agent host's protocol (`hostSessions.claim|report|ask|decision`), authenticated by the
+  agent-host credential only; like `auth` its operations are not commands.
 - Renames that make the spec pass its own rule:
 
 | Spec says | Becomes | Why |

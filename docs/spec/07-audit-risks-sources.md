@@ -152,6 +152,27 @@ Open questions:
     events there, with entity kind `agent_profile`
   - The default workspaces are created by the bootstrap as placeholders (an empty layout) that the web shell fills
     with its code-defined default layout on first open
+- [ ] Agent sessions (phase 1, wave 2) assumptions, confirm:
+  - Ending an interactive session is `agentSessions.cancel` with `{"end": true}` (the vocabulary has no end/close
+    verb); the session is `done`, `cancelled` only when it never started
+  - `agentSessions.accept|revert` need the session paused or ended; a paused one ends. Accepting a running session
+    would race the host's last commit
+  - The session token is minted when a host claims the session, not at `agentSessions.new`, and re-minted (the old
+    one revoked) when another host takes the session over; nothing stores it in plaintext
+  - What a claim hands the host is taken at most once: a host that crashes between claim and delivery loses those
+    messages (the user sends again); its sessions resume on the next host after 90 s of silence
+  - A message to a paused session resumes it unless it paused on its budget; read-only sessions take one message
+  - Every pause writes a note to NOTES.md on `main` as Cadence (R5 "writes a note"), the person's own pauses included
+  - Budgets: 10 M input+output tokens per session and 1 M per turn (cached reads not counted; mid-turn the host uses
+    the growth of the context window, which underestimates) — Cadence recommendations until measured
+  - The idle clock runs from the last user message (or the start) and only while no approval is pending and no turn
+    runs; waiting for a person never pauses
+  - An agent-permission approval shows its ACP request as the approval's `request` (method `ACP`, path
+    `session/request_permission`) so existing Approvals cards render it; `kind` and `permission` tell them apart
+  - Development without the agent-credentials volume uses the agents' default login under the host user's HOME and
+    no per-session users; the image always isolates
+  - claude-agent-acp raises a permission request even for MCP tools the rendered settings allow (A2); the preset
+    answers them without a person
 
 ## Sources
 

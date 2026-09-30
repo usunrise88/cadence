@@ -11,7 +11,7 @@ import { Chip, Field, InlineConfirm, SectionHeading, Table, Td, when } from "./u
 // or to registry read — the token is shown once, at creation — plus active browser sessions and agent session
 // tokens. Revoke is irreversible and confirms inline.
 
-const KIND_LABEL: Record<CredentialKind, string> = { session: "Session", api_key: "API key", agent: "Agent token", invitation: "Invitation", worker: "Worker" };
+const KIND_LABEL: Record<CredentialKind, string> = { session: "Session", api_key: "API key", agent: "Agent token", agent_host: "Agent host", invitation: "Invitation", worker: "Worker" };
 
 export function isActive(c: Credential, now = Date.now()): boolean {
   return !c.revokedAt && (!c.expiresAt || new Date(c.expiresAt).getTime() > now);

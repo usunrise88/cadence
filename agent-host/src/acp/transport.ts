@@ -10,6 +10,9 @@ export interface LaunchSpec {
   args: readonly string[];
   cwd: string;
   env: NodeJS.ProcessEnv;
+  // The Unix user the process runs as (the host must be root to switch).
+  uid?: number;
+  gid?: number;
 }
 
 // "in" = agent → client, "out" = client → agent.
@@ -49,6 +52,8 @@ export function launch(spec: LaunchSpec, tap?: MessageTap): AgentProcess {
     cwd: spec.cwd,
     env: spec.env,
     stdio: ["pipe", "pipe", "pipe"],
+    ...(spec.uid !== undefined ? { uid: spec.uid } : {}),
+    ...(spec.gid !== undefined ? { gid: spec.gid } : {}),
   });
   let stderr = "";
   child.stderr.setEncoding("utf8");

@@ -10,10 +10,11 @@ gen:           ## regenerate Go server stubs, MCP tool manifest, CLI table, TS c
 	cd control-plane && go tool oapi-codegen -config oapi-codegen.yaml ../api/openapi.yaml
 	cd control-plane && go run ./cmd/mcpgen
 	cd web && npx openapi-ts
+	cd agent-host && npx openapi-ts
 	cd control-plane && go run ./cmd/helpsync
 
 check-gen: gen ## CI: fail when generated files are not committed
-	git diff --exit-code -- control-plane/internal/api control-plane/internal/mcp control-plane/internal/cli control-plane/internal/help/content web/src/api \
+	git diff --exit-code -- control-plane/internal/api control-plane/internal/mcp control-plane/internal/cli control-plane/internal/help/content web/src/api agent-host/src/api \
 	  || (echo "generated files are stale: run make gen and commit" && exit 1)
 
 lint:          ## golangci-lint, eslint (panel, Dockview and Base UI rules), tsc, ruff, mypy --strict

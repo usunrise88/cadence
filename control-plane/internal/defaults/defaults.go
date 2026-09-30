@@ -97,6 +97,8 @@ type Budgets struct {
 	GPUHoursPerProjectPerDay           Param[float64] `yaml:"gpu_hours_per_project_per_day"`
 	AgentTokensPerProjectPerDay        Param[int64]   `yaml:"agent_tokens_per_project_per_day"`
 	AgentTurnsPerSession               Param[int]     `yaml:"agent_turns_per_session"`
+	AgentTokensPerSession              Param[int64]   `yaml:"agent_tokens_per_session"`
+	AgentTokensPerTurn                 Param[int64]   `yaml:"agent_tokens_per_turn"`
 	ManualTestGPUHoursPerProjectPerDay Param[float64] `yaml:"manual_test_gpu_hours_per_project_per_day"`
 }
 

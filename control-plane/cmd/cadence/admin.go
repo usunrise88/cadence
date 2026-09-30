@@ -22,6 +22,7 @@ import (
 const minPasswordLen = 12
 
 const adminUsage = `usage: cadence admin reset-password [--user NAME] [--password PASSWORD] [--disable-totp]
+       cadence admin host-token [--keep-others]
 
 Sets a user's password from the host shell and signs out all of that user's browser sessions. A lost admin
 password is reset this way, never by email (docs/spec/06-platform.md "Authentication and access").
@@ -29,13 +30,19 @@ Without --password the new password is read from the first line of standard inpu
 
   docker compose exec -T control-plane cadence admin reset-password < new-password.txt
 
---disable-totp also turns off the user's second factor (a lost phone). Needs DATABASE_URL.`
+--disable-totp also turns off the user's second factor (a lost phone). Needs DATABASE_URL.
+
+host-token prints a new agent host token (cah_…) for an agent host that does not share the control plane's
+CADENCE_HOST_TOKEN_FILE volume (another machine); every other host token is revoked unless --keep-others.`
 
 // admin runs the hand-written admin subcommands (R34).
 func admin(ctx context.Context, args []string, getenv func(string) string, stdin io.Reader, stdout io.Writer) error {
+	if len(args) > 0 && args[0] == "host-token" {
+		return hostToken(ctx, args[1:], getenv, stdout)
+	}
 	if len(args) == 0 || args[0] != "reset-password" {
 		_, _ = fmt.Fprintln(stdout, adminUsage)
-		return errors.New("unknown admin command; expected reset-password")
+		return errors.New("unknown admin command; expected reset-password or host-token")
 	}
 	fs := flag.NewFlagSet("reset-password", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
@@ -91,4 +98,37 @@ func onOff(b bool) string {
 		return "on"
 	}
 	return "off"
+}
+
+// hostToken issues an agent host token and prints it (shown once).
+func hostToken(ctx context.Context, args []string, getenv func(string) string, stdout io.Writer) error {
+	fs := flag.NewFlagSet("host-token", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	keep := fs.Bool("keep-others", false, "keep the other host tokens")
+	if err := fs.Parse(args); err != nil {
+		_, _ = fmt.Fprintln(stdout, adminUsage)
+		return fmt.Errorf("host-token: %w", err)
+	}
+	dsn := getenv("DATABASE_URL")
+	if dsn == "" {
+		return errors.New("DATABASE_URL is not set")
+	}
+	pool, err := storage.Open(ctx, dsn)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+	if _, err := storage.Migrate(ctx, pool, migrations.FS); err != nil {
+		return fmt.Errorf("migrate: %w", err)
+	}
+	var tok string
+	if err := pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
+		var err error
+		tok, _, err = credentials.NewHostToken(ctx, tx, credentials.HostName, !*keep)
+		return err
+	}); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintln(stdout, tok)
+	return err
 }

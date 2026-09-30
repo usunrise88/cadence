@@ -76,7 +76,7 @@ func TestRenderNeverWidens(t *testing.T) {
 		}
 		for _, op := range fixtureOps {
 			c, _ := p.ClassOf(op.Name, op.VerbClass)
-			if (c == "" || c == ClassForbidden) && allowed["mcp__cadence__"+op.Name] {
+			if (c == "" || c == ClassForbidden) && allowed[ClaudeMCPTool(op.Name)] {
 				t.Errorf("%s: %s is denied by the server but allowed in settings.json", name, op.Name)
 			}
 		}

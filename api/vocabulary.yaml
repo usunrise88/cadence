@@ -54,5 +54,6 @@ verbs:
   revoke:      { class: mutate, shape: action,          reversible: false, confirm: inline,   icon: KeyMinus }
 
 # Operations tagged with these tags keep <entity>.<verb> ids but are exempt from the vocabulary and never become
-# MCP tools (R1).
-exemptTags: [auth, me]
+# MCP tools (R1). `host` is the agent host's protocol (claim work, report, ask), authenticated by the agent-host
+# credential only; like `auth` its operations are not commands (no Idempotency-Key, If-Match or dryRun).
+exemptTags: [auth, me, host]

@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AdoptionsListData, AdoptionsListErrors, AdoptionsListResponses, AgentMessagesNewData, AgentMessagesNewErrors, AgentMessagesNewResponses, AgentModelsListData, AgentModelsListErrors, AgentModelsListResponses, AgentProfileEditData, AgentProfileEditErrors, AgentProfileEditResponses, AgentProfileGetData, AgentProfileGetErrors, AgentProfileGetResponses, AgentSessionsCancelData, AgentSessionsCancelErrors, AgentSessionsCancelResponses, AgentSessionsNewData, AgentSessionsNewErrors, AgentSessionsNewResponses, AliasesGetData, AliasesGetErrors, AliasesGetResponses, AliasesListData, AliasesListErrors, AliasesListResponses, AliasesSetData, AliasesSetErrors, AliasesSetResponses, ApprovalsApproveData, ApprovalsApproveErrors, ApprovalsApproveResponses, ApprovalsDenyData, ApprovalsDenyErrors, ApprovalsDenyResponses, ApprovalsGetData, ApprovalsGetErrors, ApprovalsGetResponses, ApprovalsListData, ApprovalsListErrors, ApprovalsListResponses, AuditListData, AuditListErrors, AuditListResponses, AuthGetData, AuthGetErrors, AuthGetResponses, AuthLoginData, AuthLoginErrors, AuthLoginResponses, AuthLogoutData, AuthLogoutErrors, AuthLogoutResponses, AuthSetupData, AuthSetupErrors, AuthSetupResponses, BaseModelsGetData, BaseModelsGetErrors, BaseModelsGetResponses, BaseModelsListData, BaseModelsListErrors, BaseModelsListResponses, BranchesAcceptData, BranchesAcceptErrors, BranchesAcceptResponses, BranchesGetData, BranchesGetErrors, BranchesGetResponses, BranchesListData, BranchesListErrors, BranchesListResponses, BranchesRevertData, BranchesRevertErrors, BranchesRevertResponses, CollectionsGetData, CollectionsGetErrors, CollectionsGetResponses, CollectionsListData, CollectionsListErrors, CollectionsListResponses, ComputeEditData, ComputeEditErrors, ComputeEditResponses, ComputeGetData, ComputeGetErrors, ComputeGetResponses, ComputeListData, ComputeListErrors, ComputeListResponses, CredentialsListData, CredentialsListErrors, CredentialsListResponses, CredentialsNewData, CredentialsNewErrors, CredentialsNewResponses, CredentialsRevokeData, CredentialsRevokeErrors, CredentialsRevokeResponses, DatasetsGetData, DatasetsGetErrors, DatasetsGetResponses, DatasetsListData, DatasetsListErrors, DatasetsListResponses, DefaultsGetData, DefaultsGetErrors, DefaultsGetResponses, DraftsAcceptData, DraftsAcceptErrors, DraftsAcceptResponses, DraftsGetData, DraftsGetErrors, DraftsGetResponses, DraftsListData, DraftsListErrors, DraftsListResponses, DraftsRevertData, DraftsRevertErrors, DraftsRevertResponses, EventsListData, EventsListErrors, EventsListResponses, HelpGetData, HelpGetErrors, HelpGetResponses, HelpSearchData, HelpSearchErrors, HelpSearchResponses, JobsCancelData, JobsCancelErrors, JobsCancelResponses, JobsGetData, JobsGetErrors, JobsGetResponses, JobsListData, JobsListErrors, JobsListResponses, JobsWaitData, JobsWaitErrors, JobsWaitResponses, MeGetData, MeGetErrors, MeGetResponses, MixesEditData, MixesEditErrors, MixesEditResponses, MixesGetData, MixesGetErrors, MixesGetResponses, MixesListData, MixesListErrors, MixesListResponses, MixesNewData, MixesNewErrors, MixesNewResponses, MixesPreviewData, MixesPreviewErrors, MixesPreviewResponses, MountsListData, MountsListErrors, MountsListResponses, MountsNewData, MountsNewErrors, MountsNewResponses, PoliciesEditData, PoliciesEditErrors, PoliciesEditResponses, PoliciesGetData, PoliciesGetErrors, PoliciesGetResponses, ProjectsAdoptData, ProjectsAdoptErrors, ProjectsAdoptResponses, ProjectsArchiveData, ProjectsArchiveErrors, ProjectsArchiveResponses, ProjectsEditData, ProjectsEditErrors, ProjectsEditResponses, ProjectsGetData, ProjectsGetErrors, ProjectsGetResponses, ProjectsListData, ProjectsListErrors, ProjectsListResponses, ProjectsNewData, ProjectsNewErrors, ProjectsNewResponses, ProjectsNoteData, ProjectsNoteErrors, ProjectsNoteResponses, ProjectsSearchData, ProjectsSearchErrors, ProjectsSearchResponses, ProjectsSyncData, ProjectsSyncErrors, ProjectsSyncResponses, RecipesGetData, RecipesGetErrors, RecipesGetResponses, RecipesListData, RecipesListErrors, RecipesListResponses, RegistrySearchData, RegistrySearchErrors, RegistrySearchResponses, RunsNewData, RunsNewErrors, RunsNewResponses, SecretsListData, SecretsListErrors, SecretsListResponses, SecretsNewData, SecretsNewErrors, SecretsNewResponses, TemplatesGetData, TemplatesGetErrors, TemplatesGetResponses, TemplatesListData, TemplatesListErrors, TemplatesListResponses, TotpConfirmData, TotpConfirmErrors, TotpConfirmResponses, TotpDisableData, TotpDisableErrors, TotpDisableResponses, TotpEnrollData, TotpEnrollErrors, TotpEnrollResponses, ViewsGetData, ViewsGetErrors, ViewsGetResponses, ViewsListData, ViewsListErrors, ViewsListResponses, ViewsSetData, ViewsSetErrors, ViewsSetResponses, WorkspacesGetData, WorkspacesGetErrors, WorkspacesGetResponses, WorkspacesListData, WorkspacesListErrors, WorkspacesListResponses, WorkspacesSetData, WorkspacesSetErrors, WorkspacesSetResponses } from './types.gen';
+import type { AdoptionsListData, AdoptionsListErrors, AdoptionsListResponses, AgentMessagesListData, AgentMessagesListErrors, AgentMessagesListResponses, AgentMessagesNewData, AgentMessagesNewErrors, AgentMessagesNewResponses, AgentModelsListData, AgentModelsListErrors, AgentModelsListResponses, AgentProfileEditData, AgentProfileEditErrors, AgentProfileEditResponses, AgentProfileGetData, AgentProfileGetErrors, AgentProfileGetResponses, AgentSessionsAcceptData, AgentSessionsAcceptErrors, AgentSessionsAcceptResponses, AgentSessionsCancelData, AgentSessionsCancelErrors, AgentSessionsCancelResponses, AgentSessionsGetData, AgentSessionsGetErrors, AgentSessionsGetResponses, AgentSessionsListData, AgentSessionsListErrors, AgentSessionsListResponses, AgentSessionsNewData, AgentSessionsNewErrors, AgentSessionsNewResponses, AgentSessionsPauseData, AgentSessionsPauseErrors, AgentSessionsPauseResponses, AgentSessionsResumeData, AgentSessionsResumeErrors, AgentSessionsResumeResponses, AgentSessionsRevertData, AgentSessionsRevertErrors, AgentSessionsRevertResponses, AliasesGetData, AliasesGetErrors, AliasesGetResponses, AliasesListData, AliasesListErrors, AliasesListResponses, AliasesSetData, AliasesSetErrors, AliasesSetResponses, ApprovalsApproveData, ApprovalsApproveErrors, ApprovalsApproveResponses, ApprovalsDenyData, ApprovalsDenyErrors, ApprovalsDenyResponses, ApprovalsGetData, ApprovalsGetErrors, ApprovalsGetResponses, ApprovalsListData, ApprovalsListErrors, ApprovalsListResponses, AuditListData, AuditListErrors, AuditListResponses, AuthGetData, AuthGetErrors, AuthGetResponses, AuthLoginData, AuthLoginErrors, AuthLoginResponses, AuthLogoutData, AuthLogoutErrors, AuthLogoutResponses, AuthSetupData, AuthSetupErrors, AuthSetupResponses, BaseModelsGetData, BaseModelsGetErrors, BaseModelsGetResponses, BaseModelsListData, BaseModelsListErrors, BaseModelsListResponses, BranchesAcceptData, BranchesAcceptErrors, BranchesAcceptResponses, BranchesGetData, BranchesGetErrors, BranchesGetResponses, BranchesListData, BranchesListErrors, BranchesListResponses, BranchesRevertData, BranchesRevertErrors, BranchesRevertResponses, CollectionsGetData, CollectionsGetErrors, CollectionsGetResponses, CollectionsListData, CollectionsListErrors, CollectionsListResponses, ComputeEditData, ComputeEditErrors, ComputeEditResponses, ComputeGetData, ComputeGetErrors, ComputeGetResponses, ComputeListData, ComputeListErrors, ComputeListResponses, CredentialsListData, CredentialsListErrors, CredentialsListResponses, CredentialsNewData, CredentialsNewErrors, CredentialsNewResponses, CredentialsRevokeData, CredentialsRevokeErrors, CredentialsRevokeResponses, DatasetsGetData, DatasetsGetErrors, DatasetsGetResponses, DatasetsListData, DatasetsListErrors, DatasetsListResponses, DefaultsGetData, DefaultsGetErrors, DefaultsGetResponses, DraftsAcceptData, DraftsAcceptErrors, DraftsAcceptResponses, DraftsGetData, DraftsGetErrors, DraftsGetResponses, DraftsListData, DraftsListErrors, DraftsListResponses, DraftsRevertData, DraftsRevertErrors, DraftsRevertResponses, EventsListData, EventsListErrors, EventsListResponses, HelpGetData, HelpGetErrors, HelpGetResponses, HelpSearchData, HelpSearchErrors, HelpSearchResponses, HostSessionsAskData, HostSessionsAskErrors, HostSessionsAskResponses, HostSessionsClaimData, HostSessionsClaimErrors, HostSessionsClaimResponses, HostSessionsDecisionData, HostSessionsDecisionErrors, HostSessionsDecisionResponses, HostSessionsReportData, HostSessionsReportErrors, HostSessionsReportResponses, JobsCancelData, JobsCancelErrors, JobsCancelResponses, JobsGetData, JobsGetErrors, JobsGetResponses, JobsListData, JobsListErrors, JobsListResponses, JobsWaitData, JobsWaitErrors, JobsWaitResponses, MeGetData, MeGetErrors, MeGetResponses, MixesEditData, MixesEditErrors, MixesEditResponses, MixesGetData, MixesGetErrors, MixesGetResponses, MixesListData, MixesListErrors, MixesListResponses, MixesNewData, MixesNewErrors, MixesNewResponses, MixesPreviewData, MixesPreviewErrors, MixesPreviewResponses, MountsListData, MountsListErrors, MountsListResponses, MountsNewData, MountsNewErrors, MountsNewResponses, PoliciesEditData, PoliciesEditErrors, PoliciesEditResponses, PoliciesGetData, PoliciesGetErrors, PoliciesGetResponses, ProjectsAdoptData, ProjectsAdoptErrors, ProjectsAdoptResponses, ProjectsArchiveData, ProjectsArchiveErrors, ProjectsArchiveResponses, ProjectsEditData, ProjectsEditErrors, ProjectsEditResponses, ProjectsGetData, ProjectsGetErrors, ProjectsGetResponses, ProjectsListData, ProjectsListErrors, ProjectsListResponses, ProjectsNewData, ProjectsNewErrors, ProjectsNewResponses, ProjectsNoteData, ProjectsNoteErrors, ProjectsNoteResponses, ProjectsSearchData, ProjectsSearchErrors, ProjectsSearchResponses, ProjectsSyncData, ProjectsSyncErrors, ProjectsSyncResponses, RecipesGetData, RecipesGetErrors, RecipesGetResponses, RecipesListData, RecipesListErrors, RecipesListResponses, RegistrySearchData, RegistrySearchErrors, RegistrySearchResponses, RunsNewData, RunsNewErrors, RunsNewResponses, SecretsListData, SecretsListErrors, SecretsListResponses, SecretsNewData, SecretsNewErrors, SecretsNewResponses, TemplatesGetData, TemplatesGetErrors, TemplatesGetResponses, TemplatesListData, TemplatesListErrors, TemplatesListResponses, TotpConfirmData, TotpConfirmErrors, TotpConfirmResponses, TotpDisableData, TotpDisableErrors, TotpDisableResponses, TotpEnrollData, TotpEnrollErrors, TotpEnrollResponses, ViewsGetData, ViewsGetErrors, ViewsGetResponses, ViewsListData, ViewsListErrors, ViewsListResponses, ViewsSetData, ViewsSetErrors, ViewsSetResponses, WorkspacesGetData, WorkspacesGetErrors, WorkspacesGetResponses, WorkspacesListData, WorkspacesListErrors, WorkspacesListResponses, WorkspacesSetData, WorkspacesSetErrors, WorkspacesSetResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -563,7 +563,12 @@ export const draftsAccept = <ThrowOnError extends boolean = false>(options: Opti
 export const draftsRevert = <ThrowOnError extends boolean = false>(options: Options<DraftsRevertData, ThrowOnError>): RequestResult<DraftsRevertResponses, DraftsRevertErrors, ThrowOnError> => (options.client ?? client).post<DraftsRevertResponses, DraftsRevertErrors, ThrowOnError>({ url: '/drafts/{id}:revert', ...options });
 
 /**
- * Launch Claude Code or opencode in a project worktree
+ * The project's agent sessions, live ones first, then the most recently changed
+ */
+export const agentSessionsList = <ThrowOnError extends boolean = false>(options: Options<AgentSessionsListData, ThrowOnError>): RequestResult<AgentSessionsListResponses, AgentSessionsListErrors, ThrowOnError> => (options.client ?? client).get<AgentSessionsListResponses, AgentSessionsListErrors, ThrowOnError>({ url: '/projects/{p}/agent-sessions', ...options });
+
+/**
+ * Start Claude Code or opencode on its own branch session/<id> of the project repository
  */
 export const agentSessionsNew = <ThrowOnError extends boolean = false>(options: Options<AgentSessionsNewData, ThrowOnError>): RequestResult<AgentSessionsNewResponses, AgentSessionsNewErrors, ThrowOnError> => (options.client ?? client).post<AgentSessionsNewResponses, AgentSessionsNewErrors, ThrowOnError>({
     url: '/projects/{p}/agent-sessions',
@@ -575,12 +580,56 @@ export const agentSessionsNew = <ThrowOnError extends boolean = false>(options: 
 });
 
 /**
- * Stop the session's current turn
+ * Get an agent session with its state, budget and use, branch and merge state
  */
-export const agentSessionsCancel = <ThrowOnError extends boolean = false>(options: Options<AgentSessionsCancelData, ThrowOnError>): RequestResult<AgentSessionsCancelResponses, AgentSessionsCancelErrors, ThrowOnError> => (options.client ?? client).post<AgentSessionsCancelResponses, AgentSessionsCancelErrors, ThrowOnError>({ url: '/agent-sessions/{id}:cancel', ...options });
+export const agentSessionsGet = <ThrowOnError extends boolean = false>(options: Options<AgentSessionsGetData, ThrowOnError>): RequestResult<AgentSessionsGetResponses, AgentSessionsGetErrors, ThrowOnError> => (options.client ?? client).get<AgentSessionsGetResponses, AgentSessionsGetErrors, ThrowOnError>({ url: '/agent-sessions/{id}', ...options });
 
 /**
- * User message with entity references; updates arrive on agent.session.{id}
+ * Stop the session's current turn; with end, also end the session
+ */
+export const agentSessionsCancel = <ThrowOnError extends boolean = false>(options: Options<AgentSessionsCancelData, ThrowOnError>): RequestResult<AgentSessionsCancelResponses, AgentSessionsCancelErrors, ThrowOnError> => (options.client ?? client).post<AgentSessionsCancelResponses, AgentSessionsCancelErrors, ThrowOnError>({
+    url: '/agent-sessions/{id}:cancel',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Pause a session; the current turn stops, the worktree is committed and the agent process ends
+ */
+export const agentSessionsPause = <ThrowOnError extends boolean = false>(options: Options<AgentSessionsPauseData, ThrowOnError>): RequestResult<AgentSessionsPauseResponses, AgentSessionsPauseErrors, ThrowOnError> => (options.client ?? client).post<AgentSessionsPauseResponses, AgentSessionsPauseErrors, ThrowOnError>({ url: '/agent-sessions/{id}:pause', ...options });
+
+/**
+ * Resume a paused session (ACP session/resume, else a new ACP session with a transcript summary)
+ */
+export const agentSessionsResume = <ThrowOnError extends boolean = false>(options: Options<AgentSessionsResumeData, ThrowOnError>): RequestResult<AgentSessionsResumeResponses, AgentSessionsResumeErrors, ThrowOnError> => (options.client ?? client).post<AgentSessionsResumeResponses, AgentSessionsResumeErrors, ThrowOnError>({
+    url: '/agent-sessions/{id}:resume',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Merge the session branch into main as a whole and end the session
+ */
+export const agentSessionsAccept = <ThrowOnError extends boolean = false>(options: Options<AgentSessionsAcceptData, ThrowOnError>): RequestResult<AgentSessionsAcceptResponses, AgentSessionsAcceptErrors, ThrowOnError> => (options.client ?? client).post<AgentSessionsAcceptResponses, AgentSessionsAcceptErrors, ThrowOnError>({ url: '/agent-sessions/{id}:accept', ...options });
+
+/**
+ * Discard the session branch as a whole and end the session
+ */
+export const agentSessionsRevert = <ThrowOnError extends boolean = false>(options: Options<AgentSessionsRevertData, ThrowOnError>): RequestResult<AgentSessionsRevertResponses, AgentSessionsRevertErrors, ThrowOnError> => (options.client ?? client).post<AgentSessionsRevertResponses, AgentSessionsRevertErrors, ThrowOnError>({ url: '/agent-sessions/{id}:revert', ...options });
+
+/**
+ * The session transcript in order, one page after a sequence number
+ */
+export const agentMessagesList = <ThrowOnError extends boolean = false>(options: Options<AgentMessagesListData, ThrowOnError>): RequestResult<AgentMessagesListResponses, AgentMessagesListErrors, ThrowOnError> => (options.client ?? client).get<AgentMessagesListResponses, AgentMessagesListErrors, ThrowOnError>({ url: '/agent-sessions/{id}/agent-messages', ...options });
+
+/**
+ * Send a user message with entity references; the agent answers on agent.session.{id}
  */
 export const agentMessagesNew = <ThrowOnError extends boolean = false>(options: Options<AgentMessagesNewData, ThrowOnError>): RequestResult<AgentMessagesNewResponses, AgentMessagesNewErrors, ThrowOnError> => (options.client ?? client).post<AgentMessagesNewResponses, AgentMessagesNewErrors, ThrowOnError>({
     url: '/agent-sessions/{id}/agent-messages',
@@ -590,6 +639,47 @@ export const agentMessagesNew = <ThrowOnError extends boolean = false>(options: 
         ...options.headers
     }
 });
+
+/**
+ * Long-poll for work — sessions to start, messages to deliver, controls and permission decisions
+ */
+export const hostSessionsClaim = <ThrowOnError extends boolean = false>(options: Options<HostSessionsClaimData, ThrowOnError>): RequestResult<HostSessionsClaimResponses, HostSessionsClaimErrors, ThrowOnError> => (options.client ?? client).post<HostSessionsClaimResponses, HostSessionsClaimErrors, ThrowOnError>({
+    url: '/host-sessions:claim',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Post a batch of transcript entries, the session state, usage and the ACP session id
+ */
+export const hostSessionsReport = <ThrowOnError extends boolean = false>(options: Options<HostSessionsReportData, ThrowOnError>): RequestResult<HostSessionsReportResponses, HostSessionsReportErrors, ThrowOnError> => (options.client ?? client).post<HostSessionsReportResponses, HostSessionsReportErrors, ThrowOnError>({
+    url: '/host-sessions/{id}:report',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Raise an ACP permission request; the preset answers it or it becomes an agent-permission approval
+ */
+export const hostSessionsAsk = <ThrowOnError extends boolean = false>(options: Options<HostSessionsAskData, ThrowOnError>): RequestResult<HostSessionsAskResponses, HostSessionsAskErrors, ThrowOnError> => (options.client ?? client).post<HostSessionsAskResponses, HostSessionsAskErrors, ThrowOnError>({
+    url: '/host-sessions/{id}:ask',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Read (or wait for) the decision on an agent-permission approval
+ */
+export const hostSessionsDecision = <ThrowOnError extends boolean = false>(options: Options<HostSessionsDecisionData, ThrowOnError>): RequestResult<HostSessionsDecisionResponses, HostSessionsDecisionErrors, ThrowOnError> => (options.client ?? client).get<HostSessionsDecisionResponses, HostSessionsDecisionErrors, ThrowOnError>({ url: '/host-sessions/{id}:decision', ...options });
 
 /**
  * Registered mounts and their health

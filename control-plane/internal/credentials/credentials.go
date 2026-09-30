@@ -31,6 +31,7 @@ const (
 	KindSession    = "session"
 	KindAPIKey     = "api_key"
 	KindAgent      = "agent"
+	KindAgentHost  = "agent_host"
 	KindInvitation = "invitation"
 	KindWorker     = "worker"
 )

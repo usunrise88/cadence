@@ -292,6 +292,11 @@ func (c *Contract) checkCommand(o *Operation, sh string, fail func(*Operation, s
 		// browser session is not an entity with a revision (docs/spec/06-platform.md "Authentication and access").
 		return
 	}
+	if hasTag(o, "host") && o.Exempt {
+		// The agent host's protocol is not commands either: a report upserts entries under keys the host chose, so
+		// a retry is idempotent by construction, and nothing a host posts is dry-run or based on a revision.
+		return
+	}
 	ref, hasKey := o.paramRef("header", "Idempotency-Key")
 	_, hasDry := o.paramRef("query", "dryRun")
 	ifRef, hasIf := o.paramRef("header", "If-Match")

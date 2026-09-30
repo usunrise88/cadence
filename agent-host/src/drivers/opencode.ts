@@ -7,8 +7,12 @@
 
 import type * as acp from "@agentclientprotocol/sdk";
 import { existsSync } from "node:fs";
+import { chmod, mkdir, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { LaunchSpec } from "../acp/transport.ts";
+import { copyIfPresent, runInteractive } from "./home.ts";
 import { defaultReading, isRecord } from "./normalize.ts";
 import type { Driver, LaunchOptions, RawToolCall, ToolReading } from "./types.ts";
 
@@ -82,10 +86,39 @@ export function makeOpencodeDriver(mcpServerNames: readonly string[] = ["cadence
     name: "opencode",
 
     launch(opts: LaunchOptions): LaunchSpec {
-      const env: NodeJS.ProcessEnv = { ...process.env, ...opts.env };
+      const env: NodeJS.ProcessEnv = { ...(opts.baseEnv ?? process.env), ...opts.env };
       if (opts.model) env.OPENCODE_CONFIG_CONTENT = inlineConfig(env.OPENCODE_CONFIG_CONTENT, opts.model);
       const cmd = opts.command ?? { command: binary(), args: ["acp", "--cwd", opts.cwd] };
       return { command: cmd.command, args: cmd.args, cwd: opts.cwd, env };
+    },
+
+    // The agent-credentials volume holds `opencode/auth.json` (what `opencode auth login` wrote: the MiniMax Token
+    // Plan key, R6) and optionally `opencode/opencode.json` (provider settings); they go to the session's XDG data
+    // and config directories, where opencode looks for them.
+    async prepareHome(home: string, credentials: string | undefined): Promise<NodeJS.ProcessEnv> {
+      if (!credentials) return {};
+      const src = join(credentials, "opencode");
+      await copyIfPresent(join(src, "auth.json"), join(home, ".local", "share", "opencode", "auth.json"));
+      await copyIfPresent(join(src, "opencode.json"), join(home, ".config", "opencode", "opencode.json"));
+      return {};
+    },
+
+    // `opencode auth login` (choose the provider — MiniMax for the Token Plan, R6 — and paste its key) writes
+    // auth.json under XDG_DATA_HOME; it is stored as opencode/auth.json.
+    async login(credentials: string): Promise<void> {
+      const dir = join(credentials, "opencode");
+      await mkdir(dir, { recursive: true, mode: 0o700 });
+      const scratch = await mkdtemp(join(tmpdir(), "opencode-login-"));
+      try {
+        console.log("Running `opencode auth login`: choose the provider (MiniMax for the Token Plan) and paste its key.");
+        runInteractive(binary(), ["auth", "login"], { ...process.env, HOME: scratch, XDG_DATA_HOME: scratch });
+        const auth = join(scratch, "opencode", "auth.json");
+        if (!(await copyIfPresent(auth, join(dir, "auth.json")))) throw new Error("opencode wrote no auth.json; nothing was saved");
+        await chmod(join(dir, "auth.json"), 0o600);
+        console.log(`Saved ${join(dir, "auth.json")}; opencode sessions use it from their next start.`);
+      } finally {
+        await rm(scratch, { recursive: true, force: true });
+      }
     },
 
     readTool(call: RawToolCall): ToolReading {

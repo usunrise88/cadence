@@ -12,8 +12,10 @@ The help entity's own verbs read "cadence help get --id <article>" and "cadence 
 
 Entities:
   adoptions      list
+  agentMessages  list new
   agentModels    list
   agentProfile   edit get
+  agentSessions  accept cancel get list new pause resume revert
   aliases        get list set
   approvals      approve deny get list
   audit          list

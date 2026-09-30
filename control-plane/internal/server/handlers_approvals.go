@@ -104,14 +104,20 @@ func (s *Server) ApprovalsApprove(ctx context.Context, req api.ApprovalsApproveR
 		if cmd.DryRun { // nothing replays in a dry run: answer the approval as it stands
 			return approvalResult(a, nil)
 		}
-		result, err := s.replayApproved(ctx, tx, a)
-		if err != nil {
-			return commands.Result{}, nil, err
+		var result *approvals.Result
+		if a.Kind != approvals.KindAgentPermission { // an agent permission is answered to the agent, never replayed
+			if result, err = s.replayApproved(ctx, tx, a); err != nil {
+				return commands.Result{}, nil, err
+			}
 		}
 		a, drafts, err := approvals.Decide(ctx, tx, a, approvals.Decision{
 			By: cmd.Actor, Approve: true, Grant: grant, Note: note, Result: result,
 		})
-		return approvalResult(a, drafts, err)
+		if err != nil {
+			return commands.Result{}, nil, err
+		}
+		more, err := s.sessions.ApprovalDecided(ctx, tx, a)
+		return approvalResult(a, append(drafts, more...), err)
 	})
 	if err != nil {
 		return nil, err
@@ -146,7 +152,11 @@ func (s *Server) ApprovalsDeny(ctx context.Context, req api.ApprovalsDenyRequest
 			return commands.Result{}, nil, err
 		}
 		a, drafts, err := approvals.Decide(ctx, tx, a, approvals.Decision{By: cmd.Actor, Note: note})
-		return approvalResult(a, drafts, err)
+		if err != nil {
+			return commands.Result{}, nil, err
+		}
+		more, err := s.sessions.ApprovalDecided(ctx, tx, a)
+		return approvalResult(a, append(drafts, more...), err)
 	})
 	if err != nil {
 		return nil, err

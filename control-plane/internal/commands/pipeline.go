@@ -81,7 +81,16 @@ type Pipeline struct {
 	log      *slog.Logger
 	commands *prometheus.CounterVec // labels: operation, outcome
 	policy   *policy.Engine
+	onGate   GateHook
 }
+
+// GateHook runs in the transaction of a gated command, right after its approval is stored, with the agent tool
+// call behind it; its events join the command's. Agent sessions use it to show the approval in the transcript and
+// to wait for it (waiting_approval).
+type GateHook func(ctx context.Context, tx pgx.Tx, a approvals.Approval, toolCallID string) ([]events.Draft, error)
+
+// SetGateHook installs h; call it before the pipeline serves.
+func (p *Pipeline) SetGateHook(h GateHook) { p.onGate = h }
 
 // NewPipeline returns a pipeline that asks engine about every command; commands counts runs by operation and
 // outcome.
@@ -270,6 +279,13 @@ func (p *Pipeline) gate(ctx context.Context, tx pgx.Tx, cmd Command, id string, 
 	})
 	if err != nil {
 		return Response{}, outcomeOf(err), err
+	}
+	if p.onGate != nil {
+		more, err := p.onGate(ctx, tx, a, tr.toolCallID)
+		if err != nil {
+			return Response{}, outcomeOf(err), err
+		}
+		drafts = append(drafts, more...)
 	}
 	resp, err := render(Result{Status: http.StatusAccepted, Body: map[string]string{"approvalId": a.ID}}, id, false)
 	if err != nil {

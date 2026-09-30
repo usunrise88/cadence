@@ -14,6 +14,11 @@ export interface LaunchOptions {
   cwd: string;
   // Extra environment for the agent process (e.g. a per-session CLAUDE_CONFIG_DIR, XDG dirs for opencode).
   env?: NodeJS.ProcessEnv;
+  // The environment the agent starts from; process.env when absent. The session manager passes a clean one so
+  // nothing of the host's own environment (its token, its HOME) reaches an agent.
+  baseEnv?: NodeJS.ProcessEnv;
+  // Run the agent as this Unix user (R3: one user per session); the host runs as root to switch.
+  user?: { uid: number; gid: number };
   // Replaces the agent command, e.g. a recorded-transcript replayer in tests.
   command?: { command: string; args: readonly string[] };
   // Agent model id in the driver's own naming ("opencode/big-pickle", "claude-sonnet-…"); undefined = agent default.
@@ -120,6 +125,11 @@ export interface Driver {
   // `_meta` for session/new, load and resume (agent options that ACP has no field for).
   sessionMeta?(opts: LaunchOptions): Record<string, unknown> | undefined;
   readTool(call: RawToolCall): ToolReading;
+  // Fills a session's private HOME with the agent's own login from the agent-credentials volume (R3) and returns
+  // the environment the agent finds it by. Without a volume (development) the agent uses its default login.
+  prepareHome?(home: string, credentials: string | undefined): Promise<NodeJS.ProcessEnv>;
+  // Logs the agent in once and stores what prepareHome copies, under the agent-credentials volume (interactive).
+  login?(credentials: string): Promise<void>;
 }
 
 // Host answer to a permission request. `select` names an option kind; the host maps it to the agent's option id.

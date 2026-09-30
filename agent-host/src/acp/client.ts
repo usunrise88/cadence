@@ -6,7 +6,7 @@
 // offer terminals: agents run shell commands themselves, inside their own sandbox.
 
 import * as acp from "@agentclientprotocol/sdk";
-import { OutsideWorkspaceError, WorkspaceFs } from "./fs.ts";
+import { type FileOwner, OutsideWorkspaceError, WorkspaceFs } from "./fs.ts";
 
 export interface ClientHandlers {
   onUpdate: (notification: acp.SessionNotification) => void;
@@ -14,6 +14,8 @@ export interface ClientHandlers {
     request: acp.RequestPermissionRequest,
     signal: AbortSignal,
   ) => Promise<acp.RequestPermissionResponse>;
+  // Files the client writes for the agent belong to this user (the agent's session user).
+  fileOwner?: FileOwner;
 }
 
 export const CLIENT_INFO = { name: "cadence-agent-host", title: "Cadence agent host", version: "0.1.0" } as const;
@@ -57,7 +59,7 @@ export class AcpClient {
   }
 
   async newSession(req: acp.NewSessionRequest): Promise<acp.NewSessionResponse> {
-    const fs = await WorkspaceFs.create([req.cwd, ...(req.additionalDirectories ?? [])]);
+    const fs = await WorkspaceFs.create([req.cwd, ...(req.additionalDirectories ?? [])], this.handlers.fileOwner);
     const res = await this.conn.agent.request(acp.methods.agent.session.new, req);
     this.fsBySession.set(res.sessionId, fs);
     return res;
@@ -65,13 +67,13 @@ export class AcpClient {
 
   // session/load replays the history as session/update notifications before it returns.
   async loadSession(req: acp.LoadSessionRequest): Promise<acp.LoadSessionResponse> {
-    this.fsBySession.set(req.sessionId, await WorkspaceFs.create([req.cwd, ...(req.additionalDirectories ?? [])]));
+    this.fsBySession.set(req.sessionId, await WorkspaceFs.create([req.cwd, ...(req.additionalDirectories ?? [])], this.handlers.fileOwner));
     return this.conn.agent.request(acp.methods.agent.session.load, req);
   }
 
   // session/resume restores the context without replaying it.
   async resumeSession(req: acp.ResumeSessionRequest): Promise<acp.ResumeSessionResponse> {
-    this.fsBySession.set(req.sessionId, await WorkspaceFs.create([req.cwd, ...(req.additionalDirectories ?? [])]));
+    this.fsBySession.set(req.sessionId, await WorkspaceFs.create([req.cwd, ...(req.additionalDirectories ?? [])], this.handlers.fileOwner));
     return this.conn.agent.request(acp.methods.agent.session.resume, req);
   }
 

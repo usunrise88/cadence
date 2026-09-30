@@ -44,6 +44,13 @@ const (
 	StateDenied   = "denied"
 )
 
+// Kinds: a gated command is replayed when approved; an agent permission (an ACP permission request of an agent
+// session) is answered to the agent host and never replayed.
+const (
+	KindCommand         = "command"
+	KindAgentPermission = "agent_permission"
+)
+
 // Grants: how far an approval reaches.
 const (
 	GrantOnce    = "once"
@@ -90,6 +97,9 @@ type Approval struct {
 	Note      string
 	Expired   bool
 	Result    *Result
+	// Kind is KindCommand or KindAgentPermission; Permission describes what the agent asked (agent permissions).
+	Kind       string
+	Permission map[string]any
 }
 
 // Result is what the replayed request answered.
@@ -148,6 +158,9 @@ type NewInput struct {
 	Decision  policy.Decision
 	Request   Request
 	Now       time.Time
+	// Kind is KindCommand (the default) or KindAgentPermission with Permission.
+	Kind       string
+	Permission map[string]any
 }
 
 // Create stores a pending approval and returns it with the events to emit.
@@ -159,18 +172,21 @@ func Create(ctx context.Context, tx pgx.Tx, in NewInput) (Approval, []events.Dra
 		ID: "apr_" + uuid.Must(uuid.NewV7()).String(), State: StatePending, Operation: in.Operation,
 		ProjectID: in.ProjectID, Actor: in.Actor, Scope: in.Scope, Rule: in.Decision.Rule, Reason: in.Decision.Reason,
 		Estimate: in.Decision.Estimate, Remaining: in.Decision.RemainingGPUHours, Request: in.Request, Rev: 1,
-		CreatedAt: in.Now, ExpiresAt: in.Now.Add(TTL),
+		CreatedAt: in.Now, ExpiresAt: in.Now.Add(TTL), Kind: in.Kind, Permission: in.Permission,
+	}
+	if a.Kind == "" {
+		a.Kind = KindCommand
 	}
 	est, err := estimateJSON(a.Estimate, a.Remaining)
 	if err != nil {
 		return Approval{}, nil, err
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO approvals (id, operation, project_id, actor, actor_id, session_id, scope,
-		rule, reason, estimate, method, path, query, headers, body, created_at, expires_at)
-		VALUES ($1, $2, NULLIF($3, ''), $4, $5, NULLIF($6, ''), $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
+		rule, reason, estimate, method, path, query, headers, body, created_at, expires_at, kind, permission)
+		VALUES ($1, $2, NULLIF($3, ''), $4, $5, NULLIF($6, ''), $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
 		a.ID, a.Operation, a.ProjectID, a.Actor, a.Actor.ID, a.Actor.SessionID, a.Scope, a.Rule, a.Reason, est,
 		a.Request.Method, a.Request.Path, a.Request.Query, a.Request.Header, a.Request.Body, a.CreatedAt,
-		a.ExpiresAt); err != nil {
+		a.ExpiresAt, a.Kind, a.Permission); err != nil {
 		return Approval{}, nil, fmt.Errorf("store approval: %w", err)
 	}
 	return a, drafts(a, EventRequested), nil
@@ -194,7 +210,7 @@ func estimateJSON(e *policy.Estimate, remaining *float64) ([]byte, error) {
 
 const cols = `id, state, operation, coalesce(project_id, ''), actor, scope, rule, reason, estimate, method, path, query,
 	headers, body, rev, created_at, expires_at, decided_at, decided_by, coalesce(grant_scope, ''), coalesce(note, ''),
-	expired, result_status, result_body, coalesce(result_command_id, '')`
+	expired, result_status, result_body, coalesce(result_command_id, ''), kind, permission`
 
 func scan(row pgx.CollectableRow) (Approval, error) {
 	var (
@@ -206,7 +222,8 @@ func scan(row pgx.CollectableRow) (Approval, error) {
 	)
 	err := row.Scan(&a.ID, &a.State, &a.Operation, &a.ProjectID, &a.Actor, &a.Scope, &a.Rule, &a.Reason, &est,
 		&a.Request.Method, &a.Request.Path, &a.Request.Query, &a.Request.Header, &a.Request.Body, &a.Rev,
-		&a.CreatedAt, &a.ExpiresAt, &a.DecidedAt, &a.DecidedBy, &a.Grant, &a.Note, &a.Expired, &status, &body, &cmdID)
+		&a.CreatedAt, &a.ExpiresAt, &a.DecidedAt, &a.DecidedBy, &a.Grant, &a.Note, &a.Expired, &status, &body, &cmdID,
+		&a.Kind, &a.Permission)
 	if err != nil {
 		return Approval{}, err
 	}
@@ -401,23 +418,25 @@ func drafts(a Approval, typ string) []events.Draft {
 
 // View is an approval's JSON form: the contract's Approval.
 type View struct {
-	ID        string        `json:"id"`
-	State     string        `json:"state"`
-	Scope     string        `json:"scope"`
-	Operation string        `json:"operation"`
-	ProjectID string        `json:"projectId,omitempty"`
-	Actor     auth.Actor    `json:"actor"`
-	Rule      string        `json:"rule"`
-	Reason    string        `json:"reason"`
-	Estimate  *estimateRow  `json:"estimate,omitempty"`
-	Request   RequestView   `json:"request"`
-	Rev       int           `json:"rev"`
-	CreatedAt time.Time     `json:"createdAt"`
-	ExpiresAt time.Time     `json:"expiresAt"`
-	DecidedAt *time.Time    `json:"decidedAt,omitempty"`
-	DecidedBy *auth.Actor   `json:"decidedBy,omitempty"`
-	Decision  *DecisionView `json:"decision,omitempty"`
-	Result    *ResultView   `json:"result,omitempty"`
+	ID         string         `json:"id"`
+	State      string         `json:"state"`
+	Scope      string         `json:"scope"`
+	Operation  string         `json:"operation"`
+	ProjectID  string         `json:"projectId,omitempty"`
+	Actor      auth.Actor     `json:"actor"`
+	Rule       string         `json:"rule"`
+	Reason     string         `json:"reason"`
+	Estimate   *estimateRow   `json:"estimate,omitempty"`
+	Request    RequestView    `json:"request"`
+	Rev        int            `json:"rev"`
+	CreatedAt  time.Time      `json:"createdAt"`
+	ExpiresAt  time.Time      `json:"expiresAt"`
+	DecidedAt  *time.Time     `json:"decidedAt,omitempty"`
+	DecidedBy  *auth.Actor    `json:"decidedBy,omitempty"`
+	Decision   *DecisionView  `json:"decision,omitempty"`
+	Result     *ResultView    `json:"result,omitempty"`
+	Kind       string         `json:"kind"`
+	Permission map[string]any `json:"permission,omitempty"`
 }
 
 // RequestView is the stored request with its JSON body inlined.
@@ -448,7 +467,7 @@ func JSON(a Approval) View {
 	v := View{
 		ID: a.ID, State: a.State, Scope: a.ScopeName(), Operation: a.Operation, ProjectID: a.ProjectID, Actor: a.Actor,
 		Rule: a.Rule, Reason: a.Reason, Rev: a.Rev, CreatedAt: a.CreatedAt, ExpiresAt: a.ExpiresAt,
-		DecidedAt: a.DecidedAt, DecidedBy: a.DecidedBy,
+		DecidedAt: a.DecidedAt, DecidedBy: a.DecidedBy, Kind: a.Kind, Permission: a.Permission,
 		Request: RequestView{Method: a.Request.Method, Path: a.Request.Path, Query: a.Request.Query,
 			Header: a.Request.Header, Body: rawJSON(a.Request.Body)},
 	}

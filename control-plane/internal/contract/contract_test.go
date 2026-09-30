@@ -204,6 +204,9 @@ func TestCheckRejects(t *testing.T) {
 		{"auth operations are not commands", `  /auth:login:
     x-cadence: { entity: auth, singleton: true }
     post: { operationId: auth.login, summary: s, tags: [auth], ` + resp + ` }`, ""},
+		{"host operations are not commands", `  /host-sessions:claim:
+    x-cadence: { entity: hostSessions }
+    post: { operationId: hostSessions.claim, summary: s, tags: [host], ` + resp + ` }`, ""},
 		{"me mutations stay commands", `  /me:login:
     x-cadence: { entity: me, singleton: true }
     post: { operationId: me.login, summary: s, tags: [me], ` + resp + ` }`, "IdempotencyKey"},
