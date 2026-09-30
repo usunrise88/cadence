@@ -8,10 +8,56 @@ Every block's process is a pipeline of typed steps declared in the recipes repos
 
 ### Model
 
-- Pipeline: a YAML file in the recipes repository (`pipelines/data-ingest.yaml`, `pipelines/train-stage.yaml`, …) listing steps in order, each with a step kind pinned as `kind@version`, parameters and named inputs and outputs. A pipeline version is its commit SHA.
-- Step kind: a Python entry point in the worker (`cadence.steps` group, the same idea as SDP processors) declaring a JSON Schema for parameters (`x-cadence` on each, `defaultRef` into `defaults.yaml`), the artifact types it consumes and produces, resources (`gpu`, `gpus`, `memoryGb`, `diskGb`, `jobKind`), the family role it fills or `neutral`, the secret names it needs, a help slug and a `run()`; the worker publishes the registry to the control plane at start (06 "Worker protocol").
-- Runtime: every step-kind version names the runtime (a pinned worker image) it runs in; a worker leases only its runtime's step kinds (R40). Runtime-neutral core kinds (`echo`, `dataset_import`) ship in every runtime image, and the scheduler may lease one to any runtime that publishes the same kind, version and schema hash; framework step kinds exist in one runtime only.
-- Pipeline run: per-step status, inputs, outputs and logs; each step that runs on a worker is a River job of kind `step`. A failed step can be retried alone; a step whose `kind@version`, resolved parameters and input hashes match a finished step reuses its outputs; an `oom` error gets one automatic retry at 0.75× batch. After a step records its outputs, output hooks by artifact type (`dataset`, `checkpoint`, `calibration`) register entities in the same transaction.
+- Pipeline: a YAML file `pipelines/<name>.yaml` in the project repository, parsed strictly (unknown keys fail):
+  `name` (equals the file name), `description`, `inputs` (name → artifact type) and `steps`, each with an `id`, a step
+  kind pinned as `kind: name@version`, `in` (every consumed input wired from `$inputs.<name>` or `<step>.<output>`;
+  outputs come from the kind's `produces`) and `params` holding only departures from defaults. Execution order is
+  topological (file order breaks ties); a cycle is refused. A pipeline's version is the commit that last changed its
+  file (`template-<sha256 prefix>` for a bundled template). A project without its own file of a name runs the bundled
+  template (`control-plane/templates/pipelines`): `echo` (worker check), `import` and `replay-base` (02 "The dataset
+  artifact"), `train-stage`, and `eval-matrix` and `data-ingest`, which name step kinds of phases 3–4 and fail
+  validation until those are published.
+- Step kind: a Python entry point in the worker (`cadence.steps` group, the same idea as SDP processors) declaring a
+  JSON Schema for parameters (`x-cadence` on each, `defaultRef` into `defaults.yaml`), the artifact types it consumes
+  and produces, resources (`gpu`, `gpus`, `memoryGb`, `diskGb`, `jobKind`), the family role it fills or `neutral`, the
+  secret names it needs, a help slug and a `run()`; the worker publishes the registry to the control plane at start
+  (06 "Worker protocol"), and the pipeline engine reads registry versions of kind `step_kind`, newest non-deprecated
+  first.
+- Runtime: every step-kind version names the runtime (a pinned worker image) it runs in; a worker leases only its
+  runtime's step kinds (R40). Runtime-neutral core kinds (`echo`, `dataset_import`) ship in every runtime image, and
+  the scheduler may lease one to any runtime that publishes the same kind, version and schema hash; framework step
+  kinds exist in one runtime only.
+- Validation at `dryRun` (`pipelines.run?dryRun=true`, `Engine.Prepare`): every `kind@version` is published, wiring
+  types equal the kinds' `consumes`/`produces`, the run's inputs match the declared types, parameters resolve
+  (`x-cadence.defaultRef` into `defaults.yaml` › `x-cadence.default` › schema default) and fit the kind's JSON Schema
+  and mapping `x-cadence.range`, and unknown parameters or required ones without a value fail. Every problem is listed
+  in one `pipeline-invalid` (422) with field paths. A valid dry run answers `200` with the plan: resolved parameters,
+  departures `{param, value, default}`, and the sum of known step estimates (seconds; GPU-hours over steps with
+  `resources.gpu`) with the steps that have none. The estimate feeds the policy's budget check, so spending over the
+  budget answers `202` with an approval.
+- Pipeline run (`plr_`, migration 0013): `pipelines.run` takes the pipeline's version as `If-Match` (`*` accepts any)
+  and answers `201` with the run and its steps (`pls_`); the run records the commit the file was read at and keeps the
+  parsed definition, so retries never re-read the repository. Step states `waiting → queued → running → done |
+  reused | failed | skipped | cancelled`; run states `running → done | failed | cancelled`; events on
+  `pipeline_run.{id}` (`pipeline_run.started`, `.step_changed` with `{pipelineRunId, runState, step}`,
+  `.state_changed`) carry the project. Each ready step is a River job of kind `step` (its own River queue, `steps`)
+  whose args are the step spec; it turns `running` when a worker is granted its lease. Its handler waits for the lease
+  outcome, then records the outputs in the artifact index (they must match the kind's `produces` and be in the
+  store), runs the output hooks by artifact type in a savepoint (`dataset` now; `checkpoint` and `calibration` with
+  runs), and advances the dependents, all in one transaction; a refusing hook fails the step and keeps nothing of it.
+  Hooks also run for reused outputs and are idempotent per artifact hash.
+- Reuse and retries: a ready step whose input hash (kind, version, resolved parameters, input hashes) equals a
+  finished step's in the same project is `reused` (outputs copied) unless the run asks for `fresh`. An `oom` error
+  gets one automatic attempt at 0.75× batch (`overrides.batchScale`), `lost` one retry, anything else fails the step
+  and the run and skips the steps that never started. `pipelineRuns.retry` runs a failed or cancelled step (or every
+  failed step) again as a new attempt and reopens the run; `pipelineRuns.cancel` cancels waiting steps and running
+  step jobs; `pipelineRuns.wait` serves agents. A sweep every minute treats steps whose job ended without an outcome
+  (the control plane stopped while waiting) as `lost`.
+- Inputs: a pipeline input is an artifact reference `{hash, type}` that must already be in the content store,
+  resolved by the facade that starts the run — a mix revision renders to a `mix` artifact with its resolved
+  `input_cfg`, a base model version to a `base_model` artifact. Facades (runs, evals, playbooks) start pipeline runs
+  through the Go API, `pipelines.Engine.Start` with a pipeline name or a parsed pipeline, inputs, parameter overrides,
+  per-step estimates, the run id, priority and `fresh`.
 
 ```yaml
 # pipelines/train-stage.yaml in the project repository
@@ -27,15 +73,13 @@ steps:
     params: { steps: 500 }                        # only departures from defaults are written
 ```
 
-- Inputs: a pipeline input is an artifact reference resolved by the facade that starts the run — a mix revision renders to a `mix` artifact with its resolved `input_cfg`, a base model version to a `base_model` artifact. Types are checked at `dryRun` against the published kinds' `consumes` and `produces`, and the resolved parameters with their departures from defaults are recorded on the run.
-
 ### Artifact types
 
 Framework code stops at the role steps of a model family; everything after them reads neutral, self-describing types (R42). An artifact is a blob or a directory manifest in the content store (06).
 
 | Type | Holds |
 | --- | --- |
-| `dataset` | JSON lines of utterances `{audio: b3 hash, duration, sampleRate, language, speaker?, text, origin}` under a header `{source: {name, licence, kind, languages}, splits}`; the `dataset` hook registers a dataset version from it (R18) |
+| `dataset` | A directory artifact: `dataset.json` (header `cadence.dataset/1` with source, split rule, counts, hours), `manifest.jsonl` (one line per utterance: `audio` as a path inside the artifact, duration, sample rate, language, speaker, text, origin, split) and the audio files (02 "The dataset artifact"); the `dataset` hook registers a dataset version from it (R18) |
 | `shar` | Lhotse Shar shards: audio and text only, never features (mel bins, frame rate and normalisation belong to a family) |
 | `mix` | A rendered mix revision: the resolved `input_cfg` and its content hash |
 | `base_model` | An upstream checkpoint at its pinned revision, with its family |
@@ -46,11 +90,11 @@ Framework code stops at the role steps of a model family; everything after them 
 | `analysis` | float16 arrays with frame rate and axis labels: model input features and per-frame emissions |
 | `eval-report`, `deployable` | Scores per cell; an export (format, files, serving metadata) |
 
-Also: manifest, waveform peaks, correction batch, text. Scorers, gates, Diff, Audio, Shadow, triage and the Transcription panel read only these types.
+Also: `text` (the `echo` check), manifest, waveform peaks, correction batch. A directory artifact carries `meta.layout: dir` (a file `layout: file`), which the worker adds to every output it releases. Scorers, gates, Diff, Audio, Shadow, triage and the Transcription panel read only these types.
 
 ### Runtimes, model families and latency profiles
 
-- A runtime is a registry version: a container image pinned by digest, its environment lock (CUDA, PyTorch, the framework, Lhotse) and the worker plugin version. A worker process lives in one runtime and advertises it with its cards; card slots belong to the control plane per host and card. A framework gets its own image even when its wheels would fit another's. v1 ships one, NeMo Speech 26.07 (`nvcr.io/nvidia/nemo-speech:26.07`); compose runs one worker service per runtime. Adding a runtime is `runtimes.new` with approval, deferred with the packs beyond NeMo (R40).
+- A runtime is a registry version: a container image pinned by digest, its environment lock (CUDA, PyTorch, the framework, Lhotse) and the worker plugin version. A worker process lives in one runtime and advertises it with its cards; card slots belong to the control plane per host and card. A framework gets its own image even when its wheels would fit another's. v1 ships one, NeMo Speech 26.07 (`nvcr.io/nvidia/nemo-speech:26.07`, runtime `nemo-speech`, `worker/Dockerfile`), plus the CPU runtime `toy` for CI and trying the seams (`worker/Dockerfile.toy`); the descriptors are baked into the images (`worker/runtime/*.json`), and compose runs one worker service per runtime (`worker`, profile `gpu`; `worker-toy`, profile `toy`). Adding a runtime is `runtimes.new` with approval, deferred with the packs beyond NeMo (R40).
 - A model family is a versioned descriptor the runtime publishes beside its step kinds (R41): framework and architecture; checkpoint and export formats and what loading needs; input (sample rate, channels) and features; tokenizer kind; capabilities (streaming, word timestamps, confidence, boosting method, language prompting, train modes `finetune | adapter | scratch`); latency profiles; the step kind for each role (calibrate, train, average, transcribe, export, parity reference); its `defaults.yaml` section; help and skill slugs. Base models, checkpoints and model versions carry a family reference; the UI and MCP render family options from the descriptor's schemas.
 - No control-plane or web code branches on a family or runtime name; the Nemotron family is named only in the worker's NeMo pack, `defaults.yaml` data, templates and docs, and a test greps for it.
 - A latency profile has a name, the algorithmic latency, chunk and left context in milliseconds, the family parameters that realise it and a label. A family without streaming has one profile, `offline`. Eval matrices, the primary cell and eval records name profiles; families line up by milliseconds, not by parameter spelling (R43).
@@ -65,13 +109,24 @@ The first family, Nemotron 3.5 streaming (cache-aware FastConformer RNNT, NeMo):
 | `560ms` | `[56,6]` | 560 ms · [56,6] | — |
 | `1120ms` | `[56,13]` | 1120 ms · [56,13] | Eval axis |
 
-Latency is 80 × (r + 1) ms for `[56,r]`, with a left context of 56 frames (4.48 s). Its step kinds: `oomptimizer_calibrate` (calibrate), `nemotron_finetune` (train), `checkpoint_average` (average), `nemotron_transcribe` (transcribe: file decode in streaming simulation at a profile → `hypotheses`), plus `checkpoint_register`; export and parity join in phase 5.
+Latency is 80 × (r + 1) ms for `[56,r]`, with a left context of 56 frames (4.48 s). Its step kinds: `oomptimizer_calibrate` (calibrate), `nemotron_finetune` (train), `checkpoint_average` (average), `nemotron_transcribe` (transcribe: file decode in streaming simulation at a profile → `hypotheses`), plus `checkpoint_register`; export and parity join in phase 5. They arrive with the NeMo pack (phase 2 wave 2); until then the `nemo-speech` runtime publishes only the neutral core kinds.
+
+The toy pack's family `toy-ctc` (runtime `toy`) has the profiles `offline` and `320ms` and the kinds `toy_calibrate`, `toy_train`, `toy_average` and `toy_transcribe`, with its defaults under `packs.toy`.
 
 ### Framework packs and the conformance suite
 
-- A framework pack is the unit of extension: a runtime image and its environment lock; the worker plugin (entry points `cadence.steps`, `cadence.families`); the role step kinds, exporters and the transcribe step; pipeline templates and playbooks; a `defaults.yaml` section; help articles and an agent skill. The worker publishes the whole pack at start, keyed by the runtime digest (R45).
-- Every pack passes one conformance suite on fixtures: calibrate → train a few steps → average → transcribe (file and streaming) → export → parity → score; it also checks schemas (`x-cadence` complete, help present, profiles declared). The NeMo pack's run grows with the phases.
+- A framework pack is the unit of extension: a runtime image and its environment lock; the worker plugin (entry points `cadence.steps`, `cadence.families`); the role step kinds, exporters and the transcribe step; pipeline templates and playbooks; a `defaults.yaml` section; help articles and an agent skill. The worker publishes the whole pack at start; each runtime, family and step kind is a registry version named by its published JSON, so a new digest or a changed kind is a new version (R45).
+- Every pack passes one conformance suite on fixtures (`python -m cadence_worker.conformance --runtime <runtime>`, through the real harness path with a local store and no control plane): it checks schemas (`x-cadence` complete, help present, profiles declared, every required role mapped to a published kind that declares it), then runs calibrate → train a few steps → stop → resume → average → transcribe (every latency profile; partial events for streaming ones) → score. Export and parity join in phase 5; the NeMo pack's run grows with the phases.
 - CI runs it for two packs: a CPU `toy` pack (a tiny CTC model trained in seconds, existing only to keep the seams honest) on every pull request, and the NeMo pack nightly on the staging card. Packs beyond NeMo (sherpa-onnx first, then Hugging Face transformers, k2/icefall) are deferred without a phase.
+
+### Step contract (phase 2, as built)
+
+- A step runs in its own process per lease. Its inputs are materialised from the content store into a scratch directory (hard links; a directory artifact is a manifest of blobs); its outputs are hashed into the store at release with neutral meta (R42) and `layout: file|dir`. An input name may receive several artifacts as `<name>.0`, `<name>.1`, ….
+- The step context reports progress, metric points (`name, value, step, epoch`), log lines and output meta, and exposes the card (device 0 through `CUDA_VISIBLE_DEVICES`; none for CPU steps), its memory cap (`CADENCE_MEMORY_CAP_MB`, applied with `set_per_process_memory_fraction` when torch is present), read-only access to blobs an input references (`ctx.blob(hash)`), the OOM retry's batch scale and the training state to resume from.
+- Errors are typed: card out-of-memory → `oom` (one retry at 0.75× batch), bad inputs or parameters → `input`, anything else → `step`. A stop request (cancel, pause, a closing window) reaches the step as SIGTERM and `should_stop()`; a training step writes its `training-state` and the lease is released `cancelled` with it; after `CADENCE_STOP_GRACE_SECONDS` (60) the process group is killed. A train-role kind resumes from `overrides.resumeFrom` up to its total `steps`; a transcribe-role kind takes a `profile` parameter naming one of its family's latency profiles.
+- Every parameter's default either is a literal with its source or comes from `defaults.yaml` through `x-cadence.defaultRef`; pack defaults sit under `packs.<pack>`, read from the control plane's own file, copied unchanged into each image (`CADENCE_DEFAULTS_FILE`). Ranges are enforced before `run`.
+- Secrets named by the kind reach only the step process's environment and are redacted from its forwarded logs.
+- A framework pack passes the conformance suite (`python -m cadence_worker.conformance --runtime <runtime>`, R45); the CPU toy pack (runtime `toy`, family `toy-ctc`) runs it on every pull request (`make conformance`). A new step is one module, its schema, `docs/help/steps/<kind with _ as ->.md` and an entry point.
 
 ### Seams for later training modes
 
@@ -81,10 +136,10 @@ Built in phase 2, used later (R44): `runs.new` carries `init: base | checkpoint`
 
 | Surface | How it appears |
 | --- | --- |
-| API | `pipelines.list|run` (`POST /projects/{p}/pipelines/{name}:run`), `pipelineRuns.list|get|cancel|retry` (`GET /pipeline-runs/{id}`; retry re-runs one failed step), `artifacts.get`, `stepKinds.list|get`; block endpoints such as `runs.``new` or `evals.``new` are thin facades over the same engine |
-| MCP | `pipelines.list`, `pipelines.run`; each step kind's schema becomes the tool's parameter description |
+| API | `pipelines.list|run` (`GET /projects/{p}/pipelines?ref=`, `POST /projects/{p}/pipelines/{name}:run`), `pipelineRuns.list|get|cancel|retry|wait` (`GET /projects/{p}/pipeline-runs`, `GET /pipeline-runs/{id}`; retry re-runs one failed step), `artifacts.get` (`GET /artifacts/{hash}`), `stepKinds.list|get`, `runtimes.list|get`, `modelFamilies.list|get` (`/registry/…`); block endpoints such as `runs.``new` or `evals.``new` are thin facades over the same engine |
+| MCP | `pipelines.list`, `pipelines.run` (dry run first), `pipelineRuns.*`, `stepKinds.list|get`; an agent reads a kind's parameter schema from `stepKinds.get` and the resolved parameters from the dry run (the per-kind tool description is not generated) |
 | UI | The Pipeline run panel shows any pipeline; Inspector renders parameters as a form from the schema; a dedicated panel is optional polish |
-| Events | `pipeline_run.{id}` carries step status changes |
+| Events | `pipeline_run.{id}` carries step status changes; `job.{id}` and `job.{id}.log` each step job's state and log |
 
 ### Extension points
 
@@ -102,24 +157,6 @@ Built in phase 2, used later (R44): `runs.new` carries `init: base | checkpoint`
 | A command | A registry entry bound to an API operation | Palette, menus and MCP pick it up |
 
 Rules: step kinds are versioned and a pipeline pins the versions it was validated with; a step declares idempotence by an input hash so re-running a pipeline skips finished work; no step reads the database directly — inputs and outputs are artifacts.
-
-### Pipelines as built (phase 2)
-
-- File format (`pipelines/<name>.yaml`, parsed strictly): `name` (equals the file name), `description`, `inputs` (name → artifact type), `steps` with `id`, `kind: name@version`, `in` (each consumed input wired from `$inputs.<name>` or `<step>.<output>`; outputs come from the kind's `produces`) and `params` holding only departures from defaults. Execution order is topological; a cycle is refused. A project without its own file of a name runs the bundled template (`control-plane/templates/pipelines`); the starters are `echo` (worker check), `train-stage`, `eval-matrix` and `data-ingest`.
-- Validation at `dryRun` (`pipelines.run?dryRun=true`): every `kind@version` is published by some runtime (registry kind `step_kind`), wiring types equal the kinds' `consumes`/`produces`, parameters resolve (`x-cadence.defaultRef` into `defaults.yaml` › `x-cadence.default` › schema default) and fit the kind's JSON Schema and mapping `x-cadence.range`, unknown parameters and required ones without a value fail, the run's inputs match the declared types. Every problem is listed in one `pipeline-invalid` (422) with field paths. A valid dry run answers the plan: resolved parameters, departures `{param, value, default}`, and the sum of known step estimates (seconds, GPU-hours) with the steps that have none.
-- Versions: a pipeline's version is the commit that last changed its file; `pipelines.run` takes it as `If-Match` (`*` accepts any) and the run records it with the commit the file was read at.
-- Pipeline runs (`plr_`) answer `201` with the run and its steps (`pls_`); step states `waiting → queued → running → done | reused | failed | skipped | cancelled`, run states `running → done | failed | cancelled`; events on `pipeline_run.{id}` (`pipeline_run.started`, `.step_changed`, `.state_changed`) carry the project. Each ready step is a River job of kind `step` (its own queue) whose args are the step spec; its handler waits for the lease outcome, then records the outputs in the artifact index, runs the output hooks and advances the dependents in one transaction (a refusing hook fails the step and keeps nothing of it). Reuse by input hash (kind, version, resolved parameters, input hashes) within the project unless `fresh`; `oom` gets one automatic attempt at 0.75× batch, `lost` one retry, anything else fails the step and the run; `pipelineRuns.retry` runs a failed step again, `pipelineRuns.cancel` cancels waiting steps and running step jobs, `pipelineRuns.wait` serves agents.
-- Artifacts: the `artifacts` table indexes the content store (hash, type, size, directory, meta, producing step, project or registry); `artifacts.get` shows metadata, a directory's files and, with `content=true`, content of at most 1 MiB. A directory artifact's size is the sum of its files.
-- Facades start pipeline runs through the Go API (`pipelines.Engine.Start` with a pipeline name or a parsed pipeline, inputs, parameter overrides, per-step estimates and the run id).
-
-### Step contract (phase 2, as built)
-
-- A step runs in its own process per lease. Its inputs are materialised from the content store into a scratch directory (hard links; a directory artifact is a manifest of blobs); its outputs are hashed into the store at release with neutral meta (R42) and `layout: file|dir`. An input name may receive several artifacts as `<name>.0`, `<name>.1`, ….
-- The step context reports progress, metric points (`name, value, step, epoch`), log lines and output meta, and exposes the card, its memory cap (applied with `set_per_process_memory_fraction`), the OOM retry's batch scale and the training state to resume from.
-- Errors are typed: card out-of-memory → `oom` (one retry at 0.75× batch), bad inputs or parameters → `input`, anything else → `step`. A stop request (cancel, pause, a closing window) reaches the step as `should_stop()`; a training step writes its `training-state` and the lease is released `cancelled` with it.
-- Every parameter's default either is a literal with its source or comes from `defaults.yaml` through `x-cadence.defaultRef`; pack defaults sit under `packs.<pack>`. Ranges are enforced before `run`.
-- Secrets named by the kind reach only the step process's environment and are redacted from its forwarded logs.
-- A framework pack passes the conformance suite (`python -m cadence_worker.conformance --runtime <runtime>`, R45); the CPU toy pack (runtime `toy`, family `toy-ctc`) runs it on every pull request.
 
 ## Defaults
 
@@ -180,7 +217,7 @@ A playbook is a pipeline chain with defaults filled in, a prefilled agent prompt
 
 "Fine-tune from a dataset version" is the phase-2 gate and the core that "Adapt a new language" later prefixes with ingest and freeze.
 
-Format (R16): a template version (`templateKind: playbook`) at `templates/playbooks/<name>.yaml`, copied into projects like other templates.
+Format (R16): a template version (`templateKind: playbook`) at `templates/playbooks/<name>.yaml`, copied into projects like other templates. Not built yet: phase 2 wave 2 (`playbooks.list|get|run`, playbook sessions) implements this format; no playbook template ships in wave 1.
 
 ```yaml
 name: finetune-from-dataset

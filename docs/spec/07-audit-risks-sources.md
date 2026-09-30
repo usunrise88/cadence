@@ -386,6 +386,38 @@ Open questions:
       `internal/notify/classify.go` and `web/src/shell/notifications/classes.ts`): `mount.unhealthy`,
       `compute.card_closed` (failure); `gate.verdict`, `deployment.promoted`, `schedule.finished`, `batch.closed`
       (outcome); `pipeline_step.done`, `checkpoint.saved`, `triage.item_added` (progress) — on a non-entity topic
+- [ ] S · Job logs (phase 2), confirm: a job's log is one NDJSON file `$CADENCE_DATA_DIR/job-logs/<jobId>.ndjson`
+      (lines `{t, level, msg, fields}`), not a content-store blob, read through `jobLogs.list` and tailed on
+      `job.{id}.log`; a daily chore deletes files untouched for 14 days (hard-coded, not a `defaults.yaml` key)
+- [ ] S · Retention of training data (phase 2), confirm: v1 deletes no content-store blob (the backup mirror is never
+      pruned either) and never deletes a metric point — points in `metric_points` live as long as their run, and no
+      code path deletes either
+- [ ] S · Availability windows (phase 2, R19), confirm: windows are per card and job kind (training, eval, shadow,
+      export, data), each a set of weekdays with `start`/`end` `HH:MM` (an end at or before the start closes the next
+      day, `24:00` is midnight) and its own IANA `timezone` defaulting to UTC — not the instance's `policies.timezone`
+      that quiet hours, the digest and backups follow; no windows means always open; only training is stopped at a
+      close; an unknown estimate or a resumed step starts whenever its window is open
+- [ ] S · Playbook format (phase 2, R16), confirm: a playbook input is taken from the project with `from: project`
+      (the base-model input: the project's default base model) or from `defaults.yaml` with `defaultRef`, and a chain
+      step not built yet carries `phase: <n>` so the estimate lists and skips it (03 "Playbooks"; stream K builds it)
+- [ ] gap (phase 2): the toy pack reads a `dataset` input as one JSON-lines file with `audio` as a b3 hash
+      (`packs/toy/cadence_toy/data.py`), while `dataset_import` produces the directory artifact of 02 "The dataset
+      artifact" (`manifest.jsonl`, `audio` as a path inside it); an import → toy train chain fails until one side moves
+- [ ] gap (phase 2): queue order is the job's own priority (`pipelines.run` `priority`, `jobs.edit`); the project's
+      queue priority from its budgets (02 "Projects", Budgets) does not feed it yet
+- [ ] gap (phase 2): `pipelines.run` does not refuse eval-only dataset versions (`data.Trainable`); only mixes and the
+      run estimate check them, so the run facade must (stream R)
+- [ ] gap (phase 2): card health is per host (`unknown | healthy | unreachable` from heartbeats); nothing closes a
+      card's slot for an unhealthy card and nothing emits `compute.card_closed`; a host turning `unreachable`
+      (`compute.health`) and `pipeline_run.step_changed` are not classified for notifications, and `pipeline_step.done`
+      has no emitter (06 "Notifications")
+- [ ] gap (phase 2): "a checkpoint and training state every 20 minutes" (03 "Key defaults") has no `defaults.yaml` key
+      and no step kind implements it yet; the NeMo pack's train kind must, with the interval from `defaults.yaml`
+- [ ] gap (phase 2): `metrics.get` (series binned for charts, R53) is not in the contract yet; `internal/telemetry.Get`
+      is ready for stream R to expose
+- [ ] gap (later): job-log field search and the global search index of `warn`+ lines (R15) are not built; step kinds'
+      schemas are not rendered into a per-kind MCP tool description (agents read `stepKinds.get` and the dry run);
+      remote workers have an upload path (`workerArtifacts.set`) but no download path
 
 ## Sources
 
