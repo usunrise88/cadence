@@ -56,7 +56,7 @@ var TrainingFixtures = []map[string]any{
 				"range": map[string]any{"values": []string{"bf16", "fp16", "fp32"}}}},
 		}},
 		"consumes": map[string]string{"base": "base_model", "data": "mix"}, "produces": map[string]string{"calibration": "calibration"},
-		"resources": map[string]any{"gpu": true, "gpus": 1, "memoryGb": 24, "jobKind": "training"}, "help": "steps.fx-calibrate",
+		"resources": map[string]any{"gpu": true, "gpus": 1, "memoryGb": 20, "jobKind": "training"}, "help": "steps.fx-calibrate",
 		"estimateSeconds": 60,
 	},
 	{
@@ -73,7 +73,7 @@ var TrainingFixtures = []map[string]any{
 		}},
 		"consumes":  map[string]string{"base": "base_model", "data": "mix"},
 		"produces":  map[string]string{"checkpoint": "checkpoint", "state": "training-state"},
-		"resources": map[string]any{"gpu": true, "gpus": 1, "memoryGb": 24, "jobKind": "training"}, "help": "steps.fx-train",
+		"resources": map[string]any{"gpu": true, "gpus": 1, "memoryGb": 20, "jobKind": "training"}, "help": "steps.fx-train",
 	},
 	{
 		"name": KindAverage, "version": "1", "runtime": "test", "runtimeVersionId": "ver_test", "role": "average",

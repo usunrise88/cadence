@@ -184,7 +184,7 @@ Rules:
 | Eval latency | `[56,1]` (160 ms) as the primary cell; `[56,0]` and `[56,13]` also run | NVIDIA guide: evaluate at deployment latency |
 | Training stage (Nemotron family) | `init_from_nemo_model`, bf16, 3 000 steps, peak LR 2e-4, warmup 100, grad clip 5, clips ≤ 40 s | Community fine-tune kit; North Sami fine-tune |
 | Continuation stage | New optimiser, peak LR 2e-5 | Community fine-tune kit (trial setting) |
-| Batch | Bucket sizes from the family's calibrate step (OOMptimizer for Nemotron) under the card's memory cap; 24 GB on the shared staging card, an RTX PRO 5000 Blackwell 48 GB with vLLM resident (≈ 24 GB), so memory fraction 0.5 | NeMo Lhotse docs; this deployment (inventoried 2026-09-30) |
+| Batch | Bucket sizes from the family's calibrate step (OOMptimizer for Nemotron) under the card's memory cap; 22 GB on the shared staging card, an RTX PRO 5000 Blackwell 48 GB with vLLM resident (23.8 GB): a PyTorch allocator of ≈ 20.5 GiB keeps the process under 22 GB | NeMo Lhotse docs; docs/spikes/A3-nemotron-finetune.md |
 | Replay | 15% of samples from the base model's other locales, drawn from `dataset/replay-base` (see Replay below); phase 2 caps it at ≈ 1 h per locale | NVIDIA guide recommends replay; share and caps are a Cadence recommendation |
 | Checkpoints and windows | A checkpoint and training state every 20 minutes, so a window close or a preemption loses at most 20 minutes; compute is always available unless windows are set (R19) | Cadence recommendation |
 | Data filters | 0.5–40 s, ≤ 30 characters per second, language-ID match, speaker-disjoint 2% validation | Cadence recommendation |
