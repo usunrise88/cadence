@@ -176,16 +176,16 @@ MCP and approvals
       from the start (R44), so phase 2 does not change the shape
 
 Agent host (05 Agent integration)
-- [ ] One ACP client; drivers for `claude-agent-acp` and `opencode acp` behind the ACP-shaped interface (`src/drivers/`)
-- [ ] Session lifecycle and states: create → worktree on `session/{id}` → spawn → turns → commit per turn → end/merge;
+- [x] One ACP client; drivers for `claude-agent-acp` and `opencode acp` behind the ACP-shaped interface (`src/drivers/`)
+- [x] Session lifecycle and states: create → worktree on `session/{id}` → spawn → turns → commit per turn → end/merge;
       pause/resume (native or summary injection); failure handling
-- [ ] Budgets (turns, tokens) and runaway checks (3 identical calls, token limit, inactivity) → pause with reason event;
+- [x] Budgets (turns, tokens) and runaway checks (3 identical calls, token limit, inactivity) → pause with reason event;
       confirm in A1 that ACP reports token usage for both drivers
-- [ ] Transcript persisted as `agent.session.{id}` events; permission requests mapped to approvals
+- [x] Transcript persisted as `agent.session.{id}` events; permission requests mapped to approvals
 - [ ] Worktree watcher emitting `recipe.{path}` events; session branch merge: fast-forward when clean and allowed,
       else "Session changes" with three-way diff
-- [ ] Per-session worktree mounts only; images install both agents; driver contract tests on recorded transcripts
-- [ ] Session kinds: interactive and read-only ("Explain this") now; playbook in phase 2; scheduled in phase 5
+- [x] Per-session worktree mounts only; images install both agents; driver contract tests on recorded transcripts
+- [x] Session kinds: interactive and read-only ("Explain this") now; playbook in phase 2; scheduled in phase 5
 
 Projects
 - [x] Wizard (Recommended three fields + Customise; the recordings-mount field is skippable until phase 4) and

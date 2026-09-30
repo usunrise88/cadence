@@ -125,7 +125,15 @@ Cadence ships `cadence-data`, `cadence-train`, `cadence-eval`, `cadence-deploy`,
 
 ### Entities and contract
 
-Agent session: kind, driver, model, project, prompt, references, state, branch, merge state, budget and use, transcript (events), started by. Agent profile: driver, model, permission preset, config file references. Endpoints: `POST /projects/{p}/agent-sessions`, `GET /agent-sessions/{id}/transcript`, `POST /agent-sessions/{id}/messages`, `:cancel`, `:pause`, `:resume`, `:merge`; topics `agent.session.{id}`, `agent.sessions`, `recipe.{path}`, `approvals`.
+Agent session: kind, driver, model, project, prompt, references, state, branch, merge state, budget and use, transcript (events), started by. Agent profile: driver, model, permission preset, config file references. Operations (R1): `agentSessions.new|list|get` (`/projects/{p}/agent-sessions`, `/agent-sessions/{id}`), `agentSessions.cancel|pause|resume|accept|revert` (`/agent-sessions/{id}:<verb>`; accept/revert merge or discard the branch as a whole), `agentMessages.new|list` (`/agent-sessions/{id}/agent-messages`, the transcript paged by `seq`); topics `agent.session.{id}` (transcript entries `agent_message.created|updated` and the session header `agent_session.changed`), `agent.sessions` (`agent_session.created|changed`), `recipe.{path}`, `approvals`.
+
+Phase 1 as built (2026-09-30):
+- The agent host speaks `hostSessions.claim|report|ask|decision` (tag `host`, R1) with its own credential (`cah_`, minted into `CADENCE_HOST_TOKEN_FILE` at start or by `cadence admin host-token`). A claim long-polls for sessions to start, messages, controls and permission decisions; everything it returns is taken once.
+- The session token is minted when a host claims the session (and again, the old one revoked, when another host takes it over), not at create: it then exists only in the host's memory and the agent's `session/new`.
+- Transcript entries are coalesced by the host: one entry per text block, one per tool call updated in place, one plan per turn, turn start/end with usage, commits. Permission entries are the server's (from `ask` and from gated commands through a pipeline hook), so ACP permission requests and gated commands share the transcript and the Approvals panel.
+- An ACP permission request first goes to the preset (`policy.AnswerPermission`: tool classes, file rules, shell patterns, web); only an `ask` becomes an approval of kind `agent_permission`, answered back to the host (once → allow_once, for session → allow_always, deny or expiry → reject_once), never replayed.
+- Ending: `agentSessions.cancel {"end": true}`; accept/revert need the session paused or ended (a paused one ends). A decided gated command is told to the agent as a notice (its next turn).
+- Clocks: the stuck-turn clock and the runaway rule run in the host; the idle clock and the project's daily token budget on the server (a chore and each report).
 
 ## Guardrails
 
