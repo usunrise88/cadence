@@ -84,8 +84,12 @@ test.describe("approvals", () => {
     const { approvalId } = await gated.json();
 
     await openWorkspace(page, slug);
-    // The status-bar badge opens Approvals floating.
+    // The status-bar badge opens a small popup like Notifications; its expand button opens Approvals floating.
     await page.getByTestId("approvals-badge").click();
+    const popup = page.locator('[data-slot="status-popover"]');
+    await expect(popup.locator(`[data-approval="${approvalId}"]`)).toContainText("aliases.set");
+    await popup.getByRole("button", { name: "Open Approvals as a window" }).click();
+    await expect(popup).toHaveCount(0);
     await expect(page.locator(".dv-resize-container [data-approval-card]").first()).toBeVisible();
     const c = card(page, approvalId);
     await expect(c).toContainText("aliases.set");

@@ -150,7 +150,8 @@ Five workspaces ship by default, and Chat sits in the right column of every one,
 
 Selecting a matrix cell attaches it to the next Chat message; an eval run the agent starts fills the matrix live, and its approval requests appear in the same column.
 
-- Agent sessions and Approvals also open from status-bar badges, floating by default.
+- The status bar's Agents and Approvals badges behave like its notification history: a small popup with the short list
+  (live sessions; pending requests) and a button that opens Agent sessions or Approvals as a floating window.
 - Each workspace remembers which agent session its Chat is pinned to.
 
 ## Commands

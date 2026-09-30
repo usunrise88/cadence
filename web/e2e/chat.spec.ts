@@ -56,6 +56,11 @@ test("Chat: new session, streamed reply, inline permission, tool call with badge
   await host.report(sessionId, { state: { state: "running", busy: true, turn: 1 }, entries: [{ key: "t1:start", kind: "turn", turn: 1, turnInfo: { state: "started" } }] });
   await expect(chat.locator('[data-slot="session-state"]')).toHaveText("running");
   const tabIcon = chatTab.locator('[data-slot="chat-tab-icon"]');
+  // The status bar's Agents opens a popup listing the live session; a click there goes to its Chat and closes it.
+  await page.getByTestId("agent-sessions-badge").click();
+  const agentsPopup = page.locator('[data-slot="status-popover"]');
+  await agentsPopup.locator(`[data-session="${sessionId}"]`).click();
+  await expect(agentsPopup).toHaveCount(0);
   await expect(tabIcon).toHaveAttribute("data-tone", "working");
   await host.entries(sessionId, 1, [{ key: "t1:m1", kind: "agent_message", text: "Looking at", final: false }]);
   const reply = chat.locator('[data-kind="agent_message"]');
