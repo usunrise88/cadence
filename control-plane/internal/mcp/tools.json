@@ -4640,6 +4640,12 @@
                     "maximum": 192,
                     "minimum": 0,
                     "type": "number"
+                  },
+                  "queuePriority": {
+                    "description": "Queue priority of the project's step jobs against other projects (higher first)",
+                    "maximum": 100,
+                    "minimum": -100,
+                    "type": "integer"
                   }
                 },
                 "type": "object"
@@ -4838,6 +4844,12 @@
                     "maximum": 192,
                     "minimum": 0,
                     "type": "number"
+                  },
+                  "queuePriority": {
+                    "description": "Queue priority of the project's step jobs against other projects (higher first)",
+                    "maximum": 100,
+                    "minimum": -100,
+                    "type": "integer"
                   }
                 },
                 "type": "object"
@@ -5136,7 +5148,7 @@
     {
       "name": "queueEntries.list",
       "title": "The step queue across projects — waiting, paused and running step jobs with their card and lease",
-      "description": "The GPU queue: step jobs waiting, paused or running on a worker, in start order (priority, then first come), with the card and worker holding each running one. Reorder with jobs.edit (priority), pause with jobs.pause. A project-scoped credential sees its own project's entries only.",
+      "description": "The GPU queue: step jobs waiting, paused or running on a worker, in start order (the project's queue priority, then the job's priority, then first come), with the card and worker holding each running one. Reorder with jobs.edit (a job's priority) or projects.edit (budgets.queuePriority), pause with jobs.pause. A project-scoped credential sees its own project's entries only.",
       "method": "GET",
       "path": "/queue-entries",
       "inputSchema": {

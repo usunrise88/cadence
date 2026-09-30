@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/usunrise88/cadence/control-plane/internal/compute"
+	"github.com/usunrise88/cadence/control-plane/internal/defaults"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
 	"github.com/usunrise88/cadence/control-plane/internal/jobs"
 	"github.com/usunrise88/cadence/control-plane/internal/queue"
@@ -172,13 +173,25 @@ func place(cand candidate, cards []queue.Card, now time.Time) (*queue.Card, int,
 	return nil, 0, false
 }
 
-// waiting reads the step jobs a worker with these kinds may run, in start order: priority, then first come. Rows
-// are locked, skipping those another claim holds.
+// projectPriority is the SQL expression of a step job's project queue priority (projects p joined on s.project_id):
+// the project's budgets.queuePriority, or $n — defaults.yaml budgets.queue_priority_per_project — for a project that
+// never set one and for a job without a project. It is read live, so a projects.edit reorders waiting jobs at once.
+func projectPriority(param string) string {
+	return `coalesce((p.budgets->>'queuePriority')::int, ` + param + `)`
+}
+
+// defaultProjectPriority is defaults.yaml budgets.queue_priority_per_project.
+func defaultProjectPriority() int { return defaults.Get().Budgets.QueuePriorityPerProject.Value }
+
+// waiting reads the step jobs a worker with these kinds may run, in start order: the project's queue priority, then
+// the job's priority, then first come (spec 02 "Budgets": the queue interleaves projects by priority). Rows are
+// locked, skipping those another claim holds.
 func waiting(ctx context.Context, tx pgx.Tx, kinds []string) ([]candidate, error) {
 	rows, err := tx.Query(ctx, `SELECT s.job_id, s.spec FROM step_jobs s JOIN jobs j ON j.id = s.job_id
+		LEFT JOIN projects p ON p.id = s.project_id
 		WHERE s.state = 'waiting' AND s.kind_ref = ANY($1) AND j.paused_at IS NULL AND j.cancel_requested_at IS NULL
-		ORDER BY j.priority DESC, s.enqueued_at, s.job_id
-		LIMIT 50 FOR UPDATE OF s SKIP LOCKED`, kinds)
+		ORDER BY `+projectPriority("$2")+` DESC, j.priority DESC, s.enqueued_at, s.job_id
+		LIMIT 50 FOR UPDATE OF s SKIP LOCKED`, kinds, defaultProjectPriority())
 	if err != nil {
 		return nil, fmt.Errorf("read the step queue: %w", err)
 	}

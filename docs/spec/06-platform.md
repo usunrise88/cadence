@@ -115,8 +115,10 @@ Rules:
   under its memory cap, shows that much free memory in the last telemetry when no Cadence step runs on it (1 GB
   slack for resident services and the driver), and the kind's availability window is open with the estimate ending
   before it closes (R19). The reservation is the step's declared `memoryGb`, or the card's whole remaining cap when it
-  declares none, so a training step takes the card alone. Candidates are taken by the job's priority (higher first;
-  set from the pipeline run's `priority`, changed with `jobs.edit`) and then first come. Card slots (`card_slots`) belong to the control
+  declares none, so a training step takes the card alone. Candidates are taken by the project's queue priority (higher first;
+  `budgets.queuePriority`, read live from the project so `projects.edit` reorders waiting jobs; a job without a project
+  takes the `defaults.yaml` default), then the job's priority (higher first; set from the pipeline run's `priority`,
+  changed with `jobs.edit`), then first come. Card slots (`card_slots`) belong to the control
   plane per host and card, not per worker, so two runtimes never double-book a card. A step with `gpu: false` takes
   no card (lease card index -1) and may go to a worker that reported no cards (the CPU toy runtime).
 - Lease: `lse_` id, the job id, the step spec (resolved parameters, input artifact refs, output types, resources,

@@ -126,6 +126,7 @@ func wizardOf(b *api.ProjectNew) bootstrap.Wizard {
 	}
 	if bu := b.Budgets; bu != nil {
 		w.GPUHoursPerDay = bu.GpuHoursPerDay
+		w.QueuePriority = bu.QueuePriority
 		if bu.AgentTokensPerDay != nil {
 			v := int64(*bu.AgentTokensPerDay)
 			w.AgentTokensPerDay = &v
@@ -151,7 +152,7 @@ func (s *Server) ProjectsEdit(ctx context.Context, req api.ProjectsEditRequestOb
 		in.Locales = append([]string{}, *b.Locales...)
 	}
 	if b.Budgets != nil {
-		in.Budgets = &projects.BudgetsEdit{GPUHoursPerDay: b.Budgets.GpuHoursPerDay}
+		in.Budgets = &projects.BudgetsEdit{GPUHoursPerDay: b.Budgets.GpuHoursPerDay, QueuePriority: b.Budgets.QueuePriority}
 		if b.Budgets.AgentTokensPerDay != nil {
 			v := int64(*b.Budgets.AgentTokensPerDay)
 			in.Budgets.AgentTokensPerDay = &v

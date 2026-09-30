@@ -404,8 +404,10 @@ Open questions:
       (`dataset.json` with `format: cadence.dataset/1`, `manifest.jsonl` with `audio` as a path inside it) and names an
       utterance by the BLAKE3 hash of its audio file; its fixtures are a `folder-csv` import folder (`metadata.csv`),
       and the conformance suite starts with a `dataset_import` stage, so import → calibrate → train → … runs end to end
-- [ ] gap (phase 2): queue order is the job's own priority (`pipelines.run` `priority`, `jobs.edit`); the project's
-      queue priority from its budgets (02 "Projects", Budgets) does not feed it yet
+- [x] F · resolved (phase 2): the project's queue priority is `budgets.queuePriority` (−100…100, default
+      `budgets.queue_priority_per_project` = 0, set by `projects.new`/`projects.edit`); the claim and `queue.list`
+      order by it, then the job's priority, then first come. It is read live from the project in the claim query
+      rather than copied into the step spec by the pipelines engine, so an edit reorders jobs already waiting
 - [ ] gap (phase 2): `pipelines.run` does not refuse eval-only dataset versions (`data.Trainable`); only mixes and the
       run estimate check them, so the run facade must (stream R)
 - [ ] gap (phase 2): card health is per host (`unknown | healthy | unreachable` from heartbeats); nothing closes a

@@ -1644,11 +1644,19 @@ export type ProjectBudgets = {
      * Agent spend per day in tokens; default budgets.agent_tokens_per_project_per_day
      */
     agentTokensPerDay: number;
+    /**
+     * The project's queue priority: waiting step jobs start by project priority (higher first), then the job's priority, then first come; default budgets.queue_priority_per_project
+     */
+    queuePriority: number;
 };
 
 export type ProjectBudgetsEdit = {
     gpuHoursPerDay?: number;
     agentTokensPerDay?: number;
+    /**
+     * Queue priority of the project's step jobs against other projects (higher first)
+     */
+    queuePriority?: number;
 };
 
 export type AgentChoice = {
@@ -3352,6 +3360,10 @@ export type QueueEntry = {
     memoryGb?: number;
     state: 'waiting' | 'paused' | 'running' | 'stopping';
     priority: number;
+    /**
+     * The project's queue priority (budgets.queuePriority): the first sort key, before priority
+     */
+    projectPriority?: number;
     enqueuedAt: string;
     estimateSeconds?: number;
     attempt: number;

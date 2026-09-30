@@ -921,7 +921,7 @@ var Operations = []Operation{
 	{
 		ID: "queueEntries.list", Entity: "queueEntries", Verb: "list", Method: "GET", Path: "/queue-entries",
 		Summary:     "The step queue across projects — waiting, paused and running step jobs with their card and lease",
-		Description: "The GPU queue: step jobs waiting, paused or running on a worker, in start order (priority, then first come), with the card and worker holding each running one. Reorder with jobs.edit (priority), pause with jobs.pause. A project-scoped credential sees its own project's entries only.",
+		Description: "The GPU queue: step jobs waiting, paused or running on a worker, in start order (the project's queue priority, then the job's priority, then first come), with the card and worker holding each running one. Reorder with jobs.edit (a job's priority) or projects.edit (budgets.queuePriority), pause with jobs.pause. A project-scoped credential sees its own project's entries only.",
 		Params: []Param{
 			{Name: "project", In: "query", Flag: "project", Type: "string", Description: "Only this project's entries (slug)"},
 		},
