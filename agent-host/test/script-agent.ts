@@ -6,6 +6,7 @@
 //   loop                 calls the same Cadence tool with the same arguments until cancelled (runaway)
 //   edits                calls the same Cadence tool four times with different arguments, streamed like Claude's
 //   hang                 sends nothing until cancelled (stuck turn)
+//   scribble <file> <t>  writes the file, then sends nothing until cancelled (the worktree watcher)
 //   ask <command>        asks permission to run a shell command, answers with the option it got
 //   usage <n>            answers with n input tokens used
 //   think                streams 50 thought chunks, then answers
@@ -79,6 +80,13 @@ async function turn(cx: Ctx, sessionId: string, prompt: string, signal: AbortSig
     case "hang":
       await cancelled(signal);
       return { stopReason: "cancelled" };
+    case "scribble": {
+      // Writes a file and keeps the turn open: the worktree watcher reports it before any commit.
+      const [file = "draft.txt", ...words] = rest;
+      writeFileSync(join(s.cwd, file), `${words.join(" ")}\n`);
+      await cancelled(signal);
+      return { stopReason: "cancelled" };
+    }
     case "ask": {
       const command = rest.join(" ");
       const toolCallId = `ask-${++n}`;

@@ -296,6 +296,13 @@ func (s *Service) finish(ctx context.Context, tx pgx.Tx, sess Session, state, er
 		merge, drafts = m, append(drafts, more...)
 	}
 	u := Update{State: &state, Merge: &merge, Ended: true}
+	if sess.Working != nil {
+		// The worktree's uncommitted changes end with the session (a failed one keeps its worktree on the host,
+		// but nothing reports it any more).
+		var clean *Working
+		u.Working = &clean
+		drafts = append(drafts, workingEvents(sess, sess.Working, nil)...)
+	}
 	f := false
 	u.Busy = &f
 	if errMsg != "" {

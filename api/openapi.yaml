@@ -1175,6 +1175,28 @@ paths:
           content: { application/json: { schema: { $ref: "#/components/schemas/BranchDiff" } } }
         default: { $ref: "#/components/responses/Problem" }
 
+  /projects/{p}/branches/{name}:compare:
+    x-cadence: { entity: branches }
+    parameters:
+      - $ref: "#/components/parameters/ProjectSlug"
+      - $ref: "#/components/parameters/BranchName"
+    get:
+      operationId: branches.compare
+      summary: A branch compared with main file by file in three ways (merge base, main, branch), with conflict hunks
+      tags: [projects]
+      x-cadence:
+        toolDescription: >
+          Compare a session or sync branch with main per file: the merge base, main and branch versions (blob ids),
+          whether each file merges cleanly and, for conflicting files, the three texts (each cut at 128 KiB) and the
+          hunks that cover them, each marked same, main, branch, both or conflict. Use it to see why
+          agentSessions.accept or branches.accept answered merge-conflict; resolve on the branch, then accept again.
+      responses:
+        "200":
+          description: The comparison; ETag is the branch head
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/BranchCompare" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
   /projects/{p}/branches/{name}:accept:
     x-cadence: { entity: branches }
     parameters:
@@ -3534,6 +3556,61 @@ components:
             files: { type: array, items: { $ref: "#/components/schemas/BranchFileChange" } }
             patch: { type: string, description: "The unified diff of the branch against its merge base with main (git diff main...branch)" }
             truncated: { type: boolean, description: The patch was cut at 512 KiB }
+    MergeSide:
+      type: object
+      required: [exists]
+      description: One version of a file in a three-way comparison
+      properties:
+        exists: { type: boolean, description: The file exists in this version }
+        blob: { type: string, description: The blob id }
+        bytes: { type: integer }
+        binary: { type: boolean }
+        text: { type: string, description: "The content (conflicting text files only; absent when binary or cut)" }
+        cut: { type: boolean, description: The text was left out because it is over 128 KiB or the response budget ran out }
+    LineRange:
+      type: object
+      required: [start, count]
+      properties:
+        start: { type: integer, description: 0-based index of the first line }
+        count: { type: integer }
+    MergeHunk:
+      type: object
+      required: [kind, base, main, branch]
+      description: One region of a file in all three versions; the hunks of a file cover every line of each, in order
+      properties:
+        kind:
+          type: string
+          enum: [same, main, branch, both, conflict]
+          description: "Which side changed the region: neither (same), only main, only the branch, both alike, or both differently (conflict)"
+        base: { $ref: "#/components/schemas/LineRange" }
+        main: { $ref: "#/components/schemas/LineRange" }
+        branch: { $ref: "#/components/schemas/LineRange" }
+    BranchCompareFile:
+      type: object
+      required: [path, clean, base, main, branch]
+      properties:
+        path: { type: string }
+        clean: { type: boolean, description: The file merges into main without a conflict }
+        conflict:
+          type: string
+          enum: [content, add/add, modify/delete, binary]
+          description: What kind of conflict (conflicting files only)
+        base: { $ref: "#/components/schemas/MergeSide" }
+        main: { $ref: "#/components/schemas/MergeSide" }
+        branch: { $ref: "#/components/schemas/MergeSide" }
+        hunks: { type: array, items: { $ref: "#/components/schemas/MergeHunk" }, description: "Conflicting text files whose three texts are present" }
+    BranchCompare:
+      type: object
+      required: [name, kind, head, main, base, fastForward, files, cut]
+      properties:
+        name: { $ref: "#/components/schemas/BranchName" }
+        kind: { type: string, enum: [session, sync, other] }
+        head: { type: string }
+        main: { type: string }
+        base: { type: string, description: The merge base of the branch and main }
+        fastForward: { type: boolean }
+        files: { type: array, items: { $ref: "#/components/schemas/BranchCompareFile" }, description: "Every file the branch changed since the merge base, conflicting files first" }
+        cut: { type: boolean, description: "Some conflicting files' texts were left out (1 MiB of text per response)" }
     BranchMerge:
       type: object
       required: [branch, head, main, fastForward, changes]
@@ -3593,6 +3670,28 @@ components:
         fastForward: { type: boolean }
         at: { type: string, format: date-time }
         by: { $ref: "#/components/schemas/Actor" }
+    WorkingChange:
+      type: object
+      required: [path, status]
+      additionalProperties: false
+      properties:
+        path: { type: string, minLength: 1, maxLength: 400 }
+        status: { type: string, enum: [added, modified, deleted] }
+        bytes: { type: integer, minimum: 0, description: The file's size in the worktree (not for deleted files) }
+        additions: { type: integer, minimum: 0, description: Lines added since the last commit (tracked text files) }
+        deletions: { type: integer, minimum: 0, description: Lines removed since the last commit (tracked text files) }
+    AgentWorking:
+      type: object
+      required: [files, truncated]
+      additionalProperties: false
+      description: >
+        Uncommitted changes in the session's worktree while a turn runs, from the agent host's watcher (paths and
+        sizes, no content); the turn's commit empties it
+      properties:
+        turn: { type: integer, minimum: 0 }
+        files: { type: array, maxItems: 200, items: { $ref: "#/components/schemas/WorkingChange" } }
+        truncated: { type: boolean, description: More files changed than listed (the first 200 by path are) }
+        at: { type: string, format: date-time, description: When the control plane received it }
     AgentReference:
       type: object
       required: [ref]
@@ -3630,6 +3729,7 @@ components:
         error: { type: string, description: Why it failed }
         branch: { type: string, description: "session/<id> (empty for read-only sessions)" }
         merge: { $ref: "#/components/schemas/AgentMerge" }
+        working: { $ref: "#/components/schemas/AgentWorking" }
         autoMerge: { $ref: "#/components/schemas/AutoMerge" }
         budget: { $ref: "#/components/schemas/AgentBudget" }
         use: { $ref: "#/components/schemas/AgentUse" }
@@ -3911,6 +4011,7 @@ components:
         acpSessionId: { type: string, maxLength: 300 }
         note: { type: string, maxLength: 4000, description: "A note for the next session (projects.note), e.g. why the session paused" }
         withdraw: { type: array, items: { type: string }, description: "Agent-permission approvals the agent no longer waits for (its turn was cancelled)" }
+        working: { $ref: "#/components/schemas/AgentWorking" }
     HostRelease:
       type: object
       required: [hostId]

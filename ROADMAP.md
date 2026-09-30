@@ -193,7 +193,7 @@ Agent host (05 Agent integration)
 - [x] Budgets (turns, tokens) and runaway checks (3 identical calls, token limit, inactivity) → pause with reason event;
       confirm in A1 that ACP reports token usage for both drivers
 - [x] Transcript persisted as `agent.session.{id}` events; permission requests mapped to approvals
-- [ ] Worktree watcher emitting `recipe.{path}` events; session branch merge: fast-forward when clean and allowed,
+- [x] Worktree watcher emitting `recipe.{path}` events; session branch merge: fast-forward when clean and allowed,
       else "Session changes" with three-way diff
 - [x] Per-session worktree mounts only; images install both agents; driver contract tests on recorded transcripts
 - [x] Session kinds: interactive and read-only ("Explain this") now; playbook in phase 2; scheduled in phase 5
@@ -222,10 +222,13 @@ Phase 1 notes (what differs from the plan above):
   (`CADENCE_HOST_TOKEN_FILE`), and the session token is minted at claim, not at create (05 "Phase 1 as built").
 - MCP tool names are sanitised by the agents: `mixes.get` is `mcp__cadence__mixes_get` in Claude and
   `cadence_mixes_get` in opencode; the renderer and the server map them back (A2).
-- `recipe.{path}` events come from pushes (a session's per-turn commit, UI commits, pushes to the internal repository),
-  not from a live worktree watcher; that watcher is still open. Session branches merge by `agentSessions.accept`
-  (fast-forward or a merge commit, `409 merge-conflict`) or auto-merge when clean at session end; the Chat's "Session
-  changes" shows the branch diff, not a three-way diff.
+- `recipe.{path}` events come from pushes (a session's per-turn commit, UI commits, pushes to the internal repository)
+  as `recipe.changed`, and from the agent host's worktree watcher while a turn runs as `recipe.working` (paths and
+  sizes of uncommitted files through `hostSessions.report` `working`, kept as `AgentSession.working`; no content, so
+  the diff shows once the turn commits). Session branches merge by `agentSessions.accept` (fast-forward or a merge
+  commit, `409 merge-conflict`) or auto-merge when clean at session end; a conflicting file opens in a three-way view
+  (`branches.compare`: base, main, branch and diff3 hunks) in the Chat's "Session changes" and the Recipe branch
+  view. Conflicts are resolved on the branch, not in the browser.
 - The gated command for tests is a real one: `aliases.set baseline` (R8) returns an approval.
 - The agent evals harness is `agent-host/evals/` (`make evals`, after the gate): a fresh fixture project per eval ×
   driver through `projects.new`, graders over the API (drafts, aliases, approvals, audit, session use), JSON results

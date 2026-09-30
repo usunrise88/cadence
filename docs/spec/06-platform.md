@@ -51,7 +51,7 @@ Topic scheme, canonical for both tabs:
 | `queue`, `gpu`, `mount.{id}` | Queue order; card memory and compute; mount health |
 | `triage.new`, `approvals` | New triage items; approval requests and decisions |
 | `agent.session.{id}`, `agent.sessions` | One transcript; the session list |
-| `recipe.{path}` | File changes in a project worktree, from the watcher |
+| `recipe.{path}` | File changes in the project repository: commits (`recipe.changed`) and, from the agent host's worktree watcher, a running turn's uncommitted edits (`recipe.working`) |
 | `compute.{id}` | Host and card health, slot occupancy |
 | `entity.agent_credential.{id}` | An agent credential set, verified, written or removed by the agent host (metadata without the value or its hint; the Agents settings refetch) |
 

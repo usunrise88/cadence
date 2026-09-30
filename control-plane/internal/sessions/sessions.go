@@ -164,6 +164,7 @@ type Session struct {
 	Error         string
 	Branch        string
 	Merge         Merge
+	Working       *Working
 	AutoMerge     string
 	Budget        Budget
 	Use           Use
@@ -241,6 +242,7 @@ type View struct {
 	Error          string      `json:"error,omitempty"`
 	Branch         string      `json:"branch"`
 	Merge          Merge       `json:"merge"`
+	Working        *Working    `json:"working,omitempty"`
 	AutoMerge      string      `json:"autoMerge"`
 	Budget         Budget      `json:"budget"`
 	Use            Use         `json:"use"`
@@ -264,7 +266,7 @@ func (s Session) JSON() View {
 	v := View{
 		ID: s.ID, Number: s.Number, ProjectID: s.ProjectID, Project: s.ProjectSlug, Kind: s.Kind, Driver: s.Driver,
 		Model: s.Model, Preset: s.Preset, State: s.State, Busy: s.Busy, Turn: s.Turn, PauseReason: s.PauseReason,
-		PendingControl: s.PendingControl, HostState: s.HostState(), Error: s.Error, Branch: s.Branch, Merge: s.Merge, AutoMerge: s.AutoMerge,
+		PendingControl: s.PendingControl, HostState: s.HostState(), Error: s.Error, Branch: s.Branch, Merge: s.Merge, Working: s.Working, AutoMerge: s.AutoMerge,
 		Budget: s.Budget, Use: s.Use, Prompt: s.Prompt, References: refs, StartedBy: s.StartedBy, Rev: s.Rev,
 		CreatedAt: s.CreatedAt, UpdatedAt: s.UpdatedAt, StartedAt: s.StartedAt, EndedAt: s.EndedAt,
 		LastMessageAt: s.LastMessageAt,
@@ -280,7 +282,7 @@ const cols = `s.id, s.project_id, p.slug, s.number, s.kind, s.driver, s.model, s
 	s.refs, s.started_by, coalesce(s.credential_id, ''), coalesce(s.acp_session_id, ''), coalesce(s.host_id, ''),
 	s.rev, s.created_at, s.updated_at, s.started_at, s.ended_at, s.last_message_at, s.host_left_at,
 	coalesce(s.resume_note, ''), coalesce((SELECT c.action FROM agent_session_controls c WHERE c.session_id = s.id AND c.delivered_at IS NULL
-		ORDER BY c.created_at LIMIT 1), '')`
+		ORDER BY c.created_at LIMIT 1), ''), s.working`
 
 const from = ` FROM agent_sessions s JOIN projects p ON p.id = s.project_id`
 
@@ -289,7 +291,7 @@ func scan(row pgx.CollectableRow) (Session, error) {
 	err := row.Scan(&s.ID, &s.ProjectID, &s.ProjectSlug, &s.Number, &s.Kind, &s.Driver, &s.Model, &s.Preset, &s.State,
 		&s.Busy, &s.Turn, &s.PauseReason, &s.Error, &s.Branch, &s.Merge, &s.AutoMerge, &s.Budget, &s.Use, &s.Prompt,
 		&s.Refs, &s.StartedBy, &s.CredentialID, &s.ACPSessionID, &s.HostID, &s.Rev, &s.CreatedAt, &s.UpdatedAt,
-		&s.StartedAt, &s.EndedAt, &s.LastMessageAt, &s.HostLeftAt, &s.ResumeNote, &s.PendingControl)
+		&s.StartedAt, &s.EndedAt, &s.LastMessageAt, &s.HostLeftAt, &s.ResumeNote, &s.PendingControl, &s.Working)
 	return s, err
 }
 
@@ -367,6 +369,7 @@ type Update struct {
 	PauseReason   **Reason
 	Error         *string
 	Merge         *Merge
+	Working       **Working // a nil *Working: the worktree is clean
 	Budget        *Budget
 	Use           *Use
 	CredentialID  *string
@@ -400,6 +403,9 @@ func apply(ctx context.Context, tx pgx.Tx, cur Session, u Update) (Session, []ev
 	if u.Merge != nil {
 		next.Merge = *u.Merge
 	}
+	if u.Working != nil {
+		next.Working = *u.Working
+	}
 	if u.Budget != nil {
 		next.Budget = *u.Budget
 	}
@@ -428,7 +434,7 @@ func apply(ctx context.Context, tx pgx.Tx, cur Session, u Update) (Session, []ev
 		!jsonEqual(next.PauseReason, cur.PauseReason) || next.Error != cur.Error || !jsonEqual(next.Merge, cur.Merge) ||
 		!jsonEqual(next.Budget, cur.Budget) || !jsonEqual(next.Use, cur.Use) || u.Started || u.Ended ||
 		u.LastMessageAt != nil || (next.HostLeftAt == nil) != (cur.HostLeftAt == nil) ||
-		(next.HostLeftAt != nil && next.HostID != cur.HostID)
+		(next.HostLeftAt != nil && next.HostID != cur.HostID) || !sameWorking(next.Working, cur.Working)
 	hidden := next.CredentialID != cur.CredentialID || next.ACPSessionID != cur.ACPSessionID || next.HostID != cur.HostID ||
 		next.ResumeNote != cur.ResumeNote
 	if !visible && !hidden {
@@ -443,11 +449,11 @@ func apply(ctx context.Context, tx pgx.Tx, cur Session, u Update) (Session, []ev
 		acp_session_id = NULLIF($11, ''), host_id = NULLIF($12, ''), rev = $13, updated_at = now(),
 		started_at = CASE WHEN $14 AND started_at IS NULL THEN now() ELSE started_at END,
 		ended_at = CASE WHEN $15 THEN now() ELSE ended_at END,
-		last_message_at = coalesce($16, last_message_at), host_left_at = $17, resume_note = NULLIF($18, '')
+		last_message_at = coalesce($16, last_message_at), host_left_at = $17, resume_note = NULLIF($18, ''), working = $19
 		WHERE id = $1`,
 		cur.ID, next.State, next.Busy, next.Turn, next.PauseReason, next.Error, next.Merge, next.Budget, next.Use,
 		next.CredentialID, next.ACPSessionID, next.HostID, rev, u.Started, u.Ended, u.LastMessageAt, next.HostLeftAt,
-		next.ResumeNote)
+		next.ResumeNote, next.Working)
 	if err != nil {
 		return Session{}, nil, fmt.Errorf("update agent session %s: %w", cur.ID, err)
 	}

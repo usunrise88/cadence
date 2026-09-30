@@ -25,6 +25,7 @@ import { baseEnv, own, prepareDirs, removeDirs, type SessionDirs, type SessionUs
 import { errText, type Logger } from "./log.ts";
 import { RunawayDetector } from "./runaway.ts";
 import { toolCall, Transcript } from "./transcript.ts";
+import { type WatcherOptions, type WorkingReport, WorktreeWatcher } from "./watcher.ts";
 
 export interface SessionDeps {
   cp: ControlPlane;
@@ -47,6 +48,8 @@ export interface SessionDeps {
   thoughts?: boolean;
   flushMs?: number;
   onEnded?: (id: string) => void;
+  // Tests: replace fs.watch in the worktree watcher.
+  watchFn?: WatcherOptions["watchFn"];
 }
 
 // detached: the host shuts down; the session moves to the next host (hostSessions.release).
@@ -67,6 +70,7 @@ export class HostSession {
   private dirs?: SessionDirs;
   private user?: SessionUser;
   private worktree?: Worktree;
+  private watcher?: WorktreeWatcher;
   private agentEnv: NodeJS.ProcessEnv = {};
   private homeEnv: NodeJS.ProcessEnv = {};
   private agent: Agent | undefined;
@@ -151,6 +155,7 @@ export class HostSession {
           email: `${this.id}@cadence.local`,
         });
       }
+      if (!this.readOnly) this.watcher = this.watch(this.worktree);
       this.homeEnv = (await this.driver.prepareHome?.(this.dirs.home, this.deps.credentials)) ?? {};
       await own(this.dirs.home, this.user);
       await this.spawn(this.start.resume);
@@ -167,6 +172,18 @@ export class HostSession {
     } catch (err) {
       await this.fail(err);
     }
+  }
+
+  // watch reports the worktree's uncommitted changes while a turn runs (recipe.{path} events on the control plane).
+  private watch(wt: Worktree): WorktreeWatcher {
+    return new WorktreeWatcher({
+      dir: wt.dir,
+      clock: this.deps.clock,
+      scan: () => wt.status(),
+      onReport: (r: WorkingReport) => void this.report({ working: { turn: this.turn, ...r } }),
+      onError: (err) => this.log("warn", "worktree watcher", { err: errText(err) }),
+      ...(this.deps.watchFn ? { watchFn: this.deps.watchFn } : {}),
+    });
   }
 
   private acpField(): Partial<HostReport> {
@@ -317,6 +334,7 @@ export class HostSession {
     this.contextAtTurnStart = this.use.contextUsed;
     await this.report({ state: { state: "running", busy: true, turn } });
     this.armStuck();
+    this.watcher?.start();
     let stopReason = "error";
     let usage: { inputTokens: number; outputTokens: number; cachedReadTokens?: number } | undefined;
     try {
@@ -329,6 +347,7 @@ export class HostSession {
       }
     } finally {
       this.disarmStuck();
+      await this.watcher?.stop();
     }
     if (this.phase === "failed" || this.phase === "ended") return;
     if (this.phase === "detached") {
@@ -431,6 +450,9 @@ export class HostSession {
     } catch (err) {
       this.notice(`The changes of turn ${turn} could not be committed or pushed: ${errText(err)}`, "error");
     }
+    // What the turn left uncommitted (nothing, or files the credential scan refused): the control plane clears or
+    // keeps them.
+    await this.watcher?.flush().catch((err: unknown) => this.log("warn", "worktree status after the turn", { err: errText(err) }));
   }
 
   // ------------------------------------------------------------------ updates, clocks, runaway
@@ -614,6 +636,7 @@ export class HostSession {
   // cleanup removes a finished session's directories, or keeps a failed one's worktree (handed back to the host
   // user so the uid can serve another session).
   private async cleanup(remove: boolean): Promise<void> {
+    await this.watcher?.stop();
     if (this.dirs) {
       if (remove) await removeDirs(this.dirs).catch(() => undefined);
       else if (this.user) await own(this.dirs.root, { uid: process.getuid?.() ?? 0, gid: process.getgid?.() ?? 0 }).catch(() => undefined);

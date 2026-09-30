@@ -33,3 +33,5 @@ export {
   useChatDraft,
 } from "@/shell/agents/bridge";
 export { formatReference, linkifyReferences, parseReference, referenceChipLabel, referenceFromHref } from "@/shell/agents/references";
+// Branches: the three-way view of conflicting files (branches.compare) that Session changes and the Recipe document share.
+export { BranchConflicts, ThreeWayDiff, type BranchConflictsProps, type ThreeWayDiffProps } from "@/shell/diff/ThreeWayDiff";

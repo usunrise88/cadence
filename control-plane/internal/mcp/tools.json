@@ -1495,6 +1495,50 @@
       ]
     },
     {
+      "name": "branches.compare",
+      "title": "A branch compared with main file by file in three ways (merge base, main, branch), with conflict hunks",
+      "description": "Compare a session or sync branch with main per file: the merge base, main and branch versions (blob ids), whether each file merges cleanly and, for conflicting files, the three texts (each cut at 128 KiB) and the hunks that cover them, each marked same, main, branch, both or conflict. Use it to see why agentSessions.accept or branches.accept answered merge-conflict; resolve on the branch, then accept again.",
+      "method": "GET",
+      "path": "/projects/{p}/branches/{name}:compare",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "Branch name, URL-encoded (sync%2F2026-09-30, session%2F\u003cid\u003e)",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$",
+            "type": "string"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "name",
+          "in": "path",
+          "name": "name"
+        }
+      ]
+    },
+    {
       "name": "branches.get",
       "title": "A branch with its diff against main and the conflicts a merge would meet",
       "description": "A branch with its diff against main and the conflicts a merge would meet",

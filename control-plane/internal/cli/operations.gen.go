@@ -271,6 +271,15 @@ var Operations = []Operation{
 		},
 	},
 	{
+		ID: "branches.compare", Entity: "branches", Verb: "compare", Method: "GET", Path: "/projects/{p}/branches/{name}:compare",
+		Summary:     "A branch compared with main file by file in three ways (merge base, main, branch), with conflict hunks",
+		Description: "Compare a session or sync branch with main per file: the merge base, main and branch versions (blob ids), whether each file merges cleanly and, for conflicting files, the three texts (each cut at 128 KiB) and the hunks that cover them, each marked same, main, branch, both or conflict. Use it to see why agentSessions.accept or branches.accept answered merge-conflict; resolve on the branch, then accept again.",
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "name", In: "path", Flag: "name", Required: true, Type: "string", Description: "Branch name, URL-encoded (sync%2F2026-09-30, session%2F<id>)"},
+		},
+	},
+	{
 		ID: "branches.get", Entity: "branches", Verb: "get", Method: "GET", Path: "/projects/{p}/branches/{name}",
 		Summary: "A branch with its diff against main and the conflicts a merge would meet",
 		Params: []Param{

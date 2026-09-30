@@ -4,8 +4,10 @@
 // session's Unix user with hooks disabled: the worktree is the agent's, and nothing in it may run as the host.
 
 import { execFile } from "node:child_process";
-import { rm } from "node:fs/promises";
+import { lstat, rm } from "node:fs/promises";
+import { join } from "node:path";
 import { type Finding, scanDiff } from "./scan.ts";
+import { capReport, parseNumstat, parsePorcelain, type WorkingChange, type WorkingReport } from "./watcher.ts";
 
 export interface GitOptions {
   // The token (cst_…) sent as the basic-auth password; absent for local repositories in tests.
@@ -58,14 +60,14 @@ export class Worktree {
     return env;
   }
 
-  git(args: readonly string[], cwd = this.dir): Promise<string> {
+  git(args: readonly string[], cwd = this.dir, extraEnv: NodeJS.ProcessEnv = {}): Promise<string> {
     return new Promise((resolve, reject) => {
       execFile(
         "git",
         [...args],
         {
           cwd,
-          env: this.env(),
+          env: { ...this.env(), ...extraEnv },
           maxBuffer: 64 * 1024 * 1024,
           ...(this.opts.user ? { uid: this.opts.user.uid, gid: this.opts.user.gid } : {}),
         },
@@ -110,6 +112,31 @@ export class Worktree {
     await this.git(["commit", "--quiet", "--no-verify", "-m", message]);
     await this.push();
     return { sha: await this.head(), files };
+  }
+
+  // The uncommitted changes against HEAD as the next turn commit would see them (ignore rules included): status, size
+  // and line counts, for the watcher. Optional locks are off, so git never writes the index under the agent's feet.
+  async status(): Promise<WorkingReport> {
+    const opts = { GIT_OPTIONAL_LOCKS: "0" };
+    const listed = parsePorcelain(
+      await this.git(["-c", "core.quotePath=off", "status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames"], this.dir, opts),
+    );
+    if (listed.length === 0) return { files: [], truncated: false };
+    const numstat = parseNumstat(await this.git(["diff", "--numstat", "-z", "--no-renames", "HEAD"], this.dir, opts).catch(() => ""));
+    const { files, truncated } = capReport(listed);
+    const out = await Promise.all(
+      files.map(async (f): Promise<WorkingChange> => {
+        const c: WorkingChange = { ...f };
+        if (f.status !== "deleted") {
+          const st = await lstat(join(this.dir, f.path)).catch(() => undefined);
+          if (st?.isFile()) c.bytes = st.size;
+        }
+        const n = numstat.get(f.path);
+        if (n) Object.assign(c, n);
+        return c;
+      }),
+    );
+    return { files: out, truncated };
   }
 
   push(): Promise<string> {

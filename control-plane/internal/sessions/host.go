@@ -474,6 +474,8 @@ type ReportInput struct {
 	ACPSessionID string
 	Note         string
 	Withdraw     []string
+	// Working is the worktree's uncommitted changes (nil: not reported; no files: clean).
+	Working *Working
 }
 
 // hostKinds are the entry kinds a host may report; user messages and permission entries are the server's.
@@ -533,6 +535,13 @@ func (s *Service) Report(ctx context.Context, id string, in ReportInput) (Sessio
 		}
 		if st := in.State; st != nil {
 			u.Busy, u.Turn = st.Busy, st.Turn
+		}
+		if in.Working != nil && Live(sess.State) && sess.Branch != "" {
+			next := normalizeWorking(in.Working, s.now())
+			if !sameWorking(next, sess.Working) {
+				agentDrafts = append(agentDrafts, workingEvents(sess, sess.Working, next)...)
+				u.Working = &next
+			}
 		}
 		sess, d, err := apply(ctx, tx, sess, u)
 		if err != nil {

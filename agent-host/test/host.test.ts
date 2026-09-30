@@ -202,11 +202,40 @@ describe("session manager", () => {
     assert.ok(!JSON.stringify(h.cp.reports).includes("cst_aaaa"), "the value is never reported");
     assert.ok(h.cp.entries().some((e) => e.kind === "notice" && e.level === "error" && /not committed/.test(e.text ?? "")));
     assert.equal(git(root, "--git-dir", origin, "rev-parse", st.session.branch).trim(), before, "nothing was pushed");
+    const left = h.cp.last((b) => b.working !== undefined)?.working;
+    assert.deepEqual(left?.files.map((f) => [f.path, f.status]), [["leak.txt", "added"]], "the refused file stays a working change");
     say(h, st, "hello");
     await waitFor("the second turn", () => turnsEnded(h.cp) === 2 && h.cp.states().at(-1) === "running");
     await s.idle();
     const reply = h.cp.entries().filter((e) => e.kind === "agent_message").at(-1);
     assert.match(reply?.text ?? "", /were not committed because leak\.txt/, "the next prompt says why");
+    control(h, st, "end");
+    await waitFor("done", () => h.cp.states().at(-1) === "done");
+  });
+
+  test("the worktree watcher reports uncommitted files during a turn; the commit clears them", async () => {
+    const h = harness();
+    const st = startFor();
+    run(h, st);
+    await waitFor("running", () => h.cp.states().includes("running"));
+    say(h, st, "scribble draft.txt half done");
+    await waitFor("the turn start", () => h.cp.states().at(-1) === "running*");
+    const working = () => h.cp.reports.map((r) => r.body.working).filter((w) => w !== undefined);
+    // The watcher's window runs on the session clock: move it until fs.watch has seen the file.
+    const end = Date.now() + 10_000;
+    while (!working().some((w) => w.files.some((f) => f.path === "draft.txt"))) {
+      if (Date.now() > end) throw new Error(`no working report: ${JSON.stringify(working())}`);
+      h.clock.advance(300);
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    const live = working().find((w) => w.files.length > 0);
+    assert.deepEqual(live?.files, [{ path: "draft.txt", status: "added", bytes: "half done\n".length }]);
+    assert.equal(live?.turn, 1);
+    assert.equal(live?.truncated, false);
+    control(h, st, "cancel");
+    await waitFor("the turn end", () => turnsEnded(h.cp) === 1 && h.cp.states().at(-1) === "running");
+    await waitFor("the clean report", () => working().at(-1)?.files.length === 0);
+    assert.equal(git(root, "--git-dir", origin, "show", `${st.session.branch}:draft.txt`), "half done\n", "the cancelled turn committed it");
     control(h, st, "end");
     await waitFor("done", () => h.cp.states().at(-1) === "done");
   });

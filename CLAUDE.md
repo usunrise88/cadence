@@ -73,9 +73,10 @@ p95 56–68 ms. What exists now (details in `ROADMAP.md` "Phase 1 notes" and `do
   hosts to its static list by polling `egressHosts.list` (internal/agentcreds, internal/egress).
 - **Web.** Chat, Agent sessions, Approvals, Agent settings, Settings, Getting started, Project, Mix, Recipe panels;
   context bridge (Ctrl/Cmd+I, `@kind:id` chips, attribution badge → tool call in Chat).
-Open from phase 1: the live worktree watcher (recipe events come from pushes), a three-way "Session changes" diff,
-opencode tool-call ids for the badge link, claude.ai connectors in Claude sessions (check the `setup-token` mode), the
-owner's MiniMax model (not yet run), dropping basic auth on the staging stand, live runs of the agent evals.
+Open from phase 1: live runs of the agent evals against real models, and dropping basic auth on the staging stand
+(the owner's step). Built after the gate: the worktree watcher (`recipe.working` events), the three-way Session changes
+(`branches.compare`), `hostSessions.release` on host shutdown, tool-call ids for opencode, the agent evals harness
+(`make evals`); claude.ai connectors are off in every Claude session.
 
 Known spec conflicts and gaps: `docs/review/2026-09-29-spec-kickoff-review.md` (statuses updated); assumptions made
 while building are in `docs/spec/07-audit-risks-sources.md` "Open questions".

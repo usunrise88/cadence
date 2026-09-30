@@ -15,6 +15,7 @@
       "mcp__cadence__baseModels_get",
       "mcp__cadence__baseModels_list",
       "mcp__cadence__branches_accept",
+      "mcp__cadence__branches_compare",
       "mcp__cadence__branches_get",
       "mcp__cadence__branches_list",
       "mcp__cadence__branches_revert",

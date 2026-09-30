@@ -241,6 +241,25 @@ Open questions:
     parallel calls of one operation could swap ids. The outbox events of those commands are rewritten in place
     (causedBy and payload), the one exception to an append-only outbox, and `mix.attributed` tells open panels that
     the current revision's cause changed
+- [ ] Worktree watcher and three-way Session changes (phase 1, closing the roadmap line) assumptions, confirm:
+  - The watcher runs only while a turn runs (the worktree changes only then) and reports paths, status, size and
+    line counts, never content: `hostSessions.report` `working` (at most 200 files, `truncated` beyond). The live view
+    is "which files, how much"; the diff itself appears when the turn commits. Carrying content (or a patch) would make
+    every keystroke of a large file travel and land in the outbox
+  - Ignore rules are git's own (`.gitignore`, `.git/info/exclude`; the host sets no global excludes file), so the
+    watcher shows exactly what the turn's commit would take; the spec's "whatever the session's config excludes" has
+    no Cadence-specific list yet
+  - Working changes are events of type `recipe.working` on the existing `recipe.{path}` topic (payload `working:
+    true`, `sessionId`, `branch`, `status` — `clean` when a file leaves the set) rather than a new topic; the session
+    keeps the last report as `AgentSession.working` (so a Chat opened mid-turn sees it) and bumps its `rev` when it
+    changes. Ending the session clears it
+  - The three-way comparison is its own read, `branches.compare` (`GET /projects/{p}/branches/{name}:compare`, the
+    `compare` verb), not a larger `branches.get`: texts travel only when asked for, 128 KiB per version and 1 MiB per
+    response. Whether a file conflicts is git's merge (`merge-tree`); the hunks are Cadence's own diff3 over Myers line
+    diffs, so a whitespace-only or end-of-line conflict can show hunks that git would call differently
+  - Conflicts are resolved on the branch (a new turn, or a push), not in the UI: the three-way view is read-only and
+    Accept stays disabled while a conflict remains. Editing a resolution in the browser would need a commit command
+    on a session branch, which agents' tokens own
 
 ## Sources
 
