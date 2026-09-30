@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type UIEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Attachment, Pause, Play, SendDiagonal, Square } from "iconoir-react";
-import { branchesGetOptions } from "@/api/gen/@tanstack/react-query.gen";
+import { branchesCompareOptions, branchesGetOptions } from "@/api/gen/@tanstack/react-query.gen";
 import type { AgentMessage, AgentSession } from "@/api/gen/types.gen";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "@/shell/entity/primitives";
 import {
+  BranchConflicts,
   currentSelectionReferences,
   errorMessage,
   isLive,
@@ -365,9 +366,15 @@ function Transcript({ session }: { session: AgentSession }) {
 function MergeArea({ session: s }: { session: AgentSession }) {
   const project = useProject();
   const ended = !isLive(s);
-  const show = s.kind === "interactive" && !!s.branch && (ended || s.state === "paused");
-  const decidable = show && s.merge.state !== "merged" && s.merge.state !== "discarded";
-  const diff = useQuery({ ...branchesGetOptions({ path: { p: project ?? s.project, name: s.branch } }), enabled: decidable, retry: false });
+  // While a turn runs the agent host's watcher reports the worktree's uncommitted files (AgentSession.working).
+  const working = !ended && s.working && s.working.files.length > 0 ? s.working : undefined;
+  const settled = ended || s.state === "paused";
+  const show = s.kind === "interactive" && !!s.branch && (settled || !!working);
+  const decidable = show && settled && s.merge.state !== "merged" && s.merge.state !== "discarded";
+  const path = { p: project ?? s.project, name: s.branch };
+  const diff = useQuery({ ...branchesGetOptions({ path }), enabled: decidable, retry: false });
+  const knownConflicts = !!s.merge.conflicts?.length || !!diff.data?.conflicts.length;
+  const compare = useQuery({ ...branchesCompareOptions({ path }), enabled: decidable && knownConflicts, retry: false });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
@@ -402,14 +409,19 @@ function MergeArea({ session: s }: { session: AgentSession }) {
       summary = "Session changes wait for you: accept merges the branch into main, discard deletes it.";
       break;
     default:
-      summary = changes ? "Paused with changes on the session branch; accepting or discarding ends the session." : "No file changes to merge.";
+      if (working) {
+        const n = working.files.length;
+        summary = `The agent is editing: ${n}${working.truncated ? "+" : ""} uncommitted file${n === 1 ? "" : "s"}, committed at the end of the turn.`;
+      } else {
+        summary = changes ? "Paused with changes on the session branch; accepting or discarding ends the session." : "No file changes to merge.";
+      }
   }
   return (
-    <section aria-label="Session changes" className="shrink-0 border-t bg-chrome px-3 py-2 text-xs" data-slot="merge-area" data-merge={s.merge.state}>
+    <section aria-label="Session changes" className="max-h-[60%] shrink-0 overflow-y-auto border-t bg-chrome px-3 py-2 text-xs" data-slot="merge-area" data-merge={s.merge.state}>
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-medium">Session changes</span>
         <span className="rounded-full border px-2 py-0.5 text-[11px] text-muted-foreground" data-slot="merge-state">
-          {s.merge.state === "none" && changes ? "open" : s.merge.state}
+          {working && s.merge.state === "none" ? "editing" : s.merge.state === "none" && changes ? "open" : s.merge.state}
         </span>
         <code className="text-[11px] text-muted-foreground">{s.branch}</code>
         <Button size="xs" variant="ghost" className="ml-auto" onClick={() => openBranch(s.branch)}>
@@ -417,6 +429,27 @@ function MergeArea({ session: s }: { session: AgentSession }) {
         </Button>
       </div>
       <p className="mt-1 text-muted-foreground">{summary}</p>
+      {working ? (
+        <ul className="mt-1 max-h-28 overflow-auto font-mono text-[11px]" aria-label="Uncommitted changes" data-slot="working-changes">
+          {working.files.map((f) => (
+            <li key={f.path} className="flex gap-2" data-path={f.path}>
+              <span className="w-14 shrink-0 text-muted-foreground">{f.status}</span>
+              <span className="min-w-0 truncate" title={f.path}>
+                {f.path}
+              </span>
+              <span className="ml-auto shrink-0 text-muted-foreground tabular-nums">
+                {f.additions !== undefined || f.deletions !== undefined ? (
+                  <>
+                    <span className="text-diff-added-foreground">+{f.additions ?? 0}</span> <span className="text-diff-removed-foreground">−{f.deletions ?? 0}</span>
+                  </>
+                ) : f.bytes !== undefined ? (
+                  `${f.bytes.toLocaleString()} B`
+                ) : null}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
       {decidable && d && d.files.length ? (
         <ul className="mt-1 max-h-28 overflow-auto font-mono text-[11px]" aria-label="Changed files">
           {d.files.map((f) => (
@@ -429,6 +462,11 @@ function MergeArea({ session: s }: { session: AgentSession }) {
             </li>
           ))}
         </ul>
+      ) : null}
+      {decidable && compare.data ? (
+        <div className="mt-2">
+          <BranchConflicts compare={compare.data} branchLabel="session" maxHeight="max-h-[30vh]" />
+        </div>
       ) : null}
       {decidable && changes ? (
         <div className="mt-2 flex flex-wrap items-center gap-1">
