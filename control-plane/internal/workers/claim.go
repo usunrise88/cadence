@@ -15,8 +15,10 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/defaults"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
 	"github.com/usunrise88/cadence/control-plane/internal/jobs"
+	"github.com/usunrise88/cadence/control-plane/internal/policies"
 	"github.com/usunrise88/cadence/control-plane/internal/queue"
 	"github.com/usunrise88/cadence/control-plane/internal/steps"
+	"github.com/usunrise88/cadence/control-plane/internal/storage"
 )
 
 // CardTelemetry is one card as a worker sees it (the contract's CardTelemetry).
@@ -130,7 +132,11 @@ func (s *Service) claimOnce(ctx context.Context, tx pgx.Tx, c Caller, in Claim, 
 	}
 	var cards []queue.Card
 	if slices.ContainsFunc(cands, func(c candidate) bool { return c.spec.Resources.GPU }) {
-		if cards, err = lockCards(ctx, tx, host, in.Cards); err != nil {
+		tz, err := instanceZone(ctx, tx)
+		if err != nil {
+			return nil, nil, err
+		}
+		if cards, err = lockCards(ctx, tx, host, in.Cards, tz); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -207,9 +213,18 @@ func waiting(ctx context.Context, tx pgx.Tx, kinds []string) ([]candidate, error
 	})
 }
 
+// instanceZone is the instance time zone (policies.timezone) that availability windows naming none follow.
+func instanceZone(ctx context.Context, q storage.Querier) (string, error) {
+	p, err := policies.Get(ctx, q, defaults.Get())
+	if err != nil {
+		return "", err
+	}
+	return p.Timezone, nil
+}
+
 // lockCards takes the card slot locks of the host's cards the worker reported, in index order (so two claims never
-// deadlock), and reads what each card holds after the lock.
-func lockCards(ctx context.Context, tx pgx.Tx, host compute.Host, reported []CardTelemetry) ([]queue.Card, error) {
+// deadlock), and reads what each card holds after the lock. Windows without a time zone take tz.
+func lockCards(ctx context.Context, tx pgx.Tx, host compute.Host, reported []CardTelemetry, tz string) ([]queue.Card, error) {
 	var out []queue.Card
 	cfg := slices.Clone(host.Cards)
 	slices.SortFunc(cfg, func(a, b compute.Card) int { return a.Index - b.Index })
@@ -226,6 +241,7 @@ func lockCards(ctx context.Context, tx pgx.Tx, host compute.Host, reported []Car
 			host.ID, cc.Index); err != nil {
 			return nil, fmt.Errorf("lock card slot: %w", err)
 		}
+		cc.Windows = cc.Windows.InZone(tz)
 		out = append(out, queue.Card{Config: cc, FreeMB: reported[at].freeMB()})
 	}
 	if len(out) == 0 {

@@ -2045,8 +2045,7 @@
                               "type": "string"
                             },
                             "timezone": {
-                              "default": "UTC",
-                              "description": "IANA time zone, e.g. Europe/Berlin",
+                              "description": "IANA time zone, e.g. Europe/Berlin; empty follows the instance time zone (policies.timezone)",
                               "maxLength": 64,
                               "type": "string"
                             }

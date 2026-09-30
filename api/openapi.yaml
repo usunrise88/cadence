@@ -5396,7 +5396,7 @@ components:
           description: Days the window opens on (a window past midnight belongs to the day it opens)
         start: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$", description: "Opens at HH:MM" }
         end: { type: string, pattern: "^(([01][0-9]|2[0-3]):[0-5][0-9]|24:00)$", description: "Closes at HH:MM (24:00 = midnight); before start = the next day" }
-        timezone: { type: string, maxLength: 64, default: UTC, description: "IANA time zone, e.g. Europe/Berlin" }
+        timezone: { type: string, maxLength: 64, description: "IANA time zone, e.g. Europe/Berlin; empty follows the instance time zone (policies.timezone)" }
     AvailabilityWindows:
       type: object
       description: >

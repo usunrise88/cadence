@@ -394,8 +394,9 @@ Open questions:
       code path deletes either
 - [ ] S · Availability windows (phase 2, R19), confirm: windows are per card and job kind (training, eval, shadow,
       export, data), each a set of weekdays with `start`/`end` `HH:MM` (an end at or before the start closes the next
-      day, `24:00` is midnight) and its own IANA `timezone` defaulting to UTC — not the instance's `policies.timezone`
-      that quiet hours, the digest and backups follow; no windows means always open; only training is stopped at a
+      day, `24:00` is midnight) and its own IANA `timezone`; a window naming none follows the instance's
+      `policies.timezone` (like quiet hours, the digest and backups), resolved at check time (F, phase 2 — it
+      defaulted to UTC in wave 1); no windows means always open; only training is stopped at a
       close; an unknown estimate or a resumed step starts whenever its window is open
 - [ ] S · Playbook format (phase 2, R16), confirm: a playbook input is taken from the project with `from: project`
       (the base-model input: the project's default base model) or from `defaults.yaml` with `defaultRef`, and a chain

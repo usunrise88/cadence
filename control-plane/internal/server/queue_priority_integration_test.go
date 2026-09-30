@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -97,4 +98,35 @@ func TestProjectQueuePriority(t *testing.T) {
 			t.Fatalf("outcome of %s = %+v", want, o)
 		}
 	}
+}
+
+// TestWindowFollowsInstanceZone: an availability window naming no time zone follows policies.timezone.
+func TestWindowFollowsInstanceZone(t *testing.T) {
+	w := startWorkers(t)
+	var pol struct{ Rev int }
+	w.ok(w.do(http.MethodGet, "/api/policies", ""), http.StatusOK, &pol)
+	w.ok(w.do(http.MethodPatch, "/api/policies", `{"timezone": "Europe/Berlin"}`, "Idempotency-Key", w.key(),
+		"If-Match", fmt.Sprint(pol.Rev)), http.StatusOK, nil)
+	var host struct{ Rev int }
+	w.ok(w.do(http.MethodGet, "/api/compute/staging", ""), http.StatusOK, &host)
+	body := `{"cards": [{"index": 0, "windows": {"training": [{"days": ["wed"], "start": "22:00", "end": "08:00"}]}}]}`
+	w.ok(w.do(http.MethodPatch, "/api/compute/staging", body, "Idempotency-Key", w.key(), "If-Match", fmt.Sprint(host.Rev)), http.StatusOK, nil)
+
+	f := w.register(w.workerToken("staging"), "toy", map[string]any{"train_toy": kind("1", "training", true, false)})
+	w.clock.Set(time.Date(2026, 9, 30, 19, 30, 0, 0, time.UTC)) // Wednesday 21:30 Berlin: closed
+	job := w.enqueue(gpuSpec("train_toy"))
+	if l := f.claim(0); l != nil {
+		t.Fatalf("leased before the window opened in the instance zone: %+v", l)
+	}
+	w.clock.Set(time.Date(2026, 9, 30, 20, 30, 0, 0, time.UTC)) // 22:30 Berlin, still before 22:00 UTC: open
+	l := f.claim(2)
+	if l == nil || l.JobID != job {
+		t.Fatalf("lease in the instance-zone window = %+v", l)
+	}
+	w.clock.Set(time.Date(2026, 10, 1, 6, 30, 0, 0, time.UTC)) // 08:30 Berlin: closed (read as UTC it would be open)
+	if stop, reason := f.report(l.ID, map[string]any{}); !stop || reason != "window-closed" {
+		t.Fatalf("report after the close in the instance zone = %v %q", stop, reason)
+	}
+	w.ok(f.release(l.ID, steps.Outcome{State: steps.StateCancelled}), http.StatusNoContent, nil)
+	w.jobCmd(job, "cancel")
 }

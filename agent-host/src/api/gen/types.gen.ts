@@ -3392,7 +3392,7 @@ export type AvailabilityWindow = {
      */
     end: string;
     /**
-     * IANA time zone, e.g. Europe/Berlin
+     * IANA time zone, e.g. Europe/Berlin; empty follows the instance time zone (policies.timezone)
      */
     timezone?: string;
 };

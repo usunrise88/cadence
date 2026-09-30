@@ -169,7 +169,14 @@ func (s *Service) stopReason(ctx context.Context, tx pgx.Tx, l leaseRow, now tim
 			return "", err
 		}
 		at := slices.IndexFunc(h.Cards, func(c compute.Card) bool { return c.Index == *l.CardIndex })
-		if at >= 0 && queue.WindowClosed(h.Cards[at].Windows, l.JobKind, now) {
+		if at < 0 || len(h.Cards[at].Windows) == 0 {
+			return "", nil
+		}
+		tz, err := instanceZone(ctx, tx)
+		if err != nil {
+			return "", err
+		}
+		if queue.WindowClosed(h.Cards[at].Windows.InZone(tz), l.JobKind, now) {
 			return StopWindowClosed, nil
 		}
 	}
