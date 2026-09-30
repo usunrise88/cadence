@@ -11,7 +11,8 @@ entry point, the parameter schema with `x-cadence` metadata, and the input hash 
 
 ## Place in the loop
 
-Run — as a stand-in step in pipeline tests; never in a real pipeline.
+Run — as a stand-in step in pipeline tests, and in the `echo` starter pipeline that checks a worker runs steps end
+to end (copy any text artifact twice). Never part of a training or data pipeline.
 
 ## Fields and defaults
 
@@ -21,7 +22,8 @@ Run — as a stand-in step in pipeline tests; never in a real pipeline.
 
 ## Commands
 
-`pipelines.run` (phase 2) runs pipelines that contain step kinds.
+`pipelines.run` runs pipelines that contain step kinds; `pipelines/echo` is the smallest one (see the
+[pipelines guide](../guides/pipelines.md)).
 
 ## Playbooks
 

@@ -29,6 +29,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/mcp"
 	"github.com/usunrise88/cadence/control-plane/internal/mixes"
 	"github.com/usunrise88/cadence/control-plane/internal/obs"
+	"github.com/usunrise88/cadence/control-plane/internal/pipelines"
 	"github.com/usunrise88/cadence/control-plane/internal/policy"
 	"github.com/usunrise88/cadence/control-plane/internal/problems"
 	"github.com/usunrise88/cadence/control-plane/internal/projects/bootstrap"
@@ -78,6 +79,9 @@ type Config struct {
 	StepHooks *steps.Hooks
 	// Leases is the worker protocol as the pipeline engine sees it; steps.NoLeases when nil.
 	Leases steps.Leases
+	// Pipelines is the pipeline engine; New builds one from the fields above when nil (register its step job
+	// kind with RegisterJobs before the job service starts).
+	Pipelines *pipelines.Engine
 }
 
 // Server implements api.StrictServerInterface. Planned operations fall through to api.Planned (501).
@@ -115,6 +119,21 @@ func New(c Config) (*Server, error) {
 	if c.Leases == nil {
 		c.Leases = steps.NoLeases{}
 	}
+	if c.Pipelines == nil {
+		var repo pipelines.Repo
+		if c.Projects != nil {
+			repo = c.Projects.Repos()
+		}
+		c.Pipelines = pipelines.New(pipelines.Options{
+			Pool: c.Pool, Jobs: c.Jobs, CAS: c.CAS, Hooks: c.StepHooks, Leases: c.Leases, Repos: repo, Log: c.Log,
+			Defaults: func() *defaults.Defaults {
+				if c.Defaults != nil {
+					return c.Defaults
+				}
+				return defaults.Get()
+			},
+		})
+	}
 	s := &Server{Config: c, spec: spec}
 	window := time.Duration(s.defaultsDoc().Drafts.PresenceSeconds.Value) * time.Second
 	s.drafts = drafts.NewStore(time.Now, window)
@@ -148,6 +167,9 @@ func New(c Config) (*Server, error) {
 	s.replay = replay
 	return s, nil
 }
+
+// RegisterJobs registers the pipeline engine's step job kind and sweep; call it before the job service starts.
+func (s *Server) RegisterJobs(j *jobs.Service) { s.Pipelines.Register(j) }
 
 // Handler is the whole HTTP surface: /api (the contract), /mcp (the same operations as MCP tools), /git (the
 // project repositories over smart HTTP), /healthz, /metrics, and the SPA for every other path.

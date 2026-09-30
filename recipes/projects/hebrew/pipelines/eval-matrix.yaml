@@ -1,13 +1,11 @@
+# Starter pipeline: the streaming eval matrix of a checkpoint, then the gate (step kinds arrive in phase 3).
 name: eval-matrix
+description: Evaluate a checkpoint at the latency profiles of the matrix and apply the project's gate
+inputs: { checkpoint: checkpoint }
 steps:
   - id: eval
     kind: streaming_eval@1
-    params:
-      checkpoint: ""
-      golden_sets: []
-      att_context_sizes: [[56, 0], [56, 1], [56, 13]]
-    outputs: { report: eval_report }
+    in: { checkpoint: $inputs.checkpoint }
   - id: gate
     kind: gate_evaluate@1
-    inputs: { report: eval.report }
-    params: { gate: default }
+    in: { report: eval.report }

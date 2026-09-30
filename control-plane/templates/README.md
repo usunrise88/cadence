@@ -9,7 +9,10 @@ The project wizard renders these into a new project repository (the `projects.bo
 - `agent-config/claude-settings.json.tmpl` → `.claude/settings.json`, `agent-config/opencode.json.tmpl` →
   `opencode.json` — rendered from the agent profile's permission preset. Permissions only: no MCP section and no
   token; the MCP server reaches the agent through ACP `session/new` (docs/spec/08-resolutions.md R2).
-- `pipelines/*.yaml` — starter pipelines, copied verbatim to `pipelines/`
+- `pipelines/*.yaml` — starter pipelines, copied verbatim to `pipelines/` (format: `internal/pipelines/README.md`;
+  steps pin `kind@version`, parameters equal to their defaults are omitted). A project without its own file of a
+  name runs the bundled one, so these are also what `pipelines.list` offers a project without a repository.
+  `internal/pipelines` tests that every file parses.
 - `skills/<name>/SKILL.md` — Cadence's product skills, copied into the project's `.claude/skills/` (both agents read
   that path). They live here, not in this repo's `.claude/skills/`, so agents building Cadence don't load
   project-operating skills.

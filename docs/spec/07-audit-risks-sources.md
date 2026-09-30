@@ -282,6 +282,25 @@ Open questions:
       file's allow rules for shell commands, reads and edits are still not applied by Claude Code, so those keep going
       through the host's permission request and the preset (a round trip each, no person). Pre-allowing them the same
       way would need the host to trust the preset's shell rules without the per-call check
+- [ ] P (phase 2): `pipelines.run` answers `201` with the pipeline run (`plr_…`, its steps and their step job ids),
+      not `202 {jobId}` — a run has one job per step attempt, so there is no single job to follow; clients follow
+      `pipeline_run.{id}` or `pipelineRuns.wait` (added, read verb `wait`). `202` stays for approvals. Its `If-Match`
+      is the pipeline's version (the commit that last changed the file, like `branches.accept` takes a head), `*`
+      accepts any. Confirm
+- [ ] P (phase 2): output hooks also run for reused outputs (a step reused by input hash in a new pipeline run), so a
+      run's facade sees its outputs; hooks must therefore be idempotent per artifact hash. A failing hook fails the
+      step and rolls back its writes and the output's index row (savepoint)
+- [ ] P (phase 2): a directory artifact's `size` is the sum of its files' sizes (the manifest blob's own size is
+      accepted when a worker declares that); an artifact row is written once by its first producer, other projects
+      are linked in `artifact_projects`, and a credential scoped to a project reads artifacts linked to it
+- [ ] P (phase 2): a step is `running` only once the worker protocol calls `pipelines.Engine.Leased` when it grants
+      the lease; until then (and in a control plane without it) a step goes `queued → done`. Step jobs run in their
+      own River queue (`steps`, 100 workers) because each waits on its lease for the whole step. A step whose job
+      ended without an outcome (control plane restarted while waiting) is swept as `lost` (one retry); the worker's
+      old lease must then stop at its next heartbeat (stream W)
+- [ ] P (phase 2): the starter pipelines move to the plan's format (`in` wiring, outputs from the kind, only
+      departures in `params`); `data-ingest` and `eval-matrix` name step kinds of phases 3–4 and fail validation until
+      those exist; a new `echo` starter checks that workers run steps end to end
 
 ## Sources
 

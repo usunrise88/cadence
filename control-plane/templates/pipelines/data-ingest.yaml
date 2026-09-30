@@ -1,31 +1,21 @@
-# Starter pipeline: index a mount, pseudo-label, normalise, filter, split, freeze.
+# Starter pipeline: index a mount, pseudo-label, normalise, filter, split, freeze (step kinds arrive in phase 4).
 name: data-ingest
+description: Turn audio on a mount into a frozen, fingerprinted dataset version
 steps:
   - id: index
     kind: sdp_ingest@1
-    params: { mount: "", sample_rate: 16000 }
-    outputs: { manifest: manifest }
   - id: pseudolabel
     kind: pseudolabel_ensemble@1
-    inputs: { manifest: index.manifest }
-    params: { models: [nemotron-3.5-base, omnilingual-3b], agreement_wer_max: 0.15 }
-    outputs: { manifest: manifest }
+    in: { manifest: index.manifest }
   - id: normalise
     kind: text_normalise@1
-    inputs: { manifest: pseudolabel.manifest }
-    params: { locale: "" }
-    outputs: { manifest: manifest }
+    in: { manifest: pseudolabel.manifest }
   - id: filter
     kind: manifest_filter@1
-    inputs: { manifest: normalise.manifest }
-    params: { min_sec: 0.5, max_sec: 40, max_chars_per_sec: 30 }
-    outputs: { manifest: manifest }
+    in: { manifest: normalise.manifest }
   - id: split
     kind: speaker_disjoint_split@1
-    inputs: { manifest: filter.manifest }
-    params: { val_share: 0.02, exclude_golden_sets: true }
-    outputs: { manifest: manifest }
+    in: { manifest: filter.manifest }
   - id: freeze
     kind: dataset_freeze@1
-    inputs: { manifest: split.manifest }
-    outputs: { dataset_version: dataset_version }
+    in: { manifest: split.manifest }

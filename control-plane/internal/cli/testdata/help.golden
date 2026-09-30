@@ -18,6 +18,7 @@ Entities:
   agentSessions  accept cancel get list new pause resume revert
   aliases        get list set
   approvals      approve deny get list
+  artifacts      get
   audit          list
   baseModels     get list
   branches       accept compare get list revert
@@ -31,6 +32,8 @@ Entities:
   help           get search
   jobs           cancel get list wait
   mixes          edit get list new preview
+  pipelineRuns   cancel get list retry wait
+  pipelines      list run
   policies       edit get
   projects       adopt archive edit get list new note search sync
   recipes        get list

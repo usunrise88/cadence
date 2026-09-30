@@ -3172,6 +3172,373 @@ export type StepError = {
     retryable?: boolean;
 };
 
+export type Artifact = {
+    /**
+     * b3:<64 hex>, BLAKE3-256 of the content (of the manifest for a directory)
+     */
+    hash: string;
+    /**
+     * Artifact type (text, dataset, mix, base_model, checkpoint, calibration, …)
+     */
+    type: string;
+    /**
+     * Bytes: the file's, or the sum of a directory's files
+     */
+    size: number;
+    /**
+     * A directory artifact: a manifest of files, each its own blob
+     */
+    directory: boolean;
+    /**
+     * Neutral, self-describing metadata of the type (R42)
+     */
+    meta: {
+        [key: string]: unknown;
+    };
+    /**
+     * The project that first produced it; absent for a registry artifact
+     */
+    projectId?: string;
+    producer?: ArtifactProducer;
+    createdAt: string;
+    /**
+     * A directory artifact's files, by path
+     */
+    files?: Array<{
+        path: string;
+        hash: string;
+        size: number;
+    }>;
+    /**
+     * How content is encoded (content=true): utf8 or base64
+     */
+    encoding?: string;
+    /**
+     * The content (content=true, at most 1 MiB)
+     */
+    content?: string;
+    /**
+     * Why content was not included (too large, a directory without path, …)
+     */
+    contentOmitted?: string;
+};
+
+/**
+ * The pipeline step whose output first recorded this artifact
+ */
+export type ArtifactProducer = {
+    pipelineRunId: string;
+    /**
+     * pls_…
+     */
+    stepId: string;
+    /**
+     * The step's id in the pipeline file
+     */
+    step: string;
+    output: string;
+};
+
+export type PipelineList = {
+    ref: string;
+    /**
+     * The commit ref resolved to; absent when the project has no repository
+     */
+    commit?: string;
+    items: Array<Pipeline>;
+};
+
+export type Pipeline = {
+    name: string;
+    description?: string;
+    /**
+     * The project repository, or a bundled template the repository has no file for
+     */
+    source: 'repository' | 'template';
+    /**
+     * pipelines/<name>.yaml
+     */
+    path: string;
+    /**
+     * The commit that last changed the file (a template: template-<sha256 prefix>); pipelines.run takes it as If-Match
+     */
+    version: string;
+    /**
+     * Pipeline input → artifact type
+     */
+    inputs: {
+        [key: string]: string;
+    };
+    steps: Array<PipelineStepDefinition>;
+    /**
+     * The file does not parse (steps and inputs are then empty)
+     */
+    error?: string;
+};
+
+export type PipelineStepDefinition = {
+    id: string;
+    /**
+     * kind@version, pinned
+     */
+    kind: string;
+    /**
+     * Step input → $inputs.<name> or <step>.<output>
+     */
+    in?: {
+        [key: string]: string;
+    };
+    /**
+     * Only the parameters that depart from defaults
+     */
+    params?: {
+        [key: string]: unknown;
+    };
+};
+
+export type PipelineRunNew = {
+    /**
+     * Branch, tag or commit to read the pipeline at (default main)
+     */
+    ref?: string;
+    /**
+     * Pipeline input → artifact (it must be in the content store)
+     */
+    inputs?: {
+        [key: string]: ArtifactRef;
+    };
+    /**
+     * Step id → parameter overrides (recorded as departures when they differ from the default)
+     */
+    params?: {
+        [key: string]: {
+            [key: string]: unknown;
+        };
+    };
+    /**
+     * Run every step even when a finished step has the same input hash
+     */
+    fresh?: boolean;
+    /**
+     * Queue priority of the step jobs (higher first)
+     */
+    priority?: number;
+};
+
+export type PipelinePlan = {
+    pipeline: string;
+    source: 'repository' | 'template';
+    ref?: string;
+    commit?: string;
+    version: string;
+    steps: Array<PipelinePlanStep>;
+    estimate: PipelineEstimate;
+};
+
+export type PipelinePlanStep = {
+    step: string;
+    kind: string;
+    kindVersion: string;
+    /**
+     * The step kind's registry version (ver_…)
+     */
+    stepKindVersionId?: string;
+    runtime?: string;
+    /**
+     * Resolved parameters (defaults applied)
+     */
+    params: {
+        [key: string]: unknown;
+    };
+    departures: Array<ParamDeparture>;
+    in: {
+        [key: string]: string;
+    };
+    /**
+     * Output → artifact type
+     */
+    produces: {
+        [key: string]: string;
+    };
+    resources: StepResources;
+    /**
+     * Absent when unknown
+     */
+    estimateSeconds?: number;
+};
+
+export type PipelineEstimate = {
+    /**
+     * Every step has an estimate
+     */
+    known: boolean;
+    /**
+     * Sum of the known step estimates
+     */
+    seconds?: number;
+    /**
+     * Sum over the steps that need a card
+     */
+    gpuHours?: number;
+    /**
+     * Steps without an estimate
+     */
+    unknownSteps: Array<string>;
+};
+
+export type ParamDeparture = {
+    param: string;
+    /**
+     * The value the step runs with
+     */
+    value: unknown;
+    /**
+     * The default (x-cadence.defaultRef in defaults.yaml, else x-cadence.default); absent when the parameter has none
+     */
+    default?: unknown;
+};
+
+export type PipelineRunState = 'running' | 'done' | 'failed' | 'cancelled';
+
+export type PipelineStepState = 'waiting' | 'queued' | 'running' | 'done' | 'reused' | 'failed' | 'skipped' | 'cancelled';
+
+export type PipelineRunSummary = {
+    /**
+     * plr_…
+     */
+    id: string;
+    projectId: string;
+    pipeline: string;
+    source: 'repository' | 'template' | 'inline';
+    ref?: string;
+    /**
+     * The commit the pipeline was read at
+     */
+    commit?: string;
+    /**
+     * The pipeline's version (commit that last changed its file)
+     */
+    version: string;
+    state: PipelineRunState;
+    /**
+     * The training run this pipeline run belongs to (run_…), when a facade started it
+     */
+    runId?: string;
+    fresh?: boolean;
+    priority?: number;
+    inputs?: {
+        [key: string]: ArtifactRef;
+    };
+    /**
+     * Why the run failed
+     */
+    error?: string;
+    rev: number;
+    actor: Actor;
+    createdAt: string;
+    updatedAt: string;
+    finishedAt?: string;
+};
+
+export type PipelineRun = PipelineRunSummary & {
+    steps: Array<PipelineStep>;
+};
+
+export type PipelineRunList = {
+    items: Array<PipelineRunSummary>;
+};
+
+export type PipelineStep = {
+    /**
+     * pls_…
+     */
+    id: string;
+    /**
+     * The step's id in the pipeline file
+     */
+    step: string;
+    /**
+     * Order of execution (topological)
+     */
+    position: number;
+    kind: string;
+    kindVersion: string;
+    stepKindVersionId?: string;
+    state: PipelineStepState;
+    /**
+     * Resolved parameters
+     */
+    params: {
+        [key: string]: unknown;
+    };
+    departures: Array<ParamDeparture>;
+    /**
+     * Wiring from the pipeline file
+     */
+    in: {
+        [key: string]: string;
+    };
+    /**
+     * Resolved inputs once the step is ready
+     */
+    inputs?: {
+        [key: string]: ArtifactRef;
+    };
+    produces: {
+        [key: string]: string;
+    };
+    outputs?: {
+        [key: string]: ArtifactRef;
+    };
+    resources?: StepResources;
+    estimateSeconds?: number;
+    /**
+     * Hash of kind, version, resolved parameters and input hashes: a finished step with the same one is reused
+     */
+    inputHash?: string;
+    /**
+     * The finished step (pls_…) whose outputs were reused
+     */
+    reusedFrom?: string;
+    attempts: number;
+    /**
+     * The current attempt's step job
+     */
+    jobId?: string;
+    error?: StepError;
+    metrics?: {
+        [key: string]: number;
+    };
+    attemptLog: Array<PipelineStepAttempt>;
+    startedAt?: string;
+    finishedAt?: string;
+};
+
+export type PipelineStepAttempt = {
+    attempt: number;
+    jobId: string;
+    /**
+     * Why the attempt started: the first, the automatic OOM retry at 0.75× batch, the retry after a lost lease, or pipelineRuns.retry
+     */
+    reason: 'initial' | 'oom' | 'lost' | 'retry';
+    batchScale?: number;
+    state: 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
+    error?: StepError;
+    startedAt?: string;
+    finishedAt?: string;
+};
+
+export type PipelineRunRetry = {
+    /**
+     * The step id to retry (default: every failed step)
+     */
+    step?: string;
+    /**
+     * Batch scale of the new attempt (1 = full batch)
+     */
+    batchScale?: number;
+};
+
 export type SecretNewWritable = {
     name: SecretName;
     kind: SecretKind;
@@ -7166,6 +7533,332 @@ export type WorkerArtifactsSetResponses = {
 };
 
 export type WorkerArtifactsSetResponse = WorkerArtifactsSetResponses[keyof WorkerArtifactsSetResponses];
+
+export type ArtifactsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Artifact hash (b3:<64 hex>, BLAKE3-256 of the content)
+         */
+        hash: string;
+    };
+    query?: {
+        /**
+         * Include the content when it is at most 1 MiB
+         */
+        content?: boolean;
+        /**
+         * With content=true on a directory artifact: the file to read
+         */
+        path?: string;
+    };
+    url: '/artifacts/{hash}';
+};
+
+export type ArtifactsGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type ArtifactsGetError = ArtifactsGetErrors[keyof ArtifactsGetErrors];
+
+export type ArtifactsGetResponses = {
+    /**
+     * The artifact
+     */
+    200: Artifact;
+};
+
+export type ArtifactsGetResponse = ArtifactsGetResponses[keyof ArtifactsGetResponses];
+
+export type PipelinesListData = {
+    body?: never;
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        /**
+         * Branch, tag or commit (default main)
+         */
+        ref?: string;
+    };
+    url: '/projects/{p}/pipelines';
+};
+
+export type PipelinesListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type PipelinesListError = PipelinesListErrors[keyof PipelinesListErrors];
+
+export type PipelinesListResponses = {
+    /**
+     * Pipelines by name
+     */
+    200: PipelineList;
+};
+
+export type PipelinesListResponse = PipelinesListResponses[keyof PipelinesListResponses];
+
+export type PipelinesRunData = {
+    body: PipelineRunNew;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+        /**
+         * Pipeline name (pipelines/<name>.yaml)
+         */
+        name: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/projects/{p}/pipelines/{name}:run';
+};
+
+export type PipelinesRunErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type PipelinesRunError = PipelinesRunErrors[keyof PipelinesRunErrors];
+
+export type PipelinesRunResponses = {
+    /**
+     * Dry run — the validated plan with resolved parameters, departures and the estimate; nothing started
+     */
+    200: PipelinePlan;
+    /**
+     * Started; the pipeline run with its steps (ready steps are queued as step jobs)
+     */
+    201: PipelineRun;
+    /**
+     * Gated; a person decides the approval on the approvals topic
+     */
+    202: ApprovalAccepted;
+};
+
+export type PipelinesRunResponse = PipelinesRunResponses[keyof PipelinesRunResponses];
+
+export type PipelineRunsListData = {
+    body?: never;
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        /**
+         * Only runs in this state
+         */
+        state?: PipelineRunState;
+        /**
+         * Only runs of this pipeline
+         */
+        pipeline?: string;
+        limit?: number;
+    };
+    url: '/projects/{p}/pipeline-runs';
+};
+
+export type PipelineRunsListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type PipelineRunsListError = PipelineRunsListErrors[keyof PipelineRunsListErrors];
+
+export type PipelineRunsListResponses = {
+    /**
+     * Pipeline runs, newest first (without their steps)
+     */
+    200: PipelineRunList;
+};
+
+export type PipelineRunsListResponse = PipelineRunsListResponses[keyof PipelineRunsListResponses];
+
+export type PipelineRunsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Pipeline run id (plr_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/pipeline-runs/{id}';
+};
+
+export type PipelineRunsGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type PipelineRunsGetError = PipelineRunsGetErrors[keyof PipelineRunsGetErrors];
+
+export type PipelineRunsGetResponses = {
+    /**
+     * The pipeline run
+     */
+    200: PipelineRun;
+};
+
+export type PipelineRunsGetResponse = PipelineRunsGetResponses[keyof PipelineRunsGetResponses];
+
+export type PipelineRunsCancelData = {
+    body?: never;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Pipeline run id (plr_…)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/pipeline-runs/{id}:cancel';
+};
+
+export type PipelineRunsCancelErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type PipelineRunsCancelError = PipelineRunsCancelErrors[keyof PipelineRunsCancelErrors];
+
+export type PipelineRunsCancelResponses = {
+    /**
+     * The cancelled pipeline run
+     */
+    200: PipelineRun;
+};
+
+export type PipelineRunsCancelResponse = PipelineRunsCancelResponses[keyof PipelineRunsCancelResponses];
+
+export type PipelineRunsRetryData = {
+    body?: PipelineRunRetry;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Pipeline run id (plr_…)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/pipeline-runs/{id}:retry';
+};
+
+export type PipelineRunsRetryErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type PipelineRunsRetryError = PipelineRunsRetryErrors[keyof PipelineRunsRetryErrors];
+
+export type PipelineRunsRetryResponses = {
+    /**
+     * The pipeline run with the step queued again
+     */
+    200: PipelineRun;
+};
+
+export type PipelineRunsRetryResponse = PipelineRunsRetryResponses[keyof PipelineRunsRetryResponses];
+
+export type PipelineRunsWaitData = {
+    body?: never;
+    path: {
+        /**
+         * Pipeline run id (plr_…)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Seconds to wait
+         */
+        timeout?: number;
+    };
+    url: '/pipeline-runs/{id}:wait';
+};
+
+export type PipelineRunsWaitErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type PipelineRunsWaitError = PipelineRunsWaitErrors[keyof PipelineRunsWaitErrors];
+
+export type PipelineRunsWaitResponses = {
+    /**
+     * The pipeline run, ended or as it is at the timeout
+     */
+    200: PipelineRun;
+};
+
+export type PipelineRunsWaitResponse = PipelineRunsWaitResponses[keyof PipelineRunsWaitResponses];
 
 export type MountsListData = {
     body?: never;

@@ -1292,6 +1292,59 @@
       ]
     },
     {
+      "name": "artifacts.get",
+      "title": "Get an artifact by hash — type, size, metadata, producing step, a directory's files, and small content",
+      "description": "Read an artifact of the content store by its hash (b3:\u003c64 hex\u003e): type, size, neutral metadata, the pipeline step that produced it and, for a directory artifact, its file list. With content=true a file artifact of at most 1 MiB comes back inline (utf8 or base64); for a directory pass path to read one of its files. Larger content is omitted (contentOmitted says why) — artifacts are read by steps, not copied into a context.",
+      "method": "GET",
+      "path": "/artifacts/{hash}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "default": false,
+            "description": "Include the content when it is at most 1 MiB",
+            "type": "boolean"
+          },
+          "hash": {
+            "description": "Artifact hash (b3:\u003c64 hex\u003e, BLAKE3-256 of the content)",
+            "pattern": "^b3:[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "path": {
+            "description": "With content=true on a directory artifact: the file to read",
+            "maxLength": 1000,
+            "type": "string"
+          }
+        },
+        "required": [
+          "hash"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "hash",
+          "in": "path",
+          "name": "hash"
+        },
+        {
+          "property": "content",
+          "in": "query",
+          "name": "content"
+        },
+        {
+          "property": "path",
+          "in": "query",
+          "name": "path"
+        }
+      ]
+    },
+    {
       "name": "audit.list",
       "title": "The audit log, newest first — every command, denial and failed attempt with its actor and cause",
       "description": "The audit log, newest first — every command, denial and failed attempt with its actor and cause",
@@ -3126,6 +3179,451 @@
           "property": "p",
           "in": "path",
           "name": "p"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "pipelineRuns.cancel",
+      "title": "Cancel a pipeline run; waiting steps never start and running step jobs are cancelled",
+      "description": "Cancel a pipeline run: steps that have not started are cancelled, queued and running step jobs are cancelled (a running step stops on its worker), finished steps keep their outputs for reuse. Send ifMatch with the run's etag (rev) from pipelineRuns.get. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/pipeline-runs/{id}:cancel",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Pipeline run id (plr_…)",
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        }
+      ]
+    },
+    {
+      "name": "pipelineRuns.get",
+      "title": "Get a pipeline run with the status, inputs, outputs, attempts and departures of every step",
+      "description": "Get a pipeline run with the status, inputs, outputs, attempts and departures of every step",
+      "method": "GET",
+      "path": "/pipeline-runs/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Pipeline run id (plr_…)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        }
+      ]
+    },
+    {
+      "name": "pipelineRuns.list",
+      "title": "Pipeline runs of a project, newest first",
+      "description": "Pipeline runs of a project, newest first",
+      "method": "GET",
+      "path": "/projects/{p}/pipeline-runs",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "default": 100,
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          },
+          "pipeline": {
+            "description": "Only runs of this pipeline",
+            "maxLength": 63,
+            "type": "string"
+          },
+          "state": {
+            "description": "Only runs in this state",
+            "enum": [
+              "running",
+              "done",
+              "failed",
+              "cancelled"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "state",
+          "in": "query",
+          "name": "state"
+        },
+        {
+          "property": "pipeline",
+          "in": "query",
+          "name": "pipeline"
+        },
+        {
+          "property": "limit",
+          "in": "query",
+          "name": "limit"
+        }
+      ]
+    },
+    {
+      "name": "pipelineRuns.retry",
+      "title": "Retry a failed step of a pipeline run as a new attempt; the run continues from there",
+      "description": "Retry one failed (or cancelled) step of a pipeline run as a new attempt, with the same resolved parameters and inputs; finished steps are not re-run and the run continues after it. Without step, every failed step is retried. batchScale (0–1] shrinks the batch after an out-of-memory failure. Send ifMatch with the run's etag (rev). Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/pipeline-runs/{id}:retry",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "batchScale": {
+                "description": "Batch scale of the new attempt (1 = full batch)",
+                "exclusiveMinimum": 0,
+                "format": "double",
+                "maximum": 1,
+                "type": "number"
+              },
+              "step": {
+                "description": "The step id to retry (default: every failed step)",
+                "maxLength": 63,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Pipeline run id (plr_…)",
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "pipelineRuns.wait",
+      "title": "Wait until a pipeline run ends or the timeout passes, then return it (agents)",
+      "description": "Wait for a pipeline run started by pipelines.run. Returns the run as soon as it is done, failed or cancelled, or when the timeout (seconds, at most 60) passes — check state and call again while it is running.",
+      "method": "GET",
+      "path": "/pipeline-runs/{id}:wait",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Pipeline run id (plr_…)",
+            "type": "string"
+          },
+          "timeout": {
+            "default": 30,
+            "description": "Seconds to wait",
+            "maximum": 60,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "timeout",
+          "in": "query",
+          "name": "timeout"
+        }
+      ]
+    },
+    {
+      "name": "pipelines.list",
+      "title": "The project's pipelines (pipelines/*.yaml at a ref) and the bundled templates it does not override",
+      "description": "List the pipelines this project can run: every pipelines/\u003cname\u003e.yaml of the project repository at ref (default main) plus the bundled templates it has no file for. Each has its version (the commit that last changed the file; send it as ifMatch to pipelines.run), its inputs by artifact type and its steps pinned as kind@version with only the parameters that depart from defaults. A file that does not parse carries error.",
+      "method": "GET",
+      "path": "/projects/{p}/pipelines",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          },
+          "ref": {
+            "description": "Branch, tag or commit (default main)",
+            "maxLength": 200,
+            "type": "string"
+          }
+        },
+        "required": [
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "ref",
+          "in": "query",
+          "name": "ref"
+        }
+      ]
+    },
+    {
+      "name": "pipelines.run",
+      "title": "Validate a pipeline against the step registry and start a pipeline run (dryRun validates and estimates)",
+      "description": "Run a pipeline of this project. Always call it with dryRun=true first: that validates the pipeline against the published step kinds (kind@version exists, input and output artifact types match, parameters fit each kind's schema, no cycles), resolves every parameter from defaults.yaml, lists the departures from defaults and sums the known estimates, without starting anything; a broken pipeline answers pipeline-invalid with one error per problem. Then run it for real with the same body and ifMatch = the pipeline's version from pipelines.list (or \"*\" for whatever is at ref). inputs maps each pipeline input to an artifact {hash, type}; params overrides parameters per step id; finished steps with the same input hash are reused unless fresh. The answer is the pipeline run (plr_…): follow pipeline_run.{id} or call pipelineRuns.wait. Spending GPU time over the budget answers 202 with an approvalId instead. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/projects/{p}/pipelines/{name}:run",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "fresh": {
+                "default": false,
+                "description": "Run every step even when a finished step has the same input hash",
+                "type": "boolean"
+              },
+              "inputs": {
+                "additionalProperties": {
+                  "properties": {
+                    "hash": {
+                      "pattern": "^b3:[0-9a-f]{64}$",
+                      "type": "string"
+                    },
+                    "meta": {
+                      "description": "Neutral, self-describing metadata of the type (R42)",
+                      "type": "object"
+                    },
+                    "size": {
+                      "format": "int64",
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "type": {
+                      "description": "shar, dataset, mix, base_model, checkpoint, training-state, calibration, hypotheses, analysis, eval-report, deployable, text",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "hash",
+                    "type"
+                  ],
+                  "type": "object"
+                },
+                "description": "Pipeline input → artifact (it must be in the content store)",
+                "type": "object"
+              },
+              "params": {
+                "additionalProperties": {
+                  "type": "object"
+                },
+                "description": "Step id → parameter overrides (recorded as departures when they differ from the default)",
+                "type": "object"
+              },
+              "priority": {
+                "default": 0,
+                "description": "Queue priority of the step jobs (higher first)",
+                "maximum": 100,
+                "minimum": -100,
+                "type": "integer"
+              },
+              "ref": {
+                "description": "Branch, tag or commit to read the pipeline at (default main)",
+                "maxLength": 200,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          },
+          "name": {
+            "description": "Pipeline name (pipelines/\u003cname\u003e.yaml)",
+            "pattern": "^[a-z][a-z0-9-]{0,62}$",
+            "type": "string"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "ifMatch",
+          "name",
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "name",
+          "in": "path",
+          "name": "name"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
         },
         {
           "property": "dryRun",
