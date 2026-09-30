@@ -1999,6 +1999,15 @@ export type AgentSession = {
      */
     pendingControl?: 'cancel' | 'pause' | 'resume' | 'end';
     /**
+     * Live sessions only. waiting: no agent host took it yet; connected: a host runs it; released: its host shut down (a restart) and the next host has not taken it yet; lost: its host stopped answering and the session moves to the next host that claims work. Requests (stop, pause, end) and messages wait for the next host.
+     *
+     */
+    hostState?: 'waiting' | 'connected' | 'released' | 'lost';
+    /**
+     * When the session's host released it or was found silent (released
+     */
+    hostLeftAt?: string;
+    /**
      * Why it failed
      */
     error?: string;
@@ -2294,6 +2303,10 @@ export type HostStart = {
          * A transcript summary for a new ACP session when resume fails
          */
         summary?: string;
+        /**
+         * What the agent is told before its next prompt, e.g. that its last turn was interrupted by a host restart
+         */
+        note?: string;
     };
 };
 
@@ -2375,6 +2388,21 @@ export type HostReport = {
      * Agent-permission approvals the agent no longer waits for (its turn was cancelled)
      */
     withdraw?: Array<string>;
+};
+
+export type HostRelease = {
+    hostId: string;
+    /**
+     * Messages this host took but never gave its agent; they go back to pending for the next host
+     */
+    messages?: Array<string>;
+};
+
+export type HostReleased = {
+    /**
+     * The ids of the sessions released
+     */
+    released: Array<string>;
 };
 
 export type HostAsk = {
@@ -6352,6 +6380,31 @@ export type EgressHostsListResponses = {
 };
 
 export type EgressHostsListResponse = EgressHostsListResponses[keyof EgressHostsListResponses];
+
+export type HostSessionsReleaseData = {
+    body: HostRelease;
+    path?: never;
+    query?: never;
+    url: '/host-sessions:release';
+};
+
+export type HostSessionsReleaseErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type HostSessionsReleaseError = HostSessionsReleaseErrors[keyof HostSessionsReleaseErrors];
+
+export type HostSessionsReleaseResponses = {
+    /**
+     * The sessions released
+     */
+    200: HostReleased;
+};
+
+export type HostSessionsReleaseResponse = HostSessionsReleaseResponses[keyof HostSessionsReleaseResponses];
 
 export type MountsListData = {
     body?: never;

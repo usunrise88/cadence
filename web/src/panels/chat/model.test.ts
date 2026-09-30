@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgentToolCall } from "@/api/gen/types.gen";
 import { message, session } from "@/shell/agents/testdata";
-import { budgetUse, compact, diffStat, dryRunEstimate, lineDiff, rowOffsets, sessionStatus, tabLabel, tabTone, toolDraft, toolEntityRef, toolOperation, visibleEntries, visibleRange } from "./model";
+import { budgetUse, compact, diffStat, dryRunEstimate, hostAway, lineDiff, rowOffsets, sessionStatus, tabLabel, tabTone, toolDraft, toolEntityRef, toolOperation, visibleEntries, visibleRange } from "./model";
 
 const tool = (over: Partial<AgentToolCall>): AgentToolCall => ({ id: "toolu_1", title: "mixes.edit", class: "mcp", status: "completed", ...over });
 
@@ -27,6 +27,15 @@ describe("header", () => {
     expect(sessionStatus(session({ state: "waiting_approval" })).label).toBe("waiting approval");
     expect(sessionStatus(session({ state: "paused", pauseReason: { code: "idle", message: "No message for 30 min" } }))).toMatchObject({ label: "paused", detail: "No message for 30 min" });
     expect(sessionStatus(session({ busy: true, pendingControl: "cancel" })).label).toBe("running · stopping…");
+  });
+
+  it("reads reconnecting while no agent host runs a live session", () => {
+    expect(sessionStatus(session({ hostState: "released" }))).toEqual({ label: "reconnecting", tone: "warning", detail: "The agent host is restarting — reconnecting…" });
+    expect(sessionStatus(session({ state: "waiting_approval", hostState: "lost", pendingControl: "pause" })).label).toBe("reconnecting · pausing…");
+    expect(hostAway(session({ hostState: "lost" }))).toMatch(/stopped answering/);
+    expect(hostAway(session({ hostState: "connected" }))).toBeUndefined();
+    expect(hostAway(session({ state: "paused", hostState: "released" }))).toBeUndefined();
+    expect(sessionStatus(session({ hostState: "connected", busy: true })).label).toBe("running");
   });
 
   it("meters turns and tokens against the budget", () => {

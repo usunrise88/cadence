@@ -465,6 +465,22 @@ func (s *Server) HostSessionsDecision(ctx context.Context, req api.HostSessionsD
 	return api.HostSessionsDecision200JSONResponse(out), nil
 }
 
+// HostSessionsRelease implements hostSessions.release.
+func (s *Server) HostSessionsRelease(ctx context.Context, req api.HostSessionsReleaseRequestObject) (api.HostSessionsReleaseResponseObject, error) {
+	if _, err := sessions.CheckHost(ctx, s.fixedActor()); err != nil {
+		return nil, err
+	}
+	in := sessions.ReleaseInput{HostID: req.Body.HostId}
+	if req.Body.Messages != nil {
+		in.Messages = *req.Body.Messages
+	}
+	ids, err := s.sessions.Release(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	return api.HostSessionsRelease200JSONResponse(api.HostReleased{Released: ids}), nil
+}
+
 // SweepSessions runs the server-side session clocks (the idle pause of R5, sessions whose approvals expired); main
 // schedules it.
 func (s *Server) SweepSessions(ctx context.Context) error { return s.sessions.Sweep(ctx) }

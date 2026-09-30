@@ -31,6 +31,9 @@ const Kind = "mix"
 const (
 	EventCreated = "mix.created"
 	EventRevised = "mix.revised"
+	// EventAttributed: the current revision's cause learned the agent's tool-call id (an MCP call without one); the
+	// revision itself did not change.
+	EventAttributed = "mix.attributed"
 )
 
 // Group is one group of a mix: dataset versions (ver_ ids) sampled together with one weight.

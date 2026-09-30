@@ -34,7 +34,7 @@ import {
   type PanelProps,
 } from "@/shell/panel";
 import { Entry, RefChips } from "./entries";
-import { budgetUse, compact, entryMatchesToolCall, rowOffsets, sessionStatus, tabLabel, VIRTUALIZE_AFTER, visibleEntries, visibleRange, type Meter, type Tone } from "./model";
+import { budgetUse, compact, entryMatchesToolCall, hostAway, rowOffsets, sessionStatus, tabLabel, VIRTUALIZE_AFTER, visibleEntries, visibleRange, type Meter, type Tone } from "./model";
 
 // Chat (docs/spec/11-ui-panels.md "Panel catalogue"; docs/spec/05-agents.md "What the Chat panel shows"): one agent
 // session's streaming transcript, its header (kind, state, budget; stop, pause or resume, end), the merge of its
@@ -165,6 +165,7 @@ function Header({ session: s, instanceId, switchable }: { session: AgentSession;
   const project = useProject();
   const list = useAgentSessions(switchable ? project : undefined);
   const status = sessionStatus(s);
+  const away = hostAway(s);
   const budget = budgetUse(s);
   const live = isLive(s);
   const [busy, setBusy] = useState(false);
@@ -294,6 +295,11 @@ function Header({ session: s, instanceId, switchable }: { session: AgentSession;
       {s.state === "failed" && status.detail ? (
         <p className={cn("text-xs", TONE[status.tone])} data-slot="session-error">
           {status.detail}
+        </p>
+      ) : null}
+      {away ? (
+        <p role="status" className={cn("text-xs", TONE.warning)} data-slot="host-state" data-host-state={s.hostState}>
+          {away}
         </p>
       ) : null}
       <div className="flex flex-wrap items-center gap-3">
