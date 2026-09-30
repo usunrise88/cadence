@@ -7,7 +7,10 @@ API_PORT="${E2E_API_PORT:-18081}"
 NAME="cadence-e2e-pg-$$"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 DATA="$(mktemp -d)"
-cleanup() { docker rm -f "$NAME" >/dev/null 2>&1 || true; rm -rf "$DATA" "$ROOT/web/.e2e"; }
+# Test tooling (the host token, mint-agent-token) goes to web/.e2e for the Playwright specs; the agent evals
+# (agent-host/evals) pass their own directory so both can run from one checkout.
+TOOLS="${E2E_TOOLS_DIR:-$ROOT/web/.e2e}"
+cleanup() { docker rm -f "$NAME" >/dev/null 2>&1 || true; rm -rf "$DATA" "$TOOLS"; }
 trap cleanup EXIT INT TERM
 # A previous run killed hard leaves its database behind; remove it so the port is free. Only this port's: runs on
 # other ports (parallel worktrees, E2E_PG_PORT) keep theirs.
@@ -19,7 +22,6 @@ for _ in $(seq 1 60); do docker exec "$NAME" pg_isready -h 127.0.0.1 -U cadence 
 DSN="postgres://cadence:e2e@127.0.0.1:${PG_PORT}/cadence?sslmode=disable"
 # Specs that act as an agent session (MCP with a cst_ token) mint their token through this wrapper (spike A4); it
 # lives only as long as this stack.
-TOOLS="$ROOT/web/.e2e"
 mkdir -p "$TOOLS"
 printf '#!/usr/bin/env bash\nDATABASE_URL=%q exec %q "$@"\n' "$DSN" "$DATA/mintagent" > "$TOOLS/mint-agent-token"
 chmod +x "$TOOLS/mint-agent-token"
