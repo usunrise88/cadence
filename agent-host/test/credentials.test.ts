@@ -130,6 +130,7 @@ describe("credential files", () => {
     assert.equal(await mode(join(root, "claude")), 0o700);
     const env = await claudeDriver.prepareHome!(join(root, "home"), root);
     assert.equal(env.CLAUDE_CODE_OAUTH_TOKEN, GOOD_CLAUDE, "the session reads what was written");
+    assert.equal(env.ENABLE_CLAUDEAI_MCP_SERVERS, "false", "the account's claude.ai connectors never reach a session");
     await claudeDriver.removeCredential!(root, task({ action: "remove" }));
     await assert.rejects(stat(join(root, "claude")));
     await assert.rejects(claudeDriver.writeCredential!(root, task({ value: "two words" })), /one word/);
