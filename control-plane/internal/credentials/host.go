@@ -38,17 +38,48 @@ func NewHostToken(ctx context.Context, q storage.Querier, name string, others bo
 // containers mount): a token there that still resolves is kept; otherwise a new one is issued, every older host
 // token is revoked, and the file is written 0600. It reports whether it issued a new token.
 func EnsureHostTokenFile(ctx context.Context, pool *pgxpool.Pool, path string) (bool, error) {
-	if b, err := os.ReadFile(path); err == nil { //nolint:gosec // the path is the operator's CADENCE_HOST_TOKEN_FILE
+	return ensureTokenFile(ctx, pool, path, KindAgentHost, auth.PrefixHost, func(q storage.Querier) (string, error) {
+		tok, _, err := NewHostToken(ctx, q, HostName, true)
+		return tok, err
+	})
+}
+
+// EgressName is the name of the egress proxy credential in the credentials list.
+const EgressName = "egress proxy"
+
+// NewEgressToken issues an egress proxy token (cep_): it reads the egress allowlist (egressHosts.list) and nothing
+// else. It revokes every other active egress proxy token.
+func NewEgressToken(ctx context.Context, q storage.Querier) (string, Credential, error) {
+	if _, err := q.Exec(ctx, `UPDATE credentials SET revoked_at = now(), rev = rev + 1
+		WHERE kind = 'egress_proxy' AND revoked_at IS NULL`); err != nil {
+		return "", Credential{}, fmt.Errorf("revoke old egress tokens: %w", err)
+	}
+	return issue(ctx, q, auth.PrefixEgress, Credential{Kind: KindEgressProxy, Name: EgressName, Scope: auth.Scope{}})
+}
+
+// EnsureEgressTokenFile keeps a working egress proxy token in path (a volume the control plane writes and the proxy
+// reads), like EnsureHostTokenFile. The proxy has a credential of its own so that it never holds the host token,
+// which claims agent credential values.
+func EnsureEgressTokenFile(ctx context.Context, pool *pgxpool.Pool, path string) (bool, error) {
+	return ensureTokenFile(ctx, pool, path, KindEgressProxy, auth.PrefixEgress, func(q storage.Querier) (string, error) {
+		tok, _, err := NewEgressToken(ctx, q)
+		return tok, err
+	})
+}
+
+func ensureTokenFile(ctx context.Context, pool *pgxpool.Pool, path, kind, prefix string,
+	issueFn func(storage.Querier) (string, error)) (bool, error) {
+	if b, err := os.ReadFile(path); err == nil { //nolint:gosec // the path is the operator's CADENCE_*_TOKEN_FILE
 		tok := strings.TrimSpace(string(b))
-		if strings.HasPrefix(tok, auth.PrefixHost) {
+		if strings.HasPrefix(tok, prefix) {
 			var id string
-			err := pool.QueryRow(ctx, `SELECT id FROM credentials WHERE token_hash = $1 AND kind = 'agent_host'
-				AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now())`, auth.HashToken(tok)).Scan(&id)
+			err := pool.QueryRow(ctx, `SELECT id FROM credentials WHERE token_hash = $1 AND kind = $2
+				AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now())`, auth.HashToken(tok), kind).Scan(&id)
 			if err == nil {
 				return false, nil
 			}
 			if !errors.Is(err, pgx.ErrNoRows) {
-				return false, fmt.Errorf("check the host token: %w", err)
+				return false, fmt.Errorf("check the %s token: %w", kind, err)
 			}
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
@@ -57,7 +88,7 @@ func EnsureHostTokenFile(ctx context.Context, pool *pgxpool.Pool, path string) (
 	var tok string
 	if err := pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
 		var err error
-		tok, _, err = NewHostToken(ctx, tx, HostName, true)
+		tok, err = issueFn(tx)
 		return err
 	}); err != nil {
 		return false, err

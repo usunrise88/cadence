@@ -1,6 +1,6 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "model": "minimax/MiniMax-M2",
+  "model": "minimax/MiniMax-M3",
   "permission": {
     "read": {
       "*": "allow",

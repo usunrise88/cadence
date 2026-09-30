@@ -6,6 +6,12 @@ name: read-only
 description: Read entities, help and the worktree; change nothing.
 
 tools:
+  # The agents' own model accounts are the admin's, reads included (they are not MCP tools either).
+  - id: admin-only
+    class: forbidden
+    operations: ["agentCredentials.*", "agentProviders.*"]
+    reason: agent model accounts are the admin's
+
   - id: read
     class: read
     verbClass: read

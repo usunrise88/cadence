@@ -16,6 +16,20 @@ test.describe("shell", () => {
     await expect(page.getByRole("dialog")).toHaveCount(0);
   });
 
+  test("Window → Reset layout restores the default workspace; the Library has the AI menu", async ({ page, request }) => {
+    const slug = await newProject(request);
+    await openWorkspace(page, slug);
+    await page.locator('[data-tab="library"] button[aria-label^="Close"]').click();
+    await expect(page.locator('[data-tab="library"]')).toHaveCount(0);
+    await page.getByRole("navigation", { name: "Main menu" }).getByRole("button", { name: "Window", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Reset layout" }).click();
+    await expect(page.locator('[data-tab="library"]')).toHaveCount(1);
+    await page.locator('[data-panel="library"] [data-slot="agent-menu"]').click();
+    await expect(page.getByRole("menuitem", { name: "Explain the Library" })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: /^Ask agent about / })).toBeVisible();
+    await page.keyboard.press("Escape");
+  });
+
   test("float from the tab menu, dock back, maximize is refused on floats", async ({ page, request }) => {
     const slug = await newProject(request);
     await openWorkspace(page, slug);
@@ -170,6 +184,12 @@ test.describe("shell", () => {
     await expect(doc.locator('[data-slot="entity-header"] [data-slot="status-chip"]')).toHaveText(/active/i);
     await expect(doc.getByText("he-IL").first()).toBeVisible();
     await expect(doc.getByText("guardrails-default")).toBeVisible();
+    // The agent's actions sit behind the AI icon in the header's corner, apart from the project's own verbs.
+    await expect(doc.locator('[data-slot="entity-header"]').getByRole("button", { name: "Explain this" })).toHaveCount(0);
+    await doc.locator('[data-slot="entity-header"] [data-slot="agent-menu"]').click();
+    await expect(page.getByRole("menuitem", { name: "Ask agent about this project" })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: "Explain this" })).toBeVisible();
+    await page.keyboard.press("Escape");
   });
 
   test("project repository: note, agent settings and the recipe document", async ({ page, request }) => {

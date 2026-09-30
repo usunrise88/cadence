@@ -36,6 +36,12 @@ function useDebounced<T>(v: T, ms: number): T {
 }
 
 const HIT_PREFIX = "hit:";
+
+// Search snippets come from the index text, which carries internal ids (`ver_01a0…`); people read names.
+const INTERNAL_ID = /\b[a-z]{2,4}_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/g;
+function readableSnippet(s: string | undefined): string {
+  return (s ?? "").replace(INTERNAL_ID, "").replace(/\s{2,}/g, " ").trim();
+}
 const OPEN_AS_LIST = "open-as-list";
 
 export function Palette({ prefix, onClose, onSwitchProject }: { prefix: string; onClose: () => void; onSwitchProject: (slug: string) => void }) {
@@ -177,6 +183,21 @@ export function Palette({ prefix, onClose, onSwitchProject }: { prefix: string; 
           ) : null}
           <CommandList className="max-h-96">
             <CommandEmpty>{text ? (entitySearch && search.isFetching ? "Searching…" : "No matches.") : "Type to search."}</CommandEmpty>
+            {cmds.length > 0 ? (
+              <CommandGroup heading="Commands">
+                {cmds.map((c) => {
+                  const ok = commands.isEnabled(c, ctx);
+                  return (
+                    <CommandItem key={c.id} value={c.id} disabled={ok !== true} onSelect={() => run(c.id)} title={ok === true ? undefined : ok}>
+                      {c.icon ? <c.icon aria-hidden /> : null}
+                      <span>{c.title}</span>
+                      <span className="text-xs text-muted-foreground">{c.id}</span>
+                      {c.keys?.[0] ? <CommandShortcut>{chordLabel(c.keys[0])}</CommandShortcut> : null}
+                    </CommandItem>
+                  );
+                })}
+              </CommandGroup>
+            ) : null}
             {entitySearch
               ? (search.data?.groups ?? []).map((g) =>
                   debounced.length > 1 && g.items.length > 0 ? (
@@ -186,7 +207,7 @@ export function Palette({ prefix, onClose, onSwitchProject }: { prefix: string; 
                           <span className="max-w-[60%] shrink-0 truncate">{h.title}</span>
                           <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
                             {h.project && h.project !== project ? `${h.project} · ` : ""}
-                            {h.snippet ?? h.id}
+                            {readableSnippet(h.snippet) || h.id}
                           </span>
                           {h.status ? <CommandShortcut>{h.status}</CommandShortcut> : null}
                         </CommandItem>
@@ -224,21 +245,6 @@ export function Palette({ prefix, onClose, onSwitchProject }: { prefix: string; 
                     <span className="truncate text-xs text-muted-foreground">{v.query}</span>
                   </CommandItem>
                 ))}
-              </CommandGroup>
-            ) : null}
-            {cmds.length > 0 ? (
-              <CommandGroup heading="Commands">
-                {cmds.map((c) => {
-                  const ok = commands.isEnabled(c, ctx);
-                  return (
-                    <CommandItem key={c.id} value={c.id} disabled={ok !== true} onSelect={() => run(c.id)} title={ok === true ? undefined : ok}>
-                      {c.icon ? <c.icon aria-hidden /> : null}
-                      <span>{c.title}</span>
-                      <span className="text-xs text-muted-foreground">{c.id}</span>
-                      {c.keys?.[0] ? <CommandShortcut>{chordLabel(c.keys[0])}</CommandShortcut> : null}
-                    </CommandItem>
-                  );
-                })}
               </CommandGroup>
             ) : null}
             {switchable.length > 0 ? (

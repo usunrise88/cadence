@@ -332,7 +332,7 @@ export type TotpCode = {
     code: string;
 };
 
-export type CredentialKind = 'session' | 'api_key' | 'agent' | 'agent_host' | 'invitation' | 'worker';
+export type CredentialKind = 'session' | 'api_key' | 'agent' | 'agent_host' | 'egress_proxy' | 'invitation' | 'worker';
 
 export type CredentialScope = {
     /**
@@ -2388,6 +2388,249 @@ export type HostAsk = {
     }>;
 };
 
+/**
+ * claude-code (the Claude subscription) or opencode.<provider> (minimax, anthropic, openai, openrouter, deepseek, or a custom provider id)
+ */
+export type AgentCredentialIdValue = string;
+
+/**
+ * Whether the agent host has the value in the agent-credentials volume
+ */
+export type AgentCredentialDelivery = {
+    /**
+     * pending: waiting for the agent host to write it; written: in the volume; removing: waiting for the host to delete it; failed: the host could not write it (detail)
+     */
+    state: 'pending' | 'written' | 'removing' | 'removed' | 'failed';
+    detail?: string;
+    at?: string;
+};
+
+export type AgentCredentialVerification = {
+    /**
+     * none: never verified since the value was set; pending: waiting for the agent host; ok or failed: the last result
+     */
+    state: 'none' | 'pending' | 'ok' | 'failed';
+    /**
+     * The agent's answer or error, shortened (never the value)
+     */
+    detail?: string;
+    /**
+     * The model the check ran with
+     */
+    model?: string;
+    at?: string;
+};
+
+/**
+ * An agent's model account. Metadata only: the value lives in the agent-credentials volume and is never returned
+ */
+export type AgentCredential = {
+    id: AgentCredentialIdValue;
+    agent: AgentDriver;
+    /**
+     * The provider id in the agent's own configuration (opencode's provider/model prefix); anthropic for Claude Code
+     */
+    provider: string;
+    /**
+     * The catalogue entry (agentProviders.list) it was configured from
+     */
+    catalogueId: string;
+    /**
+     * Display name
+     */
+    name: string;
+    /**
+     * The API base URL of a custom (OpenAI-compatible) provider
+     */
+    baseUrl?: string;
+    /**
+     * A key or token is stored (a custom provider may have none)
+     */
+    hasValue: boolean;
+    /**
+     * The value's last four characters (…ab12), to tell tokens apart
+     */
+    hint?: string;
+    /**
+     * When the value was last set
+     */
+    setAt?: string;
+    setBy?: Actor;
+    /**
+     * Expected expiry (Claude's setup-token lasts about a year); warn 30 days before
+     */
+    expiresAt?: string;
+    delivery: AgentCredentialDelivery;
+    verification: AgentCredentialVerification;
+    /**
+     * opencode: the provider's models as provider/model, from the last verification
+     */
+    models: Array<string>;
+    /**
+     * opencode: set on the one credential whose model new projects default to
+     */
+    defaultModel?: string;
+    /**
+     * The API hosts added to the egress allowlist for it
+     */
+    hosts: Array<string>;
+    archivedAt?: string;
+    rev: number;
+    createdAt?: string;
+    updatedAt: string;
+};
+
+export type AgentCredentialList = {
+    items: Array<AgentCredential>;
+    /**
+     * Whether an agent host claimed work recently; values and checks wait for one
+     */
+    host: {
+        connected: boolean;
+        seenAt?: string;
+    };
+    /**
+     * The model new opencode projects start from
+     */
+    opencodeDefault: {
+        model: string;
+        /**
+         * configured: chosen here; defaults: defaults.yaml wizard.opencode_model
+         */
+        source: 'configured' | 'defaults';
+    };
+};
+
+export type AgentCredentialSet = {
+    /**
+     * Display name (custom providers)
+     */
+    name?: string;
+    /**
+     * The catalogue entry, for a custom provider: openai-compatible (else derived from the id)
+     */
+    catalogueId?: string;
+    /**
+     * API base URL of a custom provider, e.g. http://vllm.lan:8000/v1
+     */
+    baseUrl?: string;
+    /**
+     * opencode: make this provider/model the default of new projects (one of the credential's models)
+     */
+    defaultModel?: string;
+};
+
+export type AgentProvider = {
+    /**
+     * Catalogue id (claude-subscription, minimax, anthropic, openai, openrouter, deepseek, openai-compatible)
+     */
+    id: string;
+    agent: AgentDriver;
+    name: string;
+    description: string;
+    keyLabel: string;
+    /**
+     * The value's expected prefix
+     */
+    keyPrefix?: string;
+    keyRequired: boolean;
+    /**
+     * The admin names the provider id and base URL (OpenAI-compatible
+     */
+    custom: boolean;
+    /**
+     * API hosts added to the egress allowlist when configured
+     */
+    hosts: Array<string>;
+    /**
+     * The model suggested as the default once configured (minimax/MiniMax-M3)
+     */
+    defaultModel?: string;
+    /**
+     * The cheap model the verification request runs with
+     */
+    verifyModel?: string;
+    /**
+     * How to get the key or token
+     */
+    help?: string;
+    docsUrl?: string;
+};
+
+export type AgentProviderList = {
+    items: Array<AgentProvider>;
+};
+
+export type HostCredentialClaim = {
+    hostId: string;
+    /**
+     * Seconds to wait for a task
+     */
+    wait?: number;
+};
+
+export type HostCredentialTask = {
+    /**
+     * act_…
+     */
+    id: string;
+    action: 'write' | 'remove' | 'verify';
+    credentialId: AgentCredentialIdValue;
+    agent: AgentDriver;
+    provider: string;
+    catalogueId: string;
+    name?: string;
+    /**
+     * write: the value to store (from the transit store; the host writes it to the volume and never logs it)
+     */
+    value?: string;
+    /**
+     * A custom provider's API base URL (opencode provider block)
+     */
+    baseUrl?: string;
+    /**
+     * verify: the model of the tiny check (Claude alias or opencode provider/model); empty = the first listed
+     */
+    verifyModel?: string;
+    /**
+     * A custom provider's known models (write), so the provider block keeps them
+     */
+    models?: Array<string>;
+};
+
+export type HostCredentialWork = {
+    tasks: Array<HostCredentialTask>;
+};
+
+export type HostCredentialReport = {
+    hostId: string;
+    ok: boolean;
+    /**
+     * What happened, shortened; never the value
+     */
+    detail?: string;
+    /**
+     * verify: the model the check ran with
+     */
+    model?: string;
+    /**
+     * verify (opencode): the provider's models as provider/model
+     */
+    models?: Array<string>;
+};
+
+export type HostCredentialAck = {
+    id: string;
+    state: 'done' | 'superseded';
+};
+
+export type EgressHostList = {
+    /**
+     * Host names, *.domain patterns or host:port (a custom base URL with a port)
+     */
+    hosts: Array<string>;
+};
+
 export type SecretNewWritable = {
     name: SecretName;
     kind: SecretKind;
@@ -2396,6 +2639,29 @@ export type SecretNewWritable = {
      * Write-only; stored encrypted outside the database
      */
     value: string;
+};
+
+export type AgentCredentialSetWritable = {
+    /**
+     * Write-only: the token (claude setup-token) or the provider's API key. Omit to keep the stored one
+     */
+    value?: string;
+    /**
+     * Display name (custom providers)
+     */
+    name?: string;
+    /**
+     * The catalogue entry, for a custom provider: openai-compatible (else derived from the id)
+     */
+    catalogueId?: string;
+    /**
+     * API base URL of a custom provider, e.g. http://vllm.lan:8000/v1
+     */
+    baseUrl?: string;
+    /**
+     * opencode: make this provider/model the default of new projects (one of the credential's models)
+     */
+    defaultModel?: string;
 };
 
 /**
@@ -2424,6 +2690,11 @@ export type DryRun = boolean;
 export type ProjectSlug = Slug;
 
 export type Id = string;
+
+/**
+ * claude-code or opencode.<provider>
+ */
+export type AgentCredentialId = AgentCredentialIdValue;
 
 /**
  * Mix id (mix_…)
@@ -5789,6 +6060,298 @@ export type HostSessionsDecisionResponses = {
 };
 
 export type HostSessionsDecisionResponse = HostSessionsDecisionResponses[keyof HostSessionsDecisionResponses];
+
+export type AgentCredentialsListData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/agent-credentials';
+};
+
+export type AgentCredentialsListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type AgentCredentialsListError = AgentCredentialsListErrors[keyof AgentCredentialsListErrors];
+
+export type AgentCredentialsListResponses = {
+    /**
+     * Configured agent credentials, Claude Code first
+     */
+    200: AgentCredentialList;
+};
+
+export type AgentCredentialsListResponse = AgentCredentialsListResponses[keyof AgentCredentialsListResponses];
+
+export type AgentCredentialsGetData = {
+    body?: never;
+    path: {
+        /**
+         * claude-code or opencode.<provider>
+         */
+        id: AgentCredentialIdValue;
+    };
+    query?: never;
+    url: '/agent-credentials/{id}';
+};
+
+export type AgentCredentialsGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type AgentCredentialsGetError = AgentCredentialsGetErrors[keyof AgentCredentialsGetErrors];
+
+export type AgentCredentialsGetResponses = {
+    /**
+     * The credential
+     */
+    200: AgentCredential;
+};
+
+export type AgentCredentialsGetResponse = AgentCredentialsGetResponses[keyof AgentCredentialsGetResponses];
+
+export type AgentCredentialsSetData = {
+    body: AgentCredentialSetWritable;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on; required unless the target does not exist yet
+         */
+        'If-Match'?: string;
+    };
+    path: {
+        /**
+         * claude-code or opencode.<provider>
+         */
+        id: AgentCredentialIdValue;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/agent-credentials/{id}';
+};
+
+export type AgentCredentialsSetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type AgentCredentialsSetError = AgentCredentialsSetErrors[keyof AgentCredentialsSetErrors];
+
+export type AgentCredentialsSetResponses = {
+    /**
+     * The credential as set; a new value waits for the agent host to write it (delivery pending)
+     */
+    200: AgentCredential;
+};
+
+export type AgentCredentialsSetResponse = AgentCredentialsSetResponses[keyof AgentCredentialsSetResponses];
+
+export type AgentCredentialsVerifyData = {
+    body?: never;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * claude-code or opencode.<provider>
+         */
+        id: AgentCredentialIdValue;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/agent-credentials/{id}:verify';
+};
+
+export type AgentCredentialsVerifyErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type AgentCredentialsVerifyError = AgentCredentialsVerifyErrors[keyof AgentCredentialsVerifyErrors];
+
+export type AgentCredentialsVerifyResponses = {
+    /**
+     * The credential with its verification pending
+     */
+    200: AgentCredential;
+};
+
+export type AgentCredentialsVerifyResponse = AgentCredentialsVerifyResponses[keyof AgentCredentialsVerifyResponses];
+
+export type AgentCredentialsArchiveData = {
+    body?: never;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * claude-code or opencode.<provider>
+         */
+        id: AgentCredentialIdValue;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/agent-credentials/{id}:archive';
+};
+
+export type AgentCredentialsArchiveErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type AgentCredentialsArchiveError = AgentCredentialsArchiveErrors[keyof AgentCredentialsArchiveErrors];
+
+export type AgentCredentialsArchiveResponses = {
+    /**
+     * The archived credential (its removal from the volume is pending until the host acknowledges)
+     */
+    200: AgentCredential;
+};
+
+export type AgentCredentialsArchiveResponse = AgentCredentialsArchiveResponses[keyof AgentCredentialsArchiveResponses];
+
+export type AgentProvidersListData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/agent-providers';
+};
+
+export type AgentProvidersListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type AgentProvidersListError = AgentProvidersListErrors[keyof AgentProvidersListErrors];
+
+export type AgentProvidersListResponses = {
+    /**
+     * Providers per agent
+     */
+    200: AgentProviderList;
+};
+
+export type AgentProvidersListResponse = AgentProvidersListResponses[keyof AgentProvidersListResponses];
+
+export type HostCredentialsClaimData = {
+    body: HostCredentialClaim;
+    path?: never;
+    query?: never;
+    url: '/host-credentials:claim';
+};
+
+export type HostCredentialsClaimErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type HostCredentialsClaimError = HostCredentialsClaimErrors[keyof HostCredentialsClaimErrors];
+
+export type HostCredentialsClaimResponses = {
+    /**
+     * Tasks for this host, oldest first (empty when the wait passed with nothing to do)
+     */
+    200: HostCredentialWork;
+};
+
+export type HostCredentialsClaimResponse = HostCredentialsClaimResponses[keyof HostCredentialsClaimResponses];
+
+export type HostCredentialsReportData = {
+    body: HostCredentialReport;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/host-credentials/{id}:report';
+};
+
+export type HostCredentialsReportErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type HostCredentialsReportError = HostCredentialsReportErrors[keyof HostCredentialsReportErrors];
+
+export type HostCredentialsReportResponses = {
+    /**
+     * The task as recorded
+     */
+    200: HostCredentialAck;
+};
+
+export type HostCredentialsReportResponse = HostCredentialsReportResponses[keyof HostCredentialsReportResponses];
+
+export type EgressHostsListData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/egress-hosts';
+};
+
+export type EgressHostsListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type EgressHostsListError = EgressHostsListErrors[keyof EgressHostsListErrors];
+
+export type EgressHostsListResponses = {
+    /**
+     * Hosts derived from the agent credentials, sorted
+     */
+    200: EgressHostList;
+};
+
+export type EgressHostsListResponse = EgressHostsListResponses[keyof EgressHostsListResponses];
 
 export type MountsListData = {
     body?: never;

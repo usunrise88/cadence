@@ -33,6 +33,9 @@ Keys in the list: arrows move, Enter opens, Space previews in Inspector. **Save 
 under a name (`views.set`, per user per project); saving under an existing name replaces its query. Adopt, compare and
 set alias arrive with the registry documents.
 
+The AI menu (the sparks icon next to New mix) asks the agent about the highlighted row, asks it to find what the
+filter describes in plain words, or explains the Library in a read-only session.
+
 ## Playbooks
 
 - Keep "Frozen Hebrew data" as `kind:dataset_version state:frozen lang:he` and open it from the palette.

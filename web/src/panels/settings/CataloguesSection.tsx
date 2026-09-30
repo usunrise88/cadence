@@ -17,7 +17,7 @@ export function CataloguesSection() {
       <SectionHeading id="settings-catalogues" title="Catalogues" hint="Read-only: what projects can adopt. Versions are immutable; a change is a new version." />
       <div className="flex flex-col gap-1">
         <h4 className="text-xs font-medium">Base models</h4>
-        <Table label="Base models" head={["Collection", "Version", "State", "Hugging Face", "Family", "Size", "Licence", "Used by"]}>
+        <Table className="[&_td]:whitespace-nowrap" label="Base models" head={["Collection", "Version", "State", "Hugging Face", "Family", "Size", "Licence", "Used by"]}>
           {(models.data?.items ?? []).map((m) => (
             <tr key={m.id}>
               <Td className="font-mono">{m.name}</Td>
@@ -52,7 +52,7 @@ function TemplateTable({ title, rows }: { title: string; rows: TemplateRow[] }) 
       {rows.length === 0 ? (
         <p className="text-xs text-muted-foreground">None registered.</p>
       ) : (
-        <Table label={title} head={["Collection", "Version", "State", "Path", "Files", "Registered", "Used by"]}>
+        <Table className="[&_td]:whitespace-nowrap" label={title} head={["Collection", "Version", "State", "Path", "Files", "Registered", "Used by"]}>
           {rows.map((t) => (
             <tr key={t.id}>
               <Td className="font-mono">{t.name}</Td>

@@ -1,4 +1,4 @@
-import { memo, useMemo, type AnchorHTMLAttributes, type ReactNode } from "react";
+import { memo, useEffect, useMemo, useState, type AnchorHTMLAttributes, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Check, Circle, EditPencil, NavArrowRight, Page, Terminal, Tools, WarningTriangle, Xmark } from "iconoir-react";
 import { Streamdown } from "streamdown";
@@ -10,7 +10,8 @@ import { ApprovalCard, linkifyReferences, openPanelById, openReference, parseRef
 import { compact, diffStat, dryRunEstimate, lineDiff, toolDraft, toolEntityRef, toolOperation, toolResult } from "./model";
 
 // One transcript entry per kind (docs/spec/05-agents.md "What the Chat panel shows"): streaming Markdown replies
-// with references as links, collapsed thinking, the plan checklist, tool-call cards (Cadence MCP, file edit, shell),
+// with references as links, collapsed thinking, the plan checklist, tool calls (Cadence MCP, file edit, shell) as one
+// quiet line that opens into their card,
 // permission and approval requests inline, commits and turn usage. Entries are memoised on their revision: a
 // streamed update re-renders only its own entry.
 
@@ -159,8 +160,10 @@ const STATUS_CLASS: Record<AgentToolCall["status"], string> = {
   failed: "text-status-failed-foreground",
 };
 
+/** The status on the collapsed line: quiet when done, coloured while running or on failure. */
 function ToolStatus({ status }: { status: AgentToolCall["status"] }) {
-  return <span className={cn("ml-auto shrink-0 text-[11px] font-medium", STATUS_CLASS[status])}>{STATUS_LABEL[status]}</span>;
+  if (status === "completed") return null;
+  return <span className={cn("shrink-0 font-medium", STATUS_CLASS[status])}>{STATUS_LABEL[status]}</span>;
 }
 
 function Json({ label, value }: { label: string; value: unknown }) {
@@ -173,53 +176,61 @@ function Json({ label, value }: { label: string; value: unknown }) {
   );
 }
 
-function McpCard({ tc }: { tc: AgentToolCall }) {
+/** A tool call as one collapsed line (icon, what it did, a short fact, its status) and the card behind it. */
+type ToolView = { icon: typeof Tools; label: ReactNode; meta?: ReactNode; status: ReactNode; body: ReactNode };
+
+function mcpView(tc: AgentToolCall): ToolView {
   const op = toolOperation(tc);
   const entity = toolEntityRef(tc);
   const estimate = dryRunEstimate(tc);
   const res = toolResult(tc);
   const draft = toolDraft(tc);
-  return (
-    <>
-      <div className="flex min-w-0 items-center gap-2">
-        <Tools aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
-        <code className="min-w-0 truncate font-mono text-[13px] font-medium" data-slot="tool-operation">
-          {op ?? tc.title}
-        </code>
-        {res?.status ? <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">{res.status}</span> : null}
-        <ToolStatus status={tc.status} />
-      </div>
-      {op && !tc.title.endsWith(op) ? <p className="text-muted-foreground">{tc.title}</p> : null}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        {entity ? <RefLink refText={entity} /> : null}
-        {draft ? (
-          <span className="rounded border border-dashed border-draft-outline px-1.5 text-[11px]" data-slot="tool-draft">
-            Draft{draft.rev ? ` rev ${draft.rev}` : ""} — accept or revert on the document
-          </span>
+  const failed = !!res?.error || (res?.status ?? 0) >= 400;
+  return {
+    icon: Tools,
+    label: (
+      <code className="font-mono" data-slot="tool-operation">
+        {op ?? tc.title}
+      </code>
+    ),
+    meta: draft ? "draft" : estimate ? "dry run" : undefined,
+    status: failed && tc.status === "completed" ? <span className="shrink-0 font-medium text-status-failed-foreground tabular-nums">{res?.status ?? "error"}</span> : <ToolStatus status={tc.status} />,
+    body: (
+      <>
+        {op && !tc.title.endsWith(op) ? <p className="text-muted-foreground">{tc.title}</p> : null}
+        {entity || draft || tc.approvalId || tc.jobId ? (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            {entity ? <RefLink refText={entity} /> : null}
+            {draft ? (
+              <span className="rounded border border-dashed border-draft-outline px-1.5 text-[11px]" data-slot="tool-draft">
+                Draft{draft.rev ? ` rev ${draft.rev}` : ""} — accept or revert on the document
+              </span>
+            ) : null}
+            {tc.approvalId ? (
+              <Button size="xs" variant="ghost" className="h-6 px-1.5" onClick={() => openPanelById("approvals")}>
+                Approval {tc.approvalId.slice(0, 12)}…
+                <NavArrowRight aria-hidden />
+              </Button>
+            ) : null}
+            {tc.jobId ? <RefLink refText={`@job:${tc.jobId}`} label={`Job ${tc.jobId.slice(0, 12)}…`} /> : null}
+          </div>
         ) : null}
-        {tc.approvalId ? (
-          <Button size="xs" variant="ghost" className="h-6 px-1.5" onClick={() => openPanelById("approvals")}>
-            Approval {tc.approvalId.slice(0, 12)}…
-            <NavArrowRight aria-hidden />
-          </Button>
+        {estimate ? (
+          <p className="rounded bg-accent-soft px-2 py-1 text-accent-text" data-slot="dry-run">
+            {estimate}
+          </p>
         ) : null}
-        {tc.jobId ? <RefLink refText={`@job:${tc.jobId}`} label={`Job ${tc.jobId.slice(0, 12)}…`} /> : null}
-      </div>
-      {estimate ? (
-        <p className="rounded bg-accent-soft px-2 py-1 text-accent-text" data-slot="dry-run">
-          {estimate}
-        </p>
-      ) : null}
-      {res?.error ? (
-        <p role="note" className="text-status-failed-foreground">
-          {res.error.title ?? "Error"}
-          {res.error.detail ? `: ${res.error.detail}` : ""}
-        </p>
-      ) : null}
-      <Json label="Arguments" value={tc.input} />
-      <Json label="Result" value={tc.output} />
-    </>
-  );
+        {res?.error ? (
+          <p role="note" className="text-status-failed-foreground">
+            {res.error.title ?? "Error"}
+            {res.error.detail ? `: ${res.error.detail}` : ""}
+          </p>
+        ) : null}
+        <Json label="Arguments" value={tc.input} />
+        <Json label="Result" value={tc.output} />
+      </>
+    ),
+  };
 }
 
 function FileDiff({ d }: { d: AgentFileDiff }) {
@@ -257,71 +268,127 @@ function FileDiff({ d }: { d: AgentFileDiff }) {
   );
 }
 
-function EditCard({ tc }: { tc: AgentToolCall }) {
-  return (
-    <>
-      <div className="flex min-w-0 items-center gap-2">
-        <EditPencil aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
-        <span className="min-w-0 truncate font-medium">{tc.title}</span>
-        <ToolStatus status={tc.status} />
-      </div>
-      {(tc.diffs ?? []).map((d) => (
-        <FileDiff key={d.path} d={d} />
-      ))}
-      {!tc.diffs?.length && tc.locations?.length ? <p className="font-mono text-[11px] text-muted-foreground">{tc.locations.join(", ")}</p> : null}
-    </>
+function editView(tc: AgentToolCall): ToolView {
+  const diffs = tc.diffs ?? [];
+  const stat = diffs.reduce(
+    (a, d) => {
+      const s = diffStat(lineDiff(d.oldText, d.newText));
+      return { added: a.added + s.added, removed: a.removed + s.removed };
+    },
+    { added: 0, removed: 0 },
   );
+  return {
+    icon: EditPencil,
+    label: tc.title,
+    meta: diffs.length ? (
+      <span className="tabular-nums">
+        <span className="text-diff-added-foreground">+{stat.added}</span> <span className="text-diff-removed-foreground">−{stat.removed}</span>
+      </span>
+    ) : undefined,
+    status: <ToolStatus status={tc.status} />,
+    body: diffs.length ? (
+      diffs.map((d) => <FileDiff key={d.path} d={d} />)
+    ) : tc.locations?.length ? (
+      <p className="font-mono text-[11px] text-muted-foreground">{tc.locations.join(", ")}</p>
+    ) : null,
+  };
 }
 
-function ShellCard({ tc }: { tc: AgentToolCall }) {
+function shellView(tc: AgentToolCall): ToolView {
   const sh = tc.shell;
   const exit = sh?.exitCode;
-  return (
-    <>
-      <div className="flex min-w-0 items-center gap-2">
-        <Terminal aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
-        <code className="min-w-0 font-mono text-[12px] break-all" data-slot="shell-command">
-          $ {sh?.command ?? tc.title}
-        </code>
-        {exit !== undefined ? (
-          <span className={cn("ml-auto shrink-0 text-[11px] font-medium tabular-nums", exit === 0 ? "text-status-done-foreground" : "text-status-failed-foreground")}>exit {exit}</span>
-        ) : (
-          <ToolStatus status={tc.status} />
-        )}
-      </div>
-      {sh?.output ? (
-        <details className="rounded border bg-tool px-2 py-1">
-          <summary className="min-h-6 cursor-pointer text-muted-foreground select-none">Output ({sh.output.split("\n").length} lines)</summary>
-          <pre className="mt-1 max-h-72 overflow-auto font-mono text-[11px] whitespace-pre-wrap">{sh.output}</pre>
-        </details>
-      ) : null}
-    </>
-  );
-}
-
-function OtherCard({ tc }: { tc: AgentToolCall }) {
-  return (
-    <>
-      <div className="flex min-w-0 items-center gap-2">
-        <Page aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
-        <span className="min-w-0 truncate">{tc.title}</span>
-        <span className="shrink-0 text-[11px] text-muted-foreground">{tc.class}</span>
+  return {
+    icon: Terminal,
+    label: (
+      <code className="font-mono" data-slot="shell-command">
+        $ {sh?.command ?? tc.title}
+      </code>
+    ),
+    status:
+      exit !== undefined && exit !== 0 ? (
+        <span className="shrink-0 font-medium text-status-failed-foreground tabular-nums">exit {exit}</span>
+      ) : exit === undefined ? (
         <ToolStatus status={tc.status} />
-      </div>
-      {tc.locations?.length ? <p className="truncate font-mono text-[11px] text-muted-foreground">{tc.locations.join(", ")}</p> : null}
-      {tc.text ? <p className="whitespace-pre-wrap text-muted-foreground">{tc.text}</p> : null}
-      <Json label="Arguments" value={tc.input} />
-      <Json label="Result" value={tc.output} />
-    </>
-  );
+      ) : null,
+    body: sh?.output ? (
+      <>
+        <p className="text-muted-foreground">
+          {exit !== undefined ? `exit ${exit} · ` : ""}
+          {sh.output.split("\n").length} lines of output
+        </p>
+        <pre className="max-h-72 overflow-auto rounded border bg-tool px-2 py-1 font-mono text-[11px] whitespace-pre-wrap" data-slot="shell-output">
+          {sh.output}
+        </pre>
+      </>
+    ) : exit !== undefined ? (
+      <p className="text-muted-foreground">exit {exit} · no output</p>
+    ) : null,
+  };
 }
 
-function ToolCall({ m }: { m: AgentMessage }) {
+function otherView(tc: AgentToolCall): ToolView {
+  const body =
+    tc.locations?.length || tc.text || tc.input !== undefined || tc.output !== undefined ? (
+      <>
+        {tc.locations?.length ? <p className="truncate font-mono text-[11px] text-muted-foreground">{tc.locations.join(", ")}</p> : null}
+        {tc.text ? <p className="whitespace-pre-wrap text-muted-foreground">{tc.text}</p> : null}
+        <Json label="Arguments" value={tc.input} />
+        <Json label="Result" value={tc.output} />
+      </>
+    ) : null;
+  return { icon: Page, label: tc.title, meta: tc.class !== "other" ? tc.class : undefined, status: <ToolStatus status={tc.status} />, body };
+}
+
+function toolView(tc: AgentToolCall): ToolView {
+  if (tc.class === "mcp") return mcpView(tc);
+  if (tc.class === "edit" || tc.diffs?.length) return editView(tc);
+  if (tc.class === "shell" || tc.shell) return shellView(tc);
+  return otherView(tc);
+}
+
+// Which tool calls the reader opened, by entry: survives the row leaving the window of a long transcript.
+const opened = new Set<string>();
+
+function ToolCall({ m, highlighted }: { m: AgentMessage; highlighted: boolean }) {
   const tc = m.toolCall!;
-  const body = tc.class === "mcp" ? <McpCard tc={tc} /> : tc.class === "edit" || tc.diffs?.length ? <EditCard tc={tc} /> : tc.class === "shell" || tc.shell ? <ShellCard tc={tc} /> : <OtherCard tc={tc} />;
+  const [open, setOpen] = useState(() => opened.has(m.id));
+  // The attribution badge's jump opens the call it lands on.
+  useEffect(() => {
+    if (highlighted) setOpen(true);
+  }, [highlighted]);
+  useEffect(() => {
+    if (open) opened.add(m.id);
+    else opened.delete(m.id);
+  }, [open, m.id]);
+  const v = toolView(tc);
+  const line = (
+    <>
+      <NavArrowRight aria-hidden className={cn("size-3 shrink-0 transition-transform", open && "rotate-90", !v.body && "invisible")} />
+      <v.icon aria-hidden className="size-3 shrink-0" />
+      <span className="min-w-0 truncate">{v.label}</span>
+      {v.meta ? <span className="shrink-0 opacity-80">{v.meta}</span> : null}
+      {v.status}
+    </>
+  );
+  const lineClass = "flex min-h-6 w-full min-w-0 items-center gap-1.5 rounded px-1 text-left text-[11px] text-muted-foreground";
   return (
-    <div data-slot="tool-call" data-tool-class={tc.class} className="flex flex-col gap-1.5 rounded-md border bg-background px-3 py-2 text-xs">
-      {body}
+    <div data-slot="tool-call" data-tool-class={tc.class} data-open={open || undefined} className="flex flex-col">
+      {v.body ? (
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={() => setOpen((o) => !o)}
+          className={cn(lineClass, "cursor-pointer hover:bg-hover-strong hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none")}
+          data-slot="tool-line"
+        >
+          {line}
+        </button>
+      ) : (
+        <div className={lineClass} data-slot="tool-line">
+          {line}
+        </div>
+      )}
+      {open && v.body ? <div className="mt-1 ml-5 flex flex-col gap-1.5 rounded-md border bg-background px-3 py-2 text-xs">{v.body}</div> : null}
     </div>
   );
 }
@@ -415,7 +482,7 @@ function Notice({ m }: { m: AgentMessage }) {
   );
 }
 
-function body(m: AgentMessage): ReactNode {
+function body(m: AgentMessage, highlighted: boolean): ReactNode {
   switch (m.kind) {
     case "user_message":
       return <UserMessage m={m} />;
@@ -426,7 +493,7 @@ function body(m: AgentMessage): ReactNode {
     case "plan":
       return <Plan m={m} />;
     case "tool_call":
-      return m.toolCall ? <ToolCall m={m} /> : null;
+      return m.toolCall ? <ToolCall m={m} highlighted={highlighted} /> : null;
     case "permission":
       return m.permission ? <Permission m={m} /> : null;
     case "commit":
@@ -448,9 +515,9 @@ export const Entry = memo(
         data-tool-call={m.toolCall?.id ?? m.permission?.toolCallId}
         data-highlighted={highlighted || undefined}
         tabIndex={-1}
-        className={cn("rounded-md px-1 py-1 outline-none focus-visible:ring-2 focus-visible:ring-ring", highlighted && "bg-agent ring-2 ring-accent-line")}
+        className={cn("rounded-md px-1 outline-none focus-visible:ring-2 focus-visible:ring-ring", m.kind === "tool_call" ? "-my-1" : "py-1", highlighted && "bg-agent ring-2 ring-accent-line")}
       >
-        {body(m)}
+        {body(m, highlighted)}
       </article>
     );
   },

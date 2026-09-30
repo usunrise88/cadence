@@ -1,7 +1,20 @@
-import { CheckCircle, Key, Lock, Server, Shield, XmarkCircle } from "iconoir-react";
+import { Archive, CheckCircle, Key, Lock, Server, Shield, ShieldCheck, XmarkCircle } from "iconoir-react";
 import { commandHeaders } from "@/api/client";
-import { approvalsApprove, approvalsDeny, computeEdit, credentialsNew, credentialsRevoke, policiesEdit, secretsNew } from "@/api/gen/sdk.gen";
+import {
+  agentCredentialsArchive,
+  agentCredentialsSet,
+  agentCredentialsVerify,
+  approvalsApprove,
+  approvalsDeny,
+  computeEdit,
+  credentialsNew,
+  credentialsRevoke,
+  policiesEdit,
+  secretsNew,
+} from "@/api/gen/sdk.gen";
 import type {
+  AgentCredential,
+  AgentCredentialSetWritable,
   Approval,
   Branch,
   BranchMerge,
@@ -35,11 +48,16 @@ import type { Command } from "./registry";
 
 export type ApproveArgs = { approval: Approval; grant?: "once" | "session"; note?: string };
 export type DenyArgs = { approval: Approval; note?: string };
+/** agentCredentials.set: `credential` is the current one (its rev is the If-Match) when it exists and is not archived. */
+export type AgentCredentialSetArgs = { id: string; credential?: AgentCredential; body: AgentCredentialSetWritable };
 
 /** Arguments and results of the API commands panels run. */
 export type ApiCommands = {
   "approvals.approve": { args: ApproveArgs; result: Approval };
   "approvals.deny": { args: DenyArgs; result: Approval };
+  "agentCredentials.set": { args: AgentCredentialSetArgs; result: AgentCredential };
+  "agentCredentials.verify": { args: { credential: AgentCredential }; result: AgentCredential };
+  "agentCredentials.archive": { args: { credential: AgentCredential }; result: AgentCredential };
   "credentials.new": { args: { body: CredentialNew }; result: CredentialCreated };
   "credentials.revoke": { args: { credential: Credential }; result: Credential };
   "compute.edit": { args: { host: ComputeHost; body: ComputeEdit }; result: ComputeHost };
@@ -179,6 +197,47 @@ export function registerApiCommands(): void {
       run: async (_ctx, args) => {
         const { policies, body } = need<ApiCommands["policies.edit"]["args"]>(args, "Edit policies");
         const { data } = await policiesEdit({ body, headers: commandHeaders(policies.rev), throwOnError: true });
+        return data;
+      },
+    },
+    // The agents' model accounts (Settings → Agents): admin only, never MCP tools; the value is write-only.
+    {
+      id: "agentCredentials.set",
+      operation: "agentCredentials.set",
+      title: "Set agent credential",
+      group: "Edit",
+      icon: Key,
+      hidden: true,
+      run: async (_ctx, args) => {
+        const { id, credential, body } = need<AgentCredentialSetArgs>(args, "Set agent credential");
+        const live = credential && !credential.archivedAt ? credential : undefined;
+        const { data } = await agentCredentialsSet({ path: { id }, body, headers: commandHeaders(live?.rev), throwOnError: true });
+        return data;
+      },
+    },
+    {
+      id: "agentCredentials.verify",
+      operation: "agentCredentials.verify",
+      title: "Verify agent credential",
+      group: "Edit",
+      icon: ShieldCheck,
+      hidden: true,
+      run: async (_ctx, args) => {
+        const { credential } = need<ApiCommands["agentCredentials.verify"]["args"]>(args, "Verify agent credential");
+        const { data } = await agentCredentialsVerify({ path: { id: credential.id }, headers: commandHeaders(credential.rev), throwOnError: true });
+        return data;
+      },
+    },
+    {
+      id: "agentCredentials.archive",
+      operation: "agentCredentials.archive",
+      title: "Disconnect agent credential",
+      group: "Edit",
+      icon: Archive,
+      hidden: true,
+      run: async (_ctx, args) => {
+        const { credential } = need<ApiCommands["agentCredentials.archive"]["args"]>(args, "Disconnect agent credential");
+        const { data } = await agentCredentialsArchive({ path: { id: credential.id }, headers: commandHeaders(credential.rev), throwOnError: true });
         return data;
       },
     },

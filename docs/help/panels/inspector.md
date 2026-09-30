@@ -7,7 +7,8 @@ contexts: [panel:inspector]
 ## What this is
 
 A tool panel showing every field of the selected entity — config values, manifest rows, metadata — with a copy
-button per value. It follows the active document; the pin button keeps it on one document so you can compare two.
+button per value. Times show in your locale, the actor as their badge, lists joined; nested records (the full API
+entity) fold into a "raw" block below the fields. It follows the active document; the pin button keeps it on one document so you can compare two.
 
 ## Place in the loop
 

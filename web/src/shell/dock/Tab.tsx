@@ -93,8 +93,14 @@ export function Tab(props: IDockviewPanelHeaderProps<PanelParams>) {
             />
           }
         >
-          {Icon ? <Icon aria-hidden className="size-3.5 shrink-0 opacity-80" /> : null}
-          <span className="max-w-48 truncate">{props.api.title ?? m?.title ?? props.api.id}</span>
+          {m?.tab ? (
+            <m.tab instanceId={props.api.id} doc={props.params?.doc} title={props.api.title ?? m.title} icon={m.icon} />
+          ) : (
+            <>
+              {Icon ? <Icon aria-hidden className="size-3.5 shrink-0 opacity-80" /> : null}
+              <span className="max-w-48 truncate">{props.api.title ?? m?.title ?? props.api.id}</span>
+            </>
+          )}
           <button
             type="button"
             aria-label={`Close ${props.api.title ?? ""}`}

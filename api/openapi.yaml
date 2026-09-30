@@ -31,7 +31,9 @@ tags:
   - { name: drafts, description: Unaccepted changes to draftable entities that a person accepts or reverts }
   - { name: catalog, description: What the project wizard and Agent settings choose from (agent models per driver) }
   - { name: agentSessions, description: "Claude Code and opencode sessions: lifecycle, transcript, branch accept or revert" }
+  - { name: agentCredentials, description: "The agents' own model accounts (instance-wide, admin only); values are write-only and never MCP tools" }
   - { name: host, description: The agent host's protocol (claim work, report, ask); exempt from the vocabulary and never MCP tools }
+  - { name: egress, description: The egress proxy's protocol (the allowlist it learns); exempt from the vocabulary and never MCP tools }
   - { name: planned, description: Named now, implemented in a later phase (501 until then) }
 
 paths:
@@ -1757,6 +1759,148 @@ paths:
           content: { application/json: { schema: { $ref: "#/components/schemas/HostDecision" } } }
         default: { $ref: "#/components/responses/Problem" }
 
+  # ---------------------------------------------------------------- agent credentials (instance-wide, the admin's; exempt: tag agentCredentials, never MCP tools)
+  # The agents' own model accounts (docs/spec/08-resolutions.md R3, R6): the Claude Code subscription token and
+  # opencode's providers. Values are write-only: they pass through the secret store's transit area to the agent host,
+  # which writes them into the agent-credentials volume; Postgres keeps metadata only. Admin only (full scope); the
+  # tag keeps them out of the MCP tool list, and the presets forbid them as well.
+  /agent-credentials:
+    x-cadence: { entity: agentCredentials }
+    get:
+      operationId: agentCredentials.list
+      summary: The agents' model accounts (metadata only), whether an agent host is connected, and opencode's default model
+      tags: [agentCredentials]
+      responses:
+        "200":
+          description: Configured agent credentials, Claude Code first
+          content: { application/json: { schema: { $ref: "#/components/schemas/AgentCredentialList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /agent-credentials/{id}:
+    x-cadence: { entity: agentCredentials }
+    parameters: [{ $ref: "#/components/parameters/AgentCredentialId" }]
+    get:
+      operationId: agentCredentials.get
+      summary: One agent credential's metadata (never its value)
+      tags: [agentCredentials]
+      responses:
+        "200":
+          description: The credential
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/AgentCredential" } } }
+        default: { $ref: "#/components/responses/Problem" }
+    put:
+      operationId: agentCredentials.set
+      summary: Connect or change an agent's model account (write-only value) or choose opencode's default model
+      tags: [agentCredentials]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatchOptional"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/AgentCredentialSet" } } }
+      responses:
+        "200":
+          description: The credential as set; a new value waits for the agent host to write it (delivery pending)
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/AgentCredential" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /agent-credentials/{id}:verify:
+    x-cadence: { entity: agentCredentials }
+    parameters: [{ $ref: "#/components/parameters/AgentCredentialId" }]
+    post:
+      operationId: agentCredentials.verify
+      summary: Ask the agent host for a tiny real request through the agent (and opencode's model list); the result arrives as an event
+      tags: [agentCredentials]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      responses:
+        "200":
+          description: The credential with its verification pending
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/AgentCredential" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /agent-credentials/{id}:archive:
+    x-cadence: { entity: agentCredentials }
+    parameters: [{ $ref: "#/components/parameters/AgentCredentialId" }]
+    post:
+      operationId: agentCredentials.archive
+      summary: Disconnect an agent's model account; the agent host removes it from the agent-credentials volume
+      tags: [agentCredentials]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      responses:
+        "200":
+          description: The archived credential (its removal from the volume is pending until the host acknowledges)
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/AgentCredential" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /agent-providers:
+    x-cadence: { entity: agentProviders }
+    get:
+      operationId: agentProviders.list
+      summary: The provider catalogue the Agents settings choose from (Claude subscription; opencode providers and their API hosts)
+      tags: [agentCredentials]
+      responses:
+        "200":
+          description: Providers per agent
+          content: { application/json: { schema: { $ref: "#/components/schemas/AgentProviderList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  # The agent host's side of agent credentials (tag host): it claims pending writes, removals and verifications and
+  # reports each one back; the control plane then deletes the transit copy of the value.
+  /host-credentials:claim:
+    x-cadence: { entity: hostCredentials }
+    post:
+      operationId: hostCredentials.claim
+      summary: Long-poll for agent credential tasks — values to write into the agent-credentials volume, removals, verifications
+      tags: [host]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/HostCredentialClaim" } } }
+      responses:
+        "200":
+          description: Tasks for this host, oldest first (empty when the wait passed with nothing to do)
+          content: { application/json: { schema: { $ref: "#/components/schemas/HostCredentialWork" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /host-credentials/{id}:report:
+    x-cadence: { entity: hostCredentials }
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      operationId: hostCredentials.report
+      summary: Acknowledge an agent credential task with its outcome (written, removed, verified with the model list)
+      tags: [host]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/HostCredentialReport" } } }
+      responses:
+        "200":
+          description: The task as recorded
+          content: { application/json: { schema: { $ref: "#/components/schemas/HostCredentialAck" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  # ---------------------------------------------------------------- egress proxy protocol (exempt: tag egress, never MCP tools)
+  /egress-hosts:
+    x-cadence: { entity: egressHosts }
+    get:
+      operationId: egressHosts.list
+      summary: The hosts the agent sandbox may reach beyond the proxy's static list (configured providers, custom base URLs)
+      tags: [egress]
+      responses:
+        "200":
+          description: Hosts derived from the agent credentials, sorted
+          content: { application/json: { schema: { $ref: "#/components/schemas/EgressHostList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
   # ---------------------------------------------------------------- planned (later phases)
   /mounts:
     x-cadence: { entity: mounts, planned: 4 }
@@ -1810,6 +1954,12 @@ components:
       in: path
       required: true
       schema: { type: string }
+    AgentCredentialId:
+      name: id
+      in: path
+      required: true
+      description: "claude-code or opencode.<provider>"
+      schema: { $ref: "#/components/schemas/AgentCredentialIdValue" }
     MixId:
       name: id
       in: path
@@ -2157,7 +2307,7 @@ components:
 
     CredentialKind:
       type: string
-      enum: [session, api_key, agent, agent_host, invitation, worker]
+      enum: [session, api_key, agent, agent_host, egress_proxy, invitation, worker]
     CredentialScope:
       type: object
       properties:
@@ -3750,3 +3900,154 @@ components:
               optionId: { type: string }
               name: { type: string }
               kind: { type: string, enum: [allow_once, allow_always, reject_once, reject_always] }
+
+    # ---------------------------------------------------------------- agent credentials
+    AgentCredentialIdValue:
+      type: string
+      pattern: "^(claude-code|opencode\\.[a-z][a-z0-9-]{0,39})$"
+      description: "claude-code (the Claude subscription) or opencode.<provider> (minimax, anthropic, openai, openrouter, deepseek, or a custom provider id)"
+    AgentCredentialDelivery:
+      type: object
+      description: Whether the agent host has the value in the agent-credentials volume
+      required: [state]
+      properties:
+        state:
+          type: string
+          enum: [pending, written, removing, removed, failed]
+          description: "pending: waiting for the agent host to write it; written: in the volume; removing: waiting for the host to delete it; failed: the host could not write it (detail)"
+        detail: { type: string }
+        at: { type: string, format: date-time }
+    AgentCredentialVerification:
+      type: object
+      required: [state]
+      properties:
+        state:
+          type: string
+          enum: [none, pending, ok, failed]
+          description: "none: never verified since the value was set; pending: waiting for the agent host; ok or failed: the last result"
+        detail: { type: string, description: "The agent's answer or error, shortened (never the value)" }
+        model: { type: string, description: The model the check ran with }
+        at: { type: string, format: date-time }
+    AgentCredential:
+      type: object
+      description: "An agent's model account. Metadata only: the value lives in the agent-credentials volume and is never returned"
+      required: [id, agent, provider, catalogueId, name, hasValue, delivery, verification, models, hosts, rev, updatedAt]
+      properties:
+        id: { $ref: "#/components/schemas/AgentCredentialIdValue" }
+        agent: { $ref: "#/components/schemas/AgentDriver" }
+        provider: { type: string, description: "The provider id in the agent's own configuration (opencode's provider/model prefix); anthropic for Claude Code" }
+        catalogueId: { type: string, description: The catalogue entry (agentProviders.list) it was configured from }
+        name: { type: string, description: Display name }
+        baseUrl: { type: string, description: The API base URL of a custom (OpenAI-compatible) provider }
+        hasValue: { type: boolean, description: A key or token is stored (a custom provider may have none) }
+        hint: { type: string, description: "The value's last four characters (…ab12), to tell tokens apart" }
+        setAt: { type: string, format: date-time, description: When the value was last set }
+        setBy: { $ref: "#/components/schemas/Actor" }
+        expiresAt: { type: string, format: date-time, description: "Expected expiry (Claude's setup-token lasts about a year); warn 30 days before" }
+        delivery: { $ref: "#/components/schemas/AgentCredentialDelivery" }
+        verification: { $ref: "#/components/schemas/AgentCredentialVerification" }
+        models: { type: array, items: { type: string }, description: "opencode: the provider's models as provider/model, from the last verification" }
+        defaultModel: { type: string, description: "opencode: set on the one credential whose model new projects default to" }
+        hosts: { type: array, items: { type: string }, description: The API hosts added to the egress allowlist for it }
+        archivedAt: { type: string, format: date-time }
+        rev: { type: integer }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    AgentCredentialList:
+      type: object
+      required: [items, host, opencodeDefault]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/AgentCredential" } }
+        host:
+          type: object
+          required: [connected]
+          description: Whether an agent host claimed work recently; values and checks wait for one
+          properties:
+            connected: { type: boolean }
+            seenAt: { type: string, format: date-time }
+        opencodeDefault:
+          type: object
+          required: [model, source]
+          description: The model new opencode projects start from
+          properties:
+            model: { type: string }
+            source: { type: string, enum: [configured, defaults], description: "configured: chosen here; defaults: defaults.yaml wizard.opencode_model" }
+    AgentCredentialSet:
+      type: object
+      additionalProperties: false
+      properties:
+        value: { type: string, writeOnly: true, minLength: 1, maxLength: 8192, description: "Write-only: the token (claude setup-token) or the provider's API key. Omit to keep the stored one" }
+        name: { type: string, minLength: 1, maxLength: 80, description: "Display name (custom providers)" }
+        catalogueId: { type: string, maxLength: 40, description: "The catalogue entry, for a custom provider: openai-compatible (else derived from the id)" }
+        baseUrl: { type: string, maxLength: 500, description: "API base URL of a custom provider, e.g. http://vllm.lan:8000/v1" }
+        defaultModel: { type: string, maxLength: 200, description: "opencode: make this provider/model the default of new projects (one of the credential's models)" }
+    AgentProvider:
+      type: object
+      required: [id, agent, name, description, keyLabel, keyRequired, custom, hosts]
+      properties:
+        id: { type: string, description: "Catalogue id (claude-subscription, minimax, anthropic, openai, openrouter, deepseek, openai-compatible)" }
+        agent: { $ref: "#/components/schemas/AgentDriver" }
+        name: { type: string }
+        description: { type: string }
+        keyLabel: { type: string }
+        keyPrefix: { type: string, description: The value's expected prefix, when the provider has one }
+        keyRequired: { type: boolean }
+        custom: { type: boolean, description: The admin names the provider id and base URL (OpenAI-compatible, e.g. a self-hosted vLLM) }
+        hosts: { type: array, items: { type: string }, description: API hosts added to the egress allowlist when configured }
+        defaultModel: { type: string, description: "The model suggested as the default once configured (minimax/MiniMax-M3)" }
+        verifyModel: { type: string, description: The cheap model the verification request runs with }
+        help: { type: string, description: How to get the key or token }
+        docsUrl: { type: string }
+    AgentProviderList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/AgentProvider" } }
+    HostCredentialClaim:
+      type: object
+      required: [hostId]
+      additionalProperties: false
+      properties:
+        hostId: { type: string, minLength: 1, maxLength: 200 }
+        wait: { type: integer, minimum: 0, maximum: 30, default: 20, description: Seconds to wait for a task }
+    HostCredentialTask:
+      type: object
+      required: [id, action, credentialId, agent, provider, catalogueId]
+      properties:
+        id: { type: string, description: "act_…" }
+        action: { type: string, enum: [write, remove, verify] }
+        credentialId: { $ref: "#/components/schemas/AgentCredentialIdValue" }
+        agent: { $ref: "#/components/schemas/AgentDriver" }
+        provider: { type: string }
+        catalogueId: { type: string }
+        name: { type: string }
+        value: { type: string, description: "write: the value to store (from the transit store; the host writes it to the volume and never logs it)" }
+        baseUrl: { type: string, description: A custom provider's API base URL (opencode provider block) }
+        verifyModel: { type: string, description: "verify: the model of the tiny check (Claude alias or opencode provider/model); empty = the first listed" }
+        models: { type: array, items: { type: string }, description: "A custom provider's known models (write), so the provider block keeps them" }
+    HostCredentialWork:
+      type: object
+      required: [tasks]
+      properties:
+        tasks: { type: array, items: { $ref: "#/components/schemas/HostCredentialTask" } }
+    HostCredentialReport:
+      type: object
+      required: [hostId, ok]
+      additionalProperties: false
+      properties:
+        hostId: { type: string, minLength: 1, maxLength: 200 }
+        ok: { type: boolean }
+        detail: { type: string, maxLength: 2000, description: "What happened, shortened; never the value" }
+        model: { type: string, maxLength: 200, description: "verify: the model the check ran with" }
+        models: { type: array, maxItems: 2000, items: { type: string, maxLength: 200 }, description: "verify (opencode): the provider's models as provider/model" }
+    HostCredentialAck:
+      type: object
+      required: [id, state]
+      properties:
+        id: { type: string }
+        state: { type: string, enum: [done, superseded] }
+    EgressHostList:
+      type: object
+      required: [hosts]
+      properties:
+        hosts: { type: array, items: { type: string }, description: "Host names, *.domain patterns or host:port (a custom base URL with a port)" }

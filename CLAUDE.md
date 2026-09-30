@@ -56,7 +56,8 @@ Phase 1 (agent loop) passed its gate on 2026-09-30: A1, A2 and A4 are done with 
 and opencode sessions edit a mix through MCP and the open Mix panel shows the draft with the session badge in
 p95 56–68 ms. What exists now (details in `ROADMAP.md` "Phase 1 notes" and `docs/spec/05-agents.md` "Phase 1 as built"):
 - **Identity.** First-start admin, Argon2id + TOTP, session cookie + `Cadence-Client: web` CSRF header, credentials
-  (`cdk_` API keys, `cst_` agent session tokens, `cah_` agent-host token), `cadence admin reset-password|host-token`.
+  (`cdk_` API keys, `cst_` agent session tokens, `cah_` agent-host token, `cep_` egress-proxy token),
+  `cadence admin reset-password|host-token`.
 - **Registry and policy.** Collections/versions (`YYYY-MM-DD.<sha>`), adoption, aliases (`baseline` gated,
   `production` reserved), compute, secrets (secretbox files, master key), `defaults.yaml` + `defaults://`, policies,
   presets + policy engine (`internal/policy`), approvals, audit, River jobs, `runs.new?dryRun=true` estimate (table).
@@ -65,7 +66,11 @@ p95 56–68 ms. What exists now (details in `ROADMAP.md` "Phase 1 notes" and `do
 - **MCP.** Streamable HTTP on `/mcp`, tools generated from the contract, data-marked results, four resources.
 - **Agent host.** One ACP client, drivers for claude-agent-acp and `opencode acp`, session manager (worktree on
   `session/<id>`, commit + push per turn, budgets, runaway and stuck-turn clocks, permissions → preset → approvals),
-  per-session Unix users when root; `login` puts agent logins into the agent-credentials volume.
+  per-session Unix users when root. Agent model accounts are connected in Settings → Agents (`agentCredentials.*`,
+  admin only, never MCP tools): values pass through the secret store's transit area to the host
+  (`hostCredentials.claim|report`), which writes them into the agent-credentials volume and verifies them as a
+  sandboxed user; `login claude|opencode` stays as the CLI fallback. The egress proxy adds the configured providers'
+  hosts to its static list by polling `egressHosts.list` (internal/agentcreds, internal/egress).
 - **Web.** Chat, Agent sessions, Approvals, Agent settings, Settings, Getting started, Project, Mix, Recipe panels;
   context bridge (Ctrl/Cmd+I, `@kind:id` chips, attribution badge → tool call in Chat).
 Open from phase 1: the live worktree watcher (recipe events come from pushes), a three-way "Session changes" diff, the

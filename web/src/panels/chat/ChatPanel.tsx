@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type UIEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Attachment, Pause, Play, SendDiagonal, Square } from "iconoir-react";
+import { Attachment, Eject, Pause, Play, SendDiagonal, Square } from "iconoir-react";
 import { branchesGetOptions } from "@/api/gen/@tanstack/react-query.gen";
 import type { AgentMessage, AgentSession } from "@/api/gen/types.gen";
 import { Button } from "@/components/ui/button";
@@ -28,11 +28,13 @@ import {
   useProject,
   useSelection,
   useTopic,
+  usePanel,
   useTranscript,
+  viewSession,
   type PanelProps,
 } from "@/shell/panel";
 import { Entry, RefChips } from "./entries";
-import { budgetUse, compact, entryMatchesToolCall, rowOffsets, sessionStatus, VIRTUALIZE_AFTER, visibleEntries, visibleRange, type Meter, type Tone } from "./model";
+import { budgetUse, compact, entryMatchesToolCall, rowOffsets, sessionStatus, tabLabel, VIRTUALIZE_AFTER, visibleEntries, visibleRange, type Meter, type Tone } from "./model";
 
 // Chat (docs/spec/11-ui-panels.md "Panel catalogue"; docs/spec/05-agents.md "What the Chat panel shows"): one agent
 // session's streaming transcript, its header (kind, state, budget; stop, pause or resume, end), the merge of its
@@ -49,13 +51,24 @@ export function ChatPanel({ instanceId, doc }: PanelProps) {
   const session = useAgentSession(sessionId);
   const patch = useAgentPatcher();
   useTopic(sessionId ? [sessionTopic(sessionId)] : null, patch);
+  const { visible } = usePanel();
+  // While this Chat is on screen its session's news counts as read (the tab's dot).
+  useEffect(() => {
+    if (visible && sessionId) return viewSession(sessionId);
+  }, [visible, sessionId]);
   const setLast = useChatBridge((s) => s.setLastChat);
   useEffect(() => {
     if (!useChatBridge.getState().lastChat) setLast(instanceId);
   }, [instanceId, setLast]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col" onFocusCapture={() => setLast(instanceId)} onPointerDownCapture={() => setLast(instanceId)} data-chat-session={sessionId}>
+    <div
+      className="cadence-chat flex h-full min-h-0 flex-col"
+      onFocusCapture={() => setLast(instanceId)}
+      onPointerDownCapture={() => setLast(instanceId)}
+      onKeyDown={typeIntoComposer}
+      data-chat-session={sessionId}
+    >
       {sessionId && session.data ? (
         <>
           <Header session={session.data} instanceId={instanceId} switchable={!doc} />
@@ -70,6 +83,20 @@ export function ChatPanel({ instanceId, doc }: PanelProps) {
       <Composer instanceId={instanceId} session={session.data} bound={!!doc} />
     </div>
   );
+}
+
+/** Typing anywhere in the Chat outside a field goes to the composer: the key lands in it once it has focus. Space
+ * still presses the button or link it is on. */
+function typeIntoComposer(e: KeyboardEvent<HTMLDivElement>) {
+  if (e.defaultPrevented || e.nativeEvent.isComposing || e.ctrlKey || e.metaKey || e.altKey || e.key.length !== 1) return;
+  const t = e.target as HTMLElement;
+  if (t.isContentEditable || t.closest("input, textarea, select")) return;
+  if (e.key === " " && t.closest("button, a, summary, [role=button]")) return;
+  const input = e.currentTarget.querySelector<HTMLTextAreaElement>('[data-slot="composer"] textarea');
+  if (!input || input.disabled) return;
+  const end = input.value.length;
+  input.focus({ preventScroll: true });
+  input.setSelectionRange(end, end);
 }
 
 // ---------------------------------------------------------------- no session yet
@@ -159,40 +186,113 @@ function Header({ session: s, instanceId, switchable }: { session: AgentSession;
     const items = list.data?.items ?? [];
     return items.some((x) => x.id === s.id) ? items : [s, ...items];
   }, [list.data, s]);
+  const iconButton = "size-6 [&_svg]:size-3.5";
   return (
-    <div className="flex shrink-0 flex-col gap-2 border-b px-3 py-2" data-slot="chat-header">
-      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+    <div className="@container flex shrink-0 flex-col gap-1.5 border-b px-3 py-2" data-slot="chat-header">
+      <div className="flex min-w-0 items-center gap-2">
         {switchable ? (
           <NativeSelect
             aria-label="Session shown in this Chat"
-            className="h-6 w-auto max-w-52 text-xs font-medium"
+            className="h-6 w-auto max-w-56 min-w-0 shrink text-xs font-medium"
             value={s.id}
             onChange={(e) => pinChat(instanceId, e.target.value || null)}
           >
             {options.map((x) => (
               <option key={x.id} value={x.id}>
-                {sessionLabel(x)}
+                {tabLabel(x)} · {x.model}
                 {x.id !== s.id ? ` (${x.state.replace("_", " ")})` : ""}
               </option>
             ))}
             <option value="">New session…</option>
           </NativeSelect>
         ) : (
-          <h3 className="text-[13px] font-semibold">{sessionLabel(s)}</h3>
+          <h3 className="min-w-0 truncate text-[13px] font-semibold">{sessionLabel(s)}</h3>
         )}
-        <span className="rounded-full border px-2 py-0.5 text-[11px] text-muted-foreground" data-slot="session-kind">
-          {s.kind}
-        </span>
-        <span className={cn("inline-flex items-center gap-1.5 text-xs font-medium", TONE[status.tone])} data-slot="session-state" data-state={s.state}>
+        <span
+          className={cn("inline-flex min-w-0 items-center gap-1.5 truncate text-xs font-medium", TONE[status.tone])}
+          data-slot="session-state"
+          data-state={s.state}
+          title={[status.detail, `${s.driver} · ${s.model} · ${s.kind} · preset ${s.preset}`].filter(Boolean).join("\n")}
+        >
           <span aria-hidden className={cn("size-2 rounded-full", DOT[status.tone], s.busy && "animate-pulse motion-reduce:animate-none")} />
           {status.label}
         </span>
-        <span className="min-w-0 truncate text-[11px] text-muted-foreground" title={`${s.driver} · ${s.model} · preset ${s.preset}`}>
-          {s.model}
-        </span>
+        {s.kind !== "interactive" ? (
+          <span className="shrink-0 rounded-full border px-1.5 text-[11px] text-muted-foreground" data-slot="session-kind">
+            {s.kind}
+          </span>
+        ) : null}
+        <span className="sr-only">{sessionLabel(s)}</span>
+        {live ? (
+          <div className="ml-auto flex shrink-0 items-center gap-0.5" role="toolbar" aria-label="Session">
+            {confirmEnd ? (
+              <>
+                <Button size="xs" variant="destructive" disabled={busy} onClick={() => void act(() => runCommand("agentSessions.cancel", { session: s, end: true }))} autoFocus>
+                  End the session
+                </Button>
+                <Button size="xs" variant="ghost" onClick={() => setConfirmEnd(false)}>
+                  Keep it
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button
+                  size="icon-xs"
+                  variant="ghost"
+                  className={iconButton}
+                  disabled={busy || !s.busy}
+                  onClick={() => void act(() => runCommand("agentSessions.cancel", { session: s }))}
+                  data-command="agentSessions.cancel"
+                  aria-label="Stop turn"
+                  title="Stop the agent's turn (Ctrl/Cmd+.)"
+                >
+                  <Square aria-hidden />
+                </Button>
+                {s.state === "paused" ? (
+                  <Button
+                    size="icon-xs"
+                    variant="ghost"
+                    className={iconButton}
+                    disabled={busy || s.pendingControl === "resume"}
+                    onClick={() => void act(() => runCommand("agentSessions.resume", { session: s }))}
+                    data-command="agentSessions.resume"
+                    aria-label="Resume"
+                    title="Resume the session"
+                  >
+                    <Play aria-hidden />
+                  </Button>
+                ) : (
+                  <Button
+                    size="icon-xs"
+                    variant="ghost"
+                    className={iconButton}
+                    disabled={busy || s.state === "created" || !!s.pendingControl}
+                    onClick={() => void act(() => runCommand("agentSessions.pause", { session: s }))}
+                    data-command="agentSessions.pause"
+                    aria-label="Pause"
+                    title="Pause the session"
+                  >
+                    <Pause aria-hidden />
+                  </Button>
+                )}
+                <Button
+                  size="icon-xs"
+                  variant="ghost"
+                  className={iconButton}
+                  disabled={busy || s.pendingControl === "end"}
+                  onClick={() => setConfirmEnd(true)}
+                  aria-label="End session…"
+                  title="End the session"
+                >
+                  <Eject aria-hidden />
+                </Button>
+              </>
+            )}
+          </div>
+        ) : null}
       </div>
-      {status.detail && (s.state === "paused" || s.state === "failed") ? (
-        <p className={cn("text-xs", TONE[status.tone])} data-slot="pause-reason">
+      {s.state === "failed" && status.detail ? (
+        <p className={cn("text-xs", TONE[status.tone])} data-slot="session-error">
           {status.detail}
         </p>
       ) : null}
@@ -200,46 +300,6 @@ function Header({ session: s, instanceId, switchable }: { session: AgentSession;
         <BudgetMeter label="Turns" m={budget.turns} format={String} />
         <BudgetMeter label="Tokens" m={budget.tokens} format={compact} />
       </div>
-      {live ? (
-        <div className="flex flex-wrap items-center gap-1" role="toolbar" aria-label="Session">
-          <Button
-            size="xs"
-            variant="outline"
-            disabled={busy || !s.busy}
-            onClick={() => void act(() => runCommand("agentSessions.cancel", { session: s }))}
-            data-command="agentSessions.cancel"
-            title="Stop the agent's turn (Ctrl/Cmd+.)"
-          >
-            <Square aria-hidden />
-            Stop turn
-          </Button>
-          {s.state === "paused" ? (
-            <Button size="xs" variant="outline" disabled={busy || s.pendingControl === "resume"} onClick={() => void act(() => runCommand("agentSessions.resume", { session: s }))} data-command="agentSessions.resume">
-              <Play aria-hidden />
-              Resume
-            </Button>
-          ) : (
-            <Button size="xs" variant="outline" disabled={busy || s.state === "created" || !!s.pendingControl} onClick={() => void act(() => runCommand("agentSessions.pause", { session: s }))} data-command="agentSessions.pause">
-              <Pause aria-hidden />
-              Pause
-            </Button>
-          )}
-          {confirmEnd ? (
-            <>
-              <Button size="xs" variant="destructive" disabled={busy} onClick={() => void act(() => runCommand("agentSessions.cancel", { session: s, end: true }))} autoFocus>
-                End the session
-              </Button>
-              <Button size="xs" variant="ghost" onClick={() => setConfirmEnd(false)}>
-                Keep it
-              </Button>
-            </>
-          ) : (
-            <Button size="xs" variant="ghost" disabled={busy || s.pendingControl === "end"} onClick={() => setConfirmEnd(true)}>
-              End…
-            </Button>
-          )}
-        </div>
-      ) : null}
       {error ? (
         <p role="alert" className="text-xs text-destructive">
           {error}
@@ -346,8 +406,16 @@ function Transcript({ session }: { session: AgentSession }) {
   const bottom = (offsets[items.length] ?? 0) - (offsets[range.last] ?? 0);
   return (
     // Not role="log": a log is a live region, and streamed tokens must not be announced (WCAG 4.1.3; the finished
-    // turn is announced by the shell).
-    <div ref={scroller} onScroll={onScroll} className="@container min-h-0 flex-1 overflow-auto px-2 py-2" role="region" aria-label="Transcript" data-testid="chat-transcript">
+    // turn is announced by the shell). Focusable on click so the keys typed after it reach the composer.
+    <div
+      ref={scroller}
+      onScroll={onScroll}
+      tabIndex={-1}
+      className="@container min-h-0 flex-1 overflow-auto px-2 py-2 outline-none"
+      role="region"
+      aria-label="Transcript"
+      data-testid="chat-transcript"
+    >
       {items.length === 0 ? <p className="p-2 text-xs text-muted-foreground">{session.prompt ? "Waiting for the agent…" : "No messages yet."}</p> : null}
       <div style={virtual ? { paddingTop: top, paddingBottom: bottom } : undefined} className="flex flex-col gap-2">
         {items.slice(range.first, range.last).map((m: AgentMessage) => (
@@ -529,15 +597,22 @@ function Composer({ instanceId, session, bound }: { instanceId: string; session:
         className="max-h-40 min-h-12 resize-none text-[13px]"
         disabled={!project}
       />
-      <div className="flex items-center gap-1">
-        <Button size="xs" variant="ghost" onClick={attach} title="Attach the current selection (Ctrl/Cmd+I)" disabled={!project}>
+      <div className="flex min-w-0 items-center gap-1">
+        <Button size="xs" variant="ghost" className="shrink-0" onClick={attach} title="Attach the current selection (Ctrl/Cmd+I)" disabled={!project}>
           <Attachment aria-hidden />
           Attach selection
         </Button>
-        <span className="ml-auto hidden items-center gap-1 text-[11px] text-muted-foreground @sm:flex">
+        <span className="ml-auto hidden items-center gap-1 text-[11px] whitespace-nowrap text-muted-foreground @lg:flex">
           <Kbd>Enter</Kbd> send · <Kbd>Shift+Enter</Kbd> new line
         </span>
-        <Button size="xs" disabled={!draft.text.trim() || sending || !project} onClick={() => void send()} data-command={continues ? "agentMessages.new" : "agentSessions.new"}>
+        <Button
+          size="xs"
+          className="ml-auto shrink-0 @lg:ml-0"
+          disabled={!draft.text.trim() || sending || !project}
+          onClick={() => void send()}
+          data-command={continues ? "agentMessages.new" : "agentSessions.new"}
+          title="Enter sends · Shift+Enter starts a new line"
+        >
           <SendDiagonal aria-hidden />
           {continues ? "Send" : "Start session"}
         </Button>

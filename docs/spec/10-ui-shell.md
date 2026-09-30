@@ -136,7 +136,7 @@ Each block is the same loop; only the nouns change. The stepper in every documen
 
 > **Figure:** document anatomy · header, stepper, facts, tabs, body, next-step bar — see the drawing in the Claude Doc "Cadence — spec v0.2".
 
-The header carries title, version, status chip, actor badge and exactly one primary action; the stepper shows the loop; the facts strip holds the four numbers that matter for this kind; the tabs are always Overview · Details · Lineage · Activity · Notes; the next-step bar names the next loop step and offers it as a button and as "Ask agent". Tool panels share the header and a filter bar instead of the stepper.
+The header carries title, version, status chip, actor badge and the AI icon in its corner (a menu: Ask agent about this entity, Ask agent about the next step, Explain this — kept apart from the entity's verbs); under it one wrapping row of verbs, the single primary action first; the stepper shows the loop; the facts strip holds the four numbers that matter for this kind; the tabs are always Overview · Details · Lineage · Activity · Notes; the next-step bar names the next loop step and offers it as a button. Tool panels share the header and a filter bar instead of the stepper.
 
 ### Verb vocabulary
 
@@ -163,6 +163,7 @@ One word per action, everywhere: in menus, the palette, API operation ids and MC
 | note, sync | Projects (learnings; template and skill sync) | Yes | None |
 | archive | Projects, sources | Yes | Inline confirm |
 | revoke | Credentials, tokens (R1) | No | Inline confirm |
+| verify | Agent credentials: a tiny real request through the agent, the result recorded (2026-09-30) | — | None |
 
 This table is the whole vocabulary: every MCP tool, API operation id and command id is <entity>.<verb> with a verb from it (the system tab lists the tools). Each verb has one Iconoir icon and one default key, defined once in the command registry; a panel that needs a new verb adds it here first.
 
@@ -312,6 +313,8 @@ Step roles follow Radix's [scale guide](https://radix-ui.com/colors/docs/palette
 | --- | --- | --- |
 | Empty desktop, document panels | slate-1 | Centre work area |
 | Tool panels, tab bars, menus, popovers | slate-2 | Slightly set back from documents, Photoshop-style |
+| Chat tab icon | Outline in the text colour, filled by the session's status: blue working, grass waiting for you, amber waits for a decision, slate-a paused, red failed, empty when over | The outline carries the shape; the fill is a hint beside the label's status for screen readers |
+| Chat | slate-3 (dark: slate-2) | Set apart from the documents around it; messages, cards and the composer stay on slate-1. Running and done text and diff counts take step 12 on light slate-3 (step 11 is under 4.5:1 there) |
 | Inactive tab hover, list row hover | slate-3 / slate-4 |  |
 | Selected row, pressed control | slate-5 |  |
 | Group separators, panel borders | slate-6 | Decorative, 1 px |

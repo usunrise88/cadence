@@ -143,7 +143,9 @@ func (s *Server) sessionInput(ctx context.Context, p projects.Project, b *api.Ag
 		in.Driver, in.Model, in.Preset, in.AutoMerge = profile.Driver, profile.Model, profile.PermissionPreset, profile.AutoMerge
 	case errors.As(err, &pe) && pe.Type == problems.NotFound:
 		in.Driver = d.Wizard.Driver.Value
-		in.Model = d.Wizard.ModelFor(in.Driver).Value
+		if in.Model, err = s.modelFor(ctx, in.Driver); err != nil {
+			return in, err
+		}
 	default:
 		return in, err
 	}
@@ -153,7 +155,9 @@ func (s *Server) sessionInput(ctx context.Context, p projects.Project, b *api.Ag
 		}
 		if b.Driver != nil && string(*b.Driver) != in.Driver {
 			in.Driver = string(*b.Driver)
-			in.Model = d.Wizard.ModelFor(in.Driver).Value
+			if in.Model, err = s.modelFor(ctx, in.Driver); err != nil {
+				return in, err
+			}
 		}
 		if b.Model != nil {
 			in.Model = *b.Model

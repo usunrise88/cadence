@@ -139,7 +139,7 @@ func TestBootstrapEndToEnd(t *testing.T) {
 	if strings.Contains(settings.Content, "mcpServers") || !strings.Contains(settings.Content, "mcp__cadence__projects_note") {
 		t.Errorf(".claude/settings.json:\n%s", settings.Content)
 	}
-	if oc := e.recipe("hebrew-telephony", "opencode.json", ""); !strings.Contains(oc.Content, `"model": "minimax/MiniMax-M2"`) ||
+	if oc := e.recipe("hebrew-telephony", "opencode.json", ""); !strings.Contains(oc.Content, `"model": "minimax/MiniMax-M3"`) ||
 		strings.Contains(oc.Content, `"mcp"`) {
 		t.Errorf("opencode.json:\n%s", oc.Content)
 	}
@@ -207,7 +207,7 @@ func TestAgentProfileNotesSyncAndBranches(t *testing.T) {
 	// agentProfile.edit commits the rendered files; switching driver starts from its default model.
 	var ap agentProfile
 	resp := e.ok(e.do("PATCH", "/api/projects/demo/agent-profile", `{"driver":"opencode"}`, "Idempotency-Key", e.key(), "If-Match", `"1"`), 200, &ap)
-	if ap.Driver != "opencode" || ap.Model != "minimax/MiniMax-M2" || ap.Rev != 2 || resp.Header.Get("ETag") != `"2"` || ap.Commit == "" {
+	if ap.Driver != "opencode" || ap.Model != "minimax/MiniMax-M3" || ap.Rev != 2 || resp.Header.Get("ETag") != `"2"` || ap.Commit == "" {
 		t.Fatalf("edit profile %+v", ap)
 	}
 	if !strings.Contains(e.recipe("demo", "project.yaml", "").Content, "driver: opencode") {

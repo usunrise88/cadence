@@ -31,10 +31,10 @@ wizard:
     source: docs/spec/08-resolutions.md R6 (Claude subscription); Cadence recommendation for the alias
     range: { values: [sonnet, opus, haiku] }
   opencode_model:
-    value: minimax/MiniMax-M2
+    value: minimax/MiniMax-M3
     description: Model of opencode sessions as provider/model; any provider configured in the agent-credentials volume is accepted
-    source: docs/spec/08-resolutions.md R6 (MiniMax Token Plan); model id as models.dev names it — confirm against the plan
-    range: { values: [minimax/MiniMax-M2] }
+    source: docs/spec/08-resolutions.md R6 (MiniMax Token Plan); model chosen by the owner, 2026-09-30
+    range: { values: [minimax/MiniMax-M3] }
   auto_merge:
     value: when-clean
     description: Whether a session branch merges into main at session end when it applies cleanly (when-clean) or always waits for a person (never)

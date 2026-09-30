@@ -5,7 +5,7 @@ import { Streamdown } from "streamdown";
 import { helpGetOptions, helpSearchOptions } from "@/api/gen/@tanstack/react-query.gen";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { EmptyState, ExplainThisButton, PanelToolbar } from "@/shell/entity/primitives";
+import { AgentMenu, EmptyState, explainThis, PanelToolbar } from "@/shell/entity/primitives";
 import { useHelp } from "@/shell/help/store";
 import type { PanelProps } from "@/shell/panel";
 
@@ -55,7 +55,9 @@ export function HelpPanel(_props: PanelProps) {
         >
           {pinned ? <PinSolid aria-hidden /> : <Pin aria-hidden />}
         </Button>
-        {doc.data ? <ExplainThisButton entity={null} article={id} what={`the help article “${doc.data.title}” and how it applies to this project`} /> : null}
+        {doc.data ? (
+          <AgentMenu items={[{ label: "Explain this", command: "agentSessions.new", run: () => void explainThis(null, id, `the help article “${doc.data.title}” and how it applies to this project`) }]} />
+        ) : null}
       </PanelToolbar>
       {q.length > 1 ? (
         <ul className="border-b text-xs" aria-label="Help search results">

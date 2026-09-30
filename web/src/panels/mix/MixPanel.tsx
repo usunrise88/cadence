@@ -1,13 +1,15 @@
 import { useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Plus, Trash } from "iconoir-react";
 import { datasetsListOptions, eventsListOptions, mixesGetQueryKey } from "@/api/gen/@tanstack/react-query.gen";
 import type { DraftChange, Mix, MixGroup, Problem } from "@/api/gen/types.gen";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 import { cn } from "@/lib/utils";
 import { DraftOutline, PresenceNotice, changed, presenceLabel, useActivePresence, useDrafts } from "@/shell/entity/drafts";
-import { ActorBadge, EmptyState, StatusChip } from "@/shell/entity/primitives";
-import { runCommand, useEditRequest, useTopic, type PanelProps } from "@/shell/panel";
+import { ActorBadge, EmptyState } from "@/shell/entity/primitives";
+import { runCommand, useCommand, useEditRequest, useTopic, type PanelProps } from "@/shell/panel";
 
 // The Mix document (docs/spec/11-ui-panels.md): groups, weights, temperature and replay share over dataset
 // versions, and the preview of hours per language. A person edits the table directly (a new revision); an agent's
@@ -15,7 +17,21 @@ import { runCommand, useEditRequest, useTopic, type PanelProps } from "@/shell/p
 // waits. A save on a revision that moved on shows the conflict notice instead of overwriting.
 
 export function MixEmpty() {
-  return <EmptyState step="prepare" title="No mix open" hint="Open a mix from the Library, or create one with New mix… in the palette." />;
+  const cmd = useCommand("mixes.new");
+  return (
+    <EmptyState
+      step="prepare"
+      title="No mix open"
+      hint="Open a mix from the Library, or create a new one."
+      action={
+        cmd ? (
+          <Button type="button" size="sm" disabled={cmd.enabled !== true} onClick={() => void cmd.run()}>
+            New mix
+          </Button>
+        ) : undefined
+      }
+    />
+  );
 }
 
 export function MixPanel({ tab, entity, doc }: PanelProps) {
@@ -213,75 +229,91 @@ function GroupsTable({
     onChange([...groups, { name: newName, weight: 1, replay: false, datasets: [ds] }]);
     setNewName("");
   };
+  const cell = "px-2 py-1.5 align-middle first:pl-0 last:pr-0";
   return (
-    <table data-slot="mix-groups" className="w-full text-xs">
-      <thead>
-        <tr className="text-left text-muted-foreground">
-          <th className="py-1 font-normal">Group</th>
-          <th className="font-normal">Dataset versions</th>
-          <th className="font-normal">Replay</th>
-          <th className="font-normal">Weight</th>
-          <th className="font-normal">Sample share</th>
-          <th />
-        </tr>
-      </thead>
-      <tbody>
-        {groups.map((g, i) => (
-          <tr key={`${g.name}-${i}`} className="border-t">
-            <td className="py-1 font-medium">{g.name}</td>
-            <td className="text-muted-foreground">{g.datasets.map((d) => datasetLabel(names, d)).join(", ")}</td>
-            <td>
-              <input
-                type="checkbox"
-                className="size-4 align-middle"
-                checked={!!g.replay}
-                disabled={disabled}
-                aria-label={`Replay group ${g.name}`}
-                onChange={(e) => set(i, { replay: e.target.checked })}
-              />
-            </td>
-            <td>
-              <Input
-                ref={i === 0 ? firstInput : undefined}
-                type="number"
-                step={0.1}
-                min={0.001}
-                className="h-6 w-20 text-xs"
-                value={g.weight ?? 1}
-                disabled={disabled}
-                aria-label={`Weight of ${g.name}`}
-                onChange={(e) => set(i, { weight: Number(e.target.value) })}
-              />
-            </td>
-            <td className="tabular-nums">{shares.has(g.name) ? `${Math.round((shares.get(g.name) ?? 0) * 1000) / 10} %` : "—"}</td>
-            <td className="text-right">
-              <Button size="xs" variant="ghost" disabled={disabled || groups.length === 1} aria-label={`Remove group ${g.name}`} onClick={() => onChange(groups.filter((_, j) => j !== i))}>
-                Remove
-              </Button>
-            </td>
-          </tr>
-        ))}
-        <tr className="border-t">
-          <td className="py-1">
-            <Input className="h-6 w-28 text-xs" placeholder="New group" value={newName} disabled={disabled} aria-label="New group name" onChange={(e) => setNewName(e.target.value)} />
-          </td>
-          <td colSpan={4}>
-            <select className="h-6 rounded-md border bg-background px-1 text-xs" value={newDataset || frozen[0]?.id || ""} disabled={disabled} aria-label="New group dataset version" onChange={(e) => setNewDataset(e.target.value)}>
-              {frozen.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name} · {d.version}
-                </option>
-              ))}
-            </select>
-          </td>
-          <td className="text-right">
-            <Button size="xs" variant="outline" disabled={disabled || !newName} onClick={add}>
-              Add group
-            </Button>
-          </td>
-        </tr>
-      </tbody>
-    </table>
+    <div className="flex flex-col gap-2">
+      <div className="overflow-x-auto">
+        <table data-slot="mix-groups" className="w-full min-w-md text-xs">
+          <thead>
+            <tr className="text-left text-muted-foreground">
+              <th className={cn(cell, "font-normal")}>Group</th>
+              <th className={cn(cell, "font-normal")}>Dataset versions</th>
+              <th className={cn(cell, "text-center font-normal")}>Replay</th>
+              <th className={cn(cell, "font-normal")}>Weight</th>
+              <th className={cn(cell, "text-right font-normal")}>Sample share</th>
+              <th className={cell}>
+                <span className="sr-only">Remove</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {groups.map((g, i) => (
+              <tr key={`${g.name}-${i}`} className="border-t">
+                <td className={cn(cell, "font-medium whitespace-nowrap")}>{g.name}</td>
+                <td className={cn(cell, "text-muted-foreground")}>{g.datasets.map((d) => datasetLabel(names, d)).join(", ")}</td>
+                <td className={cn(cell, "text-center")}>
+                  <input
+                    type="checkbox"
+                    className="size-4 align-middle accent-primary"
+                    checked={!!g.replay}
+                    disabled={disabled}
+                    aria-label={`Replay group ${g.name}`}
+                    onChange={(e) => set(i, { replay: e.target.checked })}
+                  />
+                </td>
+                <td className={cell}>
+                  <Input
+                    ref={i === 0 ? firstInput : undefined}
+                    type="number"
+                    step={0.1}
+                    min={0.001}
+                    className="w-20 text-xs tabular-nums"
+                    value={g.weight ?? 1}
+                    disabled={disabled}
+                    aria-label={`Weight of ${g.name}`}
+                    onChange={(e) => set(i, { weight: Number(e.target.value) })}
+                  />
+                </td>
+                <td className={cn(cell, "text-right whitespace-nowrap tabular-nums")}>{shares.has(g.name) ? `${Math.round((shares.get(g.name) ?? 0) * 1000) / 10} %` : "—"}</td>
+                <td className={cn(cell, "w-8 text-right")}>
+                  <Button
+                    size="icon-xs"
+                    variant="ghost"
+                    className="size-6 text-muted-foreground hover:text-destructive"
+                    disabled={disabled || groups.length === 1}
+                    aria-label={`Remove group ${g.name}`}
+                    title={groups.length === 1 ? "A mix keeps at least one group" : `Remove group ${g.name}`}
+                    onClick={() => onChange(groups.filter((_, j) => j !== i))}
+                  >
+                    <Trash aria-hidden />
+                  </Button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 text-xs" role="group" aria-label="Add a group">
+        <Input className="w-32 text-xs" placeholder="New group" value={newName} disabled={disabled} aria-label="New group name" onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} />
+        <NativeSelect
+          className="w-auto max-w-full min-w-40 flex-1 text-xs"
+          value={newDataset || frozen[0]?.id || ""}
+          disabled={disabled}
+          aria-label="New group dataset version"
+          onChange={(e) => setNewDataset(e.target.value)}
+        >
+          {frozen.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.name.replace(/^dataset\//, "")} · {d.version}
+            </option>
+          ))}
+        </NativeSelect>
+        <Button size="xs" variant="outline" disabled={disabled || !newName} onClick={add}>
+          <Plus aria-hidden />
+          Add group
+        </Button>
+      </div>
+    </div>
   );
 }
 
@@ -289,7 +321,7 @@ function NumberField({ label, value, step, min, max, disabled, onChange }: { lab
   return (
     <label className="flex flex-col gap-1">
       <span className="text-muted-foreground">{label}</span>
-      <Input type="number" className="h-6 w-24 text-xs" value={value} step={step} min={min} max={max} disabled={disabled} aria-label={label} onChange={(e) => onChange(Number(e.target.value))} />
+      <Input type="number" className="w-24 text-xs tabular-nums" value={value} step={step} min={min} max={max} disabled={disabled} aria-label={label} onChange={(e) => onChange(Number(e.target.value))} />
     </label>
   );
 }
@@ -376,20 +408,53 @@ function Preview({ mix }: { mix: Mix }) {
 }
 
 function Details({ mix }: { mix: Mix }) {
-  const rows: [string, string][] = [
-    ["id", mix.id],
-    ["revision", String(mix.rev)],
-    ["created", `${new Date(mix.createdAt).toLocaleString()} by ${mix.createdBy.name ?? mix.createdBy.id}`],
-    ["updated", `${new Date(mix.updatedAt).toLocaleString()} by ${mix.updatedBy.name ?? mix.updatedBy.id}`],
-    ["cause", mix.cause ? JSON.stringify(mix.cause) : "—"],
-    ["groups", JSON.stringify(mix.groups)],
+  const { names } = useDatasetNames(mix);
+  const when = (iso: string) => new Date(iso).toLocaleString();
+  const rows: [string, React.ReactNode][] = [
+    ["ID", <code className="font-mono text-[11px]">{mix.id}</code>],
+    ["Revision", `rev ${mix.rev}`],
+    [
+      "Created",
+      <span className="inline-flex flex-wrap items-center gap-1">
+        {when(mix.createdAt)} <ActorBadge actor={mix.createdBy} />
+      </span>,
+    ],
+    [
+      "Updated",
+      <span className="inline-flex flex-wrap items-center gap-1">
+        {when(mix.updatedAt)} <ActorBadge actor={mix.updatedBy} />
+      </span>,
+    ],
+    ...(mix.cause?.draftAuthor
+      ? ([
+          [
+            "From a draft by",
+            <ActorBadge actor={mix.cause.draftAuthor} toolCallId={mix.cause.toolCallId} />,
+          ],
+        ] as [string, React.ReactNode][])
+      : []),
+    ["Temperature", String(mix.temperature)],
+    ["Replay share", `${Math.round(mix.replayShare * 1000) / 10} %`],
+    [
+      "Groups",
+      <ul className="flex flex-col gap-1">
+        {mix.groups.map((g) => (
+          <li key={g.name} className="flex flex-wrap items-baseline gap-x-2">
+            <span className="font-medium">{g.name}</span>
+            <span className="text-muted-foreground">{g.datasets.map((d) => datasetLabel(names, d)).join(", ")}</span>
+            <span className="tabular-nums">weight {g.weight ?? 1}</span>
+            {g.replay ? <span className="rounded-full border px-1.5 text-[11px] text-muted-foreground">replay</span> : null}
+          </li>
+        ))}
+      </ul>,
+    ],
   ];
   return (
-    <dl className="grid grid-cols-[9rem_1fr] gap-x-4 gap-y-1.5 p-4 text-xs">
+    <dl className="grid grid-cols-[8rem_1fr] gap-x-4 gap-y-2 p-4 text-xs">
       {rows.map(([k, v]) => (
         <div key={k} className="contents">
           <dt className="text-muted-foreground">{k}</dt>
-          <dd className="break-all">{k === "revision" ? <StatusChip state="active" /> : null} {v}</dd>
+          <dd className="min-w-0 break-words">{v}</dd>
         </div>
       ))}
     </dl>

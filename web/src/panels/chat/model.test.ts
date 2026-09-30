@@ -1,9 +1,25 @@
 import { describe, expect, it } from "vitest";
 import type { AgentToolCall } from "@/api/gen/types.gen";
 import { message, session } from "@/shell/agents/testdata";
-import { budgetUse, compact, diffStat, dryRunEstimate, lineDiff, rowOffsets, sessionStatus, toolDraft, toolEntityRef, toolOperation, visibleEntries, visibleRange } from "./model";
+import { budgetUse, compact, diffStat, dryRunEstimate, lineDiff, rowOffsets, sessionStatus, tabLabel, tabTone, toolDraft, toolEntityRef, toolOperation, visibleEntries, visibleRange } from "./model";
 
 const tool = (over: Partial<AgentToolCall>): AgentToolCall => ({ id: "toolu_1", title: "mixes.edit", class: "mcp", status: "completed", ...over });
+
+describe("tab", () => {
+  it("names the session the short way", () => {
+    expect(tabLabel(session({ driver: "claude-code", number: 4 }))).toBe("CC · S4");
+    expect(tabLabel(session({ driver: "opencode", number: 1 }))).toBe("OC · S1");
+  });
+
+  it("colours the icon by status", () => {
+    expect(tabTone(session({ busy: true }))).toBe("working");
+    expect(tabTone(session({ busy: false }))).toBe("ready");
+    expect(tabTone(session({ state: "waiting_approval" }))).toBe("attention");
+    expect(tabTone(session({ state: "paused" }))).toBe("paused");
+    expect(tabTone(session({ state: "failed" }))).toBe("failed");
+    expect(tabTone(session({ state: "done" }))).toBe("none");
+  });
+});
 
 describe("header", () => {
   it("reads the state chip: running, waiting approval, paused with the reason", () => {

@@ -32,11 +32,14 @@ tools:
     verbClass: mutate
     reason: agent sessions are started, steered and merged by people
 
-  # Secrets never enter an agent context; credentials, compute, policies and defaults are the admin's.
+  # Secrets never enter an agent context; credentials, compute, policies and defaults are the admin's. The agents'
+  # own model accounts (agentCredentials, Settings → Agents) are not MCP tools at all (exempt tag); the rule is a
+  # second fence.
   - id: admin-only
     class: forbidden
-    operations: ["secrets.*", "credentials.*", compute.new, compute.edit, compute.archive, policies.edit]
-    reason: secrets, credentials, compute and policies are changed by the admin only
+    operations: ["secrets.*", "credentials.*", "agentCredentials.*", "agentProviders.*", compute.new, compute.edit,
+                 compute.archive, policies.edit]
+    reason: secrets, credentials, agent model accounts, compute and policies are changed by the admin only
 
   # R8: the baseline alias is gated for everyone, people included (production moves only by promotion).
   - id: baseline-alias

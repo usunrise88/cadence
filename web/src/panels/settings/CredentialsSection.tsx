@@ -3,6 +3,7 @@ import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-quer
 import { credentialsListOptions, projectsListOptions } from "@/api/gen/@tanstack/react-query.gen";
 import type { Credential, CredentialCreated, CredentialKind, CredentialList } from "@/api/gen/types.gen";
 import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Input } from "@/components/ui/input";
 import { errorMessage, runCommand, useTopic } from "@/shell/panel";
 import { Chip, Field, InlineConfirm, SectionHeading, Table, Td, when } from "./ui";
@@ -11,7 +12,7 @@ import { Chip, Field, InlineConfirm, SectionHeading, Table, Td, when } from "./u
 // or to registry read — the token is shown once, at creation — plus active browser sessions and agent session
 // tokens. Revoke is irreversible and confirms inline.
 
-const KIND_LABEL: Record<CredentialKind, string> = { session: "Session", api_key: "API key", agent: "Agent token", agent_host: "Agent host", invitation: "Invitation", worker: "Worker" };
+const KIND_LABEL: Record<CredentialKind, string> = { session: "Session", api_key: "API key", agent: "Agent token", agent_host: "Agent host", egress_proxy: "Egress proxy", invitation: "Invitation", worker: "Worker" };
 
 export function isActive(c: Credential, now = Date.now()): boolean {
   return !c.revokedAt && (!c.expiresAt || new Date(c.expiresAt).getTime() > now);
@@ -111,14 +112,14 @@ function NewKeyForm({ projects, onCreated }: { projects: string[]; onCreated: (c
         <Input id={`${uid}-name`} value={name} onChange={(e) => setName(e.target.value)} required maxLength={120} placeholder="ci-evals" className="h-7 text-xs" autoComplete="off" />
       </Field>
       <Field label="Project" htmlFor={`${uid}-project`} hint="The one project the key reaches (none: registry read only).">
-        <select id={`${uid}-project`} value={project} onChange={(e) => setProject(e.target.value)} className="h-7 rounded-md border border-input bg-background px-2 text-xs">
+        <NativeSelect id={`${uid}-project`} value={project} onChange={(e) => setProject(e.target.value)} className="h-7 rounded-md border border-input bg-background px-2 text-xs">
           <option value="">none</option>
           {projects.map((p) => (
             <option key={p} value={p}>
               {p}
             </option>
           ))}
-        </select>
+        </NativeSelect>
       </Field>
       <label className="flex min-h-6 items-center gap-1.5 text-xs">
         <input type="checkbox" className="size-3.5 accent-primary" checked={registryRead} onChange={(e) => setRegistryRead(e.target.checked)} />

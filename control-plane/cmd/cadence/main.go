@@ -12,7 +12,8 @@
 // CADENCE_DATA_DIR (./data), CADENCE_LOG_DIR ($CADENCE_DATA_DIR/logs), CADENCE_LOG_LEVEL (info),
 // CADENCE_MASTER_KEY_FILE ($CADENCE_DATA_DIR/master.key; generated on first start when missing),
 // CADENCE_GITHUB_API (https://api.github.com; GitHub Enterprise: https://<host>/api/v3), CADENCE_HOST_TOKEN_FILE (where
-// the agent host's cah_ token is kept: a file on a volume both containers mount; see credentials.EnsureHostTokenFile).
+// the agent host's cah_ token is kept: a file on a volume both containers mount; see credentials.EnsureHostTokenFile),
+// CADENCE_EGRESS_TOKEN_FILE (the egress proxy's cep_ token, the same way).
 // Project repositories live under $CADENCE_DATA_DIR/repos (bare), work (working clones) and worktrees; the git binary
 // must be on PATH. `cadence egress-proxy` runs the agent sandbox's allowlisting proxy instead (internal/egress).
 package main
@@ -225,6 +226,7 @@ func serve(ctx context.Context, getenv func(string) string) error {
 		return err
 	}
 	jobSvc.AddPeriodic("agentSessions.sweep", 30*time.Second, srv.SweepSessions)
+	jobSvc.AddPeriodic("agentCredentials.sweep", time.Minute, srv.SweepAgentCredentials)
 	if path := getenv("CADENCE_HOST_TOKEN_FILE"); path != "" {
 		issued, err := credentials.EnsureHostTokenFile(ctx, pool, path)
 		if err != nil {
@@ -232,6 +234,15 @@ func serve(ctx context.Context, getenv func(string) string) error {
 		}
 		if issued {
 			log.Info("issued a new agent host token; older host tokens are revoked", "file", path)
+		}
+	}
+	if path := getenv("CADENCE_EGRESS_TOKEN_FILE"); path != "" {
+		issued, err := credentials.EnsureEgressTokenFile(ctx, pool, path)
+		if err != nil {
+			return fmt.Errorf("egress proxy token: %w", err)
+		}
+		if issued {
+			log.Info("issued a new egress proxy token; older ones are revoked", "file", path)
 		}
 	}
 	httpServer := &http.Server{

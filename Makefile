@@ -34,7 +34,7 @@ test-integration: ## control plane against Postgres in Docker (testcontainers): 
 	cd control-plane && go test -tags integration ./...
 
 ui-e2e:        ## Playwright on sign-in and the shell against the real control plane (Postgres in Docker)
-	cd web && npx playwright test e2e/auth.spec.ts e2e/panels.spec.ts e2e/shell.spec.ts e2e/search.spec.ts e2e/mix.spec.ts e2e/chat.spec.ts
+	cd web && npx playwright test e2e/auth.spec.ts e2e/panels.spec.ts e2e/shell.spec.ts e2e/search.spec.ts e2e/mix.spec.ts e2e/chat.spec.ts e2e/agents.spec.ts
 
 spikes-measure: ## S1, S3, S4 and A4 measurements (weekly performance job); results in web/test-results/spikes
 	cd web && npx playwright test e2e/spikes.spec.ts e2e/a4-live-events.spec.ts

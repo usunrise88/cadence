@@ -240,7 +240,6 @@ function NewMixDialog({ onClose }: { onClose: () => void }) {
     }
   };
   const errs = fieldErrors(error);
-  const select = "h-7 rounded-md border bg-background px-2 text-[13px]";
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
@@ -253,16 +252,16 @@ function NewMixDialog({ onClose }: { onClose: () => void }) {
             <Input value={name} onChange={(e) => setName(e.target.value)} required autoFocus name="name" />
           </Field>
           <Field label="Target dataset version" error={errs["groups/0/datasets/0"]}>
-            <select className={select} value={chosenTarget} onChange={(e) => setTarget(e.target.value)} required name="target">
+            <NativeSelect  value={chosenTarget} onChange={(e) => setTarget(e.target.value)} required name="target">
               {datasets.map((d) => (
                 <option key={d.id} value={d.id}>
                   {d.name} · {d.version}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </Field>
           <Field label="Replay dataset version (optional)" error={errs["groups/1/datasets/0"]}>
-            <select className={select} value={replay} onChange={(e) => setReplay(e.target.value)} name="replay">
+            <NativeSelect  value={replay} onChange={(e) => setReplay(e.target.value)} name="replay">
               <option value="">None</option>
               {datasets
                 .filter((d) => d.id !== chosenTarget)
@@ -271,7 +270,7 @@ function NewMixDialog({ onClose }: { onClose: () => void }) {
                     {d.name} · {d.version}
                   </option>
                 ))}
-            </select>
+            </NativeSelect>
           </Field>
           {error && Object.keys(errs).length === 0 ? (
             <p role="alert" className="text-xs text-destructive">

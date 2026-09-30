@@ -4,6 +4,9 @@
 //   docker compose run --rm -it agent-host login claude     the owner's Claude subscription (`claude setup-token`)
 //   docker compose run --rm -it agent-host login opencode   `opencode auth login`: MiniMax and the Token Plan key
 //
+// Settings → Agents (the admin's UI) is the usual way now: the host writes the same files from its credential tasks
+// (src/host/credentials.ts); these commands stay as the fallback.
+//
 // CADENCE_AGENT_CREDENTIALS names the volume's mount (/agent-credentials in the image). Each driver knows how its
 // agent logs in (Driver.login).
 

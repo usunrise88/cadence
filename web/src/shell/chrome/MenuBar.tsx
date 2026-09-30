@@ -28,7 +28,7 @@ function CommandItem({ id, label }: { id: string; label?: string }) {
   return (
     <DropdownMenuItem disabled={ok !== true} title={ok === true ? undefined : ok} onClick={() => void commands.run(id, commandContext())}>
       {label ?? cmd.title}
-      {cmd.keys?.[0] ? <DropdownMenuShortcut>{chordLabel(cmd.keys[0])}</DropdownMenuShortcut> : null}
+      {cmd.keys?.[0] ? <DropdownMenuShortcut className="pl-6">{chordLabel(cmd.keys[0])}</DropdownMenuShortcut> : null}
     </DropdownMenuItem>
   );
 }
@@ -37,7 +37,7 @@ function Menu({ label, children }: { label: string; children: React.ReactNode })
   return (
     <DropdownMenu>
       <DropdownMenuTrigger render={<Button variant="ghost" size="sm" className="h-6 px-2 text-xs font-normal" />}>{label}</DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="min-w-56">
+      <DropdownMenuContent align="start" className="w-max min-w-56 [&_[role=menuitem]]:whitespace-nowrap">
         {children}
       </DropdownMenuContent>
     </DropdownMenu>
@@ -80,6 +80,20 @@ function groupItems(group: Command["group"]): Command[] {
   return commands.all().filter((c) => c.group === group && !c.hidden);
 }
 
+// The Window menu in sections: window states, docking, floating alignment, moving focus, and the layout reset.
+const WINDOW_SECTIONS: [string, string?][][] = [
+  [["view.float"], ["view.popout"], ["view.returnToGrid"], ["view.toggleMaximize"]],
+  [["view.dockLeft"], ["view.dockRight"], ["view.dockTop"], ["view.dockBottom"]],
+  [
+    ["view.alignLeft", "Align float left"],
+    ["view.alignRight", "Align float right"],
+    ["view.alignTop", "Align float top"],
+    ["view.alignBottom", "Align float bottom"],
+  ],
+  [["view.nextGroup"], ["view.previousGroup"], ["view.nextTab", "Next tab"], ["view.previousTab", "Previous tab"], ["view.closePanel"]],
+  [["view.resetWorkspace", "Reset layout"]],
+];
+
 export function MenuBar({ onSwitchProject }: { onSwitchProject: (slug: string) => void }) {
   const workspace = useShell((s) => s.workspace);
   return (
@@ -106,8 +120,13 @@ export function MenuBar({ onSwitchProject }: { onSwitchProject: (slug: string) =
         ))}
       </Menu>
       <Menu label="Window">
-        {groupItems("Window").map((c) => (
-          <CommandItem key={c.id} id={c.id} />
+        {WINDOW_SECTIONS.map((section, i) => (
+          <DropdownMenuGroup key={i}>
+            {i > 0 ? <DropdownMenuSeparator /> : null}
+            {section.map(([id, label]) => (
+              <CommandItem key={id} id={id} label={label} />
+            ))}
+          </DropdownMenuGroup>
         ))}
       </Menu>
       <Menu label="Help">

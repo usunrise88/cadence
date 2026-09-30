@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
+	"github.com/usunrise88/cadence/control-plane/internal/agentcreds"
 	"github.com/usunrise88/cadence/control-plane/internal/api"
 	"github.com/usunrise88/cadence/control-plane/internal/auth"
 	"github.com/usunrise88/cadence/control-plane/internal/commands"
@@ -433,10 +434,27 @@ func (s *Server) AgentModelsList(ctx context.Context, _ api.AgentModelsListReque
 		}
 		return m
 	}
+	opencode := entry(projects.DriverOpencode, w.OpencodeModel, true, map[string]string{"minimax/MiniMax-M3": "MiniMax M3 (Token Plan)"})
+	// Settings → Agents: the admin's default and the models of the configured, verified providers.
+	if m, ok, err := agentcreds.DefaultModel(ctx, s.Pool, agentcreds.AgentOpencode); err != nil {
+		return nil, err
+	} else if ok {
+		opencode.Default = m
+		opencode.Source = "Settings → Agents (the admin's choice); defaults.yaml wizard.opencode_model otherwise"
+	}
+	configured, err := agentcreds.Models(ctx, s.Pool, agentcreds.AgentOpencode)
+	if err != nil {
+		return nil, err
+	}
+	for _, id := range append(configured, opencode.Default) {
+		if !slices.ContainsFunc(opencode.Models, func(m api.AgentModel) bool { return m.Id == id }) {
+			opencode.Models = append(opencode.Models, api.AgentModel{Id: id, Name: id})
+		}
+	}
 	return api.AgentModelsList200JSONResponse{Items: []api.AgentModels{
 		entry(projects.DriverClaudeCode, w.ClaudeCodeModel, false, map[string]string{
 			"sonnet": "Claude Sonnet (latest)", "opus": "Claude Opus (latest)", "haiku": "Claude Haiku (latest)"}),
-		entry(projects.DriverOpencode, w.OpencodeModel, true, map[string]string{"minimax/MiniMax-M2": "MiniMax M2 (Token Plan)"}),
+		opencode,
 	}}, nil
 }
 

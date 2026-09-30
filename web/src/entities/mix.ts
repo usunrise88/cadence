@@ -65,7 +65,7 @@ export const mixEntity: EntityManifest = {
     { label: "Groups", value: (e) => String((e.mix as Mix | undefined)?.groups.length ?? "—") },
     { label: "Train hours", value: (e) => `${(e.mix as Mix | undefined)?.preview.totalHours ?? "—"} h` },
     {
-      label: "Temperature · replay",
+      label: "Temp · replay",
       value: (e) => {
         const m = e.mix as Mix | undefined;
         return m ? `${m.temperature} · ${pct(m.replayShare)}` : "—";

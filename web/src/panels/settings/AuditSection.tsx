@@ -4,6 +4,7 @@ import { auditListOptions, projectsListOptions } from "@/api/gen/@tanstack/react
 import type { AuditEntry } from "@/api/gen/types.gen";
 import { operations } from "@/api/operations.gen";
 import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { Field, SectionHeading, Table, Td, when } from "./ui";
@@ -47,14 +48,14 @@ export function AuditSection() {
           </datalist>
         </Field>
         <Field label="Project" htmlFor={`${uid}-project`}>
-          <select id={`${uid}-project`} value={filters.project} onChange={(e) => set("project", e.target.value)} className="h-7 rounded-md border border-input bg-background px-2 text-xs">
+          <NativeSelect id={`${uid}-project`} value={filters.project} onChange={(e) => set("project", e.target.value)} className="h-7 rounded-md border border-input bg-background px-2 text-xs">
             <option value="">all</option>
             {(projects.data?.items ?? []).map((p) => (
               <option key={p.id} value={p.slug}>
                 {p.slug}
               </option>
             ))}
-          </select>
+          </NativeSelect>
         </Field>
       </div>
       <Table label="Audit entries" head={["When", "Operation", "Actor", "Outcome", "Status", "Rule", "Project", "Caused by"]}>

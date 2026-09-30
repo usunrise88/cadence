@@ -6,6 +6,9 @@ import type { Reference, Selection } from "@/shell/selection/store";
 export type IconoirIcon = ComponentType<SVGProps<SVGSVGElement>>;
 export type Location = "centre" | "left" | "right" | "bottom" | "floating";
 
+/** Props of a panel's own tab label: the default is the manifest's icon and title. */
+export type PanelTabProps = { instanceId: string; doc?: string; title: string; icon: IconoirIcon };
+
 /** Props every panel component receives from the shell. */
 export type PanelProps = {
   /** Registered manifest id. */
@@ -43,6 +46,8 @@ export type PanelManifest = {
   help: string;
   empty: ComponentType;
   component: ComponentType<PanelProps>;
+  /** The tab's icon and label when they depend on what the panel shows (Chat: its session, unread news). */
+  tab?: ComponentType<PanelTabProps>;
 };
 
 /**

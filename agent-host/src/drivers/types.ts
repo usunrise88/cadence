@@ -7,6 +7,7 @@
 
 import type * as acp from "@agentclientprotocol/sdk";
 import type { LaunchSpec } from "../acp/transport.ts";
+import type { HostCredentialTask } from "../api/gen/types.gen.ts";
 
 export type DriverName = "claude" | "opencode";
 
@@ -130,6 +131,51 @@ export interface Driver {
   prepareHome?(home: string, credentials: string | undefined): Promise<NodeJS.ProcessEnv>;
   // Logs the agent in once and stores what prepareHome copies, under the agent-credentials volume (interactive).
   login?(credentials: string): Promise<void>;
+  // Agent credentials configured in Settings → Agents (hostCredentials tasks): write a value (and a custom provider's
+  // settings) into the agent-credentials volume root in the files prepareHome reads, 0600; remove them again.
+  writeCredential?(root: string, task: CredentialTask): Promise<void>;
+  removeCredential?(root: string, task: CredentialTask): Promise<void>;
+  // A tiny real request through the agent with the stored credential (and, for opencode, the provider's models).
+  // Commands run through ctx.run: as the sandboxed user, in a throwaway directory, through the egress proxy.
+  verify?(ctx: VerifyContext): Promise<VerifyResult>;
+}
+
+// One agent-credential task from the control plane (hostCredentials.claim). `value` is the secret: write it to the
+// volume, never log or report it.
+export type CredentialTask = HostCredentialTask;
+
+export interface RunOptions {
+  // Extra environment on top of the sandbox's (base environment + the driver's prepareHome environment).
+  env?: NodeJS.ProcessEnv;
+  timeoutMs?: number;
+}
+
+export interface RunResult {
+  code: number | null;
+  signal: NodeJS.Signals | null;
+  stdout: string;
+  stderr: string;
+  timedOut: boolean;
+}
+
+// Runs a command as the verification's sandboxed user in its throwaway working directory.
+export type Runner = (command: string, args: readonly string[], opts?: RunOptions) => Promise<RunResult>;
+
+export interface VerifyContext {
+  task: CredentialTask;
+  // The agent-credentials volume.
+  credentials: string;
+  // The sandbox's private HOME (prepareHome already filled it); a driver that changes the volume copies again.
+  home: string;
+  run: Runner;
+}
+
+export interface VerifyResult {
+  ok: boolean;
+  // What happened, for a person; the host redacts anything key-shaped and shortens it before reporting.
+  detail: string;
+  model?: string;
+  models?: string[];
 }
 
 // Host answer to a permission request. `select` names an option kind; the host maps it to the agent's option id.

@@ -118,7 +118,14 @@ func (s *Service) PlanProject(ctx context.Context, q storage.Querier, w Wizard) 
 		InstructionsTemplate: or(w.InstructionsTemplate, d.Wizard.InstructionsTemplate.Value),
 		AutoMerge:            d.Wizard.AutoMerge.Value, DraftPolicy: d.Wizard.DraftPolicy.Value,
 	}
-	profile.Model = or(w.Model, d.Wizard.ModelFor(profile.Driver).Value)
+	profile.Model = w.Model
+	if profile.Model == "" {
+		m, err := DefaultModel(ctx, q, profile.Driver)
+		if err != nil {
+			return Plan{}, err
+		}
+		profile.Model = m
+	}
 	for _, check := range []error{CheckModel(profile.Driver, profile.Model), s.CheckPreset(profile.PermissionPreset),
 		s.CheckInstructions(profile.InstructionsTemplate, false)} {
 		var pe *problems.Error
@@ -308,7 +315,9 @@ func (s *Service) EditProfile(ctx context.Context, tx pgx.Tx, p projects.Project
 		next.InstructionsTemplate = layout.CustomInstructions
 	}
 	if edit.Driver != nil && edit.Model == nil && *edit.Driver != cur.Driver {
-		next.Model = defaults.Get().Wizard.ModelFor(next.Driver).Value // a new driver starts from its default model
+		if next.Model, err = DefaultModel(ctx, tx, next.Driver); err != nil { // a new driver starts from its default model
+			return projects.AgentProfile{}, nil, nil, err
+		}
 	}
 	if err := errors.Join(CheckModel(next.Driver, next.Model), s.CheckPreset(next.PermissionPreset),
 		s.CheckInstructions(next.InstructionsTemplate, agentsMd != nil || cur.InstructionsTemplate == layout.CustomInstructions)); err != nil {

@@ -42,6 +42,9 @@ test("Chat: new session, streamed reply, inline permission, tool call with badge
   const sessionId = (await root.getAttribute("data-chat-session"))!;
   const session = (await (await request.get(`/api/agent-sessions/${sessionId}`)).json()) as AgentSession;
   const label = `${session.driver} · session ${session.number}`;
+  // The tab names the session the short way.
+  const chatTab = page.locator('[data-tab="chat"]');
+  await expect(chatTab.locator('[data-slot="chat-tab-label"]')).toHaveText(`${session.driver === "opencode" ? "OC" : "CC"} · S${session.number}`);
   await expect(chat.locator('[data-kind="user_message"]')).toContainText("Make the mix warmer");
   await expect(chat.locator(`[data-kind="user_message"] [data-ref="@mix:${mix.id}"]`)).toBeVisible();
 
@@ -50,6 +53,8 @@ test("Chat: new session, streamed reply, inline permission, tool call with badge
   expect(await host.message(sessionId)).toBe("Make the mix warmer");
   await host.report(sessionId, { state: { state: "running", busy: true, turn: 1 }, entries: [{ key: "t1:start", kind: "turn", turn: 1, turnInfo: { state: "started" } }] });
   await expect(chat.locator('[data-slot="session-state"]')).toHaveText("running");
+  const tabIcon = chatTab.locator('[data-slot="chat-tab-icon"]');
+  await expect(tabIcon).toHaveAttribute("data-tone", "working");
   await host.entries(sessionId, 1, [{ key: "t1:m1", kind: "agent_message", text: "Looking at", final: false }]);
   const reply = chat.locator('[data-kind="agent_message"]');
   await expect(reply).toContainText("Looking at");
@@ -80,9 +85,16 @@ test("Chat: new session, streamed reply, inline permission, tool call with badge
     },
   ]);
   const toolCall = chat.locator('[data-tool-call="toolu_mix"]');
+  // Collapsed to one line by default; a click opens the card.
   await expect(toolCall.locator('[data-slot="tool-operation"]')).toHaveText("mixes.edit");
+  const toolLine = toolCall.locator('[data-slot="tool-line"]');
+  await expect(toolLine).toHaveAttribute("aria-expanded", "false");
+  await expect(toolCall.locator('[data-slot="tool-draft"]')).toHaveCount(0);
+  await toolLine.click();
   await expect(toolCall.locator(`[data-ref="@mix:${mix.id}"]`)).toBeVisible();
   await expect(toolCall.locator('[data-slot="tool-draft"]')).toBeVisible();
+  await toolLine.click();
+  await expect(toolLine).toHaveAttribute("aria-expanded", "false");
 
   // The draft on the open Mix carries the session's badge; its click jumps to the tool call in Chat.
   const draft = page.locator('[data-panel="mix"] [data-slot="draft"]');
@@ -94,6 +106,15 @@ test("Chat: new session, streamed reply, inline permission, tool call with badge
   await badge.click();
   await expect(toolCall).toHaveAttribute("data-highlighted", "true");
   await expect(toolCall).toBeFocused();
+  await expect(toolLine).toHaveAttribute("aria-expanded", "true");
+
+  // A click in the transcript, then typing: the keys go to the composer.
+  const input = chat.getByLabel("Message to the agent");
+  await reply.click({ position: { x: 2, y: 2 } });
+  await page.keyboard.type("Thanks");
+  await expect(input).toBeFocused();
+  await expect(input).toHaveValue("Thanks");
+  await input.fill("");
   await agent.close();
 
   // The turn ends with a commit on the session branch; the finished turn reaches the live region.
@@ -102,12 +123,19 @@ test("Chat: new session, streamed reply, inline permission, tool call with badge
     { key: "t1:commit", kind: "commit", commit: { sha, files: ["NOTES-agent.md"] } },
     { key: "t1:end", kind: "turn", turnInfo: { state: "ended", stopReason: "end_turn", inputTokens: 1200, outputTokens: 80 } },
   ]);
+  await expect(chat.locator('[data-slot="commit"]')).toContainText(sha.slice(0, 7));
+  // The turn finishes while another tab hides the Chat: its tab gets the unread dot until the Chat is shown again.
+  await page.locator('[data-tab="inspector"]').click();
   await host.report(sessionId, { state: { state: "running", busy: false, turn: 1 }, use: { turns: 1, inputTokens: 1200, outputTokens: 80 } });
   await expect(page.getByTestId("live-region")).toContainText(`${label} finished its turn`);
-  await expect(chat.locator('[data-slot="commit"]')).toContainText(sha.slice(0, 7));
+  const unread = chatTab.locator('[data-slot="chat-tab-unread"]');
+  await expect(unread).toBeVisible();
+  await expect(tabIcon).toHaveAttribute("data-tone", "ready");
+  await chatTab.click();
+  await expect(unread).toHaveCount(0);
 
   // End the session: the host is told, commits nothing more and reports done; the changes wait for a person.
-  await chat.getByRole("button", { name: "End…" }).click();
+  await chat.getByRole("button", { name: "End session…" }).click();
   await chat.getByRole("button", { name: "End the session" }).click();
   await host.control(sessionId, "end");
   await host.report(sessionId, { state: { state: "done" } });

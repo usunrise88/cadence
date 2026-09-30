@@ -237,7 +237,8 @@ function Settings({ project }: { project: string }) {
           </fieldset>
         </section>
         <section aria-label="Rendered files" className="border-t">
-          <div role="tablist" aria-label="Rendered files" className="flex gap-3 px-3">
+          <div className="flex items-center gap-2 border-b px-3">
+          <div role="tablist" aria-label="Rendered files" className="flex min-w-0 flex-1 gap-3 overflow-x-auto [scrollbar-width:none]">
             {PREVIEWS.map((f) => (
               <button
                 key={f}
@@ -246,14 +247,15 @@ function Settings({ project }: { project: string }) {
                 aria-selected={preview === f}
                 onClick={() => setPreview(f)}
                 className={cn(
-                  "-mb-px min-h-6 border-b-2 py-1.5 text-xs",
+                  "-mb-px min-h-6 shrink-0 border-b-2 py-1.5 text-xs whitespace-nowrap",
                   preview === f ? "border-accent-line font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
                 )}
               >
                 {f}
               </button>
             ))}
-            <Button size="xs" variant="ghost" className="my-auto ml-auto" onClick={() => openDocument(`recipe:${preview}`)}>
+          </div>
+            <Button size="xs" variant="ghost" className="shrink-0" onClick={() => openDocument(`recipe:${preview}`)}>
               Open in Recipe
             </Button>
           </div>

@@ -28,12 +28,13 @@ const EntityKind = "credential"
 
 // Credential kinds.
 const (
-	KindSession    = "session"
-	KindAPIKey     = "api_key"
-	KindAgent      = "agent"
-	KindAgentHost  = "agent_host"
-	KindInvitation = "invitation"
-	KindWorker     = "worker"
+	KindSession     = "session"
+	KindAPIKey      = "api_key"
+	KindAgent       = "agent"
+	KindAgentHost   = "agent_host"
+	KindEgressProxy = "egress_proxy"
+	KindInvitation  = "invitation"
+	KindWorker      = "worker"
 )
 
 // TouchInterval is how often last_used_at (and a session's sliding expiry) is written at most.
