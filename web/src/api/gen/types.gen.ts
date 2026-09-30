@@ -56,20 +56,54 @@ export type Project = {
     name: string;
     description?: string;
     rev: number;
+    state: ProjectState;
+    locales: Array<LocaleTag>;
+    domain: string;
+    baseModel?: ProjectBaseModel;
+    repository?: ProjectRepository;
+    budgets: ProjectBudgets;
+    /**
+     * The job that bootstrapped (or is bootstrapping) the repository
+     */
+    bootstrapJobId?: string;
+    /**
+     * Why the bootstrap failed (state failed)
+     */
+    bootstrapError?: string;
     archivedAt?: string;
     createdAt: string;
     updatedAt: string;
 };
 
+/**
+ * The wizard's choices; everything but name defaults from defaults.yaml (section wizard, budgets)
+ */
 export type ProjectNew = {
-    slug: Slug;
+    slug?: Slug;
     name: string;
     description?: string;
+    locales?: Array<LocaleTag>;
+    domain?: string;
+    /**
+     * A frozen base-model version id (ver_…) or collection name (its newest frozen version)
+     */
+    baseModel?: string;
+    agent?: AgentChoice;
+    instructionsTemplate?: InstructionsTemplateName;
+    repository?: RepositoryChoice;
+    budgets?: ProjectBudgetsEdit;
 };
 
 export type ProjectEdit = {
     name?: string;
     description?: string;
+    locales?: Array<LocaleTag>;
+    domain?: string;
+    /**
+     * A frozen base-model version id (ver_…); adopted when the project has not yet
+     */
+    baseModel?: string;
+    budgets?: ProjectBudgetsEdit;
 };
 
 export type ProjectList = {
@@ -1073,6 +1107,385 @@ export type JobList = {
     items: Array<Job>;
 };
 
+/**
+ * BCP 47 locale, e.g. he-IL
+ */
+export type LocaleTag = string;
+
+/**
+ * bootstrapping while the bootstrap job writes the repository; failed when it could not (bootstrapError says why); archived projects keep their state and carry archivedAt
+ */
+export type ProjectState = 'bootstrapping' | 'active' | 'failed';
+
+export type AgentDriver = 'claude-code' | 'opencode';
+
+/**
+ * internal: the bare repository on the control plane; github: a new GitHub repository created with a stored token; url: an existing repository to link
+ */
+export type RepositoryKind = 'internal' | 'github' | 'url';
+
+export type ProjectRepository = {
+    kind: RepositoryKind;
+    /**
+     * The project branch (main)
+     */
+    branch: string;
+    /**
+     * Where to clone from Cadence over smart HTTP (/git/<slug>.git); authenticate with an API key or agent token as the password
+     */
+    cloneUrl: string;
+    /**
+     * The GitHub or linked repository every commit to main is pushed to (github, url)
+     */
+    remote?: string;
+    /**
+     * Name of the stored secret that authenticates the remote
+     */
+    secret?: string;
+    /**
+     * Why the last push to the remote failed; absent when it succeeded
+     */
+    pushError?: string;
+};
+
+export type ProjectBaseModel = {
+    /**
+     * ver_…
+     */
+    versionId: string;
+    /**
+     * The registry collection, e.g. base-model/nemotron-3.5-asr-streaming-0.6b
+     */
+    name: string;
+    version: string;
+    hfRepo: string;
+    /**
+     * The pinned Hugging Face revision
+     */
+    revision: string;
+};
+
+export type ProjectBudgets = {
+    /**
+     * Default budgets.gpu_hours_per_project_per_day
+     */
+    gpuHoursPerDay: number;
+    /**
+     * Agent spend per day in tokens; default budgets.agent_tokens_per_project_per_day
+     */
+    agentTokensPerDay: number;
+};
+
+export type ProjectBudgetsEdit = {
+    gpuHoursPerDay?: number;
+    agentTokensPerDay?: number;
+};
+
+export type AgentChoice = {
+    driver?: AgentDriver;
+    model?: AgentModelId;
+    permissionPreset?: PresetName;
+};
+
+/**
+ * The driver's own model id: a Claude Code alias (sonnet, opus, haiku) or opencode's provider/model
+ */
+export type AgentModelId = string;
+
+/**
+ * A permission preset (templates.list templateKind=preset), e.g. guardrails-default
+ */
+export type PresetName = string;
+
+/**
+ * An instructions template (templates.list templateKind=instructions): default or minimal; custom once AGENTS.md was edited by hand
+ */
+export type InstructionsTemplateName = string;
+
+export type RepositoryChoice = {
+    kind?: RepositoryKind;
+    /**
+     * url: the repository to link (https://…, ssh is not supported)
+     */
+    url?: string;
+    /**
+     * Name of the stored secret (secrets.new) holding the token for github or a private url
+     */
+    secret?: string;
+    /**
+     * github: the organisation to create the repository in; the token's user when absent
+     */
+    owner?: string;
+    /**
+     * github: the repository name; the project slug when absent
+     */
+    name?: string;
+    /**
+     * github: create the repository private
+     */
+    private?: boolean;
+};
+
+export type ProjectNoteNew = {
+    /**
+     * One learning in a sentence or two; Markdown
+     */
+    text: string;
+};
+
+export type ProjectNote = {
+    /**
+     * The heading the note was filed under
+     */
+    date: string;
+    text: string;
+    /**
+     * NOTES.md
+     */
+    path: string;
+    /**
+     * The commit on main; empty for a dry run
+     */
+    commit: string;
+};
+
+export type RecipeChange = {
+    path: string;
+    status: 'added' | 'modified' | 'deleted';
+};
+
+export type ProjectSync = {
+    /**
+     * Nothing differs from the current templates
+     */
+    upToDate: boolean;
+    /**
+     * The main commit the sync compared against
+     */
+    base: string;
+    /**
+     * The draft branch sync/<date>; absent when up to date or for a dry run
+     */
+    branch?: string;
+    /**
+     * The draft commit on the branch
+     */
+    commit?: string;
+    changes: Array<RecipeChange>;
+};
+
+/**
+ * direct: agent changes land at once; draft: they land as drafts to accept or revert
+ */
+export type DraftMode = 'direct' | 'draft';
+
+export type DraftPolicy = {
+    mix: DraftMode;
+    gate: DraftMode;
+    note: DraftMode;
+    language_pack: DraftMode;
+};
+
+/**
+ * when-clean: a session branch merges into main at session end when it applies cleanly; never: it always waits as Session changes
+ */
+export type AutoMerge = 'when-clean' | 'never';
+
+export type RenderedFile = {
+    path: string;
+    content: string;
+};
+
+export type AgentProfile = {
+    driver: AgentDriver;
+    model: AgentModelId;
+    permissionPreset: PresetName;
+    instructionsTemplate: InstructionsTemplateName;
+    autoMerge: AutoMerge;
+    draftPolicy: DraftPolicy;
+    rev: number;
+    updatedAt: string;
+    /**
+     * The commit on main that holds the rendered files
+     */
+    commit?: string;
+    /**
+     * The rendered .claude/settings.json, opencode.json, AGENTS.md and CLAUDE.md
+     */
+    files: Array<RenderedFile>;
+};
+
+export type AgentProfileEdit = {
+    driver?: AgentDriver;
+    model?: AgentModelId;
+    permissionPreset?: PresetName;
+    instructionsTemplate?: InstructionsTemplateName;
+    autoMerge?: AutoMerge;
+    draftPolicy?: {
+        mix?: DraftMode;
+        gate?: DraftMode;
+        note?: DraftMode;
+        language_pack?: DraftMode;
+    };
+    /**
+     * The AGENTS.md text; setting it makes the instructions custom (instructionsTemplate becomes custom)
+     */
+    agentsMd?: string;
+};
+
+export type AgentModel = {
+    id: AgentModelId;
+    name: string;
+};
+
+export type AgentModels = {
+    driver: AgentDriver;
+    default: AgentModelId;
+    models: Array<AgentModel>;
+    /**
+     * Any provider/model id is accepted, not only the listed ones (opencode)
+     */
+    freeForm: boolean;
+    description: string;
+    source: string;
+};
+
+export type AgentModelList = {
+    items: Array<AgentModels>;
+};
+
+/**
+ * A path relative to the repository root
+ */
+export type RecipePath = string;
+
+export type BranchName = string;
+
+export type RecipeFile = {
+    path: string;
+    bytes: number;
+    /**
+     * The git blob id
+     */
+    blob: string;
+};
+
+export type RecipeList = {
+    ref: string;
+    /**
+     * The commit the ref resolved to; empty for a repository without commits
+     */
+    commit: string;
+    items: Array<RecipeFile>;
+};
+
+export type RecipeCommit = {
+    sha: string;
+    /**
+     * The subject line
+     */
+    message: string;
+    author: string;
+    at: string;
+};
+
+export type Recipe = {
+    path: string;
+    ref: string;
+    commit: string;
+    bytes: number;
+    /**
+     * base64 for files that are not UTF-8 text
+     */
+    encoding: 'utf-8' | 'base64';
+    content: string;
+    /**
+     * Commits that changed the file, newest first (at most 50)
+     */
+    history: Array<RecipeCommit>;
+};
+
+export type Branch = {
+    name: BranchName;
+    kind: 'session' | 'sync' | 'other';
+    /**
+     * The agent session of a session/<id> branch
+     */
+    sessionId?: string;
+    head: string;
+    /**
+     * The head commit's subject line
+     */
+    subject?: string;
+    /**
+     * The head commit's date
+     */
+    updatedAt: string;
+    /**
+     * Commits on the branch that main does not have
+     */
+    ahead: number;
+    /**
+     * Commits on main that the branch does not have
+     */
+    behind: number;
+};
+
+export type BranchList = {
+    /**
+     * The commit main points at
+     */
+    main: string;
+    items: Array<Branch>;
+};
+
+export type BranchFileChange = {
+    path: string;
+    status: 'added' | 'modified' | 'deleted';
+    additions: number;
+    deletions: number;
+    binary: boolean;
+};
+
+export type BranchDiff = Branch & {
+    main: string;
+    /**
+     * The merge base of the branch and main
+     */
+    base: string;
+    /**
+     * Main has not moved since the branch left it
+     */
+    fastForward: boolean;
+    /**
+     * Files a merge into main would conflict on
+     */
+    conflicts: Array<string>;
+    files: Array<BranchFileChange>;
+    /**
+     * The unified diff of the branch against its merge base with main (git diff main...branch)
+     */
+    patch: string;
+    /**
+     * The patch was cut at 512 KiB
+     */
+    truncated: boolean;
+};
+
+export type BranchMerge = {
+    branch: string;
+    /**
+     * The branch head that was merged
+     */
+    head: string;
+    /**
+     * main after the merge (for a dry run: before it)
+     */
+    main: string;
+    fastForward: boolean;
+    changes: Array<RecipeChange>;
+};
+
 export type SecretNewWritable = {
     name: SecretName;
     kind: SecretKind;
@@ -1124,6 +1537,16 @@ export type RegistryCollectionFilter = string;
  * Only versions in this state
  */
 export type RegistryStateFilter = VersionState;
+
+/**
+ * Branch (main, session/<id>, sync/<date>) or commit sha to read at; main when absent
+ */
+export type RecipeRef = string;
+
+/**
+ * Branch name, URL-encoded (sync%2F2026-09-30, session%2F<id>)
+ */
+export type BranchName2 = BranchName;
 
 export type PlannedBody = {
     [key: string]: unknown;
@@ -1188,13 +1611,13 @@ export type ProjectsNewError = ProjectsNewErrors[keyof ProjectsNewErrors];
 
 export type ProjectsNewResponses = {
     /**
-     * Dry run — the project that would be created; nothing was written
+     * Dry run — the project that would be created; nothing was written and no job queued
      */
     200: Project;
     /**
-     * Created
+     * Accepted; follow the job on job.{jobId}
      */
-    201: Project;
+    202: JobAccepted;
 };
 
 export type ProjectsNewResponse = ProjectsNewResponses[keyof ProjectsNewResponses];
@@ -2977,6 +3400,440 @@ export type JobsWaitResponses = {
 };
 
 export type JobsWaitResponse = JobsWaitResponses[keyof JobsWaitResponses];
+
+export type ProjectsNoteData = {
+    body: ProjectNoteNew;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/projects/{p}:note';
+};
+
+export type ProjectsNoteErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type ProjectsNoteError = ProjectsNoteErrors[keyof ProjectsNoteErrors];
+
+export type ProjectsNoteResponses = {
+    /**
+     * The note as committed (or, for a dry run, as it would be); ETag is the project's new revision
+     */
+    200: ProjectNote;
+};
+
+export type ProjectsNoteResponse = ProjectsNoteResponses[keyof ProjectsNoteResponses];
+
+export type ProjectsSyncData = {
+    body?: never;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/projects/{p}:sync';
+};
+
+export type ProjectsSyncErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type ProjectsSyncError = ProjectsSyncErrors[keyof ProjectsSyncErrors];
+
+export type ProjectsSyncResponses = {
+    /**
+     * What the sync found and, unless a dry run or up to date, the draft branch it committed
+     */
+    200: ProjectSync;
+};
+
+export type ProjectsSyncResponse = ProjectsSyncResponses[keyof ProjectsSyncResponses];
+
+export type AgentProfileGetData = {
+    body?: never;
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: never;
+    url: '/projects/{p}/agent-profile';
+};
+
+export type AgentProfileGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type AgentProfileGetError = AgentProfileGetErrors[keyof AgentProfileGetErrors];
+
+export type AgentProfileGetResponses = {
+    /**
+     * The agent profile; ETag is its revision
+     */
+    200: AgentProfile;
+};
+
+export type AgentProfileGetResponse = AgentProfileGetResponses[keyof AgentProfileGetResponses];
+
+export type AgentProfileEditData = {
+    body: AgentProfileEdit;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/projects/{p}/agent-profile';
+};
+
+export type AgentProfileEditErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type AgentProfileEditError = AgentProfileEditErrors[keyof AgentProfileEditErrors];
+
+export type AgentProfileEditResponses = {
+    /**
+     * The edited profile with its rendered files (or, for a dry run, what they would become)
+     */
+    200: AgentProfile;
+    /**
+     * Gated; a person decides the approval on the approvals topic
+     */
+    202: ApprovalAccepted;
+};
+
+export type AgentProfileEditResponse = AgentProfileEditResponses[keyof AgentProfileEditResponses];
+
+export type AgentModelsListData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/catalog/agent-models';
+};
+
+export type AgentModelsListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type AgentModelsListError = AgentModelsListErrors[keyof AgentModelsListErrors];
+
+export type AgentModelsListResponses = {
+    /**
+     * One entry per driver
+     */
+    200: AgentModelList;
+};
+
+export type AgentModelsListResponse = AgentModelsListResponses[keyof AgentModelsListResponses];
+
+export type RecipesListData = {
+    body?: never;
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        /**
+         * Branch (main, session/<id>, sync/<date>) or commit sha to read at; main when absent
+         */
+        ref?: string;
+        /**
+         * Only files under this directory, e.g. pipelines/
+         */
+        prefix?: string;
+    };
+    url: '/projects/{p}/recipes';
+};
+
+export type RecipesListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type RecipesListError = RecipesListErrors[keyof RecipesListErrors];
+
+export type RecipesListResponses = {
+    /**
+     * Files by path, with the commit the ref resolved to
+     */
+    200: RecipeList;
+};
+
+export type RecipesListResponse = RecipesListResponses[keyof RecipesListResponses];
+
+export type RecipesGetData = {
+    body?: never;
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+        /**
+         * File path in the repository, URL-encoded (pipelines%2Ftrain-stage.yaml)
+         */
+        path: RecipePath;
+    };
+    query?: {
+        /**
+         * Branch (main, session/<id>, sync/<date>) or commit sha to read at; main when absent
+         */
+        ref?: string;
+    };
+    url: '/projects/{p}/recipes/{path}';
+};
+
+export type RecipesGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type RecipesGetError = RecipesGetErrors[keyof RecipesGetErrors];
+
+export type RecipesGetResponses = {
+    /**
+     * The file
+     */
+    200: Recipe;
+};
+
+export type RecipesGetResponse = RecipesGetResponses[keyof RecipesGetResponses];
+
+export type BranchesListData = {
+    body?: never;
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: never;
+    url: '/projects/{p}/branches';
+};
+
+export type BranchesListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type BranchesListError = BranchesListErrors[keyof BranchesListErrors];
+
+export type BranchesListResponses = {
+    /**
+     * Open branches, most recently updated first
+     */
+    200: BranchList;
+};
+
+export type BranchesListResponse = BranchesListResponses[keyof BranchesListResponses];
+
+export type BranchesGetData = {
+    body?: never;
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+        /**
+         * Branch name, URL-encoded (sync%2F2026-09-30, session%2F<id>)
+         */
+        name: BranchName;
+    };
+    query?: never;
+    url: '/projects/{p}/branches/{name}';
+};
+
+export type BranchesGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type BranchesGetError = BranchesGetErrors[keyof BranchesGetErrors];
+
+export type BranchesGetResponses = {
+    /**
+     * The branch; ETag is its head commit
+     */
+    200: BranchDiff;
+};
+
+export type BranchesGetResponse = BranchesGetResponses[keyof BranchesGetResponses];
+
+export type BranchesAcceptData = {
+    body?: never;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+        /**
+         * Branch name, URL-encoded (sync%2F2026-09-30, session%2F<id>)
+         */
+        name: BranchName;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/projects/{p}/branches/{name}:accept';
+};
+
+export type BranchesAcceptErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type BranchesAcceptError = BranchesAcceptErrors[keyof BranchesAcceptErrors];
+
+export type BranchesAcceptResponses = {
+    /**
+     * The merge (or, for a dry run, whether it would fast-forward)
+     */
+    200: BranchMerge;
+};
+
+export type BranchesAcceptResponse = BranchesAcceptResponses[keyof BranchesAcceptResponses];
+
+export type BranchesRevertData = {
+    body?: never;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+        /**
+         * Branch name, URL-encoded (sync%2F2026-09-30, session%2F<id>)
+         */
+        name: BranchName;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/projects/{p}/branches/{name}:revert';
+};
+
+export type BranchesRevertErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type BranchesRevertError = BranchesRevertErrors[keyof BranchesRevertErrors];
+
+export type BranchesRevertResponses = {
+    /**
+     * The discarded branch
+     */
+    200: Branch;
+};
+
+export type BranchesRevertResponse = BranchesRevertResponses[keyof BranchesRevertResponses];
 
 export type MixesNewData = {
     body?: PlannedBody;

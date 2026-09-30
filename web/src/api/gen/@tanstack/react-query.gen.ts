@@ -3,8 +3,8 @@
 import { type InfiniteData, infiniteQueryOptions, queryOptions, type UseMutationOptions } from '@tanstack/react-query';
 
 import { client } from '../client.gen';
-import { adoptionsList, agentMessagesNew, agentSessionsCancel, agentSessionsNew, aliasesGet, aliasesList, aliasesSet, approvalsApprove, approvalsDeny, approvalsGet, approvalsList, auditList, authGet, authLogin, authLogout, authSetup, baseModelsGet, baseModelsList, collectionsGet, collectionsList, computeEdit, computeGet, computeList, credentialsList, credentialsNew, credentialsRevoke, datasetsGet, datasetsList, defaultsGet, eventsList, helpGet, helpSearch, jobsCancel, jobsGet, jobsList, jobsWait, meGet, mixesEdit, mixesNew, mixesPreview, mountsList, mountsNew, type Options, policiesEdit, policiesGet, projectsAdopt, projectsArchive, projectsEdit, projectsGet, projectsList, projectsNew, registrySearch, runsNew, secretsList, secretsNew, templatesGet, templatesList, totpConfirm, totpDisable, totpEnroll, workspacesGet, workspacesList, workspacesSet } from '../sdk.gen';
-import type { AdoptionsListData, AdoptionsListError, AdoptionsListResponse, AgentMessagesNewData, AgentMessagesNewError, AgentMessagesNewResponse, AgentSessionsCancelData, AgentSessionsCancelError, AgentSessionsCancelResponse, AgentSessionsNewData, AgentSessionsNewError, AgentSessionsNewResponse, AliasesGetData, AliasesGetError, AliasesGetResponse, AliasesListData, AliasesListError, AliasesListResponse, AliasesSetData, AliasesSetError, AliasesSetResponse, ApprovalsApproveData, ApprovalsApproveError, ApprovalsApproveResponse, ApprovalsDenyData, ApprovalsDenyError, ApprovalsDenyResponse, ApprovalsGetData, ApprovalsGetError, ApprovalsGetResponse, ApprovalsListData, ApprovalsListError, ApprovalsListResponse, AuditListData, AuditListError, AuditListResponse, AuthGetData, AuthGetError, AuthGetResponse, AuthLoginData, AuthLoginError, AuthLoginResponse, AuthLogoutData, AuthLogoutError, AuthLogoutResponse, AuthSetupData, AuthSetupError, AuthSetupResponse, BaseModelsGetData, BaseModelsGetError, BaseModelsGetResponse, BaseModelsListData, BaseModelsListError, BaseModelsListResponse, CollectionsGetData, CollectionsGetError, CollectionsGetResponse, CollectionsListData, CollectionsListError, CollectionsListResponse, ComputeEditData, ComputeEditError, ComputeEditResponse, ComputeGetData, ComputeGetError, ComputeGetResponse, ComputeListData, ComputeListError, ComputeListResponse, CredentialsListData, CredentialsListError, CredentialsListResponse, CredentialsNewData, CredentialsNewError, CredentialsNewResponse, CredentialsRevokeData, CredentialsRevokeError, CredentialsRevokeResponse, DatasetsGetData, DatasetsGetError, DatasetsGetResponse, DatasetsListData, DatasetsListError, DatasetsListResponse, DefaultsGetData, DefaultsGetError, DefaultsGetResponse, EventsListData, EventsListError, EventsListResponse, HelpGetData, HelpGetError, HelpGetResponse, HelpSearchData, HelpSearchError, HelpSearchResponse, JobsCancelData, JobsCancelError, JobsCancelResponse, JobsGetData, JobsGetError, JobsGetResponse, JobsListData, JobsListError, JobsListResponse, JobsWaitData, JobsWaitError, JobsWaitResponse, MeGetData, MeGetError, MeGetResponse, MixesEditData, MixesEditError, MixesEditResponse, MixesNewData, MixesNewError, MixesNewResponse, MixesPreviewData, MixesPreviewError, MixesPreviewResponse, MountsListData, MountsListError, MountsListResponse, MountsNewData, MountsNewError, MountsNewResponse, PoliciesEditData, PoliciesEditError, PoliciesEditResponse, PoliciesGetData, PoliciesGetError, PoliciesGetResponse, ProjectsAdoptData, ProjectsAdoptError, ProjectsAdoptResponse, ProjectsArchiveData, ProjectsArchiveError, ProjectsArchiveResponse, ProjectsEditData, ProjectsEditError, ProjectsEditResponse, ProjectsGetData, ProjectsGetError, ProjectsGetResponse, ProjectsListData, ProjectsListError, ProjectsListResponse, ProjectsNewData, ProjectsNewError, ProjectsNewResponse, RegistrySearchData, RegistrySearchError, RegistrySearchResponse, RunsNewData, RunsNewError, RunsNewResponse, SecretsListData, SecretsListError, SecretsListResponse, SecretsNewData, SecretsNewError, SecretsNewResponse, TemplatesGetData, TemplatesGetError, TemplatesGetResponse, TemplatesListData, TemplatesListError, TemplatesListResponse, TotpConfirmData, TotpConfirmError, TotpConfirmResponse, TotpDisableData, TotpDisableError, TotpDisableResponse, TotpEnrollData, TotpEnrollError, TotpEnrollResponse, WorkspacesGetData, WorkspacesGetError, WorkspacesGetResponse, WorkspacesListData, WorkspacesListError, WorkspacesListResponse, WorkspacesSetData, WorkspacesSetError, WorkspacesSetResponse } from '../types.gen';
+import { adoptionsList, agentMessagesNew, agentModelsList, agentProfileEdit, agentProfileGet, agentSessionsCancel, agentSessionsNew, aliasesGet, aliasesList, aliasesSet, approvalsApprove, approvalsDeny, approvalsGet, approvalsList, auditList, authGet, authLogin, authLogout, authSetup, baseModelsGet, baseModelsList, branchesAccept, branchesGet, branchesList, branchesRevert, collectionsGet, collectionsList, computeEdit, computeGet, computeList, credentialsList, credentialsNew, credentialsRevoke, datasetsGet, datasetsList, defaultsGet, eventsList, helpGet, helpSearch, jobsCancel, jobsGet, jobsList, jobsWait, meGet, mixesEdit, mixesNew, mixesPreview, mountsList, mountsNew, type Options, policiesEdit, policiesGet, projectsAdopt, projectsArchive, projectsEdit, projectsGet, projectsList, projectsNew, projectsNote, projectsSync, recipesGet, recipesList, registrySearch, runsNew, secretsList, secretsNew, templatesGet, templatesList, totpConfirm, totpDisable, totpEnroll, workspacesGet, workspacesList, workspacesSet } from '../sdk.gen';
+import type { AdoptionsListData, AdoptionsListError, AdoptionsListResponse, AgentMessagesNewData, AgentMessagesNewError, AgentMessagesNewResponse, AgentModelsListData, AgentModelsListError, AgentModelsListResponse, AgentProfileEditData, AgentProfileEditError, AgentProfileEditResponse, AgentProfileGetData, AgentProfileGetError, AgentProfileGetResponse, AgentSessionsCancelData, AgentSessionsCancelError, AgentSessionsCancelResponse, AgentSessionsNewData, AgentSessionsNewError, AgentSessionsNewResponse, AliasesGetData, AliasesGetError, AliasesGetResponse, AliasesListData, AliasesListError, AliasesListResponse, AliasesSetData, AliasesSetError, AliasesSetResponse, ApprovalsApproveData, ApprovalsApproveError, ApprovalsApproveResponse, ApprovalsDenyData, ApprovalsDenyError, ApprovalsDenyResponse, ApprovalsGetData, ApprovalsGetError, ApprovalsGetResponse, ApprovalsListData, ApprovalsListError, ApprovalsListResponse, AuditListData, AuditListError, AuditListResponse, AuthGetData, AuthGetError, AuthGetResponse, AuthLoginData, AuthLoginError, AuthLoginResponse, AuthLogoutData, AuthLogoutError, AuthLogoutResponse, AuthSetupData, AuthSetupError, AuthSetupResponse, BaseModelsGetData, BaseModelsGetError, BaseModelsGetResponse, BaseModelsListData, BaseModelsListError, BaseModelsListResponse, BranchesAcceptData, BranchesAcceptError, BranchesAcceptResponse, BranchesGetData, BranchesGetError, BranchesGetResponse, BranchesListData, BranchesListError, BranchesListResponse, BranchesRevertData, BranchesRevertError, BranchesRevertResponse, CollectionsGetData, CollectionsGetError, CollectionsGetResponse, CollectionsListData, CollectionsListError, CollectionsListResponse, ComputeEditData, ComputeEditError, ComputeEditResponse, ComputeGetData, ComputeGetError, ComputeGetResponse, ComputeListData, ComputeListError, ComputeListResponse, CredentialsListData, CredentialsListError, CredentialsListResponse, CredentialsNewData, CredentialsNewError, CredentialsNewResponse, CredentialsRevokeData, CredentialsRevokeError, CredentialsRevokeResponse, DatasetsGetData, DatasetsGetError, DatasetsGetResponse, DatasetsListData, DatasetsListError, DatasetsListResponse, DefaultsGetData, DefaultsGetError, DefaultsGetResponse, EventsListData, EventsListError, EventsListResponse, HelpGetData, HelpGetError, HelpGetResponse, HelpSearchData, HelpSearchError, HelpSearchResponse, JobsCancelData, JobsCancelError, JobsCancelResponse, JobsGetData, JobsGetError, JobsGetResponse, JobsListData, JobsListError, JobsListResponse, JobsWaitData, JobsWaitError, JobsWaitResponse, MeGetData, MeGetError, MeGetResponse, MixesEditData, MixesEditError, MixesEditResponse, MixesNewData, MixesNewError, MixesNewResponse, MixesPreviewData, MixesPreviewError, MixesPreviewResponse, MountsListData, MountsListError, MountsListResponse, MountsNewData, MountsNewError, MountsNewResponse, PoliciesEditData, PoliciesEditError, PoliciesEditResponse, PoliciesGetData, PoliciesGetError, PoliciesGetResponse, ProjectsAdoptData, ProjectsAdoptError, ProjectsAdoptResponse, ProjectsArchiveData, ProjectsArchiveError, ProjectsArchiveResponse, ProjectsEditData, ProjectsEditError, ProjectsEditResponse, ProjectsGetData, ProjectsGetError, ProjectsGetResponse, ProjectsListData, ProjectsListError, ProjectsListResponse, ProjectsNewData, ProjectsNewError, ProjectsNewResponse, ProjectsNoteData, ProjectsNoteError, ProjectsNoteResponse, ProjectsSyncData, ProjectsSyncError, ProjectsSyncResponse, RecipesGetData, RecipesGetError, RecipesGetResponse, RecipesListData, RecipesListError, RecipesListResponse, RegistrySearchData, RegistrySearchError, RegistrySearchResponse, RunsNewData, RunsNewError, RunsNewResponse, SecretsListData, SecretsListError, SecretsListResponse, SecretsNewData, SecretsNewError, SecretsNewResponse, TemplatesGetData, TemplatesGetError, TemplatesGetResponse, TemplatesListData, TemplatesListError, TemplatesListResponse, TotpConfirmData, TotpConfirmError, TotpConfirmResponse, TotpDisableData, TotpDisableError, TotpDisableResponse, TotpEnrollData, TotpEnrollError, TotpEnrollResponse, WorkspacesGetData, WorkspacesGetError, WorkspacesGetResponse, WorkspacesListData, WorkspacesListError, WorkspacesListResponse, WorkspacesSetData, WorkspacesSetError, WorkspacesSetResponse } from '../types.gen';
 
 export type QueryKey<TOptions extends Options> = [
     Pick<TOptions, 'baseUrl' | 'body' | 'headers' | 'path' | 'query'> & {
@@ -58,7 +58,7 @@ export const projectsListOptions = (options?: Options<ProjectsListData>) => quer
 });
 
 /**
- * Create a project
+ * Create a project from the wizard's choices and bootstrap its repository (202 with the bootstrap job)
  */
 export const projectsNewMutation = (options?: Partial<Options<ProjectsNewData>>): UseMutationOptions<ProjectsNewResponse, ProjectsNewError, Options<ProjectsNewData>> => {
     const mutationOptions: UseMutationOptions<ProjectsNewResponse, ProjectsNewError, Options<ProjectsNewData>> = {
@@ -93,7 +93,7 @@ export const projectsGetOptions = (options: Options<ProjectsGetData>) => queryOp
 });
 
 /**
- * Rename or re-describe a project
+ * Change a project's name, description, locales, domain, base model or budgets
  */
 export const projectsEditMutation = (options?: Partial<Options<ProjectsEditData>>): UseMutationOptions<ProjectsEditResponse, ProjectsEditError, Options<ProjectsEditData>> => {
     const mutationOptions: UseMutationOptions<ProjectsEditResponse, ProjectsEditError, Options<ProjectsEditData>> = {
@@ -1078,6 +1078,199 @@ export const jobsWaitOptions = (options: Options<JobsWaitData>) => queryOptions<
     },
     queryKey: jobsWaitQueryKey(options)
 });
+
+/**
+ * Append a dated learning to the project's NOTES.md and commit it to main
+ */
+export const projectsNoteMutation = (options?: Partial<Options<ProjectsNoteData>>): UseMutationOptions<ProjectsNoteResponse, ProjectsNoteError, Options<ProjectsNoteData>> => {
+    const mutationOptions: UseMutationOptions<ProjectsNoteResponse, ProjectsNoteError, Options<ProjectsNoteData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await projectsNote({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Diff the project against Cadence's current templates and skills and offer the update as a draft branch
+ */
+export const projectsSyncMutation = (options?: Partial<Options<ProjectsSyncData>>): UseMutationOptions<ProjectsSyncResponse, ProjectsSyncError, Options<ProjectsSyncData>> => {
+    const mutationOptions: UseMutationOptions<ProjectsSyncResponse, ProjectsSyncError, Options<ProjectsSyncData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await projectsSync({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+export const agentProfileGetQueryKey = (options: Options<AgentProfileGetData>) => createQueryKey('agentProfileGet', options);
+
+/**
+ * The project's agent profile with the config files rendered from it
+ */
+export const agentProfileGetOptions = (options: Options<AgentProfileGetData>) => queryOptions<AgentProfileGetResponse, AgentProfileGetError, AgentProfileGetResponse, ReturnType<typeof agentProfileGetQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await agentProfileGet({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: agentProfileGetQueryKey(options)
+});
+
+/**
+ * Change the agent profile; the rendered config files and AGENTS.md are committed to main
+ */
+export const agentProfileEditMutation = (options?: Partial<Options<AgentProfileEditData>>): UseMutationOptions<AgentProfileEditResponse, AgentProfileEditError, Options<AgentProfileEditData>> => {
+    const mutationOptions: UseMutationOptions<AgentProfileEditResponse, AgentProfileEditError, Options<AgentProfileEditData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await agentProfileEdit({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+export const agentModelsListQueryKey = (options?: Options<AgentModelsListData>) => createQueryKey('agentModelsList', options);
+
+/**
+ * Agent models per driver, with the default the wizard picks
+ */
+export const agentModelsListOptions = (options?: Options<AgentModelsListData>) => queryOptions<AgentModelsListResponse, AgentModelsListError, AgentModelsListResponse, ReturnType<typeof agentModelsListQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await agentModelsList({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: agentModelsListQueryKey(options)
+});
+
+export const recipesListQueryKey = (options: Options<RecipesListData>) => createQueryKey('recipesList', options);
+
+/**
+ * Files of the project repository at a branch or commit
+ */
+export const recipesListOptions = (options: Options<RecipesListData>) => queryOptions<RecipesListResponse, RecipesListError, RecipesListResponse, ReturnType<typeof recipesListQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await recipesList({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: recipesListQueryKey(options)
+});
+
+export const recipesGetQueryKey = (options: Options<RecipesGetData>) => createQueryKey('recipesGet', options);
+
+/**
+ * One file of the project repository at a branch or commit, with its commit history
+ */
+export const recipesGetOptions = (options: Options<RecipesGetData>) => queryOptions<RecipesGetResponse, RecipesGetError, RecipesGetResponse, ReturnType<typeof recipesGetQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await recipesGet({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: recipesGetQueryKey(options)
+});
+
+export const branchesListQueryKey = (options: Options<BranchesListData>) => createQueryKey('branchesList', options);
+
+/**
+ * Open branches of the project repository (session and sync branches not merged into main)
+ */
+export const branchesListOptions = (options: Options<BranchesListData>) => queryOptions<BranchesListResponse, BranchesListError, BranchesListResponse, ReturnType<typeof branchesListQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await branchesList({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: branchesListQueryKey(options)
+});
+
+export const branchesGetQueryKey = (options: Options<BranchesGetData>) => createQueryKey('branchesGet', options);
+
+/**
+ * A branch with its diff against main and the conflicts a merge would meet
+ */
+export const branchesGetOptions = (options: Options<BranchesGetData>) => queryOptions<BranchesGetResponse, BranchesGetError, BranchesGetResponse, ReturnType<typeof branchesGetQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await branchesGet({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: branchesGetQueryKey(options)
+});
+
+/**
+ * Merge a sync branch into main (fast-forward when possible, otherwise a merge commit)
+ */
+export const branchesAcceptMutation = (options?: Partial<Options<BranchesAcceptData>>): UseMutationOptions<BranchesAcceptResponse, BranchesAcceptError, Options<BranchesAcceptData>> => {
+    const mutationOptions: UseMutationOptions<BranchesAcceptResponse, BranchesAcceptError, Options<BranchesAcceptData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await branchesAccept({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Discard a sync branch without merging it
+ */
+export const branchesRevertMutation = (options?: Partial<Options<BranchesRevertData>>): UseMutationOptions<BranchesRevertResponse, BranchesRevertError, Options<BranchesRevertData>> => {
+    const mutationOptions: UseMutationOptions<BranchesRevertResponse, BranchesRevertError, Options<BranchesRevertData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await branchesRevert({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
 
 /**
  * Save a mix (input_cfg groups, weights, temperature, replay share)

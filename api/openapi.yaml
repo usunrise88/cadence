@@ -27,6 +27,7 @@ tags:
   - { name: approvals, description: Gated commands waiting for a person }
   - { name: audit, description: Every command with its actor and cause }
   - { name: jobs, description: "Long work that answers 202 and reports on job.{id}" }
+  - { name: catalog, description: What the project wizard and Agent settings choose from (agent models per driver) }
   - { name: planned, description: Named now, implemented in a later phase (501 until then) }
 
 paths:
@@ -46,12 +47,16 @@ paths:
         default: { $ref: "#/components/responses/Problem" }
     post:
       operationId: projects.new
-      summary: Create a project
+      summary: Create a project from the wizard's choices and bootstrap its repository (202 with the bootstrap job)
       tags: [projects]
       x-cadence:
         toolDescription: >
-          Create a project: a unit of work with its own repository, budgets and gates. Phase 0 creates the record
-          only; bootstrap (repository, templates) arrives in phase 1 and then answers 202 with a job id.
+          Create a project: a unit of work with its own repository, budgets and gates. Only name is required; every
+          other wizard choice (slug, locales, domain, base model, agent driver and model, permission preset,
+          instructions template, repository, budgets) defaults from defaults.yaml (defaults.get, section wizard).
+          The project is created in state bootstrapping and the answer is 202 with the bootstrap job's id: follow
+          job.{jobId} (jobs.wait) until the repository is written and the project is active. A dry run answers 200
+          with the project that would be created and queues nothing.
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
         - $ref: "#/components/parameters/DryRun"
@@ -60,12 +65,9 @@ paths:
         content: { application/json: { schema: { $ref: "#/components/schemas/ProjectNew" } } }
       responses:
         "200":
-          description: Dry run — the project that would be created; nothing was written
+          description: Dry run — the project that would be created; nothing was written and no job queued
           content: { application/json: { schema: { $ref: "#/components/schemas/Project" } } }
-        "201":
-          description: Created
-          headers: { ETag: { $ref: "#/components/headers/ETag" } }
-          content: { application/json: { schema: { $ref: "#/components/schemas/Project" } } }
+        "202": { $ref: "#/components/responses/JobAccepted" }
         default: { $ref: "#/components/responses/Problem" }
 
   /projects/{p}:
@@ -83,12 +85,14 @@ paths:
         default: { $ref: "#/components/responses/Problem" }
     patch:
       operationId: projects.edit
-      summary: Rename or re-describe a project
+      summary: Change a project's name, description, locales, domain, base model or budgets
       tags: [projects]
       x-cadence:
         toolDescription: >
-          Rename or re-describe a project. Send ifMatch with the etag (or rev) of your last projects.get; a
-          stale revision fails with precondition-failed and the current revision to re-read.
+          Change what the wizard set: name, description, locales, domain, the default base model (a frozen
+          base-model version id; it is adopted when it is not yet) and budgets. Changes to project facts re-render
+          project.yaml and AGENTS.md and commit them to main. Send ifMatch with the etag (or rev) of your last
+          projects.get; a stale revision fails with precondition-failed and the current revision to re-read.
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
         - $ref: "#/components/parameters/IfMatch"
@@ -113,7 +117,8 @@ paths:
       x-cadence:
         toolDescription: >
           Archive a project (soft; reversible): it leaves the default projects.list but still resolves by
-          slug. Send ifMatch with the etag (or rev) of your last projects.get.
+          slug; its server-side worktrees and working clone are removed and its repository becomes read-only (no
+          more commits or pushes). Send ifMatch with the etag (or rev) of your last projects.get.
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
         - $ref: "#/components/parameters/IfMatch"
@@ -995,6 +1000,223 @@ paths:
           content: { application/json: { schema: { $ref: "#/components/schemas/Job" } } }
         default: { $ref: "#/components/responses/Problem" }
 
+  # ---------------------------------------------------------------- projects: wizard, agent profile, notes, sync, recipes (phase 1 · wave 2) — add paths below this line
+  #
+  #
+  #
+  /projects/{p}:note:
+    x-cadence: { entity: projects }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    post:
+      operationId: projects.note
+      summary: Append a dated learning to the project's NOTES.md and commit it to main
+      tags: [projects]
+      x-cadence:
+        toolDescription: >
+          Record a learning for the next session: the text is appended to NOTES.md under today's date and committed
+          to main; AGENTS.md tells every session to read NOTES.md. Keep one learning per note, in a sentence or
+          two (what was tried, what happened, what to do next time). Send ifMatch with the project's etag
+          (projects.get); the project's revision goes up by one.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ProjectNoteNew" } } }
+      responses:
+        "200":
+          description: The note as committed (or, for a dry run, as it would be); ETag is the project's new revision
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/ProjectNote" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /projects/{p}:sync:
+    x-cadence: { entity: projects }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    post:
+      operationId: projects.sync
+      summary: Diff the project against Cadence's current templates and skills and offer the update as a draft branch
+      tags: [projects]
+      x-cadence:
+        toolDescription: >
+          Re-render every file the bootstrap wrote from templates (skills, starter pipelines, agent config, AGENTS.md
+          unless it is custom, data.lock) with the current template versions and compare with main. When anything
+          differs the update is committed on a new branch sync/<date> as a draft: review it with branches.get and
+          apply it with branches.accept or drop it with branches.revert. A dry run lists the changes only. Send
+          ifMatch with the project's etag (projects.get).
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      responses:
+        "200":
+          description: What the sync found and, unless a dry run or up to date, the draft branch it committed
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/ProjectSync" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /projects/{p}/agent-profile:
+    x-cadence: { entity: agentProfile, singleton: true }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    get:
+      operationId: agentProfile.get
+      summary: The project's agent profile with the config files rendered from it
+      tags: [projects]
+      responses:
+        "200":
+          description: The agent profile; ETag is its revision
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/AgentProfile" } } }
+        default: { $ref: "#/components/responses/Problem" }
+    patch:
+      operationId: agentProfile.edit
+      summary: Change the agent profile; the rendered config files and AGENTS.md are committed to main
+      tags: [projects]
+      x-cadence:
+        toolDescription: >
+          Change the project's agent profile: driver (claude-code or opencode), model, permission preset,
+          auto-merge policy for session branches, draft policy per entity kind, instructions template, or the
+          AGENTS.md text itself (which makes the instructions custom). The rendered .claude/settings.json,
+          opencode.json, AGENTS.md and CLAUDE.md are committed to main; running sessions pick them up at their next
+          turn. Agents changing their own profile wait for an approval. Send ifMatch with the profile's etag.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/AgentProfileEdit" } } }
+      responses:
+        "200":
+          description: The edited profile with its rendered files (or, for a dry run, what they would become)
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/AgentProfile" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /catalog/agent-models:
+    x-cadence: { entity: agentModels, kind: agent_model }
+    get:
+      operationId: agentModels.list
+      summary: Agent models per driver, with the default the wizard picks
+      tags: [catalog]
+      responses:
+        "200":
+          description: One entry per driver
+          content: { application/json: { schema: { $ref: "#/components/schemas/AgentModelList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /projects/{p}/recipes:
+    x-cadence: { entity: recipes }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    get:
+      operationId: recipes.list
+      summary: Files of the project repository at a branch or commit
+      tags: [projects]
+      parameters:
+        - $ref: "#/components/parameters/RecipeRef"
+        - { name: prefix, in: query, description: "Only files under this directory, e.g. pipelines/", schema: { type: string, maxLength: 400 } }
+      responses:
+        "200":
+          description: Files by path, with the commit the ref resolved to
+          content: { application/json: { schema: { $ref: "#/components/schemas/RecipeList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /projects/{p}/recipes/{path}:
+    x-cadence: { entity: recipes }
+    parameters:
+      - $ref: "#/components/parameters/ProjectSlug"
+      - { name: path, in: path, required: true, description: "File path in the repository, URL-encoded (pipelines%2Ftrain-stage.yaml)", schema: { $ref: "#/components/schemas/RecipePath" } }
+    get:
+      operationId: recipes.get
+      summary: One file of the project repository at a branch or commit, with its commit history
+      tags: [projects]
+      parameters:
+        - $ref: "#/components/parameters/RecipeRef"
+      responses:
+        "200":
+          description: The file
+          content: { application/json: { schema: { $ref: "#/components/schemas/Recipe" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /projects/{p}/branches:
+    x-cadence: { entity: branches }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    get:
+      operationId: branches.list
+      summary: Open branches of the project repository (session and sync branches not merged into main)
+      tags: [projects]
+      responses:
+        "200":
+          description: Open branches, most recently updated first
+          content: { application/json: { schema: { $ref: "#/components/schemas/BranchList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /projects/{p}/branches/{name}:
+    x-cadence: { entity: branches }
+    parameters:
+      - $ref: "#/components/parameters/ProjectSlug"
+      - $ref: "#/components/parameters/BranchName"
+    get:
+      operationId: branches.get
+      summary: A branch with its diff against main and the conflicts a merge would meet
+      tags: [projects]
+      responses:
+        "200":
+          description: The branch; ETag is its head commit
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/BranchDiff" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /projects/{p}/branches/{name}:accept:
+    x-cadence: { entity: branches }
+    parameters:
+      - $ref: "#/components/parameters/ProjectSlug"
+      - $ref: "#/components/parameters/BranchName"
+    post:
+      operationId: branches.accept
+      summary: Merge a sync branch into main (fast-forward when possible, otherwise a merge commit)
+      tags: [projects]
+      x-cadence:
+        toolDescription: >
+          Merge a draft branch (sync/<date>) into main: fast-forward when main has not moved, otherwise a merge
+          commit. A conflict answers 409 merge-conflict with the conflicting files and leaves main unchanged.
+          Session branches are merged with agentSessions.accept. Send ifMatch with the branch head from branches.get,
+          so you accept exactly what you reviewed.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      responses:
+        "200":
+          description: The merge (or, for a dry run, whether it would fast-forward)
+          content: { application/json: { schema: { $ref: "#/components/schemas/BranchMerge" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /projects/{p}/branches/{name}:revert:
+    x-cadence: { entity: branches }
+    parameters:
+      - $ref: "#/components/parameters/ProjectSlug"
+      - $ref: "#/components/parameters/BranchName"
+    post:
+      operationId: branches.revert
+      summary: Discard a sync branch without merging it
+      tags: [projects]
+      x-cadence:
+        toolDescription: >
+          Discard a draft branch (sync/<date>): the branch is deleted and main is unchanged. Session branches are
+          discarded with agentSessions.revert. Send ifMatch with the branch head from branches.get.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      responses:
+        "200":
+          description: The discarded branch
+          content: { application/json: { schema: { $ref: "#/components/schemas/Branch" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
   # ---------------------------------------------------------------- planned (later phases)
   /projects/{p}/mixes:
     x-cadence: { entity: mixes, planned: 2 }
@@ -1137,6 +1359,18 @@ components:
       required: false
       description: Only versions in this state
       schema: { $ref: "#/components/schemas/VersionState" }
+    RecipeRef:
+      name: ref
+      in: query
+      required: false
+      description: "Branch (main, session/<id>, sync/<date>) or commit sha to read at; main when absent"
+      schema: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$" }
+    BranchName:
+      name: name
+      in: path
+      required: true
+      description: "Branch name, URL-encoded (sync%2F2026-09-30, session%2F<id>)"
+      schema: { $ref: "#/components/schemas/BranchName" }
 
   headers:
     ETag:
@@ -1213,30 +1447,50 @@ components:
 
     Project:
       type: object
-      required: [id, slug, name, rev, createdAt, updatedAt]
+      required: [id, slug, name, rev, state, locales, domain, budgets, createdAt, updatedAt]
       properties:
         id: { type: string }
         slug: { $ref: "#/components/schemas/Slug" }
         name: { type: string }
         description: { type: string }
         rev: { type: integer }
+        state: { $ref: "#/components/schemas/ProjectState" }
+        locales: { type: array, items: { $ref: "#/components/schemas/LocaleTag" } }
+        domain: { type: string }
+        baseModel: { $ref: "#/components/schemas/ProjectBaseModel" }
+        repository: { $ref: "#/components/schemas/ProjectRepository" }
+        budgets: { $ref: "#/components/schemas/ProjectBudgets" }
+        bootstrapJobId: { type: string, description: The job that bootstrapped (or is bootstrapping) the repository }
+        bootstrapError: { type: string, description: Why the bootstrap failed (state failed) }
         archivedAt: { type: string, format: date-time }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
     ProjectNew:
       type: object
-      required: [slug, name]
+      description: "The wizard's choices; everything but name defaults from defaults.yaml (section wizard, budgets)"
+      required: [name]
       additionalProperties: false
       properties:
         slug: { $ref: "#/components/schemas/Slug" }
         name: { type: string, minLength: 1, maxLength: 120 }
         description: { type: string, maxLength: 2000 }
+        locales: { type: array, minItems: 1, maxItems: 50, items: { $ref: "#/components/schemas/LocaleTag" } }
+        domain: { type: string, minLength: 1, maxLength: 60 }
+        baseModel: { type: string, maxLength: 200, description: "A frozen base-model version id (ver_…) or collection name (its newest frozen version)" }
+        agent: { $ref: "#/components/schemas/AgentChoice" }
+        instructionsTemplate: { $ref: "#/components/schemas/InstructionsTemplateName" }
+        repository: { $ref: "#/components/schemas/RepositoryChoice" }
+        budgets: { $ref: "#/components/schemas/ProjectBudgetsEdit" }
     ProjectEdit:
       type: object
       additionalProperties: false
       properties:
         name: { type: string, minLength: 1, maxLength: 120 }
         description: { type: string, maxLength: 2000 }
+        locales: { type: array, minItems: 1, maxItems: 50, items: { $ref: "#/components/schemas/LocaleTag" } }
+        domain: { type: string, minLength: 1, maxLength: 60 }
+        baseModel: { type: string, maxLength: 200, description: "A frozen base-model version id (ver_…); adopted when the project has not yet" }
+        budgets: { $ref: "#/components/schemas/ProjectBudgetsEdit" }
     ProjectList:
       type: object
       required: [items]
@@ -2063,3 +2317,285 @@ components:
       required: [items]
       properties:
         items: { type: array, items: { $ref: "#/components/schemas/Job" } }
+
+    # ---------------------------------------------------------------- projects: wizard, agent profile, recipes schemas (wave 2) — add below
+    #
+    #
+    #
+    LocaleTag:
+      type: string
+      pattern: "^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$"
+      description: "BCP 47 locale, e.g. he-IL"
+    ProjectState:
+      type: string
+      enum: [bootstrapping, active, failed]
+      description: "bootstrapping while the bootstrap job writes the repository; failed when it could not (bootstrapError says why); archived projects keep their state and carry archivedAt"
+    AgentDriver:
+      type: string
+      enum: [claude-code, opencode]
+    RepositoryKind:
+      type: string
+      enum: [internal, github, url]
+      description: "internal: the bare repository on the control plane; github: a new GitHub repository created with a stored token; url: an existing repository to link"
+    ProjectRepository:
+      type: object
+      required: [kind, branch, cloneUrl]
+      properties:
+        kind: { $ref: "#/components/schemas/RepositoryKind" }
+        branch: { type: string, description: The project branch (main) }
+        cloneUrl: { type: string, description: "Where to clone from Cadence over smart HTTP (/git/<slug>.git); authenticate with an API key or agent token as the password" }
+        remote: { type: string, description: "The GitHub or linked repository every commit to main is pushed to (github, url)" }
+        secret: { type: string, description: Name of the stored secret that authenticates the remote }
+        pushError: { type: string, description: Why the last push to the remote failed; absent when it succeeded }
+    ProjectBaseModel:
+      type: object
+      required: [versionId, name, version, hfRepo, revision]
+      properties:
+        versionId: { type: string, description: "ver_…" }
+        name: { type: string, description: "The registry collection, e.g. base-model/nemotron-3.5-asr-streaming-0.6b" }
+        version: { type: string }
+        hfRepo: { type: string }
+        revision: { type: string, description: The pinned Hugging Face revision }
+    ProjectBudgets:
+      type: object
+      required: [gpuHoursPerDay, agentTokensPerDay]
+      properties:
+        gpuHoursPerDay: { type: number, format: double, minimum: 0, description: "Default budgets.gpu_hours_per_project_per_day" }
+        agentTokensPerDay: { type: integer, minimum: 0, description: "Agent spend per day in tokens; default budgets.agent_tokens_per_project_per_day" }
+    ProjectBudgetsEdit:
+      type: object
+      additionalProperties: false
+      properties:
+        gpuHoursPerDay: { type: number, format: double, minimum: 0, maximum: 192 }
+        agentTokensPerDay: { type: integer, minimum: 0, maximum: 1000000000 }
+    AgentChoice:
+      type: object
+      additionalProperties: false
+      properties:
+        driver: { $ref: "#/components/schemas/AgentDriver" }
+        model: { $ref: "#/components/schemas/AgentModelId" }
+        permissionPreset: { $ref: "#/components/schemas/PresetName" }
+    AgentModelId:
+      type: string
+      pattern: "^[A-Za-z0-9][A-Za-z0-9._:/@-]{0,119}$"
+      description: "The driver's own model id: a Claude Code alias (sonnet, opus, haiku) or opencode's provider/model"
+    PresetName:
+      type: string
+      pattern: "^[a-z][a-z0-9-]{0,62}$"
+      description: "A permission preset (templates.list templateKind=preset), e.g. guardrails-default"
+    InstructionsTemplateName:
+      type: string
+      pattern: "^[a-z][a-z0-9-]{0,62}$"
+      description: "An instructions template (templates.list templateKind=instructions): default or minimal; custom once AGENTS.md was edited by hand"
+    RepositoryChoice:
+      type: object
+      additionalProperties: false
+      properties:
+        kind: { $ref: "#/components/schemas/RepositoryKind" }
+        url: { type: string, maxLength: 500, description: "url: the repository to link (https://…, ssh is not supported)" }
+        secret: { type: string, maxLength: 120, description: "Name of the stored secret (secrets.new) holding the token for github or a private url" }
+        owner: { type: string, maxLength: 100, description: "github: the organisation to create the repository in; the token's user when absent" }
+        name: { type: string, maxLength: 100, description: "github: the repository name; the project slug when absent" }
+        private: { type: boolean, default: true, description: "github: create the repository private" }
+
+    ProjectNoteNew:
+      type: object
+      required: [text]
+      additionalProperties: false
+      properties:
+        text: { type: string, minLength: 1, maxLength: 4000, description: One learning in a sentence or two; Markdown }
+    ProjectNote:
+      type: object
+      required: [date, text, path, commit]
+      properties:
+        date: { type: string, format: date, description: The heading the note was filed under }
+        text: { type: string }
+        path: { type: string, description: NOTES.md }
+        commit: { type: string, description: The commit on main; empty for a dry run }
+    RecipeChange:
+      type: object
+      required: [path, status]
+      properties:
+        path: { type: string }
+        status: { type: string, enum: [added, modified, deleted] }
+    ProjectSync:
+      type: object
+      required: [upToDate, base, changes]
+      properties:
+        upToDate: { type: boolean, description: Nothing differs from the current templates }
+        base: { type: string, description: The main commit the sync compared against }
+        branch: { type: string, description: "The draft branch sync/<date>; absent when up to date or for a dry run" }
+        commit: { type: string, description: The draft commit on the branch }
+        changes: { type: array, items: { $ref: "#/components/schemas/RecipeChange" } }
+
+    DraftMode:
+      type: string
+      enum: [direct, draft]
+      description: "direct: agent changes land at once; draft: they land as drafts to accept or revert"
+    DraftPolicy:
+      type: object
+      additionalProperties: false
+      required: [mix, gate, note, language_pack]
+      properties:
+        mix: { $ref: "#/components/schemas/DraftMode" }
+        gate: { $ref: "#/components/schemas/DraftMode" }
+        note: { $ref: "#/components/schemas/DraftMode" }
+        language_pack: { $ref: "#/components/schemas/DraftMode" }
+    AutoMerge:
+      type: string
+      enum: [when-clean, never]
+      description: "when-clean: a session branch merges into main at session end when it applies cleanly; never: it always waits as Session changes"
+    RenderedFile:
+      type: object
+      required: [path, content]
+      properties:
+        path: { type: string }
+        content: { type: string }
+    AgentProfile:
+      type: object
+      required: [driver, model, permissionPreset, instructionsTemplate, autoMerge, draftPolicy, rev, updatedAt, files]
+      properties:
+        driver: { $ref: "#/components/schemas/AgentDriver" }
+        model: { $ref: "#/components/schemas/AgentModelId" }
+        permissionPreset: { $ref: "#/components/schemas/PresetName" }
+        instructionsTemplate: { $ref: "#/components/schemas/InstructionsTemplateName" }
+        autoMerge: { $ref: "#/components/schemas/AutoMerge" }
+        draftPolicy: { $ref: "#/components/schemas/DraftPolicy" }
+        rev: { type: integer }
+        updatedAt: { type: string, format: date-time }
+        commit: { type: string, description: The commit on main that holds the rendered files }
+        files:
+          type: array
+          description: "The rendered .claude/settings.json, opencode.json, AGENTS.md and CLAUDE.md"
+          items: { $ref: "#/components/schemas/RenderedFile" }
+    AgentProfileEdit:
+      type: object
+      additionalProperties: false
+      properties:
+        driver: { $ref: "#/components/schemas/AgentDriver" }
+        model: { $ref: "#/components/schemas/AgentModelId" }
+        permissionPreset: { $ref: "#/components/schemas/PresetName" }
+        instructionsTemplate: { $ref: "#/components/schemas/InstructionsTemplateName" }
+        autoMerge: { $ref: "#/components/schemas/AutoMerge" }
+        draftPolicy:
+          type: object
+          additionalProperties: false
+          properties:
+            mix: { $ref: "#/components/schemas/DraftMode" }
+            gate: { $ref: "#/components/schemas/DraftMode" }
+            note: { $ref: "#/components/schemas/DraftMode" }
+            language_pack: { $ref: "#/components/schemas/DraftMode" }
+        agentsMd: { type: string, minLength: 1, maxLength: 100000, description: "The AGENTS.md text; setting it makes the instructions custom (instructionsTemplate becomes custom)" }
+    AgentModel:
+      type: object
+      required: [id, name]
+      properties:
+        id: { $ref: "#/components/schemas/AgentModelId" }
+        name: { type: string }
+    AgentModels:
+      type: object
+      required: [driver, default, models, freeForm, description, source]
+      properties:
+        driver: { $ref: "#/components/schemas/AgentDriver" }
+        default: { $ref: "#/components/schemas/AgentModelId" }
+        models: { type: array, items: { $ref: "#/components/schemas/AgentModel" } }
+        freeForm: { type: boolean, description: "Any provider/model id is accepted, not only the listed ones (opencode)" }
+        description: { type: string }
+        source: { type: string }
+    AgentModelList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/AgentModels" } }
+
+    RecipePath:
+      type: string
+      minLength: 1
+      maxLength: 400
+      pattern: "^[^/\\x00][^\\x00]*$"
+      description: A path relative to the repository root
+    BranchName:
+      type: string
+      pattern: "^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$"
+    RecipeFile:
+      type: object
+      required: [path, bytes, blob]
+      properties:
+        path: { type: string }
+        bytes: { type: integer }
+        blob: { type: string, description: The git blob id }
+    RecipeList:
+      type: object
+      required: [ref, commit, items]
+      properties:
+        ref: { type: string }
+        commit: { type: string, description: The commit the ref resolved to; empty for a repository without commits }
+        items: { type: array, items: { $ref: "#/components/schemas/RecipeFile" } }
+    RecipeCommit:
+      type: object
+      required: [sha, message, author, at]
+      properties:
+        sha: { type: string }
+        message: { type: string, description: The subject line }
+        author: { type: string }
+        at: { type: string, format: date-time }
+    Recipe:
+      type: object
+      required: [path, ref, commit, bytes, encoding, content, history]
+      properties:
+        path: { type: string }
+        ref: { type: string }
+        commit: { type: string }
+        bytes: { type: integer }
+        encoding: { type: string, enum: [utf-8, base64], description: base64 for files that are not UTF-8 text }
+        content: { type: string }
+        history: { type: array, items: { $ref: "#/components/schemas/RecipeCommit" }, description: "Commits that changed the file, newest first (at most 50)" }
+    Branch:
+      type: object
+      required: [name, kind, head, updatedAt, ahead, behind]
+      properties:
+        name: { $ref: "#/components/schemas/BranchName" }
+        kind: { type: string, enum: [session, sync, other] }
+        sessionId: { type: string, description: "The agent session of a session/<id> branch" }
+        head: { type: string }
+        subject: { type: string, description: The head commit's subject line }
+        updatedAt: { type: string, format: date-time, description: The head commit's date }
+        ahead: { type: integer, description: Commits on the branch that main does not have }
+        behind: { type: integer, description: Commits on main that the branch does not have }
+    BranchList:
+      type: object
+      required: [main, items]
+      properties:
+        main: { type: string, description: The commit main points at }
+        items: { type: array, items: { $ref: "#/components/schemas/Branch" } }
+    BranchFileChange:
+      type: object
+      required: [path, status, additions, deletions, binary]
+      properties:
+        path: { type: string }
+        status: { type: string, enum: [added, modified, deleted] }
+        additions: { type: integer }
+        deletions: { type: integer }
+        binary: { type: boolean }
+    BranchDiff:
+      allOf:
+        - $ref: "#/components/schemas/Branch"
+        - type: object
+          required: [main, base, fastForward, conflicts, files, patch, truncated]
+          properties:
+            main: { type: string }
+            base: { type: string, description: The merge base of the branch and main }
+            fastForward: { type: boolean, description: Main has not moved since the branch left it }
+            conflicts: { type: array, items: { type: string }, description: Files a merge into main would conflict on }
+            files: { type: array, items: { $ref: "#/components/schemas/BranchFileChange" } }
+            patch: { type: string, description: "The unified diff of the branch against its merge base with main (git diff main...branch)" }
+            truncated: { type: boolean, description: The patch was cut at 512 KiB }
+    BranchMerge:
+      type: object
+      required: [branch, head, main, fastForward, changes]
+      properties:
+        branch: { type: string }
+        head: { type: string, description: The branch head that was merged }
+        main: { type: string, description: "main after the merge (for a dry run: before it)" }
+        fastForward: { type: boolean }
+        changes: { type: array, items: { $ref: "#/components/schemas/RecipeChange" } }

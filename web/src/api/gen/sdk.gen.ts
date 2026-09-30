@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AdoptionsListData, AdoptionsListErrors, AdoptionsListResponses, AgentMessagesNewData, AgentMessagesNewErrors, AgentMessagesNewResponses, AgentSessionsCancelData, AgentSessionsCancelErrors, AgentSessionsCancelResponses, AgentSessionsNewData, AgentSessionsNewErrors, AgentSessionsNewResponses, AliasesGetData, AliasesGetErrors, AliasesGetResponses, AliasesListData, AliasesListErrors, AliasesListResponses, AliasesSetData, AliasesSetErrors, AliasesSetResponses, ApprovalsApproveData, ApprovalsApproveErrors, ApprovalsApproveResponses, ApprovalsDenyData, ApprovalsDenyErrors, ApprovalsDenyResponses, ApprovalsGetData, ApprovalsGetErrors, ApprovalsGetResponses, ApprovalsListData, ApprovalsListErrors, ApprovalsListResponses, AuditListData, AuditListErrors, AuditListResponses, AuthGetData, AuthGetErrors, AuthGetResponses, AuthLoginData, AuthLoginErrors, AuthLoginResponses, AuthLogoutData, AuthLogoutErrors, AuthLogoutResponses, AuthSetupData, AuthSetupErrors, AuthSetupResponses, BaseModelsGetData, BaseModelsGetErrors, BaseModelsGetResponses, BaseModelsListData, BaseModelsListErrors, BaseModelsListResponses, CollectionsGetData, CollectionsGetErrors, CollectionsGetResponses, CollectionsListData, CollectionsListErrors, CollectionsListResponses, ComputeEditData, ComputeEditErrors, ComputeEditResponses, ComputeGetData, ComputeGetErrors, ComputeGetResponses, ComputeListData, ComputeListErrors, ComputeListResponses, CredentialsListData, CredentialsListErrors, CredentialsListResponses, CredentialsNewData, CredentialsNewErrors, CredentialsNewResponses, CredentialsRevokeData, CredentialsRevokeErrors, CredentialsRevokeResponses, DatasetsGetData, DatasetsGetErrors, DatasetsGetResponses, DatasetsListData, DatasetsListErrors, DatasetsListResponses, DefaultsGetData, DefaultsGetErrors, DefaultsGetResponses, EventsListData, EventsListErrors, EventsListResponses, HelpGetData, HelpGetErrors, HelpGetResponses, HelpSearchData, HelpSearchErrors, HelpSearchResponses, JobsCancelData, JobsCancelErrors, JobsCancelResponses, JobsGetData, JobsGetErrors, JobsGetResponses, JobsListData, JobsListErrors, JobsListResponses, JobsWaitData, JobsWaitErrors, JobsWaitResponses, MeGetData, MeGetErrors, MeGetResponses, MixesEditData, MixesEditErrors, MixesEditResponses, MixesNewData, MixesNewErrors, MixesNewResponses, MixesPreviewData, MixesPreviewErrors, MixesPreviewResponses, MountsListData, MountsListErrors, MountsListResponses, MountsNewData, MountsNewErrors, MountsNewResponses, PoliciesEditData, PoliciesEditErrors, PoliciesEditResponses, PoliciesGetData, PoliciesGetErrors, PoliciesGetResponses, ProjectsAdoptData, ProjectsAdoptErrors, ProjectsAdoptResponses, ProjectsArchiveData, ProjectsArchiveErrors, ProjectsArchiveResponses, ProjectsEditData, ProjectsEditErrors, ProjectsEditResponses, ProjectsGetData, ProjectsGetErrors, ProjectsGetResponses, ProjectsListData, ProjectsListErrors, ProjectsListResponses, ProjectsNewData, ProjectsNewErrors, ProjectsNewResponses, RegistrySearchData, RegistrySearchErrors, RegistrySearchResponses, RunsNewData, RunsNewErrors, RunsNewResponses, SecretsListData, SecretsListErrors, SecretsListResponses, SecretsNewData, SecretsNewErrors, SecretsNewResponses, TemplatesGetData, TemplatesGetErrors, TemplatesGetResponses, TemplatesListData, TemplatesListErrors, TemplatesListResponses, TotpConfirmData, TotpConfirmErrors, TotpConfirmResponses, TotpDisableData, TotpDisableErrors, TotpDisableResponses, TotpEnrollData, TotpEnrollErrors, TotpEnrollResponses, WorkspacesGetData, WorkspacesGetErrors, WorkspacesGetResponses, WorkspacesListData, WorkspacesListErrors, WorkspacesListResponses, WorkspacesSetData, WorkspacesSetErrors, WorkspacesSetResponses } from './types.gen';
+import type { AdoptionsListData, AdoptionsListErrors, AdoptionsListResponses, AgentMessagesNewData, AgentMessagesNewErrors, AgentMessagesNewResponses, AgentModelsListData, AgentModelsListErrors, AgentModelsListResponses, AgentProfileEditData, AgentProfileEditErrors, AgentProfileEditResponses, AgentProfileGetData, AgentProfileGetErrors, AgentProfileGetResponses, AgentSessionsCancelData, AgentSessionsCancelErrors, AgentSessionsCancelResponses, AgentSessionsNewData, AgentSessionsNewErrors, AgentSessionsNewResponses, AliasesGetData, AliasesGetErrors, AliasesGetResponses, AliasesListData, AliasesListErrors, AliasesListResponses, AliasesSetData, AliasesSetErrors, AliasesSetResponses, ApprovalsApproveData, ApprovalsApproveErrors, ApprovalsApproveResponses, ApprovalsDenyData, ApprovalsDenyErrors, ApprovalsDenyResponses, ApprovalsGetData, ApprovalsGetErrors, ApprovalsGetResponses, ApprovalsListData, ApprovalsListErrors, ApprovalsListResponses, AuditListData, AuditListErrors, AuditListResponses, AuthGetData, AuthGetErrors, AuthGetResponses, AuthLoginData, AuthLoginErrors, AuthLoginResponses, AuthLogoutData, AuthLogoutErrors, AuthLogoutResponses, AuthSetupData, AuthSetupErrors, AuthSetupResponses, BaseModelsGetData, BaseModelsGetErrors, BaseModelsGetResponses, BaseModelsListData, BaseModelsListErrors, BaseModelsListResponses, BranchesAcceptData, BranchesAcceptErrors, BranchesAcceptResponses, BranchesGetData, BranchesGetErrors, BranchesGetResponses, BranchesListData, BranchesListErrors, BranchesListResponses, BranchesRevertData, BranchesRevertErrors, BranchesRevertResponses, CollectionsGetData, CollectionsGetErrors, CollectionsGetResponses, CollectionsListData, CollectionsListErrors, CollectionsListResponses, ComputeEditData, ComputeEditErrors, ComputeEditResponses, ComputeGetData, ComputeGetErrors, ComputeGetResponses, ComputeListData, ComputeListErrors, ComputeListResponses, CredentialsListData, CredentialsListErrors, CredentialsListResponses, CredentialsNewData, CredentialsNewErrors, CredentialsNewResponses, CredentialsRevokeData, CredentialsRevokeErrors, CredentialsRevokeResponses, DatasetsGetData, DatasetsGetErrors, DatasetsGetResponses, DatasetsListData, DatasetsListErrors, DatasetsListResponses, DefaultsGetData, DefaultsGetErrors, DefaultsGetResponses, EventsListData, EventsListErrors, EventsListResponses, HelpGetData, HelpGetErrors, HelpGetResponses, HelpSearchData, HelpSearchErrors, HelpSearchResponses, JobsCancelData, JobsCancelErrors, JobsCancelResponses, JobsGetData, JobsGetErrors, JobsGetResponses, JobsListData, JobsListErrors, JobsListResponses, JobsWaitData, JobsWaitErrors, JobsWaitResponses, MeGetData, MeGetErrors, MeGetResponses, MixesEditData, MixesEditErrors, MixesEditResponses, MixesNewData, MixesNewErrors, MixesNewResponses, MixesPreviewData, MixesPreviewErrors, MixesPreviewResponses, MountsListData, MountsListErrors, MountsListResponses, MountsNewData, MountsNewErrors, MountsNewResponses, PoliciesEditData, PoliciesEditErrors, PoliciesEditResponses, PoliciesGetData, PoliciesGetErrors, PoliciesGetResponses, ProjectsAdoptData, ProjectsAdoptErrors, ProjectsAdoptResponses, ProjectsArchiveData, ProjectsArchiveErrors, ProjectsArchiveResponses, ProjectsEditData, ProjectsEditErrors, ProjectsEditResponses, ProjectsGetData, ProjectsGetErrors, ProjectsGetResponses, ProjectsListData, ProjectsListErrors, ProjectsListResponses, ProjectsNewData, ProjectsNewErrors, ProjectsNewResponses, ProjectsNoteData, ProjectsNoteErrors, ProjectsNoteResponses, ProjectsSyncData, ProjectsSyncErrors, ProjectsSyncResponses, RecipesGetData, RecipesGetErrors, RecipesGetResponses, RecipesListData, RecipesListErrors, RecipesListResponses, RegistrySearchData, RegistrySearchErrors, RegistrySearchResponses, RunsNewData, RunsNewErrors, RunsNewResponses, SecretsListData, SecretsListErrors, SecretsListResponses, SecretsNewData, SecretsNewErrors, SecretsNewResponses, TemplatesGetData, TemplatesGetErrors, TemplatesGetResponses, TemplatesListData, TemplatesListErrors, TemplatesListResponses, TotpConfirmData, TotpConfirmErrors, TotpConfirmResponses, TotpDisableData, TotpDisableErrors, TotpDisableResponses, TotpEnrollData, TotpEnrollErrors, TotpEnrollResponses, WorkspacesGetData, WorkspacesGetErrors, WorkspacesGetResponses, WorkspacesListData, WorkspacesListErrors, WorkspacesListResponses, WorkspacesSetData, WorkspacesSetErrors, WorkspacesSetResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -24,7 +24,7 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
 export const projectsList = <ThrowOnError extends boolean = false>(options?: Options<ProjectsListData, ThrowOnError>): RequestResult<ProjectsListResponses, ProjectsListErrors, ThrowOnError> => (options?.client ?? client).get<ProjectsListResponses, ProjectsListErrors, ThrowOnError>({ url: '/projects', ...options });
 
 /**
- * Create a project
+ * Create a project from the wizard's choices and bootstrap its repository (202 with the bootstrap job)
  */
 export const projectsNew = <ThrowOnError extends boolean = false>(options: Options<ProjectsNewData, ThrowOnError>): RequestResult<ProjectsNewResponses, ProjectsNewErrors, ThrowOnError> => (options.client ?? client).post<ProjectsNewResponses, ProjectsNewErrors, ThrowOnError>({
     url: '/projects',
@@ -41,7 +41,7 @@ export const projectsNew = <ThrowOnError extends boolean = false>(options: Optio
 export const projectsGet = <ThrowOnError extends boolean = false>(options: Options<ProjectsGetData, ThrowOnError>): RequestResult<ProjectsGetResponses, ProjectsGetErrors, ThrowOnError> => (options.client ?? client).get<ProjectsGetResponses, ProjectsGetErrors, ThrowOnError>({ url: '/projects/{p}', ...options });
 
 /**
- * Rename or re-describe a project
+ * Change a project's name, description, locales, domain, base model or budgets
  */
 export const projectsEdit = <ThrowOnError extends boolean = false>(options: Options<ProjectsEditData, ThrowOnError>): RequestResult<ProjectsEditResponses, ProjectsEditErrors, ThrowOnError> => (options.client ?? client).patch<ProjectsEditResponses, ProjectsEditErrors, ThrowOnError>({
     url: '/projects/{p}',
@@ -399,6 +399,75 @@ export const jobsCancel = <ThrowOnError extends boolean = false>(options: Option
  * Wait until a job ends or the timeout passes, then return it (agents)
  */
 export const jobsWait = <ThrowOnError extends boolean = false>(options: Options<JobsWaitData, ThrowOnError>): RequestResult<JobsWaitResponses, JobsWaitErrors, ThrowOnError> => (options.client ?? client).get<JobsWaitResponses, JobsWaitErrors, ThrowOnError>({ url: '/jobs/{id}:wait', ...options });
+
+/**
+ * Append a dated learning to the project's NOTES.md and commit it to main
+ */
+export const projectsNote = <ThrowOnError extends boolean = false>(options: Options<ProjectsNoteData, ThrowOnError>): RequestResult<ProjectsNoteResponses, ProjectsNoteErrors, ThrowOnError> => (options.client ?? client).post<ProjectsNoteResponses, ProjectsNoteErrors, ThrowOnError>({
+    url: '/projects/{p}:note',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Diff the project against Cadence's current templates and skills and offer the update as a draft branch
+ */
+export const projectsSync = <ThrowOnError extends boolean = false>(options: Options<ProjectsSyncData, ThrowOnError>): RequestResult<ProjectsSyncResponses, ProjectsSyncErrors, ThrowOnError> => (options.client ?? client).post<ProjectsSyncResponses, ProjectsSyncErrors, ThrowOnError>({ url: '/projects/{p}:sync', ...options });
+
+/**
+ * The project's agent profile with the config files rendered from it
+ */
+export const agentProfileGet = <ThrowOnError extends boolean = false>(options: Options<AgentProfileGetData, ThrowOnError>): RequestResult<AgentProfileGetResponses, AgentProfileGetErrors, ThrowOnError> => (options.client ?? client).get<AgentProfileGetResponses, AgentProfileGetErrors, ThrowOnError>({ url: '/projects/{p}/agent-profile', ...options });
+
+/**
+ * Change the agent profile; the rendered config files and AGENTS.md are committed to main
+ */
+export const agentProfileEdit = <ThrowOnError extends boolean = false>(options: Options<AgentProfileEditData, ThrowOnError>): RequestResult<AgentProfileEditResponses, AgentProfileEditErrors, ThrowOnError> => (options.client ?? client).patch<AgentProfileEditResponses, AgentProfileEditErrors, ThrowOnError>({
+    url: '/projects/{p}/agent-profile',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Agent models per driver, with the default the wizard picks
+ */
+export const agentModelsList = <ThrowOnError extends boolean = false>(options?: Options<AgentModelsListData, ThrowOnError>): RequestResult<AgentModelsListResponses, AgentModelsListErrors, ThrowOnError> => (options?.client ?? client).get<AgentModelsListResponses, AgentModelsListErrors, ThrowOnError>({ url: '/catalog/agent-models', ...options });
+
+/**
+ * Files of the project repository at a branch or commit
+ */
+export const recipesList = <ThrowOnError extends boolean = false>(options: Options<RecipesListData, ThrowOnError>): RequestResult<RecipesListResponses, RecipesListErrors, ThrowOnError> => (options.client ?? client).get<RecipesListResponses, RecipesListErrors, ThrowOnError>({ url: '/projects/{p}/recipes', ...options });
+
+/**
+ * One file of the project repository at a branch or commit, with its commit history
+ */
+export const recipesGet = <ThrowOnError extends boolean = false>(options: Options<RecipesGetData, ThrowOnError>): RequestResult<RecipesGetResponses, RecipesGetErrors, ThrowOnError> => (options.client ?? client).get<RecipesGetResponses, RecipesGetErrors, ThrowOnError>({ url: '/projects/{p}/recipes/{path}', ...options });
+
+/**
+ * Open branches of the project repository (session and sync branches not merged into main)
+ */
+export const branchesList = <ThrowOnError extends boolean = false>(options: Options<BranchesListData, ThrowOnError>): RequestResult<BranchesListResponses, BranchesListErrors, ThrowOnError> => (options.client ?? client).get<BranchesListResponses, BranchesListErrors, ThrowOnError>({ url: '/projects/{p}/branches', ...options });
+
+/**
+ * A branch with its diff against main and the conflicts a merge would meet
+ */
+export const branchesGet = <ThrowOnError extends boolean = false>(options: Options<BranchesGetData, ThrowOnError>): RequestResult<BranchesGetResponses, BranchesGetErrors, ThrowOnError> => (options.client ?? client).get<BranchesGetResponses, BranchesGetErrors, ThrowOnError>({ url: '/projects/{p}/branches/{name}', ...options });
+
+/**
+ * Merge a sync branch into main (fast-forward when possible, otherwise a merge commit)
+ */
+export const branchesAccept = <ThrowOnError extends boolean = false>(options: Options<BranchesAcceptData, ThrowOnError>): RequestResult<BranchesAcceptResponses, BranchesAcceptErrors, ThrowOnError> => (options.client ?? client).post<BranchesAcceptResponses, BranchesAcceptErrors, ThrowOnError>({ url: '/projects/{p}/branches/{name}:accept', ...options });
+
+/**
+ * Discard a sync branch without merging it
+ */
+export const branchesRevert = <ThrowOnError extends boolean = false>(options: Options<BranchesRevertData, ThrowOnError>): RequestResult<BranchesRevertResponses, BranchesRevertErrors, ThrowOnError> => (options.client ?? client).post<BranchesRevertResponses, BranchesRevertErrors, ThrowOnError>({ url: '/projects/{p}/branches/{name}:revert', ...options });
 
 /**
  * Save a mix (input_cfg groups, weights, temperature, replay share)
