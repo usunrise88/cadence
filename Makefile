@@ -17,6 +17,7 @@ check-gen: gen ## CI: fail when generated files are not committed
 	  || (echo "generated files are stale: run make gen and commit" && exit 1)
 
 lint:          ## golangci-lint, eslint (panel, Dockview and Base UI rules), tsc, ruff, mypy --strict
+	@! git grep -nE '^(<<<<<<<|>>>>>>>)( |$$)' -- ':!*.gen.*' || { echo 'merge conflict markers left in the files above'; exit 1; }
 	cd control-plane && golangci-lint run ./...
 	cd web && npx tsc -b && npx eslint . --max-warnings 0
 	cd agent-host && npm run typecheck
