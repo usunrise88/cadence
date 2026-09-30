@@ -8,6 +8,8 @@ import { registerEntities } from "@/entities";
 import { registerPanels } from "@/panels";
 import { registerBuiltinCommands } from "@/shell/commands/builtin";
 import { registerEntityCommands } from "@/shell/commands/entities";
+import { setAgentCommandsQueryClient } from "@/shell/commands/agents";
+import { installAgentBridge } from "@/shell/agents/bridge";
 import { registerSpikePanels } from "@/spikes/stubs";
 import { dockApi } from "@/shell/dock/store";
 import { commands, events, panels } from "@/shell/registries";
@@ -24,10 +26,12 @@ if (spikes !== null) registerSpikePanels(spikes === "always" ? "always" : "onlyW
 registerBuiltinCommands();
 registerEntityCommands();
 installTheme(document);
+installAgentBridge();
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, retry: 1, refetchOnWindowFocus: false } },
 });
+setAgentCommandsQueryClient(queryClient);
 
 // Test and spike hooks (Playwright, docs/spikes): read-only handles, only in development or with cadence.debug=1.
 let debug = import.meta.env.DEV;

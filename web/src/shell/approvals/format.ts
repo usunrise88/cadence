@@ -1,11 +1,16 @@
 import type { Actor, Approval } from "@/api/gen/types.gen";
+import { knownSession, sessionLabel } from "@/shell/agents/labels";
 
-// Pure presentation helpers for approval cards and notices.
+// Presentation helpers for approval cards and notices.
 
 export function actorLabel(a: Actor | undefined): string {
   if (!a) return "—";
   const name = a.name ?? a.id;
-  if (a.kind === "agent") return a.sessionId ? `Agent · session ${shortId(a.sessionId)}` : `Agent · ${name}`;
+  if (a.kind === "agent") {
+    const s = knownSession(a.sessionId);
+    if (s) return sessionLabel(s); // "claude-code · session 3", as the Chat and the badges name it
+    return a.sessionId ? `Agent · session ${shortId(a.sessionId)}` : `Agent · ${name}`;
+  }
   if (a.kind === "automation") return `Automation · ${name}`;
   return name;
 }
