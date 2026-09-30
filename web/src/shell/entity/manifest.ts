@@ -15,7 +15,7 @@ export const STATE_TEMPLATES = {
   registry: ["draft", "frozen", "deprecated"],
   work: ["planned", "queued", "running", "paused", "done", "failed", "cancelled"],
   promotion: ["proposed", "approved", "denied", "applied", "rolled back"],
-  container: ["active", "archived"],
+  container: ["bootstrapping", "active", "failed", "archived"],
 } as const;
 export type StateTemplate = keyof typeof STATE_TEMPLATES;
 
@@ -40,6 +40,7 @@ export const STATE_TONES: Record<string, StatusTone> = {
   "rolled back": "warning",
   active: "done",
   archived: "neutral",
+  bootstrapping: "running",
 };
 
 export type EntityVerb = {

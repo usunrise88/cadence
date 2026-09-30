@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { SerializedDockview } from "dockview-core";
 import { planDefaultLayout } from "./defaults";
-import { DEFAULT_WORKSPACES, migrate, normalizeLayout, parseWorkspace, WorkspaceSchemaError, type WorkspaceData } from "./schema";
+import { DEFAULT_WORKSPACES, isPlaceholderLayout, migrate, normalizeLayout, parseWorkspace, WorkspaceSchemaError, type WorkspaceData } from "./schema";
 import legacy from "./fixtures/legacy-training.json";
 import { headlessDockview, phase0Registry } from "./testkit";
 
@@ -43,6 +43,14 @@ describe("normalizeLayout", () => {
     expect(layout.panels?.properties?.params?.panel).toBe("inspector");
     expect(layout.panels?.["old-metrics"]?.params).toEqual({ panel: "placeholder", missing: "metrics-legacy" });
     expect(layout.panels?.library).toEqual(ws.layout.panels?.library);
+  });
+});
+
+describe("placeholder workspaces from the project bootstrap", () => {
+  it("treats a stored layout without a grid as the default plan", () => {
+    const ws = parseWorkspace({ name: "Training", schemaVersion: 1, layout: {}, panels: {}, rev: 1 });
+    expect(isPlaceholderLayout(ws.layout)).toBe(true);
+    expect(isPlaceholderLayout({ grid: { root: {}, width: 1, height: 1, orientation: "HORIZONTAL" }, panels: {} })).toBe(false);
   });
 });
 
