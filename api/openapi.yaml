@@ -27,6 +27,8 @@ tags:
   - { name: approvals, description: Gated commands waiting for a person }
   - { name: audit, description: Every command with its actor and cause }
   - { name: jobs, description: "Long work that answers 202 and reports on job.{id}" }
+  - { name: mixes, description: "Project mixes: groups, weights, temperature and replay share over dataset versions (R13)" }
+  - { name: drafts, description: Unaccepted changes to draftable entities that a person accepts or reverts }
   - { name: planned, description: Named now, implemented in a later phase (501 until then) }
 
 paths:
@@ -995,43 +997,187 @@ paths:
           content: { application/json: { schema: { $ref: "#/components/schemas/Job" } } }
         default: { $ref: "#/components/responses/Problem" }
 
-  # ---------------------------------------------------------------- planned (later phases)
+  # ---------------------------------------------------------------- mixes, drafts, presence (phase 1 · wave 2 · mix stream) — add paths below this line
+  #
+  #
+  #
   /projects/{p}/mixes:
-    x-cadence: { entity: mixes, planned: 2 }
+    x-cadence: { entity: mixes }
     parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    get:
+      operationId: mixes.list
+      summary: The project's mixes, most recently changed first
+      tags: [mixes]
+      responses:
+        "200":
+          description: Mixes
+          content: { application/json: { schema: { $ref: "#/components/schemas/MixList" } } }
+        default: { $ref: "#/components/responses/Problem" }
     post:
       operationId: mixes.new
-      summary: Save a mix (input_cfg groups, weights, temperature, replay share)
-      tags: [planned]
-      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }, { $ref: "#/components/parameters/DryRun" }]
-      requestBody: { $ref: "#/components/requestBodies/PlannedBody" }
-      responses: { "201": { $ref: "#/components/responses/PlannedEntity" }, default: { $ref: "#/components/responses/Problem" } }
+      summary: Save a new mix (groups over dataset versions, weights, temperature, replay share) at revision 1
+      tags: [mixes]
+      x-cadence:
+        toolDescription: >
+          Save a new mix: named groups of frozen dataset versions (ver_…, @alias or a collection name such as
+          dataset/fleurs-he-smoke, resolved to its newest frozen version), each with a weight, plus the sampling
+          temperature and the replay share. Omitted values come from defaults.yaml (defaults://). Call
+          mixes.preview first to see hours per language. A mix is project work with revisions (R13).
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/MixNew" } } }
+      responses:
+        "200":
+          description: Dry run — the mix that would be saved; nothing was written
+          content: { application/json: { schema: { $ref: "#/components/schemas/Mix" } } }
+        "201":
+          description: Saved
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Mix" } } }
+        default: { $ref: "#/components/responses/Problem" }
 
   /projects/{p}/mixes:preview:
-    x-cadence: { entity: mixes, planned: 2 }
+    x-cadence: { entity: mixes }
     parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
     post:
       operationId: mixes.preview
-      summary: Hours per language for a mix without saving it
-      tags: [planned]
-      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }, { $ref: "#/components/parameters/DryRun" }]
-      requestBody: { $ref: "#/components/requestBodies/PlannedBody" }
-      responses: { "200": { $ref: "#/components/responses/PlannedEntity" }, default: { $ref: "#/components/responses/Problem" } }
+      summary: Hours per language and sampling shares of a mix without saving it (metadata only, no GPU)
+      tags: [mixes]
+      x-cadence:
+        toolDescription: >
+          Preview a mix without saving it: the source hours of every group and language and the share of training
+          samples each would get under the weights, temperature and replay share. Reads dataset-version metadata
+          only; nothing is written and no GPU is used.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/MixNew" } } }
+      responses:
+        "200":
+          description: The preview
+          content: { application/json: { schema: { $ref: "#/components/schemas/MixPreview" } } }
+        default: { $ref: "#/components/responses/Problem" }
 
   /mixes/{id}:
-    x-cadence: { entity: mixes, planned: 2 }
-    parameters: [{ $ref: "#/components/parameters/Id" }]
+    x-cadence: { entity: mixes }
+    parameters: [{ $ref: "#/components/parameters/MixId" }]
+    get:
+      operationId: mixes.get
+      summary: Get a mix at its current revision, with its preview and who is editing it
+      tags: [mixes]
+      responses:
+        "200":
+          description: The mix
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Mix" } } }
+        default: { $ref: "#/components/responses/Problem" }
     patch:
       operationId: mixes.edit
-      summary: Edit a mix; agent edits land as drafts
-      tags: [planned]
+      summary: Edit a mix; a person's edit makes a new revision, an agent's lands as a draft when the draft policy says so
+      tags: [mixes]
+      x-cadence:
+        toolDescription: >
+          Edit a mix: the fields you send replace the current ones (groups as a whole list). Send ifMatch with the
+          etag (or rev) of your last mixes.get; a stale revision fails with precondition-failed and the current
+          revision. Under the project's draft policy (the default for agents) the edit does not change the mix: it
+          lands as a draft (result.draft) that a person accepts or reverts, and your later edits update the same
+          draft. mixes.get shows your open draft under presence.
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
         - $ref: "#/components/parameters/IfMatch"
         - $ref: "#/components/parameters/DryRun"
-      requestBody: { $ref: "#/components/requestBodies/PlannedBody" }
-      responses: { "200": { $ref: "#/components/responses/PlannedEntity" }, default: { $ref: "#/components/responses/Problem" } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/MixEdit" } } }
+      responses:
+        "200":
+          description: >
+            The mix, plus the draft when the edit landed as one (the mix is then unchanged and ETag is its
+            revision); for a dry run, what would happen
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/MixEditResult" } } }
+        default: { $ref: "#/components/responses/Problem" }
 
+  /drafts:
+    x-cadence: { entity: drafts }
+    get:
+      operationId: drafts.list
+      summary: Drafts of one entity (open ones by default), newest first
+      tags: [drafts]
+      parameters:
+        - { name: entityKind, in: query, required: true, description: "Kind of the drafted entity", schema: { $ref: "#/components/schemas/DraftableKind" } }
+        - { name: entityId, in: query, required: true, description: "Id of the drafted entity (mix_…)", schema: { type: string } }
+        - { name: state, in: query, description: "Only drafts in this state; all lists every state", schema: { type: string, enum: [open, accepted, reverted, all], default: open } }
+      responses:
+        "200":
+          description: Drafts
+          content: { application/json: { schema: { $ref: "#/components/schemas/DraftList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /drafts/{id}:
+    x-cadence: { entity: drafts }
+    parameters: [{ $ref: "#/components/parameters/DraftId" }]
+    get:
+      operationId: drafts.get
+      summary: Get a draft with its changes against the revision it was based on
+      tags: [drafts]
+      responses:
+        "200":
+          description: The draft
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Draft" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /drafts/{id}:accept:
+    x-cadence: { entity: drafts }
+    parameters: [{ $ref: "#/components/parameters/DraftId" }]
+    post:
+      operationId: drafts.accept
+      summary: Apply a draft as a new revision of its entity, attributed to the person who accepts it
+      tags: [drafts]
+      x-cadence:
+        toolDescription: >
+          Accept a draft: its content becomes a new revision of the entity, attributed to the caller, with causedBy
+          naming the draft. Send ifMatch with the draft's etag (rev). A draft whose entity moved on since it was made
+          fails with draft-stale and the entity's current revision. Agents may not accept drafts: a person decides.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      responses:
+        "200":
+          description: The accepted draft and the entity at its new revision; ETag is the draft's revision
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/DraftAccepted" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /drafts/{id}:revert:
+    x-cadence: { entity: drafts }
+    parameters: [{ $ref: "#/components/parameters/DraftId" }]
+    post:
+      operationId: drafts.revert
+      summary: Discard a draft; its entity stays as it is
+      tags: [drafts]
+      x-cadence:
+        toolDescription: >
+          Revert (discard) a draft; the entity does not change. Send ifMatch with the draft's etag (rev).
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      responses:
+        "200":
+          description: The reverted draft
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Draft" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  # ---------------------------------------------------------------- planned (later phases)
   /projects/{p}/agent-sessions:
     x-cadence: { entity: agentSessions, planned: 1 }
     parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
@@ -1118,6 +1264,18 @@ components:
       name: id
       in: path
       required: true
+      schema: { type: string }
+    MixId:
+      name: id
+      in: path
+      required: true
+      description: Mix id (mix_…)
+      schema: { type: string }
+    DraftId:
+      name: id
+      in: path
+      required: true
+      description: Draft id (drf_…)
       schema: { type: string }
     VersionId:
       name: id
@@ -1304,6 +1462,7 @@ components:
             commandId: { type: string }
             toolCallId: { type: string, description: The agent tool call (Cadence-Tool-Call-Id request header) }
             approvalId: { type: string, description: The approval a person granted for this command }
+            draftId: { type: string, description: The draft a person accepted (drafts.accept) }
         payload: { type: object, additionalProperties: true }
         at: { type: string, format: date-time }
     EventList:
@@ -2063,3 +2222,197 @@ components:
       required: [items]
       properties:
         items: { type: array, items: { $ref: "#/components/schemas/Job" } }
+
+    # ---------------------------------------------------------------- mixes, drafts, presence schemas (mix stream) — add below
+    #
+    #
+    #
+    MixGroup:
+      type: object
+      required: [name, datasets]
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          pattern: "^[A-Za-z0-9][A-Za-z0-9 ._-]{0,59}$"
+          description: Unique within the mix, e.g. target or replay-ru
+        weight:
+          type: number
+          format: double
+          exclusiveMinimum: 0
+          maximum: 1000
+          description: "Relative sampling weight; mix.group_weight of defaults.yaml when omitted"
+        replay:
+          type: boolean
+          description: "A replay group (other locales of the base model): replay groups together get replayShare of the samples"
+        datasets:
+          type: array
+          minItems: 1
+          maxItems: 50
+          description: "Frozen dataset versions: ver_…, @alias or a collection name (its newest frozen version); stored as ver_ ids"
+          items: { type: string, minLength: 1, maxLength: 200 }
+    MixNew:
+      type: object
+      required: [name, groups]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120, description: Unique within the project }
+        description: { type: string, maxLength: 2000 }
+        groups: { type: array, minItems: 1, maxItems: 20, items: { $ref: "#/components/schemas/MixGroup" } }
+        temperature:
+          type: number
+          format: double
+          description: "Sampling temperature over group weights (probability ∝ weight^(1/temperature)); mix.temperature of defaults.yaml when omitted"
+        replayShare:
+          type: number
+          format: double
+          description: "Share of samples drawn from replay groups; mix.replay_share of defaults.yaml when the mix has a replay group, else 0"
+    MixEdit:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      description: The fields to change; groups replace the whole list
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        description: { type: string, maxLength: 2000 }
+        groups: { type: array, minItems: 1, maxItems: 20, items: { $ref: "#/components/schemas/MixGroup" } }
+        temperature: { type: number, format: double }
+        replayShare: { type: number, format: double }
+    Mix:
+      type: object
+      description: Project work with revisions (R13); a run records the revision it trained on
+      required: [id, projectId, name, groups, temperature, replayShare, rev, createdBy, updatedBy, createdAt, updatedAt, presence, preview]
+      properties:
+        id: { type: string, description: "mix_<uuidv7>" }
+        projectId: { type: string }
+        name: { type: string }
+        description: { type: string }
+        groups: { type: array, items: { $ref: "#/components/schemas/MixGroup" }, description: Weights and replay flags filled in, datasets as ver_ ids }
+        temperature: { type: number, format: double }
+        replayShare: { type: number, format: double }
+        rev: { type: integer }
+        createdBy: { $ref: "#/components/schemas/Actor" }
+        updatedBy: { $ref: "#/components/schemas/Actor" }
+        cause: { $ref: "#/components/schemas/RevisionCause" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        presence: { type: array, items: { $ref: "#/components/schemas/Presence" }, description: Agents editing the mix now }
+        preview: { $ref: "#/components/schemas/MixPreview" }
+    RevisionCause:
+      type: object
+      description: Why the current revision exists beyond its actor (updatedBy is the person who accepted a draft)
+      properties:
+        draftId: { type: string, description: The accepted draft this revision applied }
+        draftAuthor: { $ref: "#/components/schemas/Actor" }
+        toolCallId: { type: string, description: The agent tool call that wrote the revision or the draft }
+    MixList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Mix" } }
+    MixEditResult:
+      type: object
+      required: [mix]
+      properties:
+        mix: { $ref: "#/components/schemas/Mix" }
+        draft: { $ref: "#/components/schemas/Draft" }
+    MixPreview:
+      type: object
+      description: Hours per language and sampling shares from dataset-version metadata (no audio is read)
+      required: [totalHours, languages, groups, datasets, warnings, basis]
+      properties:
+        totalHours: { type: number, format: double, description: Train-split hours of every referenced dataset version }
+        languages:
+          type: array
+          items: { $ref: "#/components/schemas/MixPreviewLanguage" }
+        groups:
+          type: array
+          items: { $ref: "#/components/schemas/MixPreviewGroup" }
+        datasets:
+          type: array
+          items: { $ref: "#/components/schemas/MixPreviewDataset" }
+        warnings: { type: array, items: { type: string } }
+        basis: { type: string, enum: [metadata] }
+    MixPreviewLanguage:
+      type: object
+      required: [locale, hours, share]
+      properties:
+        locale: { type: string }
+        hours: { type: number, format: double, description: Train-split hours in this locale }
+        share: { type: number, format: double, description: Expected share of training samples }
+    MixPreviewGroup:
+      type: object
+      required: [name, replay, weight, hours, share, locales]
+      properties:
+        name: { type: string }
+        replay: { type: boolean }
+        weight: { type: number, format: double }
+        hours: { type: number, format: double }
+        share: { type: number, format: double, description: Probability that a sample comes from this group }
+        locales: { type: array, items: { type: string } }
+    MixPreviewDataset:
+      type: object
+      required: [id, name, version, locales, hours, adopted]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        version: { type: string }
+        locales: { type: array, items: { type: string } }
+        hours: { type: number, format: double }
+        adopted: { type: boolean, description: The project adopted this version (otherwise it is adoptable) }
+    Presence:
+      type: object
+      description: An agent editing an entity (an open draft, or a direct edit in the last seconds)
+      required: [actor, since]
+      properties:
+        actor: { $ref: "#/components/schemas/Actor" }
+        toolCallId: { type: string }
+        draftId: { type: string }
+        since: { type: string, format: date-time }
+        until: { type: string, format: date-time, description: When a direct edit stops counting as editing; absent while a draft is open }
+    DraftableKind:
+      type: string
+      enum: [mix]
+      description: Kinds whose agent edits can land as drafts (gate, note and language pack follow)
+    Draft:
+      type: object
+      description: An unaccepted change to a draftable entity, usually by an agent
+      required: [id, projectId, entityKind, entityId, baseRev, currentRev, rev, state, content, changes, author, stale, createdAt, updatedAt]
+      properties:
+        id: { type: string, description: "drf_<uuidv7>" }
+        projectId: { type: string }
+        entityKind: { $ref: "#/components/schemas/DraftableKind" }
+        entityId: { type: string }
+        baseRev: { type: integer, description: The entity revision the draft is based on }
+        currentRev: { type: integer, description: The entity's revision now; the draft is stale when it differs from baseRev }
+        rev: { type: integer, description: "The draft's own revision (If-Match for drafts.accept and drafts.revert)" }
+        state: { type: string, enum: [open, accepted, reverted] }
+        content: { type: object, additionalProperties: true, description: The entity content the draft proposes (for a mix, MixNew) }
+        changes: { type: array, items: { $ref: "#/components/schemas/DraftChange" } }
+        author: { $ref: "#/components/schemas/Actor" }
+        toolCallId: { type: string, description: The tool call of the draft's latest edit }
+        stale: { type: boolean, description: The entity moved on since the draft's base; accepting fails with draft-stale }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        decidedBy: { $ref: "#/components/schemas/Actor" }
+        decidedAt: { type: string, format: date-time }
+        appliedRev: { type: integer, description: The entity revision an accepted draft produced }
+    DraftChange:
+      type: object
+      required: [path]
+      description: One changed field, as a JSON pointer into the content, with its value before and after
+      properties:
+        path: { type: string, example: /groups/0/weight }
+        before: { description: Absent when the field was added }
+        after: { description: Absent when the field was removed }
+    DraftList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Draft" } }
+    DraftAccepted:
+      type: object
+      required: [draft, entity]
+      properties:
+        draft: { $ref: "#/components/schemas/Draft" }
+        entity: { type: object, additionalProperties: true, description: The entity at its new revision (a Mix for mix drafts) }

@@ -20,10 +20,12 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/commands"
 	"github.com/usunrise88/cadence/control-plane/internal/credentials"
 	"github.com/usunrise88/cadence/control-plane/internal/defaults"
+	"github.com/usunrise88/cadence/control-plane/internal/drafts"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
 	"github.com/usunrise88/cadence/control-plane/internal/help"
 	"github.com/usunrise88/cadence/control-plane/internal/jobs"
 	"github.com/usunrise88/cadence/control-plane/internal/mcp"
+	"github.com/usunrise88/cadence/control-plane/internal/mixes"
 	"github.com/usunrise88/cadence/control-plane/internal/obs"
 	"github.com/usunrise88/cadence/control-plane/internal/policy"
 	"github.com/usunrise88/cadence/control-plane/internal/problems"
@@ -70,6 +72,8 @@ type Server struct {
 	api    http.Handler // the contract, routed relative to APIPrefix
 	mcp    *mcp.Server
 	replay http.Handler // the API without authentication, for replaying approved requests as their actor
+	drafts *drafts.Store
+	mixes  *mixes.Service
 }
 
 var _ api.StrictServerInterface = (*Server)(nil)
@@ -87,6 +91,9 @@ func New(c Config) (*Server, error) {
 		c.LoginLimiter = auth.NewLimiter(time.Now, auth.DefaultLoginLimits()...)
 	}
 	s := &Server{Config: c, spec: spec}
+	window := time.Duration(s.defaultsDoc().Drafts.PresenceSeconds.Value) * time.Second
+	s.drafts = drafts.NewStore(time.Now, window)
+	s.mixes = mixes.NewService(s.drafts, s.defaultsDoc)
 	s.api = s.APIHandler()
 	apiRouter := chi.NewRouter()
 	apiRouter.Mount(APIPrefix, s.api)

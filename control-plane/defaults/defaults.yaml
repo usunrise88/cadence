@@ -4,7 +4,7 @@
 # the control-plane binary and packaged with the worker. Every value carries a description, a source and, where it
 # applies, a safe range; a value without a published source is a "Cadence recommendation" re-checked after the spikes.
 # Keys are addressed as <section>.<key> (x-cadence.defaultRef: training.steps). Bump `version` on every change.
-version: 1
+version: 2
 
 # The project wizard's Recommended mode (docs/spec/02-domain-projects-registry.md "Project wizard").
 wizard:
@@ -124,6 +124,41 @@ estimates:
       plus_minus: 0.5
       description: Seconds per optimiser step under OOMptimizer bucket sizes for the capped card
       source: Cadence recommendation — a placeholder until spike A3 measures steps per second on the staging card
+
+# Mixes (docs/spec/08-resolutions.md R13): the values a new mix starts from.
+mix:
+  temperature:
+    value: 1.0
+    description: Sampling temperature over group weights; a group is drawn with probability ∝ weight^(1/temperature), so 1 follows the weights and larger values flatten towards uniform
+    source: Cadence recommendation (temperature-based sampling over data groups, as in multilingual ASR training)
+    range: { min: 0.1, max: 10 }
+  replay_share:
+    value: 0.15
+    unit: fraction
+    description: Share of training samples drawn from replay groups (the base model's other locales) when a mix has one
+    source: docs/spec/03-pipelines-defaults.md "Key defaults" (replay 15 % of steps; NVIDIA recommends replay, the share is a Cadence recommendation)
+    range: { min: 0, max: 0.9 }
+  group_weight:
+    value: 1.0
+    description: Weight of a mix group that gives none
+    source: Cadence recommendation
+    range: { min: 0.001, max: 1000 }
+
+# Drafts (docs/spec/05-agents.md "Worktree, drafts and merge"): what an agent's edit of a draftable kind does —
+# `draft` lands as a draft a person accepts or reverts, `direct` applies at once (still attributed). The project's
+# agent profile overrides these per kind once it exists (Projects stream).
+drafts:
+  mix:
+    value: draft
+    description: What an agent's edit of a mix does
+    source: docs/spec/08-resolutions.md R13 (mixes are draftable; agent edits land as drafts)
+    range: { values: [draft, direct] }
+  presence_seconds:
+    value: 30
+    unit: s
+    description: How long an agent's direct edit keeps the entity marked "agent editing" (an open draft keeps it until accepted or reverted)
+    source: Cadence recommendation
+    range: { min: 1, max: 600 }
 
 # Local NVMe cache (docs/spec/02 "Materialisation").
 cache:

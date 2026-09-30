@@ -16,9 +16,6 @@ var PlannedOperations = map[string]int{
 	"agentMessages.new":    1,
 	"agentSessions.cancel": 1,
 	"agentSessions.new":    1,
-	"mixes.edit":           2,
-	"mixes.new":            2,
-	"mixes.preview":        2,
 	"mounts.list":          4,
 	"mounts.new":           4,
 }
@@ -41,21 +38,6 @@ func (Planned) AgentSessionsCancel(_ context.Context, _ AgentSessionsCancelReque
 // AgentSessionsNew answers 501 until phase 1.
 func (Planned) AgentSessionsNew(_ context.Context, _ AgentSessionsNewRequestObject) (AgentSessionsNewResponseObject, error) {
 	return AgentSessionsNewdefaultApplicationProblemPlusJSONResponse{Body: plannedProblem("agentSessions.new", 1), StatusCode: 501}, nil
-}
-
-// MixesEdit answers 501 until phase 2.
-func (Planned) MixesEdit(_ context.Context, _ MixesEditRequestObject) (MixesEditResponseObject, error) {
-	return MixesEditdefaultApplicationProblemPlusJSONResponse{Body: plannedProblem("mixes.edit", 2), StatusCode: 501}, nil
-}
-
-// MixesNew answers 501 until phase 2.
-func (Planned) MixesNew(_ context.Context, _ MixesNewRequestObject) (MixesNewResponseObject, error) {
-	return MixesNewdefaultApplicationProblemPlusJSONResponse{Body: plannedProblem("mixes.new", 2), StatusCode: 501}, nil
-}
-
-// MixesPreview answers 501 until phase 2.
-func (Planned) MixesPreview(_ context.Context, _ MixesPreviewRequestObject) (MixesPreviewResponseObject, error) {
-	return MixesPreviewdefaultApplicationProblemPlusJSONResponse{Body: plannedProblem("mixes.preview", 2), StatusCode: 501}, nil
 }
 
 // MountsList answers 501 until phase 4.

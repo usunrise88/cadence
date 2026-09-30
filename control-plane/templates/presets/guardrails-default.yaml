@@ -17,6 +17,13 @@ tools:
     operations: [approvals.approve, approvals.deny]
     reason: approvals are decided by a person
 
+  # A draft exists so a person decides; an agent may revert its own draft but never accept one (auto-accept is the
+  # project's draft policy `direct`, not an agent's choice).
+  - id: drafts-are-for-people
+    class: forbidden
+    operations: [drafts.accept]
+    reason: drafts are accepted by a person
+
   # Secrets never enter an agent context; credentials, compute, policies and defaults are the admin's.
   - id: admin-only
     class: forbidden
