@@ -1,4 +1,4 @@
-.PHONY: up down gen check-gen lint test test-integration ui-e2e spikes-measure contrast e2e spikes web help-sync
+.PHONY: up down gen check-gen lint test test-integration ui-e2e evals spikes-measure contrast e2e spikes web help-sync
 
 up:            ## build all images with one version and start postgres, control plane, agent host
 	CADENCE_VERSION=$${CADENCE_VERSION:-$$(git describe --tags --always --dirty)} docker compose up -d --build
@@ -35,6 +35,9 @@ test-integration: ## control plane against Postgres in Docker (testcontainers): 
 
 ui-e2e:        ## Playwright on sign-in and the shell against the real control plane (Postgres in Docker)
 	cd web && npx playwright test e2e/auth.spec.ts e2e/panels.spec.ts e2e/shell.spec.ts e2e/search.spec.ts e2e/mix.spec.ts e2e/chat.spec.ts e2e/agents.spec.ts
+
+evals:         ## agent evals on fresh fixture projects (Postgres in Docker): scripted agent offline; CADENCE_LIVE_AGENTS=1 for real drivers
+	cd agent-host && npm run evals
 
 spikes-measure: ## S1, S3, S4 and A4 measurements (weekly performance job); results in web/test-results/spikes
 	cd web && npx playwright test e2e/spikes.spec.ts e2e/a4-live-events.spec.ts

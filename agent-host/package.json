@@ -9,7 +9,8 @@
     "gen": "openapi-ts",
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit",
-    "test": "node --import tsx --test \"src/**/*.test.ts\" \"test/**/*.test.ts\"",
+    "test": "node --import tsx --test \"src/**/*.test.ts\" \"test/**/*.test.ts\" \"evals/**/*.test.ts\"",
+    "evals": "tsx evals/run.ts",
     "spike:a1": "tsx src/spikes/a1.ts"
   },
   "dependencies": {

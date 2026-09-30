@@ -117,7 +117,7 @@ Every layer has a test that runs on every change, the smoke project is the night
 | UI | Playwright on the shell (drag, dock, float, popout, palette) and on the document anatomy of each panel | Every pull request |
 | Audio and charts | The audio view's FFT against librosa on fixtures (≤ 0.5 dB); track and chart screenshots in both themes; chart palettes in the contrast and colour-vision checks (R51–R53) | Every pull request |
 | Framework conformance | Each framework pack on fixtures: calibrate → train a few steps → average → transcribe (file and streaming) → export → parity → score (R45); the CPU `toy` pack keeps the seams honest | Toy pack every pull request; NeMo pack nightly on the staging card |
-| Agent evals | Skills and playbooks executed by both agents on a fixture project; pass criteria are the expected tool calls and outcomes, not the wording | Nightly and on skill changes |
+| Agent evals | Skills and playbooks executed by both agents on a fixture project; pass criteria are the expected tool calls and outcomes, not the wording (`agent-host/evals`, `make evals`) | Offline with a scripted agent on every pull request; live with both drivers nightly on the staging host and on skill changes |
 | End to end | The smoke project on the staging card: ingest, freeze, 300 steps, eval, gate, export, parity | Nightly |
 | Performance | Workspace restore, drag frame time, SSE fan-out, search latency against the budgets | Weekly |
 
