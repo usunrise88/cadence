@@ -29,6 +29,17 @@ The header shows the session (`claude-code · session 3`), its kind (interactive
 idle, waiting approval, paused with the reason, done, failed), the model, and meters for turns and tokens against
 the session budget.
 
+When the agent host restarts, the header reads **reconnecting** with the line "The agent host is restarting —
+reconnecting…" until the next host takes the session, usually within seconds; a host that stopped answering for
+90 s shows "The agent host stopped answering" until another host takes over. A turn the restart interrupted is not
+run again: the transcript says so, and your next message continues the session (the agent is told its last turn was
+interrupted). Messages the old host had not started go to the next host by themselves. Pause and End pressed
+meanwhile wait for the next host; a Stop is dropped, since the turn it meant has already ended.
+
+A permission request the agent was waiting on when its turn ended — you pressed Stop, paused or ended the session, a
+budget or clock paused it, or the host restarted — is cancelled, not declined: the transcript notes why, and the agent
+is told the same before its next prompt, so it does not report that you declined.
+
 When an interactive session ends (or is paused), **Session changes** shows the merge state of its branch
 `session/<id>`: the changed files, **Diff in Recipe** (the branch's diff against main in the Recipe document), and
 **Accept into main** or **Discard…**. A clean branch of a project whose auto-merge policy is `when-clean` merges by
@@ -66,7 +77,8 @@ through the polite live region; streamed tokens are not announced.
 
 - **Ask about what you see**: select a mix row or open a document, press Ctrl/Cmd+I, type the question, Enter.
 - **Follow a change back**: click the agent badge on a mix or draft ("claude-code · session 3") — Chat opens at the
-  tool call that made it, highlighted.
+  tool call that made it, highlighted. For opencode sessions the badge learns the tool call a moment after the change
+  (when the agent host reports the call); until then it opens the session's Chat.
 - **Finish a session**: End…, then review Session changes and Accept into main (or Discard).
 
 ## Sources

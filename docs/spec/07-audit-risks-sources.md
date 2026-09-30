@@ -193,6 +193,29 @@ Open questions:
     `agent.sessions` subscription; pauses, failures and sessions ending with changes also go to the notification
     history. Agent sessions has no column in the default workspaces: it opens floating from the status bar's Agents
     badge (11 "Default workspaces")
+- [ ] Agent-host restarts and opencode attribution (phase 1 punch list) assumptions, confirm:
+  - The host's shutdown call is `hostSessions.release` (tag `host`, exempt from the vocabulary like claim, report and
+    ask; `release` is the plain word for giving work back). It releases every live session of the host at once
+  - A turn a restart interrupts is not run again: its message stays delivered, the next host tells the agent before
+    its next prompt that the turn was interrupted (and which permission requests were withdrawn), and the person
+    sends the next message. Messages the host took but no turn started go back to pending and are delivered again
+  - Agent-permission requests pending at a restart (or when a silent host is taken over) are denied with the note
+    "interrupted by an agent-host restart; nobody declined it" rather than kept for the next host: the agent's
+    request died with its process
+  - A Stop (`cancel`) still queued when a host takes a session over is dropped with a transcript notice: the turn it
+    meant ended with the old host. Pause and end wait for the new host as before (the host carries them out once
+    the session runs)
+  - A host silent past the lapse (90 s) is shown as `lost` by the 30 s sweep, so the Chat can say so before another
+    host takes the session; the Chat does not guess earlier. Sessions keep their silent host until another host
+    claims them, so a host that answers again keeps them
+  - ACP has no message field on a permission outcome, so the reason a request was cancelled (Stop, pause, end,
+    Cadence's clocks) or rejected without a person (the control plane unreachable) reaches the agent as a
+    `[Cadence] …` line before its next prompt, and people as a transcript notice
+  - opencode attribution matches the host's completed Cadence tool call to the oldest command of the same operation
+    by the same session within 2 minutes that still carries the MCP server's synthetic id (`mcp:<session>/<rpc id>`);
+    parallel calls of one operation could swap ids. The outbox events of those commands are rewritten in place
+    (causedBy and payload), the one exception to an append-only outbox, and `mix.attributed` tells open panels that
+    the current revision's cause changed
 
 ## Sources
 
