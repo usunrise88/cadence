@@ -4,6 +4,8 @@ import { approvalsListQueryKey } from "@/api/gen/@tanstack/react-query.gen";
 import type { ApprovalList } from "@/api/gen/types.gen";
 import { DECIDED_QUERY, mergeApprovals, patchApprovals, PENDING_QUERY } from "./cache";
 import { actorLabel, countdown, decisionLine, estimateLine } from "./format";
+import { rememberSessions } from "@/shell/agents/labels";
+import { session } from "@/shell/agents/testdata";
 import { approval } from "./testdata";
 
 const list = (...items: ReturnType<typeof approval>[]): ApprovalList => ({ items });
@@ -64,6 +66,8 @@ describe("format", () => {
   it("labels requesters by kind", () => {
     expect(actorLabel({ kind: "automation", id: "crd_1", name: "ci" })).toBe("Automation · ci");
     expect(actorLabel({ kind: "agent", id: "crd_2", sessionId: "ses_0123456789abcdef" })).toBe("Agent · session ses_…abcdef");
+    rememberSessions([session({ id: "ses_known", number: 5, driver: "opencode" })]);
+    expect(actorLabel({ kind: "agent", id: "crd_2", sessionId: "ses_known" })).toBe("opencode · session 5");
     expect(actorLabel({ kind: "user", id: "usr_admin", name: "admin" })).toBe("admin");
   });
   it("describes estimates and decisions", () => {

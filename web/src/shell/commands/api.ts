@@ -23,6 +23,8 @@ import { useDialogs } from "@/shell/chrome/dialogs";
 import { useFocusedApproval } from "@/shell/approvals/store";
 import { commands } from "@/shell/registries";
 import { commandContext } from "@/shell/state";
+import type { AgentMessage, AgentSession } from "@/api/gen/types.gen";
+import type { MessageNewArgs, SessionArgs, SessionCancelArgs, SessionNewArgs } from "./agents";
 import type { MixEditArgs } from "./entities";
 import type { BranchArgs, NoteArgs, ProfileEditArgs, ProfileEditResult, SyncArgs } from "./projects";
 import type { Command } from "./registry";
@@ -51,6 +53,13 @@ export type ApiCommands = {
   "agentProfile.edit": { args: ProfileEditArgs; result: ProfileEditResult | undefined };
   "branches.accept": { args: BranchArgs; result: BranchMerge | undefined };
   "branches.revert": { args: BranchArgs; result: Branch | undefined };
+  "agentSessions.new": { args: SessionNewArgs; result: AgentSession | undefined };
+  "agentSessions.cancel": { args: SessionCancelArgs; result: AgentSession | undefined };
+  "agentSessions.pause": { args: SessionArgs; result: AgentSession | undefined };
+  "agentSessions.resume": { args: SessionArgs; result: AgentSession | undefined };
+  "agentSessions.accept": { args: SessionArgs; result: AgentSession | undefined };
+  "agentSessions.revert": { args: SessionArgs; result: AgentSession | undefined };
+  "agentMessages.new": { args: MessageNewArgs; result: AgentMessage };
 };
 export type ApiCommandId = keyof ApiCommands;
 

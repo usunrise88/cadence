@@ -14,3 +14,21 @@ export { useDecidedApprovals, usePendingApprovals } from "@/shell/approvals/cach
 // Defaults: "Why this default?" and the safe-range warning for any form field (defaults.yaml via defaults.get).
 export { formatDefault, formatRange, lookupDefault, rangeWarning, useDefaults, WhyDefault } from "@/shell/entity/defaults";
 export { useEditRequest } from "@/shell/entity/edits";
+// Agents: sessions and transcripts (live through useTopic + useAgentPatcher), the context bridge (which Chat shows
+// which session, composer drafts, Ask agent, badge → tool call) and references as links.
+export { isLive, sessionTopic, SESSIONS_TOPIC, useAgentPatcher, useAgentSession, useAgentSessions, useTranscript } from "@/shell/agents/sessions";
+export { sessionLabel } from "@/shell/agents/labels";
+export {
+  askAgent,
+  CHAT_PANEL,
+  currentSelectionReferences,
+  openBranch,
+  openChat,
+  openReference,
+  pinChat,
+  sessionDoc,
+  sessionIdOfDoc,
+  useChatBridge,
+  useChatDraft,
+} from "@/shell/agents/bridge";
+export { formatReference, linkifyReferences, parseReference, referenceChipLabel, referenceFromHref } from "@/shell/agents/references";

@@ -173,6 +173,26 @@ Open questions:
     no per-session users; the image always isolates
   - claude-agent-acp raises a permission request even for MCP tools the rendered settings allow (A2); the preset
     answers them without a person
+- [ ] Chat, Agent sessions and the context bridge (phase 1, chat stream) assumptions, confirm:
+  - "One Chat per agent session": the workspace's Chat (instance `chat`, in the right column of every default
+    workspace) is pinned to a session through the selection bus pins, stored as `panels.chat.pinnedTo =
+    agent_session:<id>`; a session opened while that Chat shows another one gets its own Chat (`chat:agent_session:<id>`)
+    in the same group. A message in a Chat without a live session starts a new interactive session with the
+    profile's driver and model
+  - Workspace schema 2 adds Chat to the right-column group of layouts stored before Chat existed (the stored shape
+    of `panels` did not change; the layout did)
+  - The header meters turns and tokens only: a session carries no GPU-hours of its own (05 and 11 name GPU-hours in
+    the meter); GPU spend stays with the project budget and its approvals
+  - Enter sends and Shift+Enter starts a new line; Ctrl/Cmd+. and Ctrl/Cmd+I act on the Chat that last had focus
+  - "Explain this" (document headers and help articles) starts a read-only session whose prompt asks what the thing
+    is, where it sits in the loop and what to do next, with the entity and its panel's help article (`@help:<id>`)
+    attached; "Ask agent" prefills `<intent> (<references>)` and never sends by itself
+  - References in agent Markdown become links for `@<kind>:<id>[#part]` outside code; a kind without a document opens
+    its preview in the Inspector, `@session:` a Chat and `@help:` the Help panel
+  - The finished turn (busy → idle), pauses, failures and ends reach the polite live region from the shell's
+    `agent.sessions` subscription; pauses, failures and sessions ending with changes also go to the notification
+    history. Agent sessions has no column in the default workspaces: it opens floating from the status bar's Agents
+    badge (11 "Default workspaces")
 
 ## Sources
 

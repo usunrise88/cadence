@@ -178,8 +178,8 @@ Commands are the only way the UI changes anything: menus, buttons, shortcuts and
 | Promote to shadow / canary / prod | — | `POST /`projects/{p}/deployments — approval; confirm modal for production |
 | Roll back deployment | — | `POST /`projects/{p}/deployments/{id}:rollback — approval, confirm modal |
 | New agent session (Claude Code or opencode) | — | `POST /agent-sessions` |
-| Ask agent about the selection | Ctrl/Cmd+I | `POST /agent-sessions/{id}/messages` with references |
-| Stop the agent's turn | Ctrl/Cmd+. | `POST /agent-sessions/{id}:cancel` |
+| Ask agent about the selection | Ctrl/Cmd+I | Focus Chat and attach the selection (client); Send is `agentMessages.new` (`POST /agent-sessions/{id}/agent-messages`) with references |
+| Stop the agent's turn | Ctrl/Cmd+. | `agentSessions.cancel` (`POST /agent-sessions/{id}:cancel`) |
 | Approve / deny a request | Enter / Backspace on a focused approval card | `POST /approvals/{id}:approve`, `:deny` |
 | Accept / revert an agent draft | — | `POST /drafts/{id}:accept`, `:revert` |
 | New source | — | `POST /projects/{p}/sources` |
@@ -214,7 +214,7 @@ Commands are the only way the UI changes anything: menus, buttons, shortcuts and
 | Create API key / Revoke credential | — | `POST /credentials`; `POST /credentials/{id}:revoke` |
 | Start playbook | — | `POST /projects/{p}/playbooks/{name}:run` (shows the estimate first) |
 | Pause / resume agent session | — | `POST /agent-sessions/{id}:pause`, `:resume` |
-| Merge / discard session changes | — | `POST /agent-sessions/{id}:merge` — three-way diff shown on conflict |
+| Merge / discard session changes | — | `agentSessions.accept`, `agentSessions.revert` (`POST /agent-sessions/{id}:accept`, `:revert`) — the session paused or ended; a conflict blocks accept |
 
 Rules:
 

@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { branchesGetOptions, branchesListOptions, eventsListOptions, projectsGetOptions, recipesGetOptions, recipesListOptions } from "@/api/gen/@tanstack/react-query.gen";
 import type { Branch, BranchDiff, Recipe } from "@/api/gen/types.gen";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { EmptyState, PanelToolbar } from "@/shell/entity/primitives";
-import { openDocument, runCommand, useProject, useTopic, type PanelProps } from "@/shell/panel";
+import { openDocument, runCommand, useProject, useSelection, useTopic, type PanelProps } from "@/shell/panel";
 
 // The Recipe document (docs/spec/11-ui-panels.md, Recipe): one file of the project repository with its commit
 // history, the repository's files to move between, and the open session and sync branches with their diff against
@@ -21,7 +21,7 @@ export function RecipeEmpty() {
   return <EmptyState step="review" title="No file open" hint="Open the repository from the Project document (Browse files) or the palette." />;
 }
 
-export function RecipePanel({ tab, entity }: PanelProps) {
+export function RecipePanel({ tab, entity, doc }: PanelProps) {
   const routeProject = useProject();
   const project = typeof entity?.project === "string" && entity.project ? entity.project : routeProject;
   const qc = useQueryClient();
@@ -38,18 +38,18 @@ export function RecipePanel({ tab, entity }: PanelProps) {
     case "notes":
       return <EmptyState step="record" title="Notes live in NOTES.md" hint="Open the Project document's Notes tab to add one." />;
     default:
-      return <Overview project={project} path={path} />;
+      return <Overview project={project} path={path} doc={doc} />;
   }
 }
 
-function Overview({ project, path }: { project: string; path: string }) {
+function Overview({ project, path, doc }: { project: string; path: string; doc?: string }) {
   return (
     <div className="@container flex flex-col">
       <div className="grid min-h-0 @3xl:grid-cols-[15rem_1fr]">
         <Files project={project} current={path} />
         <FileView project={project} path={path} />
       </div>
-      <Branches project={project} />
+      <Branches project={project} doc={doc} />
     </div>
   );
 }
@@ -132,7 +132,7 @@ function FileView({ project, path }: { project: string; path: string }) {
   );
 }
 
-function Branches({ project }: { project: string }) {
+function Branches({ project, doc }: { project: string; doc?: string }) {
   const qc = useQueryClient();
   const list = useQuery(branchesListOptions({ path: { p: project } }));
   const proj = useQuery(projectsGetOptions({ path: { p: project } }));
@@ -141,6 +141,14 @@ function Branches({ project }: { project: string }) {
   const [message, setMessage] = useState<{ error: boolean; text: string } | null>(null);
   const items = list.data?.items ?? [];
   const active = selected && items.some((b) => b.name === selected) ? selected : null;
+  // "Diff in Recipe" from a Chat selects `branch:<name>` in this document: open that branch's diff.
+  const wanted = useSelection((s) => (doc ? s.selections[doc] : undefined));
+  const section = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!wanted?.startsWith("branch:")) return;
+    setSelected(wanted.slice("branch:".length));
+    requestAnimationFrame(() => section.current?.scrollIntoView({ block: "start" }));
+  }, [wanted]);
   const sync = async () => {
     if (!proj.data) return;
     setBusy(true);
@@ -160,7 +168,7 @@ function Branches({ project }: { project: string }) {
     }
   };
   return (
-    <section aria-labelledby="recipe-branches" className="border-t">
+    <section ref={section} aria-labelledby="recipe-branches" className="border-t">
       <PanelToolbar className="h-8">
         <h3 id="recipe-branches" className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
           Open branches

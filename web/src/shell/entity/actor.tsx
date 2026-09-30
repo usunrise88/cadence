@@ -1,13 +1,14 @@
 import { agentLabel, openToolCall } from "@/shell/agents/attribution";
+import { useLabelsVersion } from "@/shell/agents/labels";
 import { notify } from "@/shell/notifications/store";
 import type { EntityData } from "./manifest";
 
 /**
- * Marks changes an agent made ("opencode · session 9", accent alpha 3 fill, accent-11 text); a click jumps to the
- * tool call in Chat once the agent-session stream installs its resolver (shell/agents/attribution.ts). People show
- * as their name.
+ * Marks changes an agent made ("opencode · session 9", accent alpha 3 fill, accent-11 text); a click opens the
+ * session's Chat scrolled to the tool call (the resolver in shell/agents/bridge.ts). People show as their name.
  */
 export function ActorBadge({ actor, toolCallId }: { actor?: EntityData["actor"]; toolCallId?: string }) {
+  useLabelsVersion(); // the label names the session once it is known
   if (!actor) return null;
   if (actor.kind !== "agent") {
     return (
@@ -19,7 +20,7 @@ export function ActorBadge({ actor, toolCallId }: { actor?: EntityData["actor"];
   const label = agentLabel(actor);
   const open = () => {
     if (!openToolCall({ actor, toolCallId })) {
-      notify({ level: "info", title: `Changed by ${label}`, detail: toolCallId ? `Tool call ${toolCallId}; the Chat panel shows it once agent sessions land.` : "The Chat panel shows the session once agent sessions land." });
+      notify({ level: "info", title: `Changed by ${label}`, detail: toolCallId ? `Tool call ${toolCallId}; the change names no agent session.` : "The change names no agent session." });
     }
   };
   return (

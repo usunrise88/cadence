@@ -134,14 +134,20 @@ export async function saveWorkspace(api: DockviewApi, project: string, name: str
 /** Debounced autosave on every layout change; returns the unsubscribe. */
 export function startAutosave(api: DockviewApi, project: string, name: string): () => void {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const sub = api.onDidLayoutChange(() => {
+  const schedule = () => {
     const st = useWorkspaceSync.getState();
     if (st.restoring || st.conflict) return;
     clearTimeout(timer);
     timer = setTimeout(() => void saveWorkspace(api, project, name), SAVE_DEBOUNCE_MS);
+  };
+  const sub = api.onDidLayoutChange(schedule);
+  // A pin (a tool pinned to a document, Chat pinned to its agent session) is workspace state too.
+  const offPins = useSelection.subscribe((s, prev) => {
+    if (s.pins !== prev.pins) schedule();
   });
   return () => {
     clearTimeout(timer);
     sub.dispose();
+    offPins();
   };
 }

@@ -195,7 +195,7 @@ Projects
 - [x] Agent profile + `PATCH /projects/{p}/agent-profile`; catalogues (base models, agent models, instruction templates)
 - [x] `projects.note` → `NOTES.md`; `projects.sync` / template sync as a draft commit
 - [x] Mix entity, minimal (enough for the gate): `mixes.new|edit` with revisions and drafts over fixture dataset versions
-- [ ] Context bridge: selection → prompt references (`@run:123`), Ask agent / Ctrl/Cmd+I, references in replies as
+- [x] Context bridge: selection → prompt references (`@run:123`), Ask agent / Ctrl/Cmd+I, references in replies as
       links, attribution badge → tool call in Chat
 - [x] Project archive (read-only artifacts, worktrees removed); source archive comes with Sources in phase 2
 - [x] Saved searches: Saved search entity, `PUT /me/projects/{p}/views/{name}`, Library views and palette entries

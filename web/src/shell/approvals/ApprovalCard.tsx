@@ -13,6 +13,7 @@ import { runCommand } from "@/shell/commands/api";
 import { StatusChip } from "@/shell/entity/primitives";
 import { notify } from "@/shell/notifications/store";
 import { openDocument } from "@/shell/panel/actions";
+import { openChat } from "@/shell/agents/bridge";
 import { patchApprovals } from "./cache";
 import { actorLabel, countdown, decisionLine, estimateLine, requestLine, time } from "./format";
 import { useFocusedApproval } from "./store";
@@ -59,9 +60,13 @@ export function ApprovalCard({ approval: a, hideContext, onDecided, className }:
   const project = a.projectId ? projects.data?.items.find((p) => p.id === a.projectId) : undefined;
   const estimate = estimateLine(a);
   const sessionReason = a.actor.sessionId ? true : "Only a request from an agent session can be approved for the session";
+  // An agent's own permission request (ACP) reads as the agent asks it: Allow once / Allow for this session / Deny.
+  const perm = a.kind === "agent_permission" ? a.permission : undefined;
+  const verb = perm ? "Allow" : "Approve";
 
   const decide = async (d: Decision) => {
     if (!pending || busy || expiry.expired) return;
+    useFocusedApproval.getState().set(a); // a click (no focus on some platforms) decides this card
     setBusy(true);
     setError(null);
     try {
@@ -108,7 +113,8 @@ export function ApprovalCard({ approval: a, hideContext, onDecided, className }:
       aria-describedby={pending ? hintId : undefined}
       aria-busy={busy || undefined}
       onKeyDown={onKey}
-      onFocus={(e) => e.target === e.currentTarget && useFocusedApproval.getState().set(a)}
+      // Focus anywhere in the card (its buttons included) makes it the approval the palette and the decision act on.
+      onFocus={() => useFocusedApproval.getState().set(a)}
       className={cn(
         "@container flex flex-col gap-2 rounded-md border bg-background p-3 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring",
         pending ? "border-status-warning" : "opacity-90",
@@ -138,6 +144,14 @@ export function ApprovalCard({ approval: a, hideContext, onDecided, className }:
       </div>
 
       <p className="text-[13px] leading-snug">{a.reason}</p>
+      {perm ? (
+        <div className="flex flex-col gap-1 rounded border bg-tool px-2 py-1.5" data-slot="permission">
+          <span className="font-medium">{perm.title}</span>
+          {perm.command ? <code className="font-mono text-[11px] break-all">$ {perm.command}</code> : null}
+          {perm.paths?.length ? <span className="font-mono text-[11px] break-all text-muted-foreground">{perm.paths.join(", ")}</span> : null}
+          <span className="text-[11px] text-muted-foreground">Tool class: {perm.class}</span>
+        </div>
+      ) : null}
 
       <dl className="grid grid-cols-[6.5rem_1fr] gap-x-3 gap-y-1">
         <dt className="text-muted-foreground">Requested by</dt>
@@ -183,14 +197,10 @@ export function ApprovalCard({ approval: a, hideContext, onDecided, className }:
             </Button>
           ) : null}
           {a.actor.sessionId ? (
-            <Tooltip>
-              <TooltipTrigger render={<span tabIndex={0} />}>
-                <Button size="xs" variant="ghost" disabled>
-                  Open the requesting Chat
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>The Chat panel for session {a.actor.sessionId} arrives with agent sessions</TooltipContent>
-            </Tooltip>
+            <Button size="xs" variant="ghost" onClick={() => openChat(a.actor.sessionId!, { toolCallId: a.permission?.toolCallId })}>
+              Open the requesting Chat
+              <NavArrowRight aria-hidden />
+            </Button>
           ) : null}
         </div>
       ) : null}
@@ -205,17 +215,17 @@ export function ApprovalCard({ approval: a, hideContext, onDecided, className }:
           ) : null}
           <div className="flex flex-wrap items-center gap-1.5">
             <Button size="xs" disabled={busy || expiry.expired} onClick={() => void decide({ kind: "approve", grant: "once" })} data-command="approvals.approve">
-              Approve once
+              {verb} once
             </Button>
             {sessionReason === true ? (
               <Button size="xs" variant="outline" disabled={busy || expiry.expired} onClick={() => void decide({ kind: "approve", grant: "session" })}>
-                Approve for this session
+                {verb} for this session
               </Button>
             ) : (
               <Tooltip>
                 <TooltipTrigger render={<span tabIndex={0} />}>
                   <Button size="xs" variant="outline" disabled>
-                    Approve for this session
+                    {verb} for this session
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>{sessionReason}</TooltipContent>
@@ -230,7 +240,7 @@ export function ApprovalCard({ approval: a, hideContext, onDecided, className }:
               </Button>
             ) : null}
             <span id={hintId} className="ml-auto hidden items-center gap-1 text-[11px] text-muted-foreground @xs:flex">
-              <Kbd>Enter</Kbd> approve once · <Kbd>Backspace</Kbd> deny
+              <Kbd>Enter</Kbd> {verb.toLowerCase()} once · <Kbd>Backspace</Kbd> deny
             </span>
           </div>
           {error ? (
