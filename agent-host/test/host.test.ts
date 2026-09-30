@@ -205,7 +205,7 @@ describe("session manager", () => {
     await waitFor("the pause", () => h.cp.states().at(-1) === "paused");
     const paused = h.cp.last((b) => b.state?.state === "paused");
     assert.equal(paused?.state?.reason?.code, "runaway");
-    assert.match(paused?.state?.reason?.message ?? "", /cadence\.mixes\.get was called 3 times in a row/);
+    assert.match(paused?.state?.reason?.message ?? "", /cadence\.mixes_edit was called 3 times in a row/);
     assert.match(paused?.note ?? "", /runaway/);
     h.manager.dispatch({
       start: [], messages: [], decisions: [],
@@ -215,6 +215,18 @@ describe("session manager", () => {
     assert.ok(h.cp.entries().some((e) => e.kind === "notice" && /restored \(ACP session\/resume\)/.test(e.text ?? "")));
     say(h, st, "hello");
     await waitFor("a turn after the resume", () => turnsEnded(h.cp) === 2);
+    control(h, st, "end");
+    await waitFor("done", () => h.cp.states().at(-1) === "done");
+  });
+
+  test("the same tool with different arguments streamed into pending calls is not a runaway", async () => {
+    const h = harness();
+    const st = startFor();
+    run(h, st);
+    await waitFor("running", () => h.cp.states().includes("running"));
+    say(h, st, "edits");
+    await waitFor("the turn", () => turnsEnded(h.cp) === 1);
+    assert.ok(!h.cp.states().includes("paused"), "four edits with different values never pause");
     control(h, st, "end");
     await waitFor("done", () => h.cp.states().at(-1) === "done");
   });

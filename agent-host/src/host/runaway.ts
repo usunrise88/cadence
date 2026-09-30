@@ -1,5 +1,6 @@
 // The runaway rule (docs/spec/05-agents.md "Budgets and runaway protection"): the same tool called with the same
-// arguments `limit` times in a row pauses the session. Each tool call counts once, when its arguments are known.
+// arguments `limit` times in a row pauses the session. Each tool call counts once, when its arguments are final
+// (the session observes a call once it has left pending).
 
 function canonical(v: unknown): string {
   if (Array.isArray(v)) return `[${v.map(canonical).join(",")}]`;

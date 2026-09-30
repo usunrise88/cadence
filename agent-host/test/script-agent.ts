@@ -4,6 +4,7 @@
 //   edit <file> <text>   writes the file in its cwd, reports an edit tool call with the diff, answers "edited"
 //   secret               writes leak.txt holding a session token (the credential scan must refuse it)
 //   loop                 calls the same Cadence tool with the same arguments until cancelled (runaway)
+//   edits                calls the same Cadence tool four times with different arguments, streamed like Claude's
 //   hang                 sends nothing until cancelled (stuck turn)
 //   ask <command>        asks permission to run a shell command, answers with the option it got
 //   usage <n>            answers with n input tokens used
@@ -57,16 +58,21 @@ async function turn(cx: Ctx, sessionId: string, prompt: string, signal: AbortSig
       await say(cx, sessionId, "wrote a secret");
       return { stopReason: "end_turn", usage };
     case "loop":
-      for (let i = 0; i < 10 && !signal.aborted; i++) {
-        const toolCallId = `loop-${++n}`;
-        await cx.notify("session/update", {
-          sessionId,
-          update: {
-            sessionUpdate: "tool_call", toolCallId, title: "mcp__cadence__mixes.get", kind: "other", status: "pending",
-            rawInput: { id: "mix_1" }, _meta: { claudeCode: { toolName: "mcp__cadence__mixes.get" } },
-          },
-        });
+    case "edits":
+      // Claude's shape: a pending call with {} as its input, the arguments streamed in, then completed. `loop`
+      // repeats one call; `edits` calls the same tool with a different value each time (not a runaway).
+      for (let i = 0; i < (cmd === "loop" ? 10 : 4) && !signal.aborted; i++) {
+        const toolCallId = `${cmd}-${++n}`;
+        const _meta = { claudeCode: { toolName: "mcp__cadence__mixes_edit" } };
+        const call = (update: Record<string, unknown>) => cx.notify("session/update", { sessionId, update: { toolCallId, _meta, ...update } });
+        await call({ sessionUpdate: "tool_call", title: "mcp__cadence__mixes_edit", kind: "other", status: "pending", rawInput: {} });
+        await call({ sessionUpdate: "tool_call_update", status: "pending", rawInput: { id: "mix_1", body: { temperature: cmd === "loop" ? 1 : 0.6 + i / 10 } } });
+        await call({ sessionUpdate: "tool_call_update", status: "completed" });
         await tick();
+      }
+      if (cmd === "edits") {
+        await say(cx, sessionId, "edited 4 times");
+        return { stopReason: "end_turn", usage };
       }
       await cancelled(signal);
       return { stopReason: "cancelled" };

@@ -399,7 +399,9 @@ export class HostSession {
       }
       if (u.cost) this.use.costUsd = u.cost.amount;
     }
-    if (u.kind === "tool_call") {
+    // Counted once the call leaves pending: Claude streams the arguments into a pending call, starting from {}, so
+    // a pending call's input is not its arguments yet (three edits with different values once looked identical).
+    if (u.kind === "tool_call" && u.call.status !== "pending") {
       const tool = u.call.mcp ? `${u.call.mcp.server}.${u.call.mcp.tool}` : u.call.title;
       const n = this.runaway.observe(u.call.id, tool, u.call.rawInput);
       if (n !== undefined && this.turnRunning && this.after.action === "none") {
