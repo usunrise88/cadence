@@ -134,6 +134,11 @@ Open questions:
       its kind and replay groups together get `replayShare`; a dataset version belongs to one group; names are unique
       per project; the preview uses each version's train split hours and splits a multi-locale version evenly.
       Mixes use the `container` state template (active) like projects; "Save mix as version" is `mixes.new` (save)
+- [ ] U0 (charts, R53), confirm: the eight categorical hues are crimson, violet, bronze, plum, lime, sky, orange,
+      teal; in light mode lime/sky take step 11 and orange/teal step 10 (step 9 is under 3:1 on slate-2), because the
+      only eight step-9 hues passing 3:1 away from the status and accent hues include bronze/gold/brown, 3 ΔE apart;
+      tritanopia keeps neighbours ≥ 6 ΔE (light lime/sky are 6.7), the others ≥ 8. Histogram marks sit at the bin
+      that contains them; the Pareto front is drawn by the browser from the returned points
 - [ ] Chromium's offline emulation does not drop an open event stream, so spike A4 drops it in the page and the
       shell's own reconnect resumes with `?after=`; EventSource's native retry with `Last-Event-ID` is covered by the
       control plane's integration test only

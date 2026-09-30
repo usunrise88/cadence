@@ -20,6 +20,23 @@
 @import "@radix-ui/colors/amber-dark.css";
 @import "@radix-ui/colors/red.css";
 @import "@radix-ui/colors/red-dark.css";
+/* Chart hues (R53): the categorical series and the diverging ramp; used inside charts only. */
+@import "@radix-ui/colors/crimson.css";
+@import "@radix-ui/colors/crimson-dark.css";
+@import "@radix-ui/colors/violet.css";
+@import "@radix-ui/colors/violet-dark.css";
+@import "@radix-ui/colors/bronze.css";
+@import "@radix-ui/colors/bronze-dark.css";
+@import "@radix-ui/colors/plum.css";
+@import "@radix-ui/colors/plum-dark.css";
+@import "@radix-ui/colors/lime.css";
+@import "@radix-ui/colors/lime-dark.css";
+@import "@radix-ui/colors/sky.css";
+@import "@radix-ui/colors/sky-dark.css";
+@import "@radix-ui/colors/orange.css";
+@import "@radix-ui/colors/orange-dark.css";
+@import "@radix-ui/colors/teal.css";
+@import "@radix-ui/colors/teal-dark.css";
 
 :root,
 .dark {
@@ -101,6 +118,68 @@
   --cadence-focus: var(--indigo-10);
   --ring: var(--indigo-10);
   --cadence-chat: var(--slate-2);
+}
+
+/* ---- charts (R53; @/shell/charts reads these through tokens.ts) ----
+ * Categorical: eight Radix hues in this fixed order, never cycled; colour follows the entity, not its rank.
+ * Step 9 (dark: 10). lime, sky, orange and teal take a darker light-mode step (11, 11, 10, 10): their step 9 is
+ * under 3:1 on slate-1 and slate-2. scripts/contrast.mjs checks 3:1 on both panel backgrounds and the
+ * colour-vision-deficiency distances between neighbouring series; the list there must match this block.
+ * Sequential: magma (the default) and viridis, nine samples each, independent of the theme (R52).
+ * Diverging: blue ↔ slate ↔ orange for deltas, never red–green; Radix steps, so dark mode gets its own steps. */
+:root {
+  --cadence-chart-1: var(--crimson-9);
+  --cadence-chart-2: var(--violet-9);
+  --cadence-chart-3: var(--bronze-9);
+  --cadence-chart-4: var(--plum-9);
+  --cadence-chart-5: var(--lime-11);
+  --cadence-chart-6: var(--sky-11);
+  --cadence-chart-7: var(--orange-10);
+  --cadence-chart-8: var(--teal-10);
+}
+.dark {
+  --cadence-chart-1: var(--crimson-10);
+  --cadence-chart-2: var(--violet-10);
+  --cadence-chart-3: var(--bronze-10);
+  --cadence-chart-4: var(--plum-10);
+  --cadence-chart-5: var(--lime-10);
+  --cadence-chart-6: var(--sky-10);
+  --cadence-chart-7: var(--orange-10);
+  --cadence-chart-8: var(--teal-10);
+}
+:root,
+.dark {
+  --cadence-chart-axis: var(--slate-11); /* axis lines, ticks and labels: text contrast */
+  --cadence-chart-grid: var(--slate-a4); /* decorative, recessive */
+  --cadence-chart-cursor: var(--slate-9); /* crosshair: 3:1 */
+  --cadence-chart-marker: var(--slate-11); /* checkpoint marks: 3:1 */
+  --cadence-chart-div-0: var(--blue-11);
+  --cadence-chart-div-1: var(--blue-9);
+  --cadence-chart-div-2: var(--blue-7);
+  --cadence-chart-div-3: var(--blue-5);
+  --cadence-chart-div-4: var(--slate-4);
+  --cadence-chart-div-5: var(--orange-5);
+  --cadence-chart-div-6: var(--orange-7);
+  --cadence-chart-div-7: var(--orange-9);
+  --cadence-chart-div-8: var(--orange-11);
+  --cadence-chart-magma-0: #000004;
+  --cadence-chart-magma-1: #1c1044;
+  --cadence-chart-magma-2: #4f127b;
+  --cadence-chart-magma-3: #812581;
+  --cadence-chart-magma-4: #b5367a;
+  --cadence-chart-magma-5: #e55064;
+  --cadence-chart-magma-6: #fb8761;
+  --cadence-chart-magma-7: #fec287;
+  --cadence-chart-magma-8: #fcfdbf;
+  --cadence-chart-viridis-0: #440154;
+  --cadence-chart-viridis-1: #472d7b;
+  --cadence-chart-viridis-2: #3b528b;
+  --cadence-chart-viridis-3: #2c728e;
+  --cadence-chart-viridis-4: #21918c;
+  --cadence-chart-viridis-5: #28ae80;
+  --cadence-chart-viridis-6: #5ec962;
+  --cadence-chart-viridis-7: #addc30;
+  --cadence-chart-viridis-8: #fde725;
 }
 
 /* ---- the Chat: set apart from the documents around it (slate-3; dark: slate-2). On light slate-3, blue-11 and

@@ -1,0 +1,13 @@
+/* uPlot's DOM overlays (crosshair, zoom selection) in chart tokens. Colours only from theme.css. */
+.cadence-chart .u-cursor-x {
+  border-right: 1px dashed var(--cadence-chart-cursor);
+}
+.cadence-chart .u-cursor-y {
+  border-bottom: 1px dashed var(--cadence-chart-cursor);
+}
+.cadence-chart .u-select {
+  background: var(--slate-a4);
+}
+.cadence-chart .uplot {
+  font-family: inherit;
+}
