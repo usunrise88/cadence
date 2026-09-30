@@ -15,6 +15,7 @@ const PATTERNS: ReadonlyArray<{ kind: string; re: RegExp }> = [
   { kind: "cwk_", re: /\bcwk_[a-z2-7]{20,}/ },
   { kind: "cah_", re: /\bcah_[a-z2-7]{20,}/ },
   { kind: "cws_", re: /\bcws_[a-z2-7]{20,}/ },
+  { kind: "cep_", re: /\bcep_[a-z2-7]{20,}/ },
   { kind: "anthropic", re: /\bsk-ant-[A-Za-z0-9_-]{20,}/ },
   { kind: "openai", re: /\bsk-(?!ant-)(?:proj-)?[A-Za-z0-9_-]{32,}/ },
   { kind: "huggingface", re: /\bhf_[A-Za-z0-9]{30,}/ },

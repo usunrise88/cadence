@@ -193,6 +193,31 @@ Open questions:
     `agent.sessions` subscription; pauses, failures and sessions ending with changes also go to the notification
     history. Agent sessions has no column in the default workspaces: it opens floating from the status bar's Agents
     badge (11 "Default workspaces")
+- [ ] Agent credentials (Settings → Agents, 2026-09-30) assumptions, confirm:
+  - Claude's `claude setup-token` token is assumed valid for about a year from when it is set here: the expected expiry
+    is set + 365 days and the UI warns 30 days before. Anthropic does not state the lifetime in the CLI; a 401 on
+    Verify is the real signal
+  - Verify is explicit (a button, `agentCredentials.verify`); nothing verifies automatically after a key changes, so
+    opencode's model list and the default-model choice appear only after the first Verify. An automatic check after
+    each write would spend one tiny request per change
+  - The verification requests use cheap models from the catalogue (Claude `haiku`; `minimax/MiniMax-M3`,
+    `anthropic/claude-haiku-4-5`, `openai/gpt-5-nano`, `openrouter/anthropic/claude-haiku-4.5`,
+    `deepseek/deepseek-v4-flash`); model ids follow models.dev as bundled with the pinned opencode and will drift
+  - The static base allowlist (`CADENCE_EGRESS_ALLOW`) still lists `api.minimax.io` and `api.minimaxi.com` although
+    configured providers now reach the proxy dynamically; dropping them would make MiniMax reachable only once it is
+    configured in Settings → Agents
+  - A custom (OpenAI-compatible) provider's models come from its `GET <baseUrl>/models`; a server without that
+    endpoint fails Verify and has no models. A hand-typed model list is not built
+  - A custom base URL's host is allowed as `host:port` when the URL names a port; an IP literal (a vLLM on the LAN)
+    is allowed only when listed exactly — the proxy still refuses addresses matched by any wildcard. This lets an
+    agent reach a LAN address the admin configured
+  - The proxy polls `egressHosts.list` every 15 s, so a newly configured provider can be refused for up to 15 s; a
+    push from the control plane was not built
+  - Disconnecting Claude Code removes the whole `claude/` directory of the volume (an interactive login made with the
+    CLI included); removing an opencode provider drops it from `auth.json` and `opencode.json` only
+  - claude.ai connectors in Claude sessions under `setup-token` mode are still unchecked (open from phase 1)
+  - A claimed credential task that is not acknowledged is offered again after 2 minutes; the transit copy of its value
+    stays in the secret store until then (and is swept once a newer value supersedes it)
 
 ## Sources
 

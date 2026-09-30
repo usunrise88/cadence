@@ -102,7 +102,8 @@ Every mutating tool accepts `dryRun`; the verbs come from the vocabulary in the 
 |  | Claude Code | opencode |
 | --- | --- | --- |
 | Launch | `claude-agent-acp` adapter | `opencode acp` |
-| Authentication | The owner's Claude subscription, as the CLI, for every session kind (R6) | MiniMax through its Token Plan by default; other providers configured in the project's `opencode.json`, including self-hosted vLLM (R6) |
+| Authentication | The owner's Claude subscription for every session kind: a `claude setup-token` token pasted in Settings → Agents (or `agent-host login claude`), kept as `claude/oauth-token` in the agent-credentials volume and passed as `CLAUDE_CODE_OAUTH_TOKEN` (R6) | Providers from Settings → Agents (MiniMax Token Plan by default, `minimax/MiniMax-M3`; Anthropic, OpenAI, OpenRouter, DeepSeek; an OpenAI-compatible base URL such as self-hosted vLLM), kept as `opencode/auth.json` plus a provider block in `opencode/opencode.json` for custom base URLs (R6) |
+| Verify (Settings → Agents) | `claude -p "Reply OK" --model haiku --output-format json` as a sandboxed session user through the egress proxy | `opencode models <provider>` (a custom provider's `/models` is probed first), then `opencode run` with the provider's cheap model; the model list is recorded |
 | Permissions | `.claude/settings.json` rendered from the preset | `permission` block rendered from the preset |
 | Skills | `.claude/skills` | `.claude/skills` (Claude-compatible path, [docs](https://opencode.ai/docs/skills)) |
 | Resume | Where the adapter supports it; otherwise summary injection | Native session resume |
@@ -129,6 +130,7 @@ Agent session: kind, driver, model, project, prompt, references, state, branch, 
 
 Phase 1 as built (2026-09-30):
 - The agent host speaks `hostSessions.claim|report|ask|decision` (tag `host`, R1) with its own credential (`cah_`, minted into `CADENCE_HOST_TOKEN_FILE` at start or by `cadence admin host-token`). A claim long-polls for sessions to start, messages, controls and permission decisions; everything it returns is taken once.
+- Agent credentials (2026-09-30): the host also long-polls `hostCredentials.claim` for tasks from Settings → Agents — write a value into the agent-credentials volume in the agent's own format, remove one, or verify one (a tiny real request through the agent, run as a session user from the uid pool through the egress proxy) — and acknowledges each with `hostCredentials.report` (outcome, detail without the value, opencode's model list). Only the drivers know the formats and the checks (`writeCredential`, `removeCredential`, `verify`); values are never logged or reported.
 - The session token is minted when a host claims the session (and again, the old one revoked, when another host takes it over), not at create: it then exists only in the host's memory and the agent's `session/new`.
 - Transcript entries are coalesced by the host: one entry per text block, one per tool call updated in place, one plan per turn, turn start/end with usage, commits. Permission entries are the server's (from `ask` and from gated commands through a pipeline hook), so ACP permission requests and gated commands share the transcript and the Approvals panel.
 - An ACP permission request first goes to the preset (`policy.AnswerPermission`: tool classes, file rules, shell patterns, web); only an `ask` becomes an approval of kind `agent_permission`, answered back to the host (once → allow_once, for session → allow_always, deny or expiry → reject_once), never replayed.
@@ -158,7 +160,7 @@ Agents may do anything reversible on their own; anything that spends real GPU ti
 - ACP permission requests and Cadence approval requests share one Approvals panel and the same inline cards in Chat.
 - A policy engine answers requests the table already decides, so the user sees only real decisions.
 - Budgets per project and per session: GPU-hours per day, agent spend per day, turn count; hitting a limit pauses the session.
-- Secrets (Hugging Face, NGC) live in the control plane and are injected into jobs only; agent model credentials stay with each agent's own configuration.
+- Secrets (Hugging Face, NGC) live in the control plane and are injected into jobs only; agent model credentials stay with each agent's own configuration in the agent-credentials volume — set from Settings → Agents they pass through the secret store's transit area to the agent host and are deleted there once written (2026-09-30).
 - The audit log records every command with actor and `causedBy`, so any production change traces back to a person's approval.
 - Approvals have a scope: project (runs over budget, deployments) or registry (mounts, golden-set freeze, model registration, secrets). The Approvals panel shows both; registry ones are tagged, and only the admin decides them.
 - Cache fairness: each project has a cache quota on local NVMe; eviction is least-recently-used within the quota first, then across projects, never touching pinned versions.

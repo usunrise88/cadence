@@ -31,6 +31,12 @@ Guiding choices, applied throughout:
   (workspaces, saved views); they keep `<entity>.<verb>` ids but the generator doesn't publish them as tools.
   Phase 1 adds `host`: the agent host's protocol (`hostSessions.claim|report|ask|decision`), authenticated by the
   agent-host credential only; like `auth` its operations are not commands.
+  2026-09-30 adds `egress` (`egressHosts.list`, the allowlist the egress proxy polls with its own `cep_` credential; not
+  a command) and `agentCredentials` (`agentCredentials.list|get|set|verify|archive`, `agentProviders.list`; the host's
+  side is `hostCredentials.claim|report` under `host`). `agentCredentials` operations stay commands (actor,
+  Idempotency-Key, If-Match, dryRun, audit) and use vocabulary verbs; they are exempt only so that they are never MCP
+  tools: an agent must not see that its own model account can be changed, let alone try. Full scope (the admin) is
+  required, and the presets forbid `agentCredentials.*` as well (defence in depth).
 - Renames that make the spec pass its own rule:
 
 | Spec says | Becomes | Why |
@@ -49,6 +55,8 @@ Guiding choices, applied throughout:
 
 - One verb is added to the vocabulary: `revoke` (credentials; irreversible; inline confirm). Security semantics are
   distinct enough from `archive` to deserve it.
+- 2026-09-30 adds `verify` (agent credentials; a mutation that records a result; no confirm): a live check through the
+  agent is neither `scan` nor `sync`.
 
 ---
 
@@ -66,6 +74,13 @@ opencode is `{env:CADENCE_MCP_TOKEN}` substitution.
   reachable is Cadence's secrets and other projects' work.
 - Don't mount the user's `~/.claude`. A dedicated `agent-credentials` volume holds only the Claude login (and
   opencode provider config); the host copies it into a per-session `CLAUDE_CONFIG_DIR`.
+- 2026-09-30: the volume is filled either by the `agent-host login claude|opencode` CLI (the fallback) or by the agent
+  host itself from Settings → Agents: the control plane seals a submitted value in the secret store's transit area
+  under a task id, the host claims the task (`hostCredentials.claim`), writes the file 0600 in the agent's own format
+  (`claude/oauth-token`; `opencode/auth.json` and, for a custom base URL, a provider block in `opencode/opencode.json`),
+  acknowledges (`hostCredentials.report`), and the control plane deletes the transit copy. Postgres keeps metadata
+  only (last four characters as a hint, set at/by, expected expiry, delivery and verification state, models); the
+  value never enters Postgres, a log line, an event, an audit row, a response or an agent context.
 - Each session runs as its own Unix user from a uid pool inside the agent-host container; its worktree is `0700` to
   that uid. Other sessions' worktrees, other projects and the host's own files are unreadable. No `./recipes` mount:
   the host clones from the control plane.
@@ -74,6 +89,10 @@ opencode is `{env:CADENCE_MCP_TOKEN}` substitution.
 The agent-host container sits on an internal compose network whose only egress is an allowlisting proxy: Anthropic
 API, the configured opencode providers, Hugging Face, PyPI, NGC, and the control plane (MCP). This enforces the
 Guardrails line for both drivers at one place. Claude Code's own sandbox is enabled on top through the preset.
+2026-09-30: `CADENCE_EGRESS_ALLOW` is the static base list; the proxy adds the API hosts of the providers configured in
+Settings → Agents (catalogue hosts, a custom base URL's host, `host:port` when the URL names a port, an IP literal only
+when listed exactly), polled every 15 s from `egressHosts.list` with its own credential (`cep_`, written by the control
+plane to `CADENCE_EGRESS_TOKEN_FILE`); the last good list is kept while the control plane is unreachable.
 
 **R5 · Timeouts** (C3)
 Three different clocks: *stuck turn* — no ACP update for 5 min during a turn → cancel the turn, pause, note;
@@ -87,6 +106,14 @@ subscription. The driver keeps an API-key mode per profile as a fallback; budget
 modes, money only for an API key. opencode sessions use MiniMax through its Token Plan: the provider key lives with the
 agent's own configuration in the `agent-credentials` volume (R3), never in Cadence's secrets or an agent context. The
 free OpenCode Zen model used in spike A1 is for spikes and gated live tests only; it sends prompts to a third party.
+2026-09-30: both are connected from Settings → Agents (instance-wide, admin only). Claude: the admin runs
+`claude setup-token` once on any machine with a browser and pastes the token (valid about a year; the UI warns 30 days
+before the expected expiry). opencode: a provider from a catalogue — MiniMax (default model `minimax/MiniMax-M3`),
+Anthropic, OpenAI, OpenRouter, DeepSeek — or an OpenAI-compatible custom base URL (self-hosted vLLM; key optional);
+several may be configured and the admin picks the default model of new projects (else `defaults.yaml`). Verify asks
+the host for a tiny real request through the agent as a sandboxed session user behind the egress proxy: Claude
+`claude -p` on haiku; opencode `opencode models <provider>` (the list is recorded) then `opencode run` on the provider's
+cheap model.
 
 **R7 · Permission presets and policy engine** (spec gap)
 - Preset = `control-plane/templates/presets/<name>.yaml`, Cadence-level rules in three classes:

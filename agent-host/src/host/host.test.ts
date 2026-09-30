@@ -13,6 +13,7 @@ describe("credential scan", () => {
     [`x cst_${"b".repeat(52)}`, "cst_"],
     [`CADENCE_TOKEN=cdk_${"2".repeat(52)}`, "cdk_"],
     [`cah_${"q".repeat(52)}`, "cah_"],
+    [`cep_${"q".repeat(52)}`, "cep_"],
     [`key: sk-ant-oat01-${"A".repeat(40)}`, "anthropic"],
     [`HF_TOKEN=hf_${"a".repeat(34)}`, "huggingface"],
     [`nvapi-${"x".repeat(40)}`, "ngc"],

@@ -10,6 +10,7 @@
 import { driverFor } from "./drivers/index.ts";
 import { HttpControlPlane } from "./host/api.ts";
 import { realClock } from "./host/clock.ts";
+import { CredentialWorker } from "./host/credentials.ts";
 import { loadConfig } from "./host/config.ts";
 import { jsonLogger } from "./host/log.ts";
 import { SessionManager } from "./host/manager.ts";
@@ -21,8 +22,9 @@ export async function main(): Promise<void> {
   const cfg = loadConfig(process.env);
   if (!cfg.uids) log.log("warn", "sessions run as the host's own user (not root, or CADENCE_SESSION_UIDS=off): no per-session isolation");
   if (!cfg.credentials) log.log("warn", "CADENCE_AGENT_CREDENTIALS is not set: agents use their default login (development only, R3)");
+  const cp = new HttpControlPlane(cfg.baseUrl, cfg.token);
   const manager = new SessionManager({
-    cp: new HttpControlPlane(cfg.baseUrl, cfg.token),
+    cp,
     clock: realClock,
     hostId: cfg.hostId,
     baseUrl: cfg.baseUrl,
@@ -42,8 +44,20 @@ export async function main(): Promise<void> {
       stop.abort();
     });
   }
+  // Agent credentials from Settings → Agents: written into the volume and verified by the same host, sandboxed
+  // with the same uid pool as the sessions.
+  const credentialWorker = new CredentialWorker({
+    cp,
+    hostId: cfg.hostId,
+    dataDir: cfg.dataDir,
+    ...(cfg.credentials ? { credentials: cfg.credentials } : {}),
+    ...(cfg.uids ? { uids: cfg.uids } : {}),
+    hostEnv: process.env,
+    log,
+    driverFor,
+  });
   log.log("info", "cadence agent host started", { hostId: cfg.hostId, controlPlane: cfg.baseUrl, version: VERSION });
-  await manager.run(stop.signal);
+  await Promise.all([manager.run(stop.signal), credentialWorker.run(stop.signal)]);
   await manager.shutdown();
 }
 

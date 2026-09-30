@@ -16,6 +16,7 @@ const (
 	PrefixAgent   = "cst_" // agent session token, Bearer (the MCP credential)
 	PrefixWorker  = "cwk_" // worker lease token (phase 2)
 	PrefixHost    = "cah_" // agent host token, Bearer: claims sessions and reports transcripts, nothing else
+	PrefixEgress  = "cep_" // egress proxy token, Bearer: reads the egress allowlist, nothing else
 	PrefixSession = "cws_" // browser session, in the cadence_session cookie
 )
 

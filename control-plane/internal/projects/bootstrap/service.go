@@ -18,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/usunrise88/cadence/control-plane/internal/agentcreds"
 	"github.com/usunrise88/cadence/control-plane/internal/auth"
 	"github.com/usunrise88/cadence/control-plane/internal/defaults"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
@@ -146,6 +147,18 @@ func (s *Service) CheckInstructions(name string, customOK bool) error {
 	return nil
 }
 
+// DefaultModel is the model a project of driver starts from: for opencode the default the admin chose in Settings →
+// Agents (agentcreds.DefaultModel), else defaults.yaml wizard.<driver>_model.
+func DefaultModel(ctx context.Context, q storage.Querier, driver string) (string, error) {
+	if driver == projects.DriverOpencode {
+		m, ok, err := agentcreds.DefaultModel(ctx, q, agentcreds.AgentOpencode)
+		if err != nil || ok {
+			return m, err
+		}
+	}
+	return defaults.Get().Wizard.ModelFor(driver).Value, nil
+}
+
 // CheckModel fails unless model suits driver: a Claude Code alias or claude-* id, or opencode's provider/model.
 func CheckModel(driver, model string) error {
 	bad := func(msg string) error {
@@ -178,9 +191,14 @@ func (s *Service) facts(ctx context.Context, q storage.Querier, p projects.Proje
 			InstructionsTemplate: a.InstructionsTemplate, AutoMerge: a.AutoMerge, DraftPolicy: a.DraftPolicy},
 		Lock: []layout.Locked{}, Templates: []layout.Locked{},
 	}
-	f.Agent.OpencodeModel = defaults.Get().Wizard.OpencodeModel.Value
 	if a.Driver == projects.DriverOpencode {
 		f.Agent.OpencodeModel = a.Model
+	} else {
+		m, err := DefaultModel(ctx, q, projects.DriverOpencode)
+		if err != nil {
+			return layout.Facts{}, nil, err
+		}
+		f.Agent.OpencodeModel = m
 	}
 	if p.Repository != nil {
 		f.Repo = layout.Repo{Kind: p.Repository.Kind, CloneURL: p.Repository.CloneURL, Remote: p.Repository.Remote}

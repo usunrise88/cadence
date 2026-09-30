@@ -52,8 +52,12 @@ verbs:
   sync:        { class: mutate, shape: action,          reversible: true,  confirm: none,     icon: RefreshDouble }
   archive:     { class: mutate, shape: action,          reversible: true,  confirm: inline,   icon: Archive }
   revoke:      { class: mutate, shape: action,          reversible: false, confirm: inline,   icon: KeyMinus }
+  verify:      { class: mutate, shape: action,          reversible: null,  confirm: none,     icon: ShieldCheck }
 
 # Operations tagged with these tags keep <entity>.<verb> ids but are exempt from the vocabulary and never become
 # MCP tools (R1). `host` is the agent host's protocol (claim work, report, ask), authenticated by the agent-host
-# credential only; like `auth` its operations are not commands (no Idempotency-Key, If-Match or dryRun).
-exemptTags: [auth, me, host]
+# credential only; like `auth` its operations are not commands (no Idempotency-Key, If-Match or dryRun). `egress` is
+# the egress proxy's (the allowlist it polls with its own credential). `agentCredentials` are the agents' model
+# accounts: admin-only commands (they keep Idempotency-Key, If-Match and dryRun) that must never reach an agent's
+# tool list, so an agent cannot even see that they exist; the presets forbid them too (defence in depth).
+exemptTags: [auth, me, host, egress, agentCredentials]

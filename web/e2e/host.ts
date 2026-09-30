@@ -3,10 +3,23 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { expect, request as playwrightRequest, type APIRequestContext } from "@playwright/test";
-import type { AgentSession, AgentToolCall, HostDecision, HostEntry, HostReport, HostStart, HostWork } from "../src/api/gen/types.gen";
+import type {
+  AgentSession,
+  AgentToolCall,
+  HostCredentialAck,
+  HostCredentialReport,
+  HostCredentialTask,
+  HostCredentialWork,
+  HostDecision,
+  HostEntry,
+  HostReport,
+  HostStart,
+  HostWork,
+} from "../src/api/gen/types.gen";
 import { API_URL, McpAgent } from "./agent";
 
-// A scripted agent host for the specs: it speaks the host protocol (hostSessions.claim|report|ask|decision) with
+// A scripted agent host for the specs: it speaks the host protocol (hostSessions.claim|report|ask|decision, and
+// hostCredentials.claim|report for Settings → Agents) with
 // the host credential the e2e stack writes to CADENCE_HOST_TOKEN_FILE (e2e/stack.sh), so a spec can drive a session
 // turn by turn — streamed text, a permission request, a Cadence tool call through MCP with the session token, a
 // commit on the session branch — without a real agent.
@@ -149,6 +162,36 @@ export class ScriptedHost {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  }
+
+  // ---- agent credentials (hostCredentials.claim|report): the values the admin set in Settings → Agents
+
+  private readonly credentialTasks: HostCredentialTask[] = [];
+
+  /** Claims until a credential task matching `pred` arrives (oldest first) and returns it. */
+  async credentialTask(pred: (t: HostCredentialTask) => boolean): Promise<HostCredentialTask> {
+    let task: HostCredentialTask | undefined;
+    await expect
+      .poll(
+        async () => {
+          const res = await this.ctx.post("/api/host-credentials:claim", { data: { hostId: this.hostId, wait: 1 } });
+          expect(res.status(), await res.text()).toBe(200);
+          this.credentialTasks.push(...((await res.json()) as HostCredentialWork).tasks);
+          const i = this.credentialTasks.findIndex(pred);
+          if (i >= 0) task = this.credentialTasks.splice(i, 1)[0];
+          return task !== undefined;
+        },
+        { timeout: 20_000, intervals: [100] },
+      )
+      .toBe(true);
+    return task!;
+  }
+
+  /** Acknowledges a credential task (written, removed, verified with the model list). */
+  async reportCredential(taskId: string, body: Omit<HostCredentialReport, "hostId">): Promise<HostCredentialAck> {
+    const res = await this.ctx.post(`/api/host-credentials/${taskId}:report`, { data: { hostId: this.hostId, ...body } });
+    expect(res.status(), await res.text()).toBe(200);
+    return (await res.json()) as HostCredentialAck;
   }
 
   async close(): Promise<void> {

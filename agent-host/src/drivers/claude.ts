@@ -6,13 +6,13 @@
 // `mcp__<server>__<tool>`, shell is `Bash`, edits are `Edit`/`Write`/`MultiEdit`/`NotebookEdit`.
 
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { LaunchSpec } from "../acp/transport.ts";
-import { ask, copyIfPresent, readSecretFile, runInteractive } from "./home.ts";
+import { ask, copyIfPresent, readSecretFile, runInteractive, writeSecretFile } from "./home.ts";
 
 // The Claude Code CLI the Agent SDK bundles for this platform (CLAUDE_BIN overrides; else `claude` on PATH).
 function claudeBinary(): string {
@@ -30,7 +30,55 @@ function claudeBinary(): string {
   return "claude";
 }
 import { defaultReading, isRecord } from "./normalize.ts";
-import type { Driver, LaunchOptions, RawToolCall, ToolReading } from "./types.ts";
+import type {
+  CredentialTask,
+  Driver,
+  LaunchOptions,
+  RawToolCall,
+  RunResult,
+  ToolReading,
+  VerifyContext,
+  VerifyResult,
+} from "./types.ts";
+
+const VERIFY_MODEL = "haiku";
+const VERIFY_PROMPT = "Reply OK";
+
+async function writeOAuthToken(root: string, token: string): Promise<void> {
+  const t = token.trim();
+  if (!t || /\s/.test(t)) throw new Error("a Claude token is one word without spaces or line breaks");
+  await writeSecretFile(join(root, "claude", "oauth-token"), `${t}\n`);
+}
+
+// readClaudeVerify reads `claude -p --output-format json`: one result object ({type: "result", is_error, result,
+// api_error_status}); ok when the CLI exited 0 and the result is not an error.
+export function readClaudeVerify(r: RunResult): { ok: boolean; detail: string } {
+  if (r.timedOut) return { ok: false, detail: "Claude Code did not answer in time" };
+  let result: Record<string, unknown> | undefined;
+  for (const line of r.stdout.split("\n").reverse()) {
+    const s = line.trim();
+    if (!s.startsWith("{")) continue;
+    try {
+      const v: unknown = JSON.parse(s);
+      if (isRecord(v) && v.type === "result") {
+        result = v;
+        break;
+      }
+    } catch {
+      // not JSON
+    }
+  }
+  if (!result) {
+    const err = r.stderr.trim() || r.stdout.trim() || `exit ${r.code ?? r.signal}`;
+    return { ok: false, detail: `Claude Code gave no result: ${err}` };
+  }
+  const text = typeof result.result === "string" ? result.result.trim() : "";
+  if (result.is_error === true || r.code !== 0) {
+    const status = typeof result.api_error_status === "number" ? ` (HTTP ${result.api_error_status})` : "";
+    return { ok: false, detail: `${text || "Claude Code reported an error"}${status}` };
+  }
+  return { ok: true, detail: text ? `Claude answered: ${text}` : "Claude answered" };
+}
 
 const ADAPTER = fileURLToPath(import.meta.resolve("@agentclientprotocol/claude-agent-acp/dist/index.js"));
 
@@ -105,8 +153,26 @@ export const claudeDriver: Driver = {
     }
     const token = await ask("Paste the token it printed (sk-ant-oat…): ");
     if (!token.startsWith("sk-ant-")) throw new Error("that is not a Claude token (sk-ant-…); nothing was saved");
-    await writeFile(join(dir, "oauth-token"), `${token}\n`, { mode: 0o600 });
+    await writeOAuthToken(credentials, token);
     console.log(`Saved ${join(dir, "oauth-token")}; Claude Code sessions use it from their next start.`);
+  },
+
+  // Settings → Agents: the same file the login writes.
+  async writeCredential(root: string, task: CredentialTask): Promise<void> {
+    if (!task.value) throw new Error("the task carries no token to write");
+    await writeOAuthToken(root, task.value);
+  },
+
+  // Disconnect removes the whole Claude login (the token and any interactive login's config dir).
+  async removeCredential(root: string): Promise<void> {
+    await rm(join(root, "claude"), { recursive: true, force: true });
+  },
+
+  // `claude -p` with a cheap model through the stored token; the JSON result says whether the API accepted it.
+  async verify(ctx: VerifyContext): Promise<VerifyResult> {
+    const model = ctx.task.verifyModel || VERIFY_MODEL;
+    const r = await ctx.run(claudeBinary(), ["-p", VERIFY_PROMPT, "--model", model, "--output-format", "json", "--max-turns", "1"]);
+    return { ...readClaudeVerify(r), model };
   },
 
   readTool(call: RawToolCall): ToolReading {

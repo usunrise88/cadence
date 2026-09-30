@@ -175,12 +175,17 @@ func (s *Store) write(id string, value []byte) error {
 	if err != nil {
 		return err
 	}
+	return s.seal(s.dir, p, id, value)
+}
+
+// seal writes value sealed into p (a temporary file in dir, renamed), 0600.
+func (s *Store) seal(dir, p, id string, value []byte) error {
 	var nonce [24]byte
 	if _, err := rand.Read(nonce[:]); err != nil {
 		return fmt.Errorf("secret nonce: %w", err)
 	}
 	sealed := secretbox.Seal(nonce[:], value, &nonce, s.key)
-	tmp, err := os.CreateTemp(s.dir, ".tmp-"+id+"-*")
+	tmp, err := os.CreateTemp(dir, ".tmp-"+id+"-*")
 	if err != nil {
 		return fmt.Errorf("write secret: %w", err)
 	}
@@ -211,9 +216,18 @@ func (s *Store) read(id string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	sealed, err := os.ReadFile(p) //nolint:gosec // p is <store dir>/<validated id>
+	v, err := s.open(p, id)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, fmt.Errorf("secret %s has no value file in %s (restored database without the data directory?)", id, s.dir)
+	}
+	return v, err
+}
+
+// open reads and decrypts the sealed file p; a missing file is fs.ErrNotExist (wrapped).
+func (s *Store) open(p, id string) ([]byte, error) {
+	sealed, err := os.ReadFile(p) //nolint:gosec // p is <store dir>/[transit/]<validated id>
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, fmt.Errorf("secret %s: %w", id, err)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("read secret %s: %w", id, err)

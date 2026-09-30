@@ -33,17 +33,21 @@ services:
       CADENCE_MASTER_KEY_FILE: ${CADENCE_MASTER_KEY_FILE:-/data/master.key}
       # The agent host's token (cah_…): issued at start when the file holds none that works; the host reads it.
       CADENCE_HOST_TOKEN_FILE: /host-credential/token
+      # The egress proxy's own token (cep_…): it reads the allowlist of configured agent providers, nothing else.
+      CADENCE_EGRESS_TOKEN_FILE: /egress-credential/token
     volumes:
       - cadence-data:/data # the image runs as uid 65532; a named volume is writable by it
       - host-credential:/host-credential
+      - egress-credential:/egress-credential
     ports: ["127.0.0.1:${CADENCE_PORT:-8080}:8080"] # localhost only; TLS ends at the host's Caddy (R39)
     networks: [default, agents]
     depends_on:
       postgres: { condition: service_healthy }
 
   # Runs the agent sessions (docs/spec/05-agents.md). Root inside the container only to start each session as its
-  # own Unix user (R3); no host mounts: the agent's own login lives in the agent-credentials volume (put it there
-  # once: `docker compose run --rm -it agent-host login claude`, `… login opencode`), worktrees in agent-sessions.
+  # own Unix user (R3); no host mounts: the agents' own logins live in the agent-credentials volume — connected from
+  # Settings → Agents (the host writes them there), or with the fallback `docker compose run --rm -it agent-host
+  # login claude` / `… login opencode` — and worktrees in agent-sessions.
   agent-host:
     image: cadence/agent-host:${CADENCE_VERSION:-dev}
     build:
@@ -65,13 +69,17 @@ services:
     networks: [agents]
     depends_on: [control-plane, egress-proxy]
 
-  # The agent sandbox's only egress (R4): HTTP CONNECT to the listed hosts, 403 for anything else. It is the control
-  # plane binary (`cadence egress-proxy`, internal/egress); the list is the whole policy — model providers, Hugging
-  # Face, PyPI and NGC. The control plane itself is reached directly on the agents network.
+  # The agent sandbox's only egress (R4): HTTP CONNECT to the allowed hosts, 403 for anything else. It is the control
+  # plane binary (`cadence egress-proxy`, internal/egress). CADENCE_EGRESS_ALLOW is the static base list — model
+  # providers, Hugging Face, PyPI and NGC; the API hosts of the providers configured in Settings → Agents (and a
+  # custom base URL's host) come from the control plane, polled with the proxy's own token. The control plane itself
+  # is reached directly on the agents network.
   egress-proxy:
     image: cadence/control-plane:${CADENCE_VERSION:-dev}
     command: ["egress-proxy"]
     environment:
+      CADENCE_URL: http://control-plane:8080
+      CADENCE_EGRESS_TOKEN_FILE: /egress-credential/token
       CADENCE_EGRESS_ALLOW: >-
         api.anthropic.com console.anthropic.com claude.ai
         api.minimax.io api.minimaxi.com
@@ -80,6 +88,8 @@ services:
         pypi.org files.pythonhosted.org
         nvcr.io *.nvcr.io ngc.nvidia.com *.ngc.nvidia.com
       # opencode.ai serves OpenCode Zen, the free model of development and gated live tests only (R6).
+    volumes:
+      - egress-credential:/egress-credential:ro
     networks: [agents, default]
     depends_on: [control-plane]
 
@@ -111,5 +121,6 @@ volumes:
   pgdata:
   cadence-data:
   host-credential:
+  egress-credential:
   agent-credentials:
   agent-sessions:
