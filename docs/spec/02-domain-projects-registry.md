@@ -9,14 +9,14 @@ Forty-seven entities across the five blocks, the project layer and the registry 
 | Entity | Block | What it is | Links to |
 | --- | --- | --- | --- |
 | Source | Data | A corpus with licence, languages, kind (public, production, synthetic) | Utterances |
-| Utterance | Data | One audio segment in the content store: duration, language, speaker, sample rate | Source, Transcripts |
+| Utterance | Data | One audio segment in the content store, identified by the BLAKE3 hash of its audio file: duration, language, speaker, sample rate, channels | Source, Transcripts |
 | Transcript | Data | Text for an utterance with origin (human, pseudo-label, model id) and confidence | Utterance |
 | Recipe | Data, Training, Eval | A versioned file in the recipes repository: SDP config, mix, training YAML, eval-set definition | Commit SHA |
 | Dataset version | Data | Immutable, fingerprinted selection with splits, statistics and lineage | Utterances, Recipe |
 | Base model | Training | Upstream checkpoint: Hugging Face repo, revision, licence, model family | Model family |
 | Mix | Training | Groups, weights, temperature and replay share over dataset versions | Dataset versions, Recipe |
 | Run | Training | One optimisation stage: `init` (`base` or `checkpoint`, R44), mix, recipe, card, step budget, seed, runtime version (image digest), status; a facade over one pipeline run | Base model or Checkpoint, Mix, Recipe, Pipeline run |
-| Job | All | A unit of work on a card: a River job; a pipeline step runs as a job of kind `step` leased to a worker (`lse_`), with resources (`gpu`, `gpus`, memory, disk, job kind), log, state | Run, Eval run, Export, Pipeline run |
+| Job | All | A unit of work: a River job (`job_`); a pipeline step runs as a job of kind `step` that waits in the step queue and is leased to a worker (`lse_`) on one card, with resources (`gpu`, `gpus`, memory, disk, job kind), priority, pause, a log file, state | Run, Eval run, Export, Pipeline run |
 | Checkpoint | Training | A `checkpoint` artifact at a step: the family's payload, what loading it needs, the tokenizer it was trained with, validation WER; optimiser state is a separate `training-state` artifact (R42) | Run, Model family, Artifact |
 | Golden set | Eval | Frozen held-out test set per language and domain, never trainable | Dataset version, Normalizer |
 | Normalizer | Eval | Versioned text normalisation used for scoring one language | — |
@@ -37,7 +37,7 @@ Forty-seven entities across the five blocks, the project layer and the registry 
 | Pipeline run | All | Execution of a pipeline version: per-step status, inputs, outputs, logs | Recipe (pipeline SHA), Jobs, artifacts |
 | Schedule | Flywheel | A recurring automation: trigger, pipeline or agent task, driver, budget, last and next run | Agent sessions it starts |
 | Agent profile | Cross-cutting | A project's agent configuration: driver, model, permission preset, references to the committed config files and instructions template | Project, Agent sessions |
-| Compute | Cross-cutting (registry) | A host and its cards: card class, memory, memory cap per card, allowed job kinds (training, eval, shadow, export), availability windows per job kind (R19), health from worker heartbeats, the workers online on it; the queue owns one slot set per card | Jobs, Workers, Mounts reachable from the host |
+| Compute | Cross-cutting (registry) | A host (`cmp_`) and its cards: card class, memory, memory cap per card, allowed job kinds (training, eval, shadow, export, data), availability windows per job kind (R19), each card's last worker telemetry, host health from worker heartbeats (`unknown`, `healthy`, `unreachable`); workers (`wrk_`, one per runtime and host) register on it; the control plane owns one slot per card | Jobs, Workers, Mounts reachable from the host |
 | Secret | Cross-cutting (registry) | A named credential (Hugging Face, NGC, GitHub, S3, judge API): name, kind, where it lives; the value never enters the database or an agent context | Mounts, project repositories, jobs |
 | Eval record | Eval (registry) | Cached result for one model version × golden set version × normalizer version × latency setting; project eval runs reuse it and compute only missing cells; the unit an Eval run is assembled from | Model version, Golden set, Normalizer |
 | Saved search | Cross-cutting | A named query in the qualifier language, per user per project; appears as a Library view and in the palette | — |
@@ -53,7 +53,7 @@ Forty-seven entities across the five blocks, the project layer and the registry 
 | Noise bank | Data (registry) | Non-speech segments mined from own recordings plus licensed public noise sets, versioned like a dataset | Sources, Augmentation profiles |
 | Notification rule | Cross-cutting (registry) | Event class → channels and timing; quiet hours | — |
 | Runtime | All (registry) | A worker container image pinned by digest, its environment lock (CUDA, PyTorch, framework, Lhotse) and the worker plugin version; published by the worker at start as a `runtime` version (collection `runtime/<name>`); framework step kinds live in one runtime, neutral core kinds in all (R40) | Step kinds, Model families, Compute |
-| Artifact | All | A content-addressed blob or directory manifest (`b3:<hash>`) with a neutral type, size, metadata and the producing step; every step input and output is one (R15, R42) | Pipeline step; Checkpoints, Dataset versions, Eval records that reference it |
+| Artifact | All | A content-addressed blob or directory manifest (`b3:<hash>`) with a neutral type, size, metadata and the producing step; every step input and output is one (R15, R42); indexed once, linked to every project that produced or consumed it | Pipeline step, Projects; Checkpoints, Dataset versions, Eval records that reference it |
 | Model family | Training, Eval, Deploy (registry) | Versioned descriptor published with a runtime (collection `model-family/<name>`): framework and architecture, formats and what loading needs, input and features, tokenizer kind, capabilities (streaming, word timestamps, confidence, boosting, language prompt, train modes), latency profiles, role → step kind (calibrate, train, average, transcribe, export, parity), its `defaults.yaml` section, help and skill (R41, R43) | Runtime; Base models, Checkpoints, Model versions |
 
 ## Projects
@@ -168,7 +168,11 @@ Audio lives where it already is — local disk, a network share or object storag
   volume with the worker; imports, shards, checkpoints and reports all land there. From phase 4 a mount is a further
   tier behind the same hash, and an utterance's URI names where its bytes also live.
 - The `artifacts` table is the index (hash, type, size, metadata, producing step); lineage and "used by" follow the
-  hashes. Metrics are rows in Postgres and job logs NDJSON files kept 14 days — neither lives in the store.
+  hashes. Metrics are rows in Postgres (`metric_points`) and job logs NDJSON files under `$CADENCE_DATA_DIR/job-logs/`
+  kept 14 days — neither lives in the store. v1 deletes no blob; backups mirror the store once per blob.
+- Compose puts the store on the `artifacts` volume (`/var/lib/cadence/cas`), mounted by the control plane and every
+  worker service; per-lease scratch (`/var/lib/cadence/scratch`) sits on the same file system so inputs are hard
+  links, not copies.
 
 ### Mounts
 

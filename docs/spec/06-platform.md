@@ -43,16 +43,16 @@ Topic scheme, canonical for both tabs:
 | Topic | Carries |
 | --- | --- |
 | `entity.{kind}.{id}` | Revision changes of one entity, including drafts |
-| `job.{id}`, `job.{id}.log` | Job state; log lines |
-| `pipeline_run.{id}` | Step status changes |
-| `run.{id}.status`, `run.{id}.metrics` | Training run state; metric points |
+| `job.{id}`, `job.{id}.log` | Job state and progress (`job.state_changed`, `job.progress`); log lines from workers (`job.log`, ≤ 200 lines per event) |
+| `pipeline_run.{id}` | `pipeline_run.started`, `pipeline_run.step_changed`, `pipeline_run.state_changed` |
+| `run.{id}.status`, `run.{id}.metrics` | Training run state; metric points (`run.metrics`) |
 | `eval.{id}.progress` | Cells completed, utterances scored |
 | `deploy.{id}`, `shadow.{deployment}` | Deployment stage changes; divergence samples |
-| `queue`, `gpu`, `mount.{id}` | Queue order; card memory and compute; mount health |
+| `queue`, `gpu`, `mount.{id}` | Queue changes (`queue.changed` with `change`); card telemetry (`gpu.telemetry`, ≤ 1 per 5 s per host); mount health |
 | `triage.new`, `approvals` | New triage items; approval requests and decisions |
 | `agent.session.{id}`, `agent.sessions` | One transcript; the session list |
 | `recipe.{path}` | File changes in the project repository: commits (`recipe.changed`) and, from the agent host's worktree watcher, a running turn's uncommitted edits (`recipe.working`) |
-| `compute.{id}` | Host and card health, slot occupancy |
+| `compute.{id}` | Host health (`compute.health`, on a state change only) and workers registering (`worker.registered`); host edits go on `entity.compute.{id}` |
 | `entity.agent_credential.{id}` | An agent credential set, verified, written or removed by the agent host (metadata without the value or its hint; the Agents settings refetch) |
 
 A subscription can use a wildcard on the last segment (`run.123.*`). Work events carry `projectId`; registry events carry none, so a client filters work by project and shows registry changes by reference.
@@ -94,39 +94,70 @@ of kind `step` stays the orchestrator (R14, R40; the Go side is `internal/steps`
 Rules:
 
 - Tag `worker`: exempt from the verb vocabulary, the command pipeline and MCP, like `host`. Bearer `cwk_` only; a
-  worker token reaches nothing else, and no other credential reaches these paths.
-- Registration: the worker publishes its runtime (name, version, image, digest, environment lock, plugin version),
-  every step kind it carries (`StepKindDescriptor`: version, parameter schema with `x-cadence`, `consumes` and
-  `produces` by artifact type, resources, family role or `neutral`, secret names, help slug) and its model families.
-  Each is stored as a registry version of kind `runtime`, `step_kind` or `model_family` (collections
-  `runtime/<name>`, `step-kind/<name>`, `model-family/<name>`), named by its published JSON, so a restart with the same
-  pack changes nothing and a changed pack is a new version. `runtimes.list|get`, `stepKinds.list|get` and
+  worker token reaches nothing else, and no other credential reaches these paths. A token names its compute host
+  (the credential's subject): a worker registers, claims and reports only for that host (`403 forbidden` otherwise).
+- Registration: the worker publishes its host, its `instance` (hostname, pid and boot id), its runtime (name, version,
+  image, digest, environment lock, plugin version), every step kind it carries (`StepKindDescriptor`: version,
+  parameter schema with `x-cadence`, `consumes` and `produces` by artifact type, resources, family role or `neutral`,
+  secret names, help slug) and its model families. Each is stored as a frozen registry version of kind `runtime`,
+  `step_kind` or `model_family` (collections `runtime/<name>`, `step-kind/<name>`, `model-family/<name>`; a step-kind
+  payload adds `name`, `runtime`, `runtimeVersionId` and `schemaHash`, the sha256 of the canonical parameter schema),
+  and equal content reuses its version, so a restart with the same pack changes nothing and a changed pack is a new
+  version. Refused: a parameter without complete `x-cadence` (`validation-failed`), a framework kind `name@version`
+  another runtime already publishes, a neutral kind whose schema hash differs (`step-kind-conflict`). There is one
+  worker row (`wrk_`) per runtime and host; a registration with a new `instance` reaps the old process's leases at
+  once. `runtimes.list|get` (with the workers that registered each version), `stepKinds.list|get` and
   `modelFamilies.list|get` read them.
-- Scheduling: a claim gets a queued `step` job only when the worker's runtime publishes the pinned `kind@version`
-  (a neutral core kind matches in any runtime with the same version and schema hash), a card slot is free under the
-  card's memory cap, the card allows the job kind, the card's availability window fits the estimate (R19), then by
-  project priority and FIFO. Card slots belong to the control plane per host and card, not per worker, so two runtimes
-  never double-book a card. One training slot per card; an eval or data step shares the card's remaining memory only
-  when its `memoryGb` fits beside what runs.
+- Scheduling (`internal/queue`, pure functions; `internal/workers` applies them under per-card row locks): a claim
+  gets a waiting step job only when the worker published its pinned `kind@version` (neutral core kinds match in any
+  runtime, since their schema hashes must agree), the job is neither paused nor cancelled, and a card of the worker's
+  host fits it: the card allows the job kind, holds no other training job when this is one, has the reservation left
+  under its memory cap, shows that much free memory in the last telemetry when no Cadence step runs on it (1 GB
+  slack for resident services and the driver), and the kind's availability window is open with the estimate ending
+  before it closes (R19). The reservation is the step's declared `memoryGb`, or the card's whole remaining cap when it
+  declares none, so a training step takes the card alone. Candidates are taken by the job's priority (higher first;
+  set from the pipeline run's `priority`, changed with `jobs.edit`) and then first come. Card slots (`card_slots`) belong to the control
+  plane per host and card, not per worker, so two runtimes never double-book a card. A step with `gpu: false` takes
+  no card (lease card index -1) and may go to a worker that reported no cards (the CPU toy runtime).
 - Lease: `lse_` id, the job id, the step spec (resolved parameters, input artifact refs, output types, resources,
   priority, estimate, `overrides.batchScale` and `resumeFrom`, attempt, the run id when there is one), input URIs
-  (`cas://b3:<hash>`), the card index and memory cap in MB, the secret environment, the job's `traceparent` and the
-  heartbeat interval.
-- Lifecycle of a step job: `queued` → `leased` (claim) → `running` (first report) → `done`, `failed` or `cancelled`
-  (release). The worker runs each step as a subprocess in its own scratch directory, with the card's memory fraction
-  set to cap ÷ card memory (0.5 on the staging card), and materialises directory inputs there by hard links.
-- Heartbeats: `report` every 10 s. The answer `stop: true` carries `cancelled`, `paused` or `window-closed`; the step
-  saves training state when it can and releases as `cancelled`. Three missed beats reap the lease: the step fails with
-  error type `lost` (retryable) and the card slot frees. Card telemetry (memory used by every process, resident
-  services included, utilisation, temperature, power) feeds the `gpu` topic and compute health.
-- Completion: `release` sends state, outputs (`hash`, `type`, `size`, neutral `meta`), final metrics, or an error of
-  type `oom`, `step`, `lost`, `cancelled` or `input`. The control plane checks every output hash is in the store,
-  records the artifacts, runs the output hooks (`dataset`, `checkpoint`, `calibration`) in the transaction that marks
-  the step `done`, and advances the pipeline. `oom` gets one automatic retry with `batchScale` 0.75.
+  (`cas://b3:<hash>`), the card index and memory cap in MB, the secret environment, the job's `traceparent` and
+  `heartbeatSeconds` (10).
+- Lifecycle: the `step` job's River handler (its own River queue, `steps`) calls `steps.Leases.Await`, which puts the
+  job in the queue table `step_jobs` (`waiting → leased → ended`) and blocks until the step ends. The job mirror is
+  `running` from the moment its handler starts, also while it waits for a card; the Queue shows `waiting`, `paused`,
+  `running` or `stopping`; the pipeline step turns `running` when the lease is granted
+  (`pipelines.Engine.Leased`). A lease is `active`, then `released` or `reaped`; a report or release on an ended lease
+  answers `409 lease-ended` and the worker stops the step. The worker runs each step as a subprocess
+  (`python -m cadence_worker.run_step`) in its own scratch directory on the store's file system
+  (`CADENCE_WORKER_SCRATCH`), materialises inputs there by hard links, sees its card as device 0
+  (`CUDA_VISIBLE_DEVICES`), gets the cap as `CADENCE_MEMORY_CAP_MB` and, when torch is present,
+  `set_per_process_memory_fraction` of cap ÷ card memory (0.5 on the staging card). A worker runs at most
+  `CADENCE_WORKER_MAX_LEASES` (2) leases at once; the control plane decides what fits on a card.
+- Heartbeats: `report` every 10 s (progress → `job.progress`, telemetry → `card_slots`, the `gpu` topic at most once
+  per 5 s per host, and compute health). The answer `stop: true` carries `cancelled`, `paused` or `window-closed`
+  (training only; other kinds run on past a close); the step gets SIGTERM, sees `should_stop()`, saves its training
+  state when it can and releases as `cancelled` with it; after `CADENCE_STOP_GRACE_SECONDS` (60) its process group is
+  killed. A pause or a window close puts the job back to `waiting` in its place with `overrides.resumeFrom` set to
+  that `training-state` output. Three missed beats reap the lease (a periodic reaper every 10 s): the step fails with
+  error type `lost` (retryable) and the card slot frees; a host whose workers all went quiet turns `unreachable`.
+  Card telemetry is memory used by every process (resident services included), utilisation, temperature and power.
+- Completion: `release` sends state, outputs (`hash`, `type`, `size`, neutral `meta` with `layout: file|dir`), final
+  metrics, or an error of type `oom`, `step`, `lost`, `cancelled` or `input`. The control plane checks every output
+  hash is in the store (`artifact-missing`), and the pipeline engine records the artifacts, runs the output hooks in
+  the transaction that marks the step `done` (`dataset` in phase 2 wave 1; `checkpoint` and `calibration` arrive with
+  runs) and advances the pipeline. `oom` gets one automatic retry with `batchScale` 0.75, `lost` one retry.
 - Secrets: a step kind declares secret names; at lease time the control plane reads the values from the secret store
-  (R9) and puts them in the lease's `env` for that subprocess only. They never appear in the spec, job rows, events,
-  logs, artifacts or an agent context; the worker neither logs nor writes them.
+  (R9) and puts them in the lease's `env` for that subprocess only, named in upper case with `-` and `.` as `_`
+  (`hf-token` → `HF_TOKEN`); a missing secret fails the step at lease time with error type `input`. Values never
+  appear in the spec, job rows, events, logs, artifacts or an agent context; the worker redacts them from forwarded
+  logs and removes its own token and URL from the step's environment.
 - Tracing: the job's `traceparent` reaches the subprocess, so one trace runs UI → API → job → step.
+- Worker configuration (`worker/cadence_worker/config.py`): `CADENCE_URL`, `CADENCE_WORKER_TOKEN_FILE` (re-read on
+  every call), `CADENCE_CAS_DIR`, `CADENCE_WORKER_HOST`, `CADENCE_WORKER_SCRATCH`, `CADENCE_RUNTIME` or
+  `CADENCE_RUNTIME_FILE` (the runtime descriptor baked into the image), `CADENCE_WORKER_GPU`, `CADENCE_CLAIM_WAIT_SECONDS`
+  (20). Compose runs one service per runtime: `worker` (profile `gpu`, runtime `nemo-speech`, the NVIDIA device) and
+  `worker-toy` (profile `toy`, CPU), both on the `artifacts` volume at `/var/lib/cadence` with the control plane.
 
 ## Artifacts, metrics and logs
 
@@ -140,21 +171,31 @@ read any of them (R15).
 - Directory artifacts (a Shar set, a checkpoint directory): a manifest `{files: [{path, hash, size}]}`, canonical JSON
   sorted by path, stored as a blob whose hash is the artifact's hash; each file is its own blob, so equal files are
   stored once.
-- The `artifacts` table records hash, type, size, neutral metadata (R42) and the producing pipeline step (with its
-  pipeline run and project); registry versions, checkpoints and eval records reference artifacts by hash.
-  `artifacts.get` answers metadata and manifest; panels read typed views through their entity's operations, never
-  paths in the store.
+- The `artifacts` table (migration 0013) records hash, type, size, `directory`, neutral metadata (R42), the first
+  producer's project (none for a registry artifact) and its producing pipeline step; the row is written once, and
+  `artifact_projects` links every project that later produced or consumed it, so a project-scoped credential reads the
+  artifacts linked to its project and registry read covers the rest. A directory artifact's size is the sum of its
+  files. Registry versions, checkpoints and eval records reference artifacts by hash. `artifacts.get` answers
+  metadata, the producer and a directory's files, and with `content=true` (plus `path` for one file of a directory)
+  content of at most 1 MiB inline; panels read typed views through their entity's operations, never paths in the
+  store.
 - The next step reads an artifact through its lease (`cas://` URI). A step whose `kind@version`, resolved parameters
-  and input hashes equal a finished step's reuses that step's outputs instead of running.
-- Tiers: before mounts exist the store is the only tier; mounts (phase 4) become further tiers behind the same hash,
-  and remote workers read and write by hash over HTTP. v1 deletes no blob.
-- Metrics: one Postgres table `metrics` (job, pipeline step, run when there is one, name, step, epoch, value, wall
-  time), indexed by run, name and step; thousands of points per run need no TSDB. Points arrive from
-  `workerMetrics.new`, stream on `run.{id}.metrics`, and `metrics.get` answers series binned for charts (R53). Points
-  live as long as their run.
-- Logs: one NDJSON file per job under the data directory (`job-logs/<jobId>.ndjson`; `logs/` holds the control plane's own log files), lines `{t, level, msg, fields}`; they tail on
-  `job.{id}.log`. Field search is job-scoped in v1; `warn` and above are indexed for global search. Files are deleted
-  14 days after the job ends.
+  and input hashes equal a finished step's in the same project reuses that step's outputs instead of running (unless
+  the run asks for `fresh`); output hooks run for reused outputs too, so they are idempotent per artifact hash.
+- Tiers: before mounts exist the store is the only tier; mounts (phase 4) become further tiers behind the same hash.
+  A worker without the shared volume uploads by hash (`workerArtifacts.set`, verified: `artifact-hash-mismatch`); a
+  download path for remote workers comes with them. v1 deletes no blob; the backup mirror copies each new blob once.
+- Metrics: one Postgres table `metric_points` (migration 0012: job, run when there is one, pipeline step, project,
+  name, optimiser step, epoch, value, wall time), indexed by (run, name, step) and (job, name, step); thousands of
+  points per run need no TSDB. Points arrive from `workerMetrics.new` (≤ 5 000 per batch) and stream as `run.metrics`
+  on `run.{id}.metrics` when the step belongs to a run; `internal/telemetry.Get` answers one series per metric in step
+  order thinned evenly to a maximum number of points (first and last kept), which `metrics.get` exposes with runs
+  (phase 2 wave 2, R53). Points are never deleted in v1: they live as long as their run.
+- Logs: one NDJSON file per job, `$CADENCE_DATA_DIR/job-logs/<jobId>.ndjson` (`logs/` holds the control plane's own
+  log files), lines `{t, level, msg, fields}` (`msg` ≤ 16 000 characters, ≤ 1 MiB per `workerLogs.new`); each request
+  becomes `job.log` events on `job.{id}.log` of at most 200 lines. `jobLogs.list` reads a job's lines with their line
+  numbers, filtered by minimum level and message text, paging with `after` or reading the `tail`. Field search and a
+  global search index of `warn`+ lines (R15) are not built yet. A daily chore deletes log files untouched for 14 days.
 
 ## Operations
 
@@ -166,11 +207,11 @@ Cadence upgrades itself the way it upgrades models: versioned, forward-only, wit
 | Install | `docker compose up`; the first start creates the admin account and the default mounts |
 | Migrations | Embedded in the binary, forward-only, expand-and-contract, run at start under an advisory lock; data migrations run as jobs with progress events |
 | Upgrade | Pull the release, `compose up`; a failed migration stops the start and leaves the previous image runnable; rollback is the previous image plus, if data changed, the last backup |
-| Backups | Nightly `pg_dump` and content-store sync to a mount; a weekly automated restore into a scratch database with a report; targets: 24 h RPO, 1 h RTO |
-| Failures | River retries with backoff; a worker heartbeat every 10 s, leases reaped after three missed beats (step error `lost`); an OOM gets one automatic retry at 0.75× batch; a full cache pauses freezes; an unhealthy card closes its slot — every case is an event, so it notifies |
-| Availability windows | Each compute card has windows per job kind (training, eval, shadow, export; weekly, local time; none means always open, the default). The queue starts a job only if its estimate fits before the window closes; a job without an estimate starts in any open window. Training saves a checkpoint and its training state every 20 minutes; at a close the heartbeat answers `stop: window-closed`, the step saves and releases, and the job waits for the next window and resumes from the last training state (`resumeFrom`). The same path makes long runs preemption-safe on the shared staging card (R19) |
+| Backups | Nightly `pg_dump` and a content-store mirror into `CADENCE_BACKUP_DIR` (the `cadence-backups` volume; a mount from phase 4); a weekly automated restore into a scratch database with a report; targets: 24 h RPO, 1 h RTO (as built below) |
+| Failures | River retries with backoff; a worker heartbeat every 10 s, leases reaped after three missed beats (step error `lost`, one retry); an OOM gets one automatic retry at 0.75× batch; a host whose workers went quiet turns `unreachable` (`compute.health`); a full cache pauses freezes (phase 4); an unhealthy card closes its slot (not built: card health is per host today) — every case is an event, so it notifies |
+| Availability windows | Each compute card has windows per job kind (training, eval, shadow, export, data; none means always open, the default): each window is a set of weekdays, an opening and a closing time `HH:MM` (an end at or before the start closes the next day, `24:00` is midnight; a window past midnight belongs to the day it opens) and an IANA time zone per window (default UTC), edited with `compute.edit`. The queue starts a job only if its estimate fits before the window closes; a job without an estimate, or one resuming from a training state, starts in any open window. Training saves a checkpoint and its training state every 20 minutes (the training step's duty; the NeMo pack's); at a close the heartbeat answers `stop: window-closed` to training steps only (other kinds finish), the step saves and releases, and the job waits in its place for the next window and resumes from the last training state (`resumeFrom`). The same path makes long runs preemption-safe on the shared staging card (R19) |
 | Health | `/healthz` on the control plane, worker heartbeat, mount checks; a status card in Settings; a Prometheus endpoint |
-| Retention | Job log files are deleted 14 days after the job ends; metric points live as long as their run; content-store blobs are kept (v1); the audit log is kept one year; production audio follows the retention policy |
+| Retention | Job log files are deleted 14 days after their last line (a daily chore); metric points live as long as their run; content-store blobs are kept (v1); the audit log is kept one year; production audio follows the retention policy |
 
 Phase 2 as built (2026-09-30, stream O):
 
@@ -189,7 +230,8 @@ Phase 2 as built (2026-09-30, stream O):
   `backups` and `entity.backup.{id}`. API `backups.list|get|new|verify` (admin). The control-plane image ships
   `postgresql-client-17`; `CADENCE_PG_DUMP` / `CADENCE_PG_RESTORE` override the commands, and a client older than the
   server fails the set with the version to install. Compose mounts the `cadence-backups` volume at `/backups`.
-- **Retention**: the audit log is pruned daily after one year (`audit.prune`, phase 1). Job logs are stream W's.
+- **Retention**: the audit log is pruned daily after one year (`audit.prune`, phase 1); job log files untouched for
+  14 days are deleted by a daily chore (`workers.PruneLogs`); no metric point and no content-store blob is deleted.
 - **Upgrade**: `docs/help/guides/upgrading.md` (pull, compose up, migrations under the advisory lock, rollback = the
   previous image plus the last backup, the release matrix); restoring by hand is in `docs/help/guides/backups.md`.
 
@@ -240,6 +282,12 @@ Phase 2 as built (2026-09-30, stream O):
   kind (runs and evals are jobs until their entities land), each project's GPU-hours against its daily budget
   (`notify.SpendFunc`; "not metered yet" until stream R plugs in the meter), open approvals, events held for the
   digest and the last backup; in-app as `notification.digest` on `notifications`, on Telegram as a message.
+- Classification (`internal/notify/classify.go`): approvals on `approvals`; a job's `job.state_changed` on its job
+  topic (`failed` → failure, `done` → progress; step jobs included); backups by type. The table also names types no
+  stream emits yet — `mount.unhealthy`, `gate.verdict`, `deployment.promoted`, `schedule.finished`, `batch.closed`,
+  `checkpoint.saved`, `triage.item_added` arrive with their phases; `compute.card_closed` and `pipeline_step.done`
+  have no emitter (the engine emits `pipeline_run.step_changed`, the worker protocol `compute.health` with state
+  `unreachable`, and neither is classified).
 - The control plane reaches `api.telegram.org` over the compose `default` network (not internal); nothing else is
   needed. Reviewer messages (batch assigned/closing) arrive with batches in phase 4.
 
@@ -254,7 +302,7 @@ Every layer has a test that runs on every change, the smoke project is the night
 | Integration | Control plane with Postgres and a worker stub: commands, outbox, SSE resume, approvals, tokens | Every pull request |
 | UI | Playwright on the shell (drag, dock, float, popout, palette) and on the document anatomy of each panel | Every pull request |
 | Audio and charts | The audio view's FFT against librosa on fixtures (≤ 0.5 dB); track and chart screenshots in both themes; chart palettes in the contrast and colour-vision checks (R51–R53) | Every pull request |
-| Framework conformance | Each framework pack on fixtures: calibrate → train a few steps → average → transcribe (file and streaming) → export → parity → score (R45); the CPU `toy` pack keeps the seams honest | Toy pack every pull request; NeMo pack nightly on the staging card |
+| Framework conformance | Each framework pack on fixtures through the real harness path with a local store (`python -m cadence_worker.conformance --runtime <runtime>`, `make conformance`): schemas (complete `x-cadence`, help, declared profiles, every role mapped), then calibrate → train a few steps → stop → resume → average → transcribe (every latency profile; partial events for streaming ones) → score; export and parity join in phase 5 (R45). The CPU `toy` pack keeps the seams honest | Toy pack every pull request; NeMo pack nightly on the staging card |
 | Agent evals | Skills and playbooks executed by both agents on a fixture project; pass criteria are the expected tool calls and outcomes, not the wording (`agent-host/evals`, `make evals`) | Offline with a scripted agent on every pull request; live with both drivers nightly on the staging host and on skill changes |
 | End to end | The smoke project on the staging card: ingest, freeze, 300 steps, eval, gate, export, parity | Nightly |
 | Performance | Workspace restore, drag frame time, SSE fan-out, search latency against the budgets | Weekly |
