@@ -51,8 +51,8 @@ Claude Code's `_meta.claudecode/toolUseId` — the same path a driver takes, wit
   author), each carrying the tool-call id for the Chat click-through.
 - **Events per second before coalescing is needed:** 60 edits back to back committed at 49–69 edits/s (97–138
   events/s: `draft.updated` + `presence.changed` each); the panel absorbed them in 43–48 animation-frame batches and
-  showed the last draft 19–58 ms after its result reached the agent. The per-frame coalescing already in the stream is enough at the
-  rate one agent can write; no further coalescing is needed.
+  showed the last draft 19–58 ms after its result reached the agent. The per-frame coalescing already in the stream
+  is enough at the rate one agent can write; no further coalescing is needed.
 
 Surprises:
 - Chromium's offline emulation (`context.setOffline`) leaves an open event stream connected, so it cannot simulate a

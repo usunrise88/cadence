@@ -1970,13 +1970,15 @@ components:
     Defaults:
       type: object
       description: "defaults.yaml (R11): keys are snake_case, addressed as <section>.<key> (x-cadence.defaultRef)"
-      required: [version, wizard, budgets, timeouts, training, estimates, cache, compute]
+      required: [version, wizard, budgets, timeouts, training, estimates, mix, drafts, cache, compute]
       properties:
         version: { type: integer }
         wizard: { $ref: "#/components/schemas/DefaultSection" }
         budgets: { $ref: "#/components/schemas/DefaultSection" }
         timeouts: { $ref: "#/components/schemas/DefaultSection" }
         training: { $ref: "#/components/schemas/DefaultSection" }
+        mix: { $ref: "#/components/schemas/DefaultSection" }
+        drafts: { $ref: "#/components/schemas/DefaultSection" }
         cache: { $ref: "#/components/schemas/DefaultSection" }
         estimates:
           type: object

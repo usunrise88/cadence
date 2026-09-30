@@ -776,6 +776,8 @@ export type Defaults = {
     budgets: DefaultSection;
     timeouts: DefaultSection;
     training: DefaultSection;
+    mix: DefaultSection;
+    drafts: DefaultSection;
     cache: DefaultSection;
     estimates: {
         bytes_per_audio_hour: DefaultValue;
