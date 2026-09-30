@@ -200,7 +200,7 @@ func RenderMix(ctx context.Context, q storage.Querier, store *cas.Store, project
 		return RenderedMix{}, err
 	}
 	m, _ := json.Marshal(map[string]any{"format": MixFormat, "mixId": id, "name": c.Name, "revision": rev,
-		"datasets": len(out.Datasets), "hours": out.Data.Hours})
+		"datasets": out.Data.Datasets, "hours": out.Data.Hours})
 	out.Ref = MixRef{ID: id, Name: c.Name, Revision: rev, Hash: hash}
 	out.Artifact = steps.ArtifactRef{Hash: hash, Type: TypeMix, Size: int64(len(b)), Meta: m}
 	return out, nil

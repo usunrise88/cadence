@@ -13,7 +13,7 @@ step kind of each role (`calibrate`, `train`, `average`).
 - **Prepare / Create** (`runs.new`, `runs.stage`): resolve the start and family; `ResolveMix` + `RenderMix` put the
   `mix` artifact (format `cadence.mix/1`: `input_cfg` groups with weights, sampling probabilities from the mix
   preview and the dataset artifacts; every dataset trainable now, `data.Trainable`, and with a content-store
-  artifact) in the CAS; `RenderBaseModel` puts the `base_model` artifact (`cadence.base_model/1`: HF repository,
+  artifact; `meta.datasets` lists the dataset version ids, which the engine checks for eval-only data) in the CAS; `RenderBaseModel` puts the `base_model` artifact (`cadence.base_model/1`: HF repository,
   revision, checkpoint file, family). The recipe (`training.pipeline`, default `train-stage`) is read from the
   project repository and must contain exactly one step of the family's train kind (`recipe-mismatch`). Pipeline
   inputs are filled by declared type (`inputsFor`): `mix`, `dataset` (the mix's only dataset), `base_model` (the base

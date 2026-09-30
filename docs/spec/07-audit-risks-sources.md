@@ -53,6 +53,25 @@ Spikes:
 
 Open questions:
 
+- [ ] R (2026-09-30, runs): the base model's `familyId` names the family collection `model-family/<familyId>`; the
+  seeded Nemotron base model says `nemo.fastconformer-rnnt.cache-aware`, so the NeMo pack must publish its family
+  descriptor under that name (or the base model fixture must change with it).
+- [ ] R: train role kinds take the step budget as `steps`, the seed as `seed` and a stage's peak learning rate as
+  `peak_lr` (else `learning_rate`, else `lr`); a request setting a parameter the kind lacks is `recipe-mismatch`.
+- [ ] R: a `dataset` input of a run's recipe takes the mix's only dataset (the CPU toy pack trains on a dataset, not
+  a mix); a mix of several datasets needs a recipe whose kinds read the `mix` artifact.
+- [ ] R: calibrations are cached by (base model collection, card class, memory cap, precision); the card is the one
+  the estimate picks (compute.ForJob), not the card the lease got, and the newest calibration of any bucket
+  configuration answers. A calibrate step's meta gives `secondsPerStep` and optionally `plusMinus` | `spread` |
+  `secondsPerStepStd`, `batchSizes`, `bucketConfig`.
+- [ ] R: people are not gated by GPU budgets (the phase-1 policy engine's rule); only agents and automation keys are.
+  Calibration and averaging count as spending (`runs.calibrate`, `checkpoints.average` joined the `gpu-spend` rule)
+  with their kinds' published estimate.
+- [ ] R: `runs.resume` continues only failed or cancelled runs, from the newest training-state a released lease of
+  the run carries (a paused job resumes by itself with `jobs.resume`); pause, resume and stop in the Run panel act on
+  `currentJobId` through `jobs.pause|resume|cancel` — no `runs.pause|cancel` operations.
+- [ ] R: a dry run of `runs.new`, `runs.stage` or `runs.calibrate` writes the rendered mix and base-model blobs into
+  the content store (content-addressed, not indexed); nothing else.
 - [ ] Y (2026-09-30, worker harness): a directory artifact is recognised by `meta.layout: dir|file`, which the worker
   adds to every output it releases; an input without it is sniffed (a blob that parses as exactly the manifest shape
   and whose files are all present is a directory). The control plane should keep `layout` in stored artifact meta.

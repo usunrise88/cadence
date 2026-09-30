@@ -195,6 +195,19 @@ func TestRunsEndToEnd(t *testing.T) {
 		r.Mix.ID != mixID || r.Mix.Revision != 1 || r.Mix.Hash != est.Mix.Hash || r.Steps != 200 || r.Estimate.Basis != "measured" {
 		t.Fatalf("new run %+v", r)
 	}
+	var mixArt struct {
+		Type string
+		Meta struct {
+			Format   string
+			Datasets []string
+		}
+		Content string
+	}
+	e.ok(e.do("GET", "/api/artifacts/"+r.Mix.Hash+"?content=true", ""), 200, &mixArt)
+	if mixArt.Type != "mix" || mixArt.Meta.Format != runs.MixFormat || len(mixArt.Meta.Datasets) != 1 ||
+		!strings.HasPrefix(mixArt.Meta.Datasets[0], "ver_") || !strings.Contains(mixArt.Content, `"input_cfg"`) {
+		t.Fatalf("mix artifact %+v", mixArt)
+	}
 	r = e.waitRun(r.ID, "done")
 	if len(r.Timeline) != 2 || r.Timeline[0].State != "reused" || r.Timeline[0].Role != "calibrate" || r.Timeline[1].Role != "train" ||
 		r.FinalMetrics["val_wer"] == 0 || r.CheckpointCount != 1 || r.BestCheckpointID == "" {

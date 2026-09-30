@@ -111,6 +111,12 @@ Rules: step kinds are versioned and a pipeline pins the versions it was validate
 - Pipeline runs (`plr_`) answer `201` with the run and its steps (`pls_`); step states `waiting → queued → running → done | reused | failed | skipped | cancelled`, run states `running → done | failed | cancelled`; events on `pipeline_run.{id}` (`pipeline_run.started`, `.step_changed`, `.state_changed`) carry the project. Each ready step is a River job of kind `step` (its own queue) whose args are the step spec; its handler waits for the lease outcome, then records the outputs in the artifact index, runs the output hooks and advances the dependents in one transaction (a refusing hook fails the step and keeps nothing of it). Reuse by input hash (kind, version, resolved parameters, input hashes) within the project unless `fresh`; `oom` gets one automatic attempt at 0.75× batch, `lost` one retry, anything else fails the step and the run; `pipelineRuns.retry` runs a failed step again, `pipelineRuns.cancel` cancels waiting steps and running step jobs, `pipelineRuns.wait` serves agents.
 - Artifacts: the `artifacts` table indexes the content store (hash, type, size, directory, meta, producing step, project or registry); `artifacts.get` shows metadata, a directory's files and, with `content=true`, content of at most 1 MiB. A directory artifact's size is the sum of its files.
 - Facades start pipeline runs through the Go API (`pipelines.Engine.Start` with a pipeline name or a parsed pipeline, inputs, parameter overrides, per-step estimates and the run id).
+- For facades (phase 2, stream R): a step input may take several artifacts as `<input>.<n>` (averaging wires
+  `checkpoints.0`, `checkpoints.1`, … as the step contract has it); an input declared `base_model` also accepts a
+  `checkpoint` (R44: one train-stage recipe for `init: base` and `init: checkpoint`; the step reads its input's type);
+  a facade is told about every change of a pipeline run with a run id inside the changing transaction (the run
+  observer); `pipelineRuns` retries can continue a step from a `training-state` artifact (`overrides.resumeFrom`,
+  attempt reason `resume`, kept by the automatic OOM and lost retries).
 
 ### Step contract (phase 2, as built)
 
