@@ -18,12 +18,14 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/api"
 	"github.com/usunrise88/cadence/control-plane/internal/auth"
 	"github.com/usunrise88/cadence/control-plane/internal/commands"
+	"github.com/usunrise88/cadence/control-plane/internal/credentials"
 	"github.com/usunrise88/cadence/control-plane/internal/defaults"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
 	"github.com/usunrise88/cadence/control-plane/internal/help"
 	"github.com/usunrise88/cadence/control-plane/internal/jobs"
 	"github.com/usunrise88/cadence/control-plane/internal/mcp"
 	"github.com/usunrise88/cadence/control-plane/internal/obs"
+	"github.com/usunrise88/cadence/control-plane/internal/policy"
 	"github.com/usunrise88/cadence/control-plane/internal/problems"
 	"github.com/usunrise88/cadence/control-plane/internal/secrets"
 	"github.com/usunrise88/cadence/control-plane/internal/webui"
@@ -42,7 +44,8 @@ type Config struct {
 	Metrics  *obs.Metrics
 	Tracer   trace.TracerProvider
 	Version  string
-	// Actor every request is attributed to until phase 1 brings login.
+	// Actor, when set (non-empty id), is attributed to every request with full scope and no authentication at all:
+	// tests and development. Production leaves it empty and authenticates through Credentials.
 	Actor auth.Actor
 	// Defaults overrides the embedded defaults.yaml (tests); nil means defaults.Get(). It also backs the MCP
 	// resource defaults://.
@@ -53,6 +56,10 @@ type Config struct {
 	Jobs *jobs.Service
 	// Secrets is the encrypted secret store (R9); secrets.new fails without it.
 	Secrets *secrets.Store
+	// Credentials resolves sessions and tokens and checks sign-ins; New creates one on Pool when nil.
+	Credentials *credentials.Store
+	// LoginLimiter throttles failed sign-ins per address and per username; New creates the default when nil.
+	LoginLimiter *auth.Limiter
 }
 
 // Server implements api.StrictServerInterface. Planned operations fall through to api.Planned (501).
@@ -72,6 +79,12 @@ func New(c Config) (*Server, error) {
 	spec, err := api.GetSpec()
 	if err != nil {
 		return nil, fmt.Errorf("load embedded contract: %w", err)
+	}
+	if c.Credentials == nil {
+		c.Credentials = credentials.NewStore(c.Pool, time.Now, auth.DefaultPasswordParams())
+	}
+	if c.LoginLimiter == nil {
+		c.LoginLimiter = auth.NewLimiter(time.Now, auth.DefaultLoginLimits()...)
 	}
 	s := &Server{Config: c, spec: spec}
 	s.api = s.APIHandler()
@@ -115,7 +128,8 @@ func (s *Server) APIHandler() http.Handler { return s.apiRouter(true) }
 func (s *Server) apiRouter(authenticate bool) http.Handler {
 	r := chi.NewRouter()
 	if authenticate {
-		r.Use(auth.Middleware(s.Actor))
+		r.Use(s.authenticator().Middleware)
+		r.Use(policyScope)
 	}
 	r.Use(commands.HashMiddleware(s.writeProblem))
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
@@ -179,4 +193,21 @@ func (s defaultsSource) Defaults(context.Context) (any, error) {
 		d = defaults.Get()
 	}
 	return d.Document(), nil
+}
+
+// policyScope hands the authenticated credential's scope to the policy engine: a credential bound to a project
+// keeps its project and preset; a person or an unscoped key reaches every project.
+func policyScope(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sc, ok := auth.ScopeFromContext(r.Context())
+		if !ok {
+			next.ServeHTTP(w, r)
+			return
+		}
+		ps := policy.Scope{RegistryRead: sc.RegistryRead || sc.All, Preset: sc.Preset}
+		if !sc.All {
+			ps.ProjectID = sc.ProjectID
+		}
+		next.ServeHTTP(w, r.WithContext(policy.WithScope(r.Context(), ps)))
+	})
 }

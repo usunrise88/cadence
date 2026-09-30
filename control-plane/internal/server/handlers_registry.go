@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/usunrise88/cadence/control-plane/internal/api"
+	"github.com/usunrise88/cadence/control-plane/internal/auth"
 	"github.com/usunrise88/cadence/control-plane/internal/commands"
 	"github.com/usunrise88/cadence/control-plane/internal/compute"
 	"github.com/usunrise88/cadence/control-plane/internal/defaults"
@@ -51,6 +52,9 @@ func (s *Server) run(ctx context.Context, cmd commands.Command, fn commands.Func
 
 // RegistrySearch implements registry.search.
 func (s *Server) RegistrySearch(ctx context.Context, req api.RegistrySearchRequestObject) (api.RegistrySearchResponseObject, error) {
+	if err := auth.CheckRegistryRead(ctx); err != nil {
+		return nil, err
+	}
 	base := registry.Filter{Limit: 100}
 	if req.Params.Limit != nil {
 		base.Limit = *req.Params.Limit
@@ -86,6 +90,9 @@ func (s *Server) RegistrySearch(ctx context.Context, req api.RegistrySearchReque
 
 // CollectionsList implements collections.list.
 func (s *Server) CollectionsList(ctx context.Context, req api.CollectionsListRequestObject) (api.CollectionsListResponseObject, error) {
+	if err := auth.CheckRegistryRead(ctx); err != nil {
+		return nil, err
+	}
 	var kind string
 	if req.Params.Kind != nil {
 		kind = string(*req.Params.Kind)
@@ -103,6 +110,9 @@ func (s *Server) CollectionsList(ctx context.Context, req api.CollectionsListReq
 
 // CollectionsGet implements collections.get.
 func (s *Server) CollectionsGet(ctx context.Context, req api.CollectionsGetRequestObject) (api.CollectionsGetResponseObject, error) {
+	if err := auth.CheckRegistryRead(ctx); err != nil {
+		return nil, err
+	}
 	c, err := registry.GetCollection(ctx, s.Pool, req.Id)
 	if err != nil {
 		return nil, err
@@ -176,6 +186,9 @@ func baseModelVersions(ctx context.Context, q storage.Querier, f registry.Filter
 
 // BaseModelsList implements baseModels.list.
 func (s *Server) BaseModelsList(ctx context.Context, req api.BaseModelsListRequestObject) (api.BaseModelsListResponseObject, error) {
+	if err := auth.CheckRegistryRead(ctx); err != nil {
+		return nil, err
+	}
 	items, err := baseModelVersions(ctx, s.Pool, versionFilter(registry.KindBaseModel, req.Params.Collection, req.Params.State))
 	if err != nil {
 		return nil, err
@@ -185,6 +198,9 @@ func (s *Server) BaseModelsList(ctx context.Context, req api.BaseModelsListReque
 
 // BaseModelsGet implements baseModels.get.
 func (s *Server) BaseModelsGet(ctx context.Context, req api.BaseModelsGetRequestObject) (api.BaseModelsGetResponseObject, error) {
+	if err := auth.CheckRegistryRead(ctx); err != nil {
+		return nil, err
+	}
 	items, err := baseModelVersions(ctx, s.Pool, registry.Filter{Kind: registry.KindBaseModel, IDs: []string{req.Id}})
 	if err != nil {
 		return nil, err
@@ -214,6 +230,9 @@ func datasetVersions(ctx context.Context, q storage.Querier, f registry.Filter) 
 
 // DatasetsList implements datasets.list.
 func (s *Server) DatasetsList(ctx context.Context, req api.DatasetsListRequestObject) (api.DatasetsListResponseObject, error) {
+	if err := auth.CheckRegistryRead(ctx); err != nil {
+		return nil, err
+	}
 	items, err := datasetVersions(ctx, s.Pool, versionFilter(registry.KindDataset, req.Params.Collection, req.Params.State))
 	if err != nil {
 		return nil, err
@@ -223,6 +242,9 @@ func (s *Server) DatasetsList(ctx context.Context, req api.DatasetsListRequestOb
 
 // DatasetsGet implements datasets.get.
 func (s *Server) DatasetsGet(ctx context.Context, req api.DatasetsGetRequestObject) (api.DatasetsGetResponseObject, error) {
+	if err := auth.CheckRegistryRead(ctx); err != nil {
+		return nil, err
+	}
 	items, err := datasetVersions(ctx, s.Pool, registry.Filter{Kind: registry.KindDataset, IDs: []string{req.Id}})
 	if err != nil {
 		return nil, err
@@ -252,6 +274,9 @@ func templateVersions(ctx context.Context, q storage.Querier, f registry.Filter)
 
 // TemplatesList implements templates.list.
 func (s *Server) TemplatesList(ctx context.Context, req api.TemplatesListRequestObject) (api.TemplatesListResponseObject, error) {
+	if err := auth.CheckRegistryRead(ctx); err != nil {
+		return nil, err
+	}
 	f := versionFilter(registry.KindTemplate, req.Params.Collection, req.Params.State)
 	if req.Params.TemplateKind != nil {
 		f.TemplateKind = string(*req.Params.TemplateKind)
@@ -265,6 +290,9 @@ func (s *Server) TemplatesList(ctx context.Context, req api.TemplatesListRequest
 
 // TemplatesGet implements templates.get.
 func (s *Server) TemplatesGet(ctx context.Context, req api.TemplatesGetRequestObject) (api.TemplatesGetResponseObject, error) {
+	if err := auth.CheckRegistryRead(ctx); err != nil {
+		return nil, err
+	}
 	items, err := templateVersions(ctx, s.Pool, registry.Filter{Kind: registry.KindTemplate, IDs: []string{req.Id}})
 	if err != nil {
 		return nil, err
@@ -322,6 +350,13 @@ func (s *Server) ProjectsAdopt(ctx context.Context, req api.ProjectsAdoptRequest
 	if err != nil {
 		return nil, err
 	}
+	pr, err := projects.Get(ctx, s.Pool, req.P)
+	if err != nil {
+		return nil, err
+	}
+	if err := auth.CheckProject(ctx, pr.ID); err != nil {
+		return nil, err
+	}
 	cmd := command(ctx, "projects.adopt", req.Params.IdempotencyKey, req.Params.DryRun)
 	return s.run(ctx, cmd, func(ctx context.Context, tx pgx.Tx) (commands.Result, []events.Draft, error) {
 		a, p, drafts, err := registry.Adopt(ctx, tx, req.P, rev, req.Body.Version, cmd.Actor)
@@ -346,6 +381,9 @@ func (s *Server) AdoptionsList(ctx context.Context, req api.AdoptionsListRequest
 	if err != nil {
 		return nil, err
 	}
+	if err := auth.CheckProject(ctx, p.ID); err != nil {
+		return nil, err
+	}
 	var kind string
 	if req.Params.Kind != nil {
 		kind = string(*req.Params.Kind)
@@ -367,6 +405,9 @@ func (s *Server) AliasesList(ctx context.Context, req api.AliasesListRequestObje
 	if err != nil {
 		return nil, err
 	}
+	if err := auth.CheckProject(ctx, p.ID); err != nil {
+		return nil, err
+	}
 	list, err := registry.ListAliases(ctx, s.Pool, p.ID)
 	if err != nil {
 		return nil, err
@@ -382,6 +423,9 @@ func (s *Server) AliasesList(ctx context.Context, req api.AliasesListRequestObje
 func (s *Server) AliasesGet(ctx context.Context, req api.AliasesGetRequestObject) (api.AliasesGetResponseObject, error) {
 	p, err := projects.Get(ctx, s.Pool, req.P)
 	if err != nil {
+		return nil, err
+	}
+	if err := auth.CheckProject(ctx, p.ID); err != nil {
 		return nil, err
 	}
 	a, err := registry.GetAlias(ctx, s.Pool, p.ID, req.Name)
@@ -408,6 +452,9 @@ func (s *Server) AliasesSet(ctx context.Context, req api.AliasesSetRequestObject
 	return s.run(ctx, cmd, func(ctx context.Context, tx pgx.Tx) (commands.Result, []events.Draft, error) {
 		p, err := projects.Get(ctx, tx, req.P)
 		if err != nil {
+			return commands.Result{}, nil, err
+		}
+		if err := auth.CheckProject(ctx, p.ID); err != nil {
 			return commands.Result{}, nil, err
 		}
 		a, drafts, err := registry.SetAlias(ctx, tx, p.ID, req.Name, ifMatch, req.Body.Version, cmd.Actor)
@@ -452,6 +499,9 @@ func (s *Server) ComputeGet(ctx context.Context, req api.ComputeGetRequestObject
 
 // ComputeEdit implements compute.edit.
 func (s *Server) ComputeEdit(ctx context.Context, req api.ComputeEditRequestObject) (api.ComputeEditResponseObject, error) {
+	if err := auth.CheckAll(ctx); err != nil {
+		return nil, err
+	}
 	rev, err := commands.ParseIfMatch(req.Params.IfMatch)
 	if err != nil {
 		return nil, err
@@ -499,6 +549,9 @@ func apiHost(h compute.Host) api.ComputeHost {
 
 // SecretsList implements secrets.list: names, kinds, scopes and last use; never values.
 func (s *Server) SecretsList(ctx context.Context, _ api.SecretsListRequestObject) (api.SecretsListResponseObject, error) {
+	if err := auth.CheckAll(ctx); err != nil {
+		return nil, err
+	}
 	list, err := secrets.List(ctx, s.Pool)
 	if err != nil {
 		return nil, err
@@ -514,6 +567,9 @@ func (s *Server) SecretsList(ctx context.Context, _ api.SecretsListRequestObject
 // event and the idempotency record carry only metadata, and the request fingerprint replaces the value with a MAC
 // under the master key.
 func (s *Server) SecretsNew(ctx context.Context, req api.SecretsNewRequestObject) (api.SecretsNewResponseObject, error) {
+	if err := auth.CheckAll(ctx); err != nil {
+		return nil, err
+	}
 	if s.Secrets == nil {
 		return nil, fmt.Errorf("secrets.new: no secret store configured")
 	}
@@ -576,6 +632,9 @@ func (s *Server) PoliciesGet(ctx context.Context, _ api.PoliciesGetRequestObject
 
 // PoliciesEdit implements policies.edit.
 func (s *Server) PoliciesEdit(ctx context.Context, req api.PoliciesEditRequestObject) (api.PoliciesEditResponseObject, error) {
+	if err := auth.CheckAll(ctx); err != nil {
+		return nil, err
+	}
 	rev, err := commands.ParseIfMatch(req.Params.IfMatch)
 	if err != nil {
 		return nil, err
@@ -611,6 +670,9 @@ func (s *Server) RunsNew(ctx context.Context, req api.RunsNewRequestObject) (api
 	}
 	p, err := projects.Get(ctx, s.Pool, req.P)
 	if err != nil {
+		return nil, err
+	}
+	if err := auth.CheckProject(ctx, p.ID); err != nil {
 		return nil, err
 	}
 	b := req.Body

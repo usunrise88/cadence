@@ -31,8 +31,8 @@ test:          ## unit + contract (no Docker): Go, Vitest (jsdom + headless Chro
 test-integration: ## control plane against Postgres in Docker (testcontainers): commands, outbox → SSE, workspaces
 	cd control-plane && go test -tags integration ./...
 
-ui-e2e:        ## Playwright on the shell against the real control plane (Postgres in Docker)
-	cd web && npx playwright test e2e/shell.spec.ts
+ui-e2e:        ## Playwright on sign-in and the shell against the real control plane (Postgres in Docker)
+	cd web && npx playwright test e2e/auth.spec.ts e2e/shell.spec.ts
 
 spikes-measure: ## S1, S3, S4 measurements (weekly performance job); results in web/test-results/spikes
 	cd web && npx playwright test e2e/spikes.spec.ts

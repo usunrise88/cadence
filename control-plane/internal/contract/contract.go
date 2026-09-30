@@ -287,6 +287,11 @@ func (c *Contract) Check() []error {
 
 func (c *Contract) checkCommand(o *Operation, sh string, fail func(*Operation, string, ...any)) {
 	const comp = "#/components/parameters/"
+	if hasTag(o, "auth") && o.Mutation {
+		// Sign-in operations are not commands: there is no actor before sign-in to key idempotency on, and a
+		// browser session is not an entity with a revision (docs/spec/06-platform.md "Authentication and access").
+		return
+	}
 	ref, hasKey := o.paramRef("header", "Idempotency-Key")
 	_, hasDry := o.paramRef("query", "dryRun")
 	ifRef, hasIf := o.paramRef("header", "If-Match")

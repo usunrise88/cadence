@@ -34,6 +34,9 @@ func (s *Server) ApprovalsList(ctx context.Context, req api.ApprovalsListRequest
 	if err != nil {
 		return nil, err
 	}
+	if projectID, err = narrowToScope(ctx, projectID); err != nil {
+		return nil, err
+	}
 	list, err := approvals.List(ctx, s.Pool, approvals.Filter{
 		State: string(deref(req.Params.State)), ProjectID: projectID, Limit: deref(req.Params.Limit),
 	})
@@ -57,6 +60,9 @@ func (s *Server) ApprovalsGet(ctx context.Context, req api.ApprovalsGetRequestOb
 	if err != nil {
 		return nil, err
 	}
+	if err := checkItemProject(ctx, a.ProjectID); err != nil {
+		return nil, err
+	}
 	v, err := convert[api.Approval](approvals.JSON(a))
 	if err != nil {
 		return nil, err
@@ -68,6 +74,9 @@ func (s *Server) ApprovalsGet(ctx context.Context, req api.ApprovalsGetRequestOb
 // ApprovalsApprove implements approvals.approve: in one transaction it replays the stored request as its original
 // actor (in a savepoint, with the approval id in the context) and records the decision with the replay's answer.
 func (s *Server) ApprovalsApprove(ctx context.Context, req api.ApprovalsApproveRequestObject) (api.ApprovalsApproveResponseObject, error) {
+	if err := auth.CheckAll(ctx); err != nil {
+		return nil, err
+	}
 	rev, err := commands.ParseIfMatch(req.Params.IfMatch)
 	if err != nil {
 		return nil, err
@@ -112,6 +121,9 @@ func (s *Server) ApprovalsApprove(ctx context.Context, req api.ApprovalsApproveR
 
 // ApprovalsDeny implements approvals.deny.
 func (s *Server) ApprovalsDeny(ctx context.Context, req api.ApprovalsDenyRequestObject) (api.ApprovalsDenyResponseObject, error) {
+	if err := auth.CheckAll(ctx); err != nil {
+		return nil, err
+	}
 	rev, err := commands.ParseIfMatch(req.Params.IfMatch)
 	if err != nil {
 		return nil, err
@@ -180,6 +192,13 @@ func (s *Server) replayApproved(ctx context.Context, tx pgx.Tx, a approvals.Appr
 	rctx = commands.WithReplay(rctx, tx, a.ID)
 	rctx = policy.WithScope(rctx, a.Scope)
 	rctx = auth.WithActor(rctx, a.Actor)
+	// The replay carries the credential scope the request had: a person reaches everything, an agent or a key
+	// only its project (and the registry for reading).
+	replayScope := auth.Scope{ProjectID: a.Scope.ProjectID, RegistryRead: a.Scope.RegistryRead, Preset: a.Scope.Preset}
+	if a.Actor.Kind == auth.KindUser || a.Scope.ProjectID == "" {
+		replayScope = auth.FullScope()
+	}
+	rctx = auth.WithScope(rctx, replayScope)
 
 	target := a.Request.Path
 	if a.Request.Query != "" {
@@ -204,6 +223,9 @@ func (s *Server) replayApproved(ctx context.Context, tx pgx.Tx, a approvals.Appr
 
 // AuditList implements audit.list.
 func (s *Server) AuditList(ctx context.Context, req api.AuditListRequestObject) (api.AuditListResponseObject, error) {
+	if err := auth.CheckAll(ctx); err != nil {
+		return nil, err
+	}
 	projectID, err := s.projectID(ctx, deref(req.Params.Project))
 	if err != nil {
 		return nil, err
@@ -239,6 +261,9 @@ func (s *Server) JobsList(ctx context.Context, req api.JobsListRequestObject) (a
 	if err != nil {
 		return nil, err
 	}
+	if err := auth.CheckProject(ctx, p.ID); err != nil {
+		return nil, err
+	}
 	list, err := jobs.List(ctx, s.Pool, p.ID, string(deref(req.Params.State)), deref(req.Params.Limit))
 	if err != nil {
 		return nil, err
@@ -260,6 +285,9 @@ func (s *Server) JobsGet(ctx context.Context, req api.JobsGetRequestObject) (api
 	if err != nil {
 		return nil, err
 	}
+	if err := checkItemProject(ctx, j.ProjectID); err != nil {
+		return nil, err
+	}
 	v, err := convert[api.Job](j.JSON())
 	if err != nil {
 		return nil, err
@@ -276,6 +304,9 @@ func (s *Server) JobsCancel(ctx context.Context, req api.JobsCancelRequestObject
 	}
 	cur, err := jobs.Get(ctx, s.Pool, req.Id)
 	if err != nil {
+		return nil, err
+	}
+	if err := checkItemProject(ctx, cur.ProjectID); err != nil {
 		return nil, err
 	}
 	ctx = commands.WithProject(ctx, cur.ProjectID)
@@ -304,6 +335,13 @@ func (s *Server) JobsWait(ctx context.Context, req api.JobsWaitRequestObject) (a
 	timeout := 30
 	if req.Params.Timeout != nil {
 		timeout = *req.Params.Timeout
+	}
+	cur, err := jobs.Get(ctx, s.Pool, req.Id)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkItemProject(ctx, cur.ProjectID); err != nil {
+		return nil, err
 	}
 	j, err := jobs.Wait(ctx, s.Pool, req.Id, time.Duration(timeout)*time.Second, waitPoll)
 	if err != nil {
@@ -342,4 +380,29 @@ func convert[T any](v any) (T, error) {
 		return out, fmt.Errorf("convert %T: %w", v, err)
 	}
 	return out, nil
+}
+
+// narrowToScope narrows a list filter to the credential's project: a scoped credential sees only its own project,
+// whatever filter it asked for; a full-scope credential keeps the filter.
+func narrowToScope(ctx context.Context, projectID string) (string, error) {
+	sc, ok := auth.ScopeFromContext(ctx)
+	if !ok || sc.All {
+		return projectID, nil
+	}
+	if projectID != "" && projectID != sc.ProjectID {
+		return "", auth.CheckProject(ctx, projectID)
+	}
+	if sc.ProjectID == "" {
+		return "", auth.CheckAll(ctx)
+	}
+	return sc.ProjectID, nil
+}
+
+// checkItemProject authorises reading an item by id: a project item needs its project in scope, an item of no
+// project (instance-wide) needs full scope.
+func checkItemProject(ctx context.Context, projectID string) error {
+	if projectID == "" {
+		return auth.CheckAll(ctx)
+	}
+	return auth.CheckProject(ctx, projectID)
 }

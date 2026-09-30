@@ -243,6 +243,136 @@ export type RegistrySearchResult = {
     kinds: Array<RegistryKindCount>;
 };
 
+export type AuthStatus = {
+    /**
+     * First start: no admin password is set yet; auth.setup sets it
+     */
+    setupRequired: boolean;
+    actor?: Actor;
+    /**
+     * The signed-in user signs in with a TOTP code
+     */
+    totpEnabled?: boolean;
+};
+
+/**
+ * Lowercase letters, digits, dots, dashes and underscores; 2–32 characters
+ */
+export type Username = string;
+
+/**
+ * At least 12 characters (Cadence recommendation, after NIST SP 800-63B)
+ */
+export type Password = string;
+
+export type AuthSetup = {
+    username?: Username;
+    password: Password;
+};
+
+export type AuthLogin = {
+    username: string;
+    password: string;
+    /**
+     * Required when the user has TOTP on
+     */
+    totpCode?: string;
+};
+
+export type TotpEnrollment = {
+    /**
+     * Base32 secret for manual entry
+     */
+    secret: string;
+    /**
+     * otpauth://totp/… URI for a QR code
+     */
+    uri: string;
+};
+
+export type TotpCode = {
+    code: string;
+};
+
+export type CredentialKind = 'session' | 'api_key' | 'agent' | 'invitation' | 'worker';
+
+export type CredentialScope = {
+    /**
+     * Every project and the registry (the admin's own sessions)
+     */
+    all?: boolean;
+    /**
+     * The one project this credential reaches
+     */
+    projectId?: string;
+    project?: Slug;
+    /**
+     * May read the registry
+     */
+    registryRead?: boolean;
+    /**
+     * Permission preset (agent session tokens)
+     */
+    preset?: string;
+};
+
+export type Credential = {
+    /**
+     * crd_<uuidv7>
+     */
+    id: string;
+    kind: CredentialKind;
+    name: string;
+    scope: CredentialScope;
+    /**
+     * The user who owns or created it
+     */
+    userId?: string;
+    /**
+     * What it stands for: the agent session, invitation batch or worker
+     */
+    subject?: string;
+    /**
+     * The credential of this request
+     */
+    current?: boolean;
+    rev: number;
+    createdAt: string;
+    expiresAt?: string;
+    /**
+     * Updated at most once a minute
+     */
+    lastUsedAt?: string;
+    revokedAt?: string;
+};
+
+export type CredentialNew = {
+    name: string;
+    /**
+     * One project, registry read, or both
+     */
+    scope: {
+        project?: Slug;
+        registryRead?: boolean;
+    };
+    /**
+     * Never expires when absent
+     */
+    expiresAt?: string;
+};
+
+export type CredentialCreated = {
+    credential: Credential;
+    /**
+     * The secret (cdk_…); only in the first 201 — store it now
+     */
+    token?: string;
+};
+
+export type CredentialList = {
+    items: Array<Credential>;
+};
+
 /**
  * The kinds registered so far; golden sets, sources, normalizers and model versions join in later phases
  */
@@ -1473,6 +1603,297 @@ export type RegistrySearchResponses = {
 };
 
 export type RegistrySearchResponse = RegistrySearchResponses[keyof RegistrySearchResponses];
+
+export type AuthGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/auth';
+};
+
+export type AuthGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type AuthGetError = AuthGetErrors[keyof AuthGetErrors];
+
+export type AuthGetResponses = {
+    /**
+     * First-start state and the signed-in actor, if any
+     */
+    200: AuthStatus;
+};
+
+export type AuthGetResponse = AuthGetResponses[keyof AuthGetResponses];
+
+export type AuthSetupData = {
+    body: AuthSetup;
+    path?: never;
+    query?: never;
+    url: '/auth:setup';
+};
+
+export type AuthSetupErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type AuthSetupError = AuthSetupErrors[keyof AuthSetupErrors];
+
+export type AuthSetupResponses = {
+    /**
+     * The admin account is set up and signed in
+     */
+    200: AuthStatus;
+};
+
+export type AuthSetupResponse = AuthSetupResponses[keyof AuthSetupResponses];
+
+export type AuthLoginData = {
+    body: AuthLogin;
+    path?: never;
+    query?: never;
+    url: '/auth:login';
+};
+
+export type AuthLoginErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type AuthLoginError = AuthLoginErrors[keyof AuthLoginErrors];
+
+export type AuthLoginResponses = {
+    /**
+     * Signed in; the session cookie is set
+     */
+    200: AuthStatus;
+};
+
+export type AuthLoginResponse = AuthLoginResponses[keyof AuthLoginResponses];
+
+export type AuthLogoutData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/auth:logout';
+};
+
+export type AuthLogoutErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type AuthLogoutError = AuthLogoutErrors[keyof AuthLogoutErrors];
+
+export type AuthLogoutResponses = {
+    /**
+     * Signed out (also when there was no session)
+     */
+    204: void;
+};
+
+export type AuthLogoutResponse = AuthLogoutResponses[keyof AuthLogoutResponses];
+
+export type TotpEnrollData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/auth/totp:enroll';
+};
+
+export type TotpEnrollErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type TotpEnrollError = TotpEnrollErrors[keyof TotpEnrollErrors];
+
+export type TotpEnrollResponses = {
+    /**
+     * The pending secret and its otpauth URI (shown once)
+     */
+    200: TotpEnrollment;
+};
+
+export type TotpEnrollResponse = TotpEnrollResponses[keyof TotpEnrollResponses];
+
+export type TotpConfirmData = {
+    body: TotpCode;
+    path?: never;
+    query?: never;
+    url: '/auth/totp:confirm';
+};
+
+export type TotpConfirmErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type TotpConfirmError = TotpConfirmErrors[keyof TotpConfirmErrors];
+
+export type TotpConfirmResponses = {
+    /**
+     * TOTP is on
+     */
+    200: AuthStatus;
+};
+
+export type TotpConfirmResponse = TotpConfirmResponses[keyof TotpConfirmResponses];
+
+export type TotpDisableData = {
+    body: TotpCode;
+    path?: never;
+    query?: never;
+    url: '/auth/totp:disable';
+};
+
+export type TotpDisableErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type TotpDisableError = TotpDisableErrors[keyof TotpDisableErrors];
+
+export type TotpDisableResponses = {
+    /**
+     * TOTP is off
+     */
+    200: AuthStatus;
+};
+
+export type TotpDisableResponse = TotpDisableResponses[keyof TotpDisableResponses];
+
+export type CredentialsListData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Only this kind
+         */
+        kind?: CredentialKind;
+        /**
+         * Include revoked and expired credentials
+         */
+        revoked?: boolean;
+    };
+    url: '/credentials';
+};
+
+export type CredentialsListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type CredentialsListError = CredentialsListErrors[keyof CredentialsListErrors];
+
+export type CredentialsListResponses = {
+    /**
+     * Credentials, newest first
+     */
+    200: CredentialList;
+};
+
+export type CredentialsListResponse = CredentialsListResponses[keyof CredentialsListResponses];
+
+export type CredentialsNewData = {
+    body: CredentialNew;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/credentials';
+};
+
+export type CredentialsNewErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type CredentialsNewError = CredentialsNewErrors[keyof CredentialsNewErrors];
+
+export type CredentialsNewResponses = {
+    /**
+     * Dry run — the key that would be created (no token); nothing was written
+     */
+    200: CredentialCreated;
+    /**
+     * Created; `token` is shown once (an idempotent replay omits it)
+     */
+    201: CredentialCreated;
+};
+
+export type CredentialsNewResponse = CredentialsNewResponses[keyof CredentialsNewResponses];
+
+export type CredentialsRevokeData = {
+    body?: never;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/credentials/{id}:revoke';
+};
+
+export type CredentialsRevokeErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type CredentialsRevokeError = CredentialsRevokeErrors[keyof CredentialsRevokeErrors];
+
+export type CredentialsRevokeResponses = {
+    /**
+     * The revoked credential
+     */
+    200: Credential;
+};
+
+export type CredentialsRevokeResponse = CredentialsRevokeResponses[keyof CredentialsRevokeResponses];
 
 export type CollectionsListData = {
     body?: never;

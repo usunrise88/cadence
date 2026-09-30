@@ -145,10 +145,10 @@ Write before starting:
       `mixes.preview` (05); add the tool and its API operation
 
 Identity and access (06 Authentication)
-- [ ] First start: create the admin account (replaces the phase-0 development actor)
-- [ ] Admin: Argon2id password + optional TOTP, HttpOnly session cookie, custom-header CSRF rule, rate-limited login,
+- [x] First start: create the admin account (replaces the phase-0 development actor)
+- [x] Admin: Argon2id password + optional TOTP, HttpOnly session cookie, custom-header CSRF rule, rate-limited login,
       `cadence admin reset-password`
-- [ ] Credentials table (kind, scope, hash, expiry, last use); agent session tokens; `cdk_` API keys; revoke as a command
+- [x] Credentials table (kind, scope, hash, expiry, last use); agent session tokens; `cdk_` API keys; revoke as a command
 - [ ] Exposure (B7, R39) on the staging stand: TLS at the host's Caddy, control plane on 127.0.0.1, Postgres unpublished
       (in place since phase 0); once sign-in works, the owner drops basic auth from the Caddy site file (a root-owned
       file); a Caddy compose profile stays the option for hosts without a proxy of their own

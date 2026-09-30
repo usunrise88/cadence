@@ -196,6 +196,12 @@ func TestCheckRejects(t *testing.T) {
 		{"exempt tag may use any verb", `  /sessions/{id}:login:
     x-cadence: { entity: sessions }
     post: { operationId: sessions.login, summary: s, tags: [auth], ` + sprintf(mut, ifm) + `, ` + resp + ` }`, ""},
+		{"auth operations are not commands", `  /auth:login:
+    x-cadence: { entity: auth, singleton: true }
+    post: { operationId: auth.login, summary: s, tags: [auth], ` + resp + ` }`, ""},
+		{"me mutations stay commands", `  /me:login:
+    x-cadence: { entity: me, singleton: true }
+    post: { operationId: me.login, summary: s, tags: [me], ` + resp + ` }`, "IdempotencyKey"},
 	}
 	vocab, err := filepath.Abs(vocabPath)
 	if err != nil {

@@ -17,6 +17,7 @@ import type { Command } from "@/shell/commands/registry";
 import { commands } from "@/shell/registries";
 import { commandContext, useShell } from "@/shell/state";
 import { DEFAULT_WORKSPACES } from "@/shell/workspaces/schema";
+import { UserMenu } from "./UserMenu";
 
 // Thin top menu bar: project switcher, workspaces, and the View/Window/Help menus. Every item is a command.
 
@@ -115,6 +116,8 @@ export function MenuBar({ onSwitchProject }: { onSwitchProject: (slug: string) =
         ))}
         <CommandItem id="view.palette" />
       </Menu>
+      <span className="ml-auto" />
+      <UserMenu />
     </nav>
   );
 }

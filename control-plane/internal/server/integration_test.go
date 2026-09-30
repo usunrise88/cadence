@@ -47,7 +47,11 @@ var testAgent = auth.Actor{Kind: auth.KindAgent, ID: "ses_test", Name: "claude-c
 
 // start runs the whole control plane on a fresh database: migrations (River's too), dispatcher, job runner and
 // two HTTP servers over the same database, one attributing requests to the admin and one to an agent session.
-func start(t *testing.T) *env {
+func start(t *testing.T) *env { return startWith(t, nil) }
+
+// startWith is start with a hook that adjusts the admin server before it serves (authentication tests clear the
+// fixed actor).
+func startWith(t *testing.T, adjust func(*Config)) *env {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	pool, err := storage.Open(ctx, testdb.New(t))
@@ -70,7 +74,11 @@ func start(t *testing.T) *env {
 	}
 	withJobs := func(c *Config) { c.Jobs = js }
 	asAgent := func(c *Config) { c.Actor = testAgent }
-	srv := httptest.NewServer(newTestServer(t, pool, hub, metrics, withJobs).Handler())
+	opts := []func(*Config){withJobs}
+	if adjust != nil {
+		opts = append(opts, adjust)
+	}
+	srv := httptest.NewServer(newTestServer(t, pool, hub, metrics, opts...).Handler())
 	agentSrv := httptest.NewServer(newTestServer(t, pool, hub, obs.NewMetrics(), withJobs, asAgent).Handler())
 	t.Cleanup(func() {
 		hub.Close()

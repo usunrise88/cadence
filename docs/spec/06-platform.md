@@ -57,7 +57,7 @@ One admin account, invitation links for reviewers, and opaque scoped tokens for 
 | Agent session | An opaque token minted when the session starts, passed to the agent as the MCP credential | Dies with the session; one project; the verbs of the project's permission preset; read access to the registry |
 | Automation and CLI | Personal API keys (`cdk_` prefix) created in Settings, used as Bearer | Until revoked; scoped to one project or to registry read; last-used time shown |
 
-- Mutations require the session cookie plus a custom header, or a Bearer token; SameSite plus the header is the CSRF defence.
+- Mutations require the session cookie plus a custom header, or a Bearer token; SameSite plus the header is the CSRF defence. The cookie is `cadence_session` (an opaque `cws_` token); the header is `Cadence-Client: web`; tokens are `cdk_` (API key), `cst_` (agent session), `cwk_` (worker), stored as SHA-256. Unauthenticated requests answer `401 unauthenticated`, out-of-scope ones `403 forbidden`.
 - All credentials live in one table: kind, scope, hash, expiry, last use; revocation is one click and is itself an audited command.
 - TLS terminates at a reverse proxy in the compose file (Caddy with an internal certificate); the control plane listens on localhost only.
 - Login attempts are rate-limited; a lost admin password is reset from the host shell (`cadence admin reset-password`), never by email.
