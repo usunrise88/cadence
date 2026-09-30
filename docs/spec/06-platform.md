@@ -152,7 +152,7 @@ read any of them (R15).
   time), indexed by run, name and step; thousands of points per run need no TSDB. Points arrive from
   `workerMetrics.new`, stream on `run.{id}.metrics`, and `metrics.get` answers series binned for charts (R53). Points
   live as long as their run.
-- Logs: one NDJSON file per job under the data directory (`logs/`), lines `{t, level, msg, fields}`; they tail on
+- Logs: one NDJSON file per job under the data directory (`job-logs/<jobId>.ndjson`; `logs/` holds the control plane's own log files), lines `{t, level, msg, fields}`; they tail on
   `job.{id}.log`. Field search is job-scoped in v1; `warn` and above are indexed for global search. Files are deleted
   14 days after the job ends.
 
