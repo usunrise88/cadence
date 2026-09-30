@@ -160,9 +160,10 @@ Identity and access (06 Authentication)
 - [x] Admin: Argon2id password + optional TOTP, HttpOnly session cookie, custom-header CSRF rule, rate-limited login,
       `cadence admin reset-password`
 - [x] Credentials table (kind, scope, hash, expiry, last use); agent session tokens; `cdk_` API keys; revoke as a command
-- [ ] Exposure (B7, R39) on the staging stand: TLS at the host's Caddy, control plane on 127.0.0.1, Postgres unpublished
-      (in place since phase 0); once sign-in works, the owner drops basic auth from the Caddy site file (a root-owned
-      file); a Caddy compose profile stays the option for hosts without a proxy of their own
+- [x] Exposure (B7, R39) on the staging stand: TLS at the host's Caddy, control plane on 127.0.0.1, Postgres unpublished
+      (in place since phase 0); basic auth dropped from the Caddy site file on 2026-09-30 once sign-in and the admin's
+      two-factor were on (`/metrics` stays 404 outside); a Caddy compose profile stays the option for hosts without a
+      proxy of their own
 
 Registry core (completed in phase 4)
 - [x] Collections and immutable versions named `YYYY-MM-DD.<sha>`, tags, aliases per project, adoption by reference,
@@ -247,8 +248,7 @@ Phase 1 notes (what differs from the plan above):
   rules, so the control plane sends them as `HostStart.allowedTools`); an idle-paused session reads "asleep" and wakes
   on the next message; layout autosaves are debounced and not audited.
 - Agent accounts are connected in Settings → Agents (`agentCredentials.*`); `docker compose run --rm -it agent-host
-  login claude|opencode` stays as the CLI fallback. Still the owner's: dropping basic auth from the stand's Caddy site
-  file (Exposure, above) — turn on two-factor sign-in first.
+  login claude|opencode` stays as the CLI fallback. Basic auth is off the stand since 2026-09-30 (Exposure, above).
 
 ---
 

@@ -73,8 +73,7 @@ p95 56–68 ms. What exists now (details in `ROADMAP.md` "Phase 1 notes" and `do
   hosts to its static list by polling `egressHosts.list` (internal/agentcreds, internal/egress).
 - **Web.** Chat, Agent sessions, Approvals, Agent settings, Settings, Getting started, Project, Mix, Recipe panels;
   context bridge (Ctrl/Cmd+I, `@kind:id` chips, attribution badge → tool call in Chat).
-Open from phase 1: live runs of the agent evals against real models, and dropping basic auth on the staging stand
-(the owner's step). Built after the gate: the worktree watcher (`recipe.working` events), the three-way Session changes
+Open from phase 1: live runs of the agent evals against real models. Built after the gate: the worktree watcher (`recipe.working` events), the three-way Session changes
 (`branches.compare`), `hostSessions.release` on host shutdown, tool-call ids for opencode, the agent evals harness
 (`make evals`); claude.ai connectors are off in every Claude session.
 
