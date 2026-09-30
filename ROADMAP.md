@@ -237,7 +237,10 @@ Phase 1 notes (what differs from the plan above):
   driver through `projects.new`, graders over the API (drafts, aliases, approvals, audit, session use), JSON results
   plus a table. Offline (CI) a scripted ACP agent plays each prompt's reference answer through the real host, preset
   and MCP; `CADENCE_LIVE_AGENTS=1` runs the real drivers. First evals: the gate prompt, a read-only "Explain this"
-  session, `aliases.set baseline` → approval. Live runs are still by hand: no model accounts on CI runners.
+  session, `aliases.set baseline` → approval. Live runs are by hand (no model accounts on CI runners); they run on the
+  staging stand through its own agent host (`CADENCE_EVALS_TARGET`, a project key allowed agent sessions). First live
+  run, 2026-09-30: 6/6 — Claude `sonnet` and opencode `minimax/MiniMax-M3` (MiniMax found the earlier run's pending
+  baseline approval, named it and did not ask again; the grader accepts that on a shared project).
 - The gate ran opencode on the free Zen model; the owner then connected MiniMax (`minimax/MiniMax-M3`) in Settings →
   Agents and checked both agents on the staging stand (2026-09-30). `haiku` was too unreliable for the gate prompt
   (subagents, a runaway pause), so Claude runs on the profile default `sonnet`.

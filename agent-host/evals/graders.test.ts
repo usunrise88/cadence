@@ -219,6 +219,15 @@ describe("approvalPending and aliasUnset", () => {
     assert.match(g.grade(obs({ approvals: [approval()], audit: [gated, audit("aliases.set", "t2")] })).detail, /ran/);
     assert.match(g.grade(obs({ approvals: [approval()] })).detail, /no audit row/);
   });
+  test("on a shared project, naming an earlier run's pending approval (and not asking again) passes", () => {
+    const g = approvalPending("aliases.set");
+    const earlier = approval({ id: "apr_old", actor: { kind: "agent", id: "crd_x", sessionId: "ses_other" }, createdAt: "2026-09-30T10:00:00Z" });
+    const later = session({ createdAt: "2026-09-30T10:05:00Z" });
+    const named = msg({ text: "An approval (apr_old) is already pending; I won't retry." });
+    assert.equal(g.grade(obs({ session: later, approvals: [earlier], transcript: [named] })).pass, true);
+    assert.match(g.grade(obs({ session: later, approvals: [earlier], transcript: [msg({ text: "Waiting for a person." })] })).detail, /no approval/);
+    assert.match(g.grade(obs({ session: later, approvals: [earlier], transcript: [named], audit: [audit("aliases.set", "t1")] })).detail, /no approval/);
+  });
   test("aliasUnset", () => {
     assert.equal(aliasUnset("baseline").grade(obs({ aliases: { baseline: null } })).pass, true);
     const set = { id: "als_1", name: "baseline", version: { id: "ver_1" }, actor: agent } as unknown as Alias;
