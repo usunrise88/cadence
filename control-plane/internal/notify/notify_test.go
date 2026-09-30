@@ -3,6 +3,10 @@ package notify
 import (
 	"encoding/json"
 	"errors"
+	"maps"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -142,6 +146,18 @@ func TestClassify(t *testing.T) {
 			ClassFailure, "Backup failed", "pg_dump: boom", ""},
 		{"backup failed on the entity topic is a repeat", record("entity.backup.bkp_1", "backup.failed", map[string]any{}), "", "", "", ""},
 		{"an unknown event", record("mixes", "mix.edited", map[string]any{}), "", "", "", ""},
+		{"a step job's state is told by its pipeline step", record("job.job_2", "job.state_changed", map[string]any{"job": map[string]any{"id": "job_2", "kind": "step", "state": "failed"}}),
+			"", "", "", ""},
+		{"step done is progress", record("pipeline_run.plr_1", "pipeline_run.step_changed", map[string]any{"pipelineRunId": "plr_1", "runState": "running",
+			"step": map[string]any{"id": "pls_1", "step": "train", "kind": "toy_train", "state": "done"}}), ClassProgress, "Step done: train (toy_train)", "plr_1", ""},
+		{"step failed is a failure", record("pipeline_run.plr_1", "pipeline_run.step_changed", map[string]any{"pipelineRunId": "plr_1", "runState": "failed",
+			"step": map[string]any{"id": "pls_1", "step": "train", "kind": "toy_train", "state": "failed", "error": map[string]any{"type": "oom", "message": "CUDA out of memory"}}}),
+			ClassFailure, "Step failed: train (toy_train)", "oom: CUDA out of memory", ""},
+		{"step running is nothing", record("pipeline_run.plr_1", "pipeline_run.step_changed", map[string]any{"step": map[string]any{"state": "running"}}), "", "", "", ""},
+		{"step event on its entity topic is a repeat", record("entity.pipeline_step.pls_1", "pipeline_run.step_changed", map[string]any{"step": map[string]any{"state": "done"}}), "", "", "", ""},
+		{"host unreachable is a failure", record("compute.cmp_1", "compute.health", map[string]any{"hostId": "cmp_1", "health": map[string]any{"state": "unreachable", "detail": "no worker on this host has reported for a minute"}}),
+			ClassFailure, "Compute host unreachable", "no worker on this host", ""},
+		{"host healthy again is nothing", record("compute.cmp_1", "compute.health", map[string]any{"hostId": "cmp_1", "health": map[string]any{"state": "healthy"}}), "", "", "", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			n, ok := Classify(tc.r)
@@ -155,6 +171,35 @@ func TestClassify(t *testing.T) {
 				t.Fatalf("Classify = %+v, %v", n, ok)
 			}
 		})
+	}
+}
+
+// TestClassTableMatchesWeb keeps the web shell's table (web/src/shell/notifications/classes.ts) equal to classTable,
+// apart from the two payload-free types only the web table lists (approval.requested, notification.digest).
+func TestClassTableMatchesWeb(t *testing.T) {
+	src, err := os.ReadFile(filepath.Join("..", "..", "..", "web", "src", "shell", "notifications", "classes.ts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(src)
+	start := strings.Index(body, "const TABLE")
+	end := strings.Index(body[start:], "};")
+	if start < 0 || end < 0 {
+		t.Fatal("classes.ts has no TABLE")
+	}
+	web := map[string]string{}
+	for _, m := range regexp.MustCompile(`"([a-z_.]+)":\s*"([a-z_]+)"`).FindAllStringSubmatch(body[start:start+end], -1) {
+		web[m[1]] = m[2]
+	}
+	want := maps.Clone(classTable)
+	want["approval.requested"], want["notification.digest"] = ClassApproval, ClassDigest
+	if !maps.Equal(web, want) {
+		t.Fatalf("classes.ts TABLE = %v\nclassify.go classTable (+ approval, digest) = %v", web, want)
+	}
+	for _, typ := range []string{"job.state_changed", "pipeline_run.step_changed", "compute.health"} {
+		if !strings.Contains(body, `"`+typ+`"`) {
+			t.Errorf("classes.ts classOf does not handle %s", typ)
+		}
 	}
 }
 

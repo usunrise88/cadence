@@ -383,9 +383,11 @@ Open questions:
       (kind `telegram`), replaced through `telegramBot.set`; backup sets carry the sealed secret values but never the
       master key; the content-store mirror is never pruned; the set taken on the restore-test weekday is the weekly
       set; failed sets keep no files. Event types other streams should emit for the routing table (or add to
-      `internal/notify/classify.go` and `web/src/shell/notifications/classes.ts`): `mount.unhealthy`,
-      `compute.card_closed` (failure); `gate.verdict`, `deployment.promoted`, `schedule.finished`, `batch.closed`
-      (outcome); `pipeline_step.done`, `checkpoint.saved`, `triage.item_added` (progress) — on a non-entity topic
+      `internal/notify/classify.go` and `web/src/shell/notifications/classes.ts`): `mount.unhealthy` (failure);
+      `gate.verdict`, `deployment.promoted`, `schedule.finished`, `batch.closed` (outcome); `checkpoint.saved`,
+      `triage.item_added` (progress) — on a non-entity topic. Step outcomes are `pipeline_run.step_changed` and host
+      loss `compute.health` (classified by payload, F); `pipeline_step.done` was dropped (nothing emits it) and
+      `compute.card_closed` waits for per-card health
 - [ ] S · Job logs (phase 2), confirm: a job's log is one NDJSON file `$CADENCE_DATA_DIR/job-logs/<jobId>.ndjson`
       (lines `{t, level, msg, fields}`), not a content-store blob, read through `jobLogs.list` and tailed on
       `job.{id}.log`; a daily chore deletes files untouched for 14 days (hard-coded, not a `defaults.yaml` key)
@@ -411,10 +413,16 @@ Open questions:
       rather than copied into the step spec by the pipelines engine, so an edit reorders jobs already waiting
 - [ ] gap (phase 2): `pipelines.run` does not refuse eval-only dataset versions (`data.Trainable`); only mixes and the
       run estimate check them, so the run facade must (stream R)
+- [x] F · resolved (phase 2): notifications classify the events that exist — `pipeline_run.step_changed` on
+      `pipeline_run.{id}` (step `done` → progress, `failed`, i.e. no retry left → failure) and `compute.health` on
+      `compute.{id}` (`unreachable` → failure); a step job's own `job.state_changed` is no longer noticed (the step
+      event tells it once per step, not per attempt). `pipeline_step.done` and `compute.card_closed` left the routing
+      table; `TestClassTableMatchesWeb` keeps `classify.go` and `classes.ts` equal
 - [ ] gap (phase 2): card health is per host (`unknown | healthy | unreachable` from heartbeats); nothing closes a
-      card's slot for an unhealthy card and nothing emits `compute.card_closed`; a host turning `unreachable`
-      (`compute.health`) and `pipeline_run.step_changed` are not classified for notifications, and `pipeline_step.done`
-      has no emitter (06 "Notifications")
+      card's slot for an unhealthy card, so nothing emits `compute.card_closed` (it rejoins the routing table as a
+      failure when it does). Not small: the worker's card telemetry carries no health field today (NVML errors, a
+      card missing from the report), `card_slots` has no closed state, and the claim and reopening need it (06
+      "Notifications", "Failures")
 - [ ] gap (phase 2): "a checkpoint and training state every 20 minutes" (03 "Key defaults") has no `defaults.yaml` key
       and no step kind implements it yet; the NeMo pack's train kind must, with the interval from `defaults.yaml`
 - [ ] gap (phase 2): `metrics.get` (series binned for charts, R53) is not in the contract yet; `internal/telemetry.Get`

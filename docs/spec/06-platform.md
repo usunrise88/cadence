@@ -244,7 +244,7 @@ Two channels — the in-app history and a Telegram bot — one routing table by 
 | Event class | In-app | Telegram | Timing |
 | --- | --- | --- | --- |
 | Approval requested (agent, automation, registry) | Yes | Message with inline Approve / Deny buttons and the estimate | Immediate |
-| Job failed, mount unhealthy, card closed, backup failed | Yes | Yes | Immediate |
+| Job or pipeline step failed, compute host unreachable, mount unhealthy, card closed (not built), backup failed | Yes | Yes | Immediate |
 | Gate verdict, promotion, schedule finished, batch closed | Yes | Yes | Immediate |
 | Progress (step done, checkpoint saved, triage item added) | Yes | No | — |
 | Daily digest: runs, evals, spend against budgets, open approvals | Yes | Yes | 09:00 local |
@@ -284,12 +284,14 @@ Phase 2 as built (2026-09-30, stream O):
   kind (runs and evals are jobs until their entities land), each project's GPU-hours against its daily budget
   (`notify.SpendFunc`; "not metered yet" until stream R plugs in the meter), open approvals, events held for the
   digest and the last backup; in-app as `notification.digest` on `notifications`, on Telegram as a message.
-- Classification (`internal/notify/classify.go`): approvals on `approvals`; a job's `job.state_changed` on its job
-  topic (`failed` → failure, `done` → progress; step jobs included); backups by type. The table also names types no
-  stream emits yet — `mount.unhealthy`, `gate.verdict`, `deployment.promoted`, `schedule.finished`, `batch.closed`,
-  `checkpoint.saved`, `triage.item_added` arrive with their phases; `compute.card_closed` and `pipeline_step.done`
-  have no emitter (the engine emits `pipeline_run.step_changed`, the worker protocol `compute.health` with state
-  `unreachable`, and neither is classified).
+- Classification (`internal/notify/classify.go`, mirrored by `web/src/shell/notifications/classes.ts`; a test keeps
+  the two tables equal): approvals on `approvals`; a job's `job.state_changed` on its job topic (`failed` → failure,
+  `done` → progress) except step jobs, whose pipeline step tells them — `pipeline_run.step_changed` on
+  `pipeline_run.{id}` (step `done` → progress, `failed` with no retry left → failure); a host turning `unreachable`
+  (`compute.health` on `compute.{id}`) → failure; backups by type. The table also names types no stream emits yet —
+  `mount.unhealthy`, `gate.verdict`, `deployment.promoted`, `schedule.finished`, `batch.closed`, `checkpoint.saved`,
+  `triage.item_added` arrive with their phases; `compute.card_closed` joins when per-card health closes a card's slot
+  (not built).
 - The control plane reaches `api.telegram.org` over the compose `default` network (not internal); nothing else is
   needed. Reviewer messages (batch assigned/closing) arrive with batches in phase 4.
 
