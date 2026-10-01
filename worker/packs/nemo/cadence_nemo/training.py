@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import contextlib
 import math
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -317,12 +317,14 @@ def ignore_sigterm_in_workers(loader: Any) -> None:
 
 
 class Hooks:
-    """What the Lightning callback asks the train step to do (save a training state, keep the best weights)."""
+    """What the Lightning callback asks the train step to do (save a training state, register a validation's
+    checkpoint)."""
 
     def save_state(self, trainer: Any, step: int) -> None:
         raise NotImplementedError
 
-    def keep_best(self, module: Any, step: int) -> None:
+    def validated(self, module: Any, step: int, wer: float, best: bool) -> None:
+        """After each validation pass (not the sanity check): ``best`` when its WER is the lowest so far."""
         raise NotImplementedError
 
     def on_stop(self, trainer: Any, step: int) -> None:
@@ -376,26 +378,54 @@ def lightning_callback(monitor: Any, hooks: Hooks, sample_rate: int) -> Any:
             if wer is None:
                 return
             step = int(trainer.global_step)
-            if monitor.validation(step, float(wer)):
-                hooks.keep_best(module, step)
+            best = monitor.validation(step, float(wer))
+            hooks.validated(module, step, float(wer), best)
 
     return Reporter()
 
 
-def cpu_state(module: Any) -> dict[str, Any]:
-    return {k: v.detach().to("cpu", copy=True) for k, v in module.state_dict().items()}
+DATA_PATH_KEYS = (
+    ("train_ds", "input_cfg"),
+    ("train_ds", "manifest_filepath"),
+    ("validation_ds", "input_cfg"),
+    ("validation_ds", "manifest_filepath"),
+)
 
 
-def clean_data_config(model: Any) -> None:
-    """Drop the lease's scratch paths from the configuration saved inside the .nemo."""
+def clean_data_config(model: Any) -> dict[tuple[str, str], Any]:
+    """Drop the lease's scratch paths from the configuration saved inside the .nemo; returns what it dropped."""
     from omegaconf import open_dict
 
+    dropped: dict[tuple[str, str], Any] = {}
     with open_dict(model.cfg):
-        for section in ("train_ds", "validation_ds"):
-            if section in model.cfg and model.cfg[section] is not None:
-                for key in ("input_cfg", "manifest_filepath"):
-                    if key in model.cfg[section]:
-                        model.cfg[section][key] = None
+        for section, key in DATA_PATH_KEYS:
+            if section in model.cfg and model.cfg[section] is not None and key in model.cfg[section]:
+                dropped[(section, key)] = model.cfg[section][key]
+                model.cfg[section][key] = None
+    return dropped
+
+
+@contextlib.contextmanager
+def portable_config(model: Any) -> Iterator[None]:
+    """The data paths dropped for a save during training (a validation checkpoint), then put back."""
+    from omegaconf import open_dict
+
+    dropped = clean_data_config(model)
+    try:
+        yield
+    finally:
+        with open_dict(model.cfg):
+            for (section, key), value in dropped.items():
+                model.cfg[section][key] = value
+
+
+def save_nemo(model: Any, d: Path) -> None:
+    """Write ``model.nemo`` of the model as it is now into directory d, during training."""
+    from cadence_nemo.checkpoint import NEMO_FILE
+
+    d.mkdir(parents=True, exist_ok=True)
+    with portable_config(model):
+        model.save_to(str(d / NEMO_FILE))
 
 
 def timed_steps(

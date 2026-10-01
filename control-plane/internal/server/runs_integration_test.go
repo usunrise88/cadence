@@ -423,3 +423,53 @@ func TestRunShowsOOMRetry(t *testing.T) {
 		t.Fatalf("train stage %+v", tr)
 	}
 }
+
+// Validation checkpoints a train step publishes during its lease (workerOutputs.new) register on the run at once,
+// beside the checkpoint its release reports, and take part in the top k.
+func TestRunRegistersPublishedCheckpoints(t *testing.T) {
+	e := start(t)
+	if err := pipelinestest.RegisterTraining(context.Background(), e.pool); err != nil {
+		t.Fatal(err)
+	}
+	trainingProject(t, e, "pub")
+	e.ok(e.do("POST", "/api/projects/pub/runs:calibrate", `{"baseModel":"`+pipelinestest.BaseModel+`","mix":"he-mix"}`, "Idempotency-Key", e.key()), 201, nil)
+	deadline := time.Now().Add(20 * time.Second)
+	for e.count("SELECT count(*) FROM calibrations") == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("no calibration")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	e.leases.Script("train", pipelinestest.Action{Publish: 3})
+	var r runView
+	e.ok(e.do("POST", "/api/projects/pub/runs", `{"baseModel":"`+pipelinestest.BaseModel+`","mix":"he-mix"}`, "Idempotency-Key", e.key()), 201, &r)
+	r = e.waitRun(r.ID, "done")
+	ck := e.checkpoints("pub", r.ID)
+	if len(ck) != 4 || r.CheckpointCount != 4 {
+		t.Fatalf("checkpoints %d (run says %d): %+v", len(ck), r.CheckpointCount, ck)
+	}
+	at := map[int64]bool{}
+	kept := 0
+	for _, c := range ck {
+		if c.Step == nil || c.ValWer == nil || c.Kind != "trained" {
+			t.Fatalf("checkpoint %+v", c)
+		}
+		at[*c.Step] = true
+		if c.Kept {
+			kept++
+		}
+	}
+	if !at[50] || !at[100] || !at[150] || !at[200] || kept != 3 {
+		t.Fatalf("steps %v, kept %d", at, kept)
+	}
+	var art struct {
+		Producer struct{ Step, Output string }
+	}
+	e.ok(e.do("GET", "/api/artifacts/"+ck[0].Artifact, ""), 200, &art)
+	if art.Producer.Step != "train" || art.Producer.Output != "checkpoint" {
+		t.Fatalf("artifact producer %+v", art)
+	}
+	if ev := e.events("run." + r.ID + ".checkpoints"); len(ev) != 4 {
+		t.Fatalf("%d checkpoint events", len(ev))
+	}
+}

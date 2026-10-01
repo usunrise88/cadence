@@ -567,6 +567,32 @@ func (e *Engine) Leased(ctx context.Context, tx pgx.Tx, jobID string) ([]events.
 	return append([]events.Draft{stepDraft(r, saved)}, obs...), nil
 }
 
+// Published records an intermediate output a running step published during its lease (workerOutputs.new) inside the
+// publishing transaction: the artifact is indexed with the step as producer and the output hooks of its type run (a
+// validation checkpoint registers on the run at once). Nothing happens for a job without an active pipeline step.
+// The step's outputs stay what its release reports.
+func (e *Engine) Published(ctx context.Context, tx pgx.Tx, jobID string, spec steps.Spec, name string, ref steps.ArtifactRef,
+	metrics map[string]float64) ([]events.Draft, error) {
+	st, found, err := StepByJob(ctx, tx, jobID)
+	if err != nil || !found || !active(st.State) {
+		return nil, err
+	}
+	r, err := lockRun(ctx, tx, st.PipelineRunID)
+	if err != nil {
+		return nil, err
+	}
+	a, err := artifacts.Record(ctx, tx, e.o.CAS, ref, r.ProjectID,
+		&artifacts.Producer{PipelineRunID: r.ID, StepID: st.ID, Step: st.Step, Output: name})
+	if err != nil {
+		return nil, problems.Validation([]problems.FieldError{{Path: "/artifact", Message: err.Error()}})
+	}
+	ref.Size = a.Size
+	return e.o.Hooks.Run(ctx, tx, steps.Output{
+		ProjectID: r.ProjectID, PipelineRunID: r.ID, StepID: st.ID, RunID: r.RunID, Name: name, Artifact: ref,
+		Metrics: metrics, Spec: spec,
+	})
+}
+
 // complete applies a lease outcome to the step of job jobID in one transaction.
 func (e *Engine) complete(ctx context.Context, jobID string, spec steps.Spec, out steps.Outcome) error {
 	return pgx.BeginFunc(ctx, e.o.Pool, func(tx pgx.Tx) error {

@@ -19,6 +19,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import shutil
 import tarfile
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -28,6 +29,7 @@ from typing import Any
 from cadence_nemo.family import NAME
 from cadence_worker.cas import hash_file
 from cadence_worker.steps.base import StepInputError
+from cadence_worker.steps.context import StepContext
 
 NEMO_FILE = "model.nemo"
 CHECKPOINT_JSON = "checkpoint.json"
@@ -84,6 +86,21 @@ def link_checkpoint(src: Path, dst: Path) -> None:
                 os.link(f, target)
             except OSError:
                 target.write_bytes(f.read_bytes())
+
+
+def publish_validation(
+    ctx: StepContext, d: Path, meta: Mapping[str, Any], wer: float, best_link: Path | None = None
+) -> dict[str, Any]:
+    """Register a validation's checkpoint while training runs: complete ``checkpoint.json`` beside the ``model.nemo``
+    already in d, hard-link it to ``best_link`` when it is the best so far (the release's ``checkpoint_best`` is then
+    the same artifact), and publish d as an instance of the ``checkpoint`` output (the harness stores and removes d).
+    Returns the checkpoint document."""
+    doc = write_checkpoint(d, {**meta, "valWer": wer})
+    if best_link is not None:
+        shutil.rmtree(best_link, ignore_errors=True)
+        link_checkpoint(d, best_link)
+    ctx.publish("checkpoint", d, neutral_meta(doc), {"val_wer": wer})
+    return doc
 
 
 def neutral_meta(doc: Mapping[str, Any]) -> dict[str, Any]:

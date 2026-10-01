@@ -12,6 +12,7 @@ import (
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/otel/trace"
 
@@ -161,6 +162,9 @@ func New(c Config) (*Server, error) {
 	}
 	if c.Workers != nil {
 		c.Workers.OnLeased(c.Pipelines.Leased) // a granted lease marks its pipeline step running
+		c.Workers.OnPublished(func(ctx context.Context, tx pgx.Tx, jobID string, spec steps.Spec, out workers.Published) ([]events.Draft, error) {
+			return c.Pipelines.Published(ctx, tx, jobID, spec, out.Name, out.Artifact, out.Metrics) // intermediate outputs
+		})
 	}
 	s := &Server{Config: c, spec: spec}
 	s.runs = s.newRunsService()

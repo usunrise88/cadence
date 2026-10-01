@@ -88,6 +88,7 @@ of kind `step` stays the orchestrator (R14, R40; the Go side is `internal/steps`
 | `workerLeases.report` | `POST /worker-leases/{id}:report` | Heartbeat with progress and card telemetry; answers `stop` with a reason |
 | `workerLogs.new` | `POST /worker-leases/{id}/worker-logs` | NDJSON log lines, ≤ 1 MiB per request |
 | `workerMetrics.new` | `POST /worker-leases/{id}/worker-metrics` | Metric points, ≤ 5 000 per batch |
+| `workerOutputs.new` | `POST /worker-leases/{id}/worker-outputs` | An intermediate output during the lease (a validation checkpoint), recorded and hooked at once |
 | `workerLeases.release` | `POST /worker-leases/{id}:release` | Completion: the step outcome with its output artifacts and final metrics, or a typed error |
 | `workerArtifacts.set` | `PUT /worker-artifacts/{hash}` | Upload one blob, hash verified; for workers without the shared volume (remote, later) |
 
@@ -153,6 +154,16 @@ Rules:
   hash is in the store (`artifact-missing`), and the pipeline engine records the artifacts, runs the output hooks in
   the transaction that marks the step `done` (`dataset` in phase 2 wave 1; `checkpoint` and `calibration` arrive with
   runs) and advances the pipeline. `oom` gets one automatic retry with `batchScale` 0.75, `lost` one retry.
+- Intermediate outputs: a step may publish instances of its outputs while it runs (`ctx.publish(output, path, meta,
+  metrics)`; a training step publishes every validation's checkpoint). The harness hashes the path into the store,
+  removes it from the scratch directory and sends `workerOutputs.new` (`name` = one of the step's outputs, the artifact
+  of that output's type, optional metrics) on its own thread, in order, before the release. The control plane checks
+  the lease is active, the name and type match the step spec and the blob is in the store (`artifact-missing`), then
+  records the artifact (producer: the pipeline step and output name) and runs the output hooks of its type in that
+  request's own transaction (`pipelines.Engine.Published`): a checkpoint registers on its run and re-ranks the top k
+  at once, so it survives a pause, a window close, a failure or a reaped lease. Hooks are idempotent per hash, so a
+  retried publication or a final output equal to a published one registers once. The release's outputs stay the
+  step's outputs (what the next step reads); a failed publication is a warning in the job log, not a step failure.
 - Secrets: a step kind declares secret names; at lease time the control plane reads the values from the secret store
   (R9) and puts them in the lease's `env` for that subprocess only, named in upper case with `-` and `.` as `_`
   (`hf-token` → `HF_TOKEN`); a missing secret fails the step at lease time with error type `input`. Values never

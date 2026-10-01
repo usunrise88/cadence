@@ -14,6 +14,7 @@ OPERATIONS: dict[str, tuple[str, str]] = {
     "workerLeases.report": ("POST", "/worker-leases/{id}:report"),
     "workerLogs.new": ("POST", "/worker-leases/{id}/worker-logs"),
     "workerMetrics.new": ("POST", "/worker-leases/{id}/worker-metrics"),
+    "workerOutputs.new": ("POST", "/worker-leases/{id}/worker-outputs"),
     "workerRegistrations.new": ("POST", "/worker-registrations"),
 }
 
@@ -195,6 +196,12 @@ class WorkerLogLine(TypedDict):
 
 class WorkerMetricBatch(TypedDict):
     points: list[MetricPoint]
+
+
+class WorkerOutput(TypedDict):
+    name: str
+    artifact: ArtifactRef
+    metrics: NotRequired[dict[str, float]]
 
 
 class WorkerRegistration(TypedDict):

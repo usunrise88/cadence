@@ -3315,6 +3315,20 @@ export type StepOutcome = {
     };
 };
 
+export type WorkerOutput = {
+    /**
+     * The step output it is an instance of (its type must match the output's)
+     */
+    name: string;
+    artifact: ArtifactRef;
+    /**
+     * Values at this point (val_wer, …) the hooks may read when the meta lacks them
+     */
+    metrics?: {
+        [key: string]: number;
+    };
+};
+
 export type StepError = {
     /**
      * oom gets one automatic retry at 0.75× batch; lost = reaped after missed heartbeats
@@ -9015,6 +9029,36 @@ export type WorkerMetricsNewResponses = {
 };
 
 export type WorkerMetricsNewResponse = WorkerMetricsNewResponses[keyof WorkerMetricsNewResponses];
+
+export type WorkerOutputsNewData = {
+    body: WorkerOutput;
+    path: {
+        /**
+         * Lease id (lse_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/worker-leases/{id}/worker-outputs';
+};
+
+export type WorkerOutputsNewErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type WorkerOutputsNewError = WorkerOutputsNewErrors[keyof WorkerOutputsNewErrors];
+
+export type WorkerOutputsNewResponses = {
+    /**
+     * Recorded (or recorded before)
+     */
+    204: void;
+};
+
+export type WorkerOutputsNewResponse = WorkerOutputsNewResponses[keyof WorkerOutputsNewResponses];
 
 export type WorkerLeasesReleaseData = {
     body: StepOutcome;

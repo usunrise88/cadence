@@ -492,6 +492,35 @@ def test_link_checkpoint_keeps_the_same_content(tmp_path: Path) -> None:
     assert store.put_path(tmp_path / "a").hash == store.put_path(tmp_path / "b").hash
 
 
+def test_validation_checkpoints_are_published_and_the_best_is_linked(tmp_path: Path) -> None:
+    events: list[dict[str, Any]] = []
+    c = ctx(tmp_path, events)
+    best = tmp_path / "best"
+    lineage = {"base": {"hfRepo": "r", "revision": "v"}, "tokenizer": {"kind": "spe"}}
+    for step, wer, is_best in ((200, 0.40, True), (400, 0.42, False)):
+        d = tmp_path / "published" / f"checkpoint-{step}"
+        d.mkdir(parents=True)
+        fake_nemo(d / ck.NEMO_FILE, {"w": torch.full((2,), float(step))})
+        doc = ck.publish_validation(c, d, {"step": step, **lineage}, wer, best if is_best else None)
+        assert (doc["step"], doc["valWer"], doc["family"]) == (step, wer, NAME)
+    published = [e for e in events if e["e"] == "publish"]
+    assert [e["output"] for e in published] == ["checkpoint", "checkpoint"]
+    assert published[0]["meta"] == {
+        "family": NAME,
+        "step": 200,
+        "valWer": 0.40,
+        "weightsHash": ck.weights_hash(tmp_path / "published" / "checkpoint-200" / ck.NEMO_FILE),
+        "base": lineage["base"],
+        "tokenizer": lineage["tokenizer"],
+    }
+    assert published[1]["metrics"] == {"val_wer": 0.42}
+    # The best link is the step-200 checkpoint: linked as checkpoint_best it is the same artifact.
+    assert ck.read_checkpoint(best)["step"] == 200
+    store = Store(tmp_path / "cas")
+    ck.link_checkpoint(best, tmp_path / "checkpoint_best")
+    assert store.put_path(tmp_path / "checkpoint_best").hash == store.put_path(Path(published[0]["path"])).hash
+
+
 # ---------------------------------------------------------------- augmentation
 
 

@@ -2068,6 +2068,26 @@ paths:
         "204": { description: Stored }
         default: { $ref: "#/components/responses/Problem" }
 
+  /worker-leases/{id}/worker-outputs:
+    x-cadence: { entity: workerOutputs }
+    parameters: [{ $ref: "#/components/parameters/LeaseId" }]
+    post:
+      operationId: workerOutputs.new
+      summary: Publish an intermediate output of a running step (a validation checkpoint); recorded and hooked at once
+      description: >
+        The artifact must already be in the content store and name one of the step's outputs with its declared type.
+        The control plane records it and runs the output hooks of its type in their own transaction (a `checkpoint`
+        registers on the run and re-ranks its top k), so outputs published during a lease survive a pause, a window
+        close or a failure. Publishing the same hash again is a no-op. The release still sends the step's final
+        outputs.
+      tags: [worker]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/WorkerOutput" } } }
+      responses:
+        "204": { description: Recorded (or recorded before) }
+        default: { $ref: "#/components/responses/Problem" }
+
   /worker-leases/{id}:release:
     x-cadence: { entity: workerLeases }
     parameters: [{ $ref: "#/components/parameters/LeaseId" }]
@@ -5630,6 +5650,14 @@ components:
         error: { $ref: "#/components/schemas/StepError" }
         outputs: { type: object, additionalProperties: { $ref: "#/components/schemas/ArtifactRef" } }
         metrics: { type: object, additionalProperties: { type: number }, description: "Final values (val_wer, seconds_per_step, …)" }
+    WorkerOutput:
+      type: object
+      required: [name, artifact]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100, description: "The step output it is an instance of (its type must match the output's)" }
+        artifact: { $ref: "#/components/schemas/ArtifactRef" }
+        metrics: { type: object, additionalProperties: { type: number }, description: "Values at this point (val_wer, …) the hooks may read when the meta lacks them" }
     StepError:
       type: object
       required: [type, message]

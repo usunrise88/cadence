@@ -69,6 +69,8 @@ type Service struct {
 	logSeq  map[string]int // lines per job log, counted once per process
 	// onLeased runs in the transaction that grants a lease (the pipeline engine marks the step running).
 	onLeased func(ctx context.Context, tx pgx.Tx, jobID string) ([]events.Draft, error)
+	// onPublished records an intermediate output (workerOutputs.new) in its transaction.
+	onPublished PublishHook
 }
 
 // OnLeased sets fn to run in the transaction that grants a lease; its events are emitted with the grant. The

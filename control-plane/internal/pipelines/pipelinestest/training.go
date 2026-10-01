@@ -12,6 +12,8 @@ import (
 
 	"github.com/usunrise88/cadence/control-plane/internal/auth"
 	"github.com/usunrise88/cadence/control-plane/internal/cas"
+	"github.com/usunrise88/cadence/control-plane/internal/events"
+	"github.com/usunrise88/cadence/control-plane/internal/jobs"
 	"github.com/usunrise88/cadence/control-plane/internal/registry"
 	"github.com/usunrise88/cadence/control-plane/internal/steps"
 )
@@ -146,6 +148,39 @@ func RegisterDataset(ctx context.Context, pool *pgxpool.Pool, store *cas.Store, 
 		return err
 	})
 	return id, err
+}
+
+// publish has the train fixture publish n validation checkpoints (steps k·steps/(n+1), validation WER falling) as a
+// worker does during a lease, each in its own transaction.
+func (l *Leases) publish(ctx context.Context, jobID string, spec steps.Spec, n int) error {
+	if n <= 0 || spec.Kind != KindTrain || l.Engine == nil {
+		return nil
+	}
+	var params map[string]any
+	_ = json.Unmarshal(spec.Params, &params)
+	total, _ := params["steps"].(float64)
+	for k := 1; k <= n; k++ {
+		step := math.Floor(total * float64(k) / float64(n+1))
+		wer := math.Round(0.9/float64(k+1)*1e6) / 1e6
+		doc := map[string]any{"family": FamilyName, "step": step, "of": spec.StepID}
+		b, _ := json.Marshal(doc)
+		h, err := l.CAS.PutBytes(b)
+		if err != nil {
+			return err
+		}
+		meta, _ := json.Marshal(map[string]any{"family": FamilyName, "step": step, "valWer": wer, "weightsHash": cas.Hash(b)})
+		ref := steps.ArtifactRef{Hash: h, Type: "checkpoint", Size: int64(len(b)), Meta: meta}
+		if err := pgx.BeginFunc(ctx, l.Pool, func(tx pgx.Tx) error {
+			drafts, err := l.Engine.Published(ctx, tx, jobID, spec, "checkpoint", ref, map[string]float64{"val_wer": wer})
+			if err != nil {
+				return err
+			}
+			return events.Append(ctx, tx, jobs.System, nil, drafts)
+		}); err != nil {
+			return fmt.Errorf("publish checkpoint %d: %w", k, err)
+		}
+	}
+	return nil
 }
 
 // runTraining executes the training fixtures; ok is false for other kinds.

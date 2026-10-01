@@ -22,6 +22,7 @@ from cadence_worker.protocol_gen import (
     RuntimeDescriptor,
     StepOutcome,
     WorkerLogLine,
+    WorkerOutput,
     WorkerRegistration,
     WorkerReport,
 )
@@ -110,6 +111,8 @@ def _line_size(line: WorkerLogLine) -> int:
 
 class HttpSink:
     def __init__(self, client: WorkerClient, lease_id: str) -> None:
+        self.client = client
+        self.lease_id = lease_id
         self.logs: Batcher[WorkerLogLine] = Batcher(
             lambda b: with_retry(lambda: client.logs(lease_id, b)),
             max_items=LOG_BATCH_LINES,
@@ -132,6 +135,12 @@ class HttpSink:
 
     def progress(self, fraction: float, message: str) -> None:
         self.last_progress = (fraction, message)
+
+    def publish(self, output: WorkerOutput) -> None:
+        # Logs and metrics so far go first, so the job's log reads in order around the publication.
+        self.logs.flush()
+        self.metrics.flush()
+        with_retry(lambda: self.client.publish(self.lease_id, output))
 
     def close(self) -> None:
         self.logs.close()

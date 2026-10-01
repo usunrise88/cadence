@@ -514,10 +514,10 @@ Open questions:
       augmentation (it joins when the pack reads `noise-bank/*`); the MUSAN import runs on the stand in the gate wave
 - [ ] H: the toy model gained a layer norm (it converged too late: WER near 1 at 300 steps) under the same
       `toy_train@1`; the toy is CI-only, and checkpoints written before load without it
-- [ ] G · gate rehearsal (2026-10-01, docs/review/2026-10-01-phase-2-rehearsal.md): a run registers at most two
-      checkpoints (the train kind's `checkpoint` and `checkpoint_best` of the last lease), so keep-top-k and averaging
-      see one or two per run and a pause loses the pre-pause best; per-validation checkpoints need a step-contract
-      change (several checkpoint outputs)
+- [x] G2 · resolved (2026-10-01 gate rehearsal): every validation's checkpoint is registered — steps publish
+      intermediate outputs during a lease (`workerOutputs.new`, `ctx.publish`, 06 "Worker protocol"); the NeMo kind
+      saves a `.nemo` per validation (seconds of each lease, not measured on the card yet) and links `checkpoint_best`
+      to the published one
 - [ ] G · measured estimates use the calibration's compute-only seconds per step (0.38 s); real steps are 0.53–0.56 s
       and each lease adds ≈ 2 min of restore and saves, so short runs are estimated ≈ 2× low; decide how the estimate
       adds loop overhead
