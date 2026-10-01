@@ -29,6 +29,7 @@ var classTable = map[string]string{
 	"backup.failed":         ClassFailure,
 	"backup.restore_failed": ClassFailure,
 	"mount.unhealthy":       ClassFailure,
+	"storage.low_space":     ClassFailure,
 	// outcome
 	"gate.verdict":        ClassOutcome,
 	"deployment.promoted": ClassOutcome,
@@ -169,6 +170,30 @@ func Classify(r events.Record) (Notice, bool) {
 			return Notice{}, false
 		}
 		return p.Approval.notice(), true
+	case "storage.low_space":
+		var p struct {
+			TotalBytes         int64 `json:"totalBytes"`
+			FreeBytes          int64 `json:"freeBytes"`
+			EvictableArtifacts int   `json:"evictableArtifacts"`
+			EvictableBytes     int64 `json:"evictableBytes"`
+			Permanent          bool  `json:"permanent"`
+		}
+		if json.Unmarshal(r.Payload, &p) != nil || p.TotalBytes <= 0 {
+			return Notice{}, false
+		}
+		gb := func(b int64) float64 { return float64(b) / 1e9 }
+		body := fmt.Sprintf("%.0f GB free of %.0f GB (%.0f %%).", gb(p.FreeBytes), gb(p.TotalBytes),
+			100*float64(p.FreeBytes)/float64(p.TotalBytes))
+		if p.EvictableArtifacts > 0 {
+			body += fmt.Sprintf("\n%d superseded training states (%.0f GB) can be evicted: Settings → Content store.",
+				p.EvictableArtifacts, gb(p.EvictableBytes))
+			if p.Permanent {
+				body += " No backup mirror is configured, so eviction is permanent."
+			}
+		} else {
+			body += "\nNo training state can be evicted; free space on the disk or give the store a larger one."
+		}
+		return Notice{Class: ClassFailure, Title: "Content store low on space", Body: body}, true
 	case "job.state_changed":
 		if !strings.HasPrefix(r.Topic, "job.") {
 			return Notice{}, false

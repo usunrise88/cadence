@@ -3,6 +3,8 @@ package notify
 import (
 	"strings"
 	"testing"
+
+	"github.com/usunrise88/cadence/control-plane/internal/events"
 )
 
 func TestWriteQueue(t *testing.T) {
@@ -49,5 +51,19 @@ func TestWriteQueueCapsTheList(t *testing.T) {
 	}
 	if !strings.Contains(b.String(), "… 3 more") {
 		t.Errorf("no remainder line in %q", b.String())
+	}
+}
+
+func TestClassifyLowSpace(t *testing.T) {
+	r := events.Record{Topic: "storage", Type: "storage.low_space",
+		Payload: []byte(`{"totalBytes":492000000000,"freeBytes":36000000000,"lowFreeFraction":0.15,"evictableArtifacts":12,"evictableBytes":88000000000,"permanent":true}`)}
+	n, ok := Classify(r)
+	if !ok || n.Class != ClassFailure || n.Title != "Content store low on space" {
+		t.Fatalf("notice %+v, %v", n, ok)
+	}
+	for _, want := range []string{"36 GB free of 492 GB (7 %)", "12 superseded training states (88 GB)", "permanent"} {
+		if !strings.Contains(n.Body, want) {
+			t.Errorf("body %q lacks %q", n.Body, want)
+		}
 	}
 }

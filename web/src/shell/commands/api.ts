@@ -1,4 +1,4 @@
-import { Archive, Bell, CheckCircle, Database, DatabaseRestore, Key, Lock, SendDiagonal, Server, Shield, ShieldCheck, XmarkCircle } from "iconoir-react";
+import { Archive, Bell, CheckCircle, Database, DatabaseRestore, Key, Lock, SendDiagonal, Server, Shield, ShieldCheck, Trash, XmarkCircle } from "iconoir-react";
 import { commandHeaders } from "@/api/client";
 import {
   agentCredentialsArchive,
@@ -7,6 +7,7 @@ import {
   approvalsApprove,
   approvalsDeny,
   backupsNew,
+  artifactsEvict,
   backupsVerify,
   computeEdit,
   credentialsNew,
@@ -19,6 +20,9 @@ import {
   telegramBotVerify,
 } from "@/api/gen/sdk.gen";
 import type {
+  ApprovalAccepted,
+  ArtifactEvict,
+  EvictionPlan,
   AgentCredential,
   AgentCredentialSetWritable,
   Approval,
@@ -85,6 +89,7 @@ export type ApiCommands = {
   "telegramBot.verify": { args: undefined; result: TelegramBotVerify };
   "backups.new": { args: undefined; result: JobAccepted };
   "backups.verify": { args: { backup: Backup }; result: JobAccepted };
+  "artifacts.evict": { args: { dryRun?: boolean; body?: ArtifactEvict }; result: EvictionPlan | ApprovalAccepted };
   "view.twoFactor": { args: undefined; result: void };
   "views.set": { args: { name: string; query: string }; result: SavedView | undefined };
   "mixes.edit": { args: MixEditArgs; result: MixEditResult | undefined };
@@ -297,6 +302,20 @@ export function registerApiCommands(): void {
         const { backup } = need<ApiCommands["backups.verify"]["args"]>(args, "Run a restore test");
         const { data } = await backupsVerify({ path: { id: backup.id }, headers: commandHeaders(backup.rev), throwOnError: true });
         return data as JobAccepted;
+      },
+    },
+    // Settings → Content store: the dry run lists what an eviction frees; the real call always answers an approval.
+    {
+      id: "artifacts.evict",
+      operation: "artifacts.evict",
+      title: "Evict superseded training states",
+      group: "Edit",
+      icon: Trash,
+      hidden: true,
+      run: async (_ctx, args) => {
+        const a = (args ?? {}) as ApiCommands["artifacts.evict"]["args"];
+        const { data } = await artifactsEvict({ body: a.body ?? {}, query: a.dryRun ? { dryRun: true } : undefined, headers: commandHeaders(), throwOnError: true });
+        return data as EvictionPlan | ApprovalAccepted;
       },
     },
     // The agents' model accounts (Settings → Agents): admin only, never MCP tools; the value is write-only.

@@ -247,6 +247,8 @@ func serve(ctx context.Context, getenv func(string) string) error {
 	jobSvc.AddPeriodic("backups.schedule", time.Minute, backupSvc.Tick)
 	evictSvc := &eviction.Service{Pool: pool, CAS: blobs, Log: log, MirrorDir: filepath.Join(backupDir, "cas")}
 	evictSvc.Register(jobSvc)
+	storeWatch := &eviction.Watcher{Service: evictSvc, Defaults: defaults.Get}
+	jobSvc.AddPeriodic("storage.watch", 10*time.Minute, storeWatch.Tick)
 	if indexed, restored, err := eviction.Backfill(ctx, pool, blobs); err != nil {
 		return fmt.Errorf("content-store file index: %w", err)
 	} else if indexed+restored > 0 {

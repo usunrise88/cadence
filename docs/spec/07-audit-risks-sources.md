@@ -127,6 +127,11 @@ Open questions:
   written into the lease's scratch: a stop releases the newest (a fresh one when the last save fits the stop grace), but
   a lost lease (worker or host crash) loses them, because the worker protocol releases outputs only at the end. Interim
   artifacts (a `workerArtifacts` put during the lease) would close that gap.
+- [ ] D (2026-10-01, test stand): a fine-tune that ends normally still writes its final training state (7.3 GB for
+  the 0.6B model), and the retention rule makes it evictable at once — one day of short fine-tunes filled 88 GB of
+  states on the stand's disk. Proposed: write the final state only when asked (a `keep_state` parameter, default
+  off) or evict a finished run's states automatically after a person approved it once per project. Built meanwhile:
+  Settings → Content store (the dry run, **Evict…**) and the `storage.low_space` warning below `cache.store_low_free`.
 - [ ] N: the augmentation profile is the finetune step's `augmentation` parameter (default `packs.nemo.augmentation`,
   the telephony chain: 8 kHz band-limit with G.711 μ-law/A-law or GSM, gain, speed 0.95–1.05); a project's
   `augment/*.yaml` file is not read yet (no artifact type or recipe convention carries it to the step). AMR-NB and

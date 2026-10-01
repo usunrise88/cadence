@@ -15,7 +15,7 @@ import { notify, type Notice } from "./store";
 // also reaches the polite live region (WCAG 4.1.3). The routing table (Settings → Notifications) decides which
 // classes the history shows; Telegram is routed on the server by the same table.
 
-export const NOTICE_TOPICS = ["approvals", "job.*", "pipeline_run.*", "compute.*", "entity.credential.*", "backups", "notifications"];
+export const NOTICE_TOPICS = ["approvals", "job.*", "pipeline_run.*", "compute.*", "entity.credential.*", "backups", "notifications", "storage"];
 
 type NoticeInput = Omit<Notice, "id" | "at" | "read">;
 
@@ -76,6 +76,13 @@ export function noticeFor(e: CadenceEvent): NoticeInput | undefined {
     if (e.type === "backup.restore_failed") return { level: "error", title: "Restore test failed", detail: err ?? b?.restoreTest?.error, open: SETTINGS, seq: e.seq };
     if (e.type === "backup.restore_passed") return { level: "success", title: "Restore test passed", detail: b ? `set ${b.id}` : undefined, open: SETTINGS, seq: e.seq };
     return undefined;
+  }
+  if (e.type === "storage.low_space") {
+    const d = e.payload as { totalBytes?: number; freeBytes?: number; evictableArtifacts?: number; evictableBytes?: number } | undefined;
+    if (!d?.totalBytes) return undefined;
+    const gb = (b = 0) => `${Math.round(b / 1e9)} GB`;
+    const evict = d.evictableArtifacts ? ` ${d.evictableArtifacts} training states (${gb(d.evictableBytes)}) can be evicted.` : "";
+    return { level: "error", title: "Content store low on space", detail: `${gb(d.freeBytes)} free of ${gb(d.totalBytes)}.${evict}`, open: SETTINGS, seq: e.seq };
   }
   if (e.type === "notification.digest") {
     const d = e.payload as { title?: string; text?: string } | undefined;

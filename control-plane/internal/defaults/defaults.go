@@ -173,6 +173,7 @@ type Drafts struct {
 type Cache struct {
 	HighWaterMark Param[float64] `yaml:"high_water_mark"`
 	ProjectQuota  Param[float64] `yaml:"project_quota"`
+	StoreLowFree  Param[float64] `yaml:"store_low_free"`
 }
 
 // Data holds the import defaults (the dataset_import step kind's defaultRefs, phase 2).

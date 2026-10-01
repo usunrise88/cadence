@@ -9,6 +9,7 @@ const TABLE: Record<string, NotificationClass> = {
   "backup.failed": "failure",
   "backup.restore_failed": "failure",
   "mount.unhealthy": "failure",
+  "storage.low_space": "failure",
   "gate.verdict": "outcome",
   "deployment.promoted": "outcome",
   "schedule.finished": "outcome",

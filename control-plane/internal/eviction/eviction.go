@@ -98,6 +98,7 @@ type Plan struct {
 	BytesFreed int64       `json:"bytesFreed"`
 	Blobs      int         `json:"blobs"`
 	Permanent  bool        `json:"permanent"`
+	Disk       *Disk       `json:"disk,omitempty"` // the store's filesystem now (dry runs)
 	blobs      []string
 }
 

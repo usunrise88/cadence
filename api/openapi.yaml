@@ -6829,6 +6829,15 @@ components:
         bytesFreed: { type: integer, format: int64, description: Bytes of the blobs deleted (files other artifacts list are not counted) }
         blobs: { type: integer, description: Blobs deleted (manifests and files) }
         permanent: { type: boolean, description: "True when no backup mirror is configured: nothing can bring the blobs back" }
+        disk: { $ref: "#/components/schemas/StoreDisk" }
+    StoreDisk:
+      type: object
+      required: [totalBytes, freeBytes, lowFreeFraction]
+      description: The filesystem holding the content store, as the control plane sees it now
+      properties:
+        totalBytes: { type: integer, format: int64 }
+        freeBytes: { type: integer, format: int64, description: Bytes available to the control plane }
+        lowFreeFraction: { type: number, description: "Below this share free, Cadence warns (cache.store_low_free)" }
     EvictionKept:
       type: object
       required: [hash, reason]

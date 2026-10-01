@@ -5062,6 +5062,22 @@ export type EvictionPlan = {
      * True when no backup mirror is configured: nothing can bring the blobs back
      */
     permanent: boolean;
+    disk?: StoreDisk;
+};
+
+/**
+ * The filesystem holding the content store, as the control plane sees it now
+ */
+export type StoreDisk = {
+    totalBytes: number;
+    /**
+     * Bytes available to the control plane
+     */
+    freeBytes: number;
+    /**
+     * Below this share free, Cadence warns (cache.store_low_free)
+     */
+    lowFreeFraction: number;
 };
 
 export type EvictionKept = {
