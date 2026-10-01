@@ -9,7 +9,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { cn } from "@/lib/utils";
 import { copyText } from "@/shell/charts/table";
 import { useElementSize, useOwnerDocument } from "@/shell/charts/hooks";
-import { useTopic } from "@/shell/panel/context";
+import { usePanel, useTopic } from "@/shell/panel/context";
 import { atBottom, cap, formatLine, LOG_LEVELS, matches, mergeLines, visibleRange, type LogLevel } from "./model";
 
 // The log view (docs/spec/11-ui-panels.md, Logs): a job's log from its worker. History comes from jobLogs.list
@@ -54,8 +54,16 @@ export function LogView({ jobId, label, compact, className }: LogViewProps) {
   const [status, setStatus] = useState("");
 
   const opts = jobLogsListOptions({ path: { id: jobId }, query: { tail: true, limit: HISTORY, ...(level !== "debug" ? { level } : {}), ...(query ? { text: query } : {}) } });
-  const history = useQuery({ ...opts, staleTime: Infinity });
+  // Live lines live in this view only, and none arrive while the panel is hidden: the cached history is a snapshot
+  // from the first mount. Every mount and every return to view reads it again, so nothing streamed meanwhile is lost.
+  const history = useQuery({ ...opts, staleTime: Infinity, refetchOnMount: "always" });
   const refetch = history.refetch;
+  const { visible } = usePanel();
+  const wasVisible = useRef(visible);
+  useEffect(() => {
+    if (visible && !wasVisible.current) void refetch();
+    wasVisible.current = visible;
+  }, [visible, refetch]);
   // A new job or filter starts from its own history.
   useEffect(() => setLive([]), [jobId, level, query]);
 
