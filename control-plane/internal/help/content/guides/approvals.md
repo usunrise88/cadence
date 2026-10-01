@@ -39,7 +39,12 @@ request, and the Chat does not list a permission the preset allowed on its own f
 | `read-only` | "Explain this" sessions: read verbs only |
 
 Rule classes: `read` and `draft` allow; `spend` allows while the dry-run estimate of GPU-hours fits what is left of
-today's budget, otherwise asks for approval; `gated` asks for approval; `forbidden` denies. Rules apply in order,
+today's budget, otherwise asks for approval; `gated` asks for approval; `forbidden` denies. What is left is the daily
+budget minus today's metered use **and** the work already committed — the remaining estimates of the GPU steps of
+pipeline runs still running (queued, waiting for an input, or running) — so runs started back to back cannot each
+spend the same remainder. A spending command whose cost Cadence cannot estimate (a GPU step with neither a measured
+nor a declared estimate) asks for approval: the budget fails closed. `pipelineRuns.retry` and `jobs.resume` spend
+too — a retry is weighed at the remaining GPU steps of its run, a resume at its step's estimate. Rules apply in order,
 first match wins; an agent command no rule matches is denied.
 
 An approval carries the stored request (method, path, query, headers without credentials or cookies, body), who

@@ -68,7 +68,7 @@ func (s *Service) estimateView(e Estimate) EstimateView {
 		Data:   DataView{Datasets: e.Data.Datasets, Hours: e.Data.Hours, Bytes: e.Data.Bytes},
 		Source: e.Source, MeasuredAt: e.MeasuredAt, Mix: e.Mix,
 		Budget: BudgetView{GPUHoursPerProjectPerDay: e.DailyBudget, UsedTodayGPUHours: e.UsedToday,
-			RemainingGPUHours: round(e.DailyBudget-e.UsedToday, 3), WithinDailyBudget: e.WithinBudget},
+			RemainingGPUHours: round(e.DailyBudget-e.UsedToday-e.Committed, 3), WithinDailyBudget: e.WithinBudget},
 	}
 	if v.Data.Datasets == nil {
 		v.Data.Datasets = []string{}

@@ -170,10 +170,13 @@ func (s *Server) PipelinesRun(ctx context.Context, req api.PipelinesRunRequestOb
 		Params: body.Params, Fresh: body.Fresh, Priority: body.Priority,
 	}
 	ctx = commands.WithProject(ctx, p.ID)
-	// The policy weighs GPU spending against the budget: plan once outside the command to learn the estimate (a
-	// broken pipeline is reported by the command itself).
-	if _, plan, err := s.Pipelines.Prepare(ctx, s.Pool, in); err == nil && plan.Estimate.GPUHours != nil && *plan.Estimate.GPUHours > 0 {
-		ctx = commands.WithEstimate(ctx, policy.Estimate{GPUHours: *plan.Estimate.GPUHours})
+	// The policy weighs GPU spending against the budget: plan once outside the command to learn the estimate. A
+	// broken pipeline is reported by the command itself (the same plan fails inside it), so it is not gated; a step
+	// that needs a card without an estimate makes the cost unknown, which the policy does not allow without a person.
+	if _, plan, err := s.Pipelines.Prepare(ctx, s.Pool, in); err != nil {
+		ctx = commands.WithEstimate(ctx, policy.Estimate{})
+	} else {
+		ctx = commands.WithEstimate(ctx, policy.Estimate{GPUHours: deref(plan.Estimate.GPUHours), Unknown: plan.Estimate.UnknownGPU})
 	}
 	cmd := command(ctx, "pipelines.run", req.Params.IdempotencyKey, req.Params.DryRun)
 	return s.run(ctx, cmd, func(ctx context.Context, tx pgx.Tx) (commands.Result, []events.Draft, error) {
@@ -300,6 +303,12 @@ func (s *Server) PipelineRunsRetry(ctx context.Context, req api.PipelineRunsRetr
 		in.Step, in.BatchScale = deref(req.Body.Step), req.Body.BatchScale
 	}
 	ctx = commands.WithProject(ctx, r.ProjectID)
+	// A retry runs the steps not done yet again: their GPU time is weighed against the budget like a new run's.
+	hours, unknown, err := pipelines.RetryEstimate(ctx, s.Pool, req.Id)
+	if err != nil {
+		return nil, err
+	}
+	ctx = commands.WithEstimate(ctx, policy.Estimate{GPUHours: hours, Unknown: unknown})
 	cmd := command(ctx, "pipelineRuns.retry", req.Params.IdempotencyKey, req.Params.DryRun)
 	return s.run(ctx, cmd, func(ctx context.Context, tx pgx.Tx) (commands.Result, []events.Draft, error) {
 		run, drafts, err := s.Pipelines.Retry(ctx, tx, req.Id, rev, in)

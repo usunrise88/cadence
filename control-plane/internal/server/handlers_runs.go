@@ -50,7 +50,8 @@ func (s *Server) withRunStatus(ctx context.Context, tx pgx.Tx, j jobs.Job, draft
 	return j, append(drafts, more...), nil
 }
 
-// spending names a command's GPU-hours estimate to the policy engine (budgets, R12).
+// spending names a command's GPU-hours estimate to the policy engine (budgets, R12). A spending command without one
+// waits for a person (the policy fails closed), so every spending handler names one.
 func spending(ctx context.Context, gpuHours float64) context.Context {
 	return commands.WithEstimate(ctx, policy.Estimate{GPUHours: gpuHours})
 }
@@ -118,7 +119,9 @@ func (s *Server) RunsNew(ctx context.Context, req api.RunsNewRequestObject) (api
 // transaction, such as the parent's revision); outside is the same input for the policy's estimate.
 func (s *Server) startRun(ctx context.Context, op, key string, dryRun *bool, input func(context.Context, pgx.Tx) (runs.NewInput, error),
 	outside runs.NewInput) (commandResponse, error) {
-	if pr, err := s.runs.Prepare(ctx, s.Pool, outside); err == nil {
+	if pr, err := s.runs.Prepare(ctx, s.Pool, outside); err != nil {
+		ctx = spending(ctx, 0) // the command fails on the same plan; nothing to weigh
+	} else {
 		ctx = spending(ctx, pr.Estimate.GPUHours.Value)
 	}
 	cmd := command(ctx, op, key, dryRun)
@@ -195,7 +198,9 @@ func (s *Server) RunsCalibrate(ctx context.Context, req api.RunsCalibrateRequest
 	if b.Precision != nil {
 		in.Precision = string(*b.Precision)
 	}
-	if cp, err := s.runs.PlanCalibration(ctx, s.Pool, in); err == nil {
+	if cp, err := s.runs.PlanCalibration(ctx, s.Pool, in); err != nil {
+		ctx = spending(ctx, 0) // the command fails on the same plan; nothing to weigh
+	} else {
 		ctx = spending(ctx, cp.GPUHours)
 	}
 	cmd := command(ctx, "runs.calibrate", req.Params.IdempotencyKey, req.Params.DryRun)
@@ -235,7 +240,9 @@ func (s *Server) RunsResume(ctx context.Context, req api.RunsResumeRequestObject
 	}
 	ctx = commands.WithProject(ctx, projectID)
 	actor, _ := auth.FromContext(ctx)
-	if rp, err := s.runs.PlanResume(ctx, s.Pool, req.Id, actor.SessionID); err == nil {
+	if rp, err := s.runs.PlanResume(ctx, s.Pool, req.Id, actor.SessionID); err != nil {
+		ctx = spending(ctx, 0) // the command fails on the same plan; nothing to weigh
+	} else {
 		ctx = spending(ctx, rp.Estimate.GPUHours.Value)
 	}
 	cmd := command(ctx, "runs.resume", req.Params.IdempotencyKey, req.Params.DryRun)
@@ -324,7 +331,9 @@ func (s *Server) CheckpointsAverage(ctx context.Context, req api.CheckpointsAver
 	ctx = commands.WithProject(ctx, projectID)
 	actor, _ := auth.FromContext(ctx)
 	ids, params := req.Body.Checkpoints, deref(req.Body.Params)
-	if ap, err := s.runs.PlanAverage(ctx, s.Pool, req.Id, ids, params, actor); err == nil {
+	if ap, err := s.runs.PlanAverage(ctx, s.Pool, req.Id, ids, params, actor); err != nil {
+		ctx = spending(ctx, 0) // the command fails on the same plan; nothing to weigh
+	} else {
 		ctx = spending(ctx, ap.GPUHours)
 	}
 	cmd := command(ctx, "checkpoints.average", req.Params.IdempotencyKey, req.Params.DryRun)

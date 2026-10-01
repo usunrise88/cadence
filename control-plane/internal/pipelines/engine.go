@@ -878,6 +878,26 @@ type RetryInput struct {
 const AnyRev = -1
 
 // Retry runs failed (or cancelled) steps of pipeline run id again as new attempts and reopens the run.
+// RetryEstimate is the GPU time a retry of run id may spend: every step not done yet (the retried steps and those
+// waiting behind them) that needs a card, at its recorded estimate. unknown is true when such a step has none.
+func RetryEstimate(ctx context.Context, q storage.Querier, id string) (gpuHours float64, unknown bool, err error) {
+	sts, err := stepsOf(ctx, q, id, false)
+	if err != nil {
+		return 0, false, err
+	}
+	for _, s := range sts {
+		if s.State == StepDone || s.State == StepReused || !s.Resources.GPU {
+			continue
+		}
+		if s.EstimateSeconds == nil {
+			unknown = true
+			continue
+		}
+		gpuHours += *s.EstimateSeconds / 3600 * float64(max(1, s.Resources.GPUs))
+	}
+	return gpuHours, unknown, nil
+}
+
 func (e *Engine) Retry(ctx context.Context, tx pgx.Tx, id string, rev int, in RetryInput) (Run, []events.Draft, error) {
 	r, err := lockRun(ctx, tx, id)
 	if err != nil {
@@ -908,11 +928,18 @@ func (e *Engine) Retry(ctx context.Context, tx pgx.Tx, id string, rev int, in Re
 			targets = append(targets, i)
 		}
 	}
+	if len(targets) == 0 && in.Step == "" { // no failed step: continue a cancelled run from its cancelled steps
+		for i, s := range sts {
+			if s.State == StepCancelled {
+				targets = append(targets, i)
+			}
+		}
+	}
 	if len(targets) == 0 {
 		if in.Step != "" {
 			return Run{}, nil, problems.NotFound.New("pipeline run %s has no step %q", id, in.Step)
 		}
-		return Run{}, nil, problems.Conflict.New("pipeline run %s has no failed step to retry", id)
+		return Run{}, nil, problems.Conflict.New("pipeline run %s has no failed or cancelled step to retry", id)
 	}
 	scale := 0.0
 	if in.BatchScale != nil {

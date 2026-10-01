@@ -207,3 +207,31 @@ func (s *Service) PutArtifact(hash string, body io.Reader) error {
 	}
 	return nil
 }
+
+// ResumeEstimate is the GPU time resuming step job id may spend: its recorded estimate when it needs a card (a
+// resume continues from its training state, so this is an upper bound); unknown when it needs a card and has none.
+// A job that is not a step job spends nothing on a card.
+func ResumeEstimate(ctx context.Context, q storage.Querier, id string) (gpuHours float64, unknown bool, err error) {
+	var (
+		raw []byte
+		est *float64
+	)
+	err = q.QueryRow(ctx, `SELECT spec, estimate_seconds FROM step_jobs WHERE job_id = $1`, id).Scan(&raw, &est)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, fmt.Errorf("read step job %s: %w", id, err)
+	}
+	var spec steps.Spec
+	if err := json.Unmarshal(raw, &spec); err != nil {
+		return 0, false, fmt.Errorf("step job %s spec: %w", id, err)
+	}
+	switch {
+	case !spec.Resources.GPU:
+		return 0, false, nil
+	case est == nil:
+		return 0, true, nil
+	}
+	return *est / 3600 * float64(max(1, spec.Resources.GPUs)), false, nil
+}

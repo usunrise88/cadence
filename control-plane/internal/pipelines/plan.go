@@ -27,6 +27,9 @@ type Estimate struct {
 	Seconds      *float64 `json:"seconds,omitempty"`
 	GPUHours     *float64 `json:"gpuHours,omitempty"`
 	UnknownSteps []string `json:"unknownSteps"`
+	// UnknownGPU: a step that needs a card has no estimate, so GPUHours understates the cost (the policy then waits
+	// for a person rather than weighing a partial sum against the budget).
+	UnknownGPU bool `json:"-"`
 }
 
 // Plan is a pipeline validated against the published step kinds, in execution order.
@@ -161,6 +164,7 @@ func (e *Engine) Plan(ctx context.Context, q storage.Querier, p Pipeline, in Pla
 		if ps.EstimateSeconds == nil {
 			plan.Estimate.Known = false
 			plan.Estimate.UnknownSteps = append(plan.Estimate.UnknownSteps, s.ID)
+			plan.Estimate.UnknownGPU = plan.Estimate.UnknownGPU || k.Resources.GPU
 		} else {
 			seconds += *ps.EstimateSeconds
 			if k.Resources.GPU {

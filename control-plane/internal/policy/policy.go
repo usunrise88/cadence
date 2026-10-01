@@ -66,6 +66,9 @@ func ScopeFromContext(ctx context.Context) Scope {
 // Estimate is what a command will spend, from its dry run (R12).
 type Estimate struct {
 	GPUHours float64 `json:"gpuHours"`
+	// Unknown: the command will spend GPU time Cadence cannot estimate (a step without a measured or declared
+	// estimate); GPUHours is then the part it could estimate.
+	Unknown bool `json:"unknown,omitempty"`
 }
 
 // Input is one question to the engine.
@@ -175,6 +178,13 @@ func (e *Engine) Decide(ctx context.Context, in Input) (Decision, error) {
 			continue
 		}
 		d := decision(p.Name, r)
+		// Fail closed: a spending command whose cost is unknown cannot be weighed against the budget, so it waits for
+		// a person (people themselves are not gated by budgets).
+		if r.Class == ClassSpend && e.budget != nil && d.Outcome == Allow && (in.Estimate == nil || in.Estimate.Unknown) {
+			d.Outcome, d.Estimate = Approval, in.Estimate
+			d.Reason = "Cadence cannot estimate this command's GPU time, so it cannot weigh it against the budget"
+			return d, nil
+		}
 		if r.Class == ClassSpend && in.Estimate != nil && e.budget != nil {
 			left, err := e.budget.RemainingGPUHours(ctx, in.ProjectID)
 			if err != nil {
