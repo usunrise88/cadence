@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { datasetsListQueryKey, defaultsGetQueryKey } from "@/api/gen/@tanstack/react-query.gen";
+import { datasetsListQueryKey, defaultsGetQueryKey, projectsGetQueryKey } from "@/api/gen/@tanstack/react-query.gen";
 import type { Defaults, Mix, MixPreview } from "@/api/gen/types.gen";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { PanelContext } from "@/shell/panel/context";
@@ -132,5 +132,42 @@ describe("mix preview", () => {
     fireEvent.click(screen.getByRole("button", { name: "Start run" }));
     await waitFor(() => expect(runCommand).toHaveBeenLastCalledWith("runs.new", { project: "demo", body: { mix: "mix_1", mixRevision: 1 }, dryRun: false }));
     await waitFor(() => expect(openDocument).toHaveBeenCalledWith("run:run_new"));
+  });
+
+  it("offers Start run only for an estimate of exactly the steps in the form", async () => {
+    if (!commands.get("runs.new")) registerTrainingCommands();
+    const estimateOf = (steps: number, gpuHours: number) => ({
+      basis: "table",
+      plusMinus: 0.5,
+      gpuHours: { value: gpuHours, low: gpuHours, high: gpuHours },
+      durationSeconds: { value: 3000, low: 1500, high: 4500 },
+      secondsPerStep: 1,
+      steps,
+      card: { host: "staging", index: 0, cardClass: "blackwell-48gb", memoryCapGb: 24 },
+      data: { hours: 12 },
+      budget: { gpuHoursPerProjectPerDay: 8, remainingGpuHours: 8, withinDailyBudget: true },
+      source: "defaults.yaml estimates.training",
+    });
+    qc.setQueryData(projectsGetQueryKey({ path: { p: "demo" } }), { baseModel: { versionId: "ver_base" } } as never);
+    runCommand.mockResolvedValueOnce(estimateOf(3000, 0.8));
+    wrap();
+    fireEvent.click(screen.getByRole("button", { name: "Launch a run with this mix" }));
+    await screen.findByText(/0.8 GPU-h/);
+    expect(runCommand).toHaveBeenCalledWith("runs.new", { project: "demo", body: { mix: "mix_1", mixRevision: 1, baseModel: "ver_base" }, dryRun: true });
+    const start = () => screen.getByRole("button", { name: "Start run" });
+    expect(start()).toHaveProperty("disabled", false);
+    fireEvent.change(document.querySelector('[data-slot="run-launch"] input[type="number"]')!, { target: { value: "30000" } });
+    expect(start()).toHaveProperty("disabled", true);
+    expect(document.querySelector('[data-slot="run-estimate"]')!.getAttribute("data-stale")).toBe("true");
+    let answer: (v: unknown) => void = () => {};
+    runCommand.mockReturnValueOnce(new Promise((r) => (answer = r)));
+    fireEvent.click(screen.getByRole("button", { name: "Estimate again" }));
+    expect(start()).toHaveProperty("disabled", true);
+    await act(async () => answer(estimateOf(30000, 8)));
+    await screen.findByText(/^8 GPU-h/);
+    expect(start()).toHaveProperty("disabled", false);
+    runCommand.mockResolvedValueOnce({ id: "run_new" });
+    fireEvent.click(start());
+    await waitFor(() => expect(runCommand).toHaveBeenLastCalledWith("runs.new", { project: "demo", body: { mix: "mix_1", mixRevision: 1, baseModel: "ver_base", steps: 30000 }, dryRun: false }));
   });
 });

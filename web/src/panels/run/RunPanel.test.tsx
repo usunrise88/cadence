@@ -130,6 +130,41 @@ describe("Run document", () => {
     await waitFor(() => expect(openDocument).toHaveBeenCalledWith("run:run_new"));
   });
 
+  it("offers Start stage only for an estimate of exactly the values in the form", async () => {
+    wrap();
+    act(() => useEditRequests.getState().request(`run:${run.id}`));
+    const form = screen.getByRole("form", { name: "New stage from checkpoint" });
+    const start = () => within(form).getByRole("button", { name: "Start stage" });
+    const estimateOf = (steps: number, gpuHours: number) => ({ basis: "measured", gpuHours: { value: gpuHours, low: gpuHours, high: gpuHours }, durationSeconds: { value: 3600, low: 3000, high: 4000 }, steps, budget: { withinDailyBudget: true } });
+    fireEvent.change(within(form).getByLabelText("Peak LR"), { target: { value: "0.0001" } });
+    runCommand.mockResolvedValueOnce(estimateOf(500, 1));
+    fireEvent.click(within(form).getByRole("button", { name: "Estimate" }));
+    await within(form).findByText(/~1 GPU-h/);
+    expect(start()).toHaveProperty("disabled", false);
+    // Ten times the steps: the shown estimate no longer describes what Start would launch.
+    fireEvent.change(within(form).getByLabelText("Steps"), { target: { value: "5000" } });
+    expect(start()).toHaveProperty("disabled", true);
+    expect(form.querySelector('[data-slot="stage-estimate"]')!.getAttribute("data-stale")).toBe("true");
+    expect(within(form).getByText(/The form changed since this estimate/)).toBeTruthy();
+    // While the new dry run is pending Start stays off.
+    let answer: (v: unknown) => void = () => {};
+    runCommand.mockReturnValueOnce(new Promise((r) => (answer = r)));
+    fireEvent.click(within(form).getByRole("button", { name: "Estimate" }));
+    await waitFor(() => expect(runCommand).toHaveBeenLastCalledWith("runs.stage", { run, dryRun: true, body: { peakLr: 0.0001, checkpoint: "ckp_b", steps: 5000 } }));
+    expect(start()).toHaveProperty("disabled", true);
+    await act(async () => answer(estimateOf(5000, 10)));
+    await within(form).findByText(/~10 GPU-h/);
+    expect(form.querySelector('[data-slot="stage-estimate"]')!.hasAttribute("data-stale")).toBe(false);
+    expect(start()).toHaveProperty("disabled", false);
+    // Only the newest answer counts: values estimated earlier need a new dry run; back at the newest values Start is on.
+    fireEvent.change(within(form).getByLabelText("Steps"), { target: { value: "" } });
+    expect(start()).toHaveProperty("disabled", true);
+    fireEvent.change(within(form).getByLabelText("Steps"), { target: { value: "5000" } });
+    runCommand.mockResolvedValueOnce({ id: "run_new" });
+    fireEvent.click(start());
+    await waitFor(() => expect(runCommand).toHaveBeenLastCalledWith("runs.stage", { run, dryRun: false, body: { peakLr: 0.0001, checkpoint: "ckp_b", steps: 5000 } }));
+  });
+
   it("opens the stage form from Checkpoints with that checkpoint", () => {
     wrap();
     act(() => useSelection.getState().select(`run:${run.id}`, "stage:ckp_a"));

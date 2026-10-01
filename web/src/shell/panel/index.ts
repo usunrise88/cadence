@@ -50,3 +50,4 @@ export { DAY_LABEL, DAYS, formatDays, formatWindows, windowError } from "@/shell
 export { runIdOfDoc, runLabel } from "@/shell/training/runs";
 export { sortEntries } from "@/shell/training/queue";
 export { useActiveRun } from "@/shell/training/useActiveRun";
+export { useKeyedEstimate, type KeyedEstimate } from "@/shell/training/estimate";
