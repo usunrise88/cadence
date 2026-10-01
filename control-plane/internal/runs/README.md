@@ -36,9 +36,11 @@ step kind of each role (`calibrate`, `train`, `average`).
   calibrate kind (newest published version) as a one-step inline pipeline `calibrate` over the mix and base model;
   `calibration_requests` records the key (base model collection, card class, memory cap, precision) for the hook.
   The hook caches `secondsPerStep` (meta, else the metric `seconds_per_step`), ± (meta `plusMinus` | `spread` |
-  2 × `secondsPerStepStd` / mean, else `estimates.measured_plus_minus`), batch sizes and the bucket configuration;
-  a run's own calibrate step is keyed by the run. `EstimateRun` answers `basis: measured` from the newest
-  calibration of the key, else the defaults table (`basis: table`), else `estimate-unavailable`.
+  2 × `secondsPerStepStd` / mean, else `estimates.measured_plus_minus`), batch sizes, the bucket configuration and
+  `leaseOverheadSeconds` (migration 0019); a run's own calibrate step is keyed by the run. `EstimateRun` answers
+  `basis: measured` from the newest calibration of the key, else the defaults table (`basis: table`), else
+  `estimate-unavailable`; duration = lease overhead (the calibration's, else `estimates.lease_overhead_seconds`) +
+  steps × seconds per step, the ± on the steps only.
 - **Checkpoints** (`ckp_…`, table `checkpoints`, `checkpointHook`): a `checkpoint` output of a run's pipeline run is
   registered once per (run, artifact) with `step`, `valWer` (meta, else the metric `val_wer`), `family`,
   `weightsHash`; `kind` `averaged` (with `averagedFrom`) when it comes from a `checkpoints.average` pipeline run.

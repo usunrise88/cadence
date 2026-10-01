@@ -4,6 +4,8 @@ on the fly.
 
 Outputs: ``checkpoint`` (the weights at the end, validated), ``checkpoint_best`` (the best validation pass of this
 lease; the same artifact as ``checkpoint`` when that was the last one) and ``state`` (``training-state``, resume only).
+Every validation pass before the last publishes its checkpoint while training runs (``ctx.publish``), so each one is
+registered on the run at once and survives a pause, a window close or a failure.
 Metrics during training through the step context (loss, lr, grad_norm, throughput_audio_s_per_s, gpu_memory_mb,
 val_wer); the peak learning rate and the Noam scale derived from it go to the log, the output meta and the final
 metrics. A stop (cancel, pause, a closing window) ends at the next step with a training state, as does every
@@ -179,6 +181,26 @@ class FinetuneStep:
             d_model=facts.d_model,
         )
         lr_info = {"peakLr": p.peak_lr, "noamScale": scale, "dModel": facts.d_model, "warmupSteps": p.warmup_steps}
+        lineage = {
+            "base": base.reference,
+            "tokenizer": base.tokenizer,
+            "init": base.kind,
+            "trainArgs": {
+                "steps": p.steps,
+                "seed": p.seed,
+                "precision": p.precision,
+                **lr_info,
+                "gradClip": p.grad_clip,
+                "buckets": bins,
+                "batches": batches,
+                "maxDuration": max_duration,
+                "promptMode": p.prompt_mode,
+                "prompts": keys,
+                "augmentation": profile.model_dump(),
+                "mix": data.mix,
+                "datasets": data.dataset_ids(),
+            },
+        }
         ctx.log("optimiser: AdamW + NoamAnnealing", optimiser=lr_info)
         ctx.final_metric("peak_lr", p.peak_lr)
         ctx.final_metric("noam_scale", scale)
@@ -202,6 +224,7 @@ class FinetuneStep:
         )
         state_dir = outputs["state"]
         best: dict[str, Any] = {}
+        best_link = work / "best"  # hard links of the best published checkpoint of this lease
         start_step = int(resume.get("step", 0)) if resume else 0
 
         def save_state(trainer: Any, step: int) -> None:
@@ -227,9 +250,18 @@ class FinetuneStep:
             def save_state(self, trainer: Any, step: int) -> None:
                 save_state(trainer, step)
 
-            def keep_best(self, module: Any, step: int) -> None:
-                best["state"] = training.cpu_state(module)
-                best["step"] = step
+            def validated(self, module: Any, step: int, wer: float, is_best: bool) -> None:
+                if is_best:
+                    best["step"] = step
+                if step >= p.steps:
+                    return  # the last validation's checkpoint is the release's ``checkpoint``
+                t0 = time.monotonic()
+                d = work / "published" / f"checkpoint-{step}"
+                training.save_nemo(module, d)
+                ck.publish_validation(ctx, d, {"step": step, **lineage}, wer, best_link if is_best else None)
+                ctx.log(
+                    "validation checkpoint published", step=step, valWer=wer, seconds=round(time.monotonic() - t0, 1)
+                )
 
             def on_stop(self, trainer: Any, step: int) -> None:
                 ctx.log("stop requested; ending at this step", step=step)
@@ -251,6 +283,8 @@ class FinetuneStep:
         training.setup_train_dataloader(model, train_cfg, profile)
         training.setup_val_dataloader(model, val_cfg)
         training.setup_optimization(model, optim_cfg)
+        patched = training.install_raw_reference_wer(model, [lang.strip_tags(c.text) for c in val])
+        ctx.log("validation WER on raw, normalised references", metrics=patched, references=len(val))
         ctx.progress(start_step / max(1, p.steps), f"training from step {start_step}")
         trainer.fit(model, ckpt_path=str(ctx.resume_from / ck.STATE_CKPT) if ctx.resume_from else None)
 
@@ -268,37 +302,15 @@ class FinetuneStep:
         ctx.set_meta("state", {"family": NAME, "step": step})
 
         training.clean_data_config(model)
-        lineage = {
-            "base": base.reference,
-            "tokenizer": base.tokenizer,
-            "init": base.kind,
-            "trainArgs": {
-                "steps": p.steps,
-                "seed": p.seed,
-                "precision": p.precision,
-                **lr_info,
-                "gradClip": p.grad_clip,
-                "buckets": bins,
-                "batches": batches,
-                "maxDuration": max_duration,
-                "promptMode": p.prompt_mode,
-                "prompts": keys,
-                "augmentation": profile.model_dump(),
-                "mix": data.mix,
-                "datasets": data.dataset_ids(),
-            },
-        }
         last_dir = outputs["checkpoint"]
         last_dir.mkdir(parents=True, exist_ok=True)
         model.save_to(str(last_dir / ck.NEMO_FILE))
         last = ck.write_checkpoint(last_dir, {"step": step, "valWer": monitor.last_wer, **lineage})
         ctx.set_meta("checkpoint", ck.neutral_meta(last))
         best_dir = outputs["checkpoint_best"]
-        if best.get("state") is not None and best.get("step") != step:
-            model.load_state_dict(best["state"])
-            best_dir.mkdir(parents=True, exist_ok=True)
-            model.save_to(str(best_dir / ck.NEMO_FILE))
-            best_doc = ck.write_checkpoint(best_dir, {"step": best["step"], "valWer": monitor.best_wer, **lineage})
+        if best.get("step") is not None and best["step"] != step and best_link.is_dir():
+            ck.link_checkpoint(best_link, best_dir)  # the published artifact again: same files, same hash
+            best_doc = ck.read_checkpoint(best_dir)
         else:
             ck.link_checkpoint(last_dir, best_dir)
             best_doc = last

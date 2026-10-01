@@ -11,6 +11,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import queue
 import shutil
 import signal
 import subprocess
@@ -23,7 +24,15 @@ from pathlib import Path
 from typing import IO, Any, Protocol
 
 from cadence_worker.cas import CasError, Store, parse_uri
-from cadence_worker.protocol_gen import ArtifactRef, Lease, MetricPoint, StepError, StepOutcome, WorkerLogLine
+from cadence_worker.protocol_gen import (
+    ArtifactRef,
+    Lease,
+    MetricPoint,
+    StepError,
+    StepOutcome,
+    WorkerLogLine,
+    WorkerOutput,
+)
 from cadence_worker.registry import KindEntry
 from cadence_worker.run_step import EVENT_FD_ENV, MEMORY_CAP_ENV
 from cadence_worker.steps.context import now_iso
@@ -39,6 +48,7 @@ class Sink(Protocol):
     def log(self, line: WorkerLogLine) -> None: ...
     def metric(self, point: MetricPoint) -> None: ...
     def progress(self, fraction: float, message: str) -> None: ...
+    def publish(self, output: WorkerOutput) -> None: ...
 
 
 @dataclass
@@ -48,6 +58,7 @@ class MemorySink:
     logs: list[WorkerLogLine] = field(default_factory=list)
     metrics: list[MetricPoint] = field(default_factory=list)
     progresses: list[tuple[float, str]] = field(default_factory=list)
+    published: list[WorkerOutput] = field(default_factory=list)
 
     def log(self, line: WorkerLogLine) -> None:
         self.logs.append(line)
@@ -57,6 +68,9 @@ class MemorySink:
 
     def progress(self, fraction: float, message: str) -> None:
         self.progresses.append((fraction, message))
+
+    def publish(self, output: WorkerOutput) -> None:
+        self.published.append(output)
 
 
 def failed(kind: str, message: str) -> StepOutcome:
@@ -99,6 +113,11 @@ class LeaseRunner:
         self._threads: list[threading.Thread] = []
         self._secrets = sorted((v for v in (lease.get("env") or {}).values() if len(v) >= 4), key=len, reverse=True)
         self.last_progress: tuple[float, str] | None = None
+        # Intermediate outputs (ctx.publish) are stored and sent in order on their own thread, so hashing a large
+        # checkpoint never stalls the step's event pipe; the outcome waits for them.
+        self._publications: queue.Queue[dict[str, Any] | None] = queue.Queue()
+        self._publisher: threading.Thread | None = None
+        self.published: list[WorkerOutput] = []
         spec = lease["spec"]
         self.span = Span.child_of(
             lease.get("traceparent"),
@@ -244,6 +263,9 @@ class LeaseRunner:
         self._killpg(self.proc, signal.SIGKILL)
         for t in self._threads:
             t.join(timeout=10)
+        if self._publisher is not None:
+            self._publications.put(None)
+            self._publisher.join()
         return self.outcome(code)
 
     # ---------------------------------------------------------------- streams
@@ -305,6 +327,56 @@ class LeaseRunner:
         elif kind == "progress":
             self.last_progress = (float(ev.get("fraction", 0.0)), str(ev.get("message", "")))
             self.sink.progress(*self.last_progress)
+        elif kind == "publish":
+            if self._publisher is None:
+                self._publisher = threading.Thread(target=self._publish_loop, daemon=True, name="publish")
+                self._publisher.start()
+            self._publications.put(ev)
+
+    # ---------------------------------------------------------------- intermediate outputs
+
+    def _publish_loop(self) -> None:
+        while (ev := self._publications.get()) is not None:
+            try:
+                self.publish(ev)
+            except Exception as e:
+                self.sink.log(
+                    {
+                        "t": now_iso(),
+                        "level": "warn",
+                        "msg": f"could not publish output {ev.get('output')!r}: {e}"[:16000],
+                        "fields": self.span.fields(),
+                    }
+                )
+
+    def publish(self, ev: Mapping[str, Any]) -> WorkerOutput:
+        """Store one ctx.publish path (inside the lease's scratch directory) and send it as an instance of one of the
+        step's outputs; the path is removed once stored."""
+        name = str(ev.get("output", ""))
+        typ = self.lease["spec"]["outputs"].get(name)
+        if typ is None:
+            raise ValueError(f"the step has no output {name!r}")
+        p = Path(str(ev.get("path", ""))).resolve()
+        if not p.is_relative_to(self.dir.resolve()):
+            raise ValueError(f"{p} is outside the lease's scratch directory")
+        if not p.exists():
+            raise FileNotFoundError(f"{p} does not exist")
+        stored = self.store.put_path(p)
+        meta: dict[str, Any] = dict(ev.get("meta") or {})
+        meta.setdefault("layout", "dir" if stored.directory else "file")
+        out: WorkerOutput = {
+            "name": name,
+            "artifact": {"hash": stored.hash, "type": typ, "size": stored.size, "meta": meta},
+        }
+        if isinstance(ev.get("metrics"), dict) and ev["metrics"]:
+            out["metrics"] = {str(k): float(v) for k, v in ev["metrics"].items()}
+        self.sink.publish(out)
+        self.published.append(out)
+        if p.is_dir():
+            shutil.rmtree(p, ignore_errors=True)
+        else:
+            p.unlink(missing_ok=True)
+        return out
 
     # ---------------------------------------------------------------- outcome
 

@@ -33,20 +33,23 @@ type Calibration struct {
 	SecondsPerStep float64         `json:"secondsPerStep"`
 	PlusMinus      float64         `json:"plusMinus"`
 	BatchSizes     json.RawMessage `json:"batchSizes,omitempty"`
-	Family         string          `json:"family,omitempty"`
-	ArtifactHash   string          `json:"artifact"`
-	PipelineRunID  string          `json:"pipelineRunId,omitempty"`
-	MeasuredAt     time.Time       `json:"measuredAt"`
+	// LeaseOverheadSeconds is what a training lease adds to its steps, as the calibration measured it (nil: none).
+	LeaseOverheadSeconds *float64  `json:"leaseOverheadSeconds,omitempty"`
+	Family               string    `json:"family,omitempty"`
+	ArtifactHash         string    `json:"artifact"`
+	PipelineRunID        string    `json:"pipelineRunId,omitempty"`
+	MeasuredAt           time.Time `json:"measuredAt"`
 }
 
 // LatestCalibration returns the newest calibration of k (any bucket configuration).
 func LatestCalibration(ctx context.Context, q storage.Querier, k Key) (Calibration, bool, error) {
 	c := Calibration{Key: k}
-	err := q.QueryRow(ctx, `SELECT bucket_config, seconds_per_step, plus_minus, batch_sizes, family, artifact_hash,
-			coalesce(pipeline_run_id, ''), measured_at
+	err := q.QueryRow(ctx, `SELECT bucket_config, seconds_per_step, plus_minus, batch_sizes, lease_overhead_seconds, family,
+			artifact_hash, coalesce(pipeline_run_id, ''), measured_at
 		FROM calibrations WHERE base_model = $1 AND card_class = $2 AND memory_cap_gb = $3 AND precision = $4
 		ORDER BY measured_at DESC LIMIT 1`, k.BaseModel, k.CardClass, k.MemoryCapGB, k.Precision).
-		Scan(&c.BucketConfig, &c.SecondsPerStep, &c.PlusMinus, &c.BatchSizes, &c.Family, &c.ArtifactHash, &c.PipelineRunID, &c.MeasuredAt)
+		Scan(&c.BucketConfig, &c.SecondsPerStep, &c.PlusMinus, &c.BatchSizes, &c.LeaseOverheadSeconds, &c.Family, &c.ArtifactHash,
+			&c.PipelineRunID, &c.MeasuredAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Calibration{}, false, nil
 	}
@@ -68,6 +71,9 @@ type calibrationMeta struct {
 	BatchSize         *int            `json:"batchSize"`
 	BatchSizes        json.RawMessage `json:"batchSizes"`
 	BucketConfig      json.RawMessage `json:"bucketConfig"`
+	// LeaseOverheadSeconds is the fixed time a training lease adds to its steps (model load before step 1, the
+	// final validation and the saves at the end), when the step measured it.
+	LeaseOverheadSeconds *float64 `json:"leaseOverheadSeconds"`
 	// What the measurement ran for, when the step knows it (a run's own calibrate step, a calibration without a
 	// request row).
 	BaseModel   string  `json:"baseModel"`
@@ -139,6 +145,10 @@ func (s *Service) calibrationHook(ctx context.Context, tx pgx.Tx, out steps.Outp
 	if len(batch) == 0 {
 		batch = json.RawMessage(`{}`)
 	}
+	overhead := m.LeaseOverheadSeconds
+	if overhead != nil && (*overhead < 0 || math.IsInf(*overhead, 0) || math.IsNaN(*overhead)) {
+		overhead = nil
+	}
 	bucket := ""
 	if len(m.BucketConfig) > 0 && string(m.BucketConfig) != "null" {
 		var str string
@@ -149,15 +159,15 @@ func (s *Service) calibrationHook(ctx context.Context, tx pgx.Tx, out steps.Outp
 		}
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO calibrations (base_model, card_class, memory_cap_gb, precision, bucket_config,
-			seconds_per_step, plus_minus, batch_sizes, family, artifact_hash, pipeline_run_id, measured_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NULLIF($11, ''), now())
+			seconds_per_step, plus_minus, batch_sizes, lease_overhead_seconds, family, artifact_hash, pipeline_run_id, measured_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $12, $9, $10, NULLIF($11, ''), now())
 		ON CONFLICT (base_model, card_class, memory_cap_gb, precision, bucket_config) DO UPDATE SET
 			seconds_per_step = excluded.seconds_per_step, plus_minus = excluded.plus_minus, batch_sizes = excluded.batch_sizes,
-			family = excluded.family, artifact_hash = excluded.artifact_hash, pipeline_run_id = excluded.pipeline_run_id,
+			lease_overhead_seconds = excluded.lease_overhead_seconds, family = excluded.family, artifact_hash = excluded.artifact_hash, pipeline_run_id = excluded.pipeline_run_id,
 			measured_at = excluded.measured_at
 		WHERE calibrations.artifact_hash <> excluded.artifact_hash`,
 		k.BaseModel, k.CardClass, k.MemoryCapGB, k.Precision, bucket, m.SecondsPerStep, pm, batch, m.Family,
-		out.Artifact.Hash, out.PipelineRunID); err != nil {
+		out.Artifact.Hash, out.PipelineRunID, overhead); err != nil {
 		return nil, fmt.Errorf("cache calibration: %w", err)
 	}
 	return nil, nil

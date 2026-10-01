@@ -14,7 +14,8 @@ metrics `loss`, `lr` and `val_wer` and writes two outputs:
   `family`, `step`, `valWer` and `weightsHash` (R42);
 - `state` (type `training-state`: weights, optimiser and step), used only to resume.
 
-When the lease carries `overrides.resumeFrom`, it continues from that training state up to `steps` in total. Asked to
+Every validation before the last publishes its checkpoint while training runs, so the run registers one checkpoint
+per validation. When the lease carries `overrides.resumeFrom`, it continues from that training state up to `steps` in total. Asked to
 stop (cancel, pause, a closing window), it writes the training state and returns; the lease is released as cancelled
 with that output.
 

@@ -386,8 +386,28 @@ def run_family(flow: Flow, fam: Family, report: Report) -> None:
         if not {"loss", "val_wer"} <= names:
             raise ConformanceError(f"train posted metrics {sorted(names)}, expected loss and val_wer")
         meta = check_checkpoint(ck, "train")
+        # Every validation's checkpoint is registered, not only the last: the ones before it are published during
+        # the lease (ctx.publish → workerOutputs.new), each with the neutral checkpoint meta.
+        registered = {ck["hash"]}
+        for pub in sink.published:
+            if pub["artifact"]["type"] == "checkpoint":
+                check_checkpoint(pub["artifact"], f"published checkpoint {pub['name']}")
+                registered.add(pub["artifact"]["hash"])
+        validations = sum(1 for p in sink.metrics if p["name"] == "val_wer")
+        if validations >= 2 and len(registered) < 2:
+            raise ConformanceError(
+                f"{validations} validations registered {len(registered)} checkpoint(s); publish each validation's "
+                "checkpoint with ctx.publish"
+            )
         losses = [p["value"] for p in sink.metrics if p["name"] == "loss"]
-        return {"step": meta["step"], "valWer": meta["valWer"], "firstLoss": losses[0], "lastLoss": losses[-1]}
+        return {
+            "step": meta["step"],
+            "valWer": meta["valWer"],
+            "firstLoss": losses[0],
+            "lastLoss": losses[-1],
+            "validations": validations,
+            "checkpoints": len(registered),
+        }
 
     def stop() -> dict[str, Any]:
         out, _ = flow.run(

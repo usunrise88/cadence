@@ -111,3 +111,25 @@ class EnvProbe:
         outputs["env"].write_text(json.dumps(seen), encoding="utf-8")
         print(f"token is {os.environ.get('HF_TOKEN')}", flush=True)
         ctx.log("secret in a field", token=os.environ.get("HF_TOKEN"))
+
+
+class Publisher:
+    """Publishes two validation checkpoints (a directory, then a file), one bad publication, then writes its outputs."""
+
+    version: ClassVar[str] = "1"
+    consumes: ClassVar[Mapping[str, str]] = {}
+    produces: ClassVar[Mapping[str, str]] = {"checkpoint": "checkpoint", "state": "training-state"}
+    resources: ClassVar[StepResources] = {"gpu": False, "jobKind": "training"}
+    Params: ClassVar[type[BaseModel]] = NoParams
+
+    def run(self, params: BaseModel, inputs: Mapping[str, Path], outputs: Mapping[str, Path], ctx: StepContext) -> None:
+        first = ctx.work_dir / "published" / "ckpt-10"
+        first.mkdir(parents=True)
+        (first / "weights.bin").write_text("weights at 10", encoding="utf-8")
+        ctx.publish("checkpoint", first, {"step": 10, "valWer": 0.5}, {"val_wer": 0.5})
+        second = ctx.work_dir / "ckpt-20.bin"
+        second.write_text("weights at 20", encoding="utf-8")
+        ctx.publish("checkpoint", second, {"step": 20, "valWer": 0.4})
+        ctx.publish("hypotheses", second, {})  # not an output of this kind: logged, not sent
+        outputs["checkpoint"].write_text("weights at 30", encoding="utf-8")
+        outputs["state"].write_text("state at 30", encoding="utf-8")

@@ -514,15 +514,28 @@ Open questions:
       augmentation (it joins when the pack reads `noise-bank/*`); the MUSAN import runs on the stand in the gate wave
 - [ ] H: the toy model gained a layer norm (it converged too late: WER near 1 at 300 steps) under the same
       `toy_train@1`; the toy is CI-only, and checkpoints written before load without it
-- [ ] G · gate rehearsal (2026-10-01, docs/review/2026-10-01-phase-2-rehearsal.md): a run registers at most two
-      checkpoints (the train kind's `checkpoint` and `checkpoint_best` of the last lease), so keep-top-k and averaging
-      see one or two per run and a pause loses the pre-pause best; per-validation checkpoints need a step-contract
-      change (several checkpoint outputs)
-- [ ] G · measured estimates use the calibration's compute-only seconds per step (0.38 s); real steps are 0.53–0.56 s
-      and each lease adds ≈ 2 min of restore and saves, so short runs are estimated ≈ 2× low; decide how the estimate
-      adds loop overhead
-- [ ] G · a running step job's `rev` rises with each progress report, so `jobs.pause` after a read often answers 412;
-      decide whether progress bumps `rev`
+- [x] G2 · resolved (2026-10-01 gate rehearsal): every validation's checkpoint is registered — steps publish
+      intermediate outputs during a lease (`workerOutputs.new`, `ctx.publish`, 06 "Worker protocol"); the NeMo kind
+      saves a `.nemo` per validation (seconds of each lease, not measured on the card yet) and links `checkpoint_best`
+      to the published one
+- [x] G2 · resolved in part: estimates add a per-lease overhead (calibration `leaseOverheadSeconds`: model load timed,
+      one `.nemo` save timed, state save ≈ 3 of those; else `estimates.lease_overhead_seconds` 120 s); the ± covers the
+      steps only
+- [ ] G2 · open: the calibration's seconds per step is still compute only (0.38 s vs 0.53–0.56 s in the loop:
+      validation passes, metric cadence, dataloader); validations × validation time is not in the estimate (the
+      calibration runs no validation and the estimate does not read `val_every`); one pass on the stand would give the
+      ratio to fold in
+- [ ] G2 · gap: content-store retention is designed (06 "Artifacts, metrics and logs", Retention: `artifacts.evict` for
+      superseded training states, approval-gated, file index for shared blobs) but not built — it needs a file index
+      migration, a CAS delete, the approval-decided job and an `artifact.evicted` event, well beyond a small patch;
+      until then an operator deletes training states by hand as the rehearsal did
+- [x] G2 · resolved (2026-10-01 gate rehearsal): the NeMo step's `val_wer` scores the validation manifest's raw text
+      (looked up by the tokenizer round trip of NeMo's decoded reference), both sides normalised as evaluations are
+      (NFKC, case-folded, no punctuation) — assumed the right normalisation for model selection, so val_wer and eval
+      WER are comparable; a speaker-disjoint import holds out at least `data.min_validation_utterances` (100)
+      utterances, moving whole speakers (or transcripts) in split-fraction order, never past half the import
+- [x] G2 · resolved: progress reports no longer change a job's `rev` (only state, priority, pause and cancel do), so
+      `jobs.pause` with a revision read before some heartbeats succeeds; `job.progress` events carry the progress
 - [x] G · resolved: a control-plane stop interrupts (snoozes) a step job waiting on a worker instead of failing it; the
       next start waits for the same lease (`jobs.ErrInterrupted`); a step kind that sizes itself to the lease's cap
       declares no `memoryGb` (the NeMo kinds declared 24, above the staging cap)

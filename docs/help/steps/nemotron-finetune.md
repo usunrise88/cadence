@@ -28,17 +28,21 @@ clean}` turns it off.
 
 Metrics during training (every `log_every` steps): `loss` (the RNN-T loss, a per-utterance sum, so it moves with clip
 length), `lr`, `grad_norm` (before clipping), `throughput_audio_s_per_s`, `gpu_memory_mb`; `val_wer` after every
-validation (every `val_every` steps and at the end; raw text, language tags stripped).
+validation (every `val_every` steps and at the end), scored against the validation manifest's raw text (language tags
+stripped; not the tokenized reference, where characters outside the vocabulary turn into `⁇`) with hypothesis and
+reference normalised as evaluations are (NFKC, case-folded, no punctuation).
 
 Outputs:
 
 - `checkpoint` — the weights at the end (`model.nemo` + `checkpoint.json`: family, step, valWer, weightsHash, the base
   model, the tokenizer reference and the train arguments);
 - `checkpoint_best` — the best validation pass of this lease (the same artifact when that was the last pass); the
-  control plane ranks both by validation WER and keeps the top k;
+  control plane ranks every checkpoint by validation WER and keeps the top k;
 - `state` — `training-state` (`last.ckpt` with optimiser, scheduler and loop state, `state.json`), only for resuming.
 
-A training state is also written every `state_every_minutes`. Asked to stop (cancel, pause, a closing window), the step
+Every validation pass before the last also saves its checkpoint and publishes it while training runs, so each one is
+registered on the run at once (and survives a pause or a closing window); `checkpoint_best` links the published one,
+so it is the same artifact. A training state is also written every `state_every_minutes`. Asked to stop (cancel, pause, a closing window), the step
 stops at the next optimiser step and releases a training state — a fresh one when the last save was quick enough for
 the stop grace, else the periodic one; the lease is released cancelled with it. `overrides.resumeFrom` continues from
 a state up to `steps` in total. A card out-of-memory is an `oom` error; the retry runs at 0.75× the bucket batches.

@@ -92,6 +92,9 @@ func Register(ctx context.Context, pool *pgxpool.Pool, kinds ...map[string]any) 
 type Action struct {
 	Fail  *steps.StepError // fail the attempt with this error
 	Block bool             // wait until the job is cancelled
+	// Publish is how many validation checkpoints the train fixture publishes during the attempt (workerOutputs.new,
+	// through Engine.Published) before it ends.
+	Publish int
 }
 
 // Call is one Await the fake served.
@@ -184,6 +187,9 @@ func (l *Leases) Await(ctx context.Context, jobID string) (steps.Outcome, error)
 		return steps.Outcome{}, ctx.Err()
 	case act.Fail != nil:
 		return steps.Outcome{State: steps.StateFailed, Error: act.Fail}, nil
+	}
+	if err := l.publish(ctx, jobID, spec, act.Publish); err != nil {
+		return steps.Outcome{}, err
 	}
 	return l.run(spec)
 }

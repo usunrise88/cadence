@@ -75,26 +75,30 @@ type Estimate struct {
 	GPUHours        Range
 	DurationSeconds Range
 	SecondsPerStep  float64
-	Steps           int
-	GPUs            int
-	Precision       string
-	Init            string
-	BaseModel       registry.Version
-	Slot            compute.Slot
-	Data            Data
-	DailyBudget     float64
-	UsedToday       float64
-	WithinBudget    bool
-	SessionBudget   *SessionBudget
-	Source          string
-	MeasuredAt      *time.Time
-	Mix             *MixRef
+	// LeaseOverheadSeconds is the fixed time of one lease around its steps (load, final validation, saves).
+	LeaseOverheadSeconds float64
+	Steps                int
+	GPUs                 int
+	Precision            string
+	Init                 string
+	BaseModel            registry.Version
+	Slot                 compute.Slot
+	Data                 Data
+	DailyBudget          float64
+	UsedToday            float64
+	WithinBudget         bool
+	SessionBudget        *SessionBudget
+	Source               string
+	MeasuredAt           *time.Time
+	Mix                  *MixRef
 }
 
-// EstimateRun answers the estimate of a run (runs.new?dryRun=true, and every spending command's policy check): steps
-// × seconds per step from the newest calibration of (base model collection, card class, memory cap, precision) —
+// EstimateRun answers the estimate of a run (runs.new?dryRun=true, and every spending command's policy check): the
+// lease overhead plus steps × seconds per step from the newest calibration of (base model collection, card class, memory cap, precision) —
 // basis measured — or else from the estimate table in d — basis table —, the card from the compute entity, the data
-// volume from the mix (or the named dataset versions), and today's GPU spend against the project's daily budget.
+// volume from the mix (or the named dataset versions), and today's GPU spend against the project's daily budget. The
+// overhead (model load before step 1, final validation and saves) is the calibration's measurement, else
+// estimates.lease_overhead_seconds; the ± applies to the steps only.
 // Field problems answer validation-failed; a combination nothing covers answers estimate-unavailable.
 func EstimateRun(ctx context.Context, q storage.Querier, d *defaults.Defaults, in Input) (Estimate, error) {
 	e := Estimate{Basis: BasisTable, Init: or(in.Init, d.Training.Init.Value), Precision: or(in.Precision, d.Training.Precision.Value),
@@ -149,9 +153,13 @@ func EstimateRun(ctx context.Context, q storage.Querier, d *defaults.Defaults, i
 	if err != nil {
 		return Estimate{}, err
 	}
+	e.LeaseOverheadSeconds = d.Estimates.LeaseOverheadSeconds.Value
 	if found {
 		at := cal.MeasuredAt
 		e.Basis, e.SecondsPerStep, e.PlusMinus, e.MeasuredAt = BasisMeasured, cal.SecondsPerStep, cal.PlusMinus, &at
+		if cal.LeaseOverheadSeconds != nil {
+			e.LeaseOverheadSeconds = *cal.LeaseOverheadSeconds
+		}
 		e.Source = "runs.calibrate at " + at.UTC().Format(time.RFC3339) + " (calibration " + cal.ArtifactHash + ")"
 	} else {
 		row, ok := d.TrainingEstimate(e.BaseModel.Name, card.CardClass, card.MemoryCapGB, e.Precision)
@@ -163,8 +171,8 @@ func EstimateRun(ctx context.Context, q storage.Querier, d *defaults.Defaults, i
 		e.SecondsPerStep, e.PlusMinus, e.Source = row.SecondsPerStep, row.PlusMinus, row.Source
 	}
 	seconds := float64(e.Steps) * e.SecondsPerStep
-	e.DurationSeconds = spread(math.Round(seconds), e.PlusMinus, 0)
-	e.GPUHours = spread(seconds*float64(e.GPUs)/3600, e.PlusMinus, 3)
+	e.DurationSeconds = spreadAfter(e.LeaseOverheadSeconds, seconds, e.PlusMinus, 0)
+	e.GPUHours = spreadAfter(e.LeaseOverheadSeconds*float64(e.GPUs)/3600, seconds*float64(e.GPUs)/3600, e.PlusMinus, 3)
 
 	if in.Mix != nil {
 		e.Data, e.Mix = in.Mix.Data, &in.Mix.Ref
@@ -242,6 +250,12 @@ func data(ctx context.Context, q storage.Querier, d *defaults.Defaults, projectI
 
 func spread(v, plusMinus float64, digits int) Range {
 	return Range{Value: round(v, digits), Low: round(math.Max(0, v*(1-plusMinus)), digits), High: round(v*(1+plusMinus), digits)}
+}
+
+// spreadAfter is fixed plus v with the relative spread on v only (a lease's overhead does not scale with its steps).
+func spreadAfter(fixed, v, plusMinus float64, digits int) Range {
+	r := spread(v, plusMinus, 12)
+	return Range{Value: round(fixed+r.Value, digits), Low: round(fixed+r.Low, digits), High: round(fixed+r.High, digits)}
 }
 
 func round(v float64, digits int) float64 {

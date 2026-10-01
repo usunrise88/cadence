@@ -99,6 +99,23 @@ class StepContext:
         self.meta[output] = dict(meta)
         self._emit({"e": "meta", "output": output, "meta": dict(meta)})
 
+    def publish(
+        self,
+        output: str,
+        path: Path,
+        meta: Mapping[str, Any] | None = None,
+        metrics: Mapping[str, float] | None = None,
+    ) -> None:
+        """Publish an intermediate instance of output (a validation checkpoint) while the step runs: the harness hashes
+        ``path`` into the content store, removes it from the scratch directory, and the control plane records it and
+        runs its output hooks at once (workerOutputs.new), so it survives a pause, a window close or a failure. Write
+        each publication to its own path (in ``work_dir``) and do not touch it afterwards. The step's final outputs
+        are still what it writes to ``outputs``."""
+        ev: Event = {"e": "publish", "output": output, "path": str(path), "meta": dict(meta or {})}
+        if metrics:
+            ev["metrics"] = {k: float(v) for k, v in metrics.items()}
+        self._emit(ev)
+
     def blob(self, h: str) -> Path:
         """The read-only path of a blob an input references by hash (a dataset's audio); never write to it."""
         if self._blob_path is None:

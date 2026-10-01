@@ -1,6 +1,7 @@
 """toy_train — the train role of toy-ctc: a few optimiser steps with CTC loss, metrics loss / lr / val_wer, a
 ``checkpoint`` (weights, config, tokenizer and the neutral meta family, step, valWer, weightsHash) and a separate
-``training-state`` (optimiser and step, used only to resume). Stops at a checkpoint boundary when asked. Help:
+``training-state`` (optimiser and step, used only to resume); every validation before the last publishes its
+checkpoint while training runs (``ctx.publish``). Stops at a checkpoint boundary when asked. Help:
 docs/help/steps/toy-train.md.
 """
 
@@ -36,6 +37,14 @@ def save_state(d: Path, model: TinyCTC, opt: torch.optim.Optimizer, step: int, s
     torch.save(model.state_dict(), d / "model.pt")
     torch.save(opt.state_dict(), d / "optimizer.pt")
     (d / "state.json").write_text(json.dumps({"family": NAME, "step": step, "seed": seed}), encoding="utf-8")
+
+
+def publish_checkpoint(ctx: StepContext, model: TinyCTC, tok: CharTokenizer, step: int, val_wer: float) -> None:
+    """Every validation's checkpoint is registered while training runs (ctx.publish), not only the last."""
+    d = ctx.work_dir / "published" / f"checkpoint-{step}"
+    save_checkpoint(d, model, tok, step)
+    meta = {"family": NAME, "step": step, "valWer": val_wer, "weightsHash": weights_hash(d / "model.pt")}
+    ctx.publish("checkpoint", d, meta, {"val_wer": val_wer})
 
 
 class TrainStep:
@@ -79,6 +88,8 @@ class TrainStep:
             if step % p.val_every == 0 or step == p.steps:
                 val_wer = evaluate(model, tok, val)
                 ctx.metric("val_wer", val_wer, step=step)
+                if step < p.steps:  # the last validation's checkpoint is the step's output
+                    publish_checkpoint(ctx, model, tok, step, val_wer)
             ctx.progress(step / p.steps, f"step {step}/{p.steps}")
         if val_wer is None:
             val_wer = evaluate(model, tok, val)

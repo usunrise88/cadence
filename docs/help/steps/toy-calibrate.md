@@ -9,7 +9,7 @@ contexts: [step:toy_calibrate]
 `toy_calibrate@1` fills the `calibrate` role of the `toy-ctc` family (runtime `toy`, CPU). It reads a `dataset`
 (input `data`), runs one warm-up step and then `steps` timed optimiser steps at `batch_size` (times the batch scale
 of an OOM retry), and writes a `calibration` artifact: `{family, batchSize, secondsPerStep, stepsMeasured, device,
-precision, memoryCapMb}`. The final metric `seconds_per_step` travels with the outcome. The toy pack exists only to
+precision, memoryCapMb, leaseOverheadSeconds}` (the last: loading plus one checkpoint and state save, timed). The final metric `seconds_per_step` travels with the outcome. The toy pack exists only to
 keep the framework seams honest (R45); its numbers say nothing about real models.
 
 ## Place in the loop

@@ -18,10 +18,12 @@ const QueueSteps = "steps"
 const QueueStepsWorkers = 500
 
 // Progress records a running job's progress from outside its handler (the worker protocol's heartbeats) inside the
-// caller's transaction; a job that is not running is left alone and nothing is emitted.
+// caller's transaction; a job that is not running is left alone and nothing is emitted. Progress does not change the
+// job's revision (only state, priority, pause and cancel do), so a command sent with a revision read a moment ago
+// does not race the heartbeats; job.progress still carries the new progress.
 func Progress(ctx context.Context, tx pgx.Tx, id string, fraction float64, message string) ([]events.Draft, error) {
 	fraction = max(0, min(1, fraction))
-	rows, err := tx.Query(ctx, `UPDATE jobs SET progress = $2, message = NULLIF($3, ''), rev = rev + 1, updated_at = now()
+	rows, err := tx.Query(ctx, `UPDATE jobs SET progress = $2, message = NULLIF($3, ''), updated_at = now()
 		WHERE id = $1 AND state = 'running' RETURNING `+cols, id, fraction, message)
 	j, found, err := one(rows, err, id)
 	if err != nil || !found {

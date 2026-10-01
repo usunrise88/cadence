@@ -876,6 +876,7 @@ export type Defaults = {
     estimates: {
         bytes_per_audio_hour: DefaultValue;
         measured_plus_minus?: DefaultValue;
+        lease_overhead_seconds?: DefaultValue;
         training: Array<TrainingEstimateRow>;
     };
     compute: {
@@ -1009,6 +1010,10 @@ export type RunEstimate = {
     gpuHours: EstimateRange;
     durationSeconds: EstimateRange;
     secondsPerStep: number;
+    /**
+     * Fixed seconds a lease adds before and after its steps (model load, state and checkpoint saves): the calibration's measurement, else estimates.lease_overhead_seconds; durationSeconds = leaseOverheadSeconds + steps × secondsPerStep, the ± applying to the steps
+     */
+    leaseOverheadSeconds?: number;
     steps: number;
     gpus: number;
     precision: Precision;
@@ -1261,6 +1266,9 @@ export type Job = {
      */
     error?: string;
     attempt: number;
+    /**
+     * Changes with state, priority, pause and cancel; progress reports leave it (job.progress carries them)
+     */
     rev: number;
     actor: Actor;
     createdAt: string;
@@ -3306,6 +3314,20 @@ export type StepOutcome = {
     };
     /**
      * Final values (val_wer, seconds_per_step, …)
+     */
+    metrics?: {
+        [key: string]: number;
+    };
+};
+
+export type WorkerOutput = {
+    /**
+     * The step output it is an instance of (its type must match the output's)
+     */
+    name: string;
+    artifact: ArtifactRef;
+    /**
+     * Values at this point (val_wer, …) the hooks may read when the meta lacks them
      */
     metrics?: {
         [key: string]: number;
@@ -9012,6 +9034,36 @@ export type WorkerMetricsNewResponses = {
 };
 
 export type WorkerMetricsNewResponse = WorkerMetricsNewResponses[keyof WorkerMetricsNewResponses];
+
+export type WorkerOutputsNewData = {
+    body: WorkerOutput;
+    path: {
+        /**
+         * Lease id (lse_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/worker-leases/{id}/worker-outputs';
+};
+
+export type WorkerOutputsNewErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type WorkerOutputsNewError = WorkerOutputsNewErrors[keyof WorkerOutputsNewErrors];
+
+export type WorkerOutputsNewResponses = {
+    /**
+     * Recorded (or recorded before)
+     */
+    204: void;
+};
+
+export type WorkerOutputsNewResponse = WorkerOutputsNewResponses[keyof WorkerOutputsNewResponses];
 
 export type WorkerLeasesReleaseData = {
     body: StepOutcome;

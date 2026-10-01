@@ -19,7 +19,7 @@ def kinds() -> dict[str, KindEntry]:
     import fake_steps as fs
 
     out = {"echo": KindEntry("echo", EchoStep, "cadence_worker.steps.echo:EchoStep")}
-    for name in ("SlowTrain", "Stubborn", "CardOom", "Forgetful", "EnvProbe"):
+    for name in ("SlowTrain", "Stubborn", "CardOom", "Forgetful", "EnvProbe", "Publisher"):
         out[name] = KindEntry(name, getattr(fs, name), f"fake_steps:{name}")
     return out
 

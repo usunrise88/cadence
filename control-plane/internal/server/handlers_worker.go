@@ -176,6 +176,22 @@ func (s *Server) WorkerMetricsNew(ctx context.Context, req api.WorkerMetricsNewR
 	return api.WorkerMetricsNew204Response{}, nil
 }
 
+// WorkerOutputsNew implements workerOutputs.new.
+func (s *Server) WorkerOutputsNew(ctx context.Context, req api.WorkerOutputsNewRequestObject) (api.WorkerOutputsNewResponseObject, error) {
+	c, err := s.workerCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	in, err := convert[workers.Published](req.Body)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.Workers.Publish(ctx, c, req.Id, in); err != nil {
+		return nil, err
+	}
+	return api.WorkerOutputsNew204Response{}, nil
+}
+
 // WorkerLeasesRelease implements workerLeases.release.
 func (s *Server) WorkerLeasesRelease(ctx context.Context, req api.WorkerLeasesReleaseRequestObject) (api.WorkerLeasesReleaseResponseObject, error) {
 	c, err := s.workerCaller(ctx)

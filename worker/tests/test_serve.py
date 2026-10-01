@@ -32,6 +32,7 @@ class FakeControlPlane:
         self.reports: list[dict[str, Any]] = []
         self.logs: list[dict[str, Any]] = []
         self.metrics: list[dict[str, Any]] = []
+        self.outputs: list[dict[str, Any]] = []
         self.releases: dict[str, dict[str, Any]] = {}
         self.ack: Callable[[str], httpx.Response] = lambda _id: httpx.Response(200, json={"stop": False})
         self.claim_status = 200
@@ -68,6 +69,9 @@ class FakeControlPlane:
             return httpx.Response(204)
         if path.endswith("/worker-metrics"):
             self.metrics += json.loads(body)["points"]
+            return httpx.Response(204)
+        if path.endswith("/worker-outputs"):
+            self.outputs.append(json.loads(body))
             return httpx.Response(204)
         if path.endswith(":release"):
             self.releases[lease_id] = json.loads(body)
@@ -144,6 +148,21 @@ def test_a_lease_runs_and_is_released_with_its_outputs(tmp_path: Path, cp: FakeC
     assert any(line["msg"] == "echoed" for line in cp.logs)
     claim = next(json.loads(b) for m, p, _, b in cp.requests if p.endswith(":claim"))
     assert claim == {"workerId": "wrk_1", "wait": 0, "cards": []}
+
+
+def test_published_outputs_reach_the_control_plane_before_the_release(
+    tmp_path: Path, cp: FakeControlPlane, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PYTHONPATH", str(TESTS))
+    svc = service(tmp_path, cp)
+    cp.leases.append(lease("Publisher", lease_id="lse_p"))
+    run_until_released(svc, cp)
+    assert [o["artifact"]["meta"]["step"] for o in cp.outputs] == [10, 20]
+    assert all(o["name"] == "checkpoint" and o["artifact"]["type"] == "checkpoint" for o in cp.outputs)
+    order = [p for _, p, _, _ in cp.requests if p.endswith(("/worker-outputs", ":release"))]
+    assert len(order) == 3
+    assert order[-1].endswith(":release")
+    assert cp.releases["lse_p"]["state"] == "done"
 
 
 def test_a_stop_ack_cancels_with_the_training_state(

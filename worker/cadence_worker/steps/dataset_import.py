@@ -144,6 +144,11 @@ class DatasetImportParams(BaseModel):
         description="Share of speakers (or distinct transcripts without speakers) held out for validation",
         default_ref="data.validation_share",
     )
+    min_validation_utterances: int = cadence_field(
+        description="Fewest validation utterances of a speaker-disjoint split: when the share yields fewer, more whole "
+        "speakers (or transcripts) move to validation, never past half the import",
+        default_ref="data.min_validation_utterances",
+    )
     sample_rate: int = cadence_field(
         description="Sample rate the audio is stored at (16-bit PCM WAV, mono)",
         default_ref="data.sample_rate",
@@ -338,8 +343,36 @@ def assign_split(p: DatasetImportParams, r: Record, text: str) -> str:
         return s if s in SPLITS else "train"
     # speaker-disjoint: a speaker (or, without speakers, a transcript) is wholly in train or in validation, so the same
     # voice or sentence never lands on both sides.
-    group = f"speaker:{r.speaker}" if r.speaker else f"text:{text.casefold()}"
-    return "validation" if _fraction(group) < p.validation_share else "train"
+    return "validation" if _fraction(split_group(r.speaker, text)) < p.validation_share else "train"
+
+
+def split_group(speaker: str, text: str) -> str:
+    """What a speaker-disjoint split keeps together: the speaker, or without one the transcript."""
+    return f"speaker:{speaker}" if speaker else f"text:{text.casefold()}"
+
+
+def top_up_validation(lines: list[dict[str, Any]], minimum: int) -> int:
+    """Move whole groups from train to validation, next in line by their split fraction, until validation holds
+    ``minimum`` utterances — never past half of all utterances. Returns how many utterances moved."""
+    have = sum(1 for x in lines if x["split"] == "validation")
+    if have >= minimum:
+        return 0
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for x in lines:
+        if x["split"] == "train":
+            groups.setdefault(split_group(str(x.get("speaker") or ""), str(x["text"])), []).append(x)
+    moved = 0
+    for key in sorted(groups, key=_fraction):
+        members = groups[key]
+        if have >= minimum:
+            break
+        if 2 * (have + len(members)) > len(lines):
+            continue  # a group this large would pass half; a smaller one next in line may still fit
+        for x in members:
+            x["split"] = "validation"
+        have += len(members)
+        moved += len(members)
+    return moved
 
 
 def _report(ctx: Any, fraction: float, message: str) -> None:
@@ -401,6 +434,9 @@ def write_dataset(p: DatasetImportParams, rows: Iterable[Record], out: Path, ctx
             _report(ctx, 0.0, f"{len(lines)} utterances imported")
     if not lines:
         raise ValueError(f"no utterances to import (skipped: {skipped})")
+    top_up = not noise and p.split_rule == "speaker-disjoint" and p.validation_share > 0
+    if top_up and (moved := top_up_validation(lines, p.min_validation_utterances)):
+        _report(ctx, 0.0, f"validation topped up by {moved} utterances to reach {p.min_validation_utterances}")
     counts = {s: sum(1 for x in lines if x["split"] == s) for s in SPLITS}
     tags = list(dict.fromkeys(p.tags))
     if p.eval_only and "eval-only" not in tags:

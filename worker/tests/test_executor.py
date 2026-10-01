@@ -17,6 +17,24 @@ def text_input(store: Store, text: str) -> ArtifactRef:
     return {"hash": store.put_bytes(text.encode()), "type": "text"}
 
 
+def test_published_outputs_are_stored_sent_in_order_and_removed(tmp_path: Path) -> None:
+    r, sink, store = runner(tmp_path, lease("Publisher"))
+    out = r.run()
+    assert out["state"] == "done", out
+    assert [p["name"] for p in sink.published] == ["checkpoint", "checkpoint"]
+    first, second = (p["artifact"] for p in sink.published)
+    assert first["type"] == second["type"] == "checkpoint"
+    assert first["meta"] == {"step": 10, "valWer": 0.5, "layout": "dir"}
+    assert second["meta"] == {"step": 20, "valWer": 0.4, "layout": "file"}
+    assert sink.published[0].get("metrics") == {"val_wer": 0.5}
+    assert "metrics" not in sink.published[1]
+    assert store.path(second["hash"]).read_text() == "weights at 20"
+    assert [f.path for f in store.read_manifest(first["hash"])] == ["weights.bin"]
+    # The final outputs are still the release's; the bad publication is a warning in the log.
+    assert store.path(out["outputs"]["checkpoint"]["hash"]).read_text() == "weights at 30"
+    assert any(line["level"] == "warn" and "hypotheses" in line["msg"] for line in sink.logs)
+
+
 def test_echo_runs_through_the_step_process(tmp_path: Path) -> None:
     store = Store(tmp_path / "cas")
     ref = text_input(store, "shalom")

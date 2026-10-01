@@ -139,7 +139,9 @@ type Training struct {
 type Estimates struct {
 	BytesPerAudioHour Param[int64]   `yaml:"bytes_per_audio_hour"`
 	MeasuredPlusMinus Param[float64] `yaml:"measured_plus_minus"`
-	Training          []EstimateRow  `yaml:"training"`
+	// LeaseOverheadSeconds is the fixed time a lease adds to its steps when a calibration measured none.
+	LeaseOverheadSeconds Param[float64] `yaml:"lease_overhead_seconds"`
+	Training             []EstimateRow  `yaml:"training"`
 }
 
 // EstimateRow is the measured-or-assumed speed of one base model on one card class under one memory cap.
@@ -175,11 +177,13 @@ type Cache struct {
 
 // Data holds the import defaults (the dataset_import step kind's defaultRefs, phase 2).
 type Data struct {
-	ValidationShare   Param[float64] `yaml:"validation_share"`
-	MaxHours          Param[float64] `yaml:"max_hours"`
-	MaxUtterances     Param[int]     `yaml:"max_utterances"`
-	SampleRate        Param[int]     `yaml:"sample_rate"`
-	TextNormalisation Param[bool]    `yaml:"text_normalisation"`
+	ValidationShare Param[float64] `yaml:"validation_share"`
+	// MinValidationUtterances tops a speaker-disjoint split's validation up to this many utterances.
+	MinValidationUtterances Param[int]     `yaml:"min_validation_utterances"`
+	MaxHours                Param[float64] `yaml:"max_hours"`
+	MaxUtterances           Param[int]     `yaml:"max_utterances"`
+	SampleRate              Param[int]     `yaml:"sample_rate"`
+	TextNormalisation       Param[bool]    `yaml:"text_normalisation"`
 }
 
 // Operations holds instance-wide operational defaults.

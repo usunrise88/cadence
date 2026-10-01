@@ -28,7 +28,9 @@ evaluate (phase 3).
 
 ## Fields and defaults
 
-- **Estimate** (`runs.new?dryRun=true`): steps × seconds per step. The seconds per step come from the newest
+- **Estimate** (`runs.new?dryRun=true`): the lease overhead plus steps × seconds per step, the ± on the steps
+  only. The overhead (model load, final validation and saves of one lease) is the calibration's
+  `leaseOverheadSeconds`, else `estimates.lease_overhead_seconds` (120 s). The seconds per step come from the newest
   calibration of (base model, card class, memory cap, precision) — `basis: measured`, ± from the measurement's
   spread (`estimates.measured_plus_minus` when it reports none) — or else from the estimate table in
   `defaults.yaml` (`basis: table`). The answer carries the card, the data volume, the mix hash and today's GPU use

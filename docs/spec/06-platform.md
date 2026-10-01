@@ -88,6 +88,7 @@ of kind `step` stays the orchestrator (R14, R40; the Go side is `internal/steps`
 | `workerLeases.report` | `POST /worker-leases/{id}:report` | Heartbeat with progress and card telemetry; answers `stop` with a reason |
 | `workerLogs.new` | `POST /worker-leases/{id}/worker-logs` | NDJSON log lines, ≤ 1 MiB per request |
 | `workerMetrics.new` | `POST /worker-leases/{id}/worker-metrics` | Metric points, ≤ 5 000 per batch |
+| `workerOutputs.new` | `POST /worker-leases/{id}/worker-outputs` | An intermediate output during the lease (a validation checkpoint), recorded and hooked at once |
 | `workerLeases.release` | `POST /worker-leases/{id}:release` | Completion: the step outcome with its output artifacts and final metrics, or a typed error |
 | `workerArtifacts.set` | `PUT /worker-artifacts/{hash}` | Upload one blob, hash verified; for workers without the shared volume (remote, later) |
 
@@ -136,7 +137,8 @@ Rules:
   (`CUDA_VISIBLE_DEVICES`), gets the cap as `CADENCE_MEMORY_CAP_MB` and, when torch is present,
   `set_per_process_memory_fraction` of cap ÷ card memory (0.5 on the staging card). A worker runs at most
   `CADENCE_WORKER_MAX_LEASES` (2) leases at once; the control plane decides what fits on a card.
-- Heartbeats: `report` every 10 s (progress → `job.progress`, telemetry → `card_slots`, the `gpu` topic at most once
+- Heartbeats: `report` every 10 s (progress → `job.progress`, which leaves the job's `rev` alone so a queue command
+  sent with a revision read a moment ago does not race the heartbeats; telemetry → `card_slots`, the `gpu` topic at most once
   per 5 s per host, and compute health). The answer `stop: true` carries `cancelled`, `paused` or `window-closed`
   (training only; other kinds run on past a close); the step gets SIGTERM, sees `should_stop()`, saves its training
   state when it can and releases as `cancelled` with it; after `CADENCE_STOP_GRACE_SECONDS` (60) its process group is
@@ -152,6 +154,16 @@ Rules:
   hash is in the store (`artifact-missing`), and the pipeline engine records the artifacts, runs the output hooks in
   the transaction that marks the step `done` (`dataset` in phase 2 wave 1; `checkpoint` and `calibration` arrive with
   runs) and advances the pipeline. `oom` gets one automatic retry with `batchScale` 0.75, `lost` one retry.
+- Intermediate outputs: a step may publish instances of its outputs while it runs (`ctx.publish(output, path, meta,
+  metrics)`; a training step publishes every validation's checkpoint). The harness hashes the path into the store,
+  removes it from the scratch directory and sends `workerOutputs.new` (`name` = one of the step's outputs, the artifact
+  of that output's type, optional metrics) on its own thread, in order, before the release. The control plane checks
+  the lease is active, the name and type match the step spec and the blob is in the store (`artifact-missing`), then
+  records the artifact (producer: the pipeline step and output name) and runs the output hooks of its type in that
+  request's own transaction (`pipelines.Engine.Published`): a checkpoint registers on its run and re-ranks the top k
+  at once, so it survives a pause, a window close, a failure or a reaped lease. Hooks are idempotent per hash, so a
+  retried publication or a final output equal to a published one registers once. The release's outputs stay the
+  step's outputs (what the next step reads); a failed publication is a warning in the job log, not a step failure.
 - Secrets: a step kind declares secret names; at lease time the control plane reads the values from the secret store
   (R9) and puts them in the lease's `env` for that subprocess only, named in upper case with `-` and `.` as `_`
   (`hf-token` → `HF_TOKEN`); a missing secret fails the step at lease time with error type `input`. Values never
@@ -195,6 +207,24 @@ read any of them (R15).
 - Tiers: before mounts exist the store is the only tier; mounts (phase 4) become further tiers behind the same hash.
   A worker without the shared volume uploads by hash (`workerArtifacts.set`, verified: `artifact-hash-mismatch`); a
   download path for remote workers comes with them. v1 deletes no blob; the backup mirror copies each new blob once.
+- Retention (design, 2026-10-01; not built): training states are large (7.66 GB for the 0.6B model, one per pause,
+  window close and `state_every_minutes`) and only ever read to resume, so they are the first thing to reclaim.
+  - Evictable: a `training-state` artifact whose run has ended and that nothing can resume from any more — every
+    state of a run whose train step finished (`done`, a final checkpoint registered), and every state but the newest
+    of a run that ended `cancelled` or `failed` (the newest stays for `runs.resume`). Never evictable: a state named
+    by a waiting or leased step job's `overrides.resumeFrom`, or produced by a pipeline run still running.
+  - Shared files: a directory artifact's files are blobs other artifacts may list too, so eviction needs a file
+    index (`artifact_files (hash, file_hash)`, filled by `artifacts.Record` and backfilled once from the manifests);
+    a file blob is deleted only when no artifact outside the eviction set lists it, and "bytes freed" counts those.
+  - Command: `artifacts.evict` (verb `evict`, registry scope, admin) with a filter (type `training-state` only in
+    v1, optional run or project, `olderThanDays`). The dry run lists the candidates, their runs and the bytes it would
+    free. A real call is always gated, for people too (no destructive data operation without an approval command):
+    it answers an approval id; the approval's decision runs a job that deletes the blobs, marks the rows
+    `evicted_at` (the row and its metadata stay; `artifacts.get` shows it evicted, a step input naming it fails
+    `artifact-missing`), emits `artifact.evicted` and leaves an audit entry with the bytes freed.
+  - Reversibility: the backup mirror never prunes, so an evicted blob can be copied back from it (the vocabulary's
+    `evict` is reversible); on an instance without backups the dry run and the approval say the eviction is
+    permanent. Automatic retention (a high-water mark on the store) comes later, through the same command.
 - Metrics: one Postgres table `metric_points` (migration 0012: job, run when there is one, pipeline step, project,
   name, optimiser step, epoch, value, wall time), indexed by (run, name, step) and (job, name, step); thousands of
   points per run need no TSDB. Points arrive from `workerMetrics.new` (≤ 5 000 per batch) and stream as `run.metrics`

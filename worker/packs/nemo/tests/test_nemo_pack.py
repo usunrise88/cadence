@@ -14,13 +14,13 @@ import numpy as np
 import pytest
 import torch
 
-from cadence_nemo import augment, lang, noam, oomptimizer
+from cadence_nemo import augment, lang, noam, oomptimizer, valwer
 from cadence_nemo import checkpoint as ck
 from cadence_nemo.family import FAMILY, NAME, PROFILES, att_context_size, profile
 from cadence_nemo.mixdata import input_cfg, nemo_rows, read_training_data
 from cadence_nemo.monitor import TrainingMonitor
 from cadence_nemo.steps.average import AverageStep, checkpoint_inputs
-from cadence_nemo.steps.calibrate import CalibrateParams, CalibrateStep, calibration_doc
+from cadence_nemo.steps.calibrate import CalibrateParams, CalibrateStep, calibration_doc, lease_overhead
 from cadence_nemo.steps.finetune import (
     FinetuneParams,
     FinetuneStep,
@@ -246,8 +246,13 @@ def test_calibration_round_trip(tmp_path: Path) -> None:
         precision="bf16",
         applied={"memoryCapMb": 22017, "allocatorCapMb": 20993, "device": "card"},
         peak={"maxReservedMb": 20000},
+        load_s=62.0,
+        nemo_save_s=12.0,
     )
     assert doc["secondsPerStep"] == pytest.approx(0.7)
+    # Load + the last .nemo save + a training state of about three .nemo saves.
+    assert doc["leaseOverheadSeconds"] == pytest.approx(62 + 12 * 4)
+    assert lease_overhead(-1, 0) == 0
     assert doc["plusMinus"] == pytest.approx(2 * doc["secondsPerStepStd"] / 0.7 / 3**0.5, rel=1e-2)
     assert doc["batchSizes"] == {"bucket_duration_bins": [4, 8, 20], "bucket_batch_size": [37, 11, 1]}
     assert doc["bucketConfig"]["tokensPerSecond"] == 16
@@ -490,6 +495,102 @@ def test_link_checkpoint_keeps_the_same_content(tmp_path: Path) -> None:
     ck.link_checkpoint(tmp_path / "a", tmp_path / "b")
     store = Store(tmp_path / "cas")
     assert store.put_path(tmp_path / "a").hash == store.put_path(tmp_path / "b").hash
+
+
+class FakeHypothesis:
+    def __init__(self, text: str) -> None:
+        self.text = text
+
+
+class FakeDecoding:
+    """Characters as token ids; anything outside the vocabulary decodes as ⁇ (as a SentencePiece unk does)."""
+
+    vocab = " abcdefghijklmnopqrstuvwxyz.,"
+
+    def ids(self, text: str) -> list[int]:
+        return [self.vocab.index(c) + 1 if c in self.vocab else 0 for c in text]
+
+    def decode_ids_to_str(self, ids: list[int]) -> str:
+        return "".join(self.vocab[i - 1] if i > 0 else "⁇" for i in ids)
+
+
+class FakeWER:
+    def __init__(self, hypotheses: list[str]) -> None:
+        self.decoding = FakeDecoding()
+        self.batch_dim_index = 0
+        self.scores = torch.tensor(0)
+        self.words = torch.tensor(0)
+        self._hyps = hypotheses
+        self.wrapped = 0
+        self.hypotheses: list[FakeHypothesis] = []
+        self.update: Any = None  # valwer.install sets it
+
+    def decode(self, *args: Any) -> list[FakeHypothesis]:
+        return [FakeHypothesis(h) for h in self._hyps]
+
+    def _wrap_update(self, fn: Any) -> Any:
+        def wrapped(*a: Any, **kw: Any) -> Any:
+            self.wrapped += 1
+            return fn(*a, **kw)
+
+        return wrapped
+
+
+def test_validation_wer_scores_raw_normalised_references() -> None:
+    raw = ["Shalom (world).", "Good day, Ëve"]
+    dec = FakeDecoding()
+    refs = valwer.RawReferences(raw, lambda t: dec.decode_ids_to_str(dec.ids(t)))
+    assert len(refs) == 2
+    assert refs.reference(dec.decode_ids_to_str(dec.ids("Shalom (world)."))) == "Shalom (world)."
+    assert refs.reference("not in the manifest") == "not in the manifest"
+    assert valwer.counts("shalom world", "Shalom (world).") == (0, 2)
+    assert valwer.counts("good day eve", "Good day, Ëve") == (1, 3)  # ë is not e
+    assert valwer.counts("ab", "abc", use_cer=True) == (1, 3)
+
+    metric = FakeWER(["shalom world", "good day eve"])
+    valwer.install(metric, refs)
+    targets = [dec.ids(t) for t in raw]
+    width = max(len(t) for t in targets)
+    padded = torch.tensor([t + [0] * (width - len(t)) for t in targets])
+    metric.update(
+        predictions=torch.zeros(2, 3),
+        predictions_lengths=torch.tensor([3, 3]),
+        targets=padded,
+        targets_lengths=torch.tensor([len(t) for t in targets]),
+    )
+    # Tokenized, the references would read "shalom ⁇world⁇." and "good day, ⁇ve": two words wrong, not one.
+    assert (int(metric.scores), int(metric.words)) == (1, 5)
+    assert metric.wrapped == 1
+    assert [h.text for h in metric.hypotheses] == ["shalom world", "good day eve"]
+
+
+def test_validation_checkpoints_are_published_and_the_best_is_linked(tmp_path: Path) -> None:
+    events: list[dict[str, Any]] = []
+    c = ctx(tmp_path, events)
+    best = tmp_path / "best"
+    lineage = {"base": {"hfRepo": "r", "revision": "v"}, "tokenizer": {"kind": "spe"}}
+    for step, wer, is_best in ((200, 0.40, True), (400, 0.42, False)):
+        d = tmp_path / "published" / f"checkpoint-{step}"
+        d.mkdir(parents=True)
+        fake_nemo(d / ck.NEMO_FILE, {"w": torch.full((2,), float(step))})
+        doc = ck.publish_validation(c, d, {"step": step, **lineage}, wer, best if is_best else None)
+        assert (doc["step"], doc["valWer"], doc["family"]) == (step, wer, NAME)
+    published = [e for e in events if e["e"] == "publish"]
+    assert [e["output"] for e in published] == ["checkpoint", "checkpoint"]
+    assert published[0]["meta"] == {
+        "family": NAME,
+        "step": 200,
+        "valWer": 0.40,
+        "weightsHash": ck.weights_hash(tmp_path / "published" / "checkpoint-200" / ck.NEMO_FILE),
+        "base": lineage["base"],
+        "tokenizer": lineage["tokenizer"],
+    }
+    assert published[1]["metrics"] == {"val_wer": 0.42}
+    # The best link is the step-200 checkpoint: linked as checkpoint_best it is the same artifact.
+    assert ck.read_checkpoint(best)["step"] == 200
+    store = Store(tmp_path / "cas")
+    ck.link_checkpoint(best, tmp_path / "checkpoint_best")
+    assert store.put_path(tmp_path / "checkpoint_best").hash == store.put_path(Path(published[0]["path"])).hash
 
 
 # ---------------------------------------------------------------- augmentation

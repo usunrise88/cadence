@@ -20,6 +20,7 @@ from cadence_worker.protocol_gen import (
     WorkerClaim,
     WorkerClaimResult,
     WorkerLogLine,
+    WorkerOutput,
     WorkerRegistration,
     WorkerReport,
     WorkerReportAck,
@@ -107,6 +108,9 @@ class WorkerClient:
 
     def metrics(self, lease_id: str, points: list[MetricPoint]) -> None:
         self._call("workerMetrics.new", {"points": points}, id=lease_id)
+
+    def publish(self, lease_id: str, output: WorkerOutput) -> None:
+        self._call("workerOutputs.new", output, id=lease_id)
 
     def release(self, lease_id: str, outcome: StepOutcome) -> None:
         self._call("workerLeases.release", outcome, id=lease_id)

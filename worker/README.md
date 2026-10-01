@@ -65,7 +65,9 @@ class TrainStep:
 - `ctx` (`StepContext`): `progress(fraction, message)`, `metric(name, value, step, epoch)`, `log(msg, level, **fields)`,
   `should_stop()`, `set_meta(output, meta)` (neutral metadata, R42), `final_metric(name, value)`, `blob(hash)` (read a
   blob an input references), `card`, `memory_cap_mb`, `batch_scale` (0.75 on the OOM retry), `resume_from` (a
-  materialised training state), `work_dir`.
+  materialised training state), `work_dir`, and `publish(output, path, meta, metrics)`: an intermediate instance of an
+  output (a validation checkpoint) the control plane registers at once (`workerOutputs.new`); write each one to its own
+  path under `work_dir` and leave it alone, the harness stores and removes it.
 - Errors: torch's `OutOfMemoryError` or a CUDA out-of-memory message → `oom` (one retry at 0.75× batch);
   `StepInputError` or invalid parameters → `input`; anything else → `step`.
 - Stop: a cancel, pause or closing window reaches the step as SIGTERM → `ctx.should_stop()`. A training step writes its

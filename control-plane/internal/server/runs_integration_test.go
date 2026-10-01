@@ -166,20 +166,23 @@ func TestRunsEndToEnd(t *testing.T) {
 		"Idempotency-Key", e.key()), 201, &cal)
 	e.waitPipelineRun(cal.PipelineRun.ID, "done")
 	var est struct {
-		Basis          string
-		SecondsPerStep float64
-		PlusMinus      float64
-		Steps          int
-		GpuHours       runs.Range
-		Mix            struct{ Hash string }
-		Budget         struct {
+		Basis                string
+		SecondsPerStep       float64
+		LeaseOverheadSeconds float64
+		DurationSeconds      runs.Range
+		PlusMinus            float64
+		Steps                int
+		GpuHours             runs.Range
+		Mix                  struct{ Hash string }
+		Budget               struct {
 			GpuHoursPerProjectPerDay, UsedTodayGpuHours, RemainingGpuHours float64
 			WithinDailyBudget                                              bool
 		}
 	}
 	e.ok(newRun(body, "dryRun=true"), 200, &est)
-	// The pipeline's train step writes steps: 200; 200 × 0.5 s measured, ±10 %.
-	if est.Basis != "measured" || est.SecondsPerStep != 0.5 || est.PlusMinus != 0.1 || est.Steps != 200 || est.GpuHours.Value != 0.028 ||
+	// The pipeline's train step writes steps: 200; 20 s of measured lease overhead + 200 × 0.5 s, ±10 % on the steps.
+	if est.Basis != "measured" || est.SecondsPerStep != 0.5 || est.PlusMinus != 0.1 || est.Steps != 200 || est.GpuHours.Value != 0.033 ||
+		est.LeaseOverheadSeconds != 20 || est.DurationSeconds.Value != 120 || est.DurationSeconds.Low != 110 || est.DurationSeconds.High != 130 ||
 		!strings.HasPrefix(est.Mix.Hash, "b3:") || est.Budget.GpuHoursPerProjectPerDay != 8 || !est.Budget.WithinDailyBudget {
 		t.Fatalf("measured estimate %+v", est)
 	}
@@ -421,5 +424,55 @@ func TestRunShowsOOMRetry(t *testing.T) {
 	tr := r.Timeline[1]
 	if tr.Attempts != 2 || tr.OOMRetries != 1 || tr.BatchScale != steps.OOMBatchScale {
 		t.Fatalf("train stage %+v", tr)
+	}
+}
+
+// Validation checkpoints a train step publishes during its lease (workerOutputs.new) register on the run at once,
+// beside the checkpoint its release reports, and take part in the top k.
+func TestRunRegistersPublishedCheckpoints(t *testing.T) {
+	e := start(t)
+	if err := pipelinestest.RegisterTraining(context.Background(), e.pool); err != nil {
+		t.Fatal(err)
+	}
+	trainingProject(t, e, "pub")
+	e.ok(e.do("POST", "/api/projects/pub/runs:calibrate", `{"baseModel":"`+pipelinestest.BaseModel+`","mix":"he-mix"}`, "Idempotency-Key", e.key()), 201, nil)
+	deadline := time.Now().Add(20 * time.Second)
+	for e.count("SELECT count(*) FROM calibrations") == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("no calibration")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	e.leases.Script("train", pipelinestest.Action{Publish: 3})
+	var r runView
+	e.ok(e.do("POST", "/api/projects/pub/runs", `{"baseModel":"`+pipelinestest.BaseModel+`","mix":"he-mix"}`, "Idempotency-Key", e.key()), 201, &r)
+	r = e.waitRun(r.ID, "done")
+	ck := e.checkpoints("pub", r.ID)
+	if len(ck) != 4 || r.CheckpointCount != 4 {
+		t.Fatalf("checkpoints %d (run says %d): %+v", len(ck), r.CheckpointCount, ck)
+	}
+	at := map[int64]bool{}
+	kept := 0
+	for _, c := range ck {
+		if c.Step == nil || c.ValWer == nil || c.Kind != "trained" {
+			t.Fatalf("checkpoint %+v", c)
+		}
+		at[*c.Step] = true
+		if c.Kept {
+			kept++
+		}
+	}
+	if !at[50] || !at[100] || !at[150] || !at[200] || kept != 3 {
+		t.Fatalf("steps %v, kept %d", at, kept)
+	}
+	var art struct {
+		Producer struct{ Step, Output string }
+	}
+	e.ok(e.do("GET", "/api/artifacts/"+ck[0].Artifact, ""), 200, &art)
+	if art.Producer.Step != "train" || art.Producer.Output != "checkpoint" {
+		t.Fatalf("artifact producer %+v", art)
+	}
+	if ev := e.events("run." + r.ID + ".checkpoints"); len(ev) != 4 {
+		t.Fatalf("%d checkpoint events", len(ev))
 	}
 }
