@@ -205,7 +205,7 @@ read any of them (R15).
   metadata, the producer and a directory's files, and with `content=true` (plus `path` for one file of a directory)
   content of at most 1 MiB inline; panels read typed views through their entity's operations, never paths in the
   store.
-- The next step reads an artifact through its lease (`cas://` URI). A step whose `kind@version`, resolved parameters
+- The next step reads an artifact through its lease (`cas://` URI). A step whose `kind@version`, runtime version, resolved parameters
   and input hashes equal a finished step's in the same project reuses that step's outputs instead of running (unless
   the run asks for `fresh`); output hooks run for reused outputs too, so they are idempotent per artifact hash.
 - Tiers: before mounts exist the store is the only tier; mounts (phase 4) become further tiers behind the same hash.

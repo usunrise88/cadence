@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"maps"
 	"strings"
 	"sync"
 	"testing"
@@ -282,6 +283,33 @@ func TestTwoStepPipelineRunsAndReuses(t *testing.T) {
 	}
 	if len(r.leases.Calls()) != 6 {
 		t.Errorf("%d leases after fresh and changed runs, want 6", len(r.leases.Calls()))
+	}
+}
+
+func TestRuntimeUpgradeIsNotReused(t *testing.T) {
+	r := newRig(t, nil)
+	run := r.wait(r.start(r.input("hello world")).ID, pipelines.RunDone)
+	if len(r.leases.Calls()) != 2 {
+		t.Fatalf("%d leases", len(r.leases.Calls()))
+	}
+	// The echo runtime is upgraded (a new image): the same echo@1 is published by a new runtime version.
+	upgraded := map[string]any{}
+	maps.Copy(upgraded, pipelinestest.Fixtures[0])
+	upgraded["runtimeVersionId"] = "ver_test_upgraded"
+	if err := pipelinestest.Register(context.Background(), r.pool, upgraded); err != nil {
+		t.Fatal(err)
+	}
+	again := r.wait(r.start(r.input("hello world")).ID, pipelines.RunDone)
+	first, count := stepOf(t, again, "first"), stepOf(t, again, "count")
+	if first.State != pipelines.StepDone || first.ReusedFrom != "" || first.InputHash == stepOf(t, run, "first").InputHash {
+		t.Errorf("echo on the upgraded runtime: %+v; it must run again, not reuse the old runtime's output", first)
+	}
+	// Its output is the same bytes, and tally's runtime did not change: tally is still reused.
+	if count.State != pipelines.StepReused || count.ReusedFrom != stepOf(t, run, "count").ID {
+		t.Errorf("tally after the echo upgrade: %+v", count)
+	}
+	if len(r.leases.Calls()) != 3 {
+		t.Errorf("%d leases, want 3 (echo again only)", len(r.leases.Calls()))
 	}
 }
 

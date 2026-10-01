@@ -336,7 +336,11 @@ func (e *Engine) advance(ctx context.Context, tx pgx.Tx, r *Run, sts []StepRow) 
 				continue
 			}
 			s.Inputs = inputs
-			if s.InputHash, err = InputHash(s.Kind, s.KindVersion, s.Params, inputs); err != nil {
+			runtime, err := runtimeOf(ctx, tx, s.StepKindVersionID)
+			if err != nil {
+				return nil, err
+			}
+			if s.InputHash, err = InputHash(s.Kind, s.KindVersion, runtime, s.Params, inputs); err != nil {
 				return nil, err
 			}
 			ev, reused, err := e.reuse(ctx, tx, r, s)
