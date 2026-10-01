@@ -9,14 +9,16 @@ stop logic are tested without a card.
   release a recent one even when a fresh save would not fit the stop grace.
 - Stop (cancel, pause, a closing window): at the next step boundary. A fresh state is saved when the last save took
   less than the grace left (with a margin), else the periodic one is released; with none yet, a fresh save is tried.
+- Resume: the best validation of the training state is restored, so the best checkpoint spans the pause.
 """
 
 from __future__ import annotations
 
 import math
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from typing import Any
 
 from cadence_worker.steps.context import StepContext
 
@@ -83,6 +85,17 @@ class TrainingMonitor:
             self.best_wer, self.best_step = wer, step
             return True
         return False
+
+    def restore_best(self, state: Mapping[str, Any]) -> bool:
+        """On resume: the best validation before the pause (``bestValWer``, ``bestStep`` of the training state's
+        ``state.json``), so a later, worse pass is not taken for the best. False when the state records none."""
+        wer, step = state.get("bestValWer"), state.get("bestStep")
+        if isinstance(wer, bool) or not isinstance(wer, int | float) or not math.isfinite(wer):
+            return False
+        if isinstance(step, bool) or not isinstance(step, int):
+            return False
+        self.best_wer, self.best_step = float(wer), step
+        return True
 
     def state_due(self) -> bool:
         started = self.last_state_at if self.last_state_at is not None else self.window.started

@@ -36,8 +36,10 @@ Outputs:
 
 - `checkpoint` — the weights at the end (`model.nemo` + `checkpoint.json`: family, step, valWer, weightsHash, the base
   model, the tokenizer reference and the train arguments);
-- `checkpoint_best` — the best validation pass of this lease (the same artifact when that was the last pass); the
-  control plane ranks every checkpoint by validation WER and keeps the top k;
+- `checkpoint_best` — the best validation pass of the run, across pauses (the same artifact when that was the last
+  pass): a training state records the best WER, its step and the content hashes of its published checkpoint, and a
+  resumed lease rebuilds it from the content store (when it is not there, the best of the resumed lease); the control
+  plane ranks every checkpoint by validation WER and keeps the top k;
 - `state` — `training-state` (`last.ckpt` with optimiser, scheduler and loop state, `state.json`), only for resuming:
   an optional output, released only when the step stops early. A stage that finishes writes none (nothing resumes a
   finished run; `runs.stage` continues from a checkpoint).
