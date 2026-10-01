@@ -63,22 +63,49 @@ func EventTypes(class string) []string {
 }
 
 type approvalPayload struct {
-	Approval *struct {
-		ID        string `json:"id"`
-		Operation string `json:"operation"`
-		ProjectID string `json:"projectId"`
-		Reason    string `json:"reason"`
-		Actor     struct {
-			Kind string `json:"kind"`
-			ID   string `json:"id"`
-			Name string `json:"name"`
-		} `json:"actor"`
-		Estimate *struct {
-			GPUHours          float64  `json:"gpuHours"`
-			RemainingGPUHours *float64 `json:"remainingGpuHours"`
-		} `json:"estimate"`
-		ExpiresAt time.Time `json:"expiresAt"`
-	} `json:"approval"`
+	Approval *approvalView `json:"approval"`
+}
+
+// approvalView is what a person is told about an approval request (the event payload's approval, or its row).
+type approvalView struct {
+	ID        string `json:"id"`
+	Operation string `json:"operation"`
+	ProjectID string `json:"projectId"`
+	Reason    string `json:"reason"`
+	Actor     struct {
+		Kind string `json:"kind"`
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	} `json:"actor"`
+	Estimate *struct {
+		GPUHours          float64  `json:"gpuHours"`
+		RemainingGPUHours *float64 `json:"remainingGpuHours"`
+	} `json:"estimate"`
+	ExpiresAt time.Time `json:"expiresAt"`
+}
+
+// notice is the approval's Telegram message (Approve / Deny buttons through ApprovalID).
+func (a approvalView) notice() Notice {
+	who := a.Actor.Name
+	if who == "" {
+		who = a.Actor.ID
+	}
+	lines := []string{fmt.Sprintf("%s %s asks: %s", a.Actor.Kind, who, a.Reason)}
+	if a.Estimate != nil {
+		est := fmt.Sprintf("Estimate: %.1f GPU-hours", a.Estimate.GPUHours)
+		if a.Estimate.RemainingGPUHours != nil {
+			est += fmt.Sprintf(" (%.1f left in today's budget)", *a.Estimate.RemainingGPUHours)
+		}
+		lines = append(lines, est)
+	}
+	if a.ProjectID != "" {
+		lines = append(lines, "Project: "+a.ProjectID)
+	}
+	if !a.ExpiresAt.IsZero() {
+		lines = append(lines, "Expires: "+a.ExpiresAt.UTC().Format("2006-01-02 15:04 UTC"))
+	}
+	return Notice{Class: ClassApproval, Title: "Approval requested: " + a.Operation, Body: strings.Join(lines, "\n"),
+		ApprovalID: a.ID}
 }
 
 type jobPayload struct {
@@ -141,27 +168,7 @@ func Classify(r events.Record) (Notice, bool) {
 		if json.Unmarshal(r.Payload, &p) != nil || p.Approval == nil {
 			return Notice{}, false
 		}
-		a := p.Approval
-		who := a.Actor.Name
-		if who == "" {
-			who = a.Actor.ID
-		}
-		lines := []string{fmt.Sprintf("%s %s asks: %s", a.Actor.Kind, who, a.Reason)}
-		if a.Estimate != nil {
-			est := fmt.Sprintf("Estimate: %.1f GPU-hours", a.Estimate.GPUHours)
-			if a.Estimate.RemainingGPUHours != nil {
-				est += fmt.Sprintf(" (%.1f left in today's budget)", *a.Estimate.RemainingGPUHours)
-			}
-			lines = append(lines, est)
-		}
-		if a.ProjectID != "" {
-			lines = append(lines, "Project: "+a.ProjectID)
-		}
-		if !a.ExpiresAt.IsZero() {
-			lines = append(lines, "Expires: "+a.ExpiresAt.UTC().Format("2006-01-02 15:04 UTC"))
-		}
-		return Notice{Class: ClassApproval, Title: "Approval requested: " + a.Operation, Body: strings.Join(lines, "\n"),
-			ApprovalID: a.ID}, true
+		return p.Approval.notice(), true
 	case "job.state_changed":
 		if !strings.HasPrefix(r.Topic, "job.") {
 			return Notice{}, false
