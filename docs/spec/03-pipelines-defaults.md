@@ -46,7 +46,7 @@ Every block's process is a pipeline of typed steps declared in the recipes repos
   store), runs the output hooks by artifact type in a savepoint (`dataset` now; `checkpoint` and `calibration` with
   runs), and advances the dependents, all in one transaction; a refusing hook fails the step and keeps nothing of it.
   Hooks also run for reused outputs and are idempotent per artifact hash.
-- Reuse and retries: a ready step whose input hash (kind, version, resolved parameters, input hashes) equals a
+- Reuse and retries: a ready step whose input hash (kind, version, runtime version, resolved parameters, input hashes) equals a
   finished step's in the same project is `reused` (outputs copied) unless the run asks for `fresh`. An `oom` error
   gets one automatic attempt at 0.75× batch (`overrides.batchScale`), `lost` one retry, anything else fails the step
   and the run and skips the steps that never started. `pipelineRuns.retry` runs a failed or cancelled step (or every

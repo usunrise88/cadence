@@ -1,6 +1,6 @@
 ---
 title: Dry run required first
-summary: In a playbook session a command that spends GPU time runs only after a successful dry run of the same operation in the same session; call it with dryRun=true, report the estimate, then call it again.
+summary: In a playbook session a command that spends GPU time runs only after a successful dry run of the same request in the same session; call it with dryRun=true, report the estimate, then call it again with the same arguments.
 contexts: [error:playbook-dry-run-required, guide:playbooks]
 ---
 
@@ -9,9 +9,11 @@ contexts: [error:playbook-dry-run-required, guide:playbooks]
 A `409 Conflict` problem of type `playbook-dry-run-required`. A playbook session (docs/spec/05-agents.md
 "Playbooks and schedules as sessions") runs one step at a time with a dry run before each spending step, and the
 server enforces it: `runs.new`, `runs.calibrate`, `runs.resume`, `runs.stage` and `checkpoints.average` sent without
-`dryRun` by a playbook session are refused unless the session ran a successful dry run of the same operation since
-its last real one. Each real spending command uses up its dry run, so two training runs need two dry runs. Nothing
-was written.
+`dryRun` by a playbook session are refused unless the session's last dry run of the same operation since its last real one
+was the same request: the same path, query and body (the `Idempotency-Key` does not count). A dry run of a cheap
+request therefore never admits a different, more expensive one; dry-run the request again after changing an
+argument. Each real spending command uses up its dry run, so two training runs need two dry runs. Nothing was
+written.
 
 The rule is the server's, not the playbook template's: a template cannot turn it off, and the agent cannot claim a
 dry run it did not make — only a dry run the control plane answered counts.
@@ -27,7 +29,7 @@ wait for an approval (`Cadence-Policy: approval`); the plan's step turns running
 | --- | --- |
 | `type` | `https://cadence.local/help/errors/playbook-dry-run-required` |
 | `status` | `409` |
-| `detail` | The operation that needs its dry run |
+| `detail` | The operation that needs its dry run, and whether its dry run had other arguments |
 
 ## Commands
 

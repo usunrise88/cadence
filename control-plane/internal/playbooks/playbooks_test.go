@@ -2,6 +2,7 @@ package playbooks
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
@@ -282,6 +283,52 @@ func TestStopOnHonoursTheTemplate(t *testing.T) {
 	st.Stops = []Stop{{On: "budget", When: "exceeded"}}
 	if !st.StopOn("budget", "exceeded", "paused", time.Now()) || st.State != StateStopped {
 		t.Fatal("did not stop on budget")
+	}
+}
+
+func TestDryRunMatchesTheRequest(t *testing.T) {
+	type obs struct {
+		dry     bool
+		request string
+	}
+	tests := []struct {
+		name        string
+		seen        []obs // runs.new observations, in order
+		request     string
+		wantMatch   bool
+		wantDryRuns bool
+	}{
+		{"no dry run", nil, "cheap", false, false},
+		{"the dry run of this request", []obs{{true, "big"}}, "big", true, true},
+		{"a cheap dry run, an expensive call", []obs{{true, "cheap"}}, "big", false, true},
+		{"the last dry run counts", []obs{{true, "big"}, {true, "cheap"}}, "big", false, true},
+		{"dry-run again with this request", []obs{{true, "cheap"}, {true, "big"}}, "big", true, true},
+		{"a real call uses the dry run up", []obs{{true, "big"}, {false, "big"}}, "big", false, false},
+		{"a dry run without a fingerprint", []obs{{true, ""}}, "", false, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			st := testState(t)
+			for _, o := range tt.seen {
+				st.Observe(Observation{Operation: "runs.new", DryRun: o.dry, Request: o.request, Status: 200})
+			}
+			// A state saved and read back keeps the fingerprints.
+			raw, err := json.Marshal(st)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var back State
+			if err := json.Unmarshal(raw, &back); err != nil {
+				t.Fatal(err)
+			}
+			match, dry := back.DryRunMatches("runs.new", tt.request)
+			if match != tt.wantMatch || dry != tt.wantDryRuns {
+				t.Errorf("DryRunMatches = %v, %v; want %v, %v", match, dry, tt.wantMatch, tt.wantDryRuns)
+			}
+			if m, _ := back.DryRunMatches("runs.calibrate", tt.request); m {
+				t.Error("a dry run of runs.new admitted runs.calibrate")
+			}
+		})
 	}
 }
 

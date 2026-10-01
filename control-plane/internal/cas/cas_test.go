@@ -69,6 +69,32 @@ func TestPutOpenManifest(t *testing.T) {
 	}
 }
 
+func TestManifestValidate(t *testing.T) {
+	a, b := Hash([]byte("a")), Hash([]byte("b"))
+	tests := []struct {
+		name    string
+		files   []File
+		wantErr string
+	}{
+		{"distinct files", []File{{Path: "x/a", Hash: a}, {Path: "x/b", Hash: b}, {Path: "y", Hash: a}}, ""},
+		{"same path twice, same content", []File{{Path: "x/a", Hash: a}, {Path: "x/a", Hash: a}}, "appears twice"},
+		{"same path twice, other content", []File{{Path: "w.bin", Hash: a}, {Path: "y", Hash: b}, {Path: "w.bin", Hash: b}}, "appears twice"},
+		{"a file is another's directory", []File{{Path: "x", Hash: a}, {Path: "x/y/z", Hash: b}}, "both a file and the directory"},
+		{"a name that only shares a prefix", []File{{Path: "x", Hash: a}, {Path: "x-y/z", Hash: b}}, ""},
+		{"not a b3 hash", []File{{Path: "x", Hash: "sha256:00"}}, "not a b3 hash"},
+		{"dot segment", []File{{Path: "./x", Hash: a}}, "segment"},
+	}
+	for _, tt := range tests {
+		err := Manifest{Files: tt.files}.Validate()
+		if tt.wantErr == "" && err != nil || tt.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tt.wantErr)) {
+			t.Errorf("%s: Validate = %v; want %q", tt.name, err, tt.wantErr)
+		}
+		if _, eerr := (Manifest{Files: tt.files}).Encode(); (eerr == nil) != (tt.wantErr == "") {
+			t.Errorf("%s: Encode = %v; want it to agree with Validate", tt.name, eerr)
+		}
+	}
+}
+
 func TestDelete(t *testing.T) {
 	s, err := New(t.TempDir())
 	if err != nil {

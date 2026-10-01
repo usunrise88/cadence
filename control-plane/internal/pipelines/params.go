@@ -222,14 +222,17 @@ func sameJSON(a, b any) bool {
 	return errA == nil && errB == nil && bytes.Equal(ja, jb)
 }
 
-// InputHash identifies a step's work: its kind and version, resolved parameters and input hashes. A finished step
-// with the same hash in the same project produced what this one would, so it is reused (input-hash idempotence).
-func InputHash(kind, version string, params map[string]any, inputs map[string]steps.ArtifactRef) (string, error) {
+// InputHash identifies a step's work: its kind and version, the runtime version that publishes the kind (the
+// runtime registry version id, which changes with the runtime image), resolved parameters and input hashes. A
+// finished step with the same hash in the same project produced what this one would, so it is reused (input-hash
+// idempotence); after a runtime upgrade the step runs again on the new runtime.
+func InputHash(kind, version, runtimeVersionID string, params map[string]any, inputs map[string]steps.ArtifactRef) (string, error) {
 	in := map[string]string{}
 	for name, ref := range inputs {
 		in[name] = ref.Hash
 	}
-	b, err := json.Marshal(map[string]any{"kind": kind, "version": version, "params": params, "inputs": in})
+	b, err := json.Marshal(map[string]any{"kind": kind, "version": version, "runtime": runtimeVersionID, "params": params,
+		"inputs": in})
 	if err != nil {
 		return "", fmt.Errorf("input hash: %w", err)
 	}

@@ -3,7 +3,10 @@ package pipelines
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/usunrise88/cadence/control-plane/internal/registry"
 	"github.com/usunrise88/cadence/control-plane/internal/steps"
@@ -70,4 +73,22 @@ func (RegistryKinds) Lookup(ctx context.Context, q storage.Querier, name, versio
 		return k, true, nil
 	}
 	return Kind{}, false, nil
+}
+
+// runtimeOf returns the runtime version id (runtimeVersionId) of the pinned step kind registry version, part of a
+// step's input hash; "" when the step pins no version or the version names no runtime.
+func runtimeOf(ctx context.Context, q storage.Querier, stepKindVersionID string) (string, error) {
+	if stepKindVersionID == "" {
+		return "", nil
+	}
+	var id string
+	err := q.QueryRow(ctx, `SELECT coalesce(payload->>'runtimeVersionId', '') FROM registry_versions WHERE id = $1`,
+		stepKindVersionID).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("read the runtime of step kind version %s: %w", stepKindVersionID, err)
+	}
+	return id, nil
 }

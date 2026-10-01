@@ -68,7 +68,11 @@ type State struct {
 	Summary   string         `json:"summary,omitempty"`
 	Next      string         `json:"next,omitempty"`
 	DryRuns   []string       `json:"dryRuns,omitempty"`
-	Nudges    int            `json:"nudges,omitempty"`
+	// DryRunRequests maps each operation of DryRuns to the request fingerprint of its last dry run
+	// (commands.HashRequest: method, path, query without dryRun, If-Match and canonical body; never the
+	// Idempotency-Key). The real command must carry the same one (DryRunMatches). Not part of the contract.
+	DryRunRequests map[string]string `json:"dryRunRequests,omitempty"`
+	Nudges         int               `json:"nudges,omitempty"`
 	// Stops and NextText are the template's, carried so the session needs no template lookup.
 	Stops    []Stop `json:"stops,omitempty"`
 	NextText Next   `json:"nextText"`
@@ -96,6 +100,7 @@ func NewPlan(p Playbook, e Estimate) []Item {
 type Observation struct {
 	Operation  string
 	DryRun     bool
+	Request    string // the command's request fingerprint (commands.Command.RequestHash); a dry run records it
 	Status     int
 	Body       map[string]any
 	CommandID  string
@@ -125,13 +130,26 @@ func (st *State) Observe(o Observation) bool {
 	}
 	changed := false
 	if Spending[o.Operation] {
-		if o.DryRun && !slices.Contains(st.DryRuns, o.Operation) {
-			st.DryRuns = append(st.DryRuns, o.Operation)
-			changed = true
+		if o.DryRun {
+			if !slices.Contains(st.DryRuns, o.Operation) {
+				st.DryRuns = append(st.DryRuns, o.Operation)
+				changed = true
+			}
+			if prev, ok := st.DryRunRequests[o.Operation]; !ok || prev != o.Request {
+				if st.DryRunRequests == nil {
+					st.DryRunRequests = map[string]string{}
+				}
+				st.DryRunRequests[o.Operation] = o.Request
+				changed = true
+			}
 		}
 		if !o.DryRun {
 			if i := slices.Index(st.DryRuns, o.Operation); i >= 0 {
 				st.DryRuns = slices.Delete(st.DryRuns, i, i+1)
+				changed = true
+			}
+			if _, ok := st.DryRunRequests[o.Operation]; ok {
+				delete(st.DryRunRequests, o.Operation)
 				changed = true
 			}
 		}
@@ -291,6 +309,17 @@ func (st *State) End(state string, stop *StopInfo) {
 	}
 	b.WriteString(" — " + strings.Join(parts, "; ") + ".")
 	st.Summary = b.String()
+}
+
+// DryRunMatches reports whether the session's last dry run of op since its last real call was this very request
+// (request is the real command's fingerprint), and whether op had such a dry run at all. A dry run of a cheap
+// request never admits a different, expensive one: only path, query, If-Match and body equal to the dry run's do.
+func (st *State) DryRunMatches(op, request string) (matches, dryRun bool) {
+	if !slices.Contains(st.DryRuns, op) {
+		return false, false
+	}
+	prev, ok := st.DryRunRequests[op]
+	return ok && prev != "" && prev == request, true
 }
 
 // NextItem names the current item for a reminder, or "".

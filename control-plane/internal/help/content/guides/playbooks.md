@@ -43,7 +43,7 @@ Rules the server enforces in a playbook session:
 
 - Only the current item ticks, and only from an operation it names; the agent cannot tick items itself.
 - A spending command (`runs.new`, `runs.calibrate`, `runs.resume`, `runs.stage`, `checkpoints.average`) needs a
-  successful dry run of the same operation in the session first (`playbook-dry-run-required`).
+  successful dry run of the same request (path, query and body) in the session first (`playbook-dry-run-required`).
 - After the playbook ended, spending commands are refused (`playbook-stopped`); the session ends after its turn.
 - A turn that ends without progress gets a reminder of the next step, at most twice in a row.
 
