@@ -133,6 +133,33 @@ func TestLogsRoundTrip(t *testing.T) {
 	}
 }
 
+func TestByCardIndex(t *testing.T) {
+	used := func(mb int) *int { return &mb }
+	tests := []struct {
+		name string
+		in   []CardTelemetry
+		want []int // indexes, in lock order
+		used []int // MemoryUsedMB of each, to tell duplicates apart
+	}{
+		{"none", nil, []int{}, []int{}},
+		{"already ordered", []CardTelemetry{{Index: 0, MemoryUsedMB: used(1)}, {Index: 1, MemoryUsedMB: used(2)}}, []int{0, 1}, []int{1, 2}},
+		{"reversed", []CardTelemetry{{Index: 3, MemoryUsedMB: used(3)}, {Index: 1, MemoryUsedMB: used(1)}, {Index: 2, MemoryUsedMB: used(2)}},
+			[]int{1, 2, 3}, []int{1, 2, 3}},
+		{"duplicate index: the last report wins", []CardTelemetry{{Index: 1, MemoryUsedMB: used(10)}, {Index: 0, MemoryUsedMB: used(5)},
+			{Index: 1, MemoryUsedMB: used(11)}}, []int{0, 1}, []int{5, 11}},
+	}
+	for _, tt := range tests {
+		got := byCardIndex(tt.in)
+		idx, mb := []int{}, []int{}
+		for _, c := range got {
+			idx, mb = append(idx, c.Index), append(mb, *c.MemoryUsedMB)
+		}
+		if !reflect.DeepEqual(idx, tt.want) || !reflect.DeepEqual(mb, tt.used) {
+			t.Errorf("%s: byCardIndex = %v (used %v); want %v (used %v)", tt.name, idx, mb, tt.want, tt.used)
+		}
+	}
+}
+
 func TestOversizeLogLinesAreTruncated(t *testing.T) {
 	now := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
 	then := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)

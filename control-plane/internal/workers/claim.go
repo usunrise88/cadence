@@ -408,10 +408,25 @@ func queueEvent(jobID, projectID, change string, extra map[string]any) events.Dr
 	return events.Draft{Topic: TopicQueue, Type: EventQueue, ProjectID: projectID, Payload: p}
 }
 
+// byCardIndex returns the reported cards in card index order, one per index (the last report wins). Every
+// transaction locks a host's card_slots rows in this order — recordTelemetry's upserts as lockCards' FOR UPDATE —
+// so two claims or reports of the same host never wait on each other in a cycle, whatever order a worker lists its
+// cards in.
+func byCardIndex(cards []CardTelemetry) []CardTelemetry {
+	out := make([]CardTelemetry, 0, len(cards))
+	for i := len(cards) - 1; i >= 0; i-- {
+		if !slices.ContainsFunc(out, func(c CardTelemetry) bool { return c.Index == cards[i].Index }) {
+			out = append(out, cards[i])
+		}
+	}
+	slices.SortFunc(out, func(a, b CardTelemetry) int { return a.Index - b.Index })
+	return out
+}
+
 // recordTelemetry keeps each reported card's telemetry in its slot; at most every GPUEventInterval per host it also
 // emits it on the gpu topic and marks the host healthy.
 func (s *Service) recordTelemetry(ctx context.Context, tx pgx.Tx, w Worker, cards []CardTelemetry, now time.Time) ([]events.Draft, error) {
-	for _, c := range cards {
+	for _, c := range byCardIndex(cards) {
 		if _, err := tx.Exec(ctx, `INSERT INTO card_slots (host_id, card_index, telemetry, reported_at) VALUES ($1, $2, $3, $4)
 			ON CONFLICT (host_id, card_index) DO UPDATE SET telemetry = excluded.telemetry, reported_at = excluded.reported_at`,
 			w.HostID, c.Index, c, now); err != nil {
