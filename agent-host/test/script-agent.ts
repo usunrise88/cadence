@@ -3,6 +3,8 @@
 //
 //   edit <file> <text>   writes the file in its cwd, reports an edit tool call with the diff, answers "edited"
 //   secret               writes leak.txt holding a session token (the credential scan must refuse it)
+//   commit <file> <text> writes the file and commits it itself with git ("agent: <file>"), answers "committed"
+//   commitsecret         writes leak.txt holding a session token and commits it itself
 //   loop                 calls the same Cadence tool with the same arguments until cancelled (runaway)
 //   edits                calls the same Cadence tool four times with different arguments, streamed like Claude's
 //   hang                 sends nothing until cancelled (stuck turn)
@@ -17,6 +19,7 @@
 //   node test/script-agent.ts
 
 import { Readable, Writable } from "node:stream";
+import { execFileSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import * as acp from "@agentclientprotocol/sdk";
@@ -60,6 +63,16 @@ async function turn(cx: Ctx, sessionId: string, prompt: string, signal: AbortSig
         update: { sessionUpdate: "tool_call_update", toolCallId, status: "completed", content: [{ type: "diff", path: join(s.cwd, file), oldText: null, newText: text }] },
       });
       await say(cx, sessionId, "edited");
+      return { stopReason: "end_turn", usage };
+    }
+    case "commit":
+    case "commitsecret": {
+      const [file = "x.txt", ...words] = cmd === "commit" ? rest : ["leak.txt", `token=cst_${"a".repeat(52)}`];
+      writeFileSync(join(s.cwd, file), `${words.join(" ")}\n`);
+      const g = (...args: string[]) => execFileSync("git", ["-c", "user.name=agent", "-c", "user.email=agent@example.com", "-c", "core.hooksPath=/dev/null", ...args], { cwd: s.cwd });
+      g("add", file);
+      g("commit", "--quiet", "-m", `agent: ${file}`);
+      await say(cx, sessionId, "committed");
       return { stopReason: "end_turn", usage };
     }
     case "secret":
