@@ -537,6 +537,11 @@ func (w *worker) work(ctx context.Context, rj *river.Job[riverArgs]) error {
 		return err
 	}
 	switch {
+	case !cancelled && errors.Is(herr, ErrInterrupted):
+		// The control plane is stopping while the handler waits on work that goes on elsewhere (a worker's lease):
+		// the mirror stays running and River hands the job to the next start without spending an attempt, where
+		// the handler picks the work up again.
+		return river.JobSnooze(0)
 	case cancelled:
 		if err := s.end(fctx, id, StateCancelled, herr.Error()); err != nil {
 			return err
@@ -558,6 +563,11 @@ func (w *worker) work(ctx context.Context, rj *river.Job[riverArgs]) error {
 }
 
 var errCancelled = errors.New("the job was cancelled before it started")
+
+// ErrInterrupted marks a handler error as "stopped by the control plane's shutdown, not failed": a handler that waits
+// on work running elsewhere returns it (wrapped) when its context is cancelled, and the job runs again on the next
+// start with the same attempt (River's snooze) instead of failing or retrying.
+var ErrInterrupted = errors.New("interrupted by the control plane stopping; it continues on the next start")
 
 // finish stores the result and completes the River job in the same transaction.
 func (w *worker) finish(ctx context.Context, rj *river.Job[riverArgs], result any) error {
