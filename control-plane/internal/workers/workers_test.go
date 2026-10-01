@@ -71,8 +71,8 @@ func TestTraceparent(t *testing.T) {
 func TestLogsRoundTrip(t *testing.T) {
 	s := New(Options{LogDir: t.TempDir()})
 	const job = "job_0192f0a0-0000-7000-8000-000000000001"
-	lines, err := parseLines([]byte(`{"t":"2026-09-30T12:00:00Z","msg":"one"}` + "\n\n" +
-		`{"t":"2026-09-30T12:00:01Z","level":"error","msg":"Two","fields":{"k":1}}` + "\n"))
+	lines, err := parseLines([]byte(`{"t":"2026-09-30T12:00:00Z","msg":"one"}`+"\n\n"+
+		`{"t":"2026-09-30T12:00:01Z","level":"error","msg":"Two","fields":{"k":1}}`+"\n"), time.Now())
 	if err != nil || len(lines) != 2 || lines[0].Level != "info" {
 		t.Fatalf("parseLines = %+v, %v", lines, err)
 	}
@@ -84,7 +84,7 @@ func TestLogsRoundTrip(t *testing.T) {
 		t.Fatalf("seq = %d", lines[1].Seq)
 	}
 	s.logSeq = map[string]int{} // a new process counts the file
-	more, _ := parseLines([]byte(`{"t":"2026-09-30T12:00:02Z","level":"warn","msg":"three two"}`))
+	more, _ := parseLines([]byte(`{"t":"2026-09-30T12:00:02Z","level":"warn","msg":"three two"}`), time.Now())
 	if err := s.appendFile(path, job, more); err != nil || more[0].Seq != 3 {
 		t.Fatalf("append after restart: seq %d, %v", more[0].Seq, err)
 	}
@@ -112,7 +112,7 @@ func TestLogsRoundTrip(t *testing.T) {
 			t.Errorf("ReadLogs(%+v) = %v next %d; want %v next %d", tt.f, seqs, next, tt.wantSeqs, tt.wantNext)
 		}
 	}
-	if _, err := parseLines([]byte(`{"msg":"no time"}`)); err == nil {
+	if _, err := parseLines([]byte(`{"msg":"no time"}`), time.Now()); err == nil {
 		t.Fatal("a line without t was accepted")
 	} else if p, ok := problems.As(err); !ok || p.Type != problems.ValidationFailed {
 		t.Fatalf("err = %v", err)
@@ -130,5 +130,46 @@ func TestLogsRoundTrip(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(s.LogDir(), job+".ndjson")); !os.IsNotExist(err) {
 		t.Fatal("old log kept")
+	}
+}
+
+func TestOversizeLogLinesAreTruncated(t *testing.T) {
+	now := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	then := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
+	huge := strings.Repeat("x", 2<<20)
+	bigFields := `{"blob":"` + strings.Repeat("y", MaxLogLineBytes) + `"}`
+	after := `{"t":"2026-09-30T12:00:05Z","msg":"after"}`
+	tests := []struct {
+		name      string
+		line      string
+		wantLevel string
+		wantT     time.Time
+		wantStart string
+		noFields  bool
+	}{
+		{"valid line with a huge msg", `{"t":"2026-09-30T12:00:00Z","level":"error","msg":"` + huge + `"}`, "error", then, "xxx", false},
+		{"valid line with huge fields", `{"t":"2026-09-30T12:00:00Z","msg":"m","fields":` + bigFields + `}`, "info", then, "m [truncated", true},
+		{"not JSON", huge, "warn", now, "xxx", true},
+		{"cut by the request limit", `{"t":"2026-09-30T12:00:00Z","msg":"` + huge[:MaxLogLineBytes], "warn", now, `{"t":`, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lines, err := parseLines([]byte(tt.line+"\n"+after+"\n"), now)
+			if err != nil {
+				t.Fatalf("parseLines refused the batch: %v", err)
+			}
+			if len(lines) != 2 || lines[1].Msg != "after" {
+				t.Fatalf("lines = %d; the line after the oversize one must land", len(lines))
+			}
+			l := lines[0]
+			if l.Level != tt.wantLevel || !l.T.Equal(tt.wantT) || !strings.HasPrefix(l.Msg, tt.wantStart) ||
+				!strings.Contains(l.Msg, "[truncated: the line had") || (tt.noFields && l.Fields != nil) {
+				t.Fatalf("line = level %q t %v msg %.40q… fields %d bytes", l.Level, l.T, l.Msg, len(l.Fields))
+			}
+			b, err := json.Marshal(l)
+			if err != nil || len(b) > MaxLogLineBytes {
+				t.Fatalf("stored line has %d bytes (max %d), %v", len(b), MaxLogLineBytes, err)
+			}
+		})
 	}
 }

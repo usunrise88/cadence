@@ -263,7 +263,9 @@ read any of them (R15).
   order thinned evenly to a maximum number of points (first and last kept), which `metrics.get` exposes with runs
   (phase 2 wave 2, R53). Points are never deleted in v1: they live as long as their run.
 - Logs: one NDJSON file per job, `$CADENCE_DATA_DIR/job-logs/<jobId>.ndjson` (`logs/` holds the control plane's own
-  log files), lines `{t, level, msg, fields}` (`msg` ≤ 16 000 characters, ≤ 1 MiB per `workerLogs.new`); each request
+  log files), lines `{t, level, msg, fields}` (`msg` ≤ 16 000 characters, ≤ 1 MiB per `workerLogs.new`). An oversize
+  line is truncated, never refused: a line over 64 KiB is stored cut with `[truncated: the line had N bytes]` in its
+  `msg`, and bytes past 4 MiB in one request are discarded, so the lines after it still land; each request
   becomes `job.log` events on `job.{id}.log` of at most 200 lines. `jobLogs.list` reads a job's lines with their line
   numbers, filtered by minimum level and message text, paging with `after` or reading the `tail`. Field search and a
   global search index of `warn`+ lines (R15) are not built yet. A daily chore deletes log files untouched for 14 days.

@@ -20,7 +20,9 @@ The worker protocol (docs/review/2026-09-30-phase-2-plan.md "Worker protocol", R
   compute health; answers stop with `cancelled | paused | window-closed`. **Reap** (periodic, 10 s in main): three
   missed beats end the step as failed/`lost`; hosts whose workers went quiet become `unreachable`.
 - **Logs**: NDJSON appended to `<LogDir>/<jobId>.ndjson` (`$CADENCE_DATA_DIR/job-logs`), one `job.{id}.log` event
-  per batch (≤ 200 lines), `ReadLogs` for `jobLogs.list`, `PruneLogs` (14 days, daily). **Metrics**:
+  per batch (≤ 200 lines). An oversize line never refuses the batch: a line over 64 KiB is stored truncated (msg
+  cut, fields dropped if needed, `[truncated: the line had N bytes]` appended; text that is not a valid line becomes a
+  `warn` line stamped on arrival) and bytes past 4 MiB per request are discarded, so later lines still land. `ReadLogs` for `jobLogs.list`, `PruneLogs` (14 days, daily). **Metrics**:
   `internal/telemetry` rows plus `run.{runId}.metrics` events. **Release**: outputs must be in the CAS
   (`artifact-missing`); `PutArtifact` backs `workerArtifacts.set` (`artifact-hash-mismatch`).
 - **Queue commands**: `Pause`, `Resume`, `Prioritize` (jobs.pause|resume|edit) and `Queue` (queueEntries.list);
