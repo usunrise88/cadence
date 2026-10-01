@@ -6,7 +6,7 @@ contexts: [step:dataset_import, artifact:dataset]
 
 ## What this is
 
-`dataset_import@2` is a runtime-neutral core step kind (it ships in every runtime image, runs on the CPU, job kind
+`dataset_import@3` is a runtime-neutral core step kind (version 3 adds `transliterate`; it ships in every runtime image, runs on the CPU, job kind
 `data`). It reads a corpus, converts every clip to 16-bit PCM WAV, mono, at `sample_rate`, and writes one `dataset`
 artifact. When the step finishes, the control plane's `dataset` output hook — in the same transaction that marks the
 step done — creates or reuses the **Source**, inserts **Utterances** by the BLAKE3 hash of their audio (audio already
@@ -60,6 +60,7 @@ language, the source ids, the licence, the artifact (`artifact.hash`, which trai
 | `min_validation_utterances` | `100` — `data.min_validation_utterances` | Gate rehearsal 2026-10-01 (19 validation clips from a 3 h import) | 0–100000; a speaker-disjoint split with fewer validation utterances moves more whole speakers (or transcripts) over, never past half the import |
 | `sample_rate` | `16000` — `data.sample_rate` | Nemotron 3.5 model card | 8000–48000 Hz |
 | `text_normalisation` | `false` — `data.text_normalisation` | Nemotron 3.5 model card (cased, punctuated) | on: NFKC, case-folded, no punctuation |
+| `transliterate` | `""` (keep the script) | Cadence recommendation | `""`, `sr-Cyrl-Latn` (Serbian Cyrillic → Gaj Latin, before normalisation) |
 | `eval_only` | `false` | R17, R18 | golden and replay test sets |
 | `tags` | `[]` | Cadence recommendation | ≤ 20 tags |
 | `purpose` | `speech` | spec 02 entity Noise bank | `speech`; `noise`: background noise clips registered as a noise bank |
@@ -84,6 +85,9 @@ empty text, no language, or audio already imported in the same run are skipped a
 - Import FLEURS Hebrew: `format: hf-dataset`, `hf_config: he_il`, `locale: he-IL`, `source_name: fleurs`,
   `licence: CC-BY-4.0`, `hf_revision` pinned; then ask a person to clear `fleurs` for training.
 - Golden or replay test sets: `split_rule: all-test`, `eval_only: true`, `tags: [golden]`.
+- A language the base model knows only in another script (Serbian FLEURS is Cyrillic; Nemotron 3.5's tokenizer lacks
+  six of its letters): `transliterate: sr-Cyrl-Latn`, then train with a close language the model knows
+  (`target_lang: hr-HR`). `runs.new` refuses a mix whose language the base model does not know before any GPU time.
 
 ## Sources
 

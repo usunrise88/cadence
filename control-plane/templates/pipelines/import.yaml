@@ -1,6 +1,6 @@
 # written by Cadence — starter pipeline: import one corpus as a frozen dataset version (docs/spec/08-resolutions.md R18).
 #
-# dataset_import@2 writes a `dataset` artifact; the control plane's dataset hook registers the Source (eval-only until
+# dataset_import@3 writes a `dataset` artifact; the control plane's dataset hook registers the Source (eval-only until
 # a person clears it for training with sources.edit), the Utterances by content hash, their Transcripts and a frozen
 # dataset version in dataset/<name>. Only departures from defaults.yaml (data.*) are written.
 #
@@ -10,7 +10,7 @@
 name: import
 steps:
   - id: import
-    kind: dataset_import@2
+    kind: dataset_import@3
     params:
       name: fleurs-he
       source_name: fleurs

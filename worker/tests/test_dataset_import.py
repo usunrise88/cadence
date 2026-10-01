@@ -9,7 +9,7 @@ from typing import Any, cast
 
 import pytest
 
-from cadence_worker import audio
+from cadence_worker import audio, translit
 from cadence_worker.__main__ import registry
 from cadence_worker.steps import dataset_import as di
 from cadence_worker.steps.base import missing_metadata
@@ -34,7 +34,7 @@ def run(tmp_path: Path, p: di.DatasetImportParams) -> tuple[dict[str, Any], list
 
 def test_registry_publishes_the_new_contract_shape() -> None:
     reg = registry()["dataset_import"]
-    assert reg["version"] == "2"
+    assert reg["version"] == "3"
     assert reg["produces"] == {"dataset": "dataset"}
     assert di.DatasetImportStep.produces == {"dataset": "dataset"}
     assert di.DatasetImportStep.consumes == {}
@@ -245,3 +245,28 @@ def test_canonical_wav_bytes_are_pinned() -> None:
     # The canonical WAV is an utterance's identity: the same clip must give the same bytes on every host and version.
     a = audio.read(FIX / "audio" / "clip1.wav")
     assert hashlib.sha256(audio.wav_bytes(audio.canonical(a, 16000))).hexdigest().startswith("213f6c160894975e")
+
+
+def test_transliterate_writes_serbian_latin(tmp_path: Path) -> None:
+    _, cyrl, _ = run(tmp_path / "c", params(format="folder-csv", path=str(FIX), split_rule="source"))
+    _, latn, _ = run(
+        tmp_path / "l", params(format="folder-csv", path=str(FIX), split_rule="source", transliterate="sr-Cyrl-Latn")
+    )
+    assert any(any("Ѐ" <= ch <= "ӿ" for ch in x["text"]) for x in cyrl), "the fixture is Cyrillic"
+    for src, out in zip(cyrl, latn, strict=True):
+        assert not any("Ѐ" <= ch <= "ӿ" for ch in out["text"]), out["text"]
+        assert out["text"] == translit.sr_cyrl_to_latn(src["text"])
+
+
+@pytest.mark.parametrize(
+    ("cyrl", "latn"),
+    [
+        ("Љубав и џеп", "Ljubav i džep"),
+        ("ЊЕГОШ", "NJEGOŠ"),
+        ("Ђорђе, ћуприја!", "Đorđe, ćuprija!"),
+        ("abc 123", "abc 123"),
+    ],
+)
+def test_sr_cyrl_to_latn(cyrl: str, latn: str) -> None:
+    assert translit.sr_cyrl_to_latn(cyrl) == latn
+    assert translit.transliterate(cyrl, "") == cyrl

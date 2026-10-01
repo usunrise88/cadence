@@ -1,4 +1,4 @@
-"""``dataset_import@2`` — the runtime-neutral import step (docs/spec/08-resolutions.md R17, R18).
+"""``dataset_import@3`` — the runtime-neutral import step (docs/spec/08-resolutions.md R17, R18).
 
 Reads a corpus in one of three formats — a NeMo manifest, a Hugging Face dataset (FLEURS, Common Voice) or a folder
 with ``metadata.csv`` — and writes a ``dataset`` directory artifact (docs/spec/02-domain-projects-registry.md "The
@@ -31,6 +31,7 @@ from pydantic import BaseModel, model_validator
 
 from cadence_worker import audio
 from cadence_worker.steps.base import cadence_field
+from cadence_worker.translit import transliterate
 
 FORMAT = "cadence.dataset/1"
 SPLITS = ("train", "validation", "test")
@@ -157,6 +158,13 @@ class DatasetImportParams(BaseModel):
         description="Normalise transcripts (NFKC, case-folded, no punctuation); off keeps cased, punctuated text",
         default_ref="data.text_normalisation",
     )
+    transliterate: Literal["", "sr-Cyrl-Latn"] = cadence_field(
+        "",
+        description="Convert transcripts to another script before anything else (sr-Cyrl-Latn: Serbian Cyrillic to "
+        "Gaj Latin, for base models whose tokenizer lacks the Cyrillic letters); empty keeps the text's script",
+        source="Cadence recommendation (the Serbian fine-tune on the test stand, 2026-10-01)",
+        range={"values": ["", "sr-Cyrl-Latn"]},
+    )
     eval_only: bool = cadence_field(
         False,
         description="Register for evaluation only (golden and replay test sets): never mixed or trained on",
@@ -204,7 +212,7 @@ class Record:
 
 
 class DatasetImportStep:
-    version: ClassVar[str] = "2"
+    version: ClassVar[str] = "3"
     consumes: ClassVar[Mapping[str, str]] = {}
     produces: ClassVar[Mapping[str, str]] = {"dataset": "dataset"}
     resources: ClassVar[Mapping[str, Any]] = {"gpu": False, "jobKind": "data"}
@@ -390,7 +398,7 @@ def write_dataset(p: DatasetImportParams, rows: Iterable[Record], out: Path, ctx
     skipped = {"empty text": 0, "duplicate audio": 0, "no language": 0, "cap": 0}
     noise = p.purpose == "noise"
     for r in rows:
-        text = normalise_text(r.text, p.text_normalisation)
+        text = normalise_text(transliterate(r.text, p.transliterate), p.text_normalisation)
         language = r.language.strip() or ("und" if noise else "")
         if not text and not noise:
             skipped["empty text"] += 1
