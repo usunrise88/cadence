@@ -624,3 +624,34 @@ func TestStartValidatesInputsAgainstTheStore(t *testing.T) {
 		t.Fatalf("start with an unindexed input without size: %v", err)
 	}
 }
+
+// A lost-lease retry resumes from the newest training state the step published during its leases, not from the
+// start; an evicted one does not count, and another step's states are not this step's.
+func TestNewestPublishedState(t *testing.T) {
+	r := newRig(t, nil)
+	ctx := context.Background()
+	h := func(c byte) string { return "b3:" + strings.Repeat(string(c), 64) }
+	ins := func(hash, typ, step string, ago time.Duration, evicted bool) {
+		t.Helper()
+		var ev *time.Time
+		if evicted {
+			now := time.Now()
+			ev = &now
+		}
+		if _, err := r.pool.Exec(ctx, `INSERT INTO artifacts (hash, type, size, step_id, created_at, evicted_at)
+			VALUES ($1, $2, 1, $3, now() - $4::interval, $5)`, hash, typ, step, ago.String(), ev); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got, err := pipelines.NewestPublishedState(ctx, r.pool, "pls_a"); err != nil || got != "" {
+		t.Fatalf("no states: %q, %v", got, err)
+	}
+	ins(h('a'), "training-state", "pls_a", 40*time.Minute, false)
+	ins(h('b'), "training-state", "pls_a", 20*time.Minute, false)
+	ins(h('c'), "training-state", "pls_a", time.Minute, true) // evicted: its bytes are gone
+	ins(h('d'), "checkpoint", "pls_a", 0, false)              // not a state
+	ins(h('e'), "training-state", "pls_b", 0, false)          // another step's
+	if got, err := pipelines.NewestPublishedState(ctx, r.pool, "pls_a"); err != nil || got != h('b') {
+		t.Fatalf("newest state %q, %v; want %s", got, err, h('b'))
+	}
+}

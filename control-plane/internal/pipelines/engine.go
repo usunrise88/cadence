@@ -724,6 +724,24 @@ func (e *Engine) runHooks(ctx context.Context, tx pgx.Tx, r Run, s StepRow, spec
 	return drafts, nil
 }
 
+// TypeTrainingState is the artifact type a train-role step resumes from (overrides.resumeFrom).
+const TypeTrainingState = "training-state"
+
+// newestPublishedState is the newest training state step stepID published during its leases (workerOutputs.new) that
+// is still in the store, or "".
+func newestPublishedState(ctx context.Context, q storage.Querier, stepID string) (string, error) {
+	var h string
+	err := q.QueryRow(ctx, `SELECT hash FROM artifacts WHERE step_id = $1 AND type = $2 AND evicted_at IS NULL
+		ORDER BY created_at DESC, hash LIMIT 1`, stepID, TypeTrainingState).Scan(&h)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("newest training state of step %s: %w", stepID, err)
+	}
+	return h, nil
+}
+
 // fail applies a step failure: an OOM gets one automatic retry at steps.OOMBatchScale, a lost lease one retry at
 // the same scale; otherwise the step fails, the run fails and the steps that never started are skipped.
 func (e *Engine) fail(ctx context.Context, tx pgx.Tx, r *Run, sts []StepRow, i int, se steps.StepError) ([]events.Draft, error) {
@@ -739,6 +757,15 @@ func (e *Engine) fail(ctx context.Context, tx pgx.Tx, r *Run, sts []StepRow, i i
 		case se.Type == steps.ErrOOM && !s.hadAttempt(ReasonOOM):
 			return e.enqueue(ctx, tx, *r, s, ReasonOOM, steps.Overrides{BatchScale: steps.OOMBatchScale, ResumeFrom: last.ResumeFrom})
 		case se.Type == steps.ErrLost && !s.hadAttempt(ReasonLost):
+			// A lost lease (a worker or host crash) took the step's scratch with it, but the training states it
+			// published meanwhile are in the store: the retry resumes from the newest instead of starting over.
+			h, err := newestPublishedState(ctx, tx, s.ID)
+			if err != nil {
+				return nil, err
+			}
+			if h != "" {
+				last.ResumeFrom = h
+			}
 			return e.enqueue(ctx, tx, *r, s, ReasonLost, last)
 		}
 	}

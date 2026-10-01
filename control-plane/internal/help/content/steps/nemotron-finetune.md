@@ -42,7 +42,7 @@ Outputs:
 
 Every validation pass before the last also saves its checkpoint and publishes it while training runs, so each one is
 registered on the run at once (and survives a pause or a closing window); `checkpoint_best` links the published one,
-so it is the same artifact. A training state is also written every `state_every_minutes`. Asked to stop (cancel, pause, a closing window), the step
+so it is the same artifact. A training state is also written every `state_every_minutes` and published at once (`workerOutputs.new`), so a lost lease (a worker or host crash) does not lose it: the automatic lost-lease retry resumes from the newest published state. Asked to stop (cancel, pause, a closing window), the step
 stops at the next optimiser step and releases a training state — a fresh one when the last save was quick enough for
 the stop grace, else the periodic one; the lease is released cancelled with it. `overrides.resumeFrom` continues from
 a state up to `steps` in total. A card out-of-memory is an `oom` error; the retry runs at 0.75× the bucket batches.

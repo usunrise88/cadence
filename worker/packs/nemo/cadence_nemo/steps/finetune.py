@@ -15,6 +15,8 @@ docs/help/steps/nemotron-finetune.md.
 
 from __future__ import annotations
 
+import os
+import shutil
 import time
 from collections.abc import Mapping
 from pathlib import Path
@@ -246,9 +248,25 @@ class FinetuneStep:
             monitor.state_saved(step, seconds)
             ctx.log("training state written", step=step, seconds=round(seconds, 1))
 
+        def publish_state(step: int) -> None:
+            # The periodic state survives a lost lease (a worker or host crash): published now, a lost-lease retry
+            # resumes from it instead of from the start. Hard links of the files just written (the next save replaces
+            # last.ckpt by rename, so the links keep this state); the harness stores and removes the copy.
+            d = work / "published" / f"state-{step}"
+            d.mkdir(parents=True, exist_ok=True)
+            for f in state_dir.iterdir():
+                if f.is_file():
+                    try:
+                        os.link(f, d / f.name)
+                    except OSError:
+                        shutil.copyfile(f, d / f.name)
+            ctx.publish("state", d, {"family": NAME, "step": step})
+            ctx.log("training state published", step=step)
+
         class StepHooks(training.Hooks):
             def save_state(self, trainer: Any, step: int) -> None:
                 save_state(trainer, step)
+                publish_state(step)
 
             def validated(self, module: Any, step: int, wer: float, is_best: bool) -> None:
                 if is_best:
