@@ -29,7 +29,7 @@ docs/spec/      The specification (read before changing behaviour); docs/spikes/
                 control-plane/templates/skills/ and copied into project repos at bootstrap
 ```
 
-## Current state (phases 0 and 1 done; phase 2 built, its gate pending)
+## Current state (phases 0, 1 and 2 done; phase 3 next)
 
 Work follows `ROADMAP.md`: six phases (0 Shell → 1 Agent loop → 2 Training → 3 Evaluation → 4 Data → 5 Deploy and
 flywheel), each closed by a gate. Pick work from the current phase; tick items there as they merge; don't start an
@@ -77,8 +77,8 @@ Phase 1 has nothing open (live evals on the stand: 6/6, 2026-09-30). Built after
 (`branches.compare`), `hostSessions.release` on host shutdown, tool-call ids for opencode, the agent evals harness
 (`make evals`); claude.ai connectors are off in every Claude session.
 
-Phase 2 (training) is built on branch `feat/phase-2-training`; its gate (an agent's playbook session on the stand) is
-pending. Plan and interfaces: `docs/review/2026-09-30-phase-2-plan.md`; what differs: ROADMAP "Phase 2 notes"; the
+Phase 2 (training) passed its gate on 2026-10-01 (an agent's playbook session fine-tuned Nemotron on the stand; ROADMAP
+"Phase 2" gate paragraph); the replay corpus import is still open (disk). Plan and interfaces: `docs/review/2026-09-30-phase-2-plan.md`; what differs: ROADMAP "Phase 2 notes"; the
 real-card rehearsal: `docs/review/2026-10-01-phase-2-rehearsal.md`. What exists:
 - **Worker protocol** (tag `worker`, `cwk_`): workers register runtime, step kinds and model families as registry
   versions, long-poll leases on River `step` jobs (`internal/workers`, `internal/queue`: card slots, priorities,

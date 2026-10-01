@@ -260,7 +260,23 @@ Phase 1 notes (what differs from the plan above):
 **Goal.** A run is one reproducible optimisation stage — pinned base or checkpoint, frozen mix, committed recipe,
 step budget — scheduled on a card under its memory cap, watched live and continued by resume or a new stage.
 
-**Gate.** The agent (a session running the phase-2 playbook below) calibrates and runs a Nemotron 3.5 fine-tune on the staging card under the
+**Gate — passed 2026-10-01** (branch `feat/phase-2-training`, stand at `fa68968`): a Claude Code session (`sonnet`)
+running the "Fine-tune from a dataset version" playbook in project `test` on the staging stand, started from a project
+API key allowed to run sessions. The playbook dry run showed the estimate first (0.19 GPU-h, within the 8 GPU-h daily
+budget); the agent mixed `dataset/fleurs-he` (FLEURS he_il imported through `pipelines/import`, 9.18 h train + 101
+validation clips, the source cleared for training by the owner through an approval), calibrated
+(`oomptimizer_calibrate`: 0.491 s/step, base batch 13), dry-ran then started `runs.new` (300 steps, estimate basis
+measured, 0.085 GPU-h with lease overhead; actual 0.090 GPU-h, 5.4 min), followed it and listed the checkpoints: one
+checkpoint at step 300 registered with validation WER 0.379 (top-k kept). The plan ticked on the server, every spending
+command had its dry run first, metrics (loss, lr, grad norm, throughput, card memory, val WER) streamed to the Run and
+Metrics panels, and the step process peaked at 21.5 GB under the 22 GB cap with vLLM untouched (23.8 GB). A3: training,
+streaming eval and ONNX parity (0.00 points) met; Triton holds ~2 real-time streams (phase 5). Seams: the toy pack
+passes the conformance suite in CI and `internal/contract/seams_test.go` keeps framework names out of Go and web code.
+The run found two stand issues, fixed on the branch: a project bootstrapped before phase 2 keeps old-format pipelines
+until `projects.sync` (the agent stopped and explained; the sync fixed it), and an API key's session opt-in did not
+cover `playbooks.run`. The real-card rehearsal before it is in `docs/review/2026-10-01-phase-2-rehearsal.md`.
+
+Original gate: the agent (a session running the phase-2 playbook below) calibrates and runs a Nemotron 3.5 fine-tune on the staging card under the
 memory cap (22 GB on the 48 GB staging card beside vLLM; the spec's 24 GB did not fit, spike A3) from a dataset version, with a dry-run estimate shown first; metrics stream to the Run panel; checkpoints
 are registered with validation WER. A3 acceptance met (incl. ONNX parity numbers recorded for phase 5). The seams
 hold: the CPU toy pack passes the conformance suite in CI, and no control-plane or web code names the Nemotron family
@@ -290,8 +306,8 @@ Write before starting:
       schemas; the conformance suite. Everything beyond the seams is deferred (owner, 2026-09-29)
 
 Environment
-- [ ] Staging host ready: GPU card with the 24 GB cap, NeMo Speech 26.07 container pinned by digest, the base model
-      at its pinned revision, other resident services left intact (A3 setup) — the gate wave does it on the stand;
+- [x] Staging host ready: GPU card with the 24 GB cap, NeMo Speech 26.07 container pinned by digest, the base model
+      at its pinned revision, other resident services left intact (A3 setup) — done on the stand 2026-10-01;
       the cap is 22 GB (A3), the runtime descriptor pins the image digest (`worker/runtime/nemo-speech.json`)
 - [x] GPU telemetry for the `gpu` topic and the status bar (card memory and compute per card) — rides on claims and
       heartbeats (no separate collector), `gpu.telemetry` throttled per host; the status bar's GPU badge (memory
@@ -317,7 +333,9 @@ Worker and jobs
       per-utterance fingerprints — the full ingest path arrives in phase 4 (stream D: internal/data, `sources.*`,
       `utterances.*`, the `dataset` output hook)
 - [ ] Replay corpus and replay golden sets imported per the **spec** above — `pipelines/replay-base.yaml` is ready
-      (≈ 1 h per locale, golden sets ≤ 300 per locale); the gate wave runs it on the stand
+      (≈ 1 h per locale, golden sets ≤ 300 per locale). Not imported yet: the import downloads each locale's whole
+      FLEURS archive (≈ 5 GB for he), ≈ 34 locales do not fit the stand's free disk (≈ 40 GB); needs more disk or a
+      streaming import. Not part of the gate; the phase-3 replay-locale golden sets depend on it
 - [x] Runtimes (R40): the worker announces `runtime@version` and the NeMo runtime is registered from it;
       `runtimes.list|get`; card slots are owned per host and card, so two runtimes could share a card; `runtimes.new`
       (a second runtime, with approval) waits with the deferred packs — `nemo-speech` registers when its worker
