@@ -153,7 +153,8 @@ Rules:
   metrics, or an error of type `oom`, `step`, `lost`, `cancelled` or `input`. The control plane checks every output
   hash is in the store (`artifact-missing`), and the pipeline engine records the artifacts, runs the output hooks in
   the transaction that marks the step `done` (`dataset` in phase 2 wave 1; `checkpoint` and `calibration` arrive with
-  runs) and advances the pipeline. `oom` gets one automatic retry with `batchScale` 0.75, `lost` one retry.
+  runs) and advances the pipeline. `oom` gets one automatic retry at 0.75× the failed attempt's `batchScale` (so after
+  a manual retry at 0.5 it runs at 0.375, never back at 0.75), `lost` one retry.
 - Intermediate outputs: a step may publish instances of its outputs while it runs (`ctx.publish(output, path, meta,
   metrics)`; a training step publishes every validation's checkpoint). The harness hashes the path into the store,
   removes it from the scratch directory and sends `workerOutputs.new` (`name` = one of the step's outputs, the artifact

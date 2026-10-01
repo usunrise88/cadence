@@ -320,6 +320,32 @@ func TestOOMRetriesOnceAtThreeQuartersBatch(t *testing.T) {
 	}
 }
 
+// After a manual retry at half batch, the automatic OOM retry shrinks that batch (0.5 × 0.75), never back to 0.75.
+func TestOOMRetryScalesTheFailedAttempt(t *testing.T) {
+	r := newRig(t, nil)
+	r.leases.Script("count", pipelinestest.Action{Fail: &steps.StepError{Type: steps.ErrStep, Message: "boom"}},
+		pipelinestest.Action{Fail: &steps.StepError{Type: steps.ErrOOM, Message: "CUDA out of memory"}})
+	failed := r.wait(r.start(r.input("abc")).ID, pipelines.RunFailed)
+	half := 0.5
+	if err := r.tx(func(ctx context.Context, tx pgx.Tx) ([]events.Draft, error) {
+		_, drafts, err := r.eng.Retry(ctx, tx, failed.ID, failed.Rev, pipelines.RetryInput{Step: "count", BatchScale: &half})
+		return drafts, err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	run := r.wait(failed.ID, pipelines.RunDone)
+	count := stepOf(t, run, "count")
+	if got := reasons(count); got != "initial:failed,retry:failed,oom:done" {
+		t.Fatalf("attempts %s", got)
+	}
+	if count.AttemptLog[1].BatchScale != 0.5 || count.AttemptLog[2].BatchScale != 0.375 {
+		t.Errorf("batch scales %v, %v; want 0.5, 0.375", count.AttemptLog[1].BatchScale, count.AttemptLog[2].BatchScale)
+	}
+	if calls := r.leases.CallsOf("count"); len(calls) != 3 || calls[2].Spec.Overrides.BatchScale != 0.375 {
+		t.Errorf("calls %+v", calls)
+	}
+}
+
 func TestLostLeaseRetriesOnce(t *testing.T) {
 	r := newRig(t, nil)
 	r.leases.Script("first", pipelinestest.Action{Fail: &steps.StepError{Type: steps.ErrLost, Message: "missed 3 heartbeats"}})
