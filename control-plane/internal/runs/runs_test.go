@@ -2,6 +2,9 @@ package runs
 
 import (
 	"encoding/json"
+	"errors"
+	"github.com/usunrise88/cadence/control-plane/internal/pipelines"
+	"strings"
 	"testing"
 	"time"
 
@@ -192,4 +195,57 @@ func TestDatasetArtifactDecode(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"artifact":42}`), &p); err == nil {
 		t.Fatal("a number is not an artifact")
 	}
+}
+
+func TestSharedParam(t *testing.T) {
+	k := pipelines.Kind{Params: []byte(`{"properties":{
+		"target_lang":{"type":"string","x-cadence":{"shared":true}},
+		"warmup_steps":{"type":"integer","x-cadence":{"default":10}}}}`)}
+	tests := []struct {
+		name string
+		want bool
+	}{{"target_lang", true}, {"warmup_steps", false}, {"absent", false}}
+	for _, tt := range tests {
+		if got := sharedParam(k, tt.name); got != tt.want {
+			t.Errorf("sharedParam(%q) = %v, want %v", tt.name, got, tt.want)
+		}
+	}
+}
+
+func TestCheckLanguages(t *testing.T) {
+	tags := []string{"family:x", "locale:en", "locale:hr", "locale:ru"}
+	tests := []struct {
+		name   string
+		tags   []string
+		params map[string]any
+		mix    []string
+		want   string // a substring of the problem; "" = allowed
+	}{
+		{"the data's language is known", tags, map[string]any{"target_lang": ""}, []string{"ru-RU"}, ""},
+		{"Serbian data, no override", tags, map[string]any{"target_lang": ""}, []string{"sr-RS"}, "sr-RS, a language base does not know"},
+		{"Serbian data trains as Croatian", tags, map[string]any{"target_lang": "hr-HR"}, []string{"sr-RS"}, ""},
+		{"an override the model does not know", tags, map[string]any{"target_lang": "sr-RS"}, []string{"sr-RS"}, "sr-RS is not a language base knows"},
+		{"a kind without a language parameter", tags, map[string]any{}, []string{"sr-RS"}, "set the train step's language parameter"},
+		{"a base model without locale tags", []string{"family:x"}, map[string]any{}, []string{"sr-RS"}, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := CheckLanguages("base", tt.tags, tt.params, tt.mix)
+			switch {
+			case tt.want == "" && err != nil:
+				t.Fatalf("refused: %v", err)
+			case tt.want != "" && (err == nil || !strings.Contains(problemText(err), tt.want)):
+				t.Fatalf("got %v, want a problem with %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func problemText(err error) string {
+	var p *problems.Error
+	if errors.As(err, &p) {
+		b, _ := json.Marshal(p.Errors)
+		return string(b)
+	}
+	return err.Error()
 }

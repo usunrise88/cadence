@@ -42,19 +42,19 @@ def lease_overhead(load_s: float, nemo_save_s: float) -> float:
 
 
 class CalibrateParams(BaseModel):
-    precision: str = cadence_field(default_ref="training.precision")
+    precision: str = cadence_field(default_ref="training.precision", shared=True)
     bucket_bins: list[float] = cadence_field(default_ref="packs.nemo.bucket_bins")
     tokens_per_second: float = cadence_field(default_ref="packs.nemo.tokens_per_second")
     start_batch_size: int = cadence_field(default_ref="packs.nemo.start_batch_size")
     search_threshold: float = cadence_field(default_ref="packs.nemo.search_threshold")
     timed_steps: int = cadence_field(default_ref="packs.nemo.calibrate_timed_steps")
     warmup_steps: int = cadence_field(default_ref="packs.nemo.calibrate_warmup_steps")
-    min_duration: float = cadence_field(default_ref="packs.nemo.min_duration")
+    min_duration: float = cadence_field(default_ref="packs.nemo.min_duration", shared=True)
     num_workers: int = cadence_field(default_ref="packs.nemo.num_workers")
-    target_lang: str = cadence_field(default_ref="packs.nemo.target_lang")
+    target_lang: str = cadence_field(default_ref="packs.nemo.target_lang", shared=True)
     grad_clip: float = cadence_field(default_ref="packs.nemo.grad_clip")
     seed: int = cadence_field(default_ref="packs.nemo.seed")
-    cuda_context_reserve_mb: int = cadence_field(default_ref="packs.nemo.cuda_context_reserve_mb")
+    cuda_context_reserve_mb: int = cadence_field(default_ref="packs.nemo.cuda_context_reserve_mb", shared=True)
 
 
 def measured_ratio(clips: list[Clip], count: Any, sample: int = 2000) -> float | None:

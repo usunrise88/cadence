@@ -50,11 +50,15 @@ def cadence_field(
     source: str | None = None,
     range: Mapping[str, Any] | str | None = None,
     default_ref: str | None = None,
+    shared: bool = False,
 ) -> Any:
     """A pydantic field with the ``x-cadence`` metadata the UI, help and MCP tool descriptions render from.
 
     With ``default_ref`` (``<section>.<key>`` in defaults.yaml, R11) the default, source and range come from that file
     and must not be repeated here; ``description`` may reword the entry's description for this step.
+
+    ``shared`` marks a parameter that a run-level override (``runs.new`` params) sets on every step of the stage that
+    declares it, not only on the train step — the data's language, say, means the same to a calibration.
     """
     if default_ref:
         if default is not PydanticUndefined or source is not None or range is not None:
@@ -74,6 +78,8 @@ def cadence_field(
     }
     if default_ref:
         meta["defaultRef"] = default_ref
+    if shared:
+        meta["shared"] = True
     return Field(default=default, description=description, json_schema_extra={"x-cadence": meta})
 
 

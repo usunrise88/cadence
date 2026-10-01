@@ -37,7 +37,7 @@ from cadence_worker.steps.context import StepContext
 class FinetuneParams(BaseModel):
     steps: int = cadence_field(default_ref="training.steps")
     seed: int = cadence_field(default_ref="packs.nemo.seed")
-    precision: str = cadence_field(default_ref="training.precision")
+    precision: str = cadence_field(default_ref="training.precision", shared=True)
     peak_lr: float = cadence_field(default_ref="packs.nemo.peak_lr")
     warmup_steps: int = cadence_field(default_ref="packs.nemo.warmup_steps")
     min_lr: float = cadence_field(default_ref="packs.nemo.min_lr")
@@ -49,13 +49,13 @@ class FinetuneParams(BaseModel):
     log_every: int = cadence_field(default_ref="packs.nemo.log_every")
     state_every_minutes: float = cadence_field(default_ref="packs.nemo.state_every_minutes")
     max_duration: float = cadence_field(default_ref="packs.nemo.max_duration")
-    min_duration: float = cadence_field(default_ref="packs.nemo.min_duration")
+    min_duration: float = cadence_field(default_ref="packs.nemo.min_duration", shared=True)
     num_workers: int = cadence_field(default_ref="packs.nemo.num_workers")
     prompt_mode: str = cadence_field(default_ref="packs.nemo.prompt_mode")
     unified_auto_ratio: float = cadence_field(default_ref="packs.nemo.unified_auto_ratio")
-    target_lang: str = cadence_field(default_ref="packs.nemo.target_lang")
+    target_lang: str = cadence_field(default_ref="packs.nemo.target_lang", shared=True)
     augmentation: dict[str, Any] = cadence_field(default_ref="packs.nemo.augmentation")
-    cuda_context_reserve_mb: int = cadence_field(default_ref="packs.nemo.cuda_context_reserve_mb")
+    cuda_context_reserve_mb: int = cadence_field(default_ref="packs.nemo.cuda_context_reserve_mb", shared=True)
 
 
 def read_calibration(path: Path | None) -> tuple[list[float], list[int]]:
