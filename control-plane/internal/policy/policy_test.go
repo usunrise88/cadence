@@ -64,6 +64,8 @@ func TestDecide(t *testing.T) {
 			Operation: "agentSessions.new", VerbClass: "mutate", ProjectID: "prj_a"}, Allow, RuleKeyAgentSessions},
 		{"a key allowed agent sessions messages them", Input{Actor: automation, Scope: Scope{ProjectID: "prj_a", AgentSessions: true},
 			Operation: "agentMessages.new", VerbClass: "mutate", ProjectID: "prj_a"}, Allow, RuleKeyAgentSessions},
+		{"a key allowed agent sessions starts a playbook session", Input{Actor: automation, Scope: Scope{ProjectID: "prj_a", AgentSessions: true},
+			Operation: "playbooks.run", VerbClass: "mutate", ProjectID: "prj_a"}, Allow, RuleKeyAgentSessions},
 		{"a key allowed agent sessions stays out of other projects", Input{Actor: automation, Scope: Scope{ProjectID: "prj_a", AgentSessions: true},
 			Operation: "agentSessions.new", VerbClass: "mutate", ProjectID: "prj_b"}, Deny, RuleTokenScope},
 		{"a key allowed agent sessions keeps the other rules", Input{Actor: automation, Scope: Scope{ProjectID: "prj_a", AgentSessions: true},

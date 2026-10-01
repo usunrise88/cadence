@@ -206,7 +206,8 @@ func (e *Engine) Decide(ctx context.Context, in Input) (Decision, error) {
 
 // sessionOperation: the operations that start, steer and end agent sessions (the preset's sessions-are-for-people).
 func sessionOperation(op string) bool {
-	return strings.HasPrefix(op, "agentSessions.") || strings.HasPrefix(op, "agentMessages.")
+	// playbooks.run starts an agent session too (of kind playbook), so the opt-in covers it.
+	return strings.HasPrefix(op, "agentSessions.") || strings.HasPrefix(op, "agentMessages.") || op == "playbooks.run"
 }
 
 // decidePerson applies only the default preset's `everyone` rules.
