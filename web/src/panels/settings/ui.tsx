@@ -18,24 +18,71 @@ export function SectionHeading({ id, title, hint, children }: { id?: string; tit
   );
 }
 
-export function Field({ label, hint, error, warning, htmlFor, children, extra }: { label: string; hint?: string; error?: string; warning?: string; htmlFor?: string; children: ReactNode; extra?: ReactNode }) {
+/**
+ * The ids a field's control points at with aria-describedby: its hint, warning and error, when present. Field gives
+ * those messages the same ids when it has `htmlFor`.
+ */
+export function describedBy(htmlFor: string, m: { hint?: unknown; warning?: unknown; error?: unknown }): string | undefined {
+  const ids = [m.error ? `${htmlFor}-error` : "", m.warning ? `${htmlFor}-warning` : "", m.hint ? `${htmlFor}-hint` : ""].filter(Boolean);
+  return ids.length ? ids.join(" ") : undefined;
+}
+
+export function Field({
+  label,
+  hint,
+  error,
+  warning,
+  htmlFor,
+  children,
+  extra,
+  className,
+}: {
+  label: string;
+  hint?: ReactNode;
+  error?: string;
+  warning?: string;
+  htmlFor?: string;
+  children: ReactNode;
+  extra?: ReactNode;
+  className?: string;
+}) {
+  const id = (suffix: string) => (htmlFor ? `${htmlFor}-${suffix}` : undefined);
   return (
-    <div className="flex flex-col gap-1 text-xs">
-      <div className="flex items-center gap-1">
+    <div className={cn("flex flex-col gap-1 text-xs", className)}>
+      <div className="flex min-h-6 items-center gap-1">
         <label htmlFor={htmlFor} className="text-muted-foreground">
           {label}
         </label>
         {extra}
       </div>
       {children}
-      {hint ? <span className="text-muted-foreground">{hint}</span> : null}
-      {warning ? <span className="text-status-warning-foreground">{warning}</span> : null}
+      {hint ? (
+        <span id={id("hint")} className="text-[11px] text-muted-foreground">
+          {hint}
+        </span>
+      ) : null}
+      {warning ? (
+        <span id={id("warning")} className="text-status-warning-foreground">
+          {warning}
+        </span>
+      ) : null}
       {error ? (
-        <span role="alert" className="text-destructive">
+        <span id={id("error")} role="alert" className="text-destructive">
           {error}
         </span>
       ) : null}
     </div>
+  );
+}
+
+/** A titled group of fields inside a form: a fieldset whose legend reads like the wizard's small section headings. */
+export function FieldGroup({ title, hint, children, className, testId }: { title: string; hint?: ReactNode; children: ReactNode; className?: string; testId?: string }) {
+  return (
+    <fieldset className={cn("min-w-0", className)} data-testid={testId}>
+      <legend className="p-0 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">{title}</legend>
+      {hint ? <p className="mt-0.5 text-[11px] text-muted-foreground">{hint}</p> : null}
+      <div className="mt-2 flex flex-col gap-2.5">{children}</div>
+    </fieldset>
   );
 }
 
@@ -119,7 +166,7 @@ export function Chip({ children, tone = "neutral", title }: { children: ReactNod
     <span
       title={title}
       className={cn(
-        "inline-flex h-5 items-center rounded-full px-2 text-[11px]",
+        "inline-flex h-5 items-center rounded-full px-2 text-[11px] whitespace-nowrap",
         tone === "accent" && "bg-accent-soft font-medium text-accent-text",
         tone === "warning" && "border border-status-warning text-status-warning-foreground",
         tone === "neutral" && "border text-muted-foreground",
