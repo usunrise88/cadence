@@ -21,7 +21,9 @@ const plan: EvictionPlan = {
 };
 
 describe("Settings → Content store", () => {
-  beforeEach(() => runCommand.mockReset());
+  beforeEach(() => {
+    runCommand.mockReset();
+  });
   afterEach(cleanup);
 
   it("computes the free share", () => {
@@ -30,7 +32,7 @@ describe("Settings → Content store", () => {
   });
 
   it("shows the disk and the dry run, and evicts through an approval", async () => {
-    runCommand.mockImplementation((_id: string, args?: { dryRun?: boolean }) => Promise.resolve(args?.dryRun ? plan : { approvalId: "apr_1" }));
+    runCommand.mockImplementation((_id: string, args: { dryRun?: boolean }) => Promise.resolve(args.dryRun ? plan : { approvalId: "apr_1" }));
     render(
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
         <PanelContext.Provider value={{ instanceId: "settings", panelId: "settings", visible: false }}>
