@@ -381,7 +381,15 @@ def run_family(flow: Flow, fam: Family, report: Report) -> None:
         out, sink = flow.run(roles["train"], conf.get("train", {}), flow.inputs_for(roles["train"], available))
         outputs = _expect_done(out, "train")
         ck = _by_type(outputs, "checkpoint", "train")
-        state["ck1"], state["ts1"] = ck, _by_type(outputs, "training-state", "train")
+        state["ck1"] = ck
+        # A finished train step may skip its final training state when its kind declares it optional (nothing
+        # resumes a finished run); resume then continues from the stopped run's state.
+        optional = set(getattr(flow.kinds[roles["train"]].cls, "optional_outputs", ()))
+        produced = {n: t for n, t in flow.kinds[roles["train"]].cls.produces.items() if t == "training-state"}
+        if any(r["type"] == "training-state" for r in outputs.values()):
+            state["ts1"] = _by_type(outputs, "training-state", "train")
+        elif not produced or not set(produced) <= optional:
+            raise ConformanceError("train: no training-state output, and the kind does not declare it optional")
         names = {p["name"] for p in sink.metrics}
         if not {"loss", "val_wer"} <= names:
             raise ConformanceError(f"train posted metrics {sorted(names)}, expected loss and val_wer")
@@ -422,6 +430,7 @@ def run_family(flow: Flow, fam: Family, report: Report) -> None:
         ts = _by_type(outputs, "training-state", "stop")
         if any(r["type"] != "training-state" for r in outputs.values()):
             raise ConformanceError("a cancelled step released outputs other than its training-state")
+        state["tsStop"] = ts
         return {"trainingState": ts["hash"], "meta": ts.get("meta")}
 
     def resume() -> dict[str, Any]:
@@ -429,7 +438,7 @@ def run_family(flow: Flow, fam: Family, report: Report) -> None:
             roles["train"],
             conf.get("resume", {}),
             flow.inputs_for(roles["train"], available),
-            {"resumeFrom": state["ts1"]["hash"]},
+            {"resumeFrom": (state.get("ts1") or state["tsStop"])["hash"]},
         )
         ck = _by_type(_expect_done(out, "resume"), "checkpoint", "resume")
         meta = check_checkpoint(ck, "resume")
