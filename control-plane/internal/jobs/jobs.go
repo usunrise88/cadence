@@ -227,11 +227,12 @@ type Run struct {
 	svc  *Service
 }
 
-// Progress records how far the job is (0–1) with a short message and emits job.progress.
+// Progress records how far the job is (0–1) with a short message and emits job.progress; the
+// revision stays (see Progress).
 func (r *Run) Progress(ctx context.Context, fraction float64, message string) error {
 	fraction = max(0, min(1, fraction))
 	return r.svc.update(ctx, r.Job.ID, EventProgress, func(ctx context.Context, tx pgx.Tx) (pgx.Rows, error) {
-		return tx.Query(ctx, `UPDATE jobs SET progress = $2, message = NULLIF($3, ''), rev = rev + 1, updated_at = now()
+		return tx.Query(ctx, `UPDATE jobs SET progress = $2, message = NULLIF($3, ''), updated_at = now()
 			WHERE id = $1 AND state = 'running' RETURNING `+cols, r.Job.ID, fraction, message)
 	})
 }

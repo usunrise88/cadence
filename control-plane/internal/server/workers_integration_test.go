@@ -691,6 +691,48 @@ func TestCancelPauseResume(t *testing.T) {
 	expectProblem(t, w.do(http.MethodPost, "/api/jobs/"+noop+":pause", "", "Idempotency-Key", w.key(), "If-Match", fmt.Sprint(w.jobRev(noop))), 409, "conflict")
 }
 
+// Progress reports do not change a job's revision: a pause sent with the revision read before several heartbeats
+// succeeds (agents read, then act), and the reports still update the job's progress.
+func TestProgressKeepsTheJobRevision(t *testing.T) {
+	w := startWorkers(t)
+	f := w.register(w.workerToken("staging"), "toy", map[string]any{"train_toy": kind("1", "training", true, false)})
+	job := w.enqueue(gpuSpec("train_toy"))
+	l := f.claim(2)
+	if l == nil || l.JobID != job {
+		t.Fatalf("lease = %+v", l)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		j, err := jobs.Get(context.Background(), w.pool, job)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if j.State == jobs.StateRunning {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("job never ran: %+v", j)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	read := w.jobRev(job)
+	for i := 1; i <= 4; i++ {
+		f.report(l.ID, map[string]any{"progress": map[string]any{"fraction": float64(i) / 10, "message": fmt.Sprintf("step %d", i)}})
+	}
+	j, err := jobs.Get(context.Background(), w.pool, job)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if j.Rev != read || j.Progress < 0.39 || j.Message != "step 4" {
+		t.Fatalf("after progress: rev %d (read %d), progress %v %q", j.Rev, read, j.Progress, j.Message)
+	}
+	w.ok(w.do(http.MethodPost, "/api/jobs/"+job+":pause", "", "Idempotency-Key", w.key(), "If-Match", fmt.Sprint(read)), http.StatusOK, nil)
+	if stop, reason := f.report(l.ID, map[string]any{}); !stop || reason != "paused" {
+		t.Fatalf("report after pause = %v %q", stop, reason)
+	}
+	w.jobCmd(job, "cancel")
+}
+
 func TestAvailabilityWindowClosed(t *testing.T) {
 	w := startWorkers(t)
 	// Training may run on weeknights only (Europe/Berlin is UTC+2 in September).

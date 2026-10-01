@@ -521,8 +521,8 @@ Open questions:
 - [ ] G · measured estimates use the calibration's compute-only seconds per step (0.38 s); real steps are 0.53–0.56 s
       and each lease adds ≈ 2 min of restore and saves, so short runs are estimated ≈ 2× low; decide how the estimate
       adds loop overhead
-- [ ] G · a running step job's `rev` rises with each progress report, so `jobs.pause` after a read often answers 412;
-      decide whether progress bumps `rev`
+- [x] G2 · resolved: progress reports no longer change a job's `rev` (only state, priority, pause and cancel do), so
+      `jobs.pause` with a revision read before some heartbeats succeeds; `job.progress` events carry the progress
 - [x] G · resolved: a control-plane stop interrupts (snoozes) a step job waiting on a worker instead of failing it; the
       next start waits for the same lease (`jobs.ErrInterrupted`); a step kind that sizes itself to the lease's cap
       declares no `memoryGb` (the NeMo kinds declared 24, above the staging cap)

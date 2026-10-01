@@ -1261,6 +1261,9 @@ export type Job = {
      */
     error?: string;
     attempt: number;
+    /**
+     * Changes with state, priority, pause and cancel; progress reports leave it (job.progress carries them)
+     */
     rev: number;
     actor: Actor;
     createdAt: string;

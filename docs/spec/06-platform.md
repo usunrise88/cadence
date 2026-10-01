@@ -136,7 +136,8 @@ Rules:
   (`CUDA_VISIBLE_DEVICES`), gets the cap as `CADENCE_MEMORY_CAP_MB` and, when torch is present,
   `set_per_process_memory_fraction` of cap ÷ card memory (0.5 on the staging card). A worker runs at most
   `CADENCE_WORKER_MAX_LEASES` (2) leases at once; the control plane decides what fits on a card.
-- Heartbeats: `report` every 10 s (progress → `job.progress`, telemetry → `card_slots`, the `gpu` topic at most once
+- Heartbeats: `report` every 10 s (progress → `job.progress`, which leaves the job's `rev` alone so a queue command
+  sent with a revision read a moment ago does not race the heartbeats; telemetry → `card_slots`, the `gpu` topic at most once
   per 5 s per host, and compute health). The answer `stop: true` carries `cancelled`, `paused` or `window-closed`
   (training only; other kinds run on past a close); the step gets SIGTERM, sees `should_stop()`, saves its training
   state when it can and releases as `cancelled` with it; after `CADENCE_STOP_GRACE_SECONDS` (60) its process group is
