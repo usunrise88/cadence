@@ -525,6 +525,10 @@ Open questions:
       validation passes, metric cadence, dataloader); validations × validation time is not in the estimate (the
       calibration runs no validation and the estimate does not read `val_every`); one pass on the stand would give the
       ratio to fold in
+- [ ] G2 · gap: content-store retention is designed (06 "Artifacts, metrics and logs", Retention: `artifacts.evict` for
+      superseded training states, approval-gated, file index for shared blobs) but not built — it needs a file index
+      migration, a CAS delete, the approval-decided job and an `artifact.evicted` event, well beyond a small patch;
+      until then an operator deletes training states by hand as the rehearsal did
 - [x] G2 · resolved (2026-10-01 gate rehearsal): the NeMo step's `val_wer` scores the validation manifest's raw text
       (looked up by the tokenizer round trip of NeMo's decoded reference), both sides normalised as evaluations are
       (NFKC, case-folded, no punctuation) — assumed the right normalisation for model selection, so val_wer and eval

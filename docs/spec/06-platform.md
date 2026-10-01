@@ -207,6 +207,24 @@ read any of them (R15).
 - Tiers: before mounts exist the store is the only tier; mounts (phase 4) become further tiers behind the same hash.
   A worker without the shared volume uploads by hash (`workerArtifacts.set`, verified: `artifact-hash-mismatch`); a
   download path for remote workers comes with them. v1 deletes no blob; the backup mirror copies each new blob once.
+- Retention (design, 2026-10-01; not built): training states are large (7.66 GB for the 0.6B model, one per pause,
+  window close and `state_every_minutes`) and only ever read to resume, so they are the first thing to reclaim.
+  - Evictable: a `training-state` artifact whose run has ended and that nothing can resume from any more — every
+    state of a run whose train step finished (`done`, a final checkpoint registered), and every state but the newest
+    of a run that ended `cancelled` or `failed` (the newest stays for `runs.resume`). Never evictable: a state named
+    by a waiting or leased step job's `overrides.resumeFrom`, or produced by a pipeline run still running.
+  - Shared files: a directory artifact's files are blobs other artifacts may list too, so eviction needs a file
+    index (`artifact_files (hash, file_hash)`, filled by `artifacts.Record` and backfilled once from the manifests);
+    a file blob is deleted only when no artifact outside the eviction set lists it, and "bytes freed" counts those.
+  - Command: `artifacts.evict` (verb `evict`, registry scope, admin) with a filter (type `training-state` only in
+    v1, optional run or project, `olderThanDays`). The dry run lists the candidates, their runs and the bytes it would
+    free. A real call is always gated, for people too (no destructive data operation without an approval command):
+    it answers an approval id; the approval's decision runs a job that deletes the blobs, marks the rows
+    `evicted_at` (the row and its metadata stay; `artifacts.get` shows it evicted, a step input naming it fails
+    `artifact-missing`), emits `artifact.evicted` and leaves an audit entry with the bytes freed.
+  - Reversibility: the backup mirror never prunes, so an evicted blob can be copied back from it (the vocabulary's
+    `evict` is reversible); on an instance without backups the dry run and the approval say the eviction is
+    permanent. Automatic retention (a high-water mark on the store) comes later, through the same command.
 - Metrics: one Postgres table `metric_points` (migration 0012: job, run when there is one, pipeline step, project,
   name, optimiser step, epoch, value, wall time), indexed by (run, name, step) and (job, name, step); thousands of
   points per run need no TSDB. Points arrive from `workerMetrics.new` (≤ 5 000 per batch) and stream as `run.metrics`
