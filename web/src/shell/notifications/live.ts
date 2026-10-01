@@ -6,6 +6,7 @@ import { actorLabel, estimateLine } from "@/shell/approvals/format";
 import { patchApprovals } from "@/shell/approvals/cache";
 import { events } from "@/shell/registries";
 import { inAppAllowed } from "./classes";
+import { playNoticeSound, unlockSoundOnInteraction } from "./sound";
 import { notify, type Notice } from "./store";
 
 // In-app notification history from live events (docs/spec/06-platform.md "Notifications"): approval requested and
@@ -106,6 +107,7 @@ export function useLiveNotifications(): void {
   useEffect(() => {
     rulesRef.current = rules.data?.items;
   }, [rules.data]);
+  useEffect(() => unlockSoundOnInteraction(), []);
   useEffect(
     () =>
       events.subscribe(
@@ -114,7 +116,9 @@ export function useLiveNotifications(): void {
           applyNoticeBatch(
             batch,
             (a) => patchApprovals(qc, a),
-            (n) => notify(n),
+            (n) => {
+              if (notify(n)) playNoticeSound(n.level);
+            },
             rulesRef.current,
           ),
         "shell",

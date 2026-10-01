@@ -42,8 +42,11 @@ export const useNotices = create<NoticeState>((set) => ({
   announce: (message) => set({ announcement: message }),
 }));
 
-export function notify(n: Omit<Notice, "id" | "at" | "read">): void {
+/** Records a notice; false when it was already recorded (a live event seen twice, by its seq). */
+export function notify(n: Omit<Notice, "id" | "at" | "read">): boolean {
+  const before = useNotices.getState().items[0];
   useNotices.getState().push(n);
+  return useNotices.getState().items[0] !== before;
 }
 
 export function announce(message: string): void {

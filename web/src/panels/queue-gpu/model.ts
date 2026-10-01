@@ -1,16 +1,10 @@
 import type { CardTelemetry, ComputeHost, QueueEntry } from "@/api/gen/types.gen";
+import { sortEntries } from "@/shell/panel";
 
 // Pure logic of Queue & GPU: queue order and grouping by card, the training slot, reorder targets, the telemetry
 // ring buffer and the memory split between resident services and Cadence.
 
-const STATE_ORDER: Record<QueueEntry["state"], number> = { running: 0, stopping: 1, waiting: 2, paused: 3 };
-
-/** Running and stopping first, then the queue order the scheduler uses: priority (higher first), then FIFO. */
-export function sortEntries(items: QueueEntry[]): QueueEntry[] {
-  return [...items].sort(
-    (a, b) => STATE_ORDER[a.state] - STATE_ORDER[b.state] || b.priority - a.priority || a.enqueuedAt.localeCompare(b.enqueuedAt) || a.jobId.localeCompare(b.jobId),
-  );
-}
+export { sortEntries };
 
 export const cardKey = (host: string, index: number) => `${host}#${index}`;
 

@@ -150,11 +150,15 @@ Five workspaces ship by default, and Chat sits in the right column of every one,
 
 Selecting a matrix cell attaches it to the next Chat message; an eval run the agent starts fills the matrix live, and its approval requests appear in the same column.
 
-- The status bar's Agents and Approvals badges behave like its notification history: a small popup with the short list
-  (live sessions; pending requests) and a button that opens Agent sessions or Approvals as a floating window.
+- The status bar's Agents, Approvals and Queue badges behave like its notification history: a small popup with the
+  short list (live sessions; pending requests; step jobs running and waiting, a click shows the job's pipeline run) and
+  a button that opens Agent sessions, Approvals or Queue & GPU as a floating window. The Approvals badge blinks while a
+  request waits (a still tint under reduced motion); approval requests and failures play a short tone while the tab
+  is open (user menu → Notification sound, per browser).
 - The status bar's GPU badge reads each card's memory used/total and utilisation (seeded from `compute.list`, live on
   `gpu`; a reading older than two minutes greys out) with a popup per card and the Cadence cap; it expands into Queue
-  & GPU. The Queue badge counts running/queued step jobs of the current project and opens Queue & GPU.
+  & GPU. The Queue badge counts running/queued step jobs of the current project.
+- The user menu holds full screen (`view.toggleFullScreen`) next to Settings, two-factor and sign-out.
 - Each workspace remembers which agent session its Chat is pinned to.
 
 ## Commands

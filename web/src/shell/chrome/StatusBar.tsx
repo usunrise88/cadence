@@ -4,7 +4,7 @@ import { Bell, ChatBubble, CheckCircle, Cpu, HalfMoon, OpenInWindow, SunLight } 
 import { computeListOptions, queueEntriesListOptions } from "@/api/gen/@tanstack/react-query.gen";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import type { AgentSession, Approval, CardTelemetry } from "@/api/gen/types.gen";
+import type { AgentSession, Approval, CardTelemetry, QueueEntry } from "@/api/gen/types.gen";
 import { cn } from "@/lib/utils";
 import { useSnap } from "@/shell/floating-snap/dockview-adapter";
 import { useHelp } from "@/shell/help/store";
@@ -19,6 +19,8 @@ import { openChat } from "@/shell/agents/bridge";
 import { isAsleep, sessionLabel } from "@/shell/agents/labels";
 import { useAgentSessions } from "@/shell/agents/sessions";
 import { useShell } from "@/shell/state";
+import { focusPipelineRun } from "@/shell/training/focus";
+import { sortEntries } from "@/shell/training/queue";
 import { applyTelemetry, formatReading, isStale, mergeReadings, seedReadings, sortedReadings, type Readings } from "./gpu";
 
 // Status bar: live connection, workspace save state, GPU telemetry per card, the step queue, agent sessions and
@@ -174,7 +176,10 @@ function AgentSessionsBadge() {
   );
 }
 
-/** Pending approvals: a popup listing them (click opens the requesting Chat or Approvals); expands into Approvals. */
+/**
+ * Pending approvals: a popup listing them (click opens the requesting Chat or Approvals); expands into Approvals.
+ * While anything waits the badge blinks (still under prefers-reduced-motion).
+ */
 function ApprovalsBadge() {
   const { data } = usePendingApprovals();
   const items = data?.items ?? [];
@@ -188,7 +193,8 @@ function ApprovalsBadge() {
           variant="ghost"
           size="xs"
           data-testid="approvals-badge"
-          className={cn(trigger, n ? "text-status-warning-foreground" : "text-muted-foreground")}
+          data-waiting={n ? "" : undefined}
+          className={cn(trigger, n ? "animate-attention text-status-warning-foreground" : "text-muted-foreground")}
           aria-label={n ? `${n} pending approval${n === 1 ? "" : "s"}` : "No pending approvals"}
         >
           <CheckCircle aria-hidden />
@@ -273,7 +279,8 @@ function GpuBadge() {
   );
 }
 
-/** Step jobs running and waiting for the current project (every project without one); opens Queue & GPU. */
+/** Step jobs running and waiting for the current project (every project without one): a popup listing them (click
+ * shows the job's pipeline run, or Queue & GPU); expands into Queue & GPU. */
 function QueueBadge() {
   const project = useShell((s) => s.project);
   const qc = useQueryClient();
@@ -293,19 +300,74 @@ function QueueBadge() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [qc, project],
   );
-  const items = data?.items ?? [];
+  const items = sortEntries(data?.items ?? []);
   const running = items.filter((e) => e.state === "running" || e.state === "stopping").length;
   return (
-    <Button
-      variant="ghost"
-      size="xs"
-      data-testid="queue-badge"
-      className={cn(trigger, "tabular-nums", items.length ? "text-foreground" : "text-muted-foreground")}
-      aria-label={items.length ? `Queue: ${running} running, ${items.length - running} waiting. Open Queue & GPU` : "The queue is empty. Open Queue & GPU"}
-      onClick={() => openPanel("queue-gpu", { location: "floating" })}
+    <StatusPopover
+      title="Queue"
+      expand={{ label: "Open Queue & GPU as a window", panel: "queue-gpu" }}
+      button={
+        <Button
+          variant="ghost"
+          size="xs"
+          data-testid="queue-badge"
+          className={cn(trigger, "tabular-nums", items.length ? "text-foreground" : "text-muted-foreground")}
+          aria-label={items.length ? `Queue: ${running} running, ${items.length - running} waiting` : "The queue is empty"}
+        >
+          Queue {items.length ? `${running}/${items.length}` : "—"}
+        </Button>
+      }
     >
-      Queue {items.length ? `${running}/${items.length}` : "—"}
-    </Button>
+      {items.length === 0 ? <p className="p-3 text-muted-foreground">Nothing runs or waits{project ? " in this project" : ""}.</p> : null}
+      <ul>
+        {items.map((e) => (
+          <QueueRow key={e.jobId} e={e} />
+        ))}
+      </ul>
+    </StatusPopover>
+  );
+}
+
+const QUEUE_TONE: Record<QueueEntry["state"], string> = {
+  running: "bg-status-running",
+  stopping: "bg-status-warning",
+  waiting: "bg-muted-foreground",
+  paused: "bg-status-warning",
+};
+
+function QueueRow({ e }: { e: QueueEntry }) {
+  const close = useContext(ClosePopover);
+  const l = e.lease;
+  const progress = e.state === "running" && l?.progress !== undefined ? `${Math.round(l.progress * 100)} %` : undefined;
+  const where = l ? (l.card < 0 ? l.host : `${l.host} · card ${l.card}`) : undefined;
+  return (
+    <li className="border-b last:border-0">
+      <button
+        type="button"
+        className="flex w-full min-w-0 flex-col gap-0.5 px-3 py-2 text-left hover:bg-hover focus-visible:bg-hover focus-visible:outline-none"
+        onClick={() => {
+          close();
+          if (e.pipelineRunId) {
+            focusPipelineRun(e.pipelineRunId);
+            openPanel("pipeline-run");
+          } else openPanel("queue-gpu", { location: "floating" });
+        }}
+        data-job={e.jobId}
+        data-state={e.state}
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          <span aria-hidden className={cn("size-2 shrink-0 rounded-full", QUEUE_TONE[e.state], e.state === "running" && "animate-pulse motion-reduce:animate-none")} />
+          <span className="min-w-0 truncate font-medium">
+            {e.kind}@{e.kindVersion}
+          </span>
+          <span className="shrink-0 text-muted-foreground">{e.jobKind}</span>
+          <span className="ml-auto shrink-0 text-muted-foreground tabular-nums">{progress ?? (e.state === "running" ? "running" : e.state)}</span>
+        </span>
+        <span className="truncate pl-4 text-muted-foreground">
+          {[where, l?.message, e.attempt > 1 ? `attempt ${e.attempt}` : undefined, !l ? `priority ${e.priority}` : undefined].filter(Boolean).join(" · ") || "waiting for a card"}
+        </span>
+      </button>
+    </li>
   );
 }
 
