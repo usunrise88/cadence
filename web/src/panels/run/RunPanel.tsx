@@ -270,6 +270,16 @@ function TimelineRow({ s, label, train }: { s: RunStageEntry; label: string; tra
         {s.kind}@{s.kindVersion}
       </span>
       {s.role ? <span className={cn("rounded-full border px-1.5 text-[11px]", train ? "border-accent-line text-accent-text" : "text-muted-foreground")}>{s.role}</span> : null}
+      {s.state === "reused" ? (
+        <span className="text-muted-foreground" title={`Outputs of ${s.reusedFrom ?? "an earlier step"} with the same inputs; no GPU time spent`} data-slot="reused">
+          reused{s.reusedFromRun ? " from " : ""}
+          {s.reusedFromRun ? (
+            <button type="button" className="font-mono text-primary underline-offset-2 hover:underline" onClick={() => openDocument(`run:${s.reusedFromRun}`)}>
+              {s.reusedFromRun.slice(0, 13)}…
+            </button>
+          ) : null}
+        </span>
+      ) : null}
       {s.attempts > 1 ? <span className="text-muted-foreground">attempt {s.attempts}</span> : null}
       {s.oomRetries ? <span className="text-status-warning-foreground">{s.oomRetries} OOM retr{s.oomRetries === 1 ? "y" : "ies"}</span> : null}
       {s.batchScale !== undefined && s.batchScale !== 1 ? <span className="text-status-warning-foreground">batch {s.batchScale}×</span> : null}

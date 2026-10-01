@@ -6456,6 +6456,8 @@ components:
         attempts: { type: integer }
         batchScale: { type: number, format: double, description: "The current attempt's batch scale (0.75 after an out-of-memory retry)" }
         oomRetries: { type: integer, description: Attempts started by the automatic OOM retry }
+        reusedFrom: { type: string, description: "The finished step (pls_…) whose outputs this step reused (same input hash); it spent no GPU time" }
+        reusedFromRun: { type: string, description: "The run (run_…) that step belongs to, when it was a run's" }
         jobId: { type: string }
         paused: { type: boolean, description: The step's job is paused (jobs.pause) }
         estimateSeconds: { type: number, format: double }

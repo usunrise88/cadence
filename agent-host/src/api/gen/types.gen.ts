@@ -4449,6 +4449,14 @@ export type RunStageEntry = {
      * Attempts started by the automatic OOM retry
      */
     oomRetries?: number;
+    /**
+     * The finished step (pls_…) whose outputs this step reused (same input hash); it spent no GPU time
+     */
+    reusedFrom?: string;
+    /**
+     * The run (run_…) that step belongs to, when it was a run's
+     */
+    reusedFromRun?: string;
     jobId?: string;
     /**
      * The step's job is paused (jobs.pause)
