@@ -59,7 +59,16 @@ Rules the engine applies:
 - **Out of memory** (`error.type = oom`): one automatic retry at 0.75× the batch (`overrides.batchScale`).
 - **Lost lease** (the worker missed three heartbeats): one automatic retry.
 - Any other failure fails the step and the run; steps that never started are skipped. `pipelineRuns.retry` runs a
-  failed step again as a new attempt and the run continues from there.
+  failed step again as a new attempt and the run continues from there; with no failed step it continues a cancelled
+  run from its cancelled steps (or name one with `step`). A retry spends GPU time like a new run, so an agent's retry
+  over budget waits for an approval.
+- **Parameter checks**: the plan checks every parameter against its step kind's safe range (`min`/`max`,
+  `minLength`/`maxLength`, `values`, `pattern`) — defaults included, so a kind whose empty default means "give a
+  value" (`dataset_import`'s `source_name` and `licence`, R18) is refused by `pipelines.run` and its dry run, before
+  a worker is involved.
+- **A control-plane restart**: for one heartbeat window (30 s) after it starts, the control plane reaps no lease, so
+  a step whose worker reports again (or releases a finished step) survives an outage of the control plane; a worker
+  retries a release for about 13 minutes.
 - **Output hooks**: when a step finishes, its outputs are recorded and the domains react in the same transaction —
   an import's `dataset` output registers a dataset version, a training step's `checkpoint` outputs register
   checkpoints. If a hook refuses an output, the step fails and nothing of it is kept.

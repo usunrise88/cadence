@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"regexp"
 	"slices"
 	"strings"
 	"unicode/utf8"
@@ -84,6 +85,11 @@ func resolveParams(k Kind, written, overrides map[string]any, d *defaults.Defaul
 			}
 		case hasDef:
 			resolved[name] = def
+			// A default is checked too: an empty default with a pattern or a minimum length means "give a value"
+			// (dataset_import's source_name and licence, R18), and the plan says so before a worker is involved.
+			if msg := checkRange(prop, def); msg != "" {
+				probs = append(probs, paramProblem{name, msg + " (the default; set a value)"})
+			}
 		case required[name]:
 			probs = append(probs, paramProblem{name, fmt.Sprintf("%s needs a value: the parameter is required and has no default", k.Ref())})
 		}
@@ -140,7 +146,7 @@ func defaultOf(prop *jsonschema.Schema, d *defaults.Defaults) (any, bool, error)
 }
 
 // checkRange applies x-cadence.range when it is a mapping of bounds (min/minimum, max/maximum, values/enum,
-// minLength, maxLength); a prose range is documentation only.
+// minLength, maxLength, pattern); a prose range is documentation only.
 func checkRange(prop *jsonschema.Schema, v any) string {
 	r, ok := xCadence(prop)["range"].(map[string]any)
 	if !ok {
@@ -169,6 +175,15 @@ func checkRange(prop *jsonschema.Schema, v any) string {
 		}
 		if hi, ok := num("maxLength"); ok && n > hi {
 			return fmt.Sprintf("%q is longer than %v characters", x, hi)
+		}
+		if pat, ok := r["pattern"].(string); ok {
+			re, err := regexp.Compile(pat)
+			if err != nil {
+				return fmt.Sprintf("the step kind's pattern %q does not compile: %v", pat, err)
+			}
+			if !re.MatchString(x) {
+				return fmt.Sprintf("%q does not match %s", x, pat)
+			}
 		}
 	}
 	for _, key := range []string{"values", "enum"} {
