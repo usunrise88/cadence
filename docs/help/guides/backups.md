@@ -23,6 +23,7 @@ A set lives in `CADENCE_BACKUP_DIR/sets/<time>-<trigger>-<id>/`:
 | `secrets/` | the secret store's sealed values — still encrypted |
 
 Content-store blobs are immutable, so they are mirrored once into `CADENCE_BACKUP_DIR/cas/` and shared by every set.
+Blobs only training states hold are not mirrored: a state is read only to resume, and it is most of the store.
 **The master key is not in any set**: back up `CADENCE_MASTER_KEY_FILE` separately and keep it apart from the sets —
 without it the secrets in a restored instance cannot be read, and with the sets alone nobody else can read them.
 

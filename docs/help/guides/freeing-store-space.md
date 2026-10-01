@@ -1,6 +1,6 @@
 ---
 title: Freeing store space
-summary: How artifacts.evict deletes superseded training states from the content store after a person approves it, what it never touches, and how to bring an evicted artifact back from the backup mirror.
+summary: How artifacts.evict deletes superseded training states from the content store after a person approves it, what it never touches, and why an eviction is permanent.
 contexts: [guide:freeing-store-space, entity:artifact, error:artifact-not-evictable, error:artifact-missing]
 ---
 
@@ -10,7 +10,8 @@ Training states are the largest artifacts in the content store (7.66 GB each for
 window close and `state_every_minutes`) and are only ever read to resume a run. `artifacts.evict` deletes the blobs of
 the ones nothing can resume from any more. The artifact's index row stays, marked **evicted** (when, by whom, the
 job), so lineage still resolves: `artifacts.get` shows `evicted`, a directory's file list still answers, and its
-content says *evicted; restore it from the backup mirror*.
+content says *evicted*. Training states are not copied into the backup mirror (they are read only to resume), so an
+eviction is permanent: the dry run always says `permanent: true`.
 
 ## Place in the loop
 
@@ -28,8 +29,7 @@ What is evictable (v1: type `training-state` only):
 | `running` | None |
 
 Never evicted: a state a waiting or running step job names (an input or `overrides.resumeFrom`), an input of a
-running pipeline, anything a registry version or a checkpoint references, a file another live artifact lists, and —
-when backups are configured — anything the backup mirror does not hold yet. Directory artifacts share file blobs: a
+running pipeline, anything a registry version or a checkpoint references, and a file another live artifact lists. Directory artifacts share file blobs: a
 blob is deleted only when no artifact that stays lists it, and only those blobs count in `bytesFreed`.
 
 The request body (all optional): `runId`, `project` (slug or id), `olderThanDays`, `hashes` (exactly these; one
@@ -51,7 +51,6 @@ left to do. Agents may not evict (the default preset's `agents-never-evict` rule
 - `artifacts.evict?dryRun=true` — the plan, nothing changes; it also reports the store's disk (`disk`).
 - `artifacts.evict` — asks for the approval; `approvals.approve` runs it.
 - `artifacts.get` — one artifact, with `evicted` once its blobs are gone.
-- `backups.new` — a backup now, so the mirror holds what you are about to evict.
 
 ## Playbooks
 
@@ -61,11 +60,10 @@ left to do. Agents may not evict (the default preset's `agents-never-evict` rule
 
 - **Free space after a training stage.** `artifacts.evict?dryRun=true` with `{"runId": "run_…"}`; read `kept`; send
   it for real; approve it in Approvals; follow the job.
-- **Restore an evicted artifact.** The backup mirror (`CADENCE_BACKUP_DIR/cas/`) never prunes. Copy each blob back
-  to the same relative path under the content store (`b3/<first two hex>/<64 hex>`; for a directory, its manifest
-  and every file listed by `artifacts.get`), then restart the control plane: at start it clears the eviction of
-  every artifact whose blobs verify again. Producing the same artifact again clears it too.
-- **No backups configured.** The dry run says `permanent: true`: an eviction cannot be undone.
+- **An evicted state cannot be brought back.** Only a state nothing resumes from is evicted; a run that needs to go on
+  continues from a checkpoint (`runs.stage`). If a copy of the blobs exists anyway, copy them back to the same path
+  under the content store (`b3/<first two hex>/<64 hex>`) and restart the control plane: at start it clears the
+  eviction of every artifact whose blobs verify again. Producing the same artifact again clears it too.
 - A step input naming an evicted artifact fails with `artifact-missing`; restore it first.
 
 ## Sources
