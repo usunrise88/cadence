@@ -307,7 +307,7 @@ func TestRunsEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := pgx.BeginFunc(ctx, e.pool, func(tx pgx.Tx) error {
-		p, _ := json.Marshal(map[string]any{"hours": 1, "artifact": ck[0].Artifact, "sourceIds": []string{"src_fx"}, "locales": []string{"he"}})
+		p, _ := json.Marshal(map[string]any{"hours": 1, "artifact": map[string]any{"hash": ck[0].Artifact, "type": "dataset"}, "sourceIds": []string{"src_fx"}, "locales": []string{"he"}})
 		_, _, _, err := registry.Register(ctx, tx, registry.RegisterInput{Kind: registry.KindDataset, Name: "dataset/fx-sourced", Payload: p, Freeze: true,
 			Actor: testAgent}, time.Now())
 		return err

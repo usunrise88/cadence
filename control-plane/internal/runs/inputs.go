@@ -128,6 +128,25 @@ type mixDataset struct {
 	Hours    float64 `json:"hours"`
 }
 
+// datasetArtifact is the content-store hash of a dataset version's `dataset` artifact. The dataset output hook
+// registers it as an artifact reference ({hash, type, size}, the contract's DatasetVersion.artifact); a bare hash
+// string is accepted too.
+type datasetArtifact string
+
+func (a *datasetArtifact) UnmarshalJSON(b []byte) error {
+	var hash string
+	if err := json.Unmarshal(b, &hash); err == nil {
+		*a = datasetArtifact(hash)
+		return nil
+	}
+	var ref steps.ArtifactRef
+	if err := json.Unmarshal(b, &ref); err != nil {
+		return fmt.Errorf("artifact: neither a hash nor an artifact reference: %w", err)
+	}
+	*a = datasetArtifact(ref.Hash)
+	return nil
+}
+
 // MixFormat is the format tag of a mix artifact.
 const MixFormat = "cadence.mix/1"
 
@@ -160,20 +179,20 @@ func RenderMix(ctx context.Context, q storage.Querier, store *cas.Store, project
 				return RenderedMix{}, err
 			}
 			var p struct {
-				Artifact string  `json:"artifact"`
-				Hours    float64 `json:"hours"`
-				Bytes    int64   `json:"bytes"`
+				Artifact datasetArtifact `json:"artifact"`
+				Hours    float64         `json:"hours"`
+				Bytes    int64           `json:"bytes"`
 			}
 			if err := json.Unmarshal(v.Payload, &p); err != nil {
 				return RenderedMix{}, fmt.Errorf("decode dataset %s: %w", v.ID, err)
 			}
-			if !steps.ValidHash(p.Artifact) {
+			if !steps.ValidHash(string(p.Artifact)) {
 				fields = append(fields, problems.FieldError{Path: fmt.Sprintf("/mix/groups/%d/datasets/%d", gi, di),
 					Message: fmt.Sprintf("%s %s has no content-store artifact (a phase-1 fixture); import the data with pipelines/import and mix the imported version", v.Name, v.Version)})
 				continue
 			}
-			mg.InputCfg = append(mg.InputCfg, mixDataset{Type: "dataset", Dataset: v.ID, Name: v.Name, Version: v.Version, Artifact: p.Artifact, Hours: meta[v.ID].Hours})
-			ref, err := sizedRef(ctx, q, store, steps.ArtifactRef{Hash: p.Artifact, Type: TypeDataset})
+			mg.InputCfg = append(mg.InputCfg, mixDataset{Type: "dataset", Dataset: v.ID, Name: v.Name, Version: v.Version, Artifact: string(p.Artifact), Hours: meta[v.ID].Hours})
+			ref, err := sizedRef(ctx, q, store, steps.ArtifactRef{Hash: string(p.Artifact), Type: TypeDataset})
 			if err != nil {
 				return RenderedMix{}, err
 			}

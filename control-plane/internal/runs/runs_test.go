@@ -1,6 +1,7 @@
 package runs
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -140,5 +141,32 @@ func TestFamilyRoles(t *testing.T) {
 	}
 	if f.RoleOf("k_train") != RoleTrain || f.RoleOf("other") != "" {
 		t.Error("RoleOf")
+	}
+}
+
+// The dataset hook registers the artifact as a reference; older payloads carry the bare hash.
+func TestDatasetArtifactDecode(t *testing.T) {
+	const h = "b3:fb81404ff61b8bc411ce430604b36cd647e0e18c088a8fb0bf12b28e3926e275"
+	for _, tc := range []struct{ name, payload string }{
+		{"reference", `{"artifact":{"hash":"` + h + `","type":"dataset","size":346072156},"hours":3}`},
+		{"hash", `{"artifact":"` + h + `","hours":3}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var p struct {
+				Artifact datasetArtifact `json:"artifact"`
+			}
+			if err := json.Unmarshal([]byte(tc.payload), &p); err != nil {
+				t.Fatal(err)
+			}
+			if string(p.Artifact) != h {
+				t.Fatalf("artifact %q", p.Artifact)
+			}
+		})
+	}
+	var p struct {
+		Artifact datasetArtifact `json:"artifact"`
+	}
+	if err := json.Unmarshal([]byte(`{"artifact":42}`), &p); err == nil {
+		t.Fatal("a number is not an artifact")
 	}
 }

@@ -137,7 +137,9 @@ func RegisterDataset(ctx context.Context, pool *pgxpool.Pool, store *cas.Store, 
 	}
 	var id string
 	err = pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
-		b, _ := json.Marshal(map[string]any{"hours": hours, "locales": []string{"he"}, "artifact": hash, "evalOnly": evalOnly})
+		// The artifact as the dataset output hook registers it: a reference, not a bare hash.
+		art := steps.ArtifactRef{Hash: hash, Type: "dataset", Size: int64(len("dataset " + name))}
+		b, _ := json.Marshal(map[string]any{"hours": hours, "locales": []string{"he"}, "artifact": art, "evalOnly": evalOnly})
 		v, _, _, err := registry.Register(ctx, tx, registry.RegisterInput{Kind: registry.KindDataset, Name: "dataset/" + name, Payload: b,
 			Freeze: true, Actor: worker}, time.Now())
 		id = v.ID

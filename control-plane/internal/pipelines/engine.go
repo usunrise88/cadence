@@ -215,6 +215,27 @@ func readsInput(ps PlanStep, name string) bool {
 	return false
 }
 
+// indexedSize completes an input given as {hash, type} (size is optional in the contract, and checkpoints.list or
+// datasets.get name only the hash) with the size and meta the artifact index holds; an unindexed artifact keeps what
+// was sent and is verified against the store as it is.
+func indexedSize(ctx context.Context, q storage.Querier, ref steps.ArtifactRef) (steps.ArtifactRef, error) {
+	if ref.Size != 0 {
+		return ref, nil
+	}
+	a, err := artifacts.Get(ctx, q, ref.Hash)
+	if err != nil {
+		if pe, ok := problems.As(err); ok && pe.Type == problems.NotFound {
+			return ref, nil
+		}
+		return ref, err
+	}
+	ref.Size = a.Size
+	if len(ref.Meta) == 0 {
+		ref.Meta = a.Meta
+	}
+	return ref, nil
+}
+
 // Start validates the pipeline, records the run and its steps in tx, and queues the steps that are ready (or
 // reuses them). It returns the run with its steps and the events to emit with tx. Inputs must be in the content
 // store; they are indexed for the project.
@@ -228,7 +249,12 @@ func (e *Engine) Start(ctx context.Context, tx pgx.Tx, in StartInput) (Run, []ev
 	}
 	var bad Errors
 	for _, name := range sortedKeys(in.Inputs) {
-		if _, err := artifacts.Record(ctx, tx, e.o.CAS, in.Inputs[name], in.ProjectID, nil); err != nil {
+		ref, err := indexedSize(ctx, tx, in.Inputs[name])
+		if err != nil {
+			return Run{}, nil, err
+		}
+		in.Inputs[name] = ref
+		if _, err := artifacts.Record(ctx, tx, e.o.CAS, ref, in.ProjectID, nil); err != nil {
 			bad.Add("inputs."+name, "%v", err)
 		}
 	}
@@ -475,7 +501,12 @@ func (e *Engine) handle(ctx context.Context, run *jobs.Run) (any, error) {
 		} else {
 			j, jerr := jobs.Get(fctx, e.o.Pool, run.Job.ID)
 			if jerr != nil || j.CancelRequestedAt == nil {
-				return nil, fmt.Errorf("step %s: %w", spec.StepID, ctx.Err()) // stopping: the sweep resumes the step
+				if errors.Is(ctx.Err(), context.Canceled) {
+					// The control plane is stopping: the step job (and a worker's lease on it) lives on, and the
+					// handler waits for its outcome again on the next start.
+					return nil, fmt.Errorf("step %s: %w", spec.StepID, jobs.ErrInterrupted)
+				}
+				return nil, fmt.Errorf("step %s: %w", spec.StepID, ctx.Err()) // timed out: the sweep retries the step
 			}
 			out = steps.Outcome{State: steps.StateCancelled, Error: &steps.StepError{Type: steps.ErrCancelled, Message: "the step job was cancelled"}}
 		}
@@ -494,11 +525,24 @@ func (e *Engine) handle(ctx context.Context, run *jobs.Run) (any, error) {
 }
 
 // Leased marks the step of job jobID running: the worker protocol calls it in the transaction that grants the
-// lease. It returns the events to emit (none when the step is not queued on that job).
+// lease. It returns the events to emit (none when the step is not queued on that job). A step already running (its
+// job was paused or stopped by a window and requeued in place) only has the run observer called again.
 func (e *Engine) Leased(ctx context.Context, tx pgx.Tx, jobID string) ([]events.Draft, error) {
 	st, found, err := StepByJob(ctx, tx, jobID)
-	if err != nil || !found || st.State != StepQueued {
+	if err != nil || !found {
 		return nil, err
+	}
+	if st.State == StepRunning {
+		// A paused (or window-closed) job requeued in place is leased again: the step stays running, but the
+		// observer re-derives what depends on the lease (a training run goes from queued back to running).
+		r, err := lockRun(ctx, tx, st.PipelineRunID)
+		if err != nil {
+			return nil, err
+		}
+		return e.observe(ctx, tx, r)
+	}
+	if st.State != StepQueued {
+		return nil, nil
 	}
 	r, err := lockRun(ctx, tx, st.PipelineRunID)
 	if err != nil {

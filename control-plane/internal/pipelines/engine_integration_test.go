@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -420,6 +421,99 @@ func TestCancelStopsRunningStep(t *testing.T) {
 	}
 }
 
+// A job requeued in place (pause, window close) and leased again keeps its step running; the run observer hears of
+// the new lease so a training run's status goes back from queued to running.
+func TestReleaseOfRunningStepCallsTheObserver(t *testing.T) {
+	r := newRig(t, nil)
+	var mu sync.Mutex
+	seen := map[string]int{}
+	r.eng.SetObserver(func(_ context.Context, _ pgx.Tx, run pipelines.Run) ([]events.Draft, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		seen[run.RunID]++
+		return nil, nil
+	})
+	r.leases.Script("first", pipelinestest.Action{Block: true})
+	in := r.input("abc")
+	in.RunID = "run_observed"
+	started := r.start(in)
+	running := r.waitStep(started.ID, "first", pipelines.StepRunning)
+	count := func() int {
+		mu.Lock()
+		defer mu.Unlock()
+		return seen["run_observed"]
+	}
+	before := count()
+	if err := r.tx(func(ctx context.Context, tx pgx.Tx) ([]events.Draft, error) {
+		return r.eng.Leased(ctx, tx, running.JobID)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if after := count(); after != before+1 {
+		t.Fatalf("observer calls: %d before the second lease, %d after", before, after)
+	}
+	again, _ := pipelines.Get(context.Background(), r.pool, started.ID)
+	if st := stepOf(t, again, "first"); st.State != pipelines.StepRunning || len(st.AttemptLog) != 1 {
+		t.Fatalf("a second lease must not touch the step: %+v", st)
+	}
+}
+
+// A control plane that stops while a step waits on a worker does not lose the step: the step job is snoozed (same
+// attempt, mirror still running), the startup sweep leaves it alone, and the next start waits for the same job's
+// outcome instead of failing it and training again from scratch (found in the 2026-10-01 rehearsal).
+func TestStepSurvivesAControlPlaneRestart(t *testing.T) {
+	r := newRig(t, nil)
+	r.leases.Script("first", pipelinestest.Action{Block: true})
+	started := r.start(r.input("abc"))
+	running := r.waitStep(started.ID, "first", pipelines.StepRunning)
+
+	// Stop as main does: the grace period ends, so River cancels the waiting handler.
+	sctx, scancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	_ = r.jobs.Stop(sctx)
+	scancel()
+	ctx := context.Background()
+	var mirror, river string
+	if err := r.pool.QueryRow(ctx, `SELECT j.state, rj.state FROM jobs j JOIN river_job rj ON rj.id = j.river_id WHERE j.id = $1`,
+		running.JobID).Scan(&mirror, &river); err != nil {
+		t.Fatal(err)
+	}
+	if mirror != jobs.StateRunning || (river != "available" && river != "scheduled") {
+		t.Fatalf("after the stop: job %s, river job %s", mirror, river)
+	}
+	if err := r.eng.Sweep(ctx); err != nil {
+		t.Fatal(err)
+	}
+	cur, err := pipelines.Get(ctx, r.pool, started.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st := stepOf(t, cur, "first"); cur.State != pipelines.RunRunning || st.State != pipelines.StepRunning || st.JobID != running.JobID {
+		t.Fatalf("the sweep touched the interrupted step: %+v", st)
+	}
+
+	// The next start: the worker's outcome now arrives (the fake runs the step normally) and the run finishes on
+	// the same job and attempt.
+	r.leases.Script("first")
+	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
+	js := jobs.New(r.pool, quiet)
+	js.FetchPollInterval = 100 * time.Millisecond
+	r.eng.Register(js)
+	jctx, jcancel := context.WithCancel(ctx)
+	if err := js.Start(jctx); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		c, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_ = js.Stop(c)
+		cancel()
+		jcancel()
+	})
+	done := r.wait(started.ID, pipelines.RunDone)
+	if st := stepOf(t, done, "first"); st.JobID != running.JobID || st.Attempts != 1 || len(st.AttemptLog) != 1 {
+		t.Fatalf("the step after the restart: %+v", st)
+	}
+}
+
 func TestOutputHooksRunInTheStepTransaction(t *testing.T) {
 	failHook := false
 	r := newRig(t, func(h *steps.Hooks) {
@@ -508,5 +602,25 @@ func TestStartValidatesInputsAgainstTheStore(t *testing.T) {
 	})
 	if !isProblem(err, problems.PreconditionFailed) {
 		t.Fatalf("start at another version: %v", err)
+	}
+
+	// An indexed artifact may be named by {hash, type} alone (checkpoints.list gives no size): the index fills it in.
+	first := r.start(r.input("indexed"))
+	again := r.input("indexed")
+	again.Inputs["text"] = steps.ArtifactRef{Hash: first.Inputs["text"].Hash, Type: "text"}
+	second := r.start(again)
+	if got := second.Inputs["text"]; got.Size != int64(len("indexed")) {
+		t.Fatalf("input recorded as %+v", got)
+	}
+	// An unindexed blob without its size is still refused.
+	loose := r.put("loose blob")
+	in = r.input("abc")
+	in.Inputs["text"] = steps.ArtifactRef{Hash: loose.Hash, Type: "text"}
+	err = r.tx(func(ctx context.Context, tx pgx.Tx) ([]events.Draft, error) {
+		_, drafts, err := r.eng.Start(ctx, tx, in)
+		return drafts, err
+	})
+	if !isProblem(err, problems.PipelineInvalid) {
+		t.Fatalf("start with an unindexed input without size: %v", err)
 	}
 }
