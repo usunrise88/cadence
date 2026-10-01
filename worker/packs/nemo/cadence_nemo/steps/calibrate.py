@@ -96,7 +96,9 @@ class CalibrateStep:
     version: ClassVar[str] = "1"
     consumes: ClassVar[Mapping[str, str]] = {"base": "base_model", "data": "mix"}
     produces: ClassVar[Mapping[str, str]] = {"calibration": "calibration"}
-    resources: ClassVar[StepResources] = {"gpu": True, "gpus": 1, "memoryGb": 24, "diskGb": 10, "jobKind": "training"}
+    # No memoryGb: the step sizes itself to the lease's cap, so it reserves the card's whole remaining cap and takes
+    # the card alone (06 "Worker protocol"). A declared 24 never fitted the staging card's 22 GB cap.
+    resources: ClassVar[StepResources] = {"gpu": True, "gpus": 1, "diskGb": 10, "jobKind": "training"}
     role: ClassVar[str] = "calibrate"
     runtime: ClassVar[str] = RUNTIME
     Params: ClassVar[type[BaseModel]] = CalibrateParams

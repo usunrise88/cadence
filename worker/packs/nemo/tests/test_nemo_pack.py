@@ -66,6 +66,10 @@ def test_kinds_declare_their_role_runtime_and_card() -> None:
     assert FinetuneStep.resources["gpu"]
     assert FinetuneStep.resources["gpus"] == 1
     assert not AverageStep.resources["gpu"]
+    # The card kinds that size themselves to the lease's cap reserve the whole remaining cap (no memoryGb): a declared
+    # reservation above a card's cap (the staging card's is 22 GB) would wait in the queue for ever.
+    assert "memoryGb" not in FinetuneStep.resources
+    assert "memoryGb" not in CalibrateStep.resources
     assert FinetuneStep.consumes == {"base": "base_model", "data": "mix", "calibration": "calibration"}
     assert set(FinetuneStep.produces.values()) == {"checkpoint", "training-state"}
 

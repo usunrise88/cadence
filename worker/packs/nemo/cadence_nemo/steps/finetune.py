@@ -102,7 +102,9 @@ class FinetuneStep:
         "checkpoint_best": "checkpoint",
         "state": "training-state",
     }
-    resources: ClassVar[StepResources] = {"gpu": True, "gpus": 1, "memoryGb": 24, "diskGb": 40, "jobKind": "training"}
+    # No memoryGb: the step sizes itself to the lease's cap, so it reserves the card's whole remaining cap and takes
+    # the card alone (06 "Worker protocol"). A declared 24 never fitted the staging card's 22 GB cap.
+    resources: ClassVar[StepResources] = {"gpu": True, "gpus": 1, "diskGb": 40, "jobKind": "training"}
     role: ClassVar[str] = "train"
     runtime: ClassVar[str] = RUNTIME
     Params: ClassVar[type[BaseModel]] = FinetuneParams
