@@ -293,7 +293,9 @@ func stepKindPayload(k publishedKind, runtime, runtimeVersionID string) ([]byte,
 
 // checkKindConflict enforces R40 and the neutral-kind rule against what other runtimes published.
 func checkKindConflict(ctx context.Context, q storage.Querier, runtime string, k publishedKind) error {
-	rows, err := q.Query(ctx, `SELECT v.payload->>'runtime', coalesce((v.payload->>'neutral')::boolean, false), v.payload->>'schemaHash'
+	// The other runtime's hash is recomputed from its stored schema, so a change of SchemaHash's rule never makes two
+	// equal schemas disagree.
+	rows, err := q.Query(ctx, `SELECT v.payload->>'runtime', coalesce((v.payload->>'neutral')::boolean, false), v.payload->'params'
 		FROM registry_versions v JOIN registry_collections c ON c.id = v.collection_id
 		WHERE c.kind = 'step_kind' AND c.name = $1 AND v.payload->>'version' = $2 AND v.payload->>'runtime' <> $3`,
 		"step-kind/"+k.name, k.desc.Version, runtime)
@@ -305,8 +307,15 @@ func checkKindConflict(ctx context.Context, q storage.Querier, runtime string, k
 		neutral       bool
 	}
 	others, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (other, error) {
-		var o other
-		err := row.Scan(&o.runtime, &o.neutral, &o.hash)
+		var (
+			o      other
+			params []byte
+		)
+		if err := row.Scan(&o.runtime, &o.neutral, &params); err != nil {
+			return o, err
+		}
+		h, err := SchemaHash(params)
+		o.hash = h
 		return o, err
 	})
 	if err != nil {
