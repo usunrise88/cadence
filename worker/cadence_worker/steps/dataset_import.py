@@ -1,4 +1,4 @@
-"""``dataset_import@1`` — the runtime-neutral import step (docs/spec/08-resolutions.md R17, R18).
+"""``dataset_import@2`` — the runtime-neutral import step (docs/spec/08-resolutions.md R17, R18).
 
 Reads a corpus in one of three formats — a NeMo manifest, a Hugging Face dataset (FLEURS, Common Voice) or a folder
 with ``metadata.csv`` — and writes a ``dataset`` directory artifact (docs/spec/02-domain-projects-registry.md "The
@@ -204,7 +204,7 @@ class Record:
 
 
 class DatasetImportStep:
-    version: ClassVar[str] = "1"
+    version: ClassVar[str] = "2"
     consumes: ClassVar[Mapping[str, str]] = {}
     produces: ClassVar[Mapping[str, str]] = {"dataset": "dataset"}
     resources: ClassVar[Mapping[str, Any]] = {"gpu": False, "jobKind": "data"}

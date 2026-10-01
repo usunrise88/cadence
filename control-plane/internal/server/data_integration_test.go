@@ -103,7 +103,7 @@ func (e *env) runHook(ref steps.ArtifactRef, runID string, params string) error 
 	ctx := context.Background()
 	return pgx.BeginFunc(ctx, e.pool, func(tx pgx.Tx) error {
 		out := steps.Output{PipelineRunID: runID, StepID: "pls_import", Name: "dataset", Artifact: ref,
-			Spec: steps.Spec{Kind: "dataset_import", KindVersion: "1", Params: json.RawMessage(params)}}
+			Spec: steps.Spec{Kind: "dataset_import", KindVersion: "2", Params: json.RawMessage(params)}}
 		drafts, err := e.admin.StepHooks.Run(ctx, tx, out)
 		if err != nil {
 			return err
@@ -206,7 +206,7 @@ func TestDatasetHookRegistersAnImport(t *testing.T) {
 	ds := e.datasetIn("dataset/fleurs-he-test")
 	if ds.State != "frozen" || ds.Licence != "CC-BY-4.0" || ds.Dataset.Utterances != 3 || ds.Dataset.Fixture ||
 		ds.Dataset.Source != "hf://datasets/google/fleurs" || ds.Dataset.Artifact.Hash != ref.Hash ||
-		ds.Dataset.Lineage.PipelineRunID != "plr_1" || ds.Dataset.Lineage.StepKind != "dataset_import@1" ||
+		ds.Dataset.Lineage.PipelineRunID != "plr_1" || ds.Dataset.Lineage.StepKind != "dataset_import@2" ||
 		len(ds.Dataset.Locales) != 1 || ds.Dataset.Locales[0] != "he-IL" || len(ds.Dataset.Splits) != 2 ||
 		ds.Dataset.Splits[0].Name != "train" || ds.Dataset.Splits[0].Utterances != 2 || ds.Dataset.Splits[0].Speakers != 2 {
 		t.Fatalf("dataset version: %+v", ds)

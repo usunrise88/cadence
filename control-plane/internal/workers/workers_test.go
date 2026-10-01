@@ -38,6 +38,14 @@ func TestMissingXCadence(t *testing.T) {
 }
 
 func TestSchemaHashIgnoresKeyOrder(t *testing.T) {
+	// Wording and defaults from defaults.yaml are not identity; a literal default or a type is.
+	w1, _ := SchemaHash(json.RawMessage(`{"properties":{"n":{"type":"integer","default":3,"description":"a","x-cadence":{"defaultRef":"training.steps","default":3,"description":"a","source":"s","range":{"min":1}}}}}`))
+	w2, _ := SchemaHash(json.RawMessage(`{"properties":{"n":{"type":"integer","default":5,"description":"b","x-cadence":{"defaultRef":"training.steps","default":5,"description":"b","source":"t","range":{"min":2}}}}}`))
+	l1, _ := SchemaHash(json.RawMessage(`{"properties":{"n":{"type":"integer","default":3,"x-cadence":{"default":3,"description":"a","source":"s","range":{"min":1}}}}}`))
+	l2, _ := SchemaHash(json.RawMessage(`{"properties":{"n":{"type":"integer","default":4,"x-cadence":{"default":4,"description":"a","source":"s","range":{"min":1}}}}}`))
+	if w1 != w2 || l1 == l2 || w1 == l1 {
+		t.Fatalf("identity hashes: refs %s %s, literals %s %s", w1, w2, l1, l2)
+	}
 	a, err1 := SchemaHash(json.RawMessage(`{"type":"object","properties":{"x":{"type":"integer"}}}`))
 	b, err2 := SchemaHash(json.RawMessage(`{"properties":{"x":{"type":"integer"}},"type":"object"}`))
 	if err1 != nil || err2 != nil || a != b || len(a) != 64 {

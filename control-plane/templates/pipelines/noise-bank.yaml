@@ -1,7 +1,7 @@
 # written by Cadence — starter pipeline: import a public noise set as a frozen noise-bank version (docs/spec/02
 # entity Noise bank; docs/spec/03 "Augmentation", Background noise).
 #
-# dataset_import@1 with purpose noise reads every audio file under `path` (no metadata.csv needed), keeps no
+# dataset_import@2 with purpose noise reads every audio file under `path` (no metadata.csv needed), keeps no
 # transcripts and writes a `dataset` artifact marked purpose noise; the control plane's dataset hook registers the
 # Source with its licence and a frozen version in noise-bank/<name> (registry kind noise_bank) — no utterances, and a
 # noise bank never enters a mix. Augmentation profiles name the noise bank; own-call noise joins in phase 4.
@@ -14,7 +14,7 @@
 name: noise-bank
 steps:
   - id: import
-    kind: dataset_import@1
+    kind: dataset_import@2
     params:
       format: folder-csv
       purpose: noise

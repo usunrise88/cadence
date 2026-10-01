@@ -92,14 +92,74 @@ func MissingXCadence(schema json.RawMessage) ([]string, error) {
 	return bad, nil
 }
 
-// SchemaHash is the sha256 (hex) of a parameter schema's canonical JSON: neutral kinds of several runtimes must
-// agree on it.
+// SchemaHash is the sha256 (hex) of the canonical JSON of a parameter schema's identity: neutral kinds of several
+// runtimes must agree on it, and a kind@version keeps it for good. Wording (description, title, x-cadence
+// description and source) is not identity, nor is a default that comes from defaults.yaml through x-cadence
+// defaultRef (R11: a changed default reaches every pipeline without a new kind version); names, types, constraints,
+// literal defaults and ranges are.
 func SchemaHash(schema json.RawMessage) (string, error) {
-	c, err := registry.Canonical(schema)
+	var doc any
+	if err := json.Unmarshal(schema, &doc); err != nil {
+		return "", fmt.Errorf("parameter schema: %w", err)
+	}
+	b, err := json.Marshal(schemaIdentity(doc))
+	if err != nil {
+		return "", err
+	}
+	c, err := registry.Canonical(b)
 	if err != nil {
 		return "", err
 	}
 	return registry.Fingerprint(c), nil
+}
+
+// schemaIdentity drops what SchemaHash leaves out, recursively.
+func schemaIdentity(v any) any {
+	switch t := v.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(t))
+		ref := ""
+		if xc, ok := t["x-cadence"].(map[string]any); ok {
+			ref, _ = xc["defaultRef"].(string)
+		}
+		for k, val := range t {
+			switch k {
+			case "description", "title", "examples":
+				continue
+			case "default":
+				if ref != "" {
+					continue
+				}
+			case "x-cadence":
+				xc, ok := val.(map[string]any)
+				if !ok {
+					continue
+				}
+				keep := map[string]any{}
+				if ref != "" {
+					keep["defaultRef"] = ref
+				} else {
+					for _, kk := range []string{"default", "range"} {
+						if x, ok := xc[kk]; ok {
+							keep[kk] = x
+						}
+					}
+				}
+				out[k] = keep
+				continue
+			}
+			out[k] = schemaIdentity(val)
+		}
+		return out
+	case []any:
+		out := make([]any, len(t))
+		for i, x := range t {
+			out[i] = schemaIdentity(x)
+		}
+		return out
+	default:
+		return v
+	}
 }
 
 // Register records a worker's publication: its runtime, model families and step kinds as frozen registry versions

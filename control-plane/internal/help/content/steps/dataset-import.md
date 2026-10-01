@@ -6,7 +6,7 @@ contexts: [step:dataset_import, artifact:dataset]
 
 ## What this is
 
-`dataset_import@1` is a runtime-neutral core step kind (it ships in every runtime image, runs on the CPU, job kind
+`dataset_import@2` is a runtime-neutral core step kind (it ships in every runtime image, runs on the CPU, job kind
 `data`). It reads a corpus, converts every clip to 16-bit PCM WAV, mono, at `sample_rate`, and writes one `dataset`
 artifact. When the step finishes, the control plane's `dataset` output hook — in the same transaction that marks the
 step done — creates or reuses the **Source**, inserts **Utterances** by the BLAKE3 hash of their audio (audio already
