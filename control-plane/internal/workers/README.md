@@ -12,9 +12,10 @@ The worker protocol (docs/review/2026-09-30-phase-2-plan.md "Worker protocol", R
   after a restart resumes; an ended job answers its stored outcome. Register the `step` kind on
   `jobs.QueueSteps` with a long timeout.
 - **Claim** (long-poll ≤ 30 s): waiting jobs whose `kind@version` the worker published, not paused or cancelled,
-  by job priority then FIFO; card slot rows are locked in index order and `internal/queue` decides the fit. The
+  by project queue priority, job priority, then FIFO, read in keyset pages of 50 (at most 20 per attempt) until one
+  fits, so jobs that cannot fit never hide one further down; card slot rows are locked in index order and `internal/queue` decides the fit. The
   answer carries the spec, `cas://b3:…` inputs, the card and its memory cap, secret env (from `internal/secrets`,
-  never stored or logged), a traceparent and `heartbeatSeconds` 10.
+  never stored or logged; a secret whose scope does not allow the step's project fails the step with `input`), a traceparent and `heartbeatSeconds` 10.
 - **Report** (heartbeat): progress → `job.progress`, telemetry → `card_slots`, `gpu` (≤ 1 event / 5 s per host) and
   compute health; answers stop with `cancelled | paused | window-closed`. **Reap** (periodic, 10 s in main): three
   missed beats end the step as failed/`lost`; hosts whose workers went quiet become `unreachable`.

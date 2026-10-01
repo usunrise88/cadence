@@ -320,6 +320,32 @@ func TestOOMRetriesOnceAtThreeQuartersBatch(t *testing.T) {
 	}
 }
 
+// After a manual retry at half batch, the automatic OOM retry shrinks that batch (0.5 × 0.75), never back to 0.75.
+func TestOOMRetryScalesTheFailedAttempt(t *testing.T) {
+	r := newRig(t, nil)
+	r.leases.Script("count", pipelinestest.Action{Fail: &steps.StepError{Type: steps.ErrStep, Message: "boom"}},
+		pipelinestest.Action{Fail: &steps.StepError{Type: steps.ErrOOM, Message: "CUDA out of memory"}})
+	failed := r.wait(r.start(r.input("abc")).ID, pipelines.RunFailed)
+	half := 0.5
+	if err := r.tx(func(ctx context.Context, tx pgx.Tx) ([]events.Draft, error) {
+		_, drafts, err := r.eng.Retry(ctx, tx, failed.ID, failed.Rev, pipelines.RetryInput{Step: "count", BatchScale: &half})
+		return drafts, err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	run := r.wait(failed.ID, pipelines.RunDone)
+	count := stepOf(t, run, "count")
+	if got := reasons(count); got != "initial:failed,retry:failed,oom:done" {
+		t.Fatalf("attempts %s", got)
+	}
+	if count.AttemptLog[1].BatchScale != 0.5 || count.AttemptLog[2].BatchScale != 0.375 {
+		t.Errorf("batch scales %v, %v; want 0.5, 0.375", count.AttemptLog[1].BatchScale, count.AttemptLog[2].BatchScale)
+	}
+	if calls := r.leases.CallsOf("count"); len(calls) != 3 || calls[2].Spec.Overrides.BatchScale != 0.375 {
+		t.Errorf("calls %+v", calls)
+	}
+}
+
 func TestLostLeaseRetriesOnce(t *testing.T) {
 	r := newRig(t, nil)
 	r.leases.Script("first", pipelinestest.Action{Fail: &steps.StepError{Type: steps.ErrLost, Message: "missed 3 heartbeats"}})
@@ -562,6 +588,51 @@ func TestOutputHooksRunInTheStepTransaction(t *testing.T) {
 	}
 	if n := r.count("SELECT count(*) FROM artifacts WHERE type = 'tally'"); n != 1 {
 		t.Errorf("%d tally artifacts indexed", n)
+	}
+}
+
+// A hook that refuses reused outputs fails that step and its run, like a refusal of a fresh output, and leaves the
+// caller's transaction intact: the pipeline run is created, its hook writes are undone.
+func TestReusedOutputRefusedByAHook(t *testing.T) {
+	refuse := false
+	r := newRig(t, func(h *steps.Hooks) {
+		h.On("text", func(ctx context.Context, tx pgx.Tx, out steps.Output) ([]events.Draft, error) {
+			if _, err := tx.Exec(ctx, "INSERT INTO hook_marks (hash, step) VALUES ($1, $2)", out.Artifact.Hash, out.StepID); err != nil {
+				return nil, err
+			}
+			if refuse {
+				return nil, errors.New("checkpoint registry refused it")
+			}
+			return nil, nil
+		})
+	})
+	if _, err := r.pool.Exec(context.Background(), "CREATE TABLE hook_marks (hash text, step text)"); err != nil {
+		t.Fatal(err)
+	}
+	r.wait(r.start(r.input("abc")).ID, pipelines.RunDone)
+	if n := r.count("SELECT count(*) FROM hook_marks"); n != 1 {
+		t.Fatalf("%d hook marks", n)
+	}
+
+	refuse = true
+	started := r.start(r.input("abc")) // would fail the test if Start returned the hook's error
+	failed := r.wait(started.ID, pipelines.RunFailed)
+	first := stepOf(t, failed, "first")
+	if first.State != pipelines.StepFailed || first.Error == nil || first.Error.Type != steps.ErrStep ||
+		!strings.Contains(first.Error.Message, "checkpoint registry refused it") || first.Outputs != nil || first.ReusedFrom != "" {
+		t.Fatalf("first %+v", first)
+	}
+	if s := stepOf(t, failed, "count"); s.State != pipelines.StepSkipped {
+		t.Errorf("count %+v", s)
+	}
+	if !strings.Contains(failed.Error, "step first failed (step)") {
+		t.Errorf("run error %q", failed.Error)
+	}
+	if n := r.count("SELECT count(*) FROM hook_marks"); n != 1 {
+		t.Errorf("%d hook marks: the refused hook's write was not undone", n)
+	}
+	if len(r.leases.CallsOf("first")) != 1 {
+		t.Errorf("the refused reuse asked a worker")
 	}
 }
 

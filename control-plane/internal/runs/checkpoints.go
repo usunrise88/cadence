@@ -229,8 +229,7 @@ func (s *Service) registerExisting(ctx context.Context, tx pgx.Tx, x row, pr pip
 		for _, name := range sortedKeys(st.Outputs) {
 			ref := st.Outputs[name]
 			out := steps.Output{ProjectID: x.ProjectID, PipelineRunID: pr.ID, StepID: st.ID, RunID: x.ID, Name: name, Artifact: ref,
-				Metrics: st.Metrics, Spec: steps.Spec{StepID: st.ID, PipelineRunID: pr.ID, ProjectID: x.ProjectID, RunID: x.ID,
-					Kind: st.Kind, KindVersion: st.KindVersion, Inputs: st.Inputs, Outputs: st.Produces}}
+				Metrics: st.Metrics, Spec: stepSpec(st, x.ProjectID, x.ID)}
 			switch ref.Type {
 			case TypeCheckpoint:
 				ev, err := s.register(ctx, tx, x, out)
@@ -246,6 +245,17 @@ func (s *Service) registerExisting(ctx context.Context, tx pgx.Tx, x row, pr pip
 		}
 	}
 	return drafts, nil
+}
+
+// stepSpec is the spec an output hook sees for a step that finished before the hook could run (reused inside
+// pipelines.Engine.Start): its kind, parameters, inputs and outputs.
+func stepSpec(st pipelines.StepRow, projectID, runID string) steps.Spec {
+	params, err := json.Marshal(st.Params)
+	if err != nil {
+		params = json.RawMessage(`{}`)
+	}
+	return steps.Spec{StepID: st.ID, PipelineRunID: st.PipelineRunID, ProjectID: projectID, RunID: runID, Kind: st.Kind,
+		KindVersion: st.KindVersion, Params: params, Inputs: st.Inputs, Outputs: st.Produces}
 }
 
 func sortedKeys[V any](m map[string]V) []string {

@@ -11,7 +11,10 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/usunrise88/cadence/control-plane/internal/cas"
+	"github.com/usunrise88/cadence/control-plane/internal/compute"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
+	"github.com/usunrise88/cadence/control-plane/internal/pipelines"
+	"github.com/usunrise88/cadence/control-plane/internal/problems"
 	"github.com/usunrise88/cadence/control-plane/internal/registry"
 	"github.com/usunrise88/cadence/control-plane/internal/steps"
 	"github.com/usunrise88/cadence/control-plane/internal/storage"
@@ -82,35 +85,178 @@ type calibrationMeta struct {
 	Precision   string  `json:"precision"`
 }
 
-// keyFor finds what a calibration output measured for: the run it belongs to, the runs.calibrate request of its
-// pipeline run, or the artifact's own metadata. found is false when none says.
-func keyFor(ctx context.Context, tx pgx.Tx, out steps.Output, m calibrationMeta) (Key, bool, error) {
-	if out.RunID != "" {
-		r, err := getRow(ctx, tx, out.RunID)
-		if err == nil {
-			base, err := registry.GetVersion(ctx, tx, registry.KindBaseModel, r.BaseVersionID)
-			if err != nil {
-				return Key{}, false, err
-			}
-			return Key{BaseModel: base.Name, CardClass: r.Card.CardClass, MemoryCapGB: r.Card.MemoryCapGB, Precision: r.Precision},
-				r.Card.CardClass != "", nil
-		}
+// calibrationKey finds what a calibration output measured for and whether it may replace the shared entry of that
+// key in calibrations, which answers estimates for every project. Only a measurement whose origin the control plane
+// itself set up is shared:
+//
+//   - the step belongs to a runs.calibrate pipeline run (calibration_requests) or to a training run that starts
+//     from a base model (init base); the key is that request's or run's, never the artifact's metadata;
+//   - its kind is the calibrate role of the model family (the run's family version; for a request the base
+//     model's family);
+//   - every base_model or checkpoint input is the base model the pipeline run was started with;
+//   - a precision parameter, when the step has one, is the key's precision;
+//   - the card of the lease that produced it, when a lease did, has the key's card class and memory cap.
+//
+// Anything else (an ad-hoc pipeline, a recipe's own step, a stage from a checkpoint) is keyed from its run, request
+// or metadata when possible and recorded unshared, with why. skip is true for a run's output seen before the run
+// row exists (steps reused inside pipelines.Engine.Start): registerExisting runs the hook again afterwards.
+func calibrationKey(ctx context.Context, tx pgx.Tx, out steps.Output, m calibrationMeta) (k Key, shared bool, why string, skip bool, err error) {
+	req, isRequest, err := calibrationRequest(ctx, tx, out.PipelineRunID)
+	if err != nil {
+		return Key{}, false, "", false, err
 	}
-	var k Key
-	err := tx.QueryRow(ctx, `SELECT base_model, card_class, memory_cap_gb, precision FROM calibration_requests
-		WHERE pipeline_run_id = $1`, out.PipelineRunID).Scan(&k.BaseModel, &k.CardClass, &k.MemoryCapGB, &k.Precision)
+	var (
+		fam    Family
+		famErr error
+	)
 	switch {
-	case err == nil:
-		return k, true, nil
-	case !errors.Is(err, pgx.ErrNoRows):
-		return Key{}, false, fmt.Errorf("read calibration request: %w", err)
+	case out.RunID != "":
+		r, err := getRow(ctx, tx, out.RunID)
+		if pe, ok := problems.As(err); err != nil && ok && pe.Type == problems.NotFound {
+			return Key{}, false, "", true, nil
+		}
+		if err != nil {
+			return Key{}, false, "", false, err
+		}
+		base, err := registry.GetVersion(ctx, tx, registry.KindBaseModel, r.BaseVersionID)
+		if err != nil {
+			return Key{}, false, "", false, err
+		}
+		k = Key{BaseModel: base.Name, CardClass: r.Card.CardClass, MemoryCapGB: r.Card.MemoryCapGB, Precision: r.Precision}
+		switch {
+		case r.Card.CardClass == "":
+			return k, false, "the run has no card to key the calibration by", false, nil
+		case r.Init != InitBase:
+			return k, false, "the run starts from a checkpoint, not from the base model", false, nil
+		}
+		fam, famErr = familyVersion(ctx, tx, r.FamilyVersionID)
+	case isRequest:
+		k = req
+		base, err := registry.Latest(ctx, tx, registry.KindBaseModel, req.BaseModel)
+		if err != nil {
+			return Key{}, false, "", false, err
+		}
+		fam, famErr = FamilyOf(ctx, tx, base)
+	default:
+		k = Key{BaseModel: m.BaseModel, CardClass: m.CardClass, MemoryCapGB: m.MemoryCapGB, Precision: m.Precision}
+		return k, false, "not measured by runs.calibrate or by the calibrate step of a training run", false, nil
 	}
-	k = Key{BaseModel: m.BaseModel, CardClass: m.CardClass, MemoryCapGB: m.MemoryCapGB, Precision: m.Precision}
-	return k, k.BaseModel != "" && k.CardClass != "" && k.MemoryCapGB > 0 && k.Precision != "", nil
+	if famErr != nil {
+		if _, ok := problems.As(famErr); ok {
+			return k, false, famErr.Error(), false, nil
+		}
+		return Key{}, false, "", false, famErr
+	}
+	kind, err := fam.Role(RoleCalibrate)
+	if err != nil {
+		return k, false, err.Error(), false, nil
+	}
+	if out.Spec.Kind != kind {
+		return k, false, fmt.Sprintf("step kind %q is not %s, the calibrate role of model family %s", out.Spec.Kind, kind, fam.Name), false, nil
+	}
+	why, err = calibrationInputs(ctx, tx, out, k)
+	if err != nil {
+		return Key{}, false, "", false, err
+	}
+	return k, why == "", why, false, nil
 }
 
-// calibrationHook caches a `calibration` output (idempotent per artifact: a reused output writes the same row).
-// An output it cannot key or that carries no seconds per step is left alone; the step still succeeds.
+// calibrationInputs answers why a calibrate step's output does not measure key k ("" when it does): its base model
+// inputs, its precision and the card of its lease.
+func calibrationInputs(ctx context.Context, tx pgx.Tx, out steps.Output, k Key) (string, error) {
+	pr, err := pipelines.GetRun(ctx, tx, out.PipelineRunID)
+	if err != nil {
+		return "", err
+	}
+	want := ""
+	for _, name := range sortedKeys(pr.Inputs) {
+		if ref := pr.Inputs[name]; ref.Type == TypeBaseModel {
+			if want != "" && want != ref.Hash {
+				return "the pipeline run was started with two base models", nil
+			}
+			want = ref.Hash
+		}
+	}
+	if want == "" {
+		return "the pipeline run was not started from a base model", nil
+	}
+	seen := false
+	for _, name := range sortedKeys(out.Spec.Inputs) {
+		ref := out.Spec.Inputs[name]
+		if ref.Type != TypeBaseModel && ref.Type != TypeCheckpoint {
+			continue
+		}
+		if ref.Hash != want {
+			return fmt.Sprintf("input %q is not the base model the pipeline run was started with", name), nil
+		}
+		seen = true
+	}
+	if !seen {
+		return "the step has no base model input", nil
+	}
+	if len(out.Spec.Params) > 0 {
+		var p struct {
+			Precision *string `json:"precision"`
+		}
+		if json.Unmarshal(out.Spec.Params, &p) == nil && p.Precision != nil && *p.Precision != k.Precision {
+			return fmt.Sprintf("the step measured precision %s, the key is %s", *p.Precision, k.Precision), nil
+		}
+	}
+	class, capGB, found, err := leaseCard(ctx, tx, out.Artifact.Hash)
+	if err != nil || !found {
+		return "", err
+	}
+	if class != k.CardClass || capGB != k.MemoryCapGB {
+		return fmt.Sprintf("measured on a card of class %q capped at %g GB, the key is %s at %g GB", class, capGB, k.CardClass, k.MemoryCapGB), nil
+	}
+	return "", nil
+}
+
+// calibrationRequest reads the key a runs.calibrate pipeline run measures for.
+func calibrationRequest(ctx context.Context, q storage.Querier, pipelineRunID string) (Key, bool, error) {
+	var k Key
+	err := q.QueryRow(ctx, `SELECT base_model, card_class, memory_cap_gb, precision FROM calibration_requests
+		WHERE pipeline_run_id = $1`, pipelineRunID).Scan(&k.BaseModel, &k.CardClass, &k.MemoryCapGB, &k.Precision)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Key{}, false, nil
+	}
+	if err != nil {
+		return Key{}, false, fmt.Errorf("read calibration request: %w", err)
+	}
+	return k, true, nil
+}
+
+// leaseCard is the card class and memory cap of the card whose lease produced artifact hash (the newest lease on a
+// card of its producing step's job); found is false when no lease on a card produced it.
+func leaseCard(ctx context.Context, q storage.Querier, hash string) (string, float64, bool, error) {
+	var (
+		hostID string
+		index  int
+	)
+	err := q.QueryRow(ctx, `SELECT l.host_id, l.card_index FROM artifacts a
+		JOIN pipeline_steps ps ON ps.id = a.step_id JOIN leases l ON l.job_id = ps.job_id
+		WHERE a.hash = $1 AND l.card_index IS NOT NULL ORDER BY l.created_at DESC LIMIT 1`, hash).Scan(&hostID, &index)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", 0, false, nil
+	}
+	if err != nil {
+		return "", 0, false, fmt.Errorf("read the lease of calibration %s: %w", hash, err)
+	}
+	h, err := compute.Get(ctx, q, hostID)
+	if err != nil {
+		return "", 0, false, err
+	}
+	for _, c := range h.Cards {
+		if c.Index == index {
+			return c.CardClass, c.MemoryCapGB, true, nil
+		}
+	}
+	return "", 0, true, nil // the card left the host's configuration: no class matches
+}
+
+// calibrationHook records a `calibration` output (calibration_observations) and caches it in the shared table when
+// calibrationKey trusts it; idempotent per artifact, a reused output writes the same rows. An output that carries
+// no seconds per step is left alone; the step still succeeds.
 func (s *Service) calibrationHook(ctx context.Context, tx pgx.Tx, out steps.Output) ([]events.Draft, error) {
 	var m calibrationMeta
 	if len(out.Artifact.Meta) > 0 {
@@ -124,9 +270,20 @@ func (s *Service) calibrationHook(ctx context.Context, tx pgx.Tx, out steps.Outp
 	if m.SecondsPerStep <= 0 || math.IsInf(m.SecondsPerStep, 0) || math.IsNaN(m.SecondsPerStep) {
 		return nil, nil
 	}
-	k, found, err := keyFor(ctx, tx, out, m)
-	if err != nil || !found {
+	k, shared, why, skip, err := calibrationKey(ctx, tx, out, m)
+	if err != nil || skip {
 		return nil, err
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO calibration_observations (artifact_hash, pipeline_run_id, step_id, project_id, run_id,
+			base_model, card_class, memory_cap_gb, precision, seconds_per_step, shared, reason)
+		VALUES ($1, $2, $3, NULLIF($4, ''), NULLIF($5, ''), $6, $7, $8, $9, $10, $11, $12)
+		ON CONFLICT (artifact_hash, pipeline_run_id, step_id) DO UPDATE SET shared = excluded.shared, reason = excluded.reason`,
+		out.Artifact.Hash, out.PipelineRunID, out.StepID, out.ProjectID, out.RunID, k.BaseModel, k.CardClass, k.MemoryCapGB,
+		k.Precision, m.SecondsPerStep, shared, why); err != nil {
+		return nil, fmt.Errorf("record calibration: %w", err)
+	}
+	if !shared {
+		return nil, nil
 	}
 	pm := s.defaults().Estimates.MeasuredPlusMinus.Value
 	switch {

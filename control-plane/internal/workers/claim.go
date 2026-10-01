@@ -17,6 +17,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/jobs"
 	"github.com/usunrise88/cadence/control-plane/internal/policies"
 	"github.com/usunrise88/cadence/control-plane/internal/queue"
+	"github.com/usunrise88/cadence/control-plane/internal/secrets"
 	"github.com/usunrise88/cadence/control-plane/internal/steps"
 	"github.com/usunrise88/cadence/control-plane/internal/storage"
 )
@@ -106,6 +107,7 @@ type candidate struct {
 	jobID string
 	spec  steps.Spec
 	trace string // the job span's traceparent, "" when it was queued without one
+	key   queueKey
 }
 
 func (s *Service) claimOnce(ctx context.Context, tx pgx.Tx, c Caller, in Claim, telemetry bool) (*Grant, []events.Draft, error) {
@@ -123,48 +125,75 @@ func (s *Service) claimOnce(ctx context.Context, tx pgx.Tx, c Caller, in Claim, 
 			return nil, nil, err
 		}
 	}
-	cands, err := waiting(ctx, tx, w.StepKinds)
-	if err != nil || len(cands) == 0 {
-		return nil, drafts, err
-	}
-	host, err := compute.Get(ctx, tx, w.HostID)
-	if err != nil {
-		return nil, nil, err
-	}
-	var cards []queue.Card
-	if slices.ContainsFunc(cands, func(c candidate) bool { return c.spec.Resources.GPU }) {
-		tz, err := instanceZone(ctx, tx)
+	var (
+		host   *compute.Host
+		cards  []queue.Card
+		locked bool // the card slots are locked and read (once, at the first job that needs a card)
+		after  *queueKey
+	)
+	// Pages of waiting jobs in start order until one fits: jobs that cannot run here (no card fits, a window is
+	// closed) must not hide one further down that can. At most claimPages pages are read per attempt.
+	for range claimPages {
+		cands, err := waiting(ctx, tx, w.StepKinds, after, claimPageSize)
 		if err != nil {
 			return nil, nil, err
 		}
-		if cards, err = lockCards(ctx, tx, host, in.Cards, tz); err != nil {
-			return nil, nil, err
+		if len(cands) == 0 {
+			break
 		}
-	}
-	for _, cand := range cands {
-		card, capMB, ok := place(cand, cards, now)
-		if !ok {
-			continue
-		}
-		env, missing := s.secretEnv(ctx, cand.spec.SecretNames)
-		if missing != "" {
-			d, err := s.endWaiting(ctx, tx, cand.jobID, steps.Outcome{State: steps.StateFailed,
-				Error: &steps.StepError{Type: steps.ErrInput, Message: missing}})
+		if host == nil {
+			h, err := compute.Get(ctx, tx, w.HostID)
 			if err != nil {
 				return nil, nil, err
 			}
-			drafts = append(drafts, d...)
-			continue
+			host = &h
 		}
-		g, d, err := s.lease(ctx, tx, w, host, cand, card, capMB, now)
-		if err != nil {
-			return nil, nil, err
+		if !locked && slices.ContainsFunc(cands, func(c candidate) bool { return c.spec.Resources.GPU }) {
+			tz, err := instanceZone(ctx, tx)
+			if err != nil {
+				return nil, nil, err
+			}
+			if cards, err = lockCards(ctx, tx, *host, in.Cards, tz); err != nil {
+				return nil, nil, err
+			}
+			locked = true
 		}
-		g.Env = env
-		return g, append(drafts, d...), nil
+		for _, cand := range cands {
+			card, capMB, ok := place(cand, cards, now)
+			if !ok {
+				continue
+			}
+			env, missing := s.secretEnv(ctx, tx, cand.spec)
+			if missing != "" {
+				d, err := s.endWaiting(ctx, tx, cand.jobID, steps.Outcome{State: steps.StateFailed,
+					Error: &steps.StepError{Type: steps.ErrInput, Message: missing}})
+				if err != nil {
+					return nil, nil, err
+				}
+				drafts = append(drafts, d...)
+				continue
+			}
+			g, d, err := s.lease(ctx, tx, w, *host, cand, card, capMB, now)
+			if err != nil {
+				return nil, nil, err
+			}
+			g.Env = env
+			return g, append(drafts, d...), nil
+		}
+		if len(cands) < claimPageSize {
+			break
+		}
+		after = &cands[len(cands)-1].key
 	}
 	return nil, drafts, nil
 }
+
+// claimPageSize waiting jobs are read at a time, and at most claimPages pages per claim attempt; a queue deeper
+// than that is scanned on the next attempt (the head may have moved by then).
+const (
+	claimPageSize = 50
+	claimPages    = 20
+)
 
 // place picks the card for cand: the first by index where it fits, or no card for a step without a GPU.
 func place(cand candidate, cards []queue.Card, now time.Time) (*queue.Card, int, bool) {
@@ -190,15 +219,32 @@ func projectPriority(param string) string {
 // defaultProjectPriority is defaults.yaml budgets.queue_priority_per_project.
 func defaultProjectPriority() int { return defaults.Get().Budgets.QueuePriorityPerProject.Value }
 
-// waiting reads the step jobs a worker with these kinds may run, in start order: the project's queue priority, then
-// the job's priority, then first come (spec 02 "Budgets": the queue interleaves projects by priority). Rows are
-// locked, skipping those another claim holds.
-func waiting(ctx context.Context, tx pgx.Tx, kinds []string) ([]candidate, error) {
-	rows, err := tx.Query(ctx, `SELECT s.job_id, s.spec, coalesce(s.traceparent, '') FROM step_jobs s JOIN jobs j ON j.id = s.job_id
+// queueKey is a waiting job's place in start order, the keyset waiting pages by.
+type queueKey struct {
+	projectPriority int
+	jobPriority     int
+	enqueuedAt      time.Time
+	jobID           string
+}
+
+// waiting reads up to limit step jobs a worker with these kinds may run, in start order: the project's queue
+// priority, then the job's priority, then first come (spec 02 "Budgets": the queue interleaves projects by
+// priority); after, when set, starts past that place. Rows are locked, skipping those another claim holds.
+func waiting(ctx context.Context, tx pgx.Tx, kinds []string, after *queueKey, limit int) ([]candidate, error) {
+	prio := projectPriority("$2")
+	args := []any{kinds, defaultProjectPriority(), limit}
+	past := ""
+	if after != nil {
+		// The order is descending on both priorities, so the keyset compares their negations.
+		past = ` AND (-` + prio + `, -j.priority, s.enqueued_at, s.job_id) > ($4, $5, $6, $7)`
+		args = append(args, -after.projectPriority, -after.jobPriority, after.enqueuedAt, after.jobID)
+	}
+	rows, err := tx.Query(ctx, `SELECT s.job_id, s.spec, coalesce(s.traceparent, ''), `+prio+`, j.priority, s.enqueued_at
+		FROM step_jobs s JOIN jobs j ON j.id = s.job_id
 		LEFT JOIN projects p ON p.id = s.project_id
-		WHERE s.state = 'waiting' AND s.kind_ref = ANY($1) AND j.paused_at IS NULL AND j.cancel_requested_at IS NULL
-		ORDER BY `+projectPriority("$2")+` DESC, j.priority DESC, s.enqueued_at, s.job_id
-		LIMIT 50 FOR UPDATE OF s SKIP LOCKED`, kinds, defaultProjectPriority())
+		WHERE s.state = 'waiting' AND s.kind_ref = ANY($1) AND j.paused_at IS NULL AND j.cancel_requested_at IS NULL`+past+`
+		ORDER BY `+prio+` DESC, j.priority DESC, s.enqueued_at, s.job_id
+		LIMIT $3 FOR UPDATE OF s SKIP LOCKED`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("read the step queue: %w", err)
 	}
@@ -207,9 +253,10 @@ func waiting(ctx context.Context, tx pgx.Tx, kinds []string) ([]candidate, error
 			c   candidate
 			raw []byte
 		)
-		if err := row.Scan(&c.jobID, &raw, &c.trace); err != nil {
+		if err := row.Scan(&c.jobID, &raw, &c.trace, &c.key.projectPriority, &c.key.jobPriority, &c.key.enqueuedAt); err != nil {
 			return c, err
 		}
+		c.key.jobID = c.jobID
 		return c, json.Unmarshal(raw, &c.spec)
 	})
 }
@@ -271,16 +318,20 @@ func lockCards(ctx context.Context, tx pgx.Tx, host compute.Host, reported []Car
 	return out, rows.Err()
 }
 
-// secretEnv reads the secrets a step declares; missing names the first one that cannot be read. Values go into the
-// lease answer only: never into the lease row, a log line or an event.
-func (s *Service) secretEnv(ctx context.Context, names []string) (map[string]string, string) {
-	if len(names) == 0 {
+// secretEnv reads the secrets a step declares; missing names the first one that cannot be read or whose scope does
+// not allow the step's project (a project-scoped secret serves only that project's steps). Values go into the lease
+// answer only: never into the lease row, a log line or an event.
+func (s *Service) secretEnv(ctx context.Context, tx pgx.Tx, spec steps.Spec) (map[string]string, string) {
+	if len(spec.SecretNames) == 0 {
 		return nil, ""
 	}
-	env := make(map[string]string, len(names))
-	for _, n := range names {
+	env := make(map[string]string, len(spec.SecretNames))
+	for _, n := range spec.SecretNames {
 		if s.secrets == nil {
 			return nil, fmt.Sprintf("the step needs secret %q and this control plane has no secret store", n)
+		}
+		if err := secrets.CheckScope(ctx, tx, n, spec.ProjectID); err != nil {
+			return nil, fmt.Sprintf("the step needs secret %q: %v", n, err)
 		}
 		v, err := s.secrets.Read(ctx, n)
 		if err != nil {

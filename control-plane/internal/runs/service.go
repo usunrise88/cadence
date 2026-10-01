@@ -756,7 +756,7 @@ func (s *Service) StartCalibration(ctx context.Context, tx pgx.Tx, cp Calibratio
 				continue
 			}
 			if _, err := s.calibrationHook(ctx, tx, steps.Output{ProjectID: pr.ProjectID, PipelineRunID: pr.ID, StepID: st.ID, Name: name,
-				Artifact: ref, Metrics: st.Metrics}); err != nil {
+				Artifact: ref, Metrics: st.Metrics, Spec: stepSpec(st, pr.ProjectID, "")}); err != nil {
 				return pipelines.Run{}, nil, err
 			}
 		}
