@@ -551,6 +551,68 @@ func TestWorkerRegistrationRefusals(t *testing.T) {
 	expectProblem(t, f.post("/worker-registrations", registration("elsewhere", "toy", "b", map[string]any{})), 403, "forbidden")
 }
 
+func TestConcurrentFirstRegistrations(t *testing.T) {
+	w := startWorkers(t)
+	tok := w.workerToken("staging")
+	// Workers that start together register the same runtime, family and step kinds for the first time: each must
+	// get its answer, not a 500 from a unique violation, and the rows exist once.
+	const n = 8
+	body, _ := json.Marshal(registration("staging", "toy", "boot-1", map[string]any{
+		"train_toy": kind("1", "training", true, false), "echo": kind("1", "data", false, true)}))
+	burst := func() {
+		var (
+			wg    sync.WaitGroup
+			start = make(chan struct{})
+			codes [n]int
+			ids   [n]string
+		)
+		for i := range n {
+			wg.Go(func() {
+				req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, w.authURL+"/api/worker-registrations",
+					strings.NewReader(string(body)))
+				if err != nil {
+					return
+				}
+				req.Header.Set("Authorization", "Bearer "+tok)
+				req.Header.Set("Content-Type", "application/json")
+				<-start
+				resp, err := http.DefaultClient.Do(req)
+				if err != nil {
+					return
+				}
+				defer func() { _ = resp.Body.Close() }()
+				var out struct{ ID string }
+				_ = json.NewDecoder(resp.Body).Decode(&out)
+				codes[i], ids[i] = resp.StatusCode, out.ID
+			})
+		}
+		close(start)
+		wg.Wait()
+		for i := range n {
+			if codes[i] != http.StatusOK || ids[i] != ids[0] {
+				t.Fatalf("registration %d: status %d worker %q (first %q); all: %v", i, codes[i], ids[i], ids[0], codes)
+			}
+		}
+		if c := w.count("SELECT count(*) FROM workers"); c != 1 {
+			t.Fatalf("%d worker rows; want 1", c)
+		}
+	}
+	// Nothing registered yet: the registry rows and the worker row are all new.
+	burst()
+	// The content is known (another machine of the same image) but this host has no worker yet: only the worker
+	// row is new, and nothing in the registry serializes the racers before they insert it.
+	if _, err := w.pool.Exec(t.Context(), "DELETE FROM workers"); err != nil {
+		t.Fatal(err)
+	}
+	burst()
+	for _, name := range []string{"runtime/toy", "model-family/toy-family", "step-kind/train_toy", "step-kind/echo"} {
+		if c := w.count(fmt.Sprintf(`SELECT count(*) FROM registry_versions v JOIN registry_collections c ON c.id = v.collection_id
+			WHERE c.name = '%s'`, name)); c != 1 {
+			t.Fatalf("%s has %d versions; want 1", name, c)
+		}
+	}
+}
+
 func TestWorkerTokenScope(t *testing.T) {
 	w := startWorkers(t)
 	f := w.register(w.workerToken("staging"), "toy", map[string]any{"train_toy": kind("1", "training", true, false)})

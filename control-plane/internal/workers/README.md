@@ -5,7 +5,9 @@ The worker protocol (docs/review/2026-09-30-phase-2-plan.md "Worker protocol", R
   and each step kind (`step-kind/<name>`, payload = descriptor + name, runtime, runtimeVersionId, schemaHash) become
   frozen registry versions; equal content is reused, so a restart registers nothing new. Refused: parameters without
   complete `x-cadence` (validation-failed), a framework kind another runtime publishes, a neutral kind with another
-  schema (`step-kind-conflict`). One worker row per runtime and host; a new `instance` reaps the old process's leases.
+  schema (`step-kind-conflict`). One worker row per runtime and host; a new `instance` reaps the old process's leases. Workers registering for the
+  first time at once race on these rows: the handler reruns the loser's transaction (`storage.BeginRetry`, unique
+  violation or deadlock), which then finds the winner's rows, so every racer gets its answer.
 - **Await** (`steps.Leases`): the `step` job's handler (stream P) calls it; the job enters `step_jobs` (spec from
   the River args) and Await blocks until the step ends — released, reaped (`lost`) or cancelled. Pause and window
   close requeue the job in place with `overrides.resumeFrom` = its `training-state` output. Calling Await again
