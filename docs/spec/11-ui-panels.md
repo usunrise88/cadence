@@ -152,6 +152,9 @@ Selecting a matrix cell attaches it to the next Chat message; an eval run the ag
 
 - The status bar's Agents and Approvals badges behave like its notification history: a small popup with the short list
   (live sessions; pending requests) and a button that opens Agent sessions or Approvals as a floating window.
+- The status bar's GPU badge reads each card's memory used/total and utilisation (seeded from `compute.list`, live on
+  `gpu`; a reading older than two minutes greys out) with a popup per card and the Cadence cap; it expands into Queue
+  & GPU. The Queue badge counts running/queued step jobs of the current project and opens Queue & GPU.
 - Each workspace remembers which agent session its Chat is pinned to.
 
 ## Commands

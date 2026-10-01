@@ -9,7 +9,7 @@ var Operations = []Operation{
 		Summary: "Registry versions the project adopted, with the aliases pointing at each",
 		Params: []Param{
 			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
-			{Name: "kind", In: "query", Flag: "kind", Type: "string", Description: "Only versions of this kind", Enum: []string{"base_model", "dataset_version", "template", "runtime", "model_family", "step_kind"}},
+			{Name: "kind", In: "query", Flag: "kind", Type: "string", Description: "Only versions of this kind", Enum: []string{"base_model", "dataset_version", "template", "runtime", "model_family", "step_kind", "noise_bank"}},
 		},
 	},
 	{
@@ -392,7 +392,7 @@ var Operations = []Operation{
 		Summary:     "List registry collections (named series of immutable versions), optionally of one kind or tag",
 		Description: "List registry collections such as base-model/nemotron-3.5-asr-streaming-0.6b or dataset/fleurs-he-smoke. A collection groups immutable versions of one kind; list the versions with baseModels.list, datasets.list or templates.list (filter collection=<name>).",
 		Params: []Param{
-			{Name: "kind", In: "query", Flag: "kind", Type: "string", Description: "Only collections of this kind", Enum: []string{"base_model", "dataset_version", "template", "runtime", "model_family", "step_kind"}},
+			{Name: "kind", In: "query", Flag: "kind", Type: "string", Description: "Only collections of this kind", Enum: []string{"base_model", "dataset_version", "template", "runtime", "model_family", "step_kind", "noise_bank"}},
 			{Name: "tag", In: "query", Flag: "tag", Type: "string", Description: "Only collections carrying this tag (e.g. locale:he-IL)"},
 		},
 	},
@@ -1004,6 +1004,22 @@ var Operations = []Operation{
 		},
 	},
 	{
+		ID: "recipes.edit", Entity: "recipes", Verb: "edit", Method: "PATCH", Path: "/projects/{p}/recipes/{path}",
+		Summary:        "Write one text file of the project repository and commit it to main (the Recipe document's edits)",
+		Description:    "Change one UTF-8 text file of the project repository and commit it to main as the caller. Send ifMatch with the commit that last changed the file (history[0].sha from recipes.get); recipes.new creates a file. Files rendered from the agent profile (AGENTS.md, CLAUDE.md, .claude/settings.json, opencode.json) change through agentProfile.edit instead. Agents edit files in their session worktree; the default preset does not allow this tool.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "path", In: "path", Flag: "path", Required: true, Type: "string", Description: "File path in the repository, URL-encoded (pipelines%2Ftrain-stage.yaml)"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "content", Required: true, Type: "string", Description: "The file's new content (UTF-8 text)"},
+			{Name: "message", Type: "string", Description: "Commit message (default: edit <path>)"},
+		}},
+	},
+	{
 		ID: "recipes.get", Entity: "recipes", Verb: "get", Method: "GET", Path: "/projects/{p}/recipes/{path}",
 		Summary: "One file of the project repository at a branch or commit, with its commit history",
 		Params: []Param{
@@ -1022,12 +1038,27 @@ var Operations = []Operation{
 		},
 	},
 	{
+		ID: "recipes.new", Entity: "recipes", Verb: "new", Method: "POST", Path: "/projects/{p}/recipes",
+		Summary:        "Create one text file in the project repository and commit it to main",
+		Description:    "Create one UTF-8 text file in the project repository and commit it to main as the caller; a path that exists answers 409 (change it with recipes.edit). Agents create files in their session worktree; the default preset does not allow this tool.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "content", Required: true, Type: "string", Description: "The file's content (UTF-8 text)"},
+			{Name: "message", Type: "string", Description: "Commit message (default: add <path>)"},
+			{Name: "path", Required: true, Type: "string", Description: "A path relative to the repository root"},
+		}},
+	},
+	{
 		ID: "registry.search", Entity: "registry", Verb: "search", Method: "GET", Path: "/registry",
 		Summary:     "Search registry versions of every kind by text and qualifiers (kind:, tag:, locale:, state:)",
 		Description: "Search registry versions of every kind (base models, dataset versions, templates). q is free text matched against collection names and descriptions plus qualifiers: kind:base_model, tag:telephony, locale:he-IL, state:frozen. project=<slug> keeps only what that project adopted. Get one version with baseModels.get, datasets.get or templates.get.",
 		Params: []Param{
 			{Name: "q", In: "query", Flag: "q", Type: "string", Description: "Free text with qualifiers (kind:, tag:, locale:, state:)"},
-			{Name: "kind", In: "query", Flag: "kind", Type: "string", Enum: []string{"base_model", "dataset_version", "template", "runtime", "model_family", "step_kind"}},
+			{Name: "kind", In: "query", Flag: "kind", Type: "string", Enum: []string{"base_model", "dataset_version", "template", "runtime", "model_family", "step_kind", "noise_bank"}},
 			{Name: "project", In: "query", Flag: "project", Type: "string", Description: "Only versions this project adopted (slug)"},
 			{Name: "limit", In: "query", Flag: "limit", Type: "integer", Default: "100"},
 		},

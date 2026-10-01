@@ -24,6 +24,7 @@ export default defineConfig({
         test: {
           name: "unit",
           environment: "jsdom",
+          setupFiles: ["src/test/setup-jsdom.ts"],
           include: ["src/**/*.test.{ts,tsx}", "eslint-rules/**/*.test.ts", "scripts/**/*.test.ts"],
           exclude: ["src/**/*.browser.test.{ts,tsx}"],
         },

@@ -105,5 +105,9 @@ FAMILY = Family(
         "stop": {"steps": 1000, "val_every": 1000, "log_every": 1},
         "resume": {"steps": 9, "val_every": 3, "log_every": 1},
         "transcribe": {"batch_size": 8},
+        # A sanity bound only (the suite's WER compares lower-cased references with punctuated hypotheses): the run on
+        # the card measured 0.56-0.74. No baseline stage: nine steps on eight test clips need not beat the base model,
+        # and a second training run costs another 10 GB of store per nightly run.
+        "score": {"maxWer": 0.9},
     },
 )

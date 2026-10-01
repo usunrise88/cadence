@@ -71,6 +71,10 @@ func (im *Importer) Import(ctx context.Context, tx pgx.Tx, out steps.Output) (re
 	if err != nil {
 		return registry.Version{}, nil, err
 	}
+	if h.Purpose == PurposeNoise {
+		v, more, err := importNoise(ctx, tx, a, src, out, actor, now)
+		return v, append(drafts, more...), err
+	}
 	uttIDs, err := upsertUtterances(ctx, tx, src.ID, a.Lines, now)
 	if err != nil {
 		return registry.Version{}, nil, err

@@ -319,6 +319,25 @@ Telephony audio differs from the training corpora in noise, handset processing a
 - Training applies the profile on the fly through Lhotse transforms and NeMo augmentors; nothing is written to disk except the noise bank, which is a registry asset with its licence.
 - Evaluation runs the golden set through each profile as a robustness matrix (profile × latency); the gate can require a maximum WER degradation under `telephony`.
 - Windows: the Recipe document renders a profile as a schema-driven form with a listen preview (apply to a sample utterance and play). Agent tools: `augment.preview`, `augment.evaluate`.
+
+### Profile file (phase 2)
+
+A profile is `augment/<name>.yaml` in the project repository. Every value starts from `defaults.yaml` `augment.*`
+(description, source, safe range there); the Recipe form's "Reset to recommended" writes those values back, and Save
+commits the file to main (`recipes.edit`; `recipes.new` creates one). Keys the form does not know and comments stay.
+
+```yaml
+name: telephony
+seed: 1234                      # augment.seed — recorded on the run
+transforms:
+  codec:      { probability: 0.5, codecs: [g711-ulaw, g711-alaw, gsm-fr, amr-nb, opus] }   # augment.codec_*
+  band_limit: { probability: 0.5, cutoff_hz: 3400 }       # augment.band_limit_* (ITU-T G.712 passband)
+  level:      { probability: 0.3, gain_db: [-10, 6] }     # augment.level_*
+  speed:      { probability: 0.3, factor: [0.9, 1.1] }    # augment.speed_* (Ko et al. 2015)
+```
+
+Each transform applies to an utterance with its probability; ranges are drawn uniformly per utterance. Noise, room,
+suppression and network transforms join the same file when their step kinds arrive.
 - Sources: NeMo's lossy-codec augmentation and Lhotse's augmentation transforms are the base; suppressor and codec emulation chains are Cadence additions, validated by the robustness matrix.
 
 ## Interoperability

@@ -146,7 +146,7 @@ func TestPlaybooks(t *testing.T) {
 		t.Fatalf("playbook session %+v", s)
 	}
 	msgs := h.transcript(s.ID)
-	if len(msgs) < 2 || msgs[0].Kind != "notice" || !strings.Contains(msgs[0].Text, "estimate 0.24 GPU-hours") ||
+	if len(msgs) < 2 || msgs[0].Kind != "notice" || !strings.Contains(msgs[0].Text, "estimate 0.20 GPU-hours") ||
 		msgs[1].Kind != "user_message" || !strings.Contains(msgs[1].Text, "Fine-tune from a dataset version") {
 		t.Fatalf("transcript %+v", msgs)
 	}

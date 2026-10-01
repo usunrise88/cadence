@@ -66,6 +66,19 @@ Open questions:
   step jobs, so `jobs.wait` only marks it running). Before the session the calibrate step's estimate is its hint
   (0.1 GPU-hours): `runs.calibrate` plans over a mix, which exists only once the session made it. The later
   playbooks' continuation stages ask for the parent run and `peakLr` (no defaults.yaml key for a stage's peak LR).
+- [ ] U (2026-09-30, panels): the worker reports one memory number per card, so Queue & GPU estimates Cadence's share
+  (used − the last reading taken while no Cadence job held the card; without one, the job's cap) and labels it
+  "estimated"; per-process memory from the worker would make it exact.
+- [ ] U (2026-09-30, panels): jobs and pipeline runs are not documents, so "the active job" (Logs) and the pipeline
+  run Pipeline run follows are a small shell focus store set by Queue & GPU, Pipeline run and (later) Run, not the
+  selection bus.
+- [ ] U (2026-09-30, panels): the Mix document's "launch a run" sends the project's base model (the wizard's choice;
+  runs.new alone defaults to the instance's), shows the dry-run estimate and starts the run only on confirmation.
+  Metrics and Checkpoints follow the active Run document, then the last run shown, then the project's newest run.
+- [ ] U (2026-09-30, panels): the Recipe document had no write path; `recipes.new` / `recipes.edit` commit one text
+  file to main as the person (If-Match: the commit that last changed the file). The default preset forbids both for
+  agents, who change files on their session branch. The augmentation profile file shape (`augment/<name>.yaml`) and
+  its recommended values (`defaults.yaml` `augment.*`) are recorded in 03 "Augmentation".
 
 - [x] R (2026-09-30, runs): the base model's `familyId` names the family collection `model-family/<familyId>`; the
   seeded Nemotron base model says `nemo.fastconformer-rnnt.cache-aware`, so the NeMo pack must publish its family
@@ -485,14 +498,24 @@ Open questions:
       "Notifications", "Failures")
 - [ ] gap (phase 2): "a checkpoint and training state every 20 minutes" (03 "Key defaults") has no `defaults.yaml` key
       and no step kind implements it yet; the NeMo pack's train kind must, with the interval from `defaults.yaml`
-- [ ] gap (phase 2): `metrics.get` (series binned for charts, R53) is not in the contract yet; `internal/telemetry.Get`
-      is ready for stream R to expose
+- [x] gap (phase 2): `metrics.get` (series binned for charts, R53) is not in the contract yet; `internal/telemetry.Get`
+      is ready for stream R to expose — resolved: `metrics.get` is in the contract and served (stream R)
 - [ ] gap (later): job-log field search and the global search index of `warn`+ lines (R15) are not built; remote
       workers have an upload path (`workerArtifacts.set`) but no download path
 - [ ] deferred (later, decided 2026-09-30): per-kind MCP tool descriptions — step kinds' parameter schemas are not
       rendered into a tool description per kind; agents read `stepKinds.get` (schema with `x-cadence`) and the
       `pipelines.run` dry run (resolved parameters, departures), which covers phase 2. Revisit when playbooks or
       agents show they need it; no code in phase 2
+- [ ] H (2026-09-30, noise bank): a noise bank is its own registry kind `noise_bank` (collection `noise-bank/<name>`),
+      not a `dataset_version` tagged `noise-bank`: it is produced by `dataset_import` with `purpose: noise` (clips
+      without transcripts; the `dataset` hook registers the source and the version, and writes no utterances or
+      transcripts), so noise never lands in the utterance store, search or a mix. Spec 02 "versioned like a dataset"
+      holds (frozen, fingerprinted by content, licence from the source). Applying it on the fly is the NeMo pack's
+      augmentation (it joins when the pack reads `noise-bank/*`); the MUSAN import runs on the stand in the gate wave
+- [ ] H: the toy model gained a layer norm (it converged too late: WER near 1 at 300 steps) under the same
+      `toy_train@1`; the toy is CI-only, and checkpoints written before load without it
+- [ ] H: `TestProjectQueuePriority`'s one failure did not reproduce (20 runs alone, 8 beside `TestPipelinesOverHTTP`,
+      two full integration runs); nothing changed there. The cancel flake was a real race (fixed in `internal/jobs`)
 
 ## Sources
 

@@ -529,8 +529,8 @@ func TestRunEstimate(t *testing.T) {
 		t.Error("a dry run emitted an event")
 	}
 
-	e.ok(dry(`{"steps":40000}`), 200, &est)
-	if est.GpuHours.Value != 7.778 || est.Budget.WithinDailyBudget {
+	e.ok(dry(`{"steps":50000}`), 200, &est)
+	if est.GpuHours.Value != 9.722 || est.Budget.WithinDailyBudget {
 		t.Errorf("long run: %+v", est.GpuHours)
 	}
 

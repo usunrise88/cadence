@@ -14,6 +14,7 @@ from cadence_toy.family import FAMILY, PROFILES
 from cadence_toy.model import (
     FRAME_MS,
     CharTokenizer,
+    ModelConfig,
     TinyCTC,
     decode_offline,
     decode_streaming,
@@ -201,3 +202,15 @@ def test_a_dataset_file_or_escaping_path_is_an_input_error(tmp_path: Path) -> No
     (d / "manifest.jsonl").write_text('{"audio": "../x.wav", "text": "a"}\n')
     with pytest.raises(StepInputError, match="inside the artifact"):
         read_dataset(d)
+
+
+def test_checkpoint_without_input_norm_still_loads(tmp_path: Path) -> None:
+    """Checkpoints written before the layer norm (config without input_norm) load as the model they were."""
+    old = TinyCTC(ModelConfig(input_norm=False))
+    save_checkpoint(tmp_path, old, CharTokenizer(), step=1)
+    cfg = json.loads((tmp_path / "config.json").read_text())
+    del cfg["model"]["input_norm"]
+    (tmp_path / "config.json").write_text(json.dumps(cfg))
+    model, _ = load_checkpoint(tmp_path)
+    assert not model.cfg.input_norm
+    assert TinyCTC().cfg.input_norm

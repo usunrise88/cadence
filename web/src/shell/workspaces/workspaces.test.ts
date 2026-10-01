@@ -96,6 +96,24 @@ describe("default workspaces", () => {
     dismissed = true;
     expect(planDefaultLayout("Training", r, "demo").map((p) => p.panel)).not.toContain("getting-started");
   });
+
+  it("phase-2 panels join their columns; Metrics and Checkpoints take their Training slots once registered", () => {
+    const r = phase0Registry();
+    const tool = (id: string) => r.register({ ...r.get("help")!, id, help: `panels.${id}` });
+    ["logs", "queue-gpu", "pipeline-run"].forEach(tool);
+    expect(planDefaultLayout("Training", r, "demo")).toContainEqual({ panel: "logs", location: "bottom" });
+    expect(planDefaultLayout("Data", r, "demo")).toEqual(expect.arrayContaining([{ panel: "pipeline-run", location: "right" }, { panel: "logs", location: "bottom" }]));
+    expect(planDefaultLayout("Ops", r, "demo")).toEqual(expect.arrayContaining([{ panel: "queue-gpu", location: "left" }, { panel: "logs", location: "bottom" }]));
+    // Before the Run, Metrics and Checkpoints panels exist the plan skips their slots…
+    const before = planDefaultLayout("Training", r, "demo").map((p) => p.panel);
+    expect(before).not.toContain("metrics");
+    expect(before).not.toContain("checkpoints");
+    // …and fills them when they register, with no workspace migration: defaults are code, not stored JSON.
+    ["metrics", "checkpoints"].forEach(tool);
+    const after = planDefaultLayout("Training", r, "demo");
+    expect(after).toEqual(expect.arrayContaining([{ panel: "checkpoints", location: "right" }, { panel: "metrics", location: "bottom" }]));
+    expect(after.findIndex((p) => p.panel === "metrics")).toBeLessThan(after.findIndex((p) => p.panel === "logs"));
+  });
 });
 
 describe("Dockview round-trip (runs on every Dockview upgrade)", () => {

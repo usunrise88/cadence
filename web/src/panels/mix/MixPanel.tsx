@@ -1,15 +1,17 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash } from "iconoir-react";
-import { datasetsListOptions, eventsListOptions, mixesGetQueryKey } from "@/api/gen/@tanstack/react-query.gen";
-import type { DraftChange, Mix, MixGroup, Problem } from "@/api/gen/types.gen";
+import { Play, Plus, Trash } from "iconoir-react";
+import { datasetsListOptions, eventsListOptions, mixesGetQueryKey, projectsGetOptions } from "@/api/gen/@tanstack/react-query.gen";
+import type { DraftChange, Mix, MixGroup, MixPreview, Problem, RunEstimate, RunNew } from "@/api/gen/types.gen";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { AnalyticsChart, type AnalyticsSpec } from "@/shell/charts";
 import { cn } from "@/lib/utils";
 import { DraftOutline, PresenceNotice, changed, presenceLabel, useActivePresence, useDrafts } from "@/shell/entity/drafts";
 import { ActorBadge, EmptyState } from "@/shell/entity/primitives";
-import { runCommand, useCommand, useEditRequest, useTopic, type PanelProps } from "@/shell/panel";
+import { errorMessage, lookupDefault, openDocument, rangeWarning, runCommand, useCommand, useDefaults, useEditRequest, useProject, useTopic, WhyDefault, type PanelProps } from "@/shell/panel";
 
 // The Mix document (docs/spec/11-ui-panels.md): groups, weights, temperature and replay share over dataset
 // versions, and the preview of hours per language. A person edits the table directly (a new revision); an agent's
@@ -79,6 +81,7 @@ function Overview({ mix, doc }: { mix: Mix; doc?: string }) {
   const [conflict, setConflict] = useState<{ currentRev: number } | null>(null);
   const [problem, setProblem] = useState<Problem | null>(null);
   const [saving, setSaving] = useState(false);
+  const [launch, setLaunch] = useState(false);
   const first = useRef<HTMLInputElement>(null);
   useEditRequest(doc, () => first.current?.focus());
 
@@ -155,8 +158,9 @@ function Overview({ mix, doc }: { mix: Mix; doc?: string }) {
         />
         <div className="flex flex-wrap items-end gap-4 text-xs">
           <NumberField label="Temperature" value={working.temperature} step={0.1} min={0.1} max={10} disabled={blocked} onChange={(v) => edit({ temperature: v })} />
-          <NumberField label="Replay share" value={working.replayShare} step={0.05} min={0} max={0.9} disabled={blocked} onChange={(v) => edit({ replayShare: v })} />
-          <div className="ml-auto flex gap-1">
+          <ReplayShare value={working.replayShare} hasReplay={working.groups.some((g) => g.replay)} disabled={blocked} onChange={(v) => edit({ replayShare: v })} />
+          <div className="ml-auto flex flex-wrap items-center gap-1">
+            <LaunchRun dirty={dirty} open={launch} onOpen={() => setLaunch(true)} />
             <Button size="xs" variant="outline" disabled={!dirty || saving} onClick={discard}>
               Discard
             </Button>
@@ -193,7 +197,9 @@ function Overview({ mix, doc }: { mix: Mix; doc?: string }) {
         ) : null}
       </section>
 
-      <Preview mix={mix} />
+      {launch ? <RunLaunch mix={mix} onClose={() => setLaunch(false)} /> : null}
+
+      <Preview mix={mix} working={local ?? {}} dirty={dirty} />
     </div>
   );
 }
@@ -364,44 +370,283 @@ function MixContent({ content, names, changes }: { content: Partial<Mix>; names:
   );
 }
 
-function Preview({ mix }: { mix: Mix }) {
-  const p = mix.preview;
+export type PreviewBy = "language" | "source" | "group";
+const PREVIEW_BY: { id: PreviewBy; label: string }[] = [
+  { id: "language", label: "Language" },
+  { id: "source", label: "Source" },
+  { id: "group", label: "Group" },
+];
+
+const pct = (v: number) => `${Math.round(v * 1000) / 10} %`;
+const hours = (v: number) => Math.round(v * 100) / 100;
+
+/** Rows of the preview for one grouping: label, train hours and (where the preview has it) sample share. */
+export function previewRows(p: MixPreview, by: PreviewBy): { label: string; hours: number; share?: number; note?: string }[] {
+  if (by === "language") return p.languages.map((l) => ({ label: l.locale, hours: l.hours, share: l.share }));
+  if (by === "group") return p.groups.map((g) => ({ label: g.name, hours: g.hours, share: g.share, note: g.replay ? "replay" : undefined }));
+  return p.datasets.map((d) => ({ label: `${d.name.replace(/^dataset\//, "")} · ${d.version}`, hours: d.hours, note: d.adopted ? undefined : "not adopted" }));
+}
+
+/**
+ * The preview of hours per language, source and group. While the person edits, it is recomputed from the unsaved
+ * values (mixes.preview: metadata only, nothing saved); otherwise it is the saved revision's.
+ */
+function Preview({ mix, working, dirty }: { mix: Mix; working: Local; dirty: boolean }) {
+  const project = useProject();
+  const [by, setBy] = useState<PreviewBy>("language");
+  const [live, setLive] = useState<{ key: string; preview: MixPreview } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const body = useMemo(
+    () => ({ name: mix.name, groups: working.groups ?? mix.groups, temperature: working.temperature ?? mix.temperature, replayShare: working.replayShare ?? mix.replayShare }),
+    [mix, working],
+  );
+  const key = JSON.stringify(body);
+  useEffect(() => {
+    if (!dirty || !project) return;
+    const t = setTimeout(() => {
+      runCommand("mixes.preview", { project, body })
+        .then((preview) => {
+          setLive({ key, preview });
+          setError(null);
+        })
+        .catch((err: unknown) => setError(errorMessage(err)));
+    }, 400);
+    return () => clearTimeout(t);
+    // body is derived from key
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dirty, project, key]);
+  const p = dirty && live?.key === key ? live.preview : mix.preview;
+  const pending = dirty && live?.key !== key;
+  const rows = previewRows(p, by);
+  const spec: AnalyticsSpec = {
+    kind: "bar",
+    title: `Train hours per ${by}`,
+    categories: rows.map((r) => r.label),
+    series: [{ id: "hours", label: "Train hours", slot: 0, values: rows.map((r) => hours(r.hours)) }],
+    horizontal: true,
+    unit: "h",
+    xLabel: "Train hours",
+  };
   return (
-    <section aria-labelledby="mix-preview" className="flex flex-col gap-2">
-      <h3 id="mix-preview" className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-        Preview · hours per language ({p.totalHours} h of training data, from dataset metadata)
-      </h3>
+    <section aria-labelledby="mix-preview" className="flex flex-col gap-2" data-preview={dirty ? (pending ? "pending" : "unsaved") : "saved"}>
+      <div className="flex flex-wrap items-center gap-2">
+        <h3 id="mix-preview" className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+          Preview · {hours(p.totalHours)} h of training data, from dataset metadata
+        </h3>
+        {dirty ? <span className="text-xs text-muted-foreground">{pending ? "updating for your changes…" : "for your unsaved changes"}</span> : null}
+        <div role="radiogroup" aria-label="Preview by" className="ml-auto inline-flex rounded-md border bg-background p-0.5 text-xs">
+          {PREVIEW_BY.map((o) => (
+            <button
+              key={o.id}
+              type="button"
+              role="radio"
+              aria-checked={by === o.id}
+              onClick={() => setBy(o.id)}
+              className={cn("h-6 rounded-[4px] px-2.5", by === o.id ? "bg-selected font-medium text-foreground" : "text-muted-foreground hover:text-foreground")}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {rows.length ? <AnalyticsChart spec={spec} height={Math.min(320, 64 + rows.length * 28)} hideTitle /> : null}
       <table data-slot="mix-preview" className="w-full text-xs">
         <thead>
           <tr className="text-left text-muted-foreground">
-            <th className="py-1 font-normal">Language</th>
+            <th className="py-1 font-normal">{PREVIEW_BY.find((o) => o.id === by)?.label}</th>
             <th className="font-normal">Train hours</th>
-            <th className="w-1/2 font-normal">Sample share</th>
+            <th className="w-1/2 font-normal">{by === "source" ? "" : "Sample share"}</th>
           </tr>
         </thead>
         <tbody>
-          {p.languages.map((l) => (
-            <tr key={l.locale} className="border-t">
-              <td className="py-1 font-medium">{l.locale}</td>
-              <td className="tabular-nums">{l.hours}</td>
+          {rows.map((r) => (
+            <tr key={r.label} className="border-t">
+              <td className="py-1 font-medium">
+                {r.label}
+                {r.note ? <span className="ml-1 rounded-full border px-1.5 text-[11px] font-normal text-muted-foreground">{r.note}</span> : null}
+              </td>
+              <td className="tabular-nums">{hours(r.hours)}</td>
               <td>
-                <span className="flex items-center gap-2">
-                  <span className="h-2 flex-1 rounded-full bg-muted">
-                    <span className="block h-2 rounded-full bg-accent-line" style={{ width: `${Math.round(l.share * 100)}%` }} />
+                {r.share !== undefined ? (
+                  <span className="flex items-center gap-2">
+                    <span className="h-2 flex-1 rounded-full bg-muted">
+                      <span className="block h-2 rounded-full bg-accent-line" style={{ width: `${Math.round(r.share * 100)}%` }} />
+                    </span>
+                    <span className="w-12 text-right tabular-nums">{pct(r.share)}</span>
                   </span>
-                  <span className="w-12 text-right tabular-nums">{Math.round(l.share * 1000) / 10} %</span>
-                </span>
+                ) : null}
               </td>
             </tr>
           ))}
         </tbody>
       </table>
+      {error ? (
+        <p role="alert" className="text-xs text-destructive">
+          Preview failed: {error}
+        </p>
+      ) : null}
       {p.warnings.length > 0 ? (
         <ul className="flex flex-col gap-0.5 text-xs text-status-warning-foreground">
           {p.warnings.map((w) => (
             <li key={w}>{w}</li>
           ))}
         </ul>
+      ) : null}
+    </section>
+  );
+}
+
+/** Replay share: a slider with the number beside it, its default and "Why this default?" (defaults.yaml mix.replay_share). */
+function ReplayShare({ value, hasReplay, disabled, onChange }: { value: number; hasReplay: boolean; disabled: boolean; onChange: (v: number) => void }) {
+  const defaults = useDefaults();
+  const def = lookupDefault(defaults.data, "mix.replay_share");
+  const warn = rangeWarning(value, def?.range);
+  const departs = def !== undefined && hasReplay && Number(def.value) !== value;
+  const id = useId();
+  return (
+    <div className="flex flex-col gap-1" data-slot="replay-share">
+      <div className="flex items-center gap-1">
+        <label htmlFor={id} className="text-muted-foreground">
+          Replay share
+        </label>
+        <WhyDefault label="replay share" value={def} />
+      </div>
+      <div className="flex items-center gap-2">
+        <input
+          type="range"
+          aria-label="Replay share slider"
+          min={0}
+          max={0.9}
+          step={0.01}
+          value={value}
+          disabled={disabled}
+          aria-valuetext={pct(value)}
+          className="h-6 w-36 accent-primary"
+          onChange={(e) => onChange(Number(e.target.value))}
+        />
+        <Input id={id} type="number" className="w-20 text-xs tabular-nums" value={value} step={0.05} min={0} max={0.9} disabled={disabled} onChange={(e) => onChange(Number(e.target.value))} />
+        <span className="w-12 text-muted-foreground tabular-nums">{pct(value)}</span>
+      </div>
+      {!hasReplay ? <span className="text-muted-foreground">No group is marked replay, so no replay samples are drawn.</span> : null}
+      {departs ? <span className="text-muted-foreground">Departs from the default ({pct(Number(def.value))}).</span> : null}
+      {warn ? <span className="text-status-warning-foreground">{warn}</span> : null}
+    </div>
+  );
+}
+
+/**
+ * "Launch a run with this mix" (docs/spec/11-ui-panels.md, Mix, phase 2): opens the launch card, which asks for the
+ * estimate first (runs.new?dryRun=true) and starts the run only when the person confirms it.
+ */
+function LaunchRun({ dirty, open, onOpen }: { dirty: boolean; open: boolean; onOpen: () => void }) {
+  const cmd = useCommand("runs.new");
+  const reason = !cmd ? "Arrives with runs" : dirty ? "Save the mix first: a run trains on a saved revision" : cmd.enabled === true ? undefined : cmd.enabled;
+  const button = (
+    <Button size="xs" variant="outline" disabled={!!reason} aria-expanded={open} onClick={onOpen} data-command="runs.new">
+      <Play aria-hidden />
+      Launch a run with this mix
+    </Button>
+  );
+  if (!reason) return button;
+  return (
+    <Tooltip>
+      <TooltipTrigger render={<span tabIndex={0} className="inline-flex rounded-md" aria-label={`Launch a run with this mix: ${reason}`} data-slot="launch-run" />}>{button}</TooltipTrigger>
+      <TooltipContent>{reason}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+const hoursRange = (r: { value: number; low: number; high: number }, unit: string, f = (v: number) => (Math.round(v * 100) / 100).toString()) =>
+  `${f(r.value)} ${unit} (${f(r.low)}–${f(r.high)})`;
+const minutes = (s: number) => (s < 3600 ? `${Math.round(s / 60)} min` : `${Math.round((s / 3600) * 10) / 10} h`);
+
+/** The launch card: the estimate of a run on this mix revision, then Start run (runs.new). */
+function RunLaunch({ mix, onClose }: { mix: Mix; onClose: () => void }) {
+  const project = useProject();
+  // The run trains the project's base model (the wizard's choice), not the instance default.
+  const base = useQuery({ ...projectsGetOptions({ path: { p: project ?? "" } }), enabled: !!project }).data?.baseModel?.versionId;
+  const [steps, setSteps] = useState("");
+  const [estimate, setEstimate] = useState<RunEstimate | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ error: boolean; text: string } | null>(null);
+  const body = (): RunNew => ({ mix: mix.id, mixRevision: mix.rev, ...(base ? { baseModel: base } : {}), ...(Number(steps) > 0 ? { steps: Math.round(Number(steps)) } : {}) });
+  const act = async (dryRun: boolean) => {
+    if (!project) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const res = await runCommand("runs.new", { project, body: body(), dryRun });
+      if ("approvalId" in res) setMessage({ error: false, text: `The run waits for an approval (${res.approvalId}); it starts when a person approves it in Approvals.` });
+      else if ("basis" in res) setEstimate(res);
+      else {
+        openDocument(`run:${res.id}`);
+        onClose();
+      }
+    } catch (err) {
+      setMessage({ error: true, text: errorMessage(err) });
+    } finally {
+      setBusy(false);
+    }
+  };
+  useEffect(() => {
+    void act(true);
+    // the estimate is asked for once when the card opens; Estimate again re-asks with the edited steps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return (
+    <section aria-labelledby="mix-launch" className="flex flex-col gap-2 rounded-md border bg-tool p-3 text-xs" data-slot="run-launch">
+      <div className="flex items-center gap-2">
+        <h3 id="mix-launch" className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+          New run · {mix.name} rev {mix.rev}
+        </h3>
+        <Button size="xs" variant="ghost" className="ml-auto" onClick={onClose}>
+          Close
+        </Button>
+      </div>
+      <label className="flex items-center gap-2">
+        <span className="text-muted-foreground">Steps</span>
+        <Input type="number" min={1} className="h-6 w-28 text-xs tabular-nums" placeholder={estimate ? String(estimate.steps) : "default"} value={steps} onChange={(e) => setSteps(e.target.value)} />
+        <Button size="xs" variant="outline" disabled={busy} onClick={() => void act(true)}>
+          Estimate again
+        </Button>
+      </label>
+      {estimate ? (
+        <dl className="grid grid-cols-[8rem_1fr] gap-x-3 gap-y-0.5" data-slot="run-estimate">
+          <dt className="text-muted-foreground">GPU-hours</dt>
+          <dd className="tabular-nums">{hoursRange(estimate.gpuHours, "GPU-h")}</dd>
+          <dt className="text-muted-foreground">Duration</dt>
+          <dd className="tabular-nums">{hoursRange(estimate.durationSeconds, "", minutes)}</dd>
+          <dt className="text-muted-foreground">Steps</dt>
+          <dd className="tabular-nums">
+            {estimate.steps} × {Math.round(estimate.secondsPerStep * 100) / 100} s ({estimate.basis === "measured" ? "measured by calibration" : "from the estimate table"})
+          </dd>
+          <dt className="text-muted-foreground">Card</dt>
+          <dd>
+            {estimate.card.host} #{estimate.card.index} · {estimate.card.cardClass}, cap {estimate.card.memoryCapGb} GB
+          </dd>
+          <dt className="text-muted-foreground">Data</dt>
+          <dd className="tabular-nums">{Math.round(estimate.data.hours * 100) / 100} h</dd>
+          <dt className="text-muted-foreground">Today's budget</dt>
+          <dd className={estimate.budget.withinDailyBudget ? undefined : "text-status-warning-foreground"}>
+            {estimate.budget.remainingGpuHours !== undefined ? `${Math.round(estimate.budget.remainingGpuHours * 100) / 100} of ${estimate.budget.gpuHoursPerProjectPerDay} GPU-h left` : `${estimate.budget.gpuHoursPerProjectPerDay} GPU-h per day`}
+            {estimate.budget.withinDailyBudget ? "" : " — over today's budget"}
+          </dd>
+          <dt className="text-muted-foreground">Source</dt>
+          <dd className="text-muted-foreground">{estimate.source}</dd>
+        </dl>
+      ) : busy ? (
+        <p className="text-muted-foreground">Estimating…</p>
+      ) : null}
+      <div className="flex gap-1">
+        <Button size="xs" disabled={busy || !estimate} onClick={() => void act(false)} data-command="runs.new">
+          <Play aria-hidden />
+          Start run
+        </Button>
+      </div>
+      {message ? (
+        <p role={message.error ? "alert" : "status"} className={message.error ? "text-destructive" : "text-muted-foreground"}>
+          {message.text}
+        </p>
       ) : null}
     </section>
   );

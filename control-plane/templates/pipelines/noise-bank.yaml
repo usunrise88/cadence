@@ -1,0 +1,25 @@
+# written by Cadence — starter pipeline: import a public noise set as a frozen noise-bank version (docs/spec/02
+# entity Noise bank; docs/spec/03 "Augmentation", Background noise).
+#
+# dataset_import@1 with purpose noise reads every audio file under `path` (no metadata.csv needed), keeps no
+# transcripts and writes a `dataset` artifact marked purpose noise; the control plane's dataset hook registers the
+# Source with its licence and a frozen version in noise-bank/<name> (registry kind noise_bank) — no utterances, and a
+# noise bank never enters a mix. Augmentation profiles name the noise bank; own-call noise joins in phase 4.
+#
+# As shipped it imports the noise part of MUSAN (OpenSLR 17, CC BY 4.0: about 930 clips, 6 h, free-sound and
+# sound-bible) from the worker host, extracted with
+#   tar -xzf musan.tar.gz musan/noise   # into the imports directory the worker mounts
+# The archive is 11 GB (music, speech and noise together); only musan/noise is imported. Help:
+# docs/help/steps/dataset-import.md.
+name: noise-bank
+steps:
+  - id: import
+    kind: dataset_import@1
+    params:
+      format: folder-csv
+      purpose: noise
+      path: /var/lib/cadence/imports/musan/noise
+      name: musan-noise
+      source_name: musan
+      licence: CC-BY-4.0
+      source_url: https://www.openslr.org/17/

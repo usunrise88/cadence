@@ -425,9 +425,9 @@ export type CredentialList = {
 };
 
 /**
- * The kinds registered so far; runtime, model_family and step_kind are published by workers (R40, R41, R45); golden sets, normalizers and model versions join in later phases
+ * The kinds registered so far; runtime, model_family and step_kind are published by workers (R40, R41, R45); noise_bank holds background noise for augmentation, registered by dataset_import with purpose noise; golden sets, normalizers and model versions join in later phases
  */
-export type RegistryKind = 'base_model' | 'dataset_version' | 'template' | 'runtime' | 'model_family' | 'step_kind';
+export type RegistryKind = 'base_model' | 'dataset_version' | 'template' | 'runtime' | 'model_family' | 'step_kind' | 'noise_bank';
 
 /**
  * draft → frozen → deprecated; a frozen version never changes
@@ -869,6 +869,10 @@ export type Defaults = {
     operations?: DefaultSection;
     notifications?: DefaultSection;
     backups?: DefaultSection;
+    /**
+     * The recommended augmentation profile (docs/spec/03 "Augmentation"): what the Recipe form's Reset to recommended writes
+     */
+    augment?: DefaultSection;
     estimates: {
         bytes_per_audio_hour: DefaultValue;
         measured_plus_minus?: DefaultValue;
@@ -4959,6 +4963,29 @@ export type AgentPlaybook = {
     nudges?: number;
 };
 
+export type RecipeEdit = {
+    /**
+     * The file's new content (UTF-8 text)
+     */
+    content: string;
+    /**
+     * Commit message (default: edit <path>)
+     */
+    message?: string;
+};
+
+export type RecipeNew = {
+    path: RecipePath;
+    /**
+     * The file's content (UTF-8 text)
+     */
+    content: string;
+    /**
+     * Commit message (default: add <path>)
+     */
+    message?: string;
+};
+
 export type SecretNewWritable = {
     name: SecretName;
     kind: SecretKind;
@@ -7162,6 +7189,47 @@ export type RecipesListResponses = {
 
 export type RecipesListResponse = RecipesListResponses[keyof RecipesListResponses];
 
+export type RecipesNewData = {
+    body: RecipeNew;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/projects/{p}/recipes';
+};
+
+export type RecipesNewErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type RecipesNewError = RecipesNewErrors[keyof RecipesNewErrors];
+
+export type RecipesNewResponses = {
+    /**
+     * The file as committed (or, for a dry run, as it would be)
+     */
+    201: Recipe;
+};
+
+export type RecipesNewResponse = RecipesNewResponses[keyof RecipesNewResponses];
+
 export type RecipesGetData = {
     body?: never;
     path: {
@@ -7200,6 +7268,55 @@ export type RecipesGetResponses = {
 };
 
 export type RecipesGetResponse = RecipesGetResponses[keyof RecipesGetResponses];
+
+export type RecipesEditData = {
+    body: RecipeEdit;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+        /**
+         * File path in the repository, URL-encoded (pipelines%2Ftrain-stage.yaml)
+         */
+        path: RecipePath;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/projects/{p}/recipes/{path}';
+};
+
+export type RecipesEditErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type RecipesEditError = RecipesEditErrors[keyof RecipesEditErrors];
+
+export type RecipesEditResponses = {
+    /**
+     * The file as committed (or, for a dry run, as it would be), with its history
+     */
+    200: Recipe;
+};
+
+export type RecipesEditResponse = RecipesEditResponses[keyof RecipesEditResponses];
 
 export type BranchesListData = {
     body?: never;

@@ -6,7 +6,12 @@ the pack whose ``role`` matches), then the flow on the pack's fixtures through t
 ``dataset_import`` of the pack's fixtures (a ``folder-csv`` folder):
 
     import → calibrate → train a few steps → stop (training-state on cancel) → resume → average → transcribe (file and
-    streaming profiles) → score
+    streaming profiles) → baseline → score
+
+``baseline`` trains with the family's ``conformance["baseline"]`` parameters (one step, say) and transcribes with the
+nearly untrained checkpoint; ``score`` then requires the trained, averaged model to beat it on every profile, and to
+stay under ``conformance["score"]["maxWer"]`` when the family declares one. A family without ``baseline`` has that
+check reported as skipped.
 
 Export and parity join in phase 5. Contracts a pack must meet beyond the schemas: the transcribe kind takes a
 ``profile`` parameter naming a latency profile; the train kind resumes from ``overrides.resumeFrom``; checkpoints carry
@@ -424,13 +429,13 @@ def run_family(flow: Flow, fam: Family, report: Report) -> None:
         state["avg"] = ck
         return {"weightsHash": meta["weightsHash"]}
 
-    def transcribe(profile: Mapping[str, Any]) -> Callable[[], dict[str, Any]]:
+    def transcribe(profile: Mapping[str, Any], model: str = "avg", key: str = "wer") -> Callable[[], dict[str, Any]]:
         def run() -> dict[str, Any]:
             params = {**conf.get("transcribe", {}), "profile": profile["name"]}
             out, _ = flow.run(
                 roles["transcribe"],
                 params,
-                flow.inputs_for(roles["transcribe"], {**available, "checkpoint": state["avg"]}),
+                flow.inputs_for(roles["transcribe"], {**available, "checkpoint": state[model]}),
             )
             hyp = _by_type(_expect_done(out, f"transcribe {profile['name']}"), "hypotheses", "transcribe")
             lines = flow.read_lines(hyp)
@@ -449,10 +454,37 @@ def run_family(flow: Flow, fam: Family, report: Report) -> None:
                     ):
                         raise ConformanceError("a streaming hypothesis lacks ordered partial events")
             score = wer((" ".join(refs[r["audio"]].lower().split()), str(r["text"])) for r in lines)
-            state.setdefault("wer", {})[profile["name"]] = score
+            state.setdefault(key, {})[profile["name"]] = score
             return {"wer": round(score, 4), "utterances": len(lines)}
 
         return run
+
+    def baseline() -> dict[str, Any]:
+        out, _ = flow.run(roles["train"], conf["baseline"], flow.inputs_for(roles["train"], available))
+        ck = _by_type(_expect_done(out, "baseline"), "checkpoint", "baseline")
+        state["base"] = ck
+        return {"step": check_checkpoint(ck, "baseline")["step"]}
+
+    def score() -> dict[str, Any]:
+        """The trained model must beat the untrained one (baseline, first profile) and meet the family's maxWer."""
+        got: dict[str, float] = state.get("wer", {})
+        base: dict[str, float] = state.get("baseWer", {})
+        max_wer = conf.get("score", {}).get("maxWer")
+        detail: dict[str, Any] = {"wer": {k: round(v, 4) for k, v in got.items()}}
+        if "baseline" not in conf:
+            detail["baseline"] = "skipped: the family declares no conformance baseline"
+        elif not base:
+            raise ConformanceError("the baseline transcription did not run")
+        else:
+            floor = next(iter(base.values()))
+            detail["baselineWer"] = round(floor, 4)
+            if worse := {k: v for k, v in got.items() if v >= floor}:
+                raise ConformanceError(f"the trained model does not beat the untrained one ({floor:.4f}): {worse}")
+        if max_wer is not None:
+            detail["maxWer"] = max_wer
+            if over := {k: v for k, v in got.items() if v > float(max_wer)}:
+                raise ConformanceError(f"WER above the family's conformance bound {max_wer}: {over}")
+        return detail
 
     ok = stage("calibrate", calibrate)
     ok = stage("train", train) and ok
@@ -461,7 +493,9 @@ def run_family(flow: Flow, fam: Family, report: Report) -> None:
         if stage("resume", resume) and stage("average", average):
             for p in d["latencyProfiles"]:
                 stage(f"transcribe:{p['name']}", transcribe(p))
-            stage("score", lambda: {"wer": {k: round(v, 4) for k, v in state.get("wer", {}).items()}})
+            if "baseline" in conf and stage("baseline", baseline):
+                stage("transcribe:baseline", transcribe(d["latencyProfiles"][0], "base", "baseWer"))
+            stage("score", score)
     for role, why in LATER_ROLES.items():
         report.stages.append(Stage(f"{prefix}/{role}", True, 0.0, {"skipped": why}))
 
