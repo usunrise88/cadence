@@ -119,7 +119,8 @@ Rules:
   declares none, so a training step takes the card alone. Candidates are taken by the project's queue priority (higher first;
   `budgets.queuePriority`, read live from the project so `projects.edit` reorders waiting jobs; a job without a project
   takes the `defaults.yaml` default), then the job's priority (higher first; set from the pipeline run's `priority`,
-  changed with `jobs.edit`), then first come. Card slots (`card_slots`) belong to the control
+  changed with `jobs.edit`), then first come; the claim reads them in pages of 50 (at most 20 pages per attempt)
+  until one fits, so waiting jobs that cannot fit never hide one further down that can. Card slots (`card_slots`) belong to the control
   plane per host and card, not per worker, so two runtimes never double-book a card. A step with `gpu: false` takes
   no card (lease card index -1) and may go to a worker that reported no cards (the CPU toy runtime).
 - Lease: `lse_` id, the job id, the step spec (resolved parameters, input artifact refs, output types, resources,
