@@ -78,10 +78,9 @@ func (p *Poller) status(ctx context.Context) (string, error) {
 	}
 	var b strings.Builder
 	b.WriteString("Queue:")
-	switch {
-	case p.Queue == nil:
+	if p.Queue == nil {
 		b.WriteString(" this control plane runs no worker protocol")
-	default:
+	} else {
 		items, err := p.Queue(ctx)
 		if err != nil {
 			return "", err

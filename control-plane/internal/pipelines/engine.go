@@ -951,7 +951,6 @@ type RetryInput struct {
 // AnyRev skips Retry's revision check: a facade that checked its own entity's revision (runs.resume).
 const AnyRev = -1
 
-// Retry runs failed (or cancelled) steps of pipeline run id again as new attempts and reopens the run.
 // RetryEstimate is the GPU time a retry of run id may spend: every step not done yet (the retried steps and those
 // waiting behind them) that needs a card, at its recorded estimate. unknown is true when such a step has none.
 func RetryEstimate(ctx context.Context, q storage.Querier, id string) (gpuHours float64, unknown bool, err error) {
@@ -972,6 +971,7 @@ func RetryEstimate(ctx context.Context, q storage.Querier, id string) (gpuHours 
 	return gpuHours, unknown, nil
 }
 
+// Retry runs failed (or cancelled) steps of pipeline run id again as new attempts and reopens the run.
 func (e *Engine) Retry(ctx context.Context, tx pgx.Tx, id string, rev int, in RetryInput) (Run, []events.Draft, error) {
 	r, err := lockRun(ctx, tx, id)
 	if err != nil {
