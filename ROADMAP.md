@@ -597,6 +597,12 @@ Not planned into any phase; each comes back only by the owner's decision.
       contract; `make e2e` (`cadence smoke`) and `cadence admin reset-password` depend on it. Proposed: generated
       commands arrive with phase 1, `smoke` with phase 4. Generated commands built in phase 1 (R34 in 08); `smoke`
       stays with phase 4.
+- [ ] Recipe document edits every text file of the project repository, not only augmentation profiles — today
+      `recipes.edit` is reachable in the web only from `AugmentationForm`, so a person cannot change a pipeline
+      (`pipelines/*.yaml`) without git or an agent session, although the guardrails preset names `recipes.edit` "the
+      Recipe document's (a person's) path". Needs: a text editor in the Recipe panel (YAML for pipelines, with
+      `pipelines.run?dryRun` validation before save), If-Match on `history[0].sha`, help page. Found on the test stand
+      2026-10-01 (Serbian fine-tune needed `target_lang` on both train-stage steps).
 - [ ] Release process: semver, the pinned matrix (NeMo container, Dockview, agent adapters) in release notes — first
       needed when there is something to upgrade from, i.e. before the first real project after phase 2.
 
