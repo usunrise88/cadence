@@ -3835,7 +3835,7 @@ export type PipelineStep = {
     resources?: StepResources;
     estimateSeconds?: number;
     /**
-     * Hash of kind, version, resolved parameters and input hashes: a finished step with the same one is reused
+     * Hash of kind, version, the runtime version that published it, resolved parameters and input hashes: a finished step with the same one is reused
      */
     inputHash?: string;
     /**
