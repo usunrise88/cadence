@@ -8,11 +8,13 @@ consumed (``audioOffsetMs``, including the chunk's right context), the wall time
 (``emitMs``; the streams of a batch are decoded together) and the text so far. Word timings come from those emissions:
 a word ends at the offset of the first partial that contains it and starts where the previous word ended (the
 resolution is one chunk, i.e. the profile's latency); confidence comes from NeMo's word confidence when the decoder
-reports it, else it is null.
+reports token confidence (the minimum over a word's tokens; NeMo's own word aggregation miscounts the locale tag as a
+word), else it is null.
 """
 
 from __future__ import annotations
 
+import re
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
@@ -80,12 +82,38 @@ def hyp_text(h: Any) -> str:
     return str(getattr(h, "text", h) or "")
 
 
-def hyp_word_confidence(h: Any) -> list[float] | None:
-    wc = getattr(h, "word_confidence", None)
-    if wc is None:
+TAG_PIECE = re.compile(r"▁?<(?:[a-z]{2,3}-[A-Z]{2}|auto)>")
+
+
+def word_confidence(pieces: Sequence[str], confidence: Sequence[float]) -> list[float]:
+    """Per word, the minimum confidence of its sentencepiece tokens (``▁`` starts a word; locale tags are skipped)."""
+    words: list[float] = []
+    cur: list[float] = []
+    for piece, c in zip(pieces, confidence, strict=True):
+        if TAG_PIECE.fullmatch(piece):
+            continue
+        if piece.startswith("▁"):
+            if cur:
+                words.append(min(cur))
+            cur = [] if piece == "▁" else [float(c)]
+        else:
+            cur.append(float(c))
+    if cur:
+        words.append(min(cur))
+    return words
+
+
+def hyp_word_confidence(h: Any, ids_to_tokens: Callable[[list[int]], list[str]]) -> list[float] | None:
+    tc = getattr(h, "token_confidence", None)
+    seq = getattr(h, "y_sequence", None)
+    if tc is None or seq is None:
         return None
     try:
-        return [float(x) for x in wc]
+        ids = [int(x) for x in (seq.tolist() if hasattr(seq, "tolist") else seq)]
+        conf = [float(x) for x in tc]
+        if len(ids) != len(conf):
+            return None
+        return word_confidence(ids_to_tokens(ids), conf)
     except (TypeError, ValueError):
         return None
 
@@ -98,9 +126,7 @@ def prepare(model: Any, att_context_size: list[int], prompt_key: str) -> dict[st
     model.encoder.set_default_att_context_size(att_context_size=att_context_size)
     dcfg = OmegaConf.structured(RNNTDecodingConfig(fused_batch_size=-1, strategy="greedy_batch"))
     with open_dict(dcfg):
-        dcfg.confidence_cfg.preserve_word_confidence = True
         dcfg.confidence_cfg.preserve_token_confidence = True
-        dcfg.confidence_cfg.aggregation = "min"
     model.change_decoding_strategy(dcfg, verbose=False)
     model.set_inference_prompt(prompt_key)
     model.decoding.set_strip_lang_tags(True)
@@ -158,7 +184,7 @@ def decode_batch(model: Any, files: Sequence[Path], stride_ms: float) -> list[St
         prev = int(buf.buffer_idx)
     for s, h in zip(streams, hyps or [], strict=False):
         s.text = hyp_text(h)
-        s.word_confidence = hyp_word_confidence(h)
+        s.word_confidence = hyp_word_confidence(h, model.tokenizer.ids_to_tokens)
         if s.partials:
             s.partials[-1]["final"] = True
             s.partials[-1]["text"] = s.text

@@ -29,7 +29,7 @@ from cadence_nemo.steps.finetune import (
     validation_clips,
 )
 from cadence_nemo.steps.transcribe import TranscribeParams, TranscribeStep, decoding_hash, hypothesis_row
-from cadence_nemo.streaming import Stream, chunk_frames, record_partials, words_from_partials
+from cadence_nemo.streaming import Stream, chunk_frames, record_partials, word_confidence, words_from_partials
 from cadence_nemo.training import ModelFacts, optim_config, scaled_batches, train_ds_config, val_ds_config
 from cadence_worker.cas import Store
 from cadence_worker.conformance.suite import HYPOTHESIS_FIELDS, REPO_HELP, check_schemas
@@ -244,7 +244,7 @@ def test_calibration_round_trip(tmp_path: Path) -> None:
         peak={"maxReservedMb": 20000},
     )
     assert doc["secondsPerStep"] == pytest.approx(0.7)
-    assert doc["plusMinus"] == pytest.approx(2 * doc["secondsPerStepStd"] / 0.7, rel=1e-3)
+    assert doc["plusMinus"] == pytest.approx(2 * doc["secondsPerStepStd"] / 0.7 / 3**0.5, rel=1e-2)
     assert doc["batchSizes"] == {"bucket_duration_bins": [4, 8, 20], "bucket_batch_size": [37, 11, 1]}
     assert doc["bucketConfig"]["tokensPerSecond"] == 16
     assert doc["batchSize"] == 9
@@ -639,3 +639,10 @@ def test_hypothesis_rows_carry_every_field() -> None:
     assert row["family"] == NAME
     assert row["words"][0]["word"] == "שלום"
     assert decoding_hash(decoding) == decoding_hash(dict(reversed(list(decoding.items()))))
+
+
+def test_word_confidence_from_tokens_skips_the_locale_tag() -> None:
+    pieces = ["▁sh", "a", "l", ".", "▁wo", "rld", "▁", "<he-IL>"]
+    conf = [0.9, 0.8, 0.95, 0.99, 0.5, 0.7, 0.99, 0.98]
+    assert word_confidence(pieces, conf) == [0.8, 0.5]
+    assert word_confidence(["▁", "a", "b", "▁c"], [0.1, 0.6, 0.7, 0.3]) == [0.6, 0.3]

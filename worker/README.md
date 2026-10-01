@@ -17,8 +17,10 @@ cadence_worker/          the harness and the runtime-neutral core step kinds (ev
   registry.py            entry points, runtime descriptor; defaults.py reads defaults.yaml
   conformance/           the framework-pack conformance suite (R45)
 packs/toy/               the CPU toy pack (runtime toy, family toy-ctc) — its own distribution, cadence-toy
+packs/nemo/              the NeMo pack (runtime nemo-speech, family nemo.fastconformer-rnnt.cache-aware: Nemotron 3.5
+                         streaming) — distribution cadence-nemo, installed in the nemo-speech image
 runtime/*.json           runtime descriptors baked into the images
-Dockerfile               runtime nemo-speech: NeMo Speech 26.07 by digest + the harness
+Dockerfile               runtime nemo-speech: NeMo Speech 26.07 by digest + the harness + the NeMo pack
 Dockerfile.toy           runtime toy: python:3.12-slim + CPU PyTorch + the harness + the toy pack
 ```
 
@@ -87,8 +89,20 @@ conformance parameters), a `packs.<pack>` section in defaults.yaml, a runtime im
 
 ```
 make conformance                                          # the toy pack (CI, every pull request)
-python -m cadence_worker.conformance --runtime nemo-speech   # a pack's own image (nightly on the staging card)
+python -m cadence_worker.conformance --runtime nemo-speech --memory-cap-mb 22528 --help-dir docs/help
+                                                          # the NeMo pack in its image on the card (nightly.yml)
 ```
+
+Inputs are filled by declared artifact type, as the control plane fills a run's: `dataset` (the imported fixtures),
+`mix` (a `cadence.mix/1` over them), `base_model` (from the family's `conformance["base_model"]`), `calibration` (the
+calibrate stage's output), `checkpoint`. `--memory-cap-mb` is the card cap a lease would carry (the NeMo run shares
+the staging card with vLLM).
+
+The NeMo pack (`packs/nemo`, help `docs/help/guides/nemo-pack.md`): `oomptimizer_calibrate`, `nemotron_finetune`,
+`checkpoint_average`, `nemotron_transcribe`, defaults `packs.nemo`. Its pure parts (mix reading, Noam arithmetic,
+averaging, augmentation, the OOMptimizer search, the training monitor, hypotheses) are unit-tested here without NeMo;
+the NeMo glue (`training.py`, `streaming.py`, `nemo_data.py`) runs in the image. `CADENCE_NEMO_DEVICE=cpu` lets the
+train and transcribe steps run on a CPU (slowly, fp32) to check the glue without a card — development only.
 
 The suite checks the schemas (complete `x-cadence`, help articles, declared profiles, every required role mapped to a
 published kind that declares it), then imports the pack's fixtures (a `folder-csv` folder with `metadata.csv`) with

@@ -13,7 +13,6 @@ docs/help/steps/nemotron-finetune.md.
 
 from __future__ import annotations
 
-import os
 import time
 from collections.abc import Mapping
 from pathlib import Path
@@ -206,9 +205,7 @@ class FinetuneStep:
         def save_state(trainer: Any, step: int) -> None:
             t0 = time.monotonic()
             state_dir.mkdir(parents=True, exist_ok=True)
-            tmp = state_dir / (ck.STATE_CKPT + ".tmp")
-            trainer.save_checkpoint(str(tmp))
-            os.replace(tmp, state_dir / ck.STATE_CKPT)
+            trainer.save_checkpoint(str(state_dir / ck.STATE_CKPT))  # atomic: written to .part, then renamed
             ck.write_state_json(
                 state_dir,
                 {
@@ -233,6 +230,7 @@ class FinetuneStep:
                 best["step"] = step
 
             def on_stop(self, trainer: Any, step: int) -> None:
+                ctx.log("stop requested; ending at this step", step=step)
                 if monitor.save_fresh_on_stop():
                     save_state(trainer, step)
                 else:
@@ -255,6 +253,7 @@ class FinetuneStep:
         trainer.fit(model, ckpt_path=str(ctx.resume_from / ck.STATE_CKPT) if ctx.resume_from else None)
 
         step = int(trainer.global_step)
+        ctx.log("training loop ended", step=step, stopped=monitor.stopped)
         if monitor.stopped or ctx.should_stop():
             if not (state_dir / ck.STATE_CKPT).is_file():
                 save_state(trainer, step)

@@ -67,9 +67,9 @@ Open questions:
   (0.1 GPU-hours): `runs.calibrate` plans over a mix, which exists only once the session made it. The later
   playbooks' continuation stages ask for the parent run and `peakLr` (no defaults.yaml key for a stage's peak LR).
 
-- [ ] R (2026-09-30, runs): the base model's `familyId` names the family collection `model-family/<familyId>`; the
+- [x] R (2026-09-30, runs): the base model's `familyId` names the family collection `model-family/<familyId>`; the
   seeded Nemotron base model says `nemo.fastconformer-rnnt.cache-aware`, so the NeMo pack must publish its family
-  descriptor under that name (or the base model fixture must change with it).
+  descriptor under that name (or the base model fixture must change with it). — The NeMo pack publishes it (stream N).
 - [ ] R: train role kinds take the step budget as `steps`, the seed as `seed` and a stage's peak learning rate as
   `peak_lr` (else `learning_rate`, else `lr`); a request setting a parameter the kind lacks is `recipe-mismatch`.
 - [ ] R: a `dataset` input of a run's recipe takes the mix's only dataset (the CPU toy pack trains on a dataset, not
@@ -105,6 +105,29 @@ Open questions:
   contract's `Defaults` gained `packs` (a map of sections) for it.
 - [ ] Y: a transcribe-role kind takes a `profile` parameter naming one of its family's latency profiles, and a
   train-role kind resumes from `overrides.resumeFrom` up to its total `steps` — the conformance suite relies on both.
+
+- [ ] N (2026-09-30, NeMo pack): no `checkpoint_register` step kind — the control plane's checkpoint hook already
+  registers every `checkpoint` output of a run and keeps the top k; a pipeline that needs an explicit registration can
+  add the kind later. `nemotron_finetune` writes two checkpoint outputs, `checkpoint` (the end) and `checkpoint_best`
+  (the best validation pass of the lease; the same artifact when it was the last).
+- [ ] N: "a checkpoint and training state every 20 minutes" becomes a training state every `state_every_minutes`
+  written into the lease's scratch: a stop releases the newest (a fresh one when the last save fits the stop grace), but
+  a lost lease (worker or host crash) loses them, because the worker protocol releases outputs only at the end. Interim
+  artifacts (a `workerArtifacts` put during the lease) would close that gap.
+- [ ] N: the augmentation profile is the finetune step's `augmentation` parameter (default `packs.nemo.augmentation`,
+  the telephony chain: 8 kHz band-limit with G.711 μ-law/A-law or GSM, gain, speed 0.95–1.05); a project's
+  `augment/*.yaml` file is not read yet (no artifact type or recipe convention carries it to the step). AMR-NB and
+  Opus need ffmpeg, which the NeMo Speech image lacks; the noise bank joins in phase 4.
+- [ ] N: `max_duration` defaults to 20 s (spike A3, the shared-card cap), not the Key defaults' 40 s; bucket batch
+  sizes for 20 s clips are 1 under the 22 GB cap.
+- [ ] N: the lease's memory cap counts the whole process (nvidia-smi); the NeMo steps give PyTorch's allocator the cap
+  minus `packs.nemo.cuda_context_reserve_mb` (1024 MiB). Other packs sharing a card should do the same.
+- [ ] N: the NeMo steps disable Lightning's SIGTERM handler (it raises at the end of the step and exits before a
+  training state is written) and make dataloader workers ignore SIGTERM (the harness signals the process group); the
+  harness's stop event alone drives the stop. Lightning's checkpoint IO is replaced by a direct write (its in-memory
+  copy made a 7.7 GB state take 45 s; now about 15 s).
+- [ ] N: training text ends with the locale tag (` <he-IL>`, spike A3's assumption); validation references carry no
+  tag and decoding strips tags, so `val_wer` is on raw punctuated text without the tag.
 - [ ] `audit.list` for scoped credentials (2026-09-30, for the evals on the staging stand): an API key or agent token
   of one project reads that project's audit rows only (narrowed like `approvals.list`); a key without a project is
   refused; the admin's session still reads everything. Agents may therefore read their own project's audit

@@ -4,7 +4,7 @@
 # the control-plane binary and packaged with the worker. Every value carries a description, a source and, where it
 # applies, a safe range; a value without a published source is a "Cadence recommendation" re-checked after the spikes.
 # Keys are addressed as <section>.<key> (x-cadence.defaultRef: training.steps). Bump `version` on every change.
-version: 8
+version: 9
 
 # The project wizard's Recommended mode (docs/spec/02-domain-projects-registry.md "Project wizard").
 wizard:
@@ -488,7 +488,6 @@ packs:
       value: ""
       description: Language prompt for every clip; empty takes each clip's language from its dataset (he-IL, or he matched to he-IL)
       source: Cadence recommendation
-      range: { maxLength: 16 }
     augmentation:
       value:
         profile: telephony
@@ -502,7 +501,6 @@ packs:
       unit: s
       description: Upper bounds of the duration buckets OOMptimizer sizes; the largest caps the clip length
       source: Spike A3 (the invocation of step 1)
-      range: { minLength: 1, maxLength: 40 }
     tokens_per_second:
       value: 0
       unit: tokens/s

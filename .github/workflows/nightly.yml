@@ -15,3 +15,28 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - run: echo "The smoke project runs on the staging host from phase 4 (R34); it never runs on GitHub runners."
+  # The NeMo pack's conformance suite (R45) on the staging card, inside the nemo-speech worker image. Assumes a
+  # self-hosted runner on the staging host labelled `staging` and `gpu`, with Docker, the NVIDIA container toolkit and
+  # network access to Hugging Face (the base model downloads into a runner-local cache on the first run). The card is
+  # shared with the resident vLLM service, so the steps run under the staging training cap (22 GB, compute seed).
+  nemo-conformance:
+    runs-on: [self-hosted, staging, gpu]
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the nemo-speech worker image
+        run: docker build -f worker/Dockerfile -t cadence/worker:nightly .
+      - name: Conformance on the card (calibrate, train, stop, resume, average, transcribe at every profile, score)
+        run: |
+          mkdir -p "$RUNNER_TEMP/conformance" "$HOME/.cache/cadence-nightly-hf"
+          docker run --rm --init --gpus all --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 \
+            --user "$(id -u):$(id -g)" -e HOME=/work -e HF_HOME=/hf \
+            -v "$HOME/.cache/cadence-nightly-hf:/hf" -v "$RUNNER_TEMP/conformance:/work" \
+            -v "$PWD/docs/help:/help:ro" \
+            cadence/worker:nightly python -m cadence_worker.conformance --runtime nemo-speech \
+              --memory-cap-mb 22528 --help-dir /help --work /work --report /work/conformance-nemo.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: conformance-nemo
+          path: ${{ runner.temp }}/conformance/conformance-nemo.json

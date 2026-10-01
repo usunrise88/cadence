@@ -202,12 +202,14 @@ def setup_train_dataloader(model: Any, cfg: dict[str, Any], profile: Any) -> Non
     model._train_dl = get_lhotse_dataloader_from_config(
         DictConfig(oc), global_rank=0, world_size=1, dataset=dataset, tokenizer=model.tokenizer
     )
+    ignore_sigterm_in_workers(model._train_dl)
 
 
 def setup_val_dataloader(model: Any, cfg: dict[str, Any]) -> None:
     from omegaconf import OmegaConf
 
     model.setup_validation_data(OmegaConf.create(cfg))
+    ignore_sigterm_in_workers(getattr(model, "_validation_dl", None))
 
 
 def setup_optimization(model: Any, cfg: dict[str, Any]) -> Any:
@@ -231,6 +233,26 @@ def grad_norm(module: Any) -> float:
     return float(torch.linalg.vector_norm(torch.stack(norms)))
 
 
+def direct_checkpoint_io() -> Any:
+    """Lightning's checkpoint IO without its in-memory copy: ``TorchCheckpointIO`` serialises the whole checkpoint into
+    a BytesIO before writing it (7.7 GB for this model: about 45 s and twice the host memory), which does not fit a
+    stop grace; this writes it straight to a temporary file and renames it."""
+    import os
+
+    import torch
+    from lightning.pytorch.plugins import TorchCheckpointIO
+
+    class DirectCheckpointIO(TorchCheckpointIO):  # type: ignore[misc]
+        def save_checkpoint(self, checkpoint: dict[str, Any], path: Any, storage_options: Any = None) -> None:
+            target = Path(path)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            tmp = target.with_name(target.name + ".part")
+            torch.save(checkpoint, tmp)
+            os.replace(tmp, target)
+
+    return DirectCheckpointIO()
+
+
 def make_trainer(
     *,
     steps: int,
@@ -243,7 +265,7 @@ def make_trainer(
     import lightning.pytorch as pl
     import torch
 
-    return pl.Trainer(
+    trainer = pl.Trainer(
         accelerator="gpu" if torch.cuda.is_available() else "cpu",
         devices=1,
         strategy="auto",
@@ -262,7 +284,36 @@ def make_trainer(
         log_every_n_steps=log_every_n_steps,
         use_distributed_sampler=False,
         callbacks=callbacks,
+        plugins=[direct_checkpoint_io()],
     )
+    # The harness owns SIGTERM (run_step sets the step's stop event; the callback stops at the next step with a
+    # training state). Lightning's own handler would raise SIGTERMException at the end of the step and exit before a
+    # state is written, so it is not installed.
+    connector = getattr(trainer, "_signal_connector", None)
+    if connector is not None:
+        connector.register_signal_handlers = lambda: None
+    return trainer
+
+
+def _ignore_sigterm(worker_id: int) -> None:
+    import signal
+
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+
+
+def ignore_sigterm_in_workers(loader: Any) -> None:
+    """Dataloader workers share the step's process group, which receives the stop signal: they ignore it and end with
+    the loader (the stop is the main process's business)."""
+    if loader is None or not hasattr(loader, "worker_init_fn"):
+        return
+    inner = loader.worker_init_fn
+
+    def init(worker_id: int) -> None:
+        _ignore_sigterm(worker_id)
+        if inner is not None:
+            inner(worker_id)
+
+    loader.worker_init_fn = init
 
 
 class Hooks:
@@ -386,7 +437,8 @@ def timed_steps(
         t0 = time.perf_counter()
         with torch.autocast("cuda", dtype=dtype, enabled=precision != "fp32"):
             out = model.training_step(batch, i)
-        out["loss"].backward()
+        loss = out["loss"]
+        (loss if loss.dim() == 0 else loss.mean()).backward()  # per-utterance losses outside a Lightning loop
         if grad_clip > 0:
             torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
         optimizer.step()

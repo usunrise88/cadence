@@ -77,7 +77,9 @@ def calibration_doc(
         "device": applied.get("device"),
         "secondsPerStep": round(mean, 4),
         "secondsPerStepStd": round(std, 4),
-        "plusMinus": round(min(1.0, 2 * std / mean), 4) if mean > 0 else None,
+        # Relative uncertainty of the mean step time (two standard errors): a run's estimate sums many steps, so the
+        # spread of single steps (bucket to bucket) averages out; the loop's own overhead is not in the timed steps.
+        "plusMinus": round(min(1.0, 2 * std / mean / math.sqrt(len(seconds))), 4) if mean > 0 else None,
         "stepsTimed": len(seconds),
         "audioSecondsPerStep": round(statistics.fmean(audio), 2) if audio else None,
         "batchSize": max(1, round(statistics.fmean(sizes))) if sizes else batches[0],
