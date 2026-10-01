@@ -591,6 +591,51 @@ func TestOutputHooksRunInTheStepTransaction(t *testing.T) {
 	}
 }
 
+// A hook that refuses reused outputs fails that step and its run, like a refusal of a fresh output, and leaves the
+// caller's transaction intact: the pipeline run is created, its hook writes are undone.
+func TestReusedOutputRefusedByAHook(t *testing.T) {
+	refuse := false
+	r := newRig(t, func(h *steps.Hooks) {
+		h.On("text", func(ctx context.Context, tx pgx.Tx, out steps.Output) ([]events.Draft, error) {
+			if _, err := tx.Exec(ctx, "INSERT INTO hook_marks (hash, step) VALUES ($1, $2)", out.Artifact.Hash, out.StepID); err != nil {
+				return nil, err
+			}
+			if refuse {
+				return nil, errors.New("checkpoint registry refused it")
+			}
+			return nil, nil
+		})
+	})
+	if _, err := r.pool.Exec(context.Background(), "CREATE TABLE hook_marks (hash text, step text)"); err != nil {
+		t.Fatal(err)
+	}
+	r.wait(r.start(r.input("abc")).ID, pipelines.RunDone)
+	if n := r.count("SELECT count(*) FROM hook_marks"); n != 1 {
+		t.Fatalf("%d hook marks", n)
+	}
+
+	refuse = true
+	started := r.start(r.input("abc")) // would fail the test if Start returned the hook's error
+	failed := r.wait(started.ID, pipelines.RunFailed)
+	first := stepOf(t, failed, "first")
+	if first.State != pipelines.StepFailed || first.Error == nil || first.Error.Type != steps.ErrStep ||
+		!strings.Contains(first.Error.Message, "checkpoint registry refused it") || first.Outputs != nil || first.ReusedFrom != "" {
+		t.Fatalf("first %+v", first)
+	}
+	if s := stepOf(t, failed, "count"); s.State != pipelines.StepSkipped {
+		t.Errorf("count %+v", s)
+	}
+	if !strings.Contains(failed.Error, "step first failed (step)") {
+		t.Errorf("run error %q", failed.Error)
+	}
+	if n := r.count("SELECT count(*) FROM hook_marks"); n != 1 {
+		t.Errorf("%d hook marks: the refused hook's write was not undone", n)
+	}
+	if len(r.leases.CallsOf("first")) != 1 {
+		t.Errorf("the refused reuse asked a worker")
+	}
+}
+
 func TestSweepRetriesStepsWhoseJobEnded(t *testing.T) {
 	r := newRig(t, nil)
 	r.leases.Script("first", pipelinestest.Action{Block: true})

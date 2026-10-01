@@ -339,6 +339,15 @@ func (e *Engine) advance(ctx context.Context, tx pgx.Tx, r *Run, sts []StepRow) 
 				return nil, err
 			}
 			ev, reused, err := e.reuse(ctx, tx, r, s)
+			if refused, ok := errors.AsType[*refusedReuse](err); ok {
+				// An output hook refused the reused outputs: the step fails like one whose fresh output was
+				// refused, and so does the run; nothing else in the caller's transaction is undone.
+				failed, err := e.fail(ctx, tx, r, sts, i, steps.StepError{Type: steps.ErrStep, Message: refused.Error()})
+				if err != nil {
+					return nil, err
+				}
+				return append(drafts, failed...), nil
+			}
 			if err != nil {
 				return nil, err
 			}
@@ -425,10 +434,23 @@ func (e *Engine) reuse(ctx context.Context, tx pgx.Tx, r *Run, s *StepRow) ([]ev
 	}
 	now := time.Now()
 	s.State, s.Outputs, s.ReusedFrom, s.Metrics, s.FinishedAt = StepReused, prev.Outputs, prev.ID, prev.Metrics, &now
-	drafts, herr := e.runHooks(ctx, tx, *r, *s, steps.Spec{StepID: s.ID, PipelineRunID: r.ID, ProjectID: r.ProjectID, RunID: r.RunID,
+	// The hooks run in a savepoint, as for a fresh output: a refusal undoes their writes and fails this step
+	// (refused), never the caller's transaction.
+	sp, err := tx.Begin(ctx)
+	if err != nil {
+		return nil, false, fmt.Errorf("savepoint: %w", err)
+	}
+	drafts, herr := e.runHooks(ctx, sp, *r, *s, steps.Spec{StepID: s.ID, PipelineRunID: r.ID, ProjectID: r.ProjectID, RunID: r.RunID,
 		Kind: s.Kind, KindVersion: s.KindVersion, Params: mustJSON(s.Params), Inputs: s.Inputs, Outputs: s.Produces})
 	if herr != nil {
-		return nil, false, fmt.Errorf("reuse step %s: %w", s.Step, herr)
+		if err := sp.Rollback(ctx); err != nil {
+			return nil, false, fmt.Errorf("roll back savepoint: %w", err)
+		}
+		s.State, s.Outputs, s.ReusedFrom, s.Metrics, s.FinishedAt = StepWaiting, nil, "", nil, nil
+		return nil, false, &refusedReuse{from: prev.ID, err: herr}
+	}
+	if err := sp.Commit(ctx); err != nil {
+		return nil, false, fmt.Errorf("release savepoint: %w", err)
 	}
 	saved, err := saveStep(ctx, tx, *s)
 	if err != nil {
@@ -437,6 +459,18 @@ func (e *Engine) reuse(ctx context.Context, tx pgx.Tx, r *Run, s *StepRow) ([]ev
 	*s = saved
 	return append(drafts, stepDraft(*r, *s)), true, nil
 }
+
+// refusedReuse is an output hook's refusal of the outputs a step would reuse.
+type refusedReuse struct {
+	from string // the step whose outputs were offered
+	err  error
+}
+
+func (e *refusedReuse) Error() string {
+	return fmt.Sprintf("reused outputs of step %s: %v", e.from, e.err)
+}
+
+func (e *refusedReuse) Unwrap() error { return e.err }
 
 // enqueue starts a new attempt of s as a step job with overrides ov (batch scale, training state to resume from).
 func (e *Engine) enqueue(ctx context.Context, tx pgx.Tx, r Run, s *StepRow, reason string, ov steps.Overrides) ([]events.Draft, error) {
