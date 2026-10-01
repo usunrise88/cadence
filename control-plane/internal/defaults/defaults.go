@@ -177,11 +177,13 @@ type Cache struct {
 
 // Data holds the import defaults (the dataset_import step kind's defaultRefs, phase 2).
 type Data struct {
-	ValidationShare   Param[float64] `yaml:"validation_share"`
-	MaxHours          Param[float64] `yaml:"max_hours"`
-	MaxUtterances     Param[int]     `yaml:"max_utterances"`
-	SampleRate        Param[int]     `yaml:"sample_rate"`
-	TextNormalisation Param[bool]    `yaml:"text_normalisation"`
+	ValidationShare Param[float64] `yaml:"validation_share"`
+	// MinValidationUtterances tops a speaker-disjoint split's validation up to this many utterances.
+	MinValidationUtterances Param[int]     `yaml:"min_validation_utterances"`
+	MaxHours                Param[float64] `yaml:"max_hours"`
+	MaxUtterances           Param[int]     `yaml:"max_utterances"`
+	SampleRate              Param[int]     `yaml:"sample_rate"`
+	TextNormalisation       Param[bool]    `yaml:"text_normalisation"`
 }
 
 // Operations holds instance-wide operational defaults.

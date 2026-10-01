@@ -525,6 +525,11 @@ Open questions:
       validation passes, metric cadence, dataloader); validations × validation time is not in the estimate (the
       calibration runs no validation and the estimate does not read `val_every`); one pass on the stand would give the
       ratio to fold in
+- [x] G2 · resolved (2026-10-01 gate rehearsal): the NeMo step's `val_wer` scores the validation manifest's raw text
+      (looked up by the tokenizer round trip of NeMo's decoded reference), both sides normalised as evaluations are
+      (NFKC, case-folded, no punctuation) — assumed the right normalisation for model selection, so val_wer and eval
+      WER are comparable; a speaker-disjoint import holds out at least `data.min_validation_utterances` (100)
+      utterances, moving whole speakers (or transcripts) in split-fraction order, never past half the import
 - [x] G2 · resolved: progress reports no longer change a job's `rev` (only state, priority, pause and cancel do), so
       `jobs.pause` with a revision read before some heartbeats succeeds; `job.progress` events carry the progress
 - [x] G · resolved: a control-plane stop interrupts (snoozes) a step job waiting on a worker instead of failing it; the

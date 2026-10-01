@@ -57,6 +57,7 @@ language, the source ids, the licence, the artifact (`artifact.hash`, which trai
 | `max_utterances` | `0` (no cap) — `data.max_utterances` | Cadence recommendation | per language, in source order |
 | `split_rule` | `speaker-disjoint` | spec 03 starter pipeline | `speaker-disjoint`, `source`, `all-train`, `all-validation`, `all-test` |
 | `validation_share` | `0.02` — `data.validation_share` | Cadence recommendation | 0–0.5 |
+| `min_validation_utterances` | `100` — `data.min_validation_utterances` | Gate rehearsal 2026-10-01 (19 validation clips from a 3 h import) | 0–100000; a speaker-disjoint split with fewer validation utterances moves more whole speakers (or transcripts) over, never past half the import |
 | `sample_rate` | `16000` — `data.sample_rate` | Nemotron 3.5 model card | 8000–48000 Hz |
 | `text_normalisation` | `false` — `data.text_normalisation` | Nemotron 3.5 model card (cased, punctuated) | on: NFKC, case-folded, no punctuation |
 | `eval_only` | `false` | R17, R18 | golden and replay test sets |

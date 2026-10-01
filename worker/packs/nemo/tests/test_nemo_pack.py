@@ -14,7 +14,7 @@ import numpy as np
 import pytest
 import torch
 
-from cadence_nemo import augment, lang, noam, oomptimizer
+from cadence_nemo import augment, lang, noam, oomptimizer, valwer
 from cadence_nemo import checkpoint as ck
 from cadence_nemo.family import FAMILY, NAME, PROFILES, att_context_size, profile
 from cadence_nemo.mixdata import input_cfg, nemo_rows, read_training_data
@@ -495,6 +495,73 @@ def test_link_checkpoint_keeps_the_same_content(tmp_path: Path) -> None:
     ck.link_checkpoint(tmp_path / "a", tmp_path / "b")
     store = Store(tmp_path / "cas")
     assert store.put_path(tmp_path / "a").hash == store.put_path(tmp_path / "b").hash
+
+
+class FakeHypothesis:
+    def __init__(self, text: str) -> None:
+        self.text = text
+
+
+class FakeDecoding:
+    """Characters as token ids; anything outside the vocabulary decodes as ⁇ (as a SentencePiece unk does)."""
+
+    vocab = " abcdefghijklmnopqrstuvwxyz.,"
+
+    def ids(self, text: str) -> list[int]:
+        return [self.vocab.index(c) + 1 if c in self.vocab else 0 for c in text]
+
+    def decode_ids_to_str(self, ids: list[int]) -> str:
+        return "".join(self.vocab[i - 1] if i > 0 else "⁇" for i in ids)
+
+
+class FakeWER:
+    def __init__(self, hypotheses: list[str]) -> None:
+        self.decoding = FakeDecoding()
+        self.batch_dim_index = 0
+        self.scores = torch.tensor(0)
+        self.words = torch.tensor(0)
+        self._hyps = hypotheses
+        self.wrapped = 0
+        self.hypotheses: list[FakeHypothesis] = []
+        self.update: Any = None  # valwer.install sets it
+
+    def decode(self, *args: Any) -> list[FakeHypothesis]:
+        return [FakeHypothesis(h) for h in self._hyps]
+
+    def _wrap_update(self, fn: Any) -> Any:
+        def wrapped(*a: Any, **kw: Any) -> Any:
+            self.wrapped += 1
+            return fn(*a, **kw)
+
+        return wrapped
+
+
+def test_validation_wer_scores_raw_normalised_references() -> None:
+    raw = ["Shalom (world).", "Good day, Ëve"]
+    dec = FakeDecoding()
+    refs = valwer.RawReferences(raw, lambda t: dec.decode_ids_to_str(dec.ids(t)))
+    assert len(refs) == 2
+    assert refs.reference(dec.decode_ids_to_str(dec.ids("Shalom (world)."))) == "Shalom (world)."
+    assert refs.reference("not in the manifest") == "not in the manifest"
+    assert valwer.counts("shalom world", "Shalom (world).") == (0, 2)
+    assert valwer.counts("good day eve", "Good day, Ëve") == (1, 3)  # ë is not e
+    assert valwer.counts("ab", "abc", use_cer=True) == (1, 3)
+
+    metric = FakeWER(["shalom world", "good day eve"])
+    valwer.install(metric, refs)
+    targets = [dec.ids(t) for t in raw]
+    width = max(len(t) for t in targets)
+    padded = torch.tensor([t + [0] * (width - len(t)) for t in targets])
+    metric.update(
+        predictions=torch.zeros(2, 3),
+        predictions_lengths=torch.tensor([3, 3]),
+        targets=padded,
+        targets_lengths=torch.tensor([len(t) for t in targets]),
+    )
+    # Tokenized, the references would read "shalom ⁇world⁇." and "good day, ⁇ve": two words wrong, not one.
+    assert (int(metric.scores), int(metric.words)) == (1, 5)
+    assert metric.wrapped == 1
+    assert [h.text for h in metric.hypotheses] == ["shalom world", "good day eve"]
 
 
 def test_validation_checkpoints_are_published_and_the_best_is_linked(tmp_path: Path) -> None:

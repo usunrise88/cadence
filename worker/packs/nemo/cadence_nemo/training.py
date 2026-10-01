@@ -419,6 +419,24 @@ def portable_config(model: Any) -> Iterator[None]:
                 model.cfg[section][key] = value
 
 
+def install_raw_reference_wer(model: Any, texts: Sequence[str]) -> int:
+    """Validation WER against the validation manifest's raw texts, normalised as evaluations are
+    (:mod:`cadence_nemo.valwer`), on every WER metric the model validates with; returns how many it patched."""
+    from cadence_nemo import valwer
+
+    metrics: list[Any] = []
+    for m in (getattr(model, "wer", None), getattr(getattr(model, "joint", None), "_wer", None)):
+        if m is not None and hasattr(m, "decoding") and all(m is not x for x in metrics):
+            metrics.append(m)
+    if not metrics:
+        return 0
+    decoding = metrics[0].decoding
+    refs = valwer.RawReferences(texts, lambda t: str(decoding.decode_ids_to_str(model.tokenizer.text_to_ids(t))))
+    for m in metrics:
+        valwer.install(m, refs)
+    return len(metrics)
+
+
 def save_nemo(model: Any, d: Path) -> None:
     """Write ``model.nemo`` of the model as it is now into directory d, during training."""
     from cadence_nemo.checkpoint import NEMO_FILE

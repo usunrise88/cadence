@@ -28,7 +28,9 @@ clean}` turns it off.
 
 Metrics during training (every `log_every` steps): `loss` (the RNN-T loss, a per-utterance sum, so it moves with clip
 length), `lr`, `grad_norm` (before clipping), `throughput_audio_s_per_s`, `gpu_memory_mb`; `val_wer` after every
-validation (every `val_every` steps and at the end; raw text, language tags stripped).
+validation (every `val_every` steps and at the end), scored against the validation manifest's raw text (language tags
+stripped; not the tokenized reference, where characters outside the vocabulary turn into `⁇`) with hypothesis and
+reference normalised as evaluations are (NFKC, case-folded, no punctuation).
 
 Outputs:
 

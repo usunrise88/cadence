@@ -283,6 +283,8 @@ class FinetuneStep:
         training.setup_train_dataloader(model, train_cfg, profile)
         training.setup_val_dataloader(model, val_cfg)
         training.setup_optimization(model, optim_cfg)
+        patched = training.install_raw_reference_wer(model, [lang.strip_tags(c.text) for c in val])
+        ctx.log("validation WER on raw, normalised references", metrics=patched, references=len(val))
         ctx.progress(start_step / max(1, p.steps), f"training from step {start_step}")
         trainer.fit(model, ckpt_path=str(ctx.resume_from / ck.STATE_CKPT) if ctx.resume_from else None)
 

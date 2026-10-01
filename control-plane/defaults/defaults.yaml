@@ -378,6 +378,12 @@ data:
     description: Share of an import's speakers (or, without speakers, of its distinct transcripts) held out as the validation split by the speaker-disjoint split rule
     source: Cadence recommendation (docs/spec/03-pipelines-defaults.md starter pipeline, speaker_disjoint_split val_share 0.02)
     range: { min: 0, max: 0.5 }
+  min_validation_utterances:
+    value: 100
+    unit: utterances
+    description: Fewest validation utterances a speaker-disjoint import holds out; when validation_share yields fewer, more whole speakers (or transcripts) move to validation, never past half the import
+    source: docs/review/2026-10-01-phase-2-rehearsal.md (a 3 h FLEURS import at share 0.02 left 19 validation clips, so validation WER moved in steps of three words)
+    range: { min: 0, max: 100000 }
   max_hours:
     value: 0
     unit: h

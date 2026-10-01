@@ -48,7 +48,14 @@ def test_default_refs_resolve_in_defaults_yaml() -> None:
     doc = yaml.safe_load(DEFAULTS.read_text(encoding="utf-8"))
     props = di.DatasetImportParams.model_json_schema()["properties"]
     refs = {k: v["x-cadence"]["defaultRef"] for k, v in props.items() if "defaultRef" in v["x-cadence"]}
-    assert set(refs) == {"max_hours", "max_utterances", "validation_share", "sample_rate", "text_normalisation"}
+    assert set(refs) == {
+        "max_hours",
+        "max_utterances",
+        "validation_share",
+        "min_validation_utterances",
+        "sample_rate",
+        "text_normalisation",
+    }
     for field, ref in refs.items():
         section, key = ref.split(".")
         assert doc[section][key]["value"] == props[field]["default"], ref
@@ -105,6 +112,39 @@ def test_without_speakers_the_same_sentence_stays_together(tmp_path: Path) -> No
         assert lines[0]["split"] == lines[1]["split"], "clips 1 and 2 read the same sentence"
     _, lines, _ = run(tmp_path / "zero", params(format="folder-csv", path=str(FIX), validation_share=0.0))
     assert {x["split"] for x in lines} == {"train"}
+
+
+def test_validation_is_topped_up_with_whole_groups() -> None:
+    def lines() -> list[dict[str, Any]]:
+        # 40 speakers of 5 utterances, all in train (as a tiny share would leave them).
+        return [{"split": "train", "speaker": f"s{i // 5}", "text": f"t{i}"} for i in range(200)]
+
+    got = lines()
+    assert di.top_up_validation(got, 23) == 25  # five whole speakers: the first that reaches 23
+    val = [x for x in got if x["split"] == "validation"]
+    assert len(val) == 25
+    assert all(len({x["split"] for x in got if x["speaker"] == s}) == 1 for s in {x["speaker"] for x in got})
+    # The next speakers in line are the ones with the lowest split fraction, as the share would have picked them.
+    order = sorted({x["speaker"] for x in got}, key=lambda s: di._fraction(di.split_group(s, "")))
+    assert {x["speaker"] for x in val} == set(order[:5])
+    # Never past half of the import; enough already moves nothing.
+    capped = lines()
+    assert di.top_up_validation(capped, 1000) == 100
+    assert di.top_up_validation(capped, 50) == 0
+    # Without speakers a transcript is the group.
+    plain = [{"split": "train", "text": t} for t in ("a", "A", "b", "c")]
+    assert di.top_up_validation(plain, 1) in (1, 2)
+    assert plain[0]["split"] == plain[1]["split"], "the same sentence (case-folded) stays together"
+
+
+def test_import_tops_up_a_small_validation_split(tmp_path: Path) -> None:
+    p = params(format="folder-csv", path=str(FIX), validation_share=0.0001, min_validation_utterances=1)
+    header, lines, _ = run(tmp_path, p)
+    assert header["counts"]["validation"] >= 1
+    assert header["counts"]["validation"] * 2 <= len(lines)
+    off = params(format="folder-csv", path=str(FIX), validation_share=0.0001, min_validation_utterances=0)
+    header, _, _ = run(tmp_path / "off", off)
+    assert header["counts"]["validation"] == 0
 
 
 def test_caps_and_eval_only(tmp_path: Path) -> None:
