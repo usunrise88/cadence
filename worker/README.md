@@ -75,8 +75,13 @@ class TrainStep:
   `CADENCE_STOP_GRACE_SECONDS` (60) the process group is killed.
 - Card: GPU steps see their card as device 0 (`CUDA_VISIBLE_DEVICES`), `CADENCE_MEMORY_CAP_MB` holds the lease's cap and
   the harness applies `torch.cuda.set_per_process_memory_fraction` when torch is present. CPU steps get no card.
-- Secrets from the lease exist only in the step process's environment and are redacted from forwarded logs; the
-  worker's own token and URL are removed from it.
+- Secrets from the lease exist only in the step process's environment; the worker's own token and URL are removed from
+  it. Everything the step reports (log lines and fields, progress messages, output meta, the error message) has each
+  secret value and every credential-shaped token (`cdk_`/`cst_`/`cwk_`/`cah_`/`cep_`, `hf_`, `Bearer …`) replaced by
+  `[redacted]` before it leaves the worker (`cadence_worker.sanitize`).
+- Non-finite numbers (NaN, ±inf: `val_wer` = 0/0) never leave the worker: such a metric point is dropped with one
+  warning line per name, such a publication or outcome metric is dropped with a warning line, and in meta it becomes
+  `null`. The client serialises with `allow_nan=False`.
 
 Adding a step: one module, its schema, `docs/help/steps/<kind>.md` (underscores become dashes: `toy_train` →
 `steps.toy-train`), an entry point. A runtime-neutral core kind (such

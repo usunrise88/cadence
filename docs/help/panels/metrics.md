@@ -16,6 +16,10 @@ and max) — the same numbers an agent reads. The browser only smooths, zooms an
 `run.{id}.metrics` and are appended (`afterStep`), at most one read per second; the charts redraw at most four times a
 second. Checkpoints are marked on every chart (▼ checkpoint, ◆ best by validation WER).
 
+A value that is not a finite number (NaN or infinity — validation WER of an empty validation set is 0/0) is not
+recorded: the worker drops the point and writes one warning per metric name to the step's log, so the chart has a gap
+there. In a checkpoint's meta such a value is empty (`null`).
+
 Every chart has **Table** (the raw numbers) and **Copy CSV**, a keyboard cursor (arrows, Home/End) read out in a live
 region, and a legend whose buttons show and hide a series. Colour is never the only channel: each series also has its
 dash.

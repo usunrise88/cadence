@@ -12,6 +12,10 @@ writes each line as `{t, level, msg, fields}`; the panel shows the line number, 
 amber, error red; the level is also written out, so colour is never the only sign), the message and its fields as
 `key=value`.
 
+The worker redacts before anything leaves it: each secret value it injected into the step and every credential-shaped
+token (`cdk_…`, `cst_…`, `cwk_…`, `hf_…`, `Bearer …`) reads `[redacted]` in log lines and fields, progress messages,
+output meta and the step's error message — agents read all of them.
+
 It opens with the last 2 000 lines (`jobLogs.list` with `tail=true`) and then streams new lines on `job.{id}.log`
 while the panel is visible. A long log renders only the lines in view, so a run's whole log stays fast (up to 20 000
 lines in the panel; older lines stay in the job's log file).
