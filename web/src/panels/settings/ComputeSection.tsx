@@ -13,9 +13,32 @@ import { windowRows, WindowsEditor } from "./WindowsEditor";
 // the form shows both instead of overwriting (docs/spec/11 "Risks": revision conflicts, not silent overwrites).
 // Availability windows per card and job kind (R19) are edited here too; Queue & GPU shows them.
 
-export const JOB_KINDS: JobKind[] = ["training", "eval", "shadow", "export"];
+export const JOB_KINDS: JobKind[] = ["training", "eval", "shadow", "export", "data"];
 
-type CardDraft = { memoryCapGb: string; allowedJobKinds: JobKind[]; windows?: AvailabilityWindows };
+// A card's name, class and memory are editable too: a host seeded with the wrong card (an older defaults.yaml) is
+// corrected here, and the class keys the estimate table.
+type CardDraft = {
+  memoryCapGb: string;
+  allowedJobKinds: JobKind[];
+  windows?: AvailabilityWindows;
+  name?: string;
+  cardClass?: string;
+  memoryGb?: string;
+};
+
+const CARD_CLASS = /^[a-z0-9][a-z0-9-]{0,62}$/;
+
+/** Why a card draft cannot be saved, or undefined. */
+export function cardDraftError(d: CardDraft, c: ComputeCard): string | undefined {
+  const mem = d.memoryGb === undefined ? c.memoryGb : Number(d.memoryGb);
+  const cap = Number(d.memoryCapGb);
+  if (!(mem > 0)) return "memory must be above 0";
+  if (!(cap > 0)) return "memory cap must be above 0";
+  if (cap > mem) return "the cap cannot exceed the card's memory";
+  if (d.cardClass !== undefined && !CARD_CLASS.test(d.cardClass)) return "class: lowercase letters, digits and dashes";
+  if (d.name !== undefined && !d.name.trim()) return "name is required";
+  return undefined;
+}
 
 const sameWindows = (a: AvailabilityWindows | undefined, b: AvailabilityWindows | undefined) => JSON.stringify(windowRows(a)) === JSON.stringify(windowRows(b));
 
@@ -27,11 +50,14 @@ export function cardEdits(base: ComputeHost, draft: Record<number, CardDraft>): 
     if (!d) continue;
     const cap = Number(d.memoryCapGb);
     const e: ComputeCardEdit = { index: c.index };
+    if (d.name !== undefined && d.name.trim() !== c.name) e.name = d.name.trim();
+    if (d.cardClass !== undefined && d.cardClass !== c.cardClass) e.cardClass = d.cardClass;
+    if (d.memoryGb !== undefined && Number(d.memoryGb) !== c.memoryGb) e.memoryGb = Number(d.memoryGb);
     if (cap !== c.memoryCapGb) e.memoryCapGb = cap;
     const kinds = JOB_KINDS.filter((k) => d.allowedJobKinds.includes(k));
     if (kinds.join() !== JOB_KINDS.filter((k) => c.allowedJobKinds.includes(k)).join()) e.allowedJobKinds = kinds;
     if (d.windows !== undefined && !sameWindows(d.windows, c.windows)) e.windows = d.windows;
-    if (e.memoryCapGb !== undefined || e.allowedJobKinds || e.windows) out.push(e);
+    if (Object.keys(e).length > 1) out.push(e);
   }
   return out;
 }
@@ -83,7 +109,7 @@ function HostCard({ host, seeded }: { host: ComputeHost; seeded?: DefaultHost })
 
   const start = () => {
     setBase(host);
-    setDraft(Object.fromEntries(host.cards.map((c) => [c.index, { memoryCapGb: String(c.memoryCapGb), allowedJobKinds: [...c.allowedJobKinds], windows: c.windows ?? {} }])));
+    setDraft(Object.fromEntries(host.cards.map((c) => [c.index, { memoryCapGb: String(c.memoryCapGb), allowedJobKinds: [...c.allowedJobKinds], windows: c.windows ?? {}, name: c.name, cardClass: c.cardClass, memoryGb: String(c.memoryGb) }])));
     setError(null);
     setConflict(null);
   };
@@ -114,7 +140,7 @@ function HostCard({ host, seeded }: { host: ComputeHost; seeded?: DefaultHost })
     }
   };
 
-  const invalid = editing && Object.values(draft).some((d) => !(Number(d.memoryCapGb) > 0) || windowRows(d.windows).some((r) => windowError(r.window)));
+  const invalid = editing && host.cards.some((c) => { const d = draft[c.index]; return !!d && (!!cardDraftError(d, c) || windowRows(d.windows).some((r) => windowError(r.window))); });
   return (
     <div className="rounded-md border" data-testid={`compute-host-${host.name}`}>
       <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2">
@@ -154,9 +180,47 @@ function HostCard({ host, seeded }: { host: ComputeHost; seeded?: DefaultHost })
             <Fragment key={c.index}>
               <tr>
                 <Td className="tabular-nums">{c.index}</Td>
-                <Td>{c.name}</Td>
-                <Td className="font-mono">{c.cardClass}</Td>
-                <Td className="tabular-nums">{c.memoryGb} GB</Td>
+                {editing && d ? (
+                  <>
+                    <Td>
+                      <Input
+                        aria-label={`Name of card ${c.index}`}
+                        value={d.name ?? c.name}
+                        onChange={(e) => setDraft((s) => ({ ...s, [c.index]: { ...d, name: e.target.value } }))}
+                        className="h-6 w-56 text-xs"
+                      />
+                    </Td>
+                    <Td>
+                      <Input
+                        aria-label={`Class of card ${c.index}`}
+                        value={d.cardClass ?? c.cardClass}
+                        onChange={(e) => setDraft((s) => ({ ...s, [c.index]: { ...d, cardClass: e.target.value } }))}
+                        className="h-6 w-36 font-mono text-xs"
+                        aria-invalid={(d.cardClass !== undefined && !CARD_CLASS.test(d.cardClass)) || undefined}
+                      />
+                    </Td>
+                    <Td>
+                      <div className="flex items-center gap-1">
+                        <Input
+                          aria-label={`Memory of card ${c.index} (GB)`}
+                          type="number"
+                          min={1}
+                          step={1}
+                          value={d.memoryGb ?? String(c.memoryGb)}
+                          onChange={(e) => setDraft((s) => ({ ...s, [c.index]: { ...d, memoryGb: e.target.value } }))}
+                          className="h-6 w-20 text-xs"
+                        />
+                        <span className="text-muted-foreground">GB</span>
+                      </div>
+                    </Td>
+                  </>
+                ) : (
+                  <>
+                    <Td>{c.name}</Td>
+                    <Td className="font-mono">{c.cardClass}</Td>
+                    <Td className="tabular-nums">{c.memoryGb} GB</Td>
+                  </>
+                )}
                 <Td>
                   <div className="flex items-center gap-1">
                     {editing && d ? (
@@ -168,7 +232,7 @@ function HostCard({ host, seeded }: { host: ComputeHost; seeded?: DefaultHost })
                           id={capId}
                           type="number"
                           min={1}
-                          max={c.memoryGb}
+                          max={Number(d.memoryGb ?? c.memoryGb)}
                           step={1}
                           value={d.memoryCapGb}
                           onChange={(e) => setDraft((s) => ({ ...s, [c.index]: { ...d, memoryCapGb: e.target.value } }))}
@@ -184,6 +248,7 @@ function HostCard({ host, seeded }: { host: ComputeHost; seeded?: DefaultHost })
                     {!editing && departs ? <Chip tone="accent" title={`Default ${String(def?.value)} GB`}>departs from default</Chip> : null}
                   </div>
                   {warn ? <span className="text-status-warning-foreground">{warn}</span> : null}
+                  {editing && d && cardDraftError(d, c) ? <span className="text-status-failed-foreground">{cardDraftError(d, c)}</span> : null}
                 </Td>
                 <Td>
                   {editing && d ? (

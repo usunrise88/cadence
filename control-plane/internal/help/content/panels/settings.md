@@ -10,7 +10,7 @@ A tool panel for the admin account only (it opens floating; View → Open Settin
 
 | Section | What it holds |
 | --- | --- |
-| Compute | Hosts and their cards: memory, memory cap per card, allowed job kinds (training, eval, shadow, export, data), availability windows per job kind (R19: days, start, end, time zone — the instance time zone when a window names none; a job starts only if its estimate fits before the window closes, and a running training job pauses at the close and resumes in the next window — edited per card under Edit: add a window, pick the job kind, days, opening and closing time (HH:MM, 24:00 for midnight; a close before the open means the next day) and an optional time zone; Queue & GPU shows them), the last telemetry a worker reported, health (from worker heartbeats) |
+| Compute | Hosts and their cards: name, card class (keys the estimate table), memory, memory cap per card — all editable under Edit, so a card seeded wrongly is corrected in place — allowed job kinds (training, eval, shadow, export, data), availability windows per job kind (R19: days, start, end, time zone — the instance time zone when a window names none; a job starts only if its estimate fits before the window closes, and a running training job pauses at the close and resumes in the next window — edited per card under Edit: add a window, pick the job kind, days, opening and closing time (HH:MM, 24:00 for midnight; a close before the open means the next day) and an optional time zone; Queue & GPU shows them), the last telemetry a worker reported, health (from worker heartbeats) |
 | Agents | The agents' own model accounts, for the whole instance: the Claude Code subscription token and opencode's providers (MiniMax, Anthropic, OpenAI, OpenRouter, DeepSeek, or an OpenAI-compatible base URL such as a self-hosted vLLM); status, expected expiry, Verify, and the default opencode model of new projects. Values are write-only |
 | Secrets | Named credentials (Hugging Face, NGC, GitHub, S3, judge API): name, kind, scope, who added it, last use. The value is write-only |
 | Credentials | API keys (`cdk_…`) scoped to one project and/or registry read — and, opt-in, **May run agent sessions in the project** (automation such as the agent evals; everything else stays under the default preset); your browser sessions; agent session tokens |
@@ -33,7 +33,7 @@ server refuses values outside the ranges it enforces.
 
 | Field | Default | Source |
 | --- | --- | --- |
-| Memory cap (staging card) | 24 GB of 48 GB | docs/review/2026-09-30-phase-2-plan.md (RTX PRO 5000 Blackwell 48 GB beside a resident vLLM service: memory fraction 0.5) |
+| Memory cap (staging card) | 22 GB of 48 GB | docs/spikes/A3-nemotron-finetune.md (RTX PRO 5000 Blackwell 48 GB beside a resident vLLM service of 23.8 GB) |
 | GPU-hours per project per day | 8 GPU-h (0–192) | Cadence recommendation |
 | Agent turns per session | 200 turns (1–2000) | Cadence recommendation |
 | Instance timezone | `UTC` | Cadence recommendation |

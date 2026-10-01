@@ -6,7 +6,7 @@ import { computeListQueryKey, defaultsGetQueryKey, policiesGetQueryKey } from "@
 import type { ComputeHost, Credential, Defaults, Policies } from "@/api/gen/types.gen";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { PanelContext } from "@/shell/panel/context";
-import { capDefault, cardEdits, ComputeSection } from "./ComputeSection";
+import { capDefault, cardDraftError, cardEdits, ComputeSection } from "./ComputeSection";
 import { isActive, mergeCredential, TokenOnce } from "./CredentialsSection";
 import { departureLabel, PoliciesSection } from "./PoliciesSection";
 import { SecretForm } from "./SecretsSection";
@@ -108,6 +108,16 @@ describe("compute", () => {
     expect(cardEdits(host, { 0: { memoryCapGb: "24", allowedJobKinds: ["training", "eval", "shadow", "export"] } })).toEqual([]);
     expect(cardEdits(host, { 0: { memoryCapGb: "32", allowedJobKinds: ["eval", "training", "shadow", "export"] } })).toEqual([{ index: 0, memoryCapGb: 32 }]);
     expect(cardEdits(host, { 0: { memoryCapGb: "24", allowedJobKinds: ["training"] } })).toEqual([{ index: 0, allowedJobKinds: ["training"] }]);
+    // A wrongly seeded card is corrected: name, class and memory go out only when they changed.
+    expect(cardEdits(host, { 0: { memoryCapGb: "22", allowedJobKinds: ["training", "eval", "shadow", "export", "data"], name: "Staging card", cardClass: "blackwell-48gb", memoryGb: "48" } })).toEqual([
+      { index: 0, memoryCapGb: 22, allowedJobKinds: ["training", "eval", "shadow", "export", "data"] },
+    ]);
+    expect(cardEdits(host, { 0: { memoryCapGb: "24", allowedJobKinds: host.cards[0]!.allowedJobKinds, name: "RTX PRO 5000", cardClass: "rtx-pro-5000", memoryGb: "64" } })).toEqual([
+      { index: 0, name: "RTX PRO 5000", cardClass: "rtx-pro-5000", memoryGb: 64 },
+    ]);
+    expect(cardDraftError({ memoryCapGb: "50", allowedJobKinds: [], memoryGb: "48" }, host.cards[0]!)).toMatch(/cannot exceed/);
+    expect(cardDraftError({ memoryCapGb: "22", allowedJobKinds: [], cardClass: "Bad Class" }, host.cards[0]!)).toMatch(/class/);
+    expect(cardDraftError({ memoryCapGb: "22", allowedJobKinds: [], memoryGb: "48" }, host.cards[0]!)).toBeUndefined();
   });
 
   it("explains the cap's default from the seeded host", () => {
