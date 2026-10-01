@@ -114,9 +114,11 @@ tools:
   # "GPU job within the session budget → allowed; over budget → approval" (the estimate comes from the dry run; the
   # budget is the project's GPU-hours per day and the session's, metered from lease time on GPU cards). A dry run
   # never waits: it answers the estimate with a Cadence-Policy header naming the approval the real call would need.
+  # A cost Cadence cannot estimate (a step without a measured or declared estimate) fails closed: approval.
   - id: gpu-spend
     class: spend
-    operations: [runs.new, runs.calibrate, runs.resume, runs.stage, checkpoints.average, evals.new, pipelines.run, sweeps.run]
+    operations: [runs.new, runs.calibrate, runs.resume, runs.stage, checkpoints.average, evals.new, pipelines.run, sweeps.run,
+      pipelineRuns.retry, jobs.resume]
     reason: the job spends GPU time
 
   # "Read any entity, log, metric or result" → allowed.
@@ -140,7 +142,10 @@ files:
 shell:
   default: ask
   # File contents are read with the agent's own read tool, which the `files` rules cover; cat and friends ask.
-  allow: ["git status", "git diff *", "git log *", "git show *", "ls *", "wc *", "uv run *", "python *",
+  # git add / commit stay in the worktree: the host scans everything since the last push for credentials and pushes
+  # it at the end of the turn (an agent's own commits included), so they need no person.
+  allow: ["git status", "git status *", "git diff *", "git log *", "git show *", "git add *", "git commit *", "ls *",
+          "wc *", "uv run *", "python *",
           "python3 *", "pytest *", "jq *", "yq *"]
   ask: ["pip install *", "uv add *", "uv pip install *", "rm *", "mv *"]
   deny: ["git push *", "git remote *", "git config *", "sudo *", "ssh *", "scp *", "curl *", "wget *", "nc *",

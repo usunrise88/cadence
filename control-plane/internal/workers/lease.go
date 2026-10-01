@@ -322,15 +322,26 @@ func (s *Service) endWaiting(ctx context.Context, tx pgx.Tx, jobID string, o ste
 // Reap ends the leases whose worker missed three heartbeats: each step job ends as failed with error type lost
 // (the pipeline engine decides about a retry) and its card is free again. It also marks hosts whose workers all went
 // quiet as unreachable. It reports how many leases it reaped.
+//
+// Beats missed while the control plane itself was down are not the worker's: for the first lostAfter after this
+// service started nothing is reaped (a live worker reports again within one beat, and its release of a step that
+// finished meanwhile still lands), and hosts are judged quiet only once their workers had a full claim wait to
+// come back.
 func (s *Service) Reap(ctx context.Context) (int, error) {
 	n := 0
+	now := s.now()
+	if now.Before(s.started.Add(s.lostAfter())) {
+		return 0, nil
+	}
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-		now := s.now()
 		drafts, err := s.reapWhere(ctx, tx, "heartbeat_at < $1", now.Add(-s.lostAfter()))
 		if err != nil {
 			return err
 		}
 		n = len(drafts)
+		if now.Before(s.started.Add(MaxClaimWait + s.lostAfter())) {
+			return events.Append(ctx, tx, jobs.System, nil, drafts)
+		}
 		rows, err := tx.Query(ctx, `SELECT w.host_id FROM workers w JOIN compute_hosts h ON h.id = w.host_id
 			WHERE h.health->>'state' = 'healthy' GROUP BY w.host_id HAVING max(w.last_seen_at) < $1`,
 			now.Add(-MaxClaimWait-s.lostAfter()))

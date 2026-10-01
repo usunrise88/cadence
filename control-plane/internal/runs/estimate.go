@@ -86,6 +86,7 @@ type Estimate struct {
 	Data                 Data
 	DailyBudget          float64
 	UsedToday            float64
+	Committed            float64 // queued and running steps' remaining estimates (ProjectBudget.Committed)
 	WithinBudget         bool
 	SessionBudget        *SessionBudget
 	Source               string
@@ -187,8 +188,8 @@ func EstimateRun(ctx context.Context, q storage.Querier, d *defaults.Defaults, i
 	if err != nil {
 		return Estimate{}, err
 	}
-	e.DailyBudget, e.UsedToday = b.PerDay, b.Used
-	e.WithinBudget = b.Used+e.GPUHours.Value <= b.PerDay
+	e.DailyBudget, e.UsedToday, e.Committed = b.PerDay, b.Used, b.Committed
+	e.WithinBudget = e.GPUHours.Value <= b.Remaining()
 	if in.SessionID != "" {
 		sb, err := SessionBudgetOf(ctx, q, d, in.SessionID)
 		if err != nil {

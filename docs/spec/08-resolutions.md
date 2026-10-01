@@ -156,11 +156,18 @@ pipeline and a written value is a visible departure.
 - Training: GPU-hours = steps × seconds/step for (base model, card, memory cap, precision, bucket config).
   As built (2026-10-01): plus a fixed per-lease overhead (model load, final validation, saves) — the calibration's
   measured `leaseOverheadSeconds`, else `estimates.lease_overhead_seconds` (120 s, gate rehearsal); ± on the steps.
-  Seconds/step is *measured* by `runs.calibrate` (OOMptimizer plus 50 timed steps) and cached; before any
+  Seconds/step is *measured* by `runs.calibrate` (OOMptimizer plus 50 timed steps) and cached; the cache is shared
+  by all projects, so only the family's calibrate step of `runs.calibrate` or of a run from the base model, on the
+  key's base model, precision and card, replaces an entry (control-plane audit, 2026-10-01); other calibration
+  outputs are recorded unshared (`calibration_observations`). Before any
   calibration a table in `defaults.yaml` answers, seeded from A3.
 - Eval: audio hours × RTF for (model size, card, latency setting), from the benchmark cache, seeded from A3.
 - Data: bytes to materialise from the shard index.
 - Every estimate carries `basis: measured | table` and ±; approvals show it. Phase 1 ships the table path only.
+- Budgets (as built, 2026-10-01, after the phase-2 audit): the remaining budget subtracts committed work (the
+  remaining estimates of GPU steps of running pipeline runs), every spending command names an estimate
+  (`pipelineRuns.retry` and `jobs.resume` included, in the `gpu-spend` rule), and an unknown GPU cost asks for
+  approval (fail closed) instead of passing ungated.
 
 **R13 · Mix** (C5, `mixes.edit`)
 A mix is project work with revisions (`mixes.new`, `mixes.edit`, `mixes.preview`); "save as version" becomes "save".

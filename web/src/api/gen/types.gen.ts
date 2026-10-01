@@ -4449,6 +4449,14 @@ export type RunStageEntry = {
      * Attempts started by the automatic OOM retry
      */
     oomRetries?: number;
+    /**
+     * The finished step (pls_…) whose outputs this step reused (same input hash); it spent no GPU time
+     */
+    reusedFrom?: string;
+    /**
+     * The run (run_…) that step belongs to, when it was a run's
+     */
+    reusedFromRun?: string;
     jobId?: string;
     /**
      * The step's job is paused (jobs.pause)
@@ -5062,6 +5070,22 @@ export type EvictionPlan = {
      * True when no backup mirror is configured: nothing can bring the blobs back
      */
     permanent: boolean;
+    disk?: StoreDisk;
+};
+
+/**
+ * The filesystem holding the content store, as the control plane sees it now
+ */
+export type StoreDisk = {
+    totalBytes: number;
+    /**
+     * Bytes available to the control plane
+     */
+    freeBytes: number;
+    /**
+     * Below this share free, Cadence warns (cache.store_low_free)
+     */
+    lowFreeFraction: number;
 };
 
 export type EvictionKept = {

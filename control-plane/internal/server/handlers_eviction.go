@@ -11,6 +11,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/api"
 	"github.com/usunrise88/cadence/control-plane/internal/auth"
 	"github.com/usunrise88/cadence/control-plane/internal/commands"
+	"github.com/usunrise88/cadence/control-plane/internal/defaults"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
 	"github.com/usunrise88/cadence/control-plane/internal/eviction"
 	"github.com/usunrise88/cadence/control-plane/internal/problems"
@@ -62,6 +63,9 @@ func (s *Server) ArtifactsEvict(ctx context.Context, req api.ArtifactsEvictReque
 			return commands.Result{}, nil, err
 		}
 		if cmd.DryRun {
+			if p.Disk, err = s.Eviction.Disk(defaults.Get()); err != nil {
+				s.Log.WarnContext(ctx, "content store disk not readable", "err", err)
+			}
 			return commands.Result{Status: http.StatusOK, Body: p}, nil, nil
 		}
 		j, drafts, err := s.Eviction.Enqueue(ctx, tx, p, commands.ReplayedApproval(ctx))

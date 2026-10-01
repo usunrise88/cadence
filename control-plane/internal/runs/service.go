@@ -203,12 +203,23 @@ func (s *Service) Prepare(ctx context.Context, q storage.Querier, in NewInput) (
 	if err != nil {
 		return Prepared{}, err
 	}
+	stepParams, err := sharedOverrides(ctx, q, p.Source.Pipeline, p.TrainStep, p.Params)
+	if err != nil {
+		return Prepared{}, err
+	}
 	p.Start = pipelines.StartInput{
 		ProjectID: in.ProjectID, Name: p.Source.Pipeline.Name, Ref: in.Ref, Version: p.Source.Version, Inputs: inputs,
-		Params: map[string]map[string]any{p.TrainStep: p.Params}, Actor: in.Actor, Priority: in.Priority,
+		Params: stepParams, Actor: in.Actor, Priority: in.Priority,
 	}
 	if _, p.Plan, err = s.Engine.Prepare(ctx, q, p.Start); err != nil {
 		return Prepared{}, err
+	}
+	for _, ps := range p.Plan.Steps {
+		if ps.Step == p.TrainStep {
+			if err := CheckLanguages(p.Base.Name, p.Base.Tags, ps.Params, p.Mix.Locales); err != nil {
+				return Prepared{}, err
+			}
+		}
 	}
 	resolved := d.Training.Steps.Value
 	for _, ps := range p.Plan.Steps {
@@ -234,6 +245,38 @@ func (s *Service) Prepare(ctx context.Context, q storage.Querier, in NewInput) (
 }
 
 // setParam sets the train step's parameter name from v when given; a train kind without it cannot take it.
+// sharedOverrides gives the train step its overrides and every other step of the stage the ones its kind marks
+// x-cadence.shared (a calibration then measures the language and precision the training uses). A value the pipeline
+// file sets on a step stays a departure of that file; the run's override wins, as it does on the train step.
+func sharedOverrides(ctx context.Context, q storage.Querier, pl pipelines.Pipeline, train string, params map[string]any) (map[string]map[string]any, error) {
+	out := map[string]map[string]any{train: params}
+	for _, st := range pl.Steps {
+		if st.ID == train {
+			continue
+		}
+		name, version, ok := st.KindRef()
+		if !ok {
+			continue
+		}
+		k, found, err := (pipelines.RegistryKinds{}).Lookup(ctx, q, name, version)
+		if err != nil {
+			return nil, err
+		}
+		if !found {
+			continue
+		}
+		for key, v := range params {
+			if sharedParam(k, key) {
+				if out[st.ID] == nil {
+					out[st.ID] = map[string]any{}
+				}
+				out[st.ID][key] = v
+			}
+		}
+	}
+	return out, nil
+}
+
 func setParam(params map[string]any, k pipelines.Kind, name string, v *int) error {
 	if v == nil {
 		return nil
@@ -713,7 +756,7 @@ func (s *Service) StartCalibration(ctx context.Context, tx pgx.Tx, cp Calibratio
 				continue
 			}
 			if _, err := s.calibrationHook(ctx, tx, steps.Output{ProjectID: pr.ProjectID, PipelineRunID: pr.ID, StepID: st.ID, Name: name,
-				Artifact: ref, Metrics: st.Metrics}); err != nil {
+				Artifact: ref, Metrics: st.Metrics, Spec: stepSpec(st, pr.ProjectID, "")}); err != nil {
 				return pipelines.Run{}, nil, err
 			}
 		}

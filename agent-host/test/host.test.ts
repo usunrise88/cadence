@@ -187,6 +187,42 @@ describe("session manager", () => {
     assert.equal(h.manager.sessions.size, 0);
   });
 
+  test("the agent's own commits are pushed at the end of the turn", async () => {
+    const h = harness();
+    const st = startFor();
+    const s = run(h, st);
+    await waitFor("running", () => h.cp.states().includes("running"));
+    say(h, st, "commit plan.txt train longer");
+    await waitFor("the turn", () => turnsEnded(h.cp) === 1 && h.cp.states().at(-1) === "running");
+    await s.idle();
+    const commit = h.cp.entries().find((e) => e.kind === "commit");
+    assert.deepEqual(commit?.commit?.files, ["plan.txt"]);
+    assert.equal(git(root, "--git-dir", origin, "rev-parse", st.session.branch).trim(), commit?.commit?.sha, "the agent's commit is pushed");
+    assert.equal(git(root, "--git-dir", origin, "log", "-1", "--format=%s", st.session.branch).trim(), "agent: plan.txt", "with its own message");
+    control(h, st, "end");
+    await waitFor("done", () => h.cp.states().at(-1) === "done");
+  });
+
+  test("an agent's own commit holding a credential is undone, not pushed", async () => {
+    const h = harness();
+    const st = startFor();
+    const s = run(h, st);
+    await waitFor("running", () => h.cp.states().includes("running"));
+    const before = git(root, "--git-dir", origin, "rev-parse", st.session.branch).trim();
+    say(h, st, "commitsecret");
+    await waitFor("the turn", () => turnsEnded(h.cp) === 1 && h.cp.states().at(-1) === "running");
+    await s.idle();
+    const commit = h.cp.entries().find((e) => e.kind === "commit");
+    assert.equal(commit?.commit?.refused, true);
+    assert.equal(git(root, "--git-dir", origin, "rev-parse", st.session.branch).trim(), before, "nothing was pushed");
+    const wt = join(h.dataDir, "sessions", st.session.id, "worktree");
+    assert.equal(git(wt, "rev-parse", "HEAD").trim(), before, "the agent's commit is undone");
+    const left = h.cp.last((b) => b.working !== undefined)?.working;
+    assert.deepEqual(left?.files.map((f) => [f.path, f.status]), [["leak.txt", "added"]], "the file stays a working change");
+    control(h, st, "end");
+    await waitFor("done", () => h.cp.states().at(-1) === "done");
+  });
+
   test("a staged credential refuses the commit and tells the agent", async () => {
     const h = harness();
     const st = startFor();

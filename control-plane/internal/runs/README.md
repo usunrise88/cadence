@@ -37,7 +37,13 @@ step kind of each role (`calibrate`, `train`, `average`).
   `calibration_requests` records the key (base model collection, card class, memory cap, precision) for the hook.
   The hook caches `secondsPerStep` (meta, else the metric `seconds_per_step`), ± (meta `plusMinus` | `spread` |
   2 × `secondsPerStepStd` / mean, else `estimates.measured_plus_minus`), batch sizes, the bucket configuration and
-  `leaseOverheadSeconds` (migration 0019); a run's own calibrate step is keyed by the run. `EstimateRun` answers
+  `leaseOverheadSeconds` (migration 0019); a run's own calibrate step is keyed by the run. The table is shared by
+  every project, so only a trusted measurement replaces an entry (`calibrationKey`): the family's calibrate kind,
+  in a runs.calibrate pipeline run or a run with init `base`, keyed by that request or run (never by artifact
+  metadata), every base_model/checkpoint input equal to the pipeline run's base model, a `precision` parameter equal
+  to the key's, and the producing lease's card (when there is one) of the key's card class and memory cap. Every
+  calibration output is recorded in `calibration_observations` (migration 0021) with `shared` and, when not, the
+  reason. `EstimateRun` answers
   `basis: measured` from the newest calibration of the key, else the defaults table (`basis: table`), else
   `estimate-unavailable`; duration = lease overhead (the calibration's, else `estimates.lease_overhead_seconds`) +
   steps × seconds per step, the ± on the steps only.

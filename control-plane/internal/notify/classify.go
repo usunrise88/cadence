@@ -29,6 +29,7 @@ var classTable = map[string]string{
 	"backup.failed":         ClassFailure,
 	"backup.restore_failed": ClassFailure,
 	"mount.unhealthy":       ClassFailure,
+	"storage.low_space":     ClassFailure,
 	// outcome
 	"gate.verdict":        ClassOutcome,
 	"deployment.promoted": ClassOutcome,
@@ -63,22 +64,49 @@ func EventTypes(class string) []string {
 }
 
 type approvalPayload struct {
-	Approval *struct {
-		ID        string `json:"id"`
-		Operation string `json:"operation"`
-		ProjectID string `json:"projectId"`
-		Reason    string `json:"reason"`
-		Actor     struct {
-			Kind string `json:"kind"`
-			ID   string `json:"id"`
-			Name string `json:"name"`
-		} `json:"actor"`
-		Estimate *struct {
-			GPUHours          float64  `json:"gpuHours"`
-			RemainingGPUHours *float64 `json:"remainingGpuHours"`
-		} `json:"estimate"`
-		ExpiresAt time.Time `json:"expiresAt"`
-	} `json:"approval"`
+	Approval *approvalView `json:"approval"`
+}
+
+// approvalView is what a person is told about an approval request (the event payload's approval, or its row).
+type approvalView struct {
+	ID        string `json:"id"`
+	Operation string `json:"operation"`
+	ProjectID string `json:"projectId"`
+	Reason    string `json:"reason"`
+	Actor     struct {
+		Kind string `json:"kind"`
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	} `json:"actor"`
+	Estimate *struct {
+		GPUHours          float64  `json:"gpuHours"`
+		RemainingGPUHours *float64 `json:"remainingGpuHours"`
+	} `json:"estimate"`
+	ExpiresAt time.Time `json:"expiresAt"`
+}
+
+// notice is the approval's Telegram message (Approve / Deny buttons through ApprovalID).
+func (a approvalView) notice() Notice {
+	who := a.Actor.Name
+	if who == "" {
+		who = a.Actor.ID
+	}
+	lines := []string{fmt.Sprintf("%s %s asks: %s", a.Actor.Kind, who, a.Reason)}
+	if a.Estimate != nil {
+		est := fmt.Sprintf("Estimate: %.1f GPU-hours", a.Estimate.GPUHours)
+		if a.Estimate.RemainingGPUHours != nil {
+			est += fmt.Sprintf(" (%.1f left in today's budget)", *a.Estimate.RemainingGPUHours)
+		}
+		lines = append(lines, est)
+	}
+	if a.ProjectID != "" {
+		lines = append(lines, "Project: "+a.ProjectID)
+	}
+	if !a.ExpiresAt.IsZero() {
+		lines = append(lines, "Expires: "+a.ExpiresAt.UTC().Format("2006-01-02 15:04 UTC"))
+	}
+	return Notice{Class: ClassApproval, Title: "Approval requested: " + a.Operation, Body: strings.Join(lines, "\n"),
+		ApprovalID: a.ID}
 }
 
 type jobPayload struct {
@@ -141,27 +169,31 @@ func Classify(r events.Record) (Notice, bool) {
 		if json.Unmarshal(r.Payload, &p) != nil || p.Approval == nil {
 			return Notice{}, false
 		}
-		a := p.Approval
-		who := a.Actor.Name
-		if who == "" {
-			who = a.Actor.ID
+		return p.Approval.notice(), true
+	case "storage.low_space":
+		var p struct {
+			TotalBytes         int64 `json:"totalBytes"`
+			FreeBytes          int64 `json:"freeBytes"`
+			EvictableArtifacts int   `json:"evictableArtifacts"`
+			EvictableBytes     int64 `json:"evictableBytes"`
+			Permanent          bool  `json:"permanent"`
 		}
-		lines := []string{fmt.Sprintf("%s %s asks: %s", a.Actor.Kind, who, a.Reason)}
-		if a.Estimate != nil {
-			est := fmt.Sprintf("Estimate: %.1f GPU-hours", a.Estimate.GPUHours)
-			if a.Estimate.RemainingGPUHours != nil {
-				est += fmt.Sprintf(" (%.1f left in today's budget)", *a.Estimate.RemainingGPUHours)
+		if json.Unmarshal(r.Payload, &p) != nil || p.TotalBytes <= 0 {
+			return Notice{}, false
+		}
+		gb := func(b int64) float64 { return float64(b) / 1e9 }
+		body := fmt.Sprintf("%.0f GB free of %.0f GB (%.0f %%).", gb(p.FreeBytes), gb(p.TotalBytes),
+			100*float64(p.FreeBytes)/float64(p.TotalBytes))
+		if p.EvictableArtifacts > 0 {
+			body += fmt.Sprintf("\n%d superseded training states (%.0f GB) can be evicted: Settings → Content store.",
+				p.EvictableArtifacts, gb(p.EvictableBytes))
+			if p.Permanent {
+				body += " No backup mirror is configured, so eviction is permanent."
 			}
-			lines = append(lines, est)
+		} else {
+			body += "\nNo training state can be evicted; free space on the disk or give the store a larger one."
 		}
-		if a.ProjectID != "" {
-			lines = append(lines, "Project: "+a.ProjectID)
-		}
-		if !a.ExpiresAt.IsZero() {
-			lines = append(lines, "Expires: "+a.ExpiresAt.UTC().Format("2006-01-02 15:04 UTC"))
-		}
-		return Notice{Class: ClassApproval, Title: "Approval requested: " + a.Operation, Body: strings.Join(lines, "\n"),
-			ApprovalID: a.ID}, true
+		return Notice{Class: ClassFailure, Title: "Content store low on space", Body: body}, true
 	case "job.state_changed":
 		if !strings.HasPrefix(r.Topic, "job.") {
 			return Notice{}, false

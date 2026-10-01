@@ -68,7 +68,7 @@
 name: replay-base
 steps:
   - id: corpus
-    kind: dataset_import@2
+    kind: dataset_import@3
     params:
       name: replay-base
       source_name: fleurs
@@ -113,7 +113,7 @@ steps:
       split_rule: all-train
       tags: [replay]
   - id: golden-en-us
-    kind: dataset_import@2
+    kind: dataset_import@3
     params:
       name: replay-golden-en-us
       source_name: fleurs
@@ -127,7 +127,7 @@ steps:
       eval_only: true
       tags: [golden, replay]
   - id: golden-es-us
-    kind: dataset_import@2
+    kind: dataset_import@3
     params:
       name: replay-golden-es-us
       source_name: fleurs
@@ -141,7 +141,7 @@ steps:
       eval_only: true
       tags: [golden, replay]
   - id: golden-fr-fr
-    kind: dataset_import@2
+    kind: dataset_import@3
     params:
       name: replay-golden-fr-fr
       source_name: fleurs
@@ -155,7 +155,7 @@ steps:
       eval_only: true
       tags: [golden, replay]
   - id: golden-it-it
-    kind: dataset_import@2
+    kind: dataset_import@3
     params:
       name: replay-golden-it-it
       source_name: fleurs
@@ -169,7 +169,7 @@ steps:
       eval_only: true
       tags: [golden, replay]
   - id: golden-pt-br
-    kind: dataset_import@2
+    kind: dataset_import@3
     params:
       name: replay-golden-pt-br
       source_name: fleurs
@@ -183,7 +183,7 @@ steps:
       eval_only: true
       tags: [golden, replay]
   - id: golden-nl-nl
-    kind: dataset_import@2
+    kind: dataset_import@3
     params:
       name: replay-golden-nl-nl
       source_name: fleurs
@@ -197,7 +197,7 @@ steps:
       eval_only: true
       tags: [golden, replay]
   - id: golden-de-de
-    kind: dataset_import@2
+    kind: dataset_import@3
     params:
       name: replay-golden-de-de
       source_name: fleurs
@@ -211,7 +211,7 @@ steps:
       eval_only: true
       tags: [golden, replay]
   - id: golden-tr-tr
-    kind: dataset_import@2
+    kind: dataset_import@3
     params:
       name: replay-golden-tr-tr
       source_name: fleurs
@@ -225,7 +225,7 @@ steps:
       eval_only: true
       tags: [golden, replay]
   - id: golden-ru-ru
-    kind: dataset_import@2
+    kind: dataset_import@3
     params:
       name: replay-golden-ru-ru
       source_name: fleurs
@@ -239,7 +239,7 @@ steps:
       eval_only: true
       tags: [golden, replay]
   - id: golden-ar-ar
-    kind: dataset_import@2
+    kind: dataset_import@3
     params:
       name: replay-golden-ar-ar
       source_name: fleurs
@@ -253,7 +253,7 @@ steps:
       eval_only: true
       tags: [golden, replay]
   - id: golden-hi-in
-    kind: dataset_import@2
+    kind: dataset_import@3
     params:
       name: replay-golden-hi-in
       source_name: fleurs
@@ -267,7 +267,7 @@ steps:
       eval_only: true
       tags: [golden, replay]
   - id: golden-ja-jp
-    kind: dataset_import@2
+    kind: dataset_import@3
     params:
       name: replay-golden-ja-jp
       source_name: fleurs
@@ -281,7 +281,7 @@ steps:
       eval_only: true
       tags: [golden, replay]
   - id: golden-ko-kr
-    kind: dataset_import@2
+    kind: dataset_import@3
     params:
       name: replay-golden-ko-kr
       source_name: fleurs
@@ -295,7 +295,7 @@ steps:
       eval_only: true
       tags: [golden, replay]
   - id: golden-vi-vn
-    kind: dataset_import@2
+    kind: dataset_import@3
     params:
       name: replay-golden-vi-vn
       source_name: fleurs
@@ -309,7 +309,7 @@ steps:
       eval_only: true
       tags: [golden, replay]
   - id: golden-uk-ua
-    kind: dataset_import@2
+    kind: dataset_import@3
     params:
       name: replay-golden-uk-ua
       source_name: fleurs
@@ -323,7 +323,7 @@ steps:
       eval_only: true
       tags: [golden, replay]
   - id: golden-pl-pl
-    kind: dataset_import@2
+    kind: dataset_import@3
     params:
       name: replay-golden-pl-pl
       source_name: fleurs
@@ -337,7 +337,7 @@ steps:
       eval_only: true
       tags: [golden, replay]
   - id: golden-sv-se
-    kind: dataset_import@2
+    kind: dataset_import@3
     params:
       name: replay-golden-sv-se
       source_name: fleurs
@@ -351,7 +351,7 @@ steps:
       eval_only: true
       tags: [golden, replay]
   - id: golden-cs-cz
-    kind: dataset_import@2
+    kind: dataset_import@3
     params:
       name: replay-golden-cs-cz
       source_name: fleurs
@@ -365,7 +365,7 @@ steps:
       eval_only: true
       tags: [golden, replay]
   - id: golden-nb-no
-    kind: dataset_import@2
+    kind: dataset_import@3
     params:
       name: replay-golden-nb-no
       source_name: fleurs
@@ -379,7 +379,7 @@ steps:
       eval_only: true
       tags: [golden, replay]
   - id: golden-da-dk
-    kind: dataset_import@2
+    kind: dataset_import@3
     params:
       name: replay-golden-da-dk
       source_name: fleurs
@@ -393,7 +393,7 @@ steps:
       eval_only: true
       tags: [golden, replay]
   - id: golden-bg-bg
-    kind: dataset_import@2
+    kind: dataset_import@3
     params:
       name: replay-golden-bg-bg
       source_name: fleurs
@@ -407,7 +407,7 @@ steps:
       eval_only: true
       tags: [golden, replay]
   - id: golden-fi-fi
-    kind: dataset_import@2
+    kind: dataset_import@3
     params:
       name: replay-golden-fi-fi
       source_name: fleurs
@@ -421,7 +421,7 @@ steps:
       eval_only: true
       tags: [golden, replay]
   - id: golden-hr-hr
-    kind: dataset_import@2
+    kind: dataset_import@3
     params:
       name: replay-golden-hr-hr
       source_name: fleurs
@@ -435,7 +435,7 @@ steps:
       eval_only: true
       tags: [golden, replay]
   - id: golden-sk-sk
-    kind: dataset_import@2
+    kind: dataset_import@3
     params:
       name: replay-golden-sk-sk
       source_name: fleurs
@@ -449,7 +449,7 @@ steps:
       eval_only: true
       tags: [golden, replay]
   - id: golden-zh-cn
-    kind: dataset_import@2
+    kind: dataset_import@3
     params:
       name: replay-golden-zh-cn
       source_name: fleurs
@@ -463,7 +463,7 @@ steps:
       eval_only: true
       tags: [golden, replay]
   - id: golden-hu-hu
-    kind: dataset_import@2
+    kind: dataset_import@3
     params:
       name: replay-golden-hu-hu
       source_name: fleurs
@@ -477,7 +477,7 @@ steps:
       eval_only: true
       tags: [golden, replay]
   - id: golden-ro-ro
-    kind: dataset_import@2
+    kind: dataset_import@3
     params:
       name: replay-golden-ro-ro
       source_name: fleurs
@@ -491,7 +491,7 @@ steps:
       eval_only: true
       tags: [golden, replay]
   - id: golden-et-ee
-    kind: dataset_import@2
+    kind: dataset_import@3
     params:
       name: replay-golden-et-ee
       source_name: fleurs
@@ -505,7 +505,7 @@ steps:
       eval_only: true
       tags: [golden, replay]
   - id: golden-el-gr
-    kind: dataset_import@2
+    kind: dataset_import@3
     params:
       name: replay-golden-el-gr
       source_name: fleurs
@@ -519,7 +519,7 @@ steps:
       eval_only: true
       tags: [golden, replay]
   - id: golden-lt-lt
-    kind: dataset_import@2
+    kind: dataset_import@3
     params:
       name: replay-golden-lt-lt
       source_name: fleurs
@@ -533,7 +533,7 @@ steps:
       eval_only: true
       tags: [golden, replay]
   - id: golden-lv-lv
-    kind: dataset_import@2
+    kind: dataset_import@3
     params:
       name: replay-golden-lv-lv
       source_name: fleurs
@@ -547,7 +547,7 @@ steps:
       eval_only: true
       tags: [golden, replay]
   - id: golden-mt-mt
-    kind: dataset_import@2
+    kind: dataset_import@3
     params:
       name: replay-golden-mt-mt
       source_name: fleurs
@@ -561,7 +561,7 @@ steps:
       eval_only: true
       tags: [golden, replay]
   - id: golden-sl-si
-    kind: dataset_import@2
+    kind: dataset_import@3
     params:
       name: replay-golden-sl-si
       source_name: fleurs
@@ -575,7 +575,7 @@ steps:
       eval_only: true
       tags: [golden, replay]
   - id: golden-th-th
-    kind: dataset_import@2
+    kind: dataset_import@3
     params:
       name: replay-golden-th-th
       source_name: fleurs

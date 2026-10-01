@@ -275,3 +275,16 @@ func TestAccepts(t *testing.T) {
 		}
 	}
 }
+
+func TestOOMRetryScale(t *testing.T) {
+	for _, tc := range []struct{ failed, want float64 }{
+		{0, 0.75},      // the kind's own batch
+		{1, 0.75},      // full batch named explicitly
+		{0.5, 0.375},   // a manual retry at half batch shrinks further, never back to 0.75
+		{0.75, 0.5625}, // an earlier OOM retry's scale
+	} {
+		if got := OOMRetryScale(tc.failed); got != tc.want {
+			t.Errorf("OOMRetryScale(%v) = %v, want %v", tc.failed, got, tc.want)
+		}
+	}
+}

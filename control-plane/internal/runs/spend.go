@@ -51,6 +51,35 @@ func RunGPUHours(ctx context.Context, q storage.Querier, runID string) (float64,
 		time.Unix(0, 0), time.Now().Add(time.Hour))
 }
 
+// committedHours is the GPU time already committed but not metered yet: the estimates of the steps that need a card
+// and have not ended (waiting for an input, queued, or running) in pipeline runs selected by cond ($1 is its
+// argument; ps is pipeline_steps, pr pipeline_runs), less what a running step's live lease used so far. A step
+// without an estimate adds nothing (the policy gates the command that starts it instead).
+func committedHours(ctx context.Context, q storage.Querier, cond string, arg any) (float64, error) {
+	var h float64
+	err := q.QueryRow(ctx, `SELECT coalesce(sum(greatest(
+			ps.estimate_seconds / 3600 * greatest(1, coalesce((ps.resources->>'gpus')::int, 1))
+			- coalesce((SELECT sum(extract(epoch FROM now() - l.created_at)) / 3600 FROM leases l
+				WHERE l.job_id = ps.job_id AND l.state = 'active' AND l.card_index IS NOT NULL), 0), 0)), 0)
+		FROM pipeline_steps ps JOIN pipeline_runs pr ON pr.id = ps.pipeline_run_id
+		WHERE ps.state IN ('waiting', 'queued', 'running') AND pr.state = 'running'
+			AND coalesce((ps.resources->>'gpu')::boolean, false) AND ps.estimate_seconds IS NOT NULL AND `+cond, arg).Scan(&h)
+	if err != nil {
+		return 0, fmt.Errorf("committed GPU-hours: %w", err)
+	}
+	return h, nil
+}
+
+// ProjectCommittedGPUHours is the project's committed, not yet metered GPU time (committedHours).
+func ProjectCommittedGPUHours(ctx context.Context, q storage.Querier, projectID string) (float64, error) {
+	return committedHours(ctx, q, "ps.project_id = $1", projectID)
+}
+
+// SessionCommittedGPUHours is the committed GPU time of the pipeline runs an agent session started.
+func SessionCommittedGPUHours(ctx context.Context, q storage.Querier, sessionID string) (float64, error) {
+	return committedHours(ctx, q, "pr.actor->>'sessionId' = $1", sessionID)
+}
+
 // DayStart is the start of today in the instance timezone (policies).
 func DayStart(ctx context.Context, q storage.Querier, d *defaults.Defaults, now time.Time) (time.Time, error) {
 	pol, err := policies.Get(ctx, q, d)
@@ -61,14 +90,16 @@ func DayStart(ctx context.Context, q storage.Querier, d *defaults.Defaults, now 
 	return time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, local.Location()), nil
 }
 
-// ProjectBudget is a project's daily GPU budget with today's use.
+// ProjectBudget is a project's daily GPU budget with today's use and the work already committed (queued and
+// running steps' remaining estimates), so three runs started back to back cannot each see the whole remainder.
 type ProjectBudget struct {
-	PerDay float64
-	Used   float64
+	PerDay    float64
+	Used      float64
+	Committed float64
 }
 
-// Remaining is the budget minus today's use (negative when overspent).
-func (b ProjectBudget) Remaining() float64 { return b.PerDay - b.Used }
+// Remaining is the budget minus today's use and the committed work (negative when overspent).
+func (b ProjectBudget) Remaining() float64 { return b.PerDay - b.Used - b.Committed }
 
 // ProjectBudgetOf reads the project's daily budget (projects.edit, from budgets.gpu_hours_per_project_per_day at
 // creation) and what it used today.
@@ -85,13 +116,18 @@ func ProjectBudgetOf(ctx context.Context, q storage.Querier, d *defaults.Default
 	if err != nil {
 		return ProjectBudget{}, err
 	}
-	return ProjectBudget{PerDay: p.Budgets.GPUHoursPerDay, Used: round(used, 3)}, nil
+	committed, err := ProjectCommittedGPUHours(ctx, q, projectID)
+	if err != nil {
+		return ProjectBudget{}, err
+	}
+	return ProjectBudget{PerDay: p.Budgets.GPUHoursPerDay, Used: round(used, 3), Committed: round(committed, 3)}, nil
 }
 
 // SessionBudget is an agent session's GPU budget with its use so far.
 type SessionBudget struct {
-	Hours float64
-	Used  float64
+	Hours     float64
+	Used      float64
+	Committed float64 // queued and running steps' remaining estimates
 }
 
 // SessionBudgetOf reads the session's GPU budget (its budget.gpuHours, else budgets.agent_gpu_hours_per_session) and
@@ -117,6 +153,11 @@ func SessionBudgetOf(ctx context.Context, q storage.Querier, d *defaults.Default
 		return SessionBudget{}, err
 	}
 	b.Used = round(used, 3)
+	committed, err := SessionCommittedGPUHours(ctx, q, sessionID)
+	if err != nil {
+		return SessionBudget{}, err
+	}
+	b.Committed = round(committed, 3)
 	return b, nil
 }
 
@@ -166,7 +207,7 @@ func (m Meter) RemainingSessionGPUHours(ctx context.Context, sessionID string) (
 	if err != nil {
 		return 0, err
 	}
-	return b.Hours - b.Used, nil
+	return b.Hours - b.Used - b.Committed, nil
 }
 
 // Spend implements notify.SpendFunc: the project's metered GPU-hours in [since, until).

@@ -245,6 +245,13 @@ cache:
     description: Share of the local cache one project's frozen shards may occupy
     source: Cadence recommendation (docs/spec/03 "Key defaults")
     range: { min: 0.05, max: 1 }
+  store_low_free:
+    value: 0.15
+    unit: fraction
+    description: Share of the content store's filesystem free below which Cadence warns (a failure notification, at
+      most once a day) and names the training states artifacts.evict could reclaim
+    source: Cadence recommendation (the test stand filled 93 % of its disk in one day of fine-tunes, 2026-10-01)
+    range: { min: 0.02, max: 0.5 }
 
 # Instance operations (docs/spec/06-platform.md "Operations"): the clock quiet hours, the digest and backups follow.
 operations:

@@ -28,7 +28,8 @@ type Decider interface {
 var ErrAlreadyDecided = errors.New("the approval is no longer pending")
 
 // Poller long-polls Telegram for updates (getUpdates; no public webhook): button presses of allow-listed chats
-// decide approvals; chats that are not allow-listed are remembered for Settings and never answered.
+// decide approvals and their slash commands are answered (commands.go); chats that are not allow-listed are
+// remembered for Settings and never answered.
 type Poller struct {
 	Pool     *pgxpool.Pool
 	Log      *slog.Logger
@@ -36,6 +37,9 @@ type Poller struct {
 	Signer   *Signer
 	Decider  Decider
 	Defaults func() *defaults.Defaults
+	// Queue and Spend feed /status (commands.go); either may be nil.
+	Queue QueueFunc
+	Spend SpendFunc
 	// Timeout is the long-poll wait in seconds (50 when zero); Idle is the pause while no token is stored or after
 	// an error (30 s when zero).
 	Timeout int
@@ -131,9 +135,8 @@ func (p *Poller) Handle(ctx context.Context, c *telegram.Client, u telegram.Upda
 		if !settings.Allowed(u.Message.Chat.ID) {
 			return p.seen(ctx, u.Message.Chat)
 		}
-		if strings.HasPrefix(u.Message.Text, "/start") {
-			_, err := c.SendMessage(ctx, u.Message.Chat.ID, "Cadence notifications reach this chat. Approvals arrive with Approve and Deny buttons.", nil)
-			return err
+		if strings.HasPrefix(u.Message.Text, "/") {
+			return p.command(ctx, c, u.Message.Chat.ID, u.Message.Text)
 		}
 	}
 	return nil

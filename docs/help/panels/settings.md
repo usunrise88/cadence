@@ -17,6 +17,7 @@ A tool panel for the admin account only (it opens floating; View → Open Settin
 | Policies | Default budgets: GPU-hours per project per day, agent turns per session; the instance timezone (quiet hours, the digest and the backup schedule follow it) |
 | Notifications | The routing table (per event class: in-app, Telegram, Telegram timing), quiet hours, the digest time, and the Telegram bot: write-only token, allow-listed chats, chats that wrote to the bot, test message — see the [notifications guide](../guides/notifications.md) |
 | Backups | The schedule and retention, **Back up now**, the last restore test's report (row counts at backup vs restored, migration version, blobs re-hashed) and every set with its own **Restore test** — see the [backups guide](../guides/backups.md) |
+| Content store | How full the content store's disk is (red below `cache.store_low_free`, 15 %), the superseded training states an eviction would delete with their runs and sizes, and **Evict…**, which asks for an approval — see [freeing store space](../guides/freeing-store-space.md) |
 | Catalogues | Read-only: base models, instruction templates and permission presets in the registry |
 | Security | Two-factor sign-in (TOTP) for the admin account: **Set up** shows a QR code to scan with an authenticator app from the screen (drawn in the browser; the key never leaves the page), or the key in groups of four to type; confirm with the app's current code |
 | Audit log | Every command, denial and failed attempt with actor, outcome, rule and cause; filter by actor, operation and project. Workspace layout saves are preferences, not commands: they are not listed (a refused save still is) |
@@ -83,6 +84,8 @@ key's token appears once, right after creation, with a Copy button — Cadence k
 | Send test message | `telegramBot.verify` | Checks the token with Telegram, then messages every allowed chat |
 | Back up now | `backups.new` | Answers the job; one set at a time |
 | Restore test | `backups.verify` | Restores the set into a scratch database and checks it; answers the job |
+| (the Content store list) | `artifacts.evict?dryRun=true` | Read when the section opens and on Refresh, with the store's disk |
+| Evict… | `artifacts.evict` | Always answers an approval, for people too; decide it in Approvals or from Telegram |
 | Two-factor authentication… | `totp.enroll`, `totp.confirm`, `totp.disable` | The same dialog as the user menu |
 
 Agents cannot run any of these: the `admin-only` rule of every preset forbids secrets, credentials, compute,

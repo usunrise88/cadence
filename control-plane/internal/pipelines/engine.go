@@ -339,6 +339,15 @@ func (e *Engine) advance(ctx context.Context, tx pgx.Tx, r *Run, sts []StepRow) 
 				return nil, err
 			}
 			ev, reused, err := e.reuse(ctx, tx, r, s)
+			if refused, ok := errors.AsType[*refusedReuse](err); ok {
+				// An output hook refused the reused outputs: the step fails like one whose fresh output was
+				// refused, and so does the run; nothing else in the caller's transaction is undone.
+				failed, err := e.fail(ctx, tx, r, sts, i, steps.StepError{Type: steps.ErrStep, Message: refused.Error()})
+				if err != nil {
+					return nil, err
+				}
+				return append(drafts, failed...), nil
+			}
 			if err != nil {
 				return nil, err
 			}
@@ -412,6 +421,10 @@ func (e *Engine) reuse(ctx context.Context, tx pgx.Tx, r *Run, s *StepRow) ([]ev
 	if err != nil || !found {
 		return nil, false, err
 	}
+	// The outputs verified here stay in the store until tx ends: an eviction waits for the shared lock.
+	if err := artifacts.LockShared(ctx, tx); err != nil {
+		return nil, false, err
+	}
 	for _, ref := range prev.Outputs {
 		if _, err := artifacts.Verify(e.o.CAS, ref); err != nil {
 			e.o.Log.WarnContext(ctx, "pipeline step not reused: an output left the content store", "step", prev.ID, "err", err)
@@ -425,10 +438,23 @@ func (e *Engine) reuse(ctx context.Context, tx pgx.Tx, r *Run, s *StepRow) ([]ev
 	}
 	now := time.Now()
 	s.State, s.Outputs, s.ReusedFrom, s.Metrics, s.FinishedAt = StepReused, prev.Outputs, prev.ID, prev.Metrics, &now
-	drafts, herr := e.runHooks(ctx, tx, *r, *s, steps.Spec{StepID: s.ID, PipelineRunID: r.ID, ProjectID: r.ProjectID, RunID: r.RunID,
+	// The hooks run in a savepoint, as for a fresh output: a refusal undoes their writes and fails this step
+	// (refused), never the caller's transaction.
+	sp, err := tx.Begin(ctx)
+	if err != nil {
+		return nil, false, fmt.Errorf("savepoint: %w", err)
+	}
+	drafts, herr := e.runHooks(ctx, sp, *r, *s, steps.Spec{StepID: s.ID, PipelineRunID: r.ID, ProjectID: r.ProjectID, RunID: r.RunID,
 		Kind: s.Kind, KindVersion: s.KindVersion, Params: mustJSON(s.Params), Inputs: s.Inputs, Outputs: s.Produces})
 	if herr != nil {
-		return nil, false, fmt.Errorf("reuse step %s: %w", s.Step, herr)
+		if err := sp.Rollback(ctx); err != nil {
+			return nil, false, fmt.Errorf("roll back savepoint: %w", err)
+		}
+		s.State, s.Outputs, s.ReusedFrom, s.Metrics, s.FinishedAt = StepWaiting, nil, "", nil, nil
+		return nil, false, &refusedReuse{from: prev.ID, err: herr}
+	}
+	if err := sp.Commit(ctx); err != nil {
+		return nil, false, fmt.Errorf("release savepoint: %w", err)
 	}
 	saved, err := saveStep(ctx, tx, *s)
 	if err != nil {
@@ -437,6 +463,18 @@ func (e *Engine) reuse(ctx context.Context, tx pgx.Tx, r *Run, s *StepRow) ([]ev
 	*s = saved
 	return append(drafts, stepDraft(*r, *s)), true, nil
 }
+
+// refusedReuse is an output hook's refusal of the outputs a step would reuse.
+type refusedReuse struct {
+	from string // the step whose outputs were offered
+	err  error
+}
+
+func (e *refusedReuse) Error() string {
+	return fmt.Sprintf("reused outputs of step %s: %v", e.from, e.err)
+}
+
+func (e *refusedReuse) Unwrap() error { return e.err }
 
 // enqueue starts a new attempt of s as a step job with overrides ov (batch scale, training state to resume from).
 func (e *Engine) enqueue(ctx context.Context, tx pgx.Tx, r Run, s *StepRow, reason string, ov steps.Overrides) ([]events.Draft, error) {
@@ -724,8 +762,35 @@ func (e *Engine) runHooks(ctx context.Context, tx pgx.Tx, r Run, s StepRow, spec
 	return drafts, nil
 }
 
-// fail applies a step failure: an OOM gets one automatic retry at steps.OOMBatchScale, a lost lease one retry at
-// the same scale; otherwise the step fails, the run fails and the steps that never started are skipped.
+// TypeTrainingState is the artifact type a train-role step resumes from (overrides.resumeFrom).
+const TypeTrainingState = "training-state"
+
+// newestPublishedState is the newest training state step stepID published during its leases (workerOutputs.new) that
+// is still in the store, or "".
+func newestPublishedState(ctx context.Context, q storage.Querier, stepID string) (string, error) {
+	var h string
+	err := q.QueryRow(ctx, `SELECT hash FROM artifacts WHERE step_id = $1 AND type = $2 AND evicted_at IS NULL
+		ORDER BY created_at DESC, hash LIMIT 1`, stepID, TypeTrainingState).Scan(&h)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("newest training state of step %s: %w", stepID, err)
+	}
+	return h, nil
+}
+
+// OOMRetryScale is the batch scale of the automatic retry after an out-of-memory failure of an attempt that ran at
+// scale failed (0: the kind's own batch, 1): steps.OOMBatchScale of it, so a retry never grows the batch back.
+func OOMRetryScale(failed float64) float64 {
+	if failed <= 0 {
+		failed = 1
+	}
+	return failed * steps.OOMBatchScale
+}
+
+// fail applies a step failure: an OOM gets one automatic retry at steps.OOMBatchScale of the failed attempt's
+// scale, a lost lease one retry at the same scale; otherwise the step fails, the run fails and the steps that never started are skipped.
 func (e *Engine) fail(ctx context.Context, tx pgx.Tx, r *Run, sts []StepRow, i int, se steps.StepError) ([]events.Draft, error) {
 	s := &sts[i]
 	now := time.Now()
@@ -737,8 +802,17 @@ func (e *Engine) fail(ctx context.Context, tx pgx.Tx, r *Run, sts []StepRow, i i
 	if r.State == RunRunning {
 		switch {
 		case se.Type == steps.ErrOOM && !s.hadAttempt(ReasonOOM):
-			return e.enqueue(ctx, tx, *r, s, ReasonOOM, steps.Overrides{BatchScale: steps.OOMBatchScale, ResumeFrom: last.ResumeFrom})
+			return e.enqueue(ctx, tx, *r, s, ReasonOOM, steps.Overrides{BatchScale: OOMRetryScale(last.BatchScale), ResumeFrom: last.ResumeFrom})
 		case se.Type == steps.ErrLost && !s.hadAttempt(ReasonLost):
+			// A lost lease (a worker or host crash) took the step's scratch with it, but the training states it
+			// published meanwhile are in the store: the retry resumes from the newest instead of starting over.
+			h, err := newestPublishedState(ctx, tx, s.ID)
+			if err != nil {
+				return nil, err
+			}
+			if h != "" {
+				last.ResumeFrom = h
+			}
 			return e.enqueue(ctx, tx, *r, s, ReasonLost, last)
 		}
 	}
@@ -878,6 +952,26 @@ type RetryInput struct {
 const AnyRev = -1
 
 // Retry runs failed (or cancelled) steps of pipeline run id again as new attempts and reopens the run.
+// RetryEstimate is the GPU time a retry of run id may spend: every step not done yet (the retried steps and those
+// waiting behind them) that needs a card, at its recorded estimate. unknown is true when such a step has none.
+func RetryEstimate(ctx context.Context, q storage.Querier, id string) (gpuHours float64, unknown bool, err error) {
+	sts, err := stepsOf(ctx, q, id, false)
+	if err != nil {
+		return 0, false, err
+	}
+	for _, s := range sts {
+		if s.State == StepDone || s.State == StepReused || !s.Resources.GPU {
+			continue
+		}
+		if s.EstimateSeconds == nil {
+			unknown = true
+			continue
+		}
+		gpuHours += *s.EstimateSeconds / 3600 * float64(max(1, s.Resources.GPUs))
+	}
+	return gpuHours, unknown, nil
+}
+
 func (e *Engine) Retry(ctx context.Context, tx pgx.Tx, id string, rev int, in RetryInput) (Run, []events.Draft, error) {
 	r, err := lockRun(ctx, tx, id)
 	if err != nil {
@@ -908,11 +1002,18 @@ func (e *Engine) Retry(ctx context.Context, tx pgx.Tx, id string, rev int, in Re
 			targets = append(targets, i)
 		}
 	}
+	if len(targets) == 0 && in.Step == "" { // no failed step: continue a cancelled run from its cancelled steps
+		for i, s := range sts {
+			if s.State == StepCancelled {
+				targets = append(targets, i)
+			}
+		}
+	}
 	if len(targets) == 0 {
 		if in.Step != "" {
 			return Run{}, nil, problems.NotFound.New("pipeline run %s has no step %q", id, in.Step)
 		}
-		return Run{}, nil, problems.Conflict.New("pipeline run %s has no failed step to retry", id)
+		return Run{}, nil, problems.Conflict.New("pipeline run %s has no failed or cancelled step to retry", id)
 	}
 	scale := 0.0
 	if in.BatchScale != nil {

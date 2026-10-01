@@ -7,6 +7,7 @@ import type { PanelProps } from "@/shell/panel";
 import { AgentsSection } from "./AgentsSection";
 import { AuditSection } from "./AuditSection";
 import { BackupsSection } from "./BackupsSection";
+import { StorageSection } from "./StorageSection";
 import { CataloguesSection } from "./CataloguesSection";
 import { ComputeSection } from "./ComputeSection";
 import { CredentialsSection } from "./CredentialsSection";
@@ -27,6 +28,7 @@ export const SECTIONS = [
   { id: "policies", label: "Policies", component: PoliciesSection },
   { id: "notifications", label: "Notifications", component: NotificationsSection },
   { id: "backups", label: "Backups", component: BackupsSection },
+  { id: "storage", label: "Content store", component: StorageSection },
   { id: "catalogues", label: "Catalogues", component: CataloguesSection },
   { id: "security", label: "Security", component: SecuritySection },
   { id: "audit", label: "Audit log", component: AuditSection },

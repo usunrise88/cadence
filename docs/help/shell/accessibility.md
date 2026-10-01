@@ -31,6 +31,12 @@ Every step: the same shell carries data, training, evaluation, deployment and tr
 - `view.shortcuts` — the keyboard sheet (Ctrl/Cmd+/)
 - `view.toggleSnap` — snapping on/off (Ctrl/Cmd+Shift+;)
 - `view.toggleTheme` — light / dark
+- `view.toggleFullScreen` — the whole shell in full screen and back (also in the user menu; Esc leaves it, F11 stays
+  the browser's own)
+
+The user menu also switches the **notification sound**: a short tone while the Cadence tab is open (in front or in
+the background) when an approval is requested or something fails. It is on by default, remembered per browser, and
+plays only after you have clicked or typed in the page once (the browser's autoplay rule).
 
 ## Playbooks
 

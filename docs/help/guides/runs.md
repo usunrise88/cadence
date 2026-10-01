@@ -43,12 +43,21 @@ evaluate (phase 3).
   one goes out as `checkpoint.saved` on `run.{id}.checkpoints`.
 - **Departures**: parameters that differ from defaults are listed per step on the run (`departures`); a stage's
   `parentDiff` lists where its train-step parameters, mix, pipeline and start differ from its parent's.
+- **Parameters** (`params`): overrides of the train step. One its kind marks `shared` in the step schema (the data's
+  language `target_lang`, `precision`, `min_duration`, the CUDA reserve) also reaches every other step of the stage
+  that declares it, so the calibration measures what the training will run.
+- **Language check**: `runs.new` and its dry run refuse (422) a stage whose language the base model does not know —
+  its `locale:` tags list the languages it was trained with. The language is the train step's language parameter
+  when set, else each locale of the mix. Pick a close language it knows, or import the data transliterated
+  (`dataset_import`'s `transliterate`).
 - **OOM**: an out-of-memory failure gets one automatic retry at 0.75× batch; the run's timeline shows the attempts,
   `oomRetries` and the batch scale.
 - **GPU budgets**: spend is lease time on GPU cards — per project per day (the project's budget, from
   `budgets.gpu_hours_per_project_per_day`, in the instance timezone) and per agent session
-  (`budgets.agent_gpu_hours_per_session`). An agent's `runs.new`, `runs.calibrate`, `runs.resume`, `runs.stage` and
-  `checkpoints.average` whose estimate exceeds what is left of either answers `202` with an approval id; a person
+  (`budgets.agent_gpu_hours_per_session`); what is left also subtracts the work already queued or running. An agent's
+  `runs.new`, `runs.calibrate`, `runs.resume`, `runs.stage`, `checkpoints.average`, `pipelines.run`,
+  `pipelineRuns.retry` and `jobs.resume` whose estimate exceeds what is left of either — or whose GPU cost is
+  unknown — answers `202` with an approval id; a person
   approves it in the Approvals panel and the request runs as the agent. People are not budget-gated; their dry
   runs say `withinDailyBudget`.
 

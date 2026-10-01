@@ -207,7 +207,9 @@ class LeaseSession:
             self.sink.close()
         if not self.lost:
             try:
-                with_retry(lambda: self.client.release(self.lease["id"], outcome), attempts=8)
+                # A finished step's outputs are worth waiting for: ride out a control-plane restart or outage of up
+                # to ~13 minutes (the control plane does not reap leases right after its own start).
+                with_retry(lambda: self.client.release(self.lease["id"], outcome), attempts=30)
             except Exception as e:
                 log.error("release of %s failed: %s", self.lease["id"], e)
         return outcome

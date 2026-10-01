@@ -15,6 +15,8 @@ docs/help/steps/nemotron-finetune.md.
 
 from __future__ import annotations
 
+import os
+import shutil
 import time
 from collections.abc import Mapping
 from pathlib import Path
@@ -37,7 +39,7 @@ from cadence_worker.steps.context import StepContext
 class FinetuneParams(BaseModel):
     steps: int = cadence_field(default_ref="training.steps")
     seed: int = cadence_field(default_ref="packs.nemo.seed")
-    precision: str = cadence_field(default_ref="training.precision")
+    precision: str = cadence_field(default_ref="training.precision", shared=True)
     peak_lr: float = cadence_field(default_ref="packs.nemo.peak_lr")
     warmup_steps: int = cadence_field(default_ref="packs.nemo.warmup_steps")
     min_lr: float = cadence_field(default_ref="packs.nemo.min_lr")
@@ -49,13 +51,13 @@ class FinetuneParams(BaseModel):
     log_every: int = cadence_field(default_ref="packs.nemo.log_every")
     state_every_minutes: float = cadence_field(default_ref="packs.nemo.state_every_minutes")
     max_duration: float = cadence_field(default_ref="packs.nemo.max_duration")
-    min_duration: float = cadence_field(default_ref="packs.nemo.min_duration")
+    min_duration: float = cadence_field(default_ref="packs.nemo.min_duration", shared=True)
     num_workers: int = cadence_field(default_ref="packs.nemo.num_workers")
     prompt_mode: str = cadence_field(default_ref="packs.nemo.prompt_mode")
     unified_auto_ratio: float = cadence_field(default_ref="packs.nemo.unified_auto_ratio")
-    target_lang: str = cadence_field(default_ref="packs.nemo.target_lang")
+    target_lang: str = cadence_field(default_ref="packs.nemo.target_lang", shared=True)
     augmentation: dict[str, Any] = cadence_field(default_ref="packs.nemo.augmentation")
-    cuda_context_reserve_mb: int = cadence_field(default_ref="packs.nemo.cuda_context_reserve_mb")
+    cuda_context_reserve_mb: int = cadence_field(default_ref="packs.nemo.cuda_context_reserve_mb", shared=True)
 
 
 def read_calibration(path: Path | None) -> tuple[list[float], list[int]]:
@@ -246,9 +248,25 @@ class FinetuneStep:
             monitor.state_saved(step, seconds)
             ctx.log("training state written", step=step, seconds=round(seconds, 1))
 
+        def publish_state(step: int) -> None:
+            # The periodic state survives a lost lease (a worker or host crash): published now, a lost-lease retry
+            # resumes from it instead of from the start. Hard links of the files just written (the next save replaces
+            # last.ckpt by rename, so the links keep this state); the harness stores and removes the copy.
+            d = work / "published" / f"state-{step}"
+            d.mkdir(parents=True, exist_ok=True)
+            for f in state_dir.iterdir():
+                if f.is_file():
+                    try:
+                        os.link(f, d / f.name)
+                    except OSError:
+                        shutil.copyfile(f, d / f.name)
+            ctx.publish("state", d, {"family": NAME, "step": step})
+            ctx.log("training state published", step=step)
+
         class StepHooks(training.Hooks):
             def save_state(self, trainer: Any, step: int) -> None:
                 save_state(trainer, step)
+                publish_state(step)
 
             def validated(self, module: Any, step: int, wer: float, is_best: bool) -> None:
                 if is_best:

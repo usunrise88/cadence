@@ -119,7 +119,8 @@ Rules:
   declares none, so a training step takes the card alone. Candidates are taken by the project's queue priority (higher first;
   `budgets.queuePriority`, read live from the project so `projects.edit` reorders waiting jobs; a job without a project
   takes the `defaults.yaml` default), then the job's priority (higher first; set from the pipeline run's `priority`,
-  changed with `jobs.edit`), then first come. Card slots (`card_slots`) belong to the control
+  changed with `jobs.edit`), then first come; the claim reads them in pages of 50 (at most 20 pages per attempt)
+  until one fits, so waiting jobs that cannot fit never hide one further down that can. Card slots (`card_slots`) belong to the control
   plane per host and card, not per worker, so two runtimes never double-book a card. A step with `gpu: false` takes
   no card (lease card index -1) and may go to a worker that reported no cards (the CPU toy runtime).
 - Lease: `lse_` id, the job id, the step spec (resolved parameters, input artifact refs, output types, resources,
@@ -153,7 +154,8 @@ Rules:
   metrics, or an error of type `oom`, `step`, `lost`, `cancelled` or `input`. The control plane checks every output
   hash is in the store (`artifact-missing`), and the pipeline engine records the artifacts, runs the output hooks in
   the transaction that marks the step `done` (`dataset` in phase 2 wave 1; `checkpoint` and `calibration` arrive with
-  runs) and advances the pipeline. `oom` gets one automatic retry with `batchScale` 0.75, `lost` one retry.
+  runs) and advances the pipeline. `oom` gets one automatic retry at 0.75× the failed attempt's `batchScale` (so after
+  a manual retry at 0.5 it runs at 0.375, never back at 0.75), `lost` one retry.
 - Intermediate outputs: a step may publish instances of its outputs while it runs (`ctx.publish(output, path, meta,
   metrics)`; a training step publishes every validation's checkpoint). The harness hashes the path into the store,
   removes it from the scratch directory and sends `workerOutputs.new` (`name` = one of the step's outputs, the artifact
@@ -166,7 +168,9 @@ Rules:
   step's outputs (what the next step reads); a failed publication is a warning in the job log, not a step failure.
 - Secrets: a step kind declares secret names; at lease time the control plane reads the values from the secret store
   (R9) and puts them in the lease's `env` for that subprocess only, named in upper case with `-` and `.` as `_`
-  (`hf-token` → `HF_TOKEN`); a missing secret fails the step at lease time with error type `input`. Values never
+  (`hf-token` → `HF_TOKEN`); a missing secret fails the step at lease time with error type `input`, and so does a
+  secret whose scope does not allow the step's project (a `project:<slug>` secret serves only that project's steps;
+  `instance` serves all, including steps without a project). Values never
   appear in the spec, job rows, events, logs, artifacts or an agent context; the worker redacts them from forwarded
   logs and removes its own token and URL from the step's environment.
 - Tracing: one trace runs UI → API → job → step. A job keeps the traceparent of the request that enqueued it (River
@@ -246,7 +250,12 @@ read any of them (R15).
     verify again — the restore path: copy the blobs back from `CADENCE_BACKUP_DIR/cas/` to the same relative paths
     and restart (recording the same artifact again clears it too). `artifacts.get` shows `evicted {at, by, jobId}`, a
     directory's files from the index, and content "evicted … restore it from the backup mirror"; a pipeline input
-    naming it answers `artifact-missing`.
+    naming it answers `artifact-missing`. Audit fix (2026-10-01): the job decides and deletes under one content-store
+    advisory lock that `artifacts.Record`, step reuse and the restore hold shared from their store check to their
+    commit; the deleting transaction re-reads which rows are still marked (a Record that found the bytes meanwhile
+    cleared the mark) and which blobs a live artifact lists, and a Record after the deletion answers
+    `artifact-missing`. The reference checks are index lookups (migration 0022: GIN on every `b3:` hash in step job
+    specs, pipeline inputs and registry payloads; a btree on `checkpoints.artifact_hash`), no longer text scans.
 - Metrics: one Postgres table `metric_points` (migration 0012: job, run when there is one, pipeline step, project,
   name, optimiser step, epoch, value, wall time), indexed by (run, name, step) and (job, name, step); thousands of
   points per run need no TSDB. Points arrive from `workerMetrics.new` (≤ 5 000 per batch) and stream as `run.metrics`
@@ -273,7 +282,7 @@ Cadence upgrades itself the way it upgrades models: versioned, forward-only, wit
 | Failures | River retries with backoff; a worker heartbeat every 10 s, leases reaped after three missed beats (step error `lost`, one retry); an OOM gets one automatic retry at 0.75× batch; a host whose workers went quiet turns `unreachable` (`compute.health`); a full cache pauses freezes (phase 4); an unhealthy card closes its slot (not built: card health is per host today) — every case is an event, so it notifies |
 | Availability windows | Each compute card has windows per job kind (training, eval, shadow, export, data; none means always open, the default): each window is a set of weekdays, an opening and a closing time `HH:MM` (an end at or before the start closes the next day, `24:00` is midnight; a window past midnight belongs to the day it opens) and an IANA time zone per window (default: the instance time zone, `policies.timezone`, resolved when the queue checks the window — so a policy change moves windows that name none), edited with `compute.edit`. The queue starts a job only if its estimate fits before the window closes; a job without an estimate, or one resuming from a training state, starts in any open window. Training saves a checkpoint and its training state every 20 minutes (the training step's duty; the NeMo pack's); at a close the heartbeat answers `stop: window-closed` to training steps only (other kinds finish), the step saves and releases, and the job waits in its place for the next window and resumes from the last training state (`resumeFrom`). The same path makes long runs preemption-safe on the shared staging card (R19) |
 | Health | `/healthz` on the control plane, worker heartbeat, mount checks; a status card in Settings; a Prometheus endpoint |
-| Retention | Job log files are deleted 14 days after their last line (a daily chore); metric points live as long as their run; content-store blobs are kept until a person approves `artifacts.evict` (superseded training states only); the audit log is kept one year; production audio follows the retention policy |
+| Retention | Job log files are deleted 14 days after their last line (a daily chore); metric points live as long as their run; content-store blobs are kept until a person approves `artifacts.evict` (superseded training states only; Settings → Content store, and a `storage.low_space` failure notification below `cache.store_low_free` free); the audit log is kept one year; production audio follows the retention policy |
 
 Phase 2 as built (2026-09-30, stream O):
 

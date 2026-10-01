@@ -68,7 +68,7 @@ func (s *Service) estimateView(e Estimate) EstimateView {
 		Data:   DataView{Datasets: e.Data.Datasets, Hours: e.Data.Hours, Bytes: e.Data.Bytes},
 		Source: e.Source, MeasuredAt: e.MeasuredAt, Mix: e.Mix,
 		Budget: BudgetView{GPUHoursPerProjectPerDay: e.DailyBudget, UsedTodayGPUHours: e.UsedToday,
-			RemainingGPUHours: round(e.DailyBudget-e.UsedToday, 3), WithinDailyBudget: e.WithinBudget},
+			RemainingGPUHours: round(e.DailyBudget-e.UsedToday-e.Committed, 3), WithinDailyBudget: e.WithinBudget},
 	}
 	if v.Data.Datasets == nil {
 		v.Data.Datasets = []string{}
@@ -99,6 +99,8 @@ type StageEntry struct {
 	StartedAt       *time.Time       `json:"startedAt,omitempty"`
 	FinishedAt      *time.Time       `json:"finishedAt,omitempty"`
 	Error           *steps.StepError `json:"error,omitempty"`
+	ReusedFrom      string           `json:"reusedFrom,omitempty"`
+	ReusedFromRun   string           `json:"reusedFromRun,omitempty"`
 }
 
 // Departure is a parameter of one step that differs from defaults.yaml.
@@ -212,7 +214,13 @@ func (s *Service) view(ctx context.Context, q storage.Querier, x row) (View, err
 	for i, st := range pr.Steps {
 		e := StageEntry{Step: st.Step, Kind: st.Kind, KindVersion: st.KindVersion, Role: fam.RoleOf(st.Kind), State: st.State,
 			Attempts: st.Attempts, JobID: st.JobID, EstimateSeconds: st.EstimateSeconds, StartedAt: st.StartedAt,
-			FinishedAt: st.FinishedAt, Error: st.Error}
+			FinishedAt: st.FinishedAt, Error: st.Error, ReusedFrom: st.ReusedFrom}
+		if st.ReusedFrom != "" {
+			if err := q.QueryRow(ctx, `SELECT coalesce((SELECT r.id FROM pipeline_steps ps JOIN runs r ON r.pipeline_run_id = ps.pipeline_run_id
+				WHERE ps.id = $1), '')`, st.ReusedFrom).Scan(&e.ReusedFromRun); err != nil {
+				return View{}, fmt.Errorf("run of reused step %s: %w", st.ReusedFrom, err)
+			}
+		}
 		for _, a := range st.AttemptLog {
 			if a.Reason == pipelines.ReasonOOM {
 				e.OOMRetries++

@@ -123,10 +123,22 @@ Open questions:
   registers every `checkpoint` output of a run and keeps the top k; a pipeline that needs an explicit registration can
   add the kind later. `nemotron_finetune` writes two checkpoint outputs, `checkpoint` (the end) and `checkpoint_best`
   (the best validation pass of the lease; the same artifact when it was the last).
-- [ ] N: "a checkpoint and training state every 20 minutes" becomes a training state every `state_every_minutes`
+- [x] N: "a checkpoint and training state every 20 minutes" becomes a training state every `state_every_minutes`
   written into the lease's scratch: a stop releases the newest (a fresh one when the last save fits the stop grace), but
   a lost lease (worker or host crash) loses them, because the worker protocol releases outputs only at the end. Interim
   artifacts (a `workerArtifacts` put during the lease) would close that gap.
+  Closed 2026-10-01: the NeMo pack publishes each periodic state mid-lease (`workerOutputs.new`, hard links of the
+  files just written), and the lost-lease retry resumes from the step's newest published state that is not evicted.
+- [ ] D (2026-10-01, test stand): a fine-tune that ends normally still writes its final training state (7.3 GB for
+  the 0.6B model), and the retention rule makes it evictable at once — one day of short fine-tunes filled 88 GB of
+  states on the stand's disk. Proposed: write the final state only when asked (a `keep_state` parameter, default
+  off) or evict a finished run's states automatically after a person approved it once per project. Built meanwhile:
+  Settings → Content store (the dry run, **Evict…**) and the `storage.low_space` warning below `cache.store_low_free`.
+  A second trap: with `CADENCE_BACKUP_DIR` set, a state is evictable only once the backup mirror holds its blobs, and
+  the mirror (`<backups>/cas`) copies every blob it lacks — on the stand both live on the same disk, so a backup would
+  double the store before anything could be freed, and without one nothing is evictable. Proposed: training states
+  skip the mirror (they are only ever read to resume) and are evictable without it; or the mirror must live on
+  another filesystem, checked at start.
 - [ ] N: the augmentation profile is the finetune step's `augmentation` parameter (default `packs.nemo.augmentation`,
   the telephony chain: 8 kHz band-limit with G.711 μ-law/A-law or GSM, gain, speed 0.95–1.05); a project's
   `augment/*.yaml` file is not read yet (no artifact type or recipe convention carries it to the step). AMR-NB and

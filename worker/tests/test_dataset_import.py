@@ -3,13 +3,13 @@ from __future__ import annotations
 import hashlib
 import json
 import struct
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from pathlib import Path
 from typing import Any, cast
 
 import pytest
 
-from cadence_worker import audio
+from cadence_worker import audio, translit
 from cadence_worker.__main__ import registry
 from cadence_worker.steps import dataset_import as di
 from cadence_worker.steps.base import missing_metadata
@@ -34,7 +34,7 @@ def run(tmp_path: Path, p: di.DatasetImportParams) -> tuple[dict[str, Any], list
 
 def test_registry_publishes_the_new_contract_shape() -> None:
     reg = registry()["dataset_import"]
-    assert reg["version"] == "2"
+    assert reg["version"] == "3"
     assert reg["produces"] == {"dataset": "dataset"}
     assert di.DatasetImportStep.produces == {"dataset": "dataset"}
     assert di.DatasetImportStep.consumes == {}
@@ -162,8 +162,9 @@ def test_hf_dataset_reads_fleurs_rows(tmp_path: Path, monkeypatch: pytest.Monkey
     clips = [(FIX / "audio" / f"clip{i}.wav").read_bytes() for i in (1, 2, 3)]
     calls: list[tuple[str, str, str, str]] = []
 
-    def fake(repo: str, config: str, split: str, revision: str) -> Iterable[Mapping[str, Any]]:
+    def fake(repo: str, config: str, split: str, revision: str, streaming: bool = False) -> Iterable[Mapping[str, Any]]:
         calls.append((repo, config, split, revision))
+        assert streaming, "a capped import streams"
         return [
             {
                 "id": i,
@@ -245,3 +246,48 @@ def test_canonical_wav_bytes_are_pinned() -> None:
     # The canonical WAV is an utterance's identity: the same clip must give the same bytes on every host and version.
     a = audio.read(FIX / "audio" / "clip1.wav")
     assert hashlib.sha256(audio.wav_bytes(audio.canonical(a, 16000))).hexdigest().startswith("213f6c160894975e")
+
+
+def test_transliterate_writes_serbian_latin(tmp_path: Path) -> None:
+    _, cyrl, _ = run(tmp_path / "c", params(format="folder-csv", path=str(FIX), split_rule="source"))
+    _, latn, _ = run(
+        tmp_path / "l", params(format="folder-csv", path=str(FIX), split_rule="source", transliterate="sr-Cyrl-Latn")
+    )
+    assert any(any("Ѐ" <= ch <= "ӿ" for ch in x["text"]) for x in cyrl), "the fixture is Cyrillic"
+    for src, out in zip(cyrl, latn, strict=True):
+        assert not any("Ѐ" <= ch <= "ӿ" for ch in out["text"]), out["text"]
+        assert out["text"] == translit.sr_cyrl_to_latn(src["text"])
+
+
+@pytest.mark.parametrize(
+    ("cyrl", "latn"),
+    [
+        ("Љубав и џеп", "Ljubav i džep"),
+        ("ЊЕГОШ", "NJEGOŠ"),
+        ("Ђорђе, ћуприја!", "Đorđe, ćuprija!"),
+        ("abc 123", "abc 123"),
+    ],
+)
+def test_sr_cyrl_to_latn(cyrl: str, latn: str) -> None:
+    assert translit.sr_cyrl_to_latn(cyrl) == latn
+    assert translit.transliterate(cyrl, "") == cyrl
+
+
+def test_a_capped_language_stops_reading(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    clip = (FIX / "audio" / "clip1.wav").read_bytes()
+    read: list[int] = []
+
+    def fake(repo: str, config: str, split: str, revision: str, streaming: bool = False) -> Iterator[Mapping[str, Any]]:
+        for i in range(1000):
+            read.append(i)
+            # Each row a distinct clip (a different trailing sample), so none is a duplicate.
+            yield {
+                "audio": {"bytes": clip[:-2] + i.to_bytes(2, "little"), "path": f"{i}.wav"},
+                "raw_transcription": f"r {i}",
+            }
+
+    monkeypatch.setattr(di, "load_hf", fake)
+    p = params(format="hf-dataset", hf_config="sr_rs", hf_split="train", split_rule="source", max_utterances=3)
+    _, lines, _ = run(tmp_path, p)
+    assert len(lines) == 3
+    assert len(read) <= 4, f"read {len(read)} rows for a cap of 3"

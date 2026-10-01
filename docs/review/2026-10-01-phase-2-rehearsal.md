@@ -11,7 +11,7 @@ larger findings are listed below for the orchestrator.
 | --- | --- |
 | Base | `feat/phase-2-training` at ae30c23 |
 | Database | `postgres:17` container `cadence-rehearsal-pg` on 127.0.0.1:55471 |
-| Control plane | The branch's binary (`go build ./cmd/cadence`, rebuilt after each fix) on 127.0.0.1:18471, with its data and content store under `/home/administrator/cadence-rehearsal` |
+| Control plane | The branch's binary (`go build ./cmd/cadence`, rebuilt after each fix) on 127.0.0.1:18471, with its data and content store under `~/cadence-rehearsal` |
 | GPU worker | Image `cadence/worker:ae30c23` with `--gpus all --ipc=host --network host`, `CADENCE_WORKER_HOST=staging`, the content store and scratch on one mounted directory |
 | Stand worker | `cadence-dev-worker-1` was stopped for the rehearsal and started again afterwards |
 | Identity | Admin created with `auth.setup` (throwaway password). A `cdk_` key scoped to the project plus registry read drove the CLI. `sources.edit` and `recipes.new` used the admin session. |
@@ -57,6 +57,21 @@ validation, the state save (13–15 s) and the `.nemo` saves. In nvidia-smi, the
 21 288–22 026 MiB under the 22 528 MiB cap; PyTorch's own `maxAllocatedMb` was about 9.9 GB, and the rest is the
 caching allocator. **vLLM was untouched:** it held 23 808 MiB in every one of 1471 two-second samples, and all 99
 health checks (`/v1/models`) answered 200.
+
+## Gate evidence (the agent's playbook session)
+
+The phase-2 gate run (ROADMAP "Phase 2" gate paragraph), recorded here so the numbers live beside the rehearsal:
+
+| What | Value |
+| --- | --- |
+| Session | Claude Code (`sonnet`), playbook "Fine-tune from a dataset version", project `test`, started from an API key allowed to run sessions |
+| Data | `dataset/fleurs-he` (FLEURS he_il via `pipelines/import`): 9.18 h train, 101 validation clips; source cleared for training through an approval |
+| Calibration | `oomptimizer_calibrate`: 0.491 s/step, base batch 13 |
+| Estimate shown first | playbook dry run 0.19 GPU-h (budget 8 GPU-h/day); `runs.new` 300 steps, basis measured, 0.085 GPU-h with lease overhead |
+| Actual | 0.090 GPU-h, 5.4 min |
+| Result | one checkpoint at step 300, validation WER 0.379 (top-k kept) |
+| Memory | peak 21.5 GB under the 22 GB cap; vLLM untouched (23.8 GB) |
+| A3 status | training, streaming eval and ONNX parity (0.00 points) met; Triton ≈ 2 real-time streams (phase 5) |
 
 ## Bugs found and fixed (on this branch)
 
@@ -113,5 +128,5 @@ step.
 ## Cleanup
 
 The rehearsal worker and the control plane were stopped, the Postgres container was removed, and
-`/home/administrator/cadence-rehearsal` was deleted. `cadence-dev-worker-1` was started again (it was idle before
+`~/cadence-rehearsal` was deleted. `cadence-dev-worker-1` was started again (it was idle before
 and after). vLLM was at 23 808 MiB and answering 200 at the end.

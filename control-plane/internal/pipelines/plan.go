@@ -2,10 +2,12 @@ package pipelines
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
 
+	"github.com/usunrise88/cadence/control-plane/internal/problems"
 	"github.com/usunrise88/cadence/control-plane/internal/steps"
 	"github.com/usunrise88/cadence/control-plane/internal/storage"
 )
@@ -27,6 +29,9 @@ type Estimate struct {
 	Seconds      *float64 `json:"seconds,omitempty"`
 	GPUHours     *float64 `json:"gpuHours,omitempty"`
 	UnknownSteps []string `json:"unknownSteps"`
+	// UnknownGPU: a step that needs a card has no estimate, so GPUHours understates the cost (the policy then waits
+	// for a person rather than weighing a partial sum against the budget).
+	UnknownGPU bool `json:"-"`
 }
 
 // Plan is a pipeline validated against the published step kinds, in execution order.
@@ -161,6 +166,7 @@ func (e *Engine) Plan(ctx context.Context, q storage.Querier, p Pipeline, in Pla
 		if ps.EstimateSeconds == nil {
 			plan.Estimate.Known = false
 			plan.Estimate.UnknownSteps = append(plan.Estimate.UnknownSteps, s.ID)
+			plan.Estimate.UnknownGPU = plan.Estimate.UnknownGPU || k.Resources.GPU
 		} else {
 			seconds += *ps.EstimateSeconds
 			if k.Resources.GPU {
@@ -187,4 +193,27 @@ func listOr(items []string, none string) string {
 		return none
 	}
 	return strings.Join(items, ", ")
+}
+
+// Validate checks a pipeline file's content the way a run would plan it — strict parsing, structure, pinned kinds
+// published by a worker, wiring and parameters against each kind's schema — without inputs (a file is saved before
+// anyone has artifacts for it, so "needs input" problems are dropped). file is the name it is stored under. It answers
+// nil or one pipeline-invalid with every remaining problem.
+func (e *Engine) Validate(ctx context.Context, q storage.Querier, content []byte, file string) error {
+	p, err := Parse(content, file)
+	if err != nil {
+		return err
+	}
+	_, err = e.Plan(ctx, q, p, PlanInput{})
+	var pe *problems.Error
+	if err == nil || !errors.As(err, &pe) || pe.Type != problems.PipelineInvalid {
+		return err
+	}
+	var left Errors
+	for _, f := range pe.Errors {
+		if !strings.HasPrefix(f.Path, "inputs.") {
+			left = append(left, f)
+		}
+	}
+	return left.Err(p.Name)
 }

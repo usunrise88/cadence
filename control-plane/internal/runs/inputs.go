@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -44,6 +45,8 @@ type RenderedMix struct {
 	// Datasets are the dataset artifacts of the mix by dataset version id, in group order.
 	Datasets []DatasetArtifact
 	Data     Data
+	// Locales are the BCP 47 locales the mix's datasets declare, sorted, without repeats.
+	Locales []string
 }
 
 // DatasetArtifact is one dataset version of a mix with the artifact training reads.
@@ -197,6 +200,11 @@ func RenderMix(ctx context.Context, q storage.Querier, store *cas.Store, project
 				return RenderedMix{}, err
 			}
 			out.Datasets = append(out.Datasets, DatasetArtifact{VersionID: v.ID, Name: v.Name, Version: v.Version, Artifact: ref})
+			for _, l := range meta[v.ID].Locales {
+				if !slices.Contains(out.Locales, l) {
+					out.Locales = append(out.Locales, l)
+				}
+			}
 			if p.Bytes == 0 {
 				p.Bytes = int64(p.Hours * float64(bytesPerHour))
 			}

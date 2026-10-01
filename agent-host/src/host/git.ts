@@ -98,20 +98,37 @@ export class Worktree {
     return (await this.git(["rev-parse", "HEAD"])).trim();
   }
 
-  // Commits everything the turn changed and pushes it to the session branch; a staged diff holding a credential is
-  // unstaged and refused (the files stay in the worktree for the agent to fix).
+  // Commits everything the turn changed and pushes it to the session branch; a diff holding a credential is unstaged
+  // and refused (the files stay in the worktree for the agent to fix). The agent may have committed on its own during
+  // the turn: the scan covers everything since the last push (its commits and what is still uncommitted), its clean
+  // commits are pushed as they are, and commits holding a credential are undone into the worktree (soft reset) so
+  // nothing unscanned ever leaves the host.
   async commitTurn(message: string): Promise<TurnCommit> {
+    const base = await this.pushedHead();
     await this.git(["add", "--all"]);
-    const files = (await this.git(["diff", "--cached", "--name-only", "-z"])).split("\0").filter((f) => f !== "");
+    const against = base ?? "HEAD";
+    const files = (await this.git(["diff", "--cached", "--name-only", "-z", against])).split("\0").filter((f) => f !== "");
     if (files.length === 0) return { files: [] };
-    const findings = scanDiff(await this.git(["diff", "--cached", "-U0", "--no-color", "--no-ext-diff"]));
+    const findings = scanDiff(await this.git(["diff", "--cached", "-U0", "--no-color", "--no-ext-diff", against]));
     if (findings.length > 0) {
+      if (base) await this.git(["reset", "--quiet", "--soft", base]); // the agent's own commits back into the index
       await this.git(["reset", "--quiet"]);
       return { files, refused: findings };
     }
-    await this.git(["commit", "--quiet", "--no-verify", "-m", message]);
+    if ((await this.git(["diff", "--cached", "--name-only"])).trim() !== "") {
+      await this.git(["commit", "--quiet", "--no-verify", "-m", message]);
+    }
     await this.push();
     return { sha: await this.head(), files };
+  }
+
+  // The session branch as last pushed (the remote-tracking ref clone and push maintain); undefined when unknown.
+  private async pushedHead(): Promise<string | undefined> {
+    try {
+      return (await this.git(["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${this.branch}`])).trim() || undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   // The uncommitted changes against HEAD as the next turn commit would see them (ignore rules included): status, size

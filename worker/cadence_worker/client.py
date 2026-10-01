@@ -79,7 +79,7 @@ class WorkerClient:
         headers = {"Authorization": f"Bearer {self._token()}", "Accept": "application/json"}
         data = content
         if body is not None:
-            data = json.dumps(body, separators=(",", ":")).encode()
+            data = json.dumps(body, separators=(",", ":"), allow_nan=False).encode()
         if data is not None:
             headers["Content-Type"] = content_type
         res = self._http.request(method, url, content=data, headers=headers)
@@ -103,7 +103,7 @@ class WorkerClient:
         return cast(WorkerReportAck, self._call("workerLeases.report", report, id=lease_id))
 
     def logs(self, lease_id: str, lines: list[WorkerLogLine]) -> None:
-        payload = "".join(json.dumps(line, separators=(",", ":")) + "\n" for line in lines).encode()
+        payload = "".join(json.dumps(line, separators=(",", ":"), allow_nan=False) + "\n" for line in lines).encode()
         self._call("workerLogs.new", content=payload, content_type="application/x-ndjson", id=lease_id)
 
     def metrics(self, lease_id: str, points: list[MetricPoint]) -> None:
@@ -120,9 +120,15 @@ class WorkerClient:
 
 
 def with_retry[T](
-    fn: Callable[[], T], *, attempts: int = 5, base: float = 0.5, sleep: Callable[[float], None] = time.sleep
+    fn: Callable[[], T],
+    *,
+    attempts: int = 5,
+    base: float = 0.5,
+    cap: float = 30.0,
+    sleep: Callable[[float], None] = time.sleep,
 ) -> T:
-    """Retry transient failures (network, 5xx, 408, 429) with exponential backoff; permanent 4xx raise at once."""
+    """Retry transient failures (network, 5xx, 408, 429) with exponential backoff (each pause at most cap seconds);
+    permanent 4xx raise at once."""
     for i in range(attempts):
         try:
             return fn()
@@ -132,5 +138,5 @@ def with_retry[T](
         except httpx.TransportError:
             if i == attempts - 1:
                 raise
-        sleep(base * (2**i))
+        sleep(min(cap, base * (2**i)))
     raise AssertionError("unreachable")

@@ -3,10 +3,13 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/usunrise88/cadence/control-plane/internal/pipelines/pipelinestest"
 )
 
 // recipes.new and recipes.edit (phase 2 · stream U): the Recipe document's form commits one file to main; an edit
@@ -63,4 +66,40 @@ func TestRecipeWrites(t *testing.T) {
 	if strings.Contains(e.recipe("demo", path, "").Content, "agent") {
 		t.Fatal("agent write landed")
 	}
+}
+
+// A pipeline file is planned before it is committed: one that would not plan never reaches main (the Recipe
+// document's editor saves through recipes.edit), missing inputs aside — nobody has artifacts for a file yet.
+func TestRecipeWritesValidatePipelines(t *testing.T) {
+	e := start(t)
+	e.newProject("demo")
+	if err := pipelinestest.RegisterKinds(context.Background(), e.pool); err != nil {
+		t.Fatal(err)
+	}
+	body := func(v map[string]any) string {
+		b, _ := json.Marshal(v)
+		return string(b)
+	}
+	const ok = "name: copy\ninputs: { text: text }\nsteps:\n  - { id: a, kind: echo@1, in: { text: $inputs.text } }\n"
+	var r recipe
+	e.ok(e.do("POST", "/api/projects/demo/recipes", body(map[string]any{"path": "pipelines/copy.yaml", "content": ok}), "Idempotency-Key", e.key()), 201, &r)
+	esc := url.PathEscape("pipelines/copy.yaml")
+	for name, content := range map[string]string{
+		"an unknown kind":               strings.Replace(ok, "echo@1", "nosuch@1", 1),
+		"a parameter not allowed":       strings.Replace(ok, "in: { text: $inputs.text } }", "in: { text: $inputs.text }, params: { nope: 1 } }", 1),
+		"a name that is not the file's": strings.Replace(ok, "name: copy", "name: other", 1),
+		"yaml that does not parse":      "name: copy\nsteps: [",
+	} {
+		t.Run(name, func(t *testing.T) {
+			expectProblem(t, e.do("PATCH", "/api/projects/demo/recipes/"+esc, body(map[string]any{"content": content}),
+				"Idempotency-Key", e.key(), "If-Match", `"`+r.History[0].Sha+`"`), 422, "pipeline-invalid")
+		})
+	}
+	if got := e.recipe("demo", "pipelines/copy.yaml", "").Content; got != ok {
+		t.Fatalf("a refused edit landed: %q", got)
+	}
+	expectProblem(t, e.do("POST", "/api/projects/demo/recipes", body(map[string]any{"path": "pipelines/bad.yaml", "content": "name: bad\nsteps: ["}),
+		"Idempotency-Key", e.key()), 422, "pipeline-invalid")
+	// Other files are not pipelines: anything goes.
+	e.ok(e.do("POST", "/api/projects/demo/recipes", body(map[string]any{"path": "notes/plan.yaml", "content": "steps: ["}), "Idempotency-Key", e.key()), 201, nil)
 }

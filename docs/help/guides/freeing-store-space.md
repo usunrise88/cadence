@@ -47,12 +47,17 @@ left to do. Agents may not evict (the default preset's `agents-never-evict` rule
 
 ## Commands
 
-- `artifacts.evict?dryRun=true` — the plan, nothing changes.
+- Settings → **Content store** shows the disk and this plan and sends the eviction (admin).
+- `artifacts.evict?dryRun=true` — the plan, nothing changes; it also reports the store's disk (`disk`).
 - `artifacts.evict` — asks for the approval; `approvals.approve` runs it.
 - `artifacts.get` — one artifact, with `evicted` once its blobs are gone.
 - `backups.new` — a backup now, so the mirror holds what you are about to evict.
 
 ## Playbooks
+
+- **The disk runs low.** Below `cache.store_low_free` (15 %) free, Cadence sends a failure notification (in-app and
+  Telegram, at most once a day while it stays low) with what an eviction would free. Open Settings → Content store,
+  press **Evict…**, approve it.
 
 - **Free space after a training stage.** `artifacts.evict?dryRun=true` with `{"runId": "run_…"}`; read `kept`; send
   it for real; approve it in Approvals; follow the job.

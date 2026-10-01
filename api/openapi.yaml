@@ -6456,6 +6456,8 @@ components:
         attempts: { type: integer }
         batchScale: { type: number, format: double, description: "The current attempt's batch scale (0.75 after an out-of-memory retry)" }
         oomRetries: { type: integer, description: Attempts started by the automatic OOM retry }
+        reusedFrom: { type: string, description: "The finished step (pls_…) whose outputs this step reused (same input hash); it spent no GPU time" }
+        reusedFromRun: { type: string, description: "The run (run_…) that step belongs to, when it was a run's" }
         jobId: { type: string }
         paused: { type: boolean, description: The step's job is paused (jobs.pause) }
         estimateSeconds: { type: number, format: double }
@@ -6829,6 +6831,15 @@ components:
         bytesFreed: { type: integer, format: int64, description: Bytes of the blobs deleted (files other artifacts list are not counted) }
         blobs: { type: integer, description: Blobs deleted (manifests and files) }
         permanent: { type: boolean, description: "True when no backup mirror is configured: nothing can bring the blobs back" }
+        disk: { $ref: "#/components/schemas/StoreDisk" }
+    StoreDisk:
+      type: object
+      required: [totalBytes, freeBytes, lowFreeFraction]
+      description: The filesystem holding the content store, as the control plane sees it now
+      properties:
+        totalBytes: { type: integer, format: int64 }
+        freeBytes: { type: integer, format: int64, description: Bytes available to the control plane }
+        lowFreeFraction: { type: number, description: "Below this share free, Cadence warns (cache.store_low_free)" }
     EvictionKept:
       type: object
       required: [hash, reason]

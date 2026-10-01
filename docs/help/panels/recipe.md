@@ -23,6 +23,12 @@ puts every value back to defaults.yaml (`augment.*`); **Save** commits the file 
 its comments and any keys the form does not know. **New augmentation profile** (the Files header) commits
 `augment/telephony.yaml` at the recommended values and opens it.
 
+**Edit** opens any text file on `main` as plain text (Tab indents two spaces): **Check** sends a dry run, **Commit to
+main** commits it with your message (default `edit <path>`). A pipeline (`pipelines/<name>.yaml`) is planned before
+it is committed — strict YAML, the name equal to the file's, kinds a worker publishes, wiring, every parameter against
+its kind's schema — and a problem lists each field (`pipeline-invalid`) and commits nothing; inputs are not needed
+for that. Files the agent profile renders have no Edit (Agent settings changes them).
+
 While an agent's turn runs, a file it has changed but not committed shows a note above the content ("Edited in
 claude-code · session 3's worktree", with lines added and removed) and **Open its Chat**; the session branch in the
 list carries an *uncommitted* count. The note goes away when the turn's commit lands — then the file's diff is on the
@@ -69,11 +75,13 @@ A value outside its safe range is a warning, not a block.
 - `branches.accept` — Accept a sync branch into `main` (fast-forward when possible, otherwise a merge commit); a
   conflict answers `merge-conflict` and leaves `main` unchanged
 - `branches.revert` — Discard a sync branch
-- `recipes.edit` — commit a changed file to `main` (the augmentation form's Save). If-Match is the commit that last
-  changed the file; a file changed meanwhile answers `412 precondition-failed` and the form offers Reload. Files the
+- `recipes.edit` — commit a changed file to `main` (the editor's Commit to main, the augmentation form's Save). If-Match
+  is the commit that last changed the file; a file changed meanwhile answers `412 precondition-failed` and the form
+  offers Reload; a pipeline that would not plan answers `422 pipeline-invalid`. Files the
   agent profile renders (`AGENTS.md`, `CLAUDE.md`, `.claude/settings.json`, `opencode.json`) are refused: change them
   in Agent settings
-- `recipes.new` — commit a new file (New augmentation profile); an existing path answers `409 conflict`
+- `recipes.new` — commit a new file (New augmentation profile); an existing path answers `409 conflict`; a new
+  pipeline is planned first like an edit
 - `recipes.list`, `recipes.get`, `branches.list`, `branches.get` — the reads behind this document
 - `branches.compare` — a branch compared with `main` in three ways, file by file (the three-way view)
 

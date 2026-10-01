@@ -247,6 +247,8 @@ func serve(ctx context.Context, getenv func(string) string) error {
 	jobSvc.AddPeriodic("backups.schedule", time.Minute, backupSvc.Tick)
 	evictSvc := &eviction.Service{Pool: pool, CAS: blobs, Log: log, MirrorDir: filepath.Join(backupDir, "cas")}
 	evictSvc.Register(jobSvc)
+	storeWatch := &eviction.Watcher{Service: evictSvc, Defaults: defaults.Get}
+	jobSvc.AddPeriodic("storage.watch", 10*time.Minute, storeWatch.Tick)
 	if indexed, restored, err := eviction.Backfill(ctx, pool, blobs); err != nil {
 		return fmt.Errorf("content-store file index: %w", err)
 	} else if indexed+restored > 0 {
@@ -255,7 +257,22 @@ func serve(ctx context.Context, getenv func(string) string) error {
 	bot := notify.Bot{BaseURL: getenv("CADENCE_TELEGRAM_API"), Secrets: store}
 	signer := notify.NewSigner(store.DeriveKey("telegram-callback"))
 	notifyWake := make(chan struct{}, 1)
-	poller := &notify.Poller{Pool: pool, Log: log, Bot: bot, Signer: signer, Defaults: defaults.Get}
+	poller := &notify.Poller{Pool: pool, Log: log, Bot: bot, Signer: signer, Defaults: defaults.Get, Spend: runs.Spend,
+		Queue: func(ctx context.Context) ([]notify.QueueItem, error) {
+			entries, err := workers.Queue(ctx, pool, "")
+			out := make([]notify.QueueItem, 0, len(entries))
+			for _, e := range entries {
+				it := notify.QueueItem{Kind: e.Kind + "@" + e.KindVersion, JobKind: e.JobKind, State: e.State, Project: e.ProjectID}
+				if l := e.Lease; l != nil {
+					it.Where, it.Progress, it.Message = l.Host, l.Progress, l.Message
+					if l.Card >= 0 {
+						it.Where = fmt.Sprintf("%s · card %d", l.Host, l.Card)
+					}
+				}
+				out = append(out, it)
+			}
+			return out, err
+		}}
 	digester := &notify.Digester{Pool: pool, Log: log, Defaults: defaults.Get, Wake: notifyWake, Spend: runs.Spend}
 	jobSvc.AddPeriodic("notifications.digest", time.Minute, func(ctx context.Context) error {
 		_, err := digester.Tick(ctx)

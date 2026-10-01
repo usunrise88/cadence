@@ -335,7 +335,8 @@ Worker and jobs
 - [ ] Replay corpus and replay golden sets imported per the **spec** above — `pipelines/replay-base.yaml` is ready
       (≈ 1 h per locale, golden sets ≤ 300 per locale). Not imported yet: the import downloads each locale's whole
       FLEURS archive (≈ 5 GB for he), ≈ 34 locales do not fit the stand's free disk (≈ 40 GB); needs more disk or a
-      streaming import. Not part of the gate; the phase-3 replay-locale golden sets depend on it
+      streaming import. Not part of the gate; the phase-3 replay-locale golden sets depend on it. Streaming built
+      2026-10-01 (a capped `hf-dataset` import streams and stops at the cap); the import itself still waits for a run
 - [x] Runtimes (R40): the worker announces `runtime@version` and the NeMo runtime is registered from it;
       `runtimes.list|get`; card slots are owned per host and card, so two runtimes could share a card; `runtimes.new`
       (a second runtime, with approval) waits with the deferred packs — `nemo-speech` registers when its worker
@@ -597,6 +598,13 @@ Not planned into any phase; each comes back only by the owner's decision.
       contract; `make e2e` (`cadence smoke`) and `cadence admin reset-password` depend on it. Proposed: generated
       commands arrive with phase 1, `smoke` with phase 4. Generated commands built in phase 1 (R34 in 08); `smoke`
       stays with phase 4.
+- [x] Recipe document edits every text file of the project repository, not only augmentation profiles — today
+      `recipes.edit` is reachable in the web only from `AugmentationForm`, so a person cannot change a pipeline
+      (`pipelines/*.yaml`) without git or an agent session, although the guardrails preset names `recipes.edit` "the
+      Recipe document's (a person's) path". Needs: a text editor in the Recipe panel (YAML for pipelines, with
+      `pipelines.run?dryRun` validation before save), If-Match on `history[0].sha`, help page. Found on the test stand
+      2026-10-01 (Serbian fine-tune needed `target_lang` on both train-stage steps). Built 2026-10-01: Edit in the Recipe
+      document (plain text; Check = dry run), and `recipes.edit|new` plan a `pipelines/*.yaml` before committing it.
 - [ ] Release process: semver, the pinned matrix (NeMo container, Dockview, agent adapters) in release notes — first
       needed when there is something to upgrade from, i.e. before the first real project after phase 2.
 

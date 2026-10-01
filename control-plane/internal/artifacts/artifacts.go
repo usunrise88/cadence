@@ -132,6 +132,31 @@ func Verify(store *cas.Store, ref steps.ArtifactRef) (bool, error) {
 	return false, nil
 }
 
+// storeLockKey is the advisory lock that orders indexing against eviction ("cdnStore"). Whoever makes an artifact's
+// bytes count as present — Record, a step reused with its outputs — holds it shared from before it checks the store
+// until its transaction ends; internal/eviction holds it exclusive while it decides what to delete and while it
+// deletes. So a blob is never deleted between a check that found it and the commit that relies on it. Take it
+// before the outbox lock (events.Append, which every transaction calls last), never after.
+const storeLockKey int64 = 0x63646e53746f7265
+
+// LockShared takes the store lock shared until tx ends; Record takes it itself. A caller that checks the store
+// before it records (a reuse) takes it first.
+func LockShared(ctx context.Context, tx pgx.Tx) error {
+	if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock_shared($1)", storeLockKey); err != nil {
+		return fmt.Errorf("lock the content store (shared): %w", err)
+	}
+	return nil
+}
+
+// LockExclusive takes the store lock exclusive until tx ends: no Record runs meanwhile, and every one that ran has
+// committed or rolled back. Only eviction takes it.
+func LockExclusive(ctx context.Context, tx pgx.Tx) error {
+	if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock($1)", storeLockKey); err != nil {
+		return fmt.Errorf("lock the content store: %w", err)
+	}
+	return nil
+}
+
 // manifestOf reads the blob as a directory manifest when it plausibly is one.
 func manifestOf(store *cas.Store, hash string, size int64) (cas.Manifest, bool) {
 	if size < 2 || size > manifestLimit {
@@ -158,8 +183,12 @@ func manifestOf(store *cas.Store, hash string, size int64) (cas.Manifest, bool) 
 // that produced it (nil for an input a facade put into the store). An artifact already indexed keeps its first
 // row; projectID is linked to it either way. The size stored is the directory's total for a directory artifact,
 // whose files go into the file index (artifact_files). Recording an evicted artifact whose bytes are back in the
-// store (produced again, or copied back from the backup mirror) clears its eviction.
+// store (produced again, or copied back from the backup mirror) clears its eviction. It holds the store lock shared
+// (LockShared) from before it verifies, so an eviction never deletes what it verified.
 func Record(ctx context.Context, tx pgx.Tx, store *cas.Store, ref steps.ArtifactRef, projectID string, producer *Producer) (Artifact, error) {
+	if err := LockShared(ctx, tx); err != nil {
+		return Artifact{}, err
+	}
 	dir, err := Verify(store, ref)
 	if errors.Is(err, ErrMissing) {
 		if a, gerr := Get(ctx, tx, ref.Hash); gerr == nil && a.Evicted != nil {

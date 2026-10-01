@@ -6,6 +6,7 @@ import { actorLabel, estimateLine } from "@/shell/approvals/format";
 import { patchApprovals } from "@/shell/approvals/cache";
 import { events } from "@/shell/registries";
 import { inAppAllowed } from "./classes";
+import { playNoticeSound, unlockSoundOnInteraction } from "./sound";
 import { notify, type Notice } from "./store";
 
 // In-app notification history from live events (docs/spec/06-platform.md "Notifications"): approval requested and
@@ -14,7 +15,7 @@ import { notify, type Notice } from "./store";
 // also reaches the polite live region (WCAG 4.1.3). The routing table (Settings → Notifications) decides which
 // classes the history shows; Telegram is routed on the server by the same table.
 
-export const NOTICE_TOPICS = ["approvals", "job.*", "pipeline_run.*", "compute.*", "entity.credential.*", "backups", "notifications"];
+export const NOTICE_TOPICS = ["approvals", "job.*", "pipeline_run.*", "compute.*", "entity.credential.*", "backups", "notifications", "storage"];
 
 type NoticeInput = Omit<Notice, "id" | "at" | "read">;
 
@@ -76,6 +77,13 @@ export function noticeFor(e: CadenceEvent): NoticeInput | undefined {
     if (e.type === "backup.restore_passed") return { level: "success", title: "Restore test passed", detail: b ? `set ${b.id}` : undefined, open: SETTINGS, seq: e.seq };
     return undefined;
   }
+  if (e.type === "storage.low_space") {
+    const d = e.payload as { totalBytes?: number; freeBytes?: number; evictableArtifacts?: number; evictableBytes?: number } | undefined;
+    if (!d?.totalBytes) return undefined;
+    const gb = (b = 0) => `${Math.round(b / 1e9)} GB`;
+    const evict = d.evictableArtifacts ? ` ${d.evictableArtifacts} training states (${gb(d.evictableBytes)}) can be evicted.` : "";
+    return { level: "error", title: "Content store low on space", detail: `${gb(d.freeBytes)} free of ${gb(d.totalBytes)}.${evict}`, open: SETTINGS, seq: e.seq };
+  }
   if (e.type === "notification.digest") {
     const d = e.payload as { title?: string; text?: string } | undefined;
     return { level: "info", title: d?.title ?? "Daily digest", detail: d?.text, seq: e.seq };
@@ -106,6 +114,7 @@ export function useLiveNotifications(): void {
   useEffect(() => {
     rulesRef.current = rules.data?.items;
   }, [rules.data]);
+  useEffect(() => unlockSoundOnInteraction(), []);
   useEffect(
     () =>
       events.subscribe(
@@ -114,7 +123,9 @@ export function useLiveNotifications(): void {
           applyNoticeBatch(
             batch,
             (a) => patchApprovals(qc, a),
-            (n) => notify(n),
+            (n) => {
+              if (notify(n)) playNoticeSound(n.level);
+            },
             rulesRef.current,
           ),
         "shell",

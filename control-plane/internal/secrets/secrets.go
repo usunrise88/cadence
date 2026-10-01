@@ -190,6 +190,38 @@ func (s *Store) Read(ctx context.Context, name string) ([]byte, error) {
 	return s.read(id)
 }
 
+// ScopeAllows reports whether a secret of scope may serve work of the project with slug projectSlug ("" for work
+// outside any project): an instance secret serves every server-side consumer, a "project:<slug>" secret only the
+// work of that project.
+func ScopeAllows(scope, projectSlug string) bool {
+	if scope == ScopeInstance {
+		return true
+	}
+	slug, ok := strings.CutPrefix(scope, "project:")
+	return ok && projectSlug != "" && slug == projectSlug
+}
+
+// CheckScope refuses (forbidden) the use of the secret named name for work of the project projectID ("" for work
+// outside any project) when its scope does not allow that project. A name no secret has passes: Read reports it.
+func CheckScope(ctx context.Context, q storage.Querier, name, projectID string) error {
+	var scope, slug string
+	err := q.QueryRow(ctx, `SELECT s.scope, coalesce((SELECT p.slug FROM projects p WHERE p.id = $2), '')
+		FROM secrets s WHERE s.name = $1`, name, projectID).Scan(&scope, &slug)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("check the scope of secret %q: %w", name, err)
+	}
+	if ScopeAllows(scope, slug) {
+		return nil
+	}
+	if slug == "" {
+		return problems.Forbidden.New("secret %q is scoped to %s and this work belongs to no project", name, scope)
+	}
+	return problems.Forbidden.New("secret %q is scoped to %s, not to project %s", name, scope, slug)
+}
+
 // RequestMAC keys a request fingerprint on a secret value with the master key, so the idempotency record of
 // secrets.new cannot be used to test guesses of the value without the key.
 func (s *Store) RequestMAC(value []byte) string {
