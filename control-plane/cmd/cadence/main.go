@@ -51,6 +51,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/credentials"
 	"github.com/usunrise88/cadence/control-plane/internal/defaults"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
+	"github.com/usunrise88/cadence/control-plane/internal/eviction"
 	"github.com/usunrise88/cadence/control-plane/internal/help"
 	"github.com/usunrise88/cadence/control-plane/internal/jobs"
 	"github.com/usunrise88/cadence/control-plane/internal/notify"
@@ -244,6 +245,13 @@ func serve(ctx context.Context, getenv func(string) string) error {
 	}}
 	backupSvc.Register(jobSvc)
 	jobSvc.AddPeriodic("backups.schedule", time.Minute, backupSvc.Tick)
+	evictSvc := &eviction.Service{Pool: pool, CAS: blobs, Log: log, MirrorDir: filepath.Join(backupDir, "cas")}
+	evictSvc.Register(jobSvc)
+	if indexed, restored, err := eviction.Backfill(ctx, pool, blobs); err != nil {
+		return fmt.Errorf("content-store file index: %w", err)
+	} else if indexed+restored > 0 {
+		log.Info("content-store file index backfilled", "directories", indexed, "restored", restored)
+	}
 	bot := notify.Bot{BaseURL: getenv("CADENCE_TELEGRAM_API"), Secrets: store}
 	signer := notify.NewSigner(store.DeriveKey("telegram-callback"))
 	notifyWake := make(chan struct{}, 1)
@@ -268,6 +276,7 @@ func serve(ctx context.Context, getenv func(string) string) error {
 		CAS:      blobs,
 		Workers:  workerSvc,
 		Backups:  backupSvc,
+		Eviction: evictSvc,
 		Telegram: bot,
 		Poller:   poller,
 	})

@@ -1225,6 +1225,12 @@ export type AuditEntry = {
      */
     rule?: string;
     causedBy?: AuditCause;
+    /**
+     * What a job did for the command (artifacts.evict: artifacts, bytesFreed, blobs)
+     */
+    detail?: {
+        [key: string]: unknown;
+    };
     at: string;
 };
 
@@ -3552,6 +3558,7 @@ export type Artifact = {
      * Why content was not included (too large, a directory without path, …)
      */
     contentOmitted?: string;
+    evicted?: ArtifactEviction;
 };
 
 /**
@@ -5006,6 +5013,87 @@ export type RecipeNew = {
      * Commit message (default: add <path>)
      */
     message?: string;
+};
+
+/**
+ * Which artifacts to consider; empty means every superseded training state
+ */
+export type ArtifactEvict = {
+    /**
+     * The artifact type (v1: training-state only)
+     */
+    type?: 'training-state';
+    /**
+     * Only the states of this run (run_…)
+     */
+    runId?: string;
+    /**
+     * Only the states of this project (slug or id)
+     */
+    project?: string;
+    /**
+     * Only states recorded at least this many days ago
+     */
+    olderThanDays?: number;
+    /**
+     * Exactly these artifacts; one that may not be evicted answers artifact-not-evictable
+     */
+    hashes?: Array<string>;
+};
+
+export type EvictionPlan = {
+    /**
+     * The artifacts evicted (or, in a dry run, that would be)
+     */
+    artifacts: Array<EvictionCandidate>;
+    /**
+     * Training states the filter matched that stay, with the reason
+     */
+    kept: Array<EvictionKept>;
+    /**
+     * Bytes of the blobs deleted (files other artifacts list are not counted)
+     */
+    bytesFreed: number;
+    /**
+     * Blobs deleted (manifests and files)
+     */
+    blobs: number;
+    /**
+     * True when no backup mirror is configured: nothing can bring the blobs back
+     */
+    permanent: boolean;
+};
+
+export type EvictionKept = {
+    hash: string;
+    runId?: string;
+    reason: string;
+};
+
+export type EvictionCandidate = {
+    hash: string;
+    type: string;
+    /**
+     * The artifact's size (a directory's files summed)
+     */
+    size: number;
+    projectId?: string;
+    pipelineRunId?: string;
+    runId?: string;
+    /**
+     * Why it is evictable
+     */
+    reason?: string;
+    createdAt: string;
+};
+
+/**
+ * The artifact's blobs were deleted from the content store; the backup mirror holds them
+ */
+export type ArtifactEviction = {
+    at: string;
+    by: Actor;
+    jobId?: string;
 };
 
 export type SecretNewWritable = {
@@ -10942,6 +11030,46 @@ export type PlaybooksRunResponses = {
 };
 
 export type PlaybooksRunResponse = PlaybooksRunResponses[keyof PlaybooksRunResponses];
+
+export type ArtifactsEvictData = {
+    body?: ArtifactEvict;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/artifacts:evict';
+};
+
+export type ArtifactsEvictErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type ArtifactsEvictError = ArtifactsEvictErrors[keyof ArtifactsEvictErrors];
+
+export type ArtifactsEvictResponses = {
+    /**
+     * Dry run — the artifacts that would be evicted, the ones kept and the bytes freed; nothing changed
+     */
+    200: EvictionPlan;
+    /**
+     * Gated; a person decides the approval on the approvals topic
+     */
+    202: ApprovalAccepted;
+};
+
+export type ArtifactsEvictResponse = ArtifactsEvictResponses[keyof ArtifactsEvictResponses];
 
 export type MountsListData = {
     body?: never;

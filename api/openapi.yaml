@@ -3088,6 +3088,36 @@ paths:
 
 
 
+  # ---------------------------------------------------------------- content-store retention (phase 2 · stream E) — add paths below this line
+  /artifacts:evict:
+    x-cadence: { entity: artifacts }
+    post:
+      operationId: artifacts.evict
+      summary: Free content-store space by deleting superseded training states (always waits for an approval)
+      tags: [artifacts]
+      x-cadence:
+        toolDescription: >
+          Delete the blobs of superseded training-state artifacts from the content store: every state of a run whose
+          pipeline finished, and every state but the newest of a failed or cancelled run (runs.resume continues from
+          the newest). States a waiting or running step job names, inputs of running pipelines, artifacts a frozen
+          registry version or a checkpoint references and files another live artifact lists are kept. dryRun=true
+          answers the candidates, the artifacts kept with the reason and the bytes it would free. A real call always
+          answers 202 with an approvalId, for people too; once a person approves it, a job deletes the blobs (the
+          approval's result is 202 with its jobId) and marks the artifacts evicted (their index rows stay, so lineage still
+          resolves). Agents may not evict. The backup mirror is the way back.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: false
+        content: { application/json: { schema: { $ref: "#/components/schemas/ArtifactEvict" } } }
+      responses:
+        "200":
+          description: Dry run — the artifacts that would be evicted, the ones kept and the bytes freed; nothing changed
+          content: { application/json: { schema: { $ref: "#/components/schemas/EvictionPlan" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
   # ---------------------------------------------------------------- planned (later phases)
   /mounts:
     x-cadence: { entity: mounts, planned: 4 }
@@ -4196,6 +4226,7 @@ components:
         status: { type: integer, description: HTTP status answered }
         rule: { type: string, description: The policy rule that decided }
         causedBy: { $ref: "#/components/schemas/AuditCause" }
+        detail: { type: object, additionalProperties: true, description: "What a job did for the command (artifacts.evict: artifacts, bytesFreed, blobs)" }
         at: { type: string, format: date-time }
     AuditCause:
       type: object
@@ -5837,6 +5868,7 @@ components:
         encoding: { type: string, description: "How content is encoded (content=true): utf8 or base64" }
         content: { type: string, description: "The content (content=true, at most 1 MiB)" }
         contentOmitted: { type: string, description: "Why content was not included (too large, a directory without path, …)" }
+        evicted: { $ref: "#/components/schemas/ArtifactEviction" }
     ArtifactProducer:
       type: object
       required: [pipelineRunId, stepId, step, output]
@@ -6768,3 +6800,61 @@ components:
         path: { $ref: "#/components/schemas/RecipePath" }
         content: { type: string, maxLength: 1048576, description: The file's content (UTF-8 text) }
         message: { type: string, minLength: 1, maxLength: 200, description: "Commit message (default: add <path>)" }
+
+    # ---------------------------------------------------------------- content-store retention schemas (stream E) — add below
+    ArtifactEvict:
+      type: object
+      additionalProperties: false
+      description: Which artifacts to consider; empty means every superseded training state
+      properties:
+        type: { type: string, enum: [training-state], default: training-state, description: "The artifact type (v1: training-state only)" }
+        runId: { type: string, maxLength: 100, description: "Only the states of this run (run_…)" }
+        project: { type: string, maxLength: 100, description: "Only the states of this project (slug or id)" }
+        olderThanDays: { type: integer, minimum: 0, maximum: 3650, description: "Only states recorded at least this many days ago" }
+        hashes:
+          type: array
+          maxItems: 1000
+          items: { type: string, pattern: "^b3:[0-9a-f]{64}$" }
+          description: Exactly these artifacts; one that may not be evicted answers artifact-not-evictable
+    EvictionPlan:
+      type: object
+      required: [artifacts, kept, bytesFreed, blobs, permanent]
+      properties:
+        artifacts:
+          type: array
+          description: The artifacts evicted (or, in a dry run, that would be)
+          items: { $ref: "#/components/schemas/EvictionCandidate" }
+        kept:
+          type: array
+          description: Training states the filter matched that stay, with the reason
+          items: { $ref: "#/components/schemas/EvictionKept" }
+        bytesFreed: { type: integer, format: int64, description: Bytes of the blobs deleted (files other artifacts list are not counted) }
+        blobs: { type: integer, description: Blobs deleted (manifests and files) }
+        permanent: { type: boolean, description: "True when no backup mirror is configured: nothing can bring the blobs back" }
+    EvictionKept:
+      type: object
+      required: [hash, reason]
+      properties:
+        hash: { type: string }
+        runId: { type: string }
+        reason: { type: string }
+    EvictionCandidate:
+      type: object
+      required: [hash, type, size, createdAt]
+      properties:
+        hash: { type: string }
+        type: { type: string }
+        size: { type: integer, format: int64, description: "The artifact's size (a directory's files summed)" }
+        projectId: { type: string }
+        pipelineRunId: { type: string }
+        runId: { type: string }
+        reason: { type: string, description: Why it is evictable }
+        createdAt: { type: string, format: date-time }
+    ArtifactEviction:
+      type: object
+      required: [at, by]
+      description: "The artifact's blobs were deleted from the content store; the backup mirror holds them"
+      properties:
+        at: { type: string, format: date-time }
+        by: { $ref: "#/components/schemas/Actor" }
+        jobId: { type: string }

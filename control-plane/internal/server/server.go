@@ -27,6 +27,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/defaults"
 	"github.com/usunrise88/cadence/control-plane/internal/drafts"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
+	"github.com/usunrise88/cadence/control-plane/internal/eviction"
 	"github.com/usunrise88/cadence/control-plane/internal/help"
 	"github.com/usunrise88/cadence/control-plane/internal/jobs"
 	"github.com/usunrise88/cadence/control-plane/internal/mcp"
@@ -96,6 +97,8 @@ type Config struct {
 
 	// Backups takes and restore-tests backup sets (phase 2 · stream O); backups.* fail without it.
 	Backups *backups.Service
+	// Eviction plans and runs artifacts.evict (phase 2 · stream E); the command fails without it.
+	Eviction *eviction.Service
 	// Telegram reaches the Bot API (base URL, HTTP client); the token comes from Secrets.
 	Telegram notify.Bot
 	// Poller is the Telegram long-poll loop, read for its status only; nil when it does not run.

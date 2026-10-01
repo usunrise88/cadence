@@ -233,6 +233,22 @@ var Operations = []Operation{
 		},
 	},
 	{
+		ID: "artifacts.evict", Entity: "artifacts", Verb: "evict", Method: "POST", Path: "/artifacts:evict",
+		Summary:        "Free content-store space by deleting superseded training states (always waits for an approval)",
+		Description:    "Delete the blobs of superseded training-state artifacts from the content store: every state of a run whose pipeline finished, and every state but the newest of a failed or cancelled run (runs.resume continues from the newest). States a waiting or running step job names, inputs of running pipelines, artifacts a frozen registry version or a checkpoint references and files another live artifact lists are kept. dryRun=true answers the candidates, the artifacts kept with the reason and the bytes it would free. A real call always answers 202 with an approvalId, for people too; once a person approves it, a job deletes the blobs (the approval's result is 202 with its jobId) and marks the artifacts evicted (their index rows stay, so lineage still resolves). Agents may not evict. The backup mirror is the way back.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: false, Properties: []BodyProperty{
+			{Name: "hashes", Type: "array of string", Description: "Exactly these artifacts; one that may not be evicted answers artifact-not-evictable"},
+			{Name: "olderThanDays", Type: "integer", Description: "Only states recorded at least this many days ago"},
+			{Name: "project", Type: "string", Description: "Only the states of this project (slug or id)"},
+			{Name: "runId", Type: "string", Description: "Only the states of this run (run_…)"},
+			{Name: "type", Type: "string", Description: "The artifact type (v1: training-state only)"},
+		}},
+	},
+	{
 		ID: "artifacts.get", Entity: "artifacts", Verb: "get", Method: "GET", Path: "/artifacts/{hash}",
 		Summary:     "Get an artifact by hash — type, size, metadata, producing step, a directory's files, and small content",
 		Description: "Read an artifact of the content store by its hash (b3:<64 hex>): type, size, neutral metadata, the pipeline step that produced it and, for a directory artifact, its file list. With content=true a file artifact of at most 1 MiB comes back inline (utf8 or base64); for a directory pass path to read one of its files. Larger content is omitted (contentOmitted says why) — artifacts are read by steps, not copied into a context.",

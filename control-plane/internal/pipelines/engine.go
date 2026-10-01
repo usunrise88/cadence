@@ -254,7 +254,9 @@ func (e *Engine) Start(ctx context.Context, tx pgx.Tx, in StartInput) (Run, []ev
 			return Run{}, nil, err
 		}
 		in.Inputs[name] = ref
-		if _, err := artifacts.Record(ctx, tx, e.o.CAS, ref, in.ProjectID, nil); err != nil {
+		if _, err := artifacts.Record(ctx, tx, e.o.CAS, ref, in.ProjectID, nil); errors.Is(err, artifacts.ErrEvicted) {
+			return Run{}, nil, problems.ArtifactMissing.New("input %s: %v", name, err)
+		} else if err != nil {
 			bad.Add("inputs."+name, "%v", err)
 		}
 	}

@@ -78,6 +78,15 @@ func WithReplay(ctx context.Context, tx pgx.Tx, approvalID string) context.Conte
 	return context.WithValue(ctx, replayKey{}, &replay{tx: tx, approvalID: approvalID})
 }
 
+// ReplayedApproval is the approval whose replay ctx carries, or "" outside a replay (a job the replay enqueues
+// names it in its audit entry).
+func ReplayedApproval(ctx context.Context) string {
+	if r := replayFrom(ctx); r != nil {
+		return r.approvalID
+	}
+	return ""
+}
+
 func replayFrom(ctx context.Context) *replay {
 	r, _ := ctx.Value(replayKey{}).(*replay)
 	return r

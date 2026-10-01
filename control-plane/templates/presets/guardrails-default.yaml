@@ -52,6 +52,19 @@ tools:
     params: { name: baseline }
     reason: changing a project's baseline changes what every gate compares against
 
+  # Content-store eviction deletes blobs (06 "Artifacts, metrics and logs", Retention): agents never evict, and a
+  # person's real call waits for an approval too (no destructive data operation without an approval command). The
+  # first rule stops agents (first match wins); people read only `everyone` rules, so they meet the second.
+  - id: agents-never-evict
+    class: forbidden
+    operations: [artifacts.evict]
+    reason: freeing content-store space deletes artifacts; only a person asks for it
+  - id: store-eviction
+    class: gated
+    everyone: true
+    operations: [artifacts.evict]
+    reason: eviction deletes blobs from the content store; only the backup mirror can bring them back
+
   # "Freeze a golden set, change a baseline or gate" → approval.
   - id: evaluation-gates
     class: gated

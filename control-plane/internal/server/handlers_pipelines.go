@@ -48,7 +48,7 @@ func (s *Server) ArtifactsGet(ctx context.Context, req api.ArtifactsGetRequestOb
 		Content        string `json:"content,omitempty"`
 		ContentOmitted string `json:"contentOmitted,omitempty"`
 	}{Artifact: a}
-	files, err := artifacts.Files(s.CAS, a)
+	files, err := artifacts.Files(ctx, s.Pool, s.CAS, a)
 	if err != nil {
 		return nil, err
 	}

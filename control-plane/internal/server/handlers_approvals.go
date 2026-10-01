@@ -259,6 +259,9 @@ func (s *Server) AuditList(ctx context.Context, req api.AuditListRequestObject) 
 			item.CausedBy = &api.AuditCause{CommandId: optional(e.CommandID), ToolCallId: optional(e.ToolCallID),
 				ApprovalId: optional(e.ApprovalID)}
 		}
+		if len(e.Detail) > 0 {
+			item.Detail = &e.Detail
+		}
 		out.Items = append(out.Items, item)
 	}
 	return api.AuditList200JSONResponse(out), nil

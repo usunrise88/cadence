@@ -21,6 +21,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/usunrise88/cadence/control-plane/internal/auth"
 	"github.com/usunrise88/cadence/control-plane/internal/cas"
 	"github.com/usunrise88/cadence/control-plane/internal/problems"
 	"github.com/usunrise88/cadence/control-plane/internal/steps"
@@ -59,6 +60,15 @@ type Artifact struct {
 	ProjectID string          `json:"projectId,omitempty"`
 	Producer  *Producer       `json:"producer,omitempty"`
 	CreatedAt time.Time       `json:"createdAt"`
+	Evicted   *Eviction       `json:"evicted,omitempty"`
+}
+
+// Eviction says an artifact's blobs were deleted from the content store (artifacts.evict, internal/eviction); the
+// row stays so lineage resolves, and the backup mirror holds the bytes.
+type Eviction struct {
+	At    time.Time  `json:"at"`
+	By    auth.Actor `json:"by"`
+	JobID string     `json:"jobId,omitempty"`
 }
 
 // Ref returns the artifact as a step input.
@@ -68,6 +78,9 @@ func (a Artifact) Ref() steps.ArtifactRef {
 
 // ErrMissing wraps every "the store does not hold what was declared" failure of Record.
 var ErrMissing = errors.New("artifact not in the content store")
+
+// ErrEvicted is Record's error for an artifact that artifacts.evict removed from the store and nobody restored.
+var ErrEvicted = fmt.Errorf("%w (evicted)", ErrMissing)
 
 // Verify checks ref against the store: the hash is well formed, the blob exists, and either its size equals the
 // declared size (a file) or it is a manifest whose files all exist and add up to the declared size (a directory).
@@ -143,15 +156,24 @@ func manifestOf(store *cas.Store, hash string, size int64) (cas.Manifest, bool) 
 
 // Record verifies ref against the store and indexes it for projectID ("" for a registry artifact), with the step
 // that produced it (nil for an input a facade put into the store). An artifact already indexed keeps its first
-// row; projectID is linked to it either way. The size stored is the directory's total for a directory artifact.
+// row; projectID is linked to it either way. The size stored is the directory's total for a directory artifact,
+// whose files go into the file index (artifact_files). Recording an evicted artifact whose bytes are back in the
+// store (produced again, or copied back from the backup mirror) clears its eviction.
 func Record(ctx context.Context, tx pgx.Tx, store *cas.Store, ref steps.ArtifactRef, projectID string, producer *Producer) (Artifact, error) {
 	dir, err := Verify(store, ref)
+	if errors.Is(err, ErrMissing) {
+		if a, gerr := Get(ctx, tx, ref.Hash); gerr == nil && a.Evicted != nil {
+			return Artifact{}, fmt.Errorf("%w: %s (%s) was evicted from the content store on %s; restore it from the backup mirror",
+				ErrEvicted, ref.Hash, a.Type, a.Evicted.At.UTC().Format(time.DateOnly))
+		}
+	}
 	if err != nil {
 		return Artifact{}, err
 	}
 	size := ref.Size
+	var m cas.Manifest
 	if dir {
-		m, _ := store.ReadManifest(ref.Hash)
+		m, _ = store.ReadManifest(ref.Hash)
 		size = 0
 		for _, f := range m.Files {
 			size += f.Size
@@ -166,9 +188,16 @@ func Record(ctx context.Context, tx pgx.Tx, store *cas.Store, ref steps.Artifact
 		prun, pstepID, pstep, pout = &producer.PipelineRunID, &producer.StepID, &producer.Step, &producer.Output
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO artifacts (hash, type, size, directory, meta, project_id, pipeline_run_id, step_id, step, output)
-		VALUES ($1, $2, $3, $4, $5, NULLIF($6, ''), $7, $8, $9, $10) ON CONFLICT (hash) DO NOTHING`,
+		VALUES ($1, $2, $3, $4, $5, NULLIF($6, ''), $7, $8, $9, $10)
+		ON CONFLICT (hash) DO UPDATE SET evicted_at = NULL, evicted_by = NULL, eviction_job_id = NULL
+		WHERE artifacts.evicted_at IS NOT NULL`,
 		ref.Hash, ref.Type, size, dir, meta, projectID, prun, pstepID, pstep, pout); err != nil {
 		return Artifact{}, fmt.Errorf("record artifact %s: %w", ref.Hash, err)
+	}
+	if dir {
+		if err := IndexFiles(ctx, tx, ref.Hash, m.Files); err != nil {
+			return Artifact{}, err
+		}
 	}
 	if projectID != "" {
 		if _, err := tx.Exec(ctx, `INSERT INTO artifact_projects (hash, project_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
@@ -186,16 +215,44 @@ func Record(ctx context.Context, tx pgx.Tx, store *cas.Store, ref steps.Artifact
 	return a, nil
 }
 
-const cols = `hash, type, size, directory, meta, coalesce(project_id, ''), pipeline_run_id, step_id, step, output, created_at`
+// IndexFiles records the files of directory artifact hash in the file index; rows already there stay.
+func IndexFiles(ctx context.Context, q storage.Querier, hash string, files []cas.File) error {
+	if len(files) == 0 {
+		return nil
+	}
+	paths, hashes, sizes := make([]string, len(files)), make([]string, len(files)), make([]int64, len(files))
+	for i, f := range files {
+		paths[i], hashes[i], sizes[i] = f.Path, f.Hash, f.Size
+	}
+	if _, err := q.Exec(ctx, `INSERT INTO artifact_files (hash, path, file_hash, size)
+		SELECT $1, p, h, s FROM unnest($2::text[], $3::text[], $4::bigint[]) AS f(p, h, s)
+		ON CONFLICT DO NOTHING`, hash, paths, hashes, sizes); err != nil {
+		return fmt.Errorf("index files of %s: %w", hash, err)
+	}
+	return nil
+}
+
+const cols = `hash, type, size, directory, meta, coalesce(project_id, ''), pipeline_run_id, step_id, step, output, created_at,
+	evicted_at, evicted_by, coalesce(eviction_job_id, '')`
 
 func scan(row pgx.CollectableRow) (Artifact, error) {
 	var (
 		a                        Artifact
 		prun, pstepID, pstep, po *string
+		evAt                     *time.Time
+		evBy                     *auth.Actor
+		evJob                    string
 	)
-	err := row.Scan(&a.Hash, &a.Type, &a.Size, &a.Directory, &a.Meta, &a.ProjectID, &prun, &pstepID, &pstep, &po, &a.CreatedAt)
+	err := row.Scan(&a.Hash, &a.Type, &a.Size, &a.Directory, &a.Meta, &a.ProjectID, &prun, &pstepID, &pstep, &po,
+		&a.CreatedAt, &evAt, &evBy, &evJob)
 	if err == nil && prun != nil {
 		a.Producer = &Producer{PipelineRunID: *prun, StepID: deref(pstepID), Step: deref(pstep), Output: deref(po)}
+	}
+	if err == nil && evAt != nil {
+		a.Evicted = &Eviction{At: *evAt, JobID: evJob}
+		if evBy != nil {
+			a.Evicted.By = *evBy
+		}
 	}
 	return a, err
 }
@@ -249,6 +306,10 @@ func ReadContent(store *cas.Store, a Artifact, path string) (Content, error) {
 	if store == nil {
 		return Content{Omitted: "no content store is configured"}, nil
 	}
+	if a.Evicted != nil {
+		return Content{Omitted: fmt.Sprintf("evicted from the content store on %s; restore it from the backup mirror",
+			a.Evicted.At.UTC().Format(time.DateOnly))}, nil
+	}
 	hash, size := a.Hash, a.Size
 	if a.Directory {
 		if path == "" {
@@ -292,9 +353,24 @@ func ReadContent(store *cas.Store, a Artifact, path string) (Content, error) {
 	return Content{Encoding: "base64", Content: base64.StdEncoding.EncodeToString(b)}, nil
 }
 
-// Files returns a directory artifact's files (nil for a file artifact).
-func Files(store *cas.Store, a Artifact) ([]cas.File, error) {
-	if !a.Directory || store == nil {
+// Files returns a directory artifact's files (nil for a file artifact). An evicted directory's manifest is gone
+// from the store; its files come from the file index.
+func Files(ctx context.Context, q storage.Querier, store *cas.Store, a Artifact) ([]cas.File, error) {
+	if !a.Directory {
+		return nil, nil
+	}
+	if a.Evicted != nil {
+		rows, err := q.Query(ctx, "SELECT path, file_hash, size FROM artifact_files WHERE hash = $1 ORDER BY path", a.Hash)
+		if err != nil {
+			return nil, fmt.Errorf("query files of %s: %w", a.Hash, err)
+		}
+		files, err := pgx.CollectRows(rows, pgx.RowToStructByPos[cas.File])
+		if err != nil {
+			return nil, fmt.Errorf("read files of %s: %w", a.Hash, err)
+		}
+		return files, nil
+	}
+	if store == nil {
 		return nil, nil
 	}
 	m, err := store.ReadManifest(a.Hash)

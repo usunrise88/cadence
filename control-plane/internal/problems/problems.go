@@ -80,6 +80,8 @@ var (
 	FamilyUnavailable = Type{"family-unavailable", http.StatusUnprocessableEntity, "Model family unavailable"}
 	RecipeMismatch    = Type{"recipe-mismatch", http.StatusUnprocessableEntity, "Recipe does not fit the run"}
 	NoTrainingState   = Type{"no-training-state", http.StatusConflict, "No training state"}
+	// Content-store retention (phase 2 · stream E).
+	ArtifactNotEvictable = Type{"artifact-not-evictable", http.StatusConflict, "Artifact not evictable"}
 )
 
 // Types lists every registered type.
@@ -91,7 +93,7 @@ func Types() []Type {
 		RepositoryUnavailable, EvalOnlyDataset, PipelineInvalid,
 		LeaseEnded, StepKindConflict, ArtifactHashMismatch, ArtifactMissing,
 		PlaybookDryRunRequired, PlaybookStopped, PlaybookUnavailable,
-		FamilyUnavailable, RecipeMismatch, NoTrainingState,
+		FamilyUnavailable, RecipeMismatch, NoTrainingState, ArtifactNotEvictable,
 	}
 }
 

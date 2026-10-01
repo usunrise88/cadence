@@ -206,8 +206,8 @@ read any of them (R15).
   the run asks for `fresh`); output hooks run for reused outputs too, so they are idempotent per artifact hash.
 - Tiers: before mounts exist the store is the only tier; mounts (phase 4) become further tiers behind the same hash.
   A worker without the shared volume uploads by hash (`workerArtifacts.set`, verified: `artifact-hash-mismatch`); a
-  download path for remote workers comes with them. v1 deletes no blob; the backup mirror copies each new blob once.
-- Retention (design, 2026-10-01; not built): training states are large (7.66 GB for the 0.6B model, one per pause,
+  download path for remote workers comes with them. Only `artifacts.evict` deletes blobs (Retention below); the backup mirror copies each new blob once.
+- Retention (design 2026-10-01, built 2026-10-01 by stream E — "as built" at the end of this list): training states are large (7.66 GB for the 0.6B model, one per pause,
   window close and `state_every_minutes`) and only ever read to resume, so they are the first thing to reclaim.
   - Evictable: a `training-state` artifact whose run has ended and that nothing can resume from any more — every
     state of a run whose train step finished (`done`, a final checkpoint registered), and every state but the newest
@@ -225,6 +225,28 @@ read any of them (R15).
   - Reversibility: the backup mirror never prunes, so an evicted blob can be copied back from it (the vocabulary's
     `evict` is reversible); on an instance without backups the dry run and the approval say the eviction is
     permanent. Automatic retention (a high-water mark on the store) comes later, through the same command.
+  - As built (`internal/eviction`, migration 0020): `POST /artifacts:evict`, body `{type, runId, project, olderThanDays,
+    hashes}` (all optional). The dry run answers `{artifacts (with the reason), kept (with the reason), bytesFreed,
+    blobs, permanent}`; the real call answers `202 {approvalId}` for everyone (preset rule `store-eviction`,
+    `everyone: true`; agents hit `agents-never-evict`, forbidden, first); the approved replay queues the
+    `artifacts.evict` job and answers `202 {jobId}` as the approval's result. Named `hashes` that may not go answer
+    `409 artifact-not-evictable` before any approval is created. Added to the design: (1) "newest" and "finished"
+    are read from the producing **pipeline run** (`done`: all states; `failed`/`cancelled`: all but the newest by
+    record time; `running`: none), so pipeline runs without a training-run facade follow the same rule; (2) the
+    never-evictable set also covers inputs of running pipelines and unfinished steps, registry-version payloads,
+    checkpoint rows and files of other live artifacts (all matched by hash); (3) with backups configured, a state
+    whose blobs the mirror does not hold yet is kept ("evict it after the next backup"), so every eviction can be
+    undone; (4) training states that stopped steps saved only into lease outcomes (a pause or window close records
+    no artifact row) are indexed at selection time, producer = the step, time = the lease's end. The job re-plans
+    under an advisory lock, marks `evicted_at`/`evicted_by`/`eviction_job_id` and emits `artifact.evicted` on
+    `entity.artifact.{hash}` in one transaction, then deletes the blobs and writes an audit entry whose new `detail`
+    column holds the artifacts, `bytesFreed` and blobs; a retry deletes what its marked rows left, a second eviction
+    finds nothing. `artifact_files (hash, path, file_hash, size)` is filled by `artifacts.Record` and, for
+    directories recorded earlier, by a start-time backfill, which also clears the eviction of artifacts whose blobs
+    verify again — the restore path: copy the blobs back from `CADENCE_BACKUP_DIR/cas/` to the same relative paths
+    and restart (recording the same artifact again clears it too). `artifacts.get` shows `evicted {at, by, jobId}`, a
+    directory's files from the index, and content "evicted … restore it from the backup mirror"; a pipeline input
+    naming it answers `artifact-missing`.
 - Metrics: one Postgres table `metric_points` (migration 0012: job, run when there is one, pipeline step, project,
   name, optimiser step, epoch, value, wall time), indexed by (run, name, step) and (job, name, step); thousands of
   points per run need no TSDB. Points arrive from `workerMetrics.new` (≤ 5 000 per batch) and stream as `run.metrics`
@@ -251,7 +273,7 @@ Cadence upgrades itself the way it upgrades models: versioned, forward-only, wit
 | Failures | River retries with backoff; a worker heartbeat every 10 s, leases reaped after three missed beats (step error `lost`, one retry); an OOM gets one automatic retry at 0.75× batch; a host whose workers went quiet turns `unreachable` (`compute.health`); a full cache pauses freezes (phase 4); an unhealthy card closes its slot (not built: card health is per host today) — every case is an event, so it notifies |
 | Availability windows | Each compute card has windows per job kind (training, eval, shadow, export, data; none means always open, the default): each window is a set of weekdays, an opening and a closing time `HH:MM` (an end at or before the start closes the next day, `24:00` is midnight; a window past midnight belongs to the day it opens) and an IANA time zone per window (default: the instance time zone, `policies.timezone`, resolved when the queue checks the window — so a policy change moves windows that name none), edited with `compute.edit`. The queue starts a job only if its estimate fits before the window closes; a job without an estimate, or one resuming from a training state, starts in any open window. Training saves a checkpoint and its training state every 20 minutes (the training step's duty; the NeMo pack's); at a close the heartbeat answers `stop: window-closed` to training steps only (other kinds finish), the step saves and releases, and the job waits in its place for the next window and resumes from the last training state (`resumeFrom`). The same path makes long runs preemption-safe on the shared staging card (R19) |
 | Health | `/healthz` on the control plane, worker heartbeat, mount checks; a status card in Settings; a Prometheus endpoint |
-| Retention | Job log files are deleted 14 days after their last line (a daily chore); metric points live as long as their run; content-store blobs are kept (v1); the audit log is kept one year; production audio follows the retention policy |
+| Retention | Job log files are deleted 14 days after their last line (a daily chore); metric points live as long as their run; content-store blobs are kept until a person approves `artifacts.evict` (superseded training states only); the audit log is kept one year; production audio follows the retention policy |
 
 Phase 2 as built (2026-09-30, stream O):
 
