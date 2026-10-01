@@ -9,7 +9,7 @@ var Operations = []Operation{
 		Summary: "Registry versions the project adopted, with the aliases pointing at each",
 		Params: []Param{
 			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
-			{Name: "kind", In: "query", Flag: "kind", Type: "string", Description: "Only versions of this kind", Enum: []string{"base_model", "dataset_version", "template", "runtime", "model_family", "step_kind"}},
+			{Name: "kind", In: "query", Flag: "kind", Type: "string", Description: "Only versions of this kind", Enum: []string{"base_model", "dataset_version", "template", "runtime", "model_family", "step_kind", "noise_bank"}},
 		},
 	},
 	{
@@ -392,7 +392,7 @@ var Operations = []Operation{
 		Summary:     "List registry collections (named series of immutable versions), optionally of one kind or tag",
 		Description: "List registry collections such as base-model/nemotron-3.5-asr-streaming-0.6b or dataset/fleurs-he-smoke. A collection groups immutable versions of one kind; list the versions with baseModels.list, datasets.list or templates.list (filter collection=<name>).",
 		Params: []Param{
-			{Name: "kind", In: "query", Flag: "kind", Type: "string", Description: "Only collections of this kind", Enum: []string{"base_model", "dataset_version", "template", "runtime", "model_family", "step_kind"}},
+			{Name: "kind", In: "query", Flag: "kind", Type: "string", Description: "Only collections of this kind", Enum: []string{"base_model", "dataset_version", "template", "runtime", "model_family", "step_kind", "noise_bank"}},
 			{Name: "tag", In: "query", Flag: "tag", Type: "string", Description: "Only collections carrying this tag (e.g. locale:he-IL)"},
 		},
 	},
@@ -1058,7 +1058,7 @@ var Operations = []Operation{
 		Description: "Search registry versions of every kind (base models, dataset versions, templates). q is free text matched against collection names and descriptions plus qualifiers: kind:base_model, tag:telephony, locale:he-IL, state:frozen. project=<slug> keeps only what that project adopted. Get one version with baseModels.get, datasets.get or templates.get.",
 		Params: []Param{
 			{Name: "q", In: "query", Flag: "q", Type: "string", Description: "Free text with qualifiers (kind:, tag:, locale:, state:)"},
-			{Name: "kind", In: "query", Flag: "kind", Type: "string", Enum: []string{"base_model", "dataset_version", "template", "runtime", "model_family", "step_kind"}},
+			{Name: "kind", In: "query", Flag: "kind", Type: "string", Enum: []string{"base_model", "dataset_version", "template", "runtime", "model_family", "step_kind", "noise_bank"}},
 			{Name: "project", In: "query", Flag: "project", Type: "string", Description: "Only versions this project adopted (slug)"},
 			{Name: "limit", In: "query", Flag: "limit", Type: "integer", Default: "100"},
 		},

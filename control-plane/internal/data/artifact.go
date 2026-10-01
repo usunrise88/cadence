@@ -56,6 +56,7 @@ type Header struct {
 	Hours       float64        `json:"hours"`     // total audio hours
 	Tags        []string       `json:"tags,omitempty"`
 	EvalOnly    bool           `json:"evalOnly,omitempty"` // golden and replay test sets: never trained on
+	Purpose     string         `json:"purpose,omitempty"`  // speech (empty) or noise: a noise bank, not utterances
 }
 
 // Line is one utterance of manifest.jsonl.
@@ -147,6 +148,9 @@ func (h Header) check() error {
 	}
 	if h.Name != "" && !sourceName.MatchString(h.Name) {
 		bad = append(bad, fmt.Sprintf("name %q must be lowercase letters, digits, dots, dashes or underscores", h.Name))
+	}
+	if h.Purpose != "" && h.Purpose != PurposeSpeech && h.Purpose != PurposeNoise {
+		bad = append(bad, fmt.Sprintf("purpose %q is not speech or noise", h.Purpose))
 	}
 	if !slices.Contains(SplitRules, h.SplitRule) {
 		bad = append(bad, fmt.Sprintf("splitRule %q is not one of %s", h.SplitRule, strings.Join(SplitRules, ", ")))

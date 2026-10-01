@@ -10,6 +10,7 @@ from helpers import lease, runner
 from cadence_worker.cas import Store
 from cadence_worker.executor import LeaseRunner, MemorySink
 from cadence_worker.protocol_gen import ArtifactRef, MetricPoint
+from cadence_worker.tracing import Span, parse
 
 
 def text_input(store: Store, text: str) -> ArtifactRef:
@@ -128,7 +129,6 @@ def test_secrets_reach_only_the_step_and_are_redacted(tmp_path: Path, monkeypatc
     assert seen["CUDA_VISIBLE_DEVICES"] == "3"
     assert seen["CADENCE_MEMORY_CAP_MB"] == "2048"
     assert seen["CADENCE_WORKER_TOKEN_FILE"] is None
-    assert seen["TRACEPARENT"].startswith("00-")
     assert json.loads(seen["card"]) == {"index": 0, "cap": 2048}
     dumped = json.dumps(sink.logs)
     assert "hf_supersecret" not in dumped
@@ -145,3 +145,35 @@ def test_cpu_steps_are_kept_off_the_card(tmp_path: Path) -> None:
     assert seen["CUDA_VISIBLE_DEVICES"] == ""
     assert seen["CADENCE_MEMORY_CAP_MB"] is None
     assert json.loads(seen["card"]) is None
+
+
+def test_the_step_runs_in_a_span_under_the_lease_trace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The step gets TRACEPARENT naming its own span (a child of the lease's job span), its log lines carry the
+    trace and span ids, and the finished span lands in CADENCE_WORKER_TRACE_FILE."""
+    trace_file = tmp_path / "traces.jsonl"
+    monkeypatch.setenv("CADENCE_WORKER_TRACE_FILE", str(trace_file))
+    le = lease("EnvProbe")
+    trace_id, job_span = le["traceparent"].split("-")[1:3]
+    r, sink, store = runner(tmp_path, le)
+    out = r.run()
+    assert out["state"] == "done", out
+    seen = json.loads(store.path(out["outputs"]["env"]["hash"]).read_text())
+    _, t, step_span, _ = seen["TRACEPARENT"].split("-")
+    assert t == trace_id
+    assert step_span != job_span
+    assert sink.logs
+    for line in sink.logs:
+        assert line.get("fields", {}).get("trace_id") == trace_id, line
+        assert line.get("fields", {}).get("span_id") == step_span, line
+    (span,) = [json.loads(x) for x in trace_file.read_text().splitlines()]
+    assert span["SpanContext"] == {"TraceID": trace_id, "SpanID": step_span, "TraceFlags": "01"}
+    assert span["Parent"]["SpanID"] == job_span
+    assert span["Name"] == "step EnvProbe@1"
+    assert span["Status"]["Code"] == "Ok"
+
+
+def test_a_lease_without_a_trace_starts_one() -> None:
+    s = Span.child_of("garbage", "step x@1")
+    assert s.parent_id is None
+    assert parse(s.traceparent) == (s.trace_id, s.span_id, "01")
+    assert parse("00-" + "0" * 32 + "-b7ad6b7169203331-01") is None

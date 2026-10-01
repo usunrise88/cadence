@@ -475,14 +475,24 @@ Open questions:
       "Notifications", "Failures")
 - [ ] gap (phase 2): "a checkpoint and training state every 20 minutes" (03 "Key defaults") has no `defaults.yaml` key
       and no step kind implements it yet; the NeMo pack's train kind must, with the interval from `defaults.yaml`
-- [ ] gap (phase 2): `metrics.get` (series binned for charts, R53) is not in the contract yet; `internal/telemetry.Get`
-      is ready for stream R to expose
+- [x] gap (phase 2): `metrics.get` (series binned for charts, R53) is not in the contract yet; `internal/telemetry.Get`
+      is ready for stream R to expose — resolved: `metrics.get` is in the contract and served (stream R)
 - [ ] gap (later): job-log field search and the global search index of `warn`+ lines (R15) are not built; remote
       workers have an upload path (`workerArtifacts.set`) but no download path
 - [ ] deferred (later, decided 2026-09-30): per-kind MCP tool descriptions — step kinds' parameter schemas are not
       rendered into a tool description per kind; agents read `stepKinds.get` (schema with `x-cadence`) and the
       `pipelines.run` dry run (resolved parameters, departures), which covers phase 2. Revisit when playbooks or
       agents show they need it; no code in phase 2
+- [ ] H (2026-09-30, noise bank): a noise bank is its own registry kind `noise_bank` (collection `noise-bank/<name>`),
+      not a `dataset_version` tagged `noise-bank`: it is produced by `dataset_import` with `purpose: noise` (clips
+      without transcripts; the `dataset` hook registers the source and the version, and writes no utterances or
+      transcripts), so noise never lands in the utterance store, search or a mix. Spec 02 "versioned like a dataset"
+      holds (frozen, fingerprinted by content, licence from the source). Applying it on the fly is the NeMo pack's
+      augmentation (it joins when the pack reads `noise-bank/*`); the MUSAN import runs on the stand in the gate wave
+- [ ] H: the toy model gained a layer norm (it converged too late: WER near 1 at 300 steps) under the same
+      `toy_train@1`; the toy is CI-only, and checkpoints written before load without it
+- [ ] H: `TestProjectQueuePriority`'s one failure did not reproduce (20 runs alone, 8 beside `TestPipelinesOverHTTP`,
+      two full integration runs); nothing changed there. The cancel flake was a real race (fixed in `internal/jobs`)
 
 ## Sources
 

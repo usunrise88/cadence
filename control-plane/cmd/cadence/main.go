@@ -206,6 +206,7 @@ func serve(ctx context.Context, getenv func(string) string) error {
 		return err
 	}
 	jobSvc := jobs.New(pool, log)
+	jobSvc.Tracer = tp
 	registerChores(jobSvc, pool, log)
 	repoStore, err := repos.NewStore(cfg.dataDir)
 	if err != nil {

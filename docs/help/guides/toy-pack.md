@@ -8,7 +8,7 @@ contexts: [guide:toy-pack, family:toy-ctc]
 
 A framework pack is the unit of extension (R45): a runtime image, step kinds for a model family's roles, the family
 descriptor with its latency profiles, a `defaults.yaml` section and help. The toy pack is the smallest real one:
-runtime `toy` (python:3.12-slim with CPU PyTorch, image `cadence/worker-toy`), family `toy-ctc` (a linear layer and a
+runtime `toy` (python:3.12-slim with CPU PyTorch, image `cadence/worker-toy`), family `toy-ctc` (a linear layer, a layer norm and a
 unidirectional GRU with a CTC head, character tokenizer, log-mel features computed on the fly), latency profiles
 `offline` and a simulated streaming `320ms`, and the step kinds `toy_calibrate`, `toy_train`, `toy_average` and
 `toy_transcribe`. It trains in seconds on synthetic tone clips and exists only to keep the seams honest; NeMo is the
@@ -20,7 +20,9 @@ The conformance suite (`python -m cadence_worker.conformance --runtime <runtime>
 pack) checks the schemas (complete `x-cadence`, help articles, declared profiles, every role mapped to a published
 kind that declares that role) and then imports the pack's fixtures with `dataset_import` (a `folder-csv` folder)
 into a `dataset` artifact and runs calibrate → train → stop (training state on cancel) → resume → average →
-transcribe for every profile → score through the real harness path, with a local content store and no control plane.
+transcribe for every profile → baseline → score through the real harness path, with a local content store and no
+control plane. The score requires the trained model to beat a nearly untrained one (the family's `baseline`
+parameters, one step for the toy) on every profile, and the toy to reach a WER of at most 0.1 on its fixtures.
 Export and parity join in phase 5.
 
 ## Place in the loop

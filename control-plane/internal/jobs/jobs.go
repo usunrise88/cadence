@@ -24,9 +24,14 @@ import (
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"github.com/riverqueue/river/rivermigrate"
 	"github.com/riverqueue/river/rivertype"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
 	"github.com/usunrise88/cadence/control-plane/internal/auth"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
+	"github.com/usunrise88/cadence/control-plane/internal/obs"
 	"github.com/usunrise88/cadence/control-plane/internal/problems"
 	"github.com/usunrise88/cadence/control-plane/internal/storage"
 )
@@ -236,6 +241,8 @@ type riverArgs struct {
 	K     string          `json:"kind"`
 	JobID string          `json:"jobId"`
 	Args  json.RawMessage `json:"args,omitempty"`
+	// Trace is the W3C traceparent of the request that enqueued the job; each attempt's span continues it.
+	Trace string `json:"trace,omitempty"`
 }
 
 func (a riverArgs) Kind() string { return a.K }
@@ -257,6 +264,8 @@ type Service struct {
 	client   *river.Client[pgx.Tx]
 	// FetchPollInterval overrides River's poll interval (tests); zero keeps River's default.
 	FetchPollInterval time.Duration
+	// Tracer records a span per job attempt (main sets the file exporter's provider); nil records nothing.
+	Tracer trace.TracerProvider
 }
 
 type kindEntry struct {
@@ -389,7 +398,7 @@ func (s *Service) Enqueue(ctx context.Context, tx pgx.Tx, spec Spec) (Job, []eve
 	}
 	actor, _ := auth.FromContext(ctx)
 	id := "job_" + uuid.Must(uuid.NewV7()).String()
-	res, err := s.client.InsertTx(ctx, tx, riverArgs{K: spec.Kind, JobID: id, Args: args},
+	res, err := s.client.InsertTx(ctx, tx, riverArgs{K: spec.Kind, JobID: id, Args: args, Trace: obs.Traceparent(ctx)},
 		&river.InsertOpts{MaxAttempts: k.opts.MaxAttempts, Queue: k.opts.Queue})
 	if err != nil {
 		return Job{}, nil, fmt.Errorf("enqueue %s: %w", spec.Kind, err)
@@ -460,7 +469,30 @@ type worker struct {
 
 func (w *worker) Timeout(*river.Job[riverArgs]) time.Duration { return w.timeout }
 
-func (w *worker) Work(ctx context.Context, rj *river.Job[riverArgs]) error {
+// Work runs one attempt in a span that continues the trace of the request that enqueued the job.
+func (w *worker) Work(ctx context.Context, rj *river.Job[riverArgs]) (err error) {
+	s := w.svc
+	ctx, span := s.tracer().Tracer("cadence/jobs").Start(obs.WithTraceparent(ctx, rj.Args.Trace), "job "+rj.Args.K,
+		trace.WithSpanKind(trace.SpanKindConsumer), trace.WithAttributes(
+			attribute.String("cadence.job.id", rj.Args.JobID), attribute.Int("cadence.job.attempt", rj.Attempt)))
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+		span.End()
+	}()
+	return w.work(ctx, rj)
+}
+
+func (s *Service) tracer() trace.TracerProvider {
+	if s.Tracer != nil {
+		return s.Tracer
+	}
+	return tracenoop.NewTracerProvider()
+}
+
+func (w *worker) work(ctx context.Context, rj *river.Job[riverArgs]) error {
 	s, id := w.svc, rj.Args.JobID
 	k, ok := s.kinds[rj.Args.K]
 	if !ok {
@@ -482,6 +514,12 @@ func (w *worker) Work(ctx context.Context, rj *river.Job[riverArgs]) error {
 		return events.Append(ctx, tx, System, nil, stateDraft(j, EventState))
 	})
 	if errors.Is(err, errCancelled) {
+		// Cancelled after River fetched the job but before this handler marked it running: jobs.cancel saw a
+		// running River job and only set cancel_requested_at, so the mirror is still queued. End it here, or it
+		// stays queued forever (end skips a job that already ended).
+		if err := s.end(context.WithoutCancel(ctx), id, StateCancelled, "cancelled before it started"); err != nil {
+			return err
+		}
 		return river.JobCancel(err)
 	}
 	if err != nil {

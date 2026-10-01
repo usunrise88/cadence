@@ -154,7 +154,12 @@ Rules:
   (`hf-token` → `HF_TOKEN`); a missing secret fails the step at lease time with error type `input`. Values never
   appear in the spec, job rows, events, logs, artifacts or an agent context; the worker redacts them from forwarded
   logs and removes its own token and URL from the step's environment.
-- Tracing: the job's `traceparent` reaches the subprocess, so one trace runs UI → API → job → step.
+- Tracing: one trace runs UI → API → job → step. A job keeps the traceparent of the request that enqueued it (River
+  args) and each attempt runs in a `job <kind>` span continuing it (file traces, `traces.jsonl`); the step handler
+  stores that span's traceparent on the step job (`step_jobs.traceparent`) and the lease hands it to the worker (a
+  job queued without a span gets one derived from the job and lease ids). The worker opens a `step <kind>@<version>`
+  span under it, passes it to the subprocess as `TRACEPARENT`, adds `trace_id` and `span_id` to the fields of every
+  log line it forwards, and appends the finished span as a JSON line to `CADENCE_WORKER_TRACE_FILE` when set.
 - Worker configuration (`worker/cadence_worker/config.py`): `CADENCE_URL`, `CADENCE_WORKER_TOKEN_FILE` (re-read on
   every call), `CADENCE_CAS_DIR`, `CADENCE_WORKER_HOST`, `CADENCE_WORKER_SCRATCH`, `CADENCE_RUNTIME` or
   `CADENCE_RUNTIME_FILE` (the runtime descriptor baked into the image), `CADENCE_WORKER_GPU`, `CADENCE_CLAIM_WAIT_SECONDS`

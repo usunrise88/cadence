@@ -173,8 +173,18 @@ func (s *Service) sleep(ctx context.Context, limit time.Duration) bool {
 	return true
 }
 
-// traceparent is a W3C trace context for a lease: the trace is the job's (derived from its id, so every attempt of
-// a job shares it), the parent span the lease's.
+// leaseTrace is the trace context a lease hands the worker: the job span's (so the worker's step spans are its
+// children, in the trace of the request that started the job), or, for a job queued without a span, one derived
+// from the job and the lease.
+func leaseTrace(c candidate, leaseID string) string {
+	if c.trace != "" {
+		return c.trace
+	}
+	return traceparent(c.jobID, leaseID)
+}
+
+// traceparent is a derived W3C trace context for a lease: the trace is the job's (derived from its id, so every
+// attempt of a job shares it), the parent span the lease's.
 func traceparent(jobID, leaseID string) string {
 	t := sha256.Sum256([]byte(jobID))
 	p := sha256.Sum256([]byte(leaseID))

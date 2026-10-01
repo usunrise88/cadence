@@ -38,6 +38,7 @@ TEXT_FIELDS = ("raw_transcription", "sentence", "text", "transcription", "normal
 SPEAKER_FIELDS = ("speaker_id", "client_id", "speaker")
 AUDIO_FIELDS = ("audio", "path", "file", "audio_filepath")
 SPLIT_RULES = ("speaker-disjoint", "source", "all-train", "all-validation", "all-test")
+AUDIO_SUFFIXES = (".wav", ".flac", ".mp3", ".ogg")
 
 
 class DatasetImportParams(BaseModel):
@@ -163,6 +164,13 @@ class DatasetImportParams(BaseModel):
         source="Cadence recommendation",
         range="at most 20 tags, each ≤ 40 characters",
     )
+    purpose: Literal["speech", "noise"] = cadence_field(
+        "speech",
+        description="speech: utterances with transcripts; noise: background noise clips (no transcripts, all train) "
+        "registered as a noise bank for augmentation",
+        source="docs/spec/02-domain-projects-registry.md, entity Noise bank",
+        range={"values": ["speech", "noise"]},
+    )
 
     @model_validator(mode="after")
     def _check(self) -> DatasetImportParams:
@@ -243,6 +251,11 @@ def _nemo(p: DatasetImportParams) -> Iterator[Record]:
 
 def _folder(p: DatasetImportParams) -> Iterator[Record]:
     base = Path(p.path)
+    if p.purpose == "noise" and not (base / "metadata.csv").is_file():
+        # A noise folder needs no metadata: every audio file under it, in path order (MUSAN's noise/ as extracted).
+        for clip in sorted(x for x in base.rglob("*") if x.suffix.lower() in AUDIO_SUFFIXES and x.is_file()):
+            yield Record(audio=clip, text="", language=p.locale or "und")
+        return
     with (base / "metadata.csv").open(encoding="utf-8", newline="") as f:
         for n, row in enumerate(csv.DictReader(f), 2):
             file = _first(row, AUDIO_FIELDS)
@@ -342,10 +355,11 @@ def write_dataset(p: DatasetImportParams, rows: Iterable[Record], out: Path, ctx
     seen: set[str] = set()
     per_lang: dict[str, tuple[int, float]] = {}
     skipped = {"empty text": 0, "duplicate audio": 0, "no language": 0, "cap": 0}
+    noise = p.purpose == "noise"
     for r in rows:
         text = normalise_text(r.text, p.text_normalisation)
-        language = r.language.strip()
-        if not text:
+        language = r.language.strip() or ("und" if noise else "")
+        if not text and not noise:
             skipped["empty text"] += 1
             continue
         if not language:
@@ -377,7 +391,7 @@ def write_dataset(p: DatasetImportParams, rows: Iterable[Record], out: Path, ctx
             "language": language,
             "text": text,
             "origin": "human",
-            "split": assign_split(p, r, text),
+            "split": "train" if noise else assign_split(p, r, text),
         }
         if r.speaker:
             line["speaker"] = r.speaker
@@ -391,6 +405,8 @@ def write_dataset(p: DatasetImportParams, rows: Iterable[Record], out: Path, ctx
     tags = list(dict.fromkeys(p.tags))
     if p.eval_only and "eval-only" not in tags:
         tags.append("eval-only")
+    if noise and "noise-bank" not in tags:
+        tags.append("noise-bank")
     url = p.source_url or (f"hf://datasets/{p.hf_repo}" if p.format == "hf-dataset" else "")
     subset = ",".join(p.hf_configs) if p.hf_configs else p.hf_config
     header: dict[str, Any] = {
@@ -404,7 +420,7 @@ def write_dataset(p: DatasetImportParams, rows: Iterable[Record], out: Path, ctx
             **({"revision": p.hf_revision} if p.format == "hf-dataset" and p.hf_revision else {}),
             **({"subset": subset} if p.format == "hf-dataset" and subset else {}),
         },
-        "splitRule": p.split_rule,
+        "splitRule": "all-train" if noise else p.split_rule,
         "counts": counts,
         "hours": sum(x["duration"] for x in lines) / 3600,
     }
@@ -414,6 +430,8 @@ def write_dataset(p: DatasetImportParams, rows: Iterable[Record], out: Path, ctx
         header["tags"] = tags
     if p.eval_only:
         header["evalOnly"] = True
+    if noise:
+        header["purpose"] = "noise"
     with (out / "manifest.jsonl").open("w", encoding="utf-8") as f:
         for x in lines:
             f.write(json.dumps(x, ensure_ascii=False, sort_keys=True) + "\n")
