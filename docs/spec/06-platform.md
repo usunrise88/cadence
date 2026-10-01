@@ -246,7 +246,12 @@ read any of them (R15).
     verify again — the restore path: copy the blobs back from `CADENCE_BACKUP_DIR/cas/` to the same relative paths
     and restart (recording the same artifact again clears it too). `artifacts.get` shows `evicted {at, by, jobId}`, a
     directory's files from the index, and content "evicted … restore it from the backup mirror"; a pipeline input
-    naming it answers `artifact-missing`.
+    naming it answers `artifact-missing`. Audit fix (2026-10-01): the job decides and deletes under one content-store
+    advisory lock that `artifacts.Record`, step reuse and the restore hold shared from their store check to their
+    commit; the deleting transaction re-reads which rows are still marked (a Record that found the bytes meanwhile
+    cleared the mark) and which blobs a live artifact lists, and a Record after the deletion answers
+    `artifact-missing`. The reference checks are index lookups (migration 0022: GIN on every `b3:` hash in step job
+    specs, pipeline inputs and registry payloads; a btree on `checkpoints.artifact_hash`), no longer text scans.
 - Metrics: one Postgres table `metric_points` (migration 0012: job, run when there is one, pipeline step, project,
   name, optimiser step, epoch, value, wall time), indexed by (run, name, step) and (job, name, step); thousands of
   points per run need no TSDB. Points arrive from `workerMetrics.new` (≤ 5 000 per batch) and stream as `run.metrics`

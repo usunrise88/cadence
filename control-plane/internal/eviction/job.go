@@ -27,9 +27,6 @@ const Operation = "artifacts.evict"
 // EventEvicted goes out on entity.artifact.{hash} for every artifact the job evicts.
 const EventEvicted = "artifact.evicted"
 
-// lockKey serialises evictions (single-key advisory lock; the outbox and migrations use others).
-const lockKey int64 = 0x63646e45766963 // "cdnEvic"
-
 // jobArgs are what the approved replay planned; the job re-plans them, so a state that became needed meanwhile (a
 // resume started) stays.
 type jobArgs struct {
@@ -54,6 +51,12 @@ func (s *Service) Enqueue(ctx context.Context, tx pgx.Tx, p Plan, approvalID str
 // run marks the planned artifacts evicted (one transaction, with their events), deletes their blobs, and writes the
 // audit entry with the bytes freed. A retry finds the rows this job already marked and deletes what is left, so a
 // crash between the two halves never leaks blobs; a second eviction of the same artifacts finds nothing to do.
+//
+// Both halves hold the store lock exclusive (artifacts.LockExclusive), which every artifacts.Record and step reuse
+// holds shared from its store check to its commit. The first half plans and marks with every such transaction
+// either committed (its references visible to the plan) or not started. The second re-reads which rows are still
+// marked by this job — a Record in between found the bytes and cleared the mark — and which blobs no live artifact
+// lists, and deletes them before it lets a Record in again; a Record after it finds the bytes gone (ErrEvicted).
 func (s *Service) run(ctx context.Context, r *jobs.Run) (any, error) {
 	var args jobArgs
 	if len(r.Args) > 0 {
@@ -61,49 +64,67 @@ func (s *Service) run(ctx context.Context, r *jobs.Run) (any, error) {
 			return nil, fmt.Errorf("read eviction args: %w", err)
 		}
 	}
-	var (
-		p     Plan
-		blobs []string
-	)
+	reasons := map[string]string{}
 	err := pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock($1)", lockKey); err != nil {
-			return fmt.Errorf("lock evictions: %w", err)
+		if err := artifacts.LockExclusive(ctx, tx); err != nil {
+			return err
+		}
+		mine, err := markedBy(ctx, tx, r.Job.ID)
+		if err != nil || len(mine) > 0 || len(args.Hashes) == 0 {
+			return err // a retry: the rows are marked already
+		}
+		p, err := s.Plan(ctx, tx, Filter{Hashes: args.Hashes})
+		if err != nil {
+			return err
+		}
+		for _, c := range p.Artifacts {
+			reasons[c.Hash] = c.Reason
+		}
+		return s.mark(ctx, tx, r.Job, p)
+	})
+	if err != nil {
+		return nil, err
+	}
+	s.hook("marked")
+	p := Plan{Kept: []Kept{}, Permanent: s.MirrorDir == ""}
+	err = pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
+		if err := artifacts.LockExclusive(ctx, tx); err != nil {
+			return err
 		}
 		mine, err := markedBy(ctx, tx, r.Job.ID)
 		if err != nil {
 			return err
 		}
-		if len(mine) == 0 && len(args.Hashes) > 0 {
-			if p, err = s.Plan(ctx, tx, Filter{Hashes: args.Hashes}); err != nil {
-				return err
+		for i, c := range mine {
+			if why, ok := reasons[c.Hash]; ok {
+				mine[i].Reason = why
 			}
-			if err := s.mark(ctx, tx, r.Job, p); err != nil {
-				return err
-			}
-			mine = p.Artifacts
-		} else {
-			p = Plan{Artifacts: mine, Kept: []Kept{}, Permanent: s.MirrorDir == ""}
 		}
-		// The rows are marked: no live artifact outside the set needs a blob that only the set lists.
-		blobs, err = s.deletable(ctx, tx, mine, p.Hashes())
-		return err
+		p.Artifacts = mine
+		// Under the lock: no live artifact outside the set needs a blob that only the set lists, and none can
+		// start to until the deletion is done.
+		blobs, err := s.deletable(ctx, tx, mine, p.Hashes())
+		if err != nil {
+			return err
+		}
+		s.hook("deleting")
+		for i, b := range blobs {
+			n, err := s.CAS.Delete(b)
+			if err != nil {
+				return err // retried: the rows stay marked and the next attempt deletes the rest
+			}
+			if n > 0 {
+				p.BytesFreed += n
+				p.Blobs++
+			}
+			if i%50 == 49 {
+				_ = r.Progress(ctx, float64(i+1)/float64(len(blobs)), fmt.Sprintf("%d of %d blobs deleted", i+1, len(blobs)))
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, err
-	}
-	p.BytesFreed, p.Blobs = 0, 0
-	for i, b := range blobs {
-		n, err := s.CAS.Delete(b)
-		if err != nil {
-			return nil, err // retried: the rows stay marked and the next attempt deletes the rest
-		}
-		if n > 0 {
-			p.BytesFreed += n
-			p.Blobs++
-		}
-		if i%50 == 49 {
-			_ = r.Progress(ctx, float64(i+1)/float64(len(blobs)), fmt.Sprintf("%d of %d blobs deleted", i+1, len(blobs)))
-		}
 	}
 	if p.Artifacts == nil {
 		p.Artifacts = []Candidate{}
@@ -211,14 +232,28 @@ func Backfill(ctx context.Context, pool *pgxpool.Pool, store *cas.Store) (indexe
 		if ok, _, _ := store.Has(e.hash); !ok {
 			continue
 		}
-		if _, err := artifacts.Verify(store, artifactRef(e.hash, e.typ, e.size)); err != nil {
-			continue // only some of its blobs are back
+		var back bool
+		// Verified under the store lock, like Record: an eviction job still deleting cannot remove what verified.
+		err := pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
+			if err := artifacts.LockShared(ctx, tx); err != nil {
+				return err
+			}
+			if _, err := artifacts.Verify(store, artifactRef(e.hash, e.typ, e.size)); err != nil {
+				return nil // only some of its blobs are back
+			}
+			if _, err := tx.Exec(ctx, `UPDATE artifacts SET evicted_at = NULL, evicted_by = NULL, eviction_job_id = NULL
+				WHERE hash = $1`, e.hash); err != nil {
+				return fmt.Errorf("restore %s: %w", e.hash, err)
+			}
+			back = true
+			return nil
+		})
+		if err != nil {
+			return indexed, restored, err
 		}
-		if _, err := pool.Exec(ctx, `UPDATE artifacts SET evicted_at = NULL, evicted_by = NULL, eviction_job_id = NULL
-			WHERE hash = $1`, e.hash); err != nil {
-			return indexed, restored, fmt.Errorf("restore %s: %w", e.hash, err)
+		if back {
+			restored++
 		}
-		restored++
 	}
 	return indexed, restored, nil
 }

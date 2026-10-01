@@ -11,6 +11,19 @@
 // The command (internal/server) is always gated; the approved replay enqueues the eviction job (Register), which
 // marks the rows evicted (they stay: lineage resolves and artifacts.get says where the bytes went), emits
 // artifact.evicted, deletes the blobs and leaves an audit entry with the bytes freed.
+//
+// Concurrency: one advisory lock on the content store (internal/artifacts LockShared/LockExclusive). Everything
+// that relies on bytes being present — artifacts.Record (step outputs, run inputs), a step reused by input hash, the
+// start-time restore — holds it shared from its store check until it commits. The job holds it exclusive twice:
+// to plan and mark (so every such transaction is either visible to the plan or has not looked at the store yet),
+// and to delete — it re-reads which rows are still marked by it (a Record that found the bytes meanwhile cleared
+// the mark and keeps them) and which blobs a live artifact lists (a new directory sharing a file keeps it), and
+// deletes before any Record runs again; a Record after that finds the bytes gone and answers ErrEvicted, so a
+// reuse falls back to running the step. One global lock rather than one per hash: a directory shares file blobs
+// with artifacts it does not name, and evictions are rare, approved, and short.
+//
+// Reference checks (referencesQuery) are index lookups: GIN indexes on artifact_hashes_in(document) for step job
+// specs, pipeline run and step inputs and registry payloads, a btree on checkpoints.artifact_hash (migration 0022).
 package eviction
 
 import (
@@ -55,6 +68,15 @@ type Service struct {
 	// MirrorDir is the backup mirror of the store (CADENCE_BACKUP_DIR/cas, internal/backups): blobs live at
 	// <MirrorDir>/b3/<2 hex>/<64 hex>. Empty: no backups, and an eviction is permanent.
 	MirrorDir string
+	// testHook, when set, runs at the job's phases ("marked": the rows are marked and the lock is released;
+	// "deleting": the lock is held and the blobs are about to go), so a test can interleave a Record.
+	testHook func(phase string)
+}
+
+func (s *Service) hook(phase string) {
+	if s.testHook != nil {
+		s.testHook(phase)
+	}
 }
 
 // Filter selects what an eviction considers. RunID and ProjectID select whole runs (so the newest state of a failed
@@ -322,24 +344,29 @@ func liveStates(ctx context.Context, tx pgx.Tx, f Filter) ([]state, error) {
 	return out, nil
 }
 
-// referenced answers why something still needs the artifact hash, or "".
-func referenced(ctx context.Context, q pgx.Tx, hash string) (string, error) {
-	var reason string
-	err := q.QueryRow(ctx, `SELECT CASE
-		WHEN EXISTS (SELECT 1 FROM step_jobs WHERE state IN ('waiting', 'leased') AND strpos(spec::text, $1) > 0)
+// referencesQuery answers why something still needs artifact hash $1, or an empty string. Each document check is a lookup in a
+// GIN index on artifact_hashes_in(doc) (migration 0022): the hashes that occur anywhere in the document's text. The
+// expressions and state predicates must stay exactly those of the partial indexes, or the planner scans.
+const referencesQuery = `SELECT CASE
+		WHEN EXISTS (SELECT 1 FROM step_jobs WHERE state IN ('waiting', 'leased') AND artifact_hashes_in(spec) @> ARRAY[$1::text])
 			THEN 'a waiting or running step job names it (an input or overrides.resumeFrom)'
-		WHEN EXISTS (SELECT 1 FROM pipeline_runs WHERE state = 'running' AND strpos(inputs::text, $1) > 0)
+		WHEN EXISTS (SELECT 1 FROM pipeline_runs WHERE state = 'running' AND artifact_hashes_in(inputs) @> ARRAY[$1::text])
 			THEN 'an input of a running pipeline run'
-		WHEN EXISTS (SELECT 1 FROM pipeline_steps WHERE state IN ('waiting', 'queued', 'running') AND strpos(coalesce(inputs, '{}')::text, $1) > 0)
+		WHEN EXISTS (SELECT 1 FROM pipeline_steps WHERE state IN ('waiting', 'queued', 'running') AND artifact_hashes_in(inputs) @> ARRAY[$1::text])
 			THEN 'an input of a pipeline step that has not finished'
-		WHEN EXISTS (SELECT 1 FROM registry_versions WHERE strpos(payload::text, $1) > 0)
+		WHEN EXISTS (SELECT 1 FROM registry_versions WHERE artifact_hashes_in(payload) @> ARRAY[$1::text])
 			THEN 'a registry version references it'
 		WHEN EXISTS (SELECT 1 FROM checkpoints WHERE artifact_hash = $1)
 			THEN 'a registered checkpoint'
 		WHEN EXISTS (SELECT 1 FROM artifact_files f JOIN artifacts o ON o.hash = f.hash
 				WHERE f.file_hash = $1 AND o.evicted_at IS NULL AND o.hash <> $1)
 			THEN 'a file of another live artifact'
-		ELSE '' END`, hash).Scan(&reason)
+		ELSE '' END`
+
+// referenced answers why something still needs the artifact hash, or "".
+func referenced(ctx context.Context, q pgx.Tx, hash string) (string, error) {
+	var reason string
+	err := q.QueryRow(ctx, referencesQuery, hash).Scan(&reason)
 	if err != nil {
 		return "", fmt.Errorf("check references of %s: %w", hash, err)
 	}

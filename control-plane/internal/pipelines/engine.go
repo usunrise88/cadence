@@ -412,6 +412,10 @@ func (e *Engine) reuse(ctx context.Context, tx pgx.Tx, r *Run, s *StepRow) ([]ev
 	if err != nil || !found {
 		return nil, false, err
 	}
+	// The outputs verified here stay in the store until tx ends: an eviction waits for the shared lock.
+	if err := artifacts.LockShared(ctx, tx); err != nil {
+		return nil, false, err
+	}
 	for _, ref := range prev.Outputs {
 		if _, err := artifacts.Verify(e.o.CAS, ref); err != nil {
 			e.o.Log.WarnContext(ctx, "pipeline step not reused: an output left the content store", "step", prev.ID, "err", err)
