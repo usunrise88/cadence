@@ -10,7 +10,7 @@
 # back to the calling user afterwards so nothing root-owned is left in /work.
 set -euo pipefail
 IMAGE=${NEMO_IMAGE:-nvcr.io/nvidia/nemo-speech:26.07}   # sha256:b8b1c094f1bb...
-WORK=${A3_WORK:-/home/administrator/cadence-spikes/a3}
+WORK=${A3_WORK:-$HOME/cadence-spikes/a3}
 HERE=$(cd "$(dirname "$0")" && pwd)
 GPU=()
 if [[ ${1:-} == --gpu ]]; then GPU=(--gpus all); shift; fi

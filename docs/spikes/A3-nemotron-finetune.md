@@ -21,7 +21,7 @@ Batch sizes; steps per second; WER before/after 500 steps; parity delta; Triton 
 ## Result
 
 Run 2026-09-30 on the staging host, about 3 hours of the 2-day box (14:50–17:50 CDT). Scripts, all run through `docs/spikes/a3/nemo.sh`
-(the pinned image, the host's Hugging Face token mounted read-only, data under `/home/administrator/cadence-spikes/a3`):
+(the pinned image, the host's Hugging Face token mounted read-only, data under `~/cadence-spikes/a3`):
 
 | Script | Step | What it shows the NeMo pack |
 | --- | --- | --- |
@@ -46,7 +46,7 @@ at the target concurrency.**
 - **Status `partial`:** every acceptance line holds except "Triton serves streaming" at a useful concurrency.
   Phase 5 owns the serving design (proposal 9).
 
-Artifacts left on the host in `/home/administrator/cadence-spikes/a3`, 17 GB:
+Artifacts left on the host in `~/cadence-spikes/a3`, 17 GB:
 - data: wav, manifests and Shar;
 - the fine-tuned `.nemo`, logs and TensorBoard files;
 - both ONNX exports;

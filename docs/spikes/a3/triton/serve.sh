@@ -4,7 +4,7 @@
 set -euo pipefail
 ONNX=${1:?onnx export dir}
 HERE=$(cd "$(dirname "$0")" && pwd)
-REPO=${A3_WORK:-/home/administrator/cadence-spikes/a3}/triton/repo
+REPO=${A3_WORK:-$HOME/cadence-spikes/a3}/triton/repo
 rm -rf "$REPO"; mkdir -p "$REPO"
 cp -r "$HERE/streaming_asr" "$HERE/encoder_prompt" "$HERE/decoder_joint" "$REPO/"
 mkdir -p "$REPO/encoder_prompt/1" "$REPO/decoder_joint/1"

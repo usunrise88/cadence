@@ -83,7 +83,10 @@ func SetPaused(ctx context.Context, tx pgx.Tx, id string, rev int, paused bool) 
 	case paused && cur.CancelRequestedAt != nil:
 		return Job{}, nil, problems.Conflict.New("job %s is being cancelled", id)
 	}
-	rows, err := tx.Query(ctx, `UPDATE jobs SET paused_at = CASE WHEN $2 THEN now() END, rev = rev + 1, updated_at = now()
+	// The message says what happens now: the worker's last progress line ("stopped; training state written") would
+	// read as current long after a resume.
+	rows, err := tx.Query(ctx, `UPDATE jobs SET paused_at = CASE WHEN $2 THEN now() END, rev = rev + 1, updated_at = now(),
+			message = CASE WHEN $2 THEN 'paused: held in the queue until jobs.resume' ELSE 'resumed: waiting for a card' END
 		WHERE id = $1 RETURNING `+cols, id, paused)
 	j, err := existing(rows, err, id)
 	if err != nil {

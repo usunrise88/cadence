@@ -203,8 +203,10 @@ func CheckLanguages(baseName string, baseTags []string, trainParams map[string]a
 			if known[language(v)] {
 				return nil
 			}
-			return problems.Validation([]problems.FieldError{{Path: "/params/" + param, Message: fmt.Sprintf(
+			pe := problems.Validation([]problems.FieldError{{Path: "/params/" + param, Message: fmt.Sprintf(
 				"%s is not a language %s knows (it knows %s); pick one of those", v, baseName, strings.Join(list, ", "))}})
+			pe.Detail = pe.Errors[0].Message
+			return pe
 		}
 	}
 	var fields []problems.FieldError
@@ -219,7 +221,9 @@ func CheckLanguages(baseName string, baseTags []string, trainParams map[string]a
 		}
 	}
 	if len(fields) > 0 {
-		return problems.Validation(fields)
+		pe := problems.Validation(fields)
+		pe.Detail = fields[0].Message
+		return pe
 	}
 	return nil
 }

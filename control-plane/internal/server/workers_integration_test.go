@@ -654,6 +654,11 @@ func TestCancelPauseResume(t *testing.T) {
 		t.Fatalf("a paused job was leased: %+v", again)
 	}
 	w.jobCmd(job, "resume")
+	var resumed struct{ Message string }
+	w.ok(w.do(http.MethodGet, "/api/jobs/"+job, ""), http.StatusOK, &resumed)
+	if resumed.Message != "resumed: waiting for a card" {
+		t.Errorf("message after resume %q: the worker's last progress line must not read as current", resumed.Message)
+	}
 	l = f.claim(2)
 	if l == nil || l.JobID != job || l.Spec.Overrides.ResumeFrom != state {
 		t.Fatalf("resumed lease = %+v", l)
