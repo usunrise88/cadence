@@ -12,7 +12,7 @@ const manifest: PanelManifest = {
   defaultLocation: "centre",
   entity: "recipe",
   help: "panels.recipe",
-  commands: ["projects.sync", "branches.accept", "branches.revert"],
+  commands: ["projects.sync", "branches.accept", "branches.revert", "recipes.new", "recipes.edit"],
   empty: RecipeEmpty,
   component: RecipePanel,
 };

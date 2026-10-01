@@ -7,7 +7,7 @@ describe("setupSteps", () => {
   it("starts with only sign-in done and later phases marked", () => {
     const steps = setupSteps({ signedIn: true, projects: 0, datasets: [] });
     expect(state(steps)).toEqual({ admin: "done", mount: "later", project: "todo", dataset: "later", run: "later", gate: "later" });
-    expect(steps.find((s) => s.id === "run")).toMatchObject({ phase: 2, command: "runs.new" });
+    expect(steps.find((s) => s.id === "run")).toMatchObject({ phase: 2, command: "playbooks.run" });
     expect(steps.every((s) => /^[a-z][a-zA-Z]*\.[a-z]+$/.test(s.command))).toBe(true);
   });
 

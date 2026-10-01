@@ -1,0 +1,20 @@
+# written by Cadence — starter pipeline: import one corpus as a frozen dataset version (docs/spec/08-resolutions.md R18).
+#
+# dataset_import@3 writes a `dataset` artifact; the control plane's dataset hook registers the Source (eval-only until
+# a person clears it for training with sources.edit), the Utterances by content hash, their Transcripts and a frozen
+# dataset version in dataset/<name>. Only departures from defaults.yaml (data.*) are written.
+#
+# As shipped it imports FLEURS Hebrew (he_il train, CC-BY-4.0) at the revision the registry fixtures pin. For another
+# corpus change the params: format nemo-manifest or folder-csv with `path`, or another hf_repo / hf_config; always
+# the corpus's own licence. Help: docs/help/steps/dataset-import.md.
+name: import
+steps:
+  - id: import
+    kind: dataset_import@3
+    params:
+      name: fleurs-he
+      source_name: fleurs
+      licence: CC-BY-4.0
+      locale: he-IL
+      hf_config: he_il
+      hf_revision: 70bb2e84b976b7e960aa89f1c648e09c59f894dd

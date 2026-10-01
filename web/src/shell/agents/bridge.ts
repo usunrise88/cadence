@@ -40,8 +40,9 @@ type BridgeState = {
   /** Ask the composer of an instance to take focus (a counter the composer watches). */
   focus: Record<string, number>;
   highlight: Highlight | null;
-  /** The Agent sessions panel opens its New session form. */
+  /** The Agent sessions panel opens its New session form (a counter), interactive or from a playbook. */
   newSessionForm: number;
+  newSessionMode: "interactive" | "playbook";
   setDraft(instanceId: string, d: Partial<Draft>): void;
   addRefs(instanceId: string, refs: AgentReference[]): void;
   removeRef(instanceId: string, ref: string): void;
@@ -49,7 +50,7 @@ type BridgeState = {
   setLastChat(instanceId: string): void;
   focusComposer(instanceId: string): void;
   setHighlight(h: Omit<Highlight, "nonce"> | null): void;
-  openNewSessionForm(): void;
+  openNewSessionForm(mode?: "interactive" | "playbook"): void;
 };
 
 const EMPTY: Draft = { text: "", refs: [] };
@@ -61,6 +62,7 @@ export const useChatBridge = create<BridgeState>((set) => ({
   focus: {},
   highlight: null,
   newSessionForm: 0,
+  newSessionMode: "interactive",
   setDraft: (id, d) => set((s) => ({ drafts: { ...s.drafts, [id]: { ...(s.drafts[id] ?? EMPTY), ...d } } })),
   addRefs: (id, refs) =>
     set((s) => {
@@ -81,7 +83,7 @@ export const useChatBridge = create<BridgeState>((set) => ({
   setLastChat: (id) => set((s) => (s.lastChat === id ? s : { lastChat: id })),
   focusComposer: (id) => set((s) => ({ focus: { ...s.focus, [id]: (s.focus[id] ?? 0) + 1 } })),
   setHighlight: (h) => set({ highlight: h ? { ...h, nonce: ++nonce } : null }),
-  openNewSessionForm: () => set((s) => ({ newSessionForm: s.newSessionForm + 1 })),
+  openNewSessionForm: (mode = "interactive") => set((s) => ({ newSessionForm: s.newSessionForm + 1, newSessionMode: mode })),
 }));
 
 export function useChatDraft(instanceId: string): Draft {

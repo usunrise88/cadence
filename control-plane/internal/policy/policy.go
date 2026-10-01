@@ -66,6 +66,9 @@ func ScopeFromContext(ctx context.Context) Scope {
 // Estimate is what a command will spend, from its dry run (R12).
 type Estimate struct {
 	GPUHours float64 `json:"gpuHours"`
+	// Unknown: the command will spend GPU time Cadence cannot estimate (a step without a measured or declared
+	// estimate); GPUHours is then the part it could estimate.
+	Unknown bool `json:"unknown,omitempty"`
 }
 
 // Input is one question to the engine.
@@ -95,8 +98,14 @@ type Budget interface {
 	RemainingGPUHours(ctx context.Context, projectID string) (float64, error)
 }
 
-// StubBudget is the phase-1 budget source: a fixed daily allowance and no usage. Phase 2 replaces it with the
-// project's policy and the day's metered use.
+// SessionBudget is implemented by a Budget that also answers how many GPU-hours an agent session has left; a spend
+// by a session's actor must fit both its project's and its session's remaining budget (phase 2, internal/runs.Meter).
+type SessionBudget interface {
+	RemainingSessionGPUHours(ctx context.Context, sessionID string) (float64, error)
+}
+
+// StubBudget is a fixed daily allowance and no usage: tests, and a control plane without a database. The real
+// source is internal/runs.Meter (the project's budget and the day's metered lease time on GPU cards).
 type StubBudget struct{ GPUHoursPerDay float64 }
 
 // RemainingGPUHours returns the whole daily allowance.
@@ -169,6 +178,13 @@ func (e *Engine) Decide(ctx context.Context, in Input) (Decision, error) {
 			continue
 		}
 		d := decision(p.Name, r)
+		// Fail closed: a spending command whose cost is unknown cannot be weighed against the budget, so it waits for
+		// a person (people themselves are not gated by budgets).
+		if r.Class == ClassSpend && e.budget != nil && d.Outcome == Allow && (in.Estimate == nil || in.Estimate.Unknown) {
+			d.Outcome, d.Estimate = Approval, in.Estimate
+			d.Reason = "Cadence cannot estimate this command's GPU time, so it cannot weigh it against the budget"
+			return d, nil
+		}
 		if r.Class == ClassSpend && in.Estimate != nil && e.budget != nil {
 			left, err := e.budget.RemainingGPUHours(ctx, in.ProjectID)
 			if err != nil {
@@ -180,6 +196,17 @@ func (e *Engine) Decide(ctx context.Context, in Input) (Decision, error) {
 				d.Reason = fmt.Sprintf("the estimate of %.2f GPU-hours exceeds the %.2f left in today's budget",
 					in.Estimate.GPUHours, left)
 			}
+			if sb, ok := e.budget.(SessionBudget); ok && in.Actor.SessionID != "" && d.Outcome == Allow {
+				sleft, err := sb.RemainingSessionGPUHours(ctx, in.Actor.SessionID)
+				if err != nil {
+					return Decision{}, fmt.Errorf("read the session's GPU-hours budget: %w", err)
+				}
+				if in.Estimate.GPUHours > sleft {
+					d.Outcome, d.RemainingGPUHours = Approval, &sleft
+					d.Reason = fmt.Sprintf("the estimate of %.2f GPU-hours exceeds the %.2f left in this agent session's budget",
+						in.Estimate.GPUHours, sleft)
+				}
+			}
 		}
 		return d, nil
 	}
@@ -189,7 +216,8 @@ func (e *Engine) Decide(ctx context.Context, in Input) (Decision, error) {
 
 // sessionOperation: the operations that start, steer and end agent sessions (the preset's sessions-are-for-people).
 func sessionOperation(op string) bool {
-	return strings.HasPrefix(op, "agentSessions.") || strings.HasPrefix(op, "agentMessages.")
+	// playbooks.run starts an agent session too (of kind playbook), so the opt-in covers it.
+	return strings.HasPrefix(op, "agentSessions.") || strings.HasPrefix(op, "agentMessages.") || op == "playbooks.run"
 }
 
 // decidePerson applies only the default preset's `everyone` rules.

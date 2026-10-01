@@ -96,3 +96,23 @@ func TestSealedFiles(t *testing.T) {
 		t.Error("RequestMAC must be deterministic per key and differ between keys")
 	}
 }
+
+func TestScopeAllows(t *testing.T) {
+	for _, tc := range []struct {
+		scope, project string
+		want           bool
+	}{
+		{ScopeInstance, "a", true},
+		{ScopeInstance, "", true},
+		{"project:a", "a", true},
+		{"project:a", "b", false},
+		{"project:a", "", false},
+		{"project:", "", false},
+		{"project:ab", "a", false},
+		{"something-else", "a", false},
+	} {
+		if got := ScopeAllows(tc.scope, tc.project); got != tc.want {
+			t.Errorf("ScopeAllows(%q, %q) = %v, want %v", tc.scope, tc.project, got, tc.want)
+		}
+	}
+}

@@ -23,10 +23,20 @@ describe("architecture lint rules", () => {
     ["fetch in a panel", "src/panels/library/X.tsx", `export const x = () => fetch("/api/projects");\n`, "generated query layer"],
     ["the SDK in a panel", "src/panels/library/X.tsx", `import { projectsList } from "@/api/gen/sdk.gen";\nexport const x = projectsList;\n`, "TanStack Query"],
     ["a colour literal", "src/shell/chrome/X.tsx", `export const c = "#3e63dd";\n`, "No colour literals"],
+    ["a panel importing uPlot", "src/panels/library/X.tsx", `import uPlot from "uplot";\nexport const x = uPlot;\n`, "use @/shell/charts"],
+    ["a panel importing ECharts", "src/panels/library/X.tsx", `import { init } from "echarts/core";\nexport const x = init;\n`, "use @/shell/charts"],
+    ["a panel importing a charts file", "src/panels/library/X.tsx", `import { ema } from "@/shell/charts/math";\nexport const x = ema;\n`, "not its files"],
+    ["the shell importing ECharts outside shell/charts", "src/shell/chrome/X.tsx", `import * as echarts from "echarts";\nexport const x = echarts;\n`, "only that module imports"],
+    ["a component importing uPlot", "src/components/X.tsx", `import uPlot from "uplot";\nexport const x = uPlot;\n`, "only that module imports"],
     ["a default export outside a manifest", "src/shell/chrome/X.tsx", `const a = 1;\nexport default a;\n`, "No default exports"],
   ])("rejects %s", async (_name, file, code, want) => {
     const msgs = await messages(file, code);
     expect(msgs.join("\n")).toContain(want);
+  });
+
+  it("allows @/shell/charts in panels and the chart libraries inside it", async () => {
+    expect(await messages("src/panels/library/X.tsx", `import { TimeSeriesChart } from "@/shell/charts";\nexport const x = TimeSeriesChart;\n`)).toEqual([]);
+    expect(await messages("src/shell/charts/X.ts", `import uPlot from "uplot";\nimport { init } from "echarts/core";\nexport const x = [uPlot, init];\n`)).toEqual([]);
   });
 
   it("allows type-only Dockview imports in the shell and panels' own files", async () => {

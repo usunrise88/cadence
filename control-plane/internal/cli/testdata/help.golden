@@ -18,9 +18,12 @@ Entities:
   agentSessions  accept cancel get list new pause resume revert
   aliases        get list set
   approvals      approve deny get list
+  artifacts      evict get
   audit          list
+  backups        get list new verify
   baseModels     get list
   branches       accept compare get list revert
+  checkpoints    average get list
   collections    get list
   compute        edit get list
   credentials    list new revoke
@@ -29,15 +32,29 @@ Entities:
   drafts         accept get list revert
   events         list
   help           get search
-  jobs           cancel get list wait
+  jobLogs        list
+  jobs           cancel edit get list pause resume wait
+  metrics        get
   mixes          edit get list new preview
+  modelFamilies  get list
+  notificationRules edit list
+  notificationSettings edit get
+  pipelineRuns   cancel get list retry wait
+  pipelines      list run
+  playbooks      get list run
   policies       edit get
   projects       adopt archive edit get list new note search sync
-  recipes        get list
+  queueEntries   list
+  recipes        edit get list new
   registry       search
-  runs           new
+  runs           calibrate get list new resume stage
+  runtimes       get list
   secrets        list new
+  sources        archive edit get list
+  stepKinds      get list
+  telegramBot    set verify
   templates      get list
+  utterances     get list
 
 Global flags:
   --url URL               control plane (env CADENCE_URL, default http://127.0.0.1:8080; /api is appended)

@@ -121,6 +121,10 @@ func apiActor(a auth.Actor) api.Actor {
 	if a.SessionID != "" {
 		out.SessionId = &a.SessionID
 	}
+	if a.Channel != "" {
+		ch := api.ActorChannel(a.Channel)
+		out.Channel = &ch
+	}
 	return out
 }
 

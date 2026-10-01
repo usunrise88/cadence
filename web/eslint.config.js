@@ -6,6 +6,9 @@ import { defineConfig, globalIgnores } from "eslint/config";
 import cadence from "./eslint-rules/cadence.js";
 
 const DOCKVIEW = ["dockview", "dockview/*", "dockview-react", "dockview-react/*", "dockview-core", "dockview-core/*"];
+// Chart libraries: only @/shell/charts imports them (R53); panels and the rest of the app use the shell module.
+const CHART_LIBS = ["uplot", "uplot/*", "echarts", "echarts/*", "zrender", "zrender/*"];
+const chartsOnly = (message) => ({ group: CHART_LIBS, message });
 
 export default defineConfig([
   globalIgnores(["dist", "src/api/gen", "src/api/operations.gen.ts", "playwright-report", "test-results"]),
@@ -26,11 +29,33 @@ export default defineConfig([
       ],
     },
   },
+  // Charts: uPlot and ECharts only inside src/shell/charts (the blocks below repeat the group because a later block
+  // replaces this rule's options).
+  {
+    files: ["src/**/*.{ts,tsx}"],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": ["error", { patterns: [chartsOnly("Charts go through @/shell/charts; only that module imports uPlot or ECharts.")] }],
+    },
+  },
   // Dockview: only the dock host (public API) and the adapter (internals) may import it; elsewhere in the shell,
   // types only.
   {
     files: ["src/shell/**/*.{ts,tsx}"],
     ignores: ["src/shell/dock/**", "src/shell/floating-snap/dockview-adapter.ts", "src/shell/**/*.test.{ts,tsx}", "src/shell/**/testkit.ts"],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            { group: DOCKVIEW, allowTypeImports: true, message: "Only shell/dock and floating-snap/dockview-adapter.ts touch Dockview." },
+            chartsOnly("Charts go through @/shell/charts; only that module imports uPlot or ECharts."),
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ["src/shell/charts/**/*.{ts,tsx}"],
     rules: {
       "@typescript-eslint/no-restricted-imports": [
         "error",
@@ -50,6 +75,9 @@ export default defineConfig([
             { group: DOCKVIEW, message: "Panels never talk to Dockview; use the shell (src/shell/panel)." },
             { group: ["@/api/gen/sdk.gen", "@/api/gen/client*", "@/api/client"], message: "Panels fetch only through the generated TanStack Query options." },
             { group: ["@/shell/dock/*", "@/shell/floating-snap/*"], message: "Panels use the panel SDK (@/shell/panel), not shell internals." },
+            // Allowed shell primitives: @/shell/panel, the entity primitives, @/shell/charts (and @/shell/audio, R51).
+            { group: ["@/shell/charts/*"], message: "Panels import charts from @/shell/charts (its index), not its files." },
+            chartsOnly("Panels never import uPlot or ECharts; use @/shell/charts (TimeSeriesChart, AnalyticsChart)."),
           ],
         },
       ],

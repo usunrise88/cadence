@@ -163,8 +163,9 @@ test.describe("settings", () => {
     await openWorkspace(page, slug);
     await openSettings(page, "Compute");
     const host = page.getByTestId("compute-host-staging");
-    await host.getByRole("button", { name: "Edit" }).click();
-    await host.getByLabel("Memory cap of card 0 (GB)").fill("30");
+    await host.getByRole("button", { name: "Edit card 0" }).click();
+    const dialog = page.getByTestId("compute-card-dialog-0");
+    await dialog.getByLabel("Memory cap of card 0 (GB)").fill("30");
 
     // Someone else (another tab, the API) changes the host meanwhile.
     const current = await (await request.get("/api/compute/staging")).json();
@@ -174,11 +175,13 @@ test.describe("settings", () => {
     });
     expect(other.status(), await other.text()).toBe(200);
 
-    await host.getByRole("button", { name: "Save" }).click();
+    await dialog.getByRole("button", { name: "Save" }).click();
     const conflict = page.getByTestId("compute-conflict");
     await expect(conflict).toContainText(`it is now rev ${current.rev + 1}`);
     await conflict.getByRole("button", { name: `Apply mine on rev ${current.rev + 1}` }).click();
     await expect(conflict).toHaveCount(0);
+    await expect(dialog).toHaveCount(0);
+    await expect(host.getByRole("button", { name: "Edit card 0" })).toBeFocused();
     await expect(host).toContainText("30 GB");
     const after = await (await request.get("/api/compute/staging")).json();
     expect(after.cards[0].memoryCapGb).toBe(30);

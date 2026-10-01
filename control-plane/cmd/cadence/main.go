@@ -13,7 +13,13 @@
 // CADENCE_MASTER_KEY_FILE ($CADENCE_DATA_DIR/master.key; generated on first start when missing),
 // CADENCE_GITHUB_API (https://api.github.com; GitHub Enterprise: https://<host>/api/v3), CADENCE_HOST_TOKEN_FILE (where
 // the agent host's cah_ token is kept: a file on a volume both containers mount; see credentials.EnsureHostTokenFile),
-// CADENCE_EGRESS_TOKEN_FILE (the egress proxy's cep_ token, the same way).
+// CADENCE_EGRESS_TOKEN_FILE (the egress proxy's cep_ token, the same way), CADENCE_CAS_DIR ($CADENCE_DATA_DIR/cas: the
+// content-addressed artifact store, shared by volume with the worker), CADENCE_WORKER_TOKEN_FILE (the worker's cwk_
+// token for the compute host CADENCE_WORKER_HOST, default staging, the same way). Job logs from workers live under
+// $CADENCE_DATA_DIR/job-logs (14 days). CADENCE_BACKUP_DIR ($CADENCE_DATA_DIR/backups:
+// backup sets and the content-store mirror; a mount in phase 4), CADENCE_PG_DUMP / CADENCE_PG_RESTORE (the client
+// commands, default pg_dump / pg_restore on PATH; their major version must be at least the server's),
+// CADENCE_TELEGRAM_API (https://api.telegram.org: the Bot API base URL; tests point it at a fake server).
 // Project repositories live under $CADENCE_DATA_DIR/repos (bare), work (working clones) and worktrees; the git binary
 // must be on PATH. `cadence egress-proxy` runs the agent sandbox's allowlisting proxy instead (internal/egress).
 package main
@@ -28,6 +34,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -36,23 +43,29 @@ import (
 
 	"github.com/usunrise88/cadence/control-plane/internal/approvals"
 	"github.com/usunrise88/cadence/control-plane/internal/audit"
+	"github.com/usunrise88/cadence/control-plane/internal/backups"
+	"github.com/usunrise88/cadence/control-plane/internal/cas"
 	"github.com/usunrise88/cadence/control-plane/internal/cli"
 	"github.com/usunrise88/cadence/control-plane/internal/commands"
 	"github.com/usunrise88/cadence/control-plane/internal/compute"
 	"github.com/usunrise88/cadence/control-plane/internal/credentials"
 	"github.com/usunrise88/cadence/control-plane/internal/defaults"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
+	"github.com/usunrise88/cadence/control-plane/internal/eviction"
 	"github.com/usunrise88/cadence/control-plane/internal/help"
 	"github.com/usunrise88/cadence/control-plane/internal/jobs"
+	"github.com/usunrise88/cadence/control-plane/internal/notify"
 	"github.com/usunrise88/cadence/control-plane/internal/obs"
 	"github.com/usunrise88/cadence/control-plane/internal/policy"
 	"github.com/usunrise88/cadence/control-plane/internal/projects/bootstrap"
 	"github.com/usunrise88/cadence/control-plane/internal/registry"
 	"github.com/usunrise88/cadence/control-plane/internal/repos"
+	"github.com/usunrise88/cadence/control-plane/internal/runs"
 	"github.com/usunrise88/cadence/control-plane/internal/search"
 	"github.com/usunrise88/cadence/control-plane/internal/secrets"
 	"github.com/usunrise88/cadence/control-plane/internal/server"
 	"github.com/usunrise88/cadence/control-plane/internal/storage"
+	"github.com/usunrise88/cadence/control-plane/internal/workers"
 	"github.com/usunrise88/cadence/control-plane/migrations"
 	"github.com/usunrise88/cadence/control-plane/templates"
 )
@@ -188,11 +201,13 @@ func serve(ctx context.Context, getenv func(string) string) error {
 		return err
 	}
 
-	engine, err := policy.Embedded(policy.StubBudget{GPUHoursPerDay: stubGPUHoursPerDay})
+	// GPU budgets: the project's daily budget and the agent session's, metered from lease time on GPU cards.
+	engine, err := policy.Embedded(runs.Meter{Pool: pool, Defaults: defaults.Get})
 	if err != nil {
 		return err
 	}
 	jobSvc := jobs.New(pool, log)
+	jobSvc.Tracer = tp
 	registerChores(jobSvc, pool, log)
 	repoStore, err := repos.NewStore(cfg.dataDir)
 	if err != nil {
@@ -209,6 +224,60 @@ func serve(ctx context.Context, getenv func(string) string) error {
 
 	metrics := obs.NewMetrics()
 	hub := events.NewHub(256)
+	casDir := getenv("CADENCE_CAS_DIR")
+	if casDir == "" {
+		casDir = filepath.Join(cfg.dataDir, "cas")
+	}
+	blobs, err := cas.New(casDir)
+	if err != nil {
+		return err
+	}
+	workerSvc := workers.New(workers.Options{
+		Pool: pool, Secrets: store, CAS: blobs, LogDir: filepath.Join(cfg.dataDir, "job-logs"), Log: log,
+	})
+	backupDir := getenv("CADENCE_BACKUP_DIR")
+	if backupDir == "" {
+		backupDir = filepath.Join(cfg.dataDir, "backups")
+	}
+	backupSvc := &backups.Service{Pool: pool, Log: log, Jobs: jobSvc, Defaults: defaults.Get, Config: backups.Config{
+		Dir: backupDir, CASDir: casDir, SecretsDir: store.Dir(), DSN: cfg.databaseURL,
+		PgDump: strings.Fields(getenv("CADENCE_PG_DUMP")), PgRestore: strings.Fields(getenv("CADENCE_PG_RESTORE")),
+	}}
+	backupSvc.Register(jobSvc)
+	jobSvc.AddPeriodic("backups.schedule", time.Minute, backupSvc.Tick)
+	evictSvc := &eviction.Service{Pool: pool, CAS: blobs, Log: log, MirrorDir: filepath.Join(backupDir, "cas")}
+	evictSvc.Register(jobSvc)
+	storeWatch := &eviction.Watcher{Service: evictSvc, Defaults: defaults.Get}
+	jobSvc.AddPeriodic("storage.watch", 10*time.Minute, storeWatch.Tick)
+	if indexed, restored, err := eviction.Backfill(ctx, pool, blobs); err != nil {
+		return fmt.Errorf("content-store file index: %w", err)
+	} else if indexed+restored > 0 {
+		log.Info("content-store file index backfilled", "directories", indexed, "restored", restored)
+	}
+	bot := notify.Bot{BaseURL: getenv("CADENCE_TELEGRAM_API"), Secrets: store}
+	signer := notify.NewSigner(store.DeriveKey("telegram-callback"))
+	notifyWake := make(chan struct{}, 1)
+	poller := &notify.Poller{Pool: pool, Log: log, Bot: bot, Signer: signer, Defaults: defaults.Get, Spend: runs.Spend,
+		Queue: func(ctx context.Context) ([]notify.QueueItem, error) {
+			entries, err := workers.Queue(ctx, pool, "")
+			out := make([]notify.QueueItem, 0, len(entries))
+			for _, e := range entries {
+				it := notify.QueueItem{Kind: e.Kind + "@" + e.KindVersion, JobKind: e.JobKind, State: e.State, Project: e.ProjectID}
+				if l := e.Lease; l != nil {
+					it.Where, it.Progress, it.Message = l.Host, l.Progress, l.Message
+					if l.Card >= 0 {
+						it.Where = fmt.Sprintf("%s · card %d", l.Host, l.Card)
+					}
+				}
+				out = append(out, it)
+			}
+			return out, err
+		}}
+	digester := &notify.Digester{Pool: pool, Log: log, Defaults: defaults.Get, Wake: notifyWake, Spend: runs.Spend}
+	jobSvc.AddPeriodic("notifications.digest", time.Minute, func(ctx context.Context) error {
+		_, err := digester.Tick(ctx)
+		return err
+	})
 	srv, err := server.New(server.Config{
 		Pool:     pool,
 		Pipeline: commands.NewPipeline(pool, log, metrics.Commands, engine),
@@ -221,10 +290,42 @@ func serve(ctx context.Context, getenv func(string) string) error {
 		Jobs:     jobSvc,
 		Secrets:  store,
 		Projects: projectRepos,
+		CAS:      blobs,
+		Workers:  workerSvc,
+		Backups:  backupSvc,
+		Eviction: evictSvc,
+		Telegram: bot,
+		Poller:   poller,
 	})
 	if err != nil {
 		return err
 	}
+	srv.RegisterJobs(jobSvc) // the pipeline engine's step jobs (phase 2)
+	jobSvc.AddPeriodic("workerLeases.reap", 10*time.Second, func(ctx context.Context) error {
+		_, err := workerSvc.Reap(ctx)
+		return err
+	})
+	jobSvc.AddPeriodic("jobLogs.prune", 24*time.Hour, func(ctx context.Context) error {
+		n, err := workerSvc.PruneLogs(ctx)
+		if n > 0 {
+			log.InfoContext(ctx, "job logs pruned", "count", n)
+		}
+		return err
+	})
+	if path := getenv("CADENCE_WORKER_TOKEN_FILE"); path != "" {
+		host := getenv("CADENCE_WORKER_HOST")
+		if host == "" {
+			host = defaultWorkerHost
+		}
+		issued, err := credentials.EnsureWorkerTokenFile(ctx, pool, path, host)
+		if err != nil {
+			return fmt.Errorf("worker token: %w", err)
+		}
+		if issued {
+			log.Info("issued a new worker token; older ones of the host are revoked", "file", path, "host", host)
+		}
+	}
+	poller.Decider = srv
 	jobSvc.AddPeriodic("agentSessions.sweep", 30*time.Second, srv.SweepSessions)
 	jobSvc.AddPeriodic("agentCredentials.sweep", time.Minute, srv.SweepAgentCredentials)
 	if path := getenv("CADENCE_HOST_TOKEN_FILE"); path != "" {
@@ -269,6 +370,13 @@ func serve(ctx context.Context, getenv func(string) string) error {
 	g.Go(func() error { return events.NewDispatcher(pool, hub, log, metrics.EventsDispatched).Run(gctx) })
 	g.Go(func() error { return search.NewIndexer(pool, hub, log, search.Sources()).Run(gctx) })
 	g.Go(func() error {
+		return (&notify.Router{Pool: pool, Hub: hub, Log: log, Defaults: defaults.Get, Wake: notifyWake}).Run(gctx)
+	})
+	g.Go(func() error {
+		return (&notify.Sender{Pool: pool, Log: log, Bot: bot, Signer: signer, Defaults: defaults.Get, Wake: notifyWake}).Run(gctx)
+	})
+	g.Go(func() error { return poller.Run(gctx) })
+	g.Go(func() error {
 		if err := httpServer.Serve(listener); !errors.Is(err, http.ErrServerClosed) {
 			return fmt.Errorf("serve http: %w", err)
 		}
@@ -293,9 +401,9 @@ func serve(ctx context.Context, getenv func(string) string) error {
 	return g.Wait()
 }
 
-// stubGPUHoursPerDay is the daily GPU-hours allowance the policy engine checks spend against until phase 2 meters
-// use and reads the project's budget (policy.StubBudget).
-const stubGPUHoursPerDay = 8
+// defaultWorkerHost is the compute host of the worker token in CADENCE_WORKER_TOKEN_FILE when CADENCE_WORKER_HOST is
+// not set: the staging host defaults.yaml seeds.
+const defaultWorkerHost = "staging"
 
 // registerChores schedules the periodic maintenance jobs: approval expiry (R5) and audit retention.
 func registerChores(j *jobs.Service, pool *pgxpool.Pool, log *slog.Logger) {

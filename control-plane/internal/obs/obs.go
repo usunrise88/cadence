@@ -58,6 +58,22 @@ func Propagator() propagation.TextMapPropagator {
 	return propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{})
 }
 
+// Traceparent renders the span context ctx carries as a W3C traceparent; "" when it carries none. Jobs keep it so
+// their spans continue the request that started them, and step leases hand it to the worker.
+func Traceparent(ctx context.Context) string {
+	c := propagation.MapCarrier{}
+	propagation.TraceContext{}.Inject(ctx, c)
+	return c.Get("traceparent")
+}
+
+// WithTraceparent returns ctx carrying traceparent as its remote parent span; ctx itself when tp is empty or invalid.
+func WithTraceparent(ctx context.Context, tp string) context.Context {
+	if tp == "" {
+		return ctx
+	}
+	return propagation.TraceContext{}.Extract(ctx, propagation.MapCarrier{"traceparent": tp})
+}
+
 // NewTracerProvider exports every span as one JSON line to $dir/traces.jsonl (rotated like the log).
 // Shut it down to flush.
 func NewTracerProvider(dir, version string) (*sdktrace.TracerProvider, error) {

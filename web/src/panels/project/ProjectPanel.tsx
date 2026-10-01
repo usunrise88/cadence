@@ -1,12 +1,19 @@
 import { useState, type FormEvent, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Streamdown } from "streamdown";
-import { agentProfileGetOptions, branchesListOptions, eventsListOptions, projectsGetOptions, recipesGetOptions } from "@/api/gen/@tanstack/react-query.gen";
+import {
+  agentProfileGetOptions,
+  branchesListOptions,
+  eventsListOptions,
+  playbooksListOptions,
+  projectsGetOptions,
+  recipesGetOptions,
+} from "@/api/gen/@tanstack/react-query.gen";
 import type { Project } from "@/api/gen/types.gen";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { EmptyState, StatusChip } from "@/shell/entity/primitives";
-import { openDocument, openPanelById, runCommand, useTopic, type PanelProps } from "@/shell/panel";
+import { estimateLine, openDocument, openPanelById, PlaybookLauncher, runCommand, useTopic, type PanelProps } from "@/shell/panel";
 
 // The Project document is the home: the project's facts (locales, base model, repository, agent profile, budgets),
 // the five blocks as a checklist with counts, gates and notes (docs/spec/11-ui-panels.md "Panel catalogue", Project).
@@ -140,6 +147,7 @@ function Overview({ project }: { project: Project }) {
           </section>
         </div>
         <div className="flex flex-col gap-6">
+          {ready ? <Playbooks project={project} /> : null}
           <section aria-labelledby="project-agent">
             <div className="mb-2 flex items-center gap-2">
               <Heading id="project-agent">Agent profile</Heading>
@@ -178,6 +186,47 @@ function Overview({ project }: { project: Project }) {
         </div>
       </div>
     </div>
+  );
+}
+
+// The Project home's playbook button (docs/spec/10-ui-shell.md: playbooks on the Project home): the playbook this
+// phase runs, with its estimate; the others are listed with the phase they run from.
+function Playbooks({ project }: { project: Project }) {
+  const list = useQuery(playbooksListOptions({ query: { project: project.slug } }));
+  const [open, setOpen] = useState<string | null>(null);
+  const items = list.data?.items ?? [];
+  const next = items.find((p) => p.runnable);
+  return (
+    <section aria-labelledby="project-playbooks" data-slot="project-playbooks">
+      <Heading id="project-playbooks">Playbooks</Heading>
+      {list.isLoading ? <p className="text-xs text-muted-foreground">Loading…</p> : null}
+      {next ? (
+        <div className="flex flex-col gap-2 rounded-md border p-3">
+          <div className="flex items-center gap-2">
+            <span className="text-[13px] font-medium">{next.title}</span>
+            <Button size="xs" className="ml-auto" onClick={() => setOpen(open === next.name ? null : next.name)} aria-expanded={open === next.name} data-command="playbooks.run">
+              Start playbook
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {next.estimate ? `Estimate with defaults: ${estimateLine(next.estimate)}.` : next.estimateError}
+          </p>
+          {open === next.name ? <PlaybookLauncher project={project.slug} initial={next.name} onStarted={() => setOpen(null)} onCancel={() => setOpen(null)} /> : null}
+        </div>
+      ) : null}
+      {items.some((p) => !p.runnable) ? (
+        <ul className="mt-2 flex flex-col gap-1 text-xs text-muted-foreground">
+          {items
+            .filter((p) => !p.runnable)
+            .map((p) => (
+              <li key={p.name} className="flex items-center gap-2">
+                <span className="truncate">{p.title}</span>
+                <span className="ml-auto shrink-0 rounded-full border px-1.5 text-[11px]">phase {p.availableFrom}</span>
+              </li>
+            ))}
+        </ul>
+      ) : null}
+    </section>
   );
 }
 

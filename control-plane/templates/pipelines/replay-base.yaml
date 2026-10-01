@@ -1,0 +1,590 @@
+# written by Cadence — R17 replay data: the replay corpus and the replay golden sets (docs/spec/08-resolutions.md).
+#
+# Replay stops catastrophic forgetting in the base model's other locales, so it needs breadth, not volume. The base
+# model nvidia/nemotron-3.5-asr-streaming-0.6b lists 40 language-locales on its model card (19 transcription-ready,
+# 13 broad-coverage, 8 adaptation-ready); he-IL is the target, the other 39 are replayed. Source: FLEURS
+# (google/fleurs at revision 70bb2e84b976b7e960aa89f1c648e09c59f894dd),
+# licence CC-BY-4.0 — commercial use allowed with attribution (A. Conneau et al., 2022). Licence check: every step
+# below records CC-BY-4.0 on the source `fleurs`; the source is eval-only until a person clears it for training
+# (sources.edit), which is the licence decision R17 asks for.
+#
+# Phase-2 cap (docs/review/2026-09-30-phase-2-plan.md "Decisions"): about 1 h per locale from FLEURS train in one
+# dataset version, dataset/replay-base; the ≈ 5 h per locale corpus of R17 (Common Voice and Granary where they cover
+# a locale) is a later re-freeze of the same collection with this pipeline widened. Replay golden sets: FLEURS test,
+# at most 300 utterances per locale, each its own dataset version dataset/replay-golden-<locale>, tagged golden,
+# replay and eval-only (registered as dataset versions until the Golden set entity arrives in phase 3).
+#
+# FLEURS has one configuration per language, not per regional variant: 34 configurations cover 34 locales. Five
+# locales have no configuration of their own and are covered by their sister variant only (a known gap, closed by
+# the Common Voice re-freeze):
+#   en-GB → en_us (shared with en-US)
+#   es-ES → es_419 (shared with es-US)
+#   fr-CA → fr_fr (shared with fr-FR)
+#   pt-PT → pt_br (shared with pt-BR)
+#   nn-NO → nb_no (shared with nb-NO)
+#
+# Locale table (locale · model-card tier · FLEURS configuration):
+#   en-US  transcription-ready  en_us
+#   en-GB  transcription-ready  en_us (shared with en-US)
+#   es-US  transcription-ready  es_419
+#   es-ES  transcription-ready  es_419 (shared with es-US)
+#   fr-FR  transcription-ready  fr_fr
+#   fr-CA  transcription-ready  fr_fr (shared with fr-FR)
+#   it-IT  transcription-ready  it_it
+#   pt-BR  transcription-ready  pt_br
+#   pt-PT  transcription-ready  pt_br (shared with pt-BR)
+#   nl-NL  transcription-ready  nl_nl
+#   de-DE  transcription-ready  de_de
+#   tr-TR  transcription-ready  tr_tr
+#   ru-RU  transcription-ready  ru_ru
+#   ar-AR  transcription-ready  ar_eg
+#   hi-IN  transcription-ready  hi_in
+#   ja-JP  transcription-ready  ja_jp
+#   ko-KR  transcription-ready  ko_kr
+#   vi-VN  transcription-ready  vi_vn
+#   uk-UA  transcription-ready  uk_ua
+#   pl-PL  broad-coverage       pl_pl
+#   sv-SE  broad-coverage       sv_se
+#   cs-CZ  broad-coverage       cs_cz
+#   nb-NO  broad-coverage       nb_no
+#   da-DK  broad-coverage       da_dk
+#   bg-BG  broad-coverage       bg_bg
+#   fi-FI  broad-coverage       fi_fi
+#   hr-HR  broad-coverage       hr_hr
+#   sk-SK  broad-coverage       sk_sk
+#   zh-CN  broad-coverage       cmn_hans_cn
+#   hu-HU  broad-coverage       hu_hu
+#   ro-RO  broad-coverage       ro_ro
+#   et-EE  broad-coverage       et_ee
+#   el-GR  adaptation-ready     el_gr
+#   lt-LT  adaptation-ready     lt_lt
+#   lv-LV  adaptation-ready     lv_lv
+#   mt-MT  adaptation-ready     mt_mt
+#   sl-SI  adaptation-ready     sl_si
+#   th-TH  adaptation-ready     th_th
+#   nn-NO  adaptation-ready     nb_no (shared with nb-NO)
+#
+# Do not run this on a laptop: ≈ 34 h of training audio plus ≈ 10 000 test utterances (≈ 4 GB of 16 kHz WAV).
+name: replay-base
+steps:
+  - id: corpus
+    kind: dataset_import@3
+    params:
+      name: replay-base
+      source_name: fleurs
+      licence: CC-BY-4.0
+      hf_revision: 70bb2e84b976b7e960aa89f1c648e09c59f894dd
+      hf_configs:
+        en_us: en-US
+        es_419: es-US
+        fr_fr: fr-FR
+        it_it: it-IT
+        pt_br: pt-BR
+        nl_nl: nl-NL
+        de_de: de-DE
+        tr_tr: tr-TR
+        ru_ru: ru-RU
+        ar_eg: ar-AR
+        hi_in: hi-IN
+        ja_jp: ja-JP
+        ko_kr: ko-KR
+        vi_vn: vi-VN
+        uk_ua: uk-UA
+        pl_pl: pl-PL
+        sv_se: sv-SE
+        cs_cz: cs-CZ
+        nb_no: nb-NO
+        da_dk: da-DK
+        bg_bg: bg-BG
+        fi_fi: fi-FI
+        hr_hr: hr-HR
+        sk_sk: sk-SK
+        cmn_hans_cn: zh-CN
+        hu_hu: hu-HU
+        ro_ro: ro-RO
+        et_ee: et-EE
+        el_gr: el-GR
+        lt_lt: lt-LT
+        lv_lv: lv-LV
+        mt_mt: mt-MT
+        sl_si: sl-SI
+        th_th: th-TH
+      max_hours: 1
+      split_rule: all-train
+      tags: [replay]
+  - id: golden-en-us
+    kind: dataset_import@3
+    params:
+      name: replay-golden-en-us
+      source_name: fleurs
+      licence: CC-BY-4.0
+      locale: en-US
+      hf_config: en_us
+      hf_split: test
+      hf_revision: 70bb2e84b976b7e960aa89f1c648e09c59f894dd
+      max_utterances: 300
+      split_rule: all-test
+      eval_only: true
+      tags: [golden, replay]
+  - id: golden-es-us
+    kind: dataset_import@3
+    params:
+      name: replay-golden-es-us
+      source_name: fleurs
+      licence: CC-BY-4.0
+      locale: es-US
+      hf_config: es_419
+      hf_split: test
+      hf_revision: 70bb2e84b976b7e960aa89f1c648e09c59f894dd
+      max_utterances: 300
+      split_rule: all-test
+      eval_only: true
+      tags: [golden, replay]
+  - id: golden-fr-fr
+    kind: dataset_import@3
+    params:
+      name: replay-golden-fr-fr
+      source_name: fleurs
+      licence: CC-BY-4.0
+      locale: fr-FR
+      hf_config: fr_fr
+      hf_split: test
+      hf_revision: 70bb2e84b976b7e960aa89f1c648e09c59f894dd
+      max_utterances: 300
+      split_rule: all-test
+      eval_only: true
+      tags: [golden, replay]
+  - id: golden-it-it
+    kind: dataset_import@3
+    params:
+      name: replay-golden-it-it
+      source_name: fleurs
+      licence: CC-BY-4.0
+      locale: it-IT
+      hf_config: it_it
+      hf_split: test
+      hf_revision: 70bb2e84b976b7e960aa89f1c648e09c59f894dd
+      max_utterances: 300
+      split_rule: all-test
+      eval_only: true
+      tags: [golden, replay]
+  - id: golden-pt-br
+    kind: dataset_import@3
+    params:
+      name: replay-golden-pt-br
+      source_name: fleurs
+      licence: CC-BY-4.0
+      locale: pt-BR
+      hf_config: pt_br
+      hf_split: test
+      hf_revision: 70bb2e84b976b7e960aa89f1c648e09c59f894dd
+      max_utterances: 300
+      split_rule: all-test
+      eval_only: true
+      tags: [golden, replay]
+  - id: golden-nl-nl
+    kind: dataset_import@3
+    params:
+      name: replay-golden-nl-nl
+      source_name: fleurs
+      licence: CC-BY-4.0
+      locale: nl-NL
+      hf_config: nl_nl
+      hf_split: test
+      hf_revision: 70bb2e84b976b7e960aa89f1c648e09c59f894dd
+      max_utterances: 300
+      split_rule: all-test
+      eval_only: true
+      tags: [golden, replay]
+  - id: golden-de-de
+    kind: dataset_import@3
+    params:
+      name: replay-golden-de-de
+      source_name: fleurs
+      licence: CC-BY-4.0
+      locale: de-DE
+      hf_config: de_de
+      hf_split: test
+      hf_revision: 70bb2e84b976b7e960aa89f1c648e09c59f894dd
+      max_utterances: 300
+      split_rule: all-test
+      eval_only: true
+      tags: [golden, replay]
+  - id: golden-tr-tr
+    kind: dataset_import@3
+    params:
+      name: replay-golden-tr-tr
+      source_name: fleurs
+      licence: CC-BY-4.0
+      locale: tr-TR
+      hf_config: tr_tr
+      hf_split: test
+      hf_revision: 70bb2e84b976b7e960aa89f1c648e09c59f894dd
+      max_utterances: 300
+      split_rule: all-test
+      eval_only: true
+      tags: [golden, replay]
+  - id: golden-ru-ru
+    kind: dataset_import@3
+    params:
+      name: replay-golden-ru-ru
+      source_name: fleurs
+      licence: CC-BY-4.0
+      locale: ru-RU
+      hf_config: ru_ru
+      hf_split: test
+      hf_revision: 70bb2e84b976b7e960aa89f1c648e09c59f894dd
+      max_utterances: 300
+      split_rule: all-test
+      eval_only: true
+      tags: [golden, replay]
+  - id: golden-ar-ar
+    kind: dataset_import@3
+    params:
+      name: replay-golden-ar-ar
+      source_name: fleurs
+      licence: CC-BY-4.0
+      locale: ar-AR
+      hf_config: ar_eg
+      hf_split: test
+      hf_revision: 70bb2e84b976b7e960aa89f1c648e09c59f894dd
+      max_utterances: 300
+      split_rule: all-test
+      eval_only: true
+      tags: [golden, replay]
+  - id: golden-hi-in
+    kind: dataset_import@3
+    params:
+      name: replay-golden-hi-in
+      source_name: fleurs
+      licence: CC-BY-4.0
+      locale: hi-IN
+      hf_config: hi_in
+      hf_split: test
+      hf_revision: 70bb2e84b976b7e960aa89f1c648e09c59f894dd
+      max_utterances: 300
+      split_rule: all-test
+      eval_only: true
+      tags: [golden, replay]
+  - id: golden-ja-jp
+    kind: dataset_import@3
+    params:
+      name: replay-golden-ja-jp
+      source_name: fleurs
+      licence: CC-BY-4.0
+      locale: ja-JP
+      hf_config: ja_jp
+      hf_split: test
+      hf_revision: 70bb2e84b976b7e960aa89f1c648e09c59f894dd
+      max_utterances: 300
+      split_rule: all-test
+      eval_only: true
+      tags: [golden, replay]
+  - id: golden-ko-kr
+    kind: dataset_import@3
+    params:
+      name: replay-golden-ko-kr
+      source_name: fleurs
+      licence: CC-BY-4.0
+      locale: ko-KR
+      hf_config: ko_kr
+      hf_split: test
+      hf_revision: 70bb2e84b976b7e960aa89f1c648e09c59f894dd
+      max_utterances: 300
+      split_rule: all-test
+      eval_only: true
+      tags: [golden, replay]
+  - id: golden-vi-vn
+    kind: dataset_import@3
+    params:
+      name: replay-golden-vi-vn
+      source_name: fleurs
+      licence: CC-BY-4.0
+      locale: vi-VN
+      hf_config: vi_vn
+      hf_split: test
+      hf_revision: 70bb2e84b976b7e960aa89f1c648e09c59f894dd
+      max_utterances: 300
+      split_rule: all-test
+      eval_only: true
+      tags: [golden, replay]
+  - id: golden-uk-ua
+    kind: dataset_import@3
+    params:
+      name: replay-golden-uk-ua
+      source_name: fleurs
+      licence: CC-BY-4.0
+      locale: uk-UA
+      hf_config: uk_ua
+      hf_split: test
+      hf_revision: 70bb2e84b976b7e960aa89f1c648e09c59f894dd
+      max_utterances: 300
+      split_rule: all-test
+      eval_only: true
+      tags: [golden, replay]
+  - id: golden-pl-pl
+    kind: dataset_import@3
+    params:
+      name: replay-golden-pl-pl
+      source_name: fleurs
+      licence: CC-BY-4.0
+      locale: pl-PL
+      hf_config: pl_pl
+      hf_split: test
+      hf_revision: 70bb2e84b976b7e960aa89f1c648e09c59f894dd
+      max_utterances: 300
+      split_rule: all-test
+      eval_only: true
+      tags: [golden, replay]
+  - id: golden-sv-se
+    kind: dataset_import@3
+    params:
+      name: replay-golden-sv-se
+      source_name: fleurs
+      licence: CC-BY-4.0
+      locale: sv-SE
+      hf_config: sv_se
+      hf_split: test
+      hf_revision: 70bb2e84b976b7e960aa89f1c648e09c59f894dd
+      max_utterances: 300
+      split_rule: all-test
+      eval_only: true
+      tags: [golden, replay]
+  - id: golden-cs-cz
+    kind: dataset_import@3
+    params:
+      name: replay-golden-cs-cz
+      source_name: fleurs
+      licence: CC-BY-4.0
+      locale: cs-CZ
+      hf_config: cs_cz
+      hf_split: test
+      hf_revision: 70bb2e84b976b7e960aa89f1c648e09c59f894dd
+      max_utterances: 300
+      split_rule: all-test
+      eval_only: true
+      tags: [golden, replay]
+  - id: golden-nb-no
+    kind: dataset_import@3
+    params:
+      name: replay-golden-nb-no
+      source_name: fleurs
+      licence: CC-BY-4.0
+      locale: nb-NO
+      hf_config: nb_no
+      hf_split: test
+      hf_revision: 70bb2e84b976b7e960aa89f1c648e09c59f894dd
+      max_utterances: 300
+      split_rule: all-test
+      eval_only: true
+      tags: [golden, replay]
+  - id: golden-da-dk
+    kind: dataset_import@3
+    params:
+      name: replay-golden-da-dk
+      source_name: fleurs
+      licence: CC-BY-4.0
+      locale: da-DK
+      hf_config: da_dk
+      hf_split: test
+      hf_revision: 70bb2e84b976b7e960aa89f1c648e09c59f894dd
+      max_utterances: 300
+      split_rule: all-test
+      eval_only: true
+      tags: [golden, replay]
+  - id: golden-bg-bg
+    kind: dataset_import@3
+    params:
+      name: replay-golden-bg-bg
+      source_name: fleurs
+      licence: CC-BY-4.0
+      locale: bg-BG
+      hf_config: bg_bg
+      hf_split: test
+      hf_revision: 70bb2e84b976b7e960aa89f1c648e09c59f894dd
+      max_utterances: 300
+      split_rule: all-test
+      eval_only: true
+      tags: [golden, replay]
+  - id: golden-fi-fi
+    kind: dataset_import@3
+    params:
+      name: replay-golden-fi-fi
+      source_name: fleurs
+      licence: CC-BY-4.0
+      locale: fi-FI
+      hf_config: fi_fi
+      hf_split: test
+      hf_revision: 70bb2e84b976b7e960aa89f1c648e09c59f894dd
+      max_utterances: 300
+      split_rule: all-test
+      eval_only: true
+      tags: [golden, replay]
+  - id: golden-hr-hr
+    kind: dataset_import@3
+    params:
+      name: replay-golden-hr-hr
+      source_name: fleurs
+      licence: CC-BY-4.0
+      locale: hr-HR
+      hf_config: hr_hr
+      hf_split: test
+      hf_revision: 70bb2e84b976b7e960aa89f1c648e09c59f894dd
+      max_utterances: 300
+      split_rule: all-test
+      eval_only: true
+      tags: [golden, replay]
+  - id: golden-sk-sk
+    kind: dataset_import@3
+    params:
+      name: replay-golden-sk-sk
+      source_name: fleurs
+      licence: CC-BY-4.0
+      locale: sk-SK
+      hf_config: sk_sk
+      hf_split: test
+      hf_revision: 70bb2e84b976b7e960aa89f1c648e09c59f894dd
+      max_utterances: 300
+      split_rule: all-test
+      eval_only: true
+      tags: [golden, replay]
+  - id: golden-zh-cn
+    kind: dataset_import@3
+    params:
+      name: replay-golden-zh-cn
+      source_name: fleurs
+      licence: CC-BY-4.0
+      locale: zh-CN
+      hf_config: cmn_hans_cn
+      hf_split: test
+      hf_revision: 70bb2e84b976b7e960aa89f1c648e09c59f894dd
+      max_utterances: 300
+      split_rule: all-test
+      eval_only: true
+      tags: [golden, replay]
+  - id: golden-hu-hu
+    kind: dataset_import@3
+    params:
+      name: replay-golden-hu-hu
+      source_name: fleurs
+      licence: CC-BY-4.0
+      locale: hu-HU
+      hf_config: hu_hu
+      hf_split: test
+      hf_revision: 70bb2e84b976b7e960aa89f1c648e09c59f894dd
+      max_utterances: 300
+      split_rule: all-test
+      eval_only: true
+      tags: [golden, replay]
+  - id: golden-ro-ro
+    kind: dataset_import@3
+    params:
+      name: replay-golden-ro-ro
+      source_name: fleurs
+      licence: CC-BY-4.0
+      locale: ro-RO
+      hf_config: ro_ro
+      hf_split: test
+      hf_revision: 70bb2e84b976b7e960aa89f1c648e09c59f894dd
+      max_utterances: 300
+      split_rule: all-test
+      eval_only: true
+      tags: [golden, replay]
+  - id: golden-et-ee
+    kind: dataset_import@3
+    params:
+      name: replay-golden-et-ee
+      source_name: fleurs
+      licence: CC-BY-4.0
+      locale: et-EE
+      hf_config: et_ee
+      hf_split: test
+      hf_revision: 70bb2e84b976b7e960aa89f1c648e09c59f894dd
+      max_utterances: 300
+      split_rule: all-test
+      eval_only: true
+      tags: [golden, replay]
+  - id: golden-el-gr
+    kind: dataset_import@3
+    params:
+      name: replay-golden-el-gr
+      source_name: fleurs
+      licence: CC-BY-4.0
+      locale: el-GR
+      hf_config: el_gr
+      hf_split: test
+      hf_revision: 70bb2e84b976b7e960aa89f1c648e09c59f894dd
+      max_utterances: 300
+      split_rule: all-test
+      eval_only: true
+      tags: [golden, replay]
+  - id: golden-lt-lt
+    kind: dataset_import@3
+    params:
+      name: replay-golden-lt-lt
+      source_name: fleurs
+      licence: CC-BY-4.0
+      locale: lt-LT
+      hf_config: lt_lt
+      hf_split: test
+      hf_revision: 70bb2e84b976b7e960aa89f1c648e09c59f894dd
+      max_utterances: 300
+      split_rule: all-test
+      eval_only: true
+      tags: [golden, replay]
+  - id: golden-lv-lv
+    kind: dataset_import@3
+    params:
+      name: replay-golden-lv-lv
+      source_name: fleurs
+      licence: CC-BY-4.0
+      locale: lv-LV
+      hf_config: lv_lv
+      hf_split: test
+      hf_revision: 70bb2e84b976b7e960aa89f1c648e09c59f894dd
+      max_utterances: 300
+      split_rule: all-test
+      eval_only: true
+      tags: [golden, replay]
+  - id: golden-mt-mt
+    kind: dataset_import@3
+    params:
+      name: replay-golden-mt-mt
+      source_name: fleurs
+      licence: CC-BY-4.0
+      locale: mt-MT
+      hf_config: mt_mt
+      hf_split: test
+      hf_revision: 70bb2e84b976b7e960aa89f1c648e09c59f894dd
+      max_utterances: 300
+      split_rule: all-test
+      eval_only: true
+      tags: [golden, replay]
+  - id: golden-sl-si
+    kind: dataset_import@3
+    params:
+      name: replay-golden-sl-si
+      source_name: fleurs
+      licence: CC-BY-4.0
+      locale: sl-SI
+      hf_config: sl_si
+      hf_split: test
+      hf_revision: 70bb2e84b976b7e960aa89f1c648e09c59f894dd
+      max_utterances: 300
+      split_rule: all-test
+      eval_only: true
+      tags: [golden, replay]
+  - id: golden-th-th
+    kind: dataset_import@3
+    params:
+      name: replay-golden-th-th
+      source_name: fleurs
+      licence: CC-BY-4.0
+      locale: th-TH
+      hf_config: th_th
+      hf_split: test
+      hf_revision: 70bb2e84b976b7e960aa89f1c648e09c59f894dd
+      max_utterances: 300
+      split_rule: all-test
+      eval_only: true
+      tags: [golden, replay]

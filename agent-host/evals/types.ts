@@ -48,6 +48,8 @@ export interface ToolResult {
  */
 export interface ScriptedTools {
   project: string;
+  /** Whether the MCP server offers the operation as a tool (operations of later waves may not exist yet). */
+  has(operation: string): Promise<boolean>;
   call(operation: string, args: Record<string, unknown>): Promise<{ rejected: true } | { rejected: false; result: ToolResult }>;
   say(text: string): Promise<void>;
 }
@@ -62,6 +64,9 @@ export interface Eval {
   /** What the collector reads after the session besides the session itself: these mixes and aliases. */
   observe: { mixes: string[]; aliases: string[] };
   budget: Budget;
+  /** A playbook eval starts its session with playbooks.run (inputs; fixture mixes renamed) instead of agentSessions.new;
+   * its prompt is then the rendered prompt's last line, which the scripted agent recognises. */
+  playbook?: { name: string; inputs: Record<string, unknown> };
   graders: Grader[];
   /** The scripted agent's policy for this prompt in offline mode: a correct reference answer. */
   offline(tools: ScriptedTools): Promise<void>;

@@ -24,9 +24,14 @@ import (
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"github.com/riverqueue/river/rivermigrate"
 	"github.com/riverqueue/river/rivertype"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
 	"github.com/usunrise88/cadence/control-plane/internal/auth"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
+	"github.com/usunrise88/cadence/control-plane/internal/obs"
 	"github.com/usunrise88/cadence/control-plane/internal/problems"
 	"github.com/usunrise88/cadence/control-plane/internal/storage"
 )
@@ -82,6 +87,8 @@ type Job struct {
 	StartedAt         *time.Time
 	FinishedAt        *time.Time
 	CancelRequestedAt *time.Time
+	Priority          int        // step jobs: start order in the queue, higher first
+	PausedAt          *time.Time // step jobs: held in the queue (jobs.pause)
 }
 
 // View is a job's JSON form: the contract's Job.
@@ -102,22 +109,27 @@ type View struct {
 	StartedAt         *time.Time      `json:"startedAt,omitempty"`
 	FinishedAt        *time.Time      `json:"finishedAt,omitempty"`
 	CancelRequestedAt *time.Time      `json:"cancelRequestedAt,omitempty"`
+	Priority          int             `json:"priority"`
+	PausedAt          *time.Time      `json:"pausedAt,omitempty"`
 }
 
 // JSON renders j as the contract's Job.
 func (j Job) JSON() View {
 	return View{ID: j.ID, Kind: j.Kind, ProjectID: j.ProjectID, State: j.State, Progress: j.Progress, Message: j.Message,
 		Result: j.Result, Error: j.Error, Attempt: j.Attempt, Rev: j.Rev, Actor: j.Actor, CreatedAt: j.CreatedAt,
-		UpdatedAt: j.UpdatedAt, StartedAt: j.StartedAt, FinishedAt: j.FinishedAt, CancelRequestedAt: j.CancelRequestedAt}
+		UpdatedAt: j.UpdatedAt, StartedAt: j.StartedAt, FinishedAt: j.FinishedAt, CancelRequestedAt: j.CancelRequestedAt,
+		Priority: j.Priority, PausedAt: j.PausedAt}
 }
 
 const cols = `id, river_id, kind, coalesce(project_id, ''), state, progress, coalesce(message, ''), result,
-	coalesce(error, ''), attempt, actor, rev, created_at, updated_at, started_at, finished_at, cancel_requested_at`
+	coalesce(error, ''), attempt, actor, rev, created_at, updated_at, started_at, finished_at, cancel_requested_at,
+	priority, paused_at`
 
 func scan(row pgx.CollectableRow) (Job, error) {
 	var j Job
 	err := row.Scan(&j.ID, &j.RiverID, &j.Kind, &j.ProjectID, &j.State, &j.Progress, &j.Message, &j.Result, &j.Error,
-		&j.Attempt, &j.Actor, &j.Rev, &j.CreatedAt, &j.UpdatedAt, &j.StartedAt, &j.FinishedAt, &j.CancelRequestedAt)
+		&j.Attempt, &j.Actor, &j.Rev, &j.CreatedAt, &j.UpdatedAt, &j.StartedAt, &j.FinishedAt, &j.CancelRequestedAt,
+		&j.Priority, &j.PausedAt)
 	return j, err
 }
 
@@ -200,7 +212,13 @@ type Handler func(ctx context.Context, run *Run) (result any, err error)
 type KindOptions struct {
 	MaxAttempts int           // default 1: in-process kinds are not retried unless they ask for it
 	Timeout     time.Duration // default 10 min
+	// Queue is the River queue the kind runs on: river.QueueDefault when empty, QueueSteps for kinds whose handler
+	// waits for a worker (they must not take the default queue's few slots from other work).
+	Queue string
 }
+
+// queueWorkers is how many jobs of a named queue other than the default run at once.
+const queueWorkers = 100
 
 // Run is one execution of a job, handed to its Handler.
 type Run struct {
@@ -209,11 +227,12 @@ type Run struct {
 	svc  *Service
 }
 
-// Progress records how far the job is (0–1) with a short message and emits job.progress.
+// Progress records how far the job is (0–1) with a short message and emits job.progress; the
+// revision stays (see Progress).
 func (r *Run) Progress(ctx context.Context, fraction float64, message string) error {
 	fraction = max(0, min(1, fraction))
 	return r.svc.update(ctx, r.Job.ID, EventProgress, func(ctx context.Context, tx pgx.Tx) (pgx.Rows, error) {
-		return tx.Query(ctx, `UPDATE jobs SET progress = $2, message = NULLIF($3, ''), rev = rev + 1, updated_at = now()
+		return tx.Query(ctx, `UPDATE jobs SET progress = $2, message = NULLIF($3, ''), updated_at = now()
 			WHERE id = $1 AND state = 'running' RETURNING `+cols, r.Job.ID, fraction, message)
 	})
 }
@@ -223,6 +242,8 @@ type riverArgs struct {
 	K     string          `json:"kind"`
 	JobID string          `json:"jobId"`
 	Args  json.RawMessage `json:"args,omitempty"`
+	// Trace is the W3C traceparent of the request that enqueued the job; each attempt's span continues it.
+	Trace string `json:"trace,omitempty"`
 }
 
 func (a riverArgs) Kind() string { return a.K }
@@ -244,6 +265,8 @@ type Service struct {
 	client   *river.Client[pgx.Tx]
 	// FetchPollInterval overrides River's poll interval (tests); zero keeps River's default.
 	FetchPollInterval time.Duration
+	// Tracer records a span per job attempt (main sets the file exporter's provider); nil records nothing.
+	Tracer trace.TracerProvider
 }
 
 type kindEntry struct {
@@ -290,6 +313,9 @@ func (s *Service) Register(kind string, h Handler, opts KindOptions) {
 	if opts.Timeout <= 0 {
 		opts.Timeout = 10 * time.Minute
 	}
+	if opts.Queue == "" {
+		opts.Queue = river.QueueDefault
+	}
 	s.kinds[kind] = kindEntry{handler: h, opts: opts}
 	river.AddWorkerArgs(s.workers, riverArgs{K: kind}, &worker{svc: s, timeout: opts.Timeout})
 }
@@ -306,8 +332,18 @@ func (s *Service) AddPeriodic(kind string, every time.Duration, fn func(ctx cont
 
 // Start creates the River client and starts working; it returns once River runs.
 func (s *Service) Start(ctx context.Context) error {
+	queues := map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: 10}}
+	for _, k := range s.kinds {
+		if _, ok := queues[k.opts.Queue]; !ok {
+			n := queueWorkers
+			if k.opts.Queue == QueueSteps {
+				n = QueueStepsWorkers
+			}
+			queues[k.opts.Queue] = river.QueueConfig{MaxWorkers: n}
+		}
+	}
 	client, err := river.NewClient(riverpgxv5.New(s.pool), &river.Config{
-		Queues:            map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: 10}},
+		Queues:            queues,
 		Workers:           s.workers,
 		PeriodicJobs:      s.periodic,
 		Logger:            s.log,
@@ -363,8 +399,8 @@ func (s *Service) Enqueue(ctx context.Context, tx pgx.Tx, spec Spec) (Job, []eve
 	}
 	actor, _ := auth.FromContext(ctx)
 	id := "job_" + uuid.Must(uuid.NewV7()).String()
-	res, err := s.client.InsertTx(ctx, tx, riverArgs{K: spec.Kind, JobID: id, Args: args},
-		&river.InsertOpts{MaxAttempts: k.opts.MaxAttempts})
+	res, err := s.client.InsertTx(ctx, tx, riverArgs{K: spec.Kind, JobID: id, Args: args, Trace: obs.Traceparent(ctx)},
+		&river.InsertOpts{MaxAttempts: k.opts.MaxAttempts, Queue: k.opts.Queue})
 	if err != nil {
 		return Job{}, nil, fmt.Errorf("enqueue %s: %w", spec.Kind, err)
 	}
@@ -434,7 +470,30 @@ type worker struct {
 
 func (w *worker) Timeout(*river.Job[riverArgs]) time.Duration { return w.timeout }
 
-func (w *worker) Work(ctx context.Context, rj *river.Job[riverArgs]) error {
+// Work runs one attempt in a span that continues the trace of the request that enqueued the job.
+func (w *worker) Work(ctx context.Context, rj *river.Job[riverArgs]) (err error) {
+	s := w.svc
+	ctx, span := s.tracer().Tracer("cadence/jobs").Start(obs.WithTraceparent(ctx, rj.Args.Trace), "job "+rj.Args.K,
+		trace.WithSpanKind(trace.SpanKindConsumer), trace.WithAttributes(
+			attribute.String("cadence.job.id", rj.Args.JobID), attribute.Int("cadence.job.attempt", rj.Attempt)))
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+		span.End()
+	}()
+	return w.work(ctx, rj)
+}
+
+func (s *Service) tracer() trace.TracerProvider {
+	if s.Tracer != nil {
+		return s.Tracer
+	}
+	return tracenoop.NewTracerProvider()
+}
+
+func (w *worker) work(ctx context.Context, rj *river.Job[riverArgs]) error {
 	s, id := w.svc, rj.Args.JobID
 	k, ok := s.kinds[rj.Args.K]
 	if !ok {
@@ -456,6 +515,12 @@ func (w *worker) Work(ctx context.Context, rj *river.Job[riverArgs]) error {
 		return events.Append(ctx, tx, System, nil, stateDraft(j, EventState))
 	})
 	if errors.Is(err, errCancelled) {
+		// Cancelled after River fetched the job but before this handler marked it running: jobs.cancel saw a
+		// running River job and only set cancel_requested_at, so the mirror is still queued. End it here, or it
+		// stays queued forever (end skips a job that already ended).
+		if err := s.end(context.WithoutCancel(ctx), id, StateCancelled, "cancelled before it started"); err != nil {
+			return err
+		}
 		return river.JobCancel(err)
 	}
 	if err != nil {
@@ -473,6 +538,11 @@ func (w *worker) Work(ctx context.Context, rj *river.Job[riverArgs]) error {
 		return err
 	}
 	switch {
+	case !cancelled && errors.Is(herr, ErrInterrupted):
+		// The control plane is stopping while the handler waits on work that goes on elsewhere (a worker's lease):
+		// the mirror stays running and River hands the job to the next start without spending an attempt, where
+		// the handler picks the work up again.
+		return river.JobSnooze(0)
 	case cancelled:
 		if err := s.end(fctx, id, StateCancelled, herr.Error()); err != nil {
 			return err
@@ -494,6 +564,11 @@ func (w *worker) Work(ctx context.Context, rj *river.Job[riverArgs]) error {
 }
 
 var errCancelled = errors.New("the job was cancelled before it started")
+
+// ErrInterrupted marks a handler error as "stopped by the control plane's shutdown, not failed": a handler that waits
+// on work running elsewhere returns it (wrapped) when its context is cancelled, and the job runs again on the next
+// start with the same attempt (River's snooze) instead of failing or retrying.
+var ErrInterrupted = errors.New("interrupted by the control plane stopping; it continues on the next start")
 
 // finish stores the result and completes the River job in the same transaction.
 func (w *worker) finish(ctx context.Context, rj *river.Job[riverArgs], result any) error {

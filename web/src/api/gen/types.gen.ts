@@ -48,6 +48,10 @@ export type Actor = {
     id: string;
     name?: string;
     sessionId?: string;
+    /**
+     * The channel a person acted through when it was not the web UI or the API (an approval decided from Telegram)
+     */
+    channel?: 'telegram';
 };
 
 export type Project = {
@@ -421,9 +425,9 @@ export type CredentialList = {
 };
 
 /**
- * The kinds registered so far; golden sets, sources, normalizers and model versions join in later phases
+ * The kinds registered so far; runtime, model_family and step_kind are published by workers (R40, R41, R45); noise_bank holds background noise for augmentation, registered by dataset_import with purpose noise; golden sets, normalizers and model versions join in later phases
  */
-export type RegistryKind = 'base_model' | 'dataset_version' | 'template';
+export type RegistryKind = 'base_model' | 'dataset_version' | 'template' | 'runtime' | 'model_family' | 'step_kind' | 'noise_bank';
 
 /**
  * draft → frozen → deprecated; a frozen version never changes
@@ -552,6 +556,33 @@ export type DatasetPayload = {
      * Metadata only: no audio is stored (phase-1 fixture so mixes have something to reference)
      */
     fixture: boolean;
+    /**
+     * Sources (src_…) of the utterances; an imported version is eval-only while any of them is not cleared for training (phase 2)
+     */
+    sourceIds?: Array<string>;
+    /**
+     * The sources' licences, joined with ' AND ' when there are several
+     */
+    licence?: string;
+    /**
+     * Utterances and hours per language
+     */
+    languages?: Array<DatasetLanguage>;
+    artifact?: ArtifactRef;
+    /**
+     * Registered for evaluation only (golden and replay test sets): never mixed or trained on, whatever its sources
+     */
+    evalOnly?: boolean;
+    /**
+     * How utterances were assigned to splits (speaker-disjoint, source, all-train, all-validation, all-test)
+     */
+    splitRule?: string;
+    speakers?: number;
+    /**
+     * Tags given at import (golden, replay, eval-only, …)
+     */
+    tags?: Array<string>;
+    lineage?: DatasetLineage;
 };
 
 export type DatasetVersion = RegistryVersion & {
@@ -563,7 +594,7 @@ export type DatasetVersionList = {
     items: Array<DatasetVersion>;
 };
 
-export type TemplateKind = 'instructions' | 'preset' | 'skill' | 'pipeline' | 'agent-config';
+export type TemplateKind = 'instructions' | 'preset' | 'skill' | 'pipeline' | 'agent-config' | 'playbook';
 
 export type TemplateFile = {
     /**
@@ -647,7 +678,7 @@ export type AliasList = {
     items: Array<Alias>;
 };
 
-export type JobKind = 'training' | 'eval' | 'shadow' | 'export';
+export type JobKind = 'training' | 'eval' | 'shadow' | 'export' | 'data';
 
 export type ComputeCard = {
     /**
@@ -665,6 +696,8 @@ export type ComputeCard = {
      */
     memoryCapGb: number;
     allowedJobKinds: Array<JobKind>;
+    windows?: AvailabilityWindows;
+    telemetry?: CardTelemetryReport;
 };
 
 export type ComputeHealth = {
@@ -696,8 +729,18 @@ export type ComputeList = {
 
 export type ComputeCardEdit = {
     index: number;
+    name?: string;
+    /**
+     * Key into the estimate table in defaults.yaml (a corrected card: blackwell-48gb)
+     */
+    cardClass?: string;
+    /**
+     * The card's memory; the cap must stay at or below it
+     */
+    memoryGb?: number;
     memoryCapGb?: number;
     allowedJobKinds?: Array<JobKind>;
+    windows?: AvailabilityWindows;
 };
 
 export type ComputeEdit = {
@@ -705,7 +748,7 @@ export type ComputeEdit = {
     cards?: Array<ComputeCardEdit>;
 };
 
-export type SecretKind = 'huggingface' | 'ngc' | 'github' | 's3' | 'judge-api' | 'other';
+export type SecretKind = 'huggingface' | 'ngc' | 'github' | 's3' | 'judge-api' | 'telegram' | 'other';
 
 export type SecretName = string;
 
@@ -822,12 +865,28 @@ export type Defaults = {
     mix: DefaultSection;
     drafts: DefaultSection;
     cache: DefaultSection;
+    data?: DefaultSection;
+    operations?: DefaultSection;
+    notifications?: DefaultSection;
+    backups?: DefaultSection;
+    /**
+     * The recommended augmentation profile (docs/spec/03 "Augmentation"): what the Recipe form's Reset to recommended writes
+     */
+    augment?: DefaultSection;
     estimates: {
         bytes_per_audio_hour: DefaultValue;
+        measured_plus_minus?: DefaultValue;
+        lease_overhead_seconds?: DefaultValue;
         training: Array<TrainingEstimateRow>;
     };
     compute: {
         hosts: Array<DefaultHost>;
+    };
+    /**
+     * One section per framework pack (R45), addressed as packs.<pack>.<key> by the step kinds' x-cadence defaultRef
+     */
+    packs?: {
+        [key: string]: DefaultSection;
     };
 };
 
@@ -847,6 +906,10 @@ export type Policies = {
     updatedAt: string;
     budgets: PolicyBudgets;
     /**
+     * The instance timezone (IANA, e.g. Europe/Berlin): quiet hours, the daily digest and the backup schedule follow it
+     */
+    timezone: string;
+    /**
      * Fields that differ from defaults.yaml, e.g. budgets.gpuHoursPerProjectPerDay
      */
     departures: Array<string>;
@@ -857,6 +920,10 @@ export type PoliciesEdit = {
         gpuHoursPerProjectPerDay?: number;
         agentTurnsPerSession?: number;
     };
+    /**
+     * IANA timezone name, e.g. Europe/Berlin or UTC
+     */
+    timezone?: string;
 };
 
 /**
@@ -873,11 +940,11 @@ export type RunNew = {
      */
     baseModel?: string;
     /**
-     * Required when init is checkpoint (checkpoints arrive in phase 2)
+     * The checkpoint to start from (ckp_…); required when init is checkpoint. The run's base model is then the checkpoint's
      */
     checkpoint?: string;
     /**
-     * Default training.steps
+     * Step budget of the stage (default training.steps); the train step's steps parameter
      */
     steps?: number;
     precision?: Precision;
@@ -890,9 +957,39 @@ export type RunNew = {
      */
     compute?: string;
     /**
-     * Dataset versions (ver_… or @alias) the run reads, for the data volume; the mix replaces this in phase 2
+     * Dry runs without a mix only: dataset versions (ver_… or @alias) for the data volume
      */
     datasets?: Array<string>;
+    /**
+     * The mix to train on (mix_… or its name); required unless dryRun with datasets
+     */
+    mix?: string;
+    /**
+     * The mix revision (default its current one)
+     */
+    mixRevision?: number;
+    /**
+     * The train step's seed parameter, when its kind has one (default: the kind's default)
+     */
+    seed?: number;
+    /**
+     * The recipe: a pipeline of the project repository (default training.pipeline, train-stage)
+     */
+    pipeline?: string;
+    /**
+     * Branch, tag or commit to read the pipeline at (default main)
+     */
+    ref?: string;
+    /**
+     * Overrides of the train step's parameters (recorded as departures when they differ from the default)
+     */
+    params?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Queue priority of the run's step jobs (higher first)
+     */
+    priority?: number;
 };
 
 export type EstimateRange = {
@@ -913,6 +1010,10 @@ export type RunEstimate = {
     gpuHours: EstimateRange;
     durationSeconds: EstimateRange;
     secondsPerStep: number;
+    /**
+     * Fixed seconds a lease adds before and after its steps (model load, state and checkpoint saves): the calibration's measurement, else estimates.lease_overhead_seconds; durationSeconds = leaseOverheadSeconds + steps × secondsPerStep, the ± applying to the steps
+     */
+    leaseOverheadSeconds?: number;
     steps: number;
     gpus: number;
     precision: Precision;
@@ -937,16 +1038,48 @@ export type RunEstimate = {
         bytes: number;
     };
     budget: {
+        /**
+         * The project's daily GPU-hour budget
+         */
         gpuHoursPerProjectPerDay: number;
         /**
-         * The upper bound fits the project's daily GPU-hour budget
+         * GPU-hours the project's leases on GPU cards used today (policies timezone)
+         */
+        usedTodayGpuHours?: number;
+        /**
+         * Budget minus today's use (negative when overspent)
+         */
+        remainingGpuHours?: number;
+        /**
+         * Today's use plus the estimate fits the project's daily budget (over it, an agent's run waits for an approval)
          */
         withinDailyBudget: boolean;
+        /**
+         * An agent session's GPU-hour budget (budgets.agent_gpu_hours_per_session), for a session's request
+         */
+        sessionGpuHours?: number;
+        /**
+         * GPU-hours the session's leases used so far
+         */
+        sessionUsedGpuHours?: number;
     };
     /**
-     * The source of the estimate-table row
+     * The source of the estimate-table row, or the calibration it was measured by
      */
     source: string;
+    /**
+     * basis measured: when the calibration ran
+     */
+    measuredAt?: string;
+    /**
+     * The mix revision the run trains on, rendered as a mix artifact (its hash is the content hash of the resolved input_cfg)
+     */
+    mix?: {
+        id: string;
+        name: string;
+        revision: number;
+        hash: string;
+    };
 };
 
 export type Approval = {
@@ -1092,6 +1225,12 @@ export type AuditEntry = {
      */
     rule?: string;
     causedBy?: AuditCause;
+    /**
+     * What a job did for the command (artifacts.evict: artifacts, bytesFreed, blobs)
+     */
+    detail?: {
+        [key: string]: unknown;
+    };
     at: string;
 };
 
@@ -1133,6 +1272,9 @@ export type Job = {
      */
     error?: string;
     attempt: number;
+    /**
+     * Changes with state, priority, pause and cancel; progress reports leave it (job.progress carries them)
+     */
     rev: number;
     actor: Actor;
     createdAt: string;
@@ -1140,6 +1282,14 @@ export type Job = {
     startedAt?: string;
     finishedAt?: string;
     cancelRequestedAt?: string;
+    /**
+     * Step jobs: start order in the queue, higher first (jobs.edit); 0 for other jobs
+     */
+    priority?: number;
+    /**
+     * Step jobs: paused (jobs.pause) and held in the queue until jobs.resume
+     */
+    pausedAt?: string;
 };
 
 export type JobList = {
@@ -1575,11 +1725,19 @@ export type ProjectBudgets = {
      * Agent spend per day in tokens; default budgets.agent_tokens_per_project_per_day
      */
     agentTokensPerDay: number;
+    /**
+     * The project's queue priority: waiting step jobs start by project priority (higher first), then the job's priority, then first come; default budgets.queue_priority_per_project
+     */
+    queuePriority: number;
 };
 
 export type ProjectBudgetsEdit = {
     gpuHoursPerDay?: number;
     agentTokensPerDay?: number;
+    /**
+     * Queue priority of the project's step jobs against other projects (higher first)
+     */
+    queuePriority?: number;
 };
 
 export type AgentChoice = {
@@ -1972,9 +2130,9 @@ export type BranchMerge = {
 };
 
 /**
- * interactive: a conversation on its own branch; read-only: one turn under the read-only preset, no branch
+ * interactive: a conversation on its own branch; read-only: one turn under the read-only preset, no branch; playbook: started by playbooks.run, its plan is the playbook's chain (a branch like interactive)
  */
-export type AgentSessionKind = 'interactive' | 'read-only';
+export type AgentSessionKind = 'interactive' | 'read-only' | 'playbook';
 
 /**
  * docs/spec/05-agents.md "Session lifecycle"; done, failed and cancelled are terminal
@@ -2002,6 +2160,10 @@ export type AgentBudget = {
      * A turn over this is cancelled and the session pauses (budgets.agent_tokens_per_turn)
      */
     tokensPerTurn: number;
+    /**
+     * GPU-hours the session's commands may spend before a spending one waits for an approval (budgets.agent_gpu_hours_per_session)
+     */
+    gpuHours?: number;
 };
 
 export type AgentUse = {
@@ -2162,6 +2324,7 @@ export type AgentSession = {
      * The last user message; the idle clock (R5) runs from it
      */
     lastMessageAt?: string;
+    playbook?: AgentPlaybook;
 };
 
 export type AgentSessionList = {
@@ -2793,6 +2956,2170 @@ export type EgressHostList = {
     hosts: Array<string>;
 };
 
+export type WorkerRegistration = {
+    /**
+     * The compute host this worker runs on (compute entity name, e.g. staging)
+     */
+    host: string;
+    /**
+     * This worker process (hostname and boot id), so a restart is told apart from a second worker
+     */
+    instance?: string;
+    runtime: RuntimeDescriptor;
+    /**
+     * Step kinds this runtime can run, by name
+     */
+    stepKinds: {
+        [key: string]: StepKindDescriptor;
+    };
+    modelFamilies?: Array<ModelFamilyDescriptor>;
+};
+
+export type RuntimeDescriptor = {
+    /**
+     * Runtime name (nemo-speech, toy)
+     */
+    name: string;
+    /**
+     * The runtime's own version (26.07)
+     */
+    version: string;
+    /**
+     * Container image reference
+     */
+    image?: string;
+    /**
+     * Image digest (sha256:…); empty for a development worker outside a container
+     */
+    digest?: string;
+    /**
+     * Environment lock: framework and library versions (cuda, torch, nemo, lhotse, …)
+     */
+    environment?: {
+        [key: string]: string;
+    };
+    /**
+     * Version of the cadence-worker plugin the image carries
+     */
+    plugin?: string;
+};
+
+export type StepKindDescriptor = {
+    version: string;
+    /**
+     * JSON Schema of the parameters; every property carries x-cadence {default, description, source, range[, defaultRef]}
+     */
+    params: {
+        [key: string]: unknown;
+    };
+    /**
+     * Input name → artifact type
+     */
+    consumes: {
+        [key: string]: string;
+    };
+    /**
+     * Output name → artifact type
+     */
+    produces: {
+        [key: string]: string;
+    };
+    resources: StepResources;
+    /**
+     * The model-family role this kind fills (calibrate, train, average, transcribe, export, parity), empty for neutral kinds
+     */
+    role?: string;
+    /**
+     * Runtime-neutral core kind shipped in every runtime image
+     */
+    neutral?: boolean;
+    /**
+     * Secret names the step needs as environment variables
+     */
+    secrets?: Array<string>;
+    /**
+     * Help slug (steps.<name>)
+     */
+    help: string;
+};
+
+export type StepResources = {
+    gpu?: boolean;
+    /**
+     * Cards (1 in v1, R44)
+     */
+    gpus?: number;
+    /**
+     * Card memory the step needs; a training step takes the card's whole cap
+     */
+    memoryGb?: number;
+    diskGb?: number;
+    /**
+     * Which compute job kinds may take it
+     */
+    jobKind?: 'training' | 'eval' | 'export' | 'data';
+};
+
+export type ModelFamilyDescriptor = {
+    name: string;
+    version: string;
+    title?: string;
+    framework: string;
+    architecture: string;
+    /**
+     * Checkpoint and export formats (.nemo, onnx, …)
+     */
+    formats?: Array<string>;
+    input?: {
+        sampleRate?: number;
+        channels?: number;
+    };
+    /**
+     * Feature extraction the family computes itself (R42: never stored in shar)
+     */
+    features?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Tokenizer kind (sentencepiece-bpe, chars, …)
+     */
+    tokenizer?: string;
+    capabilities?: {
+        streaming?: boolean;
+        wordTimestamps?: boolean;
+        confidence?: boolean;
+        /**
+         * Boosting method, empty when none
+         */
+        boosting?: string;
+        languagePrompt?: boolean;
+        trainModes?: Array<'finetune' | 'adapter' | 'scratch'>;
+    };
+    latencyProfiles: Array<LatencyProfile>;
+    /**
+     * Role → step kind (calibrate, train, average, transcribe, export, parity)
+     */
+    roles: {
+        [key: string]: string;
+    };
+    /**
+     * The defaults.yaml section of this family
+     */
+    defaultsSection?: string;
+    help?: string;
+    skill?: string;
+};
+
+export type LatencyProfile = {
+    /**
+     * 80ms, 160ms, …, offline
+     */
+    name: string;
+    /**
+     * Algorithmic latency
+     */
+    latencyMs: number;
+    chunkMs?: number;
+    leftContextMs?: number;
+    /**
+     * Family parameters that realise it, e.g. {att_context_size: [56, 1]}
+     */
+    params?: {
+        [key: string]: unknown;
+    };
+    /**
+     * How the UI shows it: 160 ms · [56,1]
+     */
+    label?: string;
+};
+
+export type Worker = {
+    /**
+     * wrk_…
+     */
+    id: string;
+    host: string;
+    /**
+     * cmp_… of the compute host
+     */
+    hostId?: string;
+    instance?: string;
+    runtime: RuntimeDescriptor;
+    /**
+     * The runtime's registry version (ver_…)
+     */
+    runtimeVersionId?: string;
+    /**
+     * kind@version this worker may lease
+     */
+    stepKinds?: Array<string>;
+    state: 'online' | 'offline';
+    lastSeenAt?: string;
+};
+
+export type WorkerClaim = {
+    workerId: string;
+    /**
+     * Seconds to wait for work
+     */
+    wait?: number;
+    cards: Array<CardTelemetry>;
+};
+
+export type CardTelemetry = {
+    index: number;
+    name?: string;
+    memoryTotalMb?: number;
+    /**
+     * Used by every process on the card
+     */
+    memoryUsedMb?: number;
+    utilization?: number;
+    temperatureC?: number;
+    powerW?: number;
+};
+
+export type WorkerClaimResult = {
+    lease?: Lease;
+};
+
+export type Lease = {
+    /**
+     * lse_…
+     */
+    id: string;
+    jobId: string;
+    spec: StepSpec;
+    /**
+     * Input name → where to read it (cas://b3:<hash> in v1)
+     */
+    inputs?: {
+        [key: string]: string;
+    };
+    card: {
+        index: number;
+        memoryCapMb: number;
+    };
+    /**
+     * Secret environment for the step subprocess only; never logged
+     */
+    env?: {
+        [key: string]: string;
+    };
+    /**
+     * W3C trace context of the job
+     */
+    traceparent?: string;
+    heartbeatSeconds: number;
+};
+
+export type StepSpec = {
+    stepId: string;
+    pipelineRunId: string;
+    projectId?: string;
+    /**
+     * The training run this step belongs to, when it does (metrics go to run.{id}.metrics)
+     */
+    runId?: string;
+    kind: string;
+    kindVersion: string;
+    /**
+     * Resolved parameters (defaults applied)
+     */
+    params: {
+        [key: string]: unknown;
+    };
+    inputs: {
+        [key: string]: ArtifactRef;
+    };
+    /**
+     * Output name → artifact type
+     */
+    outputs: {
+        [key: string]: string;
+    };
+    resources: StepResources;
+    priority?: number;
+    /**
+     * Estimated wall time (availability windows, R19); absent when unknown
+     */
+    estimateSeconds?: number;
+    overrides?: {
+        /**
+         * 0.75 on the automatic OOM retry
+         */
+        batchScale?: number;
+        /**
+         * b3 hash of a training-state artifact to resume from
+         */
+        resumeFrom?: string;
+    };
+    attempt: number;
+};
+
+export type ArtifactRef = {
+    hash: string;
+    /**
+     * shar, dataset, mix, base_model, checkpoint, training-state, calibration, hypotheses, analysis, eval-report, deployable, text
+     */
+    type: string;
+    size?: number;
+    /**
+     * Neutral, self-describing metadata of the type (R42)
+     */
+    meta?: {
+        [key: string]: unknown;
+    };
+};
+
+export type WorkerReport = {
+    progress?: {
+        fraction?: number;
+        message?: string;
+    };
+    cards?: Array<CardTelemetry>;
+};
+
+export type WorkerReportAck = {
+    /**
+     * Stop the step now (checkpoint first when it can)
+     */
+    stop: boolean;
+    reason?: 'cancelled' | 'paused' | 'window-closed';
+};
+
+export type WorkerLogLine = {
+    t: string;
+    level?: 'debug' | 'info' | 'warn' | 'error';
+    msg: string;
+    fields?: {
+        [key: string]: unknown;
+    };
+};
+
+export type WorkerMetricBatch = {
+    points: Array<MetricPoint>;
+};
+
+export type MetricPoint = {
+    /**
+     * loss, val_wer, lr, grad_norm, throughput_audio_s_per_s, gpu_memory_mb, …
+     */
+    name: string;
+    step?: number;
+    epoch?: number;
+    value: number;
+    wallTime: string;
+};
+
+export type StepOutcome = {
+    state: 'done' | 'failed' | 'cancelled';
+    error?: StepError;
+    outputs?: {
+        [key: string]: ArtifactRef;
+    };
+    /**
+     * Final values (val_wer, seconds_per_step, …)
+     */
+    metrics?: {
+        [key: string]: number;
+    };
+};
+
+export type WorkerOutput = {
+    /**
+     * The step output it is an instance of (its type must match the output's)
+     */
+    name: string;
+    artifact: ArtifactRef;
+    /**
+     * Values at this point (val_wer, …) the hooks may read when the meta lacks them
+     */
+    metrics?: {
+        [key: string]: number;
+    };
+};
+
+export type StepError = {
+    /**
+     * oom gets one automatic retry at 0.75× batch; lost = reaped after missed heartbeats
+     */
+    type: 'oom' | 'step' | 'lost' | 'cancelled' | 'input';
+    message: string;
+    retryable?: boolean;
+};
+
+export type RuntimeVersion = RegistryVersion & {
+    runtime: RuntimeDescriptor;
+    /**
+     * Workers that registered with this version
+     */
+    workers: Array<Worker>;
+};
+
+export type RuntimeVersionList = {
+    items: Array<RuntimeVersion>;
+};
+
+export type ModelFamilyVersion = RegistryVersion & {
+    modelFamily: ModelFamilyDescriptor;
+};
+
+export type ModelFamilyVersionList = {
+    items: Array<ModelFamilyVersion>;
+};
+
+export type StepKindPayload = StepKindDescriptor & {
+    /**
+     * The step kind's name; pipelines pin <name>@<version>
+     */
+    name: string;
+    /**
+     * The runtime that publishes it
+     */
+    runtime: string;
+    /**
+     * The runtime's registry version (ver_…) when first published
+     */
+    runtimeVersionId: string;
+    /**
+     * sha256 of the canonical parameter schema; neutral kinds of several runtimes agree on it
+     */
+    schemaHash: string;
+};
+
+export type StepKindVersion = RegistryVersion & {
+    stepKind: StepKindPayload;
+};
+
+export type StepKindVersionList = {
+    items: Array<StepKindVersion>;
+};
+
+export type JobEdit = {
+    /**
+     * Start order in the queue, higher first
+     */
+    priority: number;
+};
+
+export type JobLogLine = {
+    /**
+     * Line number in the job's log
+     */
+    seq: number;
+    t: string;
+    level: 'debug' | 'info' | 'warn' | 'error';
+    msg: string;
+    fields?: {
+        [key: string]: unknown;
+    };
+};
+
+export type JobLogPage = {
+    items: Array<JobLogLine>;
+    /**
+     * Pass as after= to read on (the last line number scanned)
+     */
+    nextAfter: number;
+};
+
+export type QueueLease = {
+    /**
+     * lse_…
+     */
+    id: string;
+    workerId: string;
+    runtime?: string;
+    host: string;
+    /**
+     * Card index; -1 for a step that needs no card
+     */
+    card: number;
+    memoryCapMb: number;
+    startedAt: string;
+    heartbeatAt: string;
+    progress?: number;
+    message?: string;
+    /**
+     * The stop the worker was told about
+     */
+    stopReason?: 'cancelled' | 'paused' | 'window-closed';
+};
+
+export type QueueEntry = {
+    jobId: string;
+    projectId?: string;
+    pipelineRunId?: string;
+    stepId?: string;
+    runId?: string;
+    kind: string;
+    kindVersion: string;
+    jobKind: JobKind;
+    gpu?: boolean;
+    memoryGb?: number;
+    state: 'waiting' | 'paused' | 'running' | 'stopping';
+    priority: number;
+    /**
+     * The project's queue priority (budgets.queuePriority): the first sort key, before priority
+     */
+    projectPriority?: number;
+    enqueuedAt: string;
+    estimateSeconds?: number;
+    attempt: number;
+    /**
+     * The training state it resumes from (b3 hash), after a pause or a window close
+     */
+    resumeFrom?: string;
+    lease?: QueueLease;
+};
+
+export type QueueEntryList = {
+    items: Array<QueueEntry>;
+};
+
+export type AvailabilityWindow = {
+    /**
+     * Days the window opens on (a window past midnight belongs to the day it opens)
+     */
+    days: Array<'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun'>;
+    /**
+     * Opens at HH:MM
+     */
+    start: string;
+    /**
+     * Closes at HH:MM (24:00 = midnight); before start = the next day
+     */
+    end: string;
+    /**
+     * IANA time zone, e.g. Europe/Berlin; empty follows the instance time zone (policies.timezone)
+     */
+    timezone?: string;
+};
+
+/**
+ * R19: job kind → the windows in which a job of that kind may run on the card. A kind without an entry may run any time. A job starts only when its estimate fits before its window closes; a running training job is paused at the close and resumes from its training state when a window opens.
+ *
+ */
+export type AvailabilityWindows = {
+    [key: string]: Array<AvailabilityWindow>;
+};
+
+export type CardTelemetryReport = CardTelemetry & {
+    reportedAt: string;
+};
+
+export type Artifact = {
+    /**
+     * b3:<64 hex>, BLAKE3-256 of the content (of the manifest for a directory)
+     */
+    hash: string;
+    /**
+     * Artifact type (text, dataset, mix, base_model, checkpoint, calibration, …)
+     */
+    type: string;
+    /**
+     * Bytes: the file's, or the sum of a directory's files
+     */
+    size: number;
+    /**
+     * A directory artifact: a manifest of files, each its own blob
+     */
+    directory: boolean;
+    /**
+     * Neutral, self-describing metadata of the type (R42)
+     */
+    meta: {
+        [key: string]: unknown;
+    };
+    /**
+     * The project that first produced it; absent for a registry artifact
+     */
+    projectId?: string;
+    producer?: ArtifactProducer;
+    createdAt: string;
+    /**
+     * A directory artifact's files, by path
+     */
+    files?: Array<{
+        path: string;
+        hash: string;
+        size: number;
+    }>;
+    /**
+     * How content is encoded (content=true): utf8 or base64
+     */
+    encoding?: string;
+    /**
+     * The content (content=true, at most 1 MiB)
+     */
+    content?: string;
+    /**
+     * Why content was not included (too large, a directory without path, …)
+     */
+    contentOmitted?: string;
+    evicted?: ArtifactEviction;
+};
+
+/**
+ * The pipeline step whose output first recorded this artifact
+ */
+export type ArtifactProducer = {
+    pipelineRunId: string;
+    /**
+     * pls_…
+     */
+    stepId: string;
+    /**
+     * The step's id in the pipeline file
+     */
+    step: string;
+    output: string;
+};
+
+export type PipelineList = {
+    ref: string;
+    /**
+     * The commit ref resolved to; absent when the project has no repository
+     */
+    commit?: string;
+    items: Array<Pipeline>;
+};
+
+export type Pipeline = {
+    name: string;
+    description?: string;
+    /**
+     * The project repository, or a bundled template the repository has no file for
+     */
+    source: 'repository' | 'template';
+    /**
+     * pipelines/<name>.yaml
+     */
+    path: string;
+    /**
+     * The commit that last changed the file (a template: template-<sha256 prefix>); pipelines.run takes it as If-Match
+     */
+    version: string;
+    /**
+     * Pipeline input → artifact type
+     */
+    inputs: {
+        [key: string]: string;
+    };
+    steps: Array<PipelineStepDefinition>;
+    /**
+     * The file does not parse (steps and inputs are then empty)
+     */
+    error?: string;
+};
+
+export type PipelineStepDefinition = {
+    id: string;
+    /**
+     * kind@version, pinned
+     */
+    kind: string;
+    /**
+     * Step input → $inputs.<name> or <step>.<output>
+     */
+    in?: {
+        [key: string]: string;
+    };
+    /**
+     * Only the parameters that depart from defaults
+     */
+    params?: {
+        [key: string]: unknown;
+    };
+};
+
+export type PipelineRunNew = {
+    /**
+     * Branch, tag or commit to read the pipeline at (default main)
+     */
+    ref?: string;
+    /**
+     * Pipeline input → artifact (it must be in the content store)
+     */
+    inputs?: {
+        [key: string]: ArtifactRef;
+    };
+    /**
+     * Step id → parameter overrides (recorded as departures when they differ from the default)
+     */
+    params?: {
+        [key: string]: {
+            [key: string]: unknown;
+        };
+    };
+    /**
+     * Run every step even when a finished step has the same input hash
+     */
+    fresh?: boolean;
+    /**
+     * Queue priority of the step jobs (higher first)
+     */
+    priority?: number;
+};
+
+export type PipelinePlan = {
+    pipeline: string;
+    source: 'repository' | 'template';
+    ref?: string;
+    commit?: string;
+    version: string;
+    steps: Array<PipelinePlanStep>;
+    estimate: PipelineEstimate;
+};
+
+export type PipelinePlanStep = {
+    step: string;
+    kind: string;
+    kindVersion: string;
+    /**
+     * The step kind's registry version (ver_…)
+     */
+    stepKindVersionId?: string;
+    runtime?: string;
+    /**
+     * Resolved parameters (defaults applied)
+     */
+    params: {
+        [key: string]: unknown;
+    };
+    departures: Array<ParamDeparture>;
+    in: {
+        [key: string]: string;
+    };
+    /**
+     * Output → artifact type
+     */
+    produces: {
+        [key: string]: string;
+    };
+    resources: StepResources;
+    /**
+     * Absent when unknown
+     */
+    estimateSeconds?: number;
+};
+
+export type PipelineEstimate = {
+    /**
+     * Every step has an estimate
+     */
+    known: boolean;
+    /**
+     * Sum of the known step estimates
+     */
+    seconds?: number;
+    /**
+     * Sum over the steps that need a card
+     */
+    gpuHours?: number;
+    /**
+     * Steps without an estimate
+     */
+    unknownSteps: Array<string>;
+};
+
+export type ParamDeparture = {
+    param: string;
+    /**
+     * The value the step runs with
+     */
+    value: unknown;
+    /**
+     * The default (x-cadence.defaultRef in defaults.yaml, else x-cadence.default); absent when the parameter has none
+     */
+    default?: unknown;
+};
+
+export type PipelineRunState = 'running' | 'done' | 'failed' | 'cancelled';
+
+export type PipelineStepState = 'waiting' | 'queued' | 'running' | 'done' | 'reused' | 'failed' | 'skipped' | 'cancelled';
+
+export type PipelineRunSummary = {
+    /**
+     * plr_…
+     */
+    id: string;
+    projectId: string;
+    pipeline: string;
+    source: 'repository' | 'template' | 'inline';
+    ref?: string;
+    /**
+     * The commit the pipeline was read at
+     */
+    commit?: string;
+    /**
+     * The pipeline's version (commit that last changed its file)
+     */
+    version: string;
+    state: PipelineRunState;
+    /**
+     * The training run this pipeline run belongs to (run_…), when a facade started it
+     */
+    runId?: string;
+    fresh?: boolean;
+    priority?: number;
+    inputs?: {
+        [key: string]: ArtifactRef;
+    };
+    /**
+     * Why the run failed
+     */
+    error?: string;
+    rev: number;
+    actor: Actor;
+    createdAt: string;
+    updatedAt: string;
+    finishedAt?: string;
+};
+
+export type PipelineRun = PipelineRunSummary & {
+    steps: Array<PipelineStep>;
+};
+
+export type PipelineRunList = {
+    items: Array<PipelineRunSummary>;
+};
+
+export type PipelineStep = {
+    /**
+     * pls_…
+     */
+    id: string;
+    /**
+     * The step's id in the pipeline file
+     */
+    step: string;
+    /**
+     * Order of execution (topological)
+     */
+    position: number;
+    kind: string;
+    kindVersion: string;
+    stepKindVersionId?: string;
+    state: PipelineStepState;
+    /**
+     * Resolved parameters
+     */
+    params: {
+        [key: string]: unknown;
+    };
+    departures: Array<ParamDeparture>;
+    /**
+     * Wiring from the pipeline file
+     */
+    in: {
+        [key: string]: string;
+    };
+    /**
+     * Resolved inputs once the step is ready
+     */
+    inputs?: {
+        [key: string]: ArtifactRef;
+    };
+    produces: {
+        [key: string]: string;
+    };
+    outputs?: {
+        [key: string]: ArtifactRef;
+    };
+    resources?: StepResources;
+    estimateSeconds?: number;
+    /**
+     * Hash of kind, version, resolved parameters and input hashes: a finished step with the same one is reused
+     */
+    inputHash?: string;
+    /**
+     * The finished step (pls_…) whose outputs were reused
+     */
+    reusedFrom?: string;
+    attempts: number;
+    /**
+     * The current attempt's step job
+     */
+    jobId?: string;
+    error?: StepError;
+    metrics?: {
+        [key: string]: number;
+    };
+    attemptLog: Array<PipelineStepAttempt>;
+    startedAt?: string;
+    finishedAt?: string;
+};
+
+export type PipelineStepAttempt = {
+    attempt: number;
+    jobId: string;
+    /**
+     * Why the attempt started: the first, the automatic OOM retry at 0.75× batch, the retry after a lost lease, pipelineRuns.retry, or runs.resume
+     */
+    reason: 'initial' | 'oom' | 'lost' | 'retry' | 'resume';
+    batchScale?: number;
+    /**
+     * The training-state artifact the attempt resumes from (runs.resume)
+     */
+    resumeFrom?: string;
+    state: 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
+    error?: StepError;
+    startedAt?: string;
+    finishedAt?: string;
+};
+
+export type PipelineRunRetry = {
+    /**
+     * The step id to retry (default: every failed step)
+     */
+    step?: string;
+    /**
+     * Batch scale of the new attempt (1 = full batch)
+     */
+    batchScale?: number;
+};
+
+export type SourceKind = 'public' | 'production' | 'synthetic';
+
+/**
+ * A corpus in the registry (R18): licence, kind, languages; eval-only until a person clears it for training
+ */
+export type Source = {
+    /**
+     * src_…
+     */
+    id: string;
+    name: string;
+    description: string;
+    licence: string;
+    kind: SourceKind;
+    languages: Array<string>;
+    /**
+     * Where the corpus comes from, e.g. hf://datasets/google/fleurs
+     */
+    url: string;
+    /**
+     * false = eval-only: its dataset versions cannot be mixed or trained on
+     */
+    trainingCleared: boolean;
+    clearedBy?: Actor;
+    clearedAt?: string;
+    archived: boolean;
+    rev: number;
+    /**
+     * Utterances this source owns
+     */
+    utterances: number;
+    /**
+     * Their total duration in hours
+     */
+    hours: number;
+    /**
+     * Dataset version ids built from this source (sources.get only; empty in lists)
+     */
+    datasets: Array<string>;
+    createdBy: Actor;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type SourceList = {
+    items: Array<Source>;
+};
+
+export type SourceEdit = {
+    description?: string;
+    licence?: string;
+    /**
+     * true clears the source for training (a person's decision); false makes it eval-only again
+     */
+    trainingCleared?: boolean;
+};
+
+export type DatasetSplitName = 'train' | 'validation' | 'test';
+
+/**
+ * human, pseudo-label, or model:<id> for a single model's output
+ */
+export type TranscriptOrigin = string;
+
+export type Transcript = {
+    /**
+     * trn_…
+     */
+    id: string;
+    text: string;
+    origin: TranscriptOrigin;
+    confidence?: number;
+    createdAt: string;
+};
+
+export type UtteranceMembership = {
+    datasetVersionId: string;
+    split: DatasetSplitName;
+    /**
+     * The transcript this dataset version uses
+     */
+    transcriptId: string;
+};
+
+/**
+ * One audio segment in the content store; its content hash is its identity
+ */
+export type Utterance = {
+    /**
+     * utt_…
+     */
+    id: string;
+    /**
+     * BLAKE3-256 of the audio file's bytes (its blob in the content store)
+     */
+    contentHash: string;
+    sourceId: string;
+    sourceName: string;
+    /**
+     * Seconds
+     */
+    duration: number;
+    language: string;
+    /**
+     * Speaker id within the source; empty when unknown
+     */
+    speaker: string;
+    sampleRate: number;
+    channels: number;
+    bytes: number;
+    transcripts: Array<Transcript>;
+    split?: DatasetSplitName;
+    /**
+     * Kind → value (audio-b3, …); utterances.get only
+     */
+    fingerprints?: {
+        [key: string]: string;
+    };
+    /**
+     * utterances.get only
+     */
+    datasets?: Array<UtteranceMembership>;
+    createdAt: string;
+};
+
+export type UtteranceList = {
+    items: Array<Utterance>;
+    /**
+     * Pass as `after` for the next page; absent on the last page
+     */
+    next?: string;
+};
+
+export type DatasetLanguage = {
+    language: string;
+    utterances: number;
+    hours: number;
+};
+
+/**
+ * Where an imported dataset version came from
+ */
+export type DatasetLineage = {
+    pipelineRunId?: string;
+    stepId?: string;
+    projectId?: string;
+    stepKind?: string;
+};
+
+/**
+ * Event class of the routing table: approval_requested (agent, automation, registry); failure (job failed, mount unhealthy, card closed, backup failed); outcome (gate verdict, promotion, schedule finished, batch closed); progress (step done, checkpoint saved, triage item added); digest (the daily digest)
+ *
+ */
+export type NotificationClass = 'approval_requested' | 'failure' | 'outcome' | 'progress' | 'digest';
+
+/**
+ * immediate: sent as it happens; digest: held for the next daily digest; daily: the digest itself (its rule only); none: never sent
+ */
+export type NotificationTiming = 'immediate' | 'digest' | 'daily' | 'none';
+
+export type NotificationChannels = {
+    /**
+     * The in-app notification history
+     */
+    inApp: boolean;
+    /**
+     * The Telegram bot (allow-listed chats only)
+     */
+    telegram: boolean;
+};
+
+export type NotificationRule = {
+    /**
+     * ntr_<class>
+     */
+    id: string;
+    eventClass: NotificationClass;
+    /**
+     * What the row covers
+     */
+    label: string;
+    /**
+     * The event types the class covers
+     */
+    events: Array<string>;
+    channels: NotificationChannels;
+    timing: NotificationTiming;
+    /**
+     * Failures reach Telegram even in quiet hours; fixed per class
+     */
+    bypassQuietHours: boolean;
+    rev: number;
+    updatedAt: string;
+    /**
+     * Fields that differ from the seeded table (channels.telegram, timing, …)
+     */
+    departures: Array<string>;
+};
+
+export type NotificationRuleList = {
+    items: Array<NotificationRule>;
+};
+
+export type NotificationRuleEdit = {
+    channels?: {
+        inApp?: boolean;
+        telegram?: boolean;
+    };
+    timing?: NotificationTiming;
+};
+
+/**
+ * HH:MM on a 24-hour clock, in the instance timezone (policies)
+ */
+export type ClockTime = string;
+
+export type QuietHours = {
+    enabled: boolean;
+    start: ClockTime;
+    end: ClockTime;
+};
+
+export type TelegramChat = {
+    /**
+     * Telegram chat id (negative for groups)
+     */
+    id: number;
+    /**
+     * Chat title or @username, as Telegram last reported it
+     */
+    title?: string;
+    seenAt?: string;
+};
+
+export type TelegramStatus = {
+    /**
+     * A token is stored (secret telegram-bot-token); the value is never returned
+     */
+    tokenSet: boolean;
+    /**
+     * @username from the last successful getMe
+     */
+    botUsername?: string;
+    /**
+     * Allow-listed chats; the bot talks to no one else
+     */
+    chats: Array<TelegramChat>;
+    /**
+     * Chats that wrote to the bot but are not allow-listed (the bot never answers them); add one to the allowlist to use it
+     */
+    pendingChats: Array<TelegramChat>;
+    /**
+     * The control plane is long-polling Telegram for button presses
+     */
+    polling: boolean;
+    /**
+     * The last Bot API error
+     */
+    lastError?: string;
+    lastSentAt?: string;
+};
+
+export type NotificationSettings = {
+    rev: number;
+    updatedAt: string;
+    /**
+     * The instance timezone quiet hours and the digest follow (policies.timezone)
+     */
+    timezone: string;
+    quietHours: QuietHours;
+    digestTime: ClockTime;
+    telegram: TelegramStatus;
+};
+
+export type NotificationSettingsEdit = {
+    quietHours?: {
+        enabled?: boolean;
+        start?: ClockTime;
+        end?: ClockTime;
+    };
+    digestTime?: ClockTime;
+    /**
+     * The complete allowlist of Telegram chat ids
+     */
+    telegramChats?: Array<number>;
+};
+
+export type TelegramBotSet = {
+    /**
+     * Write-only: the token @BotFather issued (123456:ABC…)
+     */
+    token: string;
+};
+
+export type TelegramBotVerify = {
+    /**
+     * The token works and every allow-listed chat got the test message
+     */
+    ok: boolean;
+    botUsername?: string;
+    /**
+     * Why the token check failed
+     */
+    error?: string;
+    chats: Array<{
+        id: number;
+        delivered: boolean;
+        error?: string;
+    }>;
+};
+
+export type BackupState = 'queued' | 'running' | 'succeeded' | 'failed';
+
+/**
+ * nightly and weekly are scheduled (the weekly set is the one taken on the restore-test day and is kept longer); manual is backups.new
+ */
+export type BackupTrigger = 'nightly' | 'weekly' | 'manual';
+
+export type RestoreTest = {
+    state: 'running' | 'passed' | 'failed';
+    startedAt: string;
+    finishedAt?: string;
+    durationMs?: number;
+    /**
+     * The scratch database (dropped afterwards)
+     */
+    database?: string;
+    /**
+     * The latest migration in the restored database
+     */
+    migrationVersion?: number;
+    tables?: Array<{
+        name: string;
+        /**
+         * Row count when the set was taken
+         */
+        backedUp: number;
+        /**
+         * Row count in the scratch database
+         */
+        restored: number;
+    }>;
+    /**
+     * Content-store blobs sampled and re-hashed
+     */
+    casChecked?: number;
+    error?: string;
+};
+
+export type Backup = {
+    /**
+     * bkp_…
+     */
+    id: string;
+    state: BackupState;
+    trigger: BackupTrigger;
+    rev: number;
+    jobId?: string;
+    createdAt: string;
+    startedAt?: string;
+    finishedAt?: string;
+    /**
+     * The set's directory under CADENCE_BACKUP_DIR
+     */
+    path?: string;
+    dumpBytes?: number;
+    dumpSha256?: string;
+    pgDumpVersion?: string;
+    serverVersion?: string;
+    migrationVersion?: number;
+    /**
+     * Row counts of the key tables when the set was taken
+     */
+    tables?: Array<{
+        name: string;
+        rows: number;
+    }>;
+    /**
+     * Blobs in the content store when the set was taken
+     */
+    casBlobs?: number;
+    /**
+     * New blobs copied by this set (blobs are immutable; older ones were copied before)
+     */
+    casCopied?: number;
+    casBytesCopied?: number;
+    error?: string;
+    restoreTest?: RestoreTest;
+    /**
+     * When retention removed the set's files (the record stays)
+     */
+    prunedAt?: string;
+};
+
+export type BackupSchedule = {
+    /**
+     * CADENCE_BACKUP_DIR
+     */
+    directory: string;
+    nightlyAt: ClockTime;
+    restoreTestWeekday: 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday';
+    restoreTestAt: ClockTime;
+    keepNightly: number;
+    keepWeekly: number;
+    timezone: string;
+    nextBackupAt?: string;
+    nextRestoreTestAt?: string;
+};
+
+export type BackupList = {
+    items: Array<Backup>;
+    schedule: BackupSchedule;
+    lastRestoreTest?: {
+        backupId: string;
+        report: RestoreTest;
+    };
+};
+
+/**
+ * Mirrors the run's pipeline run: queued (a step waits for a card), running (a worker holds a step), paused (its step job is paused), done, failed, cancelled
+ */
+export type RunStatus = 'queued' | 'running' | 'paused' | 'done' | 'failed' | 'cancelled';
+
+export type RunMixRef = {
+    /**
+     * mix_…
+     */
+    id: string;
+    name: string;
+    /**
+     * The mix revision the run trains on
+     */
+    revision: number;
+    /**
+     * The mix artifact (b3:…): the content hash of the resolved input_cfg (R13)
+     */
+    hash: string;
+};
+
+/**
+ * The pipeline the run executes, read at a commit of the project repository
+ */
+export type RunRecipe = {
+    pipeline: string;
+    source: 'repository' | 'template' | 'inline';
+    ref?: string;
+    commit?: string;
+    version: string;
+};
+
+export type RunStage = {
+    /**
+     * The checkpoint to start from (ckp_… of this run); default the run's best kept checkpoint
+     */
+    checkpoint?: string;
+    /**
+     * The new stage's peak learning rate (the train step's peak_lr, learning_rate or lr parameter)
+     */
+    peakLr: number;
+    /**
+     * The mix (default the parent's)
+     */
+    mix?: string;
+    /**
+     * The mix revision (default the named mix's current one, or the parent's revision when the mix is the parent's)
+     */
+    mixRevision?: number;
+    /**
+     * Step budget (default training.steps)
+     */
+    steps?: number;
+    seed?: number;
+    precision?: Precision;
+    compute?: string;
+    /**
+     * The recipe (default the parent's pipeline)
+     */
+    pipeline?: string;
+    ref?: string;
+    /**
+     * More overrides of the train step's parameters
+     */
+    params?: {
+        [key: string]: unknown;
+    };
+    priority?: number;
+};
+
+export type RunCalibrate = {
+    /**
+     * Base model version (ver_…), collection name or @alias; default the defaults' base model
+     */
+    baseModel?: string;
+    /**
+     * The mix whose data the calibration measures on (mix_… or name)
+     */
+    mix: string;
+    mixRevision?: number;
+    precision?: Precision;
+    /**
+     * Host id or name; default the first host whose card allows training
+     */
+    compute?: string;
+    /**
+     * Overrides of the calibrate step's parameters
+     */
+    params?: {
+        [key: string]: unknown;
+    };
+};
+
+/**
+ * What a measured estimate is cached by (R12); the bucket configuration is part of the measurement
+ */
+export type CalibrationKey = {
+    /**
+     * The base model's registry collection
+     */
+    baseModel: string;
+    cardClass: string;
+    memoryCapGb: number;
+    precision: Precision;
+};
+
+export type RunCalibration = {
+    key: CalibrationKey;
+    /**
+     * The model family whose calibrate role runs
+     */
+    family: string;
+    /**
+     * The calibrate step kind (kind@version)
+     */
+    step: string;
+    mix?: RunMixRef;
+    pipelineRun?: PipelineRun;
+    plan?: PipelinePlan;
+    /**
+     * The calibration cached for the key so far, when there is one
+     */
+    current?: {
+        secondsPerStep?: number;
+        plusMinus?: number;
+        measuredAt?: string;
+    };
+};
+
+/**
+ * One step of the run's pipeline run, for the Run panel's stage timeline
+ */
+export type RunStageEntry = {
+    step: string;
+    kind: string;
+    kindVersion: string;
+    /**
+     * The family role the step fills (calibrate, train, average, …), when it fills one
+     */
+    role?: string;
+    state: PipelineStepState;
+    attempts: number;
+    /**
+     * The current attempt's batch scale (0.75 after an out-of-memory retry)
+     */
+    batchScale?: number;
+    /**
+     * Attempts started by the automatic OOM retry
+     */
+    oomRetries?: number;
+    /**
+     * The finished step (pls_…) whose outputs this step reused (same input hash); it spent no GPU time
+     */
+    reusedFrom?: string;
+    /**
+     * The run (run_…) that step belongs to, when it was a run's
+     */
+    reusedFromRun?: string;
+    jobId?: string;
+    /**
+     * The step's job is paused (jobs.pause)
+     */
+    paused?: boolean;
+    estimateSeconds?: number;
+    startedAt?: string;
+    finishedAt?: string;
+    error?: StepError;
+};
+
+export type RunDeparture = {
+    /**
+     * The pipeline step the parameter belongs to
+     */
+    step: string;
+    param: string;
+    /**
+     * The value the step runs with
+     */
+    value: unknown;
+    /**
+     * The default; absent when the parameter has none
+     */
+    default?: unknown;
+};
+
+export type RunParentDiff = {
+    /**
+     * A resolved train-step parameter, or a run field (init, mix, pipeline)
+     */
+    param: string;
+    /**
+     * This run's value
+     */
+    value: unknown;
+    /**
+     * The parent's value; absent when the parent had none
+     */
+    parentValue?: unknown;
+};
+
+export type Run = {
+    /**
+     * run_…
+     */
+    id: string;
+    projectId: string;
+    status: RunStatus;
+    init: RunInit;
+    baseModel: RegistryVersion;
+    /**
+     * init checkpoint: the checkpoint the run starts from
+     */
+    checkpointId?: string;
+    /**
+     * The run the start checkpoint came from (runs.stage)
+     */
+    parentRunId?: string;
+    family: {
+        /**
+         * The model family of the base model (R41)
+         */
+        name: string;
+        /**
+         * The family descriptor's registry version (ver_…)
+         */
+        versionId: string;
+    };
+    mix: RunMixRef;
+    recipe: RunRecipe;
+    /**
+     * The pipeline run the run mirrors (plr_…)
+     */
+    pipelineRunId: string;
+    /**
+     * The step of the pipeline that fills the family's train role
+     */
+    trainStep: string;
+    /**
+     * Step budget
+     */
+    steps: number;
+    seed?: number;
+    gpus: number;
+    precision: Precision;
+    /**
+     * The runtime the train step runs in: registry version and image digest
+     */
+    runtime?: {
+        name?: string;
+        versionId?: string;
+        digest?: string;
+    };
+    /**
+     * The card the estimate was made for
+     */
+    card?: {
+        computeId?: string;
+        host?: string;
+        index?: number;
+        cardClass?: string;
+        memoryCapGb?: number;
+    };
+    estimate?: RunEstimate;
+    timeline: Array<RunStageEntry>;
+    /**
+     * The step job to pause, resume or cancel (jobs.pause | jobs.resume | jobs.cancel)
+     */
+    currentJobId?: string;
+    /**
+     * The training-state the last runs.resume continued from
+     */
+    resumedFrom?: string;
+    /**
+     * Parameters that differ from defaults.yaml, per step
+     */
+    departures: Array<RunDeparture>;
+    /**
+     * Where this run's train-step parameters differ from the parent's
+     */
+    parentDiff?: Array<RunParentDiff>;
+    /**
+     * The train step's final metrics (val_wer, …)
+     */
+    finalMetrics: {
+        [key: string]: number;
+    };
+    /**
+     * The kept checkpoint with the lowest validation WER
+     */
+    bestCheckpointId?: string;
+    checkpointCount: number;
+    /**
+     * GPU-hours the run's leases on GPU cards used so far
+     */
+    gpuHours?: number;
+    error?: string;
+    rev: number;
+    actor: Actor;
+    createdAt: string;
+    updatedAt: string;
+    finishedAt?: string;
+};
+
+export type RunList = {
+    items: Array<Run>;
+};
+
+export type Checkpoint = {
+    /**
+     * ckp_…
+     */
+    id: string;
+    runId: string;
+    projectId: string;
+    /**
+     * The checkpoint artifact (b3:…); artifacts.get lists its files
+     */
+    artifact: string;
+    kind: 'trained' | 'averaged';
+    /**
+     * The optimiser step it was saved at
+     */
+    step?: number;
+    /**
+     * Validation WER the step measured (0–1)
+     */
+    valWer?: number;
+    family?: string;
+    weightsHash?: string;
+    /**
+     * The checkpoints an averaged one was made from (ckp_…)
+     */
+    averagedFrom?: Array<string>;
+    /**
+     * In its run's top k by validation WER (training.keep_top_k)
+     */
+    kept: boolean;
+    /**
+     * 1 = the run's best by validation WER
+     */
+    rank?: number;
+    pipelineRunId?: string;
+    stepId?: string;
+    /**
+     * The artifact's neutral metadata (R42)
+     */
+    meta?: {
+        [key: string]: unknown;
+    };
+    createdAt: string;
+};
+
+export type CheckpointList = {
+    items: Array<Checkpoint>;
+    /**
+     * training.keep_top_k
+     */
+    keepTopK: number;
+};
+
+export type CheckpointAverage = {
+    /**
+     * Checkpoints of the run (ckp_…)
+     */
+    checkpoints: Array<string>;
+    /**
+     * Overrides of the average step's parameters
+     */
+    params?: {
+        [key: string]: unknown;
+    };
+};
+
+export type CheckpointAverageStarted = {
+    runId: string;
+    /**
+     * The average step kind (kind@version)
+     */
+    step: string;
+    checkpoints: Array<string>;
+    pipelineRun?: PipelineRun;
+    plan?: PipelinePlan;
+};
+
+/**
+ * step: optimiser step; epoch; wall: seconds since the run's first point; gpuHours: GPU-hours of the run's leases on GPU cards up to the point (wall hours when it had none)
+ */
+export type MetricAxis = 'step' | 'epoch' | 'wall' | 'gpuHours';
+
+/**
+ * One point, or the bucket of points a long series was binned into: mean value with min and max (R53)
+ */
+export type MetricBin = {
+    x: number;
+    value: number;
+    min: number;
+    max: number;
+    count: number;
+    /**
+     * The last optimiser step in the bucket
+     */
+    step?: number;
+    epoch?: number;
+    /**
+     * The last point's wall time
+     */
+    wallTime?: string;
+};
+
+export type MetricSeriesView = {
+    name: string;
+    /**
+     * Points the series has (after afterStep)
+     */
+    total: number;
+    /**
+     * The points are buckets
+     */
+    binned: boolean;
+    points: Array<MetricBin>;
+};
+
+export type MetricSeriesSet = {
+    runId: string;
+    x: MetricAxis;
+    maxPoints: number;
+    /**
+     * The highest optimiser step returned; pass it as afterStep to append
+     */
+    lastStep?: number;
+    series: Array<MetricSeriesView>;
+    /**
+     * Checkpoint marks for the chart
+     */
+    checkpoints: Array<{
+        id: string;
+        step?: number;
+        valWer?: number;
+        kind?: string;
+        kept: boolean;
+    }>;
+};
+
+export type PlaybookInputType = 'dataset_version' | 'base_model' | 'integer' | 'number' | 'string' | 'boolean';
+
+export type PlaybookInput = {
+    name: string;
+    type: PlaybookInputType;
+    description?: string;
+    /**
+     * The caller must give it: it has neither a defaultRef nor a project fact
+     */
+    required: boolean;
+    /**
+     * A list of values (dataset versions)
+     */
+    multiple: boolean;
+    /**
+     * A defaults.yaml key (training.steps) the value defaults to
+     */
+    defaultRef?: string;
+    /**
+     * project: a project fact (the default base model); adoption: the project's adopted version of collection
+     */
+    from?: 'project' | 'adoption';
+    /**
+     * from adoption: the registry collection (dataset/replay-base)
+     */
+    collection?: string;
+    /**
+     * The value it takes when not given: from defaults.yaml or the project (absent when there is none)
+     */
+    default?: unknown;
+    /**
+     * The safe range from defaults.yaml
+     */
+    min?: number;
+    max?: number;
+};
+
+export type PlaybookStep = {
+    id: string;
+    title: string;
+    /**
+     * The operation (<entity>.<verb>) whose success ticks the step
+     */
+    command: string;
+    /**
+     * Other operations that tick it too (mixes.edit for the mix step)
+     */
+    accepts?: Array<string>;
+    /**
+     * terminal: the step ticks when the job it waits for has ended (jobs.wait answered done; failed or cancelled fails it)
+     */
+    until?: 'terminal';
+    /**
+     * The roadmap phase that ships the step; a later phase than the running one lists it as skipped
+     */
+    phase?: number;
+    /**
+     * A GPU-spending command: in a playbook session it needs a successful dry run of the same operation first
+     */
+    spending: boolean;
+    /**
+     * The step can run now (its phase has shipped)
+     */
+    available: boolean;
+};
+
+export type PlaybookStop = {
+    /**
+     * What is watched
+     */
+    on: 'gate' | 'budget' | 'step' | 'approval';
+    /**
+     * The outcome that stops the playbook: gate failed, budget exceeded, step failed, approval denied
+     */
+    when: string;
+};
+
+export type PlaybookStepEstimate = {
+    id: string;
+    command: string;
+    /**
+     * table/measured: the operation's own dry-run estimate; hint: the playbook's estimate hint; none: spends no GPU time
+     */
+    basis: 'table' | 'measured' | 'hint' | 'none';
+    gpuHours?: EstimateRange;
+    durationSeconds?: EstimateRange;
+    /**
+     * The step's phase has not shipped: listed, not counted
+     */
+    skipped: boolean;
+    /**
+     * Why a step has no estimate (e.g. the estimate table has no row)
+     */
+    note?: string;
+};
+
+/**
+ * The sum of the chain's step estimates (R12, R16); skipped steps are listed and not counted
+ */
+export type PlaybookEstimate = {
+    basis: 'table' | 'measured' | 'mixed' | 'hint' | 'none';
+    /**
+     * The largest relative uncertainty of a counted step
+     */
+    plusMinus: number;
+    gpuHours: EstimateRange;
+    durationSeconds: EstimateRange;
+    budget?: {
+        gpuHoursPerProjectPerDay: number;
+        withinDailyBudget: boolean;
+    };
+    steps: Array<PlaybookStepEstimate>;
+};
+
+export type Playbook = {
+    /**
+     * templates/playbooks/<name>.yaml
+     */
+    name: string;
+    title: string;
+    description: string;
+    /**
+     * 03 "Playbooks": the typical GPU-hours, as text
+     */
+    typicalCost?: string;
+    /**
+     * The roadmap phase from which the playbook runs
+     */
+    availableFrom: number;
+    /**
+     * It can run now (availableFrom has shipped)
+     */
+    runnable: boolean;
+    /**
+     * Why it cannot run yet
+     */
+    unavailable?: string;
+    /**
+     * The registry template version (template/playbook-<name>)
+     */
+    versionId?: string;
+    version?: string;
+    inputs: Array<PlaybookInput>;
+    chain: Array<PlaybookStep>;
+    stop: Array<PlaybookStop>;
+    /**
+     * The prompt template (Go text/template over .Inputs and .Project)
+     */
+    prompt: string;
+    estimate?: PlaybookEstimate;
+    /**
+     * Why no estimate was computed (a required input is missing, the estimate table has no row)
+     */
+    estimateError?: string;
+};
+
+export type PlaybookList = {
+    items: Array<Playbook>;
+};
+
+export type PlaybookRunNew = {
+    /**
+     * Input name → value (a dataset_version input with multiple takes a list); omitted inputs take their default or project fact
+     */
+    inputs?: {
+        [key: string]: unknown;
+    };
+    driver?: AgentDriver;
+    model?: string;
+};
+
+export type PlaybookPlanItem = {
+    id: string;
+    title: string;
+    command: string;
+    accepts?: Array<string>;
+    until?: 'terminal';
+    phase?: number;
+    spending: boolean;
+    state: 'pending' | 'running' | 'done' | 'failed' | 'skipped';
+    /**
+     * What ticked it: the entity or job, the dry run's estimate, why it failed
+     */
+    note?: string;
+    /**
+     * The command that ticked it
+     */
+    commandId?: string;
+    toolCallId?: string;
+    /**
+     * The entity the command created (mix_…
+     */
+    entityId?: string;
+    /**
+     * The job the command started (a later terminal step waits for it)
+     */
+    jobId?: string;
+    at?: string;
+    estimate?: PlaybookStepEstimate;
+};
+
+export type PlaybookRunResult = {
+    playbook: Playbook;
+    /**
+     * Every input resolved (given
+     */
+    inputs: {
+        [key: string]: unknown;
+    };
+    estimate: PlaybookEstimate;
+    plan: Array<PlaybookPlanItem>;
+    /**
+     * The rendered prompt the session starts with
+     */
+    prompt: string;
+    session?: AgentSession;
+};
+
+/**
+ * A playbook session's playbook: the plan ticks on the server when the session's matching command succeeds
+ */
+export type AgentPlaybook = {
+    name: string;
+    title: string;
+    versionId?: string;
+    /**
+     * done: every available step ticked; stopped: a stop condition ended it
+     */
+    state: 'running' | 'done' | 'stopped';
+    inputs: {
+        [key: string]: unknown;
+    };
+    estimate: PlaybookEstimate;
+    plan: Array<PlaybookPlanItem>;
+    stop?: {
+        on: 'gate' | 'budget' | 'step' | 'approval';
+        when: string;
+        message: string;
+        at?: string;
+    };
+    /**
+     * What the chain did
+     */
+    summary?: string;
+    /**
+     * The suggested next step
+     */
+    next?: string;
+    /**
+     * Spending operations with a successful dry run in this session
+     */
+    dryRuns?: Array<string>;
+    /**
+     * Turns that ended without progress since the last tick (the server reminds the agent at most twice)
+     */
+    nudges?: number;
+};
+
+export type RecipeEdit = {
+    /**
+     * The file's new content (UTF-8 text)
+     */
+    content: string;
+    /**
+     * Commit message (default: edit <path>)
+     */
+    message?: string;
+};
+
+export type RecipeNew = {
+    path: RecipePath;
+    /**
+     * The file's content (UTF-8 text)
+     */
+    content: string;
+    /**
+     * Commit message (default: add <path>)
+     */
+    message?: string;
+};
+
+/**
+ * Which artifacts to consider; empty means every superseded training state
+ */
+export type ArtifactEvict = {
+    /**
+     * The artifact type (v1: training-state only)
+     */
+    type?: 'training-state';
+    /**
+     * Only the states of this run (run_…)
+     */
+    runId?: string;
+    /**
+     * Only the states of this project (slug or id)
+     */
+    project?: string;
+    /**
+     * Only states recorded at least this many days ago
+     */
+    olderThanDays?: number;
+    /**
+     * Exactly these artifacts; one that may not be evicted answers artifact-not-evictable
+     */
+    hashes?: Array<string>;
+};
+
+export type EvictionPlan = {
+    /**
+     * The artifacts evicted (or, in a dry run, that would be)
+     */
+    artifacts: Array<EvictionCandidate>;
+    /**
+     * Training states the filter matched that stay, with the reason
+     */
+    kept: Array<EvictionKept>;
+    /**
+     * Bytes of the blobs deleted (files other artifacts list are not counted)
+     */
+    bytesFreed: number;
+    /**
+     * Blobs deleted (manifests and files)
+     */
+    blobs: number;
+    /**
+     * True when no backup mirror is configured: nothing can bring the blobs back
+     */
+    permanent: boolean;
+    disk?: StoreDisk;
+};
+
+/**
+ * The filesystem holding the content store, as the control plane sees it now
+ */
+export type StoreDisk = {
+    totalBytes: number;
+    /**
+     * Bytes available to the control plane
+     */
+    freeBytes: number;
+    /**
+     * Below this share free, Cadence warns (cache.store_low_free)
+     */
+    lowFreeFraction: number;
+};
+
+export type EvictionKept = {
+    hash: string;
+    runId?: string;
+    reason: string;
+};
+
+export type EvictionCandidate = {
+    hash: string;
+    type: string;
+    /**
+     * The artifact's size (a directory's files summed)
+     */
+    size: number;
+    projectId?: string;
+    pipelineRunId?: string;
+    runId?: string;
+    /**
+     * Why it is evictable
+     */
+    reason?: string;
+    createdAt: string;
+};
+
+/**
+ * The artifact's blobs were deleted from the content store; the backup mirror holds them
+ */
+export type ArtifactEviction = {
+    at: string;
+    by: Actor;
+    jobId?: string;
+};
+
 export type SecretNewWritable = {
     name: SecretName;
     kind: SecretKind;
@@ -2859,9 +5186,24 @@ export type Id = string;
 export type AgentCredentialId = AgentCredentialIdValue;
 
 /**
+ * Source id (src_…) or name (fleurs)
+ */
+export type SourceId = string;
+
+/**
  * Mix id (mix_…)
  */
 export type MixId = string;
+
+/**
+ * Lease id (lse_…)
+ */
+export type LeaseId = string;
+
+/**
+ * Artifact hash (b3:<64 hex>, BLAKE3-256 of the content)
+ */
+export type ArtifactHash = string;
 
 /**
  * Agent session id (ses_…)
@@ -4380,51 +6722,6 @@ export type PoliciesEditResponses = {
 
 export type PoliciesEditResponse = PoliciesEditResponses[keyof PoliciesEditResponses];
 
-export type RunsNewData = {
-    body: RunNew;
-    headers: {
-        /**
-         * Client-chosen key; a repeat with the same key returns the original result
-         */
-        'Idempotency-Key': string;
-    };
-    path: {
-        /**
-         * Project slug
-         */
-        p: Slug;
-    };
-    query?: {
-        /**
-         * Validate and report what would happen without changing anything
-         */
-        dryRun?: boolean;
-    };
-    url: '/projects/{p}/runs';
-};
-
-export type RunsNewErrors = {
-    /**
-     * Error (RFC 9457)
-     */
-    default: Problem;
-};
-
-export type RunsNewError = RunsNewErrors[keyof RunsNewErrors];
-
-export type RunsNewResponses = {
-    /**
-     * Dry run — the estimate; nothing was written or queued
-     */
-    200: RunEstimate;
-    /**
-     * Accepted; follow the job on job.{jobId}
-     */
-    202: JobAccepted;
-};
-
-export type RunsNewResponse = RunsNewResponses[keyof RunsNewResponses];
-
 export type ApprovalsListData = {
     body?: never;
     path?: never;
@@ -4676,6 +6973,48 @@ export type JobsGetResponses = {
 };
 
 export type JobsGetResponse = JobsGetResponses[keyof JobsGetResponses];
+
+export type JobsEditData = {
+    body: JobEdit;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/jobs/{id}';
+};
+
+export type JobsEditErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type JobsEditError = JobsEditErrors[keyof JobsEditErrors];
+
+export type JobsEditResponses = {
+    /**
+     * The job
+     */
+    200: Job;
+};
+
+export type JobsEditResponse = JobsEditResponses[keyof JobsEditResponses];
 
 export type JobsCancelData = {
     body?: never;
@@ -4984,6 +7323,47 @@ export type RecipesListResponses = {
 
 export type RecipesListResponse = RecipesListResponses[keyof RecipesListResponses];
 
+export type RecipesNewData = {
+    body: RecipeNew;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/projects/{p}/recipes';
+};
+
+export type RecipesNewErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type RecipesNewError = RecipesNewErrors[keyof RecipesNewErrors];
+
+export type RecipesNewResponses = {
+    /**
+     * The file as committed (or, for a dry run, as it would be)
+     */
+    201: Recipe;
+};
+
+export type RecipesNewResponse = RecipesNewResponses[keyof RecipesNewResponses];
+
 export type RecipesGetData = {
     body?: never;
     path: {
@@ -5022,6 +7402,55 @@ export type RecipesGetResponses = {
 };
 
 export type RecipesGetResponse = RecipesGetResponses[keyof RecipesGetResponses];
+
+export type RecipesEditData = {
+    body: RecipeEdit;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+        /**
+         * File path in the repository, URL-encoded (pipelines%2Ftrain-stage.yaml)
+         */
+        path: RecipePath;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/projects/{p}/recipes/{path}';
+};
+
+export type RecipesEditErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type RecipesEditError = RecipesEditErrors[keyof RecipesEditErrors];
+
+export type RecipesEditResponses = {
+    /**
+     * The file as committed (or, for a dry run, as it would be), with its history
+     */
+    200: Recipe;
+};
+
+export type RecipesEditResponse = RecipesEditResponses[keyof RecipesEditResponses];
 
 export type BranchesListData = {
     body?: never;
@@ -6574,6 +9003,2097 @@ export type HostSessionsReleaseResponses = {
 };
 
 export type HostSessionsReleaseResponse = HostSessionsReleaseResponses[keyof HostSessionsReleaseResponses];
+
+export type WorkerRegistrationsNewData = {
+    body: WorkerRegistration;
+    path?: never;
+    query?: never;
+    url: '/worker-registrations';
+};
+
+export type WorkerRegistrationsNewErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type WorkerRegistrationsNewError = WorkerRegistrationsNewErrors[keyof WorkerRegistrationsNewErrors];
+
+export type WorkerRegistrationsNewResponses = {
+    /**
+     * The worker as registered, with the registry versions its publication resolved to
+     */
+    200: Worker;
+};
+
+export type WorkerRegistrationsNewResponse = WorkerRegistrationsNewResponses[keyof WorkerRegistrationsNewResponses];
+
+export type WorkerLeasesClaimData = {
+    body: WorkerClaim;
+    path?: never;
+    query?: never;
+    url: '/worker-leases:claim';
+};
+
+export type WorkerLeasesClaimErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type WorkerLeasesClaimError = WorkerLeasesClaimErrors[keyof WorkerLeasesClaimErrors];
+
+export type WorkerLeasesClaimResponses = {
+    /**
+     * A lease (absent when the wait passed with nothing this worker may run)
+     */
+    200: WorkerClaimResult;
+};
+
+export type WorkerLeasesClaimResponse = WorkerLeasesClaimResponses[keyof WorkerLeasesClaimResponses];
+
+export type WorkerLeasesReportData = {
+    body: WorkerReport;
+    path: {
+        /**
+         * Lease id (lse_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/worker-leases/{id}:report';
+};
+
+export type WorkerLeasesReportErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type WorkerLeasesReportError = WorkerLeasesReportErrors[keyof WorkerLeasesReportErrors];
+
+export type WorkerLeasesReportResponses = {
+    /**
+     * Whether the worker must stop the step (the job was cancelled or paused)
+     */
+    200: WorkerReportAck;
+};
+
+export type WorkerLeasesReportResponse = WorkerLeasesReportResponses[keyof WorkerLeasesReportResponses];
+
+export type WorkerLogsNewData = {
+    /**
+     * One WorkerLogLine JSON object per line; at most 1 MiB per request
+     */
+    body: string;
+    path: {
+        /**
+         * Lease id (lse_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/worker-leases/{id}/worker-logs';
+};
+
+export type WorkerLogsNewErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type WorkerLogsNewError = WorkerLogsNewErrors[keyof WorkerLogsNewErrors];
+
+export type WorkerLogsNewResponses = {
+    /**
+     * Appended
+     */
+    204: void;
+};
+
+export type WorkerLogsNewResponse = WorkerLogsNewResponses[keyof WorkerLogsNewResponses];
+
+export type WorkerMetricsNewData = {
+    body: WorkerMetricBatch;
+    path: {
+        /**
+         * Lease id (lse_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/worker-leases/{id}/worker-metrics';
+};
+
+export type WorkerMetricsNewErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type WorkerMetricsNewError = WorkerMetricsNewErrors[keyof WorkerMetricsNewErrors];
+
+export type WorkerMetricsNewResponses = {
+    /**
+     * Stored
+     */
+    204: void;
+};
+
+export type WorkerMetricsNewResponse = WorkerMetricsNewResponses[keyof WorkerMetricsNewResponses];
+
+export type WorkerOutputsNewData = {
+    body: WorkerOutput;
+    path: {
+        /**
+         * Lease id (lse_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/worker-leases/{id}/worker-outputs';
+};
+
+export type WorkerOutputsNewErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type WorkerOutputsNewError = WorkerOutputsNewErrors[keyof WorkerOutputsNewErrors];
+
+export type WorkerOutputsNewResponses = {
+    /**
+     * Recorded (or recorded before)
+     */
+    204: void;
+};
+
+export type WorkerOutputsNewResponse = WorkerOutputsNewResponses[keyof WorkerOutputsNewResponses];
+
+export type WorkerLeasesReleaseData = {
+    body: StepOutcome;
+    path: {
+        /**
+         * Lease id (lse_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/worker-leases/{id}:release';
+};
+
+export type WorkerLeasesReleaseErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type WorkerLeasesReleaseError = WorkerLeasesReleaseErrors[keyof WorkerLeasesReleaseErrors];
+
+export type WorkerLeasesReleaseResponses = {
+    /**
+     * Recorded; the control plane advances the pipeline
+     */
+    204: void;
+};
+
+export type WorkerLeasesReleaseResponse = WorkerLeasesReleaseResponses[keyof WorkerLeasesReleaseResponses];
+
+export type WorkerArtifactsSetData = {
+    body: Blob | File;
+    path: {
+        /**
+         * Artifact hash (b3:<64 hex>, BLAKE3-256 of the content)
+         */
+        hash: string;
+    };
+    query?: never;
+    url: '/worker-artifacts/{hash}';
+};
+
+export type WorkerArtifactsSetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type WorkerArtifactsSetError = WorkerArtifactsSetErrors[keyof WorkerArtifactsSetErrors];
+
+export type WorkerArtifactsSetResponses = {
+    /**
+     * Stored (or already present)
+     */
+    204: void;
+};
+
+export type WorkerArtifactsSetResponse = WorkerArtifactsSetResponses[keyof WorkerArtifactsSetResponses];
+
+export type RuntimesListData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)
+         */
+        collection?: string;
+        /**
+         * Only versions in this state
+         */
+        state?: VersionState;
+    };
+    url: '/registry/runtimes';
+};
+
+export type RuntimesListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type RuntimesListError = RuntimesListErrors[keyof RuntimesListErrors];
+
+export type RuntimesListResponses = {
+    /**
+     * Runtime versions, newest first
+     */
+    200: RuntimeVersionList;
+};
+
+export type RuntimesListResponse = RuntimesListResponses[keyof RuntimesListResponses];
+
+export type RuntimesGetData = {
+    body?: never;
+    path: {
+        /**
+         * Registry version id (ver_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/registry/runtimes/{id}';
+};
+
+export type RuntimesGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type RuntimesGetError = RuntimesGetErrors[keyof RuntimesGetErrors];
+
+export type RuntimesGetResponses = {
+    /**
+     * The version
+     */
+    200: RuntimeVersion;
+};
+
+export type RuntimesGetResponse = RuntimesGetResponses[keyof RuntimesGetResponses];
+
+export type ModelFamiliesListData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)
+         */
+        collection?: string;
+        /**
+         * Only versions in this state
+         */
+        state?: VersionState;
+    };
+    url: '/registry/model-families';
+};
+
+export type ModelFamiliesListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type ModelFamiliesListError = ModelFamiliesListErrors[keyof ModelFamiliesListErrors];
+
+export type ModelFamiliesListResponses = {
+    /**
+     * Model family versions, newest first
+     */
+    200: ModelFamilyVersionList;
+};
+
+export type ModelFamiliesListResponse = ModelFamiliesListResponses[keyof ModelFamiliesListResponses];
+
+export type ModelFamiliesGetData = {
+    body?: never;
+    path: {
+        /**
+         * Registry version id (ver_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/registry/model-families/{id}';
+};
+
+export type ModelFamiliesGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type ModelFamiliesGetError = ModelFamiliesGetErrors[keyof ModelFamiliesGetErrors];
+
+export type ModelFamiliesGetResponses = {
+    /**
+     * The version
+     */
+    200: ModelFamilyVersion;
+};
+
+export type ModelFamiliesGetResponse = ModelFamiliesGetResponses[keyof ModelFamiliesGetResponses];
+
+export type StepKindsListData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)
+         */
+        collection?: string;
+        /**
+         * Only versions in this state
+         */
+        state?: VersionState;
+    };
+    url: '/registry/step-kinds';
+};
+
+export type StepKindsListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type StepKindsListError = StepKindsListErrors[keyof StepKindsListErrors];
+
+export type StepKindsListResponses = {
+    /**
+     * Step kind versions, newest first
+     */
+    200: StepKindVersionList;
+};
+
+export type StepKindsListResponse = StepKindsListResponses[keyof StepKindsListResponses];
+
+export type StepKindsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Registry version id (ver_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/registry/step-kinds/{id}';
+};
+
+export type StepKindsGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type StepKindsGetError = StepKindsGetErrors[keyof StepKindsGetErrors];
+
+export type StepKindsGetResponses = {
+    /**
+     * The version
+     */
+    200: StepKindVersion;
+};
+
+export type StepKindsGetResponse = StepKindsGetResponses[keyof StepKindsGetResponses];
+
+export type JobsPauseData = {
+    body?: never;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/jobs/{id}:pause';
+};
+
+export type JobsPauseErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type JobsPauseError = JobsPauseErrors[keyof JobsPauseErrors];
+
+export type JobsPauseResponses = {
+    /**
+     * The job with pausedAt set
+     */
+    200: Job;
+};
+
+export type JobsPauseResponse = JobsPauseResponses[keyof JobsPauseResponses];
+
+export type JobsResumeData = {
+    body?: never;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/jobs/{id}:resume';
+};
+
+export type JobsResumeErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type JobsResumeError = JobsResumeErrors[keyof JobsResumeErrors];
+
+export type JobsResumeResponses = {
+    /**
+     * The job without pausedAt
+     */
+    200: Job;
+};
+
+export type JobsResumeResponse = JobsResumeResponses[keyof JobsResumeResponses];
+
+export type JobLogsListData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: {
+        /**
+         * Minimum level
+         */
+        level?: 'debug' | 'info' | 'warn' | 'error';
+        /**
+         * Text the message must contain (case-insensitive)
+         */
+        text?: string;
+        /**
+         * Only lines after this line number
+         */
+        after?: number;
+        /**
+         * The last matching lines instead of the first
+         */
+        tail?: boolean;
+        limit?: number;
+    };
+    url: '/jobs/{id}/job-logs';
+};
+
+export type JobLogsListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type JobLogsListError = JobLogsListErrors[keyof JobLogsListErrors];
+
+export type JobLogsListResponses = {
+    /**
+     * Matching lines in order
+     */
+    200: JobLogPage;
+};
+
+export type JobLogsListResponse = JobLogsListResponses[keyof JobLogsListResponses];
+
+export type QueueEntriesListData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Only this project's entries (slug)
+         */
+        project?: string;
+    };
+    url: '/queue-entries';
+};
+
+export type QueueEntriesListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type QueueEntriesListError = QueueEntriesListErrors[keyof QueueEntriesListErrors];
+
+export type QueueEntriesListResponses = {
+    /**
+     * Entries, running ones first, then in start order
+     */
+    200: QueueEntryList;
+};
+
+export type QueueEntriesListResponse = QueueEntriesListResponses[keyof QueueEntriesListResponses];
+
+export type ArtifactsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Artifact hash (b3:<64 hex>, BLAKE3-256 of the content)
+         */
+        hash: string;
+    };
+    query?: {
+        /**
+         * Include the content when it is at most 1 MiB
+         */
+        content?: boolean;
+        /**
+         * With content=true on a directory artifact: the file to read
+         */
+        path?: string;
+    };
+    url: '/artifacts/{hash}';
+};
+
+export type ArtifactsGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type ArtifactsGetError = ArtifactsGetErrors[keyof ArtifactsGetErrors];
+
+export type ArtifactsGetResponses = {
+    /**
+     * The artifact
+     */
+    200: Artifact;
+};
+
+export type ArtifactsGetResponse = ArtifactsGetResponses[keyof ArtifactsGetResponses];
+
+export type PipelinesListData = {
+    body?: never;
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        /**
+         * Branch, tag or commit (default main)
+         */
+        ref?: string;
+    };
+    url: '/projects/{p}/pipelines';
+};
+
+export type PipelinesListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type PipelinesListError = PipelinesListErrors[keyof PipelinesListErrors];
+
+export type PipelinesListResponses = {
+    /**
+     * Pipelines by name
+     */
+    200: PipelineList;
+};
+
+export type PipelinesListResponse = PipelinesListResponses[keyof PipelinesListResponses];
+
+export type PipelinesRunData = {
+    body: PipelineRunNew;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+        /**
+         * Pipeline name (pipelines/<name>.yaml)
+         */
+        name: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/projects/{p}/pipelines/{name}:run';
+};
+
+export type PipelinesRunErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type PipelinesRunError = PipelinesRunErrors[keyof PipelinesRunErrors];
+
+export type PipelinesRunResponses = {
+    /**
+     * Dry run — the validated plan with resolved parameters, departures and the estimate; nothing started
+     */
+    200: PipelinePlan;
+    /**
+     * Started; the pipeline run with its steps (ready steps are queued as step jobs)
+     */
+    201: PipelineRun;
+    /**
+     * Gated; a person decides the approval on the approvals topic
+     */
+    202: ApprovalAccepted;
+};
+
+export type PipelinesRunResponse = PipelinesRunResponses[keyof PipelinesRunResponses];
+
+export type PipelineRunsListData = {
+    body?: never;
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        /**
+         * Only runs in this state
+         */
+        state?: PipelineRunState;
+        /**
+         * Only runs of this pipeline
+         */
+        pipeline?: string;
+        limit?: number;
+    };
+    url: '/projects/{p}/pipeline-runs';
+};
+
+export type PipelineRunsListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type PipelineRunsListError = PipelineRunsListErrors[keyof PipelineRunsListErrors];
+
+export type PipelineRunsListResponses = {
+    /**
+     * Pipeline runs, newest first (without their steps)
+     */
+    200: PipelineRunList;
+};
+
+export type PipelineRunsListResponse = PipelineRunsListResponses[keyof PipelineRunsListResponses];
+
+export type PipelineRunsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Pipeline run id (plr_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/pipeline-runs/{id}';
+};
+
+export type PipelineRunsGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type PipelineRunsGetError = PipelineRunsGetErrors[keyof PipelineRunsGetErrors];
+
+export type PipelineRunsGetResponses = {
+    /**
+     * The pipeline run
+     */
+    200: PipelineRun;
+};
+
+export type PipelineRunsGetResponse = PipelineRunsGetResponses[keyof PipelineRunsGetResponses];
+
+export type PipelineRunsCancelData = {
+    body?: never;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Pipeline run id (plr_…)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/pipeline-runs/{id}:cancel';
+};
+
+export type PipelineRunsCancelErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type PipelineRunsCancelError = PipelineRunsCancelErrors[keyof PipelineRunsCancelErrors];
+
+export type PipelineRunsCancelResponses = {
+    /**
+     * The cancelled pipeline run
+     */
+    200: PipelineRun;
+};
+
+export type PipelineRunsCancelResponse = PipelineRunsCancelResponses[keyof PipelineRunsCancelResponses];
+
+export type PipelineRunsRetryData = {
+    body?: PipelineRunRetry;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Pipeline run id (plr_…)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/pipeline-runs/{id}:retry';
+};
+
+export type PipelineRunsRetryErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type PipelineRunsRetryError = PipelineRunsRetryErrors[keyof PipelineRunsRetryErrors];
+
+export type PipelineRunsRetryResponses = {
+    /**
+     * The pipeline run with the step queued again
+     */
+    200: PipelineRun;
+};
+
+export type PipelineRunsRetryResponse = PipelineRunsRetryResponses[keyof PipelineRunsRetryResponses];
+
+export type PipelineRunsWaitData = {
+    body?: never;
+    path: {
+        /**
+         * Pipeline run id (plr_…)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Seconds to wait
+         */
+        timeout?: number;
+    };
+    url: '/pipeline-runs/{id}:wait';
+};
+
+export type PipelineRunsWaitErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type PipelineRunsWaitError = PipelineRunsWaitErrors[keyof PipelineRunsWaitErrors];
+
+export type PipelineRunsWaitResponses = {
+    /**
+     * The pipeline run, ended or as it is at the timeout
+     */
+    200: PipelineRun;
+};
+
+export type PipelineRunsWaitResponse = PipelineRunsWaitResponses[keyof PipelineRunsWaitResponses];
+
+export type SourcesListData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Include archived sources
+         */
+        archived?: boolean;
+        /**
+         * Only sources of this kind
+         */
+        kind?: SourceKind;
+        /**
+         * Only sources covering this language (he or he-IL; either matches the other)
+         */
+        language?: string;
+    };
+    url: '/registry/sources';
+};
+
+export type SourcesListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type SourcesListError = SourcesListErrors[keyof SourcesListErrors];
+
+export type SourcesListResponses = {
+    /**
+     * Sources by name
+     */
+    200: SourceList;
+};
+
+export type SourcesListResponse = SourcesListResponses[keyof SourcesListResponses];
+
+export type SourcesGetData = {
+    body?: never;
+    path: {
+        /**
+         * Source id (src_…) or name (fleurs)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/registry/sources/{id}';
+};
+
+export type SourcesGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type SourcesGetError = SourcesGetErrors[keyof SourcesGetErrors];
+
+export type SourcesGetResponses = {
+    /**
+     * The source
+     */
+    200: Source;
+};
+
+export type SourcesGetResponse = SourcesGetResponses[keyof SourcesGetResponses];
+
+export type SourcesEditData = {
+    body: SourceEdit;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Source id (src_…) or name (fleurs)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/registry/sources/{id}';
+};
+
+export type SourcesEditErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type SourcesEditError = SourcesEditErrors[keyof SourcesEditErrors];
+
+export type SourcesEditResponses = {
+    /**
+     * The edited source (or, for a dry run, what it would become)
+     */
+    200: Source;
+    /**
+     * Gated; a person decides the approval on the approvals topic
+     */
+    202: ApprovalAccepted;
+};
+
+export type SourcesEditResponse = SourcesEditResponses[keyof SourcesEditResponses];
+
+export type SourcesArchiveData = {
+    body?: never;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Source id (src_…) or name (fleurs)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/registry/sources/{id}:archive';
+};
+
+export type SourcesArchiveErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type SourcesArchiveError = SourcesArchiveErrors[keyof SourcesArchiveErrors];
+
+export type SourcesArchiveResponses = {
+    /**
+     * The archived source
+     */
+    200: Source;
+    /**
+     * Gated; a person decides the approval on the approvals topic
+     */
+    202: ApprovalAccepted;
+};
+
+export type SourcesArchiveResponse = SourcesArchiveResponses[keyof SourcesArchiveResponses];
+
+export type UtterancesListData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Source id (src_…) or name
+         */
+        source?: string;
+        /**
+         * Dataset version id (ver_…)
+         */
+        dataset?: string;
+        /**
+         * Split within the dataset version (needs dataset)
+         */
+        split?: DatasetSplitName;
+        /**
+         * Language (he or he-IL; either matches the other)
+         */
+        language?: string;
+        /**
+         * Cursor: the `next` value of the previous page
+         */
+        after?: string;
+        limit?: number;
+    };
+    url: '/registry/utterances';
+};
+
+export type UtterancesListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type UtterancesListError = UtterancesListErrors[keyof UtterancesListErrors];
+
+export type UtterancesListResponses = {
+    /**
+     * A page of utterances, oldest first
+     */
+    200: UtteranceList;
+};
+
+export type UtterancesListResponse = UtterancesListResponses[keyof UtterancesListResponses];
+
+export type UtterancesGetData = {
+    body?: never;
+    path: {
+        /**
+         * Utterance id (utt_…) or content hash (b3:…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/registry/utterances/{id}';
+};
+
+export type UtterancesGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type UtterancesGetError = UtterancesGetErrors[keyof UtterancesGetErrors];
+
+export type UtterancesGetResponses = {
+    /**
+     * The utterance
+     */
+    200: Utterance;
+};
+
+export type UtterancesGetResponse = UtterancesGetResponses[keyof UtterancesGetResponses];
+
+export type NotificationRulesListData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/notification-rules';
+};
+
+export type NotificationRulesListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type NotificationRulesListError = NotificationRulesListErrors[keyof NotificationRulesListErrors];
+
+export type NotificationRulesListResponses = {
+    /**
+     * The rules in table order
+     */
+    200: NotificationRuleList;
+};
+
+export type NotificationRulesListResponse = NotificationRulesListResponses[keyof NotificationRulesListResponses];
+
+export type NotificationRulesEditData = {
+    body: NotificationRuleEdit;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/notification-rules/{id}';
+};
+
+export type NotificationRulesEditErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type NotificationRulesEditError = NotificationRulesEditErrors[keyof NotificationRulesEditErrors];
+
+export type NotificationRulesEditResponses = {
+    /**
+     * The edited rule (or, for a dry run, what it would become)
+     */
+    200: NotificationRule;
+};
+
+export type NotificationRulesEditResponse = NotificationRulesEditResponses[keyof NotificationRulesEditResponses];
+
+export type NotificationSettingsGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/notification-settings';
+};
+
+export type NotificationSettingsGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type NotificationSettingsGetError = NotificationSettingsGetErrors[keyof NotificationSettingsGetErrors];
+
+export type NotificationSettingsGetResponses = {
+    /**
+     * The settings; the bot token is never returned, only whether one is stored
+     */
+    200: NotificationSettings;
+};
+
+export type NotificationSettingsGetResponse = NotificationSettingsGetResponses[keyof NotificationSettingsGetResponses];
+
+export type NotificationSettingsEditData = {
+    body: NotificationSettingsEdit;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/notification-settings';
+};
+
+export type NotificationSettingsEditErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type NotificationSettingsEditError = NotificationSettingsEditErrors[keyof NotificationSettingsEditErrors];
+
+export type NotificationSettingsEditResponses = {
+    /**
+     * The edited settings (or, for a dry run, what they would become)
+     */
+    200: NotificationSettings;
+};
+
+export type NotificationSettingsEditResponse = NotificationSettingsEditResponses[keyof NotificationSettingsEditResponses];
+
+export type TelegramBotSetData = {
+    body: TelegramBotSet;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on; required unless the target does not exist yet
+         */
+        'If-Match'?: string;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/telegram-bot';
+};
+
+export type TelegramBotSetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type TelegramBotSetError = TelegramBotSetErrors[keyof TelegramBotSetErrors];
+
+export type TelegramBotSetResponses = {
+    /**
+     * The notification settings with the bot's status
+     */
+    200: NotificationSettings;
+};
+
+export type TelegramBotSetResponse = TelegramBotSetResponses[keyof TelegramBotSetResponses];
+
+export type TelegramBotVerifyData = {
+    body?: never;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/telegram-bot:verify';
+};
+
+export type TelegramBotVerifyErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type TelegramBotVerifyError = TelegramBotVerifyErrors[keyof TelegramBotVerifyErrors];
+
+export type TelegramBotVerifyResponses = {
+    /**
+     * What Telegram answered, per chat
+     */
+    200: TelegramBotVerify;
+};
+
+export type TelegramBotVerifyResponse = TelegramBotVerifyResponses[keyof TelegramBotVerifyResponses];
+
+export type BackupsListData = {
+    body?: never;
+    path?: never;
+    query?: {
+        limit?: number;
+    };
+    url: '/backups';
+};
+
+export type BackupsListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type BackupsListError = BackupsListErrors[keyof BackupsListErrors];
+
+export type BackupsListResponses = {
+    /**
+     * Backup sets and the schedule
+     */
+    200: BackupList;
+};
+
+export type BackupsListResponse = BackupsListResponses[keyof BackupsListResponses];
+
+export type BackupsNewData = {
+    body?: never;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/backups';
+};
+
+export type BackupsNewErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type BackupsNewError = BackupsNewErrors[keyof BackupsNewErrors];
+
+export type BackupsNewResponses = {
+    /**
+     * Dry run — the backup set that would be taken; nothing was written or queued
+     */
+    200: Backup;
+    /**
+     * Accepted; follow the job on job.{jobId}
+     */
+    202: JobAccepted;
+};
+
+export type BackupsNewResponse = BackupsNewResponses[keyof BackupsNewResponses];
+
+export type BackupsGetData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/backups/{id}';
+};
+
+export type BackupsGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type BackupsGetError = BackupsGetErrors[keyof BackupsGetErrors];
+
+export type BackupsGetResponses = {
+    /**
+     * The backup set
+     */
+    200: Backup;
+};
+
+export type BackupsGetResponse = BackupsGetResponses[keyof BackupsGetResponses];
+
+export type BackupsVerifyData = {
+    body?: never;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/backups/{id}:verify';
+};
+
+export type BackupsVerifyErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type BackupsVerifyError = BackupsVerifyErrors[keyof BackupsVerifyErrors];
+
+export type BackupsVerifyResponses = {
+    /**
+     * Dry run — the set that would be restored; nothing was queued
+     */
+    200: Backup;
+    /**
+     * Accepted; follow the job on job.{jobId}
+     */
+    202: JobAccepted;
+};
+
+export type BackupsVerifyResponse = BackupsVerifyResponses[keyof BackupsVerifyResponses];
+
+export type RunsListData = {
+    body?: never;
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        /**
+         * Only runs in this status
+         */
+        status?: RunStatus;
+        limit?: number;
+    };
+    url: '/projects/{p}/runs';
+};
+
+export type RunsListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type RunsListError = RunsListErrors[keyof RunsListErrors];
+
+export type RunsListResponses = {
+    /**
+     * Runs, newest first
+     */
+    200: RunList;
+};
+
+export type RunsListResponse = RunsListResponses[keyof RunsListResponses];
+
+export type RunsNewData = {
+    body: RunNew;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/projects/{p}/runs';
+};
+
+export type RunsNewErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type RunsNewError = RunsNewErrors[keyof RunsNewErrors];
+
+export type RunsNewResponses = {
+    /**
+     * Dry run — the estimate; nothing was written or queued
+     */
+    200: RunEstimate;
+    /**
+     * The run, queued
+     */
+    201: Run;
+    /**
+     * Gated; a person decides the approval on the approvals topic
+     */
+    202: ApprovalAccepted;
+};
+
+export type RunsNewResponse = RunsNewResponses[keyof RunsNewResponses];
+
+export type RunsCalibrateData = {
+    body: RunCalibrate;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/projects/{p}/runs:calibrate';
+};
+
+export type RunsCalibrateErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type RunsCalibrateError = RunsCalibrateErrors[keyof RunsCalibrateErrors];
+
+export type RunsCalibrateResponses = {
+    /**
+     * Dry run — the calibration's key and plan; nothing was queued
+     */
+    200: RunCalibration;
+    /**
+     * The calibration's pipeline run, queued
+     */
+    201: RunCalibration;
+    /**
+     * Gated; a person decides the approval on the approvals topic
+     */
+    202: ApprovalAccepted;
+};
+
+export type RunsCalibrateResponse = RunsCalibrateResponses[keyof RunsCalibrateResponses];
+
+export type RunsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Run id (run_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/runs/{id}';
+};
+
+export type RunsGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type RunsGetError = RunsGetErrors[keyof RunsGetErrors];
+
+export type RunsGetResponses = {
+    /**
+     * The run
+     */
+    200: Run;
+};
+
+export type RunsGetResponse = RunsGetResponses[keyof RunsGetResponses];
+
+export type RunsResumeData = {
+    body?: never;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Run id (run_…)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/runs/{id}:resume';
+};
+
+export type RunsResumeErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type RunsResumeError = RunsResumeErrors[keyof RunsResumeErrors];
+
+export type RunsResumeResponses = {
+    /**
+     * The run, queued again (or, for a dry run, what it would be)
+     */
+    200: Run;
+    /**
+     * Gated; a person decides the approval on the approvals topic
+     */
+    202: ApprovalAccepted;
+};
+
+export type RunsResumeResponse = RunsResumeResponses[keyof RunsResumeResponses];
+
+export type RunsStageData = {
+    body: RunStage;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * The parent run (run_…)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/runs/{id}:stage';
+};
+
+export type RunsStageErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type RunsStageError = RunsStageErrors[keyof RunsStageErrors];
+
+export type RunsStageResponses = {
+    /**
+     * Dry run — the new stage's estimate
+     */
+    200: RunEstimate;
+    /**
+     * The new run, queued
+     */
+    201: Run;
+    /**
+     * Gated; a person decides the approval on the approvals topic
+     */
+    202: ApprovalAccepted;
+};
+
+export type RunsStageResponse = RunsStageResponses[keyof RunsStageResponses];
+
+export type CheckpointsListData = {
+    body?: never;
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        /**
+         * Only this run's checkpoints (run_…)
+         */
+        run?: string;
+        /**
+         * Only the checkpoints in their run's top k
+         */
+        kept?: boolean;
+        limit?: number;
+    };
+    url: '/projects/{p}/checkpoints';
+};
+
+export type CheckpointsListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type CheckpointsListError = CheckpointsListErrors[keyof CheckpointsListErrors];
+
+export type CheckpointsListResponses = {
+    /**
+     * Checkpoints, best validation WER first
+     */
+    200: CheckpointList;
+};
+
+export type CheckpointsListResponse = CheckpointsListResponses[keyof CheckpointsListResponses];
+
+export type CheckpointsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Checkpoint id (ckp_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/checkpoints/{id}';
+};
+
+export type CheckpointsGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type CheckpointsGetError = CheckpointsGetErrors[keyof CheckpointsGetErrors];
+
+export type CheckpointsGetResponses = {
+    /**
+     * The checkpoint
+     */
+    200: Checkpoint;
+};
+
+export type CheckpointsGetResponse = CheckpointsGetResponses[keyof CheckpointsGetResponses];
+
+export type CheckpointsAverageData = {
+    body: CheckpointAverage;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path: {
+        /**
+         * Run id (run_…)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/runs/{id}/checkpoints:average';
+};
+
+export type CheckpointsAverageErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type CheckpointsAverageError = CheckpointsAverageErrors[keyof CheckpointsAverageErrors];
+
+export type CheckpointsAverageResponses = {
+    /**
+     * Dry run — the plan; nothing was queued
+     */
+    200: CheckpointAverageStarted;
+    /**
+     * The averaging pipeline run, queued
+     */
+    201: CheckpointAverageStarted;
+    /**
+     * Gated; a person decides the approval on the approvals topic
+     */
+    202: ApprovalAccepted;
+};
+
+export type CheckpointsAverageResponse = CheckpointsAverageResponses[keyof CheckpointsAverageResponses];
+
+export type MetricsGetData = {
+    body?: never;
+    path: {
+        /**
+         * The run whose metrics to read (run_…)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Metric names (all when absent): repeat the parameter (names=loss&names=val_wer), as every array query parameter
+         */
+        names?: Array<string>;
+        /**
+         * The x axis
+         */
+        x?: MetricAxis;
+        /**
+         * Points per series at most; longer series are binned
+         */
+        maxPoints?: number;
+        /**
+         * Only points after this optimiser step (live append)
+         */
+        afterStep?: number;
+    };
+    url: '/metrics/{id}';
+};
+
+export type MetricsGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type MetricsGetError = MetricsGetErrors[keyof MetricsGetErrors];
+
+export type MetricsGetResponses = {
+    /**
+     * The series
+     */
+    200: MetricSeriesSet;
+};
+
+export type MetricsGetResponse = MetricsGetResponses[keyof MetricsGetResponses];
+
+export type PlaybooksListData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * A project slug: fill project facts and estimate with them
+         */
+        project?: Slug;
+    };
+    url: '/playbooks';
+};
+
+export type PlaybooksListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type PlaybooksListError = PlaybooksListErrors[keyof PlaybooksListErrors];
+
+export type PlaybooksListResponses = {
+    /**
+     * Playbooks
+     */
+    200: PlaybookList;
+};
+
+export type PlaybooksListResponse = PlaybooksListResponses[keyof PlaybooksListResponses];
+
+export type PlaybooksGetData = {
+    body?: never;
+    path: {
+        /**
+         * Playbook name (templates/playbooks/<name>.yaml)
+         */
+        name: string;
+    };
+    query?: {
+        /**
+         * A project slug: fill project facts and estimate with them
+         */
+        project?: Slug;
+    };
+    url: '/playbooks/{name}';
+};
+
+export type PlaybooksGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type PlaybooksGetError = PlaybooksGetErrors[keyof PlaybooksGetErrors];
+
+export type PlaybooksGetResponses = {
+    /**
+     * The playbook
+     */
+    200: Playbook;
+};
+
+export type PlaybooksGetResponse = PlaybooksGetResponses[keyof PlaybooksGetResponses];
+
+export type PlaybooksRunData = {
+    body?: PlaybookRunNew;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+        /**
+         * Playbook name
+         */
+        name: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/projects/{p}/playbooks/{name}:run';
+};
+
+export type PlaybooksRunErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type PlaybooksRunError = PlaybooksRunErrors[keyof PlaybooksRunErrors];
+
+export type PlaybooksRunResponses = {
+    /**
+     * Dry run — the resolved inputs, estimate, plan and prompt; no session was started
+     */
+    200: PlaybookRunResult;
+    /**
+     * Started; the result carries the playbook session
+     */
+    201: PlaybookRunResult;
+};
+
+export type PlaybooksRunResponse = PlaybooksRunResponses[keyof PlaybooksRunResponses];
+
+export type ArtifactsEvictData = {
+    body?: ArtifactEvict;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/artifacts:evict';
+};
+
+export type ArtifactsEvictErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type ArtifactsEvictError = ArtifactsEvictErrors[keyof ArtifactsEvictErrors];
+
+export type ArtifactsEvictResponses = {
+    /**
+     * Dry run — the artifacts that would be evicted, the ones kept and the bytes freed; nothing changed
+     */
+    200: EvictionPlan;
+    /**
+     * Gated; a person decides the approval on the approvals topic
+     */
+    202: ApprovalAccepted;
+};
+
+export type ArtifactsEvictResponse = ArtifactsEvictResponses[keyof ArtifactsEvictResponses];
 
 export type MountsListData = {
     body?: never;

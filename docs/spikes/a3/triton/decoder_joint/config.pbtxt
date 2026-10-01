@@ -1,0 +1,22 @@
+# decoder_joint.onnx (NeMo RNNTDecoderJoint export): one prediction-network step + joint; LSTM states in/out
+# ([2, B, 640], batch in dim 1 -> max_batch_size 0, full shapes).
+name: "decoder_joint"
+backend: "onnxruntime"
+max_batch_size: 0
+input [
+  { name: "encoder_outputs" data_type: TYPE_FP32 dims: [ -1, 1024, -1 ] },
+  { name: "targets" data_type: TYPE_INT32 dims: [ -1, -1 ] },
+  { name: "target_length" data_type: TYPE_INT32 dims: [ -1 ] },
+  { name: "input_states_1" data_type: TYPE_FP32 dims: [ 2, -1, 640 ] },
+  { name: "input_states_2" data_type: TYPE_FP32 dims: [ 2, -1, 640 ] }
+]
+output [
+  { name: "outputs" data_type: TYPE_FP32 dims: [ -1, -1, -1, 13088 ] },
+  { name: "prednet_lengths" data_type: TYPE_INT32 dims: [ -1 ] },
+  { name: "output_states_1" data_type: TYPE_FP32 dims: [ 2, -1, 640 ] },
+  { name: "output_states_2" data_type: TYPE_FP32 dims: [ 2, -1, 640 ] }
+]
+instance_group [ { count: 1 kind: KIND_GPU gpus: [ 0 ] } ]
+parameters { key: "cudnn_conv_algo_search" value: { string_value: "1" } }
+parameters { key: "arena_extend_strategy" value: { string_value: "1" } }
+parameters { key: "gpu_mem_limit" value: { string_value: "2147483648" } }

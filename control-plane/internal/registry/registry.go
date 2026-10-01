@@ -30,6 +30,12 @@ const (
 	KindBaseModel = "base_model"
 	KindDataset   = "dataset_version"
 	KindTemplate  = "template"
+	// Published by workers at start (phase 2, R40, R41, R45): keyed by the runtime's image digest.
+	KindRuntime     = "runtime"
+	KindModelFamily = "model_family"
+	KindStepKind    = "step_kind"
+	// Background noise for augmentation (spec 02 entity Noise bank): a dataset_import with purpose noise.
+	KindNoiseBank = "noise_bank"
 )
 
 // CollectionKind is the EntityKind of collections.
@@ -44,9 +50,13 @@ const (
 
 // kinds maps each kind to the prefix of its collection names and the noun used in messages.
 var kinds = map[string]struct{ prefix, noun string }{
-	KindBaseModel: {"base-model/", "base model"},
-	KindDataset:   {"dataset/", "dataset"},
-	KindTemplate:  {"template/", "template"},
+	KindBaseModel:   {"base-model/", "base model"},
+	KindDataset:     {"dataset/", "dataset"},
+	KindTemplate:    {"template/", "template"},
+	KindRuntime:     {"runtime/", "runtime"},
+	KindModelFamily: {"model-family/", "model family"},
+	KindStepKind:    {"step-kind/", "step kind"},
+	KindNoiseBank:   {"noise-bank/", "noise bank"},
 }
 
 // Known reports whether kind is a registry kind.

@@ -13,7 +13,7 @@ const manifest: PanelManifest = {
   defaultSize: { w: 460, h: 560 },
   defaultLocation: "floating",
   help: "panels.agent-sessions",
-  commands: ["agentSessions.new", "agentSessions.pause", "agentSessions.resume", "agentSessions.accept", "agentSessions.revert"],
+  commands: ["agentSessions.new", "playbooks.run", "agentSessions.pause", "agentSessions.resume", "agentSessions.accept", "agentSessions.revert"],
   empty: AgentSessionsEmpty,
   component: AgentSessionsPanel,
 };

@@ -1,0 +1,7 @@
+{
+  "name": "nemo-speech",
+  "version": "26.07",
+  "image": "nvcr.io/nvidia/nemo-speech:26.07",
+  "digest": "sha256:b8b1c094f1bbd1a28acec4a742ae8984f420c021293dd68e7cadb21ac2963ef0",
+  "environmentPackages": ["torch", "nemo-toolkit", "lhotse", "cuda-toolkit", "numpy", "pydantic", "cadence-worker", "cadence-nemo"]
+}

@@ -59,6 +59,29 @@ var (
 	// Project repositories (phase 1 · wave 2, projects).
 	MergeConflict         = Type{"merge-conflict", http.StatusConflict, "Merge conflict"}
 	RepositoryUnavailable = Type{"repository-unavailable", http.StatusBadGateway, "Repository unavailable"}
+
+	// Data entities (phase 2 · stream D).
+	EvalOnlyDataset = Type{"eval-only-dataset", http.StatusUnprocessableEntity, "Eval-only dataset"}
+
+	// Pipelines (phase 2 · stream P).
+	PipelineInvalid = Type{"pipeline-invalid", http.StatusUnprocessableEntity, "Pipeline invalid"}
+
+	// Worker protocol (phase 2 · stream W).
+	LeaseEnded           = Type{"lease-ended", http.StatusConflict, "Lease ended"}
+	StepKindConflict     = Type{"step-kind-conflict", http.StatusConflict, "Step kind conflict"}
+	ArtifactHashMismatch = Type{"artifact-hash-mismatch", http.StatusUnprocessableEntity, "Artifact hash mismatch"}
+	ArtifactMissing      = Type{"artifact-missing", http.StatusConflict, "Artifact missing"}
+
+	// Playbooks (phase 2 · stream K).
+	PlaybookDryRunRequired = Type{"playbook-dry-run-required", http.StatusConflict, "Dry run required first"}
+	PlaybookStopped        = Type{"playbook-stopped", http.StatusConflict, "Playbook stopped"}
+	PlaybookUnavailable    = Type{"playbook-unavailable", http.StatusConflict, "Playbook not available yet"}
+	// Runs, checkpoints and metrics (phase 2 · wave 2 · stream R).
+	FamilyUnavailable = Type{"family-unavailable", http.StatusUnprocessableEntity, "Model family unavailable"}
+	RecipeMismatch    = Type{"recipe-mismatch", http.StatusUnprocessableEntity, "Recipe does not fit the run"}
+	NoTrainingState   = Type{"no-training-state", http.StatusConflict, "No training state"}
+	// Content-store retention (phase 2 · stream E).
+	ArtifactNotEvictable = Type{"artifact-not-evictable", http.StatusConflict, "Artifact not evictable"}
 )
 
 // Types lists every registered type.
@@ -67,7 +90,10 @@ func Types() []Type {
 		BadRequest, ValidationFailed, NotFound, MethodNotAllowed, Conflict, PreconditionFailed,
 		PreconditionRequired, IdempotencyKeyReused, Unauthenticated, TOTPRequired, Forbidden, RateLimited, NotImplemented,
 		Internal, PolicyDenied, ReservedAlias, EstimateUnavailable, InvalidQuery, DraftStale, MergeConflict,
-		RepositoryUnavailable,
+		RepositoryUnavailable, EvalOnlyDataset, PipelineInvalid,
+		LeaseEnded, StepKindConflict, ArtifactHashMismatch, ArtifactMissing,
+		PlaybookDryRunRequired, PlaybookStopped, PlaybookUnavailable,
+		FamilyUnavailable, RecipeMismatch, NoTrainingState, ArtifactNotEvictable,
 	}
 }
 

@@ -65,6 +65,20 @@ type Defaults struct {
 	Drafts    Drafts    `yaml:"drafts"`
 	Cache     Cache     `yaml:"cache"`
 	Compute   Compute   `yaml:"compute"`
+	Data      Data      `yaml:"data"`
+
+	// Operations, notifications and backups (phase 2 · stream O).
+	Operations    Operations    `yaml:"operations"`
+	Notifications Notifications `yaml:"notifications"`
+	Backups       Backups       `yaml:"backups"`
+
+	// Augment is the recommended augmentation profile (docs/spec/03 "Augmentation"): served to the Recipe form, read
+	// by the training step kinds through their defaultRefs; the control plane never interprets it (phase 2 · stream U).
+	Augment map[string]any `yaml:"augment"`
+
+	// Packs holds one section per framework pack (R45), addressed as packs.<pack>.<key> by the step kinds'
+	// x-cadence defaultRef. The control plane serves and validates these sections and never branches on a pack.
+	Packs map[string]map[string]any `yaml:"packs"`
 
 	document map[string]any
 }
@@ -99,7 +113,9 @@ type Budgets struct {
 	AgentTurnsPerSession               Param[int]     `yaml:"agent_turns_per_session"`
 	AgentTokensPerSession              Param[int64]   `yaml:"agent_tokens_per_session"`
 	AgentTokensPerTurn                 Param[int64]   `yaml:"agent_tokens_per_turn"`
+	AgentGPUHoursPerSession            Param[float64] `yaml:"agent_gpu_hours_per_session"`
 	ManualTestGPUHoursPerProjectPerDay Param[float64] `yaml:"manual_test_gpu_hours_per_project_per_day"`
+	QueuePriorityPerProject            Param[int]     `yaml:"queue_priority_per_project"`
 }
 
 // Timeouts holds the session clocks of R5.
@@ -115,12 +131,17 @@ type Training struct {
 	Steps     Param[int]    `yaml:"steps"`
 	Precision Param[string] `yaml:"precision"`
 	GPUs      Param[int]    `yaml:"gpus"`
+	KeepTopK  Param[int]    `yaml:"keep_top_k"`
+	Pipeline  Param[string] `yaml:"pipeline"`
 }
 
 // Estimates holds the R12 estimate table.
 type Estimates struct {
-	BytesPerAudioHour Param[int64]  `yaml:"bytes_per_audio_hour"`
-	Training          []EstimateRow `yaml:"training"`
+	BytesPerAudioHour Param[int64]   `yaml:"bytes_per_audio_hour"`
+	MeasuredPlusMinus Param[float64] `yaml:"measured_plus_minus"`
+	// LeaseOverheadSeconds is the fixed time a lease adds to its steps when a calibration measured none.
+	LeaseOverheadSeconds Param[float64] `yaml:"lease_overhead_seconds"`
+	Training             []EstimateRow  `yaml:"training"`
 }
 
 // EstimateRow is the measured-or-assumed speed of one base model on one card class under one memory cap.
@@ -152,6 +173,40 @@ type Drafts struct {
 type Cache struct {
 	HighWaterMark Param[float64] `yaml:"high_water_mark"`
 	ProjectQuota  Param[float64] `yaml:"project_quota"`
+	StoreLowFree  Param[float64] `yaml:"store_low_free"`
+}
+
+// Data holds the import defaults (the dataset_import step kind's defaultRefs, phase 2).
+type Data struct {
+	ValidationShare Param[float64] `yaml:"validation_share"`
+	// MinValidationUtterances tops a speaker-disjoint split's validation up to this many utterances.
+	MinValidationUtterances Param[int]     `yaml:"min_validation_utterances"`
+	MaxHours                Param[float64] `yaml:"max_hours"`
+	MaxUtterances           Param[int]     `yaml:"max_utterances"`
+	SampleRate              Param[int]     `yaml:"sample_rate"`
+	TextNormalisation       Param[bool]    `yaml:"text_normalisation"`
+}
+
+// Operations holds instance-wide operational defaults.
+type Operations struct {
+	Timezone Param[string] `yaml:"timezone"`
+}
+
+// Notifications holds the defaults of the notification settings (the routing table is seeded by migration).
+type Notifications struct {
+	DigestTime        Param[string] `yaml:"digest_time"`
+	QuietHoursEnabled Param[bool]   `yaml:"quiet_hours_enabled"`
+	QuietHoursStart   Param[string] `yaml:"quiet_hours_start"`
+	QuietHoursEnd     Param[string] `yaml:"quiet_hours_end"`
+}
+
+// Backups holds the backup schedule and retention.
+type Backups struct {
+	NightlyAt          Param[string] `yaml:"nightly_at"`
+	RestoreTestWeekday Param[string] `yaml:"restore_test_weekday"`
+	RestoreTestAt      Param[string] `yaml:"restore_test_at"`
+	KeepNightly        Param[int]    `yaml:"keep_nightly"`
+	KeepWeekly         Param[int]    `yaml:"keep_weekly"`
 }
 
 // Compute holds the hosts seeded at first start.

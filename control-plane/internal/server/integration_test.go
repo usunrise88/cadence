@@ -22,15 +22,20 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
 	"github.com/usunrise88/cadence/control-plane/internal/auth"
+	"github.com/usunrise88/cadence/control-plane/internal/cas"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
 	"github.com/usunrise88/cadence/control-plane/internal/jobs"
 	"github.com/usunrise88/cadence/control-plane/internal/obs"
+	"github.com/usunrise88/cadence/control-plane/internal/pipelines"
+	"github.com/usunrise88/cadence/control-plane/internal/pipelines/pipelinestest"
 	"github.com/usunrise88/cadence/control-plane/internal/projects/bootstrap"
 	"github.com/usunrise88/cadence/control-plane/internal/registry"
 	"github.com/usunrise88/cadence/control-plane/internal/repos"
 	"github.com/usunrise88/cadence/control-plane/internal/search"
+	"github.com/usunrise88/cadence/control-plane/internal/steps"
 	"github.com/usunrise88/cadence/control-plane/internal/storage"
 	"github.com/usunrise88/cadence/control-plane/internal/testdb"
+	"github.com/usunrise88/cadence/control-plane/internal/workers"
 	"github.com/usunrise88/cadence/control-plane/migrations"
 	"github.com/usunrise88/cadence/control-plane/templates"
 )
@@ -44,8 +49,10 @@ type env struct {
 	pool     *pgxpool.Pool
 	metrics  *obs.Metrics
 	jobs     *jobs.Service
-	admin    *Server            // the admin server (its secret store and repositories are inspected by tests)
-	repos    *bootstrap.Service // project repositories under a temporary data directory
+	admin    *Server               // the admin server (its secret store and repositories are inspected by tests)
+	repos    *bootstrap.Service    // project repositories under a temporary data directory
+	leases   *pipelinestest.Leases // the fake worker protocol the pipeline engine waits on
+	switched *switchLeases         // env.useWorkers moves the engine to the real worker protocol
 	keys     atomic.Int64
 }
 
@@ -57,8 +64,8 @@ var testAgent = auth.Actor{Kind: auth.KindAgent, ID: "ses_test", Name: "claude-c
 func start(t *testing.T) *env { return startWith(t, nil) }
 
 // startWith is start with a hook that adjusts the admin server before it serves (authentication tests clear the
-// fixed actor).
-func startWith(t *testing.T, adjust func(*Config)) *env {
+// fixed actor) and hooks that register job kinds before the job runner starts.
+func startWith(t *testing.T, adjust func(*Config), register ...func(*pgxpool.Pool, *jobs.Service)) *env {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	pool, err := storage.Open(ctx, testdb.New(t))
@@ -94,10 +101,27 @@ func startWith(t *testing.T, adjust func(*Config)) *env {
 		t.Fatal(err)
 	}
 	svc.Register(js)
+	// The pipeline engine runs steps through an in-process fake of the worker protocol (pipelinestest).
+	blobs, err := cas.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	hooks, leases := &steps.Hooks{}, &pipelinestest.Leases{Pool: pool, CAS: blobs}
+	// The real worker protocol is there too; a test switches the engine over to it with env.useWorkers.
+	wsvc := workers.New(workers.Options{Pool: pool, CAS: blobs, LogDir: t.TempDir(), Log: quiet, Poll: 50 * time.Millisecond})
+	sw := &switchLeases{fake: leases, real: wsvc}
+	eng := pipelines.New(pipelines.Options{Pool: pool, CAS: blobs, Hooks: hooks, Leases: sw, Repos: store, Log: quiet})
+	leases.Engine = eng
+	eng.Register(js)
+	for _, r := range register {
+		r(pool, js)
+	}
 	if err := js.Start(ctx); err != nil {
 		t.Fatal(err)
 	}
-	withJobs := func(c *Config) { c.Jobs, c.Projects = js, svc }
+	withJobs := func(c *Config) {
+		c.Jobs, c.Projects, c.CAS, c.StepHooks, c.Pipelines, c.Workers = js, svc, blobs, hooks, eng, wsvc
+	}
 	asAgent := func(c *Config) { c.Actor = testAgent }
 	opts := []func(*Config){withJobs}
 	if adjust != nil {
@@ -119,8 +143,24 @@ func startWith(t *testing.T, adjust func(*Config)) *env {
 		<-indexed
 		pool.Close()
 	})
-	return &env{t: t, url: srv.URL, agentURL: agentSrv.URL, pool: pool, metrics: metrics, jobs: js, admin: admin, repos: svc}
+	return &env{t: t, url: srv.URL, agentURL: agentSrv.URL, pool: pool, metrics: metrics, jobs: js, admin: admin, repos: svc, leases: leases, switched: sw}
 }
+
+// switchLeases lets a test move the pipeline engine from the in-process fake to the real worker protocol.
+type switchLeases struct {
+	fake, real steps.Leases
+	useReal    atomic.Bool
+}
+
+func (s *switchLeases) Await(ctx context.Context, jobID string) (steps.Outcome, error) {
+	if s.useReal.Load() {
+		return s.real.Await(ctx, jobID)
+	}
+	return s.fake.Await(ctx, jobID)
+}
+
+// useWorkers makes step jobs wait for real workers (the worker protocol) instead of the in-process fake.
+func (e *env) useWorkers() { e.switched.useReal.Store(true) }
 
 func (e *env) key() string { return fmt.Sprintf("test-key-%08d", e.keys.Add(1)) }
 

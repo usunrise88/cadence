@@ -29,7 +29,7 @@ docs/spec/      The specification (read before changing behaviour); docs/spikes/
                 control-plane/templates/skills/ and copied into project repos at bootstrap
 ```
 
-## Current state (phases 0 and 1 done; phase 2 next)
+## Current state (phases 0, 1 and 2 done; phase 3 next)
 
 Work follows `ROADMAP.md`: six phases (0 Shell → 1 Agent loop → 2 Training → 3 Evaluation → 4 Data → 5 Deploy and
 flywheel), each closed by a gate. Pick work from the current phase; tick items there as they merge; don't start an
@@ -76,6 +76,25 @@ p95 56–68 ms. What exists now (details in `ROADMAP.md` "Phase 1 notes" and `do
 Phase 1 has nothing open (live evals on the stand: 6/6, 2026-09-30). Built after the gate: the worktree watcher (`recipe.working` events), the three-way Session changes
 (`branches.compare`), `hostSessions.release` on host shutdown, tool-call ids for opencode, the agent evals harness
 (`make evals`); claude.ai connectors are off in every Claude session.
+
+Phase 2 (training) passed its gate on 2026-10-01 (an agent's playbook session fine-tuned Nemotron on the stand; ROADMAP
+"Phase 2" gate paragraph); the replay corpus import is still open (disk). Plan and interfaces: `docs/review/2026-09-30-phase-2-plan.md`; what differs: ROADMAP "Phase 2 notes"; the
+real-card rehearsal: `docs/review/2026-10-01-phase-2-rehearsal.md`. What exists:
+- **Worker protocol** (tag `worker`, `cwk_`): workers register runtime, step kinds and model families as registry
+  versions, long-poll leases on River `step` jobs (`internal/workers`, `internal/queue`: card slots, priorities,
+  availability windows), heartbeat, stream NDJSON logs and metrics, publish outputs mid-lease and release.
+- **Content store and pipelines**: `internal/cas` (BLAKE3 `b3:` hashes, directory manifests), `internal/artifacts`,
+  `internal/pipelines` (YAML pinning `kind@version`, dryRun validation, input-hash reuse, OOM retry at 0.75×, output
+  hooks).
+- **Domains**: data (sources, utterances, transcripts, `dataset` hook, `noise_bank`), runs (facades over `train-stage`,
+  calibration → measured estimates with lease overhead, checkpoints top-k, `metrics.get`, GPU budgets → approval),
+  playbooks (`templates/playbooks`, server-ticked plans, dryRun before spending), notifications (Telegram) and backups.
+- **Worker packs** (`worker/`): the harness, core kinds (`echo`, `dataset_import`), the CPU `toy` pack and the NeMo pack
+  (`worker/packs/nemo`, family `nemo.fastconformer-rnnt.cache-aware`); `make conformance` runs the suite.
+- **Web**: `@/shell/charts` (uPlot, ECharts), Queue & GPU, Logs, Pipeline run, Run, Metrics, Checkpoints, full Mix,
+  augmentation form, GPU badge.
+- The staging card is 48 GB with vLLM resident: training cap 22 GB (spike A3). Go and web code never name a framework
+  or family (`internal/contract/seams_test.go`).
 
 Known spec conflicts and gaps: `docs/review/2026-09-29-spec-kickoff-review.md` (statuses updated); assumptions made
 while building are in `docs/spec/07-audit-risks-sources.md` "Open questions".

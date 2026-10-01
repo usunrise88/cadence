@@ -1,0 +1,88 @@
+# written by Cadence — playbook template (docs/spec/03-pipelines-defaults.md "Playbooks", R16; format:
+# control-plane/internal/playbooks/README.md). Keys are stable; keep prose in comments and in `prompt`.
+name: finetune-from-dataset
+title: Fine-tune from a dataset version
+description: Mix a dataset version with replay, calibrate batch sizes under the card's memory cap, train, and register the best checkpoints; from phase 3 the eval matrix and the gate follow.
+typicalCost: 1–4 GPU-hours
+availableFrom: 2
+
+inputs:
+  dataset:
+    type: dataset_version
+    multiple: true
+    required: true
+    description: The dataset version(s) to fine-tune on (ver_…, a collection name or @alias)
+  replay:
+    type: dataset_version
+    from: adoption
+    collection: dataset/replay-base
+    description: The replay corpus (R17), when the project adopted it; it keeps the base model's other locales
+  base:
+    type: base_model
+    from: project
+    description: The project's default base model
+  steps:
+    type: integer
+    defaultRef: training.steps
+    description: Optimiser steps of the training run (the steps budget)
+  replayShare:
+    type: number
+    defaultRef: mix.replay_share
+    description: Share of the replay groups in the mix
+
+chain:
+  - id: mix
+    title: Mix the dataset with replay
+    command: mixes.new
+    accepts: [mixes.edit]
+  - id: calibrate
+    title: Calibrate batch sizes under the card's memory cap (dry run first)
+    command: runs.calibrate
+    with: { baseModel: $inputs.base }
+    estimate: { gpuHours: 0.1, minutes: 6, plusMinus: 0.5 }
+  - id: train
+    title: Start the training run (dry run first)
+    command: runs.new
+    with: { baseModel: $inputs.base, steps: $inputs.steps, datasets: [$inputs.dataset, $inputs.replay] }
+  - id: watch
+    title: Wait for the run to finish
+    command: runs.get
+    accepts: [jobs.wait]
+    until: terminal
+  - id: checkpoints
+    title: List the checkpoints the run registered (top-k by validation WER)
+    command: checkpoints.list
+  - id: eval
+    title: Eval matrix on the golden sets at the deployment latency
+    command: evals.new
+    phase: 3
+  - id: gate
+    title: Gate against the baseline
+    command: evals.gate
+    phase: 3
+
+stop:
+  - gate: failed
+  - budget: exceeded
+  - step: failed
+  - approval: denied
+
+next:
+  done: Phase 3 adds the eval matrix and the gate. Until then compare the checkpoints by validation WER (checkpoints.list), average the best ones if they are close (checkpoints.average, dry run first), and note what you learned (projects.note).
+  stopped: Read why the step stopped (jobs.get and the run's logs, or the approval's note), fix the cause, then start the playbook again or continue the remaining steps by hand.
+
+prompt: |
+  Run the playbook "Fine-tune from a dataset version" in project {{ .Project.Name }} ({{ .Project.Slug }}, locales {{ .Project.Locales }}).
+
+  - Base model: {{ .Inputs.base }}
+  - Dataset version(s): {{ .Inputs.dataset }}
+  - Replay corpus: {{ .Inputs.replay }} at a replay share of {{ .Inputs.replayShare }}
+  - Training steps: {{ .Inputs.steps }}
+
+  Work the plan one step at a time with Cadence tools:
+  1. mixes.new — one group with the dataset version(s), plus a group flagged replay with the replay corpus when there is one; replayShare as given.
+  2. runs.calibrate with the mix (and the base model) — dry run first, then for real.
+  3. runs.new with the mix, the base model and steps — dry run first and report its estimate (GPU-hours, card, duration), then the same call for real; it answers the run (run_…).
+  4. Follow the run until its status is done, failed or cancelled: jobs.wait on its currentJobId, then runs.get id=<run>; metrics.get id=<run> shows the loss and validation WER meanwhile.
+  5. checkpoints.list with run=<run> — report the registered checkpoints with their validation WER.
+  The eval matrix and the gate arrive in phase 3: skip them. Finish with a short summary and the next step.

@@ -7,8 +7,9 @@ Agent: claude-code (sonnet) under the `guardrails-default` permission preset.
 ## How to work here
 
 - Use the Cadence MCP tools for every change to runs, mixes, datasets, evals and deployments; never edit the database.
-- Recipes and pipelines live in this repository; your worktree is on your session branch and every turn is
-  committed there. `main` changes only by merge.
+- Recipes and pipelines live in this repository; your worktree is on your session branch, and Cadence commits and
+  pushes what you changed at the end of every turn — do not run `git add` or `git commit` yourself. `main` changes
+  only by merge.
 - Before any GPU job, call the command with `dryRun` and check the estimate against the project budget
   (8 GPU-hours per day).
 - Evaluate only in true streaming at deployment latency; never reference golden sets from a run.

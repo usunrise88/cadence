@@ -153,6 +153,9 @@ func (s *Server) sessionInput(ctx context.Context, p projects.Project, b *api.Ag
 		if b.Kind != nil {
 			in.Kind = string(*b.Kind)
 		}
+		if in.Kind == sessions.KindPlaybook {
+			return in, problems.Validation([]problems.FieldError{{Path: "/kind", Message: "a playbook session starts with playbooks.run"}})
+		}
 		if b.Driver != nil && string(*b.Driver) != in.Driver {
 			in.Driver = string(*b.Driver)
 			if in.Model, err = s.modelFor(ctx, in.Driver); err != nil {
@@ -190,7 +193,7 @@ func (s *Server) sessionInput(ctx context.Context, p projects.Project, b *api.Ag
 		return in, err
 	}
 	in.Budget = sessions.Budget{Turns: pol.Budgets.AgentTurnsPerSession, Tokens: d.Budgets.AgentTokensPerSession.Value,
-		TokensPerTurn: d.Budgets.AgentTokensPerTurn.Value}
+		TokensPerTurn: d.Budgets.AgentTokensPerTurn.Value, GPUHours: d.Budgets.AgentGPUHoursPerSession.Value}
 	if in.Kind == sessions.KindReadOnly {
 		in.Budget.Turns = 1
 	}

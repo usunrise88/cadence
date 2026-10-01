@@ -32,7 +32,7 @@ export function setupSteps(f: SetupFacts): SetupStep[] {
     { id: "mount", title: "Attach the call recordings", detail: "A mount with the audio the project adapts to; the wizard lets you skip it until then.", state: "later", command: "mounts.new", phase: 4 },
     { id: "project", title: "Create a project", detail: "Three fields — name, language, recordings — everything else from defaults.", state: f.projects > 0 ? "done" : "todo", command: "projects.new" },
     { id: "dataset", title: "Freeze the first dataset version", detail: "An immutable, fingerprinted selection the first mix trains on.", state: frozen ? "done" : "later", command: "datasets.freeze", phase: frozen ? undefined : 4 },
-    { id: "run", title: "Finish the first training run", detail: "A dry run shows the estimate first; nothing spends GPU time unseen.", state: "later", command: "runs.new", phase: 2 },
+    { id: "run", title: "Finish the first training run", detail: "The playbook “Fine-tune from a dataset version” runs it: the estimate first, a dry run before every spending step.", state: "later", command: "playbooks.run", phase: 2 },
     { id: "gate", title: "Pass the first gate", detail: "The eval matrix against the project's golden sets; this checklist retires when it passes.", state: "later", command: "evals.gate", phase: 3 },
   ];
 }

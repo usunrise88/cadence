@@ -82,7 +82,23 @@ type Pipeline struct {
 	commands *prometheus.CounterVec // labels: operation, outcome
 	policy   *policy.Engine
 	onGate   GateHook
+	session  SessionHook
 }
+
+// SessionHook sees the commands agent sessions send (actor with a session id); playbook sessions use it to tick
+// their plan from the commands that succeed and to require a dry run before a spending command (internal/playbooks).
+type SessionHook interface {
+	// Admit runs in the command's transaction before the policy (not for replays of approved requests); an error
+	// refuses the command.
+	Admit(ctx context.Context, tx pgx.Tx, cmd Command) error
+	// Done runs in the command's transaction after its work succeeded for real; its events join the command's.
+	Done(ctx context.Context, tx pgx.Tx, cmd Command, res Result) ([]events.Draft, error)
+	// DryRun runs after a successful dry run was rolled back, on its own (it writes in its own transaction).
+	DryRun(ctx context.Context, cmd Command, res Result)
+}
+
+// SetSessionHook installs h; call it before the pipeline serves.
+func (p *Pipeline) SetSessionHook(h SessionHook) { p.session = h }
 
 // GateHook runs in the transaction of a gated command, right after its approval is stored, with the agent tool
 // call behind it; its events join the command's. Agent sessions use it to show the approval in the transcript and
@@ -194,6 +210,13 @@ func (p *Pipeline) run(ctx context.Context, cmd Command, id string, fn Func, tr 
 		}
 	}
 
+	sessionCmd := p.session != nil && cmd.Actor.SessionID != ""
+	if sessionCmd && rep == nil {
+		if err := p.session.Admit(ctx, tx, cmd); err != nil {
+			return Response{}, outcomeOf(err), err
+		}
+	}
+
 	var policyHeader string
 	if rep != nil {
 		tr.approvalID = rep.approvalID
@@ -227,7 +250,18 @@ func (p *Pipeline) run(ctx context.Context, cmd Command, id string, fn Func, tr 
 		if policyHeader != "" {
 			resp.Header.Set(HeaderPolicy, policyHeader)
 		}
+		if sessionCmd {
+			_ = tx.Rollback(ctx)
+			p.session.DryRun(context.WithoutCancel(ctx), cmd, res)
+		}
 		return resp, outcomeDryRun, nil
+	}
+	if sessionCmd {
+		more, err := p.session.Done(ctx, tx, cmd, res)
+		if err != nil {
+			return Response{}, outcomeOf(err), err
+		}
+		drafts = append(drafts, more...)
 	}
 	tr.status = resp.Status
 	if err := p.commit(ctx, tx, cmd, id, tr, audit.OutcomeOK, drafts, resp, useKey); err != nil {

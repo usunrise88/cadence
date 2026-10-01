@@ -156,3 +156,23 @@
   color: var(--cadence-text-secondary);
   font-weight: 500;
 }
+
+/* The status bar's Approvals badge while a request waits: a slow warning-tinted blink (well under three flashes a
+   second, WCAG 2.3.1); with reduced motion the tint stays still. */
+@keyframes cadence-attention {
+  0%,
+  100% {
+    background-color: transparent;
+  }
+  50% {
+    background-color: color-mix(in oklab, var(--cadence-status-warning) 35%, transparent);
+  }
+}
+
+@utility animate-attention {
+  animation: cadence-attention 1.4s ease-in-out infinite;
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+    background-color: color-mix(in oklab, var(--cadence-status-warning) 25%, transparent);
+  }
+}

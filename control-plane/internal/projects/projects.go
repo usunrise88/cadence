@@ -93,12 +93,15 @@ type storedRepo struct {
 type Budgets struct {
 	GPUHoursPerDay    float64 `json:"gpuHoursPerDay"`
 	AgentTokensPerDay int64   `json:"agentTokensPerDay"`
+	// QueuePriority orders the project's waiting step jobs against other projects' (higher first; internal/workers).
+	QueuePriority int `json:"queuePriority"`
 }
 
 // DefaultBudgets are the budgets of defaults.yaml.
 func DefaultBudgets() Budgets {
 	d := defaults.Get().Budgets
-	return Budgets{GPUHoursPerDay: d.GPUHoursPerProjectPerDay.Value, AgentTokensPerDay: d.AgentTokensPerProjectPerDay.Value}
+	return Budgets{GPUHoursPerDay: d.GPUHoursPerProjectPerDay.Value, AgentTokensPerDay: d.AgentTokensPerProjectPerDay.Value,
+		QueuePriority: d.QueuePriorityPerProject.Value}
 }
 
 // CloneURL is the path a project repository is served at over smart HTTP (internal/repos.HTTPPath).
@@ -263,6 +266,7 @@ type EditInput struct {
 type BudgetsEdit struct {
 	GPUHoursPerDay    *float64
 	AgentTokensPerDay *int64
+	QueuePriority     *int
 }
 
 // Facts reports whether the edit changes something the repository renders (project.yaml, AGENTS.md).
@@ -287,6 +291,9 @@ func Edit(ctx context.Context, tx pgx.Tx, slug string, rev int, in EditInput) (P
 		}
 		if in.Budgets.AgentTokensPerDay != nil {
 			budgets.AgentTokensPerDay = *in.Budgets.AgentTokensPerDay
+		}
+		if in.Budgets.QueuePriority != nil {
+			budgets.QueuePriority = *in.Budgets.QueuePriority
 		}
 	}
 	b, err := json.Marshal(budgets)

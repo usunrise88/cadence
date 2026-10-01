@@ -24,9 +24,12 @@
     "bash": {
       "*": "ask",
       "git status": "allow",
+      "git status *": "allow",
       "git diff *": "allow",
       "git log *": "allow",
       "git show *": "allow",
+      "git add *": "allow",
+      "git commit *": "allow",
       "ls *": "allow",
       "wc *": "allow",
       "uv run *": "allow",

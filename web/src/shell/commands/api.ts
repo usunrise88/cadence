@@ -1,4 +1,4 @@
-import { Archive, CheckCircle, Key, Lock, Server, Shield, ShieldCheck, XmarkCircle } from "iconoir-react";
+import { Archive, Bell, CheckCircle, Database, DatabaseRestore, Key, Lock, SendDiagonal, Server, Shield, ShieldCheck, Trash, XmarkCircle } from "iconoir-react";
 import { commandHeaders } from "@/api/client";
 import {
   agentCredentialsArchive,
@@ -6,16 +6,27 @@ import {
   agentCredentialsVerify,
   approvalsApprove,
   approvalsDeny,
+  backupsNew,
+  artifactsEvict,
+  backupsVerify,
   computeEdit,
   credentialsNew,
   credentialsRevoke,
+  notificationRulesEdit,
+  notificationSettingsEdit,
   policiesEdit,
   secretsNew,
+  telegramBotSet,
+  telegramBotVerify,
 } from "@/api/gen/sdk.gen";
 import type {
+  ApprovalAccepted,
+  ArtifactEvict,
+  EvictionPlan,
   AgentCredential,
   AgentCredentialSetWritable,
   Approval,
+  Backup,
   Branch,
   BranchMerge,
   ComputeEdit,
@@ -23,7 +34,12 @@ import type {
   Credential,
   CredentialCreated,
   CredentialNew,
+  JobAccepted,
   MixEditResult,
+  NotificationRule,
+  NotificationRuleEdit,
+  NotificationSettings,
+  NotificationSettingsEdit,
   Policies,
   PoliciesEdit,
   ProjectNote,
@@ -31,16 +47,19 @@ import type {
   Secret,
   SavedView,
   SecretNewWritable,
+  TelegramBotVerify,
 } from "@/api/gen/types.gen";
 import { useDialogs } from "@/shell/chrome/dialogs";
 import { useFocusedApproval } from "@/shell/approvals/store";
 import { commands } from "@/shell/registries";
 import { commandContext } from "@/shell/state";
 import type { AgentMessage, AgentSession } from "@/api/gen/types.gen";
-import type { MessageNewArgs, SessionArgs, SessionCancelArgs, SessionNewArgs } from "./agents";
+import type { PlaybookRunResult } from "@/api/gen/types.gen";
+import type { MessageNewArgs, PlaybookRunArgs, SessionArgs, SessionCancelArgs, SessionNewArgs } from "./agents";
 import type { MixEditArgs } from "./entities";
 import type { BranchArgs, NoteArgs, ProfileEditArgs, ProfileEditResult, SyncArgs } from "./projects";
 import type { Command } from "./registry";
+import type { TrainingCommands } from "./training";
 
 // Commands behind the Approvals, Settings and Getting started panels (phase 1). Each mutating command is exactly
 // one API operation and carries its operationId as id; panels run them through `runCommand` (the panel SDK), which
@@ -63,6 +82,14 @@ export type ApiCommands = {
   "compute.edit": { args: { host: ComputeHost; body: ComputeEdit }; result: ComputeHost };
   "secrets.new": { args: { body: SecretNewWritable }; result: Secret };
   "policies.edit": { args: { policies: Policies; body: PoliciesEdit }; result: Policies };
+  "notificationRules.edit": { args: { rule: NotificationRule; body: NotificationRuleEdit }; result: NotificationRule };
+  "notificationSettings.edit": { args: { settings: NotificationSettings; body: NotificationSettingsEdit }; result: NotificationSettings };
+  /** telegramBot.set: `settings` is the current settings (their rev is the If-Match once a token is stored). */
+  "telegramBot.set": { args: { settings: NotificationSettings; token: string }; result: NotificationSettings };
+  "telegramBot.verify": { args: undefined; result: TelegramBotVerify };
+  "backups.new": { args: undefined; result: JobAccepted };
+  "backups.verify": { args: { backup: Backup }; result: JobAccepted };
+  "artifacts.evict": { args: { dryRun?: boolean; body?: ArtifactEvict }; result: EvictionPlan | ApprovalAccepted };
   "view.twoFactor": { args: undefined; result: void };
   "views.set": { args: { name: string; query: string }; result: SavedView | undefined };
   "mixes.edit": { args: MixEditArgs; result: MixEditResult | undefined };
@@ -78,7 +105,8 @@ export type ApiCommands = {
   "agentSessions.accept": { args: SessionArgs; result: AgentSession | undefined };
   "agentSessions.revert": { args: SessionArgs; result: AgentSession | undefined };
   "agentMessages.new": { args: MessageNewArgs; result: AgentMessage };
-};
+  "playbooks.run": { args: PlaybookRunArgs; result: PlaybookRunResult | undefined };
+} & TrainingCommands;
 export type ApiCommandId = keyof ApiCommands;
 
 /** Runs a registered command with typed arguments; rejects with the command's error (a ProblemError for the API). */
@@ -198,6 +226,96 @@ export function registerApiCommands(): void {
         const { policies, body } = need<ApiCommands["policies.edit"]["args"]>(args, "Edit policies");
         const { data } = await policiesEdit({ body, headers: commandHeaders(policies.rev), throwOnError: true });
         return data;
+      },
+    },
+    // Notifications and backups (Settings → Notifications, Backups): admin only; the bot token is write-only.
+    {
+      id: "notificationRules.edit",
+      operation: "notificationRules.edit",
+      title: "Edit notification rule",
+      group: "Edit",
+      icon: Bell,
+      hidden: true,
+      run: async (_ctx, args) => {
+        const { rule, body } = need<ApiCommands["notificationRules.edit"]["args"]>(args, "Edit notification rule");
+        const { data } = await notificationRulesEdit({ path: { id: rule.id }, body, headers: commandHeaders(rule.rev), throwOnError: true });
+        return data;
+      },
+    },
+    {
+      id: "notificationSettings.edit",
+      operation: "notificationSettings.edit",
+      title: "Edit notification settings",
+      group: "Edit",
+      icon: Bell,
+      hidden: true,
+      run: async (_ctx, args) => {
+        const { settings, body } = need<ApiCommands["notificationSettings.edit"]["args"]>(args, "Edit notification settings");
+        const { data } = await notificationSettingsEdit({ body, headers: commandHeaders(settings.rev), throwOnError: true });
+        return data;
+      },
+    },
+    {
+      id: "telegramBot.set",
+      operation: "telegramBot.set",
+      title: "Set Telegram bot token",
+      group: "Edit",
+      icon: Lock,
+      hidden: true,
+      run: async (_ctx, args) => {
+        const { settings, token } = need<ApiCommands["telegramBot.set"]["args"]>(args, "Set Telegram bot token");
+        const headers = commandHeaders(settings.telegram.tokenSet ? settings.rev : undefined);
+        const { data } = await telegramBotSet({ body: { token }, headers, throwOnError: true });
+        return data;
+      },
+    },
+    {
+      id: "telegramBot.verify",
+      operation: "telegramBot.verify",
+      title: "Send a Telegram test message",
+      group: "Edit",
+      icon: SendDiagonal,
+      run: async () => {
+        const { data } = await telegramBotVerify({ headers: commandHeaders(), throwOnError: true });
+        return data;
+      },
+    },
+    {
+      id: "backups.new",
+      operation: "backups.new",
+      title: "Back up now",
+      group: "Edit",
+      icon: Database,
+      run: async () => {
+        const { data } = await backupsNew({ headers: commandHeaders(), throwOnError: true });
+        return data as JobAccepted;
+      },
+    },
+    {
+      id: "backups.verify",
+      operation: "backups.verify",
+      title: "Run a restore test",
+      group: "Edit",
+      icon: DatabaseRestore,
+      hidden: true,
+      run: async (_ctx, args) => {
+        const { backup } = need<ApiCommands["backups.verify"]["args"]>(args, "Run a restore test");
+        const { data } = await backupsVerify({ path: { id: backup.id }, headers: commandHeaders(backup.rev), throwOnError: true });
+        return data as JobAccepted;
+      },
+    },
+    // Settings → Content store: the dry run lists what an eviction frees; the real call always answers an approval.
+    {
+      id: "artifacts.evict",
+      operation: "artifacts.evict",
+      title: "Evict superseded training states",
+      group: "Edit",
+      icon: Trash,
+      hidden: true,
+      run: async (_ctx, args) => {
+        const a = (args ?? {}) as ApiCommands["artifacts.evict"]["args"];
+        const { data } = await artifactsEvict({ body: a.body ?? {}, query: a.dryRun ? { dryRun: true } : undefined, headers: commandHeaders(), throwOnError: true });
+        return data as EvictionPlan | ApprovalAccepted;
       },
     },
     // The agents' model accounts (Settings → Agents): admin only, never MCP tools; the value is write-only.

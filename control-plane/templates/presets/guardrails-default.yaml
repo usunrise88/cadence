@@ -24,22 +24,25 @@ tools:
     operations: [drafts.accept]
     reason: drafts are accepted by a person
 
-  # Sessions are started, steered and merged by people: an agent never starts another session, sends a session
+  # Sessions are started, steered and merged by people: an agent never starts another session (a playbook session
+  # included: playbooks.get shows it the estimate), sends a session
   # messages, or accepts or reverts a session branch — its own included.
   - id: sessions-are-for-people
     class: forbidden
-    operations: ["agentSessions.*", "agentMessages.*"]
+    operations: ["agentSessions.*", "agentMessages.*", playbooks.run]
     verbClass: mutate
     reason: agent sessions are started, steered and merged by people
 
-  # Secrets never enter an agent context; credentials, compute, policies and defaults are the admin's. The agents'
+  # Secrets never enter an agent context; credentials, compute, policies, notification routing, the Telegram bot
+  # and backups are the admin's. The agents'
   # own model accounts (agentCredentials, Settings → Agents) are not MCP tools at all (exempt tag); the rule is a
   # second fence.
   - id: admin-only
     class: forbidden
     operations: ["secrets.*", "credentials.*", "agentCredentials.*", "agentProviders.*", compute.new, compute.edit,
-                 compute.archive, policies.edit]
-    reason: secrets, credentials, agent model accounts, compute and policies are changed by the admin only
+                 compute.archive, policies.edit, notificationRules.edit, notificationSettings.edit, "telegramBot.*",
+                 backups.new, backups.verify]
+    reason: secrets, credentials, agent model accounts, compute, policies, notifications and backups are changed by the admin only
 
   # R8: the baseline alias is gated for everyone, people included (production moves only by promotion).
   - id: baseline-alias
@@ -48,6 +51,19 @@ tools:
     operations: [aliases.set]
     params: { name: baseline }
     reason: changing a project's baseline changes what every gate compares against
+
+  # Content-store eviction deletes blobs (06 "Artifacts, metrics and logs", Retention): agents never evict, and a
+  # person's real call waits for an approval too (no destructive data operation without an approval command). The
+  # first rule stops agents (first match wins); people read only `everyone` rules, so they meet the second.
+  - id: agents-never-evict
+    class: forbidden
+    operations: [artifacts.evict]
+    reason: freeing content-store space deletes artifacts; only a person asks for it
+  - id: store-eviction
+    class: gated
+    everyone: true
+    operations: [artifacts.evict]
+    reason: eviction deletes blobs from the content store; only the backup mirror can bring them back
 
   # "Freeze a golden set, change a baseline or gate" → approval.
   - id: evaluation-gates
@@ -68,11 +84,12 @@ tools:
     operations: [deployments.promote, deployments.rollback]
     reason: deployments reach real traffic
 
-  # Registry-scope approvals: mounts, model registration.
+  # Registry-scope approvals: mounts, model registration, and source edits — clearing a source for training (its
+  # licence allows it and the data may be used) is a person's decision (R18).
   - id: registry-changes
     class: gated
-    operations: [mounts.new, models.register]
-    reason: registry changes are shared by every project
+    operations: [mounts.new, models.register, sources.edit]
+    reason: registry changes are shared by every project; clearing a source for training is a person's decision
 
   # Phase-1 fixture for the approval loop until real gated commands arrive: archiving a project is a soft delete.
   - id: archive-project
@@ -80,16 +97,28 @@ tools:
     operations: [projects.archive]
     reason: archiving a project hides its work from every panel
 
+  # An agent edits recipe files in its session worktree, where every turn is a commit on the session branch that
+  # merges through the project's auto-merge policy; recipes.new and recipes.edit commit straight to main and are the
+  # Recipe document's (a person's) path.
+  - id: recipes-through-the-worktree
+    class: forbidden
+    operations: [recipes.new, recipes.edit]
+    reason: agents change recipe files in their session worktree, not directly on main
+
   # "Delete anything" → not allowed; revoking credentials is the admin's.
   - id: no-deletes
     class: forbidden
     verbs: [archive, revoke]
     reason: removing things is left to people
 
-  # "GPU job within the session budget → allowed; over budget → approval" (the estimate comes from the dry run).
+  # "GPU job within the session budget → allowed; over budget → approval" (the estimate comes from the dry run; the
+  # budget is the project's GPU-hours per day and the session's, metered from lease time on GPU cards). A dry run
+  # never waits: it answers the estimate with a Cadence-Policy header naming the approval the real call would need.
+  # A cost Cadence cannot estimate (a step without a measured or declared estimate) fails closed: approval.
   - id: gpu-spend
     class: spend
-    operations: [runs.new, runs.resume, runs.stage, evals.new, pipelines.run, sweeps.run, playbooks.run]
+    operations: [runs.new, runs.calibrate, runs.resume, runs.stage, checkpoints.average, evals.new, pipelines.run, sweeps.run,
+      pipelineRuns.retry, jobs.resume]
     reason: the job spends GPU time
 
   # "Read any entity, log, metric or result" → allowed.
@@ -113,7 +142,10 @@ files:
 shell:
   default: ask
   # File contents are read with the agent's own read tool, which the `files` rules cover; cat and friends ask.
-  allow: ["git status", "git diff *", "git log *", "git show *", "ls *", "wc *", "uv run *", "python *",
+  # git add / commit stay in the worktree: the host scans everything since the last push for credentials and pushes
+  # it at the end of the turn (an agent's own commits included), so they need no person.
+  allow: ["git status", "git status *", "git diff *", "git log *", "git show *", "git add *", "git commit *", "ls *",
+          "wc *", "uv run *", "python *",
           "python3 *", "pytest *", "jq *", "yq *"]
   ask: ["pip install *", "uv add *", "uv pip install *", "rm *", "mv *"]
   deny: ["git push *", "git remote *", "git config *", "sudo *", "ssh *", "scp *", "curl *", "wget *", "nc *",

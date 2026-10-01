@@ -36,6 +36,7 @@ type Policies struct {
 	Rev        int       `json:"rev"`
 	UpdatedAt  time.Time `json:"updatedAt"`
 	Budgets    Budgets   `json:"budgets"`
+	Timezone   string    `json:"timezone"`
 	Departures []string  `json:"departures"`
 }
 
@@ -43,6 +44,8 @@ type Policies struct {
 type overrides struct {
 	GPUHoursPerProjectPerDay *float64 `json:"gpuHoursPerProjectPerDay,omitempty"`
 	AgentTurnsPerSession     *int     `json:"agentTurnsPerSession,omitempty"`
+	// Timezone lives in its own column (policies.timezone), not in the budgets document.
+	Timezone *string `json:"-"`
 }
 
 // Get returns the effective policies: stored values over defaults d.
@@ -56,14 +59,18 @@ func Get(ctx context.Context, q storage.Querier, d *defaults.Defaults) (Policies
 
 // load reads the row: revision and time in p, the stored values in o.
 func load(ctx context.Context, q storage.Querier, lock string) (p Policies, o overrides, _ error) {
-	var raw []byte
-	if err := q.QueryRow(ctx, "SELECT rev, updated_at, budgets FROM policies WHERE id = $1 "+lock, ID).
-		Scan(&p.Rev, &p.UpdatedAt, &raw); err != nil {
+	var (
+		raw []byte
+		tz  *string
+	)
+	if err := q.QueryRow(ctx, "SELECT rev, updated_at, budgets, timezone FROM policies WHERE id = $1 "+lock, ID).
+		Scan(&p.Rev, &p.UpdatedAt, &raw, &tz); err != nil {
 		return p, o, fmt.Errorf("read policies: %w", err)
 	}
 	if err := json.Unmarshal(raw, &o); err != nil {
 		return p, o, fmt.Errorf("decode policies: %w", err)
 	}
+	o.Timezone = tz
 	return p, o, nil
 }
 
@@ -79,19 +86,35 @@ func effective(p Policies, o overrides, d *defaults.Defaults) Policies {
 	if o.AgentTurnsPerSession != nil {
 		p.Budgets.AgentTurnsPerSession = *o.AgentTurnsPerSession
 	}
+	p.Timezone = d.Operations.Timezone.Value
+	if o.Timezone != nil {
+		p.Timezone = *o.Timezone
+	}
 	if p.Budgets.GPUHoursPerProjectPerDay != d.Budgets.GPUHoursPerProjectPerDay.Value {
 		p.Departures = append(p.Departures, "budgets.gpuHoursPerProjectPerDay")
 	}
 	if p.Budgets.AgentTurnsPerSession != d.Budgets.AgentTurnsPerSession.Value {
 		p.Departures = append(p.Departures, "budgets.agentTurnsPerSession")
 	}
+	if p.Timezone != d.Operations.Timezone.Value {
+		p.Departures = append(p.Departures, "timezone")
+	}
 	return p
+}
+
+// Location is the instance timezone as a *time.Location; an unloadable name (a host without that zone) is UTC.
+func (p Policies) Location() *time.Location {
+	if loc, err := time.LoadLocation(p.Timezone); err == nil {
+		return loc
+	}
+	return time.UTC
 }
 
 // EditInput is the body of policies.edit; nil fields stay as they are.
 type EditInput struct {
 	GPUHoursPerProjectPerDay *float64
 	AgentTurnsPerSession     *int
+	Timezone                 *string // IANA name
 }
 
 // Edit changes the policies at revision rev. Values must lie inside the ranges defaults.yaml gives them.
@@ -116,6 +139,12 @@ func Edit(ctx context.Context, tx pgx.Tx, rev int, in EditInput, d *defaults.Def
 		}
 		o.AgentTurnsPerSession = v
 	}
+	if v := in.Timezone; v != nil {
+		if _, err := time.LoadLocation(*v); err != nil || *v == "" || *v == "Local" {
+			fields = append(fields, problems.FieldError{Path: "/timezone", Message: fmt.Sprintf("%q is not an IANA timezone name (e.g. Europe/Berlin, UTC)", *v)})
+		}
+		o.Timezone = v
+	}
 	if len(fields) > 0 {
 		return Policies{}, nil, problems.Validation(fields)
 	}
@@ -124,8 +153,8 @@ func Edit(ctx context.Context, tx pgx.Tx, rev int, in EditInput, d *defaults.Def
 		return Policies{}, nil, fmt.Errorf("encode policies: %w", err)
 	}
 	var p Policies
-	if err := tx.QueryRow(ctx, `UPDATE policies SET budgets = $2, rev = rev + 1, updated_at = now() WHERE id = $1
-		RETURNING rev, updated_at`, ID, stored).Scan(&p.Rev, &p.UpdatedAt); err != nil {
+	if err := tx.QueryRow(ctx, `UPDATE policies SET budgets = $2, timezone = $3, rev = rev + 1, updated_at = now()
+		WHERE id = $1 RETURNING rev, updated_at`, ID, stored, o.Timezone).Scan(&p.Rev, &p.UpdatedAt); err != nil {
 		return Policies{}, nil, fmt.Errorf("update policies: %w", err)
 	}
 	p = effective(p, o, d)

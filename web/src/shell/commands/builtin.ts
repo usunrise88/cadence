@@ -1,7 +1,8 @@
-import { Archive, Compress, EditPencil, Expand, HalfMoon, HelpCircle, KeyCommand as Keyboard, OpenNewWindow, Plus, Search, ViewGrid } from "iconoir-react";
+import { Archive, Compress, EditPencil, Expand, HalfMoon, HelpCircle, KeyCommand as Keyboard, Maximize, OpenNewWindow, Plus, Search, ViewGrid } from "iconoir-react";
 import { commandHeaders } from "@/api/client";
 import { projectsArchive } from "@/api/gen/sdk.gen";
 import { useDialogs } from "@/shell/chrome/dialogs";
+import { canFullScreen, isFullScreen, toggleFullScreen } from "@/shell/chrome/fullscreen";
 import {
   activeGroup,
   canMaximize,
@@ -28,6 +29,7 @@ import { DEFAULT_WORKSPACES } from "@/shell/workspaces/schema";
 import { applyPlan, defaultPlan, restoreWorkspace, saveWorkspace } from "@/shell/workspaces/persistence";
 import { registerAgentCommands } from "./agents";
 import { registerApiCommands } from "./api";
+import { registerTrainingCommands } from "./training";
 import { registerProjectCommands } from "./projects";
 import type { Command } from "./registry";
 
@@ -98,6 +100,15 @@ export function registerBuiltinCommands(): void {
         s.setEnabled(!s.enabled);
         notify({ level: "info", title: `Snapping ${s.enabled ? "off" : "on"}` });
       },
+    },
+    {
+      id: "view.toggleFullScreen",
+      title: "Toggle full screen",
+      group: "View",
+      icon: Maximize,
+      enabled: () => canFullScreen(),
+      run: () =>
+        void toggleFullScreen().catch((err: unknown) => notifyError(isFullScreen() ? "Could not leave full screen" : "Could not enter full screen", err)),
     },
     {
       id: "view.toggleTheme",
@@ -221,6 +232,7 @@ export function registerBuiltinCommands(): void {
   registerApiCommands();
   registerProjectCommands();
   registerAgentCommands();
+  registerTrainingCommands();
 
   // One "Open <panel>" command per registered tool panel.
   for (const m of panels.all()) {

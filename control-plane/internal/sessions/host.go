@@ -508,6 +508,7 @@ func (s *Service) Report(ctx context.Context, id string, in ReportInput) (Sessio
 		if sess.HostID != in.HostID {
 			return problems.Conflict.New("agent session %s runs on host %q, not %q", id, sess.HostID, in.HostID)
 		}
+		before := sess
 		if _, err := tx.Exec(ctx, `UPDATE agent_hosts SET seen_at = now() WHERE id = $1`, in.HostID); err != nil {
 			return fmt.Errorf("touch the agent host: %w", err)
 		}
@@ -587,6 +588,19 @@ func (s *Service) Report(ctx context.Context, id string, in ReportInput) (Sessio
 				return err
 			}
 			systemDrafts = append(systemDrafts, d...)
+		}
+		if s.Playbooks != nil && sess.Kind == KindPlaybook {
+			if sess, err = Lock(ctx, tx, id); err != nil {
+				return err
+			}
+			d, err := s.Playbooks.Reported(ctx, tx, before, sess)
+			if err != nil {
+				return err
+			}
+			systemDrafts = append(systemDrafts, d...)
+			if sess, err = Lock(ctx, tx, id); err != nil {
+				return err
+			}
 		}
 		if err := events.Append(ctx, tx, sess.Agent(), nil, agentDrafts); err != nil {
 			return err
@@ -962,7 +976,7 @@ func (s *Service) ApprovalDecided(ctx context.Context, tx pgx.Tx, a approvals.Ap
 			drafts = append(drafts, *d)
 		}
 	}
-	if a.Kind == approvals.KindCommand && Live(sess.State) && sess.Kind == KindInteractive {
+	if a.Kind == approvals.KindCommand && Live(sess.State) && sess.Kind != KindReadOnly {
 		text := fmt.Sprintf("Approval %s for %s was %s", a.ID, a.Operation, a.State)
 		if a.DecidedBy != nil {
 			text += " by " + actorName(*a.DecidedBy)
@@ -977,6 +991,16 @@ func (s *Service) ApprovalDecided(ctx context.Context, tx pgx.Tx, a approvals.Ap
 			return nil, err
 		} else if d != nil {
 			drafts = append(drafts, *d)
+		}
+	}
+	if s.Playbooks != nil && sess.Kind == KindPlaybook {
+		more, err := s.Playbooks.Decided(ctx, tx, sess, a)
+		if err != nil {
+			return nil, err
+		}
+		drafts = append(drafts, more...)
+		if sess, err = Lock(ctx, tx, sess.ID); err != nil {
+			return nil, err
 		}
 	}
 	_, more, err := syncApprovals(ctx, tx, sess)

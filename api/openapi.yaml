@@ -34,6 +34,13 @@ tags:
   - { name: agentCredentials, description: "The agents' own model accounts (instance-wide, admin only); values are write-only and never MCP tools" }
   - { name: host, description: The agent host's protocol (claim work, report, ask); exempt from the vocabulary and never MCP tools }
   - { name: egress, description: The egress proxy's protocol (the allowlist it learns); exempt from the vocabulary and never MCP tools }
+  - { name: worker, description: "The GPU worker's protocol (registry, leases, logs, metrics, artifacts); exempt from the vocabulary and never MCP tools" }
+  - { name: artifacts, description: "The content store: artifacts addressed by BLAKE3 hash, with type, size, metadata and producing step (R15)" }
+  - { name: pipelines, description: "Pipelines of typed steps pinned as kind@version, and their runs with per-step status (R11, R15)" }
+  - { name: notifications, description: "The notification routing table, quiet hours, the daily digest and the Telegram bot" }
+  - { name: backups, description: "Nightly backup sets (pg_dump plus the content store), the weekly restore test and retention" }
+  - { name: playbooks, description: "Prefilled chains of commands with inputs, stop conditions and an estimate, run as playbook sessions (R16)" }
+  - { name: runs, description: "Training runs (one optimisation stage each), calibration, checkpoints and metric series (R12, R13, R44)" }
   - { name: planned, description: Named now, implemented in a later phase (501 until then) }
 
 paths:
@@ -706,7 +713,7 @@ paths:
         default: { $ref: "#/components/responses/Problem" }
     patch:
       operationId: compute.edit
-      summary: Change a host's description or a card's memory cap and allowed job kinds
+      summary: Change a host's description or a card's name, class, memory, memory cap, allowed job kinds and availability windows
       tags: [compute]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -805,30 +812,7 @@ paths:
           content: { application/json: { schema: { $ref: "#/components/schemas/Policies" } } }
         default: { $ref: "#/components/responses/Problem" }
 
-  /projects/{p}/runs:
-    x-cadence: { entity: runs }
-    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
-    post:
-      operationId: runs.new
-      summary: Start a training run; until phase 2 only ?dryRun=true answers, with GPU-hours, card, duration and data
-      tags: [projects]
-      x-cadence:
-        toolDescription: >
-          Start a training run from a base model (init base) or a checkpoint. Until phase 2 only the dry run works:
-          call it with dryRun=true to get the estimate (GPU-hours, duration, card, data volume, basis and ±) from the
-          defaults table and the compute entity; without dryRun it answers 501.
-      parameters:
-        - $ref: "#/components/parameters/IdempotencyKey"
-        - $ref: "#/components/parameters/DryRun"
-      requestBody:
-        required: true
-        content: { application/json: { schema: { $ref: "#/components/schemas/RunNew" } } }
-      responses:
-        "200":
-          description: Dry run — the estimate; nothing was written or queued
-          content: { application/json: { schema: { $ref: "#/components/schemas/RunEstimate" } } }
-        "202": { $ref: "#/components/responses/JobAccepted" }
-        default: { $ref: "#/components/responses/Problem" }
+  # runs.new moved to the stream R section (phase 2 · wave 2) with the rest of runs.*
 
   # ---------------------------------------------------------------- approvals, policy engine, audit, jobs (phase 1 · stream C) — add paths below this line
   #
@@ -957,6 +941,24 @@ paths:
       operationId: jobs.get
       summary: Get a job
       tags: [jobs]
+      responses:
+        "200":
+          description: The job
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Job" } } }
+        default: { $ref: "#/components/responses/Problem" }
+    # jobs.edit is stream W's (phase 2): the Queue reorders step jobs by priority.
+    patch:
+      operationId: jobs.edit
+      summary: Change a step job's priority (higher starts first; the Queue's reorder)
+      tags: [jobs]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/JobEdit" } } }
       responses:
         "200":
           description: The job
@@ -1128,6 +1130,27 @@ paths:
           description: Files by path, with the commit the ref resolved to
           content: { application/json: { schema: { $ref: "#/components/schemas/RecipeList" } } }
         default: { $ref: "#/components/responses/Problem" }
+    # phase 2 · wave 2 · stream U: a new recipe file (an augmentation profile) from the Recipe document.
+    post:
+      operationId: recipes.new
+      summary: Create one text file in the project repository and commit it to main
+      tags: [projects]
+      x-cadence:
+        toolDescription: >
+          Create one UTF-8 text file in the project repository and commit it to main as the caller; a path that
+          exists answers 409 (change it with recipes.edit). Agents create files in their session worktree; the
+          default preset does not allow this tool.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/RecipeNew" } } }
+      responses:
+        "201":
+          description: The file as committed (or, for a dry run, as it would be)
+          content: { application/json: { schema: { $ref: "#/components/schemas/Recipe" } } }
+        default: { $ref: "#/components/responses/Problem" }
 
   /projects/{p}/recipes/{path}:
     x-cadence: { entity: recipes }
@@ -1143,6 +1166,29 @@ paths:
       responses:
         "200":
           description: The file
+          content: { application/json: { schema: { $ref: "#/components/schemas/Recipe" } } }
+        default: { $ref: "#/components/responses/Problem" }
+    # phase 2 · wave 2 · stream U: the Recipe document's form edits (an augmentation profile) commit through this.
+    patch:
+      operationId: recipes.edit
+      summary: Write one text file of the project repository and commit it to main (the Recipe document's edits)
+      tags: [projects]
+      x-cadence:
+        toolDescription: >
+          Change one UTF-8 text file of the project repository and commit it to main as the caller. Send ifMatch with
+          the commit that last changed the file (history[0].sha from recipes.get); recipes.new creates a file. Files rendered from the agent profile (AGENTS.md, CLAUDE.md, .claude/settings.json,
+          opencode.json) change through agentProfile.edit instead. Agents edit files in their session worktree; the
+          default preset does not allow this tool.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/RecipeEdit" } } }
+      responses:
+        "200":
+          description: The file as committed (or, for a dry run, as it would be), with its history
           content: { application/json: { schema: { $ref: "#/components/schemas/Recipe" } } }
         default: { $ref: "#/components/responses/Problem" }
 
@@ -1945,6 +1991,1131 @@ paths:
           content: { application/json: { schema: { $ref: "#/components/schemas/HostReleased" } } }
         default: { $ref: "#/components/responses/Problem" }
 
+  # ---------------------------------------------------------------- worker protocol (exempt: tag worker, never MCP tools; phase 2 · wave 0)
+  /worker-registrations:
+    x-cadence: { entity: workerRegistrations }
+    post:
+      operationId: workerRegistrations.new
+      summary: Publish the worker's runtime, step kinds and model families at start; answers the worker id
+      tags: [worker]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/WorkerRegistration" } } }
+      responses:
+        "200":
+          description: The worker as registered, with the registry versions its publication resolved to
+          content: { application/json: { schema: { $ref: "#/components/schemas/Worker" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /worker-leases:claim:
+    x-cadence: { entity: workerLeases }
+    post:
+      operationId: workerLeases.claim
+      summary: Long-poll for a step to run on one of this worker's cards
+      tags: [worker]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/WorkerClaim" } } }
+      responses:
+        "200":
+          description: A lease (absent when the wait passed with nothing this worker may run)
+          content: { application/json: { schema: { $ref: "#/components/schemas/WorkerClaimResult" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /worker-leases/{id}:report:
+    x-cadence: { entity: workerLeases }
+    parameters: [{ $ref: "#/components/parameters/LeaseId" }]
+    post:
+      operationId: workerLeases.report
+      summary: Heartbeat with progress and card telemetry; three missed beats reap the lease
+      tags: [worker]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/WorkerReport" } } }
+      responses:
+        "200":
+          description: Whether the worker must stop the step (the job was cancelled or paused)
+          content: { application/json: { schema: { $ref: "#/components/schemas/WorkerReportAck" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /worker-leases/{id}/worker-logs:
+    x-cadence: { entity: workerLogs }
+    parameters: [{ $ref: "#/components/parameters/LeaseId" }]
+    post:
+      operationId: workerLogs.new
+      summary: Append NDJSON log lines to the job's log; they stream on job.{id}.log
+      tags: [worker]
+      requestBody:
+        required: true
+        content:
+          application/x-ndjson:
+            schema: { type: string, description: "One WorkerLogLine JSON object per line; at most 1 MiB per request" }
+      responses:
+        "204": { description: Appended }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /worker-leases/{id}/worker-metrics:
+    x-cadence: { entity: workerMetrics }
+    parameters: [{ $ref: "#/components/parameters/LeaseId" }]
+    post:
+      operationId: workerMetrics.new
+      summary: Append a batch of metric points (loss, validation WER, LR, throughput, card memory)
+      tags: [worker]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/WorkerMetricBatch" } } }
+      responses:
+        "204": { description: Stored }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /worker-leases/{id}/worker-outputs:
+    x-cadence: { entity: workerOutputs }
+    parameters: [{ $ref: "#/components/parameters/LeaseId" }]
+    post:
+      operationId: workerOutputs.new
+      summary: Publish an intermediate output of a running step (a validation checkpoint); recorded and hooked at once
+      description: >
+        The artifact must already be in the content store and name one of the step's outputs with its declared type.
+        The control plane records it and runs the output hooks of its type in their own transaction (a `checkpoint`
+        registers on the run and re-ranks its top k), so outputs published during a lease survive a pause, a window
+        close or a failure. Publishing the same hash again is a no-op. The release still sends the step's final
+        outputs.
+      tags: [worker]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/WorkerOutput" } } }
+      responses:
+        "204": { description: Recorded (or recorded before) }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /worker-leases/{id}:release:
+    x-cadence: { entity: workerLeases }
+    parameters: [{ $ref: "#/components/parameters/LeaseId" }]
+    post:
+      operationId: workerLeases.release
+      summary: Complete a lease with the step's outcome, its output artifacts and final metrics, or a typed error
+      tags: [worker]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/StepOutcome" } } }
+      responses:
+        "204": { description: Recorded; the control plane advances the pipeline }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /worker-artifacts/{hash}:
+    x-cadence: { entity: workerArtifacts }
+    parameters: [{ $ref: "#/components/parameters/ArtifactHash" }]
+    put:
+      operationId: workerArtifacts.set
+      summary: Upload a blob into the content store (workers without the shared volume); the hash is verified
+      tags: [worker]
+      requestBody:
+        required: true
+        content: { application/octet-stream: { schema: { type: string, format: binary } } }
+      responses:
+        "204": { description: Stored (or already present) }
+        default: { $ref: "#/components/responses/Problem" }
+
+  # ---------------------------------------------------------------- worker, queue, telemetry, runtimes (phase 2 · stream W) — add paths below this line
+  /registry/runtimes:
+    x-cadence: { entity: runtimes, kind: runtime }
+    get:
+      operationId: runtimes.list
+      summary: List runtime versions (container image pinned by digest, environment lock, worker plugin) published by workers
+      tags: [registry]
+      x-cadence:
+        toolDescription: >
+          List runtimes: the container images step kinds run in, each pinned by digest with its environment lock
+          (CUDA, PyTorch, framework versions). Workers publish them at start; a new digest is a new version. Filter
+          collection=runtime/<name>.
+      parameters:
+        - $ref: "#/components/parameters/RegistryCollectionFilter"
+        - $ref: "#/components/parameters/RegistryStateFilter"
+      responses:
+        "200":
+          description: Runtime versions, newest first
+          content: { application/json: { schema: { $ref: "#/components/schemas/RuntimeVersionList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/runtimes/{id}:
+    x-cadence: { entity: runtimes, kind: runtime }
+    parameters: [{ $ref: "#/components/parameters/VersionId" }]
+    get:
+      operationId: runtimes.get
+      summary: Get a runtime version with the workers that run it
+      tags: [registry]
+      responses:
+        "200":
+          description: The version
+          content: { application/json: { schema: { $ref: "#/components/schemas/RuntimeVersion" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/model-families:
+    x-cadence: { entity: modelFamilies, kind: model_family }
+    get:
+      operationId: modelFamilies.list
+      summary: List model family versions (architecture, capabilities, latency profiles, role step kinds) published by runtimes
+      tags: [registry]
+      x-cadence:
+        toolDescription: >
+          List model families: what a runtime can train and decode — framework, architecture, capabilities, latency
+          profiles (e.g. 160 ms) and the step kind that fills each role (calibrate, train, average, transcribe).
+          Render options from the descriptor; never assume a family by name.
+      parameters:
+        - $ref: "#/components/parameters/RegistryCollectionFilter"
+        - $ref: "#/components/parameters/RegistryStateFilter"
+      responses:
+        "200":
+          description: Model family versions, newest first
+          content: { application/json: { schema: { $ref: "#/components/schemas/ModelFamilyVersionList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/model-families/{id}:
+    x-cadence: { entity: modelFamilies, kind: model_family }
+    parameters: [{ $ref: "#/components/parameters/VersionId" }]
+    get:
+      operationId: modelFamilies.get
+      summary: Get a model family version
+      tags: [registry]
+      responses:
+        "200":
+          description: The version
+          content: { application/json: { schema: { $ref: "#/components/schemas/ModelFamilyVersion" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/step-kinds:
+    x-cadence: { entity: stepKinds, kind: step_kind }
+    get:
+      operationId: stepKinds.list
+      summary: List step kind versions (parameter schema with defaults, inputs, outputs, resources, runtime)
+      tags: [registry]
+      x-cadence:
+        toolDescription: >
+          List step kinds a pipeline can pin as kind@version: the parameter schema (every parameter with its default,
+          description, source and safe range), consumed and produced artifact types, resources and the runtime that
+          runs it. Filter collection=step-kind/<name>.
+      parameters:
+        - $ref: "#/components/parameters/RegistryCollectionFilter"
+        - $ref: "#/components/parameters/RegistryStateFilter"
+      responses:
+        "200":
+          description: Step kind versions, newest first
+          content: { application/json: { schema: { $ref: "#/components/schemas/StepKindVersionList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/step-kinds/{id}:
+    x-cadence: { entity: stepKinds, kind: step_kind }
+    parameters: [{ $ref: "#/components/parameters/VersionId" }]
+    get:
+      operationId: stepKinds.get
+      summary: Get a step kind version
+      tags: [registry]
+      responses:
+        "200":
+          description: The version
+          content: { application/json: { schema: { $ref: "#/components/schemas/StepKindVersion" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /jobs/{id}:pause:
+    x-cadence: { entity: jobs }
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      operationId: jobs.pause
+      summary: Pause a step job; a queued one is held back, a running one saves its state and returns to the queue
+      tags: [jobs]
+      x-cadence:
+        toolDescription: >
+          Pause a step job (training, eval, data). A queued job is not started until jobs.resume; a running one is
+          told to stop at its next heartbeat, saves its training state and waits in the queue, resuming from that
+          state. Only jobs that run on a worker can be paused.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      responses:
+        "200":
+          description: The job with pausedAt set
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Job" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /jobs/{id}:resume:
+    x-cadence: { entity: jobs }
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      operationId: jobs.resume
+      summary: Resume a paused step job; it waits in the queue for a free card (from its saved training state)
+      tags: [jobs]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      responses:
+        "200":
+          description: The job without pausedAt
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Job" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /jobs/{id}/job-logs:
+    x-cadence: { entity: jobLogs }
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      operationId: jobLogs.list
+      summary: Read a job's log lines from its worker, filtered by level and text, after a line number
+      tags: [jobs]
+      x-cadence:
+        toolDescription: >
+          Read the log of a job that ran on a worker: lines {seq, t, level, msg, fields}. level=warn keeps warn and
+          error; text matches the message (case-insensitive); after=<seq> pages forward (nextAfter); tail=true returns
+          the last lines instead of the first. Live lines stream on job.{id}.log.
+      parameters:
+        - { name: level, in: query, description: Minimum level, schema: { type: string, enum: [debug, info, warn, error] } }
+        - { name: text, in: query, description: Text the message must contain (case-insensitive), schema: { type: string, maxLength: 200 } }
+        - { name: after, in: query, description: Only lines after this line number, schema: { type: integer, minimum: 0 } }
+        - { name: tail, in: query, description: The last matching lines instead of the first, schema: { type: boolean, default: false } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 5000, default: 500 } }
+      responses:
+        "200":
+          description: Matching lines in order
+          content: { application/json: { schema: { $ref: "#/components/schemas/JobLogPage" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /queue-entries:
+    x-cadence: { entity: queueEntries }
+    get:
+      operationId: queueEntries.list
+      summary: The step queue across projects — waiting, paused and running step jobs with their card and lease
+      tags: [jobs]
+      x-cadence:
+        toolDescription: >
+          The GPU queue: step jobs waiting, paused or running on a worker, in start order (the project's queue
+          priority, then the job's priority, then first come), with the card and worker holding each running one.
+          Reorder with jobs.edit (a job's priority) or projects.edit (budgets.queuePriority), pause with jobs.pause. A project-scoped credential sees its own project's entries only.
+      parameters:
+        - { name: project, in: query, description: Only this project's entries (slug), schema: { type: string } }
+      responses:
+        "200":
+          description: Entries, running ones first, then in start order
+          content: { application/json: { schema: { $ref: "#/components/schemas/QueueEntryList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  # ---------------------------------------------------------------- artifacts and pipelines (phase 2 · stream P) — add paths below this line
+  /artifacts/{hash}:
+    x-cadence: { entity: artifacts }
+    parameters: [{ $ref: "#/components/parameters/ArtifactHash" }]
+    get:
+      operationId: artifacts.get
+      summary: Get an artifact by hash — type, size, metadata, producing step, a directory's files, and small content
+      tags: [artifacts]
+      x-cadence:
+        toolDescription: >
+          Read an artifact of the content store by its hash (b3:<64 hex>): type, size, neutral metadata, the pipeline
+          step that produced it and, for a directory artifact, its file list. With content=true a file artifact of at
+          most 1 MiB comes back inline (utf8 or base64); for a directory pass path to read one of its files. Larger
+          content is omitted (contentOmitted says why) — artifacts are read by steps, not copied into a context.
+      parameters:
+        - { name: content, in: query, description: "Include the content when it is at most 1 MiB", schema: { type: boolean, default: false } }
+        - { name: path, in: query, description: "With content=true on a directory artifact: the file to read", schema: { type: string, maxLength: 1000 } }
+      responses:
+        "200":
+          description: The artifact
+          content: { application/json: { schema: { $ref: "#/components/schemas/Artifact" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /projects/{p}/pipelines:
+    x-cadence: { entity: pipelines }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    get:
+      operationId: pipelines.list
+      summary: The project's pipelines (pipelines/*.yaml at a ref) and the bundled templates it does not override
+      tags: [pipelines]
+      x-cadence:
+        toolDescription: >
+          List the pipelines this project can run: every pipelines/<name>.yaml of the project repository at ref
+          (default main) plus the bundled templates it has no file for. Each has its version (the commit that last
+          changed the file; send it as ifMatch to pipelines.run), its inputs by artifact type and its steps pinned as
+          kind@version with only the parameters that depart from defaults. A file that does not parse carries error.
+      parameters:
+        - { name: ref, in: query, description: "Branch, tag or commit (default main)", schema: { type: string, maxLength: 200 } }
+      responses:
+        "200":
+          description: Pipelines by name
+          content: { application/json: { schema: { $ref: "#/components/schemas/PipelineList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /projects/{p}/pipelines/{name}:run:
+    x-cadence: { entity: pipelines }
+    parameters:
+      - $ref: "#/components/parameters/ProjectSlug"
+      - { name: name, in: path, required: true, description: "Pipeline name (pipelines/<name>.yaml)", schema: { type: string, pattern: "^[a-z][a-z0-9-]{0,62}$" } }
+    post:
+      operationId: pipelines.run
+      summary: Validate a pipeline against the step registry and start a pipeline run (dryRun validates and estimates)
+      tags: [pipelines]
+      x-cadence:
+        toolDescription: >
+          Run a pipeline of this project. Always call it with dryRun=true first: that validates the pipeline against
+          the published step kinds (kind@version exists, input and output artifact types match, parameters fit each
+          kind's schema, no cycles), resolves every parameter from defaults.yaml, lists the departures from defaults
+          and sums the known estimates, without starting anything; a broken pipeline answers pipeline-invalid with one
+          error per problem. Then run it for real with the same body and ifMatch = the pipeline's version from
+          pipelines.list (or "*" for whatever is at ref). inputs maps each pipeline input to an artifact {hash, type};
+          params overrides parameters per step id; finished steps with the same input hash are reused unless fresh.
+          The answer is the pipeline run (plr_…): follow pipeline_run.{id} or call pipelineRuns.wait. Spending GPU time
+          over the budget answers 202 with an approvalId instead. A dataset input of an eval-only version (or a mix
+          input referencing one) that a training step reads answers eval-only-dataset.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/PipelineRunNew" } } }
+      responses:
+        "200":
+          description: Dry run — the validated plan with resolved parameters, departures and the estimate; nothing started
+          content: { application/json: { schema: { $ref: "#/components/schemas/PipelinePlan" } } }
+        "201":
+          description: Started; the pipeline run with its steps (ready steps are queued as step jobs)
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/PipelineRun" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /projects/{p}/pipeline-runs:
+    x-cadence: { entity: pipelineRuns }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    get:
+      operationId: pipelineRuns.list
+      summary: Pipeline runs of a project, newest first
+      tags: [pipelines]
+      parameters:
+        - { name: state, in: query, description: Only runs in this state, schema: { $ref: "#/components/schemas/PipelineRunState" } }
+        - { name: pipeline, in: query, description: Only runs of this pipeline, schema: { type: string, maxLength: 63 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+      responses:
+        "200":
+          description: Pipeline runs, newest first (without their steps)
+          content: { application/json: { schema: { $ref: "#/components/schemas/PipelineRunList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /pipeline-runs/{id}:
+    x-cadence: { entity: pipelineRuns }
+    parameters: [{ name: id, in: path, required: true, description: "Pipeline run id (plr_…)", schema: { type: string } }]
+    get:
+      operationId: pipelineRuns.get
+      summary: Get a pipeline run with the status, inputs, outputs, attempts and departures of every step
+      tags: [pipelines]
+      responses:
+        "200":
+          description: The pipeline run
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/PipelineRun" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /pipeline-runs/{id}:cancel:
+    x-cadence: { entity: pipelineRuns }
+    parameters: [{ name: id, in: path, required: true, description: "Pipeline run id (plr_…)", schema: { type: string } }]
+    post:
+      operationId: pipelineRuns.cancel
+      summary: Cancel a pipeline run; waiting steps never start and running step jobs are cancelled
+      tags: [pipelines]
+      x-cadence:
+        toolDescription: >
+          Cancel a pipeline run: steps that have not started are cancelled, queued and running step jobs are
+          cancelled (a running step stops on its worker), finished steps keep their outputs for reuse. Send ifMatch
+          with the run's etag (rev) from pipelineRuns.get.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      responses:
+        "200":
+          description: The cancelled pipeline run
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/PipelineRun" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /pipeline-runs/{id}:retry:
+    x-cadence: { entity: pipelineRuns }
+    parameters: [{ name: id, in: path, required: true, description: "Pipeline run id (plr_…)", schema: { type: string } }]
+    post:
+      operationId: pipelineRuns.retry
+      summary: Retry a failed step of a pipeline run as a new attempt; the run continues from there
+      tags: [pipelines]
+      x-cadence:
+        toolDescription: >
+          Retry one failed (or cancelled) step of a pipeline run as a new attempt, with the same resolved parameters
+          and inputs; finished steps are not re-run and the run continues after it. Without step, every failed step
+          is retried. batchScale (0–1] shrinks the batch after an out-of-memory failure. Send ifMatch with the run's
+          etag (rev).
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: false
+        content: { application/json: { schema: { $ref: "#/components/schemas/PipelineRunRetry" } } }
+      responses:
+        "200":
+          description: The pipeline run with the step queued again
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/PipelineRun" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /pipeline-runs/{id}:wait:
+    x-cadence: { entity: pipelineRuns }
+    parameters: [{ name: id, in: path, required: true, description: "Pipeline run id (plr_…)", schema: { type: string } }]
+    get:
+      operationId: pipelineRuns.wait
+      summary: Wait until a pipeline run ends or the timeout passes, then return it (agents)
+      tags: [pipelines]
+      x-cadence:
+        toolDescription: >
+          Wait for a pipeline run started by pipelines.run. Returns the run as soon as it is done, failed or
+          cancelled, or when the timeout (seconds, at most 60) passes — check state and call again while it is running.
+      parameters:
+        - { name: timeout, in: query, description: Seconds to wait, schema: { type: integer, minimum: 0, maximum: 60, default: 30 } }
+      responses:
+        "200":
+          description: The pipeline run, ended or as it is at the timeout
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/PipelineRun" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+
+  # ---------------------------------------------------------------- data entities and imports (phase 2 · stream D) — add paths below this line
+
+  /registry/sources:
+    x-cadence: { entity: sources }
+    get:
+      operationId: sources.list
+      summary: List sources (corpora with licence, kind and languages; eval-only until cleared for training)
+      tags: [registry]
+      x-cadence:
+        toolDescription: >
+          List registry sources: the corpora imported audio comes from (FLEURS, Common Voice, own calls), each with its
+          licence, kind (public, production, synthetic), languages and trainingCleared. A source that is not cleared
+          is eval-only: dataset versions built from it can be evaluated but never mixed or trained on. Archived
+          sources are left out unless archived=true.
+      parameters:
+        - { name: archived, in: query, description: Include archived sources, schema: { type: boolean, default: false } }
+        - { name: kind, in: query, description: Only sources of this kind, schema: { $ref: "#/components/schemas/SourceKind" } }
+        - { name: language, in: query, description: "Only sources covering this language (he or he-IL; either matches the other)", schema: { type: string } }
+      responses:
+        "200":
+          description: Sources by name
+          content: { application/json: { schema: { $ref: "#/components/schemas/SourceList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/sources/{id}:
+    x-cadence: { entity: sources }
+    parameters: [{ $ref: "#/components/parameters/SourceId" }]
+    get:
+      operationId: sources.get
+      summary: Get a source with its utterance count, hours and the dataset versions built from it
+      tags: [registry]
+      responses:
+        "200":
+          description: The source
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Source" } } }
+        default: { $ref: "#/components/responses/Problem" }
+    patch:
+      operationId: sources.edit
+      summary: Change a source's description or licence, or clear it for training (a person's decision)
+      tags: [registry]
+      x-cadence:
+        toolDescription: >
+          Change a source's description or licence, or set trainingCleared. Clearing a source for training is a
+          person's decision (the licence allows training and the data may be used): an agent's sources.edit waits
+          for a person's approval (202 with approvalId). Sources are shared by every project. Send ifMatch with the
+          etag (or rev) of your last sources.get. An archived source cannot be edited.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/SourceEdit" } } }
+      responses:
+        "200":
+          description: The edited source (or, for a dry run, what it would become)
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Source" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/sources/{id}:archive:
+    x-cadence: { entity: sources }
+    parameters: [{ $ref: "#/components/parameters/SourceId" }]
+    post:
+      operationId: sources.archive
+      summary: Archive a source (soft); it takes no new imports, its utterances and dataset versions stay
+      tags: [registry]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      responses:
+        "200":
+          description: The archived source
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Source" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/utterances:
+    x-cadence: { entity: utterances }
+    get:
+      operationId: utterances.list
+      summary: A page of utterances (audio segments by content hash) filtered by source, dataset version, split or language
+      tags: [registry]
+      x-cadence:
+        toolDescription: >
+          List utterances, oldest first, a page at a time: each is one audio segment identified by the BLAKE3 hash of
+          its bytes, with duration, language, speaker, sample rate, its source and its transcripts (text with origin
+          human, pseudo-label or model:<id>). Filter by source (id or name), dataset (a dataset version id, ver_…)
+          and split (train, validation, test; needs dataset), or language. Pass next as after for the next page.
+      parameters:
+        - { name: source, in: query, description: Source id (src_…) or name, schema: { type: string } }
+        - { name: dataset, in: query, description: Dataset version id (ver_…), schema: { type: string } }
+        - { name: split, in: query, description: Split within the dataset version (needs dataset), schema: { $ref: "#/components/schemas/DatasetSplitName" } }
+        - { name: language, in: query, description: "Language (he or he-IL; either matches the other)", schema: { type: string } }
+        - { name: after, in: query, description: "Cursor: the `next` value of the previous page", schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+      responses:
+        "200":
+          description: A page of utterances, oldest first
+          content: { application/json: { schema: { $ref: "#/components/schemas/UtteranceList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/utterances/{id}:
+    x-cadence: { entity: utterances }
+    parameters:
+      - { name: id, in: path, required: true, description: "Utterance id (utt_…) or content hash (b3:…)", schema: { type: string } }
+    get:
+      operationId: utterances.get
+      summary: Get an utterance with its transcripts, fingerprints and the dataset versions (and splits) that hold it
+      tags: [registry]
+      responses:
+        "200":
+          description: The utterance
+          content: { application/json: { schema: { $ref: "#/components/schemas/Utterance" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  # ---------------------------------------------------------------- notifications and operations (phase 2 · stream O) — add paths below this line
+
+  /notification-rules:
+    x-cadence: { entity: notificationRules, kind: notification_rule }
+    get:
+      operationId: notificationRules.list
+      summary: The notification routing table — one rule per event class with its channels and timing
+      tags: [notifications]
+      responses:
+        "200":
+          description: The rules in table order
+          content: { application/json: { schema: { $ref: "#/components/schemas/NotificationRuleList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /notification-rules/{id}:
+    x-cadence: { entity: notificationRules, kind: notification_rule }
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    patch:
+      operationId: notificationRules.edit
+      summary: Change which channels an event class reaches and when (admin only)
+      tags: [notifications]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/NotificationRuleEdit" } } }
+      responses:
+        "200":
+          description: The edited rule (or, for a dry run, what it would become)
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/NotificationRule" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /notification-settings:
+    x-cadence: { entity: notificationSettings, kind: notification_settings, singleton: true }
+    get:
+      operationId: notificationSettings.get
+      summary: Quiet hours, the digest time and the Telegram bot's allow-listed chats and status
+      tags: [notifications]
+      responses:
+        "200":
+          description: The settings; the bot token is never returned, only whether one is stored
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/NotificationSettings" } } }
+        default: { $ref: "#/components/responses/Problem" }
+    patch:
+      operationId: notificationSettings.edit
+      summary: Change quiet hours, the digest time or the allow-listed Telegram chats (admin only)
+      tags: [notifications]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/NotificationSettingsEdit" } } }
+      responses:
+        "200":
+          description: The edited settings (or, for a dry run, what they would become)
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/NotificationSettings" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /telegram-bot:
+    x-cadence: { entity: telegramBot, kind: telegram_bot, singleton: true }
+    put:
+      operationId: telegramBot.set
+      summary: Store or replace the Telegram bot token (write-only, kept in the secret store as telegram-bot-token)
+      tags: [notifications]
+      x-cadence:
+        toolDescription: >
+          Store or replace the Telegram bot token. The value is write-only, encrypted in the secret store and never
+          returned. Admin only; agents must not call this — secrets never enter an agent context.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatchOptional"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/TelegramBotSet" } } }
+      responses:
+        "200":
+          description: The notification settings with the bot's status
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/NotificationSettings" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /telegram-bot:verify:
+    x-cadence: { entity: telegramBot, kind: telegram_bot, singleton: true }
+    post:
+      operationId: telegramBot.verify
+      summary: Check the bot token with Telegram and send a test message to every allow-listed chat
+      tags: [notifications]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      responses:
+        "200":
+          description: What Telegram answered, per chat
+          content: { application/json: { schema: { $ref: "#/components/schemas/TelegramBotVerify" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /backups:
+    x-cadence: { entity: backups, kind: backup }
+    get:
+      operationId: backups.list
+      summary: Backup sets, newest first, with the schedule and the last restore test
+      tags: [backups]
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+      responses:
+        "200":
+          description: Backup sets and the schedule
+          content: { application/json: { schema: { $ref: "#/components/schemas/BackupList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+    post:
+      operationId: backups.new
+      summary: Take a backup set now (pg_dump plus the content store); answers the job
+      tags: [backups]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      responses:
+        "200":
+          description: Dry run — the backup set that would be taken; nothing was written or queued
+          content: { application/json: { schema: { $ref: "#/components/schemas/Backup" } } }
+        "202": { $ref: "#/components/responses/JobAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /backups/{id}:
+    x-cadence: { entity: backups, kind: backup }
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      operationId: backups.get
+      summary: Get a backup set with its manifest and last restore test report
+      tags: [backups]
+      responses:
+        "200":
+          description: The backup set
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Backup" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /backups/{id}:verify:
+    x-cadence: { entity: backups, kind: backup }
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      operationId: backups.verify
+      summary: Restore the set into a scratch database and check it (the weekly restore test, now); answers the job
+      tags: [backups]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      responses:
+        "200":
+          description: Dry run — the set that would be restored; nothing was queued
+          content: { application/json: { schema: { $ref: "#/components/schemas/Backup" } } }
+        "202": { $ref: "#/components/responses/JobAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  # ---------------------------------------------------------------- runs, checkpoints, metrics (phase 2 · wave 2 · stream R) — add paths below this line
+  /projects/{p}/runs:
+    x-cadence: { entity: runs }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    get:
+      operationId: runs.list
+      summary: Training runs of a project, newest first
+      tags: [runs]
+      x-cadence:
+        toolDescription: >
+          List the project's training runs, newest first: status (queued, running, paused, done, failed, cancelled),
+          start (base model or checkpoint), mix revision, step budget, final metrics and the best checkpoint. Filter
+          by status. Open one with runs.get.
+      parameters:
+        - { name: status, in: query, description: Only runs in this status, schema: { $ref: "#/components/schemas/RunStatus" } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+      responses:
+        "200":
+          description: Runs, newest first
+          content: { application/json: { schema: { $ref: "#/components/schemas/RunList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+    post:
+      operationId: runs.new
+      summary: Start a training run (one optimisation stage); ?dryRun=true answers the estimate first
+      tags: [runs]
+      x-cadence:
+        toolDescription: >
+          Start one training stage: a base model (init base) or a checkpoint (init checkpoint, ckp_…), a mix (mix_…
+          or its name, at its current revision unless mixRevision), the project's train-stage pipeline at a commit,
+          a step budget and a seed. Always call it with dryRun=true first: the answer is the estimate (GPU-hours,
+          duration, card, data volume, basis table or measured, ±, today's GPU spend against the project's budget).
+          Without dryRun it answers 201 with the run, or 202 with an approvalId when the estimate exceeds today's
+          remaining GPU budget of the project or of your session — then wait for approval.decided. Eval-only
+          datasets are refused. Follow the run with runs.get and metrics.get; checkpoints arrive on checkpoints.list.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/RunNew" } } }
+      responses:
+        "200":
+          description: Dry run — the estimate; nothing was written or queued
+          content: { application/json: { schema: { $ref: "#/components/schemas/RunEstimate" } } }
+        "201":
+          description: The run, queued
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Run" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /projects/{p}/runs:calibrate:
+    x-cadence: { entity: runs }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    post:
+      operationId: runs.calibrate
+      summary: Measure seconds per step and batch sizes for a base model on the training card (the family's calibrate step)
+      tags: [runs]
+      x-cadence:
+        toolDescription: >
+          Calibrate before the first run of a base model on a card: runs the model family's calibrate step on the
+          mix's data under the card's memory cap. When it finishes, runs.new?dryRun=true estimates switch from basis
+          table to basis measured for that base model, card class, memory cap and precision. Answers 201 with the
+          pipeline run (follow it with pipelineRuns.wait), or 202 with an approvalId when today's GPU budget is spent.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/RunCalibrate" } } }
+      responses:
+        "200":
+          description: Dry run — the calibration's key and plan; nothing was queued
+          content: { application/json: { schema: { $ref: "#/components/schemas/RunCalibration" } } }
+        "201":
+          description: The calibration's pipeline run, queued
+          content: { application/json: { schema: { $ref: "#/components/schemas/RunCalibration" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /runs/{id}:
+    x-cadence: { entity: runs }
+    parameters: [{ name: id, in: path, required: true, description: "Run id (run_…)", schema: { type: string } }]
+    get:
+      operationId: runs.get
+      summary: Get a run with its stage timeline, final metrics, departures from defaults and parent run
+      tags: [runs]
+      x-cadence:
+        toolDescription: >
+          A training run: status, the stage timeline (calibrate, train, … with their states and attempts), the job
+          to pause or cancel (currentJobId, via jobs.pause | jobs.resume | jobs.cancel), OOM retries (batch scale),
+          final metrics, departures from defaults, the parent run and the config diff against it, the best
+          checkpoint and the estimate it started with.
+      responses:
+        "200":
+          description: The run
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Run" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /runs/{id}:resume:
+    x-cadence: { entity: runs }
+    parameters: [{ name: id, in: path, required: true, description: "Run id (run_…)", schema: { type: string } }]
+    post:
+      operationId: runs.resume
+      summary: Continue a stopped or failed run from its last training state (same stage, same optimiser state)
+      tags: [runs]
+      x-cadence:
+        toolDescription: >
+          Continue the same stage of a cancelled or failed run from its last saved training-state (same optimiser
+          and sampler state, same step budget). A paused step job resumes with jobs.resume instead. Send ifMatch with
+          the run's etag. Answers the run (queued again), 409 no-training-state when it never saved one (start a new
+          run), or 202 with an approvalId when the remaining steps exceed today's GPU budget.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      responses:
+        "200":
+          description: The run, queued again (or, for a dry run, what it would be)
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Run" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /runs/{id}:stage:
+    x-cadence: { entity: runs }
+    parameters: [{ name: id, in: path, required: true, description: "The parent run (run_…)", schema: { type: string } }]
+    post:
+      operationId: runs.stage
+      summary: Start a new stage from a checkpoint of this run with an explicit peak learning rate
+      tags: [runs]
+      x-cadence:
+        toolDescription: >
+          Start the next training stage from a checkpoint of this run (default its best kept checkpoint): a new run
+          with init checkpoint, a new optimiser and the peak learning rate you give (peakLr, e.g. 2e-5 for a
+          continuation), on the parent's mix unless you name another. The new run records the parent, and runs.get
+          shows the config diff against it. Send ifMatch with the parent's etag; dryRun=true answers the estimate.
+          Answers 201 with the new run or 202 with an approvalId over budget.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/RunStage" } } }
+      responses:
+        "200":
+          description: Dry run — the new stage's estimate
+          content: { application/json: { schema: { $ref: "#/components/schemas/RunEstimate" } } }
+        "201":
+          description: The new run, queued
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Run" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /projects/{p}/checkpoints:
+    x-cadence: { entity: checkpoints }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    get:
+      operationId: checkpoints.list
+      summary: Checkpoints of a project or of one run, best validation WER first
+      tags: [runs]
+      x-cadence:
+        toolDescription: >
+          Checkpoints registered by training runs (step, validation WER, family, weights hash; trained or averaged),
+          best validation WER first. Filter by run; kept=true lists only the top k per run (training.keep_top_k).
+          Average some with checkpoints.average; start a new stage from one with runs.stage.
+      parameters:
+        - { name: run, in: query, description: "Only this run's checkpoints (run_…)", schema: { type: string } }
+        - { name: kept, in: query, description: Only the checkpoints in their run's top k, schema: { type: boolean } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+      responses:
+        "200":
+          description: Checkpoints, best validation WER first
+          content: { application/json: { schema: { $ref: "#/components/schemas/CheckpointList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /checkpoints/{id}:
+    x-cadence: { entity: checkpoints }
+    parameters: [{ name: id, in: path, required: true, description: "Checkpoint id (ckp_…)", schema: { type: string } }]
+    get:
+      operationId: checkpoints.get
+      summary: Get a checkpoint with its artifact, metrics and lineage
+      tags: [runs]
+      responses:
+        "200":
+          description: The checkpoint
+          content: { application/json: { schema: { $ref: "#/components/schemas/Checkpoint" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /runs/{id}/checkpoints:average:
+    x-cadence: { entity: checkpoints }
+    parameters: [{ name: id, in: path, required: true, description: "Run id (run_…)", schema: { type: string } }]
+    post:
+      operationId: checkpoints.average
+      summary: Average chosen checkpoints of a run with the family's average step; the result is a new checkpoint of the run
+      tags: [runs]
+      x-cadence:
+        toolDescription: >
+          Average two or more checkpoints of one run (ids from checkpoints.list, typically the top k) with the model
+          family's average step. Answers 201 with the pipeline run; when it finishes the averaged checkpoint appears
+          in checkpoints.list (kind averaged, averagedFrom) with its own validation WER when the step measures one.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/CheckpointAverage" } } }
+      responses:
+        "200":
+          description: Dry run — the plan; nothing was queued
+          content: { application/json: { schema: { $ref: "#/components/schemas/CheckpointAverageStarted" } } }
+        "201":
+          description: The averaging pipeline run, queued
+          content: { application/json: { schema: { $ref: "#/components/schemas/CheckpointAverageStarted" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /metrics/{id}:
+    x-cadence: { entity: metrics }
+    parameters: [{ name: id, in: path, required: true, description: "The run whose metrics to read (run_…)", schema: { type: string } }]
+    get:
+      operationId: metrics.get
+      summary: A run's metric series, binned server-side for charts (min and max per bucket), with checkpoint marks
+      tags: [runs]
+      x-cadence:
+        toolDescription: >
+          Metric series of a training run (loss, val_wer, lr, …) for charts and for judging progress: choose names,
+          the x axis (step, epoch, wall seconds since the first point, or GPU-hours), and maxPoints — longer series
+          are binned server-side, each point carrying the bucket's mean value with min and max. afterStep returns
+          only newer points (live append). Checkpoint marks come along.
+      parameters:
+        - name: names
+          in: query
+          description: "Metric names (all when absent): repeat the parameter (names=loss&names=val_wer), as every array query parameter"
+          schema: { type: array, maxItems: 50, items: { type: string, maxLength: 100 } }
+        - { name: x, in: query, description: The x axis, schema: { $ref: "#/components/schemas/MetricAxis" } }
+        - { name: maxPoints, in: query, description: Points per series at most; longer series are binned, schema: { type: integer, minimum: 2, maximum: 10000, default: 1000 } }
+        - { name: afterStep, in: query, description: Only points after this optimiser step (live append), schema: { type: integer, format: int64, minimum: 0 } }
+      responses:
+        "200":
+          description: The series
+          content: { application/json: { schema: { $ref: "#/components/schemas/MetricSeriesSet" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+
+  # ---------------------------------------------------------------- playbooks (phase 2 · wave 2 · stream K) — add paths below this line
+  /playbooks:
+    x-cadence: { entity: playbooks }
+    get:
+      operationId: playbooks.list
+      summary: The playbooks Cadence ships, with their inputs, chain, stop conditions and estimate
+      tags: [playbooks]
+      x-cadence:
+        toolDescription: >
+          List the playbooks: prefilled chains of commands with inputs, stop conditions and an estimate (the sum of
+          the chain's step estimates). With project, inputs taken from the project (its base model, its adopted replay
+          corpus) are filled in and the estimate uses them. runnable says whether the playbook can run yet.
+      parameters:
+        - { name: project, in: query, description: "A project slug: fill project facts and estimate with them", schema: { $ref: "#/components/schemas/Slug" } }
+      responses:
+        "200":
+          description: Playbooks
+          content: { application/json: { schema: { $ref: "#/components/schemas/PlaybookList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /playbooks/{name}:
+    x-cadence: { entity: playbooks }
+    parameters:
+      - { name: name, in: path, required: true, description: "Playbook name (templates/playbooks/<name>.yaml)", schema: { type: string, pattern: "^[a-z][a-z0-9-]{0,62}$" } }
+    get:
+      operationId: playbooks.get
+      summary: One playbook with its inputs, chain, prompt template and estimate
+      tags: [playbooks]
+      parameters:
+        - { name: project, in: query, description: "A project slug: fill project facts and estimate with them", schema: { $ref: "#/components/schemas/Slug" } }
+      responses:
+        "200":
+          description: The playbook
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Playbook" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /projects/{p}/playbooks/{name}:run:
+    x-cadence: { entity: playbooks }
+    parameters:
+      - $ref: "#/components/parameters/ProjectSlug"
+      - { name: name, in: path, required: true, description: "Playbook name", schema: { type: string, pattern: "^[a-z][a-z0-9-]{0,62}$" } }
+    post:
+      operationId: playbooks.run
+      summary: Start a playbook session — dryRun answers the estimate, the plan and the rendered prompt without starting
+      tags: [playbooks]
+      x-cadence:
+        toolDescription: >
+          Run a playbook in a project: resolves its inputs (given, from defaults.yaml or from the project), renders its
+          prompt, sums the chain's estimate and starts an agent session of kind playbook whose plan is the chain. Call
+          it with dryRun=true first to see the estimate and the plan; ifMatch is the playbook's version (the etag of
+          playbooks.get) or "*". Agents cannot start playbook sessions; use playbooks.get for the estimate.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: false
+        content: { application/json: { schema: { $ref: "#/components/schemas/PlaybookRunNew" } } }
+      responses:
+        "200":
+          description: Dry run — the resolved inputs, estimate, plan and prompt; no session was started
+          content: { application/json: { schema: { $ref: "#/components/schemas/PlaybookRunResult" } } }
+        "201":
+          description: Started; the result carries the playbook session
+          content: { application/json: { schema: { $ref: "#/components/schemas/PlaybookRunResult" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+
+
+  # ---------------------------------------------------------------- content-store retention (phase 2 · stream E) — add paths below this line
+  /artifacts:evict:
+    x-cadence: { entity: artifacts }
+    post:
+      operationId: artifacts.evict
+      summary: Free content-store space by deleting superseded training states (always waits for an approval)
+      tags: [artifacts]
+      x-cadence:
+        toolDescription: >
+          Delete the blobs of superseded training-state artifacts from the content store: every state of a run whose
+          pipeline finished, and every state but the newest of a failed or cancelled run (runs.resume continues from
+          the newest). States a waiting or running step job names, inputs of running pipelines, artifacts a frozen
+          registry version or a checkpoint references and files another live artifact lists are kept. dryRun=true
+          answers the candidates, the artifacts kept with the reason and the bytes it would free. A real call always
+          answers 202 with an approvalId, for people too; once a person approves it, a job deletes the blobs (the
+          approval's result is 202 with its jobId) and marks the artifacts evicted (their index rows stay, so lineage still
+          resolves). Agents may not evict. The backup mirror is the way back.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: false
+        content: { application/json: { schema: { $ref: "#/components/schemas/ArtifactEvict" } } }
+      responses:
+        "200":
+          description: Dry run — the artifacts that would be evicted, the ones kept and the bytes freed; nothing changed
+          content: { application/json: { schema: { $ref: "#/components/schemas/EvictionPlan" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
   # ---------------------------------------------------------------- planned (later phases)
   /mounts:
     x-cadence: { entity: mounts, planned: 4 }
@@ -2004,12 +3175,30 @@ components:
       required: true
       description: "claude-code or opencode.<provider>"
       schema: { $ref: "#/components/schemas/AgentCredentialIdValue" }
+    SourceId:
+      name: id
+      in: path
+      required: true
+      description: Source id (src_…) or name (fleurs)
+      schema: { type: string }
     MixId:
       name: id
       in: path
       required: true
       description: Mix id (mix_…)
       schema: { type: string }
+    LeaseId:
+      name: id
+      in: path
+      required: true
+      description: Lease id (lse_…)
+      schema: { type: string }
+    ArtifactHash:
+      name: hash
+      in: path
+      required: true
+      description: "Artifact hash (b3:<64 hex>, BLAKE3-256 of the content)"
+      schema: { type: string, pattern: "^b3:[0-9a-f]{64}$" }
     AgentSessionId:
       name: id
       in: path
@@ -2125,6 +3314,7 @@ components:
         id: { type: string }
         name: { type: string }
         sessionId: { type: string }
+        channel: { type: string, enum: [telegram], description: "The channel a person acted through when it was not the web UI or the API (an approval decided from Telegram)" }
 
     Project:
       type: object
@@ -2415,8 +3605,8 @@ components:
     #
     RegistryKind:
       type: string
-      enum: [base_model, dataset_version, template]
-      description: The kinds registered so far; golden sets, sources, normalizers and model versions join in later phases
+      enum: [base_model, dataset_version, template, runtime, model_family, step_kind, noise_bank]
+      description: "The kinds registered so far; runtime, model_family and step_kind are published by workers (R40, R41, R45); noise_bank holds background noise for augmentation, registered by dataset_import with purpose noise; golden sets, normalizers and model versions join in later phases"
     VersionState:
       type: string
       enum: [draft, frozen, deprecated]
@@ -2511,6 +3701,15 @@ components:
         utterances: { type: integer }
         bytes: { type: integer, format: int64, description: Size of the frozen shards; estimated for fixtures }
         fixture: { type: boolean, description: "Metadata only: no audio is stored (phase-1 fixture so mixes have something to reference)" }
+        sourceIds: { type: array, items: { type: string }, description: "Sources (src_…) of the utterances; an imported version is eval-only while any of them is not cleared for training (phase 2)" }
+        licence: { type: string, description: "The sources' licences, joined with ' AND ' when there are several" }
+        languages: { type: array, items: { $ref: "#/components/schemas/DatasetLanguage" }, description: Utterances and hours per language }
+        artifact: { $ref: "#/components/schemas/ArtifactRef" }
+        evalOnly: { type: boolean, description: "Registered for evaluation only (golden and replay test sets): never mixed or trained on, whatever its sources" }
+        splitRule: { type: string, description: "How utterances were assigned to splits (speaker-disjoint, source, all-train, all-validation, all-test)" }
+        speakers: { type: integer }
+        tags: { type: array, items: { type: string }, description: "Tags given at import (golden, replay, eval-only, …)" }
+        lineage: { $ref: "#/components/schemas/DatasetLineage" }
     DatasetVersion:
       allOf:
         - $ref: "#/components/schemas/RegistryVersion"
@@ -2527,7 +3726,7 @@ components:
 
     TemplateKind:
       type: string
-      enum: [instructions, preset, skill, pipeline, agent-config]
+      enum: [instructions, preset, skill, pipeline, agent-config, playbook]
     TemplateFile:
       type: object
       required: [path, sha256, bytes]
@@ -2611,7 +3810,7 @@ components:
 
     JobKind:
       type: string
-      enum: [training, eval, shadow, export]
+      enum: [training, eval, shadow, export, data]
     ComputeCard:
       type: object
       required: [index, name, cardClass, memoryGb, memoryCapGb, allowedJobKinds]
@@ -2622,6 +3821,8 @@ components:
         memoryGb: { type: number, format: double }
         memoryCapGb: { type: number, format: double, description: "The memory a Cadence job may use on this card (CADENCE_GPU_MEMORY_CAP_GB)" }
         allowedJobKinds: { type: array, items: { $ref: "#/components/schemas/JobKind" } }
+        windows: { $ref: "#/components/schemas/AvailabilityWindows" }
+        telemetry: { $ref: "#/components/schemas/CardTelemetryReport" }
     ComputeHealth:
       type: object
       required: [state]
@@ -2652,8 +3853,12 @@ components:
       additionalProperties: false
       properties:
         index: { type: integer, minimum: 0 }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        cardClass: { type: string, pattern: "^[a-z0-9][a-z0-9-]{0,62}$", description: "Key into the estimate table in defaults.yaml (a corrected card: blackwell-48gb)" }
+        memoryGb: { type: number, format: double, exclusiveMinimum: 0, description: "The card's memory; the cap must stay at or below it" }
         memoryCapGb: { type: number, format: double, exclusiveMinimum: 0 }
         allowedJobKinds: { type: array, uniqueItems: true, items: { $ref: "#/components/schemas/JobKind" } }
+        windows: { $ref: "#/components/schemas/AvailabilityWindows" }
     ComputeEdit:
       type: object
       additionalProperties: false
@@ -2663,7 +3868,7 @@ components:
 
     SecretKind:
       type: string
-      enum: [huggingface, ngc, github, s3, judge-api, other]
+      enum: [huggingface, ngc, github, s3, judge-api, telegram, other]
     SecretName:
       type: string
       pattern: "^[a-z][a-z0-9_-]{1,62}$"
@@ -2763,17 +3968,28 @@ components:
         mix: { $ref: "#/components/schemas/DefaultSection" }
         drafts: { $ref: "#/components/schemas/DefaultSection" }
         cache: { $ref: "#/components/schemas/DefaultSection" }
+        data: { $ref: "#/components/schemas/DefaultSection" }
+        operations: { $ref: "#/components/schemas/DefaultSection" }
+        notifications: { $ref: "#/components/schemas/DefaultSection" }
+        backups: { $ref: "#/components/schemas/DefaultSection" }
+        augment: { $ref: "#/components/schemas/DefaultSection", description: "The recommended augmentation profile (docs/spec/03 \"Augmentation\"): what the Recipe form's Reset to recommended writes" }
         estimates:
           type: object
           required: [bytes_per_audio_hour, training]
           properties:
             bytes_per_audio_hour: { $ref: "#/components/schemas/DefaultValue" }
+            measured_plus_minus: { $ref: "#/components/schemas/DefaultValue" }
+            lease_overhead_seconds: { $ref: "#/components/schemas/DefaultValue" }
             training: { type: array, items: { $ref: "#/components/schemas/TrainingEstimateRow" } }
         compute:
           type: object
           required: [hosts]
           properties:
             hosts: { type: array, items: { $ref: "#/components/schemas/DefaultHost" } }
+        packs:
+          type: object
+          description: "One section per framework pack (R45), addressed as packs.<pack>.<key> by the step kinds' x-cadence defaultRef"
+          additionalProperties: { $ref: "#/components/schemas/DefaultSection" }
 
     PolicyBudgets:
       type: object
@@ -2783,11 +3999,12 @@ components:
         agentTurnsPerSession: { type: integer, description: "Default budgets.agent_turns_per_session" }
     Policies:
       type: object
-      required: [rev, updatedAt, budgets, departures]
+      required: [rev, updatedAt, budgets, timezone, departures]
       properties:
         rev: { type: integer }
         updatedAt: { type: string, format: date-time }
         budgets: { $ref: "#/components/schemas/PolicyBudgets" }
+        timezone: { type: string, description: "The instance timezone (IANA, e.g. Europe/Berlin): quiet hours, the daily digest and the backup schedule follow it" }
         departures:
           type: array
           items: { type: string }
@@ -2802,6 +4019,7 @@ components:
           properties:
             gpuHoursPerProjectPerDay: { type: number, format: double }
             agentTurnsPerSession: { type: integer }
+        timezone: { type: string, minLength: 1, maxLength: 64, description: "IANA timezone name, e.g. Europe/Berlin or UTC" }
 
     RunInit:
       type: string
@@ -2818,8 +4036,8 @@ components:
         baseModel:
           type: string
           description: "Base model version (ver_…), collection name (its newest frozen version) or @alias; default the defaults' base model"
-        checkpoint: { type: string, description: "Required when init is checkpoint (checkpoints arrive in phase 2)" }
-        steps: { type: integer, minimum: 1, description: "Default training.steps" }
+        checkpoint: { type: string, description: "The checkpoint to start from (ckp_…); required when init is checkpoint. The run's base model is then the checkpoint's" }
+        steps: { type: integer, minimum: 1, description: "Step budget of the stage (default training.steps); the train step's steps parameter" }
         precision: { $ref: "#/components/schemas/Precision" }
         gpus: { type: integer, minimum: 1, description: "Cards for the run; v1 accepts 1 (training.gpus)" }
         compute: { type: string, description: "Host id or name; default the first host whose card allows training" }
@@ -2827,7 +4045,16 @@ components:
           type: array
           maxItems: 100
           items: { type: string }
-          description: "Dataset versions (ver_… or @alias) the run reads, for the data volume; the mix replaces this in phase 2"
+          description: "Dry runs without a mix only: dataset versions (ver_… or @alias) for the data volume"
+        mix: { type: string, maxLength: 200, description: "The mix to train on (mix_… or its name); required unless dryRun with datasets" }
+        mixRevision: { type: integer, minimum: 1, description: "The mix revision (default its current one)" }
+        seed: { type: integer, minimum: 0, maximum: 2147483647, description: "The train step's seed parameter, when its kind has one (default: the kind's default)" }
+        pipeline: { type: string, maxLength: 63, description: "The recipe: a pipeline of the project repository (default training.pipeline, train-stage)" }
+        ref: { type: string, maxLength: 200, description: "Branch, tag or commit to read the pipeline at (default main)" }
+        params:
+          type: object
+          description: "Overrides of the train step's parameters (recorded as departures when they differ from the default)"
+        priority: { type: integer, minimum: -100, maximum: 100, default: 0, description: "Queue priority of the run's step jobs (higher first)" }
     EstimateRange:
       type: object
       required: [value, low, high]
@@ -2845,6 +4072,7 @@ components:
         gpuHours: { $ref: "#/components/schemas/EstimateRange" }
         durationSeconds: { $ref: "#/components/schemas/EstimateRange" }
         secondsPerStep: { type: number, format: double }
+        leaseOverheadSeconds: { type: number, format: double, description: "Fixed seconds a lease adds before and after its steps (model load, state and checkpoint saves): the calibration's measurement, else estimates.lease_overhead_seconds; durationSeconds = leaseOverheadSeconds + steps × secondsPerStep, the ± applying to the steps" }
         steps: { type: integer }
         gpus: { type: integer }
         precision: { $ref: "#/components/schemas/Precision" }
@@ -2870,9 +4098,23 @@ components:
           type: object
           required: [gpuHoursPerProjectPerDay, withinDailyBudget]
           properties:
-            gpuHoursPerProjectPerDay: { type: number, format: double }
-            withinDailyBudget: { type: boolean, description: "The upper bound fits the project's daily GPU-hour budget" }
-        source: { type: string, description: The source of the estimate-table row }
+            gpuHoursPerProjectPerDay: { type: number, format: double, description: "The project's daily GPU-hour budget" }
+            usedTodayGpuHours: { type: number, format: double, description: "GPU-hours the project's leases on GPU cards used today (policies timezone)" }
+            remainingGpuHours: { type: number, format: double, description: "Budget minus today's use (negative when overspent)" }
+            withinDailyBudget: { type: boolean, description: "Today's use plus the estimate fits the project's daily budget (over it, an agent's run waits for an approval)" }
+            sessionGpuHours: { type: number, format: double, description: "An agent session's GPU-hour budget (budgets.agent_gpu_hours_per_session), for a session's request" }
+            sessionUsedGpuHours: { type: number, format: double, description: "GPU-hours the session's leases used so far" }
+        source: { type: string, description: "The source of the estimate-table row, or the calibration it was measured by" }
+        measuredAt: { type: string, format: date-time, description: "basis measured: when the calibration ran" }
+        mix:
+          type: object
+          required: [id, name, revision, hash]
+          description: "The mix revision the run trains on, rendered as a mix artifact (its hash is the content hash of the resolved input_cfg)"
+          properties:
+            id: { type: string }
+            name: { type: string }
+            revision: { type: integer }
+            hash: { type: string }
 
     # ---------------------------------------------------------------- approvals, audit, jobs schemas (stream C) — add below
     #
@@ -2982,6 +4224,7 @@ components:
         status: { type: integer, description: HTTP status answered }
         rule: { type: string, description: The policy rule that decided }
         causedBy: { $ref: "#/components/schemas/AuditCause" }
+        detail: { type: object, additionalProperties: true, description: "What a job did for the command (artifacts.evict: artifacts, bytesFreed, blobs)" }
         at: { type: string, format: date-time }
     AuditCause:
       type: object
@@ -3012,13 +4255,15 @@ components:
         result: { description: What the job produced (kind-specific JSON), once done }
         error: { type: string, description: Why it failed, once failed }
         attempt: { type: integer }
-        rev: { type: integer }
+        rev: { type: integer, description: "Changes with state, priority, pause and cancel; progress reports leave it (job.progress carries them)" }
         actor: { $ref: "#/components/schemas/Actor" }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
         startedAt: { type: string, format: date-time }
         finishedAt: { type: string, format: date-time }
         cancelRequestedAt: { type: string, format: date-time }
+        priority: { type: integer, description: "Step jobs: start order in the queue, higher first (jobs.edit); 0 for other jobs" }
+        pausedAt: { type: string, format: date-time, description: "Step jobs: paused (jobs.pause) and held in the queue until jobs.resume" }
     JobList:
       type: object
       required: [items]
@@ -3332,16 +4577,22 @@ components:
         revision: { type: string, description: The pinned Hugging Face revision }
     ProjectBudgets:
       type: object
-      required: [gpuHoursPerDay, agentTokensPerDay]
+      required: [gpuHoursPerDay, agentTokensPerDay, queuePriority]
       properties:
         gpuHoursPerDay: { type: number, format: double, minimum: 0, description: "Default budgets.gpu_hours_per_project_per_day" }
         agentTokensPerDay: { type: integer, minimum: 0, description: "Agent spend per day in tokens; default budgets.agent_tokens_per_project_per_day" }
+        queuePriority:
+          type: integer
+          minimum: -100
+          maximum: 100
+          description: "The project's queue priority: waiting step jobs start by project priority (higher first), then the job's priority, then first come; default budgets.queue_priority_per_project"
     ProjectBudgetsEdit:
       type: object
       additionalProperties: false
       properties:
         gpuHoursPerDay: { type: number, format: double, minimum: 0, maximum: 192 }
         agentTokensPerDay: { type: integer, minimum: 0, maximum: 1000000000 }
+        queuePriority: { type: integer, minimum: -100, maximum: 100, description: "Queue priority of the project's step jobs against other projects (higher first)" }
     AgentChoice:
       type: object
       additionalProperties: false
@@ -3632,8 +4883,8 @@ components:
     # ---------------------------------------------------------------- agent sessions schemas (sessions stream) — add below
     AgentSessionKind:
       type: string
-      enum: [interactive, read-only]
-      description: "interactive: a conversation on its own branch; read-only: one turn under the read-only preset, no branch"
+      enum: [interactive, read-only, playbook]
+      description: "interactive: a conversation on its own branch; read-only: one turn under the read-only preset, no branch; playbook: started by playbooks.run, its plan is the playbook's chain (a branch like interactive)"
     AgentSessionState:
       type: string
       enum: [created, running, waiting_approval, paused, done, failed, cancelled]
@@ -3653,6 +4904,7 @@ components:
         turns: { type: integer, description: "Turns before the session pauses (budgets.agent_turns_per_session)" }
         tokens: { type: integer, format: int64, description: "Input + output tokens before it pauses (budgets.agent_tokens_per_session)" }
         tokensPerTurn: { type: integer, format: int64, description: "A turn over this is cancelled and the session pauses (budgets.agent_tokens_per_turn)" }
+        gpuHours: { type: number, format: double, description: "GPU-hours the session's commands may spend before a spending one waits for an approval (budgets.agent_gpu_hours_per_session)" }
     AgentUse:
       type: object
       required: [turns, inputTokens, outputTokens]
@@ -3750,6 +5002,7 @@ components:
         startedAt: { type: string, format: date-time }
         endedAt: { type: string, format: date-time }
         lastMessageAt: { type: string, format: date-time, description: The last user message; the idle clock (R5) runs from it }
+        playbook: { $ref: "#/components/schemas/AgentPlaybook" }
     AgentSessionList:
       type: object
       required: [items]
@@ -4208,3 +5461,1409 @@ components:
       required: [hosts]
       properties:
         hosts: { type: array, items: { type: string }, description: "Host names, *.domain patterns or host:port (a custom base URL with a port)" }
+
+    # ---------------------------------------------------------------- worker protocol schemas (tag worker; phase 2 · wave 0)
+    WorkerRegistration:
+      type: object
+      required: [host, runtime, stepKinds]
+      additionalProperties: false
+      properties:
+        host: { type: string, minLength: 1, maxLength: 200, description: "The compute host this worker runs on (compute entity name, e.g. staging)" }
+        instance: { type: string, maxLength: 200, description: "This worker process (hostname and boot id), so a restart is told apart from a second worker" }
+        runtime: { $ref: "#/components/schemas/RuntimeDescriptor" }
+        stepKinds:
+          type: object
+          description: Step kinds this runtime can run, by name
+          additionalProperties: { $ref: "#/components/schemas/StepKindDescriptor" }
+        modelFamilies:
+          type: array
+          maxItems: 50
+          items: { $ref: "#/components/schemas/ModelFamilyDescriptor" }
+    RuntimeDescriptor:
+      type: object
+      required: [name, version]
+      properties:
+        name: { type: string, pattern: "^[a-z][a-z0-9-]{1,62}$", description: "Runtime name (nemo-speech, toy)" }
+        version: { type: string, maxLength: 100, description: "The runtime's own version (26.07)" }
+        image: { type: string, maxLength: 500, description: "Container image reference" }
+        digest: { type: string, maxLength: 100, description: "Image digest (sha256:…); empty for a development worker outside a container" }
+        environment:
+          type: object
+          description: "Environment lock: framework and library versions (cuda, torch, nemo, lhotse, …)"
+          additionalProperties: { type: string }
+        plugin: { type: string, maxLength: 100, description: "Version of the cadence-worker plugin the image carries" }
+    StepKindDescriptor:
+      type: object
+      required: [version, params, consumes, produces, resources, help]
+      properties:
+        version: { type: string, maxLength: 20 }
+        params: { type: object, description: "JSON Schema of the parameters; every property carries x-cadence {default, description, source, range[, defaultRef]}" }
+        consumes: { type: object, additionalProperties: { type: string }, description: "Input name → artifact type" }
+        produces: { type: object, additionalProperties: { type: string }, description: "Output name → artifact type" }
+        resources: { $ref: "#/components/schemas/StepResources" }
+        role: { type: string, maxLength: 40, description: "The model-family role this kind fills (calibrate, train, average, transcribe, export, parity), empty for neutral kinds" }
+        neutral: { type: boolean, description: "Runtime-neutral core kind shipped in every runtime image" }
+        secrets: { type: array, items: { type: string }, description: Secret names the step needs as environment variables }
+        help: { type: string, description: "Help slug (steps.<name>)" }
+    StepResources:
+      type: object
+      properties:
+        gpu: { type: boolean }
+        gpus: { type: integer, minimum: 0, maximum: 1, description: "Cards (1 in v1, R44)" }
+        memoryGb: { type: number, minimum: 0, description: Card memory the step needs; a training step takes the card's whole cap }
+        diskGb: { type: number, minimum: 0 }
+        jobKind: { type: string, enum: [training, eval, export, data], description: "Which compute job kinds may take it" }
+    ModelFamilyDescriptor:
+      type: object
+      required: [name, version, framework, architecture, latencyProfiles, roles]
+      properties:
+        name: { type: string, pattern: "^[a-z][a-z0-9.-]{1,62}$" }
+        version: { type: string, maxLength: 20 }
+        title: { type: string, maxLength: 200 }
+        framework: { type: string, maxLength: 100 }
+        architecture: { type: string, maxLength: 200 }
+        formats: { type: array, items: { type: string }, description: "Checkpoint and export formats (.nemo, onnx, …)" }
+        input: { type: object, properties: { sampleRate: { type: integer }, channels: { type: integer } } }
+        features: { type: object, description: "Feature extraction the family computes itself (R42: never stored in shar)" }
+        tokenizer: { type: string, description: "Tokenizer kind (sentencepiece-bpe, chars, …)" }
+        capabilities:
+          type: object
+          properties:
+            streaming: { type: boolean }
+            wordTimestamps: { type: boolean }
+            confidence: { type: boolean }
+            boosting: { type: string, description: "Boosting method, empty when none" }
+            languagePrompt: { type: boolean }
+            trainModes: { type: array, items: { type: string, enum: [finetune, adapter, scratch] } }
+        latencyProfiles:
+          type: array
+          minItems: 1
+          items: { $ref: "#/components/schemas/LatencyProfile" }
+        roles:
+          type: object
+          description: "Role → step kind (calibrate, train, average, transcribe, export, parity)"
+          additionalProperties: { type: string }
+        defaultsSection: { type: string, description: "The defaults.yaml section of this family" }
+        help: { type: string }
+        skill: { type: string }
+    LatencyProfile:
+      type: object
+      required: [name, latencyMs]
+      properties:
+        name: { type: string, description: "80ms, 160ms, …, offline" }
+        latencyMs: { type: integer, minimum: 0, description: Algorithmic latency }
+        chunkMs: { type: integer, minimum: 0 }
+        leftContextMs: { type: integer, minimum: 0 }
+        params: { type: object, description: "Family parameters that realise it, e.g. {att_context_size: [56, 1]}" }
+        label: { type: string, description: "How the UI shows it: 160 ms · [56,1]" }
+    Worker:
+      type: object
+      required: [id, host, runtime, state]
+      properties:
+        id: { type: string, description: "wrk_…" }
+        host: { type: string }
+        hostId: { type: string, description: "cmp_… of the compute host" }
+        instance: { type: string }
+        runtime: { $ref: "#/components/schemas/RuntimeDescriptor" }
+        runtimeVersionId: { type: string, description: "The runtime's registry version (ver_…)" }
+        stepKinds: { type: array, items: { type: string }, description: "kind@version this worker may lease" }
+        state: { type: string, enum: [online, offline] }
+        lastSeenAt: { type: string, format: date-time }
+    WorkerClaim:
+      type: object
+      required: [workerId, cards]
+      additionalProperties: false
+      properties:
+        workerId: { type: string }
+        wait: { type: integer, minimum: 0, maximum: 30, default: 20, description: Seconds to wait for work }
+        cards: { type: array, maxItems: 16, items: { $ref: "#/components/schemas/CardTelemetry" } }
+    CardTelemetry:
+      type: object
+      required: [index]
+      properties:
+        index: { type: integer, minimum: 0 }
+        name: { type: string }
+        memoryTotalMb: { type: integer, minimum: 0 }
+        memoryUsedMb: { type: integer, minimum: 0, description: Used by every process on the card, resident services included }
+        utilization: { type: number, minimum: 0, maximum: 1 }
+        temperatureC: { type: number }
+        powerW: { type: number }
+    WorkerClaimResult:
+      type: object
+      properties:
+        lease: { $ref: "#/components/schemas/Lease" }
+    Lease:
+      type: object
+      required: [id, jobId, spec, card, heartbeatSeconds]
+      properties:
+        id: { type: string, description: "lse_…" }
+        jobId: { type: string }
+        spec: { $ref: "#/components/schemas/StepSpec" }
+        inputs:
+          type: object
+          description: Input name → where to read it (cas://b3:<hash> in v1)
+          additionalProperties: { type: string }
+        card: { type: object, required: [index, memoryCapMb], properties: { index: { type: integer }, memoryCapMb: { type: integer } } }
+        env: { type: object, additionalProperties: { type: string }, description: "Secret environment for the step subprocess only; never logged" }
+        traceparent: { type: string, description: W3C trace context of the job }
+        heartbeatSeconds: { type: integer }
+    StepSpec:
+      type: object
+      required: [stepId, pipelineRunId, kind, kindVersion, params, inputs, outputs, resources, attempt]
+      properties:
+        stepId: { type: string }
+        pipelineRunId: { type: string }
+        projectId: { type: string }
+        runId: { type: string, description: "The training run this step belongs to, when it does (metrics go to run.{id}.metrics)" }
+        kind: { type: string }
+        kindVersion: { type: string }
+        params: { type: object, description: Resolved parameters (defaults applied) }
+        inputs: { type: object, additionalProperties: { $ref: "#/components/schemas/ArtifactRef" } }
+        outputs: { type: object, additionalProperties: { type: string }, description: Output name → artifact type }
+        resources: { $ref: "#/components/schemas/StepResources" }
+        priority: { type: integer }
+        estimateSeconds: { type: number, description: "Estimated wall time (availability windows, R19); absent when unknown" }
+        overrides:
+          type: object
+          properties:
+            batchScale: { type: number, exclusiveMinimum: 0, maximum: 1, description: "0.75 on the automatic OOM retry" }
+            resumeFrom: { type: string, description: "b3 hash of a training-state artifact to resume from" }
+        attempt: { type: integer, minimum: 1 }
+    ArtifactRef:
+      type: object
+      required: [hash, type]
+      properties:
+        hash: { type: string, pattern: "^b3:[0-9a-f]{64}$" }
+        type: { type: string, description: "shar, dataset, mix, base_model, checkpoint, training-state, calibration, hypotheses, analysis, eval-report, deployable, text" }
+        size: { type: integer, format: int64, minimum: 0 }
+        meta: { type: object, description: "Neutral, self-describing metadata of the type (R42)" }
+    WorkerReport:
+      type: object
+      additionalProperties: false
+      properties:
+        progress: { type: object, properties: { fraction: { type: number, minimum: 0, maximum: 1 }, message: { type: string, maxLength: 500 } } }
+        cards: { type: array, maxItems: 16, items: { $ref: "#/components/schemas/CardTelemetry" } }
+    WorkerReportAck:
+      type: object
+      required: [stop]
+      properties:
+        stop: { type: boolean, description: "Stop the step now (checkpoint first when it can)" }
+        reason: { type: string, enum: [cancelled, paused, window-closed] }
+    WorkerLogLine:
+      type: object
+      required: [t, msg]
+      properties:
+        t: { type: string, format: date-time }
+        level: { type: string, enum: [debug, info, warn, error], default: info }
+        msg: { type: string, maxLength: 16000 }
+        fields: { type: object }
+    WorkerMetricBatch:
+      type: object
+      required: [points]
+      additionalProperties: false
+      properties:
+        points: { type: array, minItems: 1, maxItems: 5000, items: { $ref: "#/components/schemas/MetricPoint" } }
+    MetricPoint:
+      type: object
+      required: [name, value, wallTime]
+      properties:
+        name: { type: string, pattern: "^[a-z][a-z0-9_./]{0,99}$", description: "loss, val_wer, lr, grad_norm, throughput_audio_s_per_s, gpu_memory_mb, …" }
+        step: { type: integer, format: int64, minimum: 0 }
+        epoch: { type: number }
+        value: { type: number }
+        wallTime: { type: string, format: date-time }
+    StepOutcome:
+      type: object
+      required: [state]
+      additionalProperties: false
+      properties:
+        state: { type: string, enum: [done, failed, cancelled] }
+        error: { $ref: "#/components/schemas/StepError" }
+        outputs: { type: object, additionalProperties: { $ref: "#/components/schemas/ArtifactRef" } }
+        metrics: { type: object, additionalProperties: { type: number }, description: "Final values (val_wer, seconds_per_step, …)" }
+    WorkerOutput:
+      type: object
+      required: [name, artifact]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100, description: "The step output it is an instance of (its type must match the output's)" }
+        artifact: { $ref: "#/components/schemas/ArtifactRef" }
+        metrics: { type: object, additionalProperties: { type: number }, description: "Values at this point (val_wer, …) the hooks may read when the meta lacks them" }
+    StepError:
+      type: object
+      required: [type, message]
+      properties:
+        type: { type: string, enum: [oom, step, lost, cancelled, input], description: "oom gets one automatic retry at 0.75× batch; lost = reaped after missed heartbeats" }
+        message: { type: string, maxLength: 4000 }
+        retryable: { type: boolean }
+
+    # ---------------------------------------------------------------- worker, queue, telemetry, runtimes schemas (stream W) — add below
+    RuntimeVersion:
+      allOf:
+        - $ref: "#/components/schemas/RegistryVersion"
+        - type: object
+          required: [runtime, workers]
+          properties:
+            runtime: { $ref: "#/components/schemas/RuntimeDescriptor" }
+            workers: { type: array, items: { $ref: "#/components/schemas/Worker" }, description: Workers that registered with this version, newest first }
+    RuntimeVersionList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/RuntimeVersion" } }
+    ModelFamilyVersion:
+      allOf:
+        - $ref: "#/components/schemas/RegistryVersion"
+        - type: object
+          required: [modelFamily]
+          properties:
+            modelFamily: { $ref: "#/components/schemas/ModelFamilyDescriptor" }
+    ModelFamilyVersionList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/ModelFamilyVersion" } }
+    StepKindPayload:
+      allOf:
+        - $ref: "#/components/schemas/StepKindDescriptor"
+        - type: object
+          required: [name, runtime, runtimeVersionId, schemaHash]
+          properties:
+            name: { type: string, description: "The step kind's name; pipelines pin <name>@<version>" }
+            runtime: { type: string, description: The runtime that publishes it }
+            runtimeVersionId: { type: string, description: "The runtime's registry version (ver_…) when first published" }
+            schemaHash: { type: string, description: "sha256 of the canonical parameter schema; neutral kinds of several runtimes agree on it" }
+    StepKindVersion:
+      allOf:
+        - $ref: "#/components/schemas/RegistryVersion"
+        - type: object
+          required: [stepKind]
+          properties:
+            stepKind: { $ref: "#/components/schemas/StepKindPayload" }
+    StepKindVersionList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/StepKindVersion" } }
+    JobEdit:
+      type: object
+      required: [priority]
+      additionalProperties: false
+      properties:
+        priority: { type: integer, minimum: -1000, maximum: 1000, description: "Start order in the queue, higher first" }
+    JobLogLine:
+      type: object
+      required: [seq, t, level, msg]
+      properties:
+        seq: { type: integer, description: Line number in the job's log, from 1 }
+        t: { type: string, format: date-time }
+        level: { type: string, enum: [debug, info, warn, error] }
+        msg: { type: string }
+        fields: { type: object }
+    JobLogPage:
+      type: object
+      required: [items, nextAfter]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/JobLogLine" } }
+        nextAfter: { type: integer, description: "Pass as after= to read on (the last line number scanned)" }
+    QueueLease:
+      type: object
+      required: [id, workerId, host, card, memoryCapMb, startedAt, heartbeatAt]
+      properties:
+        id: { type: string, description: "lse_…" }
+        workerId: { type: string }
+        runtime: { type: string }
+        host: { type: string }
+        card: { type: integer, description: "Card index; -1 for a step that needs no card" }
+        memoryCapMb: { type: integer }
+        startedAt: { type: string, format: date-time }
+        heartbeatAt: { type: string, format: date-time }
+        progress: { type: number }
+        message: { type: string }
+        stopReason: { type: string, enum: [cancelled, paused, window-closed], description: The stop the worker was told about }
+    QueueEntry:
+      type: object
+      required: [jobId, kind, kindVersion, jobKind, state, priority, enqueuedAt, attempt]
+      properties:
+        jobId: { type: string }
+        projectId: { type: string }
+        pipelineRunId: { type: string }
+        stepId: { type: string }
+        runId: { type: string }
+        kind: { type: string }
+        kindVersion: { type: string }
+        jobKind: { $ref: "#/components/schemas/JobKind" }
+        gpu: { type: boolean }
+        memoryGb: { type: number }
+        state: { type: string, enum: [waiting, paused, running, stopping] }
+        priority: { type: integer }
+        projectPriority: { type: integer, description: "The project's queue priority (budgets.queuePriority): the first sort key, before priority" }
+        enqueuedAt: { type: string, format: date-time }
+        estimateSeconds: { type: number }
+        attempt: { type: integer }
+        resumeFrom: { type: string, description: "The training state it resumes from (b3 hash), after a pause or a window close" }
+        lease: { $ref: "#/components/schemas/QueueLease" }
+    QueueEntryList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/QueueEntry" } }
+    AvailabilityWindow:
+      type: object
+      required: [days, start, end]
+      additionalProperties: false
+      properties:
+        days:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: string, enum: [mon, tue, wed, thu, fri, sat, sun] }
+          description: Days the window opens on (a window past midnight belongs to the day it opens)
+        start: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$", description: "Opens at HH:MM" }
+        end: { type: string, pattern: "^(([01][0-9]|2[0-3]):[0-5][0-9]|24:00)$", description: "Closes at HH:MM (24:00 = midnight); before start = the next day" }
+        timezone: { type: string, maxLength: 64, description: "IANA time zone, e.g. Europe/Berlin; empty follows the instance time zone (policies.timezone)" }
+    AvailabilityWindows:
+      type: object
+      description: >
+        R19: job kind → the windows in which a job of that kind may run on the card. A kind without an entry may run
+        any time. A job starts only when its estimate fits before its window closes; a running training job is
+        paused at the close and resumes from its training state when a window opens.
+      additionalProperties:
+        type: array
+        maxItems: 28
+        items: { $ref: "#/components/schemas/AvailabilityWindow" }
+    CardTelemetryReport:
+      allOf:
+        - $ref: "#/components/schemas/CardTelemetry"
+        - type: object
+          required: [reportedAt]
+          properties:
+            reportedAt: { type: string, format: date-time }
+
+    # ---------------------------------------------------------------- artifacts and pipelines schemas (stream P) — add below
+    Artifact:
+      type: object
+      required: [hash, type, size, directory, meta, createdAt]
+      properties:
+        hash: { type: string, description: "b3:<64 hex>, BLAKE3-256 of the content (of the manifest for a directory)" }
+        type: { type: string, description: "Artifact type (text, dataset, mix, base_model, checkpoint, calibration, …)" }
+        size: { type: integer, format: int64, description: "Bytes: the file's, or the sum of a directory's files" }
+        directory: { type: boolean, description: "A directory artifact: a manifest of files, each its own blob" }
+        meta: { type: object, description: "Neutral, self-describing metadata of the type (R42)" }
+        projectId: { type: string, description: "The project that first produced it; absent for a registry artifact" }
+        producer: { $ref: "#/components/schemas/ArtifactProducer" }
+        createdAt: { type: string, format: date-time }
+        files:
+          type: array
+          description: A directory artifact's files, by path
+          items:
+            type: object
+            required: [path, hash, size]
+            properties:
+              path: { type: string }
+              hash: { type: string }
+              size: { type: integer, format: int64 }
+        encoding: { type: string, description: "How content is encoded (content=true): utf8 or base64" }
+        content: { type: string, description: "The content (content=true, at most 1 MiB)" }
+        contentOmitted: { type: string, description: "Why content was not included (too large, a directory without path, …)" }
+        evicted: { $ref: "#/components/schemas/ArtifactEviction" }
+    ArtifactProducer:
+      type: object
+      required: [pipelineRunId, stepId, step, output]
+      description: The pipeline step whose output first recorded this artifact
+      properties:
+        pipelineRunId: { type: string }
+        stepId: { type: string, description: "pls_…" }
+        step: { type: string, description: "The step's id in the pipeline file" }
+        output: { type: string }
+    PipelineList:
+      type: object
+      required: [ref, items]
+      properties:
+        ref: { type: string }
+        commit: { type: string, description: "The commit ref resolved to; absent when the project has no repository" }
+        items: { type: array, items: { $ref: "#/components/schemas/Pipeline" } }
+    Pipeline:
+      type: object
+      required: [name, source, path, version, inputs, steps]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        source: { type: string, enum: [repository, template], description: "The project repository, or a bundled template the repository has no file for" }
+        path: { type: string, description: "pipelines/<name>.yaml" }
+        version: { type: string, description: "The commit that last changed the file (a template: template-<sha256 prefix>); pipelines.run takes it as If-Match" }
+        inputs: { type: object, additionalProperties: { type: string }, description: Pipeline input → artifact type }
+        steps: { type: array, items: { $ref: "#/components/schemas/PipelineStepDefinition" } }
+        error: { type: string, description: The file does not parse (steps and inputs are then empty) }
+    PipelineStepDefinition:
+      type: object
+      required: [id, kind]
+      properties:
+        id: { type: string }
+        kind: { type: string, description: "kind@version, pinned" }
+        in: { type: object, additionalProperties: { type: string }, description: "Step input → $inputs.<name> or <step>.<output>" }
+        params: { type: object, description: Only the parameters that depart from defaults }
+    PipelineRunNew:
+      type: object
+      additionalProperties: false
+      properties:
+        ref: { type: string, maxLength: 200, description: "Branch, tag or commit to read the pipeline at (default main)" }
+        inputs:
+          type: object
+          description: Pipeline input → artifact (it must be in the content store)
+          additionalProperties: { $ref: "#/components/schemas/ArtifactRef" }
+        params:
+          type: object
+          description: "Step id → parameter overrides (recorded as departures when they differ from the default)"
+          additionalProperties: { type: object }
+        fresh: { type: boolean, default: false, description: Run every step even when a finished step has the same input hash }
+        priority: { type: integer, minimum: -100, maximum: 100, default: 0, description: "Queue priority of the step jobs (higher first)" }
+    PipelinePlan:
+      type: object
+      required: [pipeline, source, version, steps, estimate]
+      properties:
+        pipeline: { type: string }
+        source: { type: string, enum: [repository, template] }
+        ref: { type: string }
+        commit: { type: string }
+        version: { type: string }
+        steps: { type: array, items: { $ref: "#/components/schemas/PipelinePlanStep" } }
+        estimate: { $ref: "#/components/schemas/PipelineEstimate" }
+    PipelinePlanStep:
+      type: object
+      required: [step, kind, kindVersion, params, departures, in, produces, resources]
+      properties:
+        step: { type: string }
+        kind: { type: string }
+        kindVersion: { type: string }
+        stepKindVersionId: { type: string, description: "The step kind's registry version (ver_…)" }
+        runtime: { type: string }
+        params: { type: object, description: Resolved parameters (defaults applied) }
+        departures: { type: array, items: { $ref: "#/components/schemas/ParamDeparture" } }
+        in: { type: object, additionalProperties: { type: string } }
+        produces: { type: object, additionalProperties: { type: string }, description: Output → artifact type }
+        resources: { $ref: "#/components/schemas/StepResources" }
+        estimateSeconds: { type: number, description: Absent when unknown }
+    PipelineEstimate:
+      type: object
+      required: [known, unknownSteps]
+      properties:
+        known: { type: boolean, description: Every step has an estimate }
+        seconds: { type: number, description: Sum of the known step estimates }
+        gpuHours: { type: number, description: Sum over the steps that need a card }
+        unknownSteps: { type: array, items: { type: string }, description: Steps without an estimate }
+    ParamDeparture:
+      type: object
+      required: [param, value]
+      properties:
+        param: { type: string }
+        value: { description: The value the step runs with }
+        default: { description: "The default (x-cadence.defaultRef in defaults.yaml, else x-cadence.default); absent when the parameter has none" }
+    PipelineRunState: { type: string, enum: [running, done, failed, cancelled] }
+    PipelineStepState: { type: string, enum: [waiting, queued, running, done, reused, failed, skipped, cancelled] }
+    PipelineRunSummary:
+      type: object
+      required: [id, projectId, pipeline, source, version, state, rev, actor, createdAt, updatedAt]
+      properties:
+        id: { type: string, description: "plr_…" }
+        projectId: { type: string }
+        pipeline: { type: string }
+        source: { type: string, enum: [repository, template, inline] }
+        ref: { type: string }
+        commit: { type: string, description: The commit the pipeline was read at }
+        version: { type: string, description: "The pipeline's version (commit that last changed its file)" }
+        state: { $ref: "#/components/schemas/PipelineRunState" }
+        runId: { type: string, description: "The training run this pipeline run belongs to (run_…), when a facade started it" }
+        fresh: { type: boolean }
+        priority: { type: integer }
+        inputs: { type: object, additionalProperties: { $ref: "#/components/schemas/ArtifactRef" } }
+        error: { type: string, description: Why the run failed }
+        rev: { type: integer }
+        actor: { $ref: "#/components/schemas/Actor" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time }
+    PipelineRun:
+      allOf:
+        - $ref: "#/components/schemas/PipelineRunSummary"
+        - type: object
+          required: [steps]
+          properties:
+            steps: { type: array, items: { $ref: "#/components/schemas/PipelineStep" } }
+    PipelineRunList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/PipelineRunSummary" } }
+    PipelineStep:
+      type: object
+      required: [id, step, position, kind, kindVersion, state, params, departures, in, produces, attempts, attemptLog]
+      properties:
+        id: { type: string, description: "pls_…" }
+        step: { type: string, description: The step's id in the pipeline file }
+        position: { type: integer, description: Order of execution (topological) }
+        kind: { type: string }
+        kindVersion: { type: string }
+        stepKindVersionId: { type: string }
+        state: { $ref: "#/components/schemas/PipelineStepState" }
+        params: { type: object, description: Resolved parameters }
+        departures: { type: array, items: { $ref: "#/components/schemas/ParamDeparture" } }
+        in: { type: object, additionalProperties: { type: string }, description: Wiring from the pipeline file }
+        inputs: { type: object, additionalProperties: { $ref: "#/components/schemas/ArtifactRef" }, description: Resolved inputs once the step is ready }
+        produces: { type: object, additionalProperties: { type: string } }
+        outputs: { type: object, additionalProperties: { $ref: "#/components/schemas/ArtifactRef" } }
+        resources: { $ref: "#/components/schemas/StepResources" }
+        estimateSeconds: { type: number }
+        inputHash: { type: string, description: "Hash of kind, version, resolved parameters and input hashes: a finished step with the same one is reused" }
+        reusedFrom: { type: string, description: "The finished step (pls_…) whose outputs were reused" }
+        attempts: { type: integer }
+        jobId: { type: string, description: The current attempt's step job }
+        error: { $ref: "#/components/schemas/StepError" }
+        metrics: { type: object, additionalProperties: { type: number } }
+        attemptLog: { type: array, items: { $ref: "#/components/schemas/PipelineStepAttempt" } }
+        startedAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time }
+    PipelineStepAttempt:
+      type: object
+      required: [attempt, jobId, reason, state]
+      properties:
+        attempt: { type: integer }
+        jobId: { type: string }
+        reason: { type: string, enum: [initial, oom, lost, retry, resume], description: "Why the attempt started: the first, the automatic OOM retry at 0.75× batch, the retry after a lost lease, pipelineRuns.retry, or runs.resume" }
+        batchScale: { type: number }
+        resumeFrom: { type: string, description: "The training-state artifact the attempt resumes from (runs.resume)" }
+        state: { type: string, enum: [queued, running, done, failed, cancelled] }
+        error: { $ref: "#/components/schemas/StepError" }
+        startedAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time }
+    PipelineRunRetry:
+      type: object
+      additionalProperties: false
+      properties:
+        step: { type: string, maxLength: 63, description: "The step id to retry (default: every failed step)" }
+        batchScale: { type: number, format: double, exclusiveMinimum: 0, maximum: 1, description: "Batch scale of the new attempt (1 = full batch)" }
+
+    # ---------------------------------------------------------------- data entities and imports schemas (stream D) — add below
+    SourceKind:
+      type: string
+      enum: [public, production, synthetic]
+    Source:
+      type: object
+      description: "A corpus in the registry (R18): licence, kind, languages; eval-only until a person clears it for training"
+      required: [id, name, description, licence, kind, languages, url, trainingCleared, archived, rev, utterances, hours, datasets, createdBy, createdAt, updatedAt]
+      properties:
+        id: { type: string, description: "src_…" }
+        name: { type: string, example: fleurs }
+        description: { type: string }
+        licence: { type: string, example: CC-BY-4.0 }
+        kind: { $ref: "#/components/schemas/SourceKind" }
+        languages: { type: array, items: { type: string }, example: [he-IL] }
+        url: { type: string, description: "Where the corpus comes from, e.g. hf://datasets/google/fleurs" }
+        trainingCleared: { type: boolean, description: "false = eval-only: its dataset versions cannot be mixed or trained on" }
+        clearedBy: { $ref: "#/components/schemas/Actor" }
+        clearedAt: { type: string, format: date-time }
+        archived: { type: boolean }
+        rev: { type: integer }
+        utterances: { type: integer, description: Utterances this source owns }
+        hours: { type: number, format: double, description: Their total duration in hours }
+        datasets: { type: array, items: { type: string }, description: "Dataset version ids built from this source (sources.get only; empty in lists)" }
+        createdBy: { $ref: "#/components/schemas/Actor" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    SourceList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Source" } }
+    SourceEdit:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        description: { type: string, maxLength: 2000 }
+        licence: { type: string, minLength: 1, maxLength: 200 }
+        trainingCleared: { type: boolean, description: "true clears the source for training (a person's decision); false makes it eval-only again" }
+    DatasetSplitName:
+      type: string
+      enum: [train, validation, test]
+    TranscriptOrigin:
+      type: string
+      description: "human, pseudo-label, or model:<id> for a single model's output"
+      pattern: "^(human|pseudo-label|model:.+)$"
+    Transcript:
+      type: object
+      required: [id, text, origin, createdAt]
+      properties:
+        id: { type: string, description: "trn_…" }
+        text: { type: string }
+        origin: { $ref: "#/components/schemas/TranscriptOrigin" }
+        confidence: { type: number, format: double, minimum: 0, maximum: 1 }
+        createdAt: { type: string, format: date-time }
+    UtteranceMembership:
+      type: object
+      required: [datasetVersionId, split, transcriptId]
+      properties:
+        datasetVersionId: { type: string }
+        split: { $ref: "#/components/schemas/DatasetSplitName" }
+        transcriptId: { type: string, description: The transcript this dataset version uses }
+    Utterance:
+      type: object
+      description: One audio segment in the content store; its content hash is its identity
+      required: [id, contentHash, sourceId, sourceName, duration, language, speaker, sampleRate, channels, bytes, transcripts, createdAt]
+      properties:
+        id: { type: string, description: "utt_…" }
+        contentHash: { type: string, pattern: "^b3:[0-9a-f]{64}$", description: BLAKE3-256 of the audio file's bytes (its blob in the content store) }
+        sourceId: { type: string }
+        sourceName: { type: string }
+        duration: { type: number, format: double, description: Seconds }
+        language: { type: string, example: he-IL }
+        speaker: { type: string, description: "Speaker id within the source; empty when unknown" }
+        sampleRate: { type: integer, example: 16000 }
+        channels: { type: integer, example: 1 }
+        bytes: { type: integer, format: int64 }
+        transcripts: { type: array, items: { $ref: "#/components/schemas/Transcript" } }
+        split: { $ref: "#/components/schemas/DatasetSplitName" }
+        fingerprints: { type: object, additionalProperties: { type: string }, description: "Kind → value (audio-b3, …); utterances.get only" }
+        datasets: { type: array, items: { $ref: "#/components/schemas/UtteranceMembership" }, description: "utterances.get only" }
+        createdAt: { type: string, format: date-time }
+    UtteranceList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Utterance" } }
+        next: { type: string, description: Pass as `after` for the next page; absent on the last page }
+    DatasetLanguage:
+      type: object
+      required: [language, utterances, hours]
+      properties:
+        language: { type: string }
+        utterances: { type: integer }
+        hours: { type: number, format: double }
+    DatasetLineage:
+      type: object
+      description: Where an imported dataset version came from
+      properties:
+        pipelineRunId: { type: string }
+        stepId: { type: string }
+        projectId: { type: string }
+        stepKind: { type: string, example: dataset_import@1 }
+
+    # ---------------------------------------------------------------- notifications and operations schemas (stream O) — add below
+
+    NotificationClass:
+      type: string
+      enum: [approval_requested, failure, outcome, progress, digest]
+      description: >
+        Event class of the routing table: approval_requested (agent, automation, registry); failure (job failed, mount
+        unhealthy, card closed, backup failed); outcome (gate verdict, promotion, schedule finished, batch closed);
+        progress (step done, checkpoint saved, triage item added); digest (the daily digest)
+    NotificationTiming:
+      type: string
+      enum: [immediate, digest, daily, none]
+      description: "immediate: sent as it happens; digest: held for the next daily digest; daily: the digest itself (its rule only); none: never sent"
+    NotificationChannels:
+      type: object
+      required: [inApp, telegram]
+      properties:
+        inApp: { type: boolean, description: The in-app notification history }
+        telegram: { type: boolean, description: The Telegram bot (allow-listed chats only) }
+    NotificationRule:
+      type: object
+      required: [id, eventClass, label, events, channels, timing, bypassQuietHours, rev, updatedAt, departures]
+      properties:
+        id: { type: string, description: "ntr_<class>" }
+        eventClass: { $ref: "#/components/schemas/NotificationClass" }
+        label: { type: string, description: What the row covers, as the Settings table shows it }
+        events: { type: array, items: { type: string }, description: The event types the class covers }
+        channels: { $ref: "#/components/schemas/NotificationChannels" }
+        timing: { $ref: "#/components/schemas/NotificationTiming" }
+        bypassQuietHours: { type: boolean, description: "Failures reach Telegram even in quiet hours; fixed per class" }
+        rev: { type: integer }
+        updatedAt: { type: string, format: date-time }
+        departures: { type: array, items: { type: string }, description: "Fields that differ from the seeded table (channels.telegram, timing, …)" }
+    NotificationRuleList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/NotificationRule" } }
+    NotificationRuleEdit:
+      type: object
+      additionalProperties: false
+      properties:
+        channels:
+          type: object
+          additionalProperties: false
+          properties:
+            inApp: { type: boolean }
+            telegram: { type: boolean }
+        timing: { $ref: "#/components/schemas/NotificationTiming" }
+    ClockTime:
+      type: string
+      pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+      description: "HH:MM on a 24-hour clock, in the instance timezone (policies)"
+    QuietHours:
+      type: object
+      required: [enabled, start, end]
+      properties:
+        enabled: { type: boolean }
+        start: { $ref: "#/components/schemas/ClockTime" }
+        end: { $ref: "#/components/schemas/ClockTime" }
+    TelegramChat:
+      type: object
+      required: [id]
+      properties:
+        id: { type: integer, format: int64, description: Telegram chat id (negative for groups) }
+        title: { type: string, description: "Chat title or @username, as Telegram last reported it" }
+        seenAt: { type: string, format: date-time }
+    TelegramStatus:
+      type: object
+      required: [tokenSet, chats, pendingChats, polling]
+      properties:
+        tokenSet: { type: boolean, description: "A token is stored (secret telegram-bot-token); the value is never returned" }
+        botUsername: { type: string, description: "@username from the last successful getMe" }
+        chats: { type: array, items: { $ref: "#/components/schemas/TelegramChat" }, description: Allow-listed chats; the bot talks to no one else }
+        pendingChats:
+          type: array
+          items: { $ref: "#/components/schemas/TelegramChat" }
+          description: Chats that wrote to the bot but are not allow-listed (the bot never answers them); add one to the allowlist to use it
+        polling: { type: boolean, description: The control plane is long-polling Telegram for button presses }
+        lastError: { type: string, description: The last Bot API error, if the last call failed }
+        lastSentAt: { type: string, format: date-time }
+    NotificationSettings:
+      type: object
+      required: [rev, updatedAt, timezone, quietHours, digestTime, telegram]
+      properties:
+        rev: { type: integer }
+        updatedAt: { type: string, format: date-time }
+        timezone: { type: string, description: The instance timezone quiet hours and the digest follow (policies.timezone) }
+        quietHours: { $ref: "#/components/schemas/QuietHours" }
+        digestTime: { $ref: "#/components/schemas/ClockTime" }
+        telegram: { $ref: "#/components/schemas/TelegramStatus" }
+    NotificationSettingsEdit:
+      type: object
+      additionalProperties: false
+      properties:
+        quietHours:
+          type: object
+          additionalProperties: false
+          properties:
+            enabled: { type: boolean }
+            start: { $ref: "#/components/schemas/ClockTime" }
+            end: { $ref: "#/components/schemas/ClockTime" }
+        digestTime: { $ref: "#/components/schemas/ClockTime" }
+        telegramChats:
+          type: array
+          maxItems: 20
+          items: { type: integer, format: int64 }
+          description: The complete allowlist of Telegram chat ids
+    TelegramBotSet:
+      type: object
+      required: [token]
+      additionalProperties: false
+      properties:
+        token: { type: string, writeOnly: true, minLength: 20, maxLength: 200, pattern: "^[0-9]+:[A-Za-z0-9_-]+$", description: "Write-only: the token @BotFather issued (123456:ABC…)" }
+    TelegramBotVerify:
+      type: object
+      required: [ok, chats]
+      properties:
+        ok: { type: boolean, description: The token works and every allow-listed chat got the test message }
+        botUsername: { type: string }
+        error: { type: string, description: Why the token check failed }
+        chats:
+          type: array
+          items:
+            type: object
+            required: [id, delivered]
+            properties:
+              id: { type: integer, format: int64 }
+              delivered: { type: boolean }
+              error: { type: string }
+
+    BackupState:
+      type: string
+      enum: [queued, running, succeeded, failed]
+    BackupTrigger:
+      type: string
+      enum: [nightly, weekly, manual]
+      description: "nightly and weekly are scheduled (the weekly set is the one taken on the restore-test day and is kept longer); manual is backups.new"
+    RestoreTest:
+      type: object
+      required: [state, startedAt]
+      properties:
+        state: { type: string, enum: [running, passed, failed] }
+        startedAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time }
+        durationMs: { type: integer, format: int64 }
+        database: { type: string, description: The scratch database (dropped afterwards) }
+        migrationVersion: { type: integer, format: int64, description: The latest migration in the restored database }
+        tables:
+          type: array
+          items:
+            type: object
+            required: [name, backedUp, restored]
+            properties:
+              name: { type: string }
+              backedUp: { type: integer, format: int64, description: Row count when the set was taken }
+              restored: { type: integer, format: int64, description: Row count in the scratch database }
+        casChecked: { type: integer, description: Content-store blobs sampled and re-hashed }
+        error: { type: string }
+    Backup:
+      type: object
+      required: [id, state, trigger, rev, createdAt]
+      properties:
+        id: { type: string, description: "bkp_…" }
+        state: { $ref: "#/components/schemas/BackupState" }
+        trigger: { $ref: "#/components/schemas/BackupTrigger" }
+        rev: { type: integer }
+        jobId: { type: string }
+        createdAt: { type: string, format: date-time }
+        startedAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time }
+        path: { type: string, description: The set's directory under CADENCE_BACKUP_DIR }
+        dumpBytes: { type: integer, format: int64 }
+        dumpSha256: { type: string }
+        pgDumpVersion: { type: string }
+        serverVersion: { type: string }
+        migrationVersion: { type: integer, format: int64 }
+        tables:
+          type: array
+          description: Row counts of the key tables when the set was taken
+          items:
+            type: object
+            required: [name, rows]
+            properties:
+              name: { type: string }
+              rows: { type: integer, format: int64 }
+        casBlobs: { type: integer, format: int64, description: Blobs in the content store when the set was taken }
+        casCopied: { type: integer, format: int64, description: New blobs copied by this set (blobs are immutable; older ones were copied before) }
+        casBytesCopied: { type: integer, format: int64 }
+        error: { type: string }
+        restoreTest: { $ref: "#/components/schemas/RestoreTest" }
+        prunedAt: { type: string, format: date-time, description: When retention removed the set's files (the record stays) }
+    BackupSchedule:
+      type: object
+      required: [directory, nightlyAt, restoreTestWeekday, restoreTestAt, keepNightly, keepWeekly, timezone]
+      properties:
+        directory: { type: string, description: CADENCE_BACKUP_DIR }
+        nightlyAt: { $ref: "#/components/schemas/ClockTime" }
+        restoreTestWeekday: { type: string, enum: [monday, tuesday, wednesday, thursday, friday, saturday, sunday] }
+        restoreTestAt: { $ref: "#/components/schemas/ClockTime" }
+        keepNightly: { type: integer }
+        keepWeekly: { type: integer }
+        timezone: { type: string }
+        nextBackupAt: { type: string, format: date-time }
+        nextRestoreTestAt: { type: string, format: date-time }
+    BackupList:
+      type: object
+      required: [items, schedule]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Backup" } }
+        schedule: { $ref: "#/components/schemas/BackupSchedule" }
+        lastRestoreTest:
+          type: object
+          required: [backupId, report]
+          properties:
+            backupId: { type: string }
+            report: { $ref: "#/components/schemas/RestoreTest" }
+
+    # ---------------------------------------------------------------- runs, checkpoints, metrics schemas (wave 2 · stream R) — add below
+    RunStatus:
+      type: string
+      enum: [queued, running, paused, done, failed, cancelled]
+      description: "Mirrors the run's pipeline run: queued (a step waits for a card), running (a worker holds a step), paused (its step job is paused), done, failed, cancelled"
+    RunMixRef:
+      type: object
+      required: [id, name, revision, hash]
+      properties:
+        id: { type: string, description: "mix_…" }
+        name: { type: string }
+        revision: { type: integer, description: The mix revision the run trains on }
+        hash: { type: string, description: "The mix artifact (b3:…): the content hash of the resolved input_cfg (R13)" }
+    RunRecipe:
+      type: object
+      required: [pipeline, source, version]
+      description: "The pipeline the run executes, read at a commit of the project repository"
+      properties:
+        pipeline: { type: string }
+        source: { type: string, enum: [repository, template, inline] }
+        ref: { type: string }
+        commit: { type: string }
+        version: { type: string }
+    RunStage:
+      type: object
+      additionalProperties: false
+      required: [peakLr]
+      properties:
+        checkpoint: { type: string, description: "The checkpoint to start from (ckp_… of this run); default the run's best kept checkpoint" }
+        peakLr: { type: number, format: double, exclusiveMinimum: 0, maximum: 1, description: "The new stage's peak learning rate (the train step's peak_lr, learning_rate or lr parameter)" }
+        mix: { type: string, maxLength: 200, description: "The mix (default the parent's)" }
+        mixRevision: { type: integer, minimum: 1, description: "The mix revision (default the named mix's current one, or the parent's revision when the mix is the parent's)" }
+        steps: { type: integer, minimum: 1, description: "Step budget (default training.steps)" }
+        seed: { type: integer, minimum: 0, maximum: 2147483647 }
+        precision: { $ref: "#/components/schemas/Precision" }
+        compute: { type: string }
+        pipeline: { type: string, maxLength: 63, description: "The recipe (default the parent's pipeline)" }
+        ref: { type: string, maxLength: 200 }
+        params: { type: object, description: "More overrides of the train step's parameters" }
+        priority: { type: integer, minimum: -100, maximum: 100, default: 0 }
+    RunCalibrate:
+      type: object
+      additionalProperties: false
+      required: [mix]
+      properties:
+        baseModel: { type: string, description: "Base model version (ver_…), collection name or @alias; default the defaults' base model" }
+        mix: { type: string, maxLength: 200, description: "The mix whose data the calibration measures on (mix_… or name)" }
+        mixRevision: { type: integer, minimum: 1 }
+        precision: { $ref: "#/components/schemas/Precision" }
+        compute: { type: string, description: "Host id or name; default the first host whose card allows training" }
+        params: { type: object, description: "Overrides of the calibrate step's parameters" }
+    CalibrationKey:
+      type: object
+      required: [baseModel, cardClass, memoryCapGb, precision]
+      description: "What a measured estimate is cached by (R12); the bucket configuration is part of the measurement"
+      properties:
+        baseModel: { type: string, description: The base model's registry collection }
+        cardClass: { type: string }
+        memoryCapGb: { type: number, format: double }
+        precision: { $ref: "#/components/schemas/Precision" }
+    RunCalibration:
+      type: object
+      required: [key, family, step]
+      properties:
+        key: { $ref: "#/components/schemas/CalibrationKey" }
+        family: { type: string, description: The model family whose calibrate role runs }
+        step: { type: string, description: "The calibrate step kind (kind@version)" }
+        mix: { $ref: "#/components/schemas/RunMixRef" }
+        pipelineRun: { $ref: "#/components/schemas/PipelineRun" }
+        plan: { $ref: "#/components/schemas/PipelinePlan" }
+        current:
+          type: object
+          description: The calibration cached for the key so far, when there is one
+          properties:
+            secondsPerStep: { type: number, format: double }
+            plusMinus: { type: number, format: double }
+            measuredAt: { type: string, format: date-time }
+    RunStageEntry:
+      type: object
+      required: [step, kind, kindVersion, state, attempts]
+      description: One step of the run's pipeline run, for the Run panel's stage timeline
+      properties:
+        step: { type: string }
+        kind: { type: string }
+        kindVersion: { type: string }
+        role: { type: string, description: "The family role the step fills (calibrate, train, average, …), when it fills one" }
+        state: { $ref: "#/components/schemas/PipelineStepState" }
+        attempts: { type: integer }
+        batchScale: { type: number, format: double, description: "The current attempt's batch scale (0.75 after an out-of-memory retry)" }
+        oomRetries: { type: integer, description: Attempts started by the automatic OOM retry }
+        reusedFrom: { type: string, description: "The finished step (pls_…) whose outputs this step reused (same input hash); it spent no GPU time" }
+        reusedFromRun: { type: string, description: "The run (run_…) that step belongs to, when it was a run's" }
+        jobId: { type: string }
+        paused: { type: boolean, description: The step's job is paused (jobs.pause) }
+        estimateSeconds: { type: number, format: double }
+        startedAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time }
+        error: { $ref: "#/components/schemas/StepError" }
+    RunDeparture:
+      type: object
+      required: [step, param, value]
+      properties:
+        step: { type: string, description: The pipeline step the parameter belongs to }
+        param: { type: string }
+        value: { description: The value the step runs with }
+        default: { description: "The default; absent when the parameter has none" }
+    RunParentDiff:
+      type: object
+      required: [param, value]
+      properties:
+        param: { type: string, description: "A resolved train-step parameter, or a run field (init, mix, pipeline)" }
+        value: { description: This run's value }
+        parentValue: { description: "The parent's value; absent when the parent had none" }
+    Run:
+      type: object
+      required: [id, projectId, status, init, baseModel, family, mix, recipe, pipelineRunId, trainStep, steps, gpus, precision,
+        timeline, departures, finalMetrics, checkpointCount, rev, actor, createdAt, updatedAt]
+      properties:
+        id: { type: string, description: "run_…" }
+        projectId: { type: string }
+        status: { $ref: "#/components/schemas/RunStatus" }
+        init: { $ref: "#/components/schemas/RunInit" }
+        baseModel: { $ref: "#/components/schemas/RegistryVersion" }
+        checkpointId: { type: string, description: "init checkpoint: the checkpoint the run starts from" }
+        parentRunId: { type: string, description: "The run the start checkpoint came from (runs.stage)" }
+        family:
+          type: object
+          required: [name, versionId]
+          properties:
+            name: { type: string, description: The model family of the base model (R41) }
+            versionId: { type: string, description: "The family descriptor's registry version (ver_…)" }
+        mix: { $ref: "#/components/schemas/RunMixRef" }
+        recipe: { $ref: "#/components/schemas/RunRecipe" }
+        pipelineRunId: { type: string, description: "The pipeline run the run mirrors (plr_…)" }
+        trainStep: { type: string, description: "The step of the pipeline that fills the family's train role" }
+        steps: { type: integer, description: Step budget }
+        seed: { type: integer }
+        gpus: { type: integer }
+        precision: { $ref: "#/components/schemas/Precision" }
+        runtime:
+          type: object
+          description: "The runtime the train step runs in: registry version and image digest"
+          properties:
+            name: { type: string }
+            versionId: { type: string }
+            digest: { type: string }
+        card:
+          type: object
+          description: The card the estimate was made for
+          properties:
+            computeId: { type: string }
+            host: { type: string }
+            index: { type: integer }
+            cardClass: { type: string }
+            memoryCapGb: { type: number, format: double }
+        estimate: { $ref: "#/components/schemas/RunEstimate" }
+        timeline: { type: array, items: { $ref: "#/components/schemas/RunStageEntry" } }
+        currentJobId: { type: string, description: "The step job to pause, resume or cancel (jobs.pause | jobs.resume | jobs.cancel)" }
+        resumedFrom: { type: string, description: "The training-state the last runs.resume continued from" }
+        departures: { type: array, items: { $ref: "#/components/schemas/RunDeparture" }, description: "Parameters that differ from defaults.yaml, per step" }
+        parentDiff: { type: array, items: { $ref: "#/components/schemas/RunParentDiff" }, description: "Where this run's train-step parameters differ from the parent's" }
+        finalMetrics: { type: object, additionalProperties: { type: number }, description: "The train step's final metrics (val_wer, …)" }
+        bestCheckpointId: { type: string, description: The kept checkpoint with the lowest validation WER }
+        checkpointCount: { type: integer }
+        gpuHours: { type: number, format: double, description: "GPU-hours the run's leases on GPU cards used so far" }
+        error: { type: string }
+        rev: { type: integer }
+        actor: { $ref: "#/components/schemas/Actor" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time }
+    RunList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Run" } }
+    Checkpoint:
+      type: object
+      required: [id, runId, projectId, artifact, kind, kept, createdAt]
+      properties:
+        id: { type: string, description: "ckp_…" }
+        runId: { type: string }
+        projectId: { type: string }
+        artifact: { type: string, description: "The checkpoint artifact (b3:…); artifacts.get lists its files" }
+        kind: { type: string, enum: [trained, averaged] }
+        step: { type: integer, format: int64, description: The optimiser step it was saved at }
+        valWer: { type: number, format: double, description: "Validation WER the step measured (0–1)" }
+        family: { type: string }
+        weightsHash: { type: string }
+        averagedFrom: { type: array, items: { type: string }, description: "The checkpoints an averaged one was made from (ckp_…)" }
+        kept: { type: boolean, description: "In its run's top k by validation WER (training.keep_top_k)" }
+        rank: { type: integer, description: "1 = the run's best by validation WER" }
+        pipelineRunId: { type: string }
+        stepId: { type: string }
+        meta: { type: object, description: The artifact's neutral metadata (R42) }
+        createdAt: { type: string, format: date-time }
+    CheckpointList:
+      type: object
+      required: [items, keepTopK]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Checkpoint" } }
+        keepTopK: { type: integer, description: "training.keep_top_k" }
+    CheckpointAverage:
+      type: object
+      additionalProperties: false
+      required: [checkpoints]
+      properties:
+        checkpoints: { type: array, minItems: 2, maxItems: 20, items: { type: string }, description: "Checkpoints of the run (ckp_…)" }
+        params: { type: object, description: "Overrides of the average step's parameters" }
+    CheckpointAverageStarted:
+      type: object
+      required: [runId, step, checkpoints]
+      properties:
+        runId: { type: string }
+        step: { type: string, description: "The average step kind (kind@version)" }
+        checkpoints: { type: array, items: { type: string } }
+        pipelineRun: { $ref: "#/components/schemas/PipelineRun" }
+        plan: { $ref: "#/components/schemas/PipelinePlan" }
+    MetricAxis:
+      type: string
+      enum: [step, epoch, wall, gpuHours]
+      default: step
+      description: "step: optimiser step; epoch; wall: seconds since the run's first point; gpuHours: GPU-hours of the run's leases on GPU cards up to the point (wall hours when it had none)"
+    MetricBin:
+      type: object
+      required: [x, value, min, max, count]
+      description: "One point, or the bucket of points a long series was binned into: mean value with min and max (R53)"
+      properties:
+        x: { type: number, format: double }
+        value: { type: number, format: double }
+        min: { type: number, format: double }
+        max: { type: number, format: double }
+        count: { type: integer }
+        step: { type: integer, format: int64, description: The last optimiser step in the bucket }
+        epoch: { type: number, format: double }
+        wallTime: { type: string, format: date-time, description: The last point's wall time }
+    MetricSeriesView:
+      type: object
+      required: [name, total, binned, points]
+      properties:
+        name: { type: string }
+        total: { type: integer, description: Points the series has (after afterStep) }
+        binned: { type: boolean, description: The points are buckets }
+        points: { type: array, items: { $ref: "#/components/schemas/MetricBin" } }
+    MetricSeriesSet:
+      type: object
+      required: [runId, x, maxPoints, series, checkpoints]
+      properties:
+        runId: { type: string }
+        x: { $ref: "#/components/schemas/MetricAxis" }
+        maxPoints: { type: integer }
+        lastStep: { type: integer, format: int64, description: "The highest optimiser step returned; pass it as afterStep to append" }
+        series: { type: array, items: { $ref: "#/components/schemas/MetricSeriesView" } }
+        checkpoints:
+          type: array
+          description: Checkpoint marks for the chart
+          items:
+            type: object
+            required: [id, kept]
+            properties:
+              id: { type: string }
+              step: { type: integer, format: int64 }
+              valWer: { type: number, format: double }
+              kind: { type: string }
+              kept: { type: boolean }
+
+    # ---------------------------------------------------------------- playbooks schemas (wave 2 · stream K) — add below
+    PlaybookInputType:
+      type: string
+      enum: [dataset_version, base_model, integer, number, string, boolean]
+    PlaybookInput:
+      type: object
+      required: [name, type, required, multiple]
+      properties:
+        name: { type: string }
+        type: { $ref: "#/components/schemas/PlaybookInputType" }
+        description: { type: string }
+        required: { type: boolean, description: "The caller must give it: it has neither a defaultRef nor a project fact" }
+        multiple: { type: boolean, description: A list of values (dataset versions) }
+        defaultRef: { type: string, description: "A defaults.yaml key (training.steps) the value defaults to" }
+        from: { type: string, enum: [project, adoption], description: "project: a project fact (the default base model); adoption: the project's adopted version of collection" }
+        collection: { type: string, description: "from adoption: the registry collection (dataset/replay-base)" }
+        default: { description: "The value it takes when not given: from defaults.yaml or the project (absent when there is none)" }
+        min: { type: number, format: double, description: The safe range from defaults.yaml }
+        max: { type: number, format: double }
+    PlaybookStep:
+      type: object
+      required: [id, title, command, spending, available]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        command: { type: string, description: "The operation (<entity>.<verb>) whose success ticks the step" }
+        accepts: { type: array, items: { type: string }, description: Other operations that tick it too (mixes.edit for the mix step) }
+        until: { type: string, enum: [terminal], description: "terminal: the step ticks when the job it waits for has ended (jobs.wait answered done; failed or cancelled fails it)" }
+        phase: { type: integer, description: The roadmap phase that ships the step; a later phase than the running one lists it as skipped }
+        spending: { type: boolean, description: "A GPU-spending command: in a playbook session it needs a successful dry run of the same operation first" }
+        available: { type: boolean, description: "The step can run now (its phase has shipped)" }
+    PlaybookStop:
+      type: object
+      required: [on, when]
+      properties:
+        on: { type: string, enum: [gate, budget, step, approval], description: What is watched }
+        when: { type: string, description: "The outcome that stops the playbook: gate failed, budget exceeded, step failed, approval denied" }
+    PlaybookStepEstimate:
+      type: object
+      required: [id, command, basis, skipped]
+      properties:
+        id: { type: string }
+        command: { type: string }
+        basis: { type: string, enum: [table, measured, hint, none], description: "table/measured: the operation's own dry-run estimate; hint: the playbook's estimate hint; none: spends no GPU time" }
+        gpuHours: { $ref: "#/components/schemas/EstimateRange" }
+        durationSeconds: { $ref: "#/components/schemas/EstimateRange" }
+        skipped: { type: boolean, description: "The step's phase has not shipped: listed, not counted" }
+        note: { type: string, description: Why a step has no estimate (e.g. the estimate table has no row) }
+    PlaybookEstimate:
+      type: object
+      required: [basis, plusMinus, gpuHours, durationSeconds, steps]
+      description: "The sum of the chain's step estimates (R12, R16); skipped steps are listed and not counted"
+      properties:
+        basis: { type: string, enum: [table, measured, mixed, hint, none] }
+        plusMinus: { type: number, format: double, description: "The largest relative uncertainty of a counted step" }
+        gpuHours: { $ref: "#/components/schemas/EstimateRange" }
+        durationSeconds: { $ref: "#/components/schemas/EstimateRange" }
+        budget:
+          type: object
+          required: [gpuHoursPerProjectPerDay, withinDailyBudget]
+          properties:
+            gpuHoursPerProjectPerDay: { type: number, format: double }
+            withinDailyBudget: { type: boolean }
+        steps: { type: array, items: { $ref: "#/components/schemas/PlaybookStepEstimate" } }
+    Playbook:
+      type: object
+      required: [name, title, description, availableFrom, runnable, inputs, chain, stop, prompt]
+      properties:
+        name: { type: string, description: "templates/playbooks/<name>.yaml" }
+        title: { type: string }
+        description: { type: string }
+        typicalCost: { type: string, description: "03 \"Playbooks\": the typical GPU-hours, as text" }
+        availableFrom: { type: integer, description: The roadmap phase from which the playbook runs }
+        runnable: { type: boolean, description: "It can run now (availableFrom has shipped)" }
+        unavailable: { type: string, description: "Why it cannot run yet" }
+        versionId: { type: string, description: "The registry template version (template/playbook-<name>)" }
+        version: { type: string }
+        inputs: { type: array, items: { $ref: "#/components/schemas/PlaybookInput" } }
+        chain: { type: array, items: { $ref: "#/components/schemas/PlaybookStep" } }
+        stop: { type: array, items: { $ref: "#/components/schemas/PlaybookStop" } }
+        prompt: { type: string, description: The prompt template (Go text/template over .Inputs and .Project) }
+        estimate: { $ref: "#/components/schemas/PlaybookEstimate" }
+        estimateError: { type: string, description: "Why no estimate was computed (a required input is missing, the estimate table has no row)" }
+    PlaybookList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Playbook" } }
+    PlaybookRunNew:
+      type: object
+      additionalProperties: false
+      properties:
+        inputs:
+          type: object
+          additionalProperties: true
+          description: "Input name → value (a dataset_version input with multiple takes a list); omitted inputs take their default or project fact"
+        driver: { $ref: "#/components/schemas/AgentDriver" }
+        model: { type: string, minLength: 1, maxLength: 200 }
+    PlaybookPlanItem:
+      type: object
+      required: [id, title, command, state, spending]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        command: { type: string }
+        accepts: { type: array, items: { type: string } }
+        until: { type: string, enum: [terminal] }
+        phase: { type: integer }
+        spending: { type: boolean }
+        state: { type: string, enum: [pending, running, done, failed, skipped] }
+        note: { type: string, description: "What ticked it: the entity or job, the dry run's estimate, why it failed" }
+        commandId: { type: string, description: The command that ticked it }
+        toolCallId: { type: string }
+        entityId: { type: string, description: The entity the command created (mix_…, run_…) }
+        jobId: { type: string, description: The job the command started (a later terminal step waits for it) }
+        at: { type: string, format: date-time }
+        estimate: { $ref: "#/components/schemas/PlaybookStepEstimate" }
+    PlaybookRunResult:
+      type: object
+      required: [playbook, inputs, estimate, plan, prompt]
+      properties:
+        playbook: { $ref: "#/components/schemas/Playbook" }
+        inputs: { type: object, additionalProperties: true, description: Every input resolved (given, default or project fact) }
+        estimate: { $ref: "#/components/schemas/PlaybookEstimate" }
+        plan: { type: array, items: { $ref: "#/components/schemas/PlaybookPlanItem" } }
+        prompt: { type: string, description: The rendered prompt the session starts with }
+        session: { $ref: "#/components/schemas/AgentSession" }
+    AgentPlaybook:
+      type: object
+      required: [name, title, state, inputs, estimate, plan]
+      description: "A playbook session's playbook: the plan ticks on the server when the session's matching command succeeds"
+      properties:
+        name: { type: string }
+        title: { type: string }
+        versionId: { type: string }
+        state: { type: string, enum: [running, done, stopped], description: "done: every available step ticked; stopped: a stop condition ended it" }
+        inputs: { type: object, additionalProperties: true }
+        estimate: { $ref: "#/components/schemas/PlaybookEstimate" }
+        plan: { type: array, items: { $ref: "#/components/schemas/PlaybookPlanItem" } }
+        stop:
+          type: object
+          required: [on, when, message]
+          properties:
+            on: { type: string, enum: [gate, budget, step, approval] }
+            when: { type: string }
+            message: { type: string }
+            at: { type: string, format: date-time }
+        summary: { type: string, description: What the chain did, written when it ended }
+        next: { type: string, description: The suggested next step }
+        dryRuns: { type: array, items: { type: string }, description: Spending operations with a successful dry run in this session }
+        nudges: { type: integer, description: Turns that ended without progress since the last tick (the server reminds the agent at most twice) }
+
+    # ---------------------------------------------------------------- panels schemas (wave 2 · stream U) — add below
+    RecipeEdit:
+      type: object
+      required: [content]
+      additionalProperties: false
+      properties:
+        content: { type: string, maxLength: 1048576, description: The file's new content (UTF-8 text) }
+        message: { type: string, minLength: 1, maxLength: 200, description: "Commit message (default: edit <path>)" }
+    RecipeNew:
+      type: object
+      required: [path, content]
+      additionalProperties: false
+      properties:
+        path: { $ref: "#/components/schemas/RecipePath" }
+        content: { type: string, maxLength: 1048576, description: The file's content (UTF-8 text) }
+        message: { type: string, minLength: 1, maxLength: 200, description: "Commit message (default: add <path>)" }
+
+    # ---------------------------------------------------------------- content-store retention schemas (stream E) — add below
+    ArtifactEvict:
+      type: object
+      additionalProperties: false
+      description: Which artifacts to consider; empty means every superseded training state
+      properties:
+        type: { type: string, enum: [training-state], default: training-state, description: "The artifact type (v1: training-state only)" }
+        runId: { type: string, maxLength: 100, description: "Only the states of this run (run_…)" }
+        project: { type: string, maxLength: 100, description: "Only the states of this project (slug or id)" }
+        olderThanDays: { type: integer, minimum: 0, maximum: 3650, description: "Only states recorded at least this many days ago" }
+        hashes:
+          type: array
+          maxItems: 1000
+          items: { type: string, pattern: "^b3:[0-9a-f]{64}$" }
+          description: Exactly these artifacts; one that may not be evicted answers artifact-not-evictable
+    EvictionPlan:
+      type: object
+      required: [artifacts, kept, bytesFreed, blobs, permanent]
+      properties:
+        artifacts:
+          type: array
+          description: The artifacts evicted (or, in a dry run, that would be)
+          items: { $ref: "#/components/schemas/EvictionCandidate" }
+        kept:
+          type: array
+          description: Training states the filter matched that stay, with the reason
+          items: { $ref: "#/components/schemas/EvictionKept" }
+        bytesFreed: { type: integer, format: int64, description: Bytes of the blobs deleted (files other artifacts list are not counted) }
+        blobs: { type: integer, description: Blobs deleted (manifests and files) }
+        permanent: { type: boolean, description: "True when no backup mirror is configured: nothing can bring the blobs back" }
+        disk: { $ref: "#/components/schemas/StoreDisk" }
+    StoreDisk:
+      type: object
+      required: [totalBytes, freeBytes, lowFreeFraction]
+      description: The filesystem holding the content store, as the control plane sees it now
+      properties:
+        totalBytes: { type: integer, format: int64 }
+        freeBytes: { type: integer, format: int64, description: Bytes available to the control plane }
+        lowFreeFraction: { type: number, description: "Below this share free, Cadence warns (cache.store_low_free)" }
+    EvictionKept:
+      type: object
+      required: [hash, reason]
+      properties:
+        hash: { type: string }
+        runId: { type: string }
+        reason: { type: string }
+    EvictionCandidate:
+      type: object
+      required: [hash, type, size, createdAt]
+      properties:
+        hash: { type: string }
+        type: { type: string }
+        size: { type: integer, format: int64, description: "The artifact's size (a directory's files summed)" }
+        projectId: { type: string }
+        pipelineRunId: { type: string }
+        runId: { type: string }
+        reason: { type: string, description: Why it is evictable }
+        createdAt: { type: string, format: date-time }
+    ArtifactEviction:
+      type: object
+      required: [at, by]
+      description: "The artifact's blobs were deleted from the content store; the backup mirror holds them"
+      properties:
+        at: { type: string, format: date-time }
+        by: { $ref: "#/components/schemas/Actor" }
+        jobId: { type: string }

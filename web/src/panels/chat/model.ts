@@ -97,7 +97,7 @@ const BUDGET_PAUSES = new Set(["budget_turns", "budget_tokens", "project_tokens"
  * message; any other pause holds messages until the session is resumed, and the line says why.
  */
 export function composerNotice(s: AgentSession | undefined): { tone: "quiet" | "warning"; text: string; send: boolean } | undefined {
-  if (!s || s.state !== "paused" || s.kind !== "interactive" || s.pendingControl === "resume") return undefined;
+  if (!s || s.state !== "paused" || s.kind === "read-only" || s.pendingControl === "resume") return undefined;
   if (isAsleep(s)) return { tone: "quiet", text: ASLEEP, send: true };
   const why = s.pauseReason?.message ?? "paused";
   const how = s.pauseReason && BUDGET_PAUSES.has(s.pauseReason.code) ? "resume it with a larger budget to send a message" : "resume it to send a message";

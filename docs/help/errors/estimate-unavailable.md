@@ -11,12 +11,22 @@ combination the run would use, and nothing answers it. Until a card is calibrate
 estimate comes from the table in `defaults.yaml` (`estimates.training`), keyed by
 
 - the base model's registry collection (`base-model/nemotron-3.5-asr-streaming-0.6b`),
-- the card class of the chosen compute card (`blackwell-96gb`),
+- the card class of the chosen compute card (`blackwell-48gb` on the staging card),
 - the card's memory cap in GB (24 on the shared staging card),
 - the precision (`bf16`).
 
 A different memory cap (after `compute.edit`), another base model or another precision has no row until someone
 adds one.
+
+**Installs seeded before phase 2.** The staging card was first seeded as `blackwell-96gb` with 96 GB; it is an RTX PRO
+5000 Blackwell with 48 GB, and the estimate table now has a `blackwell-48gb` row only. `compute.list` still shows
+the old card on such an install (seeding never overwrites a host Settings may have edited): correct it once with
+`compute.edit` — card `0`, `cardClass: blackwell-48gb`, `memoryGb: 48`, `memoryCapGb: 24`, for example
+
+```
+cadence compute edit --id staging --if-match <rev> \
+  --body '{"cards": [{"index": 0, "name": "Staging card (RTX PRO 5000 Blackwell, 48 GB)", "cardClass": "blackwell-48gb", "memoryGb": 48, "memoryCapGb": 24}]}'
+```
 
 ## Place in the loop
 

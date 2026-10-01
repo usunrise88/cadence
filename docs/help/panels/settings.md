@@ -1,6 +1,6 @@
 ---
 title: Settings
-summary: Instance-wide configuration for the admin — compute, the agents' model accounts, secrets, credentials, policies, catalogues, security and the audit log.
+summary: Instance-wide configuration for the admin — compute, the agents' model accounts, secrets, credentials, policies, notifications and the Telegram bot, backups, catalogues, security and the audit log.
 contexts: [panel:settings]
 ---
 
@@ -10,11 +10,14 @@ A tool panel for the admin account only (it opens floating; View → Open Settin
 
 | Section | What it holds |
 | --- | --- |
-| Compute | Hosts and their cards: memory, memory cap per card, allowed job kinds (training, eval, shadow, export), health |
+| Compute | Hosts and their cards: name, card class (keys the estimate table), memory, memory cap per card — all editable under Edit, so a card seeded wrongly is corrected in place — allowed job kinds (training, eval, shadow, export, data), availability windows per job kind (R19: days, start, end, time zone — the instance time zone when a window names none; a job starts only if its estimate fits before the window closes, and a running training job pauses at the close and resumes in the next window — edited per card under Edit: add a window, pick the job kind, days, opening and closing time (HH:MM, 24:00 for midnight; a close before the open means the next day) and an optional time zone; Queue & GPU shows them), the last telemetry a worker reported, health (from worker heartbeats) |
 | Agents | The agents' own model accounts, for the whole instance: the Claude Code subscription token and opencode's providers (MiniMax, Anthropic, OpenAI, OpenRouter, DeepSeek, or an OpenAI-compatible base URL such as a self-hosted vLLM); status, expected expiry, Verify, and the default opencode model of new projects. Values are write-only |
 | Secrets | Named credentials (Hugging Face, NGC, GitHub, S3, judge API): name, kind, scope, who added it, last use. The value is write-only |
 | Credentials | API keys (`cdk_…`) scoped to one project and/or registry read — and, opt-in, **May run agent sessions in the project** (automation such as the agent evals; everything else stays under the default preset); your browser sessions; agent session tokens |
-| Policies | Default budgets: GPU-hours per project per day, agent turns per session |
+| Policies | Default budgets: GPU-hours per project per day, agent turns per session; the instance timezone (quiet hours, the digest and the backup schedule follow it) |
+| Notifications | The routing table (per event class: in-app, Telegram, Telegram timing), quiet hours, the digest time, and the Telegram bot: write-only token, allow-listed chats, chats that wrote to the bot, test message — see the [notifications guide](../guides/notifications.md) |
+| Backups | The schedule and retention, **Back up now**, the last restore test's report (row counts at backup vs restored, migration version, blobs re-hashed) and every set with its own **Restore test** — see the [backups guide](../guides/backups.md) |
+| Content store | How full the content store's disk is (red below `cache.store_low_free`, 15 %), the superseded training states an eviction would delete with their runs and sizes, and **Evict…**, which asks for an approval — see [freeing store space](../guides/freeing-store-space.md) |
 | Catalogues | Read-only: base models, instruction templates and permission presets in the registry |
 | Security | Two-factor sign-in (TOTP) for the admin account: **Set up** shows a QR code to scan with an authenticator app from the screen (drawn in the browser; the key never leaves the page), or the key in groups of four to type; confirm with the app's current code |
 | Audit log | Every command, denial and failed attempt with actor, outcome, rule and cause; filter by actor, operation and project. Workspace layout saves are preferences, not commands: they are not listed (a refused save still is) |
@@ -31,9 +34,14 @@ server refuses values outside the ranges it enforces.
 
 | Field | Default | Source |
 | --- | --- | --- |
-| Memory cap (staging card) | 24 GB of 96 GB | docs/spikes/A3 (memory fraction 0.25) |
+| Memory cap (staging card) | 22 GB of 48 GB | docs/spikes/A3-nemotron-finetune.md (RTX PRO 5000 Blackwell 48 GB beside a resident vLLM service of 23.8 GB) |
 | GPU-hours per project per day | 8 GPU-h (0–192) | Cadence recommendation |
 | Agent turns per session | 200 turns (1–2000) | Cadence recommendation |
+| Instance timezone | `UTC` | Cadence recommendation |
+| Digest time | `09:00` | docs/spec/06-platform.md "Notifications" |
+| Quiet hours | off (22:00–08:00 when on) | Cadence recommendation |
+| Nightly backup / restore test | 03:00 / Sundays 04:00 | docs/spec/06-platform.md "Operations" |
+| Backup sets kept | 7 nightly + 4 weekly | Cadence recommendation |
 
 Policies show **departures from defaults** as chips; **Reset to recommended** puts every budget back to
 defaults.yaml.
@@ -70,10 +78,18 @@ key's token appears once, right after creation, with a Copy button — Cadence k
 | Create API key | `credentials.new` | Scope: one project, registry read, or both; optional expiry |
 | Revoke credential | `credentials.revoke` | Inline confirm; irreversible. Your current session cannot be revoked here — sign out instead |
 | Edit policies | `policies.edit` | If-Match on the policies' revision |
+| Edit notification rule | `notificationRules.edit` | If-Match on the rule's revision |
+| Save quiet hours, digest time, chats | `notificationSettings.edit` | If-Match on the settings' revision |
+| Store / Replace bot token | `telegramBot.set` | Write-only (secret `telegram-bot-token`); If-Match once a token is stored |
+| Send test message | `telegramBot.verify` | Checks the token with Telegram, then messages every allowed chat |
+| Back up now | `backups.new` | Answers the job; one set at a time |
+| Restore test | `backups.verify` | Restores the set into a scratch database and checks it; answers the job |
+| (the Content store list) | `artifacts.evict?dryRun=true` | Read when the section opens and on Refresh, with the store's disk |
+| Evict… | `artifacts.evict` | Always answers an approval, for people too; decide it in Approvals or from Telegram |
 | Two-factor authentication… | `totp.enroll`, `totp.confirm`, `totp.disable` | The same dialog as the user menu |
 
-Agents cannot run any of these: the `admin-only` rule of every preset forbids secrets, credentials, compute and
-policies changes. Agent credentials are not even MCP tools (tag `agentCredentials`), and the presets forbid them too.
+Agents cannot run any of these: the `admin-only` rule of every preset forbids secrets, credentials, compute,
+policies, notification and backup changes. Agent credentials are not even MCP tools (tag `agentCredentials`), and the presets forbid them too.
 
 ## Playbooks
 
@@ -84,8 +100,10 @@ policies changes. Agent credentials are not even MCP tools (tag `agentCredential
   add MiniMax, Verify both, keep `minimax/MiniMax-M3` as the default model.
 - Verify says 401: the token or key is wrong or expired; set a new one and Verify again.
 - Something changed and nobody remembers why: filter the audit log by operation; the cause column links approvals
-  and agent tool calls.
+  and agent tool calls. An approval decided from Telegram shows the admin with channel `telegram`.
+- Approve from the phone: set up the Telegram bot ([notifications guide](../guides/notifications.md)).
+- Before an upgrade: check the last restore test, then follow [Upgrading Cadence](../guides/upgrading.md).
 
 ## Sources
 
-- docs/spec/11-ui-panels.md "Panel catalogue" (Settings) and "First run and progressive disclosure"; docs/spec/06-platform.md "Authentication and access"; docs/spec/08-resolutions.md R3, R4, R6, R9, R11.
+- docs/spec/11-ui-panels.md "Panel catalogue" (Settings) and "First run and progressive disclosure"; docs/spec/06-platform.md "Authentication and access", "Operations", "Notifications"; docs/spec/08-resolutions.md R3, R4, R6, R9, R11.

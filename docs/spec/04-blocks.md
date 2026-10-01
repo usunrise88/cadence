@@ -28,20 +28,49 @@ A run is one optimisation stage from a pinned base or checkpoint, on a frozen mi
 
 Process:
 
-1. Choose the start: the base model at its pinned revision, or a checkpoint for a new stage.
-2. Compose the mix: dataset versions, weights, temperature and a replay share of the model's other locales; the preview shows hours per language.
-3. Fill the recipe from the template: `init_from_nemo_model`, bf16, step budget, Noam schedule with the computed peak learning rate shown next to the scale factor, `target_lang` on every clip.
-4. Calibrate batch sizes with OOMptimizer on the target card under its memory cap (24 GB when the staging card is shared).
+1. Choose the start (`init`): the base model at its pinned revision (`base`), or a checkpoint for a new stage (`checkpoint`); the start fixes the model family (R44).
+2. Compose the mix: dataset versions, weights, temperature and a replay share of the model's other locales from `dataset/replay-base` (03 "Replay"); the preview shows hours per language.
+3. Fill the recipe from the family's train-stage template: its train step kind with parameters from the family's `defaults.yaml` section and a step budget. For Nemotron: `init_from_nemo_model`, bf16, Noam schedule with the computed peak learning rate shown next to the scale factor, `target_lang` on every clip.
+4. Calibrate with the family's calibrate step (OOMptimizer for Nemotron) on the target card under its memory cap (24 GB, fraction 0.5, on the shared 48 GB staging card); the measured seconds per step replace the table estimate (`basis: measured`).
 5. Dry run: GPU-hours, card and duration; over budget goes to approval.
-6. Launch; loss, validation WER and learning rate stream in through a Lightning logger that posts to the control plane.
-7. Register checkpoints with validation WER, keep the top k, optionally average them.
-8. Continue by resuming (same optimiser state) or starting a new stage from a checkpoint with an explicit peak learning rate.
+6. Launch: the run's train-stage pipeline goes to the queue, a worker of the family's runtime leases it, and loss, validation WER and learning rate stream in as metric batches through the worker protocol (for NeMo, a Lightning callback hands them to the worker).
+7. Register checkpoints (neutral `checkpoint` artifacts with step, validation WER, family and weights hash) through the `checkpoint` output hook, keep the top k, optionally average them with the family's average step.
+8. Continue by resuming (from the `training-state` artifact, same optimiser state; a window close or preemption resumes the same way) or starting a new stage from a checkpoint with an explicit peak learning rate.
 
 Windows: Mix, Run, Metrics, Checkpoints, Logs, Queue & GPU, Recipes, Library.
 
 Agent tools: `mixes.``new`, `mixes.preview`, `runs.c``alibrate, runs.``new` (with `dryRun`), `runs.resume`, `runs.``s``tage`, `jobs.pause`, `jobs.resume`, `jobs.cancel`, `jobs.wait`, `metrics.get`, `checkpoints.list`, `checkpoints.average`.
 
 Gates: a run needs a frozen dataset version and a committed recipe SHA; the production card never takes training jobs; each session has a GPU-hour budget.
+
+Built in phase 2 (stream R; `control-plane/internal/runs`, guide `guides.runs`):
+
+- `runs.new` (dry run: the estimate; real: `201` with the run) pins the start (`init: base` with a base model version,
+  or `init: checkpoint` with a `ckp_…`, whose run becomes the parent), renders the mix revision as a `mix` artifact
+  (format `cadence.mix/1`: the resolved `input_cfg` with group weights, sampling probabilities and dataset artifacts;
+  its hash is the content hash R13 asks for) and a `base_model` artifact, and starts the recipe — the project's
+  `train-stage` pipeline (`training.pipeline`) at a commit — with the run id. The recipe must hold exactly one step of
+  the base model's family's train kind (`recipe-mismatch`); step kinds come from the family descriptor, never from
+  a family name (`family-unavailable` when unpublished). Eval-only datasets are refused.
+- Status mirrors the pipeline run (`queued`, `running`, `paused`, `done`, `failed`, `cancelled`) through an engine
+  observer; events `run.created` and `run.status_changed` on `run.{id}.status`. `runs.get` answers the stage
+  timeline (steps with role, state, attempts, OOM retries and batch scale), `currentJobId` for Pause, Resume and Stop
+  (`jobs.pause|resume|cancel`), final metrics, departures per step, the parent and the config diff against it.
+- `runs.calibrate` runs the family's calibrate kind as a one-step pipeline on the mix; the `calibration` hook caches
+  seconds per step (±, batch sizes, bucket configuration) per base model, card class, memory cap and precision, and
+  estimates switch to `basis: measured`. Before any calibration the defaults table answers (`basis: table`).
+- Checkpoints (`ckp_…`) come from the `checkpoint` hook with step, validation WER, family and weights hash; the top
+  `training.keep_top_k` (3) by validation WER are kept; `checkpoint.saved` on `run.{id}.checkpoints`.
+  `checkpoints.average` runs the family's average kind over chosen checkpoints; the result is a checkpoint of the run
+  (`kind: averaged`).
+- `runs.resume` continues a cancelled or failed run's train step from its last `training-state` (a new attempt with
+  `overrides.resumeFrom`); `runs.stage` starts a new run from a checkpoint (default the best kept) with an explicit
+  peak learning rate.
+- `metrics.get` (`GET /metrics/{runId}`) answers series on the step, epoch, wall-time or GPU-hours axis, binned
+  server-side to `maxPoints` with min and max per bucket (R53), `afterStep` for live append, checkpoint marks.
+- GPU budgets: spend is lease time on GPU cards per project per day and per agent session
+  (`budgets.agent_gpu_hours_per_session`); an agent's spending command whose estimate exceeds what is left waits for
+  an approval (the first real gated command); the daily digest shows the metered spend.
 
 ## Block 3 — Evaluation
 
@@ -151,12 +180,12 @@ Every step now has a window, a palette command, an API operation, an agent tool 
 | Freeze | Dataset version | Freeze dataset version | `POST /projects/{p}/datasets/{id}:freeze` | `datasets.freeze` | `entity.dataset_version.{id}` |
 | Materialise, export | Dataset version, Storage | Materialise; Export to Shar | `…:materialize`, `…:export` | `datasets.materialize`, `datasets.export` | `job.{id}` |
 | Compose mix | Mix | Save mix as version | `POST /projects/{p}/mixes` | `mixes.``new`, `mixes.preview` | `entity.mix.{id}` |
-| Calibrate batch | Run, Queue & GPU | Calibrate run | `POST /projects/{p}/runs:calibrate` | `runs.calibrate` | `job.{id}` |
-| Launch run | Run, Queue & GPU | New run from mix | `POST /projects/{p}/runs` with `dryRun` | `runs.create` | `run.{id}.status` |
-| Watch training | Metrics, Logs, Checkpoints | — | `GET /runs/{id}/metrics` | `metrics.get` | `run.{id}.metrics`, `job.{id}.log` |
+| Calibrate batch | Run, Queue & GPU | Calibrate run | `POST /projects/{p}/runs:calibrate` | `runs.calibrate` | `pipeline_run.{id}`, `job.{id}` |
+| Launch run | Run, Queue & GPU | New run from mix | `POST /projects/{p}/runs` with `dryRun` | `runs.new` | `run.{id}.status` |
+| Watch training | Metrics, Logs, Checkpoints | — | `GET /metrics/{runId}`; `GET /runs/{id}`; `GET /projects/{p}/checkpoints` | `metrics.get`, `runs.get`, `checkpoints.list` | `run.{id}.metrics`, `run.{id}.checkpoints`, `job.{id}.log` |
 | Control a job | Queue & GPU | Pause / resume / cancel | `POST /jobs/{id}:pause`, `:resume`, `:cancel` | `jobs.*`, `jobs.wait` | `queue`, `job.{id}` |
-| Continue | Checkpoints, Run | Resume; New stage | `POST /runs/{id}:resume`; `POST /runs` with `initFrom` | `runs.resume`, `runs.``s``tage` | `run.{id}.status` |
-| Average checkpoints | Checkpoints | Average checkpoints | `POST /runs/{id}/checkpoints:average` | `checkpoints.average` | `job.{id}` |
+| Continue | Checkpoints, Run | Resume; New stage | `POST /runs/{id}:resume`; `POST /runs/{id}:stage` | `runs.resume`, `runs.stage` | `run.{id}.status` |
+| Average checkpoints | Checkpoints | Average checkpoints | `POST /runs/{id}/checkpoints:average` | `checkpoints.average` | `pipeline_run.{id}`, `run.{id}.checkpoints` |
 | Golden set | Golden set | Propose / approve freeze | `POST /projects/{p}/golden-sets`; `…:freeze` | `goldenSets.``freez``e` | `entity.golden_set.{id}`, `approvals` |
 | Eval run | Eval report | Run eval matrix | `POST /projects/{p}/evals` | `evals.create` | `eval.{id}.progress` |
 | Inspect results | Diff, Audio, Inspector | — | `GET /evals/{id}/results` | `evals.``get` | — |

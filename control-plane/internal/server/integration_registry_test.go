@@ -410,7 +410,7 @@ func TestComputeAndPolicies(t *testing.T) {
 	}
 	e.ok(e.do("GET", "/api/compute", ""), 200, &hosts)
 	if len(hosts.Items) != 1 || hosts.Items[0].Name != "staging" || len(hosts.Items[0].Cards) != 1 ||
-		hosts.Items[0].Cards[0].MemoryCapGb != 24 || hosts.Items[0].Health.State != "unknown" {
+		hosts.Items[0].Cards[0].MemoryCapGb != 22 || hosts.Items[0].Health.State != "unknown" {
 		t.Fatalf("compute.list: %+v", hosts.Items)
 	}
 	resp := e.ok(e.do("GET", "/api/compute/staging", ""), 200, nil)
@@ -511,13 +511,14 @@ func TestRunEstimate(t *testing.T) {
 	eventsBefore := e.count("SELECT count(*) FROM events")
 	var est estimate
 	e.ok(dry(`{"init":"base","gpus":1,"datasets":["dataset/fleurs-he-smoke","dataset/fleurs-ru-smoke","dataset/fleurs-he-smoke"]}`), 200, &est)
-	// 3 000 steps × 1.0 s/step (the table row) on the staging card, ±50%.
-	if est.Basis != "table" || est.PlusMinus != 0.5 || est.Steps != 3000 || est.Gpus != 1 || est.Init != "base" ||
-		est.GpuHours.Value != 0.833 || est.GpuHours.Low != 0.417 || est.GpuHours.High != 1.25 ||
-		est.DurationSeconds.Value != 3000 || est.DurationSeconds.Low != 1500 || est.DurationSeconds.High != 4500 {
+	// 120 s of lease overhead (estimates.lease_overhead_seconds) + 3 000 steps × 0.7 ± 0.2 s/step (the table row,
+	// spike A3) on the staging card; the ± applies to the steps.
+	if est.Basis != "table" || est.PlusMinus != 0.2 || est.Steps != 3000 || est.Gpus != 1 || est.Init != "base" ||
+		est.GpuHours.Value != 0.617 || est.GpuHours.Low != 0.5 || est.GpuHours.High != 0.733 ||
+		est.DurationSeconds.Value != 2220 || est.DurationSeconds.Low != 1800 || est.DurationSeconds.High != 2640 {
 		t.Fatalf("estimate numbers: %+v", est)
 	}
-	if est.Card.Host != "staging" || est.Card.Index != 0 || est.Card.CardClass != "blackwell-96gb" || est.Card.MemoryCapGb != 24 ||
+	if est.Card.Host != "staging" || est.Card.Index != 0 || est.Card.CardClass != "blackwell-48gb" || est.Card.MemoryCapGb != 22 ||
 		est.BaseModel.Name != "base-model/nemotron-3.5-asr-streaming-0.6b" {
 		t.Errorf("estimate card or base model: %+v", est)
 	}
@@ -529,12 +530,12 @@ func TestRunEstimate(t *testing.T) {
 		t.Error("a dry run emitted an event")
 	}
 
-	e.ok(dry(`{"steps":40000}`), 200, &est)
-	if est.GpuHours.Value != 11.111 || est.Budget.WithinDailyBudget {
+	e.ok(dry(`{"steps":50000}`), 200, &est)
+	if est.GpuHours.Value != 9.756 || est.Budget.WithinDailyBudget {
 		t.Errorf("long run: %+v", est.GpuHours)
 	}
 
-	expectProblem(t, e.do("POST", "/api/projects/hebrew/runs", `{}`, "Idempotency-Key", e.key()), 501, "not-implemented")
+	expectProblem(t, e.do("POST", "/api/projects/hebrew/runs", `{}`, "Idempotency-Key", e.key()), 422, "validation-failed") // a real run needs a mix
 	expectProblem(t, dry(`{"gpus":2}`), 422, "validation-failed")
 	expectProblem(t, dry(`{"init":"checkpoint"}`), 422, "validation-failed")
 	expectProblem(t, dry(`{"init":"checkpoint","checkpoint":"ckp_1"}`), 404, "not-found")

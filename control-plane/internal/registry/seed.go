@@ -116,6 +116,7 @@ var templateDirs = map[string]string{
 	"skills":       "skill",
 	"pipelines":    "pipeline",
 	"agent-config": "agent-config",
+	"playbooks":    "playbook",
 }
 
 // TemplateFile is one file of a template version.

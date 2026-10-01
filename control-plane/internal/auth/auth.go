@@ -26,6 +26,9 @@ type Actor struct {
 	ID        string `json:"id"`
 	Name      string `json:"name,omitempty"`
 	SessionID string `json:"sessionId,omitempty"`
+	// Channel names how a person acted when it was not the web UI or the API: "telegram" for an approval decided
+	// from a Telegram button (docs/spec/06-platform.md "Notifications").
+	Channel string `json:"channel,omitempty"`
 }
 
 // DevActor is the admin user (seeded by migration 0001), used as the fixed actor of tests and development.

@@ -60,4 +60,4 @@ verbs:
 # the egress proxy's (the allowlist it polls with its own credential). `agentCredentials` are the agents' model
 # accounts: admin-only commands (they keep Idempotency-Key, If-Match and dryRun) that must never reach an agent's
 # tool list, so an agent cannot even see that they exist; the presets forbid them too (defence in depth).
-exemptTags: [auth, me, host, egress, agentCredentials]
+exemptTags: [auth, me, host, egress, agentCredentials, worker]

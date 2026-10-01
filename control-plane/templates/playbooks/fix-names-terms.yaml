@@ -1,0 +1,59 @@
+# written by Cadence — playbook template (docs/spec/03-pipelines-defaults.md "Playbooks", R16; format:
+# control-plane/internal/playbooks/README.md). Listed from phase 2; runs once phase 4 ships boost lists and batches.
+name: fix-names-terms
+title: Fix names and terms
+description: Build a boost list from the project glossary, package a correction batch and train a short continuation.
+typicalCost: 1–2 GPU-hours
+availableFrom: 4
+
+inputs:
+  glossary:
+    type: string
+    required: true
+    description: The glossary file in the project repository (lang/<locale>/boost/names.txt)
+  base:
+    type: base_model
+    from: project
+    description: The project's default base model
+
+  parent:
+    type: string
+    required: true
+    description: The run to continue (run_…); the stage starts from its best kept checkpoint
+  peakLr:
+    type: number
+    required: true
+    description: The continuation stage's peak learning rate (runs.stage peakLr)
+
+chain:
+  - id: boost
+    title: Boost list from the glossary
+    command: boost.edit
+    phase: 4
+  - id: batch
+    title: Correction batch
+    command: batches.new
+    phase: 4
+  - id: stage
+    title: Short continuation (dry run first)
+    command: runs.stage
+    with: { run: $inputs.parent, peakLr: $inputs.peakLr }
+    estimate: { gpuHours: 0.75, minutes: 45, plusMinus: 0.5 }
+  - id: watch
+    title: Wait for the stage to finish
+    command: runs.get
+    accepts: [jobs.wait]
+    until: terminal
+
+stop:
+  - budget: exceeded
+  - step: failed
+  - approval: denied
+
+next:
+  done: Evaluate the boost list's effect (boost.evaluate) once phase 4 ships.
+  stopped: Read why the step stopped, fix the cause, and start again from the failed step.
+
+prompt: |
+  Run the playbook "Fix names and terms" in project {{ .Project.Name }}: build a boost list from {{ .Inputs.glossary }},
+  package a correction batch and train a short continuation of {{ .Inputs.base }} (dry run first).

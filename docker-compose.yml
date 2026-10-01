@@ -35,10 +35,19 @@ services:
       CADENCE_HOST_TOKEN_FILE: /host-credential/token
       # The egress proxy's own token (cep_…): it reads the allowlist of configured agent providers, nothing else.
       CADENCE_EGRESS_TOKEN_FILE: /egress-credential/token
+      # Nightly backup sets and the content-store mirror (pg_dump from the image's postgresql-client-17).
+      CADENCE_BACKUP_DIR: /backups
+      # The workers' token (cwk_…): issued at start like the host token; the worker services read it.
+      CADENCE_WORKER_TOKEN_FILE: /worker-credential/token
+      # The content store, shared with the workers by volume (blobs b3/<ab>/<hash>, mode 0440, uid 65532 on both sides).
+      CADENCE_CAS_DIR: /var/lib/cadence/cas
     volumes:
       - cadence-data:/data # the image runs as uid 65532; a named volume is writable by it
       - host-credential:/host-credential
       - egress-credential:/egress-credential
+      - cadence-backups:/backups
+      - worker-credential:/worker-credential
+      - artifacts:/var/lib/cadence
     ports: ["127.0.0.1:${CADENCE_PORT:-8080}:8080"] # localhost only; TLS ends at the host's Caddy (R39)
     networks: [default, agents]
     depends_on:
@@ -96,24 +105,57 @@ services:
     networks: [agents, default]
     depends_on: [control-plane]
 
-  # GPU worker: runs on the staging host inside the NeMo Speech container.
-  # Uncomment once spike A3 fixes the image tag and memory cap.
-  # worker:
-  #   image: nvcr.io/nvidia/nemo-speech:26.07.00
-  #   command: python -m cadence_worker
-  #   environment:
-  #     CADENCE_API: http://control-plane:8080
-  #     CADENCE_GPU_MEMORY_CAP_GB: "24"
-  #   volumes:
-  #     - ./worker:/workspace/worker
-  #     - ${CADENCE_CACHE_DIR:-./cache}:/cache
-  #   deploy:
-  #     resources:
-  #       reservations:
-  #         devices:
-  #           - driver: nvidia
-  #             count: 1
-  #             capabilities: [gpu]
+  # Workers (R40: one service per runtime) pull steps from the control plane (workerLeases.claim) and write outputs into
+  # the shared content store; per-lease scratch lives on the same volume so inputs are hard links, not copies. They run
+  # as uid 65532 like the control plane and reach nothing but the control plane.
+  # The GPU worker, runtime nemo-speech (NeMo Speech 26.07 by digest): `docker compose --profile gpu up -d worker`.
+  worker:
+    image: cadence/worker:${CADENCE_VERSION:-dev}
+    profiles: [gpu]
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+      args: *version
+    environment:
+      CADENCE_URL: http://control-plane:8080
+      CADENCE_WORKER_TOKEN_FILE: /worker-credential/token
+      CADENCE_WORKER_HOST: staging
+      CADENCE_CAS_DIR: /var/lib/cadence/cas
+      CADENCE_WORKER_SCRATCH: /var/lib/cadence/scratch
+    volumes:
+      - worker-credential:/worker-credential:ro
+      - artifacts:/var/lib/cadence
+    ipc: host # NeMo's data loaders need more shared memory than the 64 MB default
+    depends_on: [control-plane]
+    # On SIGTERM a training step writes its training state and the lease is released as cancelled with it.
+    stop_grace_period: 90s
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # The CPU toy worker, runtime toy (R45): proves the seams end to end; `docker compose --profile toy up -d worker-toy`.
+  worker-toy:
+    image: cadence/worker-toy:${CADENCE_VERSION:-dev}
+    profiles: [toy]
+    build:
+      context: .
+      dockerfile: worker/Dockerfile.toy
+      args: *version
+    environment:
+      CADENCE_URL: http://control-plane:8080
+      CADENCE_WORKER_TOKEN_FILE: /worker-credential/token
+      CADENCE_WORKER_HOST: staging
+      CADENCE_CAS_DIR: /var/lib/cadence/cas
+      CADENCE_WORKER_SCRATCH: /var/lib/cadence/scratch
+    volumes:
+      - worker-credential:/worker-credential:ro
+      - artifacts:/var/lib/cadence
+    depends_on: [control-plane]
+    stop_grace_period: 30s
 
 networks:
   # No route out: the agent host reaches the control plane here and everything else through egress-proxy.
@@ -123,7 +165,10 @@ networks:
 volumes:
   pgdata:
   cadence-data:
+  cadence-backups:
   host-credential:
   egress-credential:
   agent-credentials:
   agent-sessions:
+  worker-credential:
+  artifacts: # the content store and the workers' scratch (one file system: hard links)

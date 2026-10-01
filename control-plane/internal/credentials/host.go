@@ -44,6 +44,45 @@ func EnsureHostTokenFile(ctx context.Context, pool *pgxpool.Pool, path string) (
 	})
 }
 
+// NewWorkerToken issues a worker token (cwk_) for the compute host named host (its subject): it reaches the worker
+// protocol for that host and nothing else. With others it also revokes the host's other worker tokens, so a
+// re-issued token replaces the old one (one per host, R14).
+func NewWorkerToken(ctx context.Context, q storage.Querier, host string, others bool) (string, Credential, error) {
+	if host == "" {
+		return "", Credential{}, errors.New("worker token: name the compute host")
+	}
+	if others {
+		if _, err := q.Exec(ctx, `UPDATE credentials SET revoked_at = now(), rev = rev + 1
+			WHERE kind = 'worker' AND subject = $1 AND revoked_at IS NULL`, host); err != nil {
+			return "", Credential{}, fmt.Errorf("revoke old worker tokens: %w", err)
+		}
+	}
+	return issue(ctx, q, auth.PrefixWorker, Credential{Kind: KindWorker, Subject: host, Name: "worker on " + host, Scope: auth.Scope{}})
+}
+
+// EnsureWorkerTokenFile keeps a working worker token for host in path (a volume the control plane writes and the
+// worker reads), like EnsureHostTokenFile: a token there that still resolves for this host is kept; otherwise a new
+// one is issued and the host's older worker tokens are revoked.
+func EnsureWorkerTokenFile(ctx context.Context, pool *pgxpool.Pool, path, host string) (bool, error) {
+	if b, err := os.ReadFile(path); err == nil { //nolint:gosec // the path is the operator's CADENCE_WORKER_TOKEN_FILE
+		tok := strings.TrimSpace(string(b))
+		var id string
+		err := pool.QueryRow(ctx, `SELECT id FROM credentials WHERE token_hash = $1 AND kind = 'worker' AND subject = $2
+			AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now())`, auth.HashToken(tok), host).Scan(&id)
+		if err == nil {
+			return false, nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return false, fmt.Errorf("check the worker token: %w", err)
+		}
+		_ = os.Remove(path) // a token of another host or a revoked one: issue a new one below
+	}
+	return ensureTokenFile(ctx, pool, path, KindWorker, auth.PrefixWorker, func(q storage.Querier) (string, error) {
+		tok, _, err := NewWorkerToken(ctx, q, host, true)
+		return tok, err
+	})
+}
+
 // EgressName is the name of the egress proxy credential in the credentials list.
 const EgressName = "egress proxy"
 

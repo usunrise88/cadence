@@ -15,7 +15,11 @@
             "enum": [
               "base_model",
               "dataset_version",
-              "template"
+              "template",
+              "runtime",
+              "model_family",
+              "step_kind",
+              "noise_bank"
             ],
             "type": "string"
           },
@@ -622,10 +626,11 @@
               "kind": {
                 "allOf": [
                   {
-                    "description": "interactive: a conversation on its own branch; read-only: one turn under the read-only preset, no branch",
+                    "description": "interactive: a conversation on its own branch; read-only: one turn under the read-only preset, no branch; playbook: started by playbooks.run, its plan is the playbook's chain (a branch like interactive)",
                     "enum": [
                       "interactive",
-                      "read-only"
+                      "read-only",
+                      "playbook"
                     ],
                     "type": "string"
                   }
@@ -1289,6 +1294,134 @@
       ]
     },
     {
+      "name": "artifacts.evict",
+      "title": "Free content-store space by deleting superseded training states (always waits for an approval)",
+      "description": "Delete the blobs of superseded training-state artifacts from the content store: every state of a run whose pipeline finished, and every state but the newest of a failed or cancelled run (runs.resume continues from the newest). States a waiting or running step job names, inputs of running pipelines, artifacts a frozen registry version or a checkpoint references and files another live artifact lists are kept. dryRun=true answers the candidates, the artifacts kept with the reason and the bytes it would free. A real call always answers 202 with an approvalId, for people too; once a person approves it, a job deletes the blobs (the approval's result is 202 with its jobId) and marks the artifacts evicted (their index rows stay, so lineage still resolves). Agents may not evict. The backup mirror is the way back. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/artifacts:evict",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "description": "Which artifacts to consider; empty means every superseded training state",
+            "properties": {
+              "hashes": {
+                "description": "Exactly these artifacts; one that may not be evicted answers artifact-not-evictable",
+                "items": {
+                  "pattern": "^b3:[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "maxItems": 1000,
+                "type": "array"
+              },
+              "olderThanDays": {
+                "description": "Only states recorded at least this many days ago",
+                "maximum": 3650,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "project": {
+                "description": "Only the states of this project (slug or id)",
+                "maxLength": 100,
+                "type": "string"
+              },
+              "runId": {
+                "description": "Only the states of this run (run_…)",
+                "maxLength": 100,
+                "type": "string"
+              },
+              "type": {
+                "default": "training-state",
+                "description": "The artifact type (v1: training-state only)",
+                "enum": [
+                  "training-state"
+                ],
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "artifacts.get",
+      "title": "Get an artifact by hash — type, size, metadata, producing step, a directory's files, and small content",
+      "description": "Read an artifact of the content store by its hash (b3:\u003c64 hex\u003e): type, size, neutral metadata, the pipeline step that produced it and, for a directory artifact, its file list. With content=true a file artifact of at most 1 MiB comes back inline (utf8 or base64); for a directory pass path to read one of its files. Larger content is omitted (contentOmitted says why) — artifacts are read by steps, not copied into a context.",
+      "method": "GET",
+      "path": "/artifacts/{hash}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "default": false,
+            "description": "Include the content when it is at most 1 MiB",
+            "type": "boolean"
+          },
+          "hash": {
+            "description": "Artifact hash (b3:\u003c64 hex\u003e, BLAKE3-256 of the content)",
+            "pattern": "^b3:[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "path": {
+            "description": "With content=true on a directory artifact: the file to read",
+            "maxLength": 1000,
+            "type": "string"
+          }
+        },
+        "required": [
+          "hash"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "hash",
+          "in": "path",
+          "name": "hash"
+        },
+        {
+          "property": "content",
+          "in": "query",
+          "name": "content"
+        },
+        {
+          "property": "path",
+          "in": "query",
+          "name": "path"
+        }
+      ]
+    },
+    {
       "name": "audit.list",
       "title": "The audit log, newest first — every command, denial and failed attempt with its actor and cause",
       "description": "The audit log, newest first — every command, denial and failed attempt with its actor and cause",
@@ -1352,6 +1485,149 @@
           "property": "limit",
           "in": "query",
           "name": "limit"
+        }
+      ]
+    },
+    {
+      "name": "backups.get",
+      "title": "Get a backup set with its manifest and last restore test report",
+      "description": "Get a backup set with its manifest and last restore test report",
+      "method": "GET",
+      "path": "/backups/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        }
+      ]
+    },
+    {
+      "name": "backups.list",
+      "title": "Backup sets, newest first, with the schedule and the last restore test",
+      "description": "Backup sets, newest first, with the schedule and the last restore test",
+      "method": "GET",
+      "path": "/backups",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "default": 50,
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "limit",
+          "in": "query",
+          "name": "limit"
+        }
+      ]
+    },
+    {
+      "name": "backups.new",
+      "title": "Take a backup set now (pg_dump plus the content store); answers the job",
+      "description": "Take a backup set now (pg_dump plus the content store); answers the job. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/backups",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        }
+      ]
+    },
+    {
+      "name": "backups.verify",
+      "title": "Restore the set into a scratch database and check it (the weekly restore test, now); answers the job",
+      "description": "Restore the set into a scratch database and check it (the weekly restore test, now); answers the job. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/backups/{id}:verify",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
         }
       ]
     },
@@ -1680,6 +1956,170 @@
       ]
     },
     {
+      "name": "checkpoints.average",
+      "title": "Average chosen checkpoints of a run with the family's average step; the result is a new checkpoint of the run",
+      "description": "Average two or more checkpoints of one run (ids from checkpoints.list, typically the top k) with the model family's average step. Answers 201 with the pipeline run; when it finishes the averaged checkpoint appears in checkpoints.list (kind averaged, averagedFrom) with its own validation WER when the step measures one. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/runs/{id}/checkpoints:average",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "checkpoints": {
+                "description": "Checkpoints of the run (ckp_…)",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "minItems": 2,
+                "type": "array"
+              },
+              "params": {
+                "description": "Overrides of the average step's parameters",
+                "type": "object"
+              }
+            },
+            "required": [
+              "checkpoints"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Run id (run_…)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "checkpoints.get",
+      "title": "Get a checkpoint with its artifact, metrics and lineage",
+      "description": "Get a checkpoint with its artifact, metrics and lineage",
+      "method": "GET",
+      "path": "/checkpoints/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Checkpoint id (ckp_…)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        }
+      ]
+    },
+    {
+      "name": "checkpoints.list",
+      "title": "Checkpoints of a project or of one run, best validation WER first",
+      "description": "Checkpoints registered by training runs (step, validation WER, family, weights hash; trained or averaged), best validation WER first. Filter by run; kept=true lists only the top k per run (training.keep_top_k). Average some with checkpoints.average; start a new stage from one with runs.stage.",
+      "method": "GET",
+      "path": "/projects/{p}/checkpoints",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "kept": {
+            "description": "Only the checkpoints in their run's top k",
+            "type": "boolean"
+          },
+          "limit": {
+            "default": 100,
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          },
+          "run": {
+            "description": "Only this run's checkpoints (run_…)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "run",
+          "in": "query",
+          "name": "run"
+        },
+        {
+          "property": "kept",
+          "in": "query",
+          "name": "kept"
+        },
+        {
+          "property": "limit",
+          "in": "query",
+          "name": "limit"
+        }
+      ]
+    },
+    {
       "name": "collections.get",
       "title": "Get a registry collection with its versions, newest first",
       "description": "Get a registry collection with its versions, newest first",
@@ -1725,7 +2165,11 @@
             "enum": [
               "base_model",
               "dataset_version",
-              "template"
+              "template",
+              "runtime",
+              "model_family",
+              "step_kind",
+              "noise_bank"
             ],
             "type": "string"
           },
@@ -1756,8 +2200,8 @@
     },
     {
       "name": "compute.edit",
-      "title": "Change a host's description or a card's memory cap and allowed job kinds",
-      "description": "Change a host's description or a card's memory cap and allowed job kinds. Pass dryRun=true to see what would happen without changing anything.",
+      "title": "Change a host's description or a card's name, class, memory, memory cap, allowed job kinds and availability windows",
+      "description": "Change a host's description or a card's name, class, memory, memory cap, allowed job kinds and availability windows. Pass dryRun=true to see what would happen without changing anything.",
       "method": "PATCH",
       "path": "/compute/{id}",
       "inputSchema": {
@@ -1776,12 +2220,18 @@
                           "training",
                           "eval",
                           "shadow",
-                          "export"
+                          "export",
+                          "data"
                         ],
                         "type": "string"
                       },
                       "type": "array",
                       "uniqueItems": true
+                    },
+                    "cardClass": {
+                      "description": "Key into the estimate table in defaults.yaml (a corrected card: blackwell-48gb)",
+                      "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+                      "type": "string"
                     },
                     "index": {
                       "minimum": 0,
@@ -1791,6 +2241,69 @@
                       "exclusiveMinimum": 0,
                       "format": "double",
                       "type": "number"
+                    },
+                    "memoryGb": {
+                      "description": "The card's memory; the cap must stay at or below it",
+                      "exclusiveMinimum": 0,
+                      "format": "double",
+                      "type": "number"
+                    },
+                    "name": {
+                      "maxLength": 200,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "windows": {
+                      "additionalProperties": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "days": {
+                              "description": "Days the window opens on (a window past midnight belongs to the day it opens)",
+                              "items": {
+                                "enum": [
+                                  "mon",
+                                  "tue",
+                                  "wed",
+                                  "thu",
+                                  "fri",
+                                  "sat",
+                                  "sun"
+                                ],
+                                "type": "string"
+                              },
+                              "minItems": 1,
+                              "type": "array",
+                              "uniqueItems": true
+                            },
+                            "end": {
+                              "description": "Closes at HH:MM (24:00 = midnight); before start = the next day",
+                              "pattern": "^(([01][0-9]|2[0-3]):[0-5][0-9]|24:00)$",
+                              "type": "string"
+                            },
+                            "start": {
+                              "description": "Opens at HH:MM",
+                              "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+                              "type": "string"
+                            },
+                            "timezone": {
+                              "description": "IANA time zone, e.g. Europe/Berlin; empty follows the instance time zone (policies.timezone)",
+                              "maxLength": 64,
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "days",
+                            "start",
+                            "end"
+                          ],
+                          "type": "object"
+                        },
+                        "maxItems": 28,
+                        "type": "array"
+                      },
+                      "description": "R19: job kind → the windows in which a job of that kind may run on the card. A kind without an entry may run any time. A job starts only when its estimate fits before its window closes; a running training job is paused at the close and resumes from its training state when a window opens.\n",
+                      "type": "object"
                     }
                   },
                   "required": [
@@ -2517,6 +3030,93 @@
       ]
     },
     {
+      "name": "jobLogs.list",
+      "title": "Read a job's log lines from its worker, filtered by level and text, after a line number",
+      "description": "Read the log of a job that ran on a worker: lines {seq, t, level, msg, fields}. level=warn keeps warn and error; text matches the message (case-insensitive); after=\u003cseq\u003e pages forward (nextAfter); tail=true returns the last lines instead of the first. Live lines stream on job.{id}.log.",
+      "method": "GET",
+      "path": "/jobs/{id}/job-logs",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "after": {
+            "description": "Only lines after this line number",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "level": {
+            "description": "Minimum level",
+            "enum": [
+              "debug",
+              "info",
+              "warn",
+              "error"
+            ],
+            "type": "string"
+          },
+          "limit": {
+            "default": 500,
+            "maximum": 5000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "tail": {
+            "default": false,
+            "description": "The last matching lines instead of the first",
+            "type": "boolean"
+          },
+          "text": {
+            "description": "Text the message must contain (case-insensitive)",
+            "maxLength": 200,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "level",
+          "in": "query",
+          "name": "level"
+        },
+        {
+          "property": "text",
+          "in": "query",
+          "name": "text"
+        },
+        {
+          "property": "after",
+          "in": "query",
+          "name": "after"
+        },
+        {
+          "property": "tail",
+          "in": "query",
+          "name": "tail"
+        },
+        {
+          "property": "limit",
+          "in": "query",
+          "name": "limit"
+        }
+      ]
+    },
+    {
       "name": "jobs.cancel",
       "title": "Cancel a job; a queued job stops at once, a running one when its handler notices",
       "description": "Cancel a job; a queued job stops at once, a running one when its handler notices. Pass dryRun=true to see what would happen without changing anything.",
@@ -2564,6 +3164,78 @@
           "property": "dryRun",
           "in": "query",
           "name": "dryRun"
+        }
+      ]
+    },
+    {
+      "name": "jobs.edit",
+      "title": "Change a step job's priority (higher starts first; the Queue's reorder)",
+      "description": "Change a step job's priority (higher starts first; the Queue's reorder). Pass dryRun=true to see what would happen without changing anything.",
+      "method": "PATCH",
+      "path": "/jobs/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "priority": {
+                "description": "Start order in the queue, higher first",
+                "maximum": 1000,
+                "minimum": -1000,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "priority"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
         }
       ]
     },
@@ -2659,6 +3331,108 @@
       ]
     },
     {
+      "name": "jobs.pause",
+      "title": "Pause a step job; a queued one is held back, a running one saves its state and returns to the queue",
+      "description": "Pause a step job (training, eval, data). A queued job is not started until jobs.resume; a running one is told to stop at its next heartbeat, saves its training state and waits in the queue, resuming from that state. Only jobs that run on a worker can be paused. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/jobs/{id}:pause",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        }
+      ]
+    },
+    {
+      "name": "jobs.resume",
+      "title": "Resume a paused step job; it waits in the queue for a free card (from its saved training state)",
+      "description": "Resume a paused step job; it waits in the queue for a free card (from its saved training state). Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/jobs/{id}:resume",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        }
+      ]
+    },
+    {
       "name": "jobs.wait",
       "title": "Wait until a job ends or the timeout passes, then return it (agents)",
       "description": "Wait for a job started by another tool (which answered 202 with a jobId). Returns the job as soon as it is done, failed or cancelled, or when the timeout (seconds, at most 60) passes — check `state` and call again if it is still queued or running.",
@@ -2698,6 +3472,91 @@
           "property": "timeout",
           "in": "query",
           "name": "timeout"
+        }
+      ]
+    },
+    {
+      "name": "metrics.get",
+      "title": "A run's metric series, binned server-side for charts (min and max per bucket), with checkpoint marks",
+      "description": "Metric series of a training run (loss, val_wer, lr, …) for charts and for judging progress: choose names, the x axis (step, epoch, wall seconds since the first point, or GPU-hours), and maxPoints — longer series are binned server-side, each point carrying the bucket's mean value with min and max. afterStep returns only newer points (live append). Checkpoint marks come along.",
+      "method": "GET",
+      "path": "/metrics/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "afterStep": {
+            "description": "Only points after this optimiser step (live append)",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "id": {
+            "description": "The run whose metrics to read (run_…)",
+            "type": "string"
+          },
+          "maxPoints": {
+            "default": 1000,
+            "description": "Points per series at most; longer series are binned",
+            "maximum": 10000,
+            "minimum": 2,
+            "type": "integer"
+          },
+          "names": {
+            "description": "Metric names (all when absent): repeat the parameter (names=loss\u0026names=val_wer), as every array query parameter",
+            "items": {
+              "maxLength": 100,
+              "type": "string"
+            },
+            "maxItems": 50,
+            "type": "array"
+          },
+          "x": {
+            "default": "step",
+            "description": "The x axis",
+            "enum": [
+              "step",
+              "epoch",
+              "wall",
+              "gpuHours"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "names",
+          "in": "query",
+          "name": "names"
+        },
+        {
+          "property": "x",
+          "in": "query",
+          "name": "x"
+        },
+        {
+          "property": "maxPoints",
+          "in": "query",
+          "name": "maxPoints"
+        },
+        {
+          "property": "afterStep",
+          "in": "query",
+          "name": "afterStep"
         }
       ]
     },
@@ -3134,6 +3993,899 @@
       ]
     },
     {
+      "name": "modelFamilies.get",
+      "title": "Get a model family version",
+      "description": "Get a model family version",
+      "method": "GET",
+      "path": "/registry/model-families/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Registry version id (ver_…)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        }
+      ]
+    },
+    {
+      "name": "modelFamilies.list",
+      "title": "List model family versions (architecture, capabilities, latency profiles, role step kinds) published by runtimes",
+      "description": "List model families: what a runtime can train and decode — framework, architecture, capabilities, latency profiles (e.g. 160 ms) and the step kind that fills each role (calibrate, train, average, transcribe). Render options from the descriptor; never assume a family by name.",
+      "method": "GET",
+      "path": "/registry/model-families",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "collection": {
+            "description": "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)",
+            "type": "string"
+          },
+          "state": {
+            "description": "Only versions in this state",
+            "enum": [
+              "draft",
+              "frozen",
+              "deprecated"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "collection",
+          "in": "query",
+          "name": "collection"
+        },
+        {
+          "property": "state",
+          "in": "query",
+          "name": "state"
+        }
+      ]
+    },
+    {
+      "name": "notificationRules.edit",
+      "title": "Change which channels an event class reaches and when (admin only)",
+      "description": "Change which channels an event class reaches and when (admin only). Pass dryRun=true to see what would happen without changing anything.",
+      "method": "PATCH",
+      "path": "/notification-rules/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "channels": {
+                "additionalProperties": false,
+                "properties": {
+                  "inApp": {
+                    "type": "boolean"
+                  },
+                  "telegram": {
+                    "type": "boolean"
+                  }
+                },
+                "type": "object"
+              },
+              "timing": {
+                "description": "immediate: sent as it happens; digest: held for the next daily digest; daily: the digest itself (its rule only); none: never sent",
+                "enum": [
+                  "immediate",
+                  "digest",
+                  "daily",
+                  "none"
+                ],
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "notificationRules.list",
+      "title": "The notification routing table — one rule per event class with its channels and timing",
+      "description": "The notification routing table — one rule per event class with its channels and timing",
+      "method": "GET",
+      "path": "/notification-rules",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": null
+    },
+    {
+      "name": "notificationSettings.edit",
+      "title": "Change quiet hours, the digest time or the allow-listed Telegram chats (admin only)",
+      "description": "Change quiet hours, the digest time or the allow-listed Telegram chats (admin only). Pass dryRun=true to see what would happen without changing anything.",
+      "method": "PATCH",
+      "path": "/notification-settings",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "digestTime": {
+                "description": "HH:MM on a 24-hour clock, in the instance timezone (policies)",
+                "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+                "type": "string"
+              },
+              "quietHours": {
+                "additionalProperties": false,
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "end": {
+                    "description": "HH:MM on a 24-hour clock, in the instance timezone (policies)",
+                    "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+                    "type": "string"
+                  },
+                  "start": {
+                    "description": "HH:MM on a 24-hour clock, in the instance timezone (policies)",
+                    "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "telegramChats": {
+                "description": "The complete allowlist of Telegram chat ids",
+                "items": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "maxItems": 20,
+                "type": "array"
+              }
+            },
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "notificationSettings.get",
+      "title": "Quiet hours, the digest time and the Telegram bot's allow-listed chats and status",
+      "description": "Quiet hours, the digest time and the Telegram bot's allow-listed chats and status",
+      "method": "GET",
+      "path": "/notification-settings",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": null
+    },
+    {
+      "name": "pipelineRuns.cancel",
+      "title": "Cancel a pipeline run; waiting steps never start and running step jobs are cancelled",
+      "description": "Cancel a pipeline run: steps that have not started are cancelled, queued and running step jobs are cancelled (a running step stops on its worker), finished steps keep their outputs for reuse. Send ifMatch with the run's etag (rev) from pipelineRuns.get. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/pipeline-runs/{id}:cancel",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Pipeline run id (plr_…)",
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        }
+      ]
+    },
+    {
+      "name": "pipelineRuns.get",
+      "title": "Get a pipeline run with the status, inputs, outputs, attempts and departures of every step",
+      "description": "Get a pipeline run with the status, inputs, outputs, attempts and departures of every step",
+      "method": "GET",
+      "path": "/pipeline-runs/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Pipeline run id (plr_…)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        }
+      ]
+    },
+    {
+      "name": "pipelineRuns.list",
+      "title": "Pipeline runs of a project, newest first",
+      "description": "Pipeline runs of a project, newest first",
+      "method": "GET",
+      "path": "/projects/{p}/pipeline-runs",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "default": 100,
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          },
+          "pipeline": {
+            "description": "Only runs of this pipeline",
+            "maxLength": 63,
+            "type": "string"
+          },
+          "state": {
+            "description": "Only runs in this state",
+            "enum": [
+              "running",
+              "done",
+              "failed",
+              "cancelled"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "state",
+          "in": "query",
+          "name": "state"
+        },
+        {
+          "property": "pipeline",
+          "in": "query",
+          "name": "pipeline"
+        },
+        {
+          "property": "limit",
+          "in": "query",
+          "name": "limit"
+        }
+      ]
+    },
+    {
+      "name": "pipelineRuns.retry",
+      "title": "Retry a failed step of a pipeline run as a new attempt; the run continues from there",
+      "description": "Retry one failed (or cancelled) step of a pipeline run as a new attempt, with the same resolved parameters and inputs; finished steps are not re-run and the run continues after it. Without step, every failed step is retried. batchScale (0–1] shrinks the batch after an out-of-memory failure. Send ifMatch with the run's etag (rev). Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/pipeline-runs/{id}:retry",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "batchScale": {
+                "description": "Batch scale of the new attempt (1 = full batch)",
+                "exclusiveMinimum": 0,
+                "format": "double",
+                "maximum": 1,
+                "type": "number"
+              },
+              "step": {
+                "description": "The step id to retry (default: every failed step)",
+                "maxLength": 63,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Pipeline run id (plr_…)",
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "pipelineRuns.wait",
+      "title": "Wait until a pipeline run ends or the timeout passes, then return it (agents)",
+      "description": "Wait for a pipeline run started by pipelines.run. Returns the run as soon as it is done, failed or cancelled, or when the timeout (seconds, at most 60) passes — check state and call again while it is running.",
+      "method": "GET",
+      "path": "/pipeline-runs/{id}:wait",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Pipeline run id (plr_…)",
+            "type": "string"
+          },
+          "timeout": {
+            "default": 30,
+            "description": "Seconds to wait",
+            "maximum": 60,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "timeout",
+          "in": "query",
+          "name": "timeout"
+        }
+      ]
+    },
+    {
+      "name": "pipelines.list",
+      "title": "The project's pipelines (pipelines/*.yaml at a ref) and the bundled templates it does not override",
+      "description": "List the pipelines this project can run: every pipelines/\u003cname\u003e.yaml of the project repository at ref (default main) plus the bundled templates it has no file for. Each has its version (the commit that last changed the file; send it as ifMatch to pipelines.run), its inputs by artifact type and its steps pinned as kind@version with only the parameters that depart from defaults. A file that does not parse carries error.",
+      "method": "GET",
+      "path": "/projects/{p}/pipelines",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          },
+          "ref": {
+            "description": "Branch, tag or commit (default main)",
+            "maxLength": 200,
+            "type": "string"
+          }
+        },
+        "required": [
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "ref",
+          "in": "query",
+          "name": "ref"
+        }
+      ]
+    },
+    {
+      "name": "pipelines.run",
+      "title": "Validate a pipeline against the step registry and start a pipeline run (dryRun validates and estimates)",
+      "description": "Run a pipeline of this project. Always call it with dryRun=true first: that validates the pipeline against the published step kinds (kind@version exists, input and output artifact types match, parameters fit each kind's schema, no cycles), resolves every parameter from defaults.yaml, lists the departures from defaults and sums the known estimates, without starting anything; a broken pipeline answers pipeline-invalid with one error per problem. Then run it for real with the same body and ifMatch = the pipeline's version from pipelines.list (or \"*\" for whatever is at ref). inputs maps each pipeline input to an artifact {hash, type}; params overrides parameters per step id; finished steps with the same input hash are reused unless fresh. The answer is the pipeline run (plr_…): follow pipeline_run.{id} or call pipelineRuns.wait. Spending GPU time over the budget answers 202 with an approvalId instead. A dataset input of an eval-only version (or a mix input referencing one) that a training step reads answers eval-only-dataset. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/projects/{p}/pipelines/{name}:run",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "fresh": {
+                "default": false,
+                "description": "Run every step even when a finished step has the same input hash",
+                "type": "boolean"
+              },
+              "inputs": {
+                "additionalProperties": {
+                  "properties": {
+                    "hash": {
+                      "pattern": "^b3:[0-9a-f]{64}$",
+                      "type": "string"
+                    },
+                    "meta": {
+                      "description": "Neutral, self-describing metadata of the type (R42)",
+                      "type": "object"
+                    },
+                    "size": {
+                      "format": "int64",
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "type": {
+                      "description": "shar, dataset, mix, base_model, checkpoint, training-state, calibration, hypotheses, analysis, eval-report, deployable, text",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "hash",
+                    "type"
+                  ],
+                  "type": "object"
+                },
+                "description": "Pipeline input → artifact (it must be in the content store)",
+                "type": "object"
+              },
+              "params": {
+                "additionalProperties": {
+                  "type": "object"
+                },
+                "description": "Step id → parameter overrides (recorded as departures when they differ from the default)",
+                "type": "object"
+              },
+              "priority": {
+                "default": 0,
+                "description": "Queue priority of the step jobs (higher first)",
+                "maximum": 100,
+                "minimum": -100,
+                "type": "integer"
+              },
+              "ref": {
+                "description": "Branch, tag or commit to read the pipeline at (default main)",
+                "maxLength": 200,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          },
+          "name": {
+            "description": "Pipeline name (pipelines/\u003cname\u003e.yaml)",
+            "pattern": "^[a-z][a-z0-9-]{0,62}$",
+            "type": "string"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "ifMatch",
+          "name",
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "name",
+          "in": "path",
+          "name": "name"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "playbooks.get",
+      "title": "One playbook with its inputs, chain, prompt template and estimate",
+      "description": "One playbook with its inputs, chain, prompt template and estimate",
+      "method": "GET",
+      "path": "/playbooks/{name}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "Playbook name (templates/playbooks/\u003cname\u003e.yaml)",
+            "pattern": "^[a-z][a-z0-9-]{0,62}$",
+            "type": "string"
+          },
+          "project": {
+            "description": "A project slug: fill project facts and estimate with them",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "name",
+          "in": "path",
+          "name": "name"
+        },
+        {
+          "property": "project",
+          "in": "query",
+          "name": "project"
+        }
+      ]
+    },
+    {
+      "name": "playbooks.list",
+      "title": "The playbooks Cadence ships, with their inputs, chain, stop conditions and estimate",
+      "description": "List the playbooks: prefilled chains of commands with inputs, stop conditions and an estimate (the sum of the chain's step estimates). With project, inputs taken from the project (its base model, its adopted replay corpus) are filled in and the estimate uses them. runnable says whether the playbook can run yet.",
+      "method": "GET",
+      "path": "/playbooks",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "project": {
+            "description": "A project slug: fill project facts and estimate with them",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "project",
+          "in": "query",
+          "name": "project"
+        }
+      ]
+    },
+    {
+      "name": "playbooks.run",
+      "title": "Start a playbook session — dryRun answers the estimate, the plan and the rendered prompt without starting",
+      "description": "Run a playbook in a project: resolves its inputs (given, from defaults.yaml or from the project), renders its prompt, sums the chain's estimate and starts an agent session of kind playbook whose plan is the chain. Call it with dryRun=true first to see the estimate and the plan; ifMatch is the playbook's version (the etag of playbooks.get) or \"*\". Agents cannot start playbook sessions; use playbooks.get for the estimate. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/projects/{p}/playbooks/{name}:run",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "driver": {
+                "enum": [
+                  "claude-code",
+                  "opencode"
+                ],
+                "type": "string"
+              },
+              "inputs": {
+                "additionalProperties": true,
+                "description": "Input name → value (a dataset_version input with multiple takes a list); omitted inputs take their default or project fact",
+                "type": "object"
+              },
+              "model": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          },
+          "name": {
+            "description": "Playbook name",
+            "pattern": "^[a-z][a-z0-9-]{0,62}$",
+            "type": "string"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ifMatch",
+          "name",
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "name",
+          "in": "path",
+          "name": "name"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
       "name": "policies.edit",
       "title": "Change instance-wide policies; values must stay inside the ranges in defaults.yaml",
       "description": "Change instance-wide policies; values must stay inside the ranges in defaults.yaml. Pass dryRun=true to see what would happen without changing anything.",
@@ -3157,6 +4909,12 @@
                   }
                 },
                 "type": "object"
+              },
+              "timezone": {
+                "description": "IANA timezone name, e.g. Europe/Berlin or UTC",
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
               }
             },
             "type": "object"
@@ -3373,6 +5131,12 @@
                     "maximum": 192,
                     "minimum": 0,
                     "type": "number"
+                  },
+                  "queuePriority": {
+                    "description": "Queue priority of the project's step jobs against other projects (higher first)",
+                    "maximum": 100,
+                    "minimum": -100,
+                    "type": "integer"
                   }
                 },
                 "type": "object"
@@ -3571,6 +5335,12 @@
                     "maximum": 192,
                     "minimum": 0,
                     "type": "number"
+                  },
+                  "queuePriority": {
+                    "description": "Queue priority of the project's step jobs against other projects (higher first)",
+                    "maximum": 100,
+                    "minimum": -100,
+                    "type": "integer"
                   }
                 },
                 "type": "object"
@@ -3867,6 +5637,127 @@
       ]
     },
     {
+      "name": "queueEntries.list",
+      "title": "The step queue across projects — waiting, paused and running step jobs with their card and lease",
+      "description": "The GPU queue: step jobs waiting, paused or running on a worker, in start order (the project's queue priority, then the job's priority, then first come), with the card and worker holding each running one. Reorder with jobs.edit (a job's priority) or projects.edit (budgets.queuePriority), pause with jobs.pause. A project-scoped credential sees its own project's entries only.",
+      "method": "GET",
+      "path": "/queue-entries",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "project": {
+            "description": "Only this project's entries (slug)",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "project",
+          "in": "query",
+          "name": "project"
+        }
+      ]
+    },
+    {
+      "name": "recipes.edit",
+      "title": "Write one text file of the project repository and commit it to main (the Recipe document's edits)",
+      "description": "Change one UTF-8 text file of the project repository and commit it to main as the caller. Send ifMatch with the commit that last changed the file (history[0].sha from recipes.get); recipes.new creates a file. Files rendered from the agent profile (AGENTS.md, CLAUDE.md, .claude/settings.json, opencode.json) change through agentProfile.edit instead. Agents edit files in their session worktree; the default preset does not allow this tool. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "PATCH",
+      "path": "/projects/{p}/recipes/{path}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "content": {
+                "description": "The file's new content (UTF-8 text)",
+                "maxLength": 1048576,
+                "type": "string"
+              },
+              "message": {
+                "description": "Commit message (default: edit \u003cpath\u003e)",
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "content"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          },
+          "path": {
+            "description": "File path in the repository, URL-encoded (pipelines%2Ftrain-stage.yaml)",
+            "maxLength": 400,
+            "minLength": 1,
+            "pattern": "^[^/\\x00][^\\x00]*$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "ifMatch",
+          "p",
+          "path"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "path",
+          "in": "path",
+          "name": "path"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
       "name": "recipes.get",
       "title": "One file of the project repository at a branch or commit, with its commit history",
       "description": "One file of the project repository at a branch or commit, with its commit history",
@@ -3976,6 +5867,83 @@
       ]
     },
     {
+      "name": "recipes.new",
+      "title": "Create one text file in the project repository and commit it to main",
+      "description": "Create one UTF-8 text file in the project repository and commit it to main as the caller; a path that exists answers 409 (change it with recipes.edit). Agents create files in their session worktree; the default preset does not allow this tool. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/projects/{p}/recipes",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "content": {
+                "description": "The file's content (UTF-8 text)",
+                "maxLength": 1048576,
+                "type": "string"
+              },
+              "message": {
+                "description": "Commit message (default: add \u003cpath\u003e)",
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "path": {
+                "description": "A path relative to the repository root",
+                "maxLength": 400,
+                "minLength": 1,
+                "pattern": "^[^/\\x00][^\\x00]*$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "content"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
       "name": "registry.search",
       "title": "Search registry versions of every kind by text and qualifiers (kind:, tag:, locale:, state:)",
       "description": "Search registry versions of every kind (base models, dataset versions, templates). q is free text matched against collection names and descriptions plus qualifiers: kind:base_model, tag:telephony, locale:he-IL, state:frozen. project=\u003cslug\u003e keeps only what that project adopted. Get one version with baseModels.get, datasets.get or templates.get.",
@@ -3985,11 +5953,15 @@
         "additionalProperties": false,
         "properties": {
           "kind": {
-            "description": "The kinds registered so far; golden sets, sources, normalizers and model versions join in later phases",
+            "description": "The kinds registered so far; runtime, model_family and step_kind are published by workers (R40, R41, R45); noise_bank holds background noise for augmentation, registered by dataset_import with purpose noise; golden sets, normalizers and model versions join in later phases",
             "enum": [
               "base_model",
               "dataset_version",
-              "template"
+              "template",
+              "runtime",
+              "model_family",
+              "step_kind",
+              "noise_bank"
             ],
             "type": "string"
           },
@@ -4039,9 +6011,189 @@
       ]
     },
     {
+      "name": "runs.calibrate",
+      "title": "Measure seconds per step and batch sizes for a base model on the training card (the family's calibrate step)",
+      "description": "Calibrate before the first run of a base model on a card: runs the model family's calibrate step on the mix's data under the card's memory cap. When it finishes, runs.new?dryRun=true estimates switch from basis table to basis measured for that base model, card class, memory cap and precision. Answers 201 with the pipeline run (follow it with pipelineRuns.wait), or 202 with an approvalId when today's GPU budget is spent. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/projects/{p}/runs:calibrate",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "baseModel": {
+                "description": "Base model version (ver_…), collection name or @alias; default the defaults' base model",
+                "type": "string"
+              },
+              "compute": {
+                "description": "Host id or name; default the first host whose card allows training",
+                "type": "string"
+              },
+              "mix": {
+                "description": "The mix whose data the calibration measures on (mix_… or name)",
+                "maxLength": 200,
+                "type": "string"
+              },
+              "mixRevision": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "params": {
+                "description": "Overrides of the calibrate step's parameters",
+                "type": "object"
+              },
+              "precision": {
+                "enum": [
+                  "bf16",
+                  "fp16",
+                  "fp32"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "mix"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "runs.get",
+      "title": "Get a run with its stage timeline, final metrics, departures from defaults and parent run",
+      "description": "A training run: status, the stage timeline (calibrate, train, … with their states and attempts), the job to pause or cancel (currentJobId, via jobs.pause | jobs.resume | jobs.cancel), OOM retries (batch scale), final metrics, departures from defaults, the parent run and the config diff against it, the best checkpoint and the estimate it started with.",
+      "method": "GET",
+      "path": "/runs/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Run id (run_…)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        }
+      ]
+    },
+    {
+      "name": "runs.list",
+      "title": "Training runs of a project, newest first",
+      "description": "List the project's training runs, newest first: status (queued, running, paused, done, failed, cancelled), start (base model or checkpoint), mix revision, step budget, final metrics and the best checkpoint. Filter by status. Open one with runs.get.",
+      "method": "GET",
+      "path": "/projects/{p}/runs",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "default": 100,
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          },
+          "status": {
+            "description": "Only runs in this status",
+            "enum": [
+              "queued",
+              "running",
+              "paused",
+              "done",
+              "failed",
+              "cancelled"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "status",
+          "in": "query",
+          "name": "status"
+        },
+        {
+          "property": "limit",
+          "in": "query",
+          "name": "limit"
+        }
+      ]
+    },
+    {
       "name": "runs.new",
-      "title": "Start a training run; until phase 2 only ?dryRun=true answers, with GPU-hours, card, duration and data",
-      "description": "Start a training run from a base model (init base) or a checkpoint. Until phase 2 only the dry run works: call it with dryRun=true to get the estimate (GPU-hours, duration, card, data volume, basis and ±) from the defaults table and the compute entity; without dryRun it answers 501. Pass dryRun=true to see what would happen without changing anything.",
+      "title": "Start a training run (one optimisation stage); ?dryRun=true answers the estimate first",
+      "description": "Start one training stage: a base model (init base) or a checkpoint (init checkpoint, ckp_…), a mix (mix_… or its name, at its current revision unless mixRevision), the project's train-stage pipeline at a commit, a step budget and a seed. Always call it with dryRun=true first: the answer is the estimate (GPU-hours, duration, card, data volume, basis table or measured, ±, today's GPU spend against the project's budget). Without dryRun it answers 201 with the run, or 202 with an approvalId when the estimate exceeds today's remaining GPU budget of the project or of your session — then wait for approval.decided. Eval-only datasets are refused. Follow the run with runs.get and metrics.get; checkpoints arrive on checkpoints.list. Pass dryRun=true to see what would happen without changing anything.",
       "method": "POST",
       "path": "/projects/{p}/runs",
       "inputSchema": {
@@ -4055,7 +6207,7 @@
                 "type": "string"
               },
               "checkpoint": {
-                "description": "Required when init is checkpoint (checkpoints arrive in phase 2)",
+                "description": "The checkpoint to start from (ckp_…); required when init is checkpoint. The run's base model is then the checkpoint's",
                 "type": "string"
               },
               "compute": {
@@ -4063,7 +6215,7 @@
                 "type": "string"
               },
               "datasets": {
-                "description": "Dataset versions (ver_… or @alias) the run reads, for the data volume; the mix replaces this in phase 2",
+                "description": "Dry runs without a mix only: dataset versions (ver_… or @alias) for the data volume",
                 "items": {
                   "type": "string"
                 },
@@ -4083,6 +6235,25 @@
                 ],
                 "type": "string"
               },
+              "mix": {
+                "description": "The mix to train on (mix_… or its name); required unless dryRun with datasets",
+                "maxLength": 200,
+                "type": "string"
+              },
+              "mixRevision": {
+                "description": "The mix revision (default its current one)",
+                "minimum": 1,
+                "type": "integer"
+              },
+              "params": {
+                "description": "Overrides of the train step's parameters (recorded as departures when they differ from the default)",
+                "type": "object"
+              },
+              "pipeline": {
+                "description": "The recipe: a pipeline of the project repository (default training.pipeline, train-stage)",
+                "maxLength": 63,
+                "type": "string"
+              },
               "precision": {
                 "enum": [
                   "bf16",
@@ -4091,8 +6262,26 @@
                 ],
                 "type": "string"
               },
+              "priority": {
+                "default": 0,
+                "description": "Queue priority of the run's step jobs (higher first)",
+                "maximum": 100,
+                "minimum": -100,
+                "type": "integer"
+              },
+              "ref": {
+                "description": "Branch, tag or commit to read the pipeline at (default main)",
+                "maxLength": 200,
+                "type": "string"
+              },
+              "seed": {
+                "description": "The train step's seed parameter, when its kind has one (default: the kind's default)",
+                "maximum": 2147483647,
+                "minimum": 0,
+                "type": "integer"
+              },
               "steps": {
-                "description": "Default training.steps",
+                "description": "Step budget of the stage (default training.steps); the train step's steps parameter",
                 "minimum": 1,
                 "type": "integer"
               }
@@ -4140,6 +6329,261 @@
       ]
     },
     {
+      "name": "runs.resume",
+      "title": "Continue a stopped or failed run from its last training state (same stage, same optimiser state)",
+      "description": "Continue the same stage of a cancelled or failed run from its last saved training-state (same optimiser and sampler state, same step budget). A paused step job resumes with jobs.resume instead. Send ifMatch with the run's etag. Answers the run (queued again), 409 no-training-state when it never saved one (start a new run), or 202 with an approvalId when the remaining steps exceed today's GPU budget. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/runs/{id}:resume",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Run id (run_…)",
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        }
+      ]
+    },
+    {
+      "name": "runs.stage",
+      "title": "Start a new stage from a checkpoint of this run with an explicit peak learning rate",
+      "description": "Start the next training stage from a checkpoint of this run (default its best kept checkpoint): a new run with init checkpoint, a new optimiser and the peak learning rate you give (peakLr, e.g. 2e-5 for a continuation), on the parent's mix unless you name another. The new run records the parent, and runs.get shows the config diff against it. Send ifMatch with the parent's etag; dryRun=true answers the estimate. Answers 201 with the new run or 202 with an approvalId over budget. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/runs/{id}:stage",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "checkpoint": {
+                "description": "The checkpoint to start from (ckp_… of this run); default the run's best kept checkpoint",
+                "type": "string"
+              },
+              "compute": {
+                "type": "string"
+              },
+              "mix": {
+                "description": "The mix (default the parent's)",
+                "maxLength": 200,
+                "type": "string"
+              },
+              "mixRevision": {
+                "description": "The mix revision (default the named mix's current one, or the parent's revision when the mix is the parent's)",
+                "minimum": 1,
+                "type": "integer"
+              },
+              "params": {
+                "description": "More overrides of the train step's parameters",
+                "type": "object"
+              },
+              "peakLr": {
+                "description": "The new stage's peak learning rate (the train step's peak_lr, learning_rate or lr parameter)",
+                "exclusiveMinimum": 0,
+                "format": "double",
+                "maximum": 1,
+                "type": "number"
+              },
+              "pipeline": {
+                "description": "The recipe (default the parent's pipeline)",
+                "maxLength": 63,
+                "type": "string"
+              },
+              "precision": {
+                "enum": [
+                  "bf16",
+                  "fp16",
+                  "fp32"
+                ],
+                "type": "string"
+              },
+              "priority": {
+                "default": 0,
+                "maximum": 100,
+                "minimum": -100,
+                "type": "integer"
+              },
+              "ref": {
+                "maxLength": 200,
+                "type": "string"
+              },
+              "seed": {
+                "maximum": 2147483647,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "steps": {
+                "description": "Step budget (default training.steps)",
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "peakLr"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "The parent run (run_…)",
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "runtimes.get",
+      "title": "Get a runtime version with the workers that run it",
+      "description": "Get a runtime version with the workers that run it",
+      "method": "GET",
+      "path": "/registry/runtimes/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Registry version id (ver_…)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        }
+      ]
+    },
+    {
+      "name": "runtimes.list",
+      "title": "List runtime versions (container image pinned by digest, environment lock, worker plugin) published by workers",
+      "description": "List runtimes: the container images step kinds run in, each pinned by digest with its environment lock (CUDA, PyTorch, framework versions). Workers publish them at start; a new digest is a new version. Filter collection=runtime/\u003cname\u003e.",
+      "method": "GET",
+      "path": "/registry/runtimes",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "collection": {
+            "description": "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)",
+            "type": "string"
+          },
+          "state": {
+            "description": "Only versions in this state",
+            "enum": [
+              "draft",
+              "frozen",
+              "deprecated"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "collection",
+          "in": "query",
+          "name": "collection"
+        },
+        {
+          "property": "state",
+          "in": "query",
+          "name": "state"
+        }
+      ]
+    },
+    {
       "name": "secrets.list",
       "title": "Named credentials (name, kind, scope, last use); values are never returned",
       "description": "Named credentials (name, kind, scope, last use); values are never returned",
@@ -4176,6 +6620,7 @@
                   "github",
                   "s3",
                   "judge-api",
+                  "telegram",
                   "other"
                 ],
                 "type": "string"
@@ -4230,6 +6675,390 @@
           "property": "body",
           "in": "body",
           "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "sources.archive",
+      "title": "Archive a source (soft); it takes no new imports, its utterances and dataset versions stay",
+      "description": "Archive a source (soft); it takes no new imports, its utterances and dataset versions stay. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/registry/sources/{id}:archive",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Source id (src_…) or name (fleurs)",
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        }
+      ]
+    },
+    {
+      "name": "sources.edit",
+      "title": "Change a source's description or licence, or clear it for training (a person's decision)",
+      "description": "Change a source's description or licence, or set trainingCleared. Clearing a source for training is a person's decision (the licence allows training and the data may be used): an agent's sources.edit waits for a person's approval (202 with approvalId). Sources are shared by every project. Send ifMatch with the etag (or rev) of your last sources.get. An archived source cannot be edited. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "PATCH",
+      "path": "/registry/sources/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "minProperties": 1,
+            "properties": {
+              "description": {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              "licence": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "trainingCleared": {
+                "description": "true clears the source for training (a person's decision); false makes it eval-only again",
+                "type": "boolean"
+              }
+            },
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Source id (src_…) or name (fleurs)",
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "sources.get",
+      "title": "Get a source with its utterance count, hours and the dataset versions built from it",
+      "description": "Get a source with its utterance count, hours and the dataset versions built from it",
+      "method": "GET",
+      "path": "/registry/sources/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Source id (src_…) or name (fleurs)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        }
+      ]
+    },
+    {
+      "name": "sources.list",
+      "title": "List sources (corpora with licence, kind and languages; eval-only until cleared for training)",
+      "description": "List registry sources: the corpora imported audio comes from (FLEURS, Common Voice, own calls), each with its licence, kind (public, production, synthetic), languages and trainingCleared. A source that is not cleared is eval-only: dataset versions built from it can be evaluated but never mixed or trained on. Archived sources are left out unless archived=true.",
+      "method": "GET",
+      "path": "/registry/sources",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "archived": {
+            "default": false,
+            "description": "Include archived sources",
+            "type": "boolean"
+          },
+          "kind": {
+            "description": "Only sources of this kind",
+            "enum": [
+              "public",
+              "production",
+              "synthetic"
+            ],
+            "type": "string"
+          },
+          "language": {
+            "description": "Only sources covering this language (he or he-IL; either matches the other)",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "archived",
+          "in": "query",
+          "name": "archived"
+        },
+        {
+          "property": "kind",
+          "in": "query",
+          "name": "kind"
+        },
+        {
+          "property": "language",
+          "in": "query",
+          "name": "language"
+        }
+      ]
+    },
+    {
+      "name": "stepKinds.get",
+      "title": "Get a step kind version",
+      "description": "Get a step kind version",
+      "method": "GET",
+      "path": "/registry/step-kinds/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Registry version id (ver_…)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        }
+      ]
+    },
+    {
+      "name": "stepKinds.list",
+      "title": "List step kind versions (parameter schema with defaults, inputs, outputs, resources, runtime)",
+      "description": "List step kinds a pipeline can pin as kind@version: the parameter schema (every parameter with its default, description, source and safe range), consumed and produced artifact types, resources and the runtime that runs it. Filter collection=step-kind/\u003cname\u003e.",
+      "method": "GET",
+      "path": "/registry/step-kinds",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "collection": {
+            "description": "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)",
+            "type": "string"
+          },
+          "state": {
+            "description": "Only versions in this state",
+            "enum": [
+              "draft",
+              "frozen",
+              "deprecated"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "collection",
+          "in": "query",
+          "name": "collection"
+        },
+        {
+          "property": "state",
+          "in": "query",
+          "name": "state"
+        }
+      ]
+    },
+    {
+      "name": "telegramBot.set",
+      "title": "Store or replace the Telegram bot token (write-only, kept in the secret store as telegram-bot-token)",
+      "description": "Store or replace the Telegram bot token. The value is write-only, encrypted in the secret store and never returned. Admin only; agents must not call this — secrets never enter an agent context. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "PUT",
+      "path": "/telegram-bot",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "token": {
+                "description": "Write-only: the token @BotFather issued (123456:ABC…)",
+                "maxLength": 200,
+                "minLength": 20,
+                "pattern": "^[0-9]+:[A-Za-z0-9_-]+$",
+                "type": "string",
+                "writeOnly": true
+              }
+            },
+            "required": [
+              "token"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on; required unless the target does not exist yet",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "telegramBot.verify",
+      "title": "Check the bot token with Telegram and send a test message to every allow-listed chat",
+      "description": "Check the bot token with Telegram and send a test message to every allow-listed chat. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/telegram-bot:verify",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
         }
       ]
     },
@@ -4294,7 +7123,8 @@
               "preset",
               "skill",
               "pipeline",
-              "agent-config"
+              "agent-config",
+              "playbook"
             ],
             "type": "string"
           }
@@ -4321,6 +7151,119 @@
           "property": "templateKind",
           "in": "query",
           "name": "templateKind"
+        }
+      ]
+    },
+    {
+      "name": "utterances.get",
+      "title": "Get an utterance with its transcripts, fingerprints and the dataset versions (and splits) that hold it",
+      "description": "Get an utterance with its transcripts, fingerprints and the dataset versions (and splits) that hold it",
+      "method": "GET",
+      "path": "/registry/utterances/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Utterance id (utt_…) or content hash (b3:…)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        }
+      ]
+    },
+    {
+      "name": "utterances.list",
+      "title": "A page of utterances (audio segments by content hash) filtered by source, dataset version, split or language",
+      "description": "List utterances, oldest first, a page at a time: each is one audio segment identified by the BLAKE3 hash of its bytes, with duration, language, speaker, sample rate, its source and its transcripts (text with origin human, pseudo-label or model:\u003cid\u003e). Filter by source (id or name), dataset (a dataset version id, ver_…) and split (train, validation, test; needs dataset), or language. Pass next as after for the next page.",
+      "method": "GET",
+      "path": "/registry/utterances",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "after": {
+            "description": "Cursor: the `next` value of the previous page",
+            "type": "string"
+          },
+          "dataset": {
+            "description": "Dataset version id (ver_…)",
+            "type": "string"
+          },
+          "language": {
+            "description": "Language (he or he-IL; either matches the other)",
+            "type": "string"
+          },
+          "limit": {
+            "default": 100,
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "source": {
+            "description": "Source id (src_…) or name",
+            "type": "string"
+          },
+          "split": {
+            "description": "Split within the dataset version (needs dataset)",
+            "enum": [
+              "train",
+              "validation",
+              "test"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "source",
+          "in": "query",
+          "name": "source"
+        },
+        {
+          "property": "dataset",
+          "in": "query",
+          "name": "dataset"
+        },
+        {
+          "property": "split",
+          "in": "query",
+          "name": "split"
+        },
+        {
+          "property": "language",
+          "in": "query",
+          "name": "language"
+        },
+        {
+          "property": "after",
+          "in": "query",
+          "name": "after"
+        },
+        {
+          "property": "limit",
+          "in": "query",
+          "name": "limit"
         }
       ]
     }

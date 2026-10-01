@@ -1,0 +1,29 @@
+[project]
+name = "cadence-nemo"
+version = "0.1.0"
+description = "Cadence NeMo pack (R40–R45): the Nemotron 3.5 streaming family and its step kinds on the nemo-speech runtime"
+requires-python = ">=3.12"
+# NeMo Speech, Lhotse, Lightning, PyTorch, soundfile and huggingface_hub come from the pinned NeMo Speech image and are
+# never pinned here (worker/Dockerfile). The pure parts (Noam arithmetic, the mix reader, checkpoint averaging,
+# augmentation, the batch search) need only numpy and torch, which the dev environment has.
+dependencies = ["cadence-worker", "numpy>=1.26"]
+
+# The pack's step kinds (runtime `nemo-speech`) and its model family.
+[project.entry-points."cadence.steps"]
+oomptimizer_calibrate = "cadence_nemo.steps.calibrate:CalibrateStep"
+nemotron_finetune = "cadence_nemo.steps.finetune:FinetuneStep"
+checkpoint_average = "cadence_nemo.steps.average:AverageStep"
+nemotron_transcribe = "cadence_nemo.steps.transcribe:TranscribeStep"
+
+[project.entry-points."cadence.families"]
+"nemo.fastconformer-rnnt.cache-aware" = "cadence_nemo.family:FAMILY"
+
+[tool.uv.sources]
+cadence-worker = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["cadence_nemo"]

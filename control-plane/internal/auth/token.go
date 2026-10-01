@@ -14,7 +14,7 @@ import (
 const (
 	PrefixAPIKey  = "cdk_" // personal API key, Bearer
 	PrefixAgent   = "cst_" // agent session token, Bearer (the MCP credential)
-	PrefixWorker  = "cwk_" // worker lease token (phase 2)
+	PrefixWorker  = "cwk_" // worker token, Bearer: one per compute host, speaks the worker protocol, nothing else
 	PrefixHost    = "cah_" // agent host token, Bearer: claims sessions and reports transcripts, nothing else
 	PrefixEgress  = "cep_" // egress proxy token, Bearer: reads the egress allowlist, nothing else
 	PrefixSession = "cws_" // browser session, in the cadence_session cookie

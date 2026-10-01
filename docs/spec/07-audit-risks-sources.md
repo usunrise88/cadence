@@ -53,6 +53,106 @@ Spikes:
 
 Open questions:
 
+- [ ] K (2026-09-30, playbooks): agents cannot start playbook sessions — `playbooks.run` joined the preset rule
+  `sessions-are-for-people` (05 lists it among the agent tools; an agent starting a session contradicts "sessions are
+  started by people"); `playbooks.get` gives an agent the estimate.
+- [ ] K: the dry-run rule is per operation and used up by the real call (two training runs need two dry runs); it is
+  enforced only in playbook sessions, not in interactive ones.
+- [ ] K: "budget: exceeded" stops a playbook when the session pauses on its turn, token or project token budget; an
+  over-budget GPU spend waits for its approval as in any session, and stops the playbook only when denied.
+- [ ] K: playbooks run from the bundled templates; the copies in a project's `playbooks/` are for reading and editing,
+  and project overrides of a playbook are not read yet.
+- [ ] K: the watch step ticks from `runs.get` answering the run with an ended status (a run's pipeline has several
+  step jobs, so `jobs.wait` only marks it running). Before the session the calibrate step's estimate is its hint
+  (0.1 GPU-hours): `runs.calibrate` plans over a mix, which exists only once the session made it. The later
+  playbooks' continuation stages ask for the parent run and `peakLr` (no defaults.yaml key for a stage's peak LR).
+- [ ] U (2026-09-30, panels): the worker reports one memory number per card, so Queue & GPU estimates Cadence's share
+  (used − the last reading taken while no Cadence job held the card; without one, the job's cap) and labels it
+  "estimated"; per-process memory from the worker would make it exact.
+- [ ] U (2026-09-30, panels): jobs and pipeline runs are not documents, so "the active job" (Logs) and the pipeline
+  run Pipeline run follows are a small shell focus store set by Queue & GPU, Pipeline run and (later) Run, not the
+  selection bus.
+- [ ] U (2026-09-30, panels): the Mix document's "launch a run" sends the project's base model (the wizard's choice;
+  runs.new alone defaults to the instance's), shows the dry-run estimate and starts the run only on confirmation.
+  Metrics and Checkpoints follow the active Run document, then the last run shown, then the project's newest run.
+- [ ] U (2026-09-30, panels): the Recipe document had no write path; `recipes.new` / `recipes.edit` commit one text
+  file to main as the person (If-Match: the commit that last changed the file). The default preset forbids both for
+  agents, who change files on their session branch. The augmentation profile file shape (`augment/<name>.yaml`) and
+  its recommended values (`defaults.yaml` `augment.*`) are recorded in 03 "Augmentation".
+
+- [x] R (2026-09-30, runs): the base model's `familyId` names the family collection `model-family/<familyId>`; the
+  seeded Nemotron base model says `nemo.fastconformer-rnnt.cache-aware`, so the NeMo pack must publish its family
+  descriptor under that name (or the base model fixture must change with it). — The NeMo pack publishes it (stream N).
+- [ ] R: train role kinds take the step budget as `steps`, the seed as `seed` and a stage's peak learning rate as
+  `peak_lr` (else `learning_rate`, else `lr`); a request setting a parameter the kind lacks is `recipe-mismatch`.
+- [ ] R: a `dataset` input of a run's recipe takes the mix's only dataset (the CPU toy pack trains on a dataset, not
+  a mix); a mix of several datasets needs a recipe whose kinds read the `mix` artifact.
+- [ ] R: calibrations are cached by (base model collection, card class, memory cap, precision); the card is the one
+  the estimate picks (compute.ForJob), not the card the lease got, and the newest calibration of any bucket
+  configuration answers. A calibrate step's meta gives `secondsPerStep` and optionally `plusMinus` | `spread` |
+  `secondsPerStepStd`, `batchSizes`, `bucketConfig`.
+- [ ] R: people are not gated by GPU budgets (the phase-1 policy engine's rule); only agents and automation keys are.
+  Calibration and averaging count as spending (`runs.calibrate`, `checkpoints.average` joined the `gpu-spend` rule)
+  with their kinds' published estimate.
+- [ ] R: `runs.resume` continues only failed or cancelled runs, from the newest training-state a released lease of
+  the run carries (a paused job resumes by itself with `jobs.resume`); pause, resume and stop in the Run panel act on
+  `currentJobId` through `jobs.pause|resume|cancel` — no `runs.pause|cancel` operations.
+- [ ] R: a dry run of `runs.new`, `runs.stage` or `runs.calibrate` writes the rendered mix and base-model blobs into
+  the content store (content-addressed, not indexed); nothing else.
+- [ ] Y (2026-09-30, worker harness): a directory artifact is recognised by `meta.layout: dir|file`, which the worker
+  adds to every output it releases; an input without it is sniffed (a blob that parses as exactly the manifest shape
+  and whose files are all present is a directory). The control plane should keep `layout` in stored artifact meta.
+- [ ] Y: an input name may receive several artifacts as `<name>.0`, `<name>.1`, … (checkpoint averaging declares
+  `consumes: {checkpoints: checkpoint}`); the pipeline and `checkpoints.average` pass them that way.
+- [ ] Y: a CPU runtime (the toy worker) claims with an empty `cards` list; the scheduler must lease `gpu: false` steps to
+  a worker without cards, and the lease's `card` is then ignored (`CUDA_VISIBLE_DEVICES` is empty for CPU steps).
+- [ ] Y: a lease claimed while the worker is stopping is handed back at once as `failed` with error type `lost`,
+  `retryable: true`; a worker stopping mid-step releases it `cancelled` with its training state (message "the worker
+  is stopping"). A heartbeat answered with a 4xx other than 408/429 means the lease is gone: the step is stopped and
+  not released.
+- [ ] Y: the `dataset` artifact the toy pack reads is JSON lines whose utterance lines carry `audio` (a b3 hash of a
+  16 kHz WAV in the content store), `text` and optionally `split`; other lines (the header) are skipped. Steps read
+  such referenced blobs read-only through `ctx.blob(hash)`. Stream D's final format must keep those keys.
+- [ ] Y: pack defaults live under `packs.<pack>.<key>` in defaults.yaml (toy: `packs.toy.*`); the worker reads the
+  control plane's file (`CADENCE_DEFAULTS_FILE`, copied unchanged into each image), never a copy of its values; the
+  contract's `Defaults` gained `packs` (a map of sections) for it.
+- [ ] Y: a transcribe-role kind takes a `profile` parameter naming one of its family's latency profiles, and a
+  train-role kind resumes from `overrides.resumeFrom` up to its total `steps` — the conformance suite relies on both.
+
+- [ ] N (2026-09-30, NeMo pack): no `checkpoint_register` step kind — the control plane's checkpoint hook already
+  registers every `checkpoint` output of a run and keeps the top k; a pipeline that needs an explicit registration can
+  add the kind later. `nemotron_finetune` writes two checkpoint outputs, `checkpoint` (the end) and `checkpoint_best`
+  (the best validation pass of the lease; the same artifact when it was the last).
+- [x] N: "a checkpoint and training state every 20 minutes" becomes a training state every `state_every_minutes`
+  written into the lease's scratch: a stop releases the newest (a fresh one when the last save fits the stop grace), but
+  a lost lease (worker or host crash) loses them, because the worker protocol releases outputs only at the end. Interim
+  artifacts (a `workerArtifacts` put during the lease) would close that gap.
+  Closed 2026-10-01: the NeMo pack publishes each periodic state mid-lease (`workerOutputs.new`, hard links of the
+  files just written), and the lost-lease retry resumes from the step's newest published state that is not evicted.
+- [ ] D (2026-10-01, test stand): a fine-tune that ends normally still writes its final training state (7.3 GB for
+  the 0.6B model), and the retention rule makes it evictable at once — one day of short fine-tunes filled 88 GB of
+  states on the stand's disk. Proposed: write the final state only when asked (a `keep_state` parameter, default
+  off) or evict a finished run's states automatically after a person approved it once per project. Built meanwhile:
+  Settings → Content store (the dry run, **Evict…**) and the `storage.low_space` warning below `cache.store_low_free`.
+  A second trap: with `CADENCE_BACKUP_DIR` set, a state is evictable only once the backup mirror holds its blobs, and
+  the mirror (`<backups>/cas`) copies every blob it lacks — on the stand both live on the same disk, so a backup would
+  double the store before anything could be freed, and without one nothing is evictable. Proposed: training states
+  skip the mirror (they are only ever read to resume) and are evictable without it; or the mirror must live on
+  another filesystem, checked at start.
+- [ ] N: the augmentation profile is the finetune step's `augmentation` parameter (default `packs.nemo.augmentation`,
+  the telephony chain: 8 kHz band-limit with G.711 μ-law/A-law or GSM, gain, speed 0.95–1.05); a project's
+  `augment/*.yaml` file is not read yet (no artifact type or recipe convention carries it to the step). AMR-NB and
+  Opus need ffmpeg, which the NeMo Speech image lacks; the noise bank joins in phase 4.
+- [ ] N: `max_duration` defaults to 20 s (spike A3, the shared-card cap), not the Key defaults' 40 s; bucket batch
+  sizes for 20 s clips are 1 under the 22 GB cap.
+- [ ] N: the lease's memory cap counts the whole process (nvidia-smi); the NeMo steps give PyTorch's allocator the cap
+  minus `packs.nemo.cuda_context_reserve_mb` (1024 MiB). Other packs sharing a card should do the same.
+- [ ] N: the NeMo steps disable Lightning's SIGTERM handler (it raises at the end of the step and exits before a
+  training state is written) and make dataloader workers ignore SIGTERM (the harness signals the process group); the
+  harness's stop event alone drives the stop. Lightning's checkpoint IO is replaced by a direct write (its in-memory
+  copy made a 7.7 GB state take 45 s; now about 15 s).
+- [ ] N: training text ends with the locale tag (` <he-IL>`, spike A3's assumption); validation references carry no
+  tag and decoding strips tags, so `val_wer` is on raw punctuated text without the tag.
 - [ ] `audit.list` for scoped credentials (2026-09-30, for the evals on the staging stand): an API key or agent token
   of one project reads that project's audit rows only (narrowed like `approvals.list`); a key without a project is
   refused; the admin's session still reads everything. Agents may therefore read their own project's audit
@@ -89,7 +189,11 @@ Open questions:
       project locales (wizard) and a licence policy — which licences may a project adopt without a person?
 - [ ] An alias may point only at a version the project adopted (enforced by a foreign key); versions and the staging
       card's class (`blackwell-96gb`, from spike A3's "96 GB" and the Blackwell toolchain note) are assumptions until
-      the staging host is inventoried
+      the staging host is inventoried — card class resolved 2026-09-30: RTX PRO 5000 Blackwell 48 GB, `blackwell-48gb`,
+      cap 24 GB = fraction 0.5 (00 decision log)
+- [ ] An alias may point only at a version the project adopted (enforced by a foreign key). The staging card was
+      inventoried in phase 2: an RTX PRO 5000 Blackwell 48 GB (`blackwell-48gb`, cap 24 GB beside the resident vLLM
+      service), no longer the `blackwell-96gb` assumption; installs seeded before phase 2 correct it with compute.edit
 - [ ] Secrets: no rotation or archive yet (`secrets.new` refuses a taken name); the master key defaults to
       `$CADENCE_DATA_DIR/master.key`, generated on first start, until the compose secret of R9 is wired
 - [ ] Identity (phase 1) assumptions, confirm: login throttling counts failed attempts only (5/min, 20/h per address and per username, in memory); `X-Forwarded-For`/`-Proto` are trusted from loopback and private peers (the host's Caddy, Docker's gateway); the TOTP secret lives in the `users` row, not the R9 file store (it is a sign-in factor, not a secret handed to jobs); passwords need 12+ characters; first start may rename the admin account; out-of-scope reads answer 403 `forbidden` rather than hiding the entity behind 404; a credential without a project may not open the event stream
@@ -133,6 +237,11 @@ Open questions:
       its kind and replay groups together get `replayShare`; a dataset version belongs to one group; names are unique
       per project; the preview uses each version's train split hours and splits a multi-locale version evenly.
       Mixes use the `container` state template (active) like projects; "Save mix as version" is `mixes.new` (save)
+- [ ] U0 (charts, R53), confirm: the eight categorical hues are crimson, violet, bronze, plum, lime, sky, orange,
+      teal; in light mode lime/sky take step 11 and orange/teal step 10 (step 9 is under 3:1 on slate-2), because the
+      only eight step-9 hues passing 3:1 away from the status and accent hues include bronze/gold/brown, 3 ΔE apart;
+      tritanopia keeps neighbours ≥ 6 ΔE (light lime/sky are 6.7), the others ≥ 8. Histogram marks sit at the bin
+      that contains them; the Pareto front is drawn by the browser from the returned points
 - [ ] Chromium's offline emulation does not drop an open event stream, so spike A4 drops it in the page and the
       shell's own reconnect resumes with `?after=`; EventSource's native retry with `Last-Event-ID` is covered by the
       control plane's integration test only
@@ -282,6 +391,176 @@ Open questions:
       file's allow rules for shell commands, reads and edits are still not applied by Claude Code, so those keep going
       through the host's permission request and the preset (a round trip each, no person). Pre-allowing them the same
       way would need the host to trust the preset's shell rules without the per-call check
+- [ ] D · Clearing a source for training (phase 2, R18), confirm: imported sources start eval-only; any change by
+      an agent through `sources.edit` is gated (preset rule `registry-changes`, approval), a person edits directly,
+      `sources.archive` is the admin's only (agents: `no-deletes`). Clearance is read when a mix or run is checked,
+      so clearing a source makes its existing versions trainable without a re-import; the collection tag `eval-only`
+      written at registration is informative and is not removed when the source is cleared
+- [ ] D · Utterance identity and audio format (phase 2), confirm: `dataset_import` stores audio as 16-bit PCM WAV,
+      mono, 16 kHz (`data.sample_rate`), written byte for byte the same by the pure-Python and NumPy paths, so an
+      utterance's BLAKE3 identity does not depend on the host (FLAC would halve the bytes but its encoder output
+      varies with libsndfile versions). Resampled sources (Common Voice MP3 at 48 kHz) hash per resampler (SciPy
+      polyphase when present, linear otherwise). The first source that imports an audio owns the utterance; a
+      re-import must carry the source's registry licence and kind, else the step fails
+- [ ] D · Dataset version identity (phase 2), confirm: the fingerprint of an imported `dataset_version` is the sha256
+      of the sorted `[audio hash, split, transcript text]` tuples (`registry.RegisterInput.Fingerprint`), not of its
+      payload, so the same content re-imported into the same collection returns the version already there with its
+      first lineage. A dataset artifact names audio by path inside the artifact (the plan's `audio: b3 hash` became
+      a path so the artifact is self-contained; the path's blob hash is the utterance hash)
+- [ ] D · Replay (R17) in phase 2, confirm: FLEURS covers 34 of the base model's 39 other locales with a
+      configuration of its own; en-GB, es-ES, fr-CA, pt-PT and nn-NO share their sister variant's configuration
+      until the Common Voice re-freeze. `dataset/replay-base` is one multi-language version (≈ 1 h per locale from
+      FLEURS train, `all-train`); replay golden sets are dataset versions `dataset/replay-golden-<locale>` (FLEURS
+      test, ≤ 300 utterances, `evalOnly`, tags `golden`, `replay`, `eval-only`) until the Golden set entity arrives
+      in phase 3, which will adopt or re-register them. Without speaker ids (FLEURS) the speaker-disjoint split
+      groups by transcript
+- [ ] D · Step help slugs (phase 2): help slugs allow only dashes, so a step kind's help article is
+      `docs/help/steps/<name with _ as ->.md` (`steps.dataset-import`); the worker's registry publishes that slug
+- [ ] P (phase 2): `pipelines.run` answers `201` with the pipeline run (`plr_…`, its steps and their step job ids),
+      not `202 {jobId}` — a run has one job per step attempt, so there is no single job to follow; clients follow
+      `pipeline_run.{id}` or `pipelineRuns.wait` (added, read verb `wait`). `202` stays for approvals. Its `If-Match`
+      is the pipeline's version (the commit that last changed the file, like `branches.accept` takes a head), `*`
+      accepts any. Confirm
+- [ ] P (phase 2): output hooks also run for reused outputs (a step reused by input hash in a new pipeline run), so a
+      run's facade sees its outputs; hooks must therefore be idempotent per artifact hash. A failing hook fails the
+      step and rolls back its writes and the output's index row (savepoint)
+- [ ] P (phase 2): a directory artifact's `size` is the sum of its files' sizes (the manifest blob's own size is
+      accepted when a worker declares that); an artifact row is written once by its first producer, other projects
+      are linked in `artifact_projects`, and a credential scoped to a project reads artifacts linked to it
+- [ ] P (phase 2): a step is `running` only once the worker protocol calls `pipelines.Engine.Leased` when it grants
+      the lease; until then (and in a control plane without it) a step goes `queued → done`. Step jobs run in their
+      own River queue (`steps`, 100 workers) because each waits on its lease for the whole step. A step whose job
+      ended without an outcome (control plane restarted while waiting) is swept as `lost` (one retry); the worker's
+      old lease must then stop at its next heartbeat (stream W)
+- [ ] P (phase 2): the starter pipelines move to the plan's format (`in` wiring, outputs from the kind, only
+      departures in `params`); `data-ingest` and `eval-matrix` name step kinds of phases 3–4 and fail validation until
+      those exist; a new `echo` starter checks that workers run steps end to end
+- [ ] W · The step queue (phase 2, confirm): a `step` job's River handler waits in `steps.Leases.Await` on its own
+      River queue (`jobs.QueueSteps`, 500 waiting handlers) so it never starves the default queue; the queue itself is
+      the `step_jobs` table, filled when Await is first called. The job mirror stays `running` while its step waits
+      for a card (the Queue shows `waiting | paused | running | stopping`); priority and pause live on the job
+      (`jobs.edit`, `jobs.pause|resume`); a cancelled running step ends at once for the pipeline while its card frees
+      only on the worker's release or reaping
+- [ ] W · Card slots (confirm): a job reserves its declared `memoryGb`, or the card's whole remaining cap when it
+      declares none (so a training step that declares no memory takes the card alone); an idle card must also show
+      that much free memory in the worker's telemetry, with 1 GB of slack for driver bookkeeping. A step with
+      `gpu: false` takes no card and may go to a worker without cards. Only training is stopped at a window close;
+      an unknown estimate, or a step resuming from a training state, starts whenever its window is open (it is
+      paused at the close anyway), so a resumed run is never locked out by its original estimate
+- [ ] W · Workers (confirm): one worker row per runtime and host (a restart re-registers it; a new `instance`
+      reaps the old process's leases at once); a framework step kind `name@version` may be published by one runtime
+      only and neutral kinds must agree on their schema hash (`step-kind-conflict`); a `cwk_` token names its host
+      (the credential's subject), `CADENCE_WORKER_TOKEN_FILE` is issued for `CADENCE_WORKER_HOST` (default
+      `staging`). Secret names become environment variables in upper case with `-`/`.` as `_` (`hf-token` →
+      `HF_TOKEN`); a step whose secret is missing fails at lease time with error type `input`. Job logs are kept in
+      files only (the global search index of `warn`+ lines from R15 is not built yet)
+- [ ] O · Notifications and operations (phase 2, stream O), confirm: the instance timezone is a policy
+      (`policies.timezone`, default `defaults.yaml` `operations.timezone` = UTC) that quiet hours, the digest and the
+      backup schedule follow; a rule's timing applies to Telegram only (the in-app history is always immediate, its
+      checkbox only switches a class off); quiet hours *drop* Telegram messages (they stay in-app and the digest lists
+      open approvals) rather than deferring them; a Telegram press decides as the one admin account (`usr_admin`)
+      with `actor.channel = telegram` (a contract field) through `approvals.approve|deny`; the bot answers nothing to
+      chats outside the allowlist but lists them in Settings; the bot token is the secret `telegram-bot-token`
+      (kind `telegram`), replaced through `telegramBot.set`; backup sets carry the sealed secret values but never the
+      master key; the content-store mirror is never pruned; the set taken on the restore-test weekday is the weekly
+      set; failed sets keep no files. Event types other streams should emit for the routing table (or add to
+      `internal/notify/classify.go` and `web/src/shell/notifications/classes.ts`): `mount.unhealthy` (failure);
+      `gate.verdict`, `deployment.promoted`, `schedule.finished`, `batch.closed` (outcome); `checkpoint.saved`,
+      `triage.item_added` (progress) — on a non-entity topic. Step outcomes are `pipeline_run.step_changed` and host
+      loss `compute.health` (classified by payload, F); `pipeline_step.done` was dropped (nothing emits it) and
+      `compute.card_closed` waits for per-card health
+- [ ] S · Job logs (phase 2), confirm: a job's log is one NDJSON file `$CADENCE_DATA_DIR/job-logs/<jobId>.ndjson`
+      (lines `{t, level, msg, fields}`), not a content-store blob, read through `jobLogs.list` and tailed on
+      `job.{id}.log`; a daily chore deletes files untouched for 14 days (hard-coded, not a `defaults.yaml` key)
+- [ ] S · Retention of training data (phase 2), confirm: v1 deletes no content-store blob (the backup mirror is never
+      pruned either) and never deletes a metric point — points in `metric_points` live as long as their run, and no
+      code path deletes either
+- [ ] S · Availability windows (phase 2, R19), confirm: windows are per card and job kind (training, eval, shadow,
+      export, data), each a set of weekdays with `start`/`end` `HH:MM` (an end at or before the start closes the next
+      day, `24:00` is midnight) and its own IANA `timezone`; a window naming none follows the instance's
+      `policies.timezone` (like quiet hours, the digest and backups), resolved at check time (F, phase 2 — it
+      defaulted to UTC in wave 1); no windows means always open; only training is stopped at a
+      close; an unknown estimate or a resumed step starts whenever its window is open
+- [ ] S · Playbook format (phase 2, R16), confirm: a playbook input is taken from the project with `from: project`
+      (the base-model input: the project's default base model) or from `defaults.yaml` with `defaultRef`, and a chain
+      step not built yet carries `phase: <n>` so the estimate lists and skips it (03 "Playbooks"; stream K builds it)
+- [x] F · resolved (phase 2): the toy pack reads only the `dataset` directory artifact of 02 "The dataset artifact"
+      (`dataset.json` with `format: cadence.dataset/1`, `manifest.jsonl` with `audio` as a path inside it) and names an
+      utterance by the BLAKE3 hash of its audio file; its fixtures are a `folder-csv` import folder (`metadata.csv`),
+      and the conformance suite starts with a `dataset_import` stage, so import → calibrate → train → … runs end to end
+- [x] F · resolved (phase 2): the project's queue priority is `budgets.queuePriority` (−100…100, default
+      `budgets.queue_priority_per_project` = 0, set by `projects.new`/`projects.edit`); the claim and `queue.list`
+      order by it, then the job's priority, then first come. It is read live from the project in the claim query
+      rather than copied into the step spec by the pipelines engine, so an edit reorders jobs already waiting
+- [x] F · resolved (phase 2): `pipelines.run` (dry run included) answers `eval-only-dataset` when a training step
+      (`resources.jobKind` training or unset) reads, straight from `$inputs.<name>`, a `dataset` artifact that an
+      eval-only version registers (`payload.artifact.hash`, `data.Trainable`) or a `mix` artifact referencing one;
+      inputs only eval, data or export steps read may be eval-only. Assumptions: a mix artifact names its dataset
+      versions in `meta.datasets` or in its JSON content's `groups[].datasets` / `datasets` (stream R renders it);
+      a dataset artifact no version registers passes; only direct reads are checked, not outputs derived from it
+- [x] F · resolved (phase 2): notifications classify the events that exist — `pipeline_run.step_changed` on
+      `pipeline_run.{id}` (step `done` → progress, `failed`, i.e. no retry left → failure) and `compute.health` on
+      `compute.{id}` (`unreachable` → failure); a step job's own `job.state_changed` is no longer noticed (the step
+      event tells it once per step, not per attempt). `pipeline_step.done` and `compute.card_closed` left the routing
+      table; `TestClassTableMatchesWeb` keeps `classify.go` and `classes.ts` equal
+- [ ] gap (phase 2): card health is per host (`unknown | healthy | unreachable` from heartbeats); nothing closes a
+      card's slot for an unhealthy card, so nothing emits `compute.card_closed` (it rejoins the routing table as a
+      failure when it does). Not small: the worker's card telemetry carries no health field today (NVML errors, a
+      card missing from the report), `card_slots` has no closed state, and the claim and reopening need it (06
+      "Notifications", "Failures")
+- [ ] gap (phase 2): "a checkpoint and training state every 20 minutes" (03 "Key defaults") has no `defaults.yaml` key
+      and no step kind implements it yet; the NeMo pack's train kind must, with the interval from `defaults.yaml`
+- [x] gap (phase 2): `metrics.get` (series binned for charts, R53) is not in the contract yet; `internal/telemetry.Get`
+      is ready for stream R to expose — resolved: `metrics.get` is in the contract and served (stream R)
+- [ ] gap (later): job-log field search and the global search index of `warn`+ lines (R15) are not built; remote
+      workers have an upload path (`workerArtifacts.set`) but no download path
+- [ ] deferred (later, decided 2026-09-30): per-kind MCP tool descriptions — step kinds' parameter schemas are not
+      rendered into a tool description per kind; agents read `stepKinds.get` (schema with `x-cadence`) and the
+      `pipelines.run` dry run (resolved parameters, departures), which covers phase 2. Revisit when playbooks or
+      agents show they need it; no code in phase 2
+- [ ] H (2026-09-30, noise bank): a noise bank is its own registry kind `noise_bank` (collection `noise-bank/<name>`),
+      not a `dataset_version` tagged `noise-bank`: it is produced by `dataset_import` with `purpose: noise` (clips
+      without transcripts; the `dataset` hook registers the source and the version, and writes no utterances or
+      transcripts), so noise never lands in the utterance store, search or a mix. Spec 02 "versioned like a dataset"
+      holds (frozen, fingerprinted by content, licence from the source). Applying it on the fly is the NeMo pack's
+      augmentation (it joins when the pack reads `noise-bank/*`); the MUSAN import runs on the stand in the gate wave
+- [ ] H: the toy model gained a layer norm (it converged too late: WER near 1 at 300 steps) under the same
+      `toy_train@1`; the toy is CI-only, and checkpoints written before load without it
+- [x] G2 · resolved (2026-10-01 gate rehearsal): every validation's checkpoint is registered — steps publish
+      intermediate outputs during a lease (`workerOutputs.new`, `ctx.publish`, 06 "Worker protocol"); the NeMo kind
+      saves a `.nemo` per validation (seconds of each lease, not measured on the card yet) and links `checkpoint_best`
+      to the published one
+- [x] G2 · resolved in part: estimates add a per-lease overhead (calibration `leaseOverheadSeconds`: model load timed,
+      one `.nemo` save timed, state save ≈ 3 of those; else `estimates.lease_overhead_seconds` 120 s); the ± covers the
+      steps only
+- [ ] G2 · open: the calibration's seconds per step is still compute only (0.38 s vs 0.53–0.56 s in the loop:
+      validation passes, metric cadence, dataloader); validations × validation time is not in the estimate (the
+      calibration runs no validation and the estimate does not read `val_every`); one pass on the stand would give the
+      ratio to fold in
+- [x] G2 · resolved by stream E (2026-10-01): content-store retention is built as designed (06 "Artifacts, metrics
+      and logs", Retention, "As built"): `artifacts.evict`, approval-gated for everyone and forbidden to agents, the
+      `artifact_files` index (migration 0020, backfilled at start), `cas.Store.Delete`, the approval-decided job,
+      `artifact.evicted` and an audit entry with the bytes freed
+- [ ] E · assumption: a blob deleted by an eviction can race a new artifact that lists the same file blob while the
+      job deletes it (the writer's `Put` sees the blob and skips writing; the job then deletes it). Training-state
+      files (optimiser state) are not shared with anything in practice, so the job does not lock writers; file blobs
+      listed only by unindexed lease outcomes (outputs of stopped steps other than training states) are not
+      protected either. Revisit when retention reaches other artifact types
+- [ ] E · assumption: with backups configured, eviction keeps any state whose blobs the backup mirror does not hold
+      yet (rather than copying them there itself), so the nightly backup must run before space comes back;
+      `backups.new` makes it immediate
+- [x] G2 · resolved (2026-10-01 gate rehearsal): the NeMo step's `val_wer` scores the validation manifest's raw text
+      (looked up by the tokenizer round trip of NeMo's decoded reference), both sides normalised as evaluations are
+      (NFKC, case-folded, no punctuation) — assumed the right normalisation for model selection, so val_wer and eval
+      WER are comparable; a speaker-disjoint import holds out at least `data.min_validation_utterances` (100)
+      utterances, moving whole speakers (or transcripts) in split-fraction order, never past half the import
+- [x] G2 · resolved: progress reports no longer change a job's `rev` (only state, priority, pause and cancel do), so
+      `jobs.pause` with a revision read before some heartbeats succeeds; `job.progress` events carry the progress
+- [x] G · resolved: a control-plane stop interrupts (snoozes) a step job waiting on a worker instead of failing it; the
+      next start waits for the same lease (`jobs.ErrInterrupted`); a step kind that sizes itself to the lease's cap
+      declares no `memoryGb` (the NeMo kinds declared 24, above the staging cap)
+- [ ] H: `TestProjectQueuePriority`'s one failure did not reproduce (20 runs alone, 8 beside `TestPipelinesOverHTTP`,
+      two full integration runs); nothing changed there. The cancel flake was a real race (fixed in `internal/jobs`)
 
 ## Sources
 

@@ -1,8 +1,10 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import { Bell, ChatBubble, CheckCircle, HalfMoon, OpenInWindow, SunLight } from "iconoir-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Bell, ChatBubble, CheckCircle, Cpu, HalfMoon, OpenInWindow, SunLight } from "iconoir-react";
+import { computeListOptions, queueEntriesListOptions } from "@/api/gen/@tanstack/react-query.gen";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import type { AgentSession, Approval } from "@/api/gen/types.gen";
+import type { AgentSession, Approval, CardTelemetry, QueueEntry } from "@/api/gen/types.gen";
 import { cn } from "@/lib/utils";
 import { useSnap } from "@/shell/floating-snap/dockview-adapter";
 import { useHelp } from "@/shell/help/store";
@@ -17,9 +19,12 @@ import { openChat } from "@/shell/agents/bridge";
 import { isAsleep, sessionLabel } from "@/shell/agents/labels";
 import { useAgentSessions } from "@/shell/agents/sessions";
 import { useShell } from "@/shell/state";
+import { focusPipelineRun } from "@/shell/training/focus";
+import { sortEntries } from "@/shell/training/queue";
+import { applyTelemetry, formatReading, isStale, mergeReadings, seedReadings, sortedReadings, type Readings } from "./gpu";
 
-// Status bar: live connection, workspace save state, GPU / queue / agent slots (filled by later phases), snapping,
-// theme and the notification history. The polite live region lives here too (WCAG 4.1.3).
+// Status bar: live connection, workspace save state, GPU telemetry per card, the step queue, agent sessions and
+// approvals, snapping, theme and the notification history. The polite live region lives here too (WCAG 4.1.3).
 
 function useConnection(): ConnectionState {
   const [s, setS] = useState(events.connectionState);
@@ -41,9 +46,9 @@ export function StatusBar() {
         {CONN_LABEL[conn]}
       </span>
       <span data-testid="workspace-sync">{sync.restoring ? "Restoring…" : sync.saving ? "Saving…" : sync.rev && !sync.placeholder ? `Saved · rev ${sync.rev}` : "Not saved yet"}</span>
-      <span title="GPU memory and compute arrive with training (phase 2)">GPU —</span>
-      <span title="The job queue arrives with the agent loop (phase 1)">Queue —</span>
       <div className="ml-auto flex items-center gap-1">
+        <GpuBadge />
+        <QueueBadge />
         <AgentSessionsBadge />
         <ApprovalsBadge />
         <Button variant="ghost" size="xs" className="h-5 px-1.5 text-[11px] font-normal text-muted-foreground" onClick={() => useSnap.getState().setEnabled(!snap)} aria-pressed={snap}>
@@ -171,7 +176,10 @@ function AgentSessionsBadge() {
   );
 }
 
-/** Pending approvals: a popup listing them (click opens the requesting Chat or Approvals); expands into Approvals. */
+/**
+ * Pending approvals: a popup listing them (click opens the requesting Chat or Approvals); expands into Approvals.
+ * While anything waits the badge blinks (still under prefers-reduced-motion).
+ */
 function ApprovalsBadge() {
   const { data } = usePendingApprovals();
   const items = data?.items ?? [];
@@ -185,7 +193,8 @@ function ApprovalsBadge() {
           variant="ghost"
           size="xs"
           data-testid="approvals-badge"
-          className={cn(trigger, n ? "text-status-warning-foreground" : "text-muted-foreground")}
+          data-waiting={n ? "" : undefined}
+          className={cn(trigger, n ? "animate-attention text-status-warning-foreground" : "text-muted-foreground")}
           aria-label={n ? `${n} pending approval${n === 1 ? "" : "s"}` : "No pending approvals"}
         >
           <CheckCircle aria-hidden />
@@ -201,6 +210,164 @@ function ApprovalsBadge() {
         ))}
       </ul>
     </StatusPopover>
+  );
+}
+
+/** GPU memory used/total and utilisation per card, live on `gpu`: a popup per card; expands into Queue & GPU. */
+function GpuBadge() {
+  const compute = useQuery(computeListOptions());
+  const [live, setLive] = useState<Readings>({});
+  useEffect(
+    () =>
+      events.subscribe(
+        ["gpu"],
+        (batch) => {
+          for (const e of batch) {
+            if (e.type !== "gpu.telemetry") continue;
+            const p = e.payload as { host?: string; cards?: CardTelemetry[]; at?: string } | undefined;
+            if (!p?.host || !p.cards) continue;
+            const { host, cards } = p;
+            const at = p.at ? Date.parse(p.at) / 1000 : Date.now() / 1000;
+            setLive((cur) => applyTelemetry(cur, host, cards, at));
+          }
+        },
+        "shell",
+      ),
+    [],
+  );
+  // Staleness is judged against a clock that ticks twice a minute.
+  const [now, setNow] = useState(() => Date.now() / 1000);
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now() / 1000), 30_000);
+    return () => clearInterval(t);
+  }, []);
+  const cards = sortedReadings(mergeReadings(seedReadings(compute.data?.items ?? []), live));
+  const fresh = cards.filter((c) => !isStale(c, now));
+  const label = fresh.length === 0 ? "GPU —" : `GPU ${fresh.map(formatReading).join(" | ")}`;
+  const aria = fresh.length === 0 ? "No recent GPU telemetry" : `GPU: ${fresh.map((c) => `${c.name} ${formatReading(c)}`).join("; ")}`;
+  return (
+    <StatusPopover
+      title="GPU"
+      expand={{ label: "Open Queue & GPU as a window", panel: "queue-gpu" }}
+      button={
+        <Button variant="ghost" size="xs" data-testid="gpu-badge" className={cn(trigger, "tabular-nums", fresh.length ? "text-foreground" : "text-muted-foreground")} aria-label={aria}>
+          <Cpu aria-hidden />
+          {label}
+        </Button>
+      }
+    >
+      {cards.length === 0 ? <p className="p-3 text-muted-foreground">No card has reported yet. A worker reports its cards when it claims a job and on every heartbeat.</p> : null}
+      <ul>
+        {cards.map((c) => (
+          <li key={c.key} className="border-b px-3 py-2 last:border-0" data-card={c.key}>
+            <div className="flex items-center gap-2">
+              <span aria-hidden className={cn("size-2 shrink-0 rounded-full", isStale(c, now) ? "bg-muted-foreground" : "bg-status-done")} />
+              <span className="min-w-0 truncate font-medium">{c.name}</span>
+              <span className="ml-auto shrink-0 text-muted-foreground">
+                {c.host} · card {c.index}
+              </span>
+            </div>
+            <p className="pl-4 text-muted-foreground tabular-nums">
+              {formatReading(c) || "no reading"}
+              {c.capGb ? ` · Cadence cap ${c.capGb} GB` : ""}
+              {isStale(c, now) ? ` · last seen ${new Date(c.at * 1000).toLocaleTimeString()}` : ""}
+            </p>
+          </li>
+        ))}
+      </ul>
+    </StatusPopover>
+  );
+}
+
+/** Step jobs running and waiting for the current project (every project without one): a popup listing them (click
+ * shows the job's pipeline run, or Queue & GPU); expands into Queue & GPU. */
+function QueueBadge() {
+  const project = useShell((s) => s.project);
+  const qc = useQueryClient();
+  const opts = queueEntriesListOptions(project ? { query: { project } } : undefined);
+  const { data } = useQuery(opts);
+  const queryKey = opts.queryKey;
+  useEffect(
+    () =>
+      events.subscribe(
+        ["queue"],
+        (batch) => {
+          if (batch.some((e) => e.type === "queue.changed")) void qc.invalidateQueries({ queryKey });
+        },
+        "shell",
+      ),
+    // The key is a fresh array each render; the project names it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [qc, project],
+  );
+  const items = sortEntries(data?.items ?? []);
+  const running = items.filter((e) => e.state === "running" || e.state === "stopping").length;
+  return (
+    <StatusPopover
+      title="Queue"
+      expand={{ label: "Open Queue & GPU as a window", panel: "queue-gpu" }}
+      button={
+        <Button
+          variant="ghost"
+          size="xs"
+          data-testid="queue-badge"
+          className={cn(trigger, "tabular-nums", items.length ? "text-foreground" : "text-muted-foreground")}
+          aria-label={items.length ? `Queue: ${running} running, ${items.length - running} waiting` : "The queue is empty"}
+        >
+          Queue {items.length ? `${running}/${items.length}` : "—"}
+        </Button>
+      }
+    >
+      {items.length === 0 ? <p className="p-3 text-muted-foreground">Nothing runs or waits{project ? " in this project" : ""}.</p> : null}
+      <ul>
+        {items.map((e) => (
+          <QueueRow key={e.jobId} e={e} />
+        ))}
+      </ul>
+    </StatusPopover>
+  );
+}
+
+const QUEUE_TONE: Record<QueueEntry["state"], string> = {
+  running: "bg-status-running",
+  stopping: "bg-status-warning",
+  waiting: "bg-muted-foreground",
+  paused: "bg-status-warning",
+};
+
+function QueueRow({ e }: { e: QueueEntry }) {
+  const close = useContext(ClosePopover);
+  const l = e.lease;
+  const progress = e.state === "running" && l?.progress !== undefined ? `${Math.round(l.progress * 100)} %` : undefined;
+  const where = l ? (l.card < 0 ? l.host : `${l.host} · card ${l.card}`) : undefined;
+  return (
+    <li className="border-b last:border-0">
+      <button
+        type="button"
+        className="flex w-full min-w-0 flex-col gap-0.5 px-3 py-2 text-left hover:bg-hover focus-visible:bg-hover focus-visible:outline-none"
+        onClick={() => {
+          close();
+          if (e.pipelineRunId) {
+            focusPipelineRun(e.pipelineRunId);
+            openPanel("pipeline-run");
+          } else openPanel("queue-gpu", { location: "floating" });
+        }}
+        data-job={e.jobId}
+        data-state={e.state}
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          <span aria-hidden className={cn("size-2 shrink-0 rounded-full", QUEUE_TONE[e.state], e.state === "running" && "animate-pulse motion-reduce:animate-none")} />
+          <span className="min-w-0 truncate font-medium">
+            {e.kind}@{e.kindVersion}
+          </span>
+          <span className="shrink-0 text-muted-foreground">{e.jobKind}</span>
+          <span className="ml-auto shrink-0 text-muted-foreground tabular-nums">{progress ?? (e.state === "running" ? "running" : e.state)}</span>
+        </span>
+        <span className="truncate pl-4 text-muted-foreground">
+          {[where, l?.message, e.attempt > 1 ? `attempt ${e.attempt}` : undefined, !l ? `priority ${e.priority}` : undefined].filter(Boolean).join(" · ") || "waiting for a card"}
+        </span>
+      </button>
+    </li>
   );
 }
 

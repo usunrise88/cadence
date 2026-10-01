@@ -23,11 +23,17 @@ COPY --from=web /src/web/dist/ internal/webui/dist/
 RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${CADENCE_VERSION}" -o /out/cadence ./cmd/cadence \
  && mkdir -p /out/data
 
-# ---- runtime: slim Debian with git (project repositories, R10: merges, hooks and smart HTTP need the real git) and
-# the CA bundle (GitHub over HTTPS); non-root (uid 65532). The data volume must be writable by that uid.
+# ---- runtime: slim Debian with git (project repositories, R10: merges, hooks and smart HTTP need the real git), the
+# CA bundle (GitHub over HTTPS) and the PostgreSQL 17 client from the PGDG repository (pg_dump / pg_restore for
+# backups and the restore test; their major version must match the compose file's postgres:17 — bookworm itself
+# ships 15); non-root (uid 65532). The data volume must be writable by that uid.
 FROM debian:bookworm-slim
-RUN apt-get update \
- && apt-get install -y --no-install-recommends git ca-certificates \
+ADD https://www.postgresql.org/media/keys/ACCC4CF8.asc /usr/share/keyrings/pgdg.asc
+RUN chmod 0644 /usr/share/keyrings/pgdg.asc \
+ && echo "deb [signed-by=/usr/share/keyrings/pgdg.asc] http://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" \
+      > /etc/apt/sources.list.d/pgdg.list \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends git ca-certificates postgresql-client-17 \
  && rm -rf /var/lib/apt/lists/* /usr/share/doc /usr/share/man \
  && groupadd --gid 65532 nonroot \
  && useradd --uid 65532 --gid 65532 --no-create-home --home-dir /data --shell /usr/sbin/nologin nonroot
@@ -38,6 +44,11 @@ COPY --from=build --chown=65532:65532 /out/data /data
 COPY --from=build --chown=65532:65532 /out/data /host-credential
 # Where the egress proxy's token is kept (CADENCE_EGRESS_TOKEN_FILE): written by the control plane, read by the proxy.
 COPY --from=build --chown=65532:65532 /out/data /egress-credential
+# Backup sets and the content-store mirror (CADENCE_BACKUP_DIR): a volume now, a mount in phase 4.
+COPY --from=build --chown=65532:65532 /out/data /backups
+# Where the workers' token is kept (CADENCE_WORKER_TOKEN_FILE) and the content store shared with them by volume.
+COPY --from=build --chown=65532:65532 /out/data /worker-credential
+COPY --from=build --chown=65532:65532 /out/data /var/lib/cadence
 ENV CADENCE_ADDR=0.0.0.0:8080 \
     CADENCE_DATA_DIR=/data
 USER 65532:65532

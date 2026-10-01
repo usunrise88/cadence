@@ -51,7 +51,15 @@ func TestDecide(t *testing.T) {
 			PathParams: map[string]string{"p": "demo", "name": "candidate"}}, Allow, "draft"},
 		{"agent sets baseline", Input{Actor: agent, Operation: "aliases.set", VerbClass: "mutate",
 			PathParams: map[string]string{"p": "demo", "name": "baseline"}}, Approval, "baseline-alias"},
-		{"agent runs without an estimate", Input{Actor: agent, Operation: "runs.new", VerbClass: "mutate"}, Allow, "gpu-spend"},
+		{"agent runs without an estimate: fails closed", Input{Actor: agent, Operation: "runs.new", VerbClass: "mutate"}, Approval, "gpu-spend"},
+		{"agent runs with a partly unknown estimate", Input{Actor: agent, Operation: "pipelines.run", VerbClass: "mutate",
+			Estimate: &Estimate{GPUHours: 0.1, Unknown: true}}, Approval, "gpu-spend"},
+		{"agent retries a pipeline step within budget", Input{Actor: agent, Operation: "pipelineRuns.retry", VerbClass: "mutate",
+			Estimate: &Estimate{GPUHours: 1}}, Allow, "gpu-spend"},
+		{"agent resumes a job over budget", Input{Actor: agent, Operation: "jobs.resume", VerbClass: "mutate",
+			Estimate: &Estimate{GPUHours: 5}}, Approval, "gpu-spend"},
+		{"agent runs a CPU-only pipeline", Input{Actor: agent, Operation: "pipelines.run", VerbClass: "mutate",
+			Estimate: &Estimate{}}, Allow, "gpu-spend"},
 		{"agent runs within budget", Input{Actor: agent, Operation: "runs.new", VerbClass: "mutate",
 			Estimate: &Estimate{GPUHours: 3.5}}, Allow, "gpu-spend"},
 		{"agent runs over budget", Input{Actor: agent, Operation: "runs.new", VerbClass: "mutate",
@@ -64,6 +72,8 @@ func TestDecide(t *testing.T) {
 			Operation: "agentSessions.new", VerbClass: "mutate", ProjectID: "prj_a"}, Allow, RuleKeyAgentSessions},
 		{"a key allowed agent sessions messages them", Input{Actor: automation, Scope: Scope{ProjectID: "prj_a", AgentSessions: true},
 			Operation: "agentMessages.new", VerbClass: "mutate", ProjectID: "prj_a"}, Allow, RuleKeyAgentSessions},
+		{"a key allowed agent sessions starts a playbook session", Input{Actor: automation, Scope: Scope{ProjectID: "prj_a", AgentSessions: true},
+			Operation: "playbooks.run", VerbClass: "mutate", ProjectID: "prj_a"}, Allow, RuleKeyAgentSessions},
 		{"a key allowed agent sessions stays out of other projects", Input{Actor: automation, Scope: Scope{ProjectID: "prj_a", AgentSessions: true},
 			Operation: "agentSessions.new", VerbClass: "mutate", ProjectID: "prj_b"}, Deny, RuleTokenScope},
 		{"a key allowed agent sessions keeps the other rules", Input{Actor: automation, Scope: Scope{ProjectID: "prj_a", AgentSessions: true},
@@ -82,6 +92,10 @@ func TestDecide(t *testing.T) {
 			Estimate: &Estimate{GPUHours: 100}}, Allow, RulePeople},
 		{"person sets baseline: gated for everyone", Input{Actor: person, Operation: "aliases.set", VerbClass: "mutate",
 			PathParams: map[string]string{"name": "baseline"}}, Approval, "baseline-alias"},
+		{"person evicts: gated for everyone", Input{Actor: person, Operation: "artifacts.evict", VerbClass: "mutate"},
+			Approval, "store-eviction"},
+		{"agent evicts: never", Input{Actor: agent, Operation: "artifacts.evict", VerbClass: "mutate"},
+			Deny, "agents-never-evict"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -107,6 +121,47 @@ func TestDecideOverBudgetExplains(t *testing.T) {
 	}
 	if d.Outcome != Approval || d.RemainingGPUHours == nil || *d.RemainingGPUHours != 2 || !strings.Contains(d.Reason, "3.00") {
 		t.Fatalf("decision %+v", d)
+	}
+}
+
+// sessionBudget has a project allowance and a smaller session allowance.
+type sessionBudget struct{ project, session float64 }
+
+func (b sessionBudget) RemainingGPUHours(context.Context, string) (float64, error) {
+	return b.project, nil
+}
+func (b sessionBudget) RemainingSessionGPUHours(context.Context, string) (float64, error) {
+	return b.session, nil
+}
+
+func TestDecideSessionBudget(t *testing.T) {
+	b := sessionBudget{project: 8, session: 1}
+	inSession := agent // ses_1
+	automation := auth.Actor{Kind: auth.KindAutomation, ID: "key_1"}
+	tests := []struct {
+		name     string
+		actor    auth.Actor
+		estimate float64
+		want     Outcome
+		reason   string
+	}{
+		{"within both", inSession, 0.5, Allow, ""},
+		{"over the session's", inSession, 2, Approval, "agent session's budget"},
+		{"over the project's first", inSession, 9, Approval, "today's budget"},
+		{"no session: only the project's", automation, 2, Allow, ""},
+		{"a person is not budget-gated", person, 20, Allow, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d, err := engine(t, b).Decide(context.Background(),
+				Input{Actor: tt.actor, Operation: "runs.calibrate", VerbClass: "mutate", Estimate: &Estimate{GPUHours: tt.estimate}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if d.Outcome != tt.want || !strings.Contains(d.Reason, tt.reason) {
+				t.Fatalf("decision %+v", d)
+			}
+		})
 	}
 }
 

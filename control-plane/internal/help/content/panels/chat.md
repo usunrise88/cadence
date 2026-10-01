@@ -101,8 +101,17 @@ review, accepting drafts and session changes decides, and the note it leaves rec
 Screen readers hear when a turn finishes (with the start of the reply), when a session pauses, fails or ends —
 through the polite live region; streamed tokens are not announced.
 
+A **playbook session** (the header chip says `playbook`) shows its plan between the header and the transcript: the
+playbook's estimate first, then one line per step of the chain — to do, in progress (its dry run answered, or its job
+is running), done (with the entity or job), failed, or skipped (a later phase). Cadence ticks the steps when the
+session's commands for them succeed; the agent cannot tick them. When the playbook completes or stops, the plan shows
+the summary and the suggested next step, and the session ends after its turn. See the
+[playbooks guide](../guides/playbooks.md).
+
 ## Playbooks
 
+- **Watch a playbook**: start it from Agent sessions (New session → From a playbook) or the Project home; its Chat
+  opens with the plan; approvals the steps need appear inline.
 - **Ask about what you see**: select a mix row or open a document, press Ctrl/Cmd+I, type the question, Enter.
 - **Follow a change back**: click the agent badge on a mix or draft ("claude-code · session 3") — Chat opens at the
   tool call that made it, highlighted. For opencode sessions the badge learns the tool call a moment after the change

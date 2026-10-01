@@ -1,0 +1,69 @@
+# written by Cadence — playbook template (docs/spec/03-pipelines-defaults.md "Playbooks", R16; format:
+# control-plane/internal/playbooks/README.md). Listed from phase 2; runs once phases 4–5 ship triage and schedules.
+name: weekly-flywheel
+title: Weekly flywheel
+description: On a schedule, replay production samples, read the signals, triage, package a correction batch, train a continuation, evaluate and shadow.
+typicalCost: 2–3 GPU-hours per week
+availableFrom: 4
+
+inputs:
+  base:
+    type: base_model
+    from: project
+    description: The project's default base model
+
+  parent:
+    type: string
+    required: true
+    description: The run to continue (run_…); the stage starts from its best kept checkpoint
+  peakLr:
+    type: number
+    required: true
+    description: The continuation stage's peak learning rate (runs.stage peakLr)
+
+chain:
+  - id: signals
+    title: Read the week's signals
+    command: signals.list
+    phase: 5
+  - id: triage
+    title: Triage the queue
+    command: triage.accept
+    accepts: [triage.correct, triage.reject]
+    phase: 5
+  - id: batch
+    title: Package the corrections
+    command: corrections.package
+    phase: 5
+  - id: stage
+    title: Continuation stage (dry run first)
+    command: runs.stage
+    with: { run: $inputs.parent, peakLr: $inputs.peakLr }
+    estimate: { gpuHours: 1.5, minutes: 90, plusMinus: 0.5 }
+  - id: watch
+    title: Wait for the stage to finish
+    command: runs.get
+    accepts: [jobs.wait]
+    until: terminal
+  - id: eval
+    title: Eval matrix
+    command: evals.new
+    phase: 3
+  - id: shadow
+    title: Shadow deployment
+    command: deployments.promote
+    phase: 5
+
+stop:
+  - gate: failed
+  - budget: exceeded
+  - step: failed
+  - approval: denied
+
+next:
+  done: Review the shadow deployment's agreement next week before promoting further.
+  stopped: Read why the step stopped; the next scheduled run starts from the beginning.
+
+prompt: |
+  Run the playbook "Weekly flywheel" in project {{ .Project.Name }}: read the week's signals, triage, package the
+  corrections, train a continuation of {{ .Inputs.base }} (dry run first), evaluate and shadow.

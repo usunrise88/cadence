@@ -9,7 +9,7 @@ var Operations = []Operation{
 		Summary: "Registry versions the project adopted, with the aliases pointing at each",
 		Params: []Param{
 			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
-			{Name: "kind", In: "query", Flag: "kind", Type: "string", Description: "Only versions of this kind", Enum: []string{"base_model", "dataset_version", "template"}},
+			{Name: "kind", In: "query", Flag: "kind", Type: "string", Description: "Only versions of this kind", Enum: []string{"base_model", "dataset_version", "template", "runtime", "model_family", "step_kind", "noise_bank"}},
 		},
 	},
 	{
@@ -233,6 +233,32 @@ var Operations = []Operation{
 		},
 	},
 	{
+		ID: "artifacts.evict", Entity: "artifacts", Verb: "evict", Method: "POST", Path: "/artifacts:evict",
+		Summary:        "Free content-store space by deleting superseded training states (always waits for an approval)",
+		Description:    "Delete the blobs of superseded training-state artifacts from the content store: every state of a run whose pipeline finished, and every state but the newest of a failed or cancelled run (runs.resume continues from the newest). States a waiting or running step job names, inputs of running pipelines, artifacts a frozen registry version or a checkpoint references and files another live artifact lists are kept. dryRun=true answers the candidates, the artifacts kept with the reason and the bytes it would free. A real call always answers 202 with an approvalId, for people too; once a person approves it, a job deletes the blobs (the approval's result is 202 with its jobId) and marks the artifacts evicted (their index rows stay, so lineage still resolves). Agents may not evict. The backup mirror is the way back.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: false, Properties: []BodyProperty{
+			{Name: "hashes", Type: "array of string", Description: "Exactly these artifacts; one that may not be evicted answers artifact-not-evictable"},
+			{Name: "olderThanDays", Type: "integer", Description: "Only states recorded at least this many days ago"},
+			{Name: "project", Type: "string", Description: "Only the states of this project (slug or id)"},
+			{Name: "runId", Type: "string", Description: "Only the states of this run (run_…)"},
+			{Name: "type", Type: "string", Description: "The artifact type (v1: training-state only)"},
+		}},
+	},
+	{
+		ID: "artifacts.get", Entity: "artifacts", Verb: "get", Method: "GET", Path: "/artifacts/{hash}",
+		Summary:     "Get an artifact by hash — type, size, metadata, producing step, a directory's files, and small content",
+		Description: "Read an artifact of the content store by its hash (b3:<64 hex>): type, size, neutral metadata, the pipeline step that produced it and, for a directory artifact, its file list. With content=true a file artifact of at most 1 MiB comes back inline (utf8 or base64); for a directory pass path to read one of its files. Larger content is omitted (contentOmitted says why) — artifacts are read by steps, not copied into a context.",
+		Params: []Param{
+			{Name: "hash", In: "path", Flag: "hash", Required: true, Type: "string", Description: "Artifact hash (b3:<64 hex>, BLAKE3-256 of the content)"},
+			{Name: "content", In: "query", Flag: "content", Type: "boolean", Description: "Include the content when it is at most 1 MiB", Default: "false"},
+			{Name: "path", In: "query", Flag: "path", Type: "string", Description: "With content=true on a directory artifact: the file to read"},
+		},
+	},
+	{
 		ID: "audit.list", Entity: "audit", Verb: "list", Method: "GET", Path: "/audit",
 		Summary: "The audit log, newest first — every command, denial and failed attempt with its actor and cause",
 		Params: []Param{
@@ -241,6 +267,38 @@ var Operations = []Operation{
 			{Name: "operation", In: "query", Flag: "operation", Type: "string", Description: "Operation id, e.g. projects.archive"},
 			{Name: "before", In: "query", Flag: "before", Type: "string", Description: "Cursor: the `next` value of the previous page"},
 			{Name: "limit", In: "query", Flag: "limit", Type: "integer", Default: "100"},
+		},
+	},
+	{
+		ID: "backups.get", Entity: "backups", Verb: "get", Method: "GET", Path: "/backups/{id}",
+		Summary: "Get a backup set with its manifest and last restore test report",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string"},
+		},
+	},
+	{
+		ID: "backups.list", Entity: "backups", Verb: "list", Method: "GET", Path: "/backups",
+		Summary: "Backup sets, newest first, with the schedule and the last restore test",
+		Params: []Param{
+			{Name: "limit", In: "query", Flag: "limit", Type: "integer", Default: "50"},
+		},
+	},
+	{
+		ID: "backups.new", Entity: "backups", Verb: "new", Method: "POST", Path: "/backups",
+		Summary:        "Take a backup set now (pg_dump plus the content store); answers the job",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+	},
+	{
+		ID: "backups.verify", Entity: "backups", Verb: "verify", Method: "POST", Path: "/backups/{id}:verify",
+		Summary:        "Restore the set into a scratch database and check it (the weekly restore test, now); answers the job",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
 		},
 	},
 	{
@@ -307,6 +365,38 @@ var Operations = []Operation{
 		},
 	},
 	{
+		ID: "checkpoints.average", Entity: "checkpoints", Verb: "average", Method: "POST", Path: "/runs/{id}/checkpoints:average",
+		Summary:        "Average chosen checkpoints of a run with the family's average step; the result is a new checkpoint of the run",
+		Description:    "Average two or more checkpoints of one run (ids from checkpoints.list, typically the top k) with the model family's average step. Answers 201 with the pipeline run; when it finishes the averaged checkpoint appears in checkpoints.list (kind averaged, averagedFrom) with its own validation WER when the step measures one.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Run id (run_…)"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "checkpoints", Required: true, Type: "array of string", Description: "Checkpoints of the run (ckp_…)"},
+			{Name: "params", Type: "object", Description: "Overrides of the average step's parameters"},
+		}},
+	},
+	{
+		ID: "checkpoints.get", Entity: "checkpoints", Verb: "get", Method: "GET", Path: "/checkpoints/{id}",
+		Summary: "Get a checkpoint with its artifact, metrics and lineage",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Checkpoint id (ckp_…)"},
+		},
+	},
+	{
+		ID: "checkpoints.list", Entity: "checkpoints", Verb: "list", Method: "GET", Path: "/projects/{p}/checkpoints",
+		Summary:     "Checkpoints of a project or of one run, best validation WER first",
+		Description: "Checkpoints registered by training runs (step, validation WER, family, weights hash; trained or averaged), best validation WER first. Filter by run; kept=true lists only the top k per run (training.keep_top_k). Average some with checkpoints.average; start a new stage from one with runs.stage.",
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "run", In: "query", Flag: "run", Type: "string", Description: "Only this run's checkpoints (run_…)"},
+			{Name: "kept", In: "query", Flag: "kept", Type: "boolean", Description: "Only the checkpoints in their run's top k"},
+			{Name: "limit", In: "query", Flag: "limit", Type: "integer", Default: "100"},
+		},
+	},
+	{
 		ID: "collections.get", Entity: "collections", Verb: "get", Method: "GET", Path: "/registry/collections/{id}",
 		Summary: "Get a registry collection with its versions, newest first",
 		Params: []Param{
@@ -318,13 +408,13 @@ var Operations = []Operation{
 		Summary:     "List registry collections (named series of immutable versions), optionally of one kind or tag",
 		Description: "List registry collections such as base-model/nemotron-3.5-asr-streaming-0.6b or dataset/fleurs-he-smoke. A collection groups immutable versions of one kind; list the versions with baseModels.list, datasets.list or templates.list (filter collection=<name>).",
 		Params: []Param{
-			{Name: "kind", In: "query", Flag: "kind", Type: "string", Description: "Only collections of this kind", Enum: []string{"base_model", "dataset_version", "template"}},
+			{Name: "kind", In: "query", Flag: "kind", Type: "string", Description: "Only collections of this kind", Enum: []string{"base_model", "dataset_version", "template", "runtime", "model_family", "step_kind", "noise_bank"}},
 			{Name: "tag", In: "query", Flag: "tag", Type: "string", Description: "Only collections carrying this tag (e.g. locale:he-IL)"},
 		},
 	},
 	{
 		ID: "compute.edit", Entity: "compute", Verb: "edit", Method: "PATCH", Path: "/compute/{id}",
-		Summary:        "Change a host's description or a card's memory cap and allowed job kinds",
+		Summary:        "Change a host's description or a card's name, class, memory, memory cap, allowed job kinds and availability windows",
 		IdempotencyKey: true,
 		Params: []Param{
 			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Host id (cmp_…) or name (staging)"},
@@ -466,6 +556,19 @@ var Operations = []Operation{
 		},
 	},
 	{
+		ID: "jobLogs.list", Entity: "jobLogs", Verb: "list", Method: "GET", Path: "/jobs/{id}/job-logs",
+		Summary:     "Read a job's log lines from its worker, filtered by level and text, after a line number",
+		Description: "Read the log of a job that ran on a worker: lines {seq, t, level, msg, fields}. level=warn keeps warn and error; text matches the message (case-insensitive); after=<seq> pages forward (nextAfter); tail=true returns the last lines instead of the first. Live lines stream on job.{id}.log.",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string"},
+			{Name: "level", In: "query", Flag: "level", Type: "string", Description: "Minimum level", Enum: []string{"debug", "info", "warn", "error"}},
+			{Name: "text", In: "query", Flag: "text", Type: "string", Description: "Text the message must contain (case-insensitive)"},
+			{Name: "after", In: "query", Flag: "after", Type: "integer", Description: "Only lines after this line number"},
+			{Name: "tail", In: "query", Flag: "tail", Type: "boolean", Description: "The last matching lines instead of the first", Default: "false"},
+			{Name: "limit", In: "query", Flag: "limit", Type: "integer", Default: "500"},
+		},
+	},
+	{
 		ID: "jobs.cancel", Entity: "jobs", Verb: "cancel", Method: "POST", Path: "/jobs/{id}:cancel",
 		Summary:        "Cancel a job; a queued job stops at once, a running one when its handler notices",
 		IdempotencyKey: true,
@@ -474,6 +577,19 @@ var Operations = []Operation{
 			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
 			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
 		},
+	},
+	{
+		ID: "jobs.edit", Entity: "jobs", Verb: "edit", Method: "PATCH", Path: "/jobs/{id}",
+		Summary:        "Change a step job's priority (higher starts first; the Queue's reorder)",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "priority", Required: true, Type: "integer", Description: "Start order in the queue, higher first"},
+		}},
 	},
 	{
 		ID: "jobs.get", Entity: "jobs", Verb: "get", Method: "GET", Path: "/jobs/{id}",
@@ -492,12 +608,45 @@ var Operations = []Operation{
 		},
 	},
 	{
+		ID: "jobs.pause", Entity: "jobs", Verb: "pause", Method: "POST", Path: "/jobs/{id}:pause",
+		Summary:        "Pause a step job; a queued one is held back, a running one saves its state and returns to the queue",
+		Description:    "Pause a step job (training, eval, data). A queued job is not started until jobs.resume; a running one is told to stop at its next heartbeat, saves its training state and waits in the queue, resuming from that state. Only jobs that run on a worker can be paused.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+	},
+	{
+		ID: "jobs.resume", Entity: "jobs", Verb: "resume", Method: "POST", Path: "/jobs/{id}:resume",
+		Summary:        "Resume a paused step job; it waits in the queue for a free card (from its saved training state)",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+	},
+	{
 		ID: "jobs.wait", Entity: "jobs", Verb: "wait", Method: "GET", Path: "/jobs/{id}:wait",
 		Summary:     "Wait until a job ends or the timeout passes, then return it (agents)",
 		Description: "Wait for a job started by another tool (which answered 202 with a jobId). Returns the job as soon as it is done, failed or cancelled, or when the timeout (seconds, at most 60) passes — check `state` and call again if it is still queued or running.",
 		Params: []Param{
 			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string"},
 			{Name: "timeout", In: "query", Flag: "timeout", Type: "integer", Description: "Seconds to wait at most", Default: "30"},
+		},
+	},
+	{
+		ID: "metrics.get", Entity: "metrics", Verb: "get", Method: "GET", Path: "/metrics/{id}",
+		Summary:     "A run's metric series, binned server-side for charts (min and max per bucket), with checkpoint marks",
+		Description: "Metric series of a training run (loss, val_wer, lr, …) for charts and for judging progress: choose names, the x axis (step, epoch, wall seconds since the first point, or GPU-hours), and maxPoints — longer series are binned server-side, each point carrying the bucket's mean value with min and max. afterStep returns only newer points (live append). Checkpoint marks come along.",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "The run whose metrics to read (run_…)"},
+			{Name: "names", In: "query", Flag: "names", Type: "array", Items: "string", Description: "Metric names (all when absent): repeat the parameter (names=loss&names=val_wer), as every array query parameter"},
+			{Name: "x", In: "query", Flag: "x", Type: "string", Description: "The x axis", Default: "step", Enum: []string{"step", "epoch", "wall", "gpuHours"}},
+			{Name: "maxPoints", In: "query", Flag: "max-points", Type: "integer", Description: "Points per series at most; longer series are binned", Default: "1000"},
+			{Name: "afterStep", In: "query", Flag: "after-step", Type: "integer", Description: "Only points after this optimiser step (live append)"},
 		},
 	},
 	{
@@ -567,6 +716,171 @@ var Operations = []Operation{
 		}},
 	},
 	{
+		ID: "modelFamilies.get", Entity: "modelFamilies", Verb: "get", Method: "GET", Path: "/registry/model-families/{id}",
+		Summary: "Get a model family version",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Registry version id (ver_…)"},
+		},
+	},
+	{
+		ID: "modelFamilies.list", Entity: "modelFamilies", Verb: "list", Method: "GET", Path: "/registry/model-families",
+		Summary:     "List model family versions (architecture, capabilities, latency profiles, role step kinds) published by runtimes",
+		Description: "List model families: what a runtime can train and decode — framework, architecture, capabilities, latency profiles (e.g. 160 ms) and the step kind that fills each role (calibrate, train, average, transcribe). Render options from the descriptor; never assume a family by name.",
+		Params: []Param{
+			{Name: "collection", In: "query", Flag: "collection", Type: "string", Description: "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)"},
+			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated"}},
+		},
+	},
+	{
+		ID: "notificationRules.edit", Entity: "notificationRules", Verb: "edit", Method: "PATCH", Path: "/notification-rules/{id}",
+		Summary:        "Change which channels an event class reaches and when (admin only)",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "channels", Type: "object"},
+			{Name: "timing", Type: "string", Description: "immediate: sent as it happens; digest: held for the next daily digest; daily: the digest itself (its rule only); none: never sent"},
+		}},
+	},
+	{
+		ID: "notificationRules.list", Entity: "notificationRules", Verb: "list", Method: "GET", Path: "/notification-rules",
+		Summary: "The notification routing table — one rule per event class with its channels and timing",
+	},
+	{
+		ID: "notificationSettings.edit", Entity: "notificationSettings", Verb: "edit", Method: "PATCH", Path: "/notification-settings",
+		Summary:        "Change quiet hours, the digest time or the allow-listed Telegram chats (admin only)",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "digestTime", Type: "string", Description: "HH:MM on a 24-hour clock, in the instance timezone (policies)"},
+			{Name: "quietHours", Type: "object"},
+			{Name: "telegramChats", Type: "array of integer", Description: "The complete allowlist of Telegram chat ids"},
+		}},
+	},
+	{
+		ID: "notificationSettings.get", Entity: "notificationSettings", Verb: "get", Method: "GET", Path: "/notification-settings",
+		Summary: "Quiet hours, the digest time and the Telegram bot's allow-listed chats and status",
+	},
+	{
+		ID: "pipelineRuns.cancel", Entity: "pipelineRuns", Verb: "cancel", Method: "POST", Path: "/pipeline-runs/{id}:cancel",
+		Summary:        "Cancel a pipeline run; waiting steps never start and running step jobs are cancelled",
+		Description:    "Cancel a pipeline run: steps that have not started are cancelled, queued and running step jobs are cancelled (a running step stops on its worker), finished steps keep their outputs for reuse. Send ifMatch with the run's etag (rev) from pipelineRuns.get.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Pipeline run id (plr_…)"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+	},
+	{
+		ID: "pipelineRuns.get", Entity: "pipelineRuns", Verb: "get", Method: "GET", Path: "/pipeline-runs/{id}",
+		Summary: "Get a pipeline run with the status, inputs, outputs, attempts and departures of every step",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Pipeline run id (plr_…)"},
+		},
+	},
+	{
+		ID: "pipelineRuns.list", Entity: "pipelineRuns", Verb: "list", Method: "GET", Path: "/projects/{p}/pipeline-runs",
+		Summary: "Pipeline runs of a project, newest first",
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only runs in this state", Enum: []string{"running", "done", "failed", "cancelled"}},
+			{Name: "pipeline", In: "query", Flag: "pipeline", Type: "string", Description: "Only runs of this pipeline"},
+			{Name: "limit", In: "query", Flag: "limit", Type: "integer", Default: "100"},
+		},
+	},
+	{
+		ID: "pipelineRuns.retry", Entity: "pipelineRuns", Verb: "retry", Method: "POST", Path: "/pipeline-runs/{id}:retry",
+		Summary:        "Retry a failed step of a pipeline run as a new attempt; the run continues from there",
+		Description:    "Retry one failed (or cancelled) step of a pipeline run as a new attempt, with the same resolved parameters and inputs; finished steps are not re-run and the run continues after it. Without step, every failed step is retried. batchScale (0–1] shrinks the batch after an out-of-memory failure. Send ifMatch with the run's etag (rev).",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Pipeline run id (plr_…)"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: false, Properties: []BodyProperty{
+			{Name: "batchScale", Type: "number", Description: "Batch scale of the new attempt (1 = full batch)"},
+			{Name: "step", Type: "string", Description: "The step id to retry (default: every failed step)"},
+		}},
+	},
+	{
+		ID: "pipelineRuns.wait", Entity: "pipelineRuns", Verb: "wait", Method: "GET", Path: "/pipeline-runs/{id}:wait",
+		Summary:     "Wait until a pipeline run ends or the timeout passes, then return it (agents)",
+		Description: "Wait for a pipeline run started by pipelines.run. Returns the run as soon as it is done, failed or cancelled, or when the timeout (seconds, at most 60) passes — check state and call again while it is running.",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Pipeline run id (plr_…)"},
+			{Name: "timeout", In: "query", Flag: "timeout", Type: "integer", Description: "Seconds to wait", Default: "30"},
+		},
+	},
+	{
+		ID: "pipelines.list", Entity: "pipelines", Verb: "list", Method: "GET", Path: "/projects/{p}/pipelines",
+		Summary:     "The project's pipelines (pipelines/*.yaml at a ref) and the bundled templates it does not override",
+		Description: "List the pipelines this project can run: every pipelines/<name>.yaml of the project repository at ref (default main) plus the bundled templates it has no file for. Each has its version (the commit that last changed the file; send it as ifMatch to pipelines.run), its inputs by artifact type and its steps pinned as kind@version with only the parameters that depart from defaults. A file that does not parse carries error.",
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "ref", In: "query", Flag: "ref", Type: "string", Description: "Branch, tag or commit (default main)"},
+		},
+	},
+	{
+		ID: "pipelines.run", Entity: "pipelines", Verb: "run", Method: "POST", Path: "/projects/{p}/pipelines/{name}:run",
+		Summary:        "Validate a pipeline against the step registry and start a pipeline run (dryRun validates and estimates)",
+		Description:    "Run a pipeline of this project. Always call it with dryRun=true first: that validates the pipeline against the published step kinds (kind@version exists, input and output artifact types match, parameters fit each kind's schema, no cycles), resolves every parameter from defaults.yaml, lists the departures from defaults and sums the known estimates, without starting anything; a broken pipeline answers pipeline-invalid with one error per problem. Then run it for real with the same body and ifMatch = the pipeline's version from pipelines.list (or \"*\" for whatever is at ref). inputs maps each pipeline input to an artifact {hash, type}; params overrides parameters per step id; finished steps with the same input hash are reused unless fresh. The answer is the pipeline run (plr_…): follow pipeline_run.{id} or call pipelineRuns.wait. Spending GPU time over the budget answers 202 with an approvalId instead. A dataset input of an eval-only version (or a mix input referencing one) that a training step reads answers eval-only-dataset.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "name", In: "path", Flag: "name", Required: true, Type: "string", Description: "Pipeline name (pipelines/<name>.yaml)"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "fresh", Type: "boolean", Description: "Run every step even when a finished step has the same input hash"},
+			{Name: "inputs", Type: "object", Description: "Pipeline input → artifact (it must be in the content store)"},
+			{Name: "params", Type: "object", Description: "Step id → parameter overrides (recorded as departures when they differ from the default)"},
+			{Name: "priority", Type: "integer", Description: "Queue priority of the step jobs (higher first)"},
+			{Name: "ref", Type: "string", Description: "Branch, tag or commit to read the pipeline at (default main)"},
+		}},
+	},
+	{
+		ID: "playbooks.get", Entity: "playbooks", Verb: "get", Method: "GET", Path: "/playbooks/{name}",
+		Summary: "One playbook with its inputs, chain, prompt template and estimate",
+		Params: []Param{
+			{Name: "name", In: "path", Flag: "name", Required: true, Type: "string", Description: "Playbook name (templates/playbooks/<name>.yaml)"},
+			{Name: "project", In: "query", Flag: "project", Type: "string", Description: "A project slug: fill project facts and estimate with them"},
+		},
+	},
+	{
+		ID: "playbooks.list", Entity: "playbooks", Verb: "list", Method: "GET", Path: "/playbooks",
+		Summary:     "The playbooks Cadence ships, with their inputs, chain, stop conditions and estimate",
+		Description: "List the playbooks: prefilled chains of commands with inputs, stop conditions and an estimate (the sum of the chain's step estimates). With project, inputs taken from the project (its base model, its adopted replay corpus) are filled in and the estimate uses them. runnable says whether the playbook can run yet.",
+		Params: []Param{
+			{Name: "project", In: "query", Flag: "project", Type: "string", Description: "A project slug: fill project facts and estimate with them"},
+		},
+	},
+	{
+		ID: "playbooks.run", Entity: "playbooks", Verb: "run", Method: "POST", Path: "/projects/{p}/playbooks/{name}:run",
+		Summary:        "Start a playbook session — dryRun answers the estimate, the plan and the rendered prompt without starting",
+		Description:    "Run a playbook in a project: resolves its inputs (given, from defaults.yaml or from the project), renders its prompt, sums the chain's estimate and starts an agent session of kind playbook whose plan is the chain. Call it with dryRun=true first to see the estimate and the plan; ifMatch is the playbook's version (the etag of playbooks.get) or \"*\". Agents cannot start playbook sessions; use playbooks.get for the estimate.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "name", In: "path", Flag: "name", Required: true, Type: "string", Description: "Playbook name"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: false, Properties: []BodyProperty{
+			{Name: "driver", Type: "string"},
+			{Name: "inputs", Type: "object", Description: "Input name → value (a dataset_version input with multiple takes a list); omitted inputs take their default or project fact"},
+			{Name: "model", Type: "string"},
+		}},
+	},
+	{
 		ID: "policies.edit", Entity: "policies", Verb: "edit", Method: "PATCH", Path: "/policies",
 		Summary:        "Change instance-wide policies; values must stay inside the ranges in defaults.yaml",
 		IdempotencyKey: true,
@@ -576,6 +890,7 @@ var Operations = []Operation{
 		},
 		Body: &Body{Required: true, Properties: []BodyProperty{
 			{Name: "budgets", Type: "object"},
+			{Name: "timezone", Type: "string", Description: "IANA timezone name, e.g. Europe/Berlin or UTC"},
 		}},
 	},
 	{
@@ -697,6 +1012,30 @@ var Operations = []Operation{
 		},
 	},
 	{
+		ID: "queueEntries.list", Entity: "queueEntries", Verb: "list", Method: "GET", Path: "/queue-entries",
+		Summary:     "The step queue across projects — waiting, paused and running step jobs with their card and lease",
+		Description: "The GPU queue: step jobs waiting, paused or running on a worker, in start order (the project's queue priority, then the job's priority, then first come), with the card and worker holding each running one. Reorder with jobs.edit (a job's priority) or projects.edit (budgets.queuePriority), pause with jobs.pause. A project-scoped credential sees its own project's entries only.",
+		Params: []Param{
+			{Name: "project", In: "query", Flag: "project", Type: "string", Description: "Only this project's entries (slug)"},
+		},
+	},
+	{
+		ID: "recipes.edit", Entity: "recipes", Verb: "edit", Method: "PATCH", Path: "/projects/{p}/recipes/{path}",
+		Summary:        "Write one text file of the project repository and commit it to main (the Recipe document's edits)",
+		Description:    "Change one UTF-8 text file of the project repository and commit it to main as the caller. Send ifMatch with the commit that last changed the file (history[0].sha from recipes.get); recipes.new creates a file. Files rendered from the agent profile (AGENTS.md, CLAUDE.md, .claude/settings.json, opencode.json) change through agentProfile.edit instead. Agents edit files in their session worktree; the default preset does not allow this tool.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "path", In: "path", Flag: "path", Required: true, Type: "string", Description: "File path in the repository, URL-encoded (pipelines%2Ftrain-stage.yaml)"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "content", Required: true, Type: "string", Description: "The file's new content (UTF-8 text)"},
+			{Name: "message", Type: "string", Description: "Commit message (default: edit <path>)"},
+		}},
+	},
+	{
 		ID: "recipes.get", Entity: "recipes", Verb: "get", Method: "GET", Path: "/projects/{p}/recipes/{path}",
 		Summary: "One file of the project repository at a branch or commit, with its commit history",
 		Params: []Param{
@@ -715,20 +1054,71 @@ var Operations = []Operation{
 		},
 	},
 	{
+		ID: "recipes.new", Entity: "recipes", Verb: "new", Method: "POST", Path: "/projects/{p}/recipes",
+		Summary:        "Create one text file in the project repository and commit it to main",
+		Description:    "Create one UTF-8 text file in the project repository and commit it to main as the caller; a path that exists answers 409 (change it with recipes.edit). Agents create files in their session worktree; the default preset does not allow this tool.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "content", Required: true, Type: "string", Description: "The file's content (UTF-8 text)"},
+			{Name: "message", Type: "string", Description: "Commit message (default: add <path>)"},
+			{Name: "path", Required: true, Type: "string", Description: "A path relative to the repository root"},
+		}},
+	},
+	{
 		ID: "registry.search", Entity: "registry", Verb: "search", Method: "GET", Path: "/registry",
 		Summary:     "Search registry versions of every kind by text and qualifiers (kind:, tag:, locale:, state:)",
 		Description: "Search registry versions of every kind (base models, dataset versions, templates). q is free text matched against collection names and descriptions plus qualifiers: kind:base_model, tag:telephony, locale:he-IL, state:frozen. project=<slug> keeps only what that project adopted. Get one version with baseModels.get, datasets.get or templates.get.",
 		Params: []Param{
 			{Name: "q", In: "query", Flag: "q", Type: "string", Description: "Free text with qualifiers (kind:, tag:, locale:, state:)"},
-			{Name: "kind", In: "query", Flag: "kind", Type: "string", Enum: []string{"base_model", "dataset_version", "template"}},
+			{Name: "kind", In: "query", Flag: "kind", Type: "string", Enum: []string{"base_model", "dataset_version", "template", "runtime", "model_family", "step_kind", "noise_bank"}},
 			{Name: "project", In: "query", Flag: "project", Type: "string", Description: "Only versions this project adopted (slug)"},
 			{Name: "limit", In: "query", Flag: "limit", Type: "integer", Default: "100"},
 		},
 	},
 	{
+		ID: "runs.calibrate", Entity: "runs", Verb: "calibrate", Method: "POST", Path: "/projects/{p}/runs:calibrate",
+		Summary:        "Measure seconds per step and batch sizes for a base model on the training card (the family's calibrate step)",
+		Description:    "Calibrate before the first run of a base model on a card: runs the model family's calibrate step on the mix's data under the card's memory cap. When it finishes, runs.new?dryRun=true estimates switch from basis table to basis measured for that base model, card class, memory cap and precision. Answers 201 with the pipeline run (follow it with pipelineRuns.wait), or 202 with an approvalId when today's GPU budget is spent.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "baseModel", Type: "string", Description: "Base model version (ver_…), collection name or @alias; default the defaults' base model"},
+			{Name: "compute", Type: "string", Description: "Host id or name; default the first host whose card allows training"},
+			{Name: "mix", Required: true, Type: "string", Description: "The mix whose data the calibration measures on (mix_… or name)"},
+			{Name: "mixRevision", Type: "integer"},
+			{Name: "params", Type: "object", Description: "Overrides of the calibrate step's parameters"},
+			{Name: "precision", Type: "string"},
+		}},
+	},
+	{
+		ID: "runs.get", Entity: "runs", Verb: "get", Method: "GET", Path: "/runs/{id}",
+		Summary:     "Get a run with its stage timeline, final metrics, departures from defaults and parent run",
+		Description: "A training run: status, the stage timeline (calibrate, train, … with their states and attempts), the job to pause or cancel (currentJobId, via jobs.pause | jobs.resume | jobs.cancel), OOM retries (batch scale), final metrics, departures from defaults, the parent run and the config diff against it, the best checkpoint and the estimate it started with.",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Run id (run_…)"},
+		},
+	},
+	{
+		ID: "runs.list", Entity: "runs", Verb: "list", Method: "GET", Path: "/projects/{p}/runs",
+		Summary:     "Training runs of a project, newest first",
+		Description: "List the project's training runs, newest first: status (queued, running, paused, done, failed, cancelled), start (base model or checkpoint), mix revision, step budget, final metrics and the best checkpoint. Filter by status. Open one with runs.get.",
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "status", In: "query", Flag: "status", Type: "string", Description: "Only runs in this status", Enum: []string{"queued", "running", "paused", "done", "failed", "cancelled"}},
+			{Name: "limit", In: "query", Flag: "limit", Type: "integer", Default: "100"},
+		},
+	},
+	{
 		ID: "runs.new", Entity: "runs", Verb: "new", Method: "POST", Path: "/projects/{p}/runs",
-		Summary:        "Start a training run; until phase 2 only ?dryRun=true answers, with GPU-hours, card, duration and data",
-		Description:    "Start a training run from a base model (init base) or a checkpoint. Until phase 2 only the dry run works: call it with dryRun=true to get the estimate (GPU-hours, duration, card, data volume, basis and ±) from the defaults table and the compute entity; without dryRun it answers 501.",
+		Summary:        "Start a training run (one optimisation stage); ?dryRun=true answers the estimate first",
+		Description:    "Start one training stage: a base model (init base) or a checkpoint (init checkpoint, ckp_…), a mix (mix_… or its name, at its current revision unless mixRevision), the project's train-stage pipeline at a commit, a step budget and a seed. Always call it with dryRun=true first: the answer is the estimate (GPU-hours, duration, card, data volume, basis table or measured, ±, today's GPU spend against the project's budget). Without dryRun it answers 201 with the run, or 202 with an approvalId when the estimate exceeds today's remaining GPU budget of the project or of your session — then wait for approval.decided. Eval-only datasets are refused. Follow the run with runs.get and metrics.get; checkpoints arrive on checkpoints.list.",
 		IdempotencyKey: true,
 		Params: []Param{
 			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
@@ -736,14 +1126,73 @@ var Operations = []Operation{
 		},
 		Body: &Body{Required: true, Properties: []BodyProperty{
 			{Name: "baseModel", Type: "string", Description: "Base model version (ver_…), collection name (its newest frozen version) or @alias; default the defaults' base model"},
-			{Name: "checkpoint", Type: "string", Description: "Required when init is checkpoint (checkpoints arrive in phase 2)"},
+			{Name: "checkpoint", Type: "string", Description: "The checkpoint to start from (ckp_…); required when init is checkpoint. The run's base model is then the checkpoint's"},
 			{Name: "compute", Type: "string", Description: "Host id or name; default the first host whose card allows training"},
-			{Name: "datasets", Type: "array of string", Description: "Dataset versions (ver_… or @alias) the run reads, for the data volume; the mix replaces this in phase 2"},
+			{Name: "datasets", Type: "array of string", Description: "Dry runs without a mix only: dataset versions (ver_… or @alias) for the data volume"},
 			{Name: "gpus", Type: "integer", Description: "Cards for the run; v1 accepts 1 (training.gpus)"},
 			{Name: "init", Type: "string", Description: "Where the weights start (R44); scratch is deferred"},
+			{Name: "mix", Type: "string", Description: "The mix to train on (mix_… or its name); required unless dryRun with datasets"},
+			{Name: "mixRevision", Type: "integer", Description: "The mix revision (default its current one)"},
+			{Name: "params", Type: "object", Description: "Overrides of the train step's parameters (recorded as departures when they differ from the default)"},
+			{Name: "pipeline", Type: "string", Description: "The recipe: a pipeline of the project repository (default training.pipeline, train-stage)"},
 			{Name: "precision", Type: "string"},
-			{Name: "steps", Type: "integer", Description: "Default training.steps"},
+			{Name: "priority", Type: "integer", Description: "Queue priority of the run's step jobs (higher first)"},
+			{Name: "ref", Type: "string", Description: "Branch, tag or commit to read the pipeline at (default main)"},
+			{Name: "seed", Type: "integer", Description: "The train step's seed parameter, when its kind has one (default: the kind's default)"},
+			{Name: "steps", Type: "integer", Description: "Step budget of the stage (default training.steps); the train step's steps parameter"},
 		}},
+	},
+	{
+		ID: "runs.resume", Entity: "runs", Verb: "resume", Method: "POST", Path: "/runs/{id}:resume",
+		Summary:        "Continue a stopped or failed run from its last training state (same stage, same optimiser state)",
+		Description:    "Continue the same stage of a cancelled or failed run from its last saved training-state (same optimiser and sampler state, same step budget). A paused step job resumes with jobs.resume instead. Send ifMatch with the run's etag. Answers the run (queued again), 409 no-training-state when it never saved one (start a new run), or 202 with an approvalId when the remaining steps exceed today's GPU budget.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Run id (run_…)"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+	},
+	{
+		ID: "runs.stage", Entity: "runs", Verb: "stage", Method: "POST", Path: "/runs/{id}:stage",
+		Summary:        "Start a new stage from a checkpoint of this run with an explicit peak learning rate",
+		Description:    "Start the next training stage from a checkpoint of this run (default its best kept checkpoint): a new run with init checkpoint, a new optimiser and the peak learning rate you give (peakLr, e.g. 2e-5 for a continuation), on the parent's mix unless you name another. The new run records the parent, and runs.get shows the config diff against it. Send ifMatch with the parent's etag; dryRun=true answers the estimate. Answers 201 with the new run or 202 with an approvalId over budget.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "The parent run (run_…)"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "checkpoint", Type: "string", Description: "The checkpoint to start from (ckp_… of this run); default the run's best kept checkpoint"},
+			{Name: "compute", Type: "string"},
+			{Name: "mix", Type: "string", Description: "The mix (default the parent's)"},
+			{Name: "mixRevision", Type: "integer", Description: "The mix revision (default the named mix's current one, or the parent's revision when the mix is the parent's)"},
+			{Name: "params", Type: "object", Description: "More overrides of the train step's parameters"},
+			{Name: "peakLr", Required: true, Type: "number", Description: "The new stage's peak learning rate (the train step's peak_lr, learning_rate or lr parameter)"},
+			{Name: "pipeline", Type: "string", Description: "The recipe (default the parent's pipeline)"},
+			{Name: "precision", Type: "string"},
+			{Name: "priority", Type: "integer"},
+			{Name: "ref", Type: "string"},
+			{Name: "seed", Type: "integer"},
+			{Name: "steps", Type: "integer", Description: "Step budget (default training.steps)"},
+		}},
+	},
+	{
+		ID: "runtimes.get", Entity: "runtimes", Verb: "get", Method: "GET", Path: "/registry/runtimes/{id}",
+		Summary: "Get a runtime version with the workers that run it",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Registry version id (ver_…)"},
+		},
+	},
+	{
+		ID: "runtimes.list", Entity: "runtimes", Verb: "list", Method: "GET", Path: "/registry/runtimes",
+		Summary:     "List runtime versions (container image pinned by digest, environment lock, worker plugin) published by workers",
+		Description: "List runtimes: the container images step kinds run in, each pinned by digest with its environment lock (CUDA, PyTorch, framework versions). Workers publish them at start; a new digest is a new version. Filter collection=runtime/<name>.",
+		Params: []Param{
+			{Name: "collection", In: "query", Flag: "collection", Type: "string", Description: "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)"},
+			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated"}},
+		},
 	},
 	{
 		ID: "secrets.list", Entity: "secrets", Verb: "list", Method: "GET", Path: "/secrets",
@@ -765,6 +1214,86 @@ var Operations = []Operation{
 		}},
 	},
 	{
+		ID: "sources.archive", Entity: "sources", Verb: "archive", Method: "POST", Path: "/registry/sources/{id}:archive",
+		Summary:        "Archive a source (soft); it takes no new imports, its utterances and dataset versions stay",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Source id (src_…) or name (fleurs)"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+	},
+	{
+		ID: "sources.edit", Entity: "sources", Verb: "edit", Method: "PATCH", Path: "/registry/sources/{id}",
+		Summary:        "Change a source's description or licence, or clear it for training (a person's decision)",
+		Description:    "Change a source's description or licence, or set trainingCleared. Clearing a source for training is a person's decision (the licence allows training and the data may be used): an agent's sources.edit waits for a person's approval (202 with approvalId). Sources are shared by every project. Send ifMatch with the etag (or rev) of your last sources.get. An archived source cannot be edited.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Source id (src_…) or name (fleurs)"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "description", Type: "string"},
+			{Name: "licence", Type: "string"},
+			{Name: "trainingCleared", Type: "boolean", Description: "true clears the source for training (a person's decision); false makes it eval-only again"},
+		}},
+	},
+	{
+		ID: "sources.get", Entity: "sources", Verb: "get", Method: "GET", Path: "/registry/sources/{id}",
+		Summary: "Get a source with its utterance count, hours and the dataset versions built from it",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Source id (src_…) or name (fleurs)"},
+		},
+	},
+	{
+		ID: "sources.list", Entity: "sources", Verb: "list", Method: "GET", Path: "/registry/sources",
+		Summary:     "List sources (corpora with licence, kind and languages; eval-only until cleared for training)",
+		Description: "List registry sources: the corpora imported audio comes from (FLEURS, Common Voice, own calls), each with its licence, kind (public, production, synthetic), languages and trainingCleared. A source that is not cleared is eval-only: dataset versions built from it can be evaluated but never mixed or trained on. Archived sources are left out unless archived=true.",
+		Params: []Param{
+			{Name: "archived", In: "query", Flag: "archived", Type: "boolean", Description: "Include archived sources", Default: "false"},
+			{Name: "kind", In: "query", Flag: "kind", Type: "string", Description: "Only sources of this kind", Enum: []string{"public", "production", "synthetic"}},
+			{Name: "language", In: "query", Flag: "language", Type: "string", Description: "Only sources covering this language (he or he-IL; either matches the other)"},
+		},
+	},
+	{
+		ID: "stepKinds.get", Entity: "stepKinds", Verb: "get", Method: "GET", Path: "/registry/step-kinds/{id}",
+		Summary: "Get a step kind version",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Registry version id (ver_…)"},
+		},
+	},
+	{
+		ID: "stepKinds.list", Entity: "stepKinds", Verb: "list", Method: "GET", Path: "/registry/step-kinds",
+		Summary:     "List step kind versions (parameter schema with defaults, inputs, outputs, resources, runtime)",
+		Description: "List step kinds a pipeline can pin as kind@version: the parameter schema (every parameter with its default, description, source and safe range), consumed and produced artifact types, resources and the runtime that runs it. Filter collection=step-kind/<name>.",
+		Params: []Param{
+			{Name: "collection", In: "query", Flag: "collection", Type: "string", Description: "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)"},
+			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated"}},
+		},
+	},
+	{
+		ID: "telegramBot.set", Entity: "telegramBot", Verb: "set", Method: "PUT", Path: "/telegram-bot",
+		Summary:        "Store or replace the Telegram bot token (write-only, kept in the secret store as telegram-bot-token)",
+		Description:    "Store or replace the Telegram bot token. The value is write-only, encrypted in the secret store and never returned. Admin only; agents must not call this — secrets never enter an agent context.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "If-Match", In: "header", Flag: "if-match", Type: "string", Description: "The revision the change is based on; required unless the target does not exist yet"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "token", Required: true, Type: "string", Description: "Write-only: the token @BotFather issued (123456:ABC…)"},
+		}},
+	},
+	{
+		ID: "telegramBot.verify", Entity: "telegramBot", Verb: "verify", Method: "POST", Path: "/telegram-bot:verify",
+		Summary:        "Check the bot token with Telegram and send a test message to every allow-listed chat",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+	},
+	{
 		ID: "templates.get", Entity: "templates", Verb: "get", Method: "GET", Path: "/registry/templates/{id}",
 		Summary: "Get a template version with its files (paths and hashes) and the projects that use it",
 		Params: []Param{
@@ -777,7 +1306,27 @@ var Operations = []Operation{
 		Params: []Param{
 			{Name: "collection", In: "query", Flag: "collection", Type: "string", Description: "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)"},
 			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated"}},
-			{Name: "templateKind", In: "query", Flag: "template-kind", Type: "string", Description: "Only templates of this kind", Enum: []string{"instructions", "preset", "skill", "pipeline", "agent-config"}},
+			{Name: "templateKind", In: "query", Flag: "template-kind", Type: "string", Description: "Only templates of this kind", Enum: []string{"instructions", "preset", "skill", "pipeline", "agent-config", "playbook"}},
+		},
+	},
+	{
+		ID: "utterances.get", Entity: "utterances", Verb: "get", Method: "GET", Path: "/registry/utterances/{id}",
+		Summary: "Get an utterance with its transcripts, fingerprints and the dataset versions (and splits) that hold it",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Utterance id (utt_…) or content hash (b3:…)"},
+		},
+	},
+	{
+		ID: "utterances.list", Entity: "utterances", Verb: "list", Method: "GET", Path: "/registry/utterances",
+		Summary:     "A page of utterances (audio segments by content hash) filtered by source, dataset version, split or language",
+		Description: "List utterances, oldest first, a page at a time: each is one audio segment identified by the BLAKE3 hash of its bytes, with duration, language, speaker, sample rate, its source and its transcripts (text with origin human, pseudo-label or model:<id>). Filter by source (id or name), dataset (a dataset version id, ver_…) and split (train, validation, test; needs dataset), or language. Pass next as after for the next page.",
+		Params: []Param{
+			{Name: "source", In: "query", Flag: "source", Type: "string", Description: "Source id (src_…) or name"},
+			{Name: "dataset", In: "query", Flag: "dataset", Type: "string", Description: "Dataset version id (ver_…)"},
+			{Name: "split", In: "query", Flag: "split", Type: "string", Description: "Split within the dataset version (needs dataset)", Enum: []string{"train", "validation", "test"}},
+			{Name: "language", In: "query", Flag: "language", Type: "string", Description: "Language (he or he-IL; either matches the other)"},
+			{Name: "after", In: "query", Flag: "after", Type: "string", Description: "Cursor: the `next` value of the previous page"},
+			{Name: "limit", In: "query", Flag: "limit", Type: "integer", Default: "100"},
 		},
 	},
 }
