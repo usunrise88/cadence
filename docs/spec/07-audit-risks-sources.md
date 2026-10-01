@@ -132,6 +132,11 @@ Open questions:
   states on the stand's disk. Proposed: write the final state only when asked (a `keep_state` parameter, default
   off) or evict a finished run's states automatically after a person approved it once per project. Built meanwhile:
   Settings → Content store (the dry run, **Evict…**) and the `storage.low_space` warning below `cache.store_low_free`.
+  A second trap: with `CADENCE_BACKUP_DIR` set, a state is evictable only once the backup mirror holds its blobs, and
+  the mirror (`<backups>/cas`) copies every blob it lacks — on the stand both live on the same disk, so a backup would
+  double the store before anything could be freed, and without one nothing is evictable. Proposed: training states
+  skip the mirror (they are only ever read to resume) and are evictable without it; or the mirror must live on
+  another filesystem, checked at start.
 - [ ] N: the augmentation profile is the finetune step's `augmentation` parameter (default `packs.nemo.augmentation`,
   the telephony chain: 8 kHz band-limit with G.711 μ-law/A-law or GSM, gain, speed 0.95–1.05); a project's
   `augment/*.yaml` file is not read yet (no artifact type or recipe convention carries it to the step). AMR-NB and
