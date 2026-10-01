@@ -116,7 +116,15 @@ The first family, Nemotron 3.5 streaming (cache-aware FastConformer RNNT, NeMo):
 | `560ms` | `[56,6]` | 560 ms · [56,6] | — |
 | `1120ms` | `[56,13]` | 1120 ms · [56,13] | Eval axis |
 
-Latency is 80 × (r + 1) ms for `[56,r]`, with a left context of 56 frames (4.48 s). Its step kinds: `oomptimizer_calibrate` (calibrate), `nemotron_finetune` (train), `checkpoint_average` (average), `nemotron_transcribe` (transcribe: file decode in streaming simulation at a profile → `hypotheses`), plus `checkpoint_register`; export and parity join in phase 5. They arrive with the NeMo pack (phase 2 wave 2); until then the `nemo-speech` runtime publishes only the neutral core kinds.
+Latency is 80 × (r + 1) ms for `[56,r]`, with a left context of 56 frames (4.48 s). Its step kinds: `oomptimizer_calibrate` (calibrate), `nemotron_finetune` (train), `checkpoint_average` (average), `nemotron_transcribe` (transcribe: file decode in streaming simulation at a profile → `hypotheses`); export and parity join in phase 5. No `checkpoint_register` kind: the control plane's checkpoint hook registers every `checkpoint` output of a run (07, stream N).
+
+NeMo pack as built (phase 2, `worker/packs/nemo`, distribution `cadence-nemo`, help `guides.nemo-pack`):
+
+- The family is published as `nemo.fastconformer-rnnt.cache-aware` (the seeded base model's `familyId`); defaults under `packs.nemo`. The image installs the pack and makes NeMo's editable install readable by the worker's non-root user.
+- `oomptimizer_calibrate` (consumes `base`: base_model, `data`: mix): OOMptimizer re-implemented in the pack with the prompt model's fixes (five-tensor batch with the language's prompt index, no endless loop when batch 1 does not fit, cuFFT failures count as out of memory), buckets from the longest down and merged, then timed optimiser steps on the mix; the `calibration` artifact carries `secondsPerStep`, `secondsPerStepStd`, `plusMinus`, `batchSize`, `batchSizes` and `bucketConfig`.
+- `nemotron_finetune` (consumes `base`, `data`, `calibration`; produces `checkpoint`, `checkpoint_best`, `state`): NeMo + Lightning, bf16-mixed, AdamW + NoamAnnealing from `peak_lr` (the scale is derived and posted), the mix read from the content store in place as Lhotse `input_cfg` groups, the language prompt per clip (`unified` mode) with the locale tag appended, the augmentation profile on the fly, metrics through the step context, a training state every `state_every_minutes` and at a stop, resume from `overrides.resumeFrom`.
+- `checkpoint_average` averages the `.nemo` weights on the CPU; `nemotron_transcribe` streams with NeMo's cache-aware decoder at a profile and writes words timed by the emissions, token-derived word confidence and partial events.
+- Every GPU step caps PyTorch's allocator at the lease's cap minus `cuda_context_reserve_mb`, so the whole process stays under the cap nvidia-smi sees.
 
 The toy pack's family `toy-ctc` (runtime `toy`) has the profiles `offline` and `320ms` and the kinds `toy_calibrate`, `toy_train`, `toy_average` and `toy_transcribe`, with its defaults under `packs.toy`.
 
