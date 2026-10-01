@@ -82,6 +82,10 @@ func TestDecide(t *testing.T) {
 			Estimate: &Estimate{GPUHours: 100}}, Allow, RulePeople},
 		{"person sets baseline: gated for everyone", Input{Actor: person, Operation: "aliases.set", VerbClass: "mutate",
 			PathParams: map[string]string{"name": "baseline"}}, Approval, "baseline-alias"},
+		{"person evicts: gated for everyone", Input{Actor: person, Operation: "artifacts.evict", VerbClass: "mutate"},
+			Approval, "store-eviction"},
+		{"agent evicts: never", Input{Actor: agent, Operation: "artifacts.evict", VerbClass: "mutate"},
+			Deny, "agents-never-evict"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -1,9 +1,11 @@
 package artifacts
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/usunrise88/cadence/control-plane/internal/cas"
 	"github.com/usunrise88/cadence/control-plane/internal/steps"
@@ -76,8 +78,13 @@ func TestVerifyAndReadContent(t *testing.T) {
 	if c, _ := ReadContent(store, Artifact{Hash: a, Size: ContentLimit + 1}, ""); c.Omitted == "" {
 		t.Error("a large artifact was returned inline")
 	}
-	files, err := Files(store, d)
+	files, err := Files(context.Background(), nil, store, d)
 	if err != nil || len(files) != 2 || files[0].Path != "b.txt" {
 		t.Errorf("files %+v %v", files, err)
+	}
+	gone := Artifact{Hash: a, Size: 5, Evicted: &Eviction{At: time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)}}
+	if c, _ := ReadContent(store, gone, ""); c.Content != "" || !strings.Contains(c.Omitted, "evicted") ||
+		!strings.Contains(c.Omitted, "2026-10-01") {
+		t.Errorf("an evicted artifact's content %+v", c)
 	}
 }

@@ -54,7 +54,9 @@ type Entry struct {
 	Rule       string     `json:"rule,omitempty"`
 	ToolCallID string     `json:"toolCallId,omitempty"`
 	ApprovalID string     `json:"approvalId,omitempty"`
-	At         time.Time  `json:"at"`
+	// Detail is what a job did for the command (artifacts.evict: the artifacts, bytes freed, blobs deleted).
+	Detail map[string]any `json:"detail,omitempty"`
+	At     time.Time      `json:"at"`
 }
 
 // Write inserts e; ID and At are filled in when empty.
@@ -66,11 +68,11 @@ func Write(ctx context.Context, q storage.Querier, e Entry) error {
 		e.At = time.Now()
 	}
 	if _, err := q.Exec(ctx, `INSERT INTO audit_log (id, command_id, operation, actor, actor_id, preset, project_id,
-		outcome, status, rule, tool_call_id, approval_id, at)
+		outcome, status, rule, tool_call_id, approval_id, at, detail)
 		VALUES ($1, NULLIF($2, ''), $3, $4, $5, NULLIF($6, ''), NULLIF($7, ''), $8, $9, NULLIF($10, ''),
-		        NULLIF($11, ''), NULLIF($12, ''), $13)`,
+		        NULLIF($11, ''), NULLIF($12, ''), $13, $14)`,
 		e.ID, e.CommandID, e.Operation, e.Actor, e.Actor.ID, e.Preset, e.ProjectID, e.Outcome, e.Status, e.Rule,
-		e.ToolCallID, e.ApprovalID, e.At); err != nil {
+		e.ToolCallID, e.ApprovalID, e.At, e.Detail); err != nil {
 		return fmt.Errorf("write audit entry for %s: %w", e.Operation, err)
 	}
 	return nil
@@ -121,7 +123,7 @@ func List(ctx context.Context, q storage.Querier, f Filter) ([]Entry, string, er
 		add("id < $%d", f.Before)
 	}
 	sql := `SELECT id, coalesce(command_id, ''), operation, actor, coalesce(preset, ''), coalesce(project_id, ''),
-		outcome, status, coalesce(rule, ''), coalesce(tool_call_id, ''), coalesce(approval_id, ''), at FROM audit_log`
+		outcome, status, coalesce(rule, ''), coalesce(tool_call_id, ''), coalesce(approval_id, ''), at, detail FROM audit_log`
 	if len(where) > 0 {
 		sql += " WHERE " + strings.Join(where, " AND ")
 	}
@@ -134,7 +136,7 @@ func List(ctx context.Context, q storage.Querier, f Filter) ([]Entry, string, er
 	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Entry, error) {
 		var e Entry
 		err := row.Scan(&e.ID, &e.CommandID, &e.Operation, &e.Actor, &e.Preset, &e.ProjectID, &e.Outcome, &e.Status,
-			&e.Rule, &e.ToolCallID, &e.ApprovalID, &e.At)
+			&e.Rule, &e.ToolCallID, &e.ApprovalID, &e.At, &e.Detail)
 		return e, err
 	})
 	if err != nil {

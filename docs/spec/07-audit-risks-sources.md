@@ -525,10 +525,18 @@ Open questions:
       validation passes, metric cadence, dataloader); validations × validation time is not in the estimate (the
       calibration runs no validation and the estimate does not read `val_every`); one pass on the stand would give the
       ratio to fold in
-- [ ] G2 · gap: content-store retention is designed (06 "Artifacts, metrics and logs", Retention: `artifacts.evict` for
-      superseded training states, approval-gated, file index for shared blobs) but not built — it needs a file index
-      migration, a CAS delete, the approval-decided job and an `artifact.evicted` event, well beyond a small patch;
-      until then an operator deletes training states by hand as the rehearsal did
+- [x] G2 · resolved by stream E (2026-10-01): content-store retention is built as designed (06 "Artifacts, metrics
+      and logs", Retention, "As built"): `artifacts.evict`, approval-gated for everyone and forbidden to agents, the
+      `artifact_files` index (migration 0020, backfilled at start), `cas.Store.Delete`, the approval-decided job,
+      `artifact.evicted` and an audit entry with the bytes freed
+- [ ] E · assumption: a blob deleted by an eviction can race a new artifact that lists the same file blob while the
+      job deletes it (the writer's `Put` sees the blob and skips writing; the job then deletes it). Training-state
+      files (optimiser state) are not shared with anything in practice, so the job does not lock writers; file blobs
+      listed only by unindexed lease outcomes (outputs of stopped steps other than training states) are not
+      protected either. Revisit when retention reaches other artifact types
+- [ ] E · assumption: with backups configured, eviction keeps any state whose blobs the backup mirror does not hold
+      yet (rather than copying them there itself), so the nightly backup must run before space comes back;
+      `backups.new` makes it immediate
 - [x] G2 · resolved (2026-10-01 gate rehearsal): the NeMo step's `val_wer` scores the validation manifest's raw text
       (looked up by the tokenizer round trip of NeMo's decoded reference), both sides normalised as evaluations are
       (NFKC, case-folded, no punctuation) — assumed the right normalisation for model selection, so val_wer and eval

@@ -1294,6 +1294,81 @@
       ]
     },
     {
+      "name": "artifacts.evict",
+      "title": "Free content-store space by deleting superseded training states (always waits for an approval)",
+      "description": "Delete the blobs of superseded training-state artifacts from the content store: every state of a run whose pipeline finished, and every state but the newest of a failed or cancelled run (runs.resume continues from the newest). States a waiting or running step job names, inputs of running pipelines, artifacts a frozen registry version or a checkpoint references and files another live artifact lists are kept. dryRun=true answers the candidates, the artifacts kept with the reason and the bytes it would free. A real call always answers 202 with an approvalId, for people too; once a person approves it, a job deletes the blobs (the approval's result is 202 with its jobId) and marks the artifacts evicted (their index rows stay, so lineage still resolves). Agents may not evict. The backup mirror is the way back. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/artifacts:evict",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "description": "Which artifacts to consider; empty means every superseded training state",
+            "properties": {
+              "hashes": {
+                "description": "Exactly these artifacts; one that may not be evicted answers artifact-not-evictable",
+                "items": {
+                  "pattern": "^b3:[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "maxItems": 1000,
+                "type": "array"
+              },
+              "olderThanDays": {
+                "description": "Only states recorded at least this many days ago",
+                "maximum": 3650,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "project": {
+                "description": "Only the states of this project (slug or id)",
+                "maxLength": 100,
+                "type": "string"
+              },
+              "runId": {
+                "description": "Only the states of this run (run_…)",
+                "maxLength": 100,
+                "type": "string"
+              },
+              "type": {
+                "default": "training-state",
+                "description": "The artifact type (v1: training-state only)",
+                "enum": [
+                  "training-state"
+                ],
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
       "name": "artifacts.get",
       "title": "Get an artifact by hash — type, size, metadata, producing step, a directory's files, and small content",
       "description": "Read an artifact of the content store by its hash (b3:\u003c64 hex\u003e): type, size, neutral metadata, the pipeline step that produced it and, for a directory artifact, its file list. With content=true a file artifact of at most 1 MiB comes back inline (utf8 or base64); for a directory pass path to read one of its files. Larger content is omitted (contentOmitted says why) — artifacts are read by steps, not copied into a context.",

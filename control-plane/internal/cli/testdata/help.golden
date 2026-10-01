@@ -18,7 +18,7 @@ Entities:
   agentSessions  accept cancel get list new pause resume revert
   aliases        get list set
   approvals      approve deny get list
-  artifacts      get
+  artifacts      evict get
   audit          list
   backups        get list new verify
   baseModels     get list

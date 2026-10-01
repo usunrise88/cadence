@@ -68,3 +68,26 @@ func TestPutOpenManifest(t *testing.T) {
 		t.Fatalf("missing file err = %v", err)
 	}
 }
+
+func TestDelete(t *testing.T) {
+	s, err := New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, err := s.PutBytes([]byte("state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n, err := s.Delete(h); err != nil || n != 5 {
+		t.Fatalf("Delete = %d %v", n, err)
+	}
+	if ok, _, _ := s.Has(h); ok {
+		t.Fatal("the blob is still there")
+	}
+	if n, err := s.Delete(h); err != nil || n != 0 {
+		t.Fatalf("second Delete = %d %v", n, err)
+	}
+	if _, err := s.Delete("nope"); err == nil {
+		t.Fatal("a malformed hash deletes nothing and says so")
+	}
+}

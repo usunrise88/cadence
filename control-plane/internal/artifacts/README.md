@@ -6,3 +6,5 @@ The index of the content store (docs/spec/08-resolutions.md R15, R42): one `arti
 - `Get`, `Projects`, `Files` (a directory's manifest) and `ReadContent` (a file, or one file of a directory, of at most 1 MiB inline — `artifacts.get?content=true&path=`).
 
 Reads are authorised by project: a credential scoped to a project reads artifacts linked to it; an artifact linked to no project needs registry read.
+
+Retention (stream E): `Record` also fills the file index `artifact_files` (hash, path, file_hash, size) for a directory, and clears the eviction of an artifact whose bytes are back. An evicted artifact (`Evicted`: when, by whom, the job) keeps its row: `Files` reads its list from the index, `ReadContent` says it was evicted, and `Record` refuses it as an input with `ErrEvicted` (the pipeline engine answers `artifact-missing`). Eviction itself lives in `internal/eviction`.

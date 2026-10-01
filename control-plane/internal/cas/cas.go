@@ -104,6 +104,27 @@ func (s *Store) Open(hash string) (*os.File, error) {
 	return f, err
 }
 
+// Delete removes the blob hash and reports the bytes it held; a blob already gone is not an error (0 bytes).
+// Only the eviction job (artifacts.evict, after a person approved it) deletes blobs: everything else treats the
+// store as append-only.
+func (s *Store) Delete(hash string) (int64, error) {
+	p, err := s.Path(hash)
+	if err != nil {
+		return 0, err
+	}
+	fi, err := os.Stat(p)
+	if errors.Is(err, fs.ErrNotExist) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("cas: %w", err)
+	}
+	if err := os.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return 0, fmt.Errorf("cas: delete %s: %w", hash, err)
+	}
+	return fi.Size(), nil
+}
+
 // Put streams r into the store and returns its hash and size. When want is not empty the content must hash to it
 // (ErrHashMismatch otherwise, and nothing is stored).
 func (s *Store) Put(r io.Reader, want string) (string, int64, error) {

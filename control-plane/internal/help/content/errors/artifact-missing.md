@@ -1,7 +1,7 @@
 ---
 title: Artifact missing
-summary: A lease was released with an output the content store does not hold; write or upload it first.
-contexts: [error:artifact-missing, entity:artifact]
+summary: A lease was released with an output the content store does not hold, or a pipeline input was evicted; store or restore it first.
+contexts: [error:artifact-missing, entity:artifact, guide:freeing-store-space]
 ---
 
 ## What this is
@@ -9,6 +9,9 @@ contexts: [error:artifact-missing, entity:artifact]
 A `409 Conflict` problem of type `artifact-missing`, answered to `workerLeases.release`. The outcome named an output
 artifact by hash, but no blob with that hash is in the content store. The release is refused as a whole and the lease
 stays active, so the worker can store the output and release again.
+
+`pipelines.run` (and the run facades) answer it too when an input names an artifact that `artifacts.evict` removed
+from the store: the index row says when; restore its blobs from the backup mirror (see *Freeing store space*).
 
 ## Place in the loop
 
@@ -27,6 +30,7 @@ control plane records them only once their bytes are safely stored (R15).
 
 - `workerArtifacts.set` — upload a blob when the worker does not share the store's volume.
 - `workerLeases.release` — release again once the outputs are stored.
+- `artifacts.get` — whether an input was evicted, and when.
 
 ## Playbooks
 
