@@ -112,7 +112,8 @@ def execute(lease_dir: Path, stop: threading.Event, emit: EventWriter) -> dict[s
         kind().run(params, inputs, outputs, ctx)
         if stop.is_set():
             return {"state": "cancelled", "metrics": ctx.final_metrics, "meta": ctx.meta}
-        missing = [n for n, p in outputs.items() if not p.exists()]
+        optional = set(getattr(kind, "optional_outputs", ()))  # e.g. a train step's final training state
+        missing = [n for n, p in outputs.items() if not p.exists() and n not in optional]
         if missing:
             raise RuntimeError(f"the step did not write its outputs {missing}")
         return {"state": "done", "metrics": ctx.final_metrics, "meta": ctx.meta}

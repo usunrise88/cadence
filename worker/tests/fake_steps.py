@@ -94,6 +94,20 @@ class Forgetful:
         ctx.log("forgot")
 
 
+class SkipsOptional:
+    """Writes its required output and skips the optional one (a train step's final training state)."""
+
+    version: ClassVar[str] = "1"
+    consumes: ClassVar[Mapping[str, str]] = {}
+    produces: ClassVar[Mapping[str, str]] = {"out": "text", "state": "training-state"}
+    optional_outputs: ClassVar[frozenset[str]] = frozenset({"state"})
+    resources: ClassVar[StepResources] = {"gpu": False}
+    Params: ClassVar[type[BaseModel]] = NoParams
+
+    def run(self, params: BaseModel, inputs: Mapping[str, Path], outputs: Mapping[str, Path], ctx: StepContext) -> None:
+        outputs["out"].write_text("ok", encoding="utf-8")
+
+
 class EnvProbe:
     """Writes the environment it sees and prints its secret (the harness must redact it)."""
 

@@ -240,3 +240,9 @@ def test_a_lease_without_a_trace_starts_one() -> None:
     assert s.parent_id is None
     assert parse(s.traceparent) == (s.trace_id, s.span_id, "01")
     assert parse("00-" + "0" * 32 + "-b7ad6b7169203331-01") is None
+
+
+def test_an_optional_output_may_stay_unwritten(tmp_path: Path) -> None:
+    out = runner(tmp_path, lease("SkipsOptional"))[0].run()
+    assert out["state"] == "done", out
+    assert set(out.get("outputs") or {}) == {"out"}
