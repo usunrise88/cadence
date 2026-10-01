@@ -2,8 +2,9 @@
 NeMo + Lightning in bf16 with the calibrated Lhotse buckets, the language prompt per clip and telephony augmentation
 on the fly.
 
-Outputs: ``checkpoint`` (the weights at the end, validated), ``checkpoint_best`` (the best validation pass of this
-lease; the same artifact as ``checkpoint`` when that was the last one) and ``state`` (``training-state``, resume only).
+Outputs: ``checkpoint`` (the weights at the end, validated), ``checkpoint_best`` (the best validation pass of the
+run, across pauses: see :func:`resume_best`; the same artifact as ``checkpoint`` when that was the last one) and
+``state`` (``training-state``, resume only).
 Every validation pass before the last publishes its checkpoint while training runs (``ctx.publish``), so each one is
 registered on the run at once and survives a pause, a window close or a failure.
 Metrics during training through the step context (loss, lr, grad_norm, throughput_audio_s_per_s, gpu_memory_mb,
@@ -96,6 +97,31 @@ def validation_clips(data: TrainingData, limit: int, min_duration: float, max_du
     if not val:  # a mix without a validation split validates on its first training clips
         val = [c for c in data.train_clips() if min_duration <= c.duration <= max_duration]
     return val[:limit]
+
+
+def resume_best(
+    monitor: TrainingMonitor, state: Mapping[str, Any], ctx: StepContext, best_link: Path
+) -> dict[str, str] | None:
+    """On resume, carry the best validation across the pause: rebuild the best checkpoint published before it from the
+    content store into ``best_link`` (the files ``bestFiles`` of the state records) and restore the monitor's best WER
+    and step, so a later, worse pass is not taken for the best and ``checkpoint_best`` stays that artifact. Returns the
+    file hashes (to record in the next state), or None when the state has no best or its files are not in the store —
+    then the best is this lease's, as before the record existed."""
+    files = state.get("bestFiles")
+    if state.get("bestStep") is None:
+        return None
+    if not ck.restore_files(files, ctx.blob, best_link):
+        ctx.log(
+            "the best checkpoint before the pause is not in the content store; checkpoint_best is this lease's best",
+            level="warn",
+            bestStep=state.get("bestStep"),
+        )
+        return None
+    if not monitor.restore_best(state):
+        shutil.rmtree(best_link, ignore_errors=True)
+        return None
+    ctx.log("best validation before the pause restored", bestStep=monitor.best_step, bestValWer=monitor.best_wer)
+    return dict(files) if isinstance(files, Mapping) else None
 
 
 class FinetuneStep:
@@ -230,6 +256,11 @@ class FinetuneStep:
         best: dict[str, Any] = {}
         best_link = work / "best"  # hard links of the best published checkpoint of this lease
         start_step = int(resume.get("step", 0)) if resume else 0
+        best_files: dict[str, str] = {}
+        if resume is not None:
+            restored = resume_best(monitor, resume, ctx, best_link)
+            if restored is not None:
+                best["step"], best_files = monitor.best_step, restored
 
         def save_state(trainer: Any, step: int) -> None:
             t0 = time.monotonic()
@@ -242,6 +273,7 @@ class FinetuneStep:
                     "seed": p.seed,
                     "bestValWer": monitor.best_wer,
                     "bestStep": monitor.best_step,
+                    "bestFiles": best_files or None,
                     "base": base.reference,
                     "peakLr": p.peak_lr,
                 },
@@ -273,12 +305,15 @@ class FinetuneStep:
             def validated(self, module: Any, step: int, wer: float, is_best: bool) -> None:
                 if is_best:
                     best["step"] = step
+                    best_files.clear()  # set again once published; a best not published has nothing to rebuild
                 if step >= p.steps:
                     return  # the last validation's checkpoint is the release's ``checkpoint``
                 t0 = time.monotonic()
                 d = work / "published" / f"checkpoint-{step}"
                 training.save_nemo(module, d)
                 ck.publish_validation(ctx, d, {"step": step, **lineage}, wer, best_link if is_best else None)
+                if is_best:  # recorded in the next training state, so a resumed lease keeps this checkpoint as best
+                    best_files.update(ck.file_hashes(best_link))
                 ctx.log(
                     "validation checkpoint published", step=step, valWer=wer, seconds=round(time.monotonic() - t0, 1)
                 )

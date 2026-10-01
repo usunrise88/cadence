@@ -5,7 +5,8 @@ sentencepiece tokenizer files) and ``checkpoint.json`` — the neutral meta (R42
 what loading needs: the base model it descends from and the tokenizer reference (the base model's, R44).
 
 ``training-state`` (a directory artifact, only for resuming): ``last.ckpt`` (Lightning: weights, optimiser, scheduler
-and loop state) and ``state.json`` (family, step, seed, best validation so far).
+and loop state) and ``state.json`` (family, step, seed, best validation so far: ``bestValWer``, ``bestStep`` and
+``bestFiles``, the content hashes of that published checkpoint's files, so a resumed lease keeps it as the best).
 
 ``base`` input: a ``base_model`` artifact (``cadence.base_model/1`` JSON: Hugging Face repository, revision, checkpoint
 file, family) or a ``checkpoint`` directory (a run that starts from a checkpoint, R44).
@@ -27,7 +28,7 @@ from pathlib import Path
 from typing import Any
 
 from cadence_nemo.family import NAME
-from cadence_worker.cas import hash_file
+from cadence_worker.cas import CasError, hash_file
 from cadence_worker.steps.base import StepInputError
 from cadence_worker.steps.context import StepContext
 
@@ -86,6 +87,39 @@ def link_checkpoint(src: Path, dst: Path) -> None:
                 os.link(f, target)
             except OSError:
                 target.write_bytes(f.read_bytes())
+
+
+def file_hashes(d: Path) -> dict[str, str]:
+    """The content hashes of a (flat) checkpoint directory's files by name: what a training state records of the best
+    published checkpoint, so a resumed lease can rebuild it from the content store (:func:`restore_files`)."""
+    return {f.name: hash_file(f) for f in sorted(d.iterdir()) if f.is_file()}
+
+
+def restore_files(files: Any, blob: Callable[[str], Path], dst: Path) -> bool:
+    """Hard-link the files a training state recorded (``{name: hash}``) from the content store into ``dst`` — the
+    best checkpoint published before a pause, the same artifact again. False (``dst`` removed) when the record is
+    malformed or a blob is not in the store."""
+    shutil.rmtree(dst, ignore_errors=True)
+    if not isinstance(files, Mapping) or not files:
+        return False
+    try:
+        srcs: dict[str, Path] = {}
+        for name, h in files.items():
+            if not isinstance(name, str) or not isinstance(h, str) or name != Path(name).name or name.startswith("."):
+                return False
+            srcs[name] = blob(h)
+            if not srcs[name].is_file():
+                return False
+        dst.mkdir(parents=True, exist_ok=True)
+        for name, src in srcs.items():
+            try:
+                os.link(src, dst / name)
+            except OSError:
+                shutil.copyfile(src, dst / name)
+    except (OSError, RuntimeError, CasError):
+        shutil.rmtree(dst, ignore_errors=True)
+        return False
+    return True
 
 
 def publish_validation(

@@ -26,6 +26,7 @@ from cadence_nemo.steps.finetune import (
     FinetuneStep,
     fit_buckets,
     read_calibration,
+    resume_best,
     validation_clips,
 )
 from cadence_nemo.steps.transcribe import TranscribeParams, TranscribeStep, decoding_hash, hypothesis_row
@@ -686,6 +687,63 @@ def test_monitor_best_validation(tmp_path: Path) -> None:
     assert not m.validation(6, 0.7)
     assert m.validation(9, 0.5)
     assert (m.best_step, m.best_wer, m.last_val_step) == (9, 0.5, 9)
+
+
+def test_monitor_restores_the_best_validation_on_resume(tmp_path: Path) -> None:
+    m = monitor(tmp_path, [], Clock())
+    assert m.restore_best({"step": 8, "bestValWer": 0.4, "bestStep": 6})
+    assert not m.validation(9, 0.5)  # worse than the pass before the pause: not the best
+    assert (m.best_step, m.best_wer) == (6, 0.4)
+    assert m.validation(10, 0.3)
+    fresh = monitor(tmp_path, [], Clock())
+    for doc in ({}, {"bestValWer": None, "bestStep": None}, {"bestValWer": 0.4}, {"bestValWer": True, "bestStep": 3}):
+        assert not fresh.restore_best(doc)
+    assert (fresh.best_wer, fresh.best_step) == (None, None)
+
+
+def published_best(tmp_path: Path, store: Store) -> tuple[Path, dict[str, str]]:
+    """A best checkpoint published before a pause: stored in the content store, its hashes recorded by name."""
+    d = tmp_path / "published"
+    d.mkdir()
+    (d / ck.NEMO_FILE).write_bytes(b"weights at step 6")
+    ck.write_checkpoint(d, {"step": 6})
+    files = ck.file_hashes(d)
+    for f in d.iterdir():
+        store.put_file(f)
+    return d, files
+
+
+def test_resume_best_rebuilds_the_published_best_checkpoint(tmp_path: Path) -> None:
+    store = Store(tmp_path / "cas")
+    d, files = published_best(tmp_path, store)
+    events: list[dict[str, Any]] = []
+    m = monitor(tmp_path, events, Clock())
+    link = tmp_path / "work" / "best"
+    state = {"step": 8, "bestValWer": 0.4, "bestStep": 6, "bestFiles": files}
+    assert resume_best(m, state, ctx(tmp_path, events, store), link) == files
+    assert (m.best_step, m.best_wer) == (6, 0.4)
+    assert ck.file_hashes(link) == files  # the same artifact again
+    assert (link / ck.NEMO_FILE).read_bytes() == (d / ck.NEMO_FILE).read_bytes()
+
+
+def test_resume_best_falls_back_to_the_lease_without_the_files(tmp_path: Path) -> None:
+    store = Store(tmp_path / "cas")
+    _, files = published_best(tmp_path, store)
+    link = tmp_path / "work" / "best"
+    missing = {**files, ck.NEMO_FILE: "b3:" + "0" * 64}
+    for state in (
+        {"step": 8, "bestValWer": 0.4, "bestStep": 6},  # a state written before bestFiles existed
+        {"step": 8, "bestValWer": 0.4, "bestStep": 6, "bestFiles": missing},
+        {"step": 8, "bestValWer": 0.4, "bestStep": 6, "bestFiles": {"../escape": files[ck.NEMO_FILE]}},
+    ):
+        events: list[dict[str, Any]] = []
+        m = monitor(tmp_path, events, Clock())
+        assert resume_best(m, state, ctx(tmp_path, events, store), link) is None
+        assert m.best_wer is None
+        assert not link.exists()
+        assert any(e.get("level") == "warn" for e in events)
+    m = monitor(tmp_path, [], Clock())
+    assert resume_best(m, {"step": 8, "bestValWer": None, "bestStep": None}, ctx(tmp_path, [], store), link) is None
 
 
 def test_monitor_periodic_states_and_stop_decision(tmp_path: Path) -> None:
