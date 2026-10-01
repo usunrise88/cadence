@@ -219,6 +219,14 @@ func TestPlaybooks(t *testing.T) {
 	// Train: the calibration's dry run does not count for runs.new; its own does, once.
 	runBody := calBody
 	expectProblem(t, agent("POST", "/api/projects/hebrew/runs", runBody, "Idempotency-Key", h.key()), 409, "playbook-dry-run-required")
+	// A dry run of a cheap request does not admit a different, expensive one: the real call must be the request the
+	// dry run estimated (path and canonical body; the Idempotency-Key differs and does not matter).
+	cheap := `{"baseModel":"` + pipelinestest.BaseModel + `","mix":"` + mix.ID + `","steps":1}`
+	h.ok(agent("POST", "/api/projects/hebrew/runs?dryRun=true", cheap, "Idempotency-Key", h.key()), 200, nil)
+	p := expectProblem(t, agent("POST", "/api/projects/hebrew/runs", runBody, "Idempotency-Key", h.key()), 409, "playbook-dry-run-required")
+	if !strings.Contains(p.Detail, "differs from its dry run") {
+		t.Fatalf("problem = %+v", p)
+	}
 	h.ok(agent("POST", "/api/projects/hebrew/runs?dryRun=true", runBody, "Idempotency-Key", h.key()), 200, nil)
 	var trained runView
 	h.ok(agent("POST", "/api/projects/hebrew/runs", runBody, "Idempotency-Key", h.key()), 201, &trained)
