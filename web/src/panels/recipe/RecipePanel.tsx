@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { EmptyState, PanelToolbar } from "@/shell/entity/primitives";
 import { AugmentationForm, NewProfileButton } from "./AugmentationForm";
+import { editable, TextEditor } from "./TextEditor";
 import {
   BranchConflicts,
   isAugmentationProfile,
@@ -149,6 +150,7 @@ function WorkingBanner({ project, path }: { project: string; path: string }) {
 
 function FileView({ project, path }: { project: string; path: string }) {
   const q = useQuery(recipesGetOptions({ path: { p: project, path } }));
+  const [editing, setEditing] = useState(false);
   const r = q.data;
   if (!r)
     return (
@@ -162,8 +164,20 @@ function FileView({ project, path }: { project: string; path: string }) {
   return (
     <div className="flex min-w-0 flex-col">
       <WorkingBanner project={project} path={path} />
-      {text !== null && isAugmentationProfile(path) ? <AugmentationForm key={r.history[0]?.sha ?? "new"} project={project} recipe={r} /> : null}
-      {text === null ? (
+      {text !== null && isAugmentationProfile(path) && !editing ? <AugmentationForm key={r.history[0]?.sha ?? "new"} project={project} recipe={r} /> : null}
+      {text !== null && editable(path) && !editing ? (
+        <div className="flex items-center gap-2 border-b px-3 py-1.5 text-xs">
+          <span className="text-muted-foreground">
+            On main at {r.history[0]?.sha.slice(0, 7) ?? r.commit.slice(0, 7)}
+          </span>
+          <Button size="xs" variant="outline" className="ml-auto" onClick={() => setEditing(true)} data-command="recipes.edit">
+            Edit
+          </Button>
+        </div>
+      ) : null}
+      {editing && text !== null ? (
+        <TextEditor key={r.history[0]?.sha ?? "new"} project={project} recipe={r} onDone={() => setEditing(false)} />
+      ) : text === null ? (
         <p className="p-3 text-xs text-muted-foreground">Binary file ({r.bytes.toLocaleString()} bytes); not shown.</p>
       ) : (
         <pre className="max-h-[32rem] overflow-auto py-2 font-mono text-xs leading-5" data-testid="recipe-content" aria-label={`${path} at ${r.ref}`}>

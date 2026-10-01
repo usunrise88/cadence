@@ -39,7 +39,7 @@ export type RunStageArgs = RunArgs & { body?: RunStage; dryRun?: boolean };
 export type CheckpointAverageArgs = { runId: string; body: CheckpointAverage; dryRun?: boolean };
 
 /** recipes.edit: `expect` is the commit that last changed the file (history[0].sha), sent as If-Match. */
-export type RecipeEditArgs = { project: string; path: string; expect: string; body: RecipeEdit };
+export type RecipeEditArgs = { project: string; path: string; expect: string; body: RecipeEdit; dryRun?: boolean };
 export type RecipeNewArgs = { project: string; body: RecipeNew };
 
 export type TrainingCommands = {
@@ -190,7 +190,13 @@ export function registerTrainingCommands(): void {
       hidden: true,
       run: async (_ctx, args) => {
         const a = need<RecipeEditArgs>(args, "Commit recipe file");
-        const { data } = await recipesEdit({ path: { p: a.project, path: a.path }, body: a.body, headers: commandHeadersAt(a.expect), throwOnError: true });
+        const { data } = await recipesEdit({
+          path: { p: a.project, path: a.path },
+          body: a.body,
+          query: a.dryRun ? { dryRun: true } : undefined,
+          headers: commandHeadersAt(a.expect),
+          throwOnError: true,
+        });
         return data;
       },
     },
