@@ -64,6 +64,7 @@ type Service struct {
 	now     func() time.Time
 	poll    time.Duration
 	beat    int
+	started time.Time // when this process started; Reap grants a grace after it
 	wake    notifier
 	logMu   sync.Mutex
 	logSeq  map[string]int // lines per job log, counted once per process
@@ -100,6 +101,7 @@ func New(o Options) *Service {
 	if s.now == nil {
 		s.now = time.Now
 	}
+	s.started = s.now()
 	if s.poll <= 0 {
 		s.poll = 500 * time.Millisecond
 	}

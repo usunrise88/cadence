@@ -120,9 +120,15 @@ class WorkerClient:
 
 
 def with_retry[T](
-    fn: Callable[[], T], *, attempts: int = 5, base: float = 0.5, sleep: Callable[[float], None] = time.sleep
+    fn: Callable[[], T],
+    *,
+    attempts: int = 5,
+    base: float = 0.5,
+    cap: float = 30.0,
+    sleep: Callable[[float], None] = time.sleep,
 ) -> T:
-    """Retry transient failures (network, 5xx, 408, 429) with exponential backoff; permanent 4xx raise at once."""
+    """Retry transient failures (network, 5xx, 408, 429) with exponential backoff (each pause at most cap seconds);
+    permanent 4xx raise at once."""
     for i in range(attempts):
         try:
             return fn()
@@ -132,5 +138,5 @@ def with_retry[T](
         except httpx.TransportError:
             if i == attempts - 1:
                 raise
-        sleep(base * (2**i))
+        sleep(min(cap, base * (2**i)))
     raise AssertionError("unreachable")

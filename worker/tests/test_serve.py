@@ -308,3 +308,16 @@ def test_nvidia_smi_output_is_parsed() -> None:
     assert "memoryTotalMb" not in cards[1]
     assert "powerW" not in cards[1]
     assert Telemetry(enabled=False).cards() == []
+
+
+def test_with_retry_caps_each_pause() -> None:
+    pauses: list[float] = []
+
+    def down() -> str:
+        raise httpx.ConnectError("control plane down")
+
+    with pytest.raises(httpx.ConnectError):
+        with_retry(down, attempts=10, cap=30.0, sleep=pauses.append)
+    assert len(pauses) == 9
+    assert max(pauses) == 30.0
+    assert pauses[:3] == [0.5, 1.0, 2.0]

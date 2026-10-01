@@ -862,3 +862,33 @@ func TestTwoRuntimesShareACard(t *testing.T) {
 		t.Fatalf("%d active leases on card 0", n)
 	}
 }
+
+// A control plane that was down longer than three beats does not reap the live leases at its own start: the worker
+// reports again within the grace and its release of a step that finished meanwhile lands.
+func TestReapWaitsAfterControlPlaneStart(t *testing.T) {
+	w := startWorkers(t)
+	f := w.register(w.workerToken("staging"), "toy", map[string]any{"train_toy": kind("1", "training", true, false)})
+	a := w.enqueue(gpuSpec("train_toy"))
+	l := f.claim(2)
+	if l == nil || l.JobID != a {
+		t.Fatalf("lease = %+v", l)
+	}
+	w.clock.Add(2 * time.Minute) // the control plane was down for two minutes
+	restarted := workers.New(workers.Options{Pool: w.pool, Now: w.clock.Now})
+	if n, err := restarted.Reap(context.Background()); err != nil || n != 0 {
+		t.Fatalf("reaped %d right after start (%v)", n, err)
+	}
+	w.clock.Add(20 * time.Second) // still within the grace; the worker reports again
+	w.ok(f.post("/worker-leases/"+l.ID+":report", map[string]any{}), http.StatusOK, nil)
+	if n, err := restarted.Reap(context.Background()); err != nil || n != 0 {
+		t.Fatalf("reaped %d within the grace (%v)", n, err)
+	}
+	w.clock.Add(15 * time.Second) // past the grace, but the lease reported 15 s ago
+	if n, err := restarted.Reap(context.Background()); err != nil || n != 0 {
+		t.Fatalf("reaped a live lease (%d, %v)", n, err)
+	}
+	w.clock.Add(31 * time.Second) // now it really missed three beats
+	if n, err := restarted.Reap(context.Background()); err != nil || n != 1 {
+		t.Fatalf("Reap after missed beats = %d, %v", n, err)
+	}
+}
