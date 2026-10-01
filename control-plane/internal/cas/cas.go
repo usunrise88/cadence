@@ -4,7 +4,8 @@
 // either exists whole or not at all; blobs are immutable and a second write of the same content is a no-op.
 //
 // A directory artifact (a Shar set, a checkpoint directory) is a Manifest stored as a blob whose hash is the
-// artifact's hash; each file of the directory is its own blob. The control plane and the v1 worker share the root
+// artifact's hash; each file of the directory is its own blob, and each path names one file (Manifest.Validate
+// refuses a path listed twice or a file that is also a directory). The control plane and the v1 worker share the root
 // by volume; remote workers upload through workerArtifacts.set.
 package cas
 
@@ -16,6 +17,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -187,15 +189,37 @@ type Manifest struct {
 func (m Manifest) Encode() ([]byte, error) {
 	files := append([]File(nil), m.Files...)
 	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
-	for _, f := range files {
-		if err := checkRel(f.Path); err != nil {
-			return nil, err
-		}
-		if !steps.ValidHash(f.Hash) {
-			return nil, fmt.Errorf("cas: manifest file %q: %q is not a b3 hash", f.Path, f.Hash)
-		}
+	if err := m.Validate(); err != nil {
+		return nil, err
 	}
 	return json.Marshal(Manifest{Files: files})
+}
+
+// Validate checks that m describes a directory: every path is relative and slash-separated without empty, . or ..
+// segments, no path appears twice, no path is also another's directory ("a" beside "a/b"), and every hash is a b3
+// hash. Encode (so PutManifest) and artifacts.Verify refuse a manifest that fails it.
+func (m Manifest) Validate() error {
+	seen := make(map[string]bool, len(m.Files))
+	for _, f := range m.Files {
+		if err := checkRel(f.Path); err != nil {
+			return err
+		}
+		if !steps.ValidHash(f.Hash) {
+			return fmt.Errorf("cas: manifest file %q: %q is not a b3 hash", f.Path, f.Hash)
+		}
+		if seen[f.Path] {
+			return fmt.Errorf("cas: manifest path %q appears twice", f.Path)
+		}
+		seen[f.Path] = true
+	}
+	for _, f := range m.Files {
+		for dir := path.Dir(f.Path); dir != "."; dir = path.Dir(dir) {
+			if seen[dir] {
+				return fmt.Errorf("cas: manifest path %q is both a file and the directory of %q", dir, f.Path)
+			}
+		}
+	}
+	return nil
 }
 
 // PutManifest stores m and returns the directory artifact's hash; every file must already be in the store.
@@ -229,6 +253,8 @@ func (s *Store) ReadManifest(hash string) (Manifest, error) {
 	if err := dec.Decode(&m); err != nil {
 		return Manifest{}, fmt.Errorf("cas: %s is not a manifest: %w", hash, err)
 	}
+	// Only the paths are checked here, not Validate: a directory recorded before Validate refused duplicate paths
+	// must still be read (its files indexed and kept); Verify refuses such a manifest when it is recorded anew.
 	for _, fl := range m.Files {
 		if err := checkRel(fl.Path); err != nil {
 			return Manifest{}, err
