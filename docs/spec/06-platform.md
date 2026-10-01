@@ -166,7 +166,9 @@ Rules:
   step's outputs (what the next step reads); a failed publication is a warning in the job log, not a step failure.
 - Secrets: a step kind declares secret names; at lease time the control plane reads the values from the secret store
   (R9) and puts them in the lease's `env` for that subprocess only, named in upper case with `-` and `.` as `_`
-  (`hf-token` → `HF_TOKEN`); a missing secret fails the step at lease time with error type `input`. Values never
+  (`hf-token` → `HF_TOKEN`); a missing secret fails the step at lease time with error type `input`, and so does a
+  secret whose scope does not allow the step's project (a `project:<slug>` secret serves only that project's steps;
+  `instance` serves all, including steps without a project). Values never
   appear in the spec, job rows, events, logs, artifacts or an agent context; the worker redacts them from forwarded
   logs and removes its own token and URL from the step's environment.
 - Tracing: one trace runs UI → API → job → step. A job keeps the traceparent of the request that enqueued it (River

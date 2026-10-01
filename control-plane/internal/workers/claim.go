@@ -17,6 +17,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/jobs"
 	"github.com/usunrise88/cadence/control-plane/internal/policies"
 	"github.com/usunrise88/cadence/control-plane/internal/queue"
+	"github.com/usunrise88/cadence/control-plane/internal/secrets"
 	"github.com/usunrise88/cadence/control-plane/internal/steps"
 	"github.com/usunrise88/cadence/control-plane/internal/storage"
 )
@@ -146,7 +147,7 @@ func (s *Service) claimOnce(ctx context.Context, tx pgx.Tx, c Caller, in Claim, 
 		if !ok {
 			continue
 		}
-		env, missing := s.secretEnv(ctx, cand.spec.SecretNames)
+		env, missing := s.secretEnv(ctx, tx, cand.spec)
 		if missing != "" {
 			d, err := s.endWaiting(ctx, tx, cand.jobID, steps.Outcome{State: steps.StateFailed,
 				Error: &steps.StepError{Type: steps.ErrInput, Message: missing}})
@@ -271,16 +272,20 @@ func lockCards(ctx context.Context, tx pgx.Tx, host compute.Host, reported []Car
 	return out, rows.Err()
 }
 
-// secretEnv reads the secrets a step declares; missing names the first one that cannot be read. Values go into the
-// lease answer only: never into the lease row, a log line or an event.
-func (s *Service) secretEnv(ctx context.Context, names []string) (map[string]string, string) {
-	if len(names) == 0 {
+// secretEnv reads the secrets a step declares; missing names the first one that cannot be read or whose scope does
+// not allow the step's project (a project-scoped secret serves only that project's steps). Values go into the lease
+// answer only: never into the lease row, a log line or an event.
+func (s *Service) secretEnv(ctx context.Context, tx pgx.Tx, spec steps.Spec) (map[string]string, string) {
+	if len(spec.SecretNames) == 0 {
 		return nil, ""
 	}
-	env := make(map[string]string, len(names))
-	for _, n := range names {
+	env := make(map[string]string, len(spec.SecretNames))
+	for _, n := range spec.SecretNames {
 		if s.secrets == nil {
 			return nil, fmt.Sprintf("the step needs secret %q and this control plane has no secret store", n)
+		}
+		if err := secrets.CheckScope(ctx, tx, n, spec.ProjectID); err != nil {
+			return nil, fmt.Sprintf("the step needs secret %q: %v", n, err)
 		}
 		v, err := s.secrets.Read(ctx, n)
 		if err != nil {
