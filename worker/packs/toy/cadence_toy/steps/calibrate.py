@@ -15,7 +15,8 @@ from pydantic import BaseModel
 
 from cadence_toy.data import read_dataset, splits
 from cadence_toy.family import NAME, RUNTIME
-from cadence_toy.model import CharTokenizer, TinyCTC, use_one_thread
+from cadence_toy.model import CharTokenizer, TinyCTC, save_checkpoint, use_one_thread
+from cadence_toy.steps.train import save_state
 from cadence_toy.training import sampler, train_step
 from cadence_worker.protocol_gen import StepResources
 from cadence_worker.steps.base import cadence_field
@@ -40,10 +41,12 @@ class CalibrateStep:
         use_one_thread()
         p = CalibrateParams.model_validate(params.model_dump())
         torch.manual_seed(0)
+        loaded = time.perf_counter()
         train, _ = splits(read_dataset(inputs["data"]))
         tok = CharTokenizer()
         model = TinyCTC()
         opt = torch.optim.Adam(model.parameters(), lr=1e-3)
+        load_s = time.perf_counter() - loaded
         size = max(1, int(p.batch_size * ctx.batch_scale))
         train_step(model, opt, sampler(train, size, 0, 0), tok)  # warm-up, not timed
         t0 = time.perf_counter()
@@ -51,6 +54,11 @@ class CalibrateStep:
             train_step(model, opt, sampler(train, size, 0, i + 1), tok)
             ctx.progress((i + 1) / p.steps, f"timed step {i + 1}/{p.steps}")
         seconds = (time.perf_counter() - t0) / p.steps
+        # What a train lease adds around its steps: loading (measured above) and the saves at the end, timed once.
+        saved = time.perf_counter()
+        save_checkpoint(ctx.work_dir / "probe-checkpoint", model, tok, p.steps)
+        save_state(ctx.work_dir / "probe-state", model, opt, p.steps, 0)
+        overhead = load_s + time.perf_counter() - saved
         doc = {
             "family": NAME,
             "batchSize": size,
@@ -59,8 +67,17 @@ class CalibrateStep:
             "device": "cpu",
             "precision": "fp32",
             "memoryCapMb": ctx.memory_cap_mb,
+            "leaseOverheadSeconds": round(overhead, 6),
         }
         outputs["calibration"].write_text(json.dumps(doc, indent=2), encoding="utf-8")
-        ctx.set_meta("calibration", {"family": NAME, "batchSize": size, "secondsPerStep": doc["secondsPerStep"]})
+        ctx.set_meta(
+            "calibration",
+            {
+                "family": NAME,
+                "batchSize": size,
+                "secondsPerStep": doc["secondsPerStep"],
+                "leaseOverheadSeconds": doc["leaseOverheadSeconds"],
+            },
+        )
         ctx.final_metric("seconds_per_step", seconds)
         ctx.log("calibrated", batchSize=size, secondsPerStep=seconds)

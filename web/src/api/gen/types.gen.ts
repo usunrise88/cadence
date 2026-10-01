@@ -876,6 +876,7 @@ export type Defaults = {
     estimates: {
         bytes_per_audio_hour: DefaultValue;
         measured_plus_minus?: DefaultValue;
+        lease_overhead_seconds?: DefaultValue;
         training: Array<TrainingEstimateRow>;
     };
     compute: {
@@ -1009,6 +1010,10 @@ export type RunEstimate = {
     gpuHours: EstimateRange;
     durationSeconds: EstimateRange;
     secondsPerStep: number;
+    /**
+     * Fixed seconds a lease adds before and after its steps (model load, state and checkpoint saves): the calibration's measurement, else estimates.lease_overhead_seconds; durationSeconds = leaseOverheadSeconds + steps × secondsPerStep, the ± applying to the steps
+     */
+    leaseOverheadSeconds?: number;
     steps: number;
     gpus: number;
     precision: Precision;

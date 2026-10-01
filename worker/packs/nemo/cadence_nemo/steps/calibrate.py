@@ -1,7 +1,9 @@
 """oomptimizer_calibrate — the calibrate role of the Nemotron family: OOMptimizer under the lease's memory cap (the
 largest batch per duration bucket whose training step and optimiser update fit), then timed optimiser steps on the
 mix's own data with those buckets. Writes a ``calibration`` artifact the estimate switches to (runs README
-"Calibration"): seconds per step with its spread, the bucket batch sizes and the bucket configuration measured for.
+"Calibration"): seconds per step with its spread, the bucket batch sizes, the bucket configuration measured for and
+the fixed time a training lease adds around its steps (``leaseOverheadSeconds``: the model load timed here, plus one
+``.nemo`` save timed here and a training-state save estimated from it).
 Help: docs/help/steps/oomptimizer-calibrate.md.
 """
 
@@ -9,7 +11,9 @@ from __future__ import annotations
 
 import json
 import math
+import shutil
 import statistics
+import time
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, ClassVar
@@ -26,6 +30,15 @@ from cadence_worker.steps.base import StepInputError, cadence_field
 from cadence_worker.steps.context import StepContext
 
 FALLBACK_TOKENS_PER_SECOND = 14.0  # spike A3's invocation, when the mix has no measurable clip
+# A training state (weights and AdamW's two moments, fp32) is about three times the .nemo's weights: the 2026-10-01
+# rehearsal wrote 7.66 GB of state for a 2.4 GB .nemo, so its save takes about three .nemo saves.
+STATE_SAVES_PER_NEMO_SAVE = 3.0
+
+
+def lease_overhead(load_s: float, nemo_save_s: float) -> float:
+    """Fixed seconds a training lease adds to its steps: the model load before step 1 and, at the end, the last
+    checkpoint's .nemo save and the training-state save (``STATE_SAVES_PER_NEMO_SAVE`` .nemo saves)."""
+    return max(0.0, load_s) + max(0.0, nemo_save_s) * (1 + STATE_SAVES_PER_NEMO_SAVE)
 
 
 class CalibrateParams(BaseModel):
@@ -61,6 +74,8 @@ def calibration_doc(
     precision: str,
     applied: Mapping[str, Any],
     peak: Mapping[str, int],
+    load_s: float | None = None,
+    nemo_save_s: float | None = None,
 ) -> dict[str, Any]:
     """The calibration artifact (and, trimmed, its meta): what the calibration hook and the train step read."""
     mean = statistics.fmean(seconds)
@@ -89,6 +104,11 @@ def calibration_doc(
         "bucketBatchSize": batches,
         "maxDuration": max(bins),
         "peakMemoryMb": peak.get("maxReservedMb"),
+        "loadSeconds": round(load_s, 2) if load_s is not None else None,
+        "nemoSaveSeconds": round(nemo_save_s, 2) if nemo_save_s is not None else None,
+        "leaseOverheadSeconds": (
+            round(lease_overhead(load_s, nemo_save_s), 1) if load_s is not None and nemo_save_s is not None else None
+        ),
     }
 
 
@@ -118,7 +138,9 @@ class CalibrateStep:
         trainer = pl.Trainer(barebones=True, accelerator="gpu", devices=1, logger=False)
         trainer.log_every_n_steps = 10**6  # no WER decode inside the profiled steps
         ctx.progress(0.02, "loading the model")
+        loaded = time.monotonic()
         model = training.load_model(base.nemo, "cuda", trainer=trainer)
+        load_s = time.monotonic() - loaded
         facts = training.model_facts(model)
         keys = lang.prompt_keys(data.languages(), facts.prompt_dictionary, p.target_lang)
         tagged = {k: training.single_piece(model, k) for k in set(keys.values())}
@@ -208,6 +230,10 @@ class CalibrateStep:
         if ctx.should_stop() or not seconds:
             ctx.log("stopped during the timed steps; no calibration written")
             return
+        saved = time.monotonic()
+        training.save_nemo(model, ctx.work_dir / "probe")  # one .nemo save, as a lease's end writes
+        nemo_save_s = time.monotonic() - saved
+        shutil.rmtree(ctx.work_dir / "probe", ignore_errors=True)
         doc = calibration_doc(
             buckets=buckets,
             requested=list(p.bucket_bins),
@@ -218,6 +244,8 @@ class CalibrateStep:
             precision=p.precision,
             applied=applied,
             peak=gpu.peak_mb(),
+            load_s=load_s,
+            nemo_save_s=nemo_save_s,
         )
         outputs["calibration"].write_text(json.dumps(doc, indent=2), encoding="utf-8")
         meta_keys = (
@@ -232,6 +260,7 @@ class CalibrateStep:
             "memoryCapMb",
             "audioSecondsPerStep",
             "peakMemoryMb",
+            "leaseOverheadSeconds",
         )
         ctx.set_meta("calibration", {k: doc[k] for k in meta_keys if doc.get(k) is not None})
         ctx.final_metric("seconds_per_step", doc["secondsPerStep"])

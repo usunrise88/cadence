@@ -207,7 +207,8 @@ func (l *Leases) runTraining(spec steps.Spec) (steps.Outcome, bool, error) {
 		}
 		ref, err := put(map[string]any{"family": FamilyName, "base": spec.Inputs["base"].Hash, "data": spec.Inputs["data"].Hash,
 			"secondsPerStep": sps}, "calibration", "calibration",
-			map[string]any{"family": FamilyName, "secondsPerStep": sps, "plusMinus": 0.1, "batchSizes": map[string]int{"b1": 16}})
+			map[string]any{"family": FamilyName, "secondsPerStep": sps, "plusMinus": 0.1, "batchSizes": map[string]int{"b1": 16},
+				"leaseOverheadSeconds": 20})
 		if err != nil {
 			return steps.Outcome{}, true, err
 		}

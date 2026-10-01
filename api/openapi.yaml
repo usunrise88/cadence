@@ -3951,6 +3951,7 @@ components:
           properties:
             bytes_per_audio_hour: { $ref: "#/components/schemas/DefaultValue" }
             measured_plus_minus: { $ref: "#/components/schemas/DefaultValue" }
+            lease_overhead_seconds: { $ref: "#/components/schemas/DefaultValue" }
             training: { type: array, items: { $ref: "#/components/schemas/TrainingEstimateRow" } }
         compute:
           type: object
@@ -4043,6 +4044,7 @@ components:
         gpuHours: { $ref: "#/components/schemas/EstimateRange" }
         durationSeconds: { $ref: "#/components/schemas/EstimateRange" }
         secondsPerStep: { type: number, format: double }
+        leaseOverheadSeconds: { type: number, format: double, description: "Fixed seconds a lease adds before and after its steps (model load, state and checkpoint saves): the calibration's measurement, else estimates.lease_overhead_seconds; durationSeconds = leaseOverheadSeconds + steps × secondsPerStep, the ± applying to the steps" }
         steps: { type: integer }
         gpus: { type: integer }
         precision: { $ref: "#/components/schemas/Precision" }

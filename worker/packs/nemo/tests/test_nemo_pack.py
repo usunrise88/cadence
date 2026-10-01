@@ -20,7 +20,7 @@ from cadence_nemo.family import FAMILY, NAME, PROFILES, att_context_size, profil
 from cadence_nemo.mixdata import input_cfg, nemo_rows, read_training_data
 from cadence_nemo.monitor import TrainingMonitor
 from cadence_nemo.steps.average import AverageStep, checkpoint_inputs
-from cadence_nemo.steps.calibrate import CalibrateParams, CalibrateStep, calibration_doc
+from cadence_nemo.steps.calibrate import CalibrateParams, CalibrateStep, calibration_doc, lease_overhead
 from cadence_nemo.steps.finetune import (
     FinetuneParams,
     FinetuneStep,
@@ -246,8 +246,13 @@ def test_calibration_round_trip(tmp_path: Path) -> None:
         precision="bf16",
         applied={"memoryCapMb": 22017, "allocatorCapMb": 20993, "device": "card"},
         peak={"maxReservedMb": 20000},
+        load_s=62.0,
+        nemo_save_s=12.0,
     )
     assert doc["secondsPerStep"] == pytest.approx(0.7)
+    # Load + the last .nemo save + a training state of about three .nemo saves.
+    assert doc["leaseOverheadSeconds"] == pytest.approx(62 + 12 * 4)
+    assert lease_overhead(-1, 0) == 0
     assert doc["plusMinus"] == pytest.approx(2 * doc["secondsPerStepStd"] / 0.7 / 3**0.5, rel=1e-2)
     assert doc["batchSizes"] == {"bucket_duration_bins": [4, 8, 20], "bucket_batch_size": [37, 11, 1]}
     assert doc["bucketConfig"]["tokensPerSecond"] == 16

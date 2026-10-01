@@ -81,7 +81,7 @@ func TestPlaybooks(t *testing.T) {
 	}
 	ft := list.Items[0]
 	// 3 000 steps × 1.0 s (table) + the calibration hint 0.1 GPU-hours; both ±50%.
-	if ft.Estimate == nil || ft.Estimate.Basis != "mixed" || ft.Estimate.GPUHours.Value != 0.683 || ft.Estimate.GPUHours.High != 0.85 {
+	if ft.Estimate == nil || ft.Estimate.Basis != "mixed" || ft.Estimate.GPUHours.Value != 0.717 || ft.Estimate.GPUHours.High != 0.883 {
 		t.Fatalf("estimate %+v", ft.Estimate)
 	}
 	for _, in := range ft.Inputs {
@@ -130,7 +130,7 @@ func TestPlaybooks(t *testing.T) {
 	before := h.count("SELECT count(*) FROM agent_sessions")
 	h.ok(run(body, true), 200, &dry)
 	if dry.Session != nil || h.count("SELECT count(*) FROM agent_sessions") != before || len(dry.Plan) != 7 ||
-		dry.Plan[5].State != "skipped" || dry.Estimate.GPUHours.Value != 0.197 || !strings.Contains(dry.Prompt, "Training steps: 500") ||
+		dry.Plan[5].State != "skipped" || dry.Estimate.GPUHours.Value != 0.231 || !strings.Contains(dry.Prompt, "Training steps: 500") ||
 		!strings.Contains(dry.Prompt, "none (the project has not adopted dataset/replay-base)") {
 		t.Fatalf("dry run %+v", dry)
 	}
@@ -146,7 +146,7 @@ func TestPlaybooks(t *testing.T) {
 		t.Fatalf("playbook session %+v", s)
 	}
 	msgs := h.transcript(s.ID)
-	if len(msgs) < 2 || msgs[0].Kind != "notice" || !strings.Contains(msgs[0].Text, "estimate 0.20 GPU-hours") ||
+	if len(msgs) < 2 || msgs[0].Kind != "notice" || !strings.Contains(msgs[0].Text, "estimate 0.23 GPU-hours") ||
 		msgs[1].Kind != "user_message" || !strings.Contains(msgs[1].Text, "Fine-tune from a dataset version") {
 		t.Fatalf("transcript %+v", msgs)
 	}

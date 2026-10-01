@@ -154,6 +154,8 @@ pipeline and a written value is a visible departure.
 
 **R12 · Estimate model** (spec gap)
 - Training: GPU-hours = steps × seconds/step for (base model, card, memory cap, precision, bucket config).
+  As built (2026-10-01): plus a fixed per-lease overhead (model load, final validation, saves) — the calibration's
+  measured `leaseOverheadSeconds`, else `estimates.lease_overhead_seconds` (120 s, gate rehearsal); ± on the steps.
   Seconds/step is *measured* by `runs.calibrate` (OOMptimizer plus 50 timed steps) and cached; before any
   calibration a table in `defaults.yaml` answers, seeded from A3.
 - Eval: audio hours × RTF for (model size, card, latency setting), from the benchmark cache, seeded from A3.

@@ -21,7 +21,9 @@ contexts: [step:oomptimizer_calibrate, artifact:calibration, family:nemo.fastcon
 
 It writes one `calibration` artifact (JSON) with `secondsPerStep`, `secondsPerStepStd`, `plusMinus` (two standard errors of the mean step time, relative),
 `batchSize` (mean clips per step), `batchSizes` (`bucket_duration_bins`, `bucket_batch_size`), `bucketConfig` (the
-requested bins, tokens per second, longest clip), the precision, the memory cap and the peak card memory. The control
+requested bins, tokens per second, longest clip), the precision, the memory cap, the peak card memory and
+`leaseOverheadSeconds` — the fixed time a training lease adds around its steps: the model load it timed, one `.nemo`
+save it timed and a training-state save estimated as three of those. The control
 plane's calibration hook caches it per base model, card class, cap and precision; estimates then answer
 `basis: measured`. `nemotron_finetune` reads the buckets from it.
 

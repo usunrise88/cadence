@@ -166,20 +166,23 @@ func TestRunsEndToEnd(t *testing.T) {
 		"Idempotency-Key", e.key()), 201, &cal)
 	e.waitPipelineRun(cal.PipelineRun.ID, "done")
 	var est struct {
-		Basis          string
-		SecondsPerStep float64
-		PlusMinus      float64
-		Steps          int
-		GpuHours       runs.Range
-		Mix            struct{ Hash string }
-		Budget         struct {
+		Basis                string
+		SecondsPerStep       float64
+		LeaseOverheadSeconds float64
+		DurationSeconds      runs.Range
+		PlusMinus            float64
+		Steps                int
+		GpuHours             runs.Range
+		Mix                  struct{ Hash string }
+		Budget               struct {
 			GpuHoursPerProjectPerDay, UsedTodayGpuHours, RemainingGpuHours float64
 			WithinDailyBudget                                              bool
 		}
 	}
 	e.ok(newRun(body, "dryRun=true"), 200, &est)
-	// The pipeline's train step writes steps: 200; 200 × 0.5 s measured, ±10 %.
-	if est.Basis != "measured" || est.SecondsPerStep != 0.5 || est.PlusMinus != 0.1 || est.Steps != 200 || est.GpuHours.Value != 0.028 ||
+	// The pipeline's train step writes steps: 200; 20 s of measured lease overhead + 200 × 0.5 s, ±10 % on the steps.
+	if est.Basis != "measured" || est.SecondsPerStep != 0.5 || est.PlusMinus != 0.1 || est.Steps != 200 || est.GpuHours.Value != 0.033 ||
+		est.LeaseOverheadSeconds != 20 || est.DurationSeconds.Value != 120 || est.DurationSeconds.Low != 110 || est.DurationSeconds.High != 130 ||
 		!strings.HasPrefix(est.Mix.Hash, "b3:") || est.Budget.GpuHoursPerProjectPerDay != 8 || !est.Budget.WithinDailyBudget {
 		t.Fatalf("measured estimate %+v", est)
 	}

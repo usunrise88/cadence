@@ -22,6 +22,29 @@ func points(n int) ([]float64, []telemetry.Point) {
 	return xs, pts
 }
 
+// The lease overhead is added after the spread: the ± covers the steps, not the fixed load and saves.
+func TestSpreadAfter(t *testing.T) {
+	tests := []struct {
+		name                     string
+		fixed, v, pm             float64
+		digits                   int
+		wantValue, wantLo, wantH float64
+	}{
+		{"no overhead", 0, 100, 0.1, 0, 100, 90, 110},
+		{"overhead", 120, 2100, 0.2, 0, 2220, 1800, 2640},
+		{"gpu hours", 120.0 / 3600, 100.0 / 3600, 0.1, 3, 0.061, 0.058, 0.064},
+		{"spread above one", 10, 50, 1.5, 0, 60, 10, 135},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := spreadAfter(tt.fixed, tt.v, tt.pm, tt.digits)
+			if got != (Range{Value: tt.wantValue, Low: tt.wantLo, High: tt.wantH}) {
+				t.Fatalf("spreadAfter = %+v", got)
+			}
+		})
+	}
+}
+
 func TestBin(t *testing.T) {
 	tests := []struct {
 		name       string

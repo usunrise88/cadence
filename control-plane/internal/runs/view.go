@@ -21,6 +21,7 @@ type EstimateView struct {
 	GPUHours        Range      `json:"gpuHours"`
 	DurationSeconds Range      `json:"durationSeconds"`
 	SecondsPerStep  float64    `json:"secondsPerStep"`
+	LeaseOverhead   float64    `json:"leaseOverheadSeconds"`
 	Steps           int        `json:"steps"`
 	GPUs            int        `json:"gpus"`
 	Precision       string     `json:"precision"`
@@ -61,7 +62,7 @@ func (s *Service) renderVersion(v registry.Version) any {
 func (s *Service) estimateView(e Estimate) EstimateView {
 	v := EstimateView{
 		Basis: e.Basis, PlusMinus: e.PlusMinus, GPUHours: e.GPUHours, DurationSeconds: e.DurationSeconds, SecondsPerStep: e.SecondsPerStep,
-		Steps: e.Steps, GPUs: e.GPUs, Precision: e.Precision, Init: e.Init, BaseModelView: s.renderVersion(e.BaseModel),
+		LeaseOverhead: e.LeaseOverheadSeconds, Steps: e.Steps, GPUs: e.GPUs, Precision: e.Precision, Init: e.Init, BaseModelView: s.renderVersion(e.BaseModel),
 		Card: Card{ComputeID: e.Slot.Host.ID, Host: e.Slot.Host.Name, Index: e.Slot.Card.Index, CardClass: e.Slot.Card.CardClass,
 			MemoryCapGB: e.Slot.Card.MemoryCapGB},
 		Data:   DataView{Datasets: e.Data.Datasets, Hours: e.Data.Hours, Bytes: e.Data.Bytes},

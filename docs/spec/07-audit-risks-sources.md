@@ -518,9 +518,13 @@ Open questions:
       intermediate outputs during a lease (`workerOutputs.new`, `ctx.publish`, 06 "Worker protocol"); the NeMo kind
       saves a `.nemo` per validation (seconds of each lease, not measured on the card yet) and links `checkpoint_best`
       to the published one
-- [ ] G · measured estimates use the calibration's compute-only seconds per step (0.38 s); real steps are 0.53–0.56 s
-      and each lease adds ≈ 2 min of restore and saves, so short runs are estimated ≈ 2× low; decide how the estimate
-      adds loop overhead
+- [x] G2 · resolved in part: estimates add a per-lease overhead (calibration `leaseOverheadSeconds`: model load timed,
+      one `.nemo` save timed, state save ≈ 3 of those; else `estimates.lease_overhead_seconds` 120 s); the ± covers the
+      steps only
+- [ ] G2 · open: the calibration's seconds per step is still compute only (0.38 s vs 0.53–0.56 s in the loop:
+      validation passes, metric cadence, dataloader); validations × validation time is not in the estimate (the
+      calibration runs no validation and the estimate does not read `val_every`); one pass on the stand would give the
+      ratio to fold in
 - [x] G2 · resolved: progress reports no longer change a job's `rev` (only state, priority, pause and cancel do), so
       `jobs.pause` with a revision read before some heartbeats succeeds; `job.progress` events carry the progress
 - [x] G · resolved: a control-plane stop interrupts (snoozes) a step job waiting on a worker instead of failing it; the

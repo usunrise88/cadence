@@ -139,7 +139,9 @@ type Training struct {
 type Estimates struct {
 	BytesPerAudioHour Param[int64]   `yaml:"bytes_per_audio_hour"`
 	MeasuredPlusMinus Param[float64] `yaml:"measured_plus_minus"`
-	Training          []EstimateRow  `yaml:"training"`
+	// LeaseOverheadSeconds is the fixed time a lease adds to its steps when a calibration measured none.
+	LeaseOverheadSeconds Param[float64] `yaml:"lease_overhead_seconds"`
+	Training             []EstimateRow  `yaml:"training"`
 }
 
 // EstimateRow is the measured-or-assumed speed of one base model on one card class under one memory cap.

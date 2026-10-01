@@ -511,10 +511,11 @@ func TestRunEstimate(t *testing.T) {
 	eventsBefore := e.count("SELECT count(*) FROM events")
 	var est estimate
 	e.ok(dry(`{"init":"base","gpus":1,"datasets":["dataset/fleurs-he-smoke","dataset/fleurs-ru-smoke","dataset/fleurs-he-smoke"]}`), 200, &est)
-	// 3 000 steps × 0.7 ± 0.2 s/step (the table row, spike A3) on the staging card.
+	// 120 s of lease overhead (estimates.lease_overhead_seconds) + 3 000 steps × 0.7 ± 0.2 s/step (the table row,
+	// spike A3) on the staging card; the ± applies to the steps.
 	if est.Basis != "table" || est.PlusMinus != 0.2 || est.Steps != 3000 || est.Gpus != 1 || est.Init != "base" ||
-		est.GpuHours.Value != 0.583 || est.GpuHours.Low != 0.467 || est.GpuHours.High != 0.7 ||
-		est.DurationSeconds.Value != 2100 || est.DurationSeconds.Low != 1680 || est.DurationSeconds.High != 2520 {
+		est.GpuHours.Value != 0.617 || est.GpuHours.Low != 0.5 || est.GpuHours.High != 0.733 ||
+		est.DurationSeconds.Value != 2220 || est.DurationSeconds.Low != 1800 || est.DurationSeconds.High != 2640 {
 		t.Fatalf("estimate numbers: %+v", est)
 	}
 	if est.Card.Host != "staging" || est.Card.Index != 0 || est.Card.CardClass != "blackwell-48gb" || est.Card.MemoryCapGb != 22 ||
@@ -530,7 +531,7 @@ func TestRunEstimate(t *testing.T) {
 	}
 
 	e.ok(dry(`{"steps":50000}`), 200, &est)
-	if est.GpuHours.Value != 9.722 || est.Budget.WithinDailyBudget {
+	if est.GpuHours.Value != 9.756 || est.Budget.WithinDailyBudget {
 		t.Errorf("long run: %+v", est.GpuHours)
 	}
 
