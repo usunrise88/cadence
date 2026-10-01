@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { QueueEntry } from "@/api/gen/types.gen";
-import { appendTelemetry, formatDuration, groupEntries, reorderPriority, sortEntries, splitMemory, trainingSlot, WINDOW_SECONDS, type Sample } from "./model";
+import { appendTelemetry, formatDuration, groupEntries, reorderPriority, sortEntries, splitMemory, trainingSlot, WINDOW_SECONDS, type PriorityEdit, type Sample } from "./model";
 
 const entry = (jobId: string, over: Partial<QueueEntry> = {}): QueueEntry => ({
   jobId,
@@ -43,11 +43,61 @@ describe("queue order", () => {
   it("moves an entry past its neighbour, within the contract's range", () => {
     const q = sortEntries([entry("a", { priority: 3 }), entry("b", { priority: 3, enqueuedAt: "2026-09-30T10:05:00Z" }), entry("c", { priority: 1000 })]);
     expect(q.map((e) => e.jobId)).toEqual(["c", "a", "b"]);
-    expect(reorderPriority(q, "b", -1)).toBe(4);
-    expect(reorderPriority(q, "a", -1)).toBe(1000); // clamped
-    expect(reorderPriority(q, "a", 1)).toBe(2);
+    expect(reorderPriority(q, "b", -1)).toEqual([{ jobId: "b", priority: 4 }]);
+    // c sits at the top of the range; a ties with it and wins on the job id.
+    expect(reorderPriority(q, "a", -1)).toEqual([{ jobId: "a", priority: 1000 }]);
+    expect(reorderPriority(q, "a", 1)).toEqual([{ jobId: "a", priority: 2 }]);
     expect(reorderPriority(q, "c", -1)).toBeUndefined();
     expect(reorderPriority(q, "b", 1)).toBeUndefined();
+  });
+
+  const at = (min: number) => `2026-09-30T10:${String(min).padStart(2, "0")}:00Z`;
+  const moved = (q: QueueEntry[], edits: PriorityEdit[] | undefined) => {
+    const next = new Map((edits ?? []).map((e) => [e.jobId, e.priority]));
+    return sortEntries(q.map((e) => ({ ...e, priority: next.get(e.jobId) ?? e.priority }))).map((e) => e.jobId);
+  };
+
+  it("takes the neighbour's priority when FIFO already puts the entry past it", () => {
+    // b (priority 1) was enqueued before a (priority 2): priority 2 puts it right above a, not above x.
+    const q = sortEntries([entry("x", { priority: 3 }), entry("a", { priority: 2, enqueuedAt: at(5) }), entry("b", { priority: 1, enqueuedAt: at(1) })]);
+    expect(reorderPriority(q, "b", -1)).toEqual([{ jobId: "b", priority: 2 }]);
+  });
+
+  it("moves exactly one place among equal priorities", () => {
+    const q = sortEntries(["w", "x", "a", "b", "y"].map((id, n) => entry(id, { priority: 5, enqueuedAt: at(n) })));
+    // One above a alone would put b above w and x too. Raising b with w and x takes three edits; sinking a with y
+    // (the one entry behind b) takes two.
+    const up = reorderPriority(q, "b", -1);
+    expect(up).toEqual([
+      { jobId: "a", priority: 4 },
+      { jobId: "y", priority: 4 },
+    ]);
+    expect(moved(q, up)).toEqual(["w", "x", "b", "a", "y"]);
+    const down = reorderPriority(q, "x", 1);
+    expect(down).toEqual([
+      { jobId: "a", priority: 6 },
+      { jobId: "w", priority: 6 },
+    ]);
+    expect(moved(q, down)).toEqual(["w", "a", "x", "b", "y"]);
+    // At either end of the run one edit does it.
+    expect(reorderPriority(q, "w", 1)).toEqual([{ jobId: "x", priority: 6 }]);
+    expect(reorderPriority(q, "y", -1)).toEqual([{ jobId: "b", priority: 4 }]);
+  });
+
+  it("keeps the order of the entries it shifts, and prefers the moved entry's own edit on a tie", () => {
+    // v (priority 6) was enqueued last: raising x to 6 would put x above it, so v rises too.
+    const q = sortEntries([
+      entry("v", { priority: 6, enqueuedAt: at(9) }),
+      ...["x", "a", "b", "c", "d"].map((id, n) => entry(id, { priority: 5, enqueuedAt: at(n + 1) })),
+    ]);
+    expect(q.map((e) => e.jobId)).toEqual(["v", "x", "a", "b", "c", "d"]);
+    const edits = reorderPriority(q, "b", -1);
+    expect(edits).toEqual([
+      { jobId: "b", priority: 6 },
+      { jobId: "v", priority: 7 },
+      { jobId: "x", priority: 6 },
+    ]);
+    expect(moved(q, edits)).toEqual(["v", "x", "b", "a", "c", "d"]);
   });
 });
 

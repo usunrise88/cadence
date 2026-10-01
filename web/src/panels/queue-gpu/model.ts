@@ -38,17 +38,68 @@ export function trainingSlot(entries: QueueEntry[] | undefined): QueueEntry | un
   return entries?.find((e) => e.jobKind === "training" && (e.state === "running" || e.state === "stopping"));
 }
 
+/** One `jobs.edit` of a reorder: the entry and its new priority. */
+export type PriorityEdit = { jobId: string; priority: number };
+
+const PRIORITY_MIN = -1000;
+const PRIORITY_MAX = 1000;
+
 /**
- * The priority that moves a waiting entry one place up or down in the queue: one above the entry it passes (or one
- * below), within the contract's range. Undefined when it is already first or last.
+ * The priority edits that move a waiting entry exactly one place up (dir −1) or down (dir 1) in `queue` (sorted with
+ * `sortEntries`): it swaps places with its neighbour and nothing else moves. The rule, smallest change first:
+ *
+ * 1. One edit, preferring the moved entry: give it the neighbour's priority, or one past it, whichever is the smaller
+ *    change that sorts it right past the neighbour (FIFO and the job id break ties); failing that, give the neighbour
+ *    the moved entry's priority or one past it.
+ * 2. When neighbours share a priority no single value can do it (one above the neighbour would also pass every entry
+ *    tied with it). Then the moved entry goes one past the neighbour together with the fewest entries on the far side
+ *    of the neighbour (those it would otherwise pass), each shifted by one in the same direction so their own order
+ *    holds — or, if that takes fewer edits, the neighbour moves one the other way together with the entries it would
+ *    otherwise pass.
+ *
+ * Every candidate is checked by sorting the edited queue; values stay within the contract's range [−1000, 1000].
+ * Undefined when the entry is already first or last, or no edit within the range moves it exactly one place.
  */
-export function reorderPriority(queue: QueueEntry[], jobId: string, dir: -1 | 1): number | undefined {
+export function reorderPriority(queue: QueueEntry[], jobId: string, dir: -1 | 1): PriorityEdit[] | undefined {
   const i = queue.findIndex((e) => e.jobId === jobId);
-  const j = i + (dir < 0 ? -1 : 1);
+  const j = i + dir;
   if (i < 0 || j < 0 || j >= queue.length) return undefined;
-  const other = queue[j]!.priority;
-  const p = dir < 0 ? other + 1 : other - 1;
-  return Math.max(-1000, Math.min(1000, p));
+  const target = queue.map((e) => e.jobId);
+  target[i] = queue[j]!.jobId;
+  target[j] = jobId;
+  const valid = (edits: PriorityEdit[]) => {
+    if (edits.some((e) => e.priority < PRIORITY_MIN || e.priority > PRIORITY_MAX)) return false;
+    const next = new Map(edits.map((e) => [e.jobId, e.priority]));
+    const order = sortEntries(queue.map((e) => (next.has(e.jobId) ? { ...e, priority: next.get(e.jobId)! } : e)));
+    return order.every((e, k) => e.jobId === target[k]);
+  };
+  // The pair ends up swapped: `bottom` rises above `top`, or `top` sinks below `bottom`.
+  const hi = Math.min(i, j);
+  const lo = Math.max(i, j);
+  const top = queue[hi]!;
+  const bottom = queue[lo]!;
+  // `rise(k)`: bottom one above top, the k entries ahead of top one up each. `sink(k)`: top one below bottom, the k
+  // entries behind bottom one down each.
+  const rise = (k: number): PriorityEdit[] | undefined =>
+    hi - k < 0 ? undefined : [{ jobId: bottom.jobId, priority: top.priority + 1 }, ...queue.slice(hi - k, hi).map((e) => ({ jobId: e.jobId, priority: e.priority + 1 }))];
+  const sink = (k: number): PriorityEdit[] | undefined =>
+    lo + k >= queue.length ? undefined : [{ jobId: top.jobId, priority: bottom.priority - 1 }, ...queue.slice(lo + 1, lo + 1 + k).map((e) => ({ jobId: e.jobId, priority: e.priority - 1 }))];
+  const sameAs = (who: QueueEntry, priority: number): PriorityEdit[] | undefined => (who.priority === priority ? undefined : [{ jobId: who.jobId, priority }]);
+  // The moved entry's own change first, then its neighbour's.
+  const [first, second] = dir < 0 ? [rise, sink] : [sink, rise];
+  const single = dir < 0 ? [sameAs(bottom, top.priority), rise(0), sameAs(top, bottom.priority), sink(0)] : [sameAs(top, bottom.priority), sink(0), sameAs(bottom, top.priority), rise(0)];
+  for (const edits of single) if (edits && valid(edits)) return edits;
+  const smallest = (shift: (k: number) => PriorityEdit[] | undefined) => {
+    for (let k = 1; ; k++) {
+      const edits = shift(k);
+      if (!edits) return undefined;
+      if (valid(edits)) return edits;
+    }
+  };
+  const a = smallest(first);
+  const b = smallest(second);
+  if (a && b) return b.length < a.length ? b : a;
+  return a ?? b;
 }
 
 // ---------------------------------------------------------------- telemetry

@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 import { EmptyState, PanelToolbar, StatusChip } from "@/shell/entity/primitives";
 import { TimeSeriesChart, type TimeSeries } from "@/shell/charts";
 import { errorMessage, focusJob, focusPipelineRun, formatWindows, openDocument, openPanelById, runCommand, useProject, useTopic, type PanelProps } from "@/shell/panel";
-import { appendTelemetry, cardKey, formatDuration, groupEntries, reorderPriority, seedTelemetry, splitMemory, trainingSlot, type Sample, type Telemetry } from "./model";
+import { appendTelemetry, cardKey, formatDuration, groupEntries, reorderPriority, seedTelemetry, splitMemory, trainingSlot, type PriorityEdit, type Sample, type Telemetry } from "./model";
 
 // Queue & GPU (docs/spec/11-ui-panels.md "Panel catalogue"): the step queue per card — waiting, paused, running and
 // stopping jobs with priority, project and who holds the training slot — and each card's memory (resident services
@@ -272,6 +272,11 @@ function focusEntry(e: QueueEntry, slugOf: Map<string, string>) {
   if (e.pipelineRunId) focusPipelineRun(e.pipelineRunId);
 }
 
+/** Applies a reorder's priority edits one `jobs.edit` at a time, in order. */
+async function applyEdits(edits: PriorityEdit[]) {
+  for (const { jobId, priority } of edits) await runCommand("jobs.edit", { jobId, priority });
+}
+
 const STATE_CHIP: Record<QueueEntry["state"], string> = { running: "running", stopping: "paused", waiting: "queued", paused: "paused" };
 
 function EntryRow({ e, slugOf, queue }: { e: QueueEntry; slugOf: Map<string, string>; queue?: QueueEntry[] }) {
@@ -320,10 +325,10 @@ function EntryRow({ e, slugOf, queue }: { e: QueueEntry; slugOf: Map<string, str
       <div className="flex flex-wrap items-center gap-1">
         {queue ? (
           <>
-            <Button size="icon-xs" variant="ghost" aria-label={`Move ${e.kind} up`} disabled={busy || up === undefined} onClick={() => up !== undefined && void act(() => runCommand("jobs.edit", { jobId: e.jobId, priority: up }))} data-command="jobs.edit">
+            <Button size="icon-xs" variant="ghost" aria-label={`Move ${e.kind} up`} disabled={busy || up === undefined} onClick={() => up && void act(() => applyEdits(up))} data-command="jobs.edit">
               <NavArrowUp aria-hidden />
             </Button>
-            <Button size="icon-xs" variant="ghost" aria-label={`Move ${e.kind} down`} disabled={busy || down === undefined} onClick={() => down !== undefined && void act(() => runCommand("jobs.edit", { jobId: e.jobId, priority: down }))} data-command="jobs.edit">
+            <Button size="icon-xs" variant="ghost" aria-label={`Move ${e.kind} down`} disabled={busy || down === undefined} onClick={() => down && void act(() => applyEdits(down))} data-command="jobs.edit">
               <NavArrowDown aria-hidden />
             </Button>
           </>
