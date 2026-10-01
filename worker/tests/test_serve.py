@@ -165,6 +165,43 @@ def test_published_outputs_reach_the_control_plane_before_the_release(
     assert cp.releases["lse_p"]["state"] == "done"
 
 
+def _strict(raw: bytes) -> Any:
+    def refuse(name: str) -> Any:
+        raise ValueError(f"{name} is not JSON")
+
+    return [json.loads(line, parse_constant=refuse) for line in raw.decode().splitlines() if line]
+
+
+def test_non_finite_metrics_do_not_cost_the_release(
+    tmp_path: Path, cp: FakeControlPlane, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """val_wer = 0/0 must not turn a request into invalid JSON (a 400 without retry loses the release)."""
+    monkeypatch.setenv("PYTHONPATH", str(TESTS))
+    svc = service(tmp_path, cp)
+    cp.leases.append(lease("NonFinite", lease_id="lse_n"))
+    run_until_released(svc, cp)
+    for _, _, headers, body in cp.requests:
+        if "json" in headers.get("content-type", ""):
+            _strict(body)
+    rel = cp.releases["lse_n"]
+    assert rel["state"] == "done"
+    assert rel["metrics"] == {"loss": 0.5}
+    assert rel["outputs"]["checkpoint"]["meta"]["valWer"] is None
+    assert [o["artifact"]["meta"]["valWer"] for o in cp.outputs] == [None]
+    assert [p["name"] for p in cp.metrics] == ["loss"]
+
+
+def test_the_client_refuses_to_send_non_finite_numbers(cp: FakeControlPlane) -> None:
+    client = WorkerClient("http://cp", lambda: "cwk_test", transport=httpx.MockTransport(cp.handler))
+    with pytest.raises(ValueError, match="not JSON compliant"):
+        client.metrics("lse_x", [{"name": "val_wer", "value": float("nan"), "wallTime": "2026-10-01T00:00:00Z"}])
+    with pytest.raises(ValueError, match="not JSON compliant"):
+        client.logs(
+            "lse_x", [{"t": "2026-10-01T00:00:00Z", "level": "info", "msg": "x", "fields": {"v": float("inf")}}]
+        )
+    assert cp.requests == []
+
+
 def test_a_stop_ack_cancels_with_the_training_state(
     tmp_path: Path, cp: FakeControlPlane, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -154,6 +154,51 @@ def test_secrets_reach_only_the_step_and_are_redacted(tmp_path: Path, monkeypatc
     assert '"token": "[redacted]"' in dumped
 
 
+def test_non_finite_numbers_never_leave_the_worker(tmp_path: Path) -> None:
+    r, sink, _ = runner(tmp_path, lease("NonFinite"))
+    out = r.run()
+    assert out["state"] == "done", out
+    # Points: only the finite one, without its NaN epoch.
+    assert [(p["name"], p["value"], p.get("step"), "epoch" in p) for p in sink.metrics] == [("loss", 0.5, 20, False)]
+    warnings = [line["msg"] for line in sink.logs if line["level"] == "warn"]
+    assert sum("'val_wer'" in w for w in warnings) == 1  # once per name, not per point
+    assert sum("'grad_norm'" in w for w in warnings) == 1
+    assert any("val_wer" in w and "published checkpoint" in w for w in warnings)
+    assert any("seconds_per_step" in w and "outcome" in w for w in warnings)
+    assert sink.progresses == [(0.0, "validating")]
+    [published] = sink.published
+    assert published.get("metrics") == {"loss": 0.5}
+    assert published["artifact"].get("meta") == {"step": 20, "valWer": None, "curve": [1.0, None], "layout": "file"}
+    assert out.get("metrics") == {"loss": 0.5}
+    assert out["outputs"]["checkpoint"].get("meta") == {"step": 30, "valWer": None, "layout": "file"}
+    for doc in (out, sink.published, sink.metrics, sink.logs, sink.progresses):
+        json.dumps(doc, allow_nan=False)
+
+
+def test_error_meta_and_progress_are_redacted(tmp_path: Path) -> None:
+    secret = "hf_leaky42"
+    r, sink, _ = runner(tmp_path, lease("Leaky", env={"HF_TOKEN": secret}))
+    out = r.run()
+    assert out["state"] == "failed", out
+    msg = out["error"]["message"]
+    assert "token=[redacted]" in msg
+    assert "Bearer [redacted]" in msg
+    assert "agent [redacted], key [redacted]" in msg
+    assert sink.progresses == [(0.5, "downloading with [redacted]")]
+    [published] = sink.published
+    assert published["artifact"].get("meta") == {
+        "source": "https://user:[redacted]@hub.example/model",
+        "note": ["[redacted]"],
+        "layout": "file",
+    }
+    fields = next(line.get("fields") or {} for line in sink.logs if line["msg"] == "a token")
+    assert fields["agent"] == 'say "[redacted]"'
+    assert fields["[redacted]"] == "as a key"
+    everything = json.dumps([out, sink.published, sink.logs, sink.progresses])
+    for leaked in (secret, "cst_AbCd", "cdk_0123", "abc.def"):
+        assert leaked not in everything
+
+
 def test_cpu_steps_are_kept_off_the_card(tmp_path: Path) -> None:
     le = lease("EnvProbe")
     le["spec"]["resources"] = {"gpu": False}

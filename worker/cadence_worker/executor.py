@@ -21,7 +21,7 @@ import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import IO, Any, Protocol
+from typing import IO, Any, Protocol, cast
 
 from cadence_worker.cas import CasError, Store, parse_uri
 from cadence_worker.protocol_gen import (
@@ -35,13 +35,13 @@ from cadence_worker.protocol_gen import (
 )
 from cadence_worker.registry import KindEntry
 from cadence_worker.run_step import EVENT_FD_ENV, MEMORY_CAP_ENV
+from cadence_worker.sanitize import Redactor, finite, finite_metrics
 from cadence_worker.steps.context import now_iso
 from cadence_worker.tracing import Span
 
 TRAINING_STATE = "training-state"
 # Never handed to a step: the worker's own credential and where the control plane is.
 WORKER_ONLY_ENV = ("CADENCE_WORKER_TOKEN_FILE", "CADENCE_URL", "CADENCE_WORKER_TOKEN")
-REDACTED = "[redacted]"
 
 
 class Sink(Protocol):
@@ -111,7 +111,8 @@ class LeaseRunner:
         self.stop_reason: str | None = None
         self._lock = threading.Lock()
         self._threads: list[threading.Thread] = []
-        self._secrets = sorted((v for v in (lease.get("env") or {}).values() if len(v) >= 4), key=len, reverse=True)
+        self._redactor = Redactor((lease.get("env") or {}).values())
+        self._dropped_metrics: set[str] = set()
         self.last_progress: tuple[float, str] | None = None
         # Intermediate outputs (ctx.publish) are stored and sent in order on their own thread, so hashing a large
         # checkpoint never stalls the step's event pipe; the outcome waits for them.
@@ -135,17 +136,20 @@ class LeaseRunner:
         out: StepOutcome = failed("step", "the worker stopped before the step ended")
         try:
             prepared = self.prepare()
-            if isinstance(prepared, dict):
+            if prepared is not None:
                 out = prepared
-                return out
-            self.start()
-            out = self.wait()
-            return out
+            else:
+                self.start()
+                out = self.wait()
         finally:
             err = out.get("error")
+            if err:
+                # Error text often quotes a failing request or an environment dump, and agents read it.
+                err["message"] = self.redact(str(err.get("message", "")))[:4000]
             self.span.end(out["state"], err["message"] if err else "")
             if not self.keep_scratch:
                 shutil.rmtree(self.dir, ignore_errors=True)
+        return out
 
     def prepare(self) -> StepOutcome | None:
         """Materialise inputs and write step.json; a failed outcome when the lease cannot run here."""
@@ -276,9 +280,24 @@ class LeaseRunner:
         self._threads.append(t)
 
     def redact(self, s: str) -> str:
-        for v in self._secrets:
-            s = s.replace(v, REDACTED)
-        return s
+        """s without the lease's secret values or credential-shaped tokens (agents read what the step reports)."""
+        return self._redactor.text(s)
+
+    def clean(self, v: Any) -> Any:
+        """A JSON-ready copy of meta or log fields: strings redacted, non-finite numbers as null."""
+        return self._redactor.value(v)
+
+    def _warn(self, msg: str) -> None:
+        self.sink.log({"t": now_iso(), "level": "warn", "msg": self.redact(msg)[:16000], "fields": self.span.fields()})
+
+    def finite_metrics(self, metrics: Any, where: str) -> dict[str, float]:
+        """The finite entries of a step's metrics; a dropped one (NaN, ±inf: val_wer = 0/0) is a warning line."""
+        kept = finite_metrics(metrics)
+        if isinstance(metrics, Mapping):
+            dropped = sorted(str(k) for k in metrics if str(k) not in kept)
+            if dropped:
+                self._warn(f"dropped non-finite metrics {', '.join(dropped)} from {where}")
+        return kept
 
     def _read_output(self, stream: IO[bytes]) -> None:
         with stream:
@@ -314,24 +333,37 @@ class LeaseRunner:
             }
             fields: dict[str, Any] = {}
             if isinstance(ev.get("fields"), dict):
-                fields = json.loads(self.redact(json.dumps(ev["fields"], default=str)))
+                fields = self.clean(ev["fields"])
             line["fields"] = {**fields, **self.span.fields()}
             self.sink.log(line)
         elif kind == "metric":
-            point: MetricPoint = {"name": str(ev["name"]), "value": float(ev["value"]), "wallTime": str(ev["wallTime"])}
-            if "step" in ev:
-                point["step"] = int(ev["step"])
-            if "epoch" in ev:
-                point["epoch"] = float(ev["epoch"])
-            self.sink.metric(point)
+            self._metric(ev)
         elif kind == "progress":
-            self.last_progress = (float(ev.get("fraction", 0.0)), str(ev.get("message", "")))
+            fraction = min(1.0, max(0.0, finite(ev.get("fraction", 0.0)) or 0.0))
+            self.last_progress = (fraction, self.redact(str(ev.get("message", "")))[:500])
             self.sink.progress(*self.last_progress)
         elif kind == "publish":
             if self._publisher is None:
                 self._publisher = threading.Thread(target=self._publish_loop, daemon=True, name="publish")
                 self._publisher.start()
             self._publications.put(ev)
+
+    def _metric(self, ev: Mapping[str, Any]) -> None:
+        """A metric point; one whose value is not a finite number is dropped (JSON has no NaN), with a warning line
+        the first time per name."""
+        name = str(ev.get("name", ""))
+        value = finite(ev.get("value"))
+        if value is None:
+            if name not in self._dropped_metrics:
+                self._dropped_metrics.add(name)
+                self._warn(f"dropped metric {name!r}: {ev.get('value')!r} is not a finite number (reported once)")
+            return
+        point: MetricPoint = {"name": name, "value": value, "wallTime": str(ev.get("wallTime") or now_iso())}
+        if isinstance(ev.get("step"), int):
+            point["step"] = int(ev["step"])
+        if (epoch := finite(ev.get("epoch"))) is not None:
+            point["epoch"] = epoch
+        self.sink.metric(point)
 
     # ---------------------------------------------------------------- intermediate outputs
 
@@ -340,14 +372,7 @@ class LeaseRunner:
             try:
                 self.publish(ev)
             except Exception as e:
-                self.sink.log(
-                    {
-                        "t": now_iso(),
-                        "level": "warn",
-                        "msg": f"could not publish output {ev.get('output')!r}: {e}"[:16000],
-                        "fields": self.span.fields(),
-                    }
-                )
+                self._warn(f"could not publish output {ev.get('output')!r}: {e}")
 
     def publish(self, ev: Mapping[str, Any]) -> WorkerOutput:
         """Store one ctx.publish path (inside the lease's scratch directory) and send it as an instance of one of the
@@ -362,14 +387,15 @@ class LeaseRunner:
         if not p.exists():
             raise FileNotFoundError(f"{p} does not exist")
         stored = self.store.put_path(p)
-        meta: dict[str, Any] = dict(ev.get("meta") or {})
+        raw_meta = ev.get("meta")
+        meta: dict[str, Any] = self.clean(raw_meta) if isinstance(raw_meta, Mapping) else {}
         meta.setdefault("layout", "dir" if stored.directory else "file")
         out: WorkerOutput = {
             "name": name,
             "artifact": {"hash": stored.hash, "type": typ, "size": stored.size, "meta": meta},
         }
-        if isinstance(ev.get("metrics"), dict) and ev["metrics"]:
-            out["metrics"] = {str(k): float(v) for k, v in ev["metrics"].items()}
+        if metrics := self.finite_metrics(ev.get("metrics"), f"the published {name}"):
+            out["metrics"] = metrics
         self.sink.publish(out)
         self.published.append(out)
         if p.is_dir():
@@ -392,11 +418,12 @@ class LeaseRunner:
             if self.stop_reason:
                 return {"state": "cancelled", "error": {"type": "cancelled", "message": self.stop_reason}}
             return failed("step", f"the step process exited with code {code} without a result")
-        metrics = {k: float(v) for k, v in (result.get("metrics") or {}).items()}
-        meta: dict[str, Any] = result.get("meta") or {}
+        metrics = self.finite_metrics(result.get("metrics"), "the outcome")
+        raw_meta = result.get("meta")
+        meta: dict[str, Any] = self.clean(raw_meta) if isinstance(raw_meta, Mapping) else {}
         state = result.get("state")
         if state == "failed":
-            out: StepOutcome = {"state": "failed", "error": result["error"]}
+            out: StepOutcome = {"state": "failed", "error": cast(StepError, dict(result["error"]))}
             if metrics:
                 out["metrics"] = metrics
             return out

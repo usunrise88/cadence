@@ -133,3 +133,54 @@ class Publisher:
         ctx.publish("hypotheses", second, {})  # not an output of this kind: logged, not sent
         outputs["checkpoint"].write_text("weights at 30", encoding="utf-8")
         outputs["state"].write_text("state at 30", encoding="utf-8")
+
+
+class NonFinite:
+    """Reports NaN and ±inf (val_wer = 0/0 on an empty validation set) in metric points, a publication, its meta and
+    its final metrics; none of them may leave the worker."""
+
+    version: ClassVar[str] = "1"
+    consumes: ClassVar[Mapping[str, str]] = {}
+    produces: ClassVar[Mapping[str, str]] = {"checkpoint": "checkpoint"}
+    resources: ClassVar[StepResources] = {"gpu": False, "jobKind": "training"}
+    Params: ClassVar[type[BaseModel]] = NoParams
+
+    def run(self, params: BaseModel, inputs: Mapping[str, Path], outputs: Mapping[str, Path], ctx: StepContext) -> None:
+        nan, inf = float("nan"), float("inf")
+        ctx.metric("val_wer", nan, step=10)
+        ctx.metric("val_wer", nan, step=20)
+        ctx.metric("grad_norm", inf, step=20)
+        ctx.metric("loss", 0.5, step=20, epoch=nan)
+        ctx.progress(nan, "validating")
+        ckpt = ctx.work_dir / "ckpt-20.bin"
+        ckpt.write_text("weights at 20", encoding="utf-8")
+        meta = {"step": 20, "valWer": nan, "curve": [1.0, -inf]}
+        ctx.publish("checkpoint", ckpt, meta, {"val_wer": nan, "loss": 0.5})
+        outputs["checkpoint"].write_text("weights", encoding="utf-8")
+        ctx.set_meta("checkpoint", {"step": 30, "valWer": nan})
+        ctx.final_metric("seconds_per_step", inf)
+
+
+class Leaky:
+    """Puts its secret and credential-shaped tokens in a progress message, log fields, an output's meta and its
+    error."""
+
+    version: ClassVar[str] = "1"
+    consumes: ClassVar[Mapping[str, str]] = {}
+    produces: ClassVar[Mapping[str, str]] = {"checkpoint": "checkpoint"}
+    resources: ClassVar[StepResources] = {"gpu": False}
+    secrets: ClassVar[tuple[str, ...]] = ("HF_TOKEN",)
+    Params: ClassVar[type[BaseModel]] = NoParams
+
+    def run(self, params: BaseModel, inputs: Mapping[str, Path], outputs: Mapping[str, Path], ctx: StepContext) -> None:
+        secret = os.environ.get("HF_TOKEN", "")
+        ctx.progress(0.5, f"downloading with {secret}")
+        ckpt = ctx.work_dir / "ckpt.bin"
+        ckpt.write_text("weights", encoding="utf-8")
+        ctx.publish("checkpoint", ckpt, {"source": f"https://user:{secret}@hub.example/model", "note": [secret]})
+        ctx.set_meta("checkpoint", {"auth": f"Bearer {secret}"})
+        ctx.log("a token", agent='say "cst_AbCdEf1234567890"', **{secret: "as a key"})
+        raise RuntimeError(
+            f"401 for https://hub.example?token={secret}; header Authorization: Bearer abc.def-ghi_jkl; "
+            "agent cst_AbCdEf1234567890XyZ, key cdk_0123456789abcdef"
+        )
