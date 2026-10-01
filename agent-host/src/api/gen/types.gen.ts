@@ -3024,6 +3024,10 @@ export type StepKindDescriptor = {
     produces: {
         [key: string]: string;
     };
+    /**
+     * Outputs of produces a successful step may leave unwritten (a train step's final training state); no pipeline may wire them into another step
+     */
+    optionalOutputs?: Array<string>;
     resources: StepResources;
     /**
      * The model-family role this kind fills (calibrate, train, average, transcribe, export, parity), empty for neutral kinds

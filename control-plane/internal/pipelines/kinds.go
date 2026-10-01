@@ -20,9 +20,11 @@ type Kind struct {
 	Params           json.RawMessage   `json:"params"`
 	Consumes         map[string]string `json:"consumes"`
 	Produces         map[string]string `json:"produces"`
-	Resources        steps.Resources   `json:"resources"`
-	Secrets          []string          `json:"secrets,omitempty"`
-	Help             string            `json:"help,omitempty"`
+	// OptionalOutputs may be left unwritten by a successful step; no pipeline wires them into another step.
+	OptionalOutputs []string        `json:"optionalOutputs,omitempty"`
+	Resources       steps.Resources `json:"resources"`
+	Secrets         []string        `json:"secrets,omitempty"`
+	Help            string          `json:"help,omitempty"`
 	// EstimateSeconds is an optional fixed wall-time estimate a kind may publish (a data step's typical time);
 	// facades pass better ones per run (StartInput.Estimates).
 	EstimateSeconds *float64 `json:"estimateSeconds,omitempty"`

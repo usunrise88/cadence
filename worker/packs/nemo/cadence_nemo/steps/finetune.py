@@ -106,6 +106,8 @@ class FinetuneStep:
         "checkpoint_best": "checkpoint",
         "state": "training-state",
     }
+    # Written only when the step stops early (cancel, pause, a closing window) — what runs.resume continues from.
+    optional_outputs: ClassVar[frozenset[str]] = frozenset({"state"})
     # No memoryGb: the step sizes itself to the lease's cap, so it reserves the card's whole remaining cap and takes
     # the card alone (06 "Worker protocol"). A declared 24 never fitted the staging card's 22 GB cap.
     resources: ClassVar[StepResources] = {"gpu": True, "gpus": 1, "diskGb": 40, "jobKind": "training"}
@@ -316,8 +318,10 @@ class FinetuneStep:
             return
         if monitor.last_val_step != step and val:
             trainer.validate(model, dataloaders=model._validation_dl, verbose=False)
-        save_state(trainer, step)
-        ctx.set_meta("state", {"family": NAME, "step": step})
+        # A finished stage writes no training state: nothing resumes a run that ended (runs.stage continues from a
+        # checkpoint), and the state is 7.66 GB (docs/spec/07 D). A periodic one written meanwhile was published
+        # already; the scratch copy is dropped so the release does not store it again.
+        shutil.rmtree(state_dir, ignore_errors=True)
 
         training.clean_data_config(model)
         last_dir = outputs["checkpoint"]

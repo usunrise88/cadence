@@ -140,7 +140,8 @@ Open questions:
   skip the mirror (they are only ever read to resume) and are evictable without it; or the mirror must live on
   another filesystem, checked at start.
   Decided by the owner 2026-10-01: training states skip the mirror and are evictable without it (an eviction is
-  permanent). The final state of a finished fine-tune: see the optional-output change in the same commit series.
+  permanent). A finished fine-tune writes no final state any more: `nemotron_finetune` declares `state` an optional
+  output (`StepKindDescriptor.optionalOutputs`), released only when the step stops early.
 - [ ] N: the augmentation profile is the finetune step's `augmentation` parameter (default `packs.nemo.augmentation`,
   the telephony chain: 8 kHz band-limit with G.711 μ-law/A-law or GSM, gain, speed 0.95–1.05); a project's
   `augment/*.yaml` file is not read yet (no artifact type or recipe convention carries it to the step). AMR-NB and

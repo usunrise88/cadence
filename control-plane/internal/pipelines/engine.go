@@ -19,6 +19,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"slices"
 	"sync/atomic"
 	"time"
 
@@ -685,9 +686,22 @@ func indexOf(sts []StepRow, id string) int {
 // run. Missing, mistyped or absent-from-store outputs and failing hooks fail the step instead.
 func (e *Engine) succeed(ctx context.Context, tx pgx.Tx, r *Run, sts []StepRow, i int, spec steps.Spec, out steps.Outcome) ([]events.Draft, error) {
 	s := &sts[i]
+	var optional []string // outputs the kind may leave unwritten, read only when one is missing
 	for _, name := range sortedKeys(s.Produces) {
 		ref, ok := out.Outputs[name]
+		if !ok && optional == nil {
+			k, found, err := (RegistryKinds{}).Lookup(ctx, tx, s.Kind, s.KindVersion)
+			if err != nil {
+				return nil, err
+			}
+			optional = []string{}
+			if found {
+				optional = k.OptionalOutputs
+			}
+		}
 		switch {
+		case !ok && slices.Contains(optional, name):
+			continue
 		case !ok:
 			return e.fail(ctx, tx, r, sts, i, steps.StepError{Type: steps.ErrStep, Message: fmt.Sprintf("the step reported no output %q (%s)", name, s.Produces[name])})
 		case ref.Type != s.Produces[name]:

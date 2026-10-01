@@ -60,6 +60,8 @@ class TrainStep:
 - Every parameter carries `x-cadence` {default, description, source, range}. `cadence_field(default_ref="packs.toy.
   train_steps")` takes default, source and range from `control-plane/defaults/defaults.yaml` (the single source; the
   images copy it unchanged to `/opt/cadence/defaults.yaml`); ranges are enforced before `run`.
+- `optional_outputs` (a frozenset of output names, published as `optionalOutputs`) lists outputs a successful step may
+  leave unwritten — a train step's final training state; no pipeline may wire them into another step.
 - `inputs` are paths in the step's scratch directory (a file, or a directory for a directory artifact); `outputs` are
   paths the step creates. An input name may receive several artifacts as `<name>.0`, `<name>.1`, ….
 - `ctx` (`StepContext`): `progress(fraction, message)`, `metric(name, value, step, epoch)`, `log(msg, level, **fields)`,

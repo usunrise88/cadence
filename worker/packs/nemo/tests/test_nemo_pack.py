@@ -751,3 +751,12 @@ def test_word_confidence_from_tokens_skips_the_locale_tag() -> None:
     conf = [0.9, 0.8, 0.95, 0.99, 0.5, 0.7, 0.99, 0.98]
     assert word_confidence(pieces, conf) == [0.8, 0.5]
     assert word_confidence(["▁", "a", "b", "▁c"], [0.1, 0.6, 0.7, 0.3]) == [0.6, 0.3]
+
+
+def test_finetune_final_state_is_optional() -> None:
+    from cadence_worker.steps.base import descriptor
+
+    d = descriptor("nemotron_finetune", FinetuneStep)
+    assert d.get("optionalOutputs") == ["state"]
+    assert "state" in d["produces"], "the state is still an output: a stop writes it"
+    assert "optionalOutputs" not in descriptor("nemotron_calibrate", CalibrateStep)

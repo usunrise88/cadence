@@ -185,6 +185,8 @@ def descriptor(name: str, kind: type[StepKind]) -> StepKindDescriptor:
         d["neutral"] = True
     if secrets := list(getattr(kind, "secrets", ())):
         d["secrets"] = secrets
+    if optional := sorted(getattr(kind, "optional_outputs", ())):
+        d["optionalOutputs"] = optional
     return d
 
 

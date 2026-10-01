@@ -726,3 +726,38 @@ func TestNewestPublishedState(t *testing.T) {
 		t.Fatalf("newest state %q, %v; want %s", got, err, h('b'))
 	}
 }
+
+// A kind may leave an optional output unwritten (a train step's final training state): the step still succeeds,
+// and no pipeline may wire that output into another step.
+func TestOptionalOutputs(t *testing.T) {
+	r := newRig(t, nil)
+	ctx := context.Background()
+	echo2 := map[string]any{}
+	for k, v := range pipelinestest.Fixtures[0] {
+		echo2[k] = v
+	}
+	echo2["version"] = "2"
+	echo2["produces"] = map[string]string{"text": "text", "extra": "text"}
+	echo2["optionalOutputs"] = []string{"extra"}
+	if err := pipelinestest.Register(ctx, r.pool, echo2); err != nil {
+		t.Fatal(err)
+	}
+	one := &pipelines.Pipeline{Name: "one", Inputs: map[string]string{"text": "text"},
+		Steps: []pipelines.Step{{ID: "a", Kind: "echo@2", In: map[string]string{"text": "$inputs.text"}}}}
+	in := r.input("abc")
+	in.Pipeline = one
+	run := r.wait(r.start(in).ID, pipelines.RunDone)
+	if a := stepOf(t, run, "a"); a.State != pipelines.StepDone || len(a.Outputs) != 1 {
+		t.Fatalf("step a %+v: done with only its written output", a)
+	}
+
+	wired := &pipelines.Pipeline{Name: "wired", Inputs: map[string]string{"text": "text"}, Steps: []pipelines.Step{
+		{ID: "a", Kind: "echo@2", In: map[string]string{"text": "$inputs.text"}},
+		{ID: "b", Kind: "echo@1", In: map[string]string{"text": "a.extra"}},
+	}}
+	_, err := r.eng.Plan(ctx, r.pool, *wired, pipelines.PlanInput{Inputs: in.Inputs})
+	var pe *problems.Error
+	if !errors.As(err, &pe) || len(pe.Errors) == 0 || !strings.Contains(pe.Errors[0].Message, "may finish without") {
+		t.Fatalf("plan of a pipeline wiring an optional output: %v", err)
+	}
+}

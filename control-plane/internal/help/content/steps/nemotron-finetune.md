@@ -1,6 +1,6 @@
 ---
 title: nemotron_finetune (step kind)
-summary: The Nemotron family's train role — fine-tune from a base model or a checkpoint on a mix in bf16 with calibrated buckets, the language prompt and telephony augmentation; posts metrics, writes checkpoints and a training state, stops and resumes.
+summary: The Nemotron family's train role — fine-tune from a base model or a checkpoint on a mix in bf16 with calibrated buckets, the language prompt and telephony augmentation; posts metrics, writes checkpoints, and a training state when it stops early; resumes from one.
 contexts: [step:nemotron_finetune, artifact:checkpoint, artifact:training-state, family:nemo.fastconformer-rnnt.cache-aware]
 ---
 
@@ -38,7 +38,9 @@ Outputs:
   model, the tokenizer reference and the train arguments);
 - `checkpoint_best` — the best validation pass of this lease (the same artifact when that was the last pass); the
   control plane ranks every checkpoint by validation WER and keeps the top k;
-- `state` — `training-state` (`last.ckpt` with optimiser, scheduler and loop state, `state.json`), only for resuming.
+- `state` — `training-state` (`last.ckpt` with optimiser, scheduler and loop state, `state.json`), only for resuming:
+  an optional output, released only when the step stops early. A stage that finishes writes none (nothing resumes a
+  finished run; `runs.stage` continues from a checkpoint).
 
 Every validation pass before the last also saves its checkpoint and publishes it while training runs, so each one is
 registered on the run at once (and survives a pause or a closing window); `checkpoint_best` links the published one,
