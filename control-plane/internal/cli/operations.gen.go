@@ -643,7 +643,7 @@ var Operations = []Operation{
 		Description: "Metric series of a training run (loss, val_wer, lr, …) for charts and for judging progress: choose names, the x axis (step, epoch, wall seconds since the first point, or GPU-hours), and maxPoints — longer series are binned server-side, each point carrying the bucket's mean value with min and max. afterStep returns only newer points (live append). Checkpoint marks come along.",
 		Params: []Param{
 			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "The run whose metrics to read (run_…)"},
-			{Name: "names", In: "query", Flag: "names", Type: "array", Items: "string", Description: "Metric names (all when absent)"},
+			{Name: "names", In: "query", Flag: "names", Type: "array", Items: "string", Description: "Metric names (all when absent): repeat the parameter (names=loss&names=val_wer), as every array query parameter"},
 			{Name: "x", In: "query", Flag: "x", Type: "string", Description: "The x axis", Default: "step", Enum: []string{"step", "epoch", "wall", "gpuHours"}},
 			{Name: "maxPoints", In: "query", Flag: "max-points", Type: "integer", Description: "Points per series at most; longer series are binned", Default: "1000"},
 			{Name: "afterStep", In: "query", Flag: "after-step", Type: "integer", Description: "Only points after this optimiser step (live append)"},

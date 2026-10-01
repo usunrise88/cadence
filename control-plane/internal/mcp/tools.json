@@ -3502,7 +3502,7 @@
             "type": "integer"
           },
           "names": {
-            "description": "Metric names (all when absent)",
+            "description": "Metric names (all when absent): repeat the parameter (names=loss\u0026names=val_wer), as every array query parameter",
             "items": {
               "maxLength": 100,
               "type": "string"

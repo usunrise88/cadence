@@ -3004,9 +3004,7 @@ paths:
       parameters:
         - name: names
           in: query
-          description: Metric names (all when absent)
-          style: form
-          explode: false
+          description: "Metric names (all when absent): repeat the parameter (names=loss&names=val_wer), as every array query parameter"
           schema: { type: array, maxItems: 50, items: { type: string, maxLength: 100 } }
         - { name: x, in: query, description: The x axis, schema: { $ref: "#/components/schemas/MetricAxis" } }
         - { name: maxPoints, in: query, description: Points per series at most; longer series are binned, schema: { type: integer, minimum: 2, maximum: 10000, default: 1000 } }

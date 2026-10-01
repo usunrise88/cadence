@@ -1179,11 +1179,7 @@ export const checkpointsAverage = <ThrowOnError extends boolean = false>(options
 /**
  * A run's metric series, binned server-side for charts (min and max per bucket), with checkpoint marks
  */
-export const metricsGet = <ThrowOnError extends boolean = false>(options: Options<MetricsGetData, ThrowOnError>): RequestResult<MetricsGetResponses, MetricsGetErrors, ThrowOnError> => (options.client ?? client).get<MetricsGetResponses, MetricsGetErrors, ThrowOnError>({
-    querySerializer: { parameters: { names: { array: { explode: false } } } },
-    url: '/metrics/{id}',
-    ...options
-});
+export const metricsGet = <ThrowOnError extends boolean = false>(options: Options<MetricsGetData, ThrowOnError>): RequestResult<MetricsGetResponses, MetricsGetErrors, ThrowOnError> => (options.client ?? client).get<MetricsGetResponses, MetricsGetErrors, ThrowOnError>({ url: '/metrics/{id}', ...options });
 
 /**
  * The playbooks Cadence ships, with their inputs, chain, stop conditions and estimate

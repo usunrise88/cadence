@@ -10876,7 +10876,7 @@ export type MetricsGetData = {
     };
     query?: {
         /**
-         * Metric names (all when absent)
+         * Metric names (all when absent): repeat the parameter (names=loss&names=val_wer), as every array query parameter
          */
         names?: Array<string>;
         /**
