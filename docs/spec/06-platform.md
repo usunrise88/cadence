@@ -143,6 +143,9 @@ Rules:
   killed. A pause or a window close puts the job back to `waiting` in its place with `overrides.resumeFrom` set to
   that `training-state` output. Three missed beats reap the lease (a periodic reaper every 10 s): the step fails with
   error type `lost` (retryable) and the card slot frees; a host whose workers all went quiet turns `unreachable`.
+  A control plane that stops while a step job waits on a worker does not fail it: the River job is snoozed with its
+  attempt kept, the lease runs on, and the next start waits for the same lease's outcome (a re-lease of a running
+  step, after a pause or a window close, re-derives the run's status).
   Card telemetry is memory used by every process (resident services included), utilisation, temperature and power.
 - Completion: `release` sends state, outputs (`hash`, `type`, `size`, neutral `meta` with `layout: file|dir`), final
   metrics, or an error of type `oom`, `step`, `lost`, `cancelled` or `input`. The control plane checks every output

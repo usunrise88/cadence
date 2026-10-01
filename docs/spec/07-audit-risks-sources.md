@@ -514,6 +514,18 @@ Open questions:
       augmentation (it joins when the pack reads `noise-bank/*`); the MUSAN import runs on the stand in the gate wave
 - [ ] H: the toy model gained a layer norm (it converged too late: WER near 1 at 300 steps) under the same
       `toy_train@1`; the toy is CI-only, and checkpoints written before load without it
+- [ ] G · gate rehearsal (2026-10-01, docs/review/2026-10-01-phase-2-rehearsal.md): a run registers at most two
+      checkpoints (the train kind's `checkpoint` and `checkpoint_best` of the last lease), so keep-top-k and averaging
+      see one or two per run and a pause loses the pre-pause best; per-validation checkpoints need a step-contract
+      change (several checkpoint outputs)
+- [ ] G · measured estimates use the calibration's compute-only seconds per step (0.38 s); real steps are 0.53–0.56 s
+      and each lease adds ≈ 2 min of restore and saves, so short runs are estimated ≈ 2× low; decide how the estimate
+      adds loop overhead
+- [ ] G · a running step job's `rev` rises with each progress report, so `jobs.pause` after a read often answers 412;
+      decide whether progress bumps `rev`
+- [x] G · resolved: a control-plane stop interrupts (snoozes) a step job waiting on a worker instead of failing it; the
+      next start waits for the same lease (`jobs.ErrInterrupted`); a step kind that sizes itself to the lease's cap
+      declares no `memoryGb` (the NeMo kinds declared 24, above the staging cap)
 - [ ] H: `TestProjectQueuePriority`'s one failure did not reproduce (20 runs alone, 8 beside `TestPipelinesOverHTTP`,
       two full integration runs); nothing changed there. The cancel flake was a real race (fixed in `internal/jobs`)
 
