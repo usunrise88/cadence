@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import struct
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from pathlib import Path
 from typing import Any, cast
 
@@ -162,8 +162,9 @@ def test_hf_dataset_reads_fleurs_rows(tmp_path: Path, monkeypatch: pytest.Monkey
     clips = [(FIX / "audio" / f"clip{i}.wav").read_bytes() for i in (1, 2, 3)]
     calls: list[tuple[str, str, str, str]] = []
 
-    def fake(repo: str, config: str, split: str, revision: str) -> Iterable[Mapping[str, Any]]:
+    def fake(repo: str, config: str, split: str, revision: str, streaming: bool = False) -> Iterable[Mapping[str, Any]]:
         calls.append((repo, config, split, revision))
+        assert streaming, "a capped import streams"
         return [
             {
                 "id": i,
@@ -270,3 +271,23 @@ def test_transliterate_writes_serbian_latin(tmp_path: Path) -> None:
 def test_sr_cyrl_to_latn(cyrl: str, latn: str) -> None:
     assert translit.sr_cyrl_to_latn(cyrl) == latn
     assert translit.transliterate(cyrl, "") == cyrl
+
+
+def test_a_capped_language_stops_reading(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    clip = (FIX / "audio" / "clip1.wav").read_bytes()
+    read: list[int] = []
+
+    def fake(repo: str, config: str, split: str, revision: str, streaming: bool = False) -> Iterator[Mapping[str, Any]]:
+        for i in range(1000):
+            read.append(i)
+            # Each row a distinct clip (a different trailing sample), so none is a duplicate.
+            yield {
+                "audio": {"bytes": clip[:-2] + i.to_bytes(2, "little"), "path": f"{i}.wav"},
+                "raw_transcription": f"r {i}",
+            }
+
+    monkeypatch.setattr(di, "load_hf", fake)
+    p = params(format="hf-dataset", hf_config="sr_rs", hf_split="train", split_rule="source", max_utterances=3)
+    _, lines, _ = run(tmp_path, p)
+    assert len(lines) == 3
+    assert len(read) <= 4, f"read {len(read)} rows for a cap of 3"

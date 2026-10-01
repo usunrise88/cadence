@@ -53,7 +53,7 @@ language, the source ids, the licence, the artifact (`artifact.hash`, which trai
 | `hf_split` | `train` | Cadence recommendation | the source split to read |
 | `hf_revision` | `""` | Cadence recommendation | pin it for reproducible imports |
 | `text_field` | `""` (auto) | Cadence recommendation | auto picks `raw_transcription`, `sentence`, `text`, `transcription` |
-| `max_hours` | `0` (no cap) — `data.max_hours` | Cadence recommendation | per language, in source order |
+| `max_hours` | `0` (no cap) — `data.max_hours` | Cadence recommendation | per language, in source order; with a cap an `hf-dataset` is streamed and a full language is read no further |
 | `max_utterances` | `0` (no cap) — `data.max_utterances` | Cadence recommendation | per language, in source order |
 | `split_rule` | `speaker-disjoint` | spec 03 starter pipeline | `speaker-disjoint`, `source`, `all-train`, `all-validation`, `all-test` |
 | `validation_share` | `0.02` — `data.validation_share` | Cadence recommendation | 0–0.5 |

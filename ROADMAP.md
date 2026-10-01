@@ -335,7 +335,8 @@ Worker and jobs
 - [ ] Replay corpus and replay golden sets imported per the **spec** above — `pipelines/replay-base.yaml` is ready
       (≈ 1 h per locale, golden sets ≤ 300 per locale). Not imported yet: the import downloads each locale's whole
       FLEURS archive (≈ 5 GB for he), ≈ 34 locales do not fit the stand's free disk (≈ 40 GB); needs more disk or a
-      streaming import. Not part of the gate; the phase-3 replay-locale golden sets depend on it
+      streaming import. Not part of the gate; the phase-3 replay-locale golden sets depend on it. Streaming built
+      2026-10-01 (a capped `hf-dataset` import streams and stops at the cap); the import itself still waits for a run
 - [x] Runtimes (R40): the worker announces `runtime@version` and the NeMo runtime is registered from it;
       `runtimes.list|get`; card slots are owned per host and card, so two runtimes could share a card; `runtimes.new`
       (a second runtime, with approval) waits with the deferred packs — `nemo-speech` registers when its worker

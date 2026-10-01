@@ -228,18 +228,21 @@ class DatasetImportStep:
         ctx: Any = None,
     ) -> None:
         p = DatasetImportParams.model_validate(params.model_dump())
-        write_dataset(p, records(p), outputs["dataset"], ctx)
+        full: set[str] = set()
+        write_dataset(p, records(p, full), outputs["dataset"], ctx, full)
 
 
 # ---------------------------------------------------------------- readers
 
 
-def records(p: DatasetImportParams) -> Iterator[Record]:
+def records(p: DatasetImportParams, full: set[str] | None = None) -> Iterator[Record]:
+    """The input's records in source order. full is the set of languages write_dataset has capped (max_hours,
+    max_utterances): a reader that knows a row's language before reading its audio stops reading that language."""
     if p.format == "nemo-manifest":
         return _nemo(p)
     if p.format == "folder-csv":
         return _folder(p)
-    return _hf(p)
+    return _hf(p, full if full is not None else set())
 
 
 def _nemo(p: DatasetImportParams) -> Iterator[Record]:
@@ -291,23 +294,28 @@ def _first(row: Mapping[str, Any], fields: Iterable[str]) -> str:
     return ""
 
 
-def load_hf(repo: str, config: str, split: str, revision: str) -> Iterable[Mapping[str, Any]]:
-    """Rows of a Hugging Face dataset with undecoded audio ({"bytes", "path"}); tests replace it."""
+def load_hf(repo: str, config: str, split: str, revision: str, streaming: bool = False) -> Iterable[Mapping[str, Any]]:
+    """Rows of a Hugging Face dataset with undecoded audio ({"bytes", "path"}); tests replace it. Streaming reads rows
+    as they are needed instead of downloading the whole split first (a FLEURS locale is ≈ 5 GB; a capped replay import
+    needs an hour of it)."""
     try:
         datasets: Any = importlib.import_module("datasets")
     except ImportError as e:
         raise RuntimeError("format hf-dataset needs the datasets library (the NeMo Speech container has it)") from e
-    ds = datasets.load_dataset(repo, config, split=split, revision=revision or None)
+    ds = datasets.load_dataset(repo, config, split=split, revision=revision or None, streaming=streaming)
     if "audio" in ds.column_names:
         ds = ds.cast_column("audio", datasets.Audio(decode=False))
     rows: Iterable[Mapping[str, Any]] = ds
     return rows
 
 
-def _hf(p: DatasetImportParams) -> Iterator[Record]:
+def _hf(p: DatasetImportParams, full: set[str]) -> Iterator[Record]:
     configs = dict(p.hf_configs) if p.hf_configs else {p.hf_config: p.locale}
+    capped = bool(p.max_hours or p.max_utterances)
     for config, locale in configs.items():
-        for row in load_hf(p.hf_repo, config, p.hf_split, p.hf_revision):
+        for row in load_hf(p.hf_repo, config, p.hf_split, p.hf_revision, streaming=capped):
+            if locale and locale in full:
+                break  # this configuration's language is full: read no further (with streaming, download no further)
             a = row.get("audio")
             data: bytes | Path
             if isinstance(a, Mapping) and a.get("bytes"):
@@ -389,8 +397,11 @@ def _report(ctx: Any, fraction: float, message: str) -> None:
         progress(fraction, message)
 
 
-def write_dataset(p: DatasetImportParams, rows: Iterable[Record], out: Path, ctx: Any = None) -> dict[str, Any]:
-    """Convert and write the dataset artifact into the directory ``out``; returns the header."""
+def write_dataset(
+    p: DatasetImportParams, rows: Iterable[Record], out: Path, ctx: Any = None, full: set[str] | None = None
+) -> dict[str, Any]:
+    """Convert and write the dataset artifact into the directory ``out``; returns the header. A language that reaches
+    its cap joins ``full``, so the reader can stop reading it."""
     out.mkdir(parents=True, exist_ok=True)
     lines: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -409,6 +420,8 @@ def write_dataset(p: DatasetImportParams, rows: Iterable[Record], out: Path, ctx
         n, hours = per_lang.get(language, (0, 0.0))
         if (p.max_utterances and n >= p.max_utterances) or (p.max_hours and hours >= p.max_hours):
             skipped["cap"] += 1
+            if full is not None:
+                full.add(language)
             continue
         a = audio.canonical(audio.read(r.audio), p.sample_rate)
         if a.frames == 0:
@@ -438,6 +451,11 @@ def write_dataset(p: DatasetImportParams, rows: Iterable[Record], out: Path, ctx
             line["speaker"] = r.speaker
         lines.append(line)
         per_lang[language] = (n + 1, hours + a.duration / 3600)
+        if full is not None and (
+            (p.max_utterances and n + 1 >= p.max_utterances)
+            or (p.max_hours and hours + a.duration / 3600 >= p.max_hours)
+        ):
+            full.add(language)
         if len(lines) % 100 == 0:
             _report(ctx, 0.0, f"{len(lines)} utterances imported")
     if not lines:
