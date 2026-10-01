@@ -11,7 +11,7 @@ import { AnalyticsChart, type AnalyticsSpec } from "@/shell/charts";
 import { cn } from "@/lib/utils";
 import { DraftOutline, PresenceNotice, changed, presenceLabel, useActivePresence, useDrafts } from "@/shell/entity/drafts";
 import { ActorBadge, EmptyState } from "@/shell/entity/primitives";
-import { errorMessage, lookupDefault, openDocument, rangeWarning, runCommand, useCommand, useDefaults, useEditRequest, useProject, useTopic, WhyDefault, type PanelProps } from "@/shell/panel";
+import { errorMessage, lookupDefault, openDocument, rangeWarning, runCommand, useCommand, useDefaults, useEditRequest, useKeyedEstimate, useProject, useTopic, WhyDefault, type PanelProps } from "@/shell/panel";
 
 // The Mix document (docs/spec/11-ui-panels.md): groups, weights, temperature and replay share over dataset
 // versions, and the preview of hours per language. A person edits the table directly (a new revision); an agent's
@@ -564,20 +564,26 @@ const minutes = (s: number) => (s < 3600 ? `${Math.round(s / 60)} min` : `${Math
 function RunLaunch({ mix, onClose }: { mix: Mix; onClose: () => void }) {
   const project = useProject();
   // The run trains the project's base model (the wizard's choice), not the instance default.
-  const base = useQuery({ ...projectsGetOptions({ path: { p: project ?? "" } }), enabled: !!project }).data?.baseModel?.versionId;
+  const projectQuery = useQuery({ ...projectsGetOptions({ path: { p: project ?? "" } }), enabled: !!project });
+  const base = projectQuery.data?.baseModel?.versionId;
   const [steps, setSteps] = useState("");
-  const [estimate, setEstimate] = useState<RunEstimate | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ error: boolean; text: string } | null>(null);
-  const body = (): RunNew => ({ mix: mix.id, mixRevision: mix.rev, ...(base ? { baseModel: base } : {}), ...(Number(steps) > 0 ? { steps: Math.round(Number(steps)) } : {}) });
+  const body: RunNew = { mix: mix.id, mixRevision: mix.rev, ...(base ? { baseModel: base } : {}), ...(Number(steps) > 0 ? { steps: Math.round(Number(steps)) } : {}) };
+  // Start sends exactly the body the shown estimate answered; a changed step count (or base model, or mix revision)
+  // makes it stale until estimated again.
+  const est = useKeyedEstimate<RunEstimate>(JSON.stringify(body));
+  const estimate = est.estimate;
   const act = async (dryRun: boolean) => {
-    if (!project) return;
+    if (!project || (!dryRun && !est.fresh)) return;
+    const ticket = dryRun ? est.begin() : 0;
+    let answer: RunEstimate | undefined;
     setBusy(true);
     setMessage(null);
     try {
-      const res = await runCommand("runs.new", { project, body: body(), dryRun });
+      const res = await runCommand("runs.new", { project, body, dryRun });
       if ("approvalId" in res) setMessage({ error: false, text: `The run waits for an approval (${res.approvalId}); it starts when a person approves it in Approvals.` });
-      else if ("basis" in res) setEstimate(res);
+      else if ("basis" in res) answer = res;
       else {
         openDocument(`run:${res.id}`);
         onClose();
@@ -585,14 +591,20 @@ function RunLaunch({ mix, onClose }: { mix: Mix; onClose: () => void }) {
     } catch (err) {
       setMessage({ error: true, text: errorMessage(err) });
     } finally {
+      if (dryRun) est.settle(ticket, answer);
       setBusy(false);
     }
   };
+  // The estimate is asked for once when the card opens, after the project (its base model) has loaded; Estimate
+  // again re-asks with the edited steps.
+  const ready = !!project && !projectQuery.isPending;
+  const asked = useRef(false);
   useEffect(() => {
+    if (!ready || asked.current) return;
+    asked.current = true;
     void act(true);
-    // the estimate is asked for once when the card opens; Estimate again re-asks with the edited steps
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [ready]);
   return (
     <section aria-labelledby="mix-launch" className="flex flex-col gap-2 rounded-md border bg-tool p-3 text-xs" data-slot="run-launch">
       <div className="flex items-center gap-2">
@@ -611,7 +623,7 @@ function RunLaunch({ mix, onClose }: { mix: Mix; onClose: () => void }) {
         </Button>
       </label>
       {estimate ? (
-        <dl className="grid grid-cols-[8rem_1fr] gap-x-3 gap-y-0.5" data-slot="run-estimate">
+        <dl className={cn("grid grid-cols-[8rem_1fr] gap-x-3 gap-y-0.5", est.stale && "text-muted-foreground opacity-60")} data-slot="run-estimate" data-stale={est.stale || undefined}>
           <dt className="text-muted-foreground">GPU-hours</dt>
           <dd className="tabular-nums">{hoursRange(estimate.gpuHours, "GPU-h")}</dd>
           <dt className="text-muted-foreground">Duration</dt>
@@ -637,8 +649,13 @@ function RunLaunch({ mix, onClose }: { mix: Mix; onClose: () => void }) {
       ) : busy ? (
         <p className="text-muted-foreground">Estimating…</p>
       ) : null}
+      {est.stale ? (
+        <p className="text-muted-foreground" data-slot="run-estimate-stale">
+          {est.pending ? "Estimating…" : "The form changed since this estimate: estimate again to start."}
+        </p>
+      ) : null}
       <div className="flex gap-1">
-        <Button size="xs" disabled={busy || !estimate} onClick={() => void act(false)} data-command="runs.new">
+        <Button size="xs" disabled={busy || !est.fresh} onClick={() => void act(false)} data-command="runs.new">
           <Play aria-hidden />
           Start run
         </Button>

@@ -17,6 +17,7 @@ import {
   runCommand,
   runLabel,
   useEditRequest,
+  useKeyedEstimate,
   useProject,
   useSelection,
   useTopic,
@@ -310,25 +311,27 @@ function StageForm({ run, from, onClose }: { run: Run; from?: string; onClose: (
   useEffect(() => setCheckpoint(from), [from]);
   const [peakLr, setPeakLr] = useState("");
   const [steps, setSteps] = useState("");
-  const [estimate, setEstimate] = useState<RunEstimate | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ error: boolean; text: string } | null>(null);
   const first = useRef<HTMLInputElement>(null);
   useEffect(() => first.current?.focus(), []);
   const lr = Number(peakLr);
   const valid = peakLr.trim() !== "" && lr > 0 && lr <= 1;
+  const body = { peakLr: lr, ...(checkpoint ? { checkpoint } : {}), ...(Number(steps) > 0 ? { steps: Math.round(Number(steps)) } : {}) };
+  // Start sends exactly the body the shown estimate answered; any edit makes it stale until estimated again.
+  const est = useKeyedEstimate<RunEstimate>(JSON.stringify(body));
+  const estimate = est.estimate;
   const act = async (dryRun: boolean) => {
+    if (!dryRun && !est.fresh) return;
+    const ticket = dryRun ? est.begin() : 0;
+    let answer: RunEstimate | undefined;
     setBusy(true);
     setMessage(null);
     try {
-      const res = await runCommand("runs.stage", {
-        run,
-        dryRun,
-        body: { peakLr: lr, ...(checkpoint ? { checkpoint } : {}), ...(Number(steps) > 0 ? { steps: Math.round(Number(steps)) } : {}) },
-      });
+      const res = await runCommand("runs.stage", { run, dryRun, body });
       if (!res) return;
       if ("approvalId" in res) setMessage({ error: false, text: `The stage waits for an approval (${res.approvalId}).` });
-      else if ("basis" in res) setEstimate(res);
+      else if ("basis" in res) answer = res;
       else {
         openDocument(`run:${res.id}`);
         onClose();
@@ -336,6 +339,7 @@ function StageForm({ run, from, onClose }: { run: Run; from?: string; onClose: (
     } catch (err) {
       setMessage({ error: true, text: errorMessage(err) });
     } finally {
+      if (dryRun) est.settle(ticket, answer);
       setBusy(false);
     }
   };
@@ -367,16 +371,21 @@ function StageForm({ run, from, onClose }: { run: Run; from?: string; onClose: (
         <Input id={`stage-steps-${run.id}`} type="number" min={1} className="h-6 w-32 text-xs tabular-nums" placeholder="default" value={steps} onChange={(e) => setSteps(e.target.value)} />
       </div>
       {estimate ? (
-        <p className="tabular-nums" data-slot="stage-estimate">
+        <p className={cn("tabular-nums", est.stale && "text-muted-foreground line-through")} data-slot="stage-estimate" data-stale={est.stale || undefined}>
           ~{n2(estimate.gpuHours.value)} GPU-h ({n2(estimate.gpuHours.low)}–{n2(estimate.gpuHours.high)}), {duration(estimate.durationSeconds.value)}, {estimate.steps} steps, {estimate.basis}
           {estimate.budget.withinDailyBudget ? "" : " — over today's budget"}
+        </p>
+      ) : null}
+      {est.stale ? (
+        <p className="text-muted-foreground" data-slot="stage-estimate-stale">
+          {est.pending ? "Estimating…" : "The form changed since this estimate: estimate again to start."}
         </p>
       ) : null}
       <div className="flex gap-1">
         <Button type="submit" size="xs" variant="outline" disabled={busy || !valid}>
           Estimate
         </Button>
-        <Button type="button" size="xs" disabled={busy || !valid || !estimate} onClick={() => void act(false)} data-command="runs.stage">
+        <Button type="button" size="xs" disabled={busy || !valid || !est.fresh} onClick={() => void act(false)} data-command="runs.stage">
           Start stage
         </Button>
         <Button type="button" size="xs" variant="ghost" onClick={onClose}>
