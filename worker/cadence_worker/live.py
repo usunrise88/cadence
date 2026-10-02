@@ -14,7 +14,9 @@ streaming polyphase) and, when the session simulates a phone line, through :clas
 
 - ``microphone``: binary frames of 16-bit little-endian mono PCM at ``start.input.sampleRate``;
 - ``file``: the file's bytes, kept in the step's work directory until the socket closes; ``fileEnd`` decodes them
-  (ffmpeg when present, else WAV/soundfile), channel 0, at most ``maxFileSeconds``, and streams them at the session's
+  (ffprobe and ffmpeg when present — an accepted audio container read from the local file only, its declared duration
+  checked before decoding, the decode cut and size-capped; else WAV/soundfile after the header's duration is checked),
+  channel 0, at most ``maxFileSeconds``, and streams them at the session's
   pace (``realtime``: 20 ms of audio per 20 ms; ``fast``: as fast as the decoders go);
 - ``span``: the utterance's audio (the step's ``audio`` input) cut to [start, end] on its channel, streamed like a file
   right after ``start``.
@@ -244,23 +246,127 @@ def message_type(raw: str) -> tuple[str, dict[str, Any]]:
     return str(doc.get("type") or "").strip(), doc
 
 
-def decode_file(path: Path, work: Path) -> tuple[Audio, int]:
-    """A file's channel 0 as float samples at its own rate: ffmpeg when present (any container), else the WAV reader
-    (and soundfile for FLAC/OGG/MP3 when installed)."""
-    ffmpeg = shutil.which("ffmpeg")
-    if ffmpeg:
-        out = work / (path.name + ".wav")
-        cmd = [ffmpeg, "-nostdin", "-v", "error", "-y", "-i", str(path), "-map", "0:a:0"]
-        cmd += ["-af", "pan=mono|c0=c0", "-c:a", "pcm_f32le", "-f", "wav", str(out)]
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=600, check=False)
+# The containers a file session accepts (ffmpeg demuxer names, also its -format_whitelist): an upload is a person's
+# recording, so playlists (hls), concatenation lists, image or video-only formats and network protocols never reach a
+# demuxer that would follow them. mov covers mp4/m4a (AAC or ALAC), matroska covers webm (Opus), ogg covers Opus/Vorbis.
+AUDIO_FORMATS = ("wav", "flac", "mp3", "ogg", "mov", "mp4", "m4a", "aac", "matroska", "webm")
+MAX_FILE_RATE = 192000  # the highest sample rate a file session decodes (and the output size cap assumes)
+FFMPEG_TIMEOUT_S = 300
+
+
+class FileRefusedError(StepInputError):
+    """An upload refused before decoding: too long, too high a rate."""
+
+
+def _ffmpeg_tools() -> tuple[str, str] | None:
+    ffmpeg, ffprobe = shutil.which("ffmpeg"), shutil.which("ffprobe")
+    return (ffmpeg, ffprobe) if ffmpeg and ffprobe else None
+
+
+def probe_file(ffprobe: str, path: Path) -> tuple[str, float | None, int | None]:
+    """The container, duration (None when the container does not say) and first audio stream's sample rate of an
+    upload, read by ffprobe on the local file only and among AUDIO_FORMATS only."""
+    cmd = [ffprobe, "-v", "error", "-protocol_whitelist", "file", "-format_whitelist", ",".join(AUDIO_FORMATS)]
+    cmd += ["-select_streams", "a:0", "-show_entries", "format=format_name,duration:stream=sample_rate", "-of", "json"]
+    cmd += ["file:" + str(path)]
+    res = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60, check=False)
+    if res.returncode != 0:
+        detail = res.stderr.strip()[-300:]
+        if "not on whitelist" in detail:
+            raise audio_io.AudioError(f"not an audio file of an accepted container ({', '.join(AUDIO_FORMATS)})")
+        raise audio_io.AudioError(detail or "ffprobe could not read the file")
+    try:
+        doc = json.loads(res.stdout or "{}")
+    except ValueError as e:
+        raise audio_io.AudioError("ffprobe answered no JSON") from e
+    fmt = doc.get("format") or {}
+    streams = doc.get("streams") or []
+    if not streams:
+        raise audio_io.AudioError("the file holds no audio stream")
+    duration: float | None
+    try:
+        duration = float(str(fmt["duration"]))
+    except (KeyError, TypeError, ValueError):
+        duration = None
+    try:
+        rate: int | None = int(str(streams[0]["sample_rate"]))
+    except (KeyError, TypeError, ValueError):
+        rate = None
+    return str(fmt.get("format_name") or ""), duration, rate
+
+
+def file_seconds(path: Path) -> float | None:
+    """The duration a file's header declares, without decoding it (WAV, or anything soundfile reads); None when it
+    cannot tell."""
+    with path.open("rb") as f:
+        head = f.read(12)
+        if head[:4] == b"RIFF" and head[8:12] == b"WAVE":
+            byte_rate, data = 0, None
+            while True:
+                chunk = f.read(8)
+                if len(chunk) < 8:
+                    break
+                cid, size = chunk[:4], int.from_bytes(chunk[4:], "little")
+                if cid == b"fmt ":
+                    body = f.read(size)
+                    byte_rate = int.from_bytes(body[8:12], "little") if len(body) >= 12 else 0
+                    f.seek(size % 2, os.SEEK_CUR)
+                    continue
+                if cid == b"data":
+                    data = size
+                    break
+                f.seek(size + size % 2, os.SEEK_CUR)
+            return data / byte_rate if data is not None and byte_rate > 0 else None
+    try:
+        import soundfile  # type: ignore[import-untyped,import-not-found,unused-ignore]
+
+        return float(soundfile.info(str(path)).duration)
+    except Exception:
+        return None
+
+
+def decode_file(path: Path, work: Path, max_seconds: int) -> tuple[Audio, int]:
+    """A file's channel 0 as float samples at its own rate (the training resampler takes it from there). With ffmpeg:
+    the file is probed first — a local file in an accepted audio container (AUDIO_FORMATS), at most MAX_FILE_RATE, whose
+    declared duration is at most ``max_seconds`` — then decoded from the local file only, cut at ``max_seconds`` + 1 s
+    and capped in output size, so a tiny file that expands to hours (a decompression bomb) or a playlist that points
+    elsewhere is refused before it costs anything. Without ffmpeg: the WAV reader (soundfile for FLAC/OGG/MP3 when
+    installed), after the header's duration is checked."""
+    tools = _ffmpeg_tools()
+    if tools is None:
+        declared = file_seconds(path)
+        if declared is not None and declared > max_seconds:
+            raise FileRefusedError(f"the file holds {declared:.0f} s of audio; a session takes at most {max_seconds} s")
+        a = audio_io.read(path)
+        return channel_of(a, 0), a.sample_rate
+    ffmpeg, ffprobe = tools
+    _, duration, rate = probe_file(ffprobe, path)
+    if duration is not None and duration > max_seconds:
+        raise FileRefusedError(f"the file holds {duration:.0f} s of audio; a session takes at most {max_seconds} s")
+    if rate is not None and rate > MAX_FILE_RATE:
+        raise FileRefusedError(f"the file's sample rate is {rate} Hz; a session takes at most {MAX_FILE_RATE} Hz")
+    limit_s = max_seconds + 1
+    out = work / (path.name + ".wav")
+    max_bytes = limit_s * (rate or MAX_FILE_RATE) * 4 + 4096  # float32 mono and the header
+    cmd = [ffmpeg, "-nostdin", "-v", "error", "-y", "-protocol_whitelist", "file"]
+    cmd += [
+        "-format_whitelist",
+        ",".join(AUDIO_FORMATS),
+        "-i",
+        "file:" + str(path),
+        "-map",
+        "0:a:0",
+        "-t",
+        str(limit_s),
+    ]
+    cmd += ["-af", "pan=mono|c0=c0", "-c:a", "pcm_f32le", "-fs", str(max_bytes), "-f", "wav", str(out)]
+    try:
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=FFMPEG_TIMEOUT_S, check=False)
         if res.returncode != 0:
             raise audio_io.AudioError(res.stderr.strip()[-500:] or "ffmpeg could not decode the file")
-        try:
-            a = audio_io.read(out)
-        finally:
-            out.unlink(missing_ok=True)
-    else:
-        a = audio_io.read(path)
+        a = audio_io.read(out)
+    finally:
+        out.unlink(missing_ok=True)
     return channel_of(a, 0), a.sample_rate
 
 
@@ -530,19 +636,23 @@ class _Session:
         self.upload_fh.close()
         self.upload_fh = None
         try:
-            x, rate = decode_file(self.upload, self.work)
+            x, rate = decode_file(self.upload, self.work, self.params.maxFileSeconds)
+        except FileRefusedError as e:
+            self.fail("transcription-input-invalid", "Transcription input invalid", 422, str(e))
+            return
         except (audio_io.AudioError, StepInputError, OSError, subprocess.SubprocessError) as e:
             self.fail("transcription-input-invalid", "Transcription input invalid", 422, f"cannot decode the file: {e}")
             return
         finally:
             self.upload.unlink(missing_ok=True)
         seconds = x.size / rate
-        if seconds > self.params.maxFileSeconds:
+        if seconds > self.params.maxFileSeconds:  # a container that did not declare its duration, cut by ffmpeg
             self.fail(
                 "transcription-input-invalid",
                 "Transcription input invalid",
                 422,
-                f"the file holds {seconds:.0f} s of audio; a session takes at most {self.params.maxFileSeconds} s",
+                f"the file holds more than {self.params.maxFileSeconds} s of audio; a session takes at most "
+                f"{self.params.maxFileSeconds} s",
             )
             return
         self.capture_rate = rate
