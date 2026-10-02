@@ -80,3 +80,6 @@ export {
   type GateState,
 } from "@/shell/evaluation/format";
 export { invalidateEval, invalidateLangpacks } from "@/shell/evaluation/cache";
+// Transcription (phase 3, R47–R50): the live channel's client, lanes, microphone capture and the page-side reference
+// check the Transcription panel composes (no audio or text is kept beyond the page).
+export * from "@/shell/transcription";

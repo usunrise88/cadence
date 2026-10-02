@@ -17,7 +17,7 @@ import { windowRows, WindowsEditor } from "./WindowsEditor";
 // answers 412 and the dialog shows both instead of overwriting (docs/spec/11 "Risks": revision conflicts, not silent
 // overwrites). Availability windows per card and job kind (R19) are edited here too; Queue & GPU shows them.
 
-export const JOB_KINDS: JobKind[] = ["training", "eval", "shadow", "export", "data"];
+export const JOB_KINDS: JobKind[] = ["training", "eval", "shadow", "export", "data", "interactive"];
 
 /** One line per job kind in the card dialog (scheduling rules: docs/review/2026-09-30-phase-2-plan.md, R19, R27). */
 export const JOB_KIND_HINT: Record<JobKind, string> = {
@@ -26,6 +26,7 @@ export const JOB_KIND_HINT: Record<JobKind, string> = {
   shadow: "Shadow replay of production audio against a candidate; throughput work that can share.",
   export: "Turns a checkpoint into a deployable model.",
   data: "Imports, preparation and augmentation. Share the card when their memory fits.",
+  interactive: "Live transcription tests. Highest priority; beside training under the cap, never beside a benchmark (R49).",
 };
 
 // A card's name, class and memory are editable too: a host seeded with the wrong card (an older defaults.yaml) is

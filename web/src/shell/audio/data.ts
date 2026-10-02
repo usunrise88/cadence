@@ -69,7 +69,7 @@ export function computeStft(pcm: Float32Array, params: StftParams): Promise<{ fr
 }
 
 /** Resamples linearly to 16 kHz (audio.get serves 16 kHz already; this covers a foreign rate). */
-function to16k(pcm: Float32Array, rate: number): Float32Array {
+export function to16k(pcm: Float32Array, rate: number): Float32Array {
   if (rate === 16000) return pcm;
   const n = Math.floor((pcm.length * 16000) / rate);
   const out = new Float32Array(n);
