@@ -354,7 +354,7 @@ generated like the rest.
 | Message | Direction | Frame | Carries |
 | --- | --- | --- | --- |
 | `start` | Client → server, first | JSON | The input: microphone (capture rate and `getSettings()`), file, or utterance span; telephony simulation on or off; the pace for files |
-| audio | Client → server | Binary | 16-bit little-endian mono PCM at the capture rate, 80 ms per frame; or a file's bytes |
+| audio | Client → server | Binary | 16-bit little-endian mono PCM at the capture rate, at most 20 ms per frame (`transcriptions.frame_ms`, spike A5); or a file's bytes |
 | `fileEnd` | Client → server | JSON | The file's bytes are complete |
 | `finalize` | Client → server | JSON | Flush pending words without closing |
 | `keepalive` | Client → server | JSON | Keep the session open without audio |
@@ -405,6 +405,47 @@ generated like the rest.
 - Display: Hebrew right to left with bidi isolation around digits and Latin text; grey partials update in place,
   finals are solid with endpoint marks; confidence shades words, timestamps show on hover; live p50/p95 time to final
   and the real-time factor sit under the lanes.
+
+Transcriptions and the live channel as built (2026-10-02, stream T; `internal/transcriptions`,
+`internal/server/handlers_transcriptions.go`, migration 0026, `cadence_worker/live.py`, the packs' `live` role kinds,
+the Transcription panel):
+
+- Operations: `transcriptions.new` (`POST /projects/{p}/transcriptions`, tag `media`, a command; `200` for a dry run,
+  `201` with `streamUrl` and `ticket`), `stream.connect` (`GET /transcriptions/{id}/stream?ticket=`, tag `media`) and
+  `workerLive.connect` (`GET /worker-live/{jobId}`, tag `worker`). The worker's path is `/worker-live/…`, not
+  `/worker/live/…`: the worker credential is confined to `/worker-*` paths. Message schemas: `LiveClientMessage`
+  (`start`, `fileEnd`, `finalize`, `keepalive`, `ping`, `end`) and `LiveServerMessage` (`waiting`, `started`,
+  `partial`, `final`, `stats`, `pong`, `error`, `summary`). `waiting` (from the relay: queued with position, reason
+  and reservation, then loading) and `ping`/`pong` (the relay's own hop) are additions to the table above.
+- Targets: one family per session (one worker job serves them all); the family descriptor names the kind in role
+  `live` and the reservation in `interactive {memoryMb, extraCheckpointMb}`. Lanes are `A`–`C`; blind shuffles them
+  on the server and still returns the labels (the page hides them until the pick). Telephony is
+  `{codec: ulaw|alaw|none, sampleRate: 8000}` set at `transcriptions.new` (not in `start`); the project's augmentation
+  profile is not read yet.
+- The ticket is kept as a SHA-256 hash and is single-use; the socket checks `Origin` against the request's host (or
+  `X-Forwarded-Host`, or `CADENCE_ALLOWED_ORIGINS`) and that the signed-in person owns the session. The worker dials
+  with the lease's `CADENCE_LIVE_TOKEN` (header `Cadence-Live-Token`; a fresh token per lease, hash kept) or its
+  `cwk_` credential; the harness sets `CADENCE_LIVE_URL`.
+- Interactive jobs are River kind `live` awaiting a step job of kind `interactive` (`steps.LiveJobKind`): leased
+  before every other kind, beside training under the card's cap (training's whole-cap reservation leaves no room, so
+  a session waits for a training step that took the whole cap), never beside a `benchmark`; priority
+  `transcriptions.interactive_job_priority`. Their lease wall time counts against
+  `budgets.manual_test_gpu_hours_per_project_per_day` and not against the project's GPU budget; a session's cap is
+  the smaller of `transcriptions.session_max_minutes` and what the allowance has left when its worker joins.
+- The relay is in process (one control plane). Close codes: 1000 after the summary, 4001 idle, 4002 cap, 4003 worker
+  lost, 4004 not started (job ended, queue wait limit), 1013 backpressure, 1001 stopping; at the idle and cap limits
+  it injects `end` so the summary still arrives. A 30 s sweep ends sessions whose ticket expired unused or whose
+  socket is gone. Problem types: `transcription-in-progress`, `transcription-allowance-exhausted`,
+  `transcription-ticket-invalid`, `transcription-input-invalid`, `transcription-limit`. Limits: `transcriptions.*`
+  in `defaults.yaml`.
+- One decoder (A5 proposal 2): the NeMo pack's `pipeline.py` (NeMo's cache-aware streaming pipeline with the prompt
+  and tag shims, the model restored on the CPU then moved to the card, per-stream phrase boosting) serves
+  `nemotron_live@1` and `nemotron_transcribe@3` (decoding `decoder: nemo-pipeline-cache-aware`; evals pick @3 as the
+  newest transcribe kind, so @2 records do not mix). On the stand card: live (20 ms frames) and @3 file decode give the
+  same words 22/22, @3 at batch 8 equals batch 1; WER @2 → @3 at 160 ms: he fixtures 77.9 → 80.2, ru 15.7 → 14.6;
+  one model peaks at 2.8 GiB allocated, load 29–30 s. Two distinct models in one job turn NeMo's CUDA-graph decoder
+  off (it crashes with two). The training telephone stage moved to polyphase resampling (`nemotron_finetune@2`).
+- Not built: `analysis: [features, emissions]`; a conformance stage for the live role; the Triton target (phase 5).
 
 ## Operations
 

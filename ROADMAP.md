@@ -501,17 +501,21 @@ worker protocol; S5 (audio view) before the Audio panel — it needs only the ph
       window, server tiles from `spectrogram_tiles@1`), hypothesis words with confidence and S/D/I, spans and `#t=`
       references, the three exports, the Audio panel, Diff's embedded view; open: model input and emissions (needs
       the transcribe step's `analysis` artifact), streaming timeline lane, presets, TextGrid/CTM import
-- [ ] Transcription tool (R47–R50): a file, the microphone or an utterance span through one WebSocket session; up to
+- [x] Transcription tool (R47–R50): a file, the microphone or an utterance span through one WebSocket session; up to
       three targets, blind compare; telephony simulation; a typed reference gives WER on the page; nothing is stored;
       "test a phrase" becomes a two-target transcription
+      — built 2026-10-02 (stream T; 06 "Transcriptions and the live channel as built"): `transcriptions.new`, the
+      relay, the worker's `live` role (NeMo and toy), the Transcription panel; open: "test a phrase" in the Language
+      pack, `analysis` (features, emissions), Firefox/Safari/Caddy checks (owner)
 - [ ] Eval charts (R53): matrix heatmap, forest plot of deltas with intervals, S/D/I, buckets, latency CDFs, WER
       against latency; the utterance table opens rows in Diff and Audio
-- [ ] Generator: the `media` tag — exempt from the verb rule and from MCP — for R25's audio endpoint, `…/peaks`,
+- [x] Generator: the `media` tag — exempt from the verb rule and from MCP — for R25's audio endpoint, `…/peaks`,
       `transcriptions.new` and its socket (R48)
       — the tag and audio serving built 2026-10-02 (stream A: `audio.get|sign`, `peaks.get`, `spectrogram.get`,
-      `words.get`); `transcriptions.new` and the socket belong to stream T
-- [ ] Queue: job kind `interactive` beside training under the card's cap, never beside a benchmark, 1 GPU-hour per
-      project per day (R49)
+      `words.get`); `transcriptions.new` and `stream.connect` by stream T
+- [x] Queue: job kind `interactive` beside training under the card's cap, never beside a benchmark, 1 GPU-hour per
+      project per day (R49) — built 2026-10-02 (stream T): leased before every other kind; the reservation comes
+      from the family descriptor (`interactive`); lease wall time against the manual-test allowance
 
 Panels: Eval report, Diff, Audio, Golden set, Lineage (over what the registry holds so far), Language pack,
 Experiment, Transcription; Eval workspace.
