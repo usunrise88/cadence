@@ -127,6 +127,8 @@ type View struct {
 	BaseModel        any                `json:"baseModel"`
 	CheckpointID     string             `json:"checkpointId,omitempty"`
 	ParentRunID      string             `json:"parentRunId,omitempty"`
+	ExperimentID     string             `json:"experimentId,omitempty"`
+	SweepID          string             `json:"sweepId,omitempty"`
 	Family           map[string]string  `json:"family"`
 	Mix              MixRef             `json:"mix"`
 	Recipe           Recipe             `json:"recipe"`
@@ -196,6 +198,7 @@ func (s *Service) view(ctx context.Context, q storage.Querier, x row) (View, err
 		Runtime: x.Runtime, Card: x.Card, Estimate: x.Estimate, ResumedFrom: x.ResumedFrom, Error: x.Error, Rev: x.Rev,
 		Actor: x.Actor, CreatedAt: x.CreatedAt, UpdatedAt: x.UpdatedAt, FinishedAt: x.FinishedAt,
 		Timeline: []StageEntry{}, Departures: []Departure{}, FinalMetrics: map[string]float64{},
+		ExperimentID: x.ExperimentID, SweepID: x.SweepID,
 	}
 	base, err := registry.GetVersion(ctx, q, registry.KindBaseModel, x.BaseVersionID)
 	if err != nil {

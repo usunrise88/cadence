@@ -609,6 +609,40 @@ var Operations = []Operation{
 		},
 	},
 	{
+		ID: "experiments.get", Entity: "experiments", Verb: "get", Method: "GET", Path: "/experiments/{id}",
+		Summary:     "Get an experiment with its runs as parameters × metrics, the best run by validation WER, and its sweeps",
+		Description: "The comparison of an experiment: one row per run with the values of the compared parameters (every swept parameter and every train-step parameter some run departs from defaults with; departures marked), the best validation WER and its checkpoint, GPU-hours, and the latest eval of that checkpoint with its gate verdict. best names the run with the lowest validation WER and whether its checkpoint can be registered now (models.register needs a passed gate: evals.new, then evals.gate). sweeps lists each sweep's state, points and GPU-hours spent against its cap.",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Experiment id (exp_…)"},
+		},
+	},
+	{
+		ID: "experiments.list", Entity: "experiments", Verb: "list", Method: "GET", Path: "/projects/{p}/experiments",
+		Summary: "List the project's experiments, newest first (question, mix, base model, run count, best run, sweeps)",
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "limit", In: "query", Flag: "limit", Type: "integer", Default: "50"},
+		},
+	},
+	{
+		ID: "experiments.new", Entity: "experiments", Verb: "new", Method: "POST", Path: "/projects/{p}/experiments",
+		Summary:        "Open an experiment — a question with a fixed mix revision and base model — that runs and sweeps join",
+		Description:    "Group the runs that answer one question: name, question, the mix (mix_… or its name, pinned to its current revision unless mixRevision) and the base model (pinned to a version; default the defaults' base model). Every run of the experiment trains on exactly that mix revision and base model: runs.new with experiment=exp_… inherits them, and sweeps.run generates runs over recipe parameters. dryRun checks the mix and base model and answers the experiment as it would be. Follow with sweeps.run (dry run first) or runs.new, then experiments.get for the comparison.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "baseModel", Type: "string", Description: "Base model version (ver_…), collection name or @alias, pinned to a version (default the defaults' base model)"},
+			{Name: "mix", Required: true, Type: "string", Description: "The mix every run trains on (mix_… or its name)"},
+			{Name: "mixRevision", Type: "integer", Description: "The fixed mix revision (default the mix's current one)"},
+			{Name: "name", Required: true, Type: "string", Description: "A short name, unique in the project"},
+			{Name: "question", Required: true, Type: "string", Description: "The question the experiment's runs answer"},
+			{Name: "tag", Type: "string", Description: "A short tag for filters and search (default derived from the name)"},
+		}},
+	},
+	{
 		ID: "gates.edit", Entity: "gates", Verb: "edit", Method: "PATCH", Path: "/projects/{p}/gates",
 		Summary:        "Commit a new gates.yaml to main (approval for agents); dryRun validates",
 		Description:    "Change the project's gate: send content (the YAML) or config (the same as an object) with If-Match = the ETag of gates.get. The file is validated first (gate-config-invalid lists every problem); dryRun validates and commits nothing. For agents this waits for a person's approval (gates decide what counts as better).",
@@ -1329,6 +1363,7 @@ var Operations = []Operation{
 		Params: []Param{
 			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
 			{Name: "status", In: "query", Flag: "status", Type: "string", Description: "Only runs in this status", Enum: []string{"queued", "running", "paused", "done", "failed", "cancelled"}},
+			{Name: "experiment", In: "query", Flag: "experiment", Type: "string", Description: "Only runs of this experiment (exp_…)"},
 			{Name: "limit", In: "query", Flag: "limit", Type: "integer", Default: "100"},
 		},
 	},
@@ -1346,6 +1381,7 @@ var Operations = []Operation{
 			{Name: "checkpoint", Type: "string", Description: "The checkpoint to start from (ckp_…); required when init is checkpoint. The run's base model is then the checkpoint's"},
 			{Name: "compute", Type: "string", Description: "Host id or name; default the first host whose card allows training"},
 			{Name: "datasets", Type: "array of string", Description: "Dry runs without a mix only: dataset versions (ver_… or @alias) for the data volume"},
+			{Name: "experiment", Type: "string", Description: "The experiment the run belongs to (exp_…): the run trains on its mix revision and base model (phase 3)"},
 			{Name: "gpus", Type: "integer", Description: "Cards for the run; v1 accepts 1 (training.gpus)"},
 			{Name: "init", Type: "string", Description: "Where the weights start (R44); scratch is deferred"},
 			{Name: "mix", Type: "string", Description: "The mix to train on (mix_… or its name); required unless dryRun with datasets"},
@@ -1488,6 +1524,26 @@ var Operations = []Operation{
 			{Name: "collection", In: "query", Flag: "collection", Type: "string", Description: "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)"},
 			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated"}},
 		},
+	},
+	{
+		ID: "sweeps.run", Entity: "sweeps", Verb: "run", Method: "POST", Path: "/experiments/{id}/sweeps:run",
+		Summary:        "Run a grid or random sweep over recipe parameters as sequential runs of the experiment under a GPU-hour cap",
+		Description:    "Generate the experiment's runs from a parameter set: mode grid (every combination of the listed values) or random (points drawn with seed from each parameter's values or its min–max range, log scale for learning rates). Parameters are the train step's (peak_lr, warmup_steps, augmentation, … — any parameter with an x-cadence range) and replayShare (the mix's replay share; the mix revision stays fixed). Each point becomes one run through runs.new on the experiment's mix and base model; runs are queued one after another on the project's training slot. Always call it with dryRun=true first: the answer lists the points with their estimates and the total against gpuHourCap. The whole estimate must fit the cap (sweep-over-cap) and is weighed against the GPU budgets like runs.new (202 with an approvalId when it exceeds them). The sweep stops when the GPU-hours its runs used plus the next run's estimate would pass the cap. Cancelling the running run (jobs.cancel on its current job) cancels the sweep. Watch experiments.get or entity.experiment.{id}.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Experiment id (exp_…)"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "gpuHourCap", Type: "number", Description: "Most GPU-hours the sweep's runs may use (default sweeps.gpu_hour_cap)"},
+			{Name: "mode", Type: "string"},
+			{Name: "parameters", Required: true, Type: "array of object"},
+			{Name: "priority", Type: "integer", Description: "Queue priority of the runs' step jobs (default 0)"},
+			{Name: "runs", Type: "integer", Description: "random: how many points (default sweeps.random_runs); grid: at most this many of the combinations (default all of them, up to sweeps.max_runs)"},
+			{Name: "seed", Type: "integer", Description: "random: the seed of the draw (default sweeps.seed)"},
+			{Name: "steps", Type: "integer", Description: "Step budget of every run (default training.steps)"},
+		}},
 	},
 	{
 		ID: "telegramBot.set", Entity: "telegramBot", Verb: "set", Method: "PUT", Path: "/telegram-bot",

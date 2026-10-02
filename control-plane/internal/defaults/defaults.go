@@ -87,6 +87,9 @@ type Defaults struct {
 	// Language packs: boost list defaults (phase 3, stream L).
 	Langpacks Langpacks `yaml:"langpacks"`
 
+	// Sweeps over recipe parameters (phase 3, stream X).
+	Sweeps Sweeps `yaml:"sweeps"`
+
 	document map[string]any
 }
 
@@ -240,6 +243,16 @@ type Gate struct {
 type Langpacks struct {
 	BoostWeight   Param[float64] `yaml:"boost_weight"`
 	BoostMaxTerms Param[int]     `yaml:"boost_max_terms"`
+}
+
+// Sweeps holds the sweep defaults (phase 3, stream X): the mode, how many runs a grid or a random draw makes, the
+// GPU-hour cap and the seed of a random draw.
+type Sweeps struct {
+	Mode       Param[string]  `yaml:"mode"`
+	MaxRuns    Param[int]     `yaml:"max_runs"`
+	RandomRuns Param[int]     `yaml:"random_runs"`
+	GPUHourCap Param[float64] `yaml:"gpu_hour_cap"`
+	Seed       Param[int]     `yaml:"seed"`
 }
 
 // Compute holds the hosts seeded at first start.

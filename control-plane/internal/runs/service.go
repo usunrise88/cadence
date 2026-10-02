@@ -19,6 +19,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/compute"
 	"github.com/usunrise88/cadence/control-plane/internal/defaults"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
+	"github.com/usunrise88/cadence/control-plane/internal/mixes"
 	"github.com/usunrise88/cadence/control-plane/internal/pipelines"
 	"github.com/usunrise88/cadence/control-plane/internal/problems"
 	"github.com/usunrise88/cadence/control-plane/internal/projects"
@@ -36,6 +37,28 @@ type Service struct {
 	// RenderVersion renders a base model version as the contract's RegistryVersion (the server's mapping); its
 	// summary when nil.
 	RenderVersion func(registry.Version) any
+	// OnStatus, when set, is told in the same transaction about a run that was created or whose status changed
+	// (internal/experiments advances a run's sweep and reports on the experiment); its events join the change's.
+	OnStatus func(ctx context.Context, tx pgx.Tx, c StatusChange) ([]events.Draft, error)
+}
+
+// StatusChange is what OnStatus is told: the run's identity, its experiment and sweep, and its status now.
+type StatusChange struct {
+	RunID        string
+	ProjectID    string
+	ExperimentID string
+	SweepID      string
+	Status       string
+	Error        string
+	Created      bool
+}
+
+func (s *Service) onStatus(ctx context.Context, tx pgx.Tx, x row, created bool) ([]events.Draft, error) {
+	if s.OnStatus == nil {
+		return nil, nil
+	}
+	return s.OnStatus(ctx, tx, StatusChange{RunID: x.ID, ProjectID: x.ProjectID, ExperimentID: x.ExperimentID, SweepID: x.SweepID,
+		Status: x.Status, Error: x.Error, Created: created})
 }
 
 func (s *Service) defaults() *defaults.Defaults {
@@ -73,6 +96,11 @@ type NewInput struct {
 	Params      map[string]any
 	PeakLR      *float64
 	Priority    int
+	// Experiments (phase 3): the experiment and sweep the run belongs to, and a replay share that replaces the mix
+	// revision's when the mix is rendered (a sweep may vary it; the revision stays the same, the rendered hash not).
+	ExperimentID string
+	SweepID      string
+	ReplayShare  *float64
 }
 
 // Prepared is a run checked and planned, not yet started: what a dry run answers and what Create starts.
@@ -137,6 +165,11 @@ func (s *Service) Prepare(ctx context.Context, q storage.Querier, in NewInput) (
 	mixID, content, rev, err := ResolveMix(ctx, q, in.ProjectID, in.Mix, in.MixRevision)
 	if err != nil {
 		return Prepared{}, err
+	}
+	if in.ReplayShare != nil {
+		if content, err = withReplayShare(d, content, *in.ReplayShare); err != nil {
+			return Prepared{}, err
+		}
 	}
 	if p.Mix, err = RenderMix(ctx, q, s.CAS, in.ProjectID, mixID, content, rev, d.Estimates.BytesPerAudioHour.Value); err != nil {
 		return Prepared{}, err
@@ -277,6 +310,24 @@ func sharedOverrides(ctx context.Context, q storage.Querier, pl pipelines.Pipeli
 	return out, nil
 }
 
+// withReplayShare is mix content c with another replay share, checked as mixes.edit would check it: inside the
+// range of defaults.yaml mix.replay_share, and above zero only with a replay group.
+func withReplayShare(d *defaults.Defaults, c mixes.Content, share float64) (mixes.Content, error) {
+	if err := d.Mix.ReplayShare.Range.Check(share); err != nil {
+		return mixes.Content{}, problems.Validation([]problems.FieldError{{Path: "/replayShare", Message: fmt.Sprintf("%v (defaults.yaml mix.replay_share)", err)}})
+	}
+	replay := false
+	for _, g := range c.Groups {
+		replay = replay || g.Replay
+	}
+	if share > 0 && !replay {
+		return mixes.Content{}, problems.Validation([]problems.FieldError{{Path: "/replayShare",
+			Message: fmt.Sprintf("is %g but mix %s has no replay group (replay: true)", share, c.Name)}})
+	}
+	c.ReplayShare = share
+	return c, nil
+}
+
 func setParam(params map[string]any, k pipelines.Kind, name string, v *int) error {
 	if v == nil {
 		return nil
@@ -309,6 +360,7 @@ func (s *Service) Create(ctx context.Context, tx pgx.Tx, p Prepared) (View, []ev
 		Precision: p.Estimate.Precision, Params: p.Params, Estimate: est, Actor: p.In.Actor,
 		Card: Card{ComputeID: p.Estimate.Slot.Host.ID, Host: p.Estimate.Slot.Host.Name, Index: p.Estimate.Slot.Card.Index,
 			CardClass: p.Estimate.Slot.Card.CardClass, MemoryCapGB: p.Estimate.Slot.Card.MemoryCapGB},
+		ExperimentID: p.In.ExperimentID, SweepID: p.In.SweepID,
 	}
 	if p.Checkpoint != nil {
 		x.CheckpointID = p.Checkpoint.ID
@@ -333,6 +385,11 @@ func (s *Service) Create(ctx context.Context, tx pgx.Tx, p Prepared) (View, []ev
 		return View{}, nil, err
 	}
 	drafts = append(append(drafts, statusDraft(x, EventCreated)), more...)
+	hooked, err := s.onStatus(ctx, tx, x, true)
+	if err != nil {
+		return View{}, nil, err
+	}
+	drafts = append(drafts, hooked...)
 	v, err := s.view(ctx, tx, x)
 	return v, drafts, err
 }
@@ -398,7 +455,11 @@ func (s *Service) refresh(ctx context.Context, tx pgx.Tx, x row) ([]events.Draft
 	if x, err = saveStatus(ctx, tx, x); err != nil {
 		return nil, err
 	}
-	return []events.Draft{statusDraft(x, EventStatusChanged)}, nil
+	hooked, err := s.onStatus(ctx, tx, x, false)
+	if err != nil {
+		return nil, err
+	}
+	return append([]events.Draft{statusDraft(x, EventStatusChanged)}, hooked...), nil
 }
 
 // derive is a run's status from its pipeline run: an ended pipeline run gives done, failed or cancelled; while it

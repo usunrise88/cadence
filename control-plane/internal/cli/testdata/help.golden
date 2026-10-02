@@ -33,6 +33,7 @@ Entities:
   drafts         accept get list revert
   evals          gate get list new
   events         list
+  experiments    get list new
   gates          edit get
   goldenSets     freeze get list
   help           get search
@@ -59,6 +60,7 @@ Entities:
   secrets        list new
   sources        archive edit get list
   stepKinds      get list
+  sweeps         run
   telegramBot    set verify
   templates      get list
   utterances     get list
