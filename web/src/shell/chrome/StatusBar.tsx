@@ -1,10 +1,10 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bell, ChatBubble, CheckCircle, Cpu, HalfMoon, OpenInWindow, SunLight } from "iconoir-react";
-import { computeListOptions, queueEntriesListOptions } from "@/api/gen/@tanstack/react-query.gen";
+import { Bell, ChatBubble, CheckCircle, Cpu, GitFork, HalfMoon, OpenInWindow, SunLight } from "iconoir-react";
+import { branchesListOptions, computeListOptions, queueEntriesListOptions } from "@/api/gen/@tanstack/react-query.gen";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import type { AgentSession, Approval, CardTelemetry, QueueEntry } from "@/api/gen/types.gen";
+import type { AgentSession, Approval, Branch, CardTelemetry, QueueEntry } from "@/api/gen/types.gen";
 import { cn } from "@/lib/utils";
 import { useSnap } from "@/shell/floating-snap/dockview-adapter";
 import { useHelp } from "@/shell/help/store";
@@ -15,12 +15,13 @@ import { openPanel } from "@/shell/dock/layout";
 import { events } from "@/shell/registries";
 import { useTheme } from "@/shell/theme/store";
 import { useWorkspaceSync } from "@/shell/workspaces/persistence";
-import { openChat } from "@/shell/agents/bridge";
+import { openBranch, openChat } from "@/shell/agents/bridge";
 import { isAsleep, sessionLabel } from "@/shell/agents/labels";
 import { useAgentSessions } from "@/shell/agents/sessions";
 import { useShell } from "@/shell/state";
 import { focusPipelineRun } from "@/shell/training/focus";
 import { sortEntries } from "@/shell/training/queue";
+import { waitingBranches, waitingReason } from "./branches";
 import { applyTelemetry, formatReading, isStale, mergeReadings, seedReadings, sortedReadings, type Readings } from "./gpu";
 
 // Status bar: live connection, workspace save state, GPU telemetry per card, the step queue, agent sessions and
@@ -50,6 +51,7 @@ export function StatusBar() {
         <GpuBadge />
         <QueueBadge />
         <AgentSessionsBadge />
+        <BranchesBadge />
         <ApprovalsBadge />
         <Button variant="ghost" size="xs" className="h-5 px-1.5 text-[11px] font-normal text-muted-foreground" onClick={() => useSnap.getState().setEnabled(!snap)} aria-pressed={snap}>
           Snap {snap ? "on" : "off"}
@@ -210,6 +212,89 @@ function ApprovalsBadge() {
         ))}
       </ul>
     </StatusPopover>
+  );
+}
+
+/**
+ * Branches of the project repository that wait for a person — a template sync, another branch, an ended agent
+ * session's unmerged changes: a popup listing them (click opens the branch in the Recipe document); blinks while any
+ * wait, like Approvals.
+ */
+function BranchesBadge() {
+  const project = useShell((s) => s.project);
+  const qc = useQueryClient();
+  const opts = branchesListOptions({ path: { p: project ?? "" } });
+  const { data } = useQuery({ ...opts, enabled: !!project, staleTime: 30_000, refetchInterval: 60_000 });
+  const sessions = useAgentSessions(project);
+  const queryKey = opts.queryKey;
+  useEffect(
+    () =>
+      events.subscribe(
+        ["branches", "recipe.*", "agent.sessions", "entity.project.*"],
+        () => void qc.invalidateQueries({ queryKey }),
+        "shell",
+      ),
+    // The key is a fresh array each render; the project names it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [qc, project],
+  );
+  const items = waitingBranches(data?.items ?? [], sessions.data?.items ?? []);
+  const n = items.length;
+  if (!project) return null;
+  return (
+    <StatusPopover
+      title="Branches waiting for review"
+      button={
+        <Button
+          variant="ghost"
+          size="xs"
+          data-testid="branches-badge"
+          data-waiting={n ? "" : undefined}
+          className={cn(trigger, n ? "animate-attention text-status-warning-foreground" : "text-muted-foreground")}
+          aria-label={n ? `${n} branch${n === 1 ? "" : "es"} waiting for review` : "No branch waits for review"}
+        >
+          <GitFork aria-hidden />
+          Branches
+          {n ? <span className="min-w-4 rounded-full border border-status-warning px-1 text-center font-medium tabular-nums">{n}</span> : null}
+        </Button>
+      }
+    >
+      {n === 0 ? <p className="p-3 text-muted-foreground">Nothing to merge: every branch is in main or still being worked on.</p> : null}
+      <ul>
+        {items.map((b) => (
+          <BranchRow key={b.name} b={b} />
+        ))}
+      </ul>
+    </StatusPopover>
+  );
+}
+
+function BranchRow({ b }: { b: Branch }) {
+  const close = useContext(ClosePopover);
+  return (
+    <li className="border-b last:border-0">
+      <button
+        type="button"
+        className="flex w-full min-w-0 flex-col gap-0.5 px-3 py-2 text-left hover:bg-hover focus-visible:bg-hover focus-visible:outline-none"
+        onClick={() => {
+          close();
+          openBranch(b.name);
+        }}
+        data-branch={b.name}
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          <span aria-hidden className="size-2 shrink-0 rounded-full bg-status-warning" />
+          <span className="min-w-0 truncate font-mono font-medium">{b.name}</span>
+          <time className="ml-auto shrink-0 text-muted-foreground" dateTime={b.updatedAt}>
+            {new Date(b.updatedAt).toLocaleDateString()}
+          </time>
+        </span>
+        <span className="truncate pl-4 text-muted-foreground">
+          {waitingReason(b)} · {b.ahead} commit{b.ahead === 1 ? "" : "s"} ahead{b.behind ? `, ${b.behind} behind main` : ""}
+          {b.subject ? ` · ${b.subject}` : ""}
+        </span>
+      </button>
+    </li>
   );
 }
 

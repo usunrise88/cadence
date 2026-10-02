@@ -67,3 +67,21 @@ func TestClassifyLowSpace(t *testing.T) {
 		}
 	}
 }
+
+func TestClassifyBranchWaiting(t *testing.T) {
+	r := events.Record{Topic: "branches", Type: "branch.waiting",
+		Payload: []byte(`{"project":"test","branch":"session/ses_1","kind":"session","files":3,"conflicts":1,"reason":"the session's changes conflict with main"}`)}
+	n, ok := Classify(r)
+	if !ok || n.Class != ClassOutcome || n.Title != "Branch waiting for review: session/ses_1 (test)" {
+		t.Fatalf("notice %+v, %v", n, ok)
+	}
+	for _, want := range []string{"conflict with main", "3 files, 1 conflicting", "Recipe"} {
+		if !strings.Contains(n.Body, want) {
+			t.Errorf("body %q lacks %q", n.Body, want)
+		}
+	}
+	d := Digest{Branches: []string{"test: sync/2026-10-01"}}
+	if !strings.Contains(d.Text(), "Branches waiting for review (1):\n• test: sync/2026-10-01") {
+		t.Errorf("digest text %q", d.Text())
+	}
+}

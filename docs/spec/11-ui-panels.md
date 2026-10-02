@@ -150,6 +150,10 @@ Five workspaces ship by default, and Chat sits in the right column of every one,
 
 Selecting a matrix cell attaches it to the next Chat message; an eval run the agent starts fills the matrix live, and its approval requests appear in the same column.
 
+- The status bar's Branches badge counts the project's branches waiting for a person — ahead of main and not a live
+  session's (a template sync, another branch, an ended session's unmerged changes); it blinks like Approvals, its popup
+  lists them and a click opens the branch in the Recipe document. `branch.waiting` (topic `branches`) announces a new
+  one as an outcome notification, and the daily digest lists them.
 - The status bar's Agents, Approvals and Queue badges behave like its notification history: a small popup with the
   short list (live sessions; pending requests; step jobs running and waiting, a click shows the job's pipeline run) and
   a button that opens Agent sessions, Approvals or Queue & GPU as a floating window. The Approvals badge blinks while a

@@ -107,6 +107,9 @@ func Verify(store *cas.Store, ref steps.ArtifactRef) (bool, error) {
 	}
 	m, isDir := manifestOf(store, ref.Hash, size)
 	if isDir {
+		if err := m.Validate(); err != nil {
+			return false, fmt.Errorf("directory %s: %w", ref.Hash, err)
+		}
 		var total int64
 		for _, f := range m.Files {
 			has, fsize, err := store.Has(f.Hash)

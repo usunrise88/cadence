@@ -1,7 +1,7 @@
 # internal/artifacts
 The index of the content store (docs/spec/08-resolutions.md R15, R42): one `artifacts` row per artifact — hash (`b3:<64 hex>`), type, size, `directory`, neutral `meta`, the first producer's project (NULL for a registry artifact) and producing pipeline step — plus `artifact_projects`, every project that produced or consumed it. The bytes stay in `internal/cas`; this package never writes blobs.
 
-- `Verify(store, ref)` checks a reference against the store: a file's blob size equals the declared size; a directory artifact is a `cas.Manifest` blob whose files all exist with their sizes, and its size is the sum of its files (the manifest blob's own size is accepted too).
+- `Verify(store, ref)` checks a reference against the store: a file's blob size equals the declared size; a directory artifact is a `cas.Manifest` blob that passes `Manifest.Validate` (no path twice, no file that is also a directory) and whose files all exist with their sizes, and its size is the sum of its files (the manifest blob's own size is accepted too).
 - `Record(ctx, tx, store, ref, projectID, producer)` verifies and indexes an artifact; the first row wins, later producers and consumers only link their project. The pipeline engine records every step output (with its producer) and every run input.
 - `Get`, `Projects`, `Files` (a directory's manifest) and `ReadContent` (a file, or one file of a directory, of at most 1 MiB inline — `artifacts.get?content=true&path=`).
 

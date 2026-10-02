@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"maps"
 	"strings"
 	"sync"
 	"testing"
@@ -282,6 +283,33 @@ func TestTwoStepPipelineRunsAndReuses(t *testing.T) {
 	}
 	if len(r.leases.Calls()) != 6 {
 		t.Errorf("%d leases after fresh and changed runs, want 6", len(r.leases.Calls()))
+	}
+}
+
+func TestRuntimeUpgradeIsNotReused(t *testing.T) {
+	r := newRig(t, nil)
+	run := r.wait(r.start(r.input("hello world")).ID, pipelines.RunDone)
+	if len(r.leases.Calls()) != 2 {
+		t.Fatalf("%d leases", len(r.leases.Calls()))
+	}
+	// The echo runtime is upgraded (a new image): the same echo@1 is published by a new runtime version.
+	upgraded := map[string]any{}
+	maps.Copy(upgraded, pipelinestest.Fixtures[0])
+	upgraded["runtimeVersionId"] = "ver_test_upgraded"
+	if err := pipelinestest.Register(context.Background(), r.pool, upgraded); err != nil {
+		t.Fatal(err)
+	}
+	again := r.wait(r.start(r.input("hello world")).ID, pipelines.RunDone)
+	first, count := stepOf(t, again, "first"), stepOf(t, again, "count")
+	if first.State != pipelines.StepDone || first.ReusedFrom != "" || first.InputHash == stepOf(t, run, "first").InputHash {
+		t.Errorf("echo on the upgraded runtime: %+v; it must run again, not reuse the old runtime's output", first)
+	}
+	// Its output is the same bytes, and tally's runtime did not change: tally is still reused.
+	if count.State != pipelines.StepReused || count.ReusedFrom != stepOf(t, run, "count").ID {
+		t.Errorf("tally after the echo upgrade: %+v", count)
+	}
+	if len(r.leases.Calls()) != 3 {
+		t.Errorf("%d leases, want 3 (echo again only)", len(r.leases.Calls()))
 	}
 }
 
@@ -724,5 +752,40 @@ func TestNewestPublishedState(t *testing.T) {
 	ins(h('e'), "training-state", "pls_b", 0, false)          // another step's
 	if got, err := pipelines.NewestPublishedState(ctx, r.pool, "pls_a"); err != nil || got != h('b') {
 		t.Fatalf("newest state %q, %v; want %s", got, err, h('b'))
+	}
+}
+
+// A kind may leave an optional output unwritten (a train step's final training state): the step still succeeds,
+// and no pipeline may wire that output into another step.
+func TestOptionalOutputs(t *testing.T) {
+	r := newRig(t, nil)
+	ctx := context.Background()
+	echo2 := map[string]any{}
+	for k, v := range pipelinestest.Fixtures[0] {
+		echo2[k] = v
+	}
+	echo2["version"] = "2"
+	echo2["produces"] = map[string]string{"text": "text", "extra": "text"}
+	echo2["optionalOutputs"] = []string{"extra"}
+	if err := pipelinestest.Register(ctx, r.pool, echo2); err != nil {
+		t.Fatal(err)
+	}
+	one := &pipelines.Pipeline{Name: "one", Inputs: map[string]string{"text": "text"},
+		Steps: []pipelines.Step{{ID: "a", Kind: "echo@2", In: map[string]string{"text": "$inputs.text"}}}}
+	in := r.input("abc")
+	in.Pipeline = one
+	run := r.wait(r.start(in).ID, pipelines.RunDone)
+	if a := stepOf(t, run, "a"); a.State != pipelines.StepDone || len(a.Outputs) != 1 {
+		t.Fatalf("step a %+v: done with only its written output", a)
+	}
+
+	wired := &pipelines.Pipeline{Name: "wired", Inputs: map[string]string{"text": "text"}, Steps: []pipelines.Step{
+		{ID: "a", Kind: "echo@2", In: map[string]string{"text": "$inputs.text"}},
+		{ID: "b", Kind: "echo@1", In: map[string]string{"text": "a.extra"}},
+	}}
+	_, err := r.eng.Plan(ctx, r.pool, *wired, pipelines.PlanInput{Inputs: in.Inputs})
+	var pe *problems.Error
+	if !errors.As(err, &pe) || len(pe.Errors) == 0 || !strings.Contains(pe.Errors[0].Message, "may finish without") {
+		t.Fatalf("plan of a pipeline wiring an optional output: %v", err)
 	}
 }

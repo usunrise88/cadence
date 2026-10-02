@@ -55,7 +55,12 @@ type Digest struct {
 	Approvals     []string       `json:"approvals"` // the oldest pending operations, at most 5
 	Held          []string       `json:"held"`      // titles of events held for the digest
 	LastBackup    string         `json:"lastBackup,omitempty"`
+	// Branches are the branches waiting for a person (project: branch), when the digester knows them.
+	Branches []string `json:"branches,omitempty"`
 }
+
+// BranchesFunc lists the branches waiting for a person as "project: branch" (bootstrap.Service.WaitingBranches).
+type BranchesFunc func(ctx context.Context) ([]string, error)
 
 // BuildDigest gathers the digest of [since, until) in q.
 func BuildDigest(ctx context.Context, q storage.Querier, since, until time.Time, spend SpendFunc) (Digest, error) {
@@ -168,6 +173,12 @@ func (d Digest) Text() string {
 			b.WriteString("\n• " + h)
 		}
 	}
+	if len(d.Branches) > 0 {
+		fmt.Fprintf(&b, "\n\nBranches waiting for review (%d):", len(d.Branches))
+		for _, br := range d.Branches {
+			b.WriteString("\n• " + br)
+		}
+	}
 	if d.LastBackup != "" {
 		b.WriteString("\n\nLast backup: " + d.LastBackup)
 	}
@@ -182,6 +193,7 @@ type Digester struct {
 	Defaults func() *defaults.Defaults
 	Now      func() time.Time
 	Spend    SpendFunc
+	Branches BranchesFunc // nil: the digest lists no branches
 	// Wake is signalled after the digest was queued for Telegram.
 	Wake chan<- struct{}
 }
@@ -215,6 +227,11 @@ func (dg *Digester) Tick(ctx context.Context) (bool, error) {
 			return nil
 		}
 		d, err := BuildDigest(ctx, tx, at.Add(-24*time.Hour), now, dg.Spend)
+		if err == nil && dg.Branches != nil {
+			if d.Branches, err = dg.Branches(ctx); err != nil {
+				err = fmt.Errorf("digest branches: %w", err)
+			}
+		}
 		if err != nil {
 			return err
 		}

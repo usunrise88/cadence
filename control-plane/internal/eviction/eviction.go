@@ -31,9 +31,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
-	"path/filepath"
-	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -66,7 +63,8 @@ type Service struct {
 	Jobs *jobs.Service
 	Log  *slog.Logger
 	// MirrorDir is the backup mirror of the store (CADENCE_BACKUP_DIR/cas, internal/backups): blobs live at
-	// <MirrorDir>/b3/<2 hex>/<64 hex>. Empty: no backups, and an eviction is permanent.
+	// <MirrorDir>/b3/<2 hex>/<64 hex>. Training states are never mirrored (internal/backups), so their eviction is permanent;
+	// the mirror restores other artifacts (Backfill).
 	MirrorDir string
 	// testHook, when set, runs at the job's phases ("marked": the rows are marked and the lock is released;
 	// "deleting": the lock is held and the blobs are about to go), so a test can interleave a Record.
@@ -282,29 +280,9 @@ func (s *Service) Plan(ctx context.Context, tx pgx.Tx, f Filter) (Plan, error) {
 	if err != nil {
 		return Plan{}, err
 	}
-	p := Plan{Kept: kept, Permanent: s.MirrorDir == ""}
-	var refused []string
-	for _, c := range evict {
-		if !p.Permanent {
-			missing, err := s.unmirrored(ctx, tx, c)
-			if err != nil {
-				return Plan{}, err
-			}
-			if missing != "" {
-				k := Kept{Hash: c.Hash, RunID: c.RunID, Reason: "the backup mirror does not hold " + missing +
-					" yet; evict it after the next backup"}
-				p.Kept = append(p.Kept, k)
-				if slices.Contains(f.Hashes, c.Hash) {
-					refused = append(refused, k.Hash+": "+k.Reason)
-				}
-				continue
-			}
-		}
-		p.Artifacts = append(p.Artifacts, c)
-	}
-	if f.Strict && len(refused) > 0 {
-		return Plan{}, problems.ArtifactNotEvictable.New("%s", strings.Join(refused, "; "))
-	}
+	// Training states are not mirrored (internal/backups copyCAS): they are read only to resume, so evicting one is
+	// permanent and needs no backup first (docs/spec/07 open question D, decided 2026-10-01).
+	p := Plan{Kept: kept, Permanent: true, Artifacts: evict}
 	if err := s.sizeBlobs(ctx, tx, &p); err != nil {
 		return Plan{}, err
 	}
@@ -388,29 +366,6 @@ func blobsOf(ctx context.Context, q pgx.Tx, hash string, directory bool) ([]stri
 		return nil, fmt.Errorf("read files of %s: %w", hash, err)
 	}
 	return append(out, files...), nil
-}
-
-// unmirrored names the first blob of c that the backup mirror lacks (absent, or of another size), or "".
-func (s *Service) unmirrored(ctx context.Context, tx pgx.Tx, c Candidate) (string, error) {
-	blobs, err := blobsOf(ctx, tx, c.Hash, c.directory)
-	if err != nil {
-		return "", err
-	}
-	for _, b := range blobs {
-		ok, size, err := s.CAS.Has(b)
-		if err != nil {
-			return "", fmt.Errorf("look up %s: %w", b, err)
-		}
-		if !ok {
-			continue // already gone from the store: nothing to lose
-		}
-		hx := strings.TrimPrefix(b, cas.Prefix)
-		fi, err := os.Stat(filepath.Join(s.MirrorDir, "b3", hx[:2], hx))
-		if err != nil || fi.Size() != size {
-			return b, nil
-		}
-	}
-	return "", nil
 }
 
 // sizeBlobs fills the blobs the plan deletes and the bytes they hold: every blob of its artifacts that no live

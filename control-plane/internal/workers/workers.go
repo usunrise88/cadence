@@ -33,9 +33,11 @@ const (
 	MaxClaimWait     = 30 * time.Second // the longest long-poll
 	GPUEventInterval = 5 * time.Second  // at most one gpu event per host this often
 	LogRetention     = 14 * 24 * time.Hour
-	MaxLogBytes      = 1 << 20 // per workerLogs.new request
-	maxEventLines    = 200     // log lines carried by one job.{id}.log event
-	maxEventPoints   = 1000    // metric points carried by one run.{id}.metrics event
+	MaxLogBytes      = 4 << 20  // read per workerLogs.new request (the command body limit); the rest is discarded
+	MaxLogLineBytes  = 64 << 10 // one stored log line; a longer line is truncated, never refused
+	maxMsgBytes      = 16000    // a log line's msg
+	maxEventLines    = 200      // log lines carried by one job.{id}.log event
+	maxEventPoints   = 1000     // metric points carried by one run.{id}.metrics event
 )
 
 // Topics and event types of the worker protocol (docs/spec/06-platform.md "Topic scheme").

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import signal
+import threading
 import time
 from collections.abc import Mapping
 from pathlib import Path
@@ -92,6 +93,34 @@ class Forgetful:
 
     def run(self, params: BaseModel, inputs: Mapping[str, Path], outputs: Mapping[str, Path], ctx: StepContext) -> None:
         ctx.log("forgot")
+
+
+class SkipsOptional:
+    """Writes its required output and skips the optional one (a train step's final training state)."""
+
+    version: ClassVar[str] = "1"
+    consumes: ClassVar[Mapping[str, str]] = {}
+    produces: ClassVar[Mapping[str, str]] = {"out": "text", "state": "training-state"}
+    optional_outputs: ClassVar[frozenset[str]] = frozenset({"state"})
+    resources: ClassVar[StepResources] = {"gpu": False}
+    Params: ClassVar[type[BaseModel]] = NoParams
+
+    def run(self, params: BaseModel, inputs: Mapping[str, Path], outputs: Mapping[str, Path], ctx: StepContext) -> None:
+        outputs["out"].write_text("ok", encoding="utf-8")
+
+
+class Lingering:
+    """Writes its output and leaves a non-daemon thread behind, as a library's abandoned stream does."""
+
+    version: ClassVar[str] = "1"
+    consumes: ClassVar[Mapping[str, str]] = {}
+    produces: ClassVar[Mapping[str, str]] = {"out": "text"}
+    resources: ClassVar[StepResources] = {"gpu": False}
+    Params: ClassVar[type[BaseModel]] = NoParams
+
+    def run(self, params: BaseModel, inputs: Mapping[str, Path], outputs: Mapping[str, Path], ctx: StepContext) -> None:
+        threading.Thread(target=threading.Event().wait, daemon=False, name="lingering").start()
+        outputs["out"].write_text("ok", encoding="utf-8")
 
 
 class EnvProbe:

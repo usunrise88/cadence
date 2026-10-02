@@ -3,7 +3,10 @@ package pipelines
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/usunrise88/cadence/control-plane/internal/registry"
 	"github.com/usunrise88/cadence/control-plane/internal/steps"
@@ -20,9 +23,11 @@ type Kind struct {
 	Params           json.RawMessage   `json:"params"`
 	Consumes         map[string]string `json:"consumes"`
 	Produces         map[string]string `json:"produces"`
-	Resources        steps.Resources   `json:"resources"`
-	Secrets          []string          `json:"secrets,omitempty"`
-	Help             string            `json:"help,omitempty"`
+	// OptionalOutputs may be left unwritten by a successful step; no pipeline wires them into another step.
+	OptionalOutputs []string        `json:"optionalOutputs,omitempty"`
+	Resources       steps.Resources `json:"resources"`
+	Secrets         []string        `json:"secrets,omitempty"`
+	Help            string          `json:"help,omitempty"`
 	// EstimateSeconds is an optional fixed wall-time estimate a kind may publish (a data step's typical time);
 	// facades pass better ones per run (StartInput.Estimates).
 	EstimateSeconds *float64 `json:"estimateSeconds,omitempty"`
@@ -68,4 +73,22 @@ func (RegistryKinds) Lookup(ctx context.Context, q storage.Querier, name, versio
 		return k, true, nil
 	}
 	return Kind{}, false, nil
+}
+
+// runtimeOf returns the runtime version id (runtimeVersionId) of the pinned step kind registry version, part of a
+// step's input hash; "" when the step pins no version or the version names no runtime.
+func runtimeOf(ctx context.Context, q storage.Querier, stepKindVersionID string) (string, error) {
+	if stepKindVersionID == "" {
+		return "", nil
+	}
+	var id string
+	err := q.QueryRow(ctx, `SELECT coalesce(payload->>'runtimeVersionId', '') FROM registry_versions WHERE id = $1`,
+		stepKindVersionID).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("read the runtime of step kind version %s: %w", stepKindVersionID, err)
+	}
+	return id, nil
 }

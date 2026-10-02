@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -137,6 +138,10 @@ func (e *Engine) Plan(ctx context.Context, q storage.Querier, p Pipeline, in Pla
 				t, ok := pk.Produces[w.Output]
 				if !ok {
 					errs.Add(path+".in."+name, "step %q (%s) produces no %q (it produces %s)", w.Step, pk.Ref(), w.Output, listOr(sortedKeys(pk.Produces), "nothing"))
+					continue
+				}
+				if slices.Contains(pk.OptionalOutputs, w.Output) {
+					errs.Add(path+".in."+name, "step %q (%s) may finish without %q (an optional output); wire an output it always writes", w.Step, pk.Ref(), w.Output)
 					continue
 				}
 				got = t

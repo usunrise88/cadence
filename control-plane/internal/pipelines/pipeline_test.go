@@ -217,15 +217,19 @@ func TestPlanValidationErrors(t *testing.T) {
 
 func TestInputHash(t *testing.T) {
 	in := map[string]steps.ArtifactRef{"text": {Hash: textHash, Type: "text", Size: 3}}
-	a, _ := InputHash("echo", "1", map[string]any{"prefix": "x", "n": 1.0}, in)
-	b, _ := InputHash("echo", "1", map[string]any{"n": 1.0, "prefix": "x"}, map[string]steps.ArtifactRef{"text": {Hash: textHash, Type: "text"}})
-	c, _ := InputHash("echo", "2", map[string]any{"prefix": "x", "n": 1.0}, in)
-	d, _ := InputHash("echo", "1", map[string]any{"prefix": "y", "n": 1.0}, in)
+	a, _ := InputHash("echo", "1", "ver_rt1", map[string]any{"prefix": "x", "n": 1.0}, in)
+	b, _ := InputHash("echo", "1", "ver_rt1", map[string]any{"n": 1.0, "prefix": "x"}, map[string]steps.ArtifactRef{"text": {Hash: textHash, Type: "text"}})
+	c, _ := InputHash("echo", "2", "ver_rt1", map[string]any{"prefix": "x", "n": 1.0}, in)
+	d, _ := InputHash("echo", "1", "ver_rt1", map[string]any{"prefix": "y", "n": 1.0}, in)
+	e, _ := InputHash("echo", "1", "ver_rt2", map[string]any{"prefix": "x", "n": 1.0}, in)
 	if a != b || !steps.ValidHash(a) {
 		t.Errorf("the hash depends on key order or metadata: %s %s", a, b)
 	}
 	if a == c || a == d {
 		t.Error("the hash ignores the version or the parameters")
+	}
+	if a == e {
+		t.Error("the hash ignores the runtime version: a runtime upgrade would reuse the old runtime's work")
 	}
 }
 

@@ -361,3 +361,47 @@ func waitState(t *testing.T, pool *pgxpool.Pool, state string) string {
 	t.Fatalf("no set reached %s", state)
 	return ""
 }
+
+// Training states are not mirrored: a blob only a training state holds is skipped (it is read only to resume, and its
+// eviction is permanent by design); a file a state shares with a checkpoint is mirrored for the checkpoint.
+func TestMirrorSkipsTrainingStates(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	put := func(s string) string {
+		t.Helper()
+		h, err := f.cas.PutBytes([]byte(s))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return h
+	}
+	stateOnly, shared, ckp := put("optimizer moments"), put("shared weights"), put("checkpoint manifest")
+	state := put("state manifest")
+	if _, err := f.pool.Exec(ctx, `INSERT INTO artifacts (hash, type, size, directory) VALUES
+			($1, 'training-state', 1, true), ($2, 'checkpoint', 1, true)`, state, ckp); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.pool.Exec(ctx, `INSERT INTO artifact_files (hash, path, file_hash, size) VALUES
+			($1, 'last.ckpt', $2, 1), ($1, 'weights', $3, 1), ($4, 'weights', $3, 1)`,
+		state, stateOnly, shared, ckp); err != nil {
+		t.Fatal(err)
+	}
+	b, err := f.svc.Run(ctx, f.queue(TriggerManual, time.Now()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mirrored := func(h string) bool {
+		hx := strings.TrimPrefix(h, cas.Prefix)
+		_, err := os.Stat(filepath.Join(f.svc.Config.Dir, "cas", "b3", hx[:2], hx))
+		return err == nil
+	}
+	for h, want := range map[string]bool{state: false, stateOnly: false, shared: true, ckp: true} {
+		if mirrored(h) != want {
+			t.Errorf("blob %s mirrored = %v, want %v", h, !want, want)
+		}
+	}
+	// The fixture's two loose blobs, the shared file and the checkpoint manifest.
+	if *b.CASBlobs != 4 || *b.CASCopied != 4 {
+		t.Fatalf("cas blobs %d copied %d", *b.CASBlobs, *b.CASCopied)
+	}
+}

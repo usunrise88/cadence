@@ -35,6 +35,9 @@ LOG_BATCH_LINES = 500
 LOG_BATCH_BYTES = 512 << 10  # the endpoint takes at most 1 MiB per request
 METRIC_BATCH_POINTS = 1000  # the contract allows 5000
 FLUSH_SECONDS = 1.0
+# How long shutdown waits for a stopping lease beyond the step stop grace: hashing its training state and the release.
+# A worker container's stop_grace_period in docker-compose.yml must cover both (tests/test_compose.py).
+RELEASE_MARGIN_SECONDS = 15.0
 
 
 class Batcher[T]:
@@ -345,7 +348,7 @@ class WorkerService:
         for s in sessions:
             s.runner.stop(reason)
         for t in self._threads:
-            t.join(timeout=self.cfg.stop_grace + 15)
+            t.join(timeout=self.cfg.stop_grace + RELEASE_MARGIN_SECONDS)
 
 
 def serve(cfg: Config | None = None) -> int:

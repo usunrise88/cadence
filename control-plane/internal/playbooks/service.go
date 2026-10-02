@@ -264,10 +264,13 @@ func (s *Service) Admit(ctx context.Context, tx pgx.Tx, cmd commands.Command) er
 	if cmd.DryRun {
 		return nil
 	}
-	for _, op := range st.DryRuns {
-		if op == cmd.Operation {
-			return nil
-		}
+	matches, dryRun := st.DryRunMatches(cmd.Operation, cmd.RequestHash)
+	if matches {
+		return nil
+	}
+	if dryRun {
+		return problems.PlaybookDryRunRequired.New(
+			"%s spends GPU time and this request differs from its dry run (path, parameters or body): call it with dryRun=true with exactly these arguments first, report the estimate, then call it again without dryRun", cmd.Operation)
 	}
 	return problems.PlaybookDryRunRequired.New(
 		"%s spends GPU time: in a playbook session call it with dryRun=true first, report the estimate, then call it again without dryRun", cmd.Operation)
@@ -293,7 +296,7 @@ func (s *Service) Done(ctx context.Context, tx pgx.Tx, cmd commands.Command, res
 
 // DryRun records a successful dry run (and marks a spending item running) in its own transaction.
 func (s *Service) DryRun(ctx context.Context, cmd commands.Command, res commands.Result) {
-	s.apart(ctx, cmd.Actor, Observation{Operation: cmd.Operation, DryRun: true, Status: 200, Body: bodyMap(res.Body),
+	s.apart(ctx, cmd.Actor, Observation{Operation: cmd.Operation, DryRun: true, Request: cmd.RequestHash, Status: 200, Body: bodyMap(res.Body),
 		ToolCallID: commands.ToolCallFromContext(ctx), At: s.now()})
 }
 

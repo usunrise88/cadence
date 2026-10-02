@@ -70,14 +70,14 @@ func (s *Service) AppendLogs(ctx context.Context, c Caller, leaseID string, body
 	if err != nil {
 		return err
 	}
-	raw, err := io.ReadAll(io.LimitReader(body, MaxLogBytes+1))
+	// Bytes past MaxLogBytes are discarded rather than refused: one huge line must not stop the job's log for good.
+	// The line the limit cuts is kept, truncated (parseLines).
+	raw, err := io.ReadAll(io.LimitReader(body, MaxLogBytes))
 	if err != nil {
 		return problems.BadRequest.New("cannot read the log lines: %v", err)
 	}
-	if len(raw) > MaxLogBytes {
-		return problems.BadRequest.New("at most %d bytes of log lines per request; send smaller batches", MaxLogBytes)
-	}
-	lines, err := parseLines(raw)
+	_, _ = io.Copy(io.Discard, body)
+	lines, err := parseLines(raw, s.now())
 	if err != nil {
 		return err
 	}
@@ -99,7 +99,8 @@ func (s *Service) AppendLogs(ctx context.Context, c Caller, leaseID string, body
 	})
 }
 
-func parseLines(raw []byte) ([]LogLine, error) {
+// parseLines parses a batch of NDJSON log lines. A line longer than MaxLogLineBytes is never refused (truncateLine).
+func parseLines(raw []byte, now time.Time) ([]LogLine, error) {
 	var (
 		out    []LogLine
 		fields []problems.FieldError
@@ -107,6 +108,10 @@ func parseLines(raw []byte) ([]LogLine, error) {
 	for i, b := range bytes.Split(raw, []byte("\n")) {
 		b = bytes.TrimSpace(b)
 		if len(b) == 0 {
+			continue
+		}
+		if len(b) > MaxLogLineBytes {
+			out = append(out, truncateLine(b, now))
 			continue
 		}
 		var l LogLine
@@ -121,8 +126,8 @@ func parseLines(raw []byte) ([]LogLine, error) {
 			fields = append(fields, problems.FieldError{Path: fmt.Sprintf("/lines/%d/level", i), Message: "debug, info, warn or error"})
 			continue
 		}
-		if len(l.Msg) > 16000 {
-			l.Msg = l.Msg[:16000]
+		if len(l.Msg) > maxMsgBytes {
+			l.Msg = l.Msg[:maxMsgBytes]
 		}
 		l.Seq = 0
 		out = append(out, l)
@@ -134,6 +139,33 @@ func parseLines(raw []byte) ([]LogLine, error) {
 		return nil, problems.Validation(fields)
 	}
 	return out, nil
+}
+
+// truncateLine turns a line longer than MaxLogLineBytes into one that fits and says so: a valid line keeps its time
+// and level, its msg is cut and its fields dropped when they alone are too long; anything else (a line cut by
+// MaxLogBytes, invalid JSON) becomes a warn line stamped now whose msg is the start of the raw text. Either way the
+// msg ends with "[truncated: the line had N bytes]".
+func truncateLine(b []byte, now time.Time) LogLine {
+	mark := fmt.Sprintf(" [truncated: the line had %d bytes]", len(b))
+	var l LogLine
+	if err := json.Unmarshal(b, &l); err == nil && !l.T.IsZero() && l.Msg != "" {
+		if l.Level == "" {
+			l.Level = "info"
+		}
+		if _, ok := levels[l.Level]; ok {
+			if len(l.Msg) > maxMsgBytes {
+				l.Msg = strings.ToValidUTF8(l.Msg[:maxMsgBytes], "")
+			}
+			l.Msg += mark
+			if len(l.Fields) > MaxLogLineBytes-maxMsgBytes-1024 {
+				l.Fields = nil
+			}
+			l.Seq = 0
+			return l
+		}
+	}
+	prefix := b[:min(len(b), maxMsgBytes)]
+	return LogLine{T: now, Level: "warn", Msg: strings.ToValidUTF8(string(prefix), "") + mark}
 }
 
 // appendFile writes lines to the job's log under the service's log lock, numbering them.

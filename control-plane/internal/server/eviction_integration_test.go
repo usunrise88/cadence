@@ -212,23 +212,23 @@ func TestArtifactsEvict(t *testing.T) {
 		t.Fatal(err)
 	}
 	mirror(t, f.store, mirrorDir)
-	// Recorded after the last backup: the mirror lacks it, so it waits for the next one.
+	// Recorded after the last backup: training states are never mirrored, so the mirror does not hold it up.
 	u1 := f.fileState("state u1 (not backed up)", "plr_done", 1)
 
 	sharedHash := cas.Hash([]byte("shared weights"))
 	optimHash := cas.Hash([]byte("optimizer state of d1"))
-	wantBytes := f.size(d1) + f.size(optimHash) + f.size(d2) + f.size(f1)
+	wantBytes := f.size(d1) + f.size(optimHash) + f.size(d2) + f.size(f1) + f.size(u1)
 
 	// Dry run: the plan, with the shared file kept and not counted.
 	var plan evictionPlan
 	e.ok(e.do("POST", "/api/artifacts:evict?dryRun=true", "", "Idempotency-Key", e.key()), 200, &plan)
-	want := []string{d1, d2, f1}
+	want := []string{d1, d2, f1, u1}
 	slices.Sort(want)
-	if !slices.Equal(plan.hashes(), want) || plan.BytesFreed != wantBytes || plan.Blobs != 4 || plan.Permanent {
+	if !slices.Equal(plan.hashes(), want) || plan.BytesFreed != wantBytes || plan.Blobs != 5 || !plan.Permanent {
 		t.Fatalf("plan %+v, want %v and %d bytes", plan, want, wantBytes)
 	}
 	for hash, reason := range map[string]string{f2: "newest state of a failed run", r1: "still running",
-		x1: "step job names it", u1: "backup mirror does not hold"} {
+		x1: "step job names it"} {
 		if got := plan.keptReason(hash); !strings.Contains(got, reason) {
 			t.Errorf("kept %s: %q, want %q", hash, got, reason)
 		}
@@ -276,20 +276,20 @@ func TestArtifactsEvict(t *testing.T) {
 	if err := json.Unmarshal(j.Result, &done); err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(done.hashes(), want) || done.BytesFreed != wantBytes || done.Blobs != 4 {
+	if !slices.Equal(done.hashes(), want) || done.BytesFreed != wantBytes || done.Blobs != 5 {
 		t.Fatalf("job result %+v", done)
 	}
-	for _, h := range []string{d1, optimHash, d2, f1} {
+	for _, h := range []string{d1, optimHash, d2, f1, u1} {
 		if f.has(h) {
 			t.Errorf("blob %s is still in the store", h)
 		}
 	}
-	for _, h := range []string{sharedHash, ckp, f2, r1, x1, u1} {
+	for _, h := range []string{sharedHash, ckp, f2, r1, x1} {
 		if !f.has(h) {
 			t.Errorf("blob %s was deleted", h)
 		}
 	}
-	if n := e.count(`SELECT count(*) FROM artifacts WHERE evicted_at IS NOT NULL AND eviction_job_id = '` + job.JobID + `'`); n != 3 {
+	if n := e.count(`SELECT count(*) FROM artifacts WHERE evicted_at IS NOT NULL AND eviction_job_id = '` + job.JobID + `'`); n != 4 {
 		t.Fatalf("%d rows marked evicted", n)
 	}
 	var got struct {

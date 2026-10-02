@@ -5500,6 +5500,10 @@ components:
         params: { type: object, description: "JSON Schema of the parameters; every property carries x-cadence {default, description, source, range[, defaultRef]}" }
         consumes: { type: object, additionalProperties: { type: string }, description: "Input name → artifact type" }
         produces: { type: object, additionalProperties: { type: string }, description: "Output name → artifact type" }
+        optionalOutputs:
+          type: array
+          items: { type: string }
+          description: "Outputs of produces a successful step may leave unwritten (a train step's final training state); no pipeline may wire them into another step"
         resources: { $ref: "#/components/schemas/StepResources" }
         role: { type: string, maxLength: 40, description: "The model-family role this kind fills (calibrate, train, average, transcribe, export, parity), empty for neutral kinds" }
         neutral: { type: boolean, description: "Runtime-neutral core kind shipped in every runtime image" }
@@ -6014,7 +6018,7 @@ components:
         outputs: { type: object, additionalProperties: { $ref: "#/components/schemas/ArtifactRef" } }
         resources: { $ref: "#/components/schemas/StepResources" }
         estimateSeconds: { type: number }
-        inputHash: { type: string, description: "Hash of kind, version, resolved parameters and input hashes: a finished step with the same one is reused" }
+        inputHash: { type: string, description: "Hash of kind, version, the runtime version that published it, resolved parameters and input hashes: a finished step with the same one is reused" }
         reusedFrom: { type: string, description: "The finished step (pls_…) whose outputs were reused" }
         attempts: { type: integer }
         jobId: { type: string, description: The current attempt's step job }

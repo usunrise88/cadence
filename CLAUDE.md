@@ -78,7 +78,7 @@ Phase 1 has nothing open (live evals on the stand: 6/6, 2026-09-30). Built after
 (`make evals`); claude.ai connectors are off in every Claude session.
 
 Phase 2 (training) passed its gate on 2026-10-01 (an agent's playbook session fine-tuned Nemotron on the stand; ROADMAP
-"Phase 2" gate paragraph); the replay corpus import is still open (disk). Plan and interfaces: `docs/review/2026-09-30-phase-2-plan.md`; what differs: ROADMAP "Phase 2 notes"; the
+"Phase 2" gate paragraph); the replay corpus and the 34 replay golden sets are imported on the stand. Plan and interfaces: `docs/review/2026-09-30-phase-2-plan.md`; what differs: ROADMAP "Phase 2 notes"; the
 real-card rehearsal: `docs/review/2026-10-01-phase-2-rehearsal.md`. What exists:
 - **Worker protocol** (tag `worker`, `cwk_`): workers register runtime, step kinds and model families as registry
   versions, long-poll leases on River `step` jobs (`internal/workers`, `internal/queue`: card slots, priorities,
@@ -95,6 +95,17 @@ real-card rehearsal: `docs/review/2026-10-01-phase-2-rehearsal.md`. What exists:
   augmentation form, GPU badge.
 - The staging card is 48 GB with vLLM resident: training cap 22 GB (spike A3). Go and web code never name a framework
   or family (`internal/contract/seams_test.go`).
+- **Hardening after the gate** (PRs #8, #10 and the follow-ups; ROADMAP "Phase 2 notes"): GPU budgets fail closed
+  (an unknown GPU cost waits for approval) and subtract queued work, `pipelineRuns.retry` and `jobs.resume` are in
+  `gpu-spend`; the reaper grants a grace after the control plane starts; plans check `pattern` ranges and defaults;
+  `runs.new` refuses a language the base model's `locale:` tags lack and passes `x-cadence.shared` params (e.g.
+  `target_lang`) to every step of the stage; periodic training states are published mid-lease and a lost lease resumes
+  from the newest; step kinds may declare `optionalOutputs` (a finished fine-tune writes no training state); training
+  states skip the backup mirror and evict without it (permanent); Settings → Content store and the
+  `storage.low_space` warning; the Recipe document edits any text file and pipelines are planned before they commit;
+  the agent host scans and pushes an agent's own commits; the Telegram bot answers `/status`, `/approvals`, `/help`;
+  `dataset_import@3` transliterates (`sr-Cyrl-Latn`) and streams a capped `hf-dataset`; the NeMo pack passes the
+  conformance suite on the card (`nightly.yml` needs a runner, below).
 
 Known spec conflicts and gaps: `docs/review/2026-09-29-spec-kickoff-review.md` (statuses updated); assumptions made
 while building are in `docs/spec/07-audit-risks-sources.md` "Open questions".
@@ -124,6 +135,11 @@ Gotchas:
   agent. A new Cadence tool an agent should use without asking belongs in the preset, not only in the rendered file.
 - A stopping agent host calls `hostSessions.release`; compose gives it `stop_grace_period: 30s`. Restarting the stand's
   agent host is therefore safe mid-session, but a running turn is interrupted (the agent is told, not re-run).
+- In vitest, `beforeEach(() => fn.mockReset())` returns the mock and vitest runs it as teardown: use a block body.
+- A new parameter on a step kind changes its schema: bump the kind's version (`worker/step-kinds.lock.json` enforces
+  it) and the bundled pipelines' pins; `optionalOutputs` and `x-cadence.shared` do not count.
+- CI lints with golangci-lint v2.14.0 (`.github/workflows/ci.yml`); locally `docker run … golangci/golangci-lint:v2.14.0
+  golangci-lint run ./...` in `control-plane` when the binary is not installed.
 - For live agent runs keep prompts tiny; Claude sessions use `sonnet` (`haiku` delegates to subagents and loops),
   opencode `minimax/MiniMax-M3` on the stand (the free `opencode/big-pickle` elsewhere).
 

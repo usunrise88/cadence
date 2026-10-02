@@ -3,6 +3,7 @@ package eviction
 import (
 	"context"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -42,8 +43,15 @@ func DiskOf(dir string, low float64) (Disk, error) {
 	if err := unix.Statfs(dir, &st); err != nil {
 		return Disk{}, fmt.Errorf("statfs %s: %w", dir, err)
 	}
-	bsize := int64(st.Bsize) //nolint:unconvert // the field's type differs between platforms
-	return Disk{TotalBytes: int64(st.Blocks) * bsize, FreeBytes: int64(st.Bavail) * bsize, LowFreeFraction: low}, nil
+	// Block counts and sizes are unsigned; a filesystem past 2^63 bytes does not exist, so the sizes are capped there.
+	bsize := uint64(st.Bsize) //nolint:unconvert,gosec // the field type differs between platforms; a block size is positive
+	bytes := func(blocks uint64) int64 {
+		if bsize != 0 && blocks > math.MaxInt64/bsize {
+			return math.MaxInt64
+		}
+		return int64(blocks * bsize) //nolint:gosec // bounded above
+	}
+	return Disk{TotalBytes: bytes(st.Blocks), FreeBytes: bytes(st.Bavail), LowFreeFraction: low}, nil
 }
 
 // Disk reads the content store's filesystem now.

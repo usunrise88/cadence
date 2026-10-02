@@ -19,6 +19,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"slices"
 	"sync/atomic"
 	"time"
 
@@ -335,7 +336,11 @@ func (e *Engine) advance(ctx context.Context, tx pgx.Tx, r *Run, sts []StepRow) 
 				continue
 			}
 			s.Inputs = inputs
-			if s.InputHash, err = InputHash(s.Kind, s.KindVersion, s.Params, inputs); err != nil {
+			runtime, err := runtimeOf(ctx, tx, s.StepKindVersionID)
+			if err != nil {
+				return nil, err
+			}
+			if s.InputHash, err = InputHash(s.Kind, s.KindVersion, runtime, s.Params, inputs); err != nil {
 				return nil, err
 			}
 			ev, reused, err := e.reuse(ctx, tx, r, s)
@@ -685,9 +690,22 @@ func indexOf(sts []StepRow, id string) int {
 // run. Missing, mistyped or absent-from-store outputs and failing hooks fail the step instead.
 func (e *Engine) succeed(ctx context.Context, tx pgx.Tx, r *Run, sts []StepRow, i int, spec steps.Spec, out steps.Outcome) ([]events.Draft, error) {
 	s := &sts[i]
+	var optional []string // outputs the kind may leave unwritten, read only when one is missing
 	for _, name := range sortedKeys(s.Produces) {
 		ref, ok := out.Outputs[name]
+		if !ok && optional == nil {
+			k, found, err := (RegistryKinds{}).Lookup(ctx, tx, s.Kind, s.KindVersion)
+			if err != nil {
+				return nil, err
+			}
+			optional = []string{}
+			if found {
+				optional = k.OptionalOutputs
+			}
+		}
 		switch {
+		case !ok && slices.Contains(optional, name):
+			continue
 		case !ok:
 			return e.fail(ctx, tx, r, sts, i, steps.StepError{Type: steps.ErrStep, Message: fmt.Sprintf("the step reported no output %q (%s)", name, s.Produces[name])})
 		case ref.Type != s.Produces[name]:
@@ -951,7 +969,6 @@ type RetryInput struct {
 // AnyRev skips Retry's revision check: a facade that checked its own entity's revision (runs.resume).
 const AnyRev = -1
 
-// Retry runs failed (or cancelled) steps of pipeline run id again as new attempts and reopens the run.
 // RetryEstimate is the GPU time a retry of run id may spend: every step not done yet (the retried steps and those
 // waiting behind them) that needs a card, at its recorded estimate. unknown is true when such a step has none.
 func RetryEstimate(ctx context.Context, q storage.Querier, id string) (gpuHours float64, unknown bool, err error) {
@@ -972,6 +989,7 @@ func RetryEstimate(ctx context.Context, q storage.Querier, id string) (gpuHours 
 	return gpuHours, unknown, nil
 }
 
+// Retry runs failed (or cancelled) steps of pipeline run id again as new attempts and reopens the run.
 func (e *Engine) Retry(ctx context.Context, tx pgx.Tx, id string, rev int, in RetryInput) (Run, []events.Draft, error) {
 	r, err := lockRun(ctx, tx, id)
 	if err != nil {

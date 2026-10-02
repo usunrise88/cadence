@@ -127,7 +127,8 @@ services:
       - artifacts:/var/lib/cadence
     ipc: host # NeMo's data loaders need more shared memory than the 64 MB default
     depends_on: [control-plane]
-    # On SIGTERM a training step writes its training state and the lease is released as cancelled with it.
+    # On SIGTERM a training step writes its training state and the lease is released as cancelled with it: at least
+    # the step stop grace (CADENCE_STOP_GRACE_SECONDS, 60 s) plus the release (worker/tests/test_compose.py).
     stop_grace_period: 90s
     deploy:
       resources:
@@ -155,7 +156,9 @@ services:
       - worker-credential:/worker-credential:ro
       - artifacts:/var/lib/cadence
     depends_on: [control-plane]
-    stop_grace_period: 30s
+    # The step stop grace (CADENCE_STOP_GRACE_SECONDS, 60 s) plus the release, as for the GPU worker
+    # (worker/tests/test_compose.py ties the numbers).
+    stop_grace_period: 90s
 
 networks:
   # No route out: the agent host reaches the control plane here and everything else through egress-proxy.

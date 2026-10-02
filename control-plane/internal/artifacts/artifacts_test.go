@@ -28,6 +28,8 @@ func TestVerifyAndReadContent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A manifest written by hand (a worker uploads its own) that lists one path twice.
+	dup := put(`{"files":[{"path":"b.txt","hash":"` + b + `","size":2},{"path":"b.txt","hash":"` + a + `","size":5}]}`)
 	tests := []struct {
 		name    string
 		ref     steps.ArtifactRef
@@ -41,6 +43,7 @@ func TestVerifyAndReadContent(t *testing.T) {
 		{"bad type", steps.ArtifactRef{Hash: a, Type: "Text!", Size: 5}, false, "not an artifact type"},
 		{"directory by total", steps.ArtifactRef{Hash: dir, Type: "shar", Size: 7}, true, ""},
 		{"directory size differs", steps.ArtifactRef{Hash: dir, Type: "shar", Size: 8}, false, "holds 7 bytes, declared 8"},
+		{"directory with a duplicate path", steps.ArtifactRef{Hash: dup, Type: "shar", Size: 7}, false, "appears twice"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

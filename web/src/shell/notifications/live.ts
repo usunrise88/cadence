@@ -15,7 +15,7 @@ import { notify, type Notice } from "./store";
 // also reaches the polite live region (WCAG 4.1.3). The routing table (Settings → Notifications) decides which
 // classes the history shows; Telegram is routed on the server by the same table.
 
-export const NOTICE_TOPICS = ["approvals", "job.*", "pipeline_run.*", "compute.*", "entity.credential.*", "backups", "notifications", "storage"];
+export const NOTICE_TOPICS = ["approvals", "job.*", "pipeline_run.*", "compute.*", "entity.credential.*", "backups", "notifications", "storage", "branches"];
 
 type NoticeInput = Omit<Notice, "id" | "at" | "read">;
 
@@ -76,6 +76,12 @@ export function noticeFor(e: CadenceEvent): NoticeInput | undefined {
     if (e.type === "backup.restore_failed") return { level: "error", title: "Restore test failed", detail: err ?? b?.restoreTest?.error, open: SETTINGS, seq: e.seq };
     if (e.type === "backup.restore_passed") return { level: "success", title: "Restore test passed", detail: b ? `set ${b.id}` : undefined, open: SETTINGS, seq: e.seq };
     return undefined;
+  }
+  if (e.type === "branch.waiting") {
+    const b = e.payload as { project?: string; branch?: string; files?: number; conflicts?: number; reason?: string } | undefined;
+    if (!b?.branch) return undefined;
+    const conflicts = b.conflicts ? `, ${b.conflicts} conflicting` : "";
+    return { level: "info", title: `Branch waiting for review: ${b.branch}`, detail: `${b.project ?? ""} · ${b.reason ?? ""} (${b.files ?? 0} files${conflicts})`, seq: e.seq };
   }
   if (e.type === "storage.low_space") {
     const d = e.payload as { totalBytes?: number; freeBytes?: number; evictableArtifacts?: number; evictableBytes?: number } | undefined;

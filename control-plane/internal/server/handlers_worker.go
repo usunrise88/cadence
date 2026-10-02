@@ -94,7 +94,9 @@ func (s *Server) WorkerRegistrationsNew(ctx context.Context, req api.WorkerRegis
 		return nil, err
 	}
 	var w workers.Worker
-	err = pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
+	// Workers that register for the first time at once race on the same registry and worker rows; the loser runs
+	// again and finds the winner's rows (registration is idempotent).
+	err = storage.BeginRetry(ctx, s.Pool, 3, func(tx pgx.Tx) error {
 		var drafts []events.Draft
 		if w, drafts, err = s.Workers.Register(ctx, tx, c, in); err != nil {
 			return err

@@ -86,7 +86,7 @@ func (s *Service) run(ctx context.Context, r *jobs.Run) (any, error) {
 		return nil, err
 	}
 	s.hook("marked")
-	p := Plan{Kept: []Kept{}, Permanent: s.MirrorDir == ""}
+	p := Plan{Kept: []Kept{}, Permanent: true} // training states are never mirrored
 	err = pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
 		if err := artifacts.LockExclusive(ctx, tx); err != nil {
 			return err

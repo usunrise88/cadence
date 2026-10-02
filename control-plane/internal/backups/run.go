@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/usunrise88/cadence/control-plane/internal/cas"
 )
@@ -318,11 +319,17 @@ func redactDSN(dsn string) string {
 }
 
 // copyCAS mirrors content-store blobs that the mirror does not hold yet (blobs are immutable: an existing file of
-// the same size is the same blob).
+// the same size is the same blob). Blobs that only training states hold are not mirrored: a state is read only to
+// resume a run, it is the bulk of the store (7.66 GB each for the 0.6B model), and its eviction is permanent by design
+// (docs/spec/07 open question D, decided 2026-10-01).
 func (s *Service) copyCAS(ctx context.Context, m *manifest) error {
 	src := s.Config.CASDir
 	if src == "" {
 		return nil
+	}
+	skip, err := stateOnlyBlobs(ctx, s.Pool)
+	if err != nil {
+		return err
 	}
 	root := filepath.Join(src, "b3")
 	if _, err := os.Stat(root); errors.Is(err, fs.ErrNotExist) {
@@ -336,7 +343,7 @@ func (s *Service) copyCAS(ctx context.Context, m *manifest) error {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		if d.IsDir() {
+		if d.IsDir() || skip[d.Name()] {
 			return nil
 		}
 		info, err := d.Info()
@@ -359,6 +366,33 @@ func (s *Service) copyCAS(ctx context.Context, m *manifest) error {
 		m.CASBytesCopied += info.Size()
 		return nil
 	})
+}
+
+// stateOnlyBlobs names (by their file name, the hex of the hash) the blobs that training-state artifacts hold — their
+// manifests and listed files — and no other artifact does. A nil pool (tests without a database) skips nothing.
+func stateOnlyBlobs(ctx context.Context, pool *pgxpool.Pool) (map[string]bool, error) {
+	out := map[string]bool{}
+	if pool == nil {
+		return out, nil
+	}
+	rows, err := pool.Query(ctx, `WITH state_blobs AS (
+			SELECT a.hash AS blob FROM artifacts a WHERE a.type = 'training-state'
+			UNION SELECT f.file_hash FROM artifact_files f JOIN artifacts a ON a.hash = f.hash WHERE a.type = 'training-state')
+		SELECT blob FROM state_blobs b
+		WHERE NOT EXISTS (SELECT 1 FROM artifacts o WHERE o.hash = b.blob AND o.type <> 'training-state')
+			AND NOT EXISTS (SELECT 1 FROM artifact_files f JOIN artifacts o ON o.hash = f.hash
+				WHERE f.file_hash = b.blob AND o.type <> 'training-state')`)
+	if err != nil {
+		return nil, fmt.Errorf("training-state blobs: %w", err)
+	}
+	hashes, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return nil, fmt.Errorf("training-state blobs: %w", err)
+	}
+	for _, h := range hashes {
+		out[strings.TrimPrefix(h, cas.Prefix)] = true
+	}
+	return out, nil
 }
 
 func copySecrets(src, dst string) (int, error) {
