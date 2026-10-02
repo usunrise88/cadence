@@ -1,7 +1,7 @@
 ---
 title: Checkpoints
 summary: The checkpoints of the active run with validation WER, the top k kept, averaged ones; average the selected, start a new stage from one.
-contexts: [panel:checkpoints, command:checkpoints.average]
+contexts: [panel:checkpoints, command:checkpoints.average, command:evals.new]
 ---
 
 ## What this is
@@ -30,7 +30,7 @@ Training · Review → Decide: which checkpoint goes on to evaluation, or become
 | --- | --- | --- |
 | Average selected | `checkpoints.average` | Two or more checkpoints of the run; runs the family's average step as a pipeline run, and the result joins the list |
 | New stage from here | `runs.stage` | Opens the Run document's stage form with this checkpoint; the peak LR is asked for explicitly |
-| Evaluate | — | Arrives with evaluation (phase 3) |
+| Evaluate | `evals.new` | Plans the eval first (golden sets × profiles, cells already cached, GPU-hours), then Start eval opens the Eval report |
 | Export | — | Arrives with deployment (phase 5) |
 | From step | — | Opens the pipeline run that saved it |
 

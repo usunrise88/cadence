@@ -1,16 +1,10 @@
-import { BookmarkBook, Play, Plus, StatsReport } from "iconoir-react";
+import { Play, Plus } from "iconoir-react";
 import { commandHeaders } from "@/api/client";
-import { evalsNew, experimentsNew, modelsRegister, sweepsRun } from "@/api/gen/sdk.gen";
+import { experimentsNew, sweepsRun } from "@/api/gen/sdk.gen";
 import type {
   ApprovalAccepted,
-  Eval,
-  EvalNew,
-  EvalPlan,
   Experiment,
   ExperimentNew,
-  ModelRegister,
-  ModelRegistration,
-  ModelVersion,
   Sweep,
   SweepNew,
   SweepPlan,
@@ -22,7 +16,8 @@ import { commands } from "@/shell/registries";
 import type { Command } from "./registry";
 
 // Commands behind the Experiment document (phase 3 · stream X; docs/spec/11-ui-panels.md "Experiment"): each is
-// exactly one API operation. Without a body, experiments.new opens the Experiment panel's form and sweeps.run asks the
+// exactly one API operation. Evaluate best and Register best run evals.new and models.register from
+// ./evaluation, which asks the Experiment document (REGISTER_REQUEST) when the header runs it without a body. Without a body, experiments.new opens the Experiment panel's form and sweeps.run asks the
 // open Experiment document for its sweep form (as runs.stage does); register best and evaluate best come from the
 // document, which knows the best run's checkpoint.
 
@@ -30,16 +25,10 @@ import type { Command } from "./registry";
 export type ExperimentNewArgs = { project: string; body: ExperimentNew; dryRun?: boolean };
 /** sweeps.run on an experiment (its revision is the If-Match); from the header `entity` stands in for it. */
 export type SweepRunArgs = { experiment?: Pick<Experiment, "id" | "rev">; entity?: EntityData; body?: SweepNew; dryRun?: boolean };
-/** models.register of a checkpoint whose latest gated eval passed; from the header the document is asked. */
-export type ModelRegisterArgs = { project?: string; body?: ModelRegister; dryRun?: boolean; entity?: EntityData };
-/** evals.new: the dry run answers the plan. */
-export type EvalNewArgs = { project: string; body: EvalNew; dryRun?: boolean };
 
 export type ExperimentCommands = {
   "experiments.new": { args: ExperimentNewArgs | undefined; result: Experiment | undefined };
   "sweeps.run": { args: SweepRunArgs; result: SweepPlan | Sweep | ApprovalAccepted | undefined };
-  "models.register": { args: ModelRegisterArgs; result: ModelRegistration | ModelVersion | ApprovalAccepted | undefined };
-  "evals.new": { args: EvalNewArgs; result: EvalPlan | Eval | ApprovalAccepted };
 };
 
 /** Requests that only the open Experiment document can complete: its sweep form, its register-best confirmation. */
@@ -93,43 +82,6 @@ export function registerExperimentCommands(): void {
         return data;
       },
     },
-    {
-      id: "models.register",
-      operation: "models.register",
-      title: "Register best",
-      group: "Edit",
-      icon: BookmarkBook,
-      hidden: true,
-      run: async (_ctx, args) => {
-        const a = (args ?? {}) as ModelRegisterArgs;
-        if (!a.body || !a.project) {
-          // From the Experiment header: the document shows the registration (dry run) before it is confirmed.
-          if (!a.entity) throw new Error("Register model: run it from an Experiment document");
-          const doc = docRef("experiment", a.entity.id);
-          openDocument(doc);
-          useEditRequests.getState().request(`${REGISTER_REQUEST}${doc}`);
-          return undefined;
-        }
-        const { data } = await modelsRegister({ path: { p: a.project }, body: a.body, query: dry(a.dryRun), headers: commandHeaders(), throwOnError: true });
-        return data;
-      },
-    },
   ];
-  // evals.new may arrive with the eval panels (stream U); register it only when nobody else did.
-  if (!commands.get("evals.new"))
-    list.push({
-      id: "evals.new",
-      operation: "evals.new",
-      title: "Evaluate checkpoint",
-      group: "Edit",
-      icon: StatsReport,
-      hidden: true,
-      run: async (_ctx, args) => {
-        if (!args) throw new Error("Evaluate: run it from a document that names the checkpoint");
-        const a = args as EvalNewArgs;
-        const { data } = await evalsNew({ path: { p: a.project }, body: a.body, query: dry(a.dryRun), headers: commandHeaders(), throwOnError: true });
-        return data;
-      },
-    });
   for (const c of list) commands.register(c);
 }

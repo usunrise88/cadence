@@ -6,6 +6,7 @@ import { useEditRequests } from "@/shell/entity/edits";
 import { ActionBar } from "@/shell/entity/primitives";
 import { commands } from "@/shell/registries";
 import { commandContext } from "@/shell/state";
+import { registerEvaluationCommands } from "./evaluation";
 import { registerExperimentCommands } from "./experiments";
 
 // The Experiment document's commands: one API operation each; sweeps.run carries the experiment's revision, and
@@ -19,6 +20,7 @@ vi.mock("@/api/gen/sdk.gen", async (orig) => ({ ...(await orig<object>()), ...sd
 
 beforeAll(() => {
   if (!commands.get("sweeps.run")) registerExperimentCommands();
+  if (!commands.get("models.register")) registerEvaluationCommands();
 });
 beforeEach(() => {
   for (const f of Object.values(sdk)) f.mockReset().mockResolvedValue({ data: { id: "x", rev: 1 } });
@@ -67,7 +69,7 @@ describe("experiment commands", () => {
     const sweep = screen.getByRole("button", { name: "Run sweep" });
     expect(sweep.getAttribute("data-command")).toBe("sweeps.run");
     expect((sweep as HTMLButtonElement).disabled).toBe(false);
-    const register = screen.getByRole("button", { name: "Register best" });
+    const register = screen.getByRole("button", { name: "Register model version" });
     expect(register.getAttribute("data-command")).toBe("models.register");
     expect((register as HTMLButtonElement).disabled).toBe(true);
   });
