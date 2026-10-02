@@ -15,6 +15,9 @@ merge base, `main` and the branch side by side (stacked when the document is nar
 marked and **Next / Previous conflict** (`n` / `p` inside the view) to move between them. Files that merge cleanly
 keep the two-way diff.
 
+The status bar's **Branches** badge counts the branches that wait for you (a sync, another branch, an ended
+session's unmerged changes) in every panel, blinks while any wait, and opens the chosen one here.
+
 An **augmentation profile** (`augment/<name>.yaml`, docs/spec/03-pipelines-defaults.md "Augmentation") opens as a
 form above its text: the seed and four transforms — **codec** (probability and the codecs one is drawn from),
 **band-limit** (probability and cut-off), **level** (probability and gain range in dB) and **speed** (probability and

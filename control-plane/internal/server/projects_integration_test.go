@@ -275,6 +275,14 @@ func TestAgentProfileNotesSyncAndBranches(t *testing.T) {
 	if sync.UpToDate || sync.Branch != "sync/"+today || len(sync.Changes) != 1 || sync.Changes[0].Status != "modified" {
 		t.Fatalf("sync %+v", sync)
 	}
+	// The draft branch is announced: it now waits for a person (status bar, notifications, digest).
+	if n := e.count(`SELECT count(*) FROM events WHERE topic = 'branches' AND type = 'branch.waiting'
+		AND payload->>'branch' = 'sync/` + today + `' AND payload->>'kind' = 'sync' AND (payload->>'files')::int = 1`); n != 1 {
+		t.Fatalf("%d branch.waiting events for the sync branch", n)
+	}
+	if ws, err := e.repos.WaitingBranches(t.Context(), e.pool); err != nil || len(ws) != 1 || ws[0].Branch != "sync/"+today || ws[0].Kind != "sync" {
+		t.Fatalf("waiting branches %+v (%v)", ws, err)
+	}
 	var branches struct {
 		Main  string
 		Items []struct {

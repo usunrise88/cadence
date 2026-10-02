@@ -373,17 +373,24 @@ func (s *Service) autoMerge(ctx context.Context, tx pgx.Tx, sess Session, ok boo
 	if d.Branch.Ahead == 0 {
 		return Merge{State: MergeNone}, nil, nil
 	}
+	waiting := func(reason string) []events.Draft {
+		return []events.Draft{projects.BranchWaitingEvent(projects.BranchWaiting{ProjectID: p.ID, Project: p.Slug,
+			Branch: sess.Branch, Kind: "session", SessionID: sess.ID, Files: len(d.Files), Conflicts: len(d.Conflicts),
+			Reason: reason})}
+	}
 	if len(d.Conflicts) > 0 {
-		return Merge{State: MergeConflict, Head: d.Branch.Head, Conflicts: d.Conflicts}, nil, nil
+		return Merge{State: MergeConflict, Head: d.Branch.Head, Conflicts: d.Conflicts},
+			waiting("the session's changes conflict with main"), nil
 	}
 	if !ok || sess.AutoMerge != "when-clean" || p.Archived() {
-		return Merge{State: MergePending, Head: d.Branch.Head}, nil, nil
+		return Merge{State: MergePending, Head: d.Branch.Head}, waiting("the session ended without merging its changes"), nil
 	}
 	m, drafts, err := s.Projects.Merge(ctx, tx, p, sess.Branch, d.Branch.Head, System)
 	if err != nil {
 		var pe *problems.Error
 		if errors.As(err, &pe) && (pe.Type == problems.MergeConflict || pe.Type == problems.PreconditionFailed) {
-			return Merge{State: MergeConflict, Head: d.Branch.Head, Conflicts: d.Conflicts}, nil, nil
+			return Merge{State: MergeConflict, Head: d.Branch.Head, Conflicts: d.Conflicts},
+				waiting("the session's changes did not merge cleanly"), nil
 		}
 		return Merge{}, nil, err
 	}

@@ -14,6 +14,7 @@ const TABLE: Record<string, NotificationClass> = {
   "deployment.promoted": "outcome",
   "schedule.finished": "outcome",
   "batch.closed": "outcome",
+  "branch.waiting": "outcome",
   "backup.succeeded": "progress",
   "backup.restore_passed": "progress",
   "checkpoint.saved": "progress",

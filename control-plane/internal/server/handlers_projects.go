@@ -307,6 +307,9 @@ func (s *Server) ProjectsSync(ctx context.Context, req api.ProjectsSyncRequestOb
 		drafts := projects.Event(p, "project.synced", map[string]any{"sync": body})
 		if res.Commit != "" {
 			drafts = append(drafts, bootstrap.RecipeEvents(p.ID, res.Branch, res.Commit, res.Changes)...)
+			drafts = append(drafts, projects.BranchWaitingEvent(projects.BranchWaiting{ProjectID: p.ID, Project: p.Slug,
+				Branch: res.Branch, Kind: "sync", Files: len(res.Changes),
+				Reason: "the template sync offers updated skills, pipelines and agent config"}))
 		}
 		return commands.Result{Status: http.StatusOK, Body: body, ETag: commands.ETag(p.Rev)}, drafts, nil
 	})

@@ -35,6 +35,7 @@ var classTable = map[string]string{
 	"deployment.promoted": ClassOutcome,
 	"schedule.finished":   ClassOutcome,
 	"batch.closed":        ClassOutcome,
+	"branch.waiting":      ClassOutcome,
 	// progress
 	"backup.succeeded":      ClassProgress,
 	"backup.restore_passed": ClassProgress,
@@ -170,6 +171,24 @@ func Classify(r events.Record) (Notice, bool) {
 			return Notice{}, false
 		}
 		return p.Approval.notice(), true
+	case "branch.waiting":
+		var p struct {
+			Project   string `json:"project"`
+			Branch    string `json:"branch"`
+			Files     int    `json:"files"`
+			Conflicts int    `json:"conflicts"`
+			Reason    string `json:"reason"`
+		}
+		if json.Unmarshal(r.Payload, &p) != nil || p.Branch == "" {
+			return Notice{}, false
+		}
+		body := fmt.Sprintf("%s (%d files", p.Reason, p.Files)
+		if p.Conflicts > 0 {
+			body += fmt.Sprintf(", %d conflicting", p.Conflicts)
+		}
+		body += ").\nAccept or discard it in the Recipe document's branch list."
+		return Notice{Class: ClassOutcome, Title: fmt.Sprintf("Branch waiting for review: %s (%s)", p.Branch, p.Project),
+			Body: body}, true
 	case "storage.low_space":
 		var p struct {
 			TotalBytes         int64 `json:"totalBytes"`

@@ -273,7 +273,15 @@ func serve(ctx context.Context, getenv func(string) string) error {
 			}
 			return out, err
 		}}
-	digester := &notify.Digester{Pool: pool, Log: log, Defaults: defaults.Get, Wake: notifyWake, Spend: runs.Spend}
+	digester := &notify.Digester{Pool: pool, Log: log, Defaults: defaults.Get, Wake: notifyWake, Spend: runs.Spend,
+		Branches: func(ctx context.Context) ([]string, error) {
+			ws, err := projectRepos.WaitingBranches(ctx, pool)
+			out := make([]string, 0, len(ws))
+			for _, w := range ws {
+				out = append(out, w.Project+": "+w.Branch)
+			}
+			return out, err
+		}}
 	jobSvc.AddPeriodic("notifications.digest", time.Minute, func(ctx context.Context) error {
 		_, err := digester.Tick(ctx)
 		return err

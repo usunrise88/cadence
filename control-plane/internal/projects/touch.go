@@ -33,3 +33,29 @@ func Event(p Project, typ string, extra map[string]any) []events.Draft {
 	drafts[0].Payload = payload
 	return drafts
 }
+
+// Branches is the topic of branch.waiting, and EventBranchWaiting the event: a branch of the project repository now
+// waits for a person to accept or discard it — a template sync's draft, or the changes of an agent session that
+// ended without merging (a conflict, or no auto-merge). The status bar counts these branches; notifications route
+// the event as an outcome.
+const (
+	TopicBranches      = "branches"
+	EventBranchWaiting = "branch.waiting"
+)
+
+// BranchWaiting is the event's payload.
+type BranchWaiting struct {
+	ProjectID string `json:"projectId"`
+	Project   string `json:"project"` // the slug
+	Branch    string `json:"branch"`
+	Kind      string `json:"kind"` // sync | session
+	SessionID string `json:"sessionId,omitempty"`
+	Files     int    `json:"files"`
+	Conflicts int    `json:"conflicts"`
+	Reason    string `json:"reason"`
+}
+
+// BranchWaitingEvent is the draft announcing w.
+func BranchWaitingEvent(w BranchWaiting) events.Draft {
+	return events.Draft{Topic: TopicBranches, Type: EventBranchWaiting, ProjectID: w.ProjectID, Payload: w}
+}
