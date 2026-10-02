@@ -901,3 +901,35 @@ def test_boost_input_and_the_decoding_hash(tmp_path: Path) -> None:
     (tmp_path / "bad.json").write_text(json.dumps({"format": "other", "terms": ["a"]}), "utf-8")
     with pytest.raises(StepInputError, match="JSON boost list"):
         boost_input({"boost": tmp_path / "bad.json"}, 1.0)
+
+
+# ---------------------------------------------------------------- frame VAD (phase 3 stream R)
+
+
+def test_frame_vad_kind_and_defaults() -> None:
+    from cadence_nemo.steps.vad import FrameVadStep, VadParams
+
+    assert missing_metadata(FrameVadStep) == []
+    check_ranges(VadParams())
+    assert FrameVadStep.consumes == {"data": "dataset"}
+    assert FrameVadStep.produces == {"vad": "vad"}
+    assert FrameVadStep.runtime == "nemo-speech"
+    assert not FrameVadStep.resources["gpu"]
+    assert not hasattr(FrameVadStep, "role")
+    p = VadParams()
+    assert p.model == "nvidia/Frame_VAD_Multilingual_MarbleNet_v2.0"
+    assert len(p.revision) == 40
+    assert p.offset <= p.onset
+
+
+def test_frame_vad_segments_hysteresis_and_minimums() -> None:
+    from cadence_nemo.steps.vad import segments, vad_row
+
+    # 20 ms frames: speech 0.2-0.6 s, a 100 ms dip (closed), speech to 1.0 s, a 40 ms blip at 1.5 s (dropped).
+    probs = [0.1] * 10 + [0.9] * 20 + [0.2] * 5 + [0.8] * 15 + [0.1] * 25 + [0.9] * 2 + [0.1] * 10
+    segs = segments(probs, onset=0.5, offset=0.3, min_speech_ms=100, min_silence_ms=200)
+    assert segs == [(0.2, 1.0)]
+    # Hysteresis: 0.4 does not start speech, but keeps it going once started.
+    assert segments([0.4, 0.6, 0.4, 0.2], 0.5, 0.3, 0, 0) == [(0.02, 0.06)]
+    assert vad_row("b3:x", 1.2, segs) == {"audio": "b3:x", "durationS": 1.2, "speech": [[0.2, 1.0]], "speechEndS": 1.0}
+    assert vad_row("b3:x", 1.2, [])["speechEndS"] is None

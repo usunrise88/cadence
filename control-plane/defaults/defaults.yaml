@@ -362,6 +362,18 @@ augment:
     description: Range the speed factor is drawn from (tempo and pitch change together)
     source: Ko et al., "Audio augmentation for speech recognition", Interspeech 2015 (factors 0.9, 1.0, 1.1); NeMo and Lhotse defaults
     range: { min: 0.8, max: 1.2 }
+  noise_probability:
+    value: 0.5
+    unit: fraction
+    description: Share of utterances mixed with a clip of the profile's noise bank (a noise transform names the bank)
+    source: Cadence recommendation
+    range: { min: 0, max: 1 }
+  noise_snr_db:
+    value: [0, 20]
+    unit: dB
+    description: Range the signal-to-noise ratio of the mixed noise is drawn from
+    source: docs/spec/03-pipelines-defaults.md "Augmentation" (Background noise, SNR 0–20 dB)
+    range: { min: -5, max: 40 }
 
 # Hosts seeded into the compute entity at first start; Settings edits them afterwards (compute.edit).
 compute:
@@ -696,3 +708,36 @@ packs:
       description: Weight of a boost list's phrase-boosting score in decoding (NeMo's boosting_tree_alpha) when the list names none; 0 turns boosting off. Above about 0.7 listed words start replacing others (over-boosting)
       source: "Cadence recommendation: FLEURS he_il test, 120 utterances, base model at 160 ms, 40 missed words boosted — recall 0.11 → 0.29 / 0.36 / 0.50 / 0.52 / 0.54 and WER 0.466 → 0.462 / 0.460 / 0.461 / 0.490 / 0.623 at weight 0.3 / 0.5 / 0.7 / 1 / 2 (staging card, 2026-10-02)"
       range: { min: 0, max: 10 }
+    # frame_vad (utterance ends for latency to final, R54; phase 3 stream R).
+    vad_model:
+      value: nvidia/Frame_VAD_Multilingual_MarbleNet_v2.0
+      description: Hugging Face repository of the frame-VAD model whose speech ends latency to final is measured from
+      source: "NVIDIA Frame-VAD Multilingual MarbleNet v2.0, NVIDIA Open Model License (commercial use; licence checked against R26 on 2026-10-02, docs/help/steps/frame-vad.md)"
+    vad_revision:
+      value: 9d25eb877d9edab5101ccc843edd04787a6c72c4
+      description: Pinned revision (commit) of the frame-VAD model
+      source: "The repository's main branch on 2026-10-02 (last modified 2025-05-14)"
+    vad_onset:
+      value: 0.5
+      unit: probability
+      description: Speech probability at which a speech segment starts (hysteresis onset)
+      source: "The model card's example threshold (frames above 0.5 count as speech)"
+      range: { min: 0.05, max: 0.95 }
+    vad_offset:
+      value: 0.3
+      unit: probability
+      description: Speech probability below which a speech segment ends (hysteresis offset, at most the onset)
+      source: Cadence recommendation (a lower offset keeps trailing low-energy phonemes inside the segment)
+      range: { min: 0.05, max: 0.95 }
+    vad_min_speech_ms:
+      value: 100
+      unit: ms
+      description: Shortest speech segment kept (shorter blips are dropped)
+      source: Cadence recommendation
+      range: { min: 0, max: 2000 }
+    vad_min_silence_ms:
+      value: 200
+      unit: ms
+      description: Shortest pause that splits two speech segments (shorter gaps are closed)
+      source: Cadence recommendation
+      range: { min: 0, max: 5000 }

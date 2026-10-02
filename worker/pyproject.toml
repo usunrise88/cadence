@@ -5,7 +5,7 @@ description = "Cadence worker: the lease harness, the step contract and the runt
 requires-python = ">=3.12"
 # Framework stacks (NeMo Speech, Lhotse, PyTorch) come from each runtime's image; do not pin them here.
 # Runtime deps are ranges because the images provide some of them; uv.lock pins the dev environment.
-dependencies = ["httpx>=0.28,<1", "pydantic>=2.11,<3", "pyyaml>=6,<7", "blake3>=1,<2"]
+dependencies = ["httpx>=0.28,<1", "pydantic>=2.11,<3", "pyyaml>=6,<7", "blake3>=1,<2", "numpy>=1.26"]
 
 # Runtime-neutral core step kinds ship in every runtime image (docs/review/2026-09-30-phase-2-plan.md). Framework
 # packs register their own kinds and families from their own distributions (packs/toy, the NeMo pack).
@@ -13,6 +13,9 @@ dependencies = ["httpx>=0.28,<1", "pydantic>=2.11,<3", "pyyaml>=6,<7", "blake3>=
 echo = "cadence_worker.steps.echo:EchoStep"
 dataset_import = "cadence_worker.steps.dataset_import:DatasetImportStep"
 wer_score = "cadence_worker.steps.wer_score:WerScoreStep"
+augment_dataset = "cadence_worker.steps.augment_dataset:AugmentDatasetStep"
+entity_score = "cadence_worker.steps.entity_score:EntityScoreStep"
+latency_score = "cadence_worker.steps.latency_score:LatencyScoreStep"
 
 [dependency-groups]
 dev = [
