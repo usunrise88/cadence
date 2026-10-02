@@ -147,8 +147,19 @@ As built (phase 3, stream U; help `panels.eval`, `panels.diff`, `panels.golden-s
   pairs, WER by SNR, bandwidth or speaker, emission delay (`evals.get` has no such data).
 - Golden set: the leakage row states the rule (the freeze checked it; nothing to recompute per view).
 - Language pack: Commit is enabled only for exactly the text that passed Check (the server's dry run).
-- Not built: "test a phrase", opening a row in Audio (stream A), Set as baseline and Adopt on the Model document, and
-  the Playwright smoke of the Eval workspace.
+- Built after the waves: opening an utterance row of the Eval report or Diff in Audio (stream A); evaluation setup
+  from the UI (audit fix F4): Adopt into project on the Golden set document and its Library row (`projects.adopt`;
+  the card dry-runs, so the leakage refusal shows with the overlapping dataset versions), Set as baseline on the Model
+  document and on a model or base model row in the Library (`aliases.set` `baseline`, approval-gated: the approval
+  id is shown), the Project home's Gate section (`gates.get|edit`: the effective gate with its departures, Check then
+  Commit to main with If-Match the file's commit or `defaults`; the Eval report's Gate section links to it), and one
+  Run eval form (`evals.new`: adopted golden sets, the family's profiles, decoding variants with boost lists and a
+  weight, augmentation profiles, the languages map prefilled from a run's `target_lang`, the baseline; Plan, then
+  Start eval) behind Checkpoints' Evaluate, the Experiment's Evaluate best and the Eval report's Run eval… and Re-run
+  missing cells (filled with the eval's axes). The Project home's blocks count mixes, runs, adopted golden sets and
+  evals with the newest verdict and `@baseline`; Getting started derives its run and gate steps from `runs.list` and
+  `evals.list` and retires once a gate passed.
+- Not built: "test a phrase" in the Language pack, and the Playwright smoke of the Eval workspace.
 
 Topics follow the event model in the Cadence system tab; the backend contract below lists the endpoints.
 

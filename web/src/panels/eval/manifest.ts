@@ -14,7 +14,7 @@ const manifest: PanelManifest = {
   defaultLocation: "centre",
   entity: "eval",
   help: "panels.eval",
-  commands: ["evals.gate", "models.register"],
+  commands: ["evals.gate", "models.register", "evals.new", "gates.edit"],
   empty: EvalEmpty,
   component: EvalPanel,
 };

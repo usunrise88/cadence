@@ -1,7 +1,7 @@
 ---
 title: Model
 summary: A registered model version — the checkpoint it publishes, its gate verdict and eval, lineage, the projects that use it, and the model card.
-contexts: [panel:model, command:models.get, command:models.register]
+contexts: [panel:model, command:models.get, command:models.register, command:aliases.set]
 ---
 
 ## What this is
@@ -35,13 +35,15 @@ deployment).
 | Command | API | Notes |
 | --- | --- | --- |
 | Register model version | `models.register` | From a passed Eval report (inline confirm) |
-| Set as baseline | `aliases.set` | `baseline` is gated: it waits for an approval |
+| Set as baseline | `aliases.set` (name `baseline`) | On this document and on a base model. The version must be adopted by the project (registration adopts it). `baseline` is gated: the answer is an approval id (Approvals shows it); the alias moves once a person approves |
 | Export, promote, roll back | — | Arrive with deployment (phase 5) |
 
 ## Playbooks
 
-- **Make it the next baseline.** Ask the agent (or an admin) to set the project's `baseline` alias to this version;
-  the next evals compare against it, and its cells come from the cache.
+- **Make it the next baseline.** Press **Set as baseline** (or ask the agent: `aliases.set name=baseline`). It
+  answers an approval id; once approved, `@baseline` points at this version, the next evals compare against it, and
+  its cells come from the eval-record cache. Until a baseline is set, evals compare against the project's default
+  base model.
 
 ## Sources
 

@@ -12,7 +12,11 @@ import { AnalyticsChart } from "@/shell/charts";
 import { ActorBadge, EmptyState, StatusChip } from "@/shell/entity/primitives";
 import {
   errorMessage,
+  EVAL_FORM_REQUEST,
+  EvalForm,
   evalItem,
+  formFromEval,
+  subjectRefOf,
   focusPipelineRun,
   formatInterval,
   formatRate,
@@ -69,7 +73,9 @@ import {
 // (the one the gate reads) is starred. Charts: delta heatmap, forest plot, S/D/I bars, WER by duration, the
 // per-utterance WER ECDF and entity accuracy of the selected cell; under "Streaming" WER against latency, latency to
 // final and partial stability of the selected cell's golden set; under "Robustness" the augmentation matrix. The gate
-// (evals.gate) and model registration (models.register, inline confirm) act here. A cell selects into the selection
+// (evals.gate) and model registration (models.register, inline confirm) act here; Run eval… and Re-run missing cells
+// open the shared Run eval form (evals.new, filled from this eval's axes for the re-run); Edit gates.yaml opens the
+// Project home's gate editor. A cell selects into the selection
 // bus (cell:<id>), its worst utterances list below, and a row opens in Diff (cell:<id>/utt:<n>).
 
 export function EvalEmpty() {
@@ -116,10 +122,26 @@ function Report({ ev, doc }: { ev: Eval; doc: string }) {
   const cell = (ev.cells ?? []).find((c) => c.id === cellId && c.role === "subject") ?? defaultCell(ev);
   const base = cell ? baselineOf(ev, cell) : undefined;
   const [registerOpen, setRegisterOpen] = useState(false);
+  const [rerun, setRerun] = useState<"fresh" | "missing" | null>(null);
+  const project = useProject();
   useEditRequest(doc, () => setRegisterOpen(true));
+  useEditRequest(`${EVAL_FORM_REQUEST}${doc}`, () => setRerun("missing"));
   return (
     <div className="flex flex-col gap-5 p-4 text-xs" data-eval={ev.id} data-status={ev.status}>
-      <Progress ev={ev} />
+      <Progress ev={ev} onRun={setRerun} />
+      {rerun && project ? (
+        <EvalForm
+          key={rerun}
+          project={project}
+          subject={subjectRefOf(ev)}
+          subjectLabel={ev.subject.label}
+          family={ev.subject.family}
+          runId={ev.subject.runId}
+          initial={rerun === "missing" ? formFromEval(ev) : undefined}
+          planOnOpen={rerun === "missing"}
+          onClose={() => setRerun(null)}
+        />
+      ) : null}
       <Gate ev={ev} onRegister={() => setRegisterOpen(true)} />
       {registerOpen ? <RegisterForm ev={ev} onClose={() => setRegisterOpen(false)} /> : null}
       <Section
@@ -338,9 +360,10 @@ function Robustness({ ev, decoding }: { ev: Eval; decoding: number }) {
   );
 }
 
-function Progress({ ev }: { ev: Eval }) {
+function Progress({ ev, onRun }: { ev: Eval; onRun: (mode: "fresh" | "missing") => void }) {
   const p = ev.progress;
   const done = ev.status === "done" || ev.status === "failed";
+  const missing = done && p.cellsDone < p.cellsTotal;
   return (
     <div className="flex flex-col gap-1.5" data-slot="eval-progress">
       <div className="flex flex-wrap items-center gap-2">
@@ -350,11 +373,26 @@ function Progress({ ev }: { ev: Eval }) {
         </span>
         {!done ? <span className="text-muted-foreground tabular-nums">~{ev.estimate.gpuHours.toFixed(2)} GPU-h for {ev.estimate.cellsToCompute} cells</span> : null}
         {ev.error ? <span className="text-status-failed-foreground">{ev.error}</span> : null}
+        <span className="ml-auto flex flex-wrap gap-1">
+          {/* The same axes again: scored cells come back cached, only the missing ones compute. */}
+          <Button
+            size="xs"
+            variant={missing ? "default" : "outline"}
+            disabled={!missing}
+            title={missing ? undefined : done ? "Every cell is scored" : "The eval is still running"}
+            onClick={() => onRun("missing")}
+            data-command="evals.new"
+          >
+            Re-run missing cells
+          </Button>
+          <Button size="xs" variant="outline" onClick={() => onRun("fresh")} data-command="evals.new">
+            Run eval…
+          </Button>
+        </span>
         {ev.pipelineRunId ? (
           <Button
             size="xs"
             variant="ghost"
-            className="ml-auto"
             onClick={() => {
               focusPipelineRun(ev.pipelineRunId ?? null);
               openPanelById("pipeline-run");
@@ -421,6 +459,9 @@ function Gate({ ev, onRegister }: { ev: Eval; onRegister: () => void }) {
           </Button>
           <Button size="xs" variant={gate?.verdict === "passed" ? "default" : "outline"} disabled={canRegister !== true} title={canRegister === true ? undefined : canRegister} onClick={onRegister} data-command="models.register">
             Register model…
+          </Button>
+          <Button size="xs" variant="ghost" onClick={() => void runCommand("gates.edit", {})} title="The project's gate: the effective values and gates.yaml (Project home)" data-command="gates.edit">
+            Edit gates.yaml
           </Button>
         </span>
       </div>

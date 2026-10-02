@@ -227,13 +227,22 @@ describe("Experiment document", () => {
   it("evaluates the best checkpoint: the plan first", async () => {
     wrap();
     fireEvent.click(screen.getByRole("button", { name: "Evaluate best" }));
-    const box = screen.getByRole("group", { name: "Evaluate the best checkpoint" });
-    runCommand.mockResolvedValueOnce({ cellsToCompute: 4, cellsCached: 2, estimate: { gpuHours: 0.3, audioHours: 3 } });
+    const box = screen.getByRole("group", { name: /Evaluate the best checkpoint/ });
+    runCommand.mockResolvedValueOnce({
+      goldenSets: [{}],
+      profiles: [{}, {}],
+      decoding: [{}],
+      baseline: { label: "base" },
+      cells: [{}, {}, {}, {}, {}, {}],
+      cellsToCompute: 4,
+      cellsCached: 2,
+      estimate: { gpuHours: 0.3, audioHours: 3 },
+    });
     fireEvent.click(within(box).getByRole("button", { name: "Plan" }));
-    await waitFor(() => expect(box.textContent).toContain("4 cells to compute, 2 cached"));
+    await waitFor(() => expect(box.textContent).toContain("6 cells, 2 cached, 4 to compute"));
     expect(runCommand).toHaveBeenLastCalledWith("evals.new", { project: "demo", body: { subject: { checkpointId: "ckp_b" } }, dryRun: true });
     runCommand.mockResolvedValueOnce({ id: "evl_2", status: "queued" });
     fireEvent.click(within(box).getByRole("button", { name: "Start eval" }));
-    await waitFor(() => expect(box.textContent).toContain("Eval evl_2 is queued"));
+    await waitFor(() => expect(openDocument).toHaveBeenCalledWith("eval:evl_2"));
   });
 });

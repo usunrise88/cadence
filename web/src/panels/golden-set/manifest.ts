@@ -13,7 +13,7 @@ const manifest: PanelManifest = {
   defaultLocation: "centre",
   entity: "golden_set",
   help: "panels.golden-set",
-  commands: ["goldenSets.freeze"],
+  commands: ["projects.adopt", "goldenSets.freeze"],
   empty: GoldenSetEmpty,
   component: GoldenSetPanel,
 };

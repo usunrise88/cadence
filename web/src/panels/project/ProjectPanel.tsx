@@ -2,29 +2,31 @@ import { useState, type FormEvent, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Streamdown } from "streamdown";
 import {
+  adoptionsListOptions,
   agentProfileGetOptions,
+  aliasesGetOptions,
   branchesListOptions,
+  evalsListOptions,
   eventsListOptions,
+  mixesListOptions,
   playbooksListOptions,
   projectsGetOptions,
   recipesGetOptions,
+  runsListOptions,
 } from "@/api/gen/@tanstack/react-query.gen";
 import type { Project } from "@/api/gen/types.gen";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 import { EmptyState, StatusChip } from "@/shell/entity/primitives";
-import { estimateLine, openDocument, openPanelById, PlaybookLauncher, runCommand, useTopic, type PanelProps } from "@/shell/panel";
+import { estimateLine, GATE_CLASS, GATE_GLYPH, openDocument, openPanelById, PlaybookLauncher, runCommand, useTopic, type PanelProps } from "@/shell/panel";
+import { evaluationSummary } from "./gate";
+import { GateSection } from "./GateSection";
 
 // The Project document is the home: the project's facts (locales, base model, repository, agent profile, budgets),
 // the five blocks as a checklist with counts, gates and notes (docs/spec/11-ui-panels.md "Panel catalogue", Project).
 
-const BLOCKS = [
-  { name: "Data", what: "Sources, dataset versions, golden sets", phase: 4 },
-  { name: "Training", what: "Mixes, runs, checkpoints", phase: 2 },
-  { name: "Evaluation", what: "Eval matrix, gates, baselines", phase: 3 },
-  { name: "Deployment", what: "Model versions, shadow, canary, production", phase: 5 },
-  { name: "Flywheel", what: "Captured samples, triage, corrections", phase: 5 },
-];
+type Block = { name: string; what: string; count?: number; detail?: ReactNode; phase?: number };
 
 export function ProjectEmpty() {
   return <EmptyState step="prepare" title="No project selected" hint="Pick a project in the menu bar, or create one." />;
@@ -128,23 +130,7 @@ function Overview({ project }: { project: Project }) {
             />
             {clone ? <p className="mt-1.5 text-[11px] text-muted-foreground">git clone with an API key (cdk_…) as the password; pushes to main appear here as recipe changes.</p> : null}
           </section>
-          <section aria-labelledby="blocks">
-            <Heading id="blocks">The five blocks</Heading>
-            <ul className="divide-y rounded-md border">
-              {BLOCKS.map((b) => (
-                <li key={b.name} className="grid h-10 grid-cols-[6.5rem_1fr_auto] items-center gap-3 px-3">
-                  <span className="text-[13px] font-medium">{b.name}</span>
-                  <span className="truncate text-xs text-muted-foreground" title={b.what}>
-                    {b.what}
-                  </span>
-                  <span className="flex items-center gap-2 text-xs">
-                    <span className="tabular-nums">0</span>
-                    <span className="rounded-full border px-1.5 text-[11px] text-muted-foreground">phase {b.phase}</span>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </section>
+          <Blocks project={project} ready={ready} />
         </div>
         <div className="flex flex-col gap-6">
           {ready ? <Playbooks project={project} /> : null}
@@ -169,10 +155,7 @@ function Overview({ project }: { project: Project }) {
               <p className="text-xs text-muted-foreground">{ready ? "Loading…" : "Available once the repository is bootstrapped."}</p>
             )}
           </section>
-          <section aria-labelledby="project-gates">
-            <Heading id="project-gates">Gates</Heading>
-            <p className="text-xs text-muted-foreground">Gates and thresholds per language arrive with the Evaluation block (phase 3).</p>
-          </section>
+          <GateSection slug={project.slug} ready={ready} />
           <section aria-labelledby="decisions">
             <Heading id="decisions">Decisions and approvals</Heading>
             <p className="text-xs text-muted-foreground">Open approvals for this project appear in the Approvals panel.</p>
@@ -186,6 +169,73 @@ function Overview({ project }: { project: Project }) {
         </div>
       </div>
     </div>
+  );
+}
+
+// The five blocks with what the project holds in each (Data, Deployment and the flywheel show the phase they ship
+// in until then); Evaluation reads the adopted golden sets, the evals with the newest verdict, and @baseline.
+function Blocks({ project, ready }: { project: Project; ready: boolean }) {
+  const p = { path: { p: project.slug } };
+  const mixes = useQuery({ ...mixesListOptions(p), enabled: ready });
+  const runs = useQuery({ ...runsListOptions({ ...p, query: { limit: 200 } }), enabled: ready });
+  const golden = useQuery({ ...adoptionsListOptions({ ...p, query: { kind: "golden_set" } }), enabled: ready });
+  const evals = useQuery({ ...evalsListOptions({ ...p, query: { limit: 200 } }), enabled: ready });
+  const baseline = useQuery({ ...aliasesGetOptions({ path: { p: project.slug, name: "baseline" } }), enabled: ready, retry: false });
+  useTopic(ready ? ["entity.mix.*", "entity.run.*", "entity.eval.*", `entity.project.${project.id}`] : null, () => {
+    void mixes.refetch();
+    void runs.refetch();
+    void evals.refetch();
+    void golden.refetch();
+    void baseline.refetch();
+  });
+  const ev = evaluationSummary(golden.data?.items.length ?? 0, evals.data?.items ?? []);
+  const b = baseline.data?.version;
+  const blocks: Block[] = [
+    { name: "Data", what: "Sources, dataset versions, golden sets", phase: 4 },
+    {
+      name: "Training",
+      what: "Mixes, runs, checkpoints",
+      count: runs.data?.items.length ?? 0,
+      detail: `${mixes.data?.items.length ?? 0} mixes · ${runs.data?.items.length ?? 0} runs · ${(runs.data?.items ?? []).filter((r) => r.status === "done").length} finished`,
+    },
+    {
+      name: "Evaluation",
+      what: "Eval matrix, gates, baselines",
+      count: ev.count,
+      detail: (
+        <>
+          {ev.text}
+          {ev.verdict ? (
+            <span className={cn("ml-1", GATE_CLASS[ev.verdict])}>
+              · <span aria-hidden>{GATE_GLYPH[ev.verdict]} </span>last gate {ev.verdict}
+            </span>
+          ) : null}
+          {" · "}
+          {b ? `@baseline ${b.name} ${b.version}` : "no @baseline (the base model)"}
+        </>
+      ),
+    },
+    { name: "Deployment", what: "Model versions, shadow, canary, production", phase: 5 },
+    { name: "Flywheel", what: "Captured samples, triage, corrections", phase: 5 },
+  ];
+  return (
+    <section aria-labelledby="blocks">
+      <Heading id="blocks">The five blocks</Heading>
+      <ul className="divide-y rounded-md border">
+        {blocks.map((bl) => (
+          <li key={bl.name} className="grid min-h-10 grid-cols-[6.5rem_1fr_auto] items-center gap-3 px-3 py-1.5" data-block={bl.name}>
+            <span className="text-[13px] font-medium">{bl.name}</span>
+            <span className="min-w-0 text-xs text-muted-foreground" title={bl.what}>
+              {bl.detail ?? bl.what}
+            </span>
+            <span className="flex items-center gap-2 text-xs">
+              {bl.count !== undefined ? <span className="tabular-nums">{bl.count}</span> : null}
+              {bl.phase ? <span className="rounded-full border px-1.5 text-[11px] text-muted-foreground">phase {bl.phase}</span> : null}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

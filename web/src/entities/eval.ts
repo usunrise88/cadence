@@ -46,6 +46,8 @@ export const evalEntity: EntityManifest = {
       primary: true,
       enabled: (e) => (e.state === "done" ? true : e.state === "failed" ? "The eval failed; its cells are incomplete" : "The gate reads a finished eval"),
     },
+    // Run eval…: the report's form filled from this eval's axes (scored cells come back cached).
+    { verb: "new", command: "evals.new" },
   ],
   facts: [
     { label: "Subject", value: (e) => evalOf(e)?.subject.label ?? "—" },
@@ -71,7 +73,7 @@ export const evalEntity: EntityManifest = {
   nextStep: (e) => {
     const ev = evalOf(e);
     if (e.state === "queued" || e.state === "running") return { step: "run", title: "The matrix fills as cells are scored; cached cells are ready now" };
-    if (e.state === "failed") return { step: "decide", title: "Open the pipeline run to see the failed step, retry it, or start a new eval" };
+    if (e.state === "failed") return { step: "decide", title: "Open the pipeline run to see the failed step, or re-run the missing cells", command: "evals.new" };
     if (!ev?.gate) return { step: "review", title: "Read the deltas and the worst utterances, then run the project's gate", command: "evals.gate" };
     if (ev.gate.verdict === "passed" && registrable(ev) === true) return { step: "record", title: "The gate passed: register the checkpoint as a model version", command: "models.register" };
     if (ev.gate.verdict === "passed") return { step: "record", title: "The gate passed" };
