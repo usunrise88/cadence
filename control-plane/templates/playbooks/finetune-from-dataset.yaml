@@ -2,7 +2,7 @@
 # control-plane/internal/playbooks/README.md). Keys are stable; keep prose in comments and in `prompt`.
 name: finetune-from-dataset
 title: Fine-tune from a dataset version
-description: Mix a dataset version with replay, calibrate batch sizes under the card's memory cap, train, and register the best checkpoints; from phase 3 the eval matrix and the gate follow.
+description: Mix a dataset version with replay, calibrate batch sizes under the card's memory cap, train, evaluate the best checkpoint against the baseline and apply the project's gate.
 typicalCost: 1–4 GPU-hours
 availableFrom: 2
 
@@ -53,13 +53,16 @@ chain:
     title: List the checkpoints the run registered (top-k by validation WER)
     command: checkpoints.list
   - id: eval
-    title: Eval matrix on the golden sets at the deployment latency
+    title: Eval the best checkpoint against the baseline on the gate's golden sets (dry run first)
     command: evals.new
-    phase: 3
+    estimate: { gpuHours: 0.5, minutes: 30, plusMinus: 0.5 }
+  - id: eval-wait
+    title: Wait for the eval to finish
+    command: evals.get
+    until: terminal
   - id: gate
     title: Gate against the baseline
     command: evals.gate
-    phase: 3
 
 stop:
   - gate: failed
@@ -68,8 +71,8 @@ stop:
   - approval: denied
 
 next:
-  done: Phase 3 adds the eval matrix and the gate. Until then compare the checkpoints by validation WER (checkpoints.list), average the best ones if they are close (checkpoints.average, dry run first), and note what you learned (projects.note).
-  stopped: Read why the step stopped (jobs.get and the run's logs, or the approval's note), fix the cause, then start the playbook again or continue the remaining steps by hand.
+  done: The checkpoint passed the gate. Ask a person to register it (models.register, an approval), and note what you learned (projects.note).
+  stopped: Read why the step stopped (jobs.get and the run's logs, the eval's failing checks in evals.get, or the approval's note), fix the cause, then start the playbook again or continue the remaining steps by hand.
 
 prompt: |
   Run the playbook "Fine-tune from a dataset version" in project {{ .Project.Name }} ({{ .Project.Slug }}, locales {{ .Project.Locales }}).
@@ -85,4 +88,7 @@ prompt: |
   3. runs.new with the mix, the base model and steps — dry run first and report its estimate (GPU-hours, card, duration), then the same call for real; it answers the run (run_…).
   4. Follow the run until its status is done, failed or cancelled: jobs.wait on its currentJobId, then runs.get id=<run>; metrics.get id=<run> shows the loss and validation WER meanwhile.
   5. checkpoints.list with run=<run> — report the registered checkpoints with their validation WER.
-  The eval matrix and the gate arrive in phase 3: skip them. Finish with a short summary and the next step.
+  6. evals.new with subject {checkpointId: <the best kept checkpoint>} — dry run first and report the cells it computes and its GPU-hours, then the same call for real; golden sets, latency profiles and the baseline come from the project (gates.yaml, @baseline). It answers the eval (evl_…).
+  7. Follow the eval with evals.get id=<eval> until its status is done or failed.
+  8. evals.gate on the eval (If-Match: the eval's ETag) — report the verdict and every check with its delta and interval.
+  Finish with a short summary and the next step.

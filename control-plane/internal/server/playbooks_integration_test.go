@@ -8,7 +8,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
+
+	"github.com/usunrise88/cadence/control-plane/internal/auth"
 	"github.com/usunrise88/cadence/control-plane/internal/pipelines/pipelinestest"
+	"github.com/usunrise88/cadence/control-plane/internal/registry"
 )
 
 // Playbooks against the real control plane (R16): playbooks.list|get with the estimate, playbooks.run (dry run and
@@ -80,8 +84,8 @@ func TestPlaybooks(t *testing.T) {
 		t.Fatalf("playbooks.list %+v", list.Items)
 	}
 	ft := list.Items[0]
-	// 3 000 steps × 1.0 s (table) + the calibration hint 0.1 GPU-hours; both ±50%.
-	if ft.Estimate == nil || ft.Estimate.Basis != "mixed" || ft.Estimate.GPUHours.Value != 0.717 || ft.Estimate.GPUHours.High != 0.883 {
+	// 3 000 steps × 1.0 s (table) + the calibration hint 0.1 GPU-hours + the eval hint 0.5; all ±50%.
+	if ft.Estimate == nil || ft.Estimate.Basis != "mixed" || ft.Estimate.GPUHours.Value != 1.217 || ft.Estimate.GPUHours.High != 1.633 {
 		t.Fatalf("estimate %+v", ft.Estimate)
 	}
 	for _, in := range ft.Inputs {
@@ -129,8 +133,8 @@ func TestPlaybooks(t *testing.T) {
 	}
 	before := h.count("SELECT count(*) FROM agent_sessions")
 	h.ok(run(body, true), 200, &dry)
-	if dry.Session != nil || h.count("SELECT count(*) FROM agent_sessions") != before || len(dry.Plan) != 7 ||
-		dry.Plan[5].State != "skipped" || dry.Estimate.GPUHours.Value != 0.231 || !strings.Contains(dry.Prompt, "Training steps: 500") ||
+	if dry.Session != nil || h.count("SELECT count(*) FROM agent_sessions") != before || len(dry.Plan) != 8 ||
+		dry.Plan[5].State != "pending" || dry.Estimate.GPUHours.Value != 0.731 || !strings.Contains(dry.Prompt, "Training steps: 500") ||
 		!strings.Contains(dry.Prompt, "none (the project has not adopted dataset/replay-base)") {
 		t.Fatalf("dry run %+v", dry)
 	}
@@ -142,11 +146,11 @@ func TestPlaybooks(t *testing.T) {
 	h.ok(run(body, false), 201, &res)
 	s := res.Session
 	if s.Kind != "playbook" || s.State != "created" || s.Branch != "session/"+s.ID || s.Playbook == nil ||
-		s.Playbook.State != "running" || len(s.Playbook.Plan) != 7 || s.Playbook.Plan[0].State != "pending" {
+		s.Playbook.State != "running" || len(s.Playbook.Plan) != 8 || s.Playbook.Plan[0].State != "pending" {
 		t.Fatalf("playbook session %+v", s)
 	}
 	msgs := h.transcript(s.ID)
-	if len(msgs) < 2 || msgs[0].Kind != "notice" || !strings.Contains(msgs[0].Text, "estimate 0.23 GPU-hours") ||
+	if len(msgs) < 2 || msgs[0].Kind != "notice" || !strings.Contains(msgs[0].Text, "estimate 0.73 GPU-hours") ||
 		msgs[1].Kind != "user_message" || !strings.Contains(msgs[1].Text, "Fine-tune from a dataset version") {
 		t.Fatalf("transcript %+v", msgs)
 	}
@@ -190,7 +194,7 @@ func TestPlaybooks(t *testing.T) {
 	}
 	reminders := 0
 	for _, m := range h.transcript(s.ID) {
-		if m.Kind == "notice" && strings.Contains(m.Text, "is not finished: the next step is step 2 of 7") {
+		if m.Kind == "notice" && strings.Contains(m.Text, "is not finished: the next step is step 2 of 8") {
 			reminders++
 			if m.Delivery != "pending" && m.Delivery != "delivered" {
 				t.Errorf("the reminder is not for the agent: %+v", m)
@@ -247,9 +251,43 @@ func TestPlaybooks(t *testing.T) {
 	h.waitRun(trained.ID, "done")
 	h.ok(agent("GET", "/api/runs/"+trained.ID, ""), 200, nil)
 	h.ok(agent("GET", "/api/projects/hebrew/checkpoints?run="+trained.ID, ""), 200, nil)
+	if pb = h.playbookSession(s.ID).Playbook; pb.Plan[3].State != "done" || pb.Plan[4].State != "done" || pb.State != "running" {
+		b, _ := json.Marshal(pb)
+		t.Fatalf("after the checkpoints: %s", b)
+	}
+
+	// Eval: refused without its dry run; the eval ticks the step, its end the wait, the gate's verdict ends the chain.
+	if err := pipelinestest.RegisterEvaluation(t.Context(), h.pool); err != nil {
+		t.Fatal(err)
+	}
+	var proj struct{ ID string }
+	h.ok(h.do("GET", "/api/projects/hebrew", ""), 200, &proj)
+	gs, err := pipelinestest.RegisterGoldenSet(t.Context(), h.pool, h.admin.CAS, "pb-golden-he", "he-IL", 0.1,
+		[]pipelinestest.GoldenUtterance{{Audio: "a1", Speaker: "s1", Ref: "one two three four"}, {Audio: "a2", Speaker: "s2", Ref: "five six seven eight"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := pgx.BeginFunc(t.Context(), h.pool, func(tx pgx.Tx) error {
+		_, err := registry.AdoptQuietly(t.Context(), tx, proj.ID, []string{gs}, auth.DevActor())
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	evalBody := `{"subject":{"checkpointId":"` + h.checkpoints("hebrew", trained.ID)[0].ID + `"},"baseline":"` + pipelinestest.BaseModel + `"}`
+	expectProblem(t, agent("POST", "/api/projects/hebrew/evals", evalBody, "Idempotency-Key", h.key()), 409, "playbook-dry-run-required")
+	h.ok(agent("POST", "/api/projects/hebrew/evals?dryRun=true", evalBody, "Idempotency-Key", h.key()), 200, nil)
+	var ev evalView
+	h.ok(agent("POST", "/api/projects/hebrew/evals", evalBody, "Idempotency-Key", h.key()), 201, &ev)
+	if pb = h.playbookSession(s.ID).Playbook; pb.Plan[5].State != "done" || pb.Plan[5].EntityID != ev.ID {
+		t.Fatalf("after evals.new: %+v", pb.Plan[5])
+	}
+	ev = h.waitEval(ev.ID, "done")
+	h.ok(agent("GET", "/api/evals/"+ev.ID, ""), 200, nil)
+	h.ok(agent("POST", "/api/evals/"+ev.ID+":gate", "", "Idempotency-Key", h.key(), "If-Match", ifMatch(ev.Rev)), 200, nil)
 	got := h.playbookSession(s.ID)
 	pb = got.Playbook
-	if pb.Plan[3].State != "done" || pb.Plan[4].State != "done" || pb.State != "done" || !strings.Contains(pb.Summary, "complete: 5 step(s) done") {
+	if pb.Plan[6].State != "done" || pb.Plan[7].State != "done" || pb.Plan[7].Note != ev.ID+": gate passed" || pb.State != "done" ||
+		!strings.Contains(pb.Summary, "complete: 8 step(s) done") {
 		b, _ := json.Marshal(pb)
 		t.Fatalf("after the chain: %s", b)
 	}

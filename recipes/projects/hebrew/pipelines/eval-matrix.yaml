@@ -1,11 +1,16 @@
-# Starter pipeline: the streaming eval matrix of a checkpoint, then the gate (step kinds arrive in phase 3).
+# Starter pipeline: one eval cell by hand — transcribe a checkpoint on a golden set's dataset at a latency profile with
+# the real streaming decoder, then score it after the golden set's normalizer (docs/spec/03-pipelines-defaults.md
+# "The eval pipeline"). evals.new generates this shape per eval (materialize → transcribe → score for each missing
+# cell, the kinds from the model family's roles) and caches the scores as eval records; a run of this file by
+# pipelines.run writes scores but no eval record.
 name: eval-matrix
-description: Evaluate a checkpoint at the latency profiles of the matrix and apply the project's gate
-inputs: { checkpoint: checkpoint }
+description: Transcribe a checkpoint on a golden dataset at a latency profile and score it (one eval cell; evals.new runs the matrix)
+inputs: { model: checkpoint, data: dataset, normalizer: normalizer }
 steps:
-  - id: eval
-    kind: streaming_eval@1
-    in: { checkpoint: $inputs.checkpoint }
-  - id: gate
-    kind: gate_evaluate@1
-    in: { report: eval.report }
+  - id: transcribe
+    kind: nemotron_transcribe@1
+    in: { model: $inputs.model, data: $inputs.data }
+    params: { profile: 160ms }
+  - id: score
+    kind: wer_score@1
+    in: { hypotheses: transcribe.hypotheses, data: $inputs.data, normalizer: $inputs.normalizer }
