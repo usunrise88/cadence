@@ -42,6 +42,7 @@ tags:
   - { name: playbooks, description: "Prefilled chains of commands with inputs, stop conditions and an estimate, run as playbook sessions (R16)" }
   - { name: runs, description: "Training runs (one optimisation stage each), calibration, checkpoints and metric series (R12, R13, R44)" }
   - { name: evals, description: "The eval matrix against the baseline, eval records, the project's gate and model registration (R20–R24)" }
+  - { name: media, description: "Audio for people: an utterance's audio, peaks, spectrogram tiles and words, live transcription (R25, R47); exempt from the vocabulary and never MCP tools; agents are refused" }
   - { name: planned, description: Named now, implemented in a later phase (501 until then) }
 
 paths:
@@ -3547,6 +3548,129 @@ paths:
         default: { $ref: "#/components/responses/Problem" }
 
 
+  # ---------------------------------------------------------------- media: audio serving (phase 3 · stream A) — add paths below this line
+  # Tag media (R25, 06 "Media"): exempt from the verb vocabulary and never MCP tools; people only (an agent session
+  # token is refused). Utterances live under /registry/utterances (R1), so R25's /utterances/{id}/audio is
+  # /registry/utterances/{id}/audio here.
+  /registry/utterances/{id}/audio:
+    x-cadence: { entity: audio, kind: utterance_audio, singleton: true }
+    parameters: [{ $ref: "#/components/parameters/UtteranceRef" }]
+    get:
+      operationId: audio.get
+      summary: A span of an utterance's audio as 16 kHz 16-bit PCM WAV, with byte ranges; a signed link plays without a session
+      tags: [media]
+      description: >
+        The utterance's audio, or a span of it, as a 16 kHz 16-bit PCM WAV file (the stored file itself when it is
+        already one and the whole file is asked). Byte ranges (Range: bytes=…) answer 206 Partial Content. A request
+        signed by audio.sign (exp, viewer, sig) needs no session and is attributed to its viewer. Every play — a request
+        from byte 0 — is written to the audit log with the viewer and the span. Agent session tokens are refused.
+      parameters:
+        - { name: channel, in: query, description: "One channel (0-based); omitted: every channel", schema: { type: integer, minimum: 0, maximum: 15 } }
+        - { name: start, in: query, description: "Span start in seconds (default 0)", schema: { type: number, format: double, minimum: 0 } }
+        - { name: end, in: query, description: "Span end in seconds (default the end of the audio)", schema: { type: number, format: double, minimum: 0 } }
+        - { name: exp, in: query, description: "Signed link: expiry (Unix seconds)", schema: { type: integer, format: int64 } }
+        - { name: viewer, in: query, description: "Signed link: the user it was minted for", schema: { type: string, maxLength: 100 } }
+        - { name: sig, in: query, description: "Signed link: the signature over utterance, span, channel, viewer and expiry", schema: { type: string, maxLength: 100 } }
+        - { name: Range, in: header, description: "Byte range (RFC 9110), e.g. bytes=0-", schema: { type: string, maxLength: 200 } }
+      responses:
+        "200":
+          description: The WAV file
+          headers:
+            Accept-Ranges: { schema: { type: string } }
+            Content-Length: { schema: { type: integer } }
+          content: { audio/wav: { schema: { type: string, format: binary } } }
+        "206":
+          description: The requested byte range of the WAV file
+          headers:
+            Content-Range: { schema: { type: string } }
+          content: { audio/wav: { schema: { type: string, format: binary } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/utterances/{id}/audio:sign:
+    x-cadence: { entity: audio, kind: utterance_audio, singleton: true }
+    parameters: [{ $ref: "#/components/parameters/UtteranceRef" }]
+    post:
+      operationId: audio.sign
+      summary: Mint a short-lived signed link that plays a span of an utterance (bound to the span, the viewer and an expiry)
+      tags: [media]
+      description: >
+        A link a media element can play without headers: audio.get with exp, viewer and sig. It is bound to the
+        utterance, the span, the channel and the signed-in viewer, and expires after defaults media.signed_link_ttl_s.
+        Minting writes an audit row (who, which span). Not a command: it changes no entity, so it takes no
+        Idempotency-Key, If-Match or dryRun. Agent session tokens are refused.
+      requestBody:
+        required: false
+        content: { application/json: { schema: { $ref: "#/components/schemas/AudioSignRequest" } } }
+      responses:
+        "200":
+          description: The signed link
+          content: { application/json: { schema: { $ref: "#/components/schemas/AudioLink" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/utterances/{id}/peaks:
+    x-cadence: { entity: peaks, kind: utterance_peaks, singleton: true }
+    parameters: [{ $ref: "#/components/parameters/UtteranceRef" }]
+    get:
+      operationId: peaks.get
+      summary: Min/max peaks per channel of an utterance (or a span) at a resolution, for the waveform track
+      tags: [media]
+      description: >
+        int8 min/max pairs (value / 127 = sample) per hop and channel, frames × channels × [min, max], base64. The 10 ms
+        peaks are computed from the audio on first use and cached in the content store as a peaks artifact (a stored
+        peaks artifact of the audio is used when present); coarser hops are max-pooled from them.
+      parameters:
+        - { name: hopMs, in: query, description: "Resolution: milliseconds per min/max pair, a multiple of 10", schema: { type: integer, minimum: 10, maximum: 60000, default: 10 } }
+        - { name: start, in: query, description: "Span start in seconds (default 0)", schema: { type: number, format: double, minimum: 0 } }
+        - { name: end, in: query, description: "Span end in seconds (default the end of the audio)", schema: { type: number, format: double, minimum: 0 } }
+      responses:
+        "200":
+          description: The peaks
+          content: { application/json: { schema: { $ref: "#/components/schemas/AudioPeaks" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/utterances/{id}/spectrogram:
+    x-cadence: { entity: spectrogram, kind: utterance_spectrogram, singleton: true }
+    parameters: [{ $ref: "#/components/parameters/UtteranceRef" }]
+    get:
+      operationId: spectrogram.get
+      summary: The spectrogram tile pyramid of an utterance's audio (spectrogram_tiles@1) — its manifest, or one tile
+      tags: [media]
+      description: >
+        For audio longer than views.audio.browser_stft_max_s the audio view reads a server tile pyramid: the newest
+        spectrogram_tiles artifact computed for the utterance's audio. Without tile: the manifest (JSON). With
+        tile=c<ch>/l<level>/<index>: that tile's bytes (uint8 dB, bins × 512 frames, dB = -120 + 0.5 × value). 404 when
+        no pyramid was computed for this audio.
+      parameters:
+        - { name: tile, in: query, description: "A tile: c<channel>/l<level>/<index>", schema: { type: string, pattern: "^c[0-9]{1,2}/l[0-9]{1,2}/[0-9]{1,7}$" } }
+      responses:
+        "200":
+          description: The manifest (no tile) or the tile's bytes
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/SpectrogramManifest" } }
+            application/octet-stream: { schema: { type: string, format: binary } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/utterances/{id}/words:
+    x-cadence: { entity: words, kind: utterance_words, singleton: true }
+    parameters: [{ $ref: "#/components/parameters/UtteranceRef" }]
+    get:
+      operationId: words.get
+      summary: An utterance's hypothesis words with times from a hypotheses artifact, marked S/D/I against the reference by a scores artifact
+      tags: [media]
+      description: >
+        The audio view's word track for one utterance: its row of a hypotheses artifact (words with start, end and
+        confidence; partial events of a streaming decode), and, with scores, the alignment of that utterance's row in
+        the scores artifact — each hypothesis word marked =, S or I (with the reference word for S), and the reference
+        words the hypothesis deleted placed between hypothesis words.
+      parameters:
+        - { name: hypotheses, in: query, required: true, description: "The hypotheses artifact (b3:…), e.g. an eval cell's", schema: { type: string, pattern: "^b3:[0-9a-f]{64}$" } }
+        - { name: scores, in: query, description: "The scores artifact (b3:…) of the same cell", schema: { type: string, pattern: "^b3:[0-9a-f]{64}$" } }
+      responses:
+        "200":
+          description: The words
+          content: { application/json: { schema: { $ref: "#/components/schemas/UtteranceWords" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
   # ---------------------------------------------------------------- planned (later phases)
   /mounts:
     x-cadence: { entity: mounts, planned: 4 }
@@ -3630,6 +3754,12 @@ components:
       required: true
       description: Lease id (lse_…)
       schema: { type: string }
+    UtteranceRef:
+      name: id
+      in: path
+      required: true
+      description: "Utterance id (utt_…) or the audio's content hash (b3:…)"
+      schema: { type: string, maxLength: 100 }
     ArtifactHash:
       name: hash
       in: path
@@ -4413,6 +4543,11 @@ components:
         eval: { $ref: "#/components/schemas/DefaultSection", description: "Evaluation (phase 3): matrix profiles, primary cell, scoring normalizer, duration buckets, bootstrap" }
         gate: { $ref: "#/components/schemas/DefaultSection", description: "The default gate a project's gates.yaml departs from (phase 3)" }
         langpacks: { $ref: "#/components/schemas/DefaultSection", description: "Language packs (phase 3): the boost weight a new list starts with and the size cap of a list" }
+        media: { $ref: "#/components/schemas/DefaultSection", description: "Audio serving (phase 3): the signed link lifetime and the longest span served" }
+        views:
+          type: object
+          description: "Client view defaults, one section per view (views.audio: the audio view's budgets and spectrogram, R52)"
+          additionalProperties: { $ref: "#/components/schemas/DefaultSection" }
         estimates:
           type: object
           required: [bytes_per_audio_hour, training]
@@ -7900,4 +8035,113 @@ components:
         truncated: { type: boolean, description: The node limit stopped the walk }
         hidden: { type: integer, description: Nodes left out because they belong to projects the caller cannot see }
 
-
+    # ---------------------------------------------------------------- media: audio serving schemas (phase 3 · stream A) — add below
+    AudioSignRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        channel: { type: integer, minimum: 0, maximum: 15, description: "One channel (0-based); omitted: every channel" }
+        start: { type: number, format: double, minimum: 0, description: Span start in seconds }
+        end: { type: number, format: double, minimum: 0, description: Span end in seconds }
+    AudioLink:
+      type: object
+      required: [url, expiresAt, utteranceId, audio, durationS, sampleRate, channels]
+      properties:
+        url: { type: string, description: "audio.get with the span and the signature (relative to the server, starts with /api/)" }
+        expiresAt: { type: string, format: date-time }
+        utteranceId: { type: string }
+        audio: { type: string, description: "The audio's content hash (b3:…)" }
+        durationS: { type: number, format: double, description: The utterance's duration }
+        sampleRate: { type: integer, description: "Sample rate of what the link serves (16000)" }
+        channels: { type: integer, description: Channels of what the link serves }
+        originSampleRate: { type: integer, description: The stored audio's sample rate }
+        start: { type: number, format: double }
+        end: { type: number, format: double }
+    AudioPeaks:
+      type: object
+      required: [utteranceId, channels, hopS, frames, start, durationS, encoding, data]
+      properties:
+        utteranceId: { type: string }
+        channels: { type: integer }
+        hopS: { type: number, format: double, description: Seconds per min/max pair }
+        frames: { type: integer, description: Pairs per channel }
+        start: { type: number, format: double, description: Time of the first pair }
+        durationS: { type: number, format: double, description: The utterance's duration }
+        originSampleRate: { type: integer, description: The stored audio's sample rate }
+        clipped: { type: array, items: { type: integer }, description: "Frames where a sample of any channel reached full scale (at most 1000)" }
+        encoding: { type: string, enum: [int8-minmax], description: "frames × channels × [min, max], int8, value / 127 = sample" }
+        data: { type: string, format: byte, description: Base64 of the int8 bytes }
+        artifact: { type: string, description: "The cached 10 ms peaks artifact (b3:…)" }
+    SpectrogramLevel:
+      type: object
+      required: [level, hopS, frames, tiles]
+      properties:
+        level: { type: integer }
+        hopS: { type: number, format: double }
+        frames: { type: integer }
+        tiles: { type: integer }
+    SpectrogramManifest:
+      type: object
+      description: "manifest.json of a spectrogram_tiles artifact (format cadence.spectrogram-tiles/1)"
+      required: [schema, sampleRate, originSampleRate, channels, bins, binHz, tileFrames, encoding, levels, peakDb, durationS]
+      properties:
+        schema: { type: string, enum: [cadence.spectrogram-tiles/1] }
+        artifact: { type: string, description: "The spectrogram_tiles artifact (b3:…)" }
+        audio: { type: string, description: "The audio's content hash (b3:…)" }
+        sampleRate: { type: integer }
+        originSampleRate: { type: integer }
+        channels: { type: integer }
+        windowSamples: { type: integer }
+        hopSamples: { type: integer }
+        nFft: { type: integer }
+        bins: { type: integer, description: "Bins kept: up to the origin's Nyquist" }
+        binHz: { type: number, format: double }
+        tileFrames: { type: integer }
+        encoding:
+          type: object
+          required: [floorDb, stepDb]
+          properties:
+            floorDb: { type: number, format: double }
+            stepDb: { type: number, format: double }
+        levels: { type: array, items: { $ref: "#/components/schemas/SpectrogramLevel" } }
+        peakDb: { type: array, items: { type: number, format: double } }
+        durationS: { type: number, format: double }
+    HypothesisWord:
+      type: object
+      required: [word, start, end]
+      properties:
+        word: { type: string }
+        start: { type: number, format: double }
+        end: { type: number, format: double }
+        confidence: { type: number, format: double }
+        op: { type: string, enum: ["=", S, I], description: "Against the reference (with scores): = correct, S substituted, I inserted" }
+        ref: { type: string, description: "The reference word a substitution replaced" }
+    DeletedWord:
+      type: object
+      required: [before, ref]
+      properties:
+        before: { type: integer, description: "Index of the hypothesis word the deletion sits before (words.length: at the end)" }
+        ref: { type: string }
+    PartialEvent:
+      type: object
+      required: [text]
+      properties:
+        text: { type: string }
+        audioOffsetMs: { type: number, format: double, description: Audio time the partial covers up to }
+        emitMs: { type: number, format: double, description: When the decoder emitted it (wall clock from the stream's start) }
+    UtteranceWords:
+      type: object
+      required: [utteranceId, audio, text, words, deletions, aligned]
+      properties:
+        utteranceId: { type: string }
+        audio: { type: string, description: "The audio's content hash (b3:…)" }
+        text: { type: string, description: The hypothesis text }
+        ref: { type: string, description: "The normalised reference (with scores)" }
+        words: { type: array, items: { $ref: "#/components/schemas/HypothesisWord" } }
+        deletions: { type: array, items: { $ref: "#/components/schemas/DeletedWord" } }
+        aligned: { type: boolean, description: "The scores' alignment was mapped onto the timed words (false without scores, or when the normaliser changed the word count)" }
+        partials: { type: array, items: { $ref: "#/components/schemas/PartialEvent" } }
+        sub: { type: integer }
+        del: { type: integer }
+        ins: { type: integer }
+        refWords: { type: integer }

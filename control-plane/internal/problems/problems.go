@@ -90,6 +90,9 @@ var (
 	GoldenSetLeakage     = Type{"golden-set-leakage", http.StatusUnprocessableEntity, "Golden set leakage"}
 	GoldenSetNotEvalOnly = Type{"golden-set-not-eval-only", http.StatusUnprocessableEntity, "Dataset is not eval-only"}
 	NormalizerUnknown    = Type{"normalizer-unknown", http.StatusUnprocessableEntity, "Unknown normalizer"}
+	// Media: audio serving (phase 3 · stream A).
+	MediaLinkInvalid    = Type{"media-link-invalid", http.StatusForbidden, "Audio link invalid or expired"}
+	RangeNotSatisfiable = Type{"range-not-satisfiable", http.StatusRequestedRangeNotSatisfiable, "Range not satisfiable"}
 )
 
 // Types lists every registered type.
@@ -104,6 +107,7 @@ func Types() []Type {
 		FamilyUnavailable, RecipeMismatch, NoTrainingState, ArtifactNotEvictable,
 		EvalBaselineMissing, GateNotPassed, GateConfigInvalid,
 		GoldenSetLeakage, GoldenSetNotEvalOnly, NormalizerUnknown,
+		MediaLinkInvalid, RangeNotSatisfiable,
 	}
 }
 

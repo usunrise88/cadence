@@ -4,7 +4,7 @@
 # the control-plane binary and packaged with the worker. Every value carries a description, a source and, where it
 # applies, a safe range; a value without a published source is a "Cadence recommendation" re-checked after the spikes.
 # Keys are addressed as <section>.<key> (x-cadence.defaultRef: training.steps). Bump `version` on every change.
-version: 10
+version: 11
 
 # The project wizard's Recommended mode (docs/spec/02-domain-projects-registry.md "Project wizard").
 wizard:
@@ -487,6 +487,107 @@ langpacks:
     description: Most terms one boost list may hold; long lists slow decoding and invite insertions of listed terms
     source: Cadence recommendation (docs/spec/08-resolutions.md R24, over-boosting shows as insertions)
     range: { min: 1, max: 100000 }
+
+# Audio serving (phase 3, stream A; docs/spec/06-platform.md "Media", R25).
+media:
+  signed_link_ttl_s:
+    value: 300
+    unit: s
+    description: How long a signed audio link (audio.sign) plays; a media element refetches ranges while it plays, so the link must outlive a listening session but a copied link soon stops working
+    source: Cadence recommendation (docs/spec/08-resolutions.md R25, short-lived signed URLs)
+    range: { min: 30, max: 3600 }
+  max_span_s:
+    value: 3600
+    unit: s
+    description: Longest span audio.get converts in one response (a stored 16 kHz WAV asked whole is served as is, at any length)
+    source: Cadence recommendation (a 60-minute 16 kHz mono span is 115 MB of PCM)
+    range: { min: 60, max: 14400 }
+
+# Client view defaults (docs/spec/10-ui-shell.md "Audio view and charts"; R51, R52; spike S5).
+views:
+  audio:
+    window_ms:
+      value: 25
+      unit: ms
+      description: Spectrogram analysis window (Hann), the model's frame length
+      source: docs/spec/08-resolutions.md R52 ("Model frames" preset)
+      range: { min: 5, max: 100 }
+    hop_ms:
+      value: 10
+      unit: ms
+      description: Spectrogram hop, the model's frame grid; tiles' base level
+      source: docs/spec/08-resolutions.md R52
+      range: { min: 5, max: 50 }
+    n_fft:
+      value: 512
+      unit: points
+      description: FFT size of the acoustic spectrogram (257 bins at 16 kHz, 31.25 Hz apart)
+      source: docs/spec/08-resolutions.md R52
+      range: { min: 256, max: 1024 }
+    fmax_hz:
+      value: 8000
+      unit: Hz
+      description: Top of the frequency axis for 16 kHz audio; audio of 8 kHz origin stops at its Nyquist with a line
+      source: docs/spec/08-resolutions.md R52
+      range: { min: 1000, max: 8000 }
+    axis:
+      value: mel
+      description: Frequency axis of the acoustic spectrogram
+      source: docs/spec/08-resolutions.md R52
+      range: { values: [mel, hz] }
+    range_db:
+      value: 80
+      unit: dB
+      description: Dynamic range shown below the peak
+      source: docs/spec/08-resolutions.md R52
+      range: { min: 20, max: 120 }
+    gain_db:
+      value: 0
+      unit: dB
+      description: Gain added before the range is applied
+      source: docs/spec/08-resolutions.md R52
+      range: { min: -40, max: 40 }
+    colormap:
+      value: magma
+      description: Spectrogram colormap (perceptually uniform; never jet or rainbow); the theme does not change it
+      source: docs/spec/08-resolutions.md R52
+      range: { values: [magma, viridis, cividis, inferno, grey, grey-inverse] }
+    tile_frames:
+      value: 512
+      unit: frames
+      description: Frames per spectrogram tile (spectrogram_tiles@1 and the browser STFT share the shape)
+      source: docs/spikes/S5-audio-view.md (tile format)
+      range: { min: 512, max: 512 }
+    tile_slots:
+      value: 64
+      unit: tiles
+      description: Tiles one window's WebGL2 texture array holds (LRU); 64 × 512 × 257 bytes is 8.4 MB of GPU memory
+      source: docs/spikes/S5-audio-view.md (what brings a 30-minute call under 150 MB)
+      range: { min: 16, max: 256 }
+    tile_cache_mb:
+      value: 12
+      unit: MiB
+      description: Tile bytes a view keeps in memory (LRU) besides the top level
+      source: docs/spikes/S5-audio-view.md
+      range: { min: 4, max: 128 }
+    model_input_max_span_s:
+      value: 60
+      unit: s
+      description: Widest span at which the model-input track loads its features
+      source: docs/spikes/S5-audio-view.md
+      range: { min: 5, max: 600 }
+    words_max_visible:
+      value: 300
+      unit: words
+      description: Most word elements a word track shows; above it the track shows density blocks
+      source: docs/spikes/S5-audio-view.md
+      range: { min: 50, max: 2000 }
+    browser_stft_max_s:
+      value: 600
+      unit: s
+      description: Longest audio whose spectrogram the browser computes (STFT in a Web Worker, ≈ 45 ms per minute); longer audio reads the server tile pyramid (spectrogram_tiles@1)
+      source: docs/spec/08-resolutions.md R52 (10 minutes); docs/spikes/S5-audio-view.md (FFT time)
+      range: { min: 10, max: 3600 }
 
 # Framework packs (R45): one section per pack, read by its step kinds through x-cadence defaultRef packs.<pack>.<key>.
 packs:

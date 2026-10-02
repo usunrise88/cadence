@@ -298,6 +298,12 @@ func (c *Contract) checkCommand(o *Operation, sh string, fail func(*Operation, s
 		// revision.
 		return
 	}
+	if hasTag(o, "media") && o.Exempt && o.pathEntity.Singleton {
+		// An utterance's media (audio.sign) mints a signed link: it changes no entity and has no revision to match
+		// or effect to dry-run; the audit row it writes is its record. Media collections (transcriptions.new) still
+		// follow the command rules below.
+		return
+	}
 	ref, hasKey := o.paramRef("header", "Idempotency-Key")
 	_, hasDry := o.paramRef("query", "dryRun")
 	ifRef, hasIf := o.paramRef("header", "If-Match")

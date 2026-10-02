@@ -34,6 +34,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/langpacks"
 	"github.com/usunrise88/cadence/control-plane/internal/lineage"
 	"github.com/usunrise88/cadence/control-plane/internal/mcp"
+	"github.com/usunrise88/cadence/control-plane/internal/media"
 	"github.com/usunrise88/cadence/control-plane/internal/mixes"
 	"github.com/usunrise88/cadence/control-plane/internal/notify"
 	"github.com/usunrise88/cadence/control-plane/internal/obs"
@@ -134,6 +135,9 @@ type Server struct {
 	runs *runs.Service
 	// evals are evals over generated pipelines, eval records, gates and model registration (phase 3).
 	evals *evals.Service
+	// media serves audio, peaks, spectrogram tiles and words to people; mediaLinks signs short-lived audio links.
+	media      *media.Service
+	mediaLinks *media.Signer
 }
 
 var _ api.StrictServerInterface = (*Server)(nil)
@@ -186,6 +190,7 @@ func New(c Config) (*Server, error) {
 	s.runs.Install(c.StepHooks) // checkpoint and calibration outputs; the engine reports run status changes
 	s.evals = s.newEvalsService()
 	s.evals.Install(c.StepHooks) // scores outputs write eval records; the engine reports eval pipeline changes
+	s.media, s.mediaLinks = s.newMedia()
 	window := time.Duration(s.defaultsDoc().Drafts.PresenceSeconds.Value) * time.Second
 	s.drafts = drafts.NewStore(time.Now, window)
 	s.mixes = mixes.NewService(s.drafts, s.defaultsDoc)
@@ -271,7 +276,7 @@ func (s *Server) apiRouter(authenticate bool) http.Handler {
 		},
 		ResponseErrorHandlerFunc: s.writeProblem,
 	})
-	api.HandlerWithOptions(eventStream{ServerInterface: strict, s: s}, api.ChiServerOptions{
+	api.HandlerWithOptions(mediaRoutes{ServerInterface: eventStream{ServerInterface: strict, s: s}, s: s}, api.ChiServerOptions{
 		BaseRouter:       r,
 		Middlewares:      []api.MiddlewareFunc{newValidator(s.spec, APIPrefix, s.writeProblem).middleware},
 		ErrorHandlerFunc: s.paramError,

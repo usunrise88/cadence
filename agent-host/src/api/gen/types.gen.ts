@@ -885,6 +885,16 @@ export type Defaults = {
      * Language packs (phase 3): the boost weight a new list starts with and the size cap of a list
      */
     langpacks?: DefaultSection;
+    /**
+     * Audio serving (phase 3): the signed link lifetime and the longest span served
+     */
+    media?: DefaultSection;
+    /**
+     * Client view defaults, one section per view (views.audio: the audio view's budgets and spectrogram, R52)
+     */
+    views?: {
+        [key: string]: DefaultSection;
+    };
     estimates: {
         bytes_per_audio_hour: DefaultValue;
         measured_plus_minus?: DefaultValue;
@@ -6012,6 +6022,196 @@ export type Lineage = {
     hidden: number;
 };
 
+export type AudioSignRequest = {
+    /**
+     * One channel (0-based); omitted: every channel
+     */
+    channel?: number;
+    /**
+     * Span start in seconds
+     */
+    start?: number;
+    /**
+     * Span end in seconds
+     */
+    end?: number;
+};
+
+export type AudioLink = {
+    /**
+     * audio.get with the span and the signature (relative to the server, starts with /api/)
+     */
+    url: string;
+    expiresAt: string;
+    utteranceId: string;
+    /**
+     * The audio's content hash (b3:…)
+     */
+    audio: string;
+    /**
+     * The utterance's duration
+     */
+    durationS: number;
+    /**
+     * Sample rate of what the link serves (16000)
+     */
+    sampleRate: number;
+    /**
+     * Channels of what the link serves
+     */
+    channels: number;
+    /**
+     * The stored audio's sample rate
+     */
+    originSampleRate?: number;
+    start?: number;
+    end?: number;
+};
+
+export type AudioPeaks = {
+    utteranceId: string;
+    channels: number;
+    /**
+     * Seconds per min/max pair
+     */
+    hopS: number;
+    /**
+     * Pairs per channel
+     */
+    frames: number;
+    /**
+     * Time of the first pair
+     */
+    start: number;
+    /**
+     * The utterance's duration
+     */
+    durationS: number;
+    /**
+     * The stored audio's sample rate
+     */
+    originSampleRate?: number;
+    /**
+     * Frames where a sample of any channel reached full scale (at most 1000)
+     */
+    clipped?: Array<number>;
+    /**
+     * frames × channels × [min, max], int8, value / 127 = sample
+     */
+    encoding: 'int8-minmax';
+    /**
+     * Base64 of the int8 bytes
+     */
+    data: string;
+    /**
+     * The cached 10 ms peaks artifact (b3:…)
+     */
+    artifact?: string;
+};
+
+export type SpectrogramLevel = {
+    level: number;
+    hopS: number;
+    frames: number;
+    tiles: number;
+};
+
+/**
+ * manifest.json of a spectrogram_tiles artifact (format cadence.spectrogram-tiles/1)
+ */
+export type SpectrogramManifest = {
+    schema: 'cadence.spectrogram-tiles/1';
+    /**
+     * The spectrogram_tiles artifact (b3:…)
+     */
+    artifact?: string;
+    /**
+     * The audio's content hash (b3:…)
+     */
+    audio?: string;
+    sampleRate: number;
+    originSampleRate: number;
+    channels: number;
+    windowSamples?: number;
+    hopSamples?: number;
+    nFft?: number;
+    /**
+     * Bins kept: up to the origin's Nyquist
+     */
+    bins: number;
+    binHz: number;
+    tileFrames: number;
+    encoding: {
+        floorDb: number;
+        stepDb: number;
+    };
+    levels: Array<SpectrogramLevel>;
+    peakDb: Array<number>;
+    durationS: number;
+};
+
+export type HypothesisWord = {
+    word: string;
+    start: number;
+    end: number;
+    confidence?: number;
+    /**
+     * Against the reference (with scores): = correct, S substituted, I inserted
+     */
+    op?: '=' | 'S' | 'I';
+    /**
+     * The reference word a substitution replaced
+     */
+    ref?: string;
+};
+
+export type DeletedWord = {
+    /**
+     * Index of the hypothesis word the deletion sits before (words.length: at the end)
+     */
+    before: number;
+    ref: string;
+};
+
+export type PartialEvent = {
+    text: string;
+    /**
+     * Audio time the partial covers up to
+     */
+    audioOffsetMs?: number;
+    /**
+     * When the decoder emitted it (wall clock from the stream's start)
+     */
+    emitMs?: number;
+};
+
+export type UtteranceWords = {
+    utteranceId: string;
+    /**
+     * The audio's content hash (b3:…)
+     */
+    audio: string;
+    /**
+     * The hypothesis text
+     */
+    text: string;
+    /**
+     * The normalised reference (with scores)
+     */
+    ref?: string;
+    words: Array<HypothesisWord>;
+    deletions: Array<DeletedWord>;
+    /**
+     * The scores' alignment was mapped onto the timed words (false without scores, or when the normaliser changed the word count)
+     */
+    aligned: boolean;
+    partials?: Array<PartialEvent>;
+    sub?: number;
+    del?: number;
+    ins?: number;
+    refWords?: number;
+};
+
 export type SecretNewWritable = {
     name: SecretName;
     kind: SecretKind;
@@ -6096,6 +6296,11 @@ export type MixId = string;
  * Lease id (lse_…)
  */
 export type LeaseId = string;
+
+/**
+ * Utterance id (utt_…) or the audio's content hash (b3:…)
+ */
+export type UtteranceRef = string;
 
 /**
  * Artifact hash (b3:<64 hex>, BLAKE3-256 of the content)
@@ -12743,6 +12948,218 @@ export type RegistryLineageResponses = {
 };
 
 export type RegistryLineageResponse = RegistryLineageResponses[keyof RegistryLineageResponses];
+
+export type AudioGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Byte range (RFC 9110), e.g. bytes=0-
+         */
+        Range?: string;
+    };
+    path: {
+        /**
+         * Utterance id (utt_…) or the audio's content hash (b3:…)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * One channel (0-based); omitted: every channel
+         */
+        channel?: number;
+        /**
+         * Span start in seconds (default 0)
+         */
+        start?: number;
+        /**
+         * Span end in seconds (default the end of the audio)
+         */
+        end?: number;
+        /**
+         * Signed link: expiry (Unix seconds)
+         */
+        exp?: number;
+        /**
+         * Signed link: the user it was minted for
+         */
+        viewer?: string;
+        /**
+         * Signed link: the signature over utterance, span, channel, viewer and expiry
+         */
+        sig?: string;
+    };
+    url: '/registry/utterances/{id}/audio';
+};
+
+export type AudioGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type AudioGetError = AudioGetErrors[keyof AudioGetErrors];
+
+export type AudioGetResponses = {
+    /**
+     * The WAV file
+     */
+    200: Blob | File;
+    /**
+     * The requested byte range of the WAV file
+     */
+    206: Blob | File;
+};
+
+export type AudioGetResponse = AudioGetResponses[keyof AudioGetResponses];
+
+export type AudioSignData = {
+    body?: AudioSignRequest;
+    path: {
+        /**
+         * Utterance id (utt_…) or the audio's content hash (b3:…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/registry/utterances/{id}/audio:sign';
+};
+
+export type AudioSignErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type AudioSignError = AudioSignErrors[keyof AudioSignErrors];
+
+export type AudioSignResponses = {
+    /**
+     * The signed link
+     */
+    200: AudioLink;
+};
+
+export type AudioSignResponse = AudioSignResponses[keyof AudioSignResponses];
+
+export type PeaksGetData = {
+    body?: never;
+    path: {
+        /**
+         * Utterance id (utt_…) or the audio's content hash (b3:…)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Resolution: milliseconds per min/max pair, a multiple of 10
+         */
+        hopMs?: number;
+        /**
+         * Span start in seconds (default 0)
+         */
+        start?: number;
+        /**
+         * Span end in seconds (default the end of the audio)
+         */
+        end?: number;
+    };
+    url: '/registry/utterances/{id}/peaks';
+};
+
+export type PeaksGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type PeaksGetError = PeaksGetErrors[keyof PeaksGetErrors];
+
+export type PeaksGetResponses = {
+    /**
+     * The peaks
+     */
+    200: AudioPeaks;
+};
+
+export type PeaksGetResponse = PeaksGetResponses[keyof PeaksGetResponses];
+
+export type SpectrogramGetData = {
+    body?: never;
+    path: {
+        /**
+         * Utterance id (utt_…) or the audio's content hash (b3:…)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * A tile: c<channel>/l<level>/<index>
+         */
+        tile?: string;
+    };
+    url: '/registry/utterances/{id}/spectrogram';
+};
+
+export type SpectrogramGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type SpectrogramGetError = SpectrogramGetErrors[keyof SpectrogramGetErrors];
+
+export type SpectrogramGetResponses = {
+    /**
+     * The manifest (no tile) or the tile's bytes
+     */
+    200: SpectrogramManifest;
+};
+
+export type SpectrogramGetResponse = SpectrogramGetResponses[keyof SpectrogramGetResponses];
+
+export type WordsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Utterance id (utt_…) or the audio's content hash (b3:…)
+         */
+        id: string;
+    };
+    query: {
+        /**
+         * The hypotheses artifact (b3:…), e.g. an eval cell's
+         */
+        hypotheses: string;
+        /**
+         * The scores artifact (b3:…) of the same cell
+         */
+        scores?: string;
+    };
+    url: '/registry/utterances/{id}/words';
+};
+
+export type WordsGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type WordsGetError = WordsGetErrors[keyof WordsGetErrors];
+
+export type WordsGetResponses = {
+    /**
+     * The words
+     */
+    200: UtteranceWords;
+};
+
+export type WordsGetResponse = WordsGetResponses[keyof WordsGetResponses];
 
 export type MountsListData = {
     body?: never;

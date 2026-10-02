@@ -59,5 +59,8 @@ verbs:
 # credential only; like `auth` its operations are not commands (no Idempotency-Key, If-Match or dryRun). `egress` is
 # the egress proxy's (the allowlist it polls with its own credential). `agentCredentials` are the agents' model
 # accounts: admin-only commands (they keep Idempotency-Key, If-Match and dryRun) that must never reach an agent's
-# tool list, so an agent cannot even see that they exist; the presets forbid them too (defence in depth).
-exemptTags: [auth, me, host, egress, agentCredentials, worker]
+# tool list, so an agent cannot even see that they exist; the presets forbid them too (defence in depth). `media` is
+# audio for people (an utterance's audio, peaks, spectrogram tiles and words; live transcription): agents read no raw
+# audio (docs/spec/06-platform.md "Media"), and its reads answer WAV and tile bytes; minting a signed link is not a
+# command either (it changes no entity; its audit row is the record).
+exemptTags: [auth, me, host, egress, agentCredentials, worker, media]

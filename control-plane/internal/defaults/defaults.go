@@ -87,6 +87,11 @@ type Defaults struct {
 	// Language packs: boost list defaults (phase 3, stream L).
 	Langpacks Langpacks `yaml:"langpacks"`
 
+	// Audio serving (phase 3, stream A): the signed link lifetime and the longest span converted.
+	Media Media `yaml:"media"`
+	// Views holds the client views' defaults; the control plane serves them (views.audio, R52) and reads none.
+	Views map[string]map[string]any `yaml:"views"`
+
 	document map[string]any
 }
 
@@ -240,6 +245,12 @@ type Gate struct {
 type Langpacks struct {
 	BoostWeight   Param[float64] `yaml:"boost_weight"`
 	BoostMaxTerms Param[int]     `yaml:"boost_max_terms"`
+}
+
+// Media holds the audio serving defaults (R25).
+type Media struct {
+	SignedLinkTTLSeconds Param[int] `yaml:"signed_link_ttl_s"`
+	MaxSpanSeconds       Param[int] `yaml:"max_span_s"`
 }
 
 // Compute holds the hosts seeded at first start.
