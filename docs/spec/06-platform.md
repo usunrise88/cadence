@@ -288,7 +288,8 @@ transcription socket.
   requests (`Range: bytes=…` → `206 Partial Content`, RFC 9110). R25 wrote the path as `/utterances/{id}/audio`;
   utterances live under `/registry/utterances` (R1), and the contract fixes the path (07 "Open questions").
 - `GET …/utterances/{id}/peaks`: min/max peaks per channel for the waveform track; short audio from its PCM, long
-  audio from a `peaks` artifact computed at ingest (≈ 450 KB per hour, phase 4; R51).
+  audio from a `peaks` artifact computed at ingest (10 ms int8 min/max per channel, ≈ 720 KB per channel-hour as
+  measured by spike S5, which corrects R51's 450 KB; phase 4).
 - Players fetch audio through short-lived signed URLs (the signature binds the utterance, span, viewer and expiry), so
   a media element needs no headers and a copied link soon stops working; the lifetime is an open question.
 - Play-only mode (the reviewer role, "Authentication and access" above): audio is streamed through Media Source Extensions with no download control and no
@@ -308,7 +309,8 @@ span and watches the words appear; nothing outlives the session.
   the session only, decoded with ffmpeg and the training resampler, deleted when the socket closes, and a sweep
   removes what a crashed session left within an hour), the microphone, or an utterance span
   (`utt:123#t=1.2,3.4`). One streaming decoder serves all three; a file plays at real-time pace or as fast as the card
-  allows, and the microphone and paced files show latency.
+  allows, and the microphone and paced files show latency. The worker resamples every input with the import and
+  training resampler, streaming polyphase (`resample_poly`; 03 "Augmentation", spike A5).
 - Streaming families decode at the target's profile, so the page shows what production would have written; adding
   the same checkpoint at `1120ms` shows the gap to the high-latency reference. A typed reference gives WER and a diff
   on the page. The Language pack's "test a phrase" is a two-target transcription, boost on and off.
@@ -344,13 +346,18 @@ generated like the rest.
   for the job (`/worker/live/{jobId}`, tag `worker`), so the pull model of R14 holds. In the NeMo runtime the job
   runs NeMo's streaming pipeline API (`nemo.collections.asr.inference`, the cache-aware RNNT pipeline): one socket per
   stream id, streams batched continuously, end-of-utterance detection, boosting and language per stream. A hard
-  finalize pads the right context with silence; up to three targets receive the same audio. A5 measures it.
+  finalize pads the right context with silence; up to three targets receive the same audio. Spike A5 measured it
+  (`docs/spikes/A5-live-transcription.md` "Result": p95 from `finalize` to the last final 43 ms at `160ms`, 70 ms
+  beside training; model load ≈ 22 s; the pipeline API needs two shims for Nemotron 3.5) and proposed the message
+  details, 20 ms frames and the worker's live-job protocol; stream T specifies them as it builds them. Evals move to
+  the same decoder so live and eval words agree (03 "Runtimes, model families and latency profiles").
 - Limits in v1: one session per user, 15 minutes each, closed after 5 minutes idle.
 
 **Interactive compute (R49).**
 
-- Job kind `interactive` (transcription sessions): a memory reservation from the family (Nemotron 0.6B: 3 GB, measured
-  in A5), the highest queue priority, beside training under the card's cap but never beside a benchmark (R30), and
+- Job kind `interactive` (transcription sessions): a memory reservation from the family (Nemotron 0.6B: 6 000 MB —
+  3.7 GB steady plus the 5.6 GB load peak and margin — and 2 600 MB per further distinct checkpoint, fp32 weights;
+  targets of one checkpoint share its weights; measured by spike A5, replacing the 3 GB placeholder), the highest queue priority, beside training under the card's cap but never beside a benchmark (R30), and
   counted in a daily GPU-hour allowance per project (default 1 GPU-hour, 03 "Key defaults").
 - When no card has room the session waits in the queue, the page shows its place, and live mode is disabled with the
   reason. Cards allow the kind like any other (Compute: allowed job kinds, availability windows).

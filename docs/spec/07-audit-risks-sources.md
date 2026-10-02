@@ -583,42 +583,96 @@ Phase 3 (stream S, 2026-10-02). Answered by the owner-delegated decisions of `do
 - [x] S3 · answered (decision 7): `goldenSets.freeze` takes a frozen eval-only dataset version and a normalizer version
       and registers `golden-set/<name>` (registry approval); the replay golden datasets and FLEURS he are frozen at the gate
 
-Open, found while folding the plan into the spec (the spec text states the assumption; streams confirm or correct):
+Found while folding the plan into the spec; answered by the streams as built (stream S2, 2026-10-02):
 
-- [ ] S3 · toy materialize kind: the plan gives the toy pack "the same" `checkpoint_from_base@1`, but a framework kind's
-      `name@version` is published by one runtime only (06 "Worker protocol", `step-kind-conflict`); the toy pack needs
-      its own kind name (03 says "a materialize kind") unless the kind is runtime-neutral (stream Y)
-- [ ] S3 · leakage at `goldenSets.freeze`: assumed to mean "no fingerprint of the set in a dataset version any run has
-      already trained on, in any project" (02 "Evaluation entities"); future training is fenced by the mix and engine
-      checks (stream G)
-- [ ] S3 · `gates.yaml` names golden sets by collection (with `*`); assumed to resolve to the versions the project
-      adopted (02 "Golden sets and gates"). What a gate naming an unadopted collection does — `gate-config-invalid`, or
-      no cell — is stream E's call
-- [ ] S3 · new normalizer versions: phase 3 has seeds (`normalizer/basic`, `normalizer/he-IL`) and `normalizers.list|get`
-      only; R21's "project changes to scoring rules are frozen into a new registry version" has no operation yet, and how
-      a language pack's collection reference resolves to a version (newest, or pinned) is open (streams G, L)
-- [ ] S3 · gate checks the spec names but the plan's `gates.yaml` lacks: entity recall on boosted terms (R24), entity
-      accuracy for the target locale (04 "Task and streaming metrics"), maximum degradation under `telephony` (03
-      "Augmentation"); written as reported-not-gated until `gates.yaml` grows them
-- [ ] S3 · robustness cells: the eval-record key has no augmentation part, yet an augmented cell's audio differs from
-      the golden set's; the augmentation profile's hash and seed must enter the key (in the decoding hash or beside it)
-      before stream R caches augmented cells (streams E, R)
-- [ ] S3 · utterance audio path: R25 writes `GET /utterances/{id}/audio`, but utterances live under
-      `/registry/utterances` (R1); 06 "Media" leaves the prefix to the contract (stream A)
-- [ ] S3 · signed audio URLs: their lifetime and which operation mints them are unspecified (R25 says "short-lived");
-      whether every play or every minted URL is the audited event likewise (stream A)
-- [ ] S3 · `transcriptions.new` under the `media` tag: exempt from the verb rule and MCP, but whether it stays a
-      command (actor, Idempotency-Key, audit, `dryRun` with the allowance) as `agentCredentials` do is unstated; R47
-      keeps who, when, targets and GPU time on the job record (stream T)
-- [ ] S3 · `models.register` approval: 05 "Guardrails" lists model registration among registry-scope approvals, the
-      plan requires only a passed gate; the spec keeps both until stream E decides
-- [ ] S3 · agents and gates: the Guardrails row ("change a baseline or gate: approval") and decision 3 ("editable by
-      agents through commits") are reconciled as: an agent's `gates.yaml` edit lands on its session branch and reaches
-      `main` only through accepted session changes; an agent's `gates.edit` call is approval-gated (05 "Guardrails")
-- [ ] S3 · the `boost_list` artifact's format and who renders it (the control plane from `boost/<domain>.txt`, as it
-      renders `normalizer`) are unspecified (streams L, Y)
-- [ ] S3 · R42's `eval report` artifact is not produced: the report is the `evals.get` view over the cells' `scores`
-      artifacts (03 "Artifact types"); an exported report file, if wanted, comes with model cards
+- [x] S3 · toy materialize kind: answered — the toy pack publishes its own kind `toy_checkpoint_from_base@1` (03
+      "Runtimes, model families and latency profiles")
+- [x] S3 · leakage at `goldenSets.freeze`: answered — the set is compared with every dataset version not registered
+      eval-only and every version a run trained on, in any project, counting only their train and validation splits
+      (02 "Leakage and training exclusion", as built)
+- [x] S3 · `gates.yaml` collections: answered — they resolve to the project's adopted versions (newest per
+      collection); a collection the project has not adopted is `gate-config-invalid` (04 "Block 3", as built)
+- [ ] S3 · new normalizer versions: still no operation to freeze one (seeds only); a pack references a collection and
+      golden sets pin the version they were frozen with. Phase 4 (the ITN and project-specific scoring rules)
+- [ ] S3 · gate checks the spec names but `gates.yaml` lacks (entity recall on boosted terms, entity accuracy, maximum
+      degradation under `telephony`): still reported, not gated; boosted-term recall has no scorer yet (03 "Hot words")
+- [x] S3 · robustness cells: answered — the augmentation (kind, profile hash, seed) enters the decoding hash, so only
+      augmented cells change key (03 "Scorers and metrics", stream R)
+- [ ] S3 · utterance audio path, signed URL lifetime and the audited event: stream A (in progress)
+- [ ] S3 · `transcriptions.new` as a command under the `media` tag: stream T (in progress)
+- [x] S3 · `models.register` approval: answered — a passed gate for everyone, and a registry-scope approval for an
+      agent's call (preset rule `registry-changes`); people register without one (02 "Model versions", as built;
+      00 decision log)
+- [x] S3 · agents and gates: answered as written — an agent's `gates.edit` is approval-gated (`evaluation-gates`), its
+      worktree edit reaches main only through accepted session changes (04 "Block 3", as built)
+- [x] S3 · the `boost_list` artifact: answered — the control plane renders a pack's `boost/<domain>.txt` (`# weight:`
+      header, one term per line) as JSON `{terms, weight}` (03 "Artifact types")
+- [x] S3 · R42's `eval report` artifact: confirmed not produced; `evals.get` is the report
+
+Phase 3 waves 1–2, assumptions the streams made (owner-delegated: answered by default as built; the owner may
+overrule; stream S2 folded them into the spec, 2026-10-02):
+
+- [x] G · a golden set is frozen only from a dataset version *registered* `evalOnly`; one that is eval-only only because
+      a source is not cleared is refused (02 "Golden sets", as built)
+- [x] G · one locale per golden set; the normalizer's locale must share the dataset's primary language subtag unless
+      `*`; `groups: call` is refused until datasets carry call ids
+- [x] G · the freeze is an approval for everyone, people included (`golden-set-freeze`, `everyone: true`), not only for
+      agents (05 "Guardrails" said agents; R8's reasoning for baselines applies to golden sets)
+- [x] G · "trained on" = the dataset versions of the mix revisions a project's runs used plus the `dataset`/`mix` inputs
+      of its training pipeline steps; `goldenSets.get` "used by" lists adopting projects only (the rest through lineage)
+- [x] Gate finding (c8d9285) · leakage checks count only the training side's train and validation splits (00 decision
+      log)
+- [x] L · an agent's `langpacks.edit`/`boost.edit` follows the draft policy `language_pack`: `draft` → a branch
+      `langpack/<locale>-<date>` accepted with `branches.accept`; a person's edit commits to main
+- [x] L · the search index folds with the scoring normalizer's character steps but keeps punctuation
+- [x] L · Serbian scores with `normalizer/basic` (no transliteration step); its golden sets are imported transliterated
+- [x] Y · the scores `group` is all-or-nothing per dataset (call, else speaker, else audio hash); alignment ties go to
+      fewer substitutions; CER counts spaces; partial stability is positional (03 "Scorers and metrics", as built)
+- [x] Y · NeMo phrase boosting is the GPU boosting tree on the greedy label-looping decoder, `packs.nemo.boost_weight`
+      0.5 (measured: over-boosting from ≈ 0.7)
+- [x] E · `evals.new` answers `201` with the eval (00 decision log); estimate `eval.gpu_hours_per_audio_hour` 0.1, a
+      Cadence recommendation until calibrated
+- [x] E · the gate reads decoding 0 (and augmentation 0) at the primary profile, matched by name then latency; with no
+      golden sets in `gates.yaml`, the project's locales are targets and the rest replay; no target → the target check
+      fails
+- [x] E · an explicitly named golden-set collection the project has not adopted falls back to its latest version in
+      `evals.new`; patterns match adopted versions only
+- [x] E · `models.register` defaults the collection to `model/<project slug>`, takes the base model's licence and
+      `locale:` tags, and adopts the new version into the project
+- [x] X · approving `sweeps.run` covers all its runs, also on later days (the GPU-hour cap is the bound); a failed run
+      does not stop the sweep; experiment runs start from the base model; sweep parameters are the train step's own;
+      every point reads the recipe at the first point's commit
+- [x] R · entity accuracy and latency to final are reported, not gated; latency uses simulated real-time pace; the VAD
+      model (NVIDIA Frame-VAD Multilingual MarbleNet v2.0, NVIDIA Open Model License, passes R26) is pinned in
+      `packs.nemo.vad_*`, not the registry; augmentation runs on target golden sets only; a failed metric step fails
+      the eval
+- [x] U · one `models.register` and one `evals.new` command in the web for every entry point (00 decision log);
+      Lineage sits in the Eval workspace's right column; deltas are shown in percentage points
+- [x] S5 · waveform, regions, timeline and minimap are Cadence code (wavesurfer.js rejected); peaks are 720 KB per
+      channel-hour; the spectrogram FFT is JavaScript in a Web Worker; the 150 MB budget is the renderer process's (10
+      "Audio view and charts"; 08 R51, R52 annotated)
+
+Still open after waves 1–2:
+
+- [ ] A5 · **owner:** the primary cell `160ms` (`[56,1]`) is not a look-ahead Nemotron 3.5 was trained at (80, 320, 560,
+      1120 ms are); keep `160ms` (R20, its WER sits between its neighbours) or move the primary cell and the gate's
+      `primaryProfile` to `320ms`? Proposal: a `trained` flag on the family's latency profiles either way
+      (`docs/spikes/A5-live-transcription.md` "Result", surprise 2 and proposal 3). Not answered by default
+- [ ] L/Y · boost weight defaults disagree: a new boost list starts at `langpacks.boost_weight` 1.0 and `evals.new`
+      passes the list's weight to the step, while the measured NeMo optimum is 0.5 (`packs.nemo.boost_weight`) and 1.0
+      already over-boosts (WER 0.466 → 0.490). Proposal: `langpacks.boost_weight` 0.5
+- [ ] E · not built: eval records and their `scores` are not protected from eviction (an evicted cell shows a delta
+      error); `evals.new` has no playbook estimator (the playbook uses a 0.5 GPU-hour hint); the GPU-hours factor is
+      not calibrated; `playbooks.CurrentPhase` still says 2
+- [ ] R · GSM-FR, AMR-NB and Opus are left out of `augment_dataset@1`'s draw (reported per cell); the frame-VAD's card
+      names no Hebrew
+- [ ] A5 · live and eval decoders differ until the transcribe kind moves to NeMo's pipeline decoder (03 "Runtimes,
+      model families and latency profiles"); the training augmentation's telephone stage still resamples by FFT
+- [ ] U · not built: "test a phrase", Audio from Eval report and Diff rows (stream A), Set as baseline and Adopt on the
+      Model document, the Eval workspace's Playwright smoke; the Eval report draws no robustness, metric or latency
+      chart yet
+- [ ] Contract text: `normalizers.list`'s description in `api/openapi.yaml` still says `normalizer/he-IL` (the
+      collection is `normalizer/he-il`); fix with the next contract change and `make gen`
 
 ## Sources
 

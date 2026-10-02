@@ -67,7 +67,7 @@ The full preferred stack is feasible as of September 2026: shadcn/ui made [Base 
 | Agent chat | Streamdown (streaming Markdown with Shiki code blocks) | Agent replies render cleanly mid-stream; entity references become links that open panels |
 | Diffs and recipe editing | CodeMirror 6 with its merge view | Recipe documents, tool-call cards and agent drafts show the same live diff |
 | Charts | uPlot (MIT) for time series and live data; Apache ECharts 6 (Apache-2.0, tree-shaken) for analytics (R53) | Metrics, latency and GPU curves; histograms, forest plots, heatmaps and scatter in Eval report, Dataset version, Experiment and Model; panels reach both only through `@/shell/charts` |
-| Audio view | Cadence's own tracks on one time axis: WebGL2 spectrogram with a colour lookup texture and FFT in a Web Worker; wavesurfer.js 8 (BSD-3) for waveform, regions and minimap if S5 confirms (R51, R52) | Audio, Diff, Triage, Transcription, Language pack and Recipe previews compose `@/shell/audio`; no maintained WebGL spectrogram library exists, and LGPL/GPL/AGPL audio libraries are excluded |
+| Audio view | Cadence's own tracks on one time axis: WebGL2 spectrogram with a colour lookup texture and FFT in a Web Worker; waveform, regions, timeline and minimap are Cadence code too (spike S5 rejected wavesurfer.js; R51, R52) | Audio, Diff, Triage, Transcription, Language pack and Recipe previews compose `@/shell/audio`; no maintained WebGL spectrogram library exists, and LGPL/GPL/AGPL audio libraries are excluded |
 
 Boundaries:
 
@@ -80,12 +80,12 @@ Boundaries:
 
 ### Audio view and charts (`@/shell/audio`, `@/shell/charts`)
 
-Two shell primitives draw everything acoustic and numeric (R51–R53; spike S5 sets the budgets and decides wavesurfer).
+Two shell primitives draw everything acoustic and numeric (R51–R53; spike S5, `docs/spikes/S5-audio-view.md`, set the
+budgets and decided against wavesurfer.js).
 
 - Lint allowlist: a panel imports only `@/shell/panel`, the entity primitives, `@/shell/charts` and `@/shell/audio`
   (each through its index). uPlot, ECharts and zrender are imported only inside `src/shell/charts`
-  (`web/eslint.config.js`); wavesurfer.js, the FFT worker and WebGL live only inside `src/shell/audio`, enforced the
-  same way. No panel draws audio or charts itself, as no document draws its own `EntityHeader`.
+  (`web/eslint.config.js`); the FFT worker and WebGL live only inside `src/shell/audio`, enforced the same way. No panel draws audio or charts itself, as no document draws its own `EntityHeader`.
 - `AudioView` owns one time axis — visible range, zoom, playhead, loop span — and stacks tracks against it (Sonic
   Visualiser layers, Praat tiers); the axis runs left to right in every locale. Phase-3 tracks: waveform overview
   (min/max peaks per channel, clipping marks), acoustic spectrogram, model input and emissions (from the transcribe
@@ -99,11 +99,29 @@ Two shell primitives draw everything acoustic and numeric (R51–R53; spike S5 s
   upsampled 8 kHz audio. Colormaps: magma, viridis, cividis, inferno, Roseus, grey and inverse grey; Turbo only on
   request; never jet or rainbow.
 - Computation: session audio and spans under 10 minutes in the browser (served 16 kHz PCM → FFT in a Web Worker,
-  WASM → uint8 dB into WebGL2 R8 textures with a 256×1 lookup texture, so gain, range and colormap are shader
+  a JavaScript FFT (`fourier-transform`, MIT; no maintained WASM FFT exists) → uint8 dB into WebGL2 R8 textures with a 256×1 lookup texture, so gain, range and colormap are shader
   parameters; Canvas 2D fallback); long audio from a server tile pyramid cached in the content store; the live
   microphone as a waterfall from AudioWorklet frames, never an AnalyserNode. One WebGL2 renderer per window (Chrome's
   16-context limit); views survive context loss and hidden panels release their textures.
 - Playback goes through an HTMLMediaElement, with Media Source Extensions for signed segments (R25, 06 "Media").
+- As decided by spike S5 (2026-10-02; proposals in its "Proposed spec change"; built by plan stream A):
+  - `@/shell/audio` exports `AudioView` and `useAudioAxis()`; the axis (start, span, playhead, loop) is controlled or
+    uncontrolled, so Diff rows and Compare share one axis. Tracks are props: `waveform`, `spectrogram`
+    (`{tiles: url} | {pcm: url}`), `modelInput`, `words[]`, `streaming`.
+  - Waveform, regions, timeline and minimap are Cadence code drawn from max-pooled peaks (PCM below ≈ 10 s spans).
+    wavesurfer.js was rejected: its region drag is dead in popouts, following an external axis cost 62 ms p95 and
+    dropped half the frames while zooming, and it adds ≈ 38 KB, three times the whole view.
+  - One WebGL2 renderer and one frame loop per window (keyed by the view's `ownerDocument.defaultView`); each view
+    copies out into its own 2D canvas, so it keeps its image through a context loss; views are rebuilt when Dockview
+    moves a panel to another window. R8 tiles live in one texture array with LRU slots; coarser levels draw first.
+  - Media arrives as an MSE source of signed segments appended around the playhead and evicted behind it (a
+    SourceBuffer holds ≈ 8 MB; never append the whole file).
+  - Words are pooled DOM (`<bdi dir=auto>`), at most 300 visible, else density blocks; model input loads only for
+    spans ≤ 60 s.
+  - New `defaults.yaml` `views.audio` keys (added with stream A): `tile_slots` 64, `tile_cache_mb` 12,
+    `model_input_max_span_s` 60, `words_max_visible` 300, `browser_stft_max_s` 600.
+  - The 30-minute-call memory budget (150 MB) is for the renderer process (S5: ≈ 130 MB); renderer plus GPU process
+    measured ≈ 165 MB under SwiftShader.
 - Spans are selections in the W3C Media Fragments temporal syntax (`utt:123#t=1.20,2.35`): chat references, deep
   links, the Inspector's span statistics and Ask agent all take them.
 - Words are DOM, not canvas: each word a bidi-isolated run; the flowing transcript beside the view follows the

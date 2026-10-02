@@ -177,8 +177,12 @@ cells `evc_`, eval records `erc_`. Events: `entity.golden_set.{id}`, `entity.mod
   `punctuation` (`keep | strip`: every Unicode `P*` character becomes a space), `removeMarks` (combining marks such as
   niqqud and accents removed after canonical decomposition), `numbers` (`keep`; spoken/written conversion through the
   pack's ITN comes in phase 4).
-- Seeds: `normalizer/basic` and `normalizer/he-IL`; a freeze that names none uses `defaults.yaml`
-  `eval.normalizer` (`normalizer/basic`). `normalizers.list|get` read them.
+- Seeds: `normalizer/basic` and `normalizer/he-il` (collection names are lower case; the payload's `locale` keeps
+  BCP 47 case, `he-IL`); a freeze that names none uses `defaults.yaml` `eval.normalizer` (`normalizer/basic`).
+  `normalizers.list|get` read them. Serbian scores with `normalizer/basic` (no transliteration step): its golden sets
+  are imported already transliterated (`dataset_import@3`, `sr-Cyrl-Latn`).
+- Two interpreters of the payload run the same steps: the scorer's (Python, `wer_score`) and `internal/textnorm` (Go),
+  which the search index uses for per-locale folding (03 "Language pack").
 - The control plane renders a version into a `normalizer` artifact (the payload as JSON, `meta: {versionId}`), as it
   renders a base model version into a `base_model` artifact; scorer steps read only that artifact.
 - A changed scoring rule is a new registry version, never an edit; golden sets pin the version, so a new one means a
@@ -194,9 +198,28 @@ cells `evc_`, eval records `erc_`. Events: `entity.golden_set.{id}`, `entity.mod
 - The freeze is a registry action: an approval at registry scope that only the admin decides (05 "Guardrails"); an
   agent's call answers the approval id. Refusals: `golden-set-not-eval-only` (the dataset version is trainable),
   `normalizer-unknown`, `golden-set-leakage` (below).
-- `goldenSets.list|get` read them; `get` adds "used by" (projects that adopted it, gates that name it, evals).
+- `goldenSets.list|get` read them; `get` adds "used by" (the projects that adopted it; gates and evals through
+  `registry.lineage`).
 - The 34 replay golden datasets (`dataset/replay-golden-<locale>`) and FLEURS he become golden sets by freezing them on
   the stand at the phase-3 gate.
+
+As built (phase 3, stream G; `internal/goldensets`, migration 0023 `golden_sets`):
+
+- Eval-only for a freeze means *registered* `evalOnly` (the dataset header's `evalOnly: true`), not merely eval-only
+  because a source is not cleared yet: a version that could become trainable by clearing a source is refused
+  (`golden-set-not-eval-only`).
+- A golden set holds one locale: a dataset version with utterances in several languages is refused, and the
+  normalizer's `locale` must share the dataset's primary language subtag unless it is `*` (`validation-failed`).
+- `groups`: the request's, else `speaker` when every utterance names a speaker, else `utterance`; `call` is refused
+  until a dataset carries call ids (they arrive with production imports, phase 4).
+- The freeze is a registry-scope approval for everyone, people included (preset rule `golden-set-freeze`,
+  `everyone: true`); the agents' rule `evaluation-gates` therefore gates only `gates.edit`. It answers `200` for a
+  dry run (with the `Cadence-Policy` header naming the approval the real call needs) or when the same content was
+  already frozen (that version is returned), `201` for the approved call, `202` with the approval id otherwise.
+  Event `golden_set.frozen` on `entity.golden_set.{id}`.
+- Refusals for leakage carry every overlap in the problem's `errors[]` ("<dataset> shares N utterances with
+  <other>", both versions named), so a person can re-freeze without them. `golden-set-leakage` is in the error lists
+  of `mixes.*`, `runs.*` and `pipelines.run`.
 
 **Leakage and training exclusion.** A golden set's utterances never reach training, checked by utterance fingerprint
 (`utterance_fingerprints`: `audio-b3` today, an acoustic fingerprint in phase 4):
@@ -210,6 +233,13 @@ cells `evc_`, eval records `erc_`. Events: `entity.golden_set.{id}`, `entity.mod
 
 Runs cannot reference golden sets at all, so checkpoint selection can only use validation splits.
 
+As built: the training side of every check counts only the **train and validation** splits of a dataset version
+(training reads the first and selects checkpoints on the second; it never reads a test split), so a corpus imported
+with its test split beside train — FLEURS — can still have that split frozen as a golden set (found at the gate,
+2026-10-02). The freeze compares the set with every dataset version not registered eval-only and every version a
+run has trained on, in any project. "Trained on" (freeze and adoption) is the dataset versions of the mix revisions
+the project's runs used, plus the `dataset` and rendered `mix` inputs of its training pipeline steps.
+
 **Eval records and the cross-project cache (R22, decision 4).** An eval record is a global row (registry scope, no
 project) keyed by:
 
@@ -218,13 +248,20 @@ project) keyed by:
 | `modelKey` | The weights hash (`b3:`) for checkpoints and model versions; `base:<versionId>` for a base model version (its weights are materialised by the family's `materialize` step, so the hash is not known before the first run) |
 | `goldenSetVersionId` | The golden set version |
 | `normalizerVersionId` | The scoring normalizer version (the golden set's) |
-| `decodingHash` | The transcribe step's decoding config hash: latency profile, boost list hash and weight, beam (R24, R43) |
+| `decodingHash` | The transcribe step's decoding config hash: transcribe kind and version, latency profile, language, boost list hash and weight, augmentation (R24, R43; as built below) |
 | `scorer` | The scorer `kind@version` (`wer_score@1`) |
 
 - The `scores` output hook writes the record in the transaction that marks the scoring step done (idempotent per
   artifact hash), and the eval links its cell to it. A cell whose key already has a record is never computed again,
   in any project.
 - An eval's pipeline is generated per eval with only the missing cells (03 "The eval pipeline").
+- As built (stream E, migration 0024): tables `eval_records` (global, `erc_`), `evals` (`evl_`) and `eval_cells`
+  (`evc_`); the decoding hash is the sha256 of `{transcribe: kind@version, profile, <the kind's locale parameter>:
+  locale, boost?: {list: <boost_list hash>, weight}, augment?: {kind, profile: <hash>, seed}}` (no `beam` yet: no
+  transcribe kind takes one). A record whose `scores` artifact was evicted stays a record; the cell's delta then
+  carries an `error` instead of numbers until the cell is recomputed (records are not protected from eviction yet,
+  07 "Open questions"). Metrics beside WER (entity accuracy, latency to final) are kept in `eval_metrics` (`erm_`,
+  migration 0028) under the same key plus the scorer's configuration (03 "Scorers and metrics").
 
 **Model versions and registration (R22).** `models.register` publishes a checkpoint as a registry version of kind
 `model` (collection `model/<name>`) once an eval of it passed its gate; without a passing verdict it answers
@@ -233,6 +270,14 @@ project) keyed by:
 datasetVersionIds}` and the generated model card (Markdown: composition, licences, lineage, eval records, departures
 from defaults). `models.list|get` read them; another project can adopt a model version as its base model. Export,
 parity and benchmark stay in phase 5. Experiments' "register best" is the same call.
+
+As built (stream E): `models.register` is `POST /projects/{p}/models:register` (a project path; the write is a
+registry version). It takes the checkpoint's latest gated eval (or the named `evalId`) and refuses a failed or missing
+verdict for everyone (`gate-not-passed`); an agent's call additionally waits for a registry-scope approval (preset
+rule `registry-changes`), and the fine-tune playbook ends by asking a person to register. The collection defaults to
+`model/<project slug>`; tags are the base model's `locale:` tags plus `family:<id>`, the licence is the base model's;
+the card is dated by the gate. The new version is frozen and adopted by the project at once (`model.registered` on
+`entity.model.{id}`). Answers: `200` dry run (the collection and payload), `201` the version, `202` an approval.
 
 **Baseline (R23, decisions 1–2).**
 
@@ -257,8 +302,10 @@ mix or pipeline run (`direction`, `depth` 1–10, `limit`), edges point from wha
 versions link by one convention: every entity id (`<prefix>_<uuid>`) a payload names, at any depth, is upstream of the
 version, the field path being the relation (`datasetVersionId`, `lineage.runId`), and the same index (migration 0025,
 `entity_refs_in`) answers "used by" from the other end — new kinds need no lineage code. Project work in tables
-(runs, checkpoints, mixes, pipeline runs) links through its columns; a domain with its own tables (evals) adds a
-`lineage.Source` to the server's graph.
+(runs, checkpoints, mixes, pipeline runs) links through its columns; a domain with its own tables adds a
+`lineage.Source` to the server's graph. Evals have one (stream R): an eval is built from its subject, baseline,
+golden sets, noise banks and its cells' records; a record from its golden set, normalizer and model (a checkpoint or
+model version by weights hash, or the base model version).
 
 ## Storage and mounts
 

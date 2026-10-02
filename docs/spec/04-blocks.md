@@ -112,6 +112,22 @@ needs a passed verdict (`gate-not-passed`). `evals.gate` without the baseline's 
 Entity accuracy, boosted-term recall (R24) and a maximum degradation under the `telephony` augmentation profile are
 reported, not gated, until `gates.yaml` grows those checks (07 "Open questions").
 
+As built (stream E; `internal/evals` `gates.go`, `verdict.go`):
+
+- `gates.get` reads `gates.yaml` at main's head with the defaults where it is silent; its ETag is the commit that last
+  changed the file, or `defaults` when there is none. `gates.edit` (`PATCH /projects/{p}/gates`) validates strictly
+  (unknown keys, ranges from `defaults.yaml`, named collections the project has not adopted → `gate-config-invalid`)
+  and commits to main with If-Match that commit or `defaults`. An agent's call waits for an approval (preset rule
+  `evaluation-gates`); an agent may also change the file in its session worktree, which reaches main only through
+  accepted session changes.
+- `evals.gate` (`POST /evals/{id}:gate`, If-Match the eval's revision) reads decoding variant 0 and augmentation 0 at
+  the primary profile, matched by name, else by latency in milliseconds; without such cells the `primaryProfile`
+  check fails. When `gates.yaml` names no golden sets, the eval's golden sets in the project's locales are targets and
+  the rest replay; an eval without a target golden set fails the target check. A dry run computes the verdict without
+  recording it; a significance different from the eval's recomputes the deltas. The verdict is stored on the eval with
+  `gatesSha` (empty for the defaults) and announced as `eval.gated` on `entity.eval.{id}`.
+- A `passed` verdict of the checkpoint's latest gated eval is what `models.register` needs (02 "Model versions").
+
 **Significance (R54).** Every WER delta gets a paired bootstrap interval: 1 000 resamples (`eval.bootstrap_samples`)
 at 95 % (`eval.confidence`) with a fixed seed (`eval.bootstrap_seed`), computed in Go from the `scores` rows of the
 candidate and baseline cells. Resampling is blockwise over the golden set's `groups` — whole calls, else speakers,
@@ -121,7 +137,7 @@ get intervals the same way.
 
 Windows: Eval report, Golden set, Diff, Audio, Inspector, Lineage, Library, Language pack ("test a phrase"), Transcription (a manual test on a file, the microphone or an utterance span, shown live, nothing stored; R47–R50).
 
-Agent tools (R1 names): `goldenSets.list`, `goldenSets.get`, `goldenSets.freeze` (approval), `normalizers.list`, `normalizers.get`, `evals.new`, `evals.get` (cells, deltas with intervals, worst-N utterances, filters), `evals.list`, `evals.gate`, `gates.get`, `gates.edit`, `models.register`, `models.list`, `models.get`, `langpacks.get`, `langpacks.edit`, `boost.edit`, `registry.lineage`, `aliases.set` (name `baseline`, approval). Not a tool: `transcriptions.new` (tag `media`; agents test models through evals).
+Agent tools (R1 names): `goldenSets.list`, `goldenSets.get`, `goldenSets.freeze` (approval), `normalizers.list`, `normalizers.get`, `evals.new`, `evals.get` (cells, deltas with intervals, worst-N utterances, filters), `evals.list`, `evals.gate`, `gates.get`, `gates.edit`, `models.register` (approval for agents), `models.list`, `models.get`, `langpacks.list`, `langpacks.get`, `langpacks.edit`, `boost.edit`, `registry.lineage`, `aliases.set` (name `baseline`, approval). Not a tool: `transcriptions.new` (tag `media`; agents test models through evals).
 
 Gates: freezing a golden set and changing the baseline need a person; a new normalizer version forces a new baseline; runs cannot reference golden sets and no training input may overlap one by fingerprint (`golden-set-leakage`), so checkpoint selection can only use validation splits — the leakage the Kenyan Nemotron study reported is impossible by construction.
 
@@ -177,7 +193,7 @@ WER stays the headline, but a voice agent fails on a wrong phone number or a lat
 | End-of-utterance | Delay and false end-of-utterance rate against the VAD reference | Per-channel VAD on the golden set |
 | Throughput | RTF and maximum concurrent streams within the latency budget | The benchmark step on the staging card |
 
-All are scorer step kinds with versions; definitions and the phase each arrives in are in 03 "Scorers and metrics". The phase-3 gate uses WER (04 "Block 3"); entity accuracy for the target locale joins it when `entity_score@1` exists, the rest are reported. Sources: the metrics beyond WER are Cadence recommendations, re-checked against the first production shadow.
+All are scorer step kinds with versions; definitions and the phase each arrives in are in 03 "Scorers and metrics". The phase-3 gate uses WER (04 "Block 3"); entity accuracy for the target locale was to join it when `entity_score@1` exists — it exists since phase 3 (stream R) and is reported, not gated, like latency to final, until `gates.yaml` grows the check (07 "Open questions"); the rest are reported. Sources: the metrics beyond WER are Cadence recommendations, re-checked against the first production shadow.
 
 ## Annotation workflow
 
@@ -201,9 +217,10 @@ An experiment groups the runs that answer one question; a sweep generates those 
 - Comparison: parameters × metrics table with the departures from defaults highlighted; Compare N replaces Compare 2 inside an experiment; the best run is marked by validation WER and its checkpoint can be registered with `models.register` once an eval of it passed the gate (R22 moves registration into phase 3).
 - Windows: Experiment (document). Agent tools: `experiments.new`, `experiments.get`, `experiments.list`, `sweeps.run` (dry run first; the GPU-hour cap is enforced). IDs `exp_` and `swp_`, events `entity.experiment.{id}` (phase 3, plan stream X). Playbooks may open an experiment instead of a single run.
 - As built (phase 3, stream X; help `guides/experiments`):
+  - Tables `experiments` (`exp_`) and `sweeps` (`swp_`), and `runs.experiment_id`, `runs.sweep_id` (migration 0027); a sweep whose estimate exceeds its cap answers `sweep-over-cap`.
   - The experiment pins a mix revision and a base model version; its runs carry `experimentId` (and `sweepId`). `runs.new` with `experiment` inherits both and refuses others; runs start from the base model (a stage from a checkpoint is not an experiment run).
   - `sweeps.run` (`POST /experiments/{id}/sweeps:run`, If-Match the experiment's revision): grid (every combination, `runs` cuts it) or random (`runs` points drawn with `seed` from values or a min–max range, linear or log); parameters are the train step's own, checked by the engine against their x-cadence ranges, plus `replayShare`, rendered into the run's mix artifact while the revision stays. Defaults `sweeps.*` (mode, `max_runs` 16, `random_runs` 8, `gpu_hour_cap` 8, seed).
-  - Every point is prepared as a run (`runs.new`'s path); the sum of the estimates must fit the cap (`sweep-over-cap`) and is what the policy weighs (`gpu-spend`). The approval of a sweep covers its runs: later runs are started by the server without another policy check, so the cap is the bound on what a sweep spends.
+  - Every point is prepared as a run (`runs.new`'s path); the sum of the estimates must fit the cap (`sweep-over-cap`) and is what the policy weighs (`gpu-spend`). The approval of a sweep covers its runs: later runs are started by the server without another policy check, even on a later day, so the cap (not the daily budget) is the bound on what a sweep spends.
   - One sweep runs per project at a time. A run that ends (done or failed) starts the next point when the GPU-hours the sweep's runs used plus the next run's fresh estimate fit the cap; otherwise the sweep stops (`stopped`, the rest `skipped`). A running run is never cut by the cap. Cancelling the running run cancels the sweep. The recipe is read at the commit the first point read.
   - `experiments.get` compares the runs: swept parameters, then any train-step parameter a run departs from defaults with; per run the best validation WER and its checkpoint, GPU-hours and the latest eval with its verdict; `best` (lowest validation WER) says whether `models.register` accepts its checkpoint now. Charts: parameter × validation WER scatter and parallel coordinates over the swept parameters (R53).
 
@@ -235,9 +252,9 @@ Every step now has a window, a palette command, an API operation, an agent tool 
 | Listen to an utterance | Audio, Diff, Eval report | Play; loop a span | Utterance audio and peaks (tag `media`, R25; 06 "Media") | — (agents never read raw audio) | — |
 | Gate | Eval report, Recipe | Evaluate gate; Edit gate | `POST /evals/{id}:gate` (`evals.gate`); `gates.get`, `gates.edit` (the project's `gates.yaml` through the recipes service) | `evals.gate`, `gates.get`, `gates.edit` | `entity.eval.{id}`, `recipe.{path}` |
 | Baseline | Eval report, Library | Set eval baseline (approval) | `PUT /projects/{p}/aliases/baseline` (`aliases.set`, R8) | `aliases.set` | `entity.project.{id}`, `approvals` |
-| Register model | Eval report, Model, Experiment | Register model version | `models.register` (registry scope, needs a passed gate); `models.list`, `models.get` under `/registry/models` | `models.register`, `models.list`, `models.get` | `entity.model.{id}` |
-| Lineage | Lineage, Library | — | `GET /registry/{kind}/{id}/lineage` (`registry.lineage`) | `registry.lineage` | — |
-| Language pack, boost lists | Language pack | Edit language pack; Edit boost list | `langpacks.get`, `langpacks.edit`, `boost.edit` (files in `lang/<locale>/`) | `langpacks.get`, `langpacks.edit`, `boost.edit` | `recipe.{path}` |
+| Register model | Eval report, Model, Experiment | Register model version | `POST /projects/{p}/models:register` (`models.register`, writes a registry version; needs a passed gate, approval for agents); `models.list`, `models.get` under `/registry/models` | `models.register`, `models.list`, `models.get` | `entity.model.{id}` |
+| Lineage | Lineage, Library | — | `GET /registry/{id}:lineage` (`registry.lineage`; `direction`, `depth`, `limit`) | `registry.lineage` | — |
+| Language pack, boost lists | Language pack | Edit language pack; Edit boost list | `langpacks.list`, `langpacks.get`, `langpacks.edit`, `boost.edit` (`/projects/{p}/langpacks/{locale}[/boost/{domain}]`, files in `lang/<locale>/`) | `langpacks.list`, `langpacks.get`, `langpacks.edit`, `boost.edit` | `recipe.{path}` |
 | Export, parity, benchmark | Model, Queue & GPU | Export; Parity check; Benchmark | `POST /models/{id}:export`, `:parity`, `:benchmark` | `models.*` | `job.{id}` |
 | Shadow, canary, production, rollback | Model, Shadow, Approvals | Promote; Roll back | `POST /projects/{p}/deployments`; `…:rollback` | `deployments.``promo``te`, `deployments.rollback` | `deploy.{id}`, `shadow.{deployment}`, `approvals` |
 | Capture and signals | Shadow, Triage queue | — | `GET /projects/{p}/samples`, `/signals` | `samples.query`, `signals.list` | `triage.new` |
