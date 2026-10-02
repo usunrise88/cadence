@@ -78,6 +78,45 @@ Boundaries:
 - Audio and charts are shell primitives like the entity primitives: panels import `@/shell/audio` and `@/shell/charts`, never uPlot, ECharts, wavesurfer or WebGL directly, so the theme bridge, context budget and accessibility rules live in one place.
 - Existing conventions carry over inside panels: Page/Section/Stack primitives, single Skeleton and Spinner, notification history, language and theme switches.
 
+### Audio view and charts (`@/shell/audio`, `@/shell/charts`)
+
+Two shell primitives draw everything acoustic and numeric (R51–R53; spike S5 sets the budgets and decides wavesurfer).
+
+- Lint allowlist: a panel imports only `@/shell/panel`, the entity primitives, `@/shell/charts` and `@/shell/audio`
+  (each through its index). uPlot, ECharts and zrender are imported only inside `src/shell/charts`
+  (`web/eslint.config.js`); wavesurfer.js, the FFT worker and WebGL live only inside `src/shell/audio`, enforced the
+  same way. No panel draws audio or charts itself, as no document draws its own `EntityHeader`.
+- `AudioView` owns one time axis — visible range, zoom, playhead, loop span — and stacks tracks against it (Sonic
+  Visualiser layers, Praat tiers); the axis runs left to right in every locale. Phase-3 tracks: waveform overview
+  (min/max peaks per channel, clipping marks), acoustic spectrogram, model input and emissions (from the transcribe
+  step's `analysis` artifact), hypothesis words (one lane per target, confidence shading, S/D/I against the reference
+  by glyph and colour), the streaming timeline (each word from first partial to final), boosted-term hits, and the
+  live energy meter; reference words and energy/VAD from steps arrive in phase 4 (the R51 table).
+- Spectrogram defaults live in `defaults.yaml` `views.audio` (R52): 25 ms Hann window, 10 ms hop, FFT 512, mel axis
+  0–8 kHz (4 kHz with a Nyquist line for audio of 8 kHz origin), range 80 dB below the peak, gain 0, magma; presets
+  "Praat broadband", "Narrowband", "Model frames" (the default). Model-input mode shows the checkpoint's own features
+  (sequential colormap without normalisation, diverging over ±3σ with it) and dims mel filters above 4 kHz for
+  upsampled 8 kHz audio. Colormaps: magma, viridis, cividis, inferno, Roseus, grey and inverse grey; Turbo only on
+  request; never jet or rainbow.
+- Computation: session audio and spans under 10 minutes in the browser (served 16 kHz PCM → FFT in a Web Worker,
+  WASM → uint8 dB into WebGL2 R8 textures with a 256×1 lookup texture, so gain, range and colormap are shader
+  parameters; Canvas 2D fallback); long audio from a server tile pyramid cached in the content store; the live
+  microphone as a waterfall from AudioWorklet frames, never an AnalyserNode. One WebGL2 renderer per window (Chrome's
+  16-context limit); views survive context loss and hidden panels release their textures.
+- Playback goes through an HTMLMediaElement, with Media Source Extensions for signed segments (R25, 06 "Media").
+- Spans are selections in the W3C Media Fragments temporal syntax (`utt:123#t=1.20,2.35`): chat references, deep
+  links, the Inspector's span statistics and Ask agent all take them.
+- Words are DOM, not canvas: each word a bidi-isolated run; the flowing transcript beside the view follows the
+  locale's direction, and hovering a word highlights it in both places.
+- Keys are `view.audio.*` commands, active only while a view has focus (Keyboard map below). Exports: Praat TextGrid,
+  NIST CTM and WebVTT; TextGrid and CTM also import as a reference track.
+- `@/shell/charts` offers a time-series chart (uPlot: synced cursors, EMA smoothing over a faint raw line, min/max
+  envelopes) and an analytics chart (ECharts 6: histograms, bars, forest plots with intervals, heatmaps, scatter,
+  Pareto fronts). Chart data is contract data: bins, intervals and aggregates arrive from the same `get` operation an
+  agent reads, and the browser only zooms, smooths and switches scales. Every chart has a table view with CSV copy, a
+  keyboard cursor and a text summary; live charts redraw at most 4 times per second. The per-panel chart list is in
+  11 "Panel catalogue" and R53.
+
 ## Shell concepts
 
 The shell is seven pieces around Dockview; panels are plug-ins that know only the shell, never each other.
@@ -125,8 +164,8 @@ Each block is the same loop; only the nouns change. The stepper in every documen
 
 | Step | Data | Training | Evaluation | Deployment | Flywheel |
 | --- | --- | --- | --- | --- | --- |
-| Prepare (draft) | Source, filters, split | Mix, recipe | Golden sets, gate | Export config | Sampling policy |
-| Check (no spend) | Preview hours, leakage check | Calibrate, dry run | — | Parity, benchmark | Signal preview |
+| Prepare (draft) | Source, filters, split | Mix, recipe | Golden sets, `gates.yaml` | Export config | Sampling policy |
+| Check (no spend) | Preview hours, leakage check | Calibrate, dry run | Eval dry run: cells to compute, cached cells, estimate | Parity, benchmark | Signal preview |
 | Run (job) | Ingest, pseudo-label | Train | Eval matrix | Shadow replay | Capture, judge |
 | Review (results) | Dataset version stats, Diff | Metrics, checkpoints | Report, Diff, Audio | Divergence, latency | Triage queue |
 | Decide (gate) | Freeze | New stage or register | Gate verdict, baseline | Promote (approval) | Accept or reject |
@@ -208,8 +247,14 @@ Three state templates cover every kind: registry assets `draft → frozen → de
 | Pin | Keep a version materialised or a panel on an entity | Alias |
 | Note | A dated learning attached to an entity and committed to the project | Comment |
 | Registry | The Cadence-wide store of immutable, versioned assets that projects adopt | Library (the panel that browses it) |
-| Golden set | A frozen held-out test set a project adopts for its gates; never trainable | Validation split |
-| Gate | A project's pass rule over an eval: thresholds, allowed regressions, significance | Approval |
+| Golden set | A frozen held-out test set a project adopts for its gates: an eval-only dataset version tied to one scoring normalizer version; never trainable | Validation split |
+| Scoring normalizer | A registry version of the text normalisation WER is computed after; golden sets and eval records pin it (R21) | Text style (the language pack's rules for training targets) |
+| Eval | One evaluation in a project: models × golden sets × latency profiles × decoding configs, assembled from eval records, with a gate verdict | Eval record (the cached cell); Transcription |
+| Eval record | The cached result of one cell — model weights × golden set version × normalizer version × decoding × scorer — shared by every project (R22) | Eval (the project's matrix) |
+| Baseline | The model version every eval cell is compared with: the project's `baseline` alias, the default base model until set (R23) | Production (the deployed model) |
+| Primary cell | The latency profile the gate reads (`160ms` by default, R20); other profiles are reported | Latency profile |
+| Span | A time range of an utterance as a selection, `utt:123#t=1.20,2.35` (W3C Media Fragments) | Segment (an utterance itself) |
+| Gate | A project's pass rule over an eval, kept in its `gates.yaml`: target and replay golden sets, allowed regression, the deletions/insertions check, significance | Approval |
 | Playbook | A pipeline chain with defaults, a prefilled agent prompt and an estimate, run from the Project home | Pipeline |
 | Session | One agent conversation with its own worktree, branch, token and budget; a first-class entity | Chat (the panel that shows it) |
 | Session changes | Commits on a session branch not yet merged to main; accepted or discarded as a whole | Draft (an entity change awaiting Accept) |

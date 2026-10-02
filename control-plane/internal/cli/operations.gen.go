@@ -557,6 +557,38 @@ var Operations = []Operation{
 		},
 	},
 	{
+		ID: "goldenSets.freeze", Entity: "goldenSets", Verb: "freeze", Method: "POST", Path: "/registry/golden-sets:freeze",
+		Summary:        "Freeze an eval-only dataset version and a scoring normalizer into a golden set (always waits for the admin's approval)",
+		Description:    "Freeze a golden set from a frozen dataset version registered eval-only (datasets.get shows dataset.evalOnly: true) and a scoring normalizer version (normalizers.list; default defaults.yaml eval.normalizer). The dataset's utterances must not overlap any trainable dataset version by utterance or fingerprint, else golden-set-leakage lists the overlapping versions and counts. dryRun=true checks everything and answers the would-be golden set. A real call always answers 202 with an approvalId, for people too: freezing is a registry-scope approval only the admin decides; the approved request registers golden-set/<name> (default: the dataset collection's name). Freezing the same content again answers the version already frozen.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "datasetVersionId", Required: true, Type: "string", Description: "The dataset version to freeze: ver_… or a dataset collection name (its newest frozen version); it must be registered eval-only"},
+			{Name: "domain", Type: "string", Description: "telephone, read-speech, …; default the dataset collection's domain:<x> tag, if any"},
+			{Name: "groups", Type: "string", Description: "The bootstrap's resampling unit (R54); default speaker when the dataset's utterances name speakers, else utterance"},
+			{Name: "name", Type: "string", Description: "The golden set's collection, golden-set/<name> or <name>; default the dataset collection's name (dataset/replay-golden-he → golden-set/replay-golden-he)"},
+			{Name: "normalizerVersionId", Type: "string", Description: "The scoring normalizer: ver_… or a normalizer collection name (its newest frozen version); default defaults.yaml eval.normalizer"},
+		}},
+	},
+	{
+		ID: "goldenSets.get", Entity: "goldenSets", Verb: "get", Method: "GET", Path: "/registry/golden-sets/{id}",
+		Summary: "Get a golden set version with its dataset, normalizer, size and the projects that use it",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Registry version id (ver_…)"},
+		},
+	},
+	{
+		ID: "goldenSets.list", Entity: "goldenSets", Verb: "list", Method: "GET", Path: "/registry/golden-sets",
+		Summary:     "List golden set versions (frozen eval-only dataset versions tied to a scoring normalizer)",
+		Description: "List golden sets: frozen, held-out test sets per language and domain, each an eval-only dataset version tied to one scoring normalizer version. Runs never read them: a dataset version or mix sharing an utterance (by id or fingerprint) with any golden set is refused for training (golden-set-leakage). Adopt one into a project with projects.adopt.",
+		Params: []Param{
+			{Name: "collection", In: "query", Flag: "collection", Type: "string", Description: "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)"},
+			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated"}},
+		},
+	},
+	{
 		ID: "help.get", Entity: "help", Verb: "get", Method: "GET", Path: "/help/{id}",
 		Summary:     "Get a help article (markdown)",
 		Description: "Get a help article (markdown) by id <section>.<slug>. Every error a tool returns names its article (errors.<slug>): read it for what went wrong and how to fix it.",
@@ -777,6 +809,22 @@ var Operations = []Operation{
 		ID: "modelFamilies.list", Entity: "modelFamilies", Verb: "list", Method: "GET", Path: "/registry/model-families",
 		Summary:     "List model family versions (architecture, capabilities, latency profiles, role step kinds) published by runtimes",
 		Description: "List model families: what a runtime can train and decode — framework, architecture, capabilities, latency profiles (e.g. 160 ms) and the step kind that fills each role (calibrate, train, average, transcribe). Render options from the descriptor; never assume a family by name.",
+		Params: []Param{
+			{Name: "collection", In: "query", Flag: "collection", Type: "string", Description: "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)"},
+			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated"}},
+		},
+	},
+	{
+		ID: "normalizers.get", Entity: "normalizers", Verb: "get", Method: "GET", Path: "/registry/normalizers/{id}",
+		Summary: "Get a scoring normalizer version with its rules and the projects that use it",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Registry version id (ver_…)"},
+		},
+	},
+	{
+		ID: "normalizers.list", Entity: "normalizers", Verb: "list", Method: "GET", Path: "/registry/normalizers",
+		Summary:     "List scoring normalizer versions (the text rules both sides of a WER are compared after, R21)",
+		Description: "List scoring normalizer versions (normalizer/basic, normalizer/he-IL, …): the Unicode form, case folding, punctuation, combining-mark removal and literal mappings applied to reference and hypothesis before WER is computed. Every golden set is frozen with one normalizer version, so its scores stay comparable over time.",
 		Params: []Param{
 			{Name: "collection", In: "query", Flag: "collection", Type: "string", Description: "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)"},
 			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated"}},

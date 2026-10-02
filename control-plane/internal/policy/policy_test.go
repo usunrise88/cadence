@@ -43,7 +43,8 @@ func TestDecide(t *testing.T) {
 		{"agent revokes a credential", Input{Actor: agent, Operation: "credentials.revoke", VerbClass: "mutate"}, Deny, "admin-only"},
 		{"agent approves", Input{Actor: agent, Operation: "approvals.approve", VerbClass: "mutate"}, Deny, "approvals-are-for-people"},
 		{"agent writes a secret", Input{Actor: agent, Operation: "secrets.new", VerbClass: "mutate"}, Deny, "admin-only"},
-		{"agent freezes a golden set", Input{Actor: agent, Operation: "goldenSets.freeze", VerbClass: "mutate"}, Approval, "evaluation-gates"},
+		{"agent freezes a golden set", Input{Actor: agent, Operation: "goldenSets.freeze", VerbClass: "mutate"}, Approval, "golden-set-freeze"},
+		{"agent edits gates", Input{Actor: agent, Operation: "gates.edit", VerbClass: "mutate"}, Approval, "evaluation-gates"},
 		{"agent freezes a dataset", Input{Actor: agent, Operation: "datasets.freeze", VerbClass: "mutate"}, Allow, "draft"},
 		{"agent promotes", Input{Actor: agent, Operation: "deployments.promote", VerbClass: "mutate"}, Approval, "deployments"},
 		{"agent registers a mount", Input{Actor: agent, Operation: "mounts.new", VerbClass: "mutate"}, Approval, "registry-changes"},
@@ -94,6 +95,8 @@ func TestDecide(t *testing.T) {
 			PathParams: map[string]string{"name": "baseline"}}, Approval, "baseline-alias"},
 		{"person evicts: gated for everyone", Input{Actor: person, Operation: "artifacts.evict", VerbClass: "mutate"},
 			Approval, "store-eviction"},
+		{"person freezes a golden set: gated for everyone", Input{Actor: person, Operation: "goldenSets.freeze", VerbClass: "mutate"},
+			Approval, "golden-set-freeze"},
 		{"agent evicts: never", Input{Actor: agent, Operation: "artifacts.evict", VerbClass: "mutate"},
 			Deny, "agents-never-evict"},
 	}

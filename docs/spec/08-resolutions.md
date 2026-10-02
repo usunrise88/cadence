@@ -223,6 +223,8 @@ This also makes long runs preemption-safe, which the shared staging card needs a
 
 ## Evaluation (phase 3)
 
+_Folded into the spec files on 2026-10-02 with the phase-3 plan (`docs/review/2026-10-02-phase-3-plan.md`): 02 "Evaluation entities", 03 "The eval pipeline" and "Scorers and metrics", 04 "Block 3", 06 "Media" (R25, R47–R50), 10 "Audio view and charts" (R51–R53), 11 "Panel catalogue". Where the plan is more precise, the spec files follow the plan._
+
 **R20 · Latency set** (C2)
 Primary cell = the latency Эра runs in production, a project setting defaulting to `[56,1]` (160 ms). Matrix =
 `[56,0]`, `[56,1]`, `[56,13]`; the "offline" column in 11 is `[56,13]`, labelled "high-latency reference". The gate

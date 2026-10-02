@@ -433,22 +433,25 @@ from phase 2) runs on staging and `evals.gate` returns a verdict (target-locale 
 replay-locale regression ≤ 0.5, deletions/insertions check). The telephone golden set from own calls needs phase 4.
 
 Decide before starting:
-- [ ] **decide** → *R20* The latency set and primary cell (`[56,1]` vs `[56,0]`, offline vs `[56,13]`) (C2), named as
-      latency profiles (R43)
-- [ ] **decide** → *R22* What evaluations are keyed by before a model version exists: registry Eval records are keyed by
+- [x] **decide** → *R20* The latency set and primary cell (`[56,1]` vs `[56,0]`, offline vs `[56,13]`) (C2), named as
+      latency profiles (R43) — `160ms` primary, matrix `80ms`/`160ms`/`1120ms` (03 "Key defaults", `eval.*`)
+- [x] **decide** → *R22* What evaluations are keyed by before a model version exists: registry Eval records are keyed by
       model version, but phase 3 evaluates checkpoints and registration is phase 5 — key by checkpoint content hash,
-      or move `models.register` into phase 3
-- [ ] **decide** → *R23* Baseline before anything is in production: the base model at its pinned revision
+      or move `models.register` into phase 3 — both: weights-hash key (plan decision 4) and `models.register` in
+      phase 3 (02 "Evaluation entities")
+- [x] **decide** → *R23* Baseline before anything is in production: the base model at its pinned revision — its
+      `base_model` version is the baseline, set with `aliases.set` (plan decisions 1–2; 02 "Evaluation entities")
 
 Write before starting:
-- [ ] **spec** → *R21* Normalizer identity: 02 makes it a registry entity (Eval records keyed by normalizer version), 03 makes
+- [x] **spec** → *R21* Normalizer identity: 02 makes it a registry entity (Eval records keyed by normalizer version), 03 makes
       it a file in a project language pack with "no registry version" — a cross-project Eval record cannot pin one
-      project's file SHA; pick one
-- [ ] **spec** → *R25* Audio serving: an endpoint that streams an utterance span (range requests) for the Audio panel, with
-      a play-only mode for reviewers; missing from the 13-item backend contract
-- [ ] **spec** → *R47–R50* Manual transcription tests and the live channel: message schemas in the contract, the `media` tag in
+      project's file SHA; pick one — 02 "Evaluation entities", 03 "Language pack"
+- [x] **spec** → *R25* Audio serving: an endpoint that streams an utterance span (range requests) for the Audio panel, with
+      a play-only mode for reviewers; missing from the 13-item backend contract — 06 "Media", 11 "Backend contract"
+- [x] **spec** → *R47–R50* Manual transcription tests and the live channel: message schemas in the contract, the `media` tag in
       the generator, interactive jobs beside training, capture defaults; *R51–R54* the audio view, spectrogram defaults,
-      charts, streaming metric definitions
+      charts, streaming metric definitions — 06 "Media", 10 "Audio view and charts", 11 "Panel catalogue", 03
+      "Scorers and metrics", 04 "Block 3"
 
 Spikes before the items they gate: A5 (live transcription) before live mode — it needs a phase-2 checkpoint and the
 worker protocol; S5 (audio view) before the Audio panel — it needs only the phase-0 shell and can run any time before.

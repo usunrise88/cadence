@@ -66,7 +66,10 @@ func TestBundledInputsMatchContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	schemas := map[string]string{KindBaseModel: "BaseModelPayload", KindDataset: "DatasetPayload", KindTemplate: "TemplatePayload"}
+	schemas := map[string]string{
+		KindBaseModel: "BaseModelPayload", KindDataset: "DatasetPayload", KindTemplate: "TemplatePayload",
+		KindNormalizer: "NormalizerPayload",
+	}
 	inputs, err := BundledInputs(templates.FS)
 	if err != nil {
 		t.Fatal(err)
@@ -94,6 +97,7 @@ func TestBundledInputsMatchContract(t *testing.T) {
 	for _, want := range []string{
 		"base-model/nemotron-3.5-asr-streaming-0.6b", "dataset/fleurs-he-smoke", "template/instructions-default",
 		"template/skill-cadence-train", "template/pipeline-train-stage", "template/agent-config-claude-settings",
+		"normalizer/basic", "normalizer/he-il",
 	} {
 		if !names[want] {
 			t.Errorf("bundled inputs lack %s", want)

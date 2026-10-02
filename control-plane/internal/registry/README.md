@@ -6,5 +6,6 @@ the kinds `base_model`, `dataset_version` and `template`. A trigger in migration
 Projects adopt versions (`projects.adopt`, bumps the project's revision) and point aliases at adopted versions
 (`aliases.set`; `production` answers `reserved-alias`, `baseline` is gated — `Gated(name)`). Registry events
 (`<kind>.registered` on `entity.<kind>.<ver_id>`) carry no projectId; adoption and alias events are project work.
-`Seed` registers the base-model catalogue and fixture datasets (`fixtures/`) and every unit of the templates tree at
+`Seed` registers the base-model catalogue, fixture datasets and the scoring normalizers `normalizer/basic` and
+`normalizer/he-il` (`fixtures/`) and every unit of the templates tree at
 start, idempotently. `Resolve` turns `ver_…`, `@alias` or a collection name into a version.

@@ -20,6 +20,12 @@ var (
 	fingerprintRe  = regexp.MustCompile(`^[0-9a-f]{64}$`)
 )
 
+// ValidName reports whether name is a collection name for kind: <kind prefix><lowercase name>.
+func ValidName(kind, name string) bool {
+	k, ok := kinds[kind]
+	return ok && strings.HasPrefix(name, k.prefix) && collectionName.MatchString(name)
+}
+
 // RegisterInput describes a version to register.
 type RegisterInput struct {
 	Kind        string

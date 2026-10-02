@@ -16,6 +16,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/compute"
 	"github.com/usunrise88/cadence/control-plane/internal/defaults"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
+	"github.com/usunrise88/cadence/control-plane/internal/goldensets"
 	"github.com/usunrise88/cadence/control-plane/internal/policies"
 	"github.com/usunrise88/cadence/control-plane/internal/problems"
 	"github.com/usunrise88/cadence/control-plane/internal/projects"
@@ -360,6 +361,10 @@ func (s *Server) ProjectsAdopt(ctx context.Context, req api.ProjectsAdoptRequest
 	return s.run(ctx, cmd, func(ctx context.Context, tx pgx.Tx) (commands.Result, []events.Draft, error) {
 		a, p, drafts, err := registry.Adopt(ctx, tx, req.P, rev, req.Body.Version, cmd.Actor)
 		if err != nil {
+			return commands.Result{}, nil, err
+		}
+		// Adopting a golden set re-runs the leakage check against what the project trained on (spec 02).
+		if err := goldensets.CheckAdoption(ctx, tx, p.ID, a.Version); err != nil {
 			return commands.Result{}, nil, err
 		}
 		if s.Projects != nil { // data.lock lists every adopted version

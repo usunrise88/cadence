@@ -51,14 +51,14 @@ Cadence launches Claude Code or opencode inside a project worktree, hands it the
 
 | Block | Tools (`<entity>.<verb>`) |
 | --- | --- |
-| Project and registry | `projects.get`, `projects.note`, `projects.sync`, `projects.adopt`, `aliases.set`, `registry.search`, `search.query`, `help.get`, `playbooks.run`, `experiments.new`, `experiments.get`, `sweeps.run` |
-| Data | `sources.new`, `mounts.list`, `mounts.scan`, `pipelines.run`, `datasets.preview`, `datasets.freeze`, `datasets.materialize`, `datasets.evict`, `datasets.export`, `utterances.search`, `langpacks.get`, `langpacks.edit`, `boost.edit`, `boost.evaluate`, `augment.preview` |
+| Project and registry | `projects.get`, `projects.note`, `projects.sync`, `projects.adopt`, `aliases.set`, `registry.search`, `registry.lineage`, `search.query`, `help.get`, `playbooks.run`, `experiments.new`, `experiments.get`, `experiments.list`, `sweeps.run` |
+| Data | `sources.new`, `mounts.list`, `mounts.scan`, `pipelines.run`, `datasets.preview`, `datasets.freeze`, `datasets.materialize`, `datasets.evict`, `datasets.export`, `utterances.search`, `langpacks.get`, `langpacks.edit`, `boost.edit`, `augment.preview` |
 | Training | `mixes.new`, `mixes.get`, `mixes.list`, `mixes.edit`, `mixes.preview`, `drafts.list`, `drafts.get`, `drafts.revert`, `runs.calibrate`, `runs.new`, `runs.resume`, `runs.stage`, `jobs.pause`, `jobs.resume`, `jobs.cancel`, `jobs.wait`, `metrics.get`, `checkpoints.list`, `checkpoints.average` |
-| Evaluation | `goldenSets.list`, `goldenSets.freeze`, `evals.new`, `evals.get`, `evals.gate`, `gates.edit`, `baselines.set`, `augment.evaluate`, `batches.new`, `batches.get`, `batches.freeze` |
-| Deployment | `models.register`, `models.export`, `models.parity`, `models.benchmark`, `deployments.promote`, `deployments.rollback` |
+| Evaluation | `goldenSets.list`, `goldenSets.get`, `goldenSets.freeze` (approval), `normalizers.list`, `normalizers.get`, `evals.new`, `evals.get`, `evals.list`, `evals.gate`, `gates.get`, `gates.edit`, `models.register`, `models.list`, `models.get`, `aliases.set` (`baseline`, approval); boosting and robustness are `evals.new` axes (R1, R24); phase 4: `batches.new`, `batches.get`, `batches.freeze` |
+| Deployment | `models.export`, `models.parity`, `models.benchmark`, `deployments.promote`, `deployments.rollback` |
 | Flywheel | `samples.query`, `signals.list`, `triage.next`, `triage.accept`, `triage.correct`, `triage.reject`, `corrections.package`, `schedules.new` |
 
-Every mutating tool accepts `dryRun`; the verbs come from the vocabulary in the UI shell tab; the same names are the API operation ids and the UI commands.
+Every mutating tool accepts `dryRun`; the verbs come from the vocabulary in the UI shell tab; the same names are the API operation ids and the UI commands. Operations tagged `media` (utterance audio and peaks, `transcriptions.new` and its socket) are never tools: agents read no raw audio and test models through evals (R47, R48).
 
 ### Context bridge
 
@@ -174,7 +174,7 @@ Agents may do anything reversible on their own; anything that spends real GPU ti
 | Create sources, dataset versions, mixes, eval runs | Allowed | — |
 | GPU job within the session budget, staging card | Allowed, notified | — |
 | GPU job over budget | Approval request | User |
-| Freeze a golden set, change a baseline or gate | Approval request | User |
+| Freeze a golden set, change a baseline or gate | Approval request; an agent's edit of `gates.yaml` in its worktree reaches `main` only when a person accepts the session changes | User (golden-set freeze: the admin, registry scope) |
 | Shadow deployment | Allowed | — |
 | Canary, production, rollback | Approval request | User, through a confirm modal |
 | Delete anything | Not allowed | User only, soft delete |

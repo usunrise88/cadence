@@ -65,6 +65,14 @@ tools:
     operations: [artifacts.evict]
     reason: eviction deletes blobs from the content store; only the backup mirror can bring them back
 
+  # A golden set decides what every project's gate compares against: freezing one is a registry-scope approval the
+  # admin decides, for people too (05 "Approvals have a scope"; phase-3 plan stream G).
+  - id: golden-set-freeze
+    class: gated
+    everyone: true
+    operations: [goldenSets.freeze]
+    reason: a golden set is frozen for every project; the admin decides what counts as held-out test data
+
   # "Freeze a golden set, change a baseline or gate" → approval.
   - id: evaluation-gates
     class: gated
