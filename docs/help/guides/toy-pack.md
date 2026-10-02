@@ -10,8 +10,9 @@ A framework pack is the unit of extension (R45): a runtime image, step kinds for
 descriptor with its latency profiles, a `defaults.yaml` section and help. The toy pack is the smallest real one:
 runtime `toy` (python:3.12-slim with CPU PyTorch, image `cadence/worker-toy`), family `toy-ctc` (a linear layer, a layer norm and a
 unidirectional GRU with a CTC head, character tokenizer, log-mel features computed on the fly), latency profiles
-`offline` and a simulated streaming `320ms`, and the step kinds `toy_calibrate`, `toy_train`, `toy_average` and
-`toy_transcribe`. It trains in seconds on synthetic tone clips and exists only to keep the seams honest; NeMo is the
+`offline` and a simulated streaming `320ms`, and the step kinds `toy_calibrate`, `toy_train`, `toy_average`,
+`toy_transcribe` and `toy_checkpoint_from_base` (role `materialize`: the untrained network from a base model's seed).
+It declares no boosting capability, so its transcribe kind takes no boost list. It trains in seconds on synthetic tone clips and exists only to keep the seams honest; NeMo is the
 only real pack. Its kinds read the `dataset` directory artifact `dataset_import` writes (`dataset.json`,
 `manifest.jsonl` with `audio` as a path inside the artifact, the audio files) and name each utterance by the BLAKE3
 hash of its audio file.
@@ -20,8 +21,9 @@ The conformance suite (`python -m cadence_worker.conformance --runtime <runtime>
 pack) checks the schemas (complete `x-cadence`, help articles, declared profiles, every role mapped to a published
 kind that declares that role) and then imports the pack's fixtures with `dataset_import` (a `folder-csv` folder)
 into a `dataset` artifact and runs calibrate → train → stop (training state on cancel) → resume → average →
-transcribe for every profile → baseline → score through the real harness path, with a local content store and no
-control plane. The score requires the trained model to beat a nearly untrained one (the family's `baseline`
+transcribe for every profile → baseline → materialize the base model → transcribe it → score through the real
+harness path, with a local content store and no control plane; every transcription is scored by the core
+[`wer_score`](../steps/wer-score.md) kind and its `scores` artifact checked. The score requires the trained model to beat a nearly untrained one (the family's `baseline`
 parameters, one step for the toy) on every profile, and the toy to reach a WER of at most 0.1 on its fixtures.
 Export and parity join in phase 5.
 

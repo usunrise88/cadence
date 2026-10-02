@@ -24,6 +24,7 @@ from cadence_toy.model import (
     save_checkpoint,
 )
 from cadence_toy.steps.average import AverageStep, checkpoint_inputs
+from cadence_toy.steps.materialize import CheckpointFromBaseStep
 from cadence_toy.steps.train import TrainParams, TrainStep
 from cadence_toy.steps.transcribe import TranscribeParams, TranscribeStep
 from cadence_worker.cas import Store
@@ -91,7 +92,7 @@ def test_family_profiles_and_roles() -> None:
     assert FAMILY.runtime == "toy"
     assert d["defaultsSection"] == "packs.toy"
     assert [p["name"] for p in PROFILES] == ["offline", "320ms"]
-    assert set(d["roles"]) == {"calibrate", "train", "average", "transcribe"}
+    assert set(d["roles"]) == {"calibrate", "train", "average", "transcribe", "materialize"}
 
 
 def test_train_average_transcribe_in_process(tmp_path: Path, dataset: tuple[Path, Store]) -> None:
@@ -214,3 +215,36 @@ def test_checkpoint_without_input_norm_still_loads(tmp_path: Path) -> None:
     model, _ = load_checkpoint(tmp_path)
     assert not model.cfg.input_norm
     assert TinyCTC().cfg.input_norm
+
+
+def test_materialize_the_untrained_network_from_a_seed(tmp_path: Path, dataset: tuple[Path, Store]) -> None:
+    root, store = dataset
+    doc = {"format": "cadence.base_model/1", "family": {"name": "toy-ctc"}, "model": {"seed": 3}}
+    (tmp_path / "base.json").write_text(json.dumps(doc), encoding="utf-8")
+    events: list[dict[str, Any]] = []
+    c = context(tmp_path, store, events)
+    hashes = []
+    for out in ("a", "b"):
+        CheckpointFromBaseStep().run(
+            CheckpointFromBaseStep.Params(), {"base": tmp_path / "base.json"}, {"checkpoint": tmp_path / out}, c
+        )
+        meta = c.meta["checkpoint"]
+        assert meta["family"] == "toy-ctc"
+        assert meta["step"] == 0
+        assert meta["valWer"] is None
+        hashes.append(meta["weightsHash"])
+    assert hashes[0] == hashes[1], "the same seed gives the same weights"
+    # The checkpoint loads and transcribes like a trained one.
+    TranscribeStep().run(
+        TranscribeParams(profile="offline"),
+        {"model": tmp_path / "a", "data": root},
+        {"hypotheses": tmp_path / "hyps.jsonl"},
+        c,
+    )
+    assert (tmp_path / "hyps.jsonl").read_text(encoding="utf-8").count("\n") == len(read_dataset(root))
+    (tmp_path / "other.json").write_text(json.dumps({**doc, "family": {"name": "x"}}), encoding="utf-8")
+    with pytest.raises(StepInputError, match="family"):
+        CheckpointFromBaseStep().run(
+            CheckpointFromBaseStep.Params(), {"base": tmp_path / "other.json"}, {"checkpoint": tmp_path / "c"}, c
+        )
+    assert FAMILY.descriptor["roles"]["materialize"] == "toy_checkpoint_from_base"

@@ -29,18 +29,25 @@ from cadence_nemo.steps.finetune import (
     resume_best,
     validation_clips,
 )
-from cadence_nemo.steps.transcribe import TranscribeParams, TranscribeStep, decoding_hash, hypothesis_row
+from cadence_nemo.steps.materialize import CheckpointFromBaseStep, materialize
+from cadence_nemo.steps.transcribe import (
+    TranscribeParams,
+    TranscribeStep,
+    boost_input,
+    decoding_hash,
+    hypothesis_row,
+)
 from cadence_nemo.streaming import Stream, chunk_frames, record_partials, word_confidence, words_from_partials
 from cadence_nemo.training import ModelFacts, optim_config, scaled_batches, train_ds_config, val_ds_config
 from cadence_worker.cas import Store
 from cadence_worker.conformance.suite import HYPOTHESIS_FIELDS, REPO_HELP, check_schemas
 from cadence_worker.registry import load_families, load_kinds
-from cadence_worker.steps.base import StepInputError, check_ranges, missing_metadata
+from cadence_worker.steps.base import StepInputError, check_ranges, descriptor, missing_metadata
 from cadence_worker.steps.context import StepContext
 from cadence_worker.steps.dataset_import import DatasetImportParams, records, write_dataset
 
 FIXTURES = Path(__file__).resolve().parents[1] / "cadence_nemo" / "fixtures"
-KINDS = (CalibrateStep, FinetuneStep, AverageStep, TranscribeStep)
+KINDS = (CalibrateStep, FinetuneStep, AverageStep, TranscribeStep, CheckpointFromBaseStep)
 PROMPTS = {"en-US": 0, "en": 0, "he-IL": 64, "fr-FR": 8, "fr-CA": 100, "auto": 101}
 
 
@@ -62,7 +69,7 @@ def test_every_kind_has_complete_x_cadence_and_valid_defaults() -> None:
 
 
 def test_kinds_declare_their_role_runtime_and_card() -> None:
-    assert {k.role for k in KINDS} == {"calibrate", "train", "average", "transcribe"}
+    assert {k.role for k in KINDS} == {"calibrate", "train", "average", "transcribe", "materialize"}
     assert all(k.runtime == "nemo-speech" for k in KINDS)
     assert FinetuneStep.resources["gpu"]
     assert FinetuneStep.resources["gpus"] == 1
@@ -818,3 +825,79 @@ def test_finetune_final_state_is_optional() -> None:
     assert d.get("optionalOutputs") == ["state"]
     assert "state" in d["produces"], "the state is still an output: a stop writes it"
     assert "optionalOutputs" not in descriptor("nemotron_calibrate", CalibrateStep)
+
+
+# ---------------------------------------------------------------- materialize (checkpoint_from_base)
+
+
+def test_materialize_writes_the_checkpoint_layout_of_a_trained_one(tmp_path: Path) -> None:
+    fake_nemo(tmp_path / "base.nemo", {"w": torch.ones(2)})
+    doc = {
+        "format": "cadence.base_model/1",
+        "versionId": "ver_base",
+        "family": {"name": NAME},
+        "model": {"hfRepo": "nvidia/x", "revision": "abc", "checkpointFile": "x.nemo"},
+    }
+    (tmp_path / "base.json").write_text(json.dumps(doc), encoding="utf-8")
+    base = ck.read_base(tmp_path / "base.json", lambda m: tmp_path / "base.nemo")
+    out = materialize(base, tmp_path / "ck")
+    assert sorted(f.name for f in (tmp_path / "ck").iterdir()) == [ck.CHECKPOINT_JSON, ck.NEMO_FILE]
+    # The weights hash is computed as for every checkpoint of the family: the BLAKE3 hash of model.nemo.
+    assert out["weightsHash"] == ck.weights_hash(tmp_path / "base.nemo") == ck.weights_hash(tmp_path / "ck/model.nemo")
+    assert out["step"] == 0
+    assert out["valWer"] is None
+    assert out["init"] == "base"
+    assert out["base"]["versionId"] == "ver_base"
+    assert ck.read_checkpoint(tmp_path / "ck")["family"] == NAME
+    meta = ck.neutral_meta(out)
+    assert meta["family"] == NAME
+    assert meta["weightsHash"] == out["weightsHash"]
+    # A checkpoint input is refused: it needs no materializing.
+    with pytest.raises(StepInputError, match="already a checkpoint"):
+        materialize(ck.read_base(tmp_path / "ck", lambda m: tmp_path / "x"), tmp_path / "ck2")
+    d = descriptor("checkpoint_from_base", CheckpointFromBaseStep)
+    assert d["role"] == "materialize"
+    assert d["consumes"] == {"base": "base_model"}
+    assert d["produces"] == {"checkpoint": "checkpoint"}
+    assert d["resources"]["gpu"] is False
+    assert FAMILY.descriptor["roles"]["materialize"] == "checkpoint_from_base"
+
+
+# ---------------------------------------------------------------- phrase boosting (nemotron_transcribe@2)
+
+
+def test_transcribe_takes_an_optional_boost_list() -> None:
+    d = descriptor("nemotron_transcribe", TranscribeStep)
+    assert d["version"] == "2"
+    assert d["consumes"]["boost"] == "boost_list"
+    assert d.get("optionalInputs") == ["boost"]
+    assert FAMILY.descriptor["capabilities"]["boosting"] == "nemo-phrase-boosting"
+    assert TranscribeParams().boost_weight > 0
+
+
+def test_boost_input_and_the_decoding_hash(tmp_path: Path) -> None:
+    assert boost_input({}, 1.0) is None
+    (tmp_path / "list.json").write_text(json.dumps({"terms": ["Tel  Aviv", "Haifa", "Haifa"], "weight": 2.5}), "utf-8")
+    b = boost_input({"boost": tmp_path / "list.json"}, 1.0)
+    assert b is not None
+    assert b.terms == ("Tel Aviv", "Haifa")
+    assert b.weight == 2.5
+    assert b.list_hash.startswith("b3:")
+    (tmp_path / "list.txt").write_text("# names\n# weight: 0.7\nTel Aviv\n\nHaifa\n", "utf-8")
+    t = boost_input({"boost": tmp_path / "list.txt"}, 1.0)
+    assert t is not None
+    assert t.terms == ("Tel Aviv", "Haifa")
+    assert t.weight == 0.7
+    (tmp_path / "plain.txt").write_text("Haifa\n", "utf-8")
+    p = boost_input({"boost": tmp_path / "plain.txt"}, 1.25)
+    assert p is not None
+    assert p.weight == 1.25
+    base = {"profile": "160ms", "decoder": "rnnt-greedy-batch"}
+    hashes = {decoding_hash(base)} | {decoding_hash({**base, "boost": x.decoding()}) for x in (b, t, p)}
+    assert len(hashes) == 4, "the list and its weight are part of the decoding hash"
+    (tmp_path / "empty.txt").write_text("# nothing\n", "utf-8")
+    with pytest.raises(StepInputError, match="no phrases"):
+        boost_input({"boost": tmp_path / "empty.txt"}, 1.0)
+    (tmp_path / "bad.json").write_text(json.dumps({"format": "other", "terms": ["a"]}), "utf-8")
+    with pytest.raises(StepInputError, match="JSON boost list"):
+        boost_input({"boost": tmp_path / "bad.json"}, 1.0)

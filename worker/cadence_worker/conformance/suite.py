@@ -6,21 +6,24 @@ the pack whose ``role`` matches), then the flow on the pack's fixtures through t
 ``dataset_import`` of the pack's fixtures (a ``folder-csv`` folder):
 
     import → calibrate → train a few steps → stop (training-state on cancel) → resume → average → transcribe (file and
-    streaming profiles) → baseline → score
+    streaming profiles, each scored) → baseline → materialize the base model → transcribe it → score
 
-``baseline`` trains with the family's ``conformance["baseline"]`` parameters (one step, say) and transcribes with the
-nearly untrained checkpoint; ``score`` then requires the trained, averaged model to beat it on every profile, and to
-stay under ``conformance["score"]["maxWer"]`` when the family declares one. A family without ``baseline`` has that
-check reported as skipped.
+Every transcription is scored by the neutral ``wer_score`` kind (the eval pipeline's scorer) with the suite's
+normalizer, and its ``scores`` artifact is checked against ``cadence.scores/1``. ``baseline`` trains with the family's
+``conformance["baseline"]`` parameters (one step, say) and transcribes with the nearly untrained checkpoint; ``score``
+then requires the trained, averaged model to beat it on every profile, and to stay under
+``conformance["score"]["maxWer"]`` when the family declares one. A family without ``baseline`` has that check reported
+as skipped. The base model's WER (materialize role → transcribe at the kind's default profile → score) is reported.
 
 Export and parity join in phase 5. Contracts a pack must meet beyond the schemas: the transcribe kind takes a
 ``profile`` parameter naming a latency profile; the train kind resumes from ``overrides.resumeFrom``; checkpoints carry
-the neutral meta family, step, valWer and weightsHash.
+the neutral meta family, step, valWer and weightsHash (a materialized base model's valWer may be null).
 
 Inputs are filled by declared artifact type, as the control plane fills a run's pipeline inputs: ``dataset`` (the
 imported fixtures), ``mix`` (a ``cadence.mix/1`` rendered over that dataset), ``base_model`` (a
 ``cadence.base_model/1`` from the family's ``conformance["base_model"]``), ``calibration`` (the calibrate stage's
-output) and ``checkpoint`` (the stage's model).
+output), ``checkpoint`` (the stage's model) and ``normalizer``; optional inputs the flow cannot fill (a boost list)
+stay unwired.
 """
 
 from __future__ import annotations
@@ -37,14 +40,28 @@ from cadence_worker.cas import Store
 from cadence_worker.executor import LeaseRunner, MemorySink
 from cadence_worker.protocol_gen import ArtifactRef, Lease, MetricPoint, StepOutcome, StepSpec
 from cadence_worker.registry import Family, KindEntry, load_families, load_kinds
-from cadence_worker.scoring import wer
 from cadence_worker.steps.base import help_slug, missing_metadata, role_of
 
-REQUIRED_ROLES = ("calibrate", "train", "average", "transcribe")
+REQUIRED_ROLES = ("calibrate", "train", "average", "transcribe", "materialize")
 LATER_ROLES = {"export": "joins in phase 5", "parity": "joins in phase 5"}
 CHECKPOINT_META = ("family", "step", "valWer", "weightsHash")
 HYPOTHESIS_FIELDS = ("text", "words", "decoding", "decodingHash", "family", "weightsHash")
+SCORES_SUMMARY = ("schema", "scorer", "utterances", "refWords", "wer", "cer", "werNoPunct", "sub", "del", "ins")
+SCORES_ROW = ("audio", "group", "durationS", "ref", "hyp", "refWords", "sub", "del", "ins", "ops")
 IMPORT_KIND = "dataset_import"
+SCORE_KIND = "wer_score"
+# The suite's scoring normalizer: NFKC, case-folded, punctuation stripped (a family's cased, punctuated output is
+# compared with the fixtures' references on words alone).
+NORMALIZER: Mapping[str, Any] = {
+    "locale": "*",
+    "unicode": "NFKC",
+    "casefold": True,
+    "punctuation": "strip",
+    "removeMarks": False,
+    "mappings": [],
+    "numbers": "keep",
+    "versionId": "ver_conformance",
+}
 IMPORT_PARAMS: Mapping[str, Any] = {
     "format": "folder-csv",
     "source_name": "conformance-fixtures",
@@ -110,6 +127,8 @@ def check_schemas(
         for n, t in {**entry.cls.consumes, **entry.cls.produces}.items():
             if not t:
                 problems.append(f"step kind {name}: {n} has no artifact type")
+        if stray := sorted(set(getattr(entry.cls, "optional_inputs", ())) - set(entry.cls.consumes)):
+            problems.append(f"step kind {name}: optional inputs {stray} are not inputs it consumes")
     for fam in families:
         d = fam.descriptor
         fname = d["name"]
@@ -139,6 +158,8 @@ def check_schemas(
             problems.append(f"family {fname}: no conformance fixtures (a folder-csv import folder with metadata.csv)")
     if families and IMPORT_KIND not in kinds:
         problems.append(f"runtime {runtime!r} does not publish the neutral {IMPORT_KIND} kind the flow starts from")
+    if families and SCORE_KIND not in kinds:
+        problems.append(f"runtime {runtime!r} does not publish the neutral {SCORE_KIND} kind evaluations score with")
     return problems
 
 
@@ -295,16 +316,25 @@ class Flow:
         return self.put_json(doc, "base_model", {"format": "cadence.base_model/1", "family": family})
 
     def inputs_for(self, kind: str, available: Mapping[str, ArtifactRef]) -> dict[str, ArtifactRef]:
-        """Every input the kind consumes, filled from ``available`` by artifact type."""
+        """Every input the kind consumes, filled from ``available`` by artifact type; an optional input of a type the
+        flow does not have stays unwired, as a pipeline may leave it."""
+        cls = self.kinds[kind].cls
+        optional = set(getattr(cls, "optional_inputs", ()))
         out: dict[str, ArtifactRef] = {}
-        for name, typ in sorted(self.kinds[kind].cls.consumes.items()):
+        for name, typ in sorted(cls.consumes.items()):
             if typ not in available:
+                if name in optional:
+                    continue
                 raise ConformanceError(f"{kind} consumes {name} ({typ}), which the conformance flow cannot provide")
             out[name] = available[typ]
         return out
 
     def read_json(self, ref: ArtifactRef) -> Any:
         return json.loads(self.store.path(ref["hash"]).read_bytes())
+
+    def dir_files(self, ref: ArtifactRef) -> dict[str, Path]:
+        """The files of a directory artifact by relative path."""
+        return {f.path: self.store.path(f.hash) for f in self.store.read_manifest(ref["hash"])}
 
     def read_lines(self, ref: ArtifactRef) -> list[dict[str, Any]]:
         return [json.loads(x) for x in self.store.path(ref["hash"]).read_text(encoding="utf-8").splitlines() if x]
@@ -360,6 +390,7 @@ def run_family(flow: Flow, fam: Family, report: Report) -> None:
             report.stages.append(Stage(f"{prefix}/inputs", False, 0.0, {"error": "no conformance base_model"}))
             return
         available["base_model"] = flow.render_base_model(d["name"], conf["base_model"])
+    available["normalizer"] = flow.put_json(NORMALIZER, "normalizer", {"versionId": NORMALIZER["versionId"]})
 
     def calibrate() -> dict[str, Any]:
         out, _ = flow.run(roles["calibrate"], conf.get("calibrate", {}), flow.inputs_for(roles["calibrate"], available))
@@ -370,9 +401,9 @@ def run_family(flow: Flow, fam: Family, report: Report) -> None:
             raise ConformanceError(f"calibration lacks secondsPerStep/batchSize: {doc}")
         return {"secondsPerStep": doc["secondsPerStep"], "batchSize": doc["batchSize"]}
 
-    def check_checkpoint(ref: ArtifactRef, what: str) -> dict[str, Any]:
+    def check_checkpoint(ref: ArtifactRef, what: str, untrained: bool = False) -> dict[str, Any]:
         meta = ref.get("meta") or {}
-        missing = [k for k in CHECKPOINT_META if meta.get(k) is None]
+        missing = [k for k in CHECKPOINT_META if meta.get(k) is None and not (untrained and k == "valWer")]
         if missing or meta.get("family") != d["name"]:
             raise ConformanceError(f"{what}: checkpoint meta {meta} lacks {missing} or names another family")
         return meta
@@ -482,11 +513,34 @@ def run_family(flow: Flow, fam: Family, report: Report) -> None:
                         or any("emitMs" not in p or "text" not in p for p in partials)
                     ):
                         raise ConformanceError("a streaming hypothesis lacks ordered partial events")
-            score = wer((" ".join(refs[r["audio"]].lower().split()), str(r["text"])) for r in lines)
-            state.setdefault(key, {})[profile["name"]] = score
-            return {"wer": round(score, 4), "utterances": len(lines)}
+            summary = score_hypotheses(hyp, len(refs), bool(profile.get("chunkMs")))
+            state.setdefault(key, {})[profile["name"]] = float(summary["wer"])
+            detail = {k: round(float(summary[k]), 4) for k in ("wer", "cer", "werNoPunct")}
+            if "stability" in summary:
+                detail["unstablePartialWordRatio"] = round(float(summary["stability"]["ratio"]), 4)
+            return {**detail, "utterances": len(lines)}
 
         return run
+
+    def score_hypotheses(hyp: ArtifactRef, utterances: int, streaming: bool) -> dict[str, Any]:
+        """Score through the neutral scorer, as an eval pipeline does, and check the scores artifact's shape."""
+        out, _ = flow.run(SCORE_KIND, {}, flow.inputs_for(SCORE_KIND, {**available, "hypotheses": hyp}))
+        scores = _by_type(_expect_done(out, SCORE_KIND), "scores", SCORE_KIND)
+        files = flow.dir_files(scores)
+        if "summary.json" not in files or "utterances.jsonl" not in files:
+            raise ConformanceError(f"the scores artifact lacks summary.json or utterances.jsonl: {sorted(files)}")
+        summary = json.loads(files["summary.json"].read_bytes())
+        rows = [json.loads(x) for x in files["utterances.jsonl"].read_text(encoding="utf-8").splitlines() if x]
+        missing = [k for k in SCORES_SUMMARY if k not in summary]
+        if missing or summary["schema"] != "cadence.scores/1":
+            raise ConformanceError(f"summary.json is not cadence.scores/1 (lacks {missing})")
+        if len(rows) != utterances or any(k not in r for r in rows for k in SCORES_ROW):
+            raise ConformanceError(
+                f"utterances.jsonl has {len(rows)} rows for {utterances} utterances, or rows lack keys"
+            )
+        if streaming and "stability" not in summary:
+            raise ConformanceError("streaming hypotheses scored without partial stability")
+        return dict(summary)
 
     def baseline() -> dict[str, Any]:
         out, _ = flow.run(roles["train"], conf["baseline"], flow.inputs_for(roles["train"], available))
@@ -494,12 +548,29 @@ def run_family(flow: Flow, fam: Family, report: Report) -> None:
         state["base"] = ck
         return {"step": check_checkpoint(ck, "baseline")["step"]}
 
+    def materialize() -> dict[str, Any]:
+        """The base model as a checkpoint (role materialize), what an eval transcribes for the baseline cells."""
+        kind = roles["materialize"]
+        out, _ = flow.run(kind, {}, flow.inputs_for(kind, available))
+        ck = _by_type(_expect_done(out, "materialize"), "checkpoint", "materialize")
+        meta = check_checkpoint(ck, "materialize", untrained=True)
+        state["material"] = ck
+        return {"weightsHash": meta["weightsHash"], "step": meta["step"]}
+
+    def default_profile() -> Mapping[str, Any]:
+        """The profile the transcribe kind decodes at by default (the primary cell), else the family's first."""
+        field = flow.kinds[roles["transcribe"]].cls.Params.model_fields.get("profile")
+        name = field.default if field is not None else None
+        return next((p for p in d["latencyProfiles"] if p["name"] == name), d["latencyProfiles"][0])
+
     def score() -> dict[str, Any]:
         """The trained model must beat the untrained one (baseline, first profile) and meet the family's maxWer."""
         got: dict[str, float] = state.get("wer", {})
         base: dict[str, float] = state.get("baseWer", {})
         max_wer = conf.get("score", {}).get("maxWer")
         detail: dict[str, Any] = {"wer": {k: round(v, 4) for k, v in got.items()}}
+        if material := state.get("baseModelWer"):
+            detail["baseModelWer"] = {k: round(v, 4) for k, v in material.items()}
         if "baseline" not in conf:
             detail["baseline"] = "skipped: the family declares no conformance baseline"
         elif not base:
@@ -524,6 +595,8 @@ def run_family(flow: Flow, fam: Family, report: Report) -> None:
                 stage(f"transcribe:{p['name']}", transcribe(p))
             if "baseline" in conf and stage("baseline", baseline):
                 stage("transcribe:baseline", transcribe(d["latencyProfiles"][0], "base", "baseWer"))
+            if stage("materialize", materialize):
+                stage("transcribe:base-model", transcribe(default_profile(), "material", "baseModelWer"))
             stage("score", score)
     for role, why in LATER_ROLES.items():
         report.stages.append(Stage(f"{prefix}/{role}", True, 0.0, {"skipped": why}))

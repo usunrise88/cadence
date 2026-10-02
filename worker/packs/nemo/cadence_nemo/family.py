@@ -80,6 +80,7 @@ FAMILY = Family(
             "train": "nemotron_finetune",
             "average": "checkpoint_average",
             "transcribe": "nemotron_transcribe",
+            "materialize": "checkpoint_from_base",
         },
         "defaultsSection": "packs.nemo",
         "help": "guides.nemo-pack",

@@ -62,6 +62,8 @@ class TrainStep:
   images copy it unchanged to `/opt/cadence/defaults.yaml`); ranges are enforced before `run`.
 - `optional_outputs` (a frozenset of output names, published as `optionalOutputs`) lists outputs a successful step may
   leave unwritten — a train step's final training state; no pipeline may wire them into another step.
+- `optional_inputs` (published as `optionalInputs`) lists inputs of `consumes` a pipeline may leave unwired — a
+  transcribe step's `boost` list; the step then finds no such key in `inputs`.
 - `inputs` are paths in the step's scratch directory (a file, or a directory for a directory artifact); `outputs` are
   paths the step creates. An input name may receive several artifacts as `<name>.0`, `<name>.1`, ….
 - `ctx` (`StepContext`): `progress(fraction, message)`, `metric(name, value, step, epoch)`, `log(msg, level, **fields)`,
@@ -108,7 +110,8 @@ calibrate stage's output), `checkpoint`. `--memory-cap-mb` is the card cap a lea
 the staging card with vLLM).
 
 The NeMo pack (`packs/nemo`, help `docs/help/guides/nemo-pack.md`): `oomptimizer_calibrate`, `nemotron_finetune`,
-`checkpoint_average`, `nemotron_transcribe`, defaults `packs.nemo`. Its pure parts (mix reading, Noam arithmetic,
+`checkpoint_average`, `nemotron_transcribe` (static phrase boosting from an optional `boost_list`, `cadence_worker/
+boost.py`), `checkpoint_from_base` (role `materialize`), defaults `packs.nemo`. Its pure parts (mix reading, Noam arithmetic,
 averaging, augmentation, the OOMptimizer search, the training monitor, hypotheses) are unit-tested here without NeMo;
 the NeMo glue (`training.py`, `streaming.py`, `nemo_data.py`) runs in the image. `CADENCE_NEMO_DEVICE=cpu` lets the
 train and transcribe steps run on a CPU (slowly, fp32) to check the glue without a card — development only.
@@ -116,8 +119,9 @@ train and transcribe steps run on a CPU (slowly, fp32) to check the glue without
 The suite checks the schemas (complete `x-cadence`, help articles, declared profiles, every required role mapped to a
 published kind that declares it), then imports the pack's fixtures (a `folder-csv` folder with `metadata.csv`) with
 `dataset_import` and runs calibrate → train → stop → resume → average → transcribe (every latency
-profile; partial events for streaming ones) → score through the real harness path with a local store and no control
-plane. Export and parity join in phase 5.
+profile; partial events for streaming ones, each transcription scored by `wer_score`) → baseline → materialize the base
+model → transcribe it → score through the real harness path with a local store and no control plane. Export and
+parity join in phase 5.
 
 ## Development
 
@@ -131,4 +135,7 @@ Framework stacks (NeMo, Lhotse, PyTorch for GPUs) come from each runtime's image
 
 Core (runtime-neutral) step kinds: `echo` and `dataset_import` (imports a NeMo manifest, a Hugging Face dataset such
 as FLEURS, or a folder with `metadata.csv` as a `dataset` artifact; audio helpers in `cadence_worker/audio.py`; help
-`docs/help/steps/dataset-import.md`). Help slugs use dashes (`steps.dataset-import`).
+`docs/help/steps/dataset-import.md`) and `wer_score` (hypotheses + dataset + scoring normalizer → `scores`: WER, CER,
+S/D/I, duration buckets, partial stability; the normalizer interpreter is `cadence_worker/normalize.py`, the
+alignment `cadence_worker/align.py`; help `docs/help/steps/wer-score.md`). Help slugs use dashes
+(`steps.dataset-import`).

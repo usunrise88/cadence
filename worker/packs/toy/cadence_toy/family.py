@@ -51,12 +51,15 @@ FAMILY = Family(
             "train": "toy_train",
             "average": "toy_average",
             "transcribe": "toy_transcribe",
+            "materialize": "toy_checkpoint_from_base",
         },
         "defaultsSection": "packs.toy",
         "help": "guides.toy-pack",
     },
     fixtures=Path(__file__).resolve().parent / "fixtures",
     conformance={
+        # The toy "base model": the untrained network from a seed (materialize role).
+        "base_model": {"seed": 0},
         # Half the default budget, then resume to the default 300 steps: the fixtures reach a WER of 0 by then.
         "train": {"steps": 150},
         "resume": {"steps": 300},

@@ -12,6 +12,7 @@ dependencies = ["httpx>=0.28,<1", "pydantic>=2.11,<3", "pyyaml>=6,<7", "blake3>=
 [project.entry-points."cadence.steps"]
 echo = "cadence_worker.steps.echo:EchoStep"
 dataset_import = "cadence_worker.steps.dataset_import:DatasetImportStep"
+wer_score = "cadence_worker.steps.wer_score:WerScoreStep"
 
 [dependency-groups]
 dev = [
