@@ -28,7 +28,7 @@ repository.
 | Driver | `claude-code` (the owner's Claude subscription) or `opencode` | `wizard.driver` |
 | Model | A Claude Code model alias, or opencode's `provider/model` (any configured provider) | `wizard.claude_code_model`, `wizard.opencode_model` |
 | Permission preset | The Guardrails rules rendered into both config files and applied by the policy engine | `wizard.permission_preset` |
-| Session branches | `when-clean`: merge into `main` at session end when it applies cleanly; `never`: always wait as Session changes | `when-clean` |
+| Session branches | `when-clean`: merge into `main` at session end when it applies cleanly (a branch that changes `gates.yaml`, `lang/`, `project.yaml`, `.claude/` or `opencode.json` always waits for a person); `never`: always wait as Session changes | `when-clean` |
 | Agent changes land as | Per kind (mix, gate, note, language pack): direct changes, or drafts to accept or revert | Direct |
 | Instructions template | The template `AGENTS.md` is rendered from; `custom` once you edited `AGENTS.md` here | `wizard.instructions_template` |
 
