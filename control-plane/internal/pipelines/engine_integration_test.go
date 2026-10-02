@@ -789,3 +789,38 @@ func TestOptionalOutputs(t *testing.T) {
 		t.Fatalf("plan of a pipeline wiring an optional output: %v", err)
 	}
 }
+
+// TestPlanRefusesUnpublishedPin: once the kind's runtime has registered workers, a pinned version none of them
+// publishes any more is refused at planning (it would wait in the queue for ever), naming the published versions.
+func TestPlanRefusesUnpublishedPin(t *testing.T) {
+	r := newRig(t, nil)
+	ctx := context.Background()
+	in := r.input("abc")
+	if _, err := r.eng.Plan(ctx, r.pool, *chain(), pipelines.PlanInput{Inputs: in.Inputs}); err != nil {
+		t.Fatalf("no worker registered yet: the pins are not judged: %v", err)
+	}
+	var verID string
+	if err := r.pool.QueryRow(ctx, `SELECT v.id FROM registry_versions v JOIN registry_collections c ON c.id = v.collection_id
+		WHERE c.name = 'step-kind/echo' LIMIT 1`).Scan(&verID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.pool.Exec(ctx, `INSERT INTO compute_hosts (id, name, cards) VALUES ('cmp_stale', 'stale-host', '[]')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.pool.Exec(ctx, `INSERT INTO workers (id, host_id, runtime_name, runtime_version_id, runtime, step_kinds)
+		VALUES ('wrk_stale', 'cmp_stale', 'test', $1, '{}', ARRAY['echo@2', 'tally@1'])`, verID); err != nil {
+		t.Fatal(err)
+	}
+	_, err := r.eng.Plan(ctx, r.pool, *chain(), pipelines.PlanInput{Inputs: in.Inputs})
+	var pe *problems.Error
+	if !errors.As(err, &pe) || len(pe.Errors) != 1 || pe.Errors[0].Path != "steps[0].kind" ||
+		!strings.Contains(pe.Errors[0].Message, "echo@1") || !strings.Contains(pe.Errors[0].Message, "they publish echo@2") {
+		t.Fatalf("plan with a stale echo@1 pin: %v (%+v)", err, pe)
+	}
+	if _, err := r.pool.Exec(ctx, `UPDATE workers SET step_kinds = ARRAY['echo@1', 'echo@2', 'tally@1'] WHERE id = 'wrk_stale'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.eng.Plan(ctx, r.pool, *chain(), pipelines.PlanInput{Inputs: in.Inputs}); err != nil {
+		t.Fatalf("a published pin: %v", err)
+	}
+}

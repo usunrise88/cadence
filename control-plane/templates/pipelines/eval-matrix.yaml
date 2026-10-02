@@ -7,10 +7,11 @@ name: eval-matrix
 description: Transcribe a checkpoint on a golden dataset at a latency profile and score it (one eval cell; evals.new runs the matrix)
 inputs: { model: checkpoint, data: dataset, normalizer: normalizer }
 steps:
+  # target_lang "" prompts each clip with its own language from the dataset (he → he-IL); name a locale to force one.
   - id: transcribe
-    kind: nemotron_transcribe@1
+    kind: nemotron_transcribe@3
     in: { model: $inputs.model, data: $inputs.data }
-    params: { profile: 160ms }
+    params: { profile: 160ms, target_lang: "" }
   - id: score
     kind: wer_score@1
     in: { hypotheses: transcribe.hypotheses, data: $inputs.data, normalizer: $inputs.normalizer }
