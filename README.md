@@ -10,7 +10,7 @@
 
 <p align="center">
   <img alt="Status: work in progress" src="https://img.shields.io/badge/status-work%20in%20progress-f5a524">
-  <img alt="Phase 3 of 6" src="https://img.shields.io/badge/roadmap-phase%203%20of%206-3e63dd">
+  <img alt="Phase 4 of 6" src="https://img.shields.io/badge/roadmap-phase%204%20of%206-3e63dd">
   <img alt="Go" src="https://img.shields.io/badge/Go-control%20plane-00add8">
   <img alt="React" src="https://img.shields.io/badge/React-web%20shell-61dafb">
 </p>
@@ -50,8 +50,8 @@ and every mutation has an actor, an idempotency key and an audit row.
 | 0 · Shell | Contract toolchain, control plane, dockable web shell | ✅ |
 | 1 · Agent loop | Auth, MCP, agent host, sessions, drafts, approvals, projects, registry core | ✅ |
 | 2 · Training | GPU worker protocol, content store, queue, pipelines, runs, playbooks, notifications, backups | ✅ |
-| 3 · Evaluation | Golden sets, streaming eval, gates, manual transcription tests | ⏳ next |
-| 4 · Data | Mounts, ingest, freeze, annotation | |
+| 3 · Evaluation | Golden sets, streaming eval, gates, manual transcription tests | ✅ |
+| 4 · Data | Mounts, ingest, freeze, annotation | ⏳ next |
 | 5 · Deploy and flywheel | Export, shadow and canary, triage, schedules | |
 
 What training looks like today:
@@ -66,6 +66,17 @@ What training looks like today:
   waits for an approval — in the Approvals panel or from Telegram.
 - **Operations**: the content store with its disk gauge and eviction, nightly backups with a weekly restore test,
   notifications and a daily digest.
+
+What evaluation looks like today:
+
+- **Golden sets** are frozen from eval-only dataset versions with an approval, tied to a scoring normalizer, and
+  never reach training: every training input is checked for their audio.
+- **Evals** run a checkpoint and its baseline through the real streaming decoder at each latency profile, score WER,
+  CER, S/D/I, streaming and entity metrics, and cache every cell across projects; deltas carry paired bootstrap
+  intervals. **Gates** (`gates.yaml`) turn the matrix into a verdict; a passed gate lets you register the model.
+- **Panels**: the Eval report with its charts, Diff, the audio view (waveform, spectrogram, words), the
+  Transcription tool for live manual tests (microphone, file or span, up to three models, nothing stored),
+  experiments and sweeps, language packs with boost lists, lineage.
 
 ## Architecture
 
