@@ -22,6 +22,7 @@ docs/help/steps/frame-vad.md.
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, ClassVar
@@ -37,6 +38,7 @@ from cadence_worker.steps.context import StepContext
 
 KIND = "frame_vad@1"
 FRAME_MS = 20
+FORCE_FULL_UNPICKLE = "TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"  # read by torch.load at each call (PyTorch 2.6+)
 
 
 class VadParams(BaseModel):
@@ -78,12 +80,10 @@ def segments(
 
 
 def vad_row(audio: str, duration: float, segs: Sequence[tuple[float, float]]) -> dict[str, Any]:
-    return {
-        "audio": audio,
-        "durationS": round(duration, 3),
-        "speech": [list(s) for s in segs],
-        "speechEndS": segs[-1][1] if segs else None,
-    }
+    """One utterance's row; segments end no later than the audio (the last frame may run past it)."""
+    d = round(duration, 3)
+    capped = [[s, min(e, d)] for s, e in segs]
+    return {"audio": audio, "durationS": d, "speech": capped, "speechEndS": capped[-1][1] if capped else None}
 
 
 def load_model(repo: str, revision: str) -> Any:
@@ -94,7 +94,18 @@ def load_model(repo: str, revision: str) -> Any:
 
     filename = repo.rsplit("/", 1)[-1].lower() + ".nemo"
     path = download_base({"hfRepo": repo, "revision": revision, "checkpointFile": filename})
-    model = nemo_asr.models.EncDecFrameClassificationModel.restore_from(str(path), map_location="cpu")
+    # The .nemo's state dict was pickled by an older PyTorch whose tensors the weights-only unpickler refuses; the file
+    # is NVIDIA's at a pinned commit (the Hub checks its LFS hash), so it is loaded with full unpickling, for this call
+    # only. strict=False: the checkpoint has no "loss.weight" (a class-weight buffer of the training loss, unused here).
+    old = os.environ.get(FORCE_FULL_UNPICKLE)
+    os.environ[FORCE_FULL_UNPICKLE] = "1"
+    try:
+        model = nemo_asr.models.EncDecFrameClassificationModel.restore_from(str(path), map_location="cpu", strict=False)
+    finally:
+        if old is None:
+            os.environ.pop(FORCE_FULL_UNPICKLE, None)
+        else:
+            os.environ[FORCE_FULL_UNPICKLE] = old
     model.eval()
     return model
 

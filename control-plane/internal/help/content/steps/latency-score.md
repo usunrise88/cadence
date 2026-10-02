@@ -35,6 +35,9 @@ How:
   `emit[k] = max(audioOffsetMs[k], emit[k−1]) + compute[k]` — a decoder slower than real time queues. `pace` says
   `simulated` or `realtime`.
 - Percentiles interpolate linearly between ranks (NumPy's default).
+- Measured on the staging card (2026-10-02; the base model at 160 ms on the NeMo pack's ten FLEURS he fixture clips,
+  batch 32, frame VAD on the CPU): p50 441 ms, p95 674 ms (8 measured, 2 empty finals); under the `telephony` profile
+  p50 462 ms, p95 654 ms. The VAD took 10.6 s for the ten clips, model load included; the decode peaked at 4.9 GB.
 
 When it is unavailable: the transcribe step of a family without streaming writes no partials (no latency step is
 planned), and without a published VAD step kind (a runtime without the NeMo pack) `evals.get` reports latency to final

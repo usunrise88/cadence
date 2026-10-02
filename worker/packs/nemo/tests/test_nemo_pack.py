@@ -933,3 +933,4 @@ def test_frame_vad_segments_hysteresis_and_minimums() -> None:
     assert segments([0.4, 0.6, 0.4, 0.2], 0.5, 0.3, 0, 0) == [(0.02, 0.06)]
     assert vad_row("b3:x", 1.2, segs) == {"audio": "b3:x", "durationS": 1.2, "speech": [[0.2, 1.0]], "speechEndS": 1.0}
     assert vad_row("b3:x", 1.2, [])["speechEndS"] is None
+    assert vad_row("b3:x", 0.99, segs)["speechEndS"] == 0.99  # the last frame runs past the audio
