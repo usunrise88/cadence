@@ -310,6 +310,8 @@ func serve(ctx context.Context, getenv func(string) string) error {
 		Poller:   poller,
 		Scorers:  scorers,
 		Lineage:  lineage.New(evals.LineageSource{}), // evals and eval records join the lineage graph (phase 3)
+		// Origins besides this server's own host that may open the live transcription socket (phase 3 · stream T).
+		AllowedOrigins: splitList(getenv("CADENCE_ALLOWED_ORIGINS")),
 	})
 	if err != nil {
 		return err
@@ -341,6 +343,7 @@ func serve(ctx context.Context, getenv func(string) string) error {
 	}
 	poller.Decider = srv
 	jobSvc.AddPeriodic("agentSessions.sweep", 30*time.Second, srv.SweepSessions)
+	jobSvc.AddPeriodic("transcriptions.sweep", 30*time.Second, srv.SweepTranscriptions)
 	jobSvc.AddPeriodic("agentCredentials.sweep", time.Minute, srv.SweepAgentCredentials)
 	if path := getenv("CADENCE_HOST_TOKEN_FILE"); path != "" {
 		issued, err := credentials.EnsureHostTokenFile(ctx, pool, path)
@@ -403,7 +406,8 @@ func serve(ctx context.Context, getenv func(string) string) error {
 	g.Go(func() error {
 		<-gctx.Done()
 		log.Info("shutting down")
-		hub.Close() // end event streams so Shutdown does not wait for them
+		hub.Close()     // end event streams so Shutdown does not wait for them
+		srv.CloseLive() // end live transcription sockets (hijacked: Shutdown does not track them)
 		jctx, jcancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer jcancel()
 		if err := jobSvc.Stop(jctx); err != nil {
@@ -417,6 +421,17 @@ func serve(ctx context.Context, getenv func(string) string) error {
 		return nil
 	})
 	return g.Wait()
+}
+
+// splitList splits a comma-separated environment value, dropping empty items.
+func splitList(v string) []string {
+	var out []string
+	for _, s := range strings.Split(v, ",") {
+		if s = strings.TrimSpace(s); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // defaultWorkerHost is the compute host of the worker token in CADENCE_WORKER_TOKEN_FILE when CADENCE_WORKER_HOST is

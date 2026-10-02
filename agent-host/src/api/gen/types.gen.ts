@@ -678,7 +678,7 @@ export type AliasList = {
     items: Array<Alias>;
 };
 
-export type JobKind = 'training' | 'eval' | 'shadow' | 'export' | 'data';
+export type JobKind = 'training' | 'eval' | 'shadow' | 'export' | 'data' | 'interactive';
 
 export type ComputeCard = {
     /**
@@ -899,6 +899,10 @@ export type Defaults = {
      * Sweeps (phase 3): mode, run counts, the GPU-hour cap and the seed of a random draw
      */
     sweeps?: DefaultSection;
+    /**
+     * Manual transcription tests and the live channel (phase 3): ticket, session and idle limits, frame size, file caps, the relay's queue and the interactive job's priority
+     */
+    transcriptions?: DefaultSection;
     estimates: {
         bytes_per_audio_hour: DefaultValue;
         measured_plus_minus?: DefaultValue;
@@ -3064,7 +3068,7 @@ export type StepKindDescriptor = {
     optionalOutputs?: Array<string>;
     resources: StepResources;
     /**
-     * The model-family role this kind fills (calibrate, train, average, transcribe, export, parity, materialize), empty for neutral kinds
+     * The model-family role this kind fills (calibrate, train, average, transcribe, export, parity, materialize, live), empty for neutral kinds
      */
     role?: string;
     /**
@@ -3093,9 +3097,9 @@ export type StepResources = {
     memoryGb?: number;
     diskGb?: number;
     /**
-     * Which compute job kinds may take it
+     * Which compute job kinds may take it (interactive: a live transcription session, R49)
      */
-    jobKind?: 'training' | 'eval' | 'export' | 'data';
+    jobKind?: 'training' | 'eval' | 'export' | 'data' | 'interactive';
 };
 
 export type ModelFamilyDescriptor = {
@@ -3135,10 +3139,23 @@ export type ModelFamilyDescriptor = {
     };
     latencyProfiles: Array<LatencyProfile>;
     /**
-     * Role → step kind (calibrate, train, average, transcribe, export, parity; materialize turns a base_model artifact into a checkpoint so evals can transcribe a base model)
+     * Role → step kind (calibrate, train, average, transcribe, export, parity; materialize turns a base_model artifact into a checkpoint so evals can transcribe a base model; live serves transcription sessions, R48)
      */
     roles: {
         [key: string]: string;
+    };
+    /**
+     * The card memory a live transcription session of the family reserves (R49, phase 3 · stream T)
+     */
+    interactive?: {
+        /**
+         * One model loaded: steady memory plus the load peak and margin (Nemotron 0.6B: 6000, spike A5)
+         */
+        memoryMb: number;
+        /**
+         * Each further distinct model of the session (targets of one model share its weights)
+         */
+        extraCheckpointMb?: number;
     };
     /**
      * The defaults.yaml section of this family
@@ -6435,6 +6452,525 @@ export type UtteranceWords = {
     del?: number;
     ins?: number;
     refWords?: number;
+};
+
+export type TranscriptionNew = {
+    input: TranscriptionInput;
+    /**
+     * One to three targets; they receive the same audio (lanes A, B, C in this order unless blind)
+     */
+    targets: Array<TranscriptionTargetIn>;
+    telephony?: TelephonySimulation;
+    /**
+     * File and span inputs: play at real-time pace (latency shows) or as fast as the card allows
+     */
+    pace?: 'realtime' | 'fast';
+    /**
+     * Shuffle the lanes; the page leaves them unnamed until the person picks the better one (the pick is not recorded)
+     */
+    blind?: boolean;
+};
+
+export type TranscriptionInput = {
+    /**
+     * microphone (PCM16 frames from the browser), file (its bytes, decoded by the worker), or span (an utterance's audio read by the worker)
+     */
+    kind: 'microphone' | 'file' | 'span';
+    /**
+     * kind span: the utterance (utt_… or its audio's b3: hash)
+     */
+    utteranceId?: string;
+    /**
+     * kind span: start in seconds (default 0)
+     */
+    start?: number;
+    /**
+     * kind span: end in seconds (default the end of the audio)
+     */
+    end?: number;
+    /**
+     * kind span: the channel (default 0)
+     */
+    channel?: number;
+};
+
+/**
+ * Exactly one of checkpointId, modelVersionId and baseModelVersionId
+ */
+export type TranscriptionTargetIn = {
+    /**
+     * A checkpoint of the project (ckp_…)
+     */
+    checkpointId?: string;
+    /**
+     * A model version (ver_…, model/<name>, or @alias)
+     */
+    modelVersionId?: string;
+    /**
+     * A base model version (ver_…, base-model/<name>, or @alias)
+     */
+    baseModelVersionId?: string;
+    /**
+     * Latency profile (default: eval.primary_profile when the family declares it, else its first streaming profile)
+     */
+    profile?: string;
+    /**
+     * BCP 47 language the model decodes in (default: the project's first locale)
+     */
+    language?: string;
+    /**
+     * none (default), or a boost list of the project's language pack: lang/<locale>/boost/<file>.txt, optionally @<commit> (default main)
+     */
+    boost?: string;
+    /**
+     * Overrides the list's '# weight:' header
+     */
+    boostWeight?: number;
+};
+
+/**
+ * Phone-line simulation (R50): down to sampleRate, through the codec, back up to 16 kHz with the training resampler (streaming polyphase)
+ */
+export type TelephonySimulation = {
+    /**
+     * G.711 μ-law (default), A-law, or band-limit only
+     */
+    codec?: 'ulaw' | 'alaw' | 'none';
+    sampleRate?: 8000;
+};
+
+export type TranscriptionSession = {
+    /**
+     * trs_…
+     */
+    id: string;
+    projectId: string;
+    /**
+     * The interactive job (job_…); absent in a dry run
+     */
+    jobId?: string;
+    /**
+     * queued: waiting for room on a card; loading: leased, the worker loads the targets; live: the worker is on the socket; ended
+     */
+    state: 'queued' | 'loading' | 'live' | 'ended';
+    /**
+     * The live channel, relative to the server (/api/transcriptions/{id}/stream?ticket=…); absent in a dry run
+     */
+    streamUrl?: string;
+    /**
+     * Single-use; absent in a dry run
+     */
+    ticket?: string;
+    ticketExpiresAt?: string;
+    input: TranscriptionInput;
+    targets: Array<TranscriptionLane>;
+    telephony?: TelephonySimulation;
+    pace: 'realtime' | 'fast';
+    blind: boolean;
+    /**
+     * The targets' model family
+     */
+    family: string;
+    /**
+     * The family's live role step kind (kind@version) that serves the session
+     */
+    liveKind: string;
+    /**
+     * Card memory the interactive job reserves: the family's interactive.memoryMb plus extraCheckpointMb per further distinct model
+     */
+    reservationMb: number;
+    /**
+     * Place among the waiting interactive jobs (1 = next)
+     */
+    position?: number;
+    /**
+     * Why the session waits, when it does
+     */
+    reason?: string;
+    limits: TranscriptionLimits;
+    allowance: ManualTestAllowance;
+    createdAt: string;
+};
+
+export type TranscriptionLane = {
+    /**
+     * The lane; live messages name it in target
+     */
+    target: 'A' | 'B' | 'C';
+    kind: 'checkpoint' | 'model' | 'base_model';
+    /**
+     * ckp_… or ver_…
+     */
+    id: string;
+    /**
+     * What the lane runs (the page hides it until the person picks, when blind)
+     */
+    label: string;
+    family: string;
+    profile: string;
+    latencyMs?: number;
+    chunkMs?: number;
+    language: string;
+    boost?: TranscriptionBoost;
+    /**
+     * Lanes with the same key share one model on the card
+     */
+    weightsKey: string;
+};
+
+export type TranscriptionBoost = {
+    /**
+     * lang/<locale>/boost/<file>.txt
+     */
+    list: string;
+    commit?: string;
+    weight: number;
+    terms: number;
+};
+
+export type TranscriptionLimits = {
+    /**
+     * Longest session once live (transcriptions.session_max_minutes, less when the allowance has less left)
+     */
+    sessionSeconds: number;
+    /**
+     * Closed after this long without audio, keepalive or ping
+     */
+    idleSeconds: number;
+    ticketSeconds: number;
+    /**
+     * Longest microphone frame (PCM16 at the capture rate)
+     */
+    frameMs: number;
+    maxFileSeconds: number;
+    maxFileBytes: number;
+    /**
+     * Largest message the socket accepts (send a file in chunks of this size or less)
+     */
+    maxMessageBytes: number;
+    /**
+     * Longest wait for a card before the session gives up
+     */
+    queueWaitSeconds: number;
+};
+
+/**
+ * The project's daily allowance of manual tests (budgets.manual_test_gpu_hours_per_project_per_day), metered as interactive lease wall time
+ */
+export type ManualTestAllowance = {
+    gpuHoursPerDay: number;
+    usedGpuHours: number;
+    remainingGpuHours: number;
+};
+
+/**
+ * Client → server text frames: start first, then fileEnd, finalize, keepalive, ping and end in any order; audio in binary frames
+ */
+export type LiveClientMessage = ({
+    type: 'start';
+} & LiveStart) | ({
+    type: 'fileEnd';
+} & LiveFileEnd) | ({
+    type: 'finalize';
+} & LiveFinalize) | ({
+    type: 'keepalive';
+} & LiveKeepalive) | ({
+    type: 'ping';
+} & LivePing) | ({
+    type: 'end';
+} & LiveEnd);
+
+/**
+ * The first message: what the audio is. Telephony, pace and targets were fixed by transcriptions.new
+ */
+export type LiveStart = {
+    type: 'start';
+    input: LiveInput;
+};
+
+export type LiveInput = {
+    kind: 'microphone' | 'file' | 'span';
+    /**
+     * microphone: the capture rate (the AudioContext's rate; no resampling in the browser)
+     */
+    sampleRate?: number;
+    /**
+     * microphone: the frame length the page sends (≤ limits.frameMs)
+     */
+    frameMs?: number;
+    /**
+     * microphone: the track's getSettings() (echo cancellation, noise suppression, auto gain, channel count, device)
+     */
+    settings?: {
+        [key: string]: unknown;
+    };
+    /**
+     * microphone: echo cancellation, noise suppression and auto gain were asked off
+     */
+    raw?: boolean;
+    fileName?: string;
+    /**
+     * file: the size the page will send
+     */
+    fileBytes?: number;
+};
+
+/**
+ * file: every byte was sent; the worker decodes the file (ffmpeg) and streams it at the session's pace
+ */
+export type LiveFileEnd = {
+    type: 'fileEnd';
+};
+
+/**
+ * A segment boundary: pad the right context with silence, force end of utterance, emit the finals; the next audio opens a new decoder stream (fresh encoder cache)
+ */
+export type LiveFinalize = {
+    type: 'finalize';
+};
+
+/**
+ * Keeps the session open without audio; the worker answers pong (source worker), behind any audio already sent
+ */
+export type LiveKeepalive = {
+    type: 'keepalive';
+    /**
+     * The client's clock, echoed in pong
+     */
+    t?: number;
+};
+
+/**
+ * Answered by the relay itself (pong, source relay): the control plane hop alone
+ */
+export type LivePing = {
+    type: 'ping';
+    /**
+     * The client's clock, echoed in pong
+     */
+    t?: number;
+};
+
+/**
+ * Flush every target, send summary, close with 1000
+ */
+export type LiveEnd = {
+    type: 'end';
+};
+
+/**
+ * Server → client text frames. partial replaces the segment's previous partial; final never changes; every result states the audio time it covers (audioEnd, seconds of session audio)
+ */
+export type LiveServerMessage = ({
+    type: 'waiting';
+} & LiveWaiting) | ({
+    type: 'started';
+} & LiveStarted) | ({
+    type: 'partial';
+} & LivePartial) | ({
+    type: 'final';
+} & LiveFinal) | ({
+    type: 'stats';
+} & LiveStats) | ({
+    type: 'pong';
+} & LivePong) | ({
+    type: 'error';
+} & LiveError) | ({
+    type: 'summary';
+} & LiveSummary);
+
+/**
+ * From the relay until started: the job waits for a card (queued, with its place and why) or the worker loads the targets (loading)
+ */
+export type LiveWaiting = {
+    type: 'waiting';
+    state: 'queued' | 'loading';
+    /**
+     * queued: place among the waiting interactive jobs (1 = next)
+     */
+    position?: number;
+    /**
+     * queued: why no card takes it yet
+     */
+    reason?: string;
+    reservationMb?: number;
+    waitedS?: number;
+};
+
+/**
+ * Every target is loaded and the decoder takes audio: the effective configuration per target
+ */
+export type LiveStarted = {
+    type: 'started';
+    targets: Array<LiveStartedTarget>;
+    /**
+     * The rate the worker resamples from (the start message's, or the file's)
+     */
+    captureRate?: number;
+    /**
+     * streaming polyphase (scipy.signal.resample_poly), the import and training resampler
+     */
+    resampler: string;
+    telephony?: LiveTelephony;
+    pace?: 'realtime' | 'fast';
+    input?: LiveInput;
+    /**
+     * file and span: the audio's duration
+     */
+    durationS?: number;
+};
+
+export type LiveStartedTarget = {
+    target: 'A' | 'B' | 'C';
+    profile: string;
+    chunkMs: number;
+    language: string;
+    /**
+     * Seconds the target's model took to load (shared weights load once)
+     */
+    loadS: number;
+    /**
+     * The decoder, as in an eval's decoding (same words as an eval of the same transcribe kind)
+     */
+    decoder?: string;
+    boost?: {
+        terms?: number;
+        weight?: number;
+    };
+};
+
+export type LiveTelephony = {
+    /**
+     * 16k → 8k (polyphase) → codec → 16k (polyphase)
+     */
+    chain: string;
+    codec: 'ulaw' | 'alaw' | 'none';
+    sampleRate: number;
+};
+
+export type LivePartial = {
+    type: 'partial';
+    target: 'A' | 'B' | 'C';
+    /**
+     * The segment it belongs to (a final closes it)
+     */
+    segment: number;
+    /**
+     * Per target, over partials and finals
+     */
+    seq: number;
+    text: string;
+    /**
+     * Seconds of session audio the partial covers
+     */
+    audioEnd: number;
+};
+
+export type LiveFinal = {
+    type: 'final';
+    target: 'A' | 'B' | 'C';
+    segment: number;
+    seq: number;
+    /**
+     * The segment's transcript (not the words joined: a word segmenter may split a word)
+     */
+    text: string;
+    words: Array<LiveWord>;
+    /**
+     * eou: the model's end of utterance; finalize: the client's; end: the session's
+     */
+    endpoint: 'eou' | 'finalize' | 'end';
+    audioEnd: number;
+    /**
+     * false: the text continues the previous final's last word (an end of utterance inside a word) — join without a space
+     */
+    space: boolean;
+};
+
+export type LiveWord = {
+    word: string;
+    /**
+     * Seconds of session audio (absent when the decoder gave no timing)
+     */
+    start?: number;
+    end?: number;
+    confidence?: number;
+};
+
+export type LiveStats = {
+    type: 'stats';
+    source: 'worker' | 'relay';
+    /**
+     * worker: decode time over audio time so far, every target together
+     */
+    rtf?: number;
+    /**
+     * worker: seconds of audio decoded
+     */
+    audioS?: number;
+    /**
+     * relay: messages waiting for the worker
+     */
+    queued?: number;
+    /**
+     * relay: forwarding time client → worker, µs
+     */
+    upP50Us?: number;
+    upP95Us?: number;
+    /**
+     * relay: forwarding time worker → client, µs
+     */
+    downP50Us?: number;
+    downP95Us?: number;
+    upN?: number;
+    downN?: number;
+};
+
+export type LivePong = {
+    type: 'pong';
+    source: 'relay' | 'worker';
+    t?: number;
+};
+
+export type LiveError = {
+    type: 'error';
+    problem: Problem;
+    /**
+     * The session closes after it
+     */
+    fatal: boolean;
+};
+
+/**
+ * The session's totals, last; the socket then closes with 1000. Nothing of it is stored
+ */
+export type LiveSummary = {
+    type: 'summary';
+    audioS: number;
+    rtf: number;
+    targets: {
+        [key: string]: LiveTargetSummary;
+    };
+    /**
+     * Peak memory of the job
+     */
+    gpu?: {
+        [key: string]: unknown;
+    };
+    load?: {
+        [key: string]: unknown;
+    };
+    frameMsP50?: number;
+    frameMsP95?: number;
+};
+
+export type LiveTargetSummary = {
+    profile?: string;
+    steps?: number;
+    stepMsP50?: number;
+    stepMsP95?: number;
+    stepMsMax?: number;
+    finals?: number;
 };
 
 export type ExperimentNew = {
@@ -13875,6 +14411,122 @@ export type WordsGetResponses = {
 };
 
 export type WordsGetResponse = WordsGetResponses[keyof WordsGetResponses];
+
+export type TranscriptionsNewData = {
+    body: TranscriptionNew;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/projects/{p}/transcriptions';
+};
+
+export type TranscriptionsNewErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type TranscriptionsNewError = TranscriptionsNewErrors[keyof TranscriptionsNewErrors];
+
+export type TranscriptionsNewResponses = {
+    /**
+     * ?dryRun=true: the session it would open (no ticket, nothing queued)
+     */
+    200: TranscriptionSession;
+    /**
+     * The session, waiting for its socket
+     */
+    201: TranscriptionSession;
+};
+
+export type TranscriptionsNewResponse = TranscriptionsNewResponses[keyof TranscriptionsNewResponses];
+
+export type StreamConnectData = {
+    body?: never;
+    path: {
+        /**
+         * The session (trs_…)
+         */
+        id: string;
+    };
+    query: {
+        /**
+         * The single-use ticket transcriptions.new answered
+         */
+        ticket: string;
+    };
+    url: '/transcriptions/{id}/stream';
+};
+
+export type StreamConnectErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type StreamConnectError = StreamConnectErrors[keyof StreamConnectErrors];
+
+export type StreamConnectResponses = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type StreamConnectResponse = StreamConnectResponses[keyof StreamConnectResponses];
+
+export type WorkerLiveConnectData = {
+    body?: never;
+    headers?: {
+        /**
+         * The lease's live token (CADENCE_LIVE_TOKEN)
+         */
+        'Cadence-Live-Token'?: string;
+    };
+    path: {
+        /**
+         * The interactive job the worker leased (job_…)
+         */
+        jobId: string;
+    };
+    query?: never;
+    url: '/worker-live/{jobId}';
+};
+
+export type WorkerLiveConnectErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type WorkerLiveConnectError = WorkerLiveConnectErrors[keyof WorkerLiveConnectErrors];
+
+export type WorkerLiveConnectResponses = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type WorkerLiveConnectResponse = WorkerLiveConnectResponses[keyof WorkerLiveConnectResponses];
 
 export type MountsListData = {
     body?: never;

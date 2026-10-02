@@ -314,7 +314,8 @@ func TestMediaOperationsExempt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := map[string]bool{"audio.get": true, "audio.sign": true, "peaks.get": true, "spectrogram.get": true, "words.get": true}
+	want := map[string]bool{"audio.get": true, "audio.sign": true, "peaks.get": true, "spectrogram.get": true, "words.get": true,
+		"transcriptions.new": true, "stream.connect": true}
 	for _, o := range c.Ops {
 		if !hasTag(o, "media") || !want[o.ID] {
 			continue

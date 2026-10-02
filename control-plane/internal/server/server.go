@@ -49,6 +49,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/secrets"
 	"github.com/usunrise88/cadence/control-plane/internal/sessions"
 	"github.com/usunrise88/cadence/control-plane/internal/steps"
+	"github.com/usunrise88/cadence/control-plane/internal/transcriptions"
 	"github.com/usunrise88/cadence/control-plane/internal/webui"
 	"github.com/usunrise88/cadence/control-plane/internal/workers"
 	"github.com/usunrise88/cadence/control-plane/templates"
@@ -115,6 +116,9 @@ type Config struct {
 	// Scorers finds a locale's scoring normalizer for the search index and its queries (language packs, R21); nil
 	// keeps the index's own folding.
 	Scorers *langpacks.Scorers
+	// AllowedOrigins are the origins besides the server's own host that may open the live transcription socket
+	// (CADENCE_ALLOWED_ORIGINS; phase 3 · stream T).
+	AllowedOrigins []string
 }
 
 // Server implements api.StrictServerInterface. Planned operations fall through to api.Planned (501).
@@ -141,6 +145,8 @@ type Server struct {
 	mediaLinks *media.Signer
 	// experiments group runs and drive sweeps (phase 3 · stream X).
 	experiments *experiments.Service
+	// transcriptions are manual tests and the live channel's relay (phase 3 · stream T).
+	transcriptions *transcriptions.Service
 }
 
 var _ api.StrictServerInterface = (*Server)(nil)
@@ -196,6 +202,7 @@ func New(c Config) (*Server, error) {
 	s.media, s.mediaLinks = s.newMedia()
 	s.experiments = s.newExperimentsService()
 	s.experiments.Install() // a run that ends starts its sweep's next run
+	s.transcriptions = s.newTranscriptions()
 	window := time.Duration(s.defaultsDoc().Drafts.PresenceSeconds.Value) * time.Second
 	s.drafts = drafts.NewStore(time.Now, window)
 	s.mixes = mixes.NewService(s.drafts, s.defaultsDoc)
@@ -237,7 +244,10 @@ func New(c Config) (*Server, error) {
 }
 
 // RegisterJobs registers the pipeline engine's step job kind and sweep; call it before the job service starts.
-func (s *Server) RegisterJobs(j *jobs.Service) { s.Pipelines.Register(j) }
+func (s *Server) RegisterJobs(j *jobs.Service) {
+	s.Pipelines.Register(j)
+	s.transcriptions.Register(j) // live transcription sessions (phase 3 · stream T)
+}
 
 // Handler is the whole HTTP surface: /api (the contract), /mcp (the same operations as MCP tools), /git (the
 // project repositories over smart HTTP), /healthz, /metrics, and the SPA for every other path.

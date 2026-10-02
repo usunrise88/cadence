@@ -387,7 +387,7 @@ compute:
           card_class: blackwell-48gb
           memory_gb: 48
           memory_cap_gb: 22
-          allowed_job_kinds: [training, eval, shadow, export, data]
+          allowed_job_kinds: [training, eval, shadow, export, data, interactive]
 
 # Imports (docs/spec/08-resolutions.md R17, R18): what the dataset_import step kind starts from.
 data:
@@ -514,6 +514,88 @@ media:
     description: Longest span audio.get converts in one response (a stored 16 kHz WAV asked whole is served as is, at any length)
     source: Cadence recommendation (a 60-minute 16 kHz mono span is 115 MB of PCM)
     range: { min: 60, max: 14400 }
+
+# Manual transcription tests and the live channel (phase 3, stream T; docs/spec/06-platform.md "Media", R47–R50; the
+# numbers come from spike A5, docs/spikes/A5-live-transcription.md "Result").
+transcriptions:
+  ticket_ttl_s:
+    value: 60
+    unit: s
+    description: How long the single-use ticket transcriptions.new answers may open the live socket
+    source: docs/spec/08-resolutions.md R48 (single-use ticket valid 60 s)
+    range: { min: 10, max: 300 }
+  session_max_minutes:
+    value: 15
+    unit: min
+    description: Longest live session; the session also ends earlier when the project's manual-test allowance runs out
+    source: docs/spec/08-resolutions.md R48 (limits in v1)
+    range: { min: 1, max: 60 }
+  idle_minutes:
+    value: 5
+    unit: min
+    description: A live session without audio, keepalive or ping for this long is closed
+    source: docs/spec/08-resolutions.md R48 (limits in v1)
+    range: { min: 1, max: 30 }
+  queue_wait_minutes:
+    value: 15
+    unit: min
+    description: Longest a session waits in the queue (or for its worker to load) before it gives up; the page shows its place meanwhile
+    source: Cadence recommendation (docs/spec/08-resolutions.md R49, the session waits and reports its place)
+    range: { min: 1, max: 120 }
+  frame_ms:
+    value: 20
+    unit: ms
+    description: Longest microphone frame the page sends (PCM16 at the capture rate); 80 ms frames with a 48 kHz microphone add one frame of lag at times
+    source: docs/spikes/A5-live-transcription.md "Result" (surprise 6, proposal 6)
+    range: { min: 10, max: 80 }
+  max_file_minutes:
+    value: 15
+    unit: min
+    description: Longest audio file a session accepts (the worker refuses a longer one after decoding it)
+    source: docs/spec/08-resolutions.md R47 (files capped at 15 minutes of audio)
+    range: { min: 1, max: 60 }
+  max_file_mb:
+    value: 300
+    unit: MB
+    description: Largest file a session accepts, counted by the relay as the bytes arrive (15 minutes of 48 kHz stereo 24-bit WAV is 260 MB)
+    source: Cadence recommendation
+    range: { min: 1, max: 2048 }
+  max_message_kb:
+    value: 64
+    unit: KB
+    description: Largest message the live socket accepts from the browser; a file is sent in chunks of this size or less
+    source: docs/spikes/A5-live-transcription.md (the relay's frame limit)
+    range: { min: 16, max: 1024 }
+  relay_queue_messages:
+    value: 256
+    unit: messages
+    description: Messages the relay holds for the worker before it stops reading from the browser (5 s of 20 ms frames)
+    source: docs/spikes/A5-live-transcription.md (bounded upstream queue = backpressure)
+    range: { min: 16, max: 4096 }
+  backpressure_wait_s:
+    value: 5
+    unit: s
+    description: How long the relay waits for room in a full queue before it closes the socket with 1013 (the worker fell behind)
+    source: Cadence recommendation
+    range: { min: 1, max: 60 }
+  interactive_job_priority:
+    value: 1000
+    unit: priority
+    description: Job priority of an interactive job; interactive jobs also start before every other kind of job, whatever the project's priority
+    source: docs/spec/08-resolutions.md R49 (highest queue priority)
+    range: { min: 0, max: 100000 }
+  worker_dial_timeout_s:
+    value: 120
+    unit: s
+    description: How long the relay keeps a worker's live socket that no browser joined (and how long a leased job may take to dial)
+    source: Cadence recommendation (a model loads in about 22 s, spike A5)
+    range: { min: 10, max: 900 }
+  scratch_sweep_minutes:
+    value: 60
+    unit: min
+    description: A worker removes a lease's scratch directory (a live session's uploaded file included) left by a crashed process after this long
+    source: docs/spec/08-resolutions.md R47 (a sweep removes what a crashed session left within an hour)
+    range: { min: 5, max: 1440 }
 
 # Client view defaults (docs/spec/10-ui-shell.md "Audio view and charts"; R51, R52; spike S5).
 views:
@@ -840,6 +922,12 @@ packs:
       description: Weight of a boost list's phrase-boosting score in decoding (NeMo's boosting_tree_alpha) when the list names none; 0 turns boosting off. Above about 0.7 listed words start replacing others (over-boosting)
       source: "Cadence recommendation: FLEURS he_il test, 120 utterances, base model at 160 ms, 40 missed words boosted — recall 0.11 → 0.29 / 0.36 / 0.50 / 0.52 / 0.54 and WER 0.466 → 0.462 / 0.460 / 0.461 / 0.490 / 0.623 at weight 0.3 / 0.5 / 0.7 / 1 / 2 (staging card, 2026-10-02)"
       range: { min: 0, max: 10 }
+    live_stop_history_eou_ms:
+      value: 800
+      unit: ms
+      description: Trailing silence (in the decoder's emissions) after which NeMo's streaming pipeline closes a segment with an automatic end of utterance; live sessions and nemotron_transcribe@3 use the same value, so their words agree
+      source: "docs/spikes/A5-live-transcription.md \"Result\" (800 ms: the automatic endpoint lands 1.5 s after the utterance at 160 ms, 2.0 s at 1120 ms)"
+      range: { min: 80, max: 10000 }
     # frame_vad (utterance ends for latency to final, R54; phase 3 stream R).
     vad_model:
       value: nvidia/Frame_VAD_Multilingual_MarbleNet_v2.0

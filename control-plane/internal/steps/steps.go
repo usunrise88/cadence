@@ -25,12 +25,21 @@ import (
 // JobKind is the River job kind of a step that runs on a worker.
 const JobKind = "step"
 
+// LiveJobKind is the River job kind of a live transcription session (internal/transcriptions): like a step job it is
+// queued in step_jobs and leased by a worker, but no pipeline run owns it.
+const LiveJobKind = "live"
+
 // Job kinds of compute cards (compute.allowed_job_kinds) a step can need.
 const (
 	JobTraining = "training"
 	JobEval     = "eval"
 	JobExport   = "export"
 	JobData     = "data"
+	// JobInteractive is a live transcription session (R49): beside training under the card's cap, never beside a
+	// benchmark, before every other kind in the queue.
+	JobInteractive = "interactive"
+	// JobBenchmark is a latency benchmark (R30, phase 5); named here because interactive jobs never share its card.
+	JobBenchmark = "benchmark"
 )
 
 // Outcome states.
@@ -72,7 +81,7 @@ type Resources struct {
 	GPUs     int     `json:"gpus,omitempty"` // 1 in v1 (R44)
 	MemoryGB float64 `json:"memoryGb,omitempty"`
 	DiskGB   float64 `json:"diskGb,omitempty"`
-	JobKind  string  `json:"jobKind,omitempty"` // training | eval | export | data
+	JobKind  string  `json:"jobKind,omitempty"` // training | eval | export | data | interactive
 }
 
 // Overrides change how one attempt runs.

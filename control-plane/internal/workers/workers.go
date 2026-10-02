@@ -74,7 +74,16 @@ type Service struct {
 	onLeased func(ctx context.Context, tx pgx.Tx, jobID string) ([]events.Draft, error)
 	// onPublished records an intermediate output (workerOutputs.new) in its transaction.
 	onPublished PublishHook
+	// onGranted adds environment to a lease in the transaction that grants it (a live session's token).
+	onGranted GrantHook
 }
+
+// GrantHook runs in the transaction that grants lease leaseID on job jobID; the variables it returns join the lease's
+// secret environment (the step process only: never stored, logged or put in an event).
+type GrantHook func(ctx context.Context, tx pgx.Tx, leaseID, jobID string, spec steps.Spec) (map[string]string, error)
+
+// OnGranted sets fn to run when a lease is granted (internal/transcriptions mints a live session's token there).
+func (s *Service) OnGranted(fn GrantHook) { s.onGranted = fn }
 
 // OnLeased sets fn to run in the transaction that grants a lease; its events are emitted with the grant. The
 // pipeline engine uses it to move the step from queued to running (pipelines.Engine.Leased).

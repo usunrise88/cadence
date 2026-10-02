@@ -3780,6 +3780,86 @@ paths:
           content: { application/json: { schema: { $ref: "#/components/schemas/UtteranceWords" } } }
         default: { $ref: "#/components/responses/Problem" }
 
+  # ---------------------------------------------------------------- transcriptions and the live channel (phase 3 · stream T) — add paths below this line
+  # Tag media (R47, R48, 06 "Media"): exempt from the verb vocabulary and never MCP tools; people only (an agent
+  # session token is refused). transcriptions.new is the only operation on transcriptions: there is nothing to get or
+  # list, because nothing outlives the session but the interactive job's record (who, when, targets, GPU time).
+  /projects/{p}/transcriptions:
+    x-cadence: { entity: transcriptions }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    post:
+      operationId: transcriptions.new
+      summary: Open a manual transcription test of one to three models on a file, the microphone or an utterance span; answers the live socket's URL and a single-use ticket
+      tags: [media]
+      description: >
+        A manual test (R47): one to three targets (a checkpoint, a model version or a base model version, each with
+        its latency profile, language and optional boost list) receive the same audio and stream partial and final
+        words back over the live channel (stream.connect, R48). The answer carries the session (trs_…), the socket URL
+        and a single-use ticket valid transcriptions.ticket_ttl_s (60 s); the socket also checks Origin. The session is
+        an interactive job (R49): it reserves the family's interactive memory on a card beside training under the
+        card's cap, never beside a benchmark, at the highest queue priority, and counts against the project's daily
+        budgets.manual_test_gpu_hours_per_project_per_day (lease wall time). One open session per person, at most
+        transcriptions.session_max_minutes long, closed after transcriptions.idle_minutes without audio or keepalive.
+        Nothing else is stored: no audio, text or metric. ?dryRun=true checks the targets and the allowance and
+        answers the session without opening it (no ticket). Agent session tokens are refused.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/TranscriptionNew" } } }
+      responses:
+        "200":
+          description: "?dryRun=true: the session it would open (no ticket, nothing queued)"
+          content: { application/json: { schema: { $ref: "#/components/schemas/TranscriptionSession" } } }
+        "201":
+          description: The session, waiting for its socket
+          content: { application/json: { schema: { $ref: "#/components/schemas/TranscriptionSession" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /transcriptions/{id}/stream:
+    x-cadence: { entity: stream, kind: transcription_stream, singleton: true }
+    parameters:
+      - { name: id, in: path, required: true, description: "The session (trs_…)", schema: { type: string, pattern: "^trs_[0-9a-f-]{36}$" } }
+    get:
+      operationId: stream.connect
+      summary: The live channel of a transcription session — a WebSocket opened with the session's single-use ticket from a same-origin page
+      tags: [media]
+      description: >
+        Upgrades to a WebSocket (no WebRTC, R48). The ticket from transcriptions.new is single-use and valid 60 s; the
+        Origin header must name this server (or one of CADENCE_ALLOWED_ORIGINS); the signed-in user must be the
+        session's. Client → server: text frames are LiveClientMessage (start first, then fileEnd, finalize, keepalive,
+        ping, end) and binary frames carry audio — PCM16 little-endian mono at the capture rate in frames of at most
+        transcriptions.frame_ms (20 ms) for the microphone, or a file's bytes. Server → client: LiveServerMessage
+        (waiting while the job is queued or loading, started, partial, final, stats, pong, error, summary). The socket
+        closes with 1000 after summary; 4001 idle, 4002 session cap, 4003 the worker was lost, 4004 the job could not
+        start, 1013 backpressure (the worker fell behind), 1001 the control plane is stopping.
+      parameters:
+        - { name: ticket, in: query, required: true, description: "The single-use ticket transcriptions.new answered", schema: { type: string, minLength: 16, maxLength: 128 } }
+      responses:
+        "101": { description: "Switching Protocols: the live channel (LiveClientMessage up, LiveServerMessage down)" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /worker-live/{jobId}:
+    x-cadence: { entity: workerLive, kind: worker_live, singleton: true }
+    parameters:
+      - { name: jobId, in: path, required: true, description: "The interactive job the worker leased (job_…)", schema: { type: string, maxLength: 100 } }
+    get:
+      operationId: workerLive.connect
+      summary: A worker's live job dials out to its session (WebSocket) and receives the browser's messages unchanged
+      tags: [worker]
+      description: >
+        The pull model of R14 for the live channel: a worker running an interactive job (a family's live role kind)
+        loads every target, then dials this socket with the lease's live token (header Cadence-Live-Token, from the
+        lease's env CADENCE_LIVE_TOKEN) or its worker credential (Bearer cwk_…, the lease's host). The relay forwards
+        the browser's frames byte for byte (it reads only "type") and the worker's LiveServerMessage frames back. One
+        dial serves one session; a dial for a session that ended answers 409 lease-ended.
+      parameters:
+        - { name: Cadence-Live-Token, in: header, required: false, description: "The lease's live token (CADENCE_LIVE_TOKEN)", schema: { type: string, maxLength: 128 } }
+      responses:
+        "101": { description: "Switching Protocols: the session's messages (LiveClientMessage and audio down to the worker, LiveServerMessage up)" }
+        default: { $ref: "#/components/responses/Problem" }
+
   # ---------------------------------------------------------------- planned (later phases)
   /mounts:
     x-cadence: { entity: mounts, planned: 4 }
@@ -4486,7 +4566,7 @@ components:
 
     JobKind:
       type: string
-      enum: [training, eval, shadow, export, data]
+      enum: [training, eval, shadow, export, data, interactive]
     ComputeCard:
       type: object
       required: [index, name, cardClass, memoryGb, memoryCapGb, allowedJobKinds]
@@ -4658,6 +4738,7 @@ components:
           description: "Client view defaults, one section per view (views.audio: the audio view's budgets and spectrogram, R52)"
           additionalProperties: { $ref: "#/components/schemas/DefaultSection" }
         sweeps: { $ref: "#/components/schemas/DefaultSection", description: "Sweeps (phase 3): mode, run counts, the GPU-hour cap and the seed of a random draw" }
+        transcriptions: { $ref: "#/components/schemas/DefaultSection", description: "Manual transcription tests and the live channel (phase 3): ticket, session and idle limits, frame size, file caps, the relay's queue and the interactive job's priority" }
         estimates:
           type: object
           required: [bytes_per_audio_hour, training]
@@ -6195,7 +6276,7 @@ components:
           items: { type: string }
           description: "Outputs of produces a successful step may leave unwritten (a train step's final training state); no pipeline may wire them into another step"
         resources: { $ref: "#/components/schemas/StepResources" }
-        role: { type: string, maxLength: 40, description: "The model-family role this kind fills (calibrate, train, average, transcribe, export, parity, materialize), empty for neutral kinds" }
+        role: { type: string, maxLength: 40, description: "The model-family role this kind fills (calibrate, train, average, transcribe, export, parity, materialize, live), empty for neutral kinds" }
         neutral: { type: boolean, description: "Runtime-neutral core kind shipped in every runtime image" }
         secrets: { type: array, items: { type: string }, description: Secret names the step needs as environment variables }
         help: { type: string, description: "Help slug (steps.<name>)" }
@@ -6206,7 +6287,7 @@ components:
         gpus: { type: integer, minimum: 0, maximum: 1, description: "Cards (1 in v1, R44)" }
         memoryGb: { type: number, minimum: 0, description: Card memory the step needs; a training step takes the card's whole cap }
         diskGb: { type: number, minimum: 0 }
-        jobKind: { type: string, enum: [training, eval, export, data], description: "Which compute job kinds may take it" }
+        jobKind: { type: string, enum: [training, eval, export, data, interactive], description: "Which compute job kinds may take it (interactive: a live transcription session, R49)" }
     ModelFamilyDescriptor:
       type: object
       required: [name, version, framework, architecture, latencyProfiles, roles]
@@ -6235,8 +6316,15 @@ components:
           items: { $ref: "#/components/schemas/LatencyProfile" }
         roles:
           type: object
-          description: "Role → step kind (calibrate, train, average, transcribe, export, parity; materialize turns a base_model artifact into a checkpoint so evals can transcribe a base model)"
+          description: "Role → step kind (calibrate, train, average, transcribe, export, parity; materialize turns a base_model artifact into a checkpoint so evals can transcribe a base model; live serves transcription sessions, R48)"
           additionalProperties: { type: string }
+        interactive:
+          type: object
+          required: [memoryMb]
+          description: "The card memory a live transcription session of the family reserves (R49, phase 3 · stream T)"
+          properties:
+            memoryMb: { type: integer, minimum: 1, description: "One model loaded: steady memory plus the load peak and margin (Nemotron 0.6B: 6000, spike A5)" }
+            extraCheckpointMb: { type: integer, minimum: 0, description: "Each further distinct model of the session (targets of one model share its weights)" }
         defaultsSection: { type: string, description: "The defaults.yaml section of this family" }
         help: { type: string }
         skill: { type: string }
@@ -8368,6 +8456,336 @@ components:
         del: { type: integer }
         ins: { type: integer }
         refWords: { type: integer }
+
+    # ---------------------------------------------------------------- transcriptions and the live channel schemas (phase 3 · stream T) — add below
+    TranscriptionNew:
+      type: object
+      additionalProperties: false
+      required: [input, targets]
+      properties:
+        input: { $ref: "#/components/schemas/TranscriptionInput" }
+        targets:
+          type: array
+          minItems: 1
+          maxItems: 3
+          description: "One to three targets; they receive the same audio (lanes A, B, C in this order unless blind)"
+          items: { $ref: "#/components/schemas/TranscriptionTargetIn" }
+        telephony: { $ref: "#/components/schemas/TelephonySimulation" }
+        pace: { type: string, enum: [realtime, fast], default: realtime, description: "File and span inputs: play at real-time pace (latency shows) or as fast as the card allows" }
+        blind: { type: boolean, default: false, description: "Shuffle the lanes; the page leaves them unnamed until the person picks the better one (the pick is not recorded)" }
+    TranscriptionInput:
+      type: object
+      additionalProperties: false
+      required: [kind]
+      properties:
+        kind: { type: string, enum: [microphone, file, span], description: "microphone (PCM16 frames from the browser), file (its bytes, decoded by the worker), or span (an utterance's audio read by the worker)" }
+        utteranceId: { type: string, maxLength: 100, description: "kind span: the utterance (utt_… or its audio's b3: hash)" }
+        start: { type: number, format: double, minimum: 0, description: "kind span: start in seconds (default 0)" }
+        end: { type: number, format: double, minimum: 0, description: "kind span: end in seconds (default the end of the audio)" }
+        channel: { type: integer, minimum: 0, maximum: 15, description: "kind span: the channel (default 0)" }
+    TranscriptionTargetIn:
+      type: object
+      additionalProperties: false
+      description: "Exactly one of checkpointId, modelVersionId and baseModelVersionId"
+      properties:
+        checkpointId: { type: string, maxLength: 100, description: "A checkpoint of the project (ckp_…)" }
+        modelVersionId: { type: string, maxLength: 200, description: "A model version (ver_…, model/<name>, or @alias)" }
+        baseModelVersionId: { type: string, maxLength: 200, description: "A base model version (ver_…, base-model/<name>, or @alias)" }
+        profile: { type: string, maxLength: 40, description: "Latency profile (default: eval.primary_profile when the family declares it, else its first streaming profile)" }
+        language: { type: string, maxLength: 35, description: "BCP 47 language the model decodes in (default: the project's first locale)" }
+        boost: { type: string, maxLength: 300, description: "none (default), or a boost list of the project's language pack: lang/<locale>/boost/<file>.txt, optionally @<commit> (default main)" }
+        boostWeight: { type: number, format: double, minimum: 0, maximum: 100, description: "Overrides the list's '# weight:' header" }
+    TelephonySimulation:
+      type: object
+      additionalProperties: false
+      description: "Phone-line simulation (R50): down to sampleRate, through the codec, back up to 16 kHz with the training resampler (streaming polyphase)"
+      properties:
+        codec: { type: string, enum: [ulaw, alaw, none], default: ulaw, description: "G.711 μ-law (default), A-law, or band-limit only" }
+        sampleRate: { type: integer, enum: [8000], default: 8000 }
+    TranscriptionSession:
+      type: object
+      required: [id, projectId, state, input, targets, pace, blind, family, liveKind, reservationMb, limits, allowance, createdAt]
+      properties:
+        id: { type: string, description: "trs_…" }
+        projectId: { type: string }
+        jobId: { type: string, description: "The interactive job (job_…); absent in a dry run" }
+        state: { type: string, enum: [queued, loading, live, ended], description: "queued: waiting for room on a card; loading: leased, the worker loads the targets; live: the worker is on the socket; ended" }
+        streamUrl: { type: string, description: "The live channel, relative to the server (/api/transcriptions/{id}/stream?ticket=…); absent in a dry run" }
+        ticket: { type: string, description: "Single-use; absent in a dry run" }
+        ticketExpiresAt: { type: string, format: date-time }
+        input: { $ref: "#/components/schemas/TranscriptionInput" }
+        targets: { type: array, items: { $ref: "#/components/schemas/TranscriptionLane" } }
+        telephony: { $ref: "#/components/schemas/TelephonySimulation" }
+        pace: { type: string, enum: [realtime, fast] }
+        blind: { type: boolean }
+        family: { type: string, description: "The targets' model family" }
+        liveKind: { type: string, description: "The family's live role step kind (kind@version) that serves the session" }
+        reservationMb: { type: integer, description: "Card memory the interactive job reserves: the family's interactive.memoryMb plus extraCheckpointMb per further distinct model" }
+        position: { type: integer, description: "Place among the waiting interactive jobs (1 = next)" }
+        reason: { type: string, description: "Why the session waits, when it does" }
+        limits: { $ref: "#/components/schemas/TranscriptionLimits" }
+        allowance: { $ref: "#/components/schemas/ManualTestAllowance" }
+        createdAt: { type: string, format: date-time }
+    TranscriptionLane:
+      type: object
+      required: [target, kind, id, label, family, profile, language, weightsKey]
+      properties:
+        target: { type: string, enum: [A, B, C], description: "The lane; live messages name it in target" }
+        kind: { type: string, enum: [checkpoint, model, base_model] }
+        id: { type: string, description: "ckp_… or ver_…" }
+        label: { type: string, description: "What the lane runs (the page hides it until the person picks, when blind)" }
+        family: { type: string }
+        profile: { type: string }
+        latencyMs: { type: integer }
+        chunkMs: { type: integer }
+        language: { type: string }
+        boost: { $ref: "#/components/schemas/TranscriptionBoost" }
+        weightsKey: { type: string, description: "Lanes with the same key share one model on the card" }
+    TranscriptionBoost:
+      type: object
+      required: [list, weight, terms]
+      properties:
+        list: { type: string, description: "lang/<locale>/boost/<file>.txt" }
+        commit: { type: string }
+        weight: { type: number, format: double }
+        terms: { type: integer }
+    TranscriptionLimits:
+      type: object
+      required: [sessionSeconds, idleSeconds, ticketSeconds, frameMs, maxFileSeconds, maxFileBytes, maxMessageBytes, queueWaitSeconds]
+      properties:
+        sessionSeconds: { type: integer, description: "Longest session once live (transcriptions.session_max_minutes, less when the allowance has less left)" }
+        idleSeconds: { type: integer, description: "Closed after this long without audio, keepalive or ping" }
+        ticketSeconds: { type: integer }
+        frameMs: { type: integer, description: "Longest microphone frame (PCM16 at the capture rate)" }
+        maxFileSeconds: { type: integer }
+        maxFileBytes: { type: integer }
+        maxMessageBytes: { type: integer, description: "Largest message the socket accepts (send a file in chunks of this size or less)" }
+        queueWaitSeconds: { type: integer, description: "Longest wait for a card before the session gives up" }
+    ManualTestAllowance:
+      type: object
+      required: [gpuHoursPerDay, usedGpuHours, remainingGpuHours]
+      description: "The project's daily allowance of manual tests (budgets.manual_test_gpu_hours_per_project_per_day), metered as interactive lease wall time"
+      properties:
+        gpuHoursPerDay: { type: number, format: double }
+        usedGpuHours: { type: number, format: double }
+        remainingGpuHours: { type: number, format: double }
+
+    # The live channel (R48). Text frames are JSON discriminated by type; audio goes in binary frames.
+    LiveClientMessage:
+      description: "Client → server text frames: start first, then fileEnd, finalize, keepalive, ping and end in any order; audio in binary frames"
+      oneOf:
+        - $ref: "#/components/schemas/LiveStart"
+        - $ref: "#/components/schemas/LiveFileEnd"
+        - $ref: "#/components/schemas/LiveFinalize"
+        - $ref: "#/components/schemas/LiveKeepalive"
+        - $ref: "#/components/schemas/LivePing"
+        - $ref: "#/components/schemas/LiveEnd"
+      discriminator:
+        propertyName: type
+        mapping:
+          start: "#/components/schemas/LiveStart"
+          fileEnd: "#/components/schemas/LiveFileEnd"
+          finalize: "#/components/schemas/LiveFinalize"
+          keepalive: "#/components/schemas/LiveKeepalive"
+          ping: "#/components/schemas/LivePing"
+          end: "#/components/schemas/LiveEnd"
+    LiveStart:
+      type: object
+      required: [type, input]
+      description: "The first message: what the audio is. Telephony, pace and targets were fixed by transcriptions.new"
+      properties:
+        type: { type: string, enum: [start] }
+        input: { $ref: "#/components/schemas/LiveInput" }
+    LiveInput:
+      type: object
+      required: [kind]
+      properties:
+        kind: { type: string, enum: [microphone, file, span] }
+        sampleRate: { type: integer, minimum: 8000, maximum: 192000, description: "microphone: the capture rate (the AudioContext's rate; no resampling in the browser)" }
+        frameMs: { type: number, description: "microphone: the frame length the page sends (≤ limits.frameMs)" }
+        settings: { type: object, additionalProperties: true, description: "microphone: the track's getSettings() (echo cancellation, noise suppression, auto gain, channel count, device)" }
+        raw: { type: boolean, description: "microphone: echo cancellation, noise suppression and auto gain were asked off" }
+        fileName: { type: string, maxLength: 255 }
+        fileBytes: { type: integer, minimum: 0, description: "file: the size the page will send" }
+    LiveFileEnd:
+      type: object
+      required: [type]
+      description: "file: every byte was sent; the worker decodes the file (ffmpeg) and streams it at the session's pace"
+      properties:
+        type: { type: string, enum: [fileEnd] }
+    LiveFinalize:
+      type: object
+      required: [type]
+      description: "A segment boundary: pad the right context with silence, force end of utterance, emit the finals; the next audio opens a new decoder stream (fresh encoder cache)"
+      properties:
+        type: { type: string, enum: [finalize] }
+    LiveKeepalive:
+      type: object
+      required: [type]
+      description: "Keeps the session open without audio; the worker answers pong (source worker), behind any audio already sent"
+      properties:
+        type: { type: string, enum: [keepalive] }
+        t: { type: number, description: "The client's clock, echoed in pong" }
+    LivePing:
+      type: object
+      required: [type]
+      description: "Answered by the relay itself (pong, source relay): the control plane hop alone"
+      properties:
+        type: { type: string, enum: [ping] }
+        t: { type: number, description: "The client's clock, echoed in pong" }
+    LiveEnd:
+      type: object
+      required: [type]
+      description: "Flush every target, send summary, close with 1000"
+      properties:
+        type: { type: string, enum: [end] }
+
+    LiveServerMessage:
+      description: "Server → client text frames. partial replaces the segment's previous partial; final never changes; every result states the audio time it covers (audioEnd, seconds of session audio)"
+      oneOf:
+        - $ref: "#/components/schemas/LiveWaiting"
+        - $ref: "#/components/schemas/LiveStarted"
+        - $ref: "#/components/schemas/LivePartial"
+        - $ref: "#/components/schemas/LiveFinal"
+        - $ref: "#/components/schemas/LiveStats"
+        - $ref: "#/components/schemas/LivePong"
+        - $ref: "#/components/schemas/LiveError"
+        - $ref: "#/components/schemas/LiveSummary"
+      discriminator:
+        propertyName: type
+        mapping:
+          waiting: "#/components/schemas/LiveWaiting"
+          started: "#/components/schemas/LiveStarted"
+          partial: "#/components/schemas/LivePartial"
+          final: "#/components/schemas/LiveFinal"
+          stats: "#/components/schemas/LiveStats"
+          pong: "#/components/schemas/LivePong"
+          error: "#/components/schemas/LiveError"
+          summary: "#/components/schemas/LiveSummary"
+    LiveWaiting:
+      type: object
+      required: [type, state]
+      description: "From the relay until started: the job waits for a card (queued, with its place and why) or the worker loads the targets (loading)"
+      properties:
+        type: { type: string, enum: [waiting] }
+        state: { type: string, enum: [queued, loading] }
+        position: { type: integer, description: "queued: place among the waiting interactive jobs (1 = next)" }
+        reason: { type: string, description: "queued: why no card takes it yet" }
+        reservationMb: { type: integer }
+        waitedS: { type: number }
+    LiveStarted:
+      type: object
+      required: [type, targets, resampler]
+      description: "Every target is loaded and the decoder takes audio: the effective configuration per target"
+      properties:
+        type: { type: string, enum: [started] }
+        targets: { type: array, items: { $ref: "#/components/schemas/LiveStartedTarget" } }
+        captureRate: { type: integer, description: "The rate the worker resamples from (the start message's, or the file's)" }
+        resampler: { type: string, description: "streaming polyphase (scipy.signal.resample_poly), the import and training resampler" }
+        telephony: { $ref: "#/components/schemas/LiveTelephony" }
+        pace: { type: string, enum: [realtime, fast] }
+        input: { $ref: "#/components/schemas/LiveInput" }
+        durationS: { type: number, description: "file and span: the audio's duration" }
+    LiveStartedTarget:
+      type: object
+      required: [target, profile, chunkMs, language, loadS]
+      properties:
+        target: { type: string, enum: [A, B, C] }
+        profile: { type: string }
+        chunkMs: { type: integer }
+        language: { type: string }
+        loadS: { type: number, description: "Seconds the target's model took to load (shared weights load once)" }
+        decoder: { type: string, description: "The decoder, as in an eval's decoding (same words as an eval of the same transcribe kind)" }
+        boost: { type: object, properties: { terms: { type: integer }, weight: { type: number } } }
+    LiveTelephony:
+      type: object
+      required: [chain, codec, sampleRate]
+      properties:
+        chain: { type: string, description: "16k → 8k (polyphase) → codec → 16k (polyphase)" }
+        codec: { type: string, enum: [ulaw, alaw, none] }
+        sampleRate: { type: integer }
+    LivePartial:
+      type: object
+      required: [type, target, segment, seq, text, audioEnd]
+      properties:
+        type: { type: string, enum: [partial] }
+        target: { type: string, enum: [A, B, C] }
+        segment: { type: integer, description: "The segment it belongs to (a final closes it)" }
+        seq: { type: integer, description: "Per target, over partials and finals" }
+        text: { type: string }
+        audioEnd: { type: number, description: "Seconds of session audio the partial covers" }
+    LiveFinal:
+      type: object
+      required: [type, target, segment, seq, text, words, endpoint, audioEnd, space]
+      properties:
+        type: { type: string, enum: [final] }
+        target: { type: string, enum: [A, B, C] }
+        segment: { type: integer }
+        seq: { type: integer }
+        text: { type: string, description: "The segment's transcript (not the words joined: a word segmenter may split a word)" }
+        words: { type: array, items: { $ref: "#/components/schemas/LiveWord" } }
+        endpoint: { type: string, enum: [eou, finalize, end], description: "eou: the model's end of utterance; finalize: the client's; end: the session's" }
+        audioEnd: { type: number }
+        space: { type: boolean, description: "false: the text continues the previous final's last word (an end of utterance inside a word) — join without a space" }
+    LiveWord:
+      type: object
+      required: [word]
+      properties:
+        word: { type: string }
+        start: { type: number, description: "Seconds of session audio (absent when the decoder gave no timing)" }
+        end: { type: number }
+        confidence: { type: number, minimum: 0, maximum: 1 }
+    LiveStats:
+      type: object
+      required: [type, source]
+      properties:
+        type: { type: string, enum: [stats] }
+        source: { type: string, enum: [worker, relay] }
+        rtf: { type: number, description: "worker: decode time over audio time so far, every target together" }
+        audioS: { type: number, description: "worker: seconds of audio decoded" }
+        queued: { type: integer, description: "relay: messages waiting for the worker" }
+        upP50Us: { type: number, description: "relay: forwarding time client → worker, µs" }
+        upP95Us: { type: number }
+        downP50Us: { type: number, description: "relay: forwarding time worker → client, µs" }
+        downP95Us: { type: number }
+        upN: { type: integer }
+        downN: { type: integer }
+    LivePong:
+      type: object
+      required: [type, source]
+      properties:
+        type: { type: string, enum: [pong] }
+        source: { type: string, enum: [relay, worker] }
+        t: { type: number }
+    LiveError:
+      type: object
+      required: [type, problem, fatal]
+      properties:
+        type: { type: string, enum: [error] }
+        problem: { $ref: "#/components/schemas/Problem" }
+        fatal: { type: boolean, description: "The session closes after it" }
+    LiveSummary:
+      type: object
+      required: [type, audioS, rtf, targets]
+      description: "The session's totals, last; the socket then closes with 1000. Nothing of it is stored"
+      properties:
+        type: { type: string, enum: [summary] }
+        audioS: { type: number }
+        rtf: { type: number }
+        targets: { type: object, additionalProperties: { $ref: "#/components/schemas/LiveTargetSummary" } }
+        gpu: { type: object, additionalProperties: true, description: "Peak memory of the job" }
+        load: { type: object, additionalProperties: true }
+        frameMsP50: { type: number }
+        frameMsP95: { type: number }
+    LiveTargetSummary:
+      type: object
+      properties:
+        profile: { type: string }
+        steps: { type: integer }
+        stepMsP50: { type: number }
+        stepMsP95: { type: number }
+        stepMsMax: { type: number }
+        finals: { type: integer }
 
     # ---------------------------------------------------------------- experiments and sweeps schemas (phase 3 · stream X) — add below
     ExperimentNew:

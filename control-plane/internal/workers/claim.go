@@ -178,6 +178,18 @@ func (s *Service) claimOnce(ctx context.Context, tx pgx.Tx, c Caller, in Claim, 
 				return nil, nil, err
 			}
 			g.Env = env
+			if s.onGranted != nil {
+				more, err := s.onGranted(ctx, tx, g.ID, cand.jobID, cand.spec)
+				if err != nil {
+					return nil, nil, fmt.Errorf("lease step job: %w", err)
+				}
+				for k, v := range more {
+					if g.Env == nil {
+						g.Env = map[string]string{}
+					}
+					g.Env[k] = v
+				}
+			}
 			return g, append(drafts, d...), nil
 		}
 		if len(cands) < claimPageSize {
@@ -221,29 +233,32 @@ func defaultProjectPriority() int { return defaults.Get().Budgets.QueuePriorityP
 
 // queueKey is a waiting job's place in start order, the keyset waiting pages by.
 type queueKey struct {
+	interactive     bool // interactive jobs (live sessions, R49) start before every other kind
 	projectPriority int
 	jobPriority     int
 	enqueuedAt      time.Time
 	jobID           string
 }
 
-// waiting reads up to limit step jobs a worker with these kinds may run, in start order: the project's queue
-// priority, then the job's priority, then first come (spec 02 "Budgets": the queue interleaves projects by
-// priority); after, when set, starts past that place. Rows are locked, skipping those another claim holds.
+// waiting reads up to limit step jobs a worker with these kinds may run, in start order: interactive jobs first (a
+// person waits for a live session, R49), then the project's queue priority, then the job's priority, then first come
+// (spec 02 "Budgets": the queue interleaves projects by priority); after, when set, starts past that place. Rows are
+// locked, skipping those another claim holds.
 func waiting(ctx context.Context, tx pgx.Tx, kinds []string, after *queueKey, limit int) ([]candidate, error) {
 	prio := projectPriority("$2")
 	args := []any{kinds, defaultProjectPriority(), limit}
 	past := ""
 	if after != nil {
-		// The order is descending on both priorities, so the keyset compares their negations.
-		past = ` AND (-` + prio + `, -j.priority, s.enqueued_at, s.job_id) > ($4, $5, $6, $7)`
-		args = append(args, -after.projectPriority, -after.jobPriority, after.enqueuedAt, after.jobID)
+		// The order is descending on interactive and both priorities, so the keyset compares their negations.
+		past = ` AND (s.job_kind <> 'interactive', -` + prio + `, -j.priority, s.enqueued_at, s.job_id) > ($4, $5, $6, $7, $8)`
+		args = append(args, !after.interactive, -after.projectPriority, -after.jobPriority, after.enqueuedAt, after.jobID)
 	}
-	rows, err := tx.Query(ctx, `SELECT s.job_id, s.spec, coalesce(s.traceparent, ''), `+prio+`, j.priority, s.enqueued_at
+	rows, err := tx.Query(ctx, `SELECT s.job_id, s.spec, coalesce(s.traceparent, ''), s.job_kind = 'interactive', `+prio+`,
+			j.priority, s.enqueued_at
 		FROM step_jobs s JOIN jobs j ON j.id = s.job_id
 		LEFT JOIN projects p ON p.id = s.project_id
 		WHERE s.state = 'waiting' AND s.kind_ref = ANY($1) AND j.paused_at IS NULL AND j.cancel_requested_at IS NULL`+past+`
-		ORDER BY `+prio+` DESC, j.priority DESC, s.enqueued_at, s.job_id
+		ORDER BY s.job_kind = 'interactive' DESC, `+prio+` DESC, j.priority DESC, s.enqueued_at, s.job_id
 		LIMIT $3 FOR UPDATE OF s SKIP LOCKED`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("read the step queue: %w", err)
@@ -253,7 +268,8 @@ func waiting(ctx context.Context, tx pgx.Tx, kinds []string, after *queueKey, li
 			c   candidate
 			raw []byte
 		)
-		if err := row.Scan(&c.jobID, &raw, &c.trace, &c.key.projectPriority, &c.key.jobPriority, &c.key.enqueuedAt); err != nil {
+		if err := row.Scan(&c.jobID, &raw, &c.trace, &c.key.interactive, &c.key.projectPriority, &c.key.jobPriority,
+			&c.key.enqueuedAt); err != nil {
 			return c, err
 		}
 		c.key.jobID = c.jobID

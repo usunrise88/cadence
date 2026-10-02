@@ -32,9 +32,10 @@ func (s *Server) authenticator() *auth.Authenticator {
 }
 
 // publicRequest lists what may run without a principal: first start, sign-in and sign-out, help (the sign-in
-// screen links error types to their articles), and a signed audio link (audio.get checks its signature).
+// screen links error types to their articles), a signed audio link (audio.get checks its signature) and a worker's live
+// dial with its lease's live token (workerLive.connect checks the token).
 func publicRequest(r *http.Request) bool {
-	if signedAudioRequest(r) {
+	if signedAudioRequest(r) || liveTokenRequest(r) {
 		return true
 	}
 	path := strings.TrimPrefix(r.URL.Path, APIPrefix)

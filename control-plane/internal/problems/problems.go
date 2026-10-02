@@ -95,6 +95,12 @@ var (
 	RangeNotSatisfiable = Type{"range-not-satisfiable", http.StatusRequestedRangeNotSatisfiable, "Range not satisfiable"}
 	// Experiments and sweeps (phase 3 · stream X).
 	SweepOverCap = Type{"sweep-over-cap", http.StatusUnprocessableEntity, "Sweep over its GPU-hour cap"}
+	// Manual transcription tests and the live channel (phase 3 · stream T).
+	TranscriptionInProgress         = Type{"transcription-in-progress", http.StatusConflict, "A transcription session is already open"}
+	TranscriptionAllowanceExhausted = Type{"transcription-allowance-exhausted", http.StatusTooManyRequests, "Manual-test allowance used up"}
+	TranscriptionTicketInvalid      = Type{"transcription-ticket-invalid", http.StatusForbidden, "Transcription ticket invalid"}
+	TranscriptionInputInvalid       = Type{"transcription-input-invalid", http.StatusUnprocessableEntity, "Transcription input invalid"}
+	TranscriptionLimit              = Type{"transcription-limit", http.StatusConflict, "Transcription session limit reached"}
 )
 
 // Types lists every registered type.
@@ -111,6 +117,8 @@ func Types() []Type {
 		GoldenSetLeakage, GoldenSetNotEvalOnly, NormalizerUnknown,
 		MediaLinkInvalid, RangeNotSatisfiable,
 		SweepOverCap,
+		TranscriptionInProgress, TranscriptionAllowanceExhausted, TranscriptionTicketInvalid, TranscriptionInputInvalid,
+		TranscriptionLimit,
 	}
 }
 

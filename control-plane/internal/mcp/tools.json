@@ -2336,7 +2336,8 @@
                           "eval",
                           "shadow",
                           "export",
-                          "data"
+                          "data",
+                          "interactive"
                         ],
                         "type": "string"
                       },
