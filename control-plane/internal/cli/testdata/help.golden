@@ -22,6 +22,7 @@ Entities:
   audit          list
   backups        get list new verify
   baseModels     get list
+  boost          edit
   branches       accept compare get list revert
   checkpoints    average get list
   collections    get list
@@ -35,6 +36,7 @@ Entities:
   help           get search
   jobLogs        list
   jobs           cancel edit get list pause resume wait
+  langpacks      edit get list
   metrics        get
   mixes          edit get list new preview
   modelFamilies  get list
@@ -48,7 +50,7 @@ Entities:
   projects       adopt archive edit get list new note search sync
   queueEntries   list
   recipes        edit get list new
-  registry       search
+  registry       lineage search
   runs           calibrate get list new resume stage
   runtimes       get list
   secrets        list new

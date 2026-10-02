@@ -244,11 +244,21 @@ parity and benchmark stay in phase 5. Experiments' "register best" is the same c
   and reused by every project; an eval computes the ones it lacks (`eval-baseline-missing` when `evals.gate` finds
   none for a gated cell).
 
-**Lineage both ways.** `registry.lineage` (`GET /registry/{kind}/{id}/lineage`) answers the graph around a registry
+**Lineage both ways.** `registry.lineage` (`GET /registry/{id}:lineage`, R1's read-action shape: the id names the
+kind by its prefix, so one operation serves every registry kind and project work) answers the graph around a registry
 version in both directions: upstream (a model version → checkpoint → run → mix SHA, recipe SHA, dataset versions →
 sources; base model; a golden set → dataset version and normalizer) and downstream ("used by": golden sets and eval
 records for a normalizer; projects, gates and evals for a golden set; projects that adopted a model version, evals of
 it). The Lineage panel draws the same answer.
+
+As built (phase 3, stream L; `internal/lineage`): the walk starts from any registry version, source, run, checkpoint,
+mix or pipeline run (`direction`, `depth` 1–10, `limit`), edges point from what was used to what used it with a
+`relation`, projects are end points, and nodes in projects the caller cannot see are counted in `hidden`. Registry
+versions link by one convention: every entity id (`<prefix>_<uuid>`) a payload names, at any depth, is upstream of the
+version, the field path being the relation (`datasetVersionId`, `lineage.runId`), and the same index (migration 0025,
+`entity_refs_in`) answers "used by" from the other end — new kinds need no lineage code. Project work in tables
+(runs, checkpoints, mixes, pipeline runs) links through its columns; a domain with its own tables (evals) adds a
+`lineage.Source` to the server's graph.
 
 ## Storage and mounts
 

@@ -350,7 +350,7 @@ lang/he-IL/
 
 Phase 3 (plan stream L; R21):
 
-- `normalizer.yaml` references a scoring normalizer by collection (`normalizer/he-IL`) beside the training text style
+- `normalizer.yaml` references a scoring normalizer by collection (`normalizer/he-il`) beside the training text style
   (punctuation, casing, numbers in targets). Changing scoring rules means freezing a new normalizer version, which
   forces a new baseline (02 "Evaluation entities").
 - Starter packs ship in `control-plane/templates/lang/<locale>/` for he-IL and sr first (the other locales above
@@ -358,6 +358,15 @@ Phase 3 (plan stream L; R21):
 - `langpacks.get|edit` read and commit a pack's files; `boost.edit` edits one boost list (`boost/<domain>.txt`, phrases
   with a weight). Both go through the recipes service like any file, so agents may also edit them in the worktree.
 - The search index normalises text per locale with the pack's scoring normalizer.
+- As built (stream L): `langpacks.list|get|edit` and `boost.edit` (`/projects/{p}/langpacks/{locale}[/boost/{domain}]`);
+  a pack's version is the last commit that changed `lang/<locale>/` (ETag and If-Match). Edits are checked against
+  each file's shape (`internal/langpacks`; unknown keys refused) before they commit; a person's edit commits to main,
+  an agent's lands on a branch `langpack/<locale>-<date>` while the draft policy `language_pack` is `draft`. Boost
+  list file: a `# weight: <float>` header, one term per line, `#` comments; the `boost_list` artifact is
+  `{"terms": [...], "weight": w}` and its sha256 is the list's identity. `projects.sync` offers pack files three-way
+  (unedited files update, edited or deleted ones stay, a missing pack comes whole). The search index folds with the
+  scoring normalizer's character steps but keeps punctuation (identifiers stay searchable); `internal/textnorm` is
+  the Go interpreter of `NormalizerPayload`, the same steps as the worker's scorer.
 - `boost.evaluate` and `augment.evaluate` are not operations (R1): boosting and augmentation are `evals.new` axes.
 
 ### Hot words

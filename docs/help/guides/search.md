@@ -56,8 +56,10 @@ What you can see follows your credential, never the query:
 
 Text is normalised the same way when indexed and when searched: case is folded; for Hebrew the niqqud and cantillation
 marks are stripped and a short list of spelling variants (ktiv male and ktiv haser, for example תוכנית / תכנית) is
-folded to one form, so a phrase is found however it was written. The list is a stub that grows with the Hebrew
-language pack.
+folded to one form, so a phrase is found however it was written. Where a [language pack](language-packs.md) applies —
+the project's own for its locales, else the pack Cadence ships — the locale's scoring normalizer folds the text first
+(Unicode form, its mappings such as צה"ל → צהל, marks and case; punctuation stays, so identifiers remain
+searchable). A document uses its locale, a query its `lang:` or the locale its script suggests.
 
 ## Commands
 

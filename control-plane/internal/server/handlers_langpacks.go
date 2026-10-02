@@ -75,9 +75,7 @@ func (s *Server) apiPack(ctx context.Context, pk langpacks.Pack, sha, commit str
 		out.Boost = append(out.Boost, api.BoostList{Domain: b.Domain, Path: langpacks.BoostPath(b.Domain), Weight: b.Weight,
 			Terms: b.Terms, Sha256: b.SHA256()})
 	}
-	for _, f := range pk.Check(lim) {
-		out.Issues = append(out.Issues, api.ProblemFieldError{Path: f.Path, Message: f.Message})
-	}
+	out.Issues = append(out.Issues, pk.Check(lim)...)
 	sc, err := scoringOf(ctx, s.Pool, pk)
 	if err != nil {
 		return api.LanguagePack{}, err

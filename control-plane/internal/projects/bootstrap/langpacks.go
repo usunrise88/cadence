@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"gopkg.in/yaml.v3"
 
 	"github.com/usunrise88/cadence/control-plane/internal/auth"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
@@ -179,10 +180,12 @@ func (s *Service) newBranch(ctx context.Context, slug, name, from string) (strin
 }
 
 // packUpdates chooses the language pack files a sync offers, three-way: rendered holds the starter pack files of
-// the project's locales (lang/<locale>/…). A file the project lacks is added when its whole pack is missing or
-// Cadence never shipped it before (a file Cadence added since); a file the project deleted on purpose is not
-// brought back. A file that differs is updated only when its content is one Cadence shipped (any registered
-// version of the pack's template): the project never edited it. A file the project edited stays as it is.
+// the project's locales (lang/<locale>/…), and data.lock at base names the pack version the project last took.
+//
+//   - A file the project lacks is added when its whole pack is missing, or when the locked version did not have it
+//     (Cadence added it since); a file the project deleted is not brought back.
+//   - A file that differs is updated only when its content is one Cadence shipped (any registered version of the
+//     pack's template): the project never edited it. A file the project edited stays as it is.
 func (s *Service) packUpdates(ctx context.Context, q storage.Querier, p projects.Project, base string, rendered layout.Files) (layout.Files, error) {
 	out := layout.Files{}
 	if len(rendered) == 0 {
@@ -196,6 +199,7 @@ func (s *Service) packUpdates(ctx context.Context, q storage.Querier, p projects
 	for _, f := range tree {
 		have[f.Path] = true
 	}
+	locked := s.lockedTemplates(ctx, p.Slug, base)
 	for _, locale := range p.Locales {
 		pack, ok := s.render.PackFor(locale)
 		if !ok {
@@ -206,7 +210,7 @@ func (s *Service) packUpdates(ctx context.Context, q storage.Querier, p projects
 		for f := range have {
 			exists = exists || strings.HasPrefix(f, prefix)
 		}
-		shipped, older, err := s.shippedPack(ctx, q, pack)
+		shipped, took, err := s.shippedPack(ctx, q, pack, locked)
 		if err != nil {
 			return nil, err
 		}
@@ -216,7 +220,7 @@ func (s *Service) packUpdates(ctx context.Context, q storage.Querier, p projects
 				continue
 			}
 			if !have[fp] {
-				if !exists || !older[rel] {
+				if !exists || !took[rel] {
 					out[fp] = b
 				}
 				continue
@@ -237,20 +241,42 @@ func (s *Service) packUpdates(ctx context.Context, q storage.Querier, p projects
 	return out, nil
 }
 
+// lockedTemplates reads the template versions data.lock names at commit: collection → version id.
+func (s *Service) lockedTemplates(ctx context.Context, slug, commit string) map[string]string {
+	out := map[string]string{}
+	b, _, err := s.o.Repos.ReadFile(ctx, slug, commit, layout.DataLock)
+	if err != nil {
+		return out
+	}
+	var lock struct {
+		Templates []struct {
+			Collection string `yaml:"collection"`
+			ID         string `yaml:"id"`
+		} `yaml:"templates"`
+	}
+	if yaml.Unmarshal(b, &lock) != nil {
+		return out
+	}
+	for _, t := range lock.Templates {
+		out[t.Collection] = t.ID
+	}
+	return out
+}
+
 // shippedPack returns, per path inside the starter pack, the sha256 of every content Cadence registered for it, and
-// which paths an older version than the newest already had.
-func (s *Service) shippedPack(ctx context.Context, q storage.Querier, pack string) (map[string]map[string]bool, map[string]bool, error) {
-	shipped, older := map[string]map[string]bool{}, map[string]bool{}
+// the paths of the version the project took (locked: data.lock's template versions).
+func (s *Service) shippedPack(ctx context.Context, q storage.Querier, pack string, locked map[string]string) (map[string]map[string]bool, map[string]bool, error) {
+	shipped, took := map[string]map[string]bool{}, map[string]bool{}
 	unit := path.Join(layout.LangDir, pack)
 	name, ok := s.templates[unit]
 	if !ok {
-		return shipped, older, nil
+		return shipped, took, nil
 	}
 	versions, err := registry.ListVersions(ctx, q, registry.Filter{Kind: registry.KindTemplate, Collection: name})
 	if err != nil {
 		return nil, nil, err
 	}
-	for i, v := range versions { // newest first
+	for _, v := range versions {
 		var payload registry.TemplatePayload
 		if err := jsonUnmarshal(v.Payload, &payload); err != nil {
 			return nil, nil, err
@@ -261,10 +287,10 @@ func (s *Service) shippedPack(ctx context.Context, q storage.Querier, pack strin
 				shipped[rel] = map[string]bool{}
 			}
 			shipped[rel][f.SHA256] = true
-			if i > 0 {
-				older[rel] = true
+			if v.ID == locked[name] {
+				took[rel] = true
 			}
 		}
 	}
-	return shipped, older, nil
+	return shipped, took, nil
 }

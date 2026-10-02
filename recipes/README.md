@@ -10,6 +10,9 @@ registry version ids in `project.yaml` and `data.lock` are examples):
 - `data.lock` — every registry version the project depends on, including the templates its files came from
 - `.claude/settings.json`, `opencode.json` — permissions rendered from the permission preset (no MCP section, R2)
 - `.claude/skills/` — Cadence's product skills; `pipelines/` — the starter pipelines
+- `lang/he-IL/` — the language pack of the project's locale (normalizer.yaml, itn.yaml, translit.yaml, lid.yaml,
+  boost lists, golden-recipe.yaml, README.md), copied from Cadence's starter pack; `langpacks.edit` and `boost.edit`
+  change it
 
 Data never lives here. Datasets, golden sets, models and other reusable assets are immutable versions in
 the Cadence-wide registry; the project references them through adoptions and aliases, and `data.lock` records the

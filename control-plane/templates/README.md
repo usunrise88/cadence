@@ -21,6 +21,12 @@ The project wizard renders these into a new project repository (the `projects.bo
   `text/template` over `.Inputs.<name>` (each input as text: `dataset/fleurs-he 2026-09-30.ab12 (ver_…)`, a number, or
   `none (…)` for an optional input without a value) and `.Project.Name`, `.Project.Slug`, `.Project.Locales`.
   `internal/playbooks` tests that every file parses and validates.
+- `lang/<locale>/` — starter language packs (he-IL, sr; format and checks in `internal/langpacks`): the bootstrap
+  copies the pack serving each project locale (the same locale, a less specific one — `sr` for `sr-Latn` — or one
+  of the same language) to the project's `lang/<locale>/`, verbatim. `projects.sync` offers pack files three-way
+  (an unedited file is updated, an edited or deleted one is left alone, a missing pack is offered whole). Each pack
+  registers as `template/langpack-<locale>` (lower case). `internal/langpacks` tests that every pack checks out and
+  that `sr`'s scheme equals the worker's `sr-Cyrl-Latn`.
 - `presets/<name>.yaml` — permission presets (R7), embedded in the binary and read by the policy engine
   (`internal/policy`) on every command: `guardrails-default` (the Guardrails table) and `read-only` ("Explain
   this" sessions).
@@ -50,6 +56,6 @@ Rendered from the preset (`internal/policy`, JSON via `policy.JSON`):
 
 `tools` is the MCP manifest (`internal/mcp/tools.json`: name, and `readOnlyHint` for the verb class).
 `embed.go` embeds the whole tree. At start the control plane registers every entry under `instructions/`, `presets/`,
-`skills/`, `pipelines/`, `playbooks/` and `agent-config/` as a registry template version (`template/<kind>-<name>`, e.g.
+`skills/`, `pipelines/`, `playbooks/`, `agent-config/` and `lang/` as a registry template version (`template/<kind>-<name>`, e.g.
 `template/skill-cadence-train`); a changed file registers a new version, so `templates.list` shows what projects can
 sync to, and `projects.sync` offers the difference to a project as a draft branch.

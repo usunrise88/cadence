@@ -144,8 +144,10 @@ func (dataSource) Describe(ctx context.Context, q storage.Querier, id string) (N
 	return Node{ID: id, Kind: "source", Label: name + " (" + licence + ")", State: state}, true, nil
 }
 
-func (dataSource) Upstream(context.Context, storage.Querier, string) ([]Ref, error)   { return nil, nil }
-func (dataSource) Downstream(context.Context, storage.Querier, string) ([]Ref, error) { return nil, nil }
+func (dataSource) Upstream(context.Context, storage.Querier, string) ([]Ref, error) { return nil, nil }
+func (dataSource) Downstream(context.Context, storage.Querier, string) ([]Ref, error) {
+	return nil, nil
+}
 
 // ---------------------------------------------------------------- projects
 
@@ -183,7 +185,9 @@ func (projectSource) Upstream(ctx context.Context, q storage.Querier, id string)
 	return out, nil
 }
 
-func (projectSource) Downstream(context.Context, storage.Querier, string) ([]Ref, error) { return nil, nil }
+func (projectSource) Downstream(context.Context, storage.Querier, string) ([]Ref, error) {
+	return nil, nil
+}
 
 // ---------------------------------------------------------------- project work
 

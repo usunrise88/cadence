@@ -83,17 +83,17 @@ type Query struct {
 
 // Refold normalises the free text again with fold (FoldFor: the locale's scoring normalizer, then Normalize), so
 // terms match documents the index folded the same way.
-func (q *Query) Refold(fold func(string) string) {
-	q.Terms = nil
-	for _, t := range q.free {
+func (out *Query) Refold(fold func(string) string) {
+	out.Terms = nil
+	for _, t := range out.free {
 		if t.Phrase {
 			if n := strings.TrimSpace(fold(t.Text)); n != "" {
-				q.Terms = append(q.Terms, Term{Text: n, Phrase: true})
+				out.Terms = append(out.Terms, Term{Text: n, Phrase: true})
 			}
 			continue
 		}
 		for _, w := range Words(fold(t.Text)) {
-			q.Terms = append(q.Terms, Term{Text: w})
+			out.Terms = append(out.Terms, Term{Text: w})
 		}
 	}
 }
