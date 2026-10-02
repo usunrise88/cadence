@@ -49,8 +49,10 @@ type NewInput struct {
 	GoldenSets []string
 	Profiles   []string
 	Decoding   []DecodingIn
-	Baseline   string
-	Priority   int
+	// Augmentations is the robustness axis (phase 3 stream R): none is always included.
+	Augmentations []AugmentationIn
+	Baseline      string
+	Priority      int
 }
 
 // PlanCell is one cell of a planned eval (the contract's EvalPlanCell).
@@ -59,6 +61,7 @@ type PlanCell struct {
 	GoldenSetVersionID string `json:"goldenSetVersionId"`
 	Profile            string `json:"profile"`
 	DecodingIndex      int    `json:"decodingIndex"`
+	AugmentationIndex  int    `json:"augmentationIndex"`
 	DecodingHash       string `json:"decodingHash"`
 	ModelKey           string `json:"modelKey"`
 	Cached             bool   `json:"cached"`
@@ -67,6 +70,8 @@ type PlanCell struct {
 	normalizer string
 	scorer     string
 	scoreStep  string
+	key        string                // the record key
+	metrics    map[string]MetricPlan // entities, latency
 }
 
 // PlanStep is one step of the generated pipeline.
@@ -78,18 +83,19 @@ type PlanStep struct {
 // Plan is an eval checked and planned, not yet started: what a dry run answers (the contract's EvalPlan) and what
 // Create starts.
 type Plan struct {
-	Subject        Model        `json:"subject"`
-	Baseline       Model        `json:"baseline"`
-	GoldenSets     []GoldenSet  `json:"goldenSets"`
-	Profiles       []Profile    `json:"profiles"`
-	PrimaryProfile string       `json:"primaryProfile"`
-	Decoding       []Decoding   `json:"decoding"`
-	Significance   Significance `json:"significance"`
-	Cells          []PlanCell   `json:"cells"`
-	CellsCached    int          `json:"cellsCached"`
-	CellsToCompute int          `json:"cellsToCompute"`
-	Estimate       Estimate     `json:"estimate"`
-	Steps          []PlanStep   `json:"steps"`
+	Subject        Model          `json:"subject"`
+	Baseline       Model          `json:"baseline"`
+	GoldenSets     []GoldenSet    `json:"goldenSets"`
+	Profiles       []Profile      `json:"profiles"`
+	PrimaryProfile string         `json:"primaryProfile"`
+	Decoding       []Decoding     `json:"decoding"`
+	Augmentations  []Augmentation `json:"augmentations"`
+	Significance   Significance   `json:"significance"`
+	Cells          []PlanCell     `json:"cells"`
+	CellsCached    int            `json:"cellsCached"`
+	CellsToCompute int            `json:"cellsToCompute"`
+	Estimate       Estimate       `json:"estimate"`
+	Steps          []PlanStep     `json:"steps"`
 
 	in      NewInput
 	project projects.Project
@@ -99,8 +105,9 @@ type Plan struct {
 // family is a model family descriptor as evals need it.
 type family struct {
 	runs.Family
-	Profiles []Profile
-	Boosting string // capabilities.boosting: the method, "" when the family cannot boost
+	Profiles  []Profile
+	Boosting  string // capabilities.boosting: the method, "" when the family cannot boost
+	Streaming bool   // capabilities.streaming: its transcribe step writes partial events
 }
 
 func (s *Service) familyOf(ctx context.Context, q storage.Querier, base registry.Version) (family, error) {
@@ -115,13 +122,14 @@ func (s *Service) familyOf(ctx context.Context, q storage.Querier, base registry
 	var d struct {
 		LatencyProfiles []Profile `json:"latencyProfiles"`
 		Capabilities    struct {
-			Boosting string `json:"boosting"`
+			Boosting  string `json:"boosting"`
+			Streaming bool   `json:"streaming"`
 		} `json:"capabilities"`
 	}
 	if err := json.Unmarshal(v.Payload, &d); err != nil {
 		return family{}, fmt.Errorf("decode model family %s: %w", v.ID, err)
 	}
-	return family{Family: f, Profiles: d.LatencyProfiles, Boosting: d.Capabilities.Boosting}, nil
+	return family{Family: f, Profiles: d.LatencyProfiles, Boosting: d.Capabilities.Boosting, Streaming: d.Capabilities.Streaming}, nil
 }
 
 // roleKind is the newest published step kind of a role of f.
@@ -161,18 +169,35 @@ func (s *Service) Prepare(ctx context.Context, q storage.Querier, in NewInput) (
 	if pl.Decoding, err = s.renderDecoding(ctx, p, in.Decoding); err != nil {
 		return Plan{}, err
 	}
+	if pl.Augmentations, err = s.renderAugmentations(ctx, q, p, in.Augmentations); err != nil {
+		return Plan{}, err
+	}
 	scorer, err := runs.RoleKind(ctx, q, ScorerKind)
 	if err != nil {
 		return Plan{}, err
 	}
 	b := &builder{s: s, q: q, plan: &pl, scorer: scorer, models: map[string]*modelSteps{}, units: map[string]*unit{},
-		perAudioHour: d.Eval.GPUHoursPerAudioHour.Value}
+		perAudioHour: d.Eval.GPUHoursPerAudioHour.Value, cached: map[string]Record{}, slots: map[string]*metricSlot{},
+		itn: map[string]itnRender{}}
+	if len(pl.Augmentations) > 1 {
+		k, err := runs.RoleKind(ctx, q, AugmentKind)
+		if err != nil {
+			return Plan{}, err
+		}
+		b.augment = &k
+	}
+	if b.mk, err = loadMetricKinds(ctx, q); err != nil {
+		return Plan{}, err
+	}
 	for _, m := range []*Model{&pl.Subject, &pl.Baseline} {
 		if err := b.kinds(ctx, m); err != nil {
 			return Plan{}, err
 		}
 	}
 	if err := b.cells(ctx); err != nil {
+		return Plan{}, err
+	}
+	if err := b.planMetrics(ctx); err != nil {
 		return Plan{}, err
 	}
 	if err := b.pipeline(ctx); err != nil {
@@ -717,6 +742,7 @@ type unit struct {
 	ms        *modelSteps
 	gs        int
 	dec       int
+	aug       int
 	profile   string
 	score     string
 	transcode string
@@ -731,6 +757,13 @@ type builder struct {
 	units        map[string]*unit       // by record key
 	order        []*unit
 	perAudioHour float64
+
+	augment   *pipelines.Kind        // the augment step kind when the eval has augmentations
+	mk        metricKinds            // the metric scorers and the VAD
+	cached    map[string]Record      // cached records by record key
+	slots     map[string]*metricSlot // metrics per record key
+	slotOrder []string
+	itn       map[string]itnRender // the rendered itn.yaml per golden-set locale
 }
 
 // localeParams name the language a transcribe kind decodes in, first match wins (a naming convention of role kinds,
@@ -798,14 +831,19 @@ func (b *builder) kinds(ctx context.Context, m *Model) error {
 	return nil
 }
 
-// decoding is the decoding configuration a record key hashes (R22: latency, boost list, the decoder version).
-func (b *builder) decoding(ms *modelSteps, profile string, gs GoldenSet, d Decoding) (map[string]any, string) {
+// decoding is the decoding configuration a record key hashes (R22: latency, boost list, the decoder version) and,
+// for an augmented cell, the augmentation (the kind that applies it, the profile's content hash and the seed): an
+// unaugmented cell hashes exactly as before the robustness axis existed, so its records stay valid as none.
+func (b *builder) decoding(ms *modelSteps, profile string, gs GoldenSet, d Decoding, a Augmentation) (map[string]any, string) {
 	dec := map[string]any{"transcribe": ms.transcribe.Ref(), "profile": profile}
 	if ms.localeParam != "" && gs.Locale != "" {
 		dec[ms.localeParam] = gs.Locale
 	}
 	if d.Boost != "none" {
 		dec["boost"] = map[string]any{"list": d.Artifact, "weight": *d.Weight}
+	}
+	if !a.none() && b.augment != nil {
+		dec["augment"] = map[string]any{"kind": b.augment.Ref(), "profile": a.Hash, "seed": *a.Seed}
 	}
 	sum := sha256.Sum256(mustJSON(dec)) // map keys marshal sorted: canonical
 	return dec, "sha256:" + hex.EncodeToString(sum[:])
@@ -819,34 +857,44 @@ func (b *builder) cells(ctx context.Context) error {
 				continue // replay golden sets at the primary profile only (03 "The eval pipeline")
 			}
 			for di, d := range pl.Decoding {
-				for _, role := range []string{RoleSubject, RoleBaseline} {
-					m := &pl.Subject
-					if role == RoleBaseline {
-						m = &pl.Baseline
+				for ai, a := range pl.Augmentations {
+					if ai > 0 && gs.Replay {
+						continue // the robustness axis covers the target golden sets; replay sets guard against forgetting
 					}
-					ms := b.models[m.ModelKey]
-					_, dhash := b.decoding(ms, prof.Name, gs, d)
-					k := Key{ModelKey: m.ModelKey, GoldenSetVersionID: gs.VersionID, NormalizerVersionID: gs.NormalizerVersionID,
-						DecodingHash: dhash, Scorer: b.scorer.Ref()}
-					c := PlanCell{Role: role, GoldenSetVersionID: gs.VersionID, Profile: prof.Name, DecodingIndex: di, DecodingHash: dhash,
-						ModelKey: m.ModelKey, normalizer: gs.NormalizerVersionID, scorer: b.scorer.Ref()}
-					rec, found, err := findRecord(ctx, b.q, k)
-					if err != nil {
-						return err
-					}
-					if found {
-						c.Cached, c.RecordID = true, rec.ID
-						pl.CellsCached++
-					} else {
-						u, ok := b.units[k.String()]
-						if !ok {
-							u = &unit{key: k, ms: ms, gs: gi, dec: di, profile: prof.Name}
-							b.units[k.String()] = u
-							b.order = append(b.order, u)
+					for _, role := range []string{RoleSubject, RoleBaseline} {
+						m := &pl.Subject
+						if role == RoleBaseline {
+							m = &pl.Baseline
 						}
-						c.scoreStep = fmt.Sprintf("score-u%d", slices.Index(b.order, u)+1)
+						ms := b.models[m.ModelKey]
+						_, dhash := b.decoding(ms, prof.Name, gs, d, a)
+						k := Key{ModelKey: m.ModelKey, GoldenSetVersionID: gs.VersionID, NormalizerVersionID: gs.NormalizerVersionID,
+							DecodingHash: dhash, Scorer: b.scorer.Ref()}
+						c := PlanCell{Role: role, GoldenSetVersionID: gs.VersionID, Profile: prof.Name, DecodingIndex: di, AugmentationIndex: ai,
+							DecodingHash: dhash, ModelKey: m.ModelKey, normalizer: gs.NormalizerVersionID, scorer: b.scorer.Ref(), key: k.String()}
+						rec, found, err := findRecord(ctx, b.q, k)
+						if err != nil {
+							return err
+						}
+						if found {
+							c.Cached, c.RecordID = true, rec.ID
+							b.cached[k.String()] = rec
+							pl.CellsCached++
+						} else {
+							u, ok := b.units[k.String()]
+							if !ok {
+								u = &unit{key: k, ms: ms, gs: gi, dec: di, aug: ai, profile: prof.Name}
+								b.units[k.String()] = u
+								b.order = append(b.order, u)
+							}
+							c.scoreStep = fmt.Sprintf("score-u%d", slices.Index(b.order, u)+1)
+						}
+						if _, ok := b.slots[k.String()]; !ok {
+							b.slots[k.String()] = &metricSlot{key: k, ms: ms, gs: gi, aug: ai}
+							b.slotOrder = append(b.slotOrder, k.String())
+						}
+						pl.Cells = append(pl.Cells, c)
 					}
-					pl.Cells = append(pl.Cells, c)
 				}
 			}
 		}
@@ -855,8 +903,81 @@ func (b *builder) cells(ctx context.Context) error {
 	return nil
 }
 
-// pipeline generates the eval's pipeline: per model that needs it a materialize step (base models), per record to
-// compute a transcribe and a score step (03 "The eval pipeline").
+// metricSlot is one record key's metrics beside WER: entity accuracy and latency to final.
+type metricSlot struct {
+	key     Key
+	ms      *modelSteps
+	gs, aug int
+	plans   map[string]MetricPlan
+}
+
+// planMetrics decides, per record key, which metrics its cells get: a stored eval_metrics row is linked, a missing
+// one gets a step (the transcribe step's hypotheses, or the cached record's), anything impossible its reason.
+func (b *builder) planMetrics(ctx context.Context) error {
+	pl := b.plan
+	for _, ks := range b.slotOrder {
+		sl := b.slots[ks]
+		gs := pl.GoldenSets[sl.gs]
+		sl.plans = map[string]MetricPlan{}
+		hypAvailable := true
+		if rec, ok := b.cached[ks]; ok && !steps.ValidHash(rec.Hypotheses) {
+			hypAvailable = false
+		}
+		// Entity accuracy: the pack's ITN classes of the golden set's locale.
+		ep := MetricPlan{}
+		switch {
+		case b.mk.entity == nil:
+			ep.Unavailable = b.mk.noEntity
+		case !hypAvailable:
+			ep.Unavailable = "the cached eval record keeps no hypotheses to score"
+		default:
+			it, ok := b.itn[gs.Locale]
+			if !ok {
+				r, err := b.s.renderITN(ctx, pl.project, gs.Locale)
+				if err != nil {
+					return err
+				}
+				b.itn[gs.Locale], it = r, r
+			}
+			if it.ref == nil {
+				ep.Unavailable = it.reason
+			} else {
+				ep.Scorer, ep.Config = b.mk.entity.Ref(), it.ref.Hash
+			}
+		}
+		// Latency to final: a streaming family's partials and utterance ends from a VAD.
+		lp := MetricPlan{}
+		switch {
+		case !sl.ms.model.family.Streaming:
+			lp.Unavailable = fmt.Sprintf("model family %s does not stream: its decodes carry no partial events", sl.ms.model.Family)
+		case b.mk.latency == nil:
+			lp.Unavailable = b.mk.noLatency
+		case b.mk.vad == nil:
+			lp.Unavailable = b.mk.noVADWhy
+		case !hypAvailable:
+			lp.Unavailable = "the cached eval record keeps no hypotheses to score"
+		default:
+			lp.Scorer, lp.Config = b.mk.latency.Ref(), b.mk.vad.Ref()+"#"+b.mk.vad.VersionID
+		}
+		for metric, mp := range map[string]MetricPlan{MetricEntities: ep, MetricLatency: lp} {
+			if mp.Scorer != "" {
+				_, _, _, found, err := findMetric(ctx, b.q, metricKey{sl.key.ModelKey, sl.key.GoldenSetVersionID, sl.key.DecodingHash, mp.Scorer, mp.Config})
+				if err != nil {
+					return err
+				}
+				if !found {
+					mp.Step = "pending" // named when the pipeline is generated
+				}
+			}
+			sl.plans[metric] = mp
+		}
+	}
+	return nil
+}
+
+// pipeline generates the eval's pipeline: per model that needs it a materialize step (base models); per golden set
+// and augmentation an augment step (augmented cells) and a VAD step (latency); per record to compute a transcribe and
+// a score step; per record key missing a metric its metric step (03 "The eval pipeline").
 func (b *builder) pipeline(ctx context.Context) error {
 	pl := b.plan
 	audio := 0.0
@@ -865,133 +986,323 @@ func (b *builder) pipeline(ctx context.Context) error {
 	}
 	pl.Estimate = Estimate{GPUHours: round3(audio * b.perAudioHour), AudioHours: round3(audio), CellsToCompute: len(b.order),
 		GPUHoursPerAudioHour: b.perAudioHour, Basis: "table"}
-	if len(b.order) == 0 {
+	metricSteps := 0
+	for _, ks := range b.slotOrder {
+		for _, mp := range b.slots[ks].plans {
+			if mp.Step != "" {
+				metricSteps++
+			}
+		}
+	}
+	if len(b.order) == 0 && metricSteps == 0 {
+		b.cellMetrics()
 		return nil
 	}
-	p := pipelines.Pipeline{Name: "eval", Description: fmt.Sprintf("Eval of %s against %s: %d cell(s) to compute (evals.new)",
-		pl.Subject.Label, pl.Baseline.Label, len(b.order)), Inputs: map[string]string{}}
-	inputs := map[string]steps.ArtifactRef{}
-	params := map[string]map[string]any{}
-	estimates := map[string]float64{}
-	wired := map[string]bool{}
-	var fields []problems.FieldError
+	g := &gen{b: b, p: pipelines.Pipeline{Name: "eval", Description: fmt.Sprintf("Eval of %s against %s: %d cell(s) to compute (evals.new)",
+		pl.Subject.Label, pl.Baseline.Label, len(b.order)), Inputs: map[string]string{}},
+		inputs: map[string]steps.ArtifactRef{}, params: map[string]map[string]any{}, estimates: map[string]float64{},
+		data: map[[2]int]string{}, vad: map[[2]int]string{}, hyp: map[string]string{}}
 	for _, u := range b.order {
-		ms := u.ms
-		if ms.wire == "" {
-			if ms.materialize != nil {
-				in := fmt.Sprintf("base_m%d", ms.index)
-				p.Inputs[in], inputs[in] = TypeBaseModel, ms.model.artifact
-				port, ok := consumesType(*ms.materialize, TypeBaseModel)
-				out, ok2 := producesType(*ms.materialize, TypeCheckpoint)
-				if !ok || !ok2 || len(ms.materialize.Consumes) != 1 {
-					return problems.RecipeMismatch.New("the materialize step kind %s must consume one base_model and produce a checkpoint (it consumes %v, produces %v)",
-						ms.materialize.Ref(), ms.materialize.Consumes, ms.materialize.Produces)
-				}
-				id := fmt.Sprintf("materialize-m%d", ms.index)
-				p.Steps = append(p.Steps, pipelines.Step{ID: id, Kind: ms.materialize.Ref(), In: map[string]string{port: pipelines.InputsRef + in}})
-				pl.Steps = append(pl.Steps, PlanStep{Step: id, Kind: ms.materialize.Ref()})
-				ms.wire = id + "." + out
-			} else {
-				in := fmt.Sprintf("model_m%d", ms.index)
-				p.Inputs[in], inputs[in] = TypeCheckpoint, ms.model.artifact
-				ms.wire = pipelines.InputsRef + in
-			}
+		if err := g.unit(ctx, u); err != nil {
+			return err
 		}
-		gs := pl.GoldenSets[u.gs]
-		data, norm := fmt.Sprintf("data_g%d", u.gs+1), fmt.Sprintf("norm_g%d", u.gs+1)
-		if !wired[data] {
-			ref, err := b.s.sized(ctx, b.q, steps.ArtifactRef{Hash: gs.datasetHash, Type: TypeDataset})
-			if err != nil {
-				return err
-			}
-			nv, err := registry.GetVersion(ctx, b.q, registry.KindNormalizer, gs.NormalizerVersionID)
-			if err != nil {
-				return err
-			}
-			nref, err := RenderNormalizer(b.s, nv)
-			if err != nil {
-				return err
-			}
-			p.Inputs[data], inputs[data], p.Inputs[norm], inputs[norm] = TypeDataset, ref, TypeNormalizer, nref
-			wired[data] = true
-		}
-		n := slices.Index(b.order, u) + 1
-		tid, sid := fmt.Sprintf("transcribe-u%d", n), fmt.Sprintf("score-u%d", n)
-		u.transcode, u.score = tid, sid
-		tin := map[string]string{}
-		for port, typ := range ms.transcribe.Consumes {
-			switch typ {
-			case TypeCheckpoint, TypeBaseModel:
-				tin[port] = ms.wire
-			case TypeDataset:
-				tin[port] = pipelines.InputsRef + data
-			case TypeBoostList:
-				ref := pl.Decoding[u.dec].ref
-				optional := slices.Contains(ms.transcribe.OptionalInputs, port)
-				if ref == nil && optional {
-					continue // boost none: the optional list stays unwired
-				}
-				in := fmt.Sprintf("boost_d%d", u.dec+1)
-				if ref == nil { // a kind that always reads a list: an empty one
-					in = "boost_none"
-					empty, err := b.s.putBoost(langpacks.Boost{Terms: []string{}}, map[string]any{"terms": 0})
-					if err != nil {
-						return err
-					}
-					ref = &empty
-				}
-				if _, ok := inputs[in]; !ok {
-					p.Inputs[in], inputs[in] = TypeBoostList, *ref
-				}
-				tin[port] = pipelines.InputsRef + in
-			default:
-				fields = append(fields, problems.FieldError{Path: "/subject", Message: fmt.Sprintf(
-					"the transcribe step kind %s consumes %s (%s), which an eval cannot fill", ms.transcribe.Ref(), port, typ)})
-			}
-		}
-		hyp, ok := producesType(ms.transcribe, TypeHypotheses)
-		if !ok {
-			return problems.RecipeMismatch.New("the transcribe step kind %s produces no hypotheses", ms.transcribe.Ref())
-		}
-		tp := map[string]any{}
-		if _, ok := kindParams(ms.transcribe)["profile"]; ok {
-			tp["profile"] = u.profile
-		}
-		if ms.localeParam != "" && gs.Locale != "" {
-			tp[ms.localeParam] = gs.Locale
-		}
-		params[tid] = tp
-		estimates[tid] = gs.Hours * b.perAudioHour * 3600
-		p.Steps = append(p.Steps, pipelines.Step{ID: tid, Kind: ms.transcribe.Ref(), In: tin})
-		sin := map[string]string{}
-		for port, typ := range b.scorer.Consumes {
-			switch typ {
-			case TypeHypotheses:
-				sin[port] = tid + "." + hyp
-			case TypeDataset:
-				sin[port] = pipelines.InputsRef + data
-			case TypeNormalizer:
-				sin[port] = pipelines.InputsRef + norm
-			default:
-				fields = append(fields, problems.FieldError{Path: "/", Message: fmt.Sprintf(
-					"the scorer %s consumes %s (%s), which an eval cannot fill", b.scorer.Ref(), port, typ)})
-			}
-		}
-		if _, ok := producesType(b.scorer, TypeScores); !ok {
-			return problems.RecipeMismatch.New("the scorer %s produces no scores", b.scorer.Ref())
-		}
-		p.Steps = append(p.Steps, pipelines.Step{ID: sid, Kind: b.scorer.Ref(), In: sin})
-		pl.Steps = append(pl.Steps, PlanStep{Step: tid, Kind: ms.transcribe.Ref()}, PlanStep{Step: sid, Kind: b.scorer.Ref()})
 	}
-	if len(fields) > 0 {
-		return problems.Validation(fields)
+	for _, ks := range b.slotOrder {
+		if err := g.metrics(ctx, ks); err != nil {
+			return err
+		}
 	}
-	start := pipelines.StartInput{ProjectID: pl.project.ID, Pipeline: &p, Inputs: inputs, Params: params, Estimates: estimates,
+	if len(g.fields) > 0 {
+		return problems.Validation(g.fields)
+	}
+	b.cellMetrics()
+	start := pipelines.StartInput{ProjectID: pl.project.ID, Pipeline: &g.p, Inputs: g.inputs, Params: g.params, Estimates: g.estimates,
 		Actor: pl.in.Actor, Priority: pl.in.Priority}
 	if _, _, err := b.s.Engine.Prepare(ctx, b.q, start); err != nil {
 		return err
 	}
 	pl.start = &start
+	return nil
+}
+
+// cellMetrics copies each record key's metric plans onto its cells.
+func (b *builder) cellMetrics() {
+	for i := range b.plan.Cells {
+		if sl, ok := b.slots[b.plan.Cells[i].key]; ok {
+			b.plan.Cells[i].metrics = sl.plans
+		}
+	}
+}
+
+// gen is one generated eval pipeline under construction.
+type gen struct {
+	b         *builder
+	p         pipelines.Pipeline
+	inputs    map[string]steps.ArtifactRef
+	params    map[string]map[string]any
+	estimates map[string]float64
+	data      map[[2]int]string // (golden set, augmentation) → the wire of its dataset
+	vad       map[[2]int]string // (golden set, augmentation) → the wire of its VAD
+	hyp       map[string]string // record key → the wire of its hypotheses
+	fields    []problems.FieldError
+}
+
+func (g *gen) step(id string, k pipelines.Kind, in map[string]string) {
+	g.p.Steps = append(g.p.Steps, pipelines.Step{ID: id, Kind: k.Ref(), In: in})
+	g.b.plan.Steps = append(g.b.plan.Steps, PlanStep{Step: id, Kind: k.Ref()})
+}
+
+func (g *gen) input(name, typ string, ref steps.ArtifactRef) string {
+	if _, ok := g.inputs[name]; !ok {
+		g.p.Inputs[name], g.inputs[name] = typ, ref
+	}
+	return pipelines.InputsRef + name
+}
+
+// golden wires golden set gi's dataset and normalizer as pipeline inputs.
+func (g *gen) golden(ctx context.Context, gi int) (data, norm string, err error) {
+	data, norm = fmt.Sprintf("data_g%d", gi+1), fmt.Sprintf("norm_g%d", gi+1)
+	if _, ok := g.inputs[data]; ok {
+		return pipelines.InputsRef + data, pipelines.InputsRef + norm, nil
+	}
+	gs := g.b.plan.GoldenSets[gi]
+	ref, err := g.b.s.sized(ctx, g.b.q, steps.ArtifactRef{Hash: gs.datasetHash, Type: TypeDataset})
+	if err != nil {
+		return "", "", err
+	}
+	nv, err := registry.GetVersion(ctx, g.b.q, registry.KindNormalizer, gs.NormalizerVersionID)
+	if err != nil {
+		return "", "", err
+	}
+	nref, err := RenderNormalizer(g.b.s, nv)
+	if err != nil {
+		return "", "", err
+	}
+	return g.input(data, TypeDataset, ref), g.input(norm, TypeNormalizer, nref), nil
+}
+
+// dataset is the wire of golden set gi's dataset under augmentation ai: the golden dataset, or the output of the
+// augment step that applies the profile to it (one per golden set and augmentation).
+func (g *gen) dataset(ctx context.Context, gi, ai int) (string, error) {
+	if w, ok := g.data[[2]int{gi, ai}]; ok {
+		return w, nil
+	}
+	golden, _, err := g.golden(ctx, gi)
+	if err != nil {
+		return "", err
+	}
+	a := g.b.plan.Augmentations[ai]
+	if a.none() {
+		g.data[[2]int{gi, ai}] = golden
+		return golden, nil
+	}
+	k := *g.b.augment
+	in := map[string]string{}
+	for port, typ := range k.Consumes {
+		switch {
+		case typ == TypeAugmentProfile:
+			in[port] = g.input(fmt.Sprintf("aug_a%d", ai), TypeAugmentProfile, *a.ref)
+		case typ == TypeDataset && slices.Contains(k.OptionalInputs, port):
+			if a.noise != nil {
+				in[port] = g.input(fmt.Sprintf("noise_a%d", ai), TypeDataset, *a.noise)
+			}
+		case typ == TypeDataset:
+			in[port] = golden
+		default:
+			return "", problems.RecipeMismatch.New("the augment step kind %s consumes %s (%s), which an eval cannot fill", k.Ref(), port, typ)
+		}
+	}
+	out, ok := producesType(k, TypeDataset)
+	if !ok {
+		return "", problems.RecipeMismatch.New("the augment step kind %s produces no dataset", k.Ref())
+	}
+	id := fmt.Sprintf("augment-g%da%d", gi+1, ai)
+	g.step(id, k, in)
+	w := id + "." + out
+	g.data[[2]int{gi, ai}] = w
+	return w, nil
+}
+
+// vadOf is the wire of the VAD of golden set gi under augmentation ai.
+func (g *gen) vadOf(ctx context.Context, gi, ai int) (string, error) {
+	if w, ok := g.vad[[2]int{gi, ai}]; ok {
+		return w, nil
+	}
+	data, err := g.dataset(ctx, gi, ai)
+	if err != nil {
+		return "", err
+	}
+	k := *g.b.mk.vad
+	port, _ := consumesType(k, TypeDataset)
+	out, _ := producesType(k, TypeVAD)
+	id := fmt.Sprintf("vad-g%da%d", gi+1, ai)
+	g.step(id, k, map[string]string{port: data})
+	w := id + "." + out
+	g.vad[[2]int{gi, ai}] = w
+	return w, nil
+}
+
+// checkpoint wires a model's checkpoint: the input, or its materialize step.
+func (g *gen) checkpoint(ms *modelSteps) error {
+	if ms.wire != "" {
+		return nil
+	}
+	if ms.materialize == nil {
+		ms.wire = g.input(fmt.Sprintf("model_m%d", ms.index), TypeCheckpoint, ms.model.artifact)
+		return nil
+	}
+	in := g.input(fmt.Sprintf("base_m%d", ms.index), TypeBaseModel, ms.model.artifact)
+	port, ok := consumesType(*ms.materialize, TypeBaseModel)
+	out, ok2 := producesType(*ms.materialize, TypeCheckpoint)
+	if !ok || !ok2 || len(ms.materialize.Consumes) != 1 {
+		return problems.RecipeMismatch.New("the materialize step kind %s must consume one base_model and produce a checkpoint (it consumes %v, produces %v)",
+			ms.materialize.Ref(), ms.materialize.Consumes, ms.materialize.Produces)
+	}
+	id := fmt.Sprintf("materialize-m%d", ms.index)
+	g.step(id, *ms.materialize, map[string]string{port: in})
+	ms.wire = id + "." + out
+	return nil
+}
+
+// unit generates a record's transcribe and score steps.
+func (g *gen) unit(ctx context.Context, u *unit) error {
+	b, pl, ms := g.b, g.b.plan, u.ms
+	if err := g.checkpoint(ms); err != nil {
+		return err
+	}
+	gs := pl.GoldenSets[u.gs]
+	data, err := g.dataset(ctx, u.gs, u.aug)
+	if err != nil {
+		return err
+	}
+	_, norm, err := g.golden(ctx, u.gs)
+	if err != nil {
+		return err
+	}
+	n := slices.Index(b.order, u) + 1
+	tid, sid := fmt.Sprintf("transcribe-u%d", n), fmt.Sprintf("score-u%d", n)
+	u.transcode, u.score = tid, sid
+	tin := map[string]string{}
+	for port, typ := range ms.transcribe.Consumes {
+		switch typ {
+		case TypeCheckpoint, TypeBaseModel:
+			tin[port] = ms.wire
+		case TypeDataset:
+			tin[port] = data
+		case TypeBoostList:
+			ref := pl.Decoding[u.dec].ref
+			if ref == nil && slices.Contains(ms.transcribe.OptionalInputs, port) {
+				continue // boost none: the optional list stays unwired
+			}
+			in := fmt.Sprintf("boost_d%d", u.dec+1)
+			if ref == nil { // a kind that always reads a list: an empty one
+				in = "boost_none"
+				empty, err := b.s.putBoost(langpacks.Boost{Terms: []string{}}, map[string]any{"terms": 0})
+				if err != nil {
+					return err
+				}
+				ref = &empty
+			}
+			tin[port] = g.input(in, TypeBoostList, *ref)
+		default:
+			g.fields = append(g.fields, problems.FieldError{Path: "/subject", Message: fmt.Sprintf(
+				"the transcribe step kind %s consumes %s (%s), which an eval cannot fill", ms.transcribe.Ref(), port, typ)})
+		}
+	}
+	hyp, ok := producesType(ms.transcribe, TypeHypotheses)
+	if !ok {
+		return problems.RecipeMismatch.New("the transcribe step kind %s produces no hypotheses", ms.transcribe.Ref())
+	}
+	tp := map[string]any{}
+	if _, ok := kindParams(ms.transcribe)["profile"]; ok {
+		tp["profile"] = u.profile
+	}
+	if ms.localeParam != "" && gs.Locale != "" {
+		tp[ms.localeParam] = gs.Locale
+	}
+	g.params[tid] = tp
+	g.estimates[tid] = gs.Hours * b.perAudioHour * 3600
+	g.step(tid, ms.transcribe, tin)
+	g.hyp[u.key.String()] = tid + "." + hyp
+	sin := map[string]string{}
+	for port, typ := range b.scorer.Consumes {
+		switch typ {
+		case TypeHypotheses:
+			sin[port] = tid + "." + hyp
+		case TypeDataset:
+			sin[port] = data
+		case TypeNormalizer:
+			sin[port] = norm
+		default:
+			g.fields = append(g.fields, problems.FieldError{Path: "/", Message: fmt.Sprintf(
+				"the scorer %s consumes %s (%s), which an eval cannot fill", b.scorer.Ref(), port, typ)})
+		}
+	}
+	if _, ok := producesType(b.scorer, TypeScores); !ok {
+		return problems.RecipeMismatch.New("the scorer %s produces no scores", b.scorer.Ref())
+	}
+	g.step(sid, b.scorer, sin)
+	return nil
+}
+
+// metrics generates the metric steps one record key misses.
+func (g *gen) metrics(ctx context.Context, ks string) error {
+	b := g.b
+	sl := b.slots[ks]
+	n := slices.Index(b.slotOrder, ks) + 1
+	for _, metric := range []string{MetricEntities, MetricLatency} {
+		mp := sl.plans[metric]
+		if mp.Step == "" {
+			continue
+		}
+		hyp, ok := g.hyp[ks]
+		if !ok { // a cached record: its hypotheses are an input
+			rec := b.cached[ks]
+			ref, err := b.s.sized(ctx, b.q, steps.ArtifactRef{Hash: rec.Hypotheses, Type: TypeHypotheses})
+			if err != nil {
+				return err
+			}
+			hyp = g.input(fmt.Sprintf("hyp_r%d", n), TypeHypotheses, ref)
+			g.hyp[ks] = hyp
+		}
+		data, err := g.dataset(ctx, sl.gs, sl.aug)
+		if err != nil {
+			return err
+		}
+		var k pipelines.Kind
+		var id string
+		in := map[string]string{}
+		switch metric {
+		case MetricEntities:
+			k, id = *b.mk.entity, fmt.Sprintf("entities-k%d", n)
+		default:
+			k, id = *b.mk.latency, fmt.Sprintf("latency-k%d", n)
+		}
+		for port, typ := range k.Consumes {
+			switch typ {
+			case TypeHypotheses:
+				in[port] = hyp
+			case TypeDataset:
+				in[port] = data
+			case TypeITN:
+				in[port] = g.input(fmt.Sprintf("itn_g%d", sl.gs+1), TypeITN, *b.itn[b.plan.GoldenSets[sl.gs].Locale].ref)
+			case TypeVAD:
+				w, err := g.vadOf(ctx, sl.gs, sl.aug)
+				if err != nil {
+					return err
+				}
+				in[port] = w
+			default:
+				return problems.RecipeMismatch.New("the metric scorer %s consumes %s (%s), which an eval cannot fill", k.Ref(), port, typ)
+			}
+		}
+		if _, ok := producesType(k, TypeMetricScores); !ok {
+			return problems.RecipeMismatch.New("the metric scorer %s produces no metric_scores", k.Ref())
+		}
+		g.step(id, k, in)
+		mp.Step = id
+		sl.plans[metric] = mp
+	}
 	return nil
 }
 

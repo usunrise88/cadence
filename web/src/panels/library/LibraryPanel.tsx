@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Plus } from "iconoir-react";
-import { mixesListOptions, projectsSearchOptions, registrySearchOptions, viewsListOptions } from "@/api/gen/@tanstack/react-query.gen";
+import { evalsListOptions, langpacksListOptions, mixesListOptions, projectsSearchOptions, registrySearchOptions, viewsListOptions } from "@/api/gen/@tanstack/react-query.gen";
 import type { AgentReference, RegistryKind } from "@/api/gen/types.gen";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -49,6 +49,11 @@ function useDebounced<T>(v: T, ms: number): T {
   return d;
 }
 
+/** Rows of the project's work (document references); registry rows are `<kind>:<ver_…>`. */
+const WORK = /^(mix|eval|language_pack):/;
+/** Registry kinds whose versions open as a document (Golden set, Model). */
+const DOCUMENTED = /^(golden_set|model):/;
+
 const pill = (on: boolean) =>
   cn("h-6 rounded-full border px-2", on ? "border-accent-line bg-accent-soft text-accent-text" : "text-muted-foreground hover:bg-hover");
 
@@ -88,21 +93,48 @@ export function LibraryPanel(_props: PanelProps) {
     enabled: !!project,
   });
 
-  useTopic(["entity.base_model.*", "entity.dataset_version.*", "entity.template.*"], () => void (searching ? search.refetch() : browse.refetch()));
+  useTopic(["entity.base_model.*", "entity.dataset_version.*", "entity.template.*", "entity.golden_set.*", "entity.normalizer.*", "entity.model.*"], () =>
+    void (searching ? search.refetch() : browse.refetch()),
+  );
   useTopic(project ? ["entity.saved_search.*"] : null, () => void views.refetch());
 
-  // The project's work (mixes now; runs and evals as they land) lists before the registry and opens as documents.
-  const mixes = useQuery({ ...mixesListOptions({ path: { p: project ?? "" } }), enabled: !!project && !searching && !kind });
+  // The project's work (mixes, evals and language packs; runs open from Metrics and links) lists before the registry
+  // and opens as documents.
+  const workEnabled = !!project && !searching && !kind;
+  const mixes = useQuery({ ...mixesListOptions({ path: { p: project ?? "" } }), enabled: workEnabled });
+  const evals = useQuery({ ...evalsListOptions({ path: { p: project ?? "" }, query: { limit: 50 } }), enabled: workEnabled });
+  const packs = useQuery({ ...langpacksListOptions({ path: { p: project ?? "" } }), enabled: workEnabled });
   useTopic(project ? ["entity.mix.*"] : null, () => void mixes.refetch());
-  const work: ListRow[] = (mixes.data?.items ?? []).map((m) => ({
-    id: `mix:${m.id}`,
-    name: m.name,
-    version: `rev ${m.rev}`,
-    state: "active",
-    tags: ["mix"],
-    actor: m.cause?.draftAuthor ?? m.updatedBy,
-    updatedAt: m.updatedAt,
-  }));
+  useTopic(project ? ["entity.eval.*"] : null, () => void evals.refetch());
+  const work: ListRow[] = [
+    ...(mixes.data?.items ?? []).map((m) => ({
+      id: `mix:${m.id}`,
+      name: m.name,
+      version: `rev ${m.rev}`,
+      state: "active",
+      tags: ["mix"],
+      actor: m.cause?.draftAuthor ?? m.updatedBy,
+      updatedAt: m.updatedAt,
+    })),
+    ...(evals.data?.items ?? []).map((e) => ({
+      id: `eval:${e.id}`,
+      name: `${e.subject.label} vs ${e.baseline.label}`,
+      version: e.gate ? `gate ${e.gate.verdict}` : "eval",
+      state: e.status,
+      tags: ["eval"],
+      actor: e.actor,
+      updatedAt: e.updatedAt,
+    })),
+    ...(packs.data?.items ?? []).map((p) => ({
+      id: `language_pack:${p.locale}`,
+      name: `${p.locale} language pack`,
+      version: p.sha.slice(0, 7),
+      state: "active",
+      tags: ["language pack", ...p.boost.map((b) => `boost:${b}`)],
+    })),
+  ];
+  // Project work and registry kinds with a document panel (golden sets, models) open as documents; the rest select.
+  const openRow = (r: ListRow) => (WORK.test(r.id) || DOCUMENTED.test(r.id) ? openDocument(r.id) : select(`registry:${r.id}`, undefined));
 
   const hits = useMemo(() => (searching ? (search.data?.groups ?? []).flatMap((g) => g.items) : []), [searching, search.data]);
   useEffect(() => remember(hits), [hits, remember]);
@@ -284,8 +316,8 @@ export function LibraryPanel(_props: PanelProps) {
           <EntityList
             rows={rows}
             label="Project work and registry versions"
-            onOpen={(r) => (r.id.startsWith("mix:") ? openDocument(r.id) : select(`registry:${r.id}`, undefined))}
-            onPreview={(r) => select(r.id.startsWith("mix:") ? r.id : `registry:${r.id}`, undefined)}
+            onOpen={openRow}
+            onPreview={(r) => select(WORK.test(r.id) ? r.id : `registry:${r.id}`, undefined)}
             onCursor={onCursor}
           />
         )}

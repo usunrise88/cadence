@@ -274,7 +274,7 @@ func Card(in CardInput) string {
 		if c.Role == RoleBaseline {
 			var sm Summary
 			if json.Unmarshal(c.Summary, &sm) == nil {
-				baseWER[fmt.Sprintf("%s|%s|%d", c.GoldenSetVersionID, c.Profile, c.DecodingIndex)] = sm.WER
+				baseWER[fmt.Sprintf("%s|%s|%d|%d", c.GoldenSetVersionID, c.Profile, c.DecodingIndex, c.AugmentationIndex)] = sm.WER
 			}
 		}
 	}
@@ -289,13 +289,16 @@ func Card(in CardInput) string {
 		if c.DecodingIndex < len(in.Eval.Decoding) {
 			dec = in.Eval.Decoding[c.DecodingIndex].Boost
 		}
+		if c.AugmentationIndex > 0 && c.AugmentationIndex < len(in.Eval.Augmentations) {
+			dec += " · augmented " + in.Eval.Augmentations[c.AugmentationIndex].Name
+		}
 		delta := "—"
 		var d Delta
 		if len(c.Delta) > 0 && json.Unmarshal(c.Delta, &d) == nil && d.Error == "" {
 			delta = fmt.Sprintf("%+.4f [%+.4f, %+.4f]", d.WER.Value, d.WER.Low, d.WER.High)
 		}
 		bw := "—"
-		if v, ok := baseWER[fmt.Sprintf("%s|%s|%d", c.GoldenSetVersionID, c.Profile, c.DecodingIndex)]; ok {
+		if v, ok := baseWER[fmt.Sprintf("%s|%s|%d|%d", c.GoldenSetVersionID, c.Profile, c.DecodingIndex, c.AugmentationIndex)]; ok {
 			bw = fmt.Sprintf("%.4f", v)
 		}
 		w("| %s | %s | %s | %.4f | %s | %s |\n", or(names[c.GoldenSetVersionID], c.GoldenSetVersionID), c.Profile, dec, sm.WER, bw, delta)

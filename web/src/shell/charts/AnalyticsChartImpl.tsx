@@ -1,15 +1,15 @@
 // The ECharts half of @/shell/charts, loaded lazily (AnalyticsChart.tsx) so ECharts stays out of the main bundle.
 // Tree-shaken: only the chart types and components the presets use are registered.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { BarChart, CustomChart, HeatmapChart, LineChart, ScatterChart } from "echarts/charts";
-import { AriaComponent, GridComponent, LegendComponent, MarkLineComponent, TooltipComponent, VisualMapComponent } from "echarts/components";
+import { BarChart, CustomChart, HeatmapChart, LineChart, ParallelChart, ScatterChart } from "echarts/charts";
+import { AriaComponent, GridComponent, LegendComponent, MarkLineComponent, ParallelComponent, TooltipComponent, VisualMapComponent } from "echarts/components";
 import { init, use as registerEcharts, type ECharts } from "echarts/core";
 import { CanvasRenderer } from "echarts/renderers";
 import { analyticsTable, buildOption, cursorItems, echartsTheme, summarizeAnalytics, type AnalyticsSpec } from "./analytics";
 import { ChartFrame } from "./ChartFrame";
 import { useChartTheme, useElementSize, useOwnerDocument } from "./hooks";
 
-registerEcharts([BarChart, HeatmapChart, ScatterChart, LineChart, CustomChart, GridComponent, TooltipComponent, LegendComponent, VisualMapComponent, MarkLineComponent, AriaComponent, CanvasRenderer]);
+registerEcharts([BarChart, HeatmapChart, ScatterChart, LineChart, CustomChart, ParallelChart, ParallelComponent, GridComponent, TooltipComponent, LegendComponent, VisualMapComponent, MarkLineComponent, AriaComponent, CanvasRenderer]);
 
 export type AnalyticsChartProps = {
   spec: AnalyticsSpec;
@@ -68,11 +68,13 @@ export function AnalyticsChartImpl({ spec, hideTitle, height, className }: Analy
       const prev = items.items[cursor];
       if (prev) chart.dispatchAction({ type: "downplay", seriesIndex: prev.seriesIndex, dataIndex: prev.dataIndex });
       chart.dispatchAction({ type: "highlight", seriesIndex: it.seriesIndex, dataIndex: it.dataIndex });
-      chart.dispatchAction({ type: "showTip", seriesIndex: it.seriesIndex, dataIndex: it.dataIndex });
+      // ECharts cannot place a tooltip on a parallel line by index (it has no single point); the highlight and the
+      // spoken readout stand for it there.
+      if (spec.kind !== "parallel") chart.dispatchAction({ type: "showTip", seriesIndex: it.seriesIndex, dataIndex: it.dataIndex });
       setCursor(next);
       setAnnounce(it.text);
     },
-    [items, cursor],
+    [items, cursor, spec.kind],
   );
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {

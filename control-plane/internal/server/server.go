@@ -29,6 +29,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/evals"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
 	"github.com/usunrise88/cadence/control-plane/internal/eviction"
+	"github.com/usunrise88/cadence/control-plane/internal/experiments"
 	"github.com/usunrise88/cadence/control-plane/internal/help"
 	"github.com/usunrise88/cadence/control-plane/internal/jobs"
 	"github.com/usunrise88/cadence/control-plane/internal/langpacks"
@@ -138,6 +139,8 @@ type Server struct {
 	// media serves audio, peaks, spectrogram tiles and words to people; mediaLinks signs short-lived audio links.
 	media      *media.Service
 	mediaLinks *media.Signer
+	// experiments group runs and drive sweeps (phase 3 · stream X).
+	experiments *experiments.Service
 }
 
 var _ api.StrictServerInterface = (*Server)(nil)
@@ -191,6 +194,8 @@ func New(c Config) (*Server, error) {
 	s.evals = s.newEvalsService()
 	s.evals.Install(c.StepHooks) // scores outputs write eval records; the engine reports eval pipeline changes
 	s.media, s.mediaLinks = s.newMedia()
+	s.experiments = s.newExperimentsService()
+	s.experiments.Install() // a run that ends starts its sweep's next run
 	window := time.Duration(s.defaultsDoc().Drafts.PresenceSeconds.Value) * time.Second
 	s.drafts = drafts.NewStore(time.Now, window)
 	s.mixes = mixes.NewService(s.drafts, s.defaultsDoc)

@@ -895,6 +895,10 @@ export type Defaults = {
     views?: {
         [key: string]: DefaultSection;
     };
+    /**
+     * Sweeps (phase 3): mode, run counts, the GPU-hour cap and the seed of a random draw
+     */
+    sweeps?: DefaultSection;
     estimates: {
         bytes_per_audio_hour: DefaultValue;
         measured_plus_minus?: DefaultValue;
@@ -1012,6 +1016,10 @@ export type RunNew = {
      * Queue priority of the run's step jobs (higher first)
      */
     priority?: number;
+    /**
+     * The experiment the run belongs to (exp_…): the run trains on its mix revision and base model (phase 3)
+     */
+    experiment?: string;
 };
 
 export type EstimateRange = {
@@ -4546,6 +4554,14 @@ export type Run = {
      * The run the start checkpoint came from (runs.stage)
      */
     parentRunId?: string;
+    /**
+     * The experiment the run belongs to (exp_…)
+     */
+    experimentId?: string;
+    /**
+     * The sweep that generated the run (swp_…)
+     */
+    sweepId?: string;
     family: {
         /**
          * The model family of the base model (R41)
@@ -5340,6 +5356,10 @@ export type EvalNew = {
      */
     decoding?: Array<EvalDecodingVariant>;
     /**
+     * The robustness axis: augmentation profiles of the project (augment/<name>.yaml@<commit>) applied to the golden sets before transcription; none is always included; default [{profile: none}]
+     */
+    augmentations?: Array<EvalAugmentationVariant>;
+    /**
      * The baseline model (ver_…, @alias, base-model/<name> or model/<name>); default the project's @baseline, else its default base model
      */
     baseline?: string;
@@ -5581,6 +5601,10 @@ export type EvalCell = {
     goldenSetVersionId: string;
     profile: string;
     decodingIndex: number;
+    /**
+     * Index into the eval's augmentations (0: none)
+     */
+    augmentationIndex?: number;
     decodingHash: string;
     modelKey: string;
     state: EvalCellState;
@@ -5599,6 +5623,7 @@ export type EvalCell = {
     summary?: EvalSummary;
     delta?: EvalDelta;
     worst?: Array<EvalUtterance>;
+    metrics?: EvalCellMetrics;
 };
 
 export type EvalGateCheck = {
@@ -5655,6 +5680,10 @@ export type Eval = {
      */
     primaryProfile: string;
     decoding: Array<EvalDecoding>;
+    /**
+     * The robustness axis: index 0 is always none (phase 3 · stream R)
+     */
+    augmentations?: Array<EvalAugmentation>;
     significance: EvalSignificance;
     /**
      * The pipeline run computing the missing cells (absent when every cell was cached)
@@ -5667,6 +5696,10 @@ export type Eval = {
      * Absent in evals.list
      */
     cells?: Array<EvalCell>;
+    /**
+     * The robustness matrix when the eval has augmentations beyond none (absent in evals.list)
+     */
+    robustness?: Array<EvalRobustnessRow>;
     rev: number;
     actor: Actor;
     createdAt: string;
@@ -5683,6 +5716,10 @@ export type EvalPlanCell = {
     goldenSetVersionId: string;
     profile: string;
     decodingIndex: number;
+    /**
+     * Index into augmentations (0: none)
+     */
+    augmentationIndex?: number;
     decodingHash: string;
     modelKey: string;
     cached: boolean;
@@ -5696,6 +5733,10 @@ export type EvalPlan = {
     profiles: Array<EvalProfile>;
     primaryProfile: string;
     decoding: Array<EvalDecoding>;
+    /**
+     * The robustness axis (phase 3 · stream R)
+     */
+    augmentations?: Array<EvalAugmentation>;
     significance: EvalSignificance;
     cells: Array<EvalPlanCell>;
     cellsCached: number;
@@ -5821,6 +5862,180 @@ export type ModelVersion = RegistryVersion & {
 
 export type ModelVersionList = {
     items: Array<ModelVersion>;
+};
+
+export type EvalAugmentationVariant = {
+    /**
+     * none, or an augmentation profile of the project repository at a commit: augment/<name>.yaml@<commit sha>
+     */
+    profile: string;
+    /**
+     * Seed of the augmentation draw; default the profile file's seed, else augment.seed
+     */
+    seed?: number;
+};
+
+/**
+ * One augmentation of an eval (the robustness axis): none, or a profile applied by augment_dataset before transcription
+ */
+export type EvalAugmentation = {
+    index: number;
+    /**
+     * none or augment/<name>.yaml@<commit>
+     */
+    profile: string;
+    /**
+     * The profile's name
+     */
+    name?: string;
+    seed?: number;
+    /**
+     * sha256 of the resolved profile (transforms and seed); the cell's decoding hash, and so its eval-record key, includes it
+     */
+    hash?: string;
+    /**
+     * The rendered augment_profile artifact (b3:…)
+     */
+    artifact?: string;
+    /**
+     * The noise bank version (ver_…) the noise transform mixes from
+     */
+    noiseBank?: string;
+    /**
+     * The resolved transforms (defaults.yaml augment.* where the file is silent)
+     */
+    transforms?: {
+        [key: string]: unknown;
+    };
+};
+
+export type EvalMetricUnavailable = {
+    metric: 'entities' | 'latency';
+    reason: string;
+};
+
+export type EvalEntityClass = {
+    /**
+     * An ITN class of the language pack (number, phone, date, amount, …)
+     */
+    class: string;
+    refEntities: number;
+    hypEntities: number;
+    correct: number;
+    /**
+     * correct / refEntities (absent or null without reference entities)
+     */
+    accuracy?: number;
+    /**
+     * correct / hypEntities
+     */
+    precision?: number;
+};
+
+/**
+ * Entity accuracy of a cell (entity_score): the pack's ITN classes compared between references and hypotheses; reported, not gated
+ */
+export type EvalEntityScores = {
+    scorer: string;
+    /**
+     * The metric_scores artifact (b3:…)
+     */
+    scores?: string;
+    available: boolean;
+    reason?: string;
+    /**
+     * {locale, commit}: the itn.yaml the classes came from
+     */
+    itn?: {
+        [key: string]: unknown;
+    };
+    utterances?: number;
+    utterancesWithEntities?: number;
+    refEntities: number;
+    hypEntities?: number;
+    correct: number;
+    accuracy?: number;
+    precision?: number;
+    classes?: Array<EvalEntityClass>;
+};
+
+/**
+ * Latency to final at real-time pace (R54, latency_score): speech end (frame VAD) to the partial whose text is final
+ */
+export type EvalLatencyScores = {
+    scorer: string;
+    /**
+     * The metric_scores artifact (b3:…)
+     */
+    scores?: string;
+    available: boolean;
+    reason?: string;
+    /**
+     * simulated: emit times at real-time pace from a file decode's compute times; realtime: a decode run at real-time pace
+     */
+    pace?: 'simulated' | 'realtime' | 'mixed';
+    /**
+     * Where utterance ends come from
+     */
+    utteranceEnd?: 'vad';
+    /**
+     * {kind, model, revision, …} of the VAD step
+     */
+    vad?: {
+        [key: string]: unknown;
+    };
+    profile?: string;
+    utterances?: number;
+    /**
+     * Utterances with speech and a non-empty final
+     */
+    measured: number;
+    p50Ms?: number;
+    p95Ms?: number;
+    meanMs?: number;
+    maxMs?: number;
+    /**
+     * Finals emitted before the VAD's speech end (counted as 0 ms)
+     */
+    earlyFinals?: number;
+    noSpeech?: number;
+    emptyFinals?: number;
+};
+
+/**
+ * Metrics beside WER, kept with the cell's eval record (absent while their steps run)
+ */
+export type EvalCellMetrics = {
+    entities?: EvalEntityScores;
+    latency?: EvalLatencyScores;
+    /**
+     * Metrics this cell does not get, and why
+     */
+    unavailable?: Array<EvalMetricUnavailable>;
+};
+
+/**
+ * One cell of the robustness matrix (golden set × augmentation × latency profile): WER under the augmentation against the same cell without it
+ */
+export type EvalRobustnessRow = {
+    role: EvalCellRole;
+    goldenSetVersionId: string;
+    profile: string;
+    decodingIndex: number;
+    augmentationIndex: number;
+    cellId: string;
+    /**
+     * WER under the augmentation (absent until scored)
+     */
+    wer?: number;
+    /**
+     * WER of the same cell without augmentation
+     */
+    werNone?: number;
+    /**
+     * wer − werNone (absolute, a fraction)
+     */
+    degradation?: number;
 };
 
 /**
@@ -6210,6 +6425,332 @@ export type UtteranceWords = {
     del?: number;
     ins?: number;
     refWords?: number;
+};
+
+export type ExperimentNew = {
+    /**
+     * A short name, unique in the project
+     */
+    name: string;
+    /**
+     * The question the experiment's runs answer
+     */
+    question: string;
+    /**
+     * The mix every run trains on (mix_… or its name)
+     */
+    mix: string;
+    /**
+     * The fixed mix revision (default the mix's current one)
+     */
+    mixRevision?: number;
+    /**
+     * Base model version (ver_…), collection name or @alias, pinned to a version (default the defaults' base model)
+     */
+    baseModel?: string;
+    /**
+     * A short tag for filters and search (default derived from the name)
+     */
+    tag?: string;
+};
+
+export type ExperimentMixRef = {
+    /**
+     * mix_…
+     */
+    id: string;
+    name: string;
+    /**
+     * The fixed mix revision
+     */
+    revision: number;
+    /**
+     * The revision's replay share (a sweep may vary it)
+     */
+    replayShare?: number;
+};
+
+export type ExperimentParameter = {
+    /**
+     * A train-step parameter, or replayShare (the mix's)
+     */
+    name: string;
+    /**
+     * The value runs get when nothing sets it (defaults.yaml, or the mix revision's replay share)
+     */
+    default?: unknown;
+    /**
+     * A sweep of the experiment varies it
+     */
+    swept: boolean;
+    /**
+     * At least one run departs from the default
+     */
+    departs: boolean;
+};
+
+export type ExperimentEval = {
+    /**
+     * evl_…
+     */
+    evalId: string;
+    status: EvalStatus;
+    /**
+     * The gate's verdict, once evals.gate ran
+     */
+    verdict?: 'passed' | 'failed';
+};
+
+export type ExperimentRun = {
+    /**
+     * run_…
+     */
+    runId: string;
+    status: RunStatus;
+    /**
+     * The sweep that generated the run (swp_…)
+     */
+    sweepId?: string;
+    /**
+     * The run's point in its sweep
+     */
+    point?: number;
+    /**
+     * The compared parameters' values for this run (parameter name → value)
+     */
+    values: {
+        [key: string]: unknown;
+    };
+    /**
+     * Compared parameters whose value differs from the default
+     */
+    departures: Array<string>;
+    /**
+     * The lowest validation WER of the run's checkpoints (a fraction)
+     */
+    bestValWer?: number;
+    /**
+     * The checkpoint with that WER
+     */
+    bestCheckpointId?: string;
+    /**
+     * The optimiser step of that checkpoint
+     */
+    bestStep?: number;
+    gpuHours: number;
+    /**
+     * The run's estimate at start
+     */
+    estimateGpuHours?: number;
+    /**
+     * The experiment's best run
+     */
+    best: boolean;
+    eval?: ExperimentEval;
+    error?: string;
+    createdAt: string;
+    finishedAt?: string;
+};
+
+export type ExperimentBest = {
+    runId: string;
+    checkpointId: string;
+    valWer: number;
+    eval?: ExperimentEval;
+    /**
+     * models.register would accept the checkpoint now: its latest gated eval passed
+     */
+    registrable: boolean;
+    /**
+     * Why it cannot be registered yet, and the next command
+     */
+    reason?: string;
+};
+
+export type Experiment = {
+    /**
+     * exp_…
+     */
+    id: string;
+    projectId: string;
+    name: string;
+    question: string;
+    tag?: string;
+    mix: ExperimentMixRef;
+    baseModel: RegistryVersion;
+    runCount: number;
+    /**
+     * The compared parameters, swept ones first (experiments.get only)
+     */
+    parameters?: Array<ExperimentParameter>;
+    /**
+     * Oldest first (experiments.get only)
+     */
+    runs?: Array<ExperimentRun>;
+    best?: ExperimentBest;
+    /**
+     * Newest first
+     */
+    sweeps: Array<Sweep>;
+    rev: number;
+    actor: Actor;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type ExperimentList = {
+    items: Array<Experiment>;
+};
+
+export type SweepMode = 'grid' | 'random';
+
+/**
+ * running: a run is queued or training; done: every point ran; stopped: the cap was reached first; cancelled: its running run was cancelled; failed: a run could not be started
+ */
+export type SweepState = 'running' | 'done' | 'stopped' | 'cancelled' | 'failed';
+
+export type SweepParameter = {
+    /**
+     * A train-step parameter (peak_lr, warmup_steps, augmentation, …) or replayShare
+     */
+    name: string;
+    /**
+     * The values to try (grid: required; random: drawn from)
+     */
+    values?: Array<unknown>;
+    /**
+     * random: the lower bound of a numeric range
+     */
+    min?: number;
+    /**
+     * random: the upper bound
+     */
+    max?: number;
+    /**
+     * random: draw uniformly on this scale (default linear; log for learning rates)
+     */
+    scale?: 'linear' | 'log';
+    /**
+     * random: round drawn values to integers
+     */
+    integer?: boolean;
+};
+
+export type SweepNew = {
+    mode?: SweepMode;
+    parameters: Array<SweepParameter>;
+    /**
+     * random: how many points (default sweeps.random_runs); grid: at most this many of the combinations (default all of them, up to sweeps.max_runs)
+     */
+    runs?: number;
+    /**
+     * Most GPU-hours the sweep's runs may use (default sweeps.gpu_hour_cap)
+     */
+    gpuHourCap?: number;
+    /**
+     * random: the seed of the draw (default sweeps.seed)
+     */
+    seed?: number;
+    /**
+     * Step budget of every run (default training.steps)
+     */
+    steps?: number;
+    /**
+     * Queue priority of the runs' step jobs (default 0)
+     */
+    priority?: number;
+};
+
+export type SweepPoint = {
+    index: number;
+    /**
+     * Parameter name → value
+     */
+    values: {
+        [key: string]: unknown;
+    };
+    /**
+     * pending: not started yet; skipped: the sweep ended first; else the run's status
+     */
+    state: 'pending' | 'queued' | 'running' | 'paused' | 'done' | 'failed' | 'cancelled' | 'skipped';
+    runId?: string;
+    /**
+     * The point's estimate when the sweep was planned
+     */
+    estimateGpuHours?: number;
+    gpuHours?: number;
+};
+
+export type Sweep = {
+    /**
+     * swp_…
+     */
+    id: string;
+    experimentId: string;
+    mode: SweepMode;
+    parameters: Array<SweepParameter>;
+    seed?: number;
+    steps?: number;
+    gpuHourCap: number;
+    state: SweepState;
+    /**
+     * Why the sweep ended before its last point (the cap, a cancelled or failed run)
+     */
+    stopReason?: string;
+    points: Array<SweepPoint>;
+    /**
+     * Runs that ended
+     */
+    runsDone: number;
+    /**
+     * The run queued or training now
+     */
+    currentRunId?: string;
+    /**
+     * GPU-hours the sweep's runs used
+     */
+    gpuHoursSpent: number;
+    /**
+     * The sum of the points' estimates when the sweep started
+     */
+    estimateGpuHours: number;
+    rev: number;
+    actor: Actor;
+    createdAt: string;
+    updatedAt: string;
+    finishedAt?: string;
+};
+
+export type SweepPlan = {
+    experimentId: string;
+    mode: SweepMode;
+    seed?: number;
+    steps?: number;
+    points: Array<SweepPoint>;
+    estimateGpuHours: EstimateRange;
+    gpuHourCap: number;
+    /**
+     * The whole estimate fits the cap (otherwise the real call answers sweep-over-cap)
+     */
+    withinCap: boolean;
+    /**
+     * How many points
+     */
+    fits: number;
+    /**
+     * table, measured or mixed: where the points' estimates come from
+     */
+    basis: string;
+    budget: {
+        /**
+         * The project's daily budget minus today's use and committed work
+         */
+        remainingGpuHours: number;
+        /**
+         * The whole estimate fits today's remaining budget (over it, an agent's sweep waits for an approval)
+         */
+        withinDailyBudget: boolean;
+    };
 };
 
 export type SecretNewWritable = {
@@ -11620,6 +12161,10 @@ export type RunsListData = {
          * Only runs in this status
          */
         status?: RunStatus;
+        /**
+         * Only runs of this experiment (exp_…)
+         */
+        experiment?: string;
         limit?: number;
     };
     url: '/projects/{p}/runs';
@@ -12948,6 +13493,166 @@ export type RegistryLineageResponses = {
 };
 
 export type RegistryLineageResponse = RegistryLineageResponses[keyof RegistryLineageResponses];
+
+export type ExperimentsListData = {
+    body?: never;
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        limit?: number;
+    };
+    url: '/projects/{p}/experiments';
+};
+
+export type ExperimentsListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type ExperimentsListError = ExperimentsListErrors[keyof ExperimentsListErrors];
+
+export type ExperimentsListResponses = {
+    /**
+     * Experiments, newest first (runs and parameters omitted; experiments.get has them)
+     */
+    200: ExperimentList;
+};
+
+export type ExperimentsListResponse = ExperimentsListResponses[keyof ExperimentsListResponses];
+
+export type ExperimentsNewData = {
+    body: ExperimentNew;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/projects/{p}/experiments';
+};
+
+export type ExperimentsNewErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type ExperimentsNewError = ExperimentsNewErrors[keyof ExperimentsNewErrors];
+
+export type ExperimentsNewResponses = {
+    /**
+     * Dry run — the experiment as it would be; nothing was written
+     */
+    200: Experiment;
+    /**
+     * The experiment
+     */
+    201: Experiment;
+};
+
+export type ExperimentsNewResponse = ExperimentsNewResponses[keyof ExperimentsNewResponses];
+
+export type ExperimentsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Experiment id (exp_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/experiments/{id}';
+};
+
+export type ExperimentsGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type ExperimentsGetError = ExperimentsGetErrors[keyof ExperimentsGetErrors];
+
+export type ExperimentsGetResponses = {
+    /**
+     * The experiment
+     */
+    200: Experiment;
+};
+
+export type ExperimentsGetResponse = ExperimentsGetResponses[keyof ExperimentsGetResponses];
+
+export type SweepsRunData = {
+    body: SweepNew;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Experiment id (exp_…)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/experiments/{id}/sweeps:run';
+};
+
+export type SweepsRunErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type SweepsRunError = SweepsRunErrors[keyof SweepsRunErrors];
+
+export type SweepsRunResponses = {
+    /**
+     * Dry run — the points, their estimates and the total against the cap; nothing was written or queued
+     */
+    200: SweepPlan;
+    /**
+     * The sweep with its first run queued
+     */
+    201: Sweep;
+    /**
+     * Gated; a person decides the approval on the approvals topic
+     */
+    202: ApprovalAccepted;
+};
+
+export type SweepsRunResponse = SweepsRunResponses[keyof SweepsRunResponses];
 
 export type AudioGetData = {
     body?: never;

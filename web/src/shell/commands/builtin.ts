@@ -29,6 +29,8 @@ import { DEFAULT_WORKSPACES } from "@/shell/workspaces/schema";
 import { applyPlan, defaultPlan, restoreWorkspace, saveWorkspace } from "@/shell/workspaces/persistence";
 import { registerAgentCommands } from "./agents";
 import { registerApiCommands } from "./api";
+import { registerExperimentCommands } from "./experiments";
+import { registerEvaluationCommands } from "./evaluation";
 import { registerTrainingCommands } from "./training";
 import { registerProjectCommands } from "./projects";
 import type { Command } from "./registry";
@@ -233,6 +235,8 @@ export function registerBuiltinCommands(): void {
   registerProjectCommands();
   registerAgentCommands();
   registerTrainingCommands();
+  registerExperimentCommands();
+  registerEvaluationCommands();
 
   // One "Open <panel>" command per registered tool panel.
   for (const m of panels.all()) {

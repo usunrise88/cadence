@@ -62,7 +62,7 @@ Behaviour:
 
 ## `AnalyticsChart` (ECharts, lazy)
 
-For histograms, bars, heatmaps, scatter/Pareto and forest plots. ECharts loads on first render (its own chunk);
+For histograms, bars, heatmaps, scatter/Pareto, forest plots and parallel coordinates. ECharts loads on first render (its own chunk);
 a small placeholder shows meanwhile.
 
 ```tsx
@@ -78,6 +78,7 @@ import { AnalyticsChart, type AnalyticsSpec } from "@/shell/charts";
 | `heatmap` | `x: string[]`, `y: string[]`, `cells: { x, y, value \| null }[]` (indexes), `colormap?: "magma" \| "viridis" \| "diverging"`, `range?`, `center?` (diverging: symmetric around it, default 0) |
 | `scatter` | `series: { id, label, slot?, points: { x, y, label? }[] }[]`, `front?: { x: "min" \| "max", y: "min" \| "max" }` (Pareto front line) |
 | `forest` | `rows: { label, estimate, low, high }[]`, `reference?` (default 0) |
+| `parallel` | `axes: { id, label, type?: "value" \| "log" \| "category", categories? }[]`, `lines: { id, label, slot?, values: (number \| string \| null)[], highlight? }[]` (one line per item, values in axis order; a highlighted line is wider and solid — the best run of an Experiment) |
 
 All kinds take `title`, `xLabel?`, `yLabel?`, `unit?`, `format?`. ARIA is on (the text summary is its
 description) and decal patterns are on for every series; scatter series also differ by symbol, heatmap cells print

@@ -2785,6 +2785,7 @@ paths:
           by status. Open one with runs.get.
       parameters:
         - { name: status, in: query, description: Only runs in this status, schema: { $ref: "#/components/schemas/RunStatus" } }
+        - { name: experiment, in: query, description: "Only runs of this experiment (exp_…)", schema: { type: string } }
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
       responses:
         "200":
@@ -3246,7 +3247,9 @@ paths:
           same cell of the baseline. Everything is optional but the subject: golden sets default to the ones the
           project's gates.yaml names (target and replay), else its adopted golden sets; profiles to
           eval.matrix_profiles the model family declares, always with the primary profile; decoding to [{boost: none}];
-          baseline to the project's @baseline alias, else its default base model. Cells already in the eval records
+          augmentations (the robustness axis) to [{profile: none}] — add {profile: augment/<name>.yaml@<commit>,
+          seed?} to decode the golden sets also through that augmentation profile; baseline to the project's
+          @baseline alias, else its default base model. Cells already in the eval records
           (any project, same weights × golden set × normalizer × decoding × scorer) are reused; only missing cells run
           (baseline cells included). Always call it with dryRun=true first: the answer is the plan — cells cached and
           to compute and the GPU-hour estimate. Without dryRun it answers 201 with the eval (follow it with evals.get;
@@ -3283,7 +3286,10 @@ paths:
           partial stability; subject cells carry the delta against the baseline's cell with a paired blockwise
           bootstrap interval (significant when it excludes zero). worst=N adds the N utterances with the most errors to
           each subject cell that passes the filters (cell=evc_… for one cell): reference, hypothesis and the alignment
-          ops (=, S, D, I). Filters: goldenSet, profile, role.
+          ops (=, S, D, I). Filters: goldenSet, profile, role. Each cell's metrics carry entity accuracy for the
+          language pack's ITN classes and latency to final (p50/p95 ms, real-time pace) when available, else the
+          reason; with augmentations, robustness lists each augmented cell's WER against the same cell without
+          augmentation (reported, not gated).
       parameters:
         - { name: worst, in: query, required: false, description: "Add the N worst utterances (most errors) to each matching cell", schema: { type: integer, minimum: 1, maximum: 200 } }
         - { name: cell, in: query, required: false, description: "Only this cell (evc_…)", schema: { type: string } }
@@ -3545,6 +3551,109 @@ paths:
         "200":
           description: Nodes and edges; edges point from what was used to what used it
           content: { application/json: { schema: { $ref: "#/components/schemas/Lineage" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  # ---------------------------------------------------------------- experiments and sweeps (phase 3 · stream X) — add paths below this line
+  /projects/{p}/experiments:
+    x-cadence: { entity: experiments }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    get:
+      operationId: experiments.list
+      summary: List the project's experiments, newest first (question, mix, base model, run count, best run, sweeps)
+      tags: [runs]
+      parameters:
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+      responses:
+        "200":
+          description: Experiments, newest first (runs and parameters omitted; experiments.get has them)
+          content: { application/json: { schema: { $ref: "#/components/schemas/ExperimentList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+    post:
+      operationId: experiments.new
+      summary: Open an experiment — a question with a fixed mix revision and base model — that runs and sweeps join
+      tags: [runs]
+      x-cadence:
+        toolDescription: >
+          Group the runs that answer one question: name, question, the mix (mix_… or its name, pinned to its current
+          revision unless mixRevision) and the base model (pinned to a version; default the defaults' base model).
+          Every run of the experiment trains on exactly that mix revision and base model: runs.new with
+          experiment=exp_… inherits them, and sweeps.run generates runs over recipe parameters. dryRun checks the mix
+          and base model and answers the experiment as it would be. Follow with sweeps.run (dry run first) or
+          runs.new, then experiments.get for the comparison.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ExperimentNew" } } }
+      responses:
+        "200":
+          description: Dry run — the experiment as it would be; nothing was written
+          content: { application/json: { schema: { $ref: "#/components/schemas/Experiment" } } }
+        "201":
+          description: The experiment
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Experiment" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /experiments/{id}:
+    x-cadence: { entity: experiments }
+    parameters: [{ name: id, in: path, required: true, description: "Experiment id (exp_…)", schema: { type: string } }]
+    get:
+      operationId: experiments.get
+      summary: Get an experiment with its runs as parameters × metrics, the best run by validation WER, and its sweeps
+      tags: [runs]
+      x-cadence:
+        toolDescription: >
+          The comparison of an experiment: one row per run with the values of the compared parameters (every swept
+          parameter and every train-step parameter some run departs from defaults with; departures marked), the
+          best validation WER and its checkpoint, GPU-hours, and the latest eval of that checkpoint with its gate
+          verdict. best names the run with the lowest validation WER and whether its checkpoint can be registered
+          now (models.register needs a passed gate: evals.new, then evals.gate). sweeps lists each sweep's state,
+          points and GPU-hours spent against its cap.
+      responses:
+        "200":
+          description: The experiment
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Experiment" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /experiments/{id}/sweeps:run:
+    x-cadence: { entity: sweeps }
+    parameters: [{ name: id, in: path, required: true, description: "Experiment id (exp_…)", schema: { type: string } }]
+    post:
+      operationId: sweeps.run
+      summary: Run a grid or random sweep over recipe parameters as sequential runs of the experiment under a GPU-hour cap
+      tags: [runs]
+      x-cadence:
+        toolDescription: >
+          Generate the experiment's runs from a parameter set: mode grid (every combination of the listed values) or
+          random (points drawn with seed from each parameter's values or its min–max range, log scale for learning
+          rates). Parameters are the train step's (peak_lr, warmup_steps, augmentation, … — any parameter with an
+          x-cadence range) and replayShare (the mix's replay share; the mix revision stays fixed). Each point becomes
+          one run through runs.new on the experiment's mix and base model; runs are queued one after another on the
+          project's training slot. Always call it with dryRun=true first: the answer lists the points with their
+          estimates and the total against gpuHourCap. The whole estimate must fit the cap (sweep-over-cap) and is
+          weighed against the GPU budgets like runs.new (202 with an approvalId when it exceeds them). The sweep
+          stops when the GPU-hours its runs used plus the next run's estimate would pass the cap. Cancelling the
+          running run (jobs.cancel on its current job) cancels the sweep. Watch experiments.get or
+          entity.experiment.{id}.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/SweepNew" } } }
+      responses:
+        "200":
+          description: Dry run — the points, their estimates and the total against the cap; nothing was written or queued
+          content: { application/json: { schema: { $ref: "#/components/schemas/SweepPlan" } } }
+        "201":
+          description: The sweep with its first run queued
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Sweep" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
         default: { $ref: "#/components/responses/Problem" }
 
 
@@ -4548,6 +4657,7 @@ components:
           type: object
           description: "Client view defaults, one section per view (views.audio: the audio view's budgets and spectrogram, R52)"
           additionalProperties: { $ref: "#/components/schemas/DefaultSection" }
+        sweeps: { $ref: "#/components/schemas/DefaultSection", description: "Sweeps (phase 3): mode, run counts, the GPU-hour cap and the seed of a random draw" }
         estimates:
           type: object
           required: [bytes_per_audio_hour, training]
@@ -4630,6 +4740,7 @@ components:
           type: object
           description: "Overrides of the train step's parameters (recorded as departures when they differ from the default)"
         priority: { type: integer, minimum: -100, maximum: 100, default: 0, description: "Queue priority of the run's step jobs (higher first)" }
+        experiment: { type: string, maxLength: 200, description: "The experiment the run belongs to (exp_…): the run trains on its mix revision and base model (phase 3)" }
     EstimateRange:
       type: object
       required: [value, low, high]
@@ -7074,6 +7185,8 @@ components:
         baseModel: { $ref: "#/components/schemas/RegistryVersion" }
         checkpointId: { type: string, description: "init checkpoint: the checkpoint the run starts from" }
         parentRunId: { type: string, description: "The run the start checkpoint came from (runs.stage)" }
+        experimentId: { type: string, description: "The experiment the run belongs to (exp_…)" }
+        sweepId: { type: string, description: "The sweep that generated the run (swp_…)" }
         family:
           type: object
           required: [name, versionId]
@@ -7586,6 +7699,7 @@ components:
         goldenSets: { type: array, items: { type: string }, description: "Golden set versions (ver_…, @alias, golden-set/<name>); default: those gates.yaml names, else the project's adopted golden sets" }
         profiles: { type: array, items: { type: string }, description: "Latency profiles (R43); default: eval.matrix_profiles that the model families declare, plus the primary profile" }
         decoding: { type: array, items: { $ref: "#/components/schemas/EvalDecodingVariant" }, description: "Decoding variants (R24); default [{boost: none}]" }
+        augmentations: { type: array, items: { $ref: "#/components/schemas/EvalAugmentationVariant" }, description: "The robustness axis: augmentation profiles of the project (augment/<name>.yaml@<commit>) applied to the golden sets before transcription; none is always included; default [{profile: none}]" }
         baseline: { type: string, description: "The baseline model (ver_…, @alias, base-model/<name> or model/<name>); default the project's @baseline, else its default base model" }
         priority: { type: integer, minimum: 0, maximum: 100, description: "Queue priority of the eval's steps" }
     EvalModel:
@@ -7734,6 +7848,7 @@ components:
         goldenSetVersionId: { type: string }
         profile: { type: string }
         decodingIndex: { type: integer }
+        augmentationIndex: { type: integer, description: "Index into the eval's augmentations (0: none)" }
         decodingHash: { type: string }
         modelKey: { type: string }
         state: { $ref: "#/components/schemas/EvalCellState" }
@@ -7743,6 +7858,7 @@ components:
         summary: { $ref: "#/components/schemas/EvalSummary" }
         delta: { $ref: "#/components/schemas/EvalDelta" }
         worst: { type: array, items: { $ref: "#/components/schemas/EvalUtterance" } }
+        metrics: { $ref: "#/components/schemas/EvalCellMetrics" }
     EvalGateCheck:
       type: object
       required: [kind, state, message]
@@ -7789,12 +7905,14 @@ components:
         profiles: { type: array, items: { $ref: "#/components/schemas/EvalProfile" } }
         primaryProfile: { type: string, description: "The cell the gate reads (R20)" }
         decoding: { type: array, items: { $ref: "#/components/schemas/EvalDecoding" } }
+        augmentations: { type: array, items: { $ref: "#/components/schemas/EvalAugmentation" }, description: "The robustness axis: index 0 is always none (phase 3 · stream R)" }
         significance: { $ref: "#/components/schemas/EvalSignificance" }
         pipelineRunId: { type: string, description: The pipeline run computing the missing cells (absent when every cell was cached) }
         progress: { $ref: "#/components/schemas/EvalProgress" }
         estimate: { $ref: "#/components/schemas/EvalEstimate" }
         gate: { $ref: "#/components/schemas/EvalGate" }
         cells: { type: array, items: { $ref: "#/components/schemas/EvalCell" }, description: "Absent in evals.list" }
+        robustness: { type: array, items: { $ref: "#/components/schemas/EvalRobustnessRow" }, description: "The robustness matrix when the eval has augmentations beyond none (absent in evals.list)" }
         rev: { type: integer }
         actor: { $ref: "#/components/schemas/Actor" }
         createdAt: { type: string, format: date-time }
@@ -7813,6 +7931,7 @@ components:
         goldenSetVersionId: { type: string }
         profile: { type: string }
         decodingIndex: { type: integer }
+        augmentationIndex: { type: integer, description: "Index into augmentations (0: none)" }
         decodingHash: { type: string }
         modelKey: { type: string }
         cached: { type: boolean }
@@ -7828,6 +7947,7 @@ components:
         profiles: { type: array, items: { $ref: "#/components/schemas/EvalProfile" } }
         primaryProfile: { type: string }
         decoding: { type: array, items: { $ref: "#/components/schemas/EvalDecoding" } }
+        augmentations: { type: array, items: { $ref: "#/components/schemas/EvalAugmentation" }, description: "The robustness axis (phase 3 · stream R)" }
         significance: { $ref: "#/components/schemas/EvalSignificance" }
         cells: { type: array, items: { $ref: "#/components/schemas/EvalPlanCell" } }
         cellsCached: { type: integer }
@@ -7922,6 +8042,104 @@ components:
       properties:
         items: { type: array, items: { $ref: "#/components/schemas/ModelVersion" } }
 
+    # ---------------------------------------------------------------- robustness and streaming scorers schemas (phase 3 · stream R) — add below
+    EvalAugmentationVariant:
+      type: object
+      required: [profile]
+      additionalProperties: false
+      properties:
+        profile: { type: string, description: "none, or an augmentation profile of the project repository at a commit: augment/<name>.yaml@<commit sha>" }
+        seed: { type: integer, minimum: 0, maximum: 2147483647, description: "Seed of the augmentation draw; default the profile file's seed, else augment.seed" }
+    EvalAugmentation:
+      type: object
+      description: "One augmentation of an eval (the robustness axis): none, or a profile applied by augment_dataset before transcription"
+      required: [index, profile]
+      properties:
+        index: { type: integer }
+        profile: { type: string, description: "none or augment/<name>.yaml@<commit>" }
+        name: { type: string, description: The profile's name }
+        seed: { type: integer }
+        hash: { type: string, description: "sha256 of the resolved profile (transforms and seed); the cell's decoding hash, and so its eval-record key, includes it" }
+        artifact: { type: string, description: "The rendered augment_profile artifact (b3:…)" }
+        noiseBank: { type: string, description: "The noise bank version (ver_…) the noise transform mixes from" }
+        transforms: { type: object, additionalProperties: true, description: "The resolved transforms (defaults.yaml augment.* where the file is silent)" }
+    EvalMetricUnavailable:
+      type: object
+      required: [metric, reason]
+      properties:
+        metric: { type: string, enum: [entities, latency] }
+        reason: { type: string }
+    EvalEntityClass:
+      type: object
+      required: [class, refEntities, hypEntities, correct]
+      properties:
+        class: { type: string, description: "An ITN class of the language pack (number, phone, date, amount, …)" }
+        refEntities: { type: integer }
+        hypEntities: { type: integer }
+        correct: { type: integer }
+        accuracy: { type: number, format: double, description: "correct / refEntities (absent or null without reference entities)" }
+        precision: { type: number, format: double, description: correct / hypEntities }
+    EvalEntityScores:
+      type: object
+      description: "Entity accuracy of a cell (entity_score): the pack's ITN classes compared between references and hypotheses; reported, not gated"
+      required: [scorer, available, refEntities, correct]
+      properties:
+        scorer: { type: string, example: entity_score@1 }
+        scores: { type: string, description: "The metric_scores artifact (b3:…)" }
+        available: { type: boolean }
+        reason: { type: string }
+        itn: { type: object, additionalProperties: true, description: "{locale, commit}: the itn.yaml the classes came from" }
+        utterances: { type: integer }
+        utterancesWithEntities: { type: integer }
+        refEntities: { type: integer }
+        hypEntities: { type: integer }
+        correct: { type: integer }
+        accuracy: { type: number, format: double }
+        precision: { type: number, format: double }
+        classes: { type: array, items: { $ref: "#/components/schemas/EvalEntityClass" } }
+    EvalLatencyScores:
+      type: object
+      description: "Latency to final at real-time pace (R54, latency_score): speech end (frame VAD) to the partial whose text is final"
+      required: [scorer, available, measured]
+      properties:
+        scorer: { type: string, example: latency_score@1 }
+        scores: { type: string, description: "The metric_scores artifact (b3:…)" }
+        available: { type: boolean }
+        reason: { type: string }
+        pace: { type: string, enum: [simulated, realtime, mixed], description: "simulated: emit times at real-time pace from a file decode's compute times; realtime: a decode run at real-time pace" }
+        utteranceEnd: { type: string, enum: [vad], description: Where utterance ends come from }
+        vad: { type: object, additionalProperties: true, description: "{kind, model, revision, …} of the VAD step" }
+        profile: { type: string }
+        utterances: { type: integer }
+        measured: { type: integer, description: Utterances with speech and a non-empty final }
+        p50Ms: { type: number, format: double }
+        p95Ms: { type: number, format: double }
+        meanMs: { type: number, format: double }
+        maxMs: { type: number, format: double }
+        earlyFinals: { type: integer, description: Finals emitted before the VAD's speech end (counted as 0 ms) }
+        noSpeech: { type: integer }
+        emptyFinals: { type: integer }
+    EvalCellMetrics:
+      type: object
+      description: Metrics beside WER, kept with the cell's eval record (absent while their steps run)
+      properties:
+        entities: { $ref: "#/components/schemas/EvalEntityScores" }
+        latency: { $ref: "#/components/schemas/EvalLatencyScores" }
+        unavailable: { type: array, items: { $ref: "#/components/schemas/EvalMetricUnavailable" }, description: "Metrics this cell does not get, and why" }
+    EvalRobustnessRow:
+      type: object
+      description: "One cell of the robustness matrix (golden set × augmentation × latency profile): WER under the augmentation against the same cell without it"
+      required: [role, goldenSetVersionId, profile, decodingIndex, augmentationIndex, cellId]
+      properties:
+        role: { $ref: "#/components/schemas/EvalCellRole" }
+        goldenSetVersionId: { type: string }
+        profile: { type: string }
+        decodingIndex: { type: integer }
+        augmentationIndex: { type: integer }
+        cellId: { type: string }
+        wer: { type: number, format: double, description: WER under the augmentation (absent until scored) }
+        werNone: { type: number, format: double, description: WER of the same cell without augmentation }
+        degradation: { type: number, format: double, description: "wer − werNone (absolute, a fraction)" }
     # ---------------------------------------------------------------- language packs, boost lists, lineage schemas (phase 3 · stream L) — add below
 
     PackLocaleName:
@@ -8145,3 +8363,177 @@ components:
         del: { type: integer }
         ins: { type: integer }
         refWords: { type: integer }
+
+    # ---------------------------------------------------------------- experiments and sweeps schemas (phase 3 · stream X) — add below
+    ExperimentNew:
+      type: object
+      additionalProperties: false
+      required: [name, question, mix]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 80, description: "A short name, unique in the project" }
+        question: { type: string, minLength: 1, maxLength: 2000, description: "The question the experiment's runs answer" }
+        mix: { type: string, maxLength: 200, description: "The mix every run trains on (mix_… or its name)" }
+        mixRevision: { type: integer, minimum: 1, description: "The fixed mix revision (default the mix's current one)" }
+        baseModel: { type: string, description: "Base model version (ver_…), collection name or @alias, pinned to a version (default the defaults' base model)" }
+        tag: { type: string, maxLength: 63, pattern: "^[a-z0-9][a-z0-9._-]*$", description: "A short tag for filters and search (default derived from the name)" }
+    ExperimentMixRef:
+      type: object
+      required: [id, name, revision]
+      properties:
+        id: { type: string, description: "mix_…" }
+        name: { type: string }
+        revision: { type: integer, description: The fixed mix revision }
+        replayShare: { type: number, format: double, description: "The revision's replay share (a sweep may vary it)" }
+    ExperimentParameter:
+      type: object
+      required: [name, swept, departs]
+      properties:
+        name: { type: string, description: "A train-step parameter, or replayShare (the mix's)" }
+        default: { description: "The value runs get when nothing sets it (defaults.yaml, or the mix revision's replay share)" }
+        swept: { type: boolean, description: A sweep of the experiment varies it }
+        departs: { type: boolean, description: At least one run departs from the default }
+    ExperimentEval:
+      type: object
+      required: [evalId, status]
+      properties:
+        evalId: { type: string, description: "evl_…" }
+        status: { $ref: "#/components/schemas/EvalStatus" }
+        verdict: { type: string, enum: [passed, failed], description: "The gate's verdict, once evals.gate ran" }
+    ExperimentRun:
+      type: object
+      required: [runId, status, values, departures, gpuHours, best, createdAt]
+      properties:
+        runId: { type: string, description: "run_…" }
+        status: { $ref: "#/components/schemas/RunStatus" }
+        sweepId: { type: string, description: "The sweep that generated the run (swp_…)" }
+        point: { type: integer, description: The run's point in its sweep }
+        values: { type: object, additionalProperties: true, description: "The compared parameters' values for this run (parameter name → value)" }
+        departures: { type: array, items: { type: string }, description: Compared parameters whose value differs from the default }
+        bestValWer: { type: number, format: double, description: The lowest validation WER of the run's checkpoints (a fraction) }
+        bestCheckpointId: { type: string, description: The checkpoint with that WER }
+        bestStep: { type: integer, format: int64, description: The optimiser step of that checkpoint }
+        gpuHours: { type: number, format: double }
+        estimateGpuHours: { type: number, format: double, description: The run's estimate at start }
+        best: { type: boolean, description: The experiment's best run }
+        eval: { $ref: "#/components/schemas/ExperimentEval" }
+        error: { type: string }
+        createdAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time }
+    ExperimentBest:
+      type: object
+      required: [runId, checkpointId, valWer, registrable]
+      properties:
+        runId: { type: string }
+        checkpointId: { type: string }
+        valWer: { type: number, format: double }
+        eval: { $ref: "#/components/schemas/ExperimentEval" }
+        registrable: { type: boolean, description: "models.register would accept the checkpoint now: its latest gated eval passed" }
+        reason: { type: string, description: "Why it cannot be registered yet, and the next command" }
+    Experiment:
+      type: object
+      required: [id, projectId, name, question, mix, baseModel, runCount, sweeps, rev, actor, createdAt, updatedAt]
+      properties:
+        id: { type: string, description: "exp_…" }
+        projectId: { type: string }
+        name: { type: string }
+        question: { type: string }
+        tag: { type: string }
+        mix: { $ref: "#/components/schemas/ExperimentMixRef" }
+        baseModel: { $ref: "#/components/schemas/RegistryVersion" }
+        runCount: { type: integer }
+        parameters: { type: array, items: { $ref: "#/components/schemas/ExperimentParameter" }, description: "The compared parameters, swept ones first (experiments.get only)" }
+        runs: { type: array, items: { $ref: "#/components/schemas/ExperimentRun" }, description: "Oldest first (experiments.get only)" }
+        best: { $ref: "#/components/schemas/ExperimentBest" }
+        sweeps: { type: array, items: { $ref: "#/components/schemas/Sweep" }, description: Newest first }
+        rev: { type: integer }
+        actor: { $ref: "#/components/schemas/Actor" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ExperimentList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Experiment" } }
+    SweepMode:
+      type: string
+      enum: [grid, random]
+    SweepState:
+      type: string
+      description: "running: a run is queued or training; done: every point ran; stopped: the cap was reached first; cancelled: its running run was cancelled; failed: a run could not be started"
+      enum: [running, done, stopped, cancelled, failed]
+    SweepParameter:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 63, description: "A train-step parameter (peak_lr, warmup_steps, augmentation, …) or replayShare" }
+        values: { type: array, minItems: 1, maxItems: 32, items: {}, description: "The values to try (grid: required; random: drawn from)" }
+        min: { type: number, format: double, description: "random: the lower bound of a numeric range" }
+        max: { type: number, format: double, description: "random: the upper bound" }
+        scale: { type: string, enum: [linear, log], description: "random: draw uniformly on this scale (default linear; log for learning rates)" }
+        integer: { type: boolean, description: "random: round drawn values to integers" }
+    SweepNew:
+      type: object
+      additionalProperties: false
+      required: [parameters]
+      properties:
+        mode: { $ref: "#/components/schemas/SweepMode" }
+        parameters: { type: array, minItems: 1, maxItems: 8, items: { $ref: "#/components/schemas/SweepParameter" } }
+        runs: { type: integer, minimum: 1, maximum: 64, description: "random: how many points (default sweeps.random_runs); grid: at most this many of the combinations (default all of them, up to sweeps.max_runs)" }
+        gpuHourCap: { type: number, format: double, minimum: 0.001, description: "Most GPU-hours the sweep's runs may use (default sweeps.gpu_hour_cap)" }
+        seed: { type: integer, minimum: 0, maximum: 2147483647, description: "random: the seed of the draw (default sweeps.seed)" }
+        steps: { type: integer, minimum: 1, description: "Step budget of every run (default training.steps)" }
+        priority: { type: integer, minimum: -100, maximum: 100, description: "Queue priority of the runs' step jobs (default 0)" }
+    SweepPoint:
+      type: object
+      required: [index, values, state]
+      properties:
+        index: { type: integer }
+        values: { type: object, additionalProperties: true, description: "Parameter name → value" }
+        state: { type: string, enum: [pending, queued, running, paused, done, failed, cancelled, skipped], description: "pending: not started yet; skipped: the sweep ended first; else the run's status" }
+        runId: { type: string }
+        estimateGpuHours: { type: number, format: double, description: "The point's estimate when the sweep was planned" }
+        gpuHours: { type: number, format: double }
+    Sweep:
+      type: object
+      required: [id, experimentId, mode, parameters, gpuHourCap, state, points, runsDone, gpuHoursSpent, estimateGpuHours, rev, actor, createdAt, updatedAt]
+      properties:
+        id: { type: string, description: "swp_…" }
+        experimentId: { type: string }
+        mode: { $ref: "#/components/schemas/SweepMode" }
+        parameters: { type: array, items: { $ref: "#/components/schemas/SweepParameter" } }
+        seed: { type: integer }
+        steps: { type: integer }
+        gpuHourCap: { type: number, format: double }
+        state: { $ref: "#/components/schemas/SweepState" }
+        stopReason: { type: string, description: "Why the sweep ended before its last point (the cap, a cancelled or failed run)" }
+        points: { type: array, items: { $ref: "#/components/schemas/SweepPoint" } }
+        runsDone: { type: integer, description: Runs that ended }
+        currentRunId: { type: string, description: The run queued or training now }
+        gpuHoursSpent: { type: number, format: double, description: GPU-hours the sweep's runs used }
+        estimateGpuHours: { type: number, format: double, description: The sum of the points' estimates when the sweep started }
+        rev: { type: integer }
+        actor: { $ref: "#/components/schemas/Actor" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time }
+    SweepPlan:
+      type: object
+      required: [experimentId, mode, points, estimateGpuHours, gpuHourCap, withinCap, fits, basis, budget]
+      properties:
+        experimentId: { type: string }
+        mode: { $ref: "#/components/schemas/SweepMode" }
+        seed: { type: integer }
+        steps: { type: integer }
+        points: { type: array, items: { $ref: "#/components/schemas/SweepPoint" } }
+        estimateGpuHours: { $ref: "#/components/schemas/EstimateRange" }
+        gpuHourCap: { type: number, format: double }
+        withinCap: { type: boolean, description: "The whole estimate fits the cap (otherwise the real call answers sweep-over-cap)" }
+        fits: { type: integer, description: How many points, in order, fit the cap by their estimates }
+        basis: { type: string, description: "table, measured or mixed: where the points' estimates come from" }
+        budget:
+          type: object
+          required: [remainingGpuHours, withinDailyBudget]
+          properties:
+            remainingGpuHours: { type: number, format: double, description: "The project's daily budget minus today's use and committed work" }
+            withinDailyBudget: { type: boolean, description: "The whole estimate fits today's remaining budget (over it, an agent's sweep waits for an approval)" }

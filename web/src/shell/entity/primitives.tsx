@@ -52,7 +52,7 @@ export function StatusChip({ state }: { state: string }) {
 export { ActorBadge };
 
 function commandIdFor(m: EntityManifest, v: EntityVerb): string {
-  return `${m.apiEntity}.${v.verb}`;
+  return v.command ?? `${m.apiEntity}.${v.verb}`;
 }
 
 function VerbButton({ m, v, entity, variant }: { m: EntityManifest; v: EntityVerb; entity: EntityData; variant: "default" | "outline" }) {

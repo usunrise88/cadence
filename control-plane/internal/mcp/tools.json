@@ -3056,7 +3056,7 @@
     {
       "name": "evals.get",
       "title": "Get an eval with its cells, deltas against the baseline with confidence intervals, and the worst utterances of a cell",
-      "description": "An eval: status, progress, and one cell per role (subject, baseline) × golden set × profile × decoding with WER, CER, the punctuation-insensitive WER, substitutions / deletions / insertions, duration buckets and partial stability; subject cells carry the delta against the baseline's cell with a paired blockwise bootstrap interval (significant when it excludes zero). worst=N adds the N utterances with the most errors to each subject cell that passes the filters (cell=evc_… for one cell): reference, hypothesis and the alignment ops (=, S, D, I). Filters: goldenSet, profile, role.",
+      "description": "An eval: status, progress, and one cell per role (subject, baseline) × golden set × profile × decoding with WER, CER, the punctuation-insensitive WER, substitutions / deletions / insertions, duration buckets and partial stability; subject cells carry the delta against the baseline's cell with a paired blockwise bootstrap interval (significant when it excludes zero). worst=N adds the N utterances with the most errors to each subject cell that passes the filters (cell=evc_… for one cell): reference, hypothesis and the alignment ops (=, S, D, I). Filters: goldenSet, profile, role. Each cell's metrics carry entity accuracy for the language pack's ITN classes and latency to final (p50/p95 ms, real-time pace) when available, else the reason; with augmentations, robustness lists each augmented cell's WER against the same cell without augmentation (reported, not gated).",
       "method": "GET",
       "path": "/evals/{id}",
       "inputSchema": {
@@ -3205,7 +3205,7 @@
     {
       "name": "evals.new",
       "title": "Evaluate a checkpoint, model or base model against the baseline on golden sets × latency profiles × decoding; ?dryRun=true answers the plan",
-      "description": "Run the eval matrix (R20–R24): subject (exactly one of checkpointId ckp_…, modelVersionId or baseModelVersionId ver_…) × golden sets × latency profiles × decoding variants, each cell compared with the same cell of the baseline. Everything is optional but the subject: golden sets default to the ones the project's gates.yaml names (target and replay), else its adopted golden sets; profiles to eval.matrix_profiles the model family declares, always with the primary profile; decoding to [{boost: none}]; baseline to the project's @baseline alias, else its default base model. Cells already in the eval records (any project, same weights × golden set × normalizer × decoding × scorer) are reused; only missing cells run (baseline cells included). Always call it with dryRun=true first: the answer is the plan — cells cached and to compute and the GPU-hour estimate. Without dryRun it answers 201 with the eval (follow it with evals.get; eval.{id}.progress reports cells done), or 202 with an approvalId when the estimate exceeds today's GPU budget. Then evals.gate applies the project's gate. Pass dryRun=true to see what would happen without changing anything.",
+      "description": "Run the eval matrix (R20–R24): subject (exactly one of checkpointId ckp_…, modelVersionId or baseModelVersionId ver_…) × golden sets × latency profiles × decoding variants, each cell compared with the same cell of the baseline. Everything is optional but the subject: golden sets default to the ones the project's gates.yaml names (target and replay), else its adopted golden sets; profiles to eval.matrix_profiles the model family declares, always with the primary profile; decoding to [{boost: none}]; augmentations (the robustness axis) to [{profile: none}] — add {profile: augment/\u003cname\u003e.yaml@\u003ccommit\u003e, seed?} to decode the golden sets also through that augmentation profile; baseline to the project's @baseline alias, else its default base model. Cells already in the eval records (any project, same weights × golden set × normalizer × decoding × scorer) are reused; only missing cells run (baseline cells included). Always call it with dryRun=true first: the answer is the plan — cells cached and to compute and the GPU-hour estimate. Without dryRun it answers 201 with the eval (follow it with evals.get; eval.{id}.progress reports cells done), or 202 with an approvalId when the estimate exceeds today's GPU budget. Then evals.gate applies the project's gate. Pass dryRun=true to see what would happen without changing anything.",
       "method": "POST",
       "path": "/projects/{p}/evals",
       "inputSchema": {
@@ -3214,6 +3214,29 @@
           "body": {
             "additionalProperties": false,
             "properties": {
+              "augmentations": {
+                "description": "The robustness axis: augmentation profiles of the project (augment/\u003cname\u003e.yaml@\u003ccommit\u003e) applied to the golden sets before transcription; none is always included; default [{profile: none}]",
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "profile": {
+                      "description": "none, or an augmentation profile of the project repository at a commit: augment/\u003cname\u003e.yaml@\u003ccommit sha\u003e",
+                      "type": "string"
+                    },
+                    "seed": {
+                      "description": "Seed of the augmentation draw; default the profile file's seed, else augment.seed",
+                      "maximum": 2147483647,
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "profile"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
               "baseline": {
                 "description": "The baseline model (ver_…, @alias, base-model/\u003cname\u003e or model/\u003cname\u003e); default the project's @baseline, else its default base model",
                 "type": "string"
@@ -3383,6 +3406,174 @@
           "property": "limit",
           "in": "query",
           "name": "limit"
+        }
+      ]
+    },
+    {
+      "name": "experiments.get",
+      "title": "Get an experiment with its runs as parameters × metrics, the best run by validation WER, and its sweeps",
+      "description": "The comparison of an experiment: one row per run with the values of the compared parameters (every swept parameter and every train-step parameter some run departs from defaults with; departures marked), the best validation WER and its checkpoint, GPU-hours, and the latest eval of that checkpoint with its gate verdict. best names the run with the lowest validation WER and whether its checkpoint can be registered now (models.register needs a passed gate: evals.new, then evals.gate). sweeps lists each sweep's state, points and GPU-hours spent against its cap.",
+      "method": "GET",
+      "path": "/experiments/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Experiment id (exp_…)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        }
+      ]
+    },
+    {
+      "name": "experiments.list",
+      "title": "List the project's experiments, newest first (question, mix, base model, run count, best run, sweeps)",
+      "description": "List the project's experiments, newest first (question, mix, base model, run count, best run, sweeps)",
+      "method": "GET",
+      "path": "/projects/{p}/experiments",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "default": 50,
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "limit",
+          "in": "query",
+          "name": "limit"
+        }
+      ]
+    },
+    {
+      "name": "experiments.new",
+      "title": "Open an experiment — a question with a fixed mix revision and base model — that runs and sweeps join",
+      "description": "Group the runs that answer one question: name, question, the mix (mix_… or its name, pinned to its current revision unless mixRevision) and the base model (pinned to a version; default the defaults' base model). Every run of the experiment trains on exactly that mix revision and base model: runs.new with experiment=exp_… inherits them, and sweeps.run generates runs over recipe parameters. dryRun checks the mix and base model and answers the experiment as it would be. Follow with sweeps.run (dry run first) or runs.new, then experiments.get for the comparison. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/projects/{p}/experiments",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "baseModel": {
+                "description": "Base model version (ver_…), collection name or @alias, pinned to a version (default the defaults' base model)",
+                "type": "string"
+              },
+              "mix": {
+                "description": "The mix every run trains on (mix_… or its name)",
+                "maxLength": 200,
+                "type": "string"
+              },
+              "mixRevision": {
+                "description": "The fixed mix revision (default the mix's current one)",
+                "minimum": 1,
+                "type": "integer"
+              },
+              "name": {
+                "description": "A short name, unique in the project",
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              "question": {
+                "description": "The question the experiment's runs answer",
+                "maxLength": 2000,
+                "minLength": 1,
+                "type": "string"
+              },
+              "tag": {
+                "description": "A short tag for filters and search (default derived from the name)",
+                "maxLength": 63,
+                "pattern": "^[a-z0-9][a-z0-9._-]*$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "question",
+              "mix"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
         }
       ]
     },
@@ -7394,6 +7585,10 @@
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
+          "experiment": {
+            "description": "Only runs of this experiment (exp_…)",
+            "type": "string"
+          },
           "limit": {
             "default": 100,
             "maximum": 500,
@@ -7440,6 +7635,11 @@
           "name": "status"
         },
         {
+          "property": "experiment",
+          "in": "query",
+          "name": "experiment"
+        },
+        {
           "property": "limit",
           "in": "query",
           "name": "limit"
@@ -7477,6 +7677,11 @@
                 },
                 "maxItems": 100,
                 "type": "array"
+              },
+              "experiment": {
+                "description": "The experiment the run belongs to (exp_…): the run trains on its mix revision and base model (phase 3)",
+                "maxLength": 200,
+                "type": "string"
               },
               "gpus": {
                 "description": "Cards for the run; v1 accepts 1 (training.gpus)",
@@ -8221,6 +8426,158 @@
           "property": "state",
           "in": "query",
           "name": "state"
+        }
+      ]
+    },
+    {
+      "name": "sweeps.run",
+      "title": "Run a grid or random sweep over recipe parameters as sequential runs of the experiment under a GPU-hour cap",
+      "description": "Generate the experiment's runs from a parameter set: mode grid (every combination of the listed values) or random (points drawn with seed from each parameter's values or its min–max range, log scale for learning rates). Parameters are the train step's (peak_lr, warmup_steps, augmentation, … — any parameter with an x-cadence range) and replayShare (the mix's replay share; the mix revision stays fixed). Each point becomes one run through runs.new on the experiment's mix and base model; runs are queued one after another on the project's training slot. Always call it with dryRun=true first: the answer lists the points with their estimates and the total against gpuHourCap. The whole estimate must fit the cap (sweep-over-cap) and is weighed against the GPU budgets like runs.new (202 with an approvalId when it exceeds them). The sweep stops when the GPU-hours its runs used plus the next run's estimate would pass the cap. Cancelling the running run (jobs.cancel on its current job) cancels the sweep. Watch experiments.get or entity.experiment.{id}. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/experiments/{id}/sweeps:run",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "gpuHourCap": {
+                "description": "Most GPU-hours the sweep's runs may use (default sweeps.gpu_hour_cap)",
+                "format": "double",
+                "minimum": 0.001,
+                "type": "number"
+              },
+              "mode": {
+                "enum": [
+                  "grid",
+                  "random"
+                ],
+                "type": "string"
+              },
+              "parameters": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "integer": {
+                      "description": "random: round drawn values to integers",
+                      "type": "boolean"
+                    },
+                    "max": {
+                      "description": "random: the upper bound",
+                      "format": "double",
+                      "type": "number"
+                    },
+                    "min": {
+                      "description": "random: the lower bound of a numeric range",
+                      "format": "double",
+                      "type": "number"
+                    },
+                    "name": {
+                      "description": "A train-step parameter (peak_lr, warmup_steps, augmentation, …) or replayShare",
+                      "maxLength": 63,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "scale": {
+                      "description": "random: draw uniformly on this scale (default linear; log for learning rates)",
+                      "enum": [
+                        "linear",
+                        "log"
+                      ],
+                      "type": "string"
+                    },
+                    "values": {
+                      "description": "The values to try (grid: required; random: drawn from)",
+                      "items": {},
+                      "maxItems": 32,
+                      "minItems": 1,
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "name"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 8,
+                "minItems": 1,
+                "type": "array"
+              },
+              "priority": {
+                "description": "Queue priority of the runs' step jobs (default 0)",
+                "maximum": 100,
+                "minimum": -100,
+                "type": "integer"
+              },
+              "runs": {
+                "description": "random: how many points (default sweeps.random_runs); grid: at most this many of the combinations (default all of them, up to sweeps.max_runs)",
+                "maximum": 64,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "seed": {
+                "description": "random: the seed of the draw (default sweeps.seed)",
+                "maximum": 2147483647,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "steps": {
+                "description": "Step budget of every run (default training.steps)",
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "parameters"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Experiment id (exp_…)",
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
         }
       ]
     },

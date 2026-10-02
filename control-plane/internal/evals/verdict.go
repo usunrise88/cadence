@@ -126,7 +126,7 @@ func (s *Service) verdict(e Eval, locales []string, gf GateFile, cells []Cell, r
 	}
 	at := func(gsID, role string) (Cell, bool) {
 		for _, c := range cells {
-			if c.Role == role && c.GoldenSetVersionID == gsID && c.Profile == g.PrimaryProfile && c.DecodingIndex == 0 {
+			if c.Role == role && c.GoldenSetVersionID == gsID && c.Profile == g.PrimaryProfile && c.DecodingIndex == 0 && c.AugmentationIndex == 0 {
 				return c, true
 			}
 		}

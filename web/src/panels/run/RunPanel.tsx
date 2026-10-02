@@ -443,6 +443,15 @@ function Lineage({ run }: { run: Run }) {
         </button>{" "}
         <code className="text-[11px] text-muted-foreground">{run.mix.hash.slice(0, 16)}…</code>
       </li>
+      {run.experimentId ? (
+        <li>
+          Experiment{" "}
+          <button type="button" className="font-medium underline-offset-2 hover:underline" onClick={() => openDocument(`experiment:${run.experimentId}`)}>
+            {run.experimentId}
+          </button>
+          {run.sweepId ? <span className="text-muted-foreground"> (sweep {run.sweepId})</span> : null}
+        </li>
+      ) : null}
       {run.parentRunId ? (
         <li>
           Parent run{" "}

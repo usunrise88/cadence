@@ -100,6 +100,7 @@ func (s *Service) repo() pipelines.Repo {
 // the eval. Both are idempotent, so two servers on one engine (tests) only repeat no-ops.
 func (s *Service) Install(hooks *steps.Hooks) {
 	hooks.On(TypeScores, s.scoresHook)
+	hooks.On(TypeMetricScores, s.metricsHook)
 	s.Engine.SetNamedObserver("evals", s.Observe)
 }
 
@@ -172,6 +173,7 @@ type Eval struct {
 	Profiles       []Profile
 	PrimaryProfile string
 	Decoding       []Decoding
+	Augmentations  []Augmentation
 	Significance   Significance
 	Estimate       Estimate
 	PipelineRunID  string
@@ -194,6 +196,7 @@ type Cell struct {
 	NormalizerVersionID string
 	Profile             string
 	DecodingIndex       int
+	AugmentationIndex   int
 	DecodingHash        string
 	ModelKey            string
 	Scorer              string
@@ -201,28 +204,30 @@ type Cell struct {
 	RecordID            string
 	ScoreStep           string
 	Delta               json.RawMessage
+	Metrics             map[string]MetricPlan
 }
 
-// sameCell reports whether two cells sit at the same golden set, profile and decoding.
+// sameCell reports whether two cells sit at the same golden set, profile, decoding and augmentation.
 func (c Cell) sameCell(o Cell) bool {
-	return c.GoldenSetVersionID == o.GoldenSetVersionID && c.Profile == o.Profile && c.DecodingIndex == o.DecodingIndex
+	return c.GoldenSetVersionID == o.GoldenSetVersionID && c.Profile == o.Profile && c.DecodingIndex == o.DecodingIndex &&
+		c.AugmentationIndex == o.AugmentationIndex
 }
 
 const evalCols = `id, project_id, status, coalesce(error, ''), subject, baseline, golden_sets, profiles, primary_profile, decoding,
-	significance, estimate, coalesce(pipeline_run_id, ''), gate, gated_at, actor, rev, created_at, updated_at, finished_at`
+	significance, estimate, coalesce(pipeline_run_id, ''), gate, gated_at, actor, rev, created_at, updated_at, finished_at, augmentations`
 
 func scanEval(row pgx.CollectableRow) (Eval, error) {
 	var e Eval
-	var subject, baseline, gs, profiles, decoding, sig, est []byte
+	var subject, baseline, gs, profiles, decoding, sig, est, augs []byte
 	if err := row.Scan(&e.ID, &e.ProjectID, &e.Status, &e.Error, &subject, &baseline, &gs, &profiles, &e.PrimaryProfile, &decoding,
-		&sig, &est, &e.PipelineRunID, &e.Gate, &e.GatedAt, &e.Actor, &e.Rev, &e.CreatedAt, &e.UpdatedAt, &e.FinishedAt); err != nil {
+		&sig, &est, &e.PipelineRunID, &e.Gate, &e.GatedAt, &e.Actor, &e.Rev, &e.CreatedAt, &e.UpdatedAt, &e.FinishedAt, &augs); err != nil {
 		return Eval{}, err
 	}
 	for _, f := range []struct {
 		b []byte
 		v any
 	}{{subject, &e.Subject}, {baseline, &e.Baseline}, {gs, &e.GoldenSets}, {profiles, &e.Profiles}, {decoding, &e.Decoding},
-		{sig, &e.Significance}, {est, &e.Estimate}} {
+		{sig, &e.Significance}, {est, &e.Estimate}, {augs, &e.Augmentations}} {
 		if err := json.Unmarshal(f.b, f.v); err != nil {
 			return Eval{}, fmt.Errorf("decode eval %s: %w", e.ID, err)
 		}
@@ -286,11 +291,15 @@ func List(ctx context.Context, q storage.Querier, f ListFilter) ([]Eval, error) 
 }
 
 func insertEval(ctx context.Context, tx pgx.Tx, e Eval) error {
+	augs := e.Augmentations
+	if len(augs) == 0 {
+		augs = []Augmentation{{Index: 0, Profile: AugmentNone}}
+	}
 	_, err := tx.Exec(ctx, `INSERT INTO evals (id, project_id, status, error, subject, subject_id, baseline, golden_sets, profiles,
-			primary_profile, decoding, significance, estimate, actor)
-		VALUES ($1, $2, $3, NULLIF($4, ''), $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+			primary_profile, decoding, significance, estimate, actor, augmentations)
+		VALUES ($1, $2, $3, NULLIF($4, ''), $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
 		e.ID, e.ProjectID, e.Status, e.Error, mustJSON(e.Subject), e.Subject.ID, mustJSON(e.Baseline), mustJSON(e.GoldenSets),
-		mustJSON(e.Profiles), e.PrimaryProfile, mustJSON(e.Decoding), mustJSON(e.Significance), mustJSON(e.Estimate), e.Actor)
+		mustJSON(e.Profiles), e.PrimaryProfile, mustJSON(e.Decoding), mustJSON(e.Significance), mustJSON(e.Estimate), e.Actor, mustJSON(augs))
 	if err != nil {
 		return fmt.Errorf("insert eval: %w", err)
 	}
@@ -308,12 +317,16 @@ func saveStatus(ctx context.Context, tx pgx.Tx, e *Eval) error {
 }
 
 const cellCols = `id, eval_id, position, role, golden_set_version_id, normalizer_version_id, profile, decoding_index, decoding_hash,
-	model_key, scorer, state, coalesce(record_id, ''), coalesce(score_step, ''), delta`
+	model_key, scorer, state, coalesce(record_id, ''), coalesce(score_step, ''), delta, augmentation_index, metrics`
 
 func scanCell(row pgx.CollectableRow) (Cell, error) {
 	var c Cell
+	var metrics []byte
 	err := row.Scan(&c.ID, &c.EvalID, &c.Position, &c.Role, &c.GoldenSetVersionID, &c.NormalizerVersionID, &c.Profile, &c.DecodingIndex,
-		&c.DecodingHash, &c.ModelKey, &c.Scorer, &c.State, &c.RecordID, &c.ScoreStep, &c.Delta)
+		&c.DecodingHash, &c.ModelKey, &c.Scorer, &c.State, &c.RecordID, &c.ScoreStep, &c.Delta, &c.AugmentationIndex, &metrics)
+	if err == nil && len(metrics) > 0 {
+		err = json.Unmarshal(metrics, &c.Metrics)
+	}
 	return c, err
 }
 
@@ -330,11 +343,15 @@ func cellsOf(ctx context.Context, q storage.Querier, evalID string) ([]Cell, err
 }
 
 func insertCell(ctx context.Context, tx pgx.Tx, c Cell) error {
+	var metrics []byte
+	if len(c.Metrics) > 0 {
+		metrics = mustJSON(c.Metrics)
+	}
 	_, err := tx.Exec(ctx, `INSERT INTO eval_cells (id, eval_id, position, role, golden_set_version_id, normalizer_version_id, profile,
-			decoding_index, decoding_hash, model_key, scorer, state, record_id, score_step)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NULLIF($13, ''), NULLIF($14, ''))`,
+			decoding_index, decoding_hash, model_key, scorer, state, record_id, score_step, augmentation_index, metrics)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NULLIF($13, ''), NULLIF($14, ''), $15, $16)`,
 		c.ID, c.EvalID, c.Position, c.Role, c.GoldenSetVersionID, c.NormalizerVersionID, c.Profile, c.DecodingIndex, c.DecodingHash,
-		c.ModelKey, c.Scorer, c.State, c.RecordID, c.ScoreStep)
+		c.ModelKey, c.Scorer, c.State, c.RecordID, c.ScoreStep, c.AugmentationIndex, metrics)
 	if err != nil {
 		return fmt.Errorf("insert eval cell: %w", err)
 	}

@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { checkpointsListOptions, runsGetOptions } from "@/api/gen/@tanstack/react-query.gen";
-import type { Checkpoint } from "@/api/gen/types.gen";
+import type { Checkpoint, EvalPlan } from "@/api/gen/types.gen";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -10,8 +10,8 @@ import { errorMessage, focusPipelineRun, openDocument, openPanelById, runCommand
 
 // Checkpoints (docs/spec/11-ui-panels.md "Panel catalogue"): the checkpoints of the active run with validation WER,
 // ranked, the run's top k marked kept, averaged ones marked with what they were made from. Average the selected ones
-// (checkpoints.average), start a new stage from one (the Run document's stage form, runs.stage), evaluate and export
-// wait for their phases. Live on run.{id}.checkpoints.
+// (checkpoints.average), start a new stage from one (the Run document's stage form, runs.stage), evaluate one
+// (evals.new: the plan first, then the Eval report opens); export waits for phase 5. Live on run.{id}.checkpoints.
 
 export function CheckpointsEmpty() {
   return <EmptyState step="review" title="No run yet" hint="Checkpoints of the active run appear here as the train step saves them." />;
@@ -54,6 +54,7 @@ function RunCheckpoints({ project, runId }: { project: string; runId: string }) 
   useTopic([`run.${runId}.checkpoints`], () => void qc.invalidateQueries({ queryKey: opts.queryKey }));
   const select = useSelection((s) => s.select);
   const [chosen, setChosen] = useState<string[]>([]);
+  const [evaluating, setEvaluating] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ error: boolean; text: string } | null>(null);
   const items = orderCheckpoints(list.data?.items ?? []);
@@ -122,7 +123,9 @@ function RunCheckpoints({ project, runId }: { project: string; runId: string }) 
                 <Button size="xs" variant="outline" onClick={() => stageFrom(c)} data-command="runs.stage">
                   New stage from here
                 </Button>
-                <Later label="Evaluate" reason="Evaluation arrives in phase 3" />
+                <Button size="xs" variant="outline" aria-expanded={evaluating === c.id} onClick={() => setEvaluating(evaluating === c.id ? null : c.id)} data-command="evals.new">
+                  Evaluate
+                </Button>
                 <Later label="Export" reason="Export arrives in phase 5" />
                 <Button
                   size="xs"
@@ -137,10 +140,69 @@ function RunCheckpoints({ project, runId }: { project: string; runId: string }) 
                   From step
                 </Button>
               </div>
+              {evaluating === c.id ? <EvaluateCard project={project} checkpoint={c} onClose={() => setEvaluating(null)} /> : null}
             </li>
           ))}
         </ul>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Evaluate a checkpoint (evals.new, docs/spec/11-ui-panels.md "Commands": Run eval matrix, dry run first): the plan
+ * answers which cells are cached and what the rest costs; Start sends the same body and opens the Eval report.
+ */
+function EvaluateCard({ project, checkpoint, onClose }: { project: string; checkpoint: Checkpoint; onClose: () => void }) {
+  const [plan, setPlan] = useState<EvalPlan | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ error: boolean; text: string } | null>(null);
+  const act = async (dryRun: boolean) => {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const res = await runCommand("evals.new", { project, body: { subject: { checkpointId: checkpoint.id } }, dryRun });
+      if ("approvalId" in res) setMessage({ error: false, text: `The eval waits for an approval (${res.approvalId}).` });
+      else if ("id" in res) {
+        openDocument(`eval:${res.id}`);
+        onClose();
+      } else setPlan(res);
+    } catch (err) {
+      setMessage({ error: true, text: errorMessage(err) });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const asked = useRef(false);
+  useEffect(() => {
+    // The plan is asked for once, when the card opens.
+    if (asked.current) return;
+    asked.current = true;
+    void act(true);
+  });
+  return (
+    <div className="flex flex-col gap-1.5 rounded-md border bg-tool p-2" data-slot="evaluate-card">
+      {plan ? (
+        <p className="tabular-nums" data-slot="eval-plan">
+          {plan.goldenSets.length} golden set{plan.goldenSets.length === 1 ? "" : "s"} × {plan.profiles.length} profile{plan.profiles.length === 1 ? "" : "s"} against{" "}
+          {plan.baseline.label}: {plan.cells.length} cells, {plan.cellsCached} cached, {plan.cellsToCompute} to compute · ~{plan.estimate.gpuHours.toFixed(2)} GPU-h ({plan.estimate.basis})
+        </p>
+      ) : busy ? (
+        <p className="text-muted-foreground">Planning the eval…</p>
+      ) : null}
+      <div className="flex gap-1">
+        <Button size="xs" disabled={busy || !plan} onClick={() => void act(false)} data-command="evals.new">
+          Start eval
+        </Button>
+        <Button size="xs" variant="ghost" onClick={onClose}>
+          Cancel
+        </Button>
+      </div>
+      {message ? (
+        <p role={message.error ? "alert" : "status"} className={message.error ? "text-destructive" : "text-muted-foreground"}>
+          {message.text}
+        </p>
+      ) : null}
     </div>
   );
 }

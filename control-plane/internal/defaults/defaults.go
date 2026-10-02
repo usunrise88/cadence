@@ -91,6 +91,8 @@ type Defaults struct {
 	Media Media `yaml:"media"`
 	// Views holds the client views' defaults; the control plane serves them (views.audio, R52) and reads none.
 	Views map[string]map[string]any `yaml:"views"`
+	// Sweeps over recipe parameters (phase 3, stream X).
+	Sweeps Sweeps `yaml:"sweeps"`
 
 	document map[string]any
 }
@@ -251,6 +253,16 @@ type Langpacks struct {
 type Media struct {
 	SignedLinkTTLSeconds Param[int] `yaml:"signed_link_ttl_s"`
 	MaxSpanSeconds       Param[int] `yaml:"max_span_s"`
+}
+
+// Sweeps holds the sweep defaults (phase 3, stream X): the mode, how many runs a grid or a random draw makes, the
+// GPU-hour cap and the seed of a random draw.
+type Sweeps struct {
+	Mode       Param[string]  `yaml:"mode"`
+	MaxRuns    Param[int]     `yaml:"max_runs"`
+	RandomRuns Param[int]     `yaml:"random_runs"`
+	GPUHourCap Param[float64] `yaml:"gpu_hour_cap"`
+	Seed       Param[int]     `yaml:"seed"`
 }
 
 // Compute holds the hosts seeded at first start.

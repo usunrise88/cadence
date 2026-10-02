@@ -93,6 +93,8 @@ var (
 	// Media: audio serving (phase 3 · stream A).
 	MediaLinkInvalid    = Type{"media-link-invalid", http.StatusForbidden, "Audio link invalid or expired"}
 	RangeNotSatisfiable = Type{"range-not-satisfiable", http.StatusRequestedRangeNotSatisfiable, "Range not satisfiable"}
+	// Experiments and sweeps (phase 3 · stream X).
+	SweepOverCap = Type{"sweep-over-cap", http.StatusUnprocessableEntity, "Sweep over its GPU-hour cap"}
 )
 
 // Types lists every registered type.
@@ -108,6 +110,7 @@ func Types() []Type {
 		EvalBaselineMissing, GateNotPassed, GateConfigInvalid,
 		GoldenSetLeakage, GoldenSetNotEvalOnly, NormalizerUnknown,
 		MediaLinkInvalid, RangeNotSatisfiable,
+		SweepOverCap,
 	}
 }
 
