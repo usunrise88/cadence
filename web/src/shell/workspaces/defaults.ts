@@ -27,6 +27,9 @@ const TABLE: Record<DefaultWorkspaceName, Slot[]> = {
     { panel: "library", location: "left" },
     { panel: "chat", location: "right" },
     { panel: "inspector", location: "right" },
+    // Lineage follows the active Eval report (its subject), golden set or model; the spec's table leaves it to the
+    // palette, the Eval workspace keeps it one tab away.
+    { panel: "lineage", location: "right" },
     { panel: "help", location: "right" },
     { panel: "diff", location: "bottom" },
     { panel: "audio", location: "floating" },
