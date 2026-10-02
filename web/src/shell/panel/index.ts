@@ -51,3 +51,31 @@ export { runIdOfDoc, runLabel } from "@/shell/training/runs";
 export { sortEntries } from "@/shell/training/queue";
 export { useActiveRun } from "@/shell/training/useActiveRun";
 export { useKeyedEstimate, type KeyedEstimate } from "@/shell/training/estimate";
+// Evaluation (phase 3): rates, deltas, gate and alignment glyphs, writing direction, and the selection items an Eval
+// report shares with Diff (cell:<id>/utt:<n>); live invalidation of eval and language pack reads.
+export {
+  alignedWords,
+  alignmentCounts,
+  deltaTone,
+  evalIdOfDoc,
+  evalItem,
+  formatDelta,
+  formatInterval,
+  formatRate,
+  GATE_CLASS,
+  GATE_GLYPH,
+  OP_GLYPH,
+  OP_LABEL,
+  parseEvalItem,
+  registrable,
+  textDirection,
+  TONE_CLASS,
+  TONE_GLYPH,
+  TONE_LABEL,
+  WORST_N,
+  type AlignedWord,
+  type AlignOp,
+  type DeltaTone,
+  type GateState,
+} from "@/shell/evaluation/format";
+export { invalidateEval, invalidateLangpacks } from "@/shell/evaluation/cache";

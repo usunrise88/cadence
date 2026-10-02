@@ -16,6 +16,10 @@ const KIND_LABELS: Record<string, string> = {
   saved_search: "Saved searches",
   run: "Runs",
   eval: "Evals",
+  golden_set: "Golden sets",
+  normalizer: "Normalizers",
+  model: "Models",
+  language_pack: "Language packs",
   mix: "Mixes",
   agent_session: "Agent sessions",
 };
