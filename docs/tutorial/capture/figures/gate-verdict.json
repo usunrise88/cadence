@@ -1,0 +1,22 @@
+{
+  "id": "gate-verdict",
+  "chapter": 9,
+  "caption": "Figure 9-1. The Eval report after the gate: the Serbian target improved, the replay languages did not",
+  "alt": "The Eval report of the Serbian checkpoint against the base model, maximised: header with subject and baseline, the loop steps with Decide current, the facts row, the progress line, and the gate section listing a passed target check, a passed deletions-versus-insertions check and failed replay checks.",
+  "project": "test",
+  "workspace": "Eval",
+  "steps": [
+    { "open": "eval", "doc": "eval:{{gateEval}}", "waitFor": "[aria-label='Gate checks']", "settleMs": 2500 },
+    { "close": "Audio" },
+    { "maximize": "eval", "settleMs": 1500 }
+  ],
+  "regions": [
+    { "label": "Subject and baseline", "target": "[data-panel='eval'] h2", "note": "What is compared with what: the checkpoint of run 902 at step 1 000 against the base model at its pinned revision. When the project sets no baseline alias, the default base model is the baseline." },
+    { "label": "Where you are in the loop", "target": "[data-panel='eval'] ol[aria-label='Loop step']", "note": "Every document shows the loop step it belongs to. An eval that is done and gated sits at Decide: what happens next is a person's call." },
+    { "label": "Cells", "target": "[data-panel='eval'] >> text=76 of 76 cells scored", "note": "76 cells: two models × 35 golden sets at 160 ms, plus the target at three more profiles. Two came from the cache, scored earlier with the same weights, set, normalizer and decoding, so they were not computed again." },
+    { "label": "Verdict", "target": "[data-panel='eval'] >> text=Gate failed", "note": "The verdict passes only when every check passes. 'gates.yaml defaults' means the project has no gates.yaml yet, so the gate used defaults.yaml." },
+    { "label": "Target check", "target": "[aria-label='Gate checks'] > li", "nth": 0, "note": "The language you trained for. WER fell by 9.0 points and the whole 95 % interval, from −10.1 to −8.1, lies below zero, so the gain is real and not resampling noise." },
+    { "label": "Replay check", "target": "[aria-label='Gate checks'] > li", "nth": 2, "style": "warning", "note": "A language the model knew before. Arabic WER rose from 16.4 % to 28.4 %, far beyond the 0.5 points allowed. 32 of 34 replay sets look like this: the run trained without replay and the model forgot." },
+    { "label": "Register model…", "target": "[data-command='models.register']", "style": "subtle", "note": "Disabled: a checkpoint is registered only when its gate passed, and then only with an approval." }
+  ]
+}

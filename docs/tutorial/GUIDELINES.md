@@ -344,7 +344,7 @@ lesson.
 - **Access:**
   - The capture sends an API key as a Bearer header on every request (Playwright `extraHTTPHeaders`).
   - The key is scoped to the book's project, with registry read, and an expiry date.
-  - The owner creates it in **Settings → Credentials** and stores it in `.docs-key` at the repository root
+  - The owner creates it in **Settings → Credentials** and stores it in `.doc-capture-key` at the repository root
     (git-ignored, mode 600). The script reads it from there and never takes it on the command line.
   - The capture only reads; it never runs a command that changes anything.
   - Never use the admin's password, a session cookie or the `.dev-key`.

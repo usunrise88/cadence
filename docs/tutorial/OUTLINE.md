@@ -141,9 +141,9 @@ The chapters in this map are the plan; correct the map when a chapter is written
 | Help bundle section `tutorial` (`cmd/helpsync`, `internal/help`), contexts from front matter | planned |
 | Term-order check: no term before its chapter (a script over chapters + this map, in CI) | planned |
 | Tour and `annotated` block parser shared by the HTML build and the shell | planned |
-| Annotated-screenshot component (SVG overlay, numbered regions, linked notes, keyboard) for the HTML edition and the Help panel | planned |
-| Capture script (Playwright): plays tours, saves screenshots and target boxes | planned |
-| Documentation API key `.docs-key` (owner creates: Settings → Credentials, project scope + registry read, expiry) | planned |
+| Annotated-screenshot component (SVG overlay, numbered regions, linked notes, keyboard, zoom) for the HTML edition and the Help panel | prototype: `build/annotated-prototype.html`, published as an Artifact for review (Figure 9-1) |
+| Capture script (Playwright): plays tours, saves screenshots and target boxes | figures done (`capture/capture.mjs`, read-only); tours planned |
+| Documentation API key `.doc-capture-key` (owner creates: Settings → Credentials, project scope + registry read, expiry) | done (project `test`) |
 | Reference project `book-serbian`, `reference/scenario.md`, `reference/numbers.yaml` and the refresh script | planned |
 | HTML edition builder: chapters, glossary with hover, search, tours over screenshots; published as an Artifact | planned |
 | In-app tour engine ("Show me" in the Help panel): spec in `11-ui-panels.md` + decision-log row first | planned |

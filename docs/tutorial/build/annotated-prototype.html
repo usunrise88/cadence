@@ -1,0 +1,255 @@
+<title>From Start to Finnish</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,600;1,7..72,400&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a book page — a reading column for prose, a wide figure band where the screenshot and its numbered notes sit side by side. */
+:root {
+  --paper: #fbfcfd;      /* Radix slate 1: Cadence's own neutral */
+  --ink: #1c2024;        /* slate 12 */
+  --ink-soft: #60646c;   /* slate 11 */
+  --rule: #dfe3e6;       /* slate 6 */
+  --panel: #f0f2f5;      /* slate 3 */
+  --accent: #3e63dd;     /* indigo 9: Cadence's accent; a focus region */
+  --accent-ink: #3a5bc7; /* indigo 10 */
+  --warn: #dc3e42;       /* red 9: a region that spends, deletes or fails */
+  --subtle: #8b8d98;     /* slate 9: context regions */
+  --shade: rgba(17, 24, 39, 0.42);
+  --badge-fg: #ffffff;
+  --code-bg: #f0f2f5;
+  --font-body: "Literata", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  --font-label: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #111113; --ink: #edeef0; --ink-soft: #b0b4ba; --rule: #363a3f; --panel: #212225;
+    --accent: #5472e4; --accent-ink: #9eb1ff; --warn: #ec5d5e; --subtle: #6c6e79;
+    --shade: rgba(0, 0, 0, 0.55); --badge-fg: #ffffff; --code-bg: #18191b; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #111113; --ink: #edeef0; --ink-soft: #b0b4ba; --rule: #363a3f; --panel: #212225;
+  --accent: #5472e4; --accent-ink: #9eb1ff; --warn: #ec5d5e; --subtle: #6c6e79;
+  --shade: rgba(0, 0, 0, 0.55); --badge-fg: #ffffff; --code-bg: #18191b; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--paper); color: var(--ink); font: 400 17px/1.62 var(--font-body); }
+.page { padding-block: 40px 72px; padding-inline: max(16px, 4vw); }
+.col { max-width: 40rem; margin-inline: auto; }
+.wide { max-width: 82rem; margin-inline: auto; }
+.eyebrow { font: 600 12px/1.2 var(--font-label); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-soft); }
+h1 { font: 600 clamp(28px, 4.2vw, 40px)/1.12 var(--font-body); margin: 10px 0 6px; text-wrap: balance; letter-spacing: -0.01em; }
+h1 em { font-weight: 400; }
+.subtitle { font: 500 15px/1.4 var(--font-label); color: var(--ink-soft); margin: 0 0 28px; }
+h2 { font: 600 24px/1.25 var(--font-body); margin: 40px 0 10px; text-wrap: balance; }
+p { margin: 0 0 14px; }
+em.term { font-style: italic; }
+code { font: 500 0.86em var(--font-mono); background: var(--code-bg); padding: 0.08em 0.32em; border-radius: 3px; }
+.ref { display: inline-grid; place-items: center; min-width: 1.35em; height: 1.35em; padding: 0 0.2em; border-radius: 999px; background: var(--accent); color: var(--badge-fg); font: 600 0.72em/1 var(--font-label); vertical-align: 0.12em; border: 0; cursor: pointer; }
+.ref.warning { background: var(--warn); }
+.ref.subtle { background: var(--subtle); }
+.ref:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+/* The annotated figure */
+figure.annotated { margin: 28px 0 8px; display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 1100px) { figure.annotated { grid-template-columns: minmax(0, 1fr) 22rem; align-items: start; } }
+.stage { position: relative; border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; background: var(--panel); outline: none; }
+.stage:focus-visible { box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px var(--accent); }
+.zoomer { position: relative; transform-origin: 0 0; transition: transform 320ms cubic-bezier(.2,.7,.2,1); }
+.zoomer img { display: block; width: 100%; height: auto; }
+.zoomer svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.shade { fill: var(--shade); opacity: 0; transition: opacity 180ms; pointer-events: none; }
+.stage.has-active .shade { opacity: 1; }
+.region rect.frame { fill: transparent; stroke: var(--accent); stroke-width: 2.5; vector-effect: non-scaling-stroke; cursor: pointer; transition: stroke-width 120ms; }
+.region.warning rect.frame { stroke: var(--warn); }
+.region.subtle rect.frame { stroke: var(--subtle); stroke-dasharray: 6 4; }
+.region.active rect.frame { stroke-width: 4; }
+.region .badge circle { fill: var(--accent); }
+.region.warning .badge circle { fill: var(--warn); }
+.region.subtle .badge circle { fill: var(--subtle); }
+.region .badge text { fill: var(--badge-fg); font: 600 15px var(--font-label); text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+.region .badge { cursor: pointer; }
+.zoomhint { position: absolute; right: 10px; bottom: 10px; font: 500 12px/1 var(--font-label); color: var(--ink); background: var(--paper); border: 1px solid var(--rule); border-radius: 4px; padding: 6px 8px; opacity: 0.94; }
+figcaption { font: 500 14px/1.45 var(--font-label); color: var(--ink-soft); grid-column: 1 / -1; }
+figcaption b { color: var(--ink); font-weight: 600; }
+
+ol.notes { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; counter-reset: n; }
+@media (min-width: 640px) and (max-width: 1099px) { ol.notes { grid-template-columns: 1fr 1fr; gap: 2px 14px; } }
+ol.notes li { min-width: 0; }
+ol.notes button { all: unset; box-sizing: border-box; display: grid; grid-template-columns: 1.8rem minmax(0, 1fr); gap: 2px 8px; width: 100%; padding: 9px 10px; border-radius: 5px; cursor: pointer; border-left: 3px solid transparent; }
+ol.notes button:hover, ol.notes button.active { background: var(--panel); border-left-color: var(--accent); }
+ol.notes li.warning button:hover, ol.notes li.warning button.active { border-left-color: var(--warn); }
+ol.notes li.subtle button:hover, ol.notes li.subtle button.active { border-left-color: var(--subtle); }
+ol.notes button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+ol.notes .num { grid-row: span 2; align-self: start; margin-top: 2px; width: 1.55rem; height: 1.55rem; border-radius: 999px; display: grid; place-items: center; background: var(--accent); color: var(--badge-fg); font: 600 13px/1 var(--font-label); }
+ol.notes li.warning .num { background: var(--warn); }
+ol.notes li.subtle .num { background: var(--subtle); }
+ol.notes .label { font: 600 14.5px/1.3 var(--font-label); }
+ol.notes .note { font: 400 14.5px/1.5 var(--font-body); color: var(--ink-soft); }
+ol.notes button.active .note { color: var(--ink); }
+
+.legend-keys { font: 500 12.5px/1.4 var(--font-label); color: var(--ink-soft); margin: 10px 0 0; }
+kbd { font: 500 11.5px var(--font-mono); border: 1px solid var(--rule); border-bottom-width: 2px; border-radius: 3px; padding: 0 4px; background: var(--paper); }
+
+aside.box { border-left: 3px solid var(--accent); background: var(--panel); padding: 12px 16px; margin: 22px 0; border-radius: 0 5px 5px 0; }
+aside.box .eyebrow { margin-bottom: 4px; }
+aside.box.field { border-left-color: var(--warn); }
+aside.box p:last-child { margin-bottom: 0; }
+pre { font: 400 13px/1.55 var(--font-mono); background: var(--code-bg); border: 1px solid var(--rule); border-radius: 5px; padding: 14px 16px; overflow-x: auto; margin: 14px 0 20px; }
+.meta { font: 500 13px/1.5 var(--font-label); color: var(--ink-soft); border-top: 1px solid var(--rule); margin-top: 44px; padding-top: 14px; }
+@media (prefers-reduced-motion: reduce) { .zoomer, .shade, rect.frame { transition: none; } }
+</style>
+
+<div class="page">
+  <header class="col">
+    <div class="eyebrow">Fine-Tuning ASR Models with Cadence · Chapter 9 · Draft</div>
+    <h1>From Start to <em>Finnish</em></h1>
+    <p class="subtitle">The gate says no — reading a verdict</p>
+  </header>
+
+  <section class="col">
+    <p>Your Serbian checkpoint finished its evaluation, and the gate has an answer. Figure 9-1 shows the <b>Eval report</b> after the gate ran. Read it from the top. The header <button class="ref" data-ref="1">1</button> says what was compared: your checkpoint against the base model. The loop strip <button class="ref" data-ref="2">2</button> puts the eval at <b>Decide</b>, so the next move is yours, not Cadence's.</p>
+    <p>The progress line <button class="ref" data-ref="3">3</button> counts the <em class="term">cells</em>, the squares of the eval matrix: one model, one golden set, one latency profile. Two of the 76 came from the cache. Then comes the verdict <button class="ref" data-ref="4">4</button>, and it is <i>failed</i>, although the target check <button class="ref" data-ref="5">5</button> passed with room to spare. The replay checks <button class="ref warning" data-ref="6">6</button> explain why.</p>
+  </section>
+
+  <section class="wide">
+    <figure class="annotated" id="fig-9-1" aria-labelledby="fig-9-1-cap">
+      <div class="stage" tabindex="0" aria-describedby="fig-9-1-keys">
+        <div class="zoomer">
+          <img src="screens/gate-verdict.png" width="1440" height="900" alt="__ALT__">
+          <svg viewBox="0 0 1440 900" aria-hidden="true"></svg>
+        </div>
+        <div class="zoomhint" hidden>Esc or click to zoom out</div>
+      </div>
+      <ol class="notes" aria-label="Annotations of Figure 9-1"></ol>
+      <figcaption id="fig-9-1-cap"><b>Figure 9-1.</b> The Eval report after the gate: the Serbian target improved, the replay languages did not. Captured from the staging stand on 2 October 2026.
+        <span class="legend-keys" id="fig-9-1-keys">Point at a number or a note to highlight its region. With the figure focused, <kbd>←</kbd> <kbd>→</kbd> step through the regions, <kbd>Enter</kbd> zooms, <kbd>Esc</kbd> zooms out.</span>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section class="col">
+    <p>A drop of 9.0 points on the target means little on its own. What makes it trustworthy is the interval: the whole range, from −10.1 to −8.1 points, lies below zero. Resampling the test speakers a thousand times never erased the gain. Chapter 8 showed how that interval is computed.</p>
+    <p>The replay checks tell the other half. Arabic went from 16.4 % to 28.4 % word error rate, Russian from 14.9 % to 44.7 %, and thirty more languages followed. The run you trained in Chapter 7 saw only Serbian. With nothing reminding it of the languages it already knew, the model overwrote them.</p>
+
+    <aside class="box field">
+      <div class="eyebrow">In the field</div>
+      <p>This is a real verdict from Cadence's own staging stand: eval <code>evl_01a0fd78…</code>, 2 October 2026. The first attempt at it failed earlier with <code>the model has no language prompt for 'sr-RS'</code>. The base model has no Serbian prompt, and the checkpoint had been trained under the Croatian one. The eval needed <code>languages: {"sr-RS": "hr-HR"}</code> to decode Serbian the way the model learned it.</p>
+    </aside>
+
+    <h2>How a figure like this is made</h2>
+    <p>Nobody draws these boxes by hand. A figure is a short spec: which screen to open, and which elements to point at. The capture script opens that screen on a stand with a read-only key, saves the screenshot, and records where each element is. If the product moves a button, the next capture fails instead of drawing a box around nothing.</p>
+<pre>{
+  "id": "gate-verdict",
+  "steps": [
+    { "open": "eval", "doc": "eval:{{gateEval}}", "waitFor": "[aria-label='Gate checks']" },
+    { "close": "Audio" },
+    { "maximize": "eval" }
+  ],
+  "regions": [
+    { "label": "Target check", "target": "[aria-label='Gate checks'] > li", "nth": 0,
+      "note": "The language you trained for. WER fell by 9.0 points …" },
+    { "label": "Replay check", "target": "[aria-label='Gate checks'] > li", "nth": 2,
+      "style": "warning", "note": "A language the model knew before …" }
+  ]
+}</pre>
+    <p>The same spec renders three ways. In this edition it becomes the figure above. Inside Cadence's Help panel it becomes a tour of the live screen. On GitHub it becomes a picture and a numbered list. The notes are written once.</p>
+
+    <p class="meta">Draft for review · written against Cadence <code>6c301ac</code> · method: <code>docs/tutorial/GUIDELINES.md</code> §5.3</p>
+  </section>
+</div>
+
+<script type="application/json" id="regions">__REGIONS__</script>
+<script>
+(() => {
+  const data = JSON.parse(document.getElementById("regions").textContent);
+  const W = 1440, H = 900, NS = "http://www.w3.org/2000/svg";
+  const fig = document.getElementById("fig-9-1");
+  const stage = fig.querySelector(".stage");
+  const zoomer = fig.querySelector(".zoomer");
+  const svg = fig.querySelector("svg");
+  const list = fig.querySelector("ol.notes");
+  const hint = fig.querySelector(".zoomhint");
+  let active = -1, zoomed = false;
+
+  const el = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); parent && parent.appendChild(e); return e; };
+
+  // The shade: the whole image darkened except the active region (an evenodd path with a hole).
+  const shade = el("path", { class: "shade", "fill-rule": "evenodd", d: "" }, svg);
+  const groups = data.map((r, i) => {
+    const [x, y, w, h] = r.box;
+    const g = el("g", { class: `region ${r.style || "focus"}` }, svg);
+    el("rect", { class: "frame", x, y, width: w, height: h, rx: 4 }, g);
+    const bx = Math.min(Math.max(x, 16), W - 16), by = Math.min(Math.max(y, 16), H - 16);
+    const badge = el("g", { class: "badge", transform: `translate(${bx} ${by})` }, g);
+    el("circle", { r: 13 }, badge);
+    el("text", {}, badge).textContent = String(i + 1);
+    g.addEventListener("mouseenter", () => setActive(i));
+    g.addEventListener("click", (e) => { e.stopPropagation(); setActive(i); toggleZoom(true); });
+    return g;
+  });
+
+  const items = data.map((r, i) => {
+    const li = document.createElement("li");
+    li.className = r.style || "focus";
+    const b = document.createElement("button");
+    b.type = "button";
+    b.innerHTML = `<span class="num" aria-hidden="true">${i + 1}</span><span class="label"></span><span class="note"></span>`;
+    b.querySelector(".label").textContent = r.label;
+    b.querySelector(".note").textContent = r.note;
+    b.setAttribute("aria-label", `${i + 1}. ${r.label}. ${r.note}`);
+    b.addEventListener("mouseenter", () => setActive(i));
+    b.addEventListener("focus", () => setActive(i));
+    b.addEventListener("click", () => { setActive(i); toggleZoom(!zoomed); });
+    li.appendChild(b);
+    list.appendChild(li);
+    return b;
+  });
+
+  function setActive(i) {
+    active = i;
+    groups.forEach((g, j) => g.classList.toggle("active", j === i));
+    items.forEach((b, j) => b.classList.toggle("active", j === i));
+    stage.classList.toggle("has-active", i >= 0);
+    if (i >= 0) {
+      const [x, y, w, h] = data[i].box;
+      shade.setAttribute("d", `M0 0H${W}V${H}H0Z M${x} ${y}h${w}v${h}h${-w}Z`);
+    }
+    if (zoomed) applyZoom();
+  }
+
+  function applyZoom() {
+    if (!zoomed || active < 0) { zoomer.style.transform = ""; hint.hidden = true; return; }
+    const [x, y, w, h] = data[active].box;
+    const s = Math.max(1, Math.min(2.6, Math.min((W * 0.86) / w, (H * 0.6) / h)));
+    const cx = x + w / 2, cy = y + h / 2;
+    const tx = Math.min(0, Math.max(W - W * s, W / 2 - cx * s));
+    const ty = Math.min(0, Math.max(H - H * s, H / 2 - cy * s));
+    zoomer.style.transform = `translate(${(tx / W) * 100}%, ${(ty / H) * 100}%) scale(${s})`;
+    hint.hidden = false;
+  }
+  function toggleZoom(on) { zoomed = on; applyZoom(); }
+
+  stage.addEventListener("mouseleave", () => { if (!zoomed && !list.contains(document.activeElement)) setActive(-1); });
+  list.addEventListener("mouseleave", () => { if (!zoomed && !list.contains(document.activeElement)) setActive(-1); });
+  stage.addEventListener("click", () => { if (zoomed) toggleZoom(false); });
+  stage.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowRight" || e.key === "ArrowDown") { setActive((active + 1) % data.length); e.preventDefault(); }
+    else if (e.key === "ArrowLeft" || e.key === "ArrowUp") { setActive((active - 1 + data.length) % data.length); e.preventDefault(); }
+    else if (e.key === "Enter" || e.key === " ") { if (active < 0) setActive(0); toggleZoom(!zoomed); e.preventDefault(); }
+    else if (e.key === "Escape") { toggleZoom(false); }
+  });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && zoomed) toggleZoom(false); });
+
+  // Numbers in the running text point at the figure.
+  document.querySelectorAll(".ref[data-ref]").forEach((b) => {
+    const i = Number(b.dataset.ref) - 1;
+    b.setAttribute("aria-label", `Region ${i + 1} of Figure 9-1: ${data[i].label}`);
+    b.addEventListener("mouseenter", () => setActive(i));
+    b.addEventListener("focus", () => setActive(i));
+    b.addEventListener("mouseleave", () => { if (!zoomed) setActive(-1); });
+    b.addEventListener("click", () => { setActive(i); fig.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "center" }); items[i].focus({ preventScroll: true }); });
+  });
+})();
+</script>
