@@ -26,6 +26,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/data"
 	"github.com/usunrise88/cadence/control-plane/internal/defaults"
 	"github.com/usunrise88/cadence/control-plane/internal/drafts"
+	"github.com/usunrise88/cadence/control-plane/internal/evals"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
 	"github.com/usunrise88/cadence/control-plane/internal/eviction"
 	"github.com/usunrise88/cadence/control-plane/internal/help"
@@ -131,6 +132,8 @@ type Server struct {
 	playbooks *playbooks.Service
 	// runs are training runs over the pipeline engine (checkpoint and calibration hooks, run status).
 	runs *runs.Service
+	// evals are evals over generated pipelines, eval records, gates and model registration (phase 3).
+	evals *evals.Service
 }
 
 var _ api.StrictServerInterface = (*Server)(nil)
@@ -181,6 +184,8 @@ func New(c Config) (*Server, error) {
 	s := &Server{Config: c, spec: spec}
 	s.runs = s.newRunsService()
 	s.runs.Install(c.StepHooks) // checkpoint and calibration outputs; the engine reports run status changes
+	s.evals = s.newEvalsService()
+	s.evals.Install(c.StepHooks) // scores outputs write eval records; the engine reports eval pipeline changes
 	window := time.Duration(s.defaultsDoc().Drafts.PresenceSeconds.Value) * time.Second
 	s.drafts = drafts.NewStore(time.Now, window)
 	s.mixes = mixes.NewService(s.drafts, s.defaultsDoc)

@@ -19,7 +19,9 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"maps"
 	"slices"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -68,26 +70,51 @@ type Options struct {
 
 // Engine runs pipelines.
 type Engine struct {
-	o        Options
-	observer atomic.Pointer[RunObserver]
+	o          Options
+	observerMu sync.Mutex
+	observers  atomic.Pointer[map[string]RunObserver]
 }
 
-// RunObserver is told about every change of a pipeline run that belongs to a training run (RunID set), inside the
-// transaction that made it, after the run and its steps were saved; the events it returns join that transaction's.
-// A facade (internal/runs) uses it to mirror the pipeline run's state onto its own entity. It is called after
+// RunObserver is told about every change of a pipeline run that belongs to a facade's entity (RunID set: a training
+// run, an eval), inside the transaction that made it, after the run and its steps were saved; the events it returns
+// join that transaction's. A facade (internal/runs, internal/evals) uses it to mirror the pipeline run's state onto
+// its own entity and ignores runs that are not its own. It is called after
 // Start, after a step outcome is applied, when a worker leases a step (Leased), and after Cancel and Retry.
 type RunObserver func(ctx context.Context, tx pgx.Tx, r Run) ([]events.Draft, error)
 
-// SetObserver installs the run observer (one per engine; a later call replaces it).
-func (e *Engine) SetObserver(fn RunObserver) { e.observer.Store(&fn) }
+// SetObserver installs the run observer of training runs (a later call replaces it); SetNamedObserver adds others.
+func (e *Engine) SetObserver(fn RunObserver) { e.SetNamedObserver("", fn) }
 
-// observe calls the observer for a run that belongs to a training run.
+// SetNamedObserver installs (or replaces) the observer called name: one per facade (runs, evals), each told about
+// every pipeline run with a RunID and left to recognise its own (an eval's pipeline run carries the eval's id).
+// Observers run in name order.
+func (e *Engine) SetNamedObserver(name string, fn RunObserver) {
+	e.observerMu.Lock()
+	defer e.observerMu.Unlock()
+	cur := e.observers.Load()
+	next := map[string]RunObserver{}
+	if cur != nil {
+		maps.Copy(next, *cur)
+	}
+	next[name] = fn
+	e.observers.Store(&next)
+}
+
+// observe calls the observers for a run that belongs to a facade's entity.
 func (e *Engine) observe(ctx context.Context, tx pgx.Tx, r Run) ([]events.Draft, error) {
-	fn := e.observer.Load()
-	if fn == nil || r.RunID == "" {
+	obs := e.observers.Load()
+	if obs == nil || r.RunID == "" {
 		return nil, nil
 	}
-	return (*fn)(ctx, tx, r)
+	var drafts []events.Draft
+	for _, name := range slices.Sorted(maps.Keys(*obs)) {
+		ev, err := (*obs)[name](ctx, tx, r)
+		if err != nil {
+			return nil, err
+		}
+		drafts = append(drafts, ev...)
+	}
+	return drafts, nil
 }
 
 // New returns an engine; call Register before the job service starts.
@@ -146,7 +173,7 @@ type StartInput struct {
 	Inputs    map[string]steps.ArtifactRef
 	Params    map[string]map[string]any // step id → overrides
 	Estimates map[string]float64        // step id → seconds (R12), from the facade
-	RunID     string                    // the training run this pipeline run belongs to
+	RunID     string                    // the facade entity it belongs to: a training run (run_…) or an eval (evl_…)
 	Actor     auth.Actor
 	Priority  int
 	Fresh     bool

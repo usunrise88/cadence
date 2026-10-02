@@ -31,7 +31,9 @@ Entities:
   datasets       get list
   defaults       get
   drafts         accept get list revert
+  evals          gate get list new
   events         list
+  gates          edit get
   goldenSets     freeze get list
   help           get search
   jobLogs        list
@@ -40,6 +42,7 @@ Entities:
   metrics        get
   mixes          edit get list new preview
   modelFamilies  get list
+  models         get list register
   normalizers    get list
   notificationRules edit list
   notificationSettings edit get

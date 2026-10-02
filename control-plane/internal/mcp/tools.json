@@ -3002,6 +3002,330 @@
       ]
     },
     {
+      "name": "evals.gate",
+      "title": "Apply the project's gate (gates.yaml at main) to a finished eval and record the verdict",
+      "description": "Apply the gate to a done eval: gates.yaml at the head of main (defaults gate.* and eval.* where it is silent). At the primary profile it checks the target golden sets (beat-baseline: the WER delta's whole interval below zero), the replay golden sets (fail when the delta exceeds maxRegression and its interval excludes zero) and deletions bought with insertions on the target sets. Answers the eval with gate: verdict passed | failed, each check passed | failed | inconclusive with its numbers, and the gates.yaml commit used. models.register needs the latest gated eval of a checkpoint to have passed. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/evals/{id}:gate",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Eval id (evl_…)",
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        }
+      ]
+    },
+    {
+      "name": "evals.get",
+      "title": "Get an eval with its cells, deltas against the baseline with confidence intervals, and the worst utterances of a cell",
+      "description": "An eval: status, progress, and one cell per role (subject, baseline) × golden set × profile × decoding with WER, CER, the punctuation-insensitive WER, substitutions / deletions / insertions, duration buckets and partial stability; subject cells carry the delta against the baseline's cell with a paired blockwise bootstrap interval (significant when it excludes zero). worst=N adds the N utterances with the most errors to each subject cell that passes the filters (cell=evc_… for one cell): reference, hypothesis and the alignment ops (=, S, D, I). Filters: goldenSet, profile, role.",
+      "method": "GET",
+      "path": "/evals/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "cell": {
+            "description": "Only this cell (evc_…)",
+            "type": "string"
+          },
+          "goldenSet": {
+            "description": "Only cells of this golden set (ver_… or its collection name)",
+            "type": "string"
+          },
+          "id": {
+            "description": "Eval id (evl_…)",
+            "type": "string"
+          },
+          "profile": {
+            "description": "Only cells of this latency profile",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "subject",
+              "baseline"
+            ],
+            "type": "string"
+          },
+          "worst": {
+            "description": "Add the N worst utterances (most errors) to each matching cell",
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "worst",
+          "in": "query",
+          "name": "worst"
+        },
+        {
+          "property": "cell",
+          "in": "query",
+          "name": "cell"
+        },
+        {
+          "property": "goldenSet",
+          "in": "query",
+          "name": "goldenSet"
+        },
+        {
+          "property": "profile",
+          "in": "query",
+          "name": "profile"
+        },
+        {
+          "property": "role",
+          "in": "query",
+          "name": "role"
+        }
+      ]
+    },
+    {
+      "name": "evals.list",
+      "title": "List the project's evals, newest first (cells omitted; evals.get has them)",
+      "description": "List the project's evals, newest first (cells omitted; evals.get has them)",
+      "method": "GET",
+      "path": "/projects/{p}/evals",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "default": 50,
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "done",
+              "failed"
+            ],
+            "type": "string"
+          },
+          "subject": {
+            "description": "Only evals of this subject (ckp_…, or a model or base model version ver_…)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "status",
+          "in": "query",
+          "name": "status"
+        },
+        {
+          "property": "subject",
+          "in": "query",
+          "name": "subject"
+        },
+        {
+          "property": "limit",
+          "in": "query",
+          "name": "limit"
+        }
+      ]
+    },
+    {
+      "name": "evals.new",
+      "title": "Evaluate a checkpoint, model or base model against the baseline on golden sets × latency profiles × decoding; ?dryRun=true answers the plan",
+      "description": "Run the eval matrix (R20–R24): subject (exactly one of checkpointId ckp_…, modelVersionId or baseModelVersionId ver_…) × golden sets × latency profiles × decoding variants, each cell compared with the same cell of the baseline. Everything is optional but the subject: golden sets default to the ones the project's gates.yaml names (target and replay), else its adopted golden sets; profiles to eval.matrix_profiles the model family declares, always with the primary profile; decoding to [{boost: none}]; baseline to the project's @baseline alias, else its default base model. Cells already in the eval records (any project, same weights × golden set × normalizer × decoding × scorer) are reused; only missing cells run (baseline cells included). Always call it with dryRun=true first: the answer is the plan — cells cached and to compute and the GPU-hour estimate. Without dryRun it answers 201 with the eval (follow it with evals.get; eval.{id}.progress reports cells done), or 202 with an approvalId when the estimate exceeds today's GPU budget. Then evals.gate applies the project's gate. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/projects/{p}/evals",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "baseline": {
+                "description": "The baseline model (ver_…, @alias, base-model/\u003cname\u003e or model/\u003cname\u003e); default the project's @baseline, else its default base model",
+                "type": "string"
+              },
+              "decoding": {
+                "description": "Decoding variants (R24); default [{boost: none}]",
+                "items": {
+                  "properties": {
+                    "boost": {
+                      "description": "none, or a boost list of the project's language pack at a commit: lang/\u003clocale\u003e/boost/\u003cfile\u003e@\u003ccommit sha\u003e",
+                      "type": "string"
+                    },
+                    "weight": {
+                      "description": "Boosting weight (with a boost list; default 1)",
+                      "format": "double",
+                      "maximum": 100,
+                      "minimum": 0,
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "boost"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "goldenSets": {
+                "description": "Golden set versions (ver_…, @alias, golden-set/\u003cname\u003e); default: those gates.yaml names, else the project's adopted golden sets",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "priority": {
+                "description": "Queue priority of the eval's steps",
+                "maximum": 100,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "profiles": {
+                "description": "Latency profiles (R43); default: eval.matrix_profiles that the model families declare, plus the primary profile",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "subject": {
+                "description": "Exactly one of the three",
+                "properties": {
+                  "baseModelVersionId": {
+                    "description": "A base model version (ver_…, @alias or base-model/\u003cname\u003e)",
+                    "type": "string"
+                  },
+                  "checkpointId": {
+                    "description": "A checkpoint of this project (ckp_…)",
+                    "type": "string"
+                  },
+                  "modelVersionId": {
+                    "description": "A registered model version (ver_…, @alias or model/\u003cname\u003e)",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "required": [
+              "subject"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
       "name": "events.list",
       "title": "Events after a sequence number; with Accept text/event-stream, the live stream",
       "description": "Events after a sequence number, oldest first, optionally filtered by topic patterns (a trailing * matches the remaining segments, e.g. run.123.*) and project. Use the last seq as `after` to continue.",
@@ -3059,6 +3383,186 @@
           "property": "limit",
           "in": "query",
           "name": "limit"
+        }
+      ]
+    },
+    {
+      "name": "gates.edit",
+      "title": "Commit a new gates.yaml to main (approval for agents); dryRun validates",
+      "description": "Change the project's gate: send content (the YAML) or config (the same as an object) with If-Match = the ETag of gates.get. The file is validated first (gate-config-invalid lists every problem); dryRun validates and commits nothing. For agents this waits for a person's approval (gates decide what counts as better). Pass dryRun=true to see what would happen without changing anything.",
+      "method": "PATCH",
+      "path": "/projects/{p}/gates",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "description": "Exactly one of content and config",
+            "properties": {
+              "config": {
+                "additionalProperties": false,
+                "description": "gates.yaml (docs/review/2026-10-02-phase-3-plan.md \"Gate\"); a value left out takes defaults.yaml gate.* / eval.*",
+                "properties": {
+                  "deletionsInsertions": {
+                    "type": "boolean"
+                  },
+                  "primaryProfile": {
+                    "description": "The latency profile the gate reads (R20)",
+                    "type": "string"
+                  },
+                  "replay": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "goldenSets": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "maxRegression": {
+                        "description": "Largest absolute WER rise (0.005 = 0.5 points)",
+                        "format": "double",
+                        "maximum": 0.1,
+                        "minimum": 0,
+                        "type": "number"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "significance": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "level": {
+                        "format": "double",
+                        "maximum": 0.999,
+                        "minimum": 0.5,
+                        "type": "number"
+                      },
+                      "samples": {
+                        "maximum": 100000,
+                        "minimum": 100,
+                        "type": "integer"
+                      },
+                      "seed": {
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "target": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "goldenSets": {
+                        "description": "golden-set/\u003cname\u003e (a * wildcard matches several)",
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "rule": {
+                        "enum": [
+                          "beat-baseline"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  }
+                },
+                "type": "object"
+              },
+              "content": {
+                "description": "The new gates.yaml",
+                "type": "string"
+              },
+              "message": {
+                "description": "The commit message",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "ifMatch",
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "gates.get",
+      "title": "Get the project's gate (gates.yaml at main, with the defaults it departs from)",
+      "description": "The project's gate: gates.yaml at the head of main (exists false when the project has none and the defaults apply), its effective configuration with defaults filled in, and the departures from defaults.yaml. The ETag is the commit that last changed the file (\"defaults\" when there is none); gates.edit takes it as If-Match.",
+      "method": "GET",
+      "path": "/projects/{p}/gates",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
         }
       ]
     },
@@ -4517,6 +5021,155 @@
           "property": "state",
           "in": "query",
           "name": "state"
+        }
+      ]
+    },
+    {
+      "name": "models.get",
+      "title": "Get a model version with its model card, gate, lineage and the projects that use it",
+      "description": "Get a model version with its model card, gate, lineage and the projects that use it",
+      "method": "GET",
+      "path": "/registry/models/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Registry version id (ver_…)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        }
+      ]
+    },
+    {
+      "name": "models.list",
+      "title": "List registered model versions (checkpoints whose gate passed) with their gate and lineage",
+      "description": "List registered model versions (checkpoints whose gate passed) with their gate and lineage",
+      "method": "GET",
+      "path": "/registry/models",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "collection": {
+            "description": "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)",
+            "type": "string"
+          },
+          "state": {
+            "description": "Only versions in this state",
+            "enum": [
+              "draft",
+              "frozen",
+              "deprecated"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "collection",
+          "in": "query",
+          "name": "collection"
+        },
+        {
+          "property": "state",
+          "in": "query",
+          "name": "state"
+        }
+      ]
+    },
+    {
+      "name": "models.register",
+      "title": "Register a checkpoint whose latest gated eval passed as a model version, with its model card (approval for agents)",
+      "description": "Publish a checkpoint (ckp_…) as a registry model version (collection model/\u003cname\u003e, default model/\u003cproject slug\u003e) with its eval, gate verdict, lineage (run, mix, recipe, dataset versions) and a generated model card. The checkpoint's latest gated eval (or evalId) must have passed (gate-not-passed otherwise). dryRun shows the version's payload and card. For agents it waits for a person's approval (registry changes are shared). Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/projects/{p}/models:register",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "checkpointId": {
+                "description": "ckp_…",
+                "type": "string"
+              },
+              "description": {
+                "description": "The collection's description when it is new",
+                "type": "string"
+              },
+              "evalId": {
+                "description": "The gated eval to publish with (default the checkpoint's latest gated eval)",
+                "type": "string"
+              },
+              "name": {
+                "description": "The collection, model/\u003cname\u003e (default model/\u003cproject slug\u003e)",
+                "type": "string"
+              }
+            },
+            "required": [
+              "checkpointId"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
         }
       ]
     },

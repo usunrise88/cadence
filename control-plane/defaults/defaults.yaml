@@ -450,6 +450,12 @@ eval:
     description: Seed of the bootstrap resampling, so a verdict is reproducible
     source: Cadence recommendation
     range: { min: 0, max: 2147483647 }
+  gpu_hours_per_audio_hour:
+    value: 0.1
+    unit: GPU-hours per audio hour
+    description: GPU time one eval cell spends per hour of golden-set audio (streaming decode at one latency profile, model load included); evals.new multiplies it by the audio of the cells it computes, and the policy weighs the result against the GPU budgets
+    source: Cadence recommendation, to be calibrated
+    range: { min: 0.001, max: 10 }
 
 gate:
   target_rule:

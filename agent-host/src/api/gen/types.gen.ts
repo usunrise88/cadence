@@ -5277,6 +5277,542 @@ export type GoldenSetFreeze = {
     groups?: 'call' | 'speaker' | 'utterance';
 };
 
+export type EvalStatus = 'queued' | 'running' | 'done' | 'failed';
+
+export type EvalCellRole = 'subject' | 'baseline';
+
+/**
+ * cached: an eval record already held the cell; queued / running: its steps wait or run; done: computed now; failed
+ */
+export type EvalCellState = 'cached' | 'queued' | 'running' | 'done' | 'failed';
+
+/**
+ * Exactly one of the three
+ */
+export type EvalSubjectRef = {
+    /**
+     * A checkpoint of this project (ckp_…)
+     */
+    checkpointId?: string;
+    /**
+     * A registered model version (ver_…, @alias or model/<name>)
+     */
+    modelVersionId?: string;
+    /**
+     * A base model version (ver_…, @alias or base-model/<name>)
+     */
+    baseModelVersionId?: string;
+};
+
+export type EvalDecodingVariant = {
+    /**
+     * none, or a boost list of the project's language pack at a commit: lang/<locale>/boost/<file>@<commit sha>
+     */
+    boost: string;
+    /**
+     * Boosting weight (with a boost list; default 1)
+     */
+    weight?: number;
+};
+
+export type EvalNew = {
+    subject: EvalSubjectRef;
+    /**
+     * Golden set versions (ver_…, @alias, golden-set/<name>); default: those gates.yaml names, else the project's adopted golden sets
+     */
+    goldenSets?: Array<string>;
+    /**
+     * Latency profiles (R43); default: eval.matrix_profiles that the model families declare, plus the primary profile
+     */
+    profiles?: Array<string>;
+    /**
+     * Decoding variants (R24); default [{boost: none}]
+     */
+    decoding?: Array<EvalDecodingVariant>;
+    /**
+     * The baseline model (ver_…, @alias, base-model/<name> or model/<name>); default the project's @baseline, else its default base model
+     */
+    baseline?: string;
+    /**
+     * Queue priority of the eval's steps
+     */
+    priority?: number;
+};
+
+/**
+ * A model an eval compares (the subject or the baseline)
+ */
+export type EvalModel = {
+    kind: 'checkpoint' | 'model' | 'base_model';
+    /**
+     * ckp_… or ver_…
+     */
+    id: string;
+    /**
+     * Readable name (collection and version, or the checkpoint's run and step)
+     */
+    label: string;
+    /**
+     * The eval-record key of the model: the weights hash, or base:<versionId> for a base model
+     */
+    modelKey: string;
+    /**
+     * The model family (R41)
+     */
+    family: string;
+    runId?: string;
+    /**
+     * Baseline only: where it came from
+     */
+    source?: 'request' | 'alias' | 'project-default';
+};
+
+export type EvalGoldenSet = {
+    versionId: string;
+    /**
+     * golden-set/<name>
+     */
+    name: string;
+    version: string;
+    normalizerVersionId: string;
+    locale: string;
+    domain?: string;
+    utterances: number;
+    hours: number;
+    /**
+     * The bootstrap's resampling unit
+     */
+    groups: 'call' | 'speaker' | 'utterance';
+    /**
+     * A replay golden set (the gate's replay list, or a language outside the project's locales): scored at the primary profile only
+     */
+    replay?: boolean;
+};
+
+export type EvalProfile = {
+    name: string;
+    latencyMs: number;
+    label?: string;
+};
+
+export type EvalDecoding = {
+    index: number;
+    /**
+     * none or lang/<locale>/boost/<file>@<commit>
+     */
+    boost: string;
+    weight?: number;
+    /**
+     * Terms in the boost list
+     */
+    terms?: number;
+    /**
+     * The rendered boost_list artifact (b3:…)
+     */
+    artifact?: string;
+};
+
+export type EvalSignificance = {
+    /**
+     * Bootstrap resamples
+     */
+    samples: number;
+    /**
+     * Interval coverage (0.95)
+     */
+    level: number;
+    seed: number;
+};
+
+/**
+ * GPU time of the cells to compute: golden audio hours × eval.gpu_hours_per_audio_hour (defaults.yaml, to be calibrated)
+ */
+export type EvalEstimate = {
+    gpuHours: number;
+    /**
+     * Audio decoded by the cells to compute
+     */
+    audioHours: number;
+    cellsToCompute: number;
+    gpuHoursPerAudioHour: number;
+    basis: 'table';
+};
+
+export type EvalBucket = {
+    /**
+     * Lower bound of the duration bucket (seconds)
+     */
+    lo: number;
+    /**
+     * Upper bound; absent for the open last bucket
+     */
+    hi?: number;
+    utterances: number;
+    refWords: number;
+    wer: number;
+};
+
+/**
+ * Partial stability (R54)
+ */
+export type EvalStability = {
+    partialWords?: number;
+    unstableWords?: number;
+    /**
+     * Unstable partial word ratio
+     */
+    ratio?: number;
+    editsPerSecond?: number;
+};
+
+/**
+ * A cell's scores (the scores artifact's summary.json); rates are fractions (0.123), counts are words
+ */
+export type EvalSummary = {
+    scorer?: string;
+    language?: string;
+    utterances: number;
+    refWords: number;
+    refChars?: number;
+    wer: number;
+    cer: number;
+    /**
+     * WER with punctuation removed after the scoring normalizer
+     */
+    werNoPunct: number;
+    /**
+     * Substituted words
+     */
+    sub: number;
+    /**
+     * Deleted words
+     */
+    del: number;
+    /**
+     * Inserted words
+     */
+    ins: number;
+    charErrors?: number;
+    buckets?: Array<EvalBucket>;
+    stability?: EvalStability;
+};
+
+export type EvalInterval = {
+    /**
+     * The point estimate (subject − baseline, a fraction)
+     */
+    value: number;
+    low: number;
+    high: number;
+};
+
+/**
+ * Subject − baseline at the same golden set, profile and decoding: paired blockwise bootstrap over the golden set's groups (R54)
+ */
+export type EvalDelta = {
+    baselineCellId: string;
+    wer: EvalInterval;
+    /**
+     * Deletion rate delta (deleted words / reference words)
+     */
+    del: EvalInterval;
+    /**
+     * Insertion rate delta
+     */
+    ins: EvalInterval;
+    /**
+     * The WER interval excludes zero
+     */
+    significant: boolean;
+    /**
+     * Resampling units (calls
+     */
+    groups: number;
+    samples: number;
+    level: number;
+    /**
+     * Why the delta could not be computed (an artifact left the store)
+     */
+    error?: string;
+};
+
+export type EvalUtterance = {
+    /**
+     * Position in the golden set
+     */
+    index: number;
+    /**
+     * The audio's content hash
+     */
+    audio: string;
+    speaker?: string;
+    group?: string;
+    durationS?: number;
+    ref: string;
+    hyp: string;
+    refWords: number;
+    sub: number;
+    del: number;
+    ins: number;
+    errors: number;
+    wer: number;
+    /**
+     * Alignment: [op, ref word, hyp word] with op =, S, D or I
+     */
+    ops: Array<Array<string>>;
+};
+
+export type EvalCell = {
+    /**
+     * evc_…
+     */
+    id: string;
+    role: EvalCellRole;
+    goldenSetVersionId: string;
+    profile: string;
+    decodingIndex: number;
+    decodingHash: string;
+    modelKey: string;
+    state: EvalCellState;
+    /**
+     * The eval record (erc_…) the scores come from
+     */
+    recordId?: string;
+    /**
+     * The scores artifact (b3:…)
+     */
+    scores?: string;
+    /**
+     * The hypotheses artifact (b3:…)
+     */
+    hypotheses?: string;
+    summary?: EvalSummary;
+    delta?: EvalDelta;
+    worst?: Array<EvalUtterance>;
+};
+
+export type EvalGateCheck = {
+    kind: 'target' | 'replay' | 'deletionsInsertions' | 'primaryProfile';
+    goldenSetVersionId?: string;
+    goldenSet?: string;
+    profile?: string;
+    state: 'passed' | 'failed' | 'inconclusive';
+    delta?: EvalInterval;
+    /**
+     * Replay: the allowed regression
+     */
+    threshold?: number;
+    baselineWer?: number;
+    candidateWer?: number;
+    message: string;
+};
+
+export type EvalGate = {
+    verdict: 'passed' | 'failed';
+    /**
+     * The commit that last changed gates.yaml (empty: the defaults applied)
+     */
+    gatesSha: string;
+    checks: Array<EvalGateCheck>;
+    config: GateConfig;
+    at: string;
+    by?: Actor;
+};
+
+export type EvalProgress = {
+    cellsTotal: number;
+    /**
+     * Cells with scores (cached ones included)
+     */
+    cellsDone: number;
+    cellsCached: number;
+};
+
+export type Eval = {
+    /**
+     * evl_…
+     */
+    id: string;
+    projectId: string;
+    status: EvalStatus;
+    error?: string;
+    subject: EvalModel;
+    baseline: EvalModel;
+    goldenSets: Array<EvalGoldenSet>;
+    profiles: Array<EvalProfile>;
+    /**
+     * The cell the gate reads (R20)
+     */
+    primaryProfile: string;
+    decoding: Array<EvalDecoding>;
+    significance: EvalSignificance;
+    /**
+     * The pipeline run computing the missing cells (absent when every cell was cached)
+     */
+    pipelineRunId?: string;
+    progress: EvalProgress;
+    estimate: EvalEstimate;
+    gate?: EvalGate;
+    /**
+     * Absent in evals.list
+     */
+    cells?: Array<EvalCell>;
+    rev: number;
+    actor: Actor;
+    createdAt: string;
+    updatedAt: string;
+    finishedAt?: string;
+};
+
+export type EvalList = {
+    items: Array<Eval>;
+};
+
+export type EvalPlanCell = {
+    role: EvalCellRole;
+    goldenSetVersionId: string;
+    profile: string;
+    decodingIndex: number;
+    decodingHash: string;
+    modelKey: string;
+    cached: boolean;
+    recordId?: string;
+};
+
+export type EvalPlan = {
+    subject: EvalModel;
+    baseline: EvalModel;
+    goldenSets: Array<EvalGoldenSet>;
+    profiles: Array<EvalProfile>;
+    primaryProfile: string;
+    decoding: Array<EvalDecoding>;
+    significance: EvalSignificance;
+    cells: Array<EvalPlanCell>;
+    cellsCached: number;
+    /**
+     * Distinct records to compute (a subject equal to the baseline computes once)
+     */
+    cellsToCompute: number;
+    estimate: EvalEstimate;
+    /**
+     * The generated pipeline's steps (materialize → transcribe → score per missing cell)
+     */
+    steps: Array<{
+        step: string;
+        kind: string;
+    }>;
+};
+
+/**
+ * gates.yaml (docs/review/2026-10-02-phase-3-plan.md "Gate"); a value left out takes defaults.yaml gate.* / eval.*
+ */
+export type GateConfig = {
+    /**
+     * The latency profile the gate reads (R20)
+     */
+    primaryProfile?: string;
+    target?: {
+        /**
+         * golden-set/<name> (a * wildcard matches several)
+         */
+        goldenSets?: Array<string>;
+        rule?: 'beat-baseline';
+    };
+    replay?: {
+        goldenSets?: Array<string>;
+        /**
+         * Largest absolute WER rise (0.005 = 0.5 points)
+         */
+        maxRegression?: number;
+    };
+    deletionsInsertions?: boolean;
+    significance?: {
+        samples?: number;
+        level?: number;
+        seed?: number;
+    };
+};
+
+export type GateDeparture = {
+    param: string;
+    value: unknown;
+    default: unknown;
+};
+
+export type Gates = {
+    path: string;
+    /**
+     * false: the project has no gates.yaml and the defaults apply
+     */
+    exists: boolean;
+    ref: string;
+    /**
+     * The head of main the file was read at
+     */
+    head: string;
+    /**
+     * The commit that last changed gates.yaml
+     */
+    commit?: string;
+    /**
+     * The file (when it does not exist: the defaults rendered as a starting point)
+     */
+    content: string;
+    /**
+     * The effective gate with the defaults filled in
+     */
+    config: GateConfig;
+    departures: Array<GateDeparture>;
+};
+
+/**
+ * Exactly one of content and config
+ */
+export type GatesEdit = {
+    /**
+     * The new gates.yaml
+     */
+    content?: string;
+    config?: GateConfig;
+    /**
+     * The commit message
+     */
+    message?: string;
+};
+
+export type ModelRegister = {
+    /**
+     * ckp_…
+     */
+    checkpointId: string;
+    /**
+     * The collection, model/<name> (default model/<project slug>)
+     */
+    name?: string;
+    /**
+     * The gated eval to publish with (default the checkpoint's latest gated eval)
+     */
+    evalId?: string;
+    /**
+     * The collection's description when it is new
+     */
+    description?: string;
+};
+
+export type ModelRegistration = {
+    name: string;
+    model: ModelPayload;
+};
+
+export type ModelVersion = RegistryVersion & {
+    model: ModelPayload;
+    usedBy: Array<UsedBy>;
+};
+
+export type ModelVersionList = {
+    items: Array<ModelVersion>;
+};
+
 /**
  * BCP 47 locale of a language pack: its directory lang/<locale>/ (he-IL, sr)
  */
@@ -11627,6 +12163,377 @@ export type GoldenSetsFreezeResponses = {
 };
 
 export type GoldenSetsFreezeResponse = GoldenSetsFreezeResponses[keyof GoldenSetsFreezeResponses];
+
+export type EvalsListData = {
+    body?: never;
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        status?: EvalStatus;
+        /**
+         * Only evals of this subject (ckp_…, or a model or base model version ver_…)
+         */
+        subject?: string;
+        limit?: number;
+    };
+    url: '/projects/{p}/evals';
+};
+
+export type EvalsListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type EvalsListError = EvalsListErrors[keyof EvalsListErrors];
+
+export type EvalsListResponses = {
+    /**
+     * Evals, newest first
+     */
+    200: EvalList;
+};
+
+export type EvalsListResponse = EvalsListResponses[keyof EvalsListResponses];
+
+export type EvalsNewData = {
+    body: EvalNew;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/projects/{p}/evals';
+};
+
+export type EvalsNewErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type EvalsNewError = EvalsNewErrors[keyof EvalsNewErrors];
+
+export type EvalsNewResponses = {
+    /**
+     * Dry run — the plan (cells, cached and to compute, estimate); nothing was written or queued
+     */
+    200: EvalPlan;
+    /**
+     * The eval, queued (done at once when every cell was cached)
+     */
+    201: Eval;
+    /**
+     * Gated; a person decides the approval on the approvals topic
+     */
+    202: ApprovalAccepted;
+};
+
+export type EvalsNewResponse = EvalsNewResponses[keyof EvalsNewResponses];
+
+export type EvalsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Eval id (evl_…)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Add the N worst utterances (most errors) to each matching cell
+         */
+        worst?: number;
+        /**
+         * Only this cell (evc_…)
+         */
+        cell?: string;
+        /**
+         * Only cells of this golden set (ver_… or its collection name)
+         */
+        goldenSet?: string;
+        /**
+         * Only cells of this latency profile
+         */
+        profile?: string;
+        role?: EvalCellRole;
+    };
+    url: '/evals/{id}';
+};
+
+export type EvalsGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type EvalsGetError = EvalsGetErrors[keyof EvalsGetErrors];
+
+export type EvalsGetResponses = {
+    /**
+     * The eval
+     */
+    200: Eval;
+};
+
+export type EvalsGetResponse = EvalsGetResponses[keyof EvalsGetResponses];
+
+export type EvalsGateData = {
+    body?: never;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Eval id (evl_…)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/evals/{id}:gate';
+};
+
+export type EvalsGateErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type EvalsGateError = EvalsGateErrors[keyof EvalsGateErrors];
+
+export type EvalsGateResponses = {
+    /**
+     * The eval with its verdict (a dry run computes it without recording)
+     */
+    200: Eval;
+};
+
+export type EvalsGateResponse = EvalsGateResponses[keyof EvalsGateResponses];
+
+export type GatesGetData = {
+    body?: never;
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: never;
+    url: '/projects/{p}/gates';
+};
+
+export type GatesGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type GatesGetError = GatesGetErrors[keyof GatesGetErrors];
+
+export type GatesGetResponses = {
+    /**
+     * The gate
+     */
+    200: Gates;
+};
+
+export type GatesGetResponse = GatesGetResponses[keyof GatesGetResponses];
+
+export type GatesEditData = {
+    body: GatesEdit;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/projects/{p}/gates';
+};
+
+export type GatesEditErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type GatesEditError = GatesEditErrors[keyof GatesEditErrors];
+
+export type GatesEditResponses = {
+    /**
+     * The gate as committed (a dry run shows it as it would be)
+     */
+    200: Gates;
+    /**
+     * Gated; a person decides the approval on the approvals topic
+     */
+    202: ApprovalAccepted;
+};
+
+export type GatesEditResponse = GatesEditResponses[keyof GatesEditResponses];
+
+export type ModelsRegisterData = {
+    body: ModelRegister;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/projects/{p}/models:register';
+};
+
+export type ModelsRegisterErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type ModelsRegisterError = ModelsRegisterErrors[keyof ModelsRegisterErrors];
+
+export type ModelsRegisterResponses = {
+    /**
+     * Dry run — the collection and payload the registration would write
+     */
+    200: ModelRegistration;
+    /**
+     * The model version, frozen and adopted by the project
+     */
+    201: ModelVersion;
+    /**
+     * Gated; a person decides the approval on the approvals topic
+     */
+    202: ApprovalAccepted;
+};
+
+export type ModelsRegisterResponse = ModelsRegisterResponses[keyof ModelsRegisterResponses];
+
+export type ModelsListData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)
+         */
+        collection?: string;
+        /**
+         * Only versions in this state
+         */
+        state?: VersionState;
+    };
+    url: '/registry/models';
+};
+
+export type ModelsListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type ModelsListError = ModelsListErrors[keyof ModelsListErrors];
+
+export type ModelsListResponses = {
+    /**
+     * Model versions, newest first
+     */
+    200: ModelVersionList;
+};
+
+export type ModelsListResponse = ModelsListResponses[keyof ModelsListResponses];
+
+export type ModelsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Registry version id (ver_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/registry/models/{id}';
+};
+
+export type ModelsGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type ModelsGetError = ModelsGetErrors[keyof ModelsGetErrors];
+
+export type ModelsGetResponses = {
+    /**
+     * The version
+     */
+    200: ModelVersion;
+};
+
+export type ModelsGetResponse = ModelsGetResponses[keyof ModelsGetResponses];
 
 export type LangpacksListData = {
     body?: never;

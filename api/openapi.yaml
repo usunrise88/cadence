@@ -41,6 +41,7 @@ tags:
   - { name: backups, description: "Nightly backup sets (pg_dump plus the content store), the weekly restore test and retention" }
   - { name: playbooks, description: "Prefilled chains of commands with inputs, stop conditions and an estimate, run as playbook sessions (R16)" }
   - { name: runs, description: "Training runs (one optimisation stage each), calibration, checkpoints and metric series (R12, R13, R44)" }
+  - { name: evals, description: "The eval matrix against the baseline, eval records, the project's gate and model registration (R20–R24)" }
   - { name: planned, description: Named now, implemented in a later phase (501 until then) }
 
 paths:
@@ -3217,6 +3218,208 @@ paths:
         default: { $ref: "#/components/responses/Problem" }
 
   # ---------------------------------------------------------------- evals, gates, models (phase 3 · stream E) — add paths below this line
+  /projects/{p}/evals:
+    x-cadence: { entity: evals }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    get:
+      operationId: evals.list
+      summary: List the project's evals, newest first (cells omitted; evals.get has them)
+      tags: [evals]
+      parameters:
+        - { name: status, in: query, required: false, schema: { $ref: "#/components/schemas/EvalStatus" } }
+        - { name: subject, in: query, required: false, description: "Only evals of this subject (ckp_…, or a model or base model version ver_…)", schema: { type: string } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+      responses:
+        "200":
+          description: Evals, newest first
+          content: { application/json: { schema: { $ref: "#/components/schemas/EvalList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+    post:
+      operationId: evals.new
+      summary: Evaluate a checkpoint, model or base model against the baseline on golden sets × latency profiles × decoding; ?dryRun=true answers the plan
+      tags: [evals]
+      x-cadence:
+        toolDescription: >
+          Run the eval matrix (R20–R24): subject (exactly one of checkpointId ckp_…, modelVersionId or
+          baseModelVersionId ver_…) × golden sets × latency profiles × decoding variants, each cell compared with the
+          same cell of the baseline. Everything is optional but the subject: golden sets default to the ones the
+          project's gates.yaml names (target and replay), else its adopted golden sets; profiles to
+          eval.matrix_profiles the model family declares, always with the primary profile; decoding to [{boost: none}];
+          baseline to the project's @baseline alias, else its default base model. Cells already in the eval records
+          (any project, same weights × golden set × normalizer × decoding × scorer) are reused; only missing cells run
+          (baseline cells included). Always call it with dryRun=true first: the answer is the plan — cells cached and
+          to compute and the GPU-hour estimate. Without dryRun it answers 201 with the eval (follow it with evals.get;
+          eval.{id}.progress reports cells done), or 202 with an approvalId when the estimate exceeds today's GPU budget.
+          Then evals.gate applies the project's gate.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/EvalNew" } } }
+      responses:
+        "200":
+          description: Dry run — the plan (cells, cached and to compute, estimate); nothing was written or queued
+          content: { application/json: { schema: { $ref: "#/components/schemas/EvalPlan" } } }
+        "201":
+          description: The eval, queued (done at once when every cell was cached)
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Eval" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /evals/{id}:
+    x-cadence: { entity: evals }
+    parameters: [{ name: id, in: path, required: true, description: "Eval id (evl_…)", schema: { type: string } }]
+    get:
+      operationId: evals.get
+      summary: Get an eval with its cells, deltas against the baseline with confidence intervals, and the worst utterances of a cell
+      tags: [evals]
+      x-cadence:
+        toolDescription: >
+          An eval: status, progress, and one cell per role (subject, baseline) × golden set × profile × decoding with
+          WER, CER, the punctuation-insensitive WER, substitutions / deletions / insertions, duration buckets and
+          partial stability; subject cells carry the delta against the baseline's cell with a paired blockwise
+          bootstrap interval (significant when it excludes zero). worst=N adds the N utterances with the most errors to
+          each subject cell that passes the filters (cell=evc_… for one cell): reference, hypothesis and the alignment
+          ops (=, S, D, I). Filters: goldenSet, profile, role.
+      parameters:
+        - { name: worst, in: query, required: false, description: "Add the N worst utterances (most errors) to each matching cell", schema: { type: integer, minimum: 1, maximum: 200 } }
+        - { name: cell, in: query, required: false, description: "Only this cell (evc_…)", schema: { type: string } }
+        - { name: goldenSet, in: query, required: false, description: "Only cells of this golden set (ver_… or its collection name)", schema: { type: string } }
+        - { name: profile, in: query, required: false, description: Only cells of this latency profile, schema: { type: string } }
+        - { name: role, in: query, required: false, schema: { $ref: "#/components/schemas/EvalCellRole" } }
+      responses:
+        "200":
+          description: The eval
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Eval" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /evals/{id}:gate:
+    x-cadence: { entity: evals }
+    parameters: [{ name: id, in: path, required: true, description: "Eval id (evl_…)", schema: { type: string } }]
+    post:
+      operationId: evals.gate
+      summary: Apply the project's gate (gates.yaml at main) to a finished eval and record the verdict
+      tags: [evals]
+      x-cadence:
+        toolDescription: >
+          Apply the gate to a done eval: gates.yaml at the head of main (defaults gate.* and eval.* where it is
+          silent). At the primary profile it checks the target golden sets (beat-baseline: the WER delta's whole
+          interval below zero), the replay golden sets (fail when the delta exceeds maxRegression and its interval
+          excludes zero) and deletions bought with insertions on the target sets. Answers the eval with gate: verdict
+          passed | failed, each check passed | failed | inconclusive with its numbers, and the gates.yaml commit used.
+          models.register needs the latest gated eval of a checkpoint to have passed.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      responses:
+        "200":
+          description: The eval with its verdict (a dry run computes it without recording)
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Eval" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /projects/{p}/gates:
+    x-cadence: { entity: gates, singleton: true }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    get:
+      operationId: gates.get
+      summary: Get the project's gate (gates.yaml at main, with the defaults it departs from)
+      tags: [evals]
+      x-cadence:
+        toolDescription: >
+          The project's gate: gates.yaml at the head of main (exists false when the project has none and the defaults
+          apply), its effective configuration with defaults filled in, and the departures from defaults.yaml. The ETag
+          is the commit that last changed the file ("defaults" when there is none); gates.edit takes it as If-Match.
+      responses:
+        "200":
+          description: The gate
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Gates" } } }
+        default: { $ref: "#/components/responses/Problem" }
+    patch:
+      operationId: gates.edit
+      summary: Commit a new gates.yaml to main (approval for agents); dryRun validates
+      tags: [evals]
+      x-cadence:
+        toolDescription: >
+          Change the project's gate: send content (the YAML) or config (the same as an object) with If-Match = the
+          ETag of gates.get. The file is validated first (gate-config-invalid lists every problem); dryRun validates
+          and commits nothing. For agents this waits for a person's approval (gates decide what counts as better).
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/GatesEdit" } } }
+      responses:
+        "200":
+          description: The gate as committed (a dry run shows it as it would be)
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Gates" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /projects/{p}/models:register:
+    x-cadence: { entity: models }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    post:
+      operationId: models.register
+      summary: Register a checkpoint whose latest gated eval passed as a model version, with its model card (approval for agents)
+      tags: [evals]
+      x-cadence:
+        toolDescription: >
+          Publish a checkpoint (ckp_…) as a registry model version (collection model/<name>, default model/<project
+          slug>) with its eval, gate verdict, lineage (run, mix, recipe, dataset versions) and a generated model card.
+          The checkpoint's latest gated eval (or evalId) must have passed (gate-not-passed otherwise). dryRun shows the
+          version's payload and card. For agents it waits for a person's approval (registry changes are shared).
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ModelRegister" } } }
+      responses:
+        "200":
+          description: Dry run — the collection and payload the registration would write
+          content: { application/json: { schema: { $ref: "#/components/schemas/ModelRegistration" } } }
+        "201":
+          description: The model version, frozen and adopted by the project
+          content: { application/json: { schema: { $ref: "#/components/schemas/ModelVersion" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/models:
+    x-cadence: { entity: models, kind: model }
+    get:
+      operationId: models.list
+      summary: List registered model versions (checkpoints whose gate passed) with their gate and lineage
+      tags: [registry]
+      parameters:
+        - $ref: "#/components/parameters/RegistryCollectionFilter"
+        - $ref: "#/components/parameters/RegistryStateFilter"
+      responses:
+        "200":
+          description: Model versions, newest first
+          content: { application/json: { schema: { $ref: "#/components/schemas/ModelVersionList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/models/{id}:
+    x-cadence: { entity: models, kind: model }
+    parameters: [{ $ref: "#/components/parameters/VersionId" }]
+    get:
+      operationId: models.get
+      summary: Get a model version with its model card, gate, lineage and the projects that use it
+      tags: [registry]
+      responses:
+        "200":
+          description: The version
+          content: { application/json: { schema: { $ref: "#/components/schemas/ModelVersion" } } }
+        default: { $ref: "#/components/responses/Problem" }
 
   # ---------------------------------------------------------------- language packs, boost lists, lineage (phase 3 · stream L) — add paths below this line
 
@@ -7216,6 +7419,373 @@ components:
         groups: { type: string, enum: [call, speaker, utterance], description: "The bootstrap's resampling unit (R54); default speaker when the dataset's utterances name speakers, else utterance" }
 
     # ---------------------------------------------------------------- evals, gates, models schemas (phase 3 · stream E) — add below
+    EvalStatus:
+      type: string
+      enum: [queued, running, done, failed]
+    EvalCellRole:
+      type: string
+      enum: [subject, baseline]
+    EvalCellState:
+      type: string
+      description: "cached: an eval record already held the cell; queued / running: its steps wait or run; done: computed now; failed"
+      enum: [cached, queued, running, done, failed]
+    EvalSubjectRef:
+      type: object
+      description: Exactly one of the three
+      properties:
+        checkpointId: { type: string, description: "A checkpoint of this project (ckp_…)" }
+        modelVersionId: { type: string, description: "A registered model version (ver_…, @alias or model/<name>)" }
+        baseModelVersionId: { type: string, description: "A base model version (ver_…, @alias or base-model/<name>)" }
+    EvalDecodingVariant:
+      type: object
+      required: [boost]
+      properties:
+        boost: { type: string, description: "none, or a boost list of the project's language pack at a commit: lang/<locale>/boost/<file>@<commit sha>" }
+        weight: { type: number, format: double, minimum: 0, maximum: 100, description: "Boosting weight (with a boost list; default 1)" }
+    EvalNew:
+      type: object
+      required: [subject]
+      additionalProperties: false
+      properties:
+        subject: { $ref: "#/components/schemas/EvalSubjectRef" }
+        goldenSets: { type: array, items: { type: string }, description: "Golden set versions (ver_…, @alias, golden-set/<name>); default: those gates.yaml names, else the project's adopted golden sets" }
+        profiles: { type: array, items: { type: string }, description: "Latency profiles (R43); default: eval.matrix_profiles that the model families declare, plus the primary profile" }
+        decoding: { type: array, items: { $ref: "#/components/schemas/EvalDecodingVariant" }, description: "Decoding variants (R24); default [{boost: none}]" }
+        baseline: { type: string, description: "The baseline model (ver_…, @alias, base-model/<name> or model/<name>); default the project's @baseline, else its default base model" }
+        priority: { type: integer, minimum: 0, maximum: 100, description: "Queue priority of the eval's steps" }
+    EvalModel:
+      type: object
+      description: A model an eval compares (the subject or the baseline)
+      required: [kind, id, label, modelKey, family]
+      properties:
+        kind: { type: string, enum: [checkpoint, model, base_model] }
+        id: { type: string, description: "ckp_… or ver_…" }
+        label: { type: string, description: "Readable name (collection and version, or the checkpoint's run and step)" }
+        modelKey: { type: string, description: "The eval-record key of the model: the weights hash, or base:<versionId> for a base model" }
+        family: { type: string, description: The model family (R41) }
+        runId: { type: string }
+        source: { type: string, enum: [request, alias, project-default], description: "Baseline only: where it came from" }
+    EvalGoldenSet:
+      type: object
+      required: [versionId, name, version, normalizerVersionId, locale, utterances, hours, groups]
+      properties:
+        versionId: { type: string }
+        name: { type: string, description: "golden-set/<name>" }
+        version: { type: string }
+        normalizerVersionId: { type: string }
+        locale: { type: string }
+        domain: { type: string }
+        utterances: { type: integer }
+        hours: { type: number, format: double }
+        groups: { type: string, enum: [call, speaker, utterance], description: The bootstrap's resampling unit }
+        replay: { type: boolean, description: "A replay golden set (the gate's replay list, or a language outside the project's locales): scored at the primary profile only" }
+    EvalProfile:
+      type: object
+      required: [name, latencyMs]
+      properties:
+        name: { type: string, example: 160ms }
+        latencyMs: { type: number, format: double }
+        label: { type: string, example: "160 ms · [56,1]" }
+    EvalDecoding:
+      type: object
+      required: [index, boost]
+      properties:
+        index: { type: integer }
+        boost: { type: string, description: "none or lang/<locale>/boost/<file>@<commit>" }
+        weight: { type: number, format: double }
+        terms: { type: integer, description: Terms in the boost list }
+        artifact: { type: string, description: "The rendered boost_list artifact (b3:…)" }
+    EvalSignificance:
+      type: object
+      required: [samples, level, seed]
+      properties:
+        samples: { type: integer, description: Bootstrap resamples }
+        level: { type: number, format: double, description: "Interval coverage (0.95)" }
+        seed: { type: integer }
+    EvalEstimate:
+      type: object
+      description: "GPU time of the cells to compute: golden audio hours × eval.gpu_hours_per_audio_hour (defaults.yaml, to be calibrated)"
+      required: [gpuHours, audioHours, cellsToCompute, gpuHoursPerAudioHour, basis]
+      properties:
+        gpuHours: { type: number, format: double }
+        audioHours: { type: number, format: double, description: Audio decoded by the cells to compute }
+        cellsToCompute: { type: integer }
+        gpuHoursPerAudioHour: { type: number, format: double }
+        basis: { type: string, enum: [table] }
+    EvalBucket:
+      type: object
+      required: [lo, utterances, refWords, wer]
+      properties:
+        lo: { type: number, format: double, description: Lower bound of the duration bucket (seconds) }
+        hi: { type: number, format: double, description: "Upper bound; absent for the open last bucket" }
+        utterances: { type: integer }
+        refWords: { type: integer }
+        wer: { type: number, format: double }
+    EvalStability:
+      type: object
+      description: Partial stability (R54)
+      properties:
+        partialWords: { type: integer }
+        unstableWords: { type: integer }
+        ratio: { type: number, format: double, description: Unstable partial word ratio }
+        editsPerSecond: { type: number, format: double }
+    EvalSummary:
+      type: object
+      description: "A cell's scores (the scores artifact's summary.json); rates are fractions (0.123), counts are words"
+      required: [wer, cer, werNoPunct, sub, del, ins, utterances, refWords]
+      properties:
+        scorer: { type: string, example: wer_score@1 }
+        language: { type: string }
+        utterances: { type: integer }
+        refWords: { type: integer }
+        refChars: { type: integer }
+        wer: { type: number, format: double }
+        cer: { type: number, format: double }
+        werNoPunct: { type: number, format: double, description: WER with punctuation removed after the scoring normalizer }
+        sub: { type: integer, description: Substituted words }
+        del: { type: integer, description: Deleted words }
+        ins: { type: integer, description: Inserted words }
+        charErrors: { type: integer }
+        buckets: { type: array, items: { $ref: "#/components/schemas/EvalBucket" } }
+        stability: { $ref: "#/components/schemas/EvalStability" }
+    EvalInterval:
+      type: object
+      required: [value, low, high]
+      properties:
+        value: { type: number, format: double, description: "The point estimate (subject − baseline, a fraction)" }
+        low: { type: number, format: double }
+        high: { type: number, format: double }
+    EvalDelta:
+      type: object
+      description: "Subject − baseline at the same golden set, profile and decoding: paired blockwise bootstrap over the golden set's groups (R54)"
+      required: [baselineCellId, wer, del, ins, significant, groups, samples, level]
+      properties:
+        baselineCellId: { type: string }
+        wer: { $ref: "#/components/schemas/EvalInterval" }
+        del: { $ref: "#/components/schemas/EvalInterval", description: Deletion rate delta (deleted words / reference words) }
+        ins: { $ref: "#/components/schemas/EvalInterval", description: Insertion rate delta }
+        significant: { type: boolean, description: The WER interval excludes zero }
+        groups: { type: integer, description: Resampling units (calls, speakers or utterances) }
+        samples: { type: integer }
+        level: { type: number, format: double }
+        error: { type: string, description: Why the delta could not be computed (an artifact left the store) }
+    EvalUtterance:
+      type: object
+      required: [index, audio, ref, hyp, refWords, sub, del, ins, errors, wer, ops]
+      properties:
+        index: { type: integer, description: Position in the golden set }
+        audio: { type: string, description: "The audio's content hash" }
+        speaker: { type: string }
+        group: { type: string }
+        durationS: { type: number, format: double }
+        ref: { type: string }
+        hyp: { type: string }
+        refWords: { type: integer }
+        sub: { type: integer }
+        del: { type: integer }
+        ins: { type: integer }
+        errors: { type: integer }
+        wer: { type: number, format: double }
+        ops:
+          type: array
+          description: "Alignment: [op, ref word, hyp word] with op =, S, D or I"
+          items: { type: array, items: { type: string } }
+    EvalCell:
+      type: object
+      required: [id, role, goldenSetVersionId, profile, decodingIndex, decodingHash, modelKey, state]
+      properties:
+        id: { type: string, description: "evc_…" }
+        role: { $ref: "#/components/schemas/EvalCellRole" }
+        goldenSetVersionId: { type: string }
+        profile: { type: string }
+        decodingIndex: { type: integer }
+        decodingHash: { type: string }
+        modelKey: { type: string }
+        state: { $ref: "#/components/schemas/EvalCellState" }
+        recordId: { type: string, description: "The eval record (erc_…) the scores come from" }
+        scores: { type: string, description: "The scores artifact (b3:…)" }
+        hypotheses: { type: string, description: "The hypotheses artifact (b3:…)" }
+        summary: { $ref: "#/components/schemas/EvalSummary" }
+        delta: { $ref: "#/components/schemas/EvalDelta" }
+        worst: { type: array, items: { $ref: "#/components/schemas/EvalUtterance" } }
+    EvalGateCheck:
+      type: object
+      required: [kind, state, message]
+      properties:
+        kind: { type: string, enum: [target, replay, deletionsInsertions, primaryProfile] }
+        goldenSetVersionId: { type: string }
+        goldenSet: { type: string }
+        profile: { type: string }
+        state: { type: string, enum: [passed, failed, inconclusive] }
+        delta: { $ref: "#/components/schemas/EvalInterval" }
+        threshold: { type: number, format: double, description: "Replay: the allowed regression" }
+        baselineWer: { type: number, format: double }
+        candidateWer: { type: number, format: double }
+        message: { type: string }
+    EvalGate:
+      type: object
+      required: [verdict, gatesSha, checks, at, config]
+      properties:
+        verdict: { type: string, enum: [passed, failed] }
+        gatesSha: { type: string, description: "The commit that last changed gates.yaml (empty: the defaults applied)" }
+        checks: { type: array, items: { $ref: "#/components/schemas/EvalGateCheck" } }
+        config: { $ref: "#/components/schemas/GateConfig" }
+        at: { type: string, format: date-time }
+        by: { $ref: "#/components/schemas/Actor" }
+    EvalProgress:
+      type: object
+      required: [cellsTotal, cellsDone, cellsCached]
+      properties:
+        cellsTotal: { type: integer }
+        cellsDone: { type: integer, description: Cells with scores (cached ones included) }
+        cellsCached: { type: integer }
+    Eval:
+      type: object
+      required: [id, projectId, status, subject, baseline, goldenSets, profiles, primaryProfile, decoding, significance, progress,
+        estimate, rev, actor, createdAt, updatedAt]
+      properties:
+        id: { type: string, description: "evl_…" }
+        projectId: { type: string }
+        status: { $ref: "#/components/schemas/EvalStatus" }
+        error: { type: string }
+        subject: { $ref: "#/components/schemas/EvalModel" }
+        baseline: { $ref: "#/components/schemas/EvalModel" }
+        goldenSets: { type: array, items: { $ref: "#/components/schemas/EvalGoldenSet" } }
+        profiles: { type: array, items: { $ref: "#/components/schemas/EvalProfile" } }
+        primaryProfile: { type: string, description: "The cell the gate reads (R20)" }
+        decoding: { type: array, items: { $ref: "#/components/schemas/EvalDecoding" } }
+        significance: { $ref: "#/components/schemas/EvalSignificance" }
+        pipelineRunId: { type: string, description: The pipeline run computing the missing cells (absent when every cell was cached) }
+        progress: { $ref: "#/components/schemas/EvalProgress" }
+        estimate: { $ref: "#/components/schemas/EvalEstimate" }
+        gate: { $ref: "#/components/schemas/EvalGate" }
+        cells: { type: array, items: { $ref: "#/components/schemas/EvalCell" }, description: "Absent in evals.list" }
+        rev: { type: integer }
+        actor: { $ref: "#/components/schemas/Actor" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time }
+    EvalList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Eval" } }
+    EvalPlanCell:
+      type: object
+      required: [role, goldenSetVersionId, profile, decodingIndex, decodingHash, modelKey, cached]
+      properties:
+        role: { $ref: "#/components/schemas/EvalCellRole" }
+        goldenSetVersionId: { type: string }
+        profile: { type: string }
+        decodingIndex: { type: integer }
+        decodingHash: { type: string }
+        modelKey: { type: string }
+        cached: { type: boolean }
+        recordId: { type: string }
+    EvalPlan:
+      type: object
+      required: [subject, baseline, goldenSets, profiles, primaryProfile, decoding, significance, cells, cellsCached, cellsToCompute,
+        estimate, steps]
+      properties:
+        subject: { $ref: "#/components/schemas/EvalModel" }
+        baseline: { $ref: "#/components/schemas/EvalModel" }
+        goldenSets: { type: array, items: { $ref: "#/components/schemas/EvalGoldenSet" } }
+        profiles: { type: array, items: { $ref: "#/components/schemas/EvalProfile" } }
+        primaryProfile: { type: string }
+        decoding: { type: array, items: { $ref: "#/components/schemas/EvalDecoding" } }
+        significance: { $ref: "#/components/schemas/EvalSignificance" }
+        cells: { type: array, items: { $ref: "#/components/schemas/EvalPlanCell" } }
+        cellsCached: { type: integer }
+        cellsToCompute: { type: integer, description: "Distinct records to compute (a subject equal to the baseline computes once)" }
+        estimate: { $ref: "#/components/schemas/EvalEstimate" }
+        steps:
+          type: array
+          description: "The generated pipeline's steps (materialize → transcribe → score per missing cell)"
+          items:
+            type: object
+            required: [step, kind]
+            properties: { step: { type: string }, kind: { type: string } }
+    GateConfig:
+      type: object
+      description: "gates.yaml (docs/review/2026-10-02-phase-3-plan.md \"Gate\"); a value left out takes defaults.yaml gate.* / eval.*"
+      additionalProperties: false
+      properties:
+        primaryProfile: { type: string, description: "The latency profile the gate reads (R20)" }
+        target:
+          type: object
+          additionalProperties: false
+          properties:
+            goldenSets: { type: array, items: { type: string }, description: "golden-set/<name> (a * wildcard matches several)" }
+            rule: { type: string, enum: [beat-baseline] }
+        replay:
+          type: object
+          additionalProperties: false
+          properties:
+            goldenSets: { type: array, items: { type: string } }
+            maxRegression: { type: number, format: double, minimum: 0, maximum: 0.1, description: "Largest absolute WER rise (0.005 = 0.5 points)" }
+        deletionsInsertions: { type: boolean }
+        significance:
+          type: object
+          additionalProperties: false
+          properties:
+            samples: { type: integer, minimum: 100, maximum: 100000 }
+            level: { type: number, format: double, minimum: 0.5, maximum: 0.999 }
+            seed: { type: integer, minimum: 0 }
+    GateDeparture:
+      type: object
+      required: [param, value, default]
+      properties:
+        param: { type: string }
+        value: {}
+        default: {}
+    Gates:
+      type: object
+      required: [path, exists, ref, head, content, config, departures]
+      properties:
+        path: { type: string, example: gates.yaml }
+        exists: { type: boolean, description: "false: the project has no gates.yaml and the defaults apply" }
+        ref: { type: string, example: main }
+        head: { type: string, description: The head of main the file was read at }
+        commit: { type: string, description: The commit that last changed gates.yaml }
+        content: { type: string, description: "The file (when it does not exist: the defaults rendered as a starting point)" }
+        config: { $ref: "#/components/schemas/GateConfig", description: The effective gate with the defaults filled in }
+        departures: { type: array, items: { $ref: "#/components/schemas/GateDeparture" } }
+    GatesEdit:
+      type: object
+      additionalProperties: false
+      description: Exactly one of content and config
+      properties:
+        content: { type: string, description: The new gates.yaml }
+        config: { $ref: "#/components/schemas/GateConfig" }
+        message: { type: string, description: The commit message }
+    ModelRegister:
+      type: object
+      required: [checkpointId]
+      additionalProperties: false
+      properties:
+        checkpointId: { type: string, description: "ckp_…" }
+        name: { type: string, description: "The collection, model/<name> (default model/<project slug>)" }
+        evalId: { type: string, description: "The gated eval to publish with (default the checkpoint's latest gated eval)" }
+        description: { type: string, description: The collection's description when it is new }
+    ModelRegistration:
+      type: object
+      required: [name, model]
+      properties:
+        name: { type: string }
+        model: { $ref: "#/components/schemas/ModelPayload" }
+    ModelVersion:
+      allOf:
+        - $ref: "#/components/schemas/RegistryVersion"
+        - type: object
+          required: [model, usedBy]
+          properties:
+            model: { $ref: "#/components/schemas/ModelPayload" }
+            usedBy: { type: array, items: { $ref: "#/components/schemas/UsedBy" } }
+    ModelVersionList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/ModelVersion" } }
 
     # ---------------------------------------------------------------- language packs, boost lists, lineage schemas (phase 3 · stream L) — add below
 

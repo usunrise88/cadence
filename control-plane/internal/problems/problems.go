@@ -82,6 +82,10 @@ var (
 	NoTrainingState   = Type{"no-training-state", http.StatusConflict, "No training state"}
 	// Content-store retention (phase 2 · stream E).
 	ArtifactNotEvictable = Type{"artifact-not-evictable", http.StatusConflict, "Artifact not evictable"}
+	// Evals, gates and models (phase 3 · stream E).
+	EvalBaselineMissing = Type{"eval-baseline-missing", http.StatusUnprocessableEntity, "No baseline to compare with"}
+	GateNotPassed       = Type{"gate-not-passed", http.StatusConflict, "Gate not passed"}
+	GateConfigInvalid   = Type{"gate-config-invalid", http.StatusUnprocessableEntity, "Gate configuration invalid"}
 	// Golden sets, normalizers and leakage (phase 3 · stream G).
 	GoldenSetLeakage     = Type{"golden-set-leakage", http.StatusUnprocessableEntity, "Golden set leakage"}
 	GoldenSetNotEvalOnly = Type{"golden-set-not-eval-only", http.StatusUnprocessableEntity, "Dataset is not eval-only"}
@@ -98,6 +102,7 @@ func Types() []Type {
 		LeaseEnded, StepKindConflict, ArtifactHashMismatch, ArtifactMissing,
 		PlaybookDryRunRequired, PlaybookStopped, PlaybookUnavailable,
 		FamilyUnavailable, RecipeMismatch, NoTrainingState, ArtifactNotEvictable,
+		EvalBaselineMissing, GateNotPassed, GateConfigInvalid,
 		GoldenSetLeakage, GoldenSetNotEvalOnly, NormalizerUnknown,
 	}
 }

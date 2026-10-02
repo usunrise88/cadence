@@ -88,8 +88,10 @@ var TrainingFixtures = []map[string]any{
 // Family is the fixture family descriptor.
 var Family = map[string]any{
 	"name": FamilyName, "version": "1", "title": "Fixture family (tests)", "framework": "none", "architecture": "none",
-	"latencyProfiles": []map[string]any{{"name": "offline", "latencyMs": 0}},
-	"roles":           map[string]string{"calibrate": KindCalibrate, "train": KindTrain, "average": KindAverage},
+	"latencyProfiles": []map[string]any{{"name": "offline", "latencyMs": 0}, {"name": "160ms", "latencyMs": 160, "label": "160 ms"}},
+	"capabilities":    map[string]any{"streaming": true, "boosting": "fixture-boost"},
+	"roles": map[string]string{"calibrate": KindCalibrate, "train": KindTrain, "average": KindAverage,
+		"materialize": KindMaterialize, "transcribe": KindTranscribe},
 }
 
 var worker = auth.Actor{Kind: auth.KindAutomation, ID: "worker", Name: "test worker"}

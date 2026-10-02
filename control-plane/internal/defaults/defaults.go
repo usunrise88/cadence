@@ -225,6 +225,8 @@ type Eval struct {
 	BootstrapSamples Param[int]       `yaml:"bootstrap_samples"`
 	Confidence       Param[float64]   `yaml:"confidence"`
 	BootstrapSeed    Param[int]       `yaml:"bootstrap_seed"`
+	// GPUHoursPerAudioHour prices an eval cell for the policy (stream E): golden audio hours × this.
+	GPUHoursPerAudioHour Param[float64] `yaml:"gpu_hours_per_audio_hour"`
 }
 
 // Gate holds the default gate a project's gates.yaml departs from (phase 3).

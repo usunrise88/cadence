@@ -198,6 +198,9 @@ func (l *Leases) run(spec steps.Spec) (steps.Outcome, error) {
 	if o, ok, err := l.runTraining(spec); ok {
 		return o, err
 	}
+	if o, ok, err := l.runEvaluation(spec); ok {
+		return o, err
+	}
 	in, ok := spec.Inputs["text"]
 	if !ok {
 		return steps.Outcome{State: steps.StateFailed, Error: &steps.StepError{Type: steps.ErrInput, Message: "no text input"}}, nil

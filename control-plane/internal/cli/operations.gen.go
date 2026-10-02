@@ -546,6 +546,58 @@ var Operations = []Operation{
 		},
 	},
 	{
+		ID: "evals.gate", Entity: "evals", Verb: "gate", Method: "POST", Path: "/evals/{id}:gate",
+		Summary:        "Apply the project's gate (gates.yaml at main) to a finished eval and record the verdict",
+		Description:    "Apply the gate to a done eval: gates.yaml at the head of main (defaults gate.* and eval.* where it is silent). At the primary profile it checks the target golden sets (beat-baseline: the WER delta's whole interval below zero), the replay golden sets (fail when the delta exceeds maxRegression and its interval excludes zero) and deletions bought with insertions on the target sets. Answers the eval with gate: verdict passed | failed, each check passed | failed | inconclusive with its numbers, and the gates.yaml commit used. models.register needs the latest gated eval of a checkpoint to have passed.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Eval id (evl_…)"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+	},
+	{
+		ID: "evals.get", Entity: "evals", Verb: "get", Method: "GET", Path: "/evals/{id}",
+		Summary:     "Get an eval with its cells, deltas against the baseline with confidence intervals, and the worst utterances of a cell",
+		Description: "An eval: status, progress, and one cell per role (subject, baseline) × golden set × profile × decoding with WER, CER, the punctuation-insensitive WER, substitutions / deletions / insertions, duration buckets and partial stability; subject cells carry the delta against the baseline's cell with a paired blockwise bootstrap interval (significant when it excludes zero). worst=N adds the N utterances with the most errors to each subject cell that passes the filters (cell=evc_… for one cell): reference, hypothesis and the alignment ops (=, S, D, I). Filters: goldenSet, profile, role.",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Eval id (evl_…)"},
+			{Name: "worst", In: "query", Flag: "worst", Type: "integer", Description: "Add the N worst utterances (most errors) to each matching cell"},
+			{Name: "cell", In: "query", Flag: "cell", Type: "string", Description: "Only this cell (evc_…)"},
+			{Name: "goldenSet", In: "query", Flag: "golden-set", Type: "string", Description: "Only cells of this golden set (ver_… or its collection name)"},
+			{Name: "profile", In: "query", Flag: "profile", Type: "string", Description: "Only cells of this latency profile"},
+			{Name: "role", In: "query", Flag: "role", Type: "string", Enum: []string{"subject", "baseline"}},
+		},
+	},
+	{
+		ID: "evals.list", Entity: "evals", Verb: "list", Method: "GET", Path: "/projects/{p}/evals",
+		Summary: "List the project's evals, newest first (cells omitted; evals.get has them)",
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "status", In: "query", Flag: "status", Type: "string", Enum: []string{"queued", "running", "done", "failed"}},
+			{Name: "subject", In: "query", Flag: "subject", Type: "string", Description: "Only evals of this subject (ckp_…, or a model or base model version ver_…)"},
+			{Name: "limit", In: "query", Flag: "limit", Type: "integer", Default: "50"},
+		},
+	},
+	{
+		ID: "evals.new", Entity: "evals", Verb: "new", Method: "POST", Path: "/projects/{p}/evals",
+		Summary:        "Evaluate a checkpoint, model or base model against the baseline on golden sets × latency profiles × decoding; ?dryRun=true answers the plan",
+		Description:    "Run the eval matrix (R20–R24): subject (exactly one of checkpointId ckp_…, modelVersionId or baseModelVersionId ver_…) × golden sets × latency profiles × decoding variants, each cell compared with the same cell of the baseline. Everything is optional but the subject: golden sets default to the ones the project's gates.yaml names (target and replay), else its adopted golden sets; profiles to eval.matrix_profiles the model family declares, always with the primary profile; decoding to [{boost: none}]; baseline to the project's @baseline alias, else its default base model. Cells already in the eval records (any project, same weights × golden set × normalizer × decoding × scorer) are reused; only missing cells run (baseline cells included). Always call it with dryRun=true first: the answer is the plan — cells cached and to compute and the GPU-hour estimate. Without dryRun it answers 201 with the eval (follow it with evals.get; eval.{id}.progress reports cells done), or 202 with an approvalId when the estimate exceeds today's GPU budget. Then evals.gate applies the project's gate.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "baseline", Type: "string", Description: "The baseline model (ver_…, @alias, base-model/<name> or model/<name>); default the project's @baseline, else its default base model"},
+			{Name: "decoding", Type: "array of object", Description: "Decoding variants (R24); default [{boost: none}]"},
+			{Name: "goldenSets", Type: "array of string", Description: "Golden set versions (ver_…, @alias, golden-set/<name>); default: those gates.yaml names, else the project's adopted golden sets"},
+			{Name: "priority", Type: "integer", Description: "Queue priority of the eval's steps"},
+			{Name: "profiles", Type: "array of string", Description: "Latency profiles (R43); default: eval.matrix_profiles that the model families declare, plus the primary profile"},
+			{Name: "subject", Required: true, Type: "object", Description: "Exactly one of the three"},
+		}},
+	},
+	{
 		ID: "events.list", Entity: "events", Verb: "list", Method: "GET", Path: "/events",
 		Summary:     "Events after a sequence number; with Accept text/event-stream, the live stream",
 		Description: "Events after a sequence number, oldest first, optionally filtered by topic patterns (a trailing * matches the remaining segments, e.g. run.123.*) and project. Use the last seq as `after` to continue.",
@@ -554,6 +606,30 @@ var Operations = []Operation{
 			{Name: "project", In: "query", Flag: "project", Type: "string", Description: "Keep work events of this project (registry events, which carry no projectId, always pass)"},
 			{Name: "after", In: "query", Flag: "after", Type: "integer", Description: "Only events with seq greater than this; SSE clients may send Last-Event-ID instead"},
 			{Name: "limit", In: "query", Flag: "limit", Type: "integer", Description: "Page size for the JSON form", Default: "200"},
+		},
+	},
+	{
+		ID: "gates.edit", Entity: "gates", Verb: "edit", Method: "PATCH", Path: "/projects/{p}/gates",
+		Summary:        "Commit a new gates.yaml to main (approval for agents); dryRun validates",
+		Description:    "Change the project's gate: send content (the YAML) or config (the same as an object) with If-Match = the ETag of gates.get. The file is validated first (gate-config-invalid lists every problem); dryRun validates and commits nothing. For agents this waits for a person's approval (gates decide what counts as better).",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "config", Type: "object", Description: "gates.yaml (docs/review/2026-10-02-phase-3-plan.md \"Gate\"); a value left out takes defaults.yaml gate.* / eval.*"},
+			{Name: "content", Type: "string", Description: "The new gates.yaml"},
+			{Name: "message", Type: "string", Description: "The commit message"},
+		}},
+	},
+	{
+		ID: "gates.get", Entity: "gates", Verb: "get", Method: "GET", Path: "/projects/{p}/gates",
+		Summary:     "Get the project's gate (gates.yaml at main, with the defaults it departs from)",
+		Description: "The project's gate: gates.yaml at the head of main (exists false when the project has none and the defaults apply), its effective configuration with defaults filled in, and the departures from defaults.yaml. The ETag is the commit that last changed the file (\"defaults\" when there is none); gates.edit takes it as If-Match.",
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
 		},
 	},
 	{
@@ -813,6 +889,37 @@ var Operations = []Operation{
 			{Name: "collection", In: "query", Flag: "collection", Type: "string", Description: "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)"},
 			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated"}},
 		},
+	},
+	{
+		ID: "models.get", Entity: "models", Verb: "get", Method: "GET", Path: "/registry/models/{id}",
+		Summary: "Get a model version with its model card, gate, lineage and the projects that use it",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Registry version id (ver_…)"},
+		},
+	},
+	{
+		ID: "models.list", Entity: "models", Verb: "list", Method: "GET", Path: "/registry/models",
+		Summary: "List registered model versions (checkpoints whose gate passed) with their gate and lineage",
+		Params: []Param{
+			{Name: "collection", In: "query", Flag: "collection", Type: "string", Description: "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)"},
+			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated"}},
+		},
+	},
+	{
+		ID: "models.register", Entity: "models", Verb: "register", Method: "POST", Path: "/projects/{p}/models:register",
+		Summary:        "Register a checkpoint whose latest gated eval passed as a model version, with its model card (approval for agents)",
+		Description:    "Publish a checkpoint (ckp_…) as a registry model version (collection model/<name>, default model/<project slug>) with its eval, gate verdict, lineage (run, mix, recipe, dataset versions) and a generated model card. The checkpoint's latest gated eval (or evalId) must have passed (gate-not-passed otherwise). dryRun shows the version's payload and card. For agents it waits for a person's approval (registry changes are shared).",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "checkpointId", Required: true, Type: "string", Description: "ckp_…"},
+			{Name: "description", Type: "string", Description: "The collection's description when it is new"},
+			{Name: "evalId", Type: "string", Description: "The gated eval to publish with (default the checkpoint's latest gated eval)"},
+			{Name: "name", Type: "string", Description: "The collection, model/<name> (default model/<project slug>)"},
+		}},
 	},
 	{
 		ID: "normalizers.get", Entity: "normalizers", Verb: "get", Method: "GET", Path: "/registry/normalizers/{id}",
