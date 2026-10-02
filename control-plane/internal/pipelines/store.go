@@ -370,9 +370,13 @@ func runDraft(r Run, typ string) events.Draft {
 }
 
 func stepDraft(r Run, s StepRow) events.Draft {
+	p := map[string]any{"pipelineRunId": r.ID, "runState": r.State, "step": s}
+	if r.RunID != "" {
+		p["runId"] = r.RunID // the facade entity (run_…, evl_…): notifications leave an eval's steps to the eval
+	}
 	return events.Draft{
 		Topic: Topic(r.ID), Type: EventStepChanged, ProjectID: r.ProjectID,
 		Entity:  &events.EntityRef{Kind: StepKind, ID: s.ID, Rev: s.Rev},
-		Payload: map[string]any{"pipelineRunId": r.ID, "runState": r.State, "step": s},
+		Payload: p,
 	}
 }

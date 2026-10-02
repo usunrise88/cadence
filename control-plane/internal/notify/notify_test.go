@@ -158,6 +158,29 @@ func TestClassify(t *testing.T) {
 		{"host unreachable is a failure", record("compute.cmp_1", "compute.health", map[string]any{"hostId": "cmp_1", "health": map[string]any{"state": "unreachable", "detail": "no worker on this host has reported for a minute"}}),
 			ClassFailure, "Compute host unreachable", "no worker on this host", ""},
 		{"host healthy again is nothing", record("compute.cmp_1", "compute.health", map[string]any{"hostId": "cmp_1", "health": map[string]any{"state": "healthy"}}), "", "", "", ""},
+		{"an eval's step done is left to the eval", record("pipeline_run.plr_2", "pipeline_run.step_changed", map[string]any{"pipelineRunId": "plr_2", "runId": "evl_1",
+			"step": map[string]any{"id": "pls_2", "step": "score-c1", "kind": "wer_score", "state": "done"}}), "", "", "", ""},
+		{"an eval's step failed is still a failure", record("pipeline_run.plr_2", "pipeline_run.step_changed", map[string]any{"pipelineRunId": "plr_2", "runId": "evl_1",
+			"step": map[string]any{"id": "pls_2", "step": "score-c1", "kind": "wer_score", "state": "failed", "error": map[string]any{"type": "step", "message": "boom"}}}),
+			ClassFailure, "Step failed: score-c1 (wer_score)", "boom", ""},
+		{"a training run's step done is progress", record("pipeline_run.plr_3", "pipeline_run.step_changed", map[string]any{"pipelineRunId": "plr_3", "runId": "run_1",
+			"step": map[string]any{"id": "pls_3", "step": "train", "kind": "toy_train", "state": "done"}}), ClassProgress, "Step done: train (toy_train)", "plr_3", ""},
+		{"eval failed is a failure", record("entity.eval.evl_1", "eval.status_changed", map[string]any{"eval": map[string]any{"id": "evl_1", "status": "failed",
+			"error": "cell c1 has no scores", "subject": map[string]any{"id": "ckp_1", "label": "run 7 step 500"}}}),
+			ClassFailure, "Eval failed: run 7 step 500", "cell c1 has no scores", ""},
+		{"eval done is progress", record("entity.eval.evl_1", "eval.status_changed", map[string]any{"eval": map[string]any{"id": "evl_1", "status": "done",
+			"subject": map[string]any{"id": "ckp_1"}}}), ClassProgress, "Eval done: ckp_1", "evals.gate", ""},
+		{"eval running is nothing", record("entity.eval.evl_1", "eval.status_changed", map[string]any{"eval": map[string]any{"id": "evl_1", "status": "running"}}), "", "", "", ""},
+		{"gate passed is an outcome", record("entity.eval.evl_1", "eval.gated", map[string]any{"eval": map[string]any{"id": "evl_1", "status": "done",
+			"subject": map[string]any{"label": "run 7 step 500"}, "gate": map[string]any{"verdict": "passed", "gatesSha": "0123456789abcdef0123"}}}),
+			ClassOutcome, "Gate passed: run 7 step 500", "gates.yaml at 0123456789ab", ""},
+		{"gate failed is an outcome", record("entity.eval.evl_1", "eval.gated", map[string]any{"eval": map[string]any{"id": "evl_1",
+			"subject": map[string]any{"label": "m"}, "gate": map[string]any{"verdict": "failed"}}}), ClassOutcome, "Gate failed: m", "evl_1", ""},
+		{"sweep ended is an outcome", record("entity.experiment.exp_1", "sweep.ended", map[string]any{"experiment": map[string]any{"id": "exp_1",
+			"sweep": map[string]any{"id": "swp_1", "state": "stopped", "stopReason": "the GPU-hour cap", "points": 6, "ended": 4}}}),
+			ClassOutcome, "Sweep stopped: exp_1", "4 of 6 points", ""},
+		{"golden set frozen is progress", record("entity.golden_set.ver_1", "golden_set.frozen", map[string]any{"version": map[string]any{"id": "ver_1",
+			"name": "golden-set/he-calls", "version": "2026-10-02.abc"}}), ClassProgress, "Golden set frozen: he-calls", "2026-10-02.abc", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			n, ok := Classify(tc.r)
@@ -196,7 +219,7 @@ func TestClassTableMatchesWeb(t *testing.T) {
 	if !maps.Equal(web, want) {
 		t.Fatalf("classes.ts TABLE = %v\nclassify.go classTable (+ approval, digest) = %v", web, want)
 	}
-	for _, typ := range []string{"job.state_changed", "pipeline_run.step_changed", "compute.health"} {
+	for _, typ := range []string{"job.state_changed", "pipeline_run.step_changed", "compute.health", "eval.status_changed", "evl_"} {
 		if !strings.Contains(body, `"`+typ+`"`) {
 			t.Errorf("classes.ts classOf does not handle %s", typ)
 		}
@@ -236,10 +259,12 @@ func TestDigestText(t *testing.T) {
 		Jobs:          []JobCount{{Kind: "backup", Done: 1}, {Kind: "step", Done: 3, Failed: 1, Running: 2}},
 		Spend:         []ProjectSpend{{Project: "hebrew", BudgetGPUHours: 8, UsedGPUHours: &used}, {Project: "demo", BudgetGPUHours: 4}},
 		OpenApprovals: 2, Approvals: []string{"runs.new", "aliases.set"}, Held: []string{"Gate verdict"},
+		Gates:      []string{"hebrew: run 7 step 500 — passed"},
 		LastBackup: "succeeded (2026-09-30 03:00 UTC)",
 	}
 	text := d.Text()
 	for _, want := range []string{
+		"Gate verdicts (1):\n• hebrew: run 7 step 500 — passed",
 		"• step: 3 done, 1 failed, 2 queued or running", "• hebrew: 2.5 of 8.0 GPU-h",
 		"• demo: budget 4.0 GPU-h/day (use not metered yet)", "Open approvals: 2\n• runs.new\n• aliases.set",
 		"Held for the digest (1):\n• Gate verdict", "Last backup: succeeded",
