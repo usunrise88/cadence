@@ -47,6 +47,11 @@ export const STATE_TONES: Record<string, StatusTone> = {
 
 export type EntityVerb = {
   verb: Verb;
+  /**
+   * The command the button runs when it is another entity's operation (an Experiment's "Run sweep" is sweeps.run,
+   * "Register best" models.register); default `<apiEntity>.<verb>`. The verb still picks the icon.
+   */
+  command?: string;
   /** The primary action in the header; exactly one per manifest. */
   primary?: boolean;
   /** Enabled, or the reason it is not (shown as the disabled button's tooltip). */

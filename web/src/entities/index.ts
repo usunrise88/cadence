@@ -1,4 +1,5 @@
 import { entities } from "@/shell/registries";
+import { experimentEntity } from "./experiment";
 import { mixEntity } from "./mix";
 import { projectEntity } from "./project";
 import { recipeEntity } from "./recipe";
@@ -10,4 +11,5 @@ export function registerEntities(): void {
   entities.register(mixEntity);
   entities.register(recipeEntity);
   entities.register(runEntity);
+  entities.register(experimentEntity);
 }
