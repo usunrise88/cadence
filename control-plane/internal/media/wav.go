@@ -161,8 +161,17 @@ func EncodeWAV(channels [][]float32, rate int) []byte {
 		n = len(channels[0])
 	}
 	nc := len(channels)
+	b := make([]byte, WAVHeaderSize+n*nc*2)
+	putWAVHeader(b, n, nc, rate)
+	putPCM16(b[WAVHeaderSize:], channels, n)
+	return b
+}
+
+// putWAVHeader writes the canonical 44-byte header of n frames of nc 16-bit channels at rate into b.
+//
+//nolint:gosec // header fields are bounded (16 channels, 384 kHz at most)
+func putWAVHeader(b []byte, n, nc, rate int) {
 	data := n * nc * 2
-	b := make([]byte, WAVHeaderSize+data)
 	copy(b[0:], "RIFF")
 	binary.LittleEndian.PutUint32(b[4:], uint32(36+data))
 	copy(b[8:], "WAVEfmt ")
@@ -175,14 +184,19 @@ func EncodeWAV(channels [][]float32, rate int) []byte {
 	binary.LittleEndian.PutUint16(b[34:], 16)
 	copy(b[36:], "data")
 	binary.LittleEndian.PutUint32(b[40:], uint32(data))
-	o := WAVHeaderSize
+}
+
+// putPCM16 writes the first n frames of channels interleaved as little-endian 16-bit samples into b.
+//
+//nolint:gosec // samples are clamped to int16
+func putPCM16(b []byte, channels [][]float32, n int) {
+	o := 0
 	for i := range n {
-		for c := range nc {
+		for c := range channels {
 			v := float64(channels[c][i]) * 32768
 			v = math.Round(max(-32768, min(32767, v)))
 			binary.LittleEndian.PutUint16(b[o:], uint16(int16(v)))
 			o += 2
 		}
 	}
-	return b
 }

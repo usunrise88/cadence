@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/usunrise88/cadence/control-plane/internal/problems"
 )
@@ -59,8 +61,10 @@ func ParseRange(header string, size int64) (*ByteRange, error) {
 }
 
 // Serve writes body with Accept-Ranges and, for a Range request, 206 and Content-Range. The caller writes the
-// problem of a returned error (nothing has been written then).
-func Serve(w http.ResponseWriter, r *http.Request, body io.ReadSeeker, size int64, contentType string) (status int, err error) {
+// problem of a returned error (nothing has been written then). before, when set, runs with the status once the
+// request is known to succeed and before anything is written (the audit of a play is in the log before the client
+// has the bytes).
+func Serve(w http.ResponseWriter, r *http.Request, body io.ReadSeeker, size int64, contentType string, before func(status int)) (status int, err error) {
 	rg, err := ParseRange(r.Header.Get("Range"), size)
 	if err != nil {
 		w.Header().Set("Content-Range", fmt.Sprintf("bytes */%d", size))
@@ -81,6 +85,9 @@ func Serve(w http.ResponseWriter, r *http.Request, body io.ReadSeeker, size int6
 		return http.StatusInternalServerError, fmt.Errorf("seek audio: %w", err)
 	}
 	h.Set("Content-Length", strconv.FormatInt(length, 10))
+	if before != nil {
+		before(status)
+	}
 	w.WriteHeader(status)
 	if r.Method == http.MethodHead {
 		return status, nil
@@ -92,14 +99,53 @@ func Serve(w http.ResponseWriter, r *http.Request, body io.ReadSeeker, size int6
 	return status, nil
 }
 
-// FirstPlay reports whether a request starts a play (no Range, or one from byte 0): the audit log records those,
-// not every range a media element fetches while it plays and seeks.
-func FirstPlay(r *http.Request) bool {
-	h := strings.TrimSpace(r.Header.Get("Range"))
-	if h == "" {
-		return true
+// Plays decides which requests of audio are audited as plays: the first request of a play — a viewer, an utterance,
+// a span and a channel — within a window, whatever byte range it asks for (a client that starts at byte 1 is still
+// heard), and none of the further ranges a media element fetches while it plays and seeks. It is per process and
+// forgets on restart, which audits a play again rather than never. The zero value is ready.
+type Plays struct {
+	mu   sync.Mutex
+	seen map[string]time.Time
+	// Now is the clock (tests); time.Now when nil.
+	Now func() time.Time
+}
+
+// maxPlays bounds the remembered plays; past it the expired ones are dropped, and if none expired arbitrary ones go
+// (a play forgotten early is audited twice, never missed).
+const maxPlays = 4096
+
+// PlayKey is the identity of a play.
+func PlayKey(viewerKind, viewerID, utterance string, start, end float64, channel int) string {
+	return fmt.Sprintf("%s:%s|%s|%.3f|%.3f|%d", viewerKind, viewerID, utterance, start, end, channel)
+}
+
+// First reports whether key starts a play: no request of it was seen within window. It records the request.
+func (p *Plays) First(key string, window time.Duration) bool {
+	now := time.Now()
+	if p.Now != nil {
+		now = p.Now()
 	}
-	_, spec, _ := strings.Cut(h, "=")
-	first, _, _ := strings.Cut(strings.TrimSpace(spec), "-")
-	return strings.TrimSpace(first) == "0"
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.seen == nil {
+		p.seen = map[string]time.Time{}
+	}
+	if at, ok := p.seen[key]; ok && now.Sub(at) < window {
+		return false
+	}
+	if len(p.seen) >= maxPlays {
+		for k, at := range p.seen {
+			if now.Sub(at) >= window {
+				delete(p.seen, k)
+			}
+		}
+		for k := range p.seen { // map order: an arbitrary one goes when nothing expired
+			if len(p.seen) < maxPlays {
+				break
+			}
+			delete(p.seen, k)
+		}
+	}
+	p.seen[key] = now
+	return true
 }

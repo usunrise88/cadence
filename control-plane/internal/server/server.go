@@ -143,6 +143,7 @@ type Server struct {
 	// media serves audio, peaks, spectrogram tiles and words to people; mediaLinks signs short-lived audio links.
 	media      *media.Service
 	mediaLinks *media.Signer
+	mediaPlays media.Plays // which audio.get requests start a play (audited once per window)
 	// experiments group runs and drive sweeps (phase 3 · stream X).
 	experiments *experiments.Service
 	// transcriptions are manual tests and the live channel's relay (phase 3 · stream T).

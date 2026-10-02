@@ -10,7 +10,8 @@ const TABLE: Record<string, NotificationClass> = {
   "backup.restore_failed": "failure",
   "mount.unhealthy": "failure",
   "storage.low_space": "failure",
-  "gate.verdict": "outcome",
+  "eval.gated": "outcome",
+  "sweep.ended": "outcome",
   "deployment.promoted": "outcome",
   "schedule.finished": "outcome",
   "batch.closed": "outcome",
@@ -19,8 +20,12 @@ const TABLE: Record<string, NotificationClass> = {
   "backup.restore_passed": "progress",
   "checkpoint.saved": "progress",
   "triage.item_added": "progress",
+  "golden_set.frozen": "progress",
   "notification.digest": "digest",
 };
+
+/** Evals (evl_…) tell their end once; their pipeline run's steps are not told one by one. */
+export const EVAL_RUN_PREFIX = "evl_";
 
 /** The class of e, or undefined for events outside the routing table (they are shown as before). */
 export function classOf(e: CadenceEvent): NotificationClass | undefined {
@@ -30,7 +35,12 @@ export function classOf(e: CadenceEvent): NotificationClass | undefined {
     return doneOrFailed(job?.state);
   }
   if (e.type === "pipeline_run.step_changed") {
-    return doneOrFailed((e.payload as { step?: { state?: string } } | undefined)?.step?.state);
+    const p = e.payload as { runId?: string; step?: { state?: string } } | undefined;
+    if (p?.step?.state === "done" && p.runId?.startsWith(EVAL_RUN_PREFIX)) return undefined;
+    return doneOrFailed(p?.step?.state);
+  }
+  if (e.type === "eval.status_changed") {
+    return doneOrFailed((e.payload as { eval?: { status?: string } } | undefined)?.eval?.status);
   }
   if (e.type === "compute.health") {
     const state = (e.payload as { health?: { state?: string } } | undefined)?.health?.state;

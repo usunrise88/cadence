@@ -267,27 +267,30 @@ func TestServe(t *testing.T) {
 	r := httptest.NewRequest("GET", "/x", nil)
 	r.Header.Set("Range", "bytes=2-4")
 	w := httptest.NewRecorder()
-	status, err := Serve(w, r, body, 10, "audio/wav")
+	var before []int
+	hook := func(status int) {
+		if w.Body.Len() != 0 {
+			t.Error("before ran after the body was written")
+		}
+		before = append(before, status)
+	}
+	status, err := Serve(w, r, body, 10, "audio/wav", hook)
 	if err != nil || status != 206 || w.Body.String() != "234" || w.Header().Get("Content-Range") != "bytes 2-4/10" ||
 		w.Header().Get("Accept-Ranges") != "bytes" {
 		t.Fatalf("206: %d %v %q %v", status, err, w.Body.String(), w.Header())
 	}
-	if FirstPlay(r) {
-		t.Error("a range from byte 2 is not a play")
-	}
 	r = httptest.NewRequest("GET", "/x", nil)
 	w = httptest.NewRecorder()
-	if status, _ := Serve(w, r, body, 10, "audio/wav"); status != 200 || w.Body.String() != "0123456789" || !FirstPlay(r) {
+	if status, _ := Serve(w, r, body, 10, "audio/wav", hook); status != 200 || w.Body.String() != "0123456789" {
 		t.Fatalf("200: %d %q", status, w.Body.String())
-	}
-	r.Header.Set("Range", "bytes=0-")
-	if !FirstPlay(r) {
-		t.Error("bytes=0- starts a play")
 	}
 	r.Header.Set("Range", "bytes=10-")
 	w = httptest.NewRecorder()
-	if status, err := Serve(w, r, body, 10, "audio/wav"); status != 416 || err == nil || w.Header().Get("Content-Range") != "bytes */10" {
+	if status, err := Serve(w, r, body, 10, "audio/wav", hook); status != 416 || err == nil || w.Header().Get("Content-Range") != "bytes */10" {
 		t.Fatalf("416: %d %v", status, err)
+	}
+	if len(before) != 2 || before[0] != 206 || before[1] != 200 {
+		t.Fatalf("before ran with %v (not for the 416)", before)
 	}
 }
 

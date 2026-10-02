@@ -66,6 +66,29 @@ type Service struct {
 	CAS  *cas.Store
 	// MaxSpan is the longest span Audio converts (seconds); a canonical file asked whole is served at any length.
 	MaxSpan float64
+	// Cache keeps converted spans; nil converts every request into memory.
+	Cache *SpanCache
+	// Conversions bounds the conversions running at once (a buffered channel used as a semaphore; nil: no bound).
+	// One more answers 429 media-busy.
+	Conversions chan struct{}
+}
+
+// busyRetryAfter is the Retry-After (seconds) of media-busy: a 10-minute span converts in well under that.
+const busyRetryAfter = 2
+
+// acquire takes a conversion slot, or answers media-busy.
+func (s *Service) acquire() (func(), error) {
+	if s.Conversions == nil {
+		return func() {}, nil
+	}
+	select {
+	case s.Conversions <- struct{}{}:
+		return func() { <-s.Conversions }, nil
+	default:
+		pe := problems.MediaBusy.New("%d audio conversions are running (media.max_conversions); try again in a moment", cap(s.Conversions))
+		pe.RetryAfter = busyRetryAfter
+		return nil, pe
+	}
 }
 
 // Served is a WAV response body.
@@ -139,7 +162,8 @@ func resolve(sp Span, info Info) (start, end float64, channel int, err error) {
 }
 
 // Audio returns the WAV of a span: the stored file itself when it is 16 kHz 16-bit PCM and asked whole (every
-// channel, no span), otherwise the span decoded, the channel picked, resampled to 16 kHz and encoded as 16-bit PCM.
+// channel, no span), otherwise the span decoded, the channel picked, resampled to 16 kHz and encoded as 16-bit PCM —
+// converted in blocks into the span cache once, and read from there by the requests that follow.
 func (s *Service) Audio(u Utterance, sp Span) (*Served, error) {
 	f, info, err := s.open(u)
 	if err != nil {
@@ -167,19 +191,37 @@ func (s *Service) Audio(u Utterance, sp Span) (*Served, error) {
 	}
 	rate := float64(info.SampleRate)
 	a, b := int64(math.Round(start*rate)), int64(math.Round(end*rate))
-	pcm, err := ReadFrames(f, info, a, b-a)
+	a, b = max(0, min(a, info.Frames())), max(0, min(b, info.Frames()))
+	nc := info.Channels
+	if channel >= 0 {
+		nc = 1
+	}
+	served := func(body io.ReadSeeker, size int64, closeFn func() error) *Served {
+		return &Served{Content: body, Size: size, Start: start, End: end, Channel: channel, Channels: nc, close: closeFn}
+	}
+	key := spanKey(u.Hash, a, b, channel)
+	if s.Cache != nil {
+		if cf, size, ok := s.Cache.Open(key); ok {
+			return served(cf, size, cf.Close), nil
+		}
+	}
+	release, err := s.acquire()
 	if err != nil {
 		return nil, err
 	}
-	if channel >= 0 {
-		pcm = pcm[channel : channel+1]
+	defer release()
+	if s.Cache == nil {
+		var buf bytes.Buffer
+		if err := ConvertSpan(&buf, f, info, a, b, channel); err != nil {
+			return nil, err
+		}
+		return served(bytes.NewReader(buf.Bytes()), int64(buf.Len()), nil), nil
 	}
-	for c := range pcm {
-		pcm[c] = Resample(pcm[c], info.SampleRate, ServeRate)
+	cf, size, err := s.Cache.Put(key, func(w io.Writer) error { return ConvertSpan(w, f, info, a, b, channel) })
+	if err != nil {
+		return nil, fmt.Errorf("convert a span of %s: %w", u.ID, err)
 	}
-	body := EncodeWAV(pcm, ServeRate)
-	return &Served{Content: bytes.NewReader(body), Size: int64(len(body)), Start: start, End: end, Channel: channel,
-		Channels: len(pcm)}, nil
+	return served(cf, size, cf.Close), nil
 }
 
 // Info returns the stored audio's format.

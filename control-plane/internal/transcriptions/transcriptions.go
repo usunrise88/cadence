@@ -822,7 +822,9 @@ func shuffled(n int) []int {
 // ---------------------------------------------------------------- the allowance
 
 // allowance is the project's manual-test allowance today: interactive leases on GPU cards, wall time (the card is
-// held for the session, RTF 0.10–0.17 notwithstanding; spike A5 proposal 4).
+// held for the session, RTF 0.10–0.17 notwithstanding; spike A5 proposal 4). What is left is also net of what the
+// project's open sessions were granted and have not leased yet (session_seconds), so sessions opened side by side
+// cannot together spend more than the allowance (Open grants under a per-project lock).
 func (s *Service) allowance(ctx context.Context, q storage.Querier, projectID string) (Allowance, error) {
 	d := s.defaults()
 	now := s.now()
@@ -838,9 +840,42 @@ func (s *Service) allowance(ctx context.Context, q storage.Querier, projectID st
 			AND l.created_at < $3 AND coalesce(l.ended_at, $4::timestamptz) > $2`, projectID, since, now, now).Scan(&used); err != nil {
 		return Allowance{}, fmt.Errorf("meter manual tests: %w", err)
 	}
+	var committed float64
+	if err := q.QueryRow(ctx, `SELECT coalesce(sum(greatest(0, t.session_seconds - `+leasedSQL+`)), 0) / 3600
+		FROM transcriptions t WHERE t.project_id = $1 AND t.state <> 'ended' AND t.session_seconds > 0`, projectID, now).Scan(&committed); err != nil {
+		return Allowance{}, fmt.Errorf("meter open manual tests: %w", err)
+	}
 	per := d.Budgets.ManualTestGPUHoursPerProjectPerDay.Value
 	used = round3(used)
-	return Allowance{GPUHoursPerDay: per, UsedGPUHours: used, RemainingGPUHours: round3(per - used)}, nil
+	return Allowance{GPUHoursPerDay: per, UsedGPUHours: used, RemainingGPUHours: round3(per - used - committed)}, nil
+}
+
+// leasedSQL is the card time (seconds, at $2) the job of transcription row t has leased so far.
+const leasedSQL = `coalesce((SELECT sum(extract(epoch FROM coalesce(l.ended_at, $2::timestamptz) - l.created_at)) FROM leases l
+		WHERE l.job_id = t.job_id AND l.job_kind = 'interactive' AND l.card_index IS NOT NULL), 0)`
+
+// lockAllowance serialises the grants of a project's manual tests until the transaction ends.
+func lockAllowance(ctx context.Context, tx pgx.Tx, projectID string) error {
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('transcriptions.allowance:' || $1))`, projectID); err != nil {
+		return fmt.Errorf("lock the manual-test allowance: %w", err)
+	}
+	return nil
+}
+
+// grantLeft is how much of its grant session id's job has not leased yet; ok is false for a session granted nothing
+// (a CPU session, which spends no allowance).
+func (s *Service) grantLeft(ctx context.Context, q storage.Querier, id string) (time.Duration, bool, error) {
+	var granted int
+	var leased float64
+	err := q.QueryRow(ctx, `SELECT t.session_seconds, `+leasedSQL+` FROM transcriptions t WHERE t.id = $1`, id, s.now()).
+		Scan(&granted, &leased)
+	if err != nil {
+		return 0, false, fmt.Errorf("read the session's grant: %w", err)
+	}
+	if granted <= 0 {
+		return 0, false, nil
+	}
+	return time.Duration((float64(granted) - leased) * float64(time.Second)), true, nil
 }
 
 func round3(v float64) float64 { return float64(int64(v*1000+0.5)) / 1000 }
@@ -896,6 +931,27 @@ func (s *Service) Open(ctx context.Context, tx pgx.Tx, pl Plan) (Session, []even
 		return Session{}, nil, errors.New("transcriptions: no job service")
 	}
 	ses := pl.Session
+	granted := 0 // card seconds granted from the allowance; a CPU session spends none
+	if pl.gpu {
+		// Grant under the project's lock from what is left net of the other open sessions' grants, so sessions opened
+		// at the same time cannot together spend more than the allowance.
+		if err := lockAllowance(ctx, tx, ses.ProjectID); err != nil {
+			return Session{}, nil, err
+		}
+		a, err := s.allowance(ctx, tx, ses.ProjectID)
+		if err != nil {
+			return Session{}, nil, err
+		}
+		left := int(a.RemainingGPUHours * 3600)
+		if left <= 0 {
+			return Session{}, nil, problems.TranscriptionAllowanceExhausted.New(
+				"project %s used its %.2g GPU-hours of manual tests today, open sessions included (budgets.manual_test_gpu_hours_per_project_per_day); test with evals.new, or try again tomorrow",
+				pl.slug, a.GPUHoursPerDay)
+		}
+		ses.Allowance = a
+		ses.Limits.SessionSeconds = max(1, min(ses.Limits.SessionSeconds, left))
+		granted = ses.Limits.SessionSeconds
+	}
 	ses.ID = "trs_" + uuid.Must(uuid.NewV7()).String()
 	params := liveParams{Session: ses.ID, Input: ses.Input, Telephony: ses.Telephony, Pace: ses.Pace,
 		MaxFileSeconds: ses.Limits.MaxFileSeconds, MaxFileBytes: ses.Limits.MaxFileBytes, FrameMs: ses.Limits.FrameMs}
@@ -927,9 +983,9 @@ func (s *Service) Open(ctx context.Context, tx pgx.Tx, pl Plan) (Session, []even
 	ticket, ticketHash := newToken()
 	expires := now.Add(time.Duration(ses.Limits.TicketSeconds) * time.Second)
 	if _, err := tx.Exec(ctx, `INSERT INTO transcriptions (id, project_id, user_id, actor, targets, reservation_mb, state,
-			ticket_hash, ticket_expires_at, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, 'queued', $7, $8, $9)`,
-		ses.ID, ses.ProjectID, pl.userID, pl.actor, records, ses.ReservationMB, ticketHash, expires, now); err != nil {
+			ticket_hash, ticket_expires_at, created_at, session_seconds)
+		VALUES ($1, $2, $3, $4, $5, $6, 'queued', $7, $8, $9, $10)`,
+		ses.ID, ses.ProjectID, pl.userID, pl.actor, records, ses.ReservationMB, ticketHash, expires, now, granted); err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			return Session{}, nil, problems.TranscriptionInProgress.New("you already have a transcription session open; end it (or close its page) first")

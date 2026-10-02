@@ -289,6 +289,19 @@ func TestReferencesAreIndexLookups(t *testing.T) {
 	e.exec(`INSERT INTO registry_versions (id, collection_id, version, fingerprint, payload, created_by)
 		VALUES ('ver_a', 'reg_a', '2026-10-01.0123456789ab', repeat('a', 64), jsonb_build_object('files', jsonb_build_array($1::text)), '{}')`,
 		inRegistry)
+	// Eval records and metrics read their scores and hypotheses for good (evals and gates).
+	typed := func(c, typ string) string {
+		r := e.blob(c)
+		r.Type = typ
+		e.mustRecord(r)
+		return r.Hash
+	}
+	scores, hyps, metric := typed("scores", "scores"), typed("hypotheses", "hypotheses"), typed("metric", "metric_scores")
+	e.exec(`INSERT INTO eval_records (id, model_key, golden_set_version_id, normalizer_version_id, decoding_hash, scorer, profile,
+		scores_hash, hypotheses_hash, summary) VALUES ('erc_a', 'm', 'ver_a', 'ver_a', 'sha256:x', 'wer_score@1', '160ms', $1, $2, '{}')`,
+		scores, hyps)
+	e.exec(`INSERT INTO eval_metrics (id, model_key, golden_set_version_id, decoding_hash, scorer, metric, scores_hash, summary)
+		VALUES ('erm_a', 'm', 'ver_a', 'sha256:x', 'entity_score@1', 'entities', $1, '{}')`, metric)
 
 	cases := []struct {
 		hash, want string
@@ -299,6 +312,9 @@ func TestReferencesAreIndexLookups(t *testing.T) {
 		{inStep, "pipeline step that has not finished"},
 		{inDoneStep, ""},
 		{inRegistry, "registry version"},
+		{scores, "eval record"},
+		{hyps, "eval record"},
+		{metric, "eval record"},
 		{unnamed, ""},
 	}
 	err := pgx.BeginFunc(e.ctx, e.pool, func(tx pgx.Tx) error {
@@ -325,7 +341,8 @@ func TestReferencesAreIndexLookups(t *testing.T) {
 		}
 		plan := strings.Join(lines, "\n")
 		for _, idx := range []string{"step_jobs_artifact_hashes_idx", "pipeline_runs_artifact_hashes_idx",
-			"pipeline_steps_artifact_hashes_idx", "registry_versions_artifact_hashes_idx", "checkpoints_artifact_idx"} {
+			"pipeline_steps_artifact_hashes_idx", "registry_versions_artifact_hashes_idx", "checkpoints_artifact_idx",
+			"eval_records_scores_idx", "eval_records_hypotheses_idx", "eval_metrics_scores_idx"} {
 			if !strings.Contains(plan, idx) {
 				t.Errorf("the plan does not use %s:\n%s", idx, plan)
 			}

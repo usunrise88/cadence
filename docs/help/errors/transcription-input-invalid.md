@@ -10,7 +10,12 @@ A `422` problem of type `transcription-input-invalid`. It comes as a `LiveError`
 `fatal`), or as the answer of the session when its worker could not start it:
 
 - a **file** the worker cannot decode (it decodes with ffmpeg in its temporary directory, else as WAV/FLAC), or one
-  longer than `transcriptions.max_file_minutes` (15 min), or bigger than `transcriptions.max_file_mb` as it arrives;
+  longer than `transcriptions.max_file_minutes` (15 min), or bigger than `transcriptions.max_file_mb` as it arrives.
+  Before decoding, ffprobe reads the local file only and accepts only audio containers — WAV, FLAC, MP3, Ogg
+  (Opus/Vorbis), MP4/M4A (AAC), WebM/Matroska — so a playlist (HLS `.m3u8`), a concatenation list or a video-only file
+  is refused; a declared duration over the limit (or a sample rate above 192 kHz) is refused before anything is
+  decoded, and the decode itself stops one second past the limit and at a bounded output size, so a small file that
+  expands to hours of silence costs nothing;
 - binary audio sent **before `start`** (non-fatal: the frame is dropped), or file bytes in a microphone session;
 - a **span** whose utterance audio cannot be read.
 
@@ -46,7 +51,8 @@ Evaluate. Manual tests take any audio a person has at hand (R47); evaluations th
 
 - **A long call recording.** Cut the part you want to hear (any audio editor) or import the call and open a span of
   its utterance.
-- **An unusual codec (AMR, Opus).** Convert it to WAV or FLAC first if the worker image has no ffmpeg.
+- **An unusual codec or container (AMR, 3GP, a video file).** Convert it to WAV or FLAC first; without ffmpeg in the
+  worker image only WAV (and FLAC/OGG/MP3 with soundfile) decode.
 
 ## Sources
 

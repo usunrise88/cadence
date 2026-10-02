@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -32,11 +33,19 @@ func (s *Server) newMedia() (*media.Service, *media.Signer) {
 	if s.Secrets != nil {
 		key = s.Secrets.DeriveKey(mediaLinkKeyPurpose)
 	}
-	return &media.Service{Pool: s.Pool, CAS: s.CAS, MaxSpan: float64(s.defaultsDoc().Media.MaxSpanSeconds.Value)}, media.NewSigner(key)
+	d := s.defaultsDoc().Media
+	svc := &media.Service{Pool: s.Pool, CAS: s.CAS, MaxSpan: float64(d.MaxSpanSeconds.Value),
+		Conversions: make(chan struct{}, max(1, d.MaxConversions.Value))}
+	if s.CAS != nil {
+		svc.Cache = &media.SpanCache{Dir: filepath.Join(s.CAS.Root(), "cache", "media-spans"),
+			MaxBytes: func() int64 { return int64(s.defaultsDoc().Media.SpanCacheMB.Value) << 20 }}
+	}
+	return svc, media.NewSigner(key)
 }
 
-// mediaViewer is the person a media request is for: refused for agents (by actor or credential) and for credentials
-// that may not read the registry.
+// mediaViewer is the person a media request is for (06 "Media": people only): refused for agents (by actor or
+// credential), for API keys, worker and host tokens (automation actors), and for credentials that may not read the
+// registry.
 func mediaViewer(ctx context.Context) (auth.Principal, error) {
 	p, ok := auth.PrincipalFromContext(ctx)
 	if !ok {
@@ -44,6 +53,9 @@ func mediaViewer(ctx context.Context) (auth.Principal, error) {
 	}
 	if p.Actor.Kind == auth.KindAgent || p.CredentialKind == credentials.KindAgent {
 		return auth.Principal{}, problems.Forbidden.New("agents read no raw audio (docs/spec/05-agents.md \"What the agent sees\"); test a model with evals.new and read its scores")
+	}
+	if p.Actor.Kind != auth.KindUser {
+		return auth.Principal{}, problems.Forbidden.New("audio is for people: sign in to hear it (an API key, worker or host token reads none; docs/spec/06-platform.md \"Media\")")
 	}
 	if err := auth.CheckRegistryRead(ctx); err != nil {
 		return auth.Principal{}, err
@@ -121,8 +133,8 @@ func (s *Server) audioGet(w http.ResponseWriter, r *http.Request, id api.Utteran
 		if err := s.mediaLinks.Verify(l, *params.Sig); err != nil {
 			return err
 		}
-		if p, ok := auth.PrincipalFromContext(ctx); ok && (p.Actor.Kind == auth.KindAgent || p.CredentialKind == credentials.KindAgent) {
-			return problems.Forbidden.New("agents read no raw audio, signed link or not")
+		if p, ok := auth.PrincipalFromContext(ctx); ok && (p.Actor.Kind != auth.KindUser || p.CredentialKind == credentials.KindAgent) {
+			return problems.Forbidden.New("audio is for people: agents, API keys, worker and host tokens read none, signed link or not")
 		}
 		actor, via = auth.Actor{Kind: auth.KindUser, ID: l.Viewer}, "link"
 	} else {
@@ -138,16 +150,22 @@ func (s *Server) audioGet(w http.ResponseWriter, r *http.Request, id api.Utteran
 	}
 	defer func() { _ = body.Close() }()
 	w.Header().Set("Content-Disposition", "inline")
-	status, err := media.Serve(w, r, body.Content, body.Size, "audio/wav")
-	if err != nil {
-		return err
-	}
-	if media.FirstPlay(r) && r.Method == http.MethodGet {
+	// The first request of a play — whatever byte range it asks for — is audited, before the client has any byte.
+	window := time.Duration(s.defaultsDoc().Media.PlayAuditWindowSeconds.Value) * time.Second
+	audit := func(status int) {
+		if r.Method != http.MethodGet ||
+			!s.mediaPlays.First(media.PlayKey(actor.Kind, actor.ID, u.ID, body.Start, body.End, body.Channel), window) {
+			return
+		}
 		d := spanDetail(body.Start, body.End, body.Channel)
 		d["via"] = via
+		if rg := r.Header.Get("Range"); rg != "" {
+			d["range"] = rg[:min(len(rg), 100)]
+		}
 		s.auditPlay(ctx, "audio.get", actor, status, u, d)
 	}
-	return nil
+	_, err = media.Serve(w, r, body.Content, body.Size, "audio/wav", audit)
+	return err
 }
 
 // SpectrogramGet serves spectrogram.get.

@@ -336,6 +336,10 @@ const referencesQuery = `SELECT CASE
 			THEN 'a registry version references it'
 		WHEN EXISTS (SELECT 1 FROM checkpoints WHERE artifact_hash = $1)
 			THEN 'a registered checkpoint'
+		WHEN EXISTS (SELECT 1 FROM eval_records WHERE scores_hash = $1)
+			OR EXISTS (SELECT 1 FROM eval_records WHERE hypotheses_hash = $1)
+			OR EXISTS (SELECT 1 FROM eval_metrics WHERE scores_hash = $1)
+			THEN 'an eval record''s scores, hypotheses or metric scores (evals and gates read them)'
 		WHEN EXISTS (SELECT 1 FROM artifact_files f JOIN artifacts o ON o.hash = f.hash
 				WHERE f.file_hash = $1 AND o.evicted_at IS NULL AND o.hash <> $1)
 			THEN 'a file of another live artifact'

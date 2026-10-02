@@ -28,7 +28,11 @@ Every block's process is a pipeline of typed steps declared in the recipes repos
   runtime's step kinds (R40). Runtime-neutral core kinds (`echo`, `dataset_import`) ship in every runtime image, and
   the scheduler may lease one to any runtime that publishes the same kind, version and schema hash; framework step
   kinds exist in one runtime only.
-- Validation at `dryRun` (`pipelines.run?dryRun=true`, `Engine.Prepare`): every `kind@version` is published, wiring
+- Validation at `dryRun` (`pipelines.run?dryRun=true`, `Engine.Prepare`): every `kind@version` is published — by a
+  registered worker now, not only once: when the kind's runtime has registered workers and none of their latest
+  registrations lists the pinned version (a newer image dropped it), the step would wait in the queue for ever, so
+  planning refuses it and names the versions the workers publish (re-pin the file, or `projects.sync` for the bundled
+  pipelines; a runtime with no registered worker is not judged) — wiring
   types equal the kinds' `consumes`/`produces`, the run's inputs match the declared types, parameters resolve
   (`x-cadence.defaultRef` into `defaults.yaml` › `x-cadence.default` › schema default) and fit the kind's JSON Schema
   and mapping `x-cadence.range`, and unknown parameters or required ones without a value fail. Every problem is listed
@@ -76,7 +80,7 @@ steps:
     kind: oomptimizer_calibrate@1
     in: { base: $inputs.base, data: $inputs.mix }
   - id: train
-    kind: nemotron_finetune@1
+    kind: nemotron_finetune@2
     in: { base: $inputs.base, data: $inputs.mix, calibration: calibrate.calibration }
     params: { steps: 500 }                        # only departures from defaults are written
 ```

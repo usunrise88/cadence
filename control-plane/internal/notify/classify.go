@@ -23,7 +23,8 @@ type Notice struct {
 // types here as they emit them (mount health, gates, promotions, schedules, batches, checkpoints; card slots once a
 // card's own health closes its slot); the web shell's in-app history mirrors this table
 // (web/src/shell/notifications/classes.ts; TestClassTableMatchesWeb keeps the two equal). Types classified by their
-// payload (approval.requested, job.state_changed, pipeline_run.step_changed, compute.health) are in Classify.
+// payload (approval.requested, job.state_changed, pipeline_run.step_changed, compute.health, eval.status_changed) are
+// in Classify. A gate verdict is eval.gated (evals.gate; passed or failed, both an outcome).
 var classTable = map[string]string{
 	// failure
 	"backup.failed":         ClassFailure,
@@ -31,7 +32,8 @@ var classTable = map[string]string{
 	"mount.unhealthy":       ClassFailure,
 	"storage.low_space":     ClassFailure,
 	// outcome
-	"gate.verdict":        ClassOutcome,
+	"eval.gated":          ClassOutcome,
+	"sweep.ended":         ClassOutcome,
 	"deployment.promoted": ClassOutcome,
 	"schedule.finished":   ClassOutcome,
 	"batch.closed":        ClassOutcome,
@@ -41,7 +43,12 @@ var classTable = map[string]string{
 	"backup.restore_passed": ClassProgress,
 	"checkpoint.saved":      ClassProgress,
 	"triage.item_added":     ClassProgress,
+	"golden_set.frozen":     ClassProgress,
 }
+
+// evalRunPrefix starts the id of an eval (evals.Kind's evl_…): the steps of an eval's pipeline run are not told one
+// by one (an eval of a few hundred cells would send as many notices); the eval's end is (eval.status_changed).
+const evalRunPrefix = "evl_"
 
 // EventTypes lists the event types of class (for the Settings table), job failures and approvals included.
 func EventTypes(class string) []string {
@@ -50,9 +57,10 @@ func EventTypes(class string) []string {
 	case ClassApproval:
 		out = append(out, "approval.requested")
 	case ClassFailure:
-		out = append(out, "job.state_changed (failed)", "pipeline_run.step_changed (failed)", "compute.health (unreachable)")
+		out = append(out, "job.state_changed (failed)", "pipeline_run.step_changed (failed)", "compute.health (unreachable)",
+			"eval.status_changed (failed)")
 	case ClassProgress:
-		out = append(out, "job.state_changed (done)", "pipeline_run.step_changed (done)")
+		out = append(out, "job.state_changed (done)", "pipeline_run.step_changed (done, not an eval's)", "eval.status_changed (done)")
 	case ClassDigest:
 		out = append(out, "notification.digest")
 	}
@@ -123,6 +131,7 @@ type jobPayload struct {
 
 type stepPayload struct {
 	PipelineRunID string `json:"pipelineRunId"`
+	RunID         string `json:"runId"` // the facade entity the pipeline run belongs to (run_…, evl_…)
 	Step          *struct {
 		ID    string `json:"id"`
 		Step  string `json:"step"`
@@ -133,6 +142,55 @@ type stepPayload struct {
 			Message string `json:"message"`
 		} `json:"error"`
 	} `json:"step"`
+}
+
+type evalPayload struct {
+	Eval *struct {
+		ID        string `json:"id"`
+		ProjectID string `json:"projectId"`
+		Status    string `json:"status"`
+		Error     string `json:"error"`
+		Subject   *struct {
+			Label string `json:"label"`
+			ID    string `json:"id"`
+		} `json:"subject"`
+		Gate *struct {
+			Verdict  string `json:"verdict"`
+			GatesSHA string `json:"gatesSha"`
+		} `json:"gate"`
+	} `json:"eval"`
+}
+
+// subject names the eval's subject model (its label, else its id).
+func (p evalPayload) subject() string {
+	if s := p.Eval.Subject; s != nil {
+		if s.Label != "" {
+			return s.Label
+		}
+		return s.ID
+	}
+	return p.Eval.ID
+}
+
+type sweepPayload struct {
+	Experiment *struct {
+		ID    string `json:"id"`
+		Sweep *struct {
+			ID         string `json:"id"`
+			State      string `json:"state"`
+			StopReason string `json:"stopReason"`
+			Points     int    `json:"points"`
+			Ended      int    `json:"ended"`
+		} `json:"sweep"`
+	} `json:"experiment"`
+}
+
+type versionPayload struct {
+	Version *struct {
+		ID      string `json:"id"`
+		Name    string `json:"name"`
+		Version string `json:"version"`
+	} `json:"version"`
 }
 
 type healthPayload struct {
@@ -158,7 +216,10 @@ type genericPayload struct {
 // notified about. Approval events go out twice (the approvals topic and the entity topic): only the approvals topic
 // counts, and a job's state change counts on its job topic only — except a step job's, which its pipeline step
 // tells (pipeline_run.step_changed on pipeline_run.{id}: done is progress, failed — no retry left — a failure). A
-// host turning unreachable (compute.health on compute.{id}) is a failure. The other classified types count on any
+// host turning unreachable (compute.health on compute.{id}) is a failure. The steps of an eval's pipeline run tell
+// nothing when done; the eval tells its end (eval.status_changed: failed a failure, done progress) and evals.gate its
+// verdict (eval.gated, an outcome), sweeps their end (sweep.ended) and golden sets their freeze (golden_set.frozen),
+// all on their entity topics, which only these announce on. The other classified types count on any
 // topic but an entity topic (entity.{kind}.{id} repeats what a domain topic already carried).
 func Classify(r events.Record) (Notice, bool) {
 	switch r.Type {
@@ -241,6 +302,9 @@ func Classify(r events.Record) (Notice, bool) {
 			return Notice{}, false
 		}
 		s := p.Step
+		if s.State == "done" && strings.HasPrefix(p.RunID, evalRunPrefix) {
+			return Notice{}, false // an eval's steps: its end is told once (eval.status_changed)
+		}
 		name := s.Step
 		if s.Kind != "" {
 			name += " (" + s.Kind + ")"
@@ -256,6 +320,47 @@ func Classify(r events.Record) (Notice, bool) {
 			return Notice{Class: ClassProgress, Title: "Step done: " + name, Body: "Pipeline run: " + p.PipelineRunID}, true
 		}
 		return Notice{}, false
+	case "eval.status_changed", "eval.gated":
+		// Evals announce on their entity topic only (entity.eval.{id}), so it counts here.
+		var p evalPayload
+		if json.Unmarshal(r.Payload, &p) != nil || p.Eval == nil {
+			return Notice{}, false
+		}
+		e := p.Eval
+		if r.Type == "eval.gated" {
+			if e.Gate == nil {
+				return Notice{}, false
+			}
+			body := "Eval: " + e.ID
+			if e.Gate.GatesSHA != "" {
+				body += "\ngates.yaml at " + shortSHA(e.Gate.GatesSHA)
+			}
+			return Notice{Class: ClassOutcome, Title: fmt.Sprintf("Gate %s: %s", e.Gate.Verdict, p.subject()), Body: body}, true
+		}
+		switch e.Status {
+		case "failed":
+			return Notice{Class: ClassFailure, Title: "Eval failed: " + p.subject(), Body: join(e.Error, "Eval: "+e.ID)}, true
+		case "done":
+			return Notice{Class: ClassProgress, Title: "Eval done: " + p.subject(), Body: "Eval: " + e.ID + "\nRun evals.gate for the verdict."}, true
+		}
+		return Notice{}, false
+	case "sweep.ended":
+		var p sweepPayload
+		if json.Unmarshal(r.Payload, &p) != nil || p.Experiment == nil || p.Experiment.Sweep == nil {
+			return Notice{}, false
+		}
+		sw := p.Experiment.Sweep
+		body := fmt.Sprintf("%d of %d points ran.", sw.Ended, sw.Points)
+		return Notice{Class: classTable[r.Type], Title: "Sweep " + sw.State + ": " + p.Experiment.ID,
+			Body: join(sw.StopReason, body, "Sweep: "+sw.ID)}, true
+	case "golden_set.frozen":
+		var p versionPayload
+		if json.Unmarshal(r.Payload, &p) != nil || p.Version == nil {
+			return Notice{}, false
+		}
+		v := p.Version
+		return Notice{Class: classTable[r.Type], Title: "Golden set frozen: " + strings.TrimPrefix(v.Name, "golden-set/"),
+			Body: join("Version "+v.Version, v.ID)}, true
 	case "compute.health":
 		if !strings.HasPrefix(r.Topic, "compute.") {
 			return Notice{}, false
@@ -285,6 +390,9 @@ func Classify(r events.Record) (Notice, bool) {
 
 // stepJobKind is steps.JobKind (a pipeline step's job), named here to keep notify free of the steps package.
 const stepJobKind = "step"
+
+// shortSHA is a commit's first 12 characters.
+func shortSHA(sha string) string { return sha[:min(len(sha), 12)] }
 
 // humanize turns "backup.restore_failed" into "Backup restore failed".
 func humanize(typ string) string {
