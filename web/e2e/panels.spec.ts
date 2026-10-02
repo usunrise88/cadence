@@ -197,7 +197,9 @@ test.describe("settings", () => {
     const steps = page.getByRole("list", { name: "Setup steps" });
     await expect(steps.locator('[data-step="admin"]')).toHaveAttribute("data-state", "done");
     await expect(steps.locator('[data-step="project"]')).toHaveAttribute("data-state", "done");
-    await expect(steps.locator('[data-step="run"]')).toContainText("phase 2");
+    // The run and gate steps read the project's runs and evals (none yet in a new project).
+    await expect(steps.locator('[data-step="run"]')).toHaveAttribute("data-state", "todo");
+    await expect(steps.locator('[data-step="gate"]')).toHaveAttribute("data-state", "todo");
     await page.getByRole("button", { name: "Dismiss" }).click();
     await expect(page.locator('[data-tab="getting-started"]')).toHaveCount(0);
     await runCommand(page, "Reset workspace to default");
