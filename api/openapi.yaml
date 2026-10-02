@@ -3245,7 +3245,9 @@ paths:
           same cell of the baseline. Everything is optional but the subject: golden sets default to the ones the
           project's gates.yaml names (target and replay), else its adopted golden sets; profiles to
           eval.matrix_profiles the model family declares, always with the primary profile; decoding to [{boost: none}];
-          baseline to the project's @baseline alias, else its default base model. Cells already in the eval records
+          augmentations (the robustness axis) to [{profile: none}] — add {profile: augment/<name>.yaml@<commit>,
+          seed?} to decode the golden sets also through that augmentation profile; baseline to the project's
+          @baseline alias, else its default base model. Cells already in the eval records
           (any project, same weights × golden set × normalizer × decoding × scorer) are reused; only missing cells run
           (baseline cells included). Always call it with dryRun=true first: the answer is the plan — cells cached and
           to compute and the GPU-hour estimate. Without dryRun it answers 201 with the eval (follow it with evals.get;
@@ -3282,7 +3284,10 @@ paths:
           partial stability; subject cells carry the delta against the baseline's cell with a paired blockwise
           bootstrap interval (significant when it excludes zero). worst=N adds the N utterances with the most errors to
           each subject cell that passes the filters (cell=evc_… for one cell): reference, hypothesis and the alignment
-          ops (=, S, D, I). Filters: goldenSet, profile, role.
+          ops (=, S, D, I). Filters: goldenSet, profile, role. Each cell's metrics carry entity accuracy for the
+          language pack's ITN classes and latency to final (p50/p95 ms, real-time pace) when available, else the
+          reason; with augmentations, robustness lists each augmented cell's WER against the same cell without
+          augmentation (reported, not gated).
       parameters:
         - { name: worst, in: query, required: false, description: "Add the N worst utterances (most errors) to each matching cell", schema: { type: integer, minimum: 1, maximum: 200 } }
         - { name: cell, in: query, required: false, description: "Only this cell (evc_…)", schema: { type: string } }
@@ -7451,6 +7456,7 @@ components:
         goldenSets: { type: array, items: { type: string }, description: "Golden set versions (ver_…, @alias, golden-set/<name>); default: those gates.yaml names, else the project's adopted golden sets" }
         profiles: { type: array, items: { type: string }, description: "Latency profiles (R43); default: eval.matrix_profiles that the model families declare, plus the primary profile" }
         decoding: { type: array, items: { $ref: "#/components/schemas/EvalDecodingVariant" }, description: "Decoding variants (R24); default [{boost: none}]" }
+        augmentations: { type: array, items: { $ref: "#/components/schemas/EvalAugmentationVariant" }, description: "The robustness axis: augmentation profiles of the project (augment/<name>.yaml@<commit>) applied to the golden sets before transcription; none is always included; default [{profile: none}]" }
         baseline: { type: string, description: "The baseline model (ver_…, @alias, base-model/<name> or model/<name>); default the project's @baseline, else its default base model" }
         priority: { type: integer, minimum: 0, maximum: 100, description: "Queue priority of the eval's steps" }
     EvalModel:
@@ -7599,6 +7605,7 @@ components:
         goldenSetVersionId: { type: string }
         profile: { type: string }
         decodingIndex: { type: integer }
+        augmentationIndex: { type: integer, description: "Index into the eval's augmentations (0: none)" }
         decodingHash: { type: string }
         modelKey: { type: string }
         state: { $ref: "#/components/schemas/EvalCellState" }
@@ -7608,6 +7615,7 @@ components:
         summary: { $ref: "#/components/schemas/EvalSummary" }
         delta: { $ref: "#/components/schemas/EvalDelta" }
         worst: { type: array, items: { $ref: "#/components/schemas/EvalUtterance" } }
+        metrics: { $ref: "#/components/schemas/EvalCellMetrics" }
     EvalGateCheck:
       type: object
       required: [kind, state, message]
@@ -7654,12 +7662,14 @@ components:
         profiles: { type: array, items: { $ref: "#/components/schemas/EvalProfile" } }
         primaryProfile: { type: string, description: "The cell the gate reads (R20)" }
         decoding: { type: array, items: { $ref: "#/components/schemas/EvalDecoding" } }
+        augmentations: { type: array, items: { $ref: "#/components/schemas/EvalAugmentation" }, description: "The robustness axis: index 0 is always none (phase 3 · stream R)" }
         significance: { $ref: "#/components/schemas/EvalSignificance" }
         pipelineRunId: { type: string, description: The pipeline run computing the missing cells (absent when every cell was cached) }
         progress: { $ref: "#/components/schemas/EvalProgress" }
         estimate: { $ref: "#/components/schemas/EvalEstimate" }
         gate: { $ref: "#/components/schemas/EvalGate" }
         cells: { type: array, items: { $ref: "#/components/schemas/EvalCell" }, description: "Absent in evals.list" }
+        robustness: { type: array, items: { $ref: "#/components/schemas/EvalRobustnessRow" }, description: "The robustness matrix when the eval has augmentations beyond none (absent in evals.list)" }
         rev: { type: integer }
         actor: { $ref: "#/components/schemas/Actor" }
         createdAt: { type: string, format: date-time }
@@ -7678,6 +7688,7 @@ components:
         goldenSetVersionId: { type: string }
         profile: { type: string }
         decodingIndex: { type: integer }
+        augmentationIndex: { type: integer, description: "Index into augmentations (0: none)" }
         decodingHash: { type: string }
         modelKey: { type: string }
         cached: { type: boolean }
@@ -7693,6 +7704,7 @@ components:
         profiles: { type: array, items: { $ref: "#/components/schemas/EvalProfile" } }
         primaryProfile: { type: string }
         decoding: { type: array, items: { $ref: "#/components/schemas/EvalDecoding" } }
+        augmentations: { type: array, items: { $ref: "#/components/schemas/EvalAugmentation" }, description: "The robustness axis (phase 3 · stream R)" }
         significance: { $ref: "#/components/schemas/EvalSignificance" }
         cells: { type: array, items: { $ref: "#/components/schemas/EvalPlanCell" } }
         cellsCached: { type: integer }
@@ -7787,6 +7799,104 @@ components:
       properties:
         items: { type: array, items: { $ref: "#/components/schemas/ModelVersion" } }
 
+    # ---------------------------------------------------------------- robustness and streaming scorers schemas (phase 3 · stream R) — add below
+    EvalAugmentationVariant:
+      type: object
+      required: [profile]
+      additionalProperties: false
+      properties:
+        profile: { type: string, description: "none, or an augmentation profile of the project repository at a commit: augment/<name>.yaml@<commit sha>" }
+        seed: { type: integer, minimum: 0, maximum: 2147483647, description: "Seed of the augmentation draw; default the profile file's seed, else augment.seed" }
+    EvalAugmentation:
+      type: object
+      description: "One augmentation of an eval (the robustness axis): none, or a profile applied by augment_dataset before transcription"
+      required: [index, profile]
+      properties:
+        index: { type: integer }
+        profile: { type: string, description: "none or augment/<name>.yaml@<commit>" }
+        name: { type: string, description: The profile's name }
+        seed: { type: integer }
+        hash: { type: string, description: "sha256 of the resolved profile (transforms and seed); the cell's decoding hash, and so its eval-record key, includes it" }
+        artifact: { type: string, description: "The rendered augment_profile artifact (b3:…)" }
+        noiseBank: { type: string, description: "The noise bank version (ver_…) the noise transform mixes from" }
+        transforms: { type: object, additionalProperties: true, description: "The resolved transforms (defaults.yaml augment.* where the file is silent)" }
+    EvalMetricUnavailable:
+      type: object
+      required: [metric, reason]
+      properties:
+        metric: { type: string, enum: [entities, latency] }
+        reason: { type: string }
+    EvalEntityClass:
+      type: object
+      required: [class, refEntities, hypEntities, correct]
+      properties:
+        class: { type: string, description: "An ITN class of the language pack (number, phone, date, amount, …)" }
+        refEntities: { type: integer }
+        hypEntities: { type: integer }
+        correct: { type: integer }
+        accuracy: { type: number, format: double, description: "correct / refEntities (absent or null without reference entities)" }
+        precision: { type: number, format: double, description: correct / hypEntities }
+    EvalEntityScores:
+      type: object
+      description: "Entity accuracy of a cell (entity_score): the pack's ITN classes compared between references and hypotheses; reported, not gated"
+      required: [scorer, available, refEntities, correct]
+      properties:
+        scorer: { type: string, example: entity_score@1 }
+        scores: { type: string, description: "The metric_scores artifact (b3:…)" }
+        available: { type: boolean }
+        reason: { type: string }
+        itn: { type: object, additionalProperties: true, description: "{locale, commit}: the itn.yaml the classes came from" }
+        utterances: { type: integer }
+        utterancesWithEntities: { type: integer }
+        refEntities: { type: integer }
+        hypEntities: { type: integer }
+        correct: { type: integer }
+        accuracy: { type: number, format: double }
+        precision: { type: number, format: double }
+        classes: { type: array, items: { $ref: "#/components/schemas/EvalEntityClass" } }
+    EvalLatencyScores:
+      type: object
+      description: "Latency to final at real-time pace (R54, latency_score): speech end (frame VAD) to the partial whose text is final"
+      required: [scorer, available, measured]
+      properties:
+        scorer: { type: string, example: latency_score@1 }
+        scores: { type: string, description: "The metric_scores artifact (b3:…)" }
+        available: { type: boolean }
+        reason: { type: string }
+        pace: { type: string, enum: [simulated, realtime, mixed], description: "simulated: emit times at real-time pace from a file decode's compute times; realtime: a decode run at real-time pace" }
+        utteranceEnd: { type: string, enum: [vad], description: Where utterance ends come from }
+        vad: { type: object, additionalProperties: true, description: "{kind, model, revision, …} of the VAD step" }
+        profile: { type: string }
+        utterances: { type: integer }
+        measured: { type: integer, description: Utterances with speech and a non-empty final }
+        p50Ms: { type: number, format: double }
+        p95Ms: { type: number, format: double }
+        meanMs: { type: number, format: double }
+        maxMs: { type: number, format: double }
+        earlyFinals: { type: integer, description: Finals emitted before the VAD's speech end (counted as 0 ms) }
+        noSpeech: { type: integer }
+        emptyFinals: { type: integer }
+    EvalCellMetrics:
+      type: object
+      description: Metrics beside WER, kept with the cell's eval record (absent while their steps run)
+      properties:
+        entities: { $ref: "#/components/schemas/EvalEntityScores" }
+        latency: { $ref: "#/components/schemas/EvalLatencyScores" }
+        unavailable: { type: array, items: { $ref: "#/components/schemas/EvalMetricUnavailable" }, description: "Metrics this cell does not get, and why" }
+    EvalRobustnessRow:
+      type: object
+      description: "One cell of the robustness matrix (golden set × augmentation × latency profile): WER under the augmentation against the same cell without it"
+      required: [role, goldenSetVersionId, profile, decodingIndex, augmentationIndex, cellId]
+      properties:
+        role: { $ref: "#/components/schemas/EvalCellRole" }
+        goldenSetVersionId: { type: string }
+        profile: { type: string }
+        decodingIndex: { type: integer }
+        augmentationIndex: { type: integer }
+        cellId: { type: string }
+        wer: { type: number, format: double, description: WER under the augmentation (absent until scored) }
+        werNone: { type: number, format: double, description: WER of the same cell without augmentation }
+        degradation: { type: number, format: double, description: "wer − werNone (absolute, a fraction)" }
     # ---------------------------------------------------------------- language packs, boost lists, lineage schemas (phase 3 · stream L) — add below
 
     PackLocaleName:

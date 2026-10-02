@@ -10,7 +10,6 @@ import pytest
 from test_wer_score import dataset
 
 from cadence_worker.registry import registry
-from cadence_worker.steps.base import StepInputError
 from cadence_worker.steps.context import StepContext
 from cadence_worker.steps.entity_score import EntityScoreParams, EntityScoreStep, entities, read_itn
 from cadence_worker.steps.latency_score import LatencyScoreParams, LatencyScoreStep, final_index, paced_emits
@@ -154,14 +153,18 @@ def test_latency_to_final(tmp_path: Path) -> None:
     assert summary["profile"] == "320ms"
 
 
-def test_latency_needs_partials(tmp_path: Path) -> None:
+def test_latency_without_partials_is_unavailable(tmp_path: Path) -> None:
     hashes = dataset(tmp_path / "data", [{"text": "one"}])
     hyps_file(tmp_path / "hyps.jsonl", hashes, [{"text": "one"}])
     (tmp_path / "vad.jsonl").write_text(json.dumps({"audio": hashes[0], "speechEndS": 0.5}) + "\n", encoding="utf-8")
-    with pytest.raises(StepInputError, match="partial events"):
-        LatencyScoreStep().run(
-            LatencyScoreParams(),
-            {"hypotheses": tmp_path / "hyps.jsonl", "data": tmp_path / "data", "vad": tmp_path / "vad.jsonl"},
-            {"scores": tmp_path / "scores"},
-            StepContext(lambda e: None, work_dir=tmp_path),
-        )
+    out = tmp_path / "scores"
+    LatencyScoreStep().run(
+        LatencyScoreParams(),
+        {"hypotheses": tmp_path / "hyps.jsonl", "data": tmp_path / "data", "vad": tmp_path / "vad.jsonl"},
+        {"scores": out},
+        StepContext(lambda e: None, work_dir=tmp_path),
+    )
+    summary, rows = read(out)
+    assert summary["available"] is False
+    assert "partial events" in summary["reason"]
+    assert rows == []

@@ -19,7 +19,7 @@ import (
 // The evaluation fixtures: the fixture family's materialize and transcribe roles and a scorer named like the core
 // kind (wer_score@1), so evals run end to end in-process. The transcribe fixture drops words: a materialised base
 // model drops the first BaseDropWords words of every reference, a trained checkpoint none, and a boost list adds its
-// first term to every hypothesis (an insertion).
+// first term to every hypothesis (an insertion); an augmented utterance (robustness.go) loses one more word.
 const (
 	KindMaterialize = "fx_materialize"
 	KindTranscribe  = "fx_transcribe"
@@ -67,6 +67,7 @@ type GoldenUtterance struct {
 	Group     string  `json:"group,omitempty"`
 	Speaker   string  `json:"speaker,omitempty"`
 	DurationS float64 `json:"durationS"`
+	Augment   string  `json:"augment,omitempty"` // set by the augment fixture: the transcribe fixture drops one more word
 }
 
 // RegisterGoldenSet registers a frozen normalizer (normalizer/fixture), an eval-only dataset version whose artifact
@@ -150,7 +151,11 @@ func (l *Leases) runEvaluation(spec steps.Spec) (steps.Outcome, bool, error) {
 		var b strings.Builder
 		for _, u := range utts {
 			words := strings.Fields(u.Ref)
-			words = words[min(m.DropWords, len(words)):]
+			drop := m.DropWords
+			if u.Augment != "" {
+				drop++
+			}
+			words = words[min(drop, len(words)):]
 			if len(boost.Terms) > 0 {
 				words = append(words, boost.Terms[0])
 			}

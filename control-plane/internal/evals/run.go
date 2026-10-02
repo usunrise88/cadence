@@ -24,7 +24,7 @@ func (s *Service) Create(ctx context.Context, tx pgx.Tx, pl Plan) (Eval, []event
 	e := Eval{
 		ID: "evl_" + uuid.Must(uuid.NewV7()).String(), ProjectID: pl.project.ID, Status: StatusQueued, Subject: pl.Subject,
 		Baseline: pl.Baseline, GoldenSets: pl.GoldenSets, Profiles: pl.Profiles, PrimaryProfile: pl.PrimaryProfile,
-		Decoding: pl.Decoding, Significance: pl.Significance, Estimate: pl.Estimate, Actor: pl.in.Actor,
+		Decoding: pl.Decoding, Augmentations: pl.Augmentations, Significance: pl.Significance, Estimate: pl.Estimate, Actor: pl.in.Actor,
 	}
 	if err := insertEval(ctx, tx, e); err != nil {
 		return Eval{}, nil, err
@@ -32,7 +32,8 @@ func (s *Service) Create(ctx context.Context, tx pgx.Tx, pl Plan) (Eval, []event
 	for i, c := range pl.Cells {
 		row := Cell{ID: "evc_" + uuid.Must(uuid.NewV7()).String(), EvalID: e.ID, Position: i, Role: c.Role,
 			GoldenSetVersionID: c.GoldenSetVersionID, NormalizerVersionID: c.normalizer, Profile: c.Profile, DecodingIndex: c.DecodingIndex,
-			DecodingHash: c.DecodingHash, ModelKey: c.ModelKey, Scorer: c.scorer, State: CellQueued, RecordID: c.RecordID, ScoreStep: c.scoreStep}
+			DecodingHash: c.DecodingHash, ModelKey: c.ModelKey, Scorer: c.scorer, State: CellQueued, RecordID: c.RecordID, ScoreStep: c.scoreStep,
+			AugmentationIndex: c.AugmentationIndex, Metrics: c.metrics}
 		if c.Cached {
 			row.State = CellCached
 		}
@@ -123,6 +124,12 @@ func (s *Service) scoresHook(ctx context.Context, tx pgx.Tx, out steps.Output) (
 			decoding["list"], decoding["weight"] = d.Artifact, d.Weight
 		}
 	}
+	var augmentation []byte // NULL: none
+	if c.AugmentationIndex > 0 && c.AugmentationIndex < len(e.Augmentations) {
+		a := e.Augmentations[c.AugmentationIndex]
+		decoding["augmentation"] = map[string]any{"profile": a.Profile, "name": a.Name, "hash": a.Hash, "seed": a.Seed}
+		augmentation = mustJSON(map[string]any{"index": a.Index, "profile": a.Profile, "name": a.Name, "hash": a.Hash, "seed": a.Seed})
+	}
 	dec := json.RawMessage(mustJSON(decoding))
 	var family string
 	for _, m := range []Model{e.Subject, e.Baseline} {
@@ -135,11 +142,11 @@ func (s *Service) scoresHook(ctx context.Context, tx pgx.Tx, out steps.Output) (
 	}
 	var id string
 	err = tx.QueryRow(ctx, `INSERT INTO eval_records (id, model_key, golden_set_version_id, normalizer_version_id, decoding_hash, scorer,
-			profile, decoding, scores_hash, hypotheses_hash, summary, family, project_id, eval_id, pipeline_run_id, step_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULLIF($10, ''), $11, $12, $13, $14, $15, $16)
+			profile, decoding, scores_hash, hypotheses_hash, summary, family, project_id, eval_id, pipeline_run_id, step_id, augmentation)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULLIF($10, ''), $11, $12, $13, $14, $15, $16, $17)
 		ON CONFLICT (model_key, golden_set_version_id, normalizer_version_id, decoding_hash, scorer) DO NOTHING RETURNING id`,
 		"erc_"+uuid.Must(uuid.NewV7()).String(), c.ModelKey, c.GoldenSetVersionID, c.NormalizerVersionID, c.DecodingHash, c.Scorer,
-		c.Profile, dec, out.Artifact.Hash, hyp, summary, family, e.ProjectID, e.ID, out.PipelineRunID, out.StepID).Scan(&id)
+		c.Profile, dec, out.Artifact.Hash, hyp, summary, family, e.ProjectID, e.ID, out.PipelineRunID, out.StepID, augmentation).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		rec, found, ferr := findRecord(ctx, tx, Key{c.ModelKey, c.GoldenSetVersionID, c.NormalizerVersionID, c.DecodingHash, c.Scorer})
 		if ferr != nil {

@@ -55,3 +55,29 @@ scorer `wer_score` (newest published version of each).
 Tables (migration 0024): `eval_records` (global), `evals`, `eval_cells`. Tests: `evals_test.go` (bootstrap, pairing,
 gate parsing and verdicts, boost lists); `internal/server/evals_integration_test.go` runs the loop on the fixture
 family (`pipelinestest.RegisterEvaluation`, `RegisterGoldenSet`).
+
+Phase 3 stream R (robustness and streaming scorers; `axes.go`, `metrics.go`, `lineage.go`; migration 0028):
+
+- **Robustness axis**: `evals.new` `augmentations: [{profile: none | augment/<name>.yaml@<commit>, seed?}]`; none is
+  always index 0. A profile is read from the project repository at its commit, every value it leaves out taken from
+  `defaults.yaml` `augment.*` and checked against the ranges there (unknown transforms or fields refused); a `noise`
+  transform names a noise bank (`noise-bank/<name>` or `ver_…`). It renders as an `augment_profile` artifact
+  `{format, name, seed, hash, transforms}`, `hash` = sha256 of `{seed, transforms}`. Target golden sets get every
+  augmentation, replay sets none only. An augmented cell's decoding hash adds `augment: {kind: augment_dataset@<v>,
+  profile: <hash>, seed}`, so the record key changes only for augmented cells (records from before stay valid as
+  none); `eval_records.augmentation` describes it. The pipeline gains `augment-g<n>a<k>` (the core kind
+  `augment_dataset`) whose `dataset` output (meta `purpose: augmented`, skipped by the dataset hook) feeds the cell's
+  transcribe and score steps. `evals.get` answers `augmentations`, each cell's `augmentationIndex` and `robustness`
+  (each augmented cell's WER against the same cell without augmentation). Deltas pair cells of the same augmentation;
+  the gate reads augmentation 0 only.
+- **Metrics beside WER** (reported, not gated): per record key, `entities` (core `entity_score`, with the `itn`
+  artifact rendered from the pack serving the golden set's locale: `lang/<pack>/itn.yaml` at main, at the commit that
+  last changed it) and `latency` (core `latency_score`, for streaming families, with a `vad` artifact from the newest
+  published kind that turns one dataset into a `vad`, `vad-g<n>a<k>`). Both write `metric_scores`
+  (`cadence.metric-scores/1`); the `metric_scores` hook stores the summary in `eval_metrics`, keyed by model key ×
+  golden set × decoding hash × scorer × config (the ITN artifact hash; the VAD kind and version id) and shared like
+  the records. A cell's plan (`eval_cells.metrics`) names the scorer, config and step, or why the metric is
+  unavailable; cached records get metric steps from their stored hypotheses. `evals.get` answers `metrics`.
+- **Lineage** (`LineageSource`, wired in `cmd/cadence`): an eval is built from its subject, baseline, golden sets,
+  noise banks and the records of its cells; a record from its golden set, normalizer and model (checkpoints and model
+  versions with its weights hash, or the base model version). Test: `evals_robustness_integration_test.go`.

@@ -147,8 +147,6 @@ def score(
                 "latencyMs": round(lat, 1),
             }
         )
-    if no_partials == len(refs):
-        raise StepInputError("the hypotheses carry no partial events: latency to final needs a streaming decode")
 
     def r1(v: float | None) -> float | None:
         return None if v is None else round(v, 1)
@@ -172,7 +170,9 @@ def score(
         "emptyFinals": empty,
         "noPartials": no_partials,
     }
-    if not latencies:
+    if no_partials == len(refs):
+        summary["reason"] = "the hypotheses carry no partial events: latency to final needs a streaming decode"
+    elif not latencies:
         summary["reason"] = "no utterance had speech (VAD) and a non-empty final"
     return summary, rows
 
