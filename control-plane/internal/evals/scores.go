@@ -26,6 +26,7 @@ type Summary struct {
 	Utterances int     `json:"utterances"`
 	RefWords   int     `json:"refWords"`
 	WER        float64 `json:"wer"`
+	CER        float64 `json:"cer"`
 	Sub        int     `json:"sub"`
 	Del        int     `json:"del"`
 	Ins        int     `json:"ins"`

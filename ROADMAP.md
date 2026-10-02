@@ -432,6 +432,26 @@ trained on, against the baseline, with confidence intervals, and a gate turns th
 from phase 2) runs on staging and `evals.gate` returns a verdict (target-locale WER vs baseline with bootstrap CI,
 replay-locale regression ≤ 0.5, deletions/insertions check). The telephone golden set from own calls needs phase 4.
 
+**Gate run (2026-10-02, staging).** `evals.gate` returned a verdict on eval `evl_01a0fd78…` of the phase-2 Serbian
+checkpoint (`ckp_01a0f902…`, run `run_01a0f902…`, 1 000 steps on `dataset/fleurs-sr-latn` under the `hr-HR` prompt, no
+replay) against the base model, on 35 frozen golden sets: `golden-set/fleurs-sr-latn-test` (700 utterances, 2.1 h;
+FLEURS he was replaced by the locale the phase-2 checkpoint was trained on) and the 34 replay golden sets (33 h).
+76 cells, 79 audio hours computed in 25 minutes (0.81 GPU-hours of transcribe steps), `languages: {sr-RS: hr-HR}`.
+- Verdict **failed**, as it should: the target passed — WER 0.346 → 0.256 at `160ms`, Δ −0.090 [−0.101, −0.081], and
+  deletions were not traded for insertions — but 32 of 34 replay sets regressed far beyond 0.5 points (e.g. ru-RU
+  0.149 → 0.447, de-DE 0.109 → 0.326, uk-UA 0.167 → 0.717): catastrophic forgetting of a run without replay, which is
+  exactly what the gate is for. hr-HR held (+0.004, interval includes zero); th-TH passed only because the base model
+  emits nothing for it (below).
+- The target across profiles (subject / baseline WER): 80 ms 0.266 / 0.356, 160 ms 0.256 / 0.346, 320 ms 0.246 /
+  0.333, 1120 ms 0.234 / 0.310; unstable partial word ratio 0.61, 0.55, 0.40, 0.16; latency to final (simulated pace,
+  frame-VAD ends) p50 ≈ 1.05–1.15 s at every profile — the endpointer, not the look-ahead, dominates it. The choice of
+  the primary profile (160 ms is not a trained look-ahead, A5) waits for the owner (07).
+- Found and fixed on the way: leakage checks counted a trainable import's test split (now train and validation only);
+  evals could not decode a locale the model has no prompt for (`evals.new.languages`); zh/ja/th were scored by words
+  over unsegmented text (now CER, `eval.character_error_languages`); the eval GPU estimate was 8× high (now 0.015
+  GPU-hours per audio hour, measured). Open: the base model's empty output for th-TH (checked with stream T's
+  decoder).
+
 Decide before starting:
 - [x] **decide** → *R20* The latency set and primary cell (`[56,1]` vs `[56,0]`, offline vs `[56,13]`) (C2), named as
       latency profiles (R43) — `160ms` primary, matrix `80ms`/`160ms`/`1120ms` (03 "Key defaults", `eval.*`)
@@ -507,8 +527,14 @@ worker protocol; S5 (audio view) before the Audio panel — it needs only the ph
       — built 2026-10-02 (stream T; 06 "Transcriptions and the live channel as built"): `transcriptions.new`, the
       relay, the worker's `live` role (NeMo and toy), the Transcription panel; open: "test a phrase" in the Language
       pack, `analysis` (features, emissions), Firefox/Safari/Caddy checks (owner)
-- [ ] Eval charts (R53): matrix heatmap, forest plot of deltas with intervals, S/D/I, buckets, latency CDFs, WER
+- [x] Eval charts (R53): matrix heatmap, forest plot of deltas with intervals, S/D/I, buckets, latency CDFs, WER
       against latency; the utterance table opens rows in Diff and Audio
+      — built 2026-10-02 (streams U, U2): beside the four above, the per-utterance WER ECDF (subject against
+      baseline; `evals.get?worst=` caps at 200, so a larger golden set shows its worst 200 rows, labelled), entity
+      accuracy per class, and folding "Streaming" (WER against latency per model with the primary marked and the
+      delta's interval, latency to final as p50/p95/max per profile — the API has no full distribution — with the
+      unavailable reasons, partial stability) and "Robustness" (degradation heatmap) sections; `@/shell/charts` gained
+      the `line` spec. Not drawn (no API data yet): confusion pairs, WER by SNR, bandwidth or speaker, emission delay
 - [x] Generator: the `media` tag — exempt from the verb rule and from MCP — for R25's audio endpoint, `…/peaks`,
       `transcriptions.new` and its socket (R48)
       — the tag and audio serving built 2026-10-02 (stream A: `audio.get|sign`, `peaks.get`, `spectrogram.get`,
@@ -540,8 +566,8 @@ L, R, U, X and spikes S5, A5, folded into the spec by stream S2 on 2026-10-02):
   (`langpacks.boost_weight` 1.0 vs the measured 0.5; 07 "Open questions").
 - Lineage is one operation (`GET /registry/{id}:lineage`) over the ids a payload names; evals add their own source.
   Agents' language-pack edits land on a `langpack/<locale>-<date>` branch under the draft policy.
-- Web: one `models.register` and one `evals.new` command; the Eval report draws the heatmap, forest plot, S/D/I and
-  bucket charts but not yet robustness, latency, entity accuracy or the ECDF; "test a phrase", Set as baseline and
+- Web: one `models.register` and one `evals.new` command; the Eval report draws every chart of the ROADMAP item
+  (stream U2 added the ECDF, entity accuracy, the Streaming and Robustness sections); "test a phrase", Set as baseline and
   Adopt on the Model document and the Eval workspace's Playwright smoke are not built.
 - Spike S5 (done with caveats): no wavesurfer.js; `AudioView` + `useAudioAxis()`, one renderer per window; peaks 720 KB
   per channel-hour; a JavaScript FFT in a Web Worker; new `views.audio` defaults (stream A adds them).

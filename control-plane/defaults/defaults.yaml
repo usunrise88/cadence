@@ -440,6 +440,10 @@ eval:
     value: normalizer/basic
     description: Scoring normalizer a golden set is frozen with when the freeze names none (the locale's language pack names its own)
     source: docs/spec/08-resolutions.md R21
+  character_error_languages:
+    value: [zh, yue, ja, th, lo, km, my]
+    description: Languages (primary subtags) written without spaces between words; their golden sets are compared and gated on the character error rate, since a word error rate over unsegmented text counts whole sentences
+    source: Cadence recommendation (FLEURS and Common Voice report CER for zh, ja and th; the stand's phase-3 gate run measured base-model WER of 0.91–1.04 on them)
   duration_buckets_s:
     value: [0, 2, 5, 10, 20]
     unit: s
@@ -463,10 +467,10 @@ eval:
     source: Cadence recommendation
     range: { min: 0, max: 2147483647 }
   gpu_hours_per_audio_hour:
-    value: 0.1
+    value: 0.015
     unit: GPU-hours per audio hour
     description: GPU time one eval cell spends per hour of golden-set audio (streaming decode at one latency profile, model load included); evals.new multiplies it by the audio of the cells it computes, and the policy weighs the result against the GPU budgets
-    source: Cadence recommendation, to be calibrated
+    source: "Measured on the stand's phase-3 gate run (2026-10-02): Nemotron 3.5 0.6B transcribe steps took 0.81 GPU-hours for 79 audio hours (0.010 per audio hour) on the 96 GB card; 1.5× margin"
     range: { min: 0.001, max: 10 }
 
 gate:

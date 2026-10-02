@@ -42,7 +42,10 @@ type Check struct {
 	Threshold          *float64  `json:"threshold,omitempty"`
 	BaselineWER        *float64  `json:"baselineWer,omitempty"`
 	CandidateWER       *float64  `json:"candidateWer,omitempty"`
-	Message            string    `json:"message"`
+	// Unit is "char" when the set is gated on CER: Delta, BaselineWER and CandidateWER then hold character error
+	// rates (eval.character_error_languages).
+	Unit    string `json:"unit,omitempty"`
+	Message string `json:"message"`
 }
 
 // Verdict is a gate's answer on an eval (the contract's EvalGate).
@@ -132,10 +135,13 @@ func (s *Service) verdict(e Eval, locales []string, gf GateFile, cells []Cell, r
 		}
 		return Cell{}, false
 	}
-	wer := func(c Cell) *float64 {
+	rate := func(c Cell, chars bool) *float64 {
 		var sm Summary
 		if r, ok := recs[c.RecordID]; ok && json.Unmarshal(r.Summary, &sm) == nil {
 			w := sm.WER
+			if chars {
+				w = sm.CER
+			}
 			return &w
 		}
 		return nil
@@ -146,13 +152,18 @@ func (s *Service) verdict(e Eval, locales []string, gf GateFile, cells []Cell, r
 		if !target && !replay {
 			continue
 		}
+		chars := CharScored(gs.Locale, s.defaults().Eval.CharacterErrorLanguages.Value)
+		metric := "WER"
 		base := Check{GoldenSetVersionID: gs.VersionID, GoldenSet: gs.Name, Profile: g.PrimaryProfile}
+		if chars {
+			metric, base.Unit = "CER", UnitChar
+		}
 		sc, ok1 := at(gs.VersionID, RoleSubject)
 		bc, ok2 := at(gs.VersionID, RoleBaseline)
 		var d *Delta
 		if ok1 && ok2 {
-			base.CandidateWER, base.BaselineWER = wer(sc), wer(bc)
-			d = s.deltaAt(sc, cells, recs, e.Significance, g.Significance)
+			base.CandidateWER, base.BaselineWER = rate(sc, chars), rate(bc, chars)
+			d = s.deltaAt(sc, cells, recs, e.Significance, g.Significance, chars)
 		}
 		missing := func(kind string) Check {
 			c := base
@@ -173,14 +184,19 @@ func (s *Service) verdict(e Eval, locales []string, gf GateFile, cells []Cell, r
 			c.Kind, c.Delta = CheckTarget, &d.WER
 			switch {
 			case d.WER.Value < 0 && d.WER.High < 0:
-				c.State, c.Message = CheckPassed, fmt.Sprintf("WER fell by %.4f, the whole %.0f%% interval below zero", -d.WER.Value, d.Level*100)
+				c.State, c.Message = CheckPassed, fmt.Sprintf("%s fell by %.4f, the whole %.0f%% interval below zero", metric, -d.WER.Value, d.Level*100)
 			case d.WER.Low > 0:
-				c.State, c.Message = CheckFailed, fmt.Sprintf("WER rose by %.4f, the whole interval above zero", d.WER.Value)
+				c.State, c.Message = CheckFailed, fmt.Sprintf("%s rose by %.4f, the whole interval above zero", metric, d.WER.Value)
 			default:
-				c.State, c.Message = CheckInconclusive, fmt.Sprintf("WER changed by %+.4f but the interval [%.4f, %.4f] includes zero", d.WER.Value, d.WER.Low, d.WER.High)
+				c.State, c.Message = CheckInconclusive, fmt.Sprintf("%s changed by %+.4f but the interval [%.4f, %.4f] includes zero", metric, d.WER.Value, d.WER.Low, d.WER.High)
 			}
 			v.Checks = append(v.Checks, c)
-			if g.DeletionsInsertions {
+			if g.DeletionsInsertions && chars {
+				di := base
+				di.Kind, di.State = CheckDelIns, CheckPassed
+				di.Message = "not applicable: the set is scored on characters, whose deletions and insertions the scores do not count"
+				v.Checks = append(v.Checks, di)
+			} else if g.DeletionsInsertions {
 				di := base
 				di.Kind, di.Delta, di.State = CheckDelIns, &d.Ins, CheckPassed
 				di.Message = "deletions were not traded for insertions"
@@ -199,10 +215,10 @@ func (s *Service) verdict(e Eval, locales []string, gf GateFile, cells []Cell, r
 		c := base
 		mr := g.MaxRegression
 		c.Kind, c.Delta, c.Threshold, c.State = CheckReplay, &d.WER, &mr, CheckPassed
-		c.Message = fmt.Sprintf("WER changed by %+.4f (allowed regression %.4f)", d.WER.Value, mr)
+		c.Message = fmt.Sprintf("%s changed by %+.4f (allowed regression %.4f)", metric, d.WER.Value, mr)
 		if d.WER.Value > mr && d.WER.Low > 0 {
 			c.State = CheckFailed
-			c.Message = fmt.Sprintf("WER rose by %.4f, above the allowed %.4f, the interval excluding zero", d.WER.Value, mr)
+			c.Message = fmt.Sprintf("%s rose by %.4f, above the allowed %.4f, the interval excluding zero", metric, d.WER.Value, mr)
 		}
 		v.Checks = append(v.Checks, c)
 	}
@@ -227,14 +243,14 @@ func (s *Service) verdict(e Eval, locales []string, gf GateFile, cells []Cell, r
 }
 
 // deltaAt is subject cell c's delta at significance want: the stored one when the eval computed it at want.
-func (s *Service) deltaAt(c Cell, cells []Cell, recs map[string]Record, have, want Significance) *Delta {
+func (s *Service) deltaAt(c Cell, cells []Cell, recs map[string]Record, have, want Significance, chars bool) *Delta {
 	if have == want && len(c.Delta) > 0 && string(c.Delta) != "null" {
 		var d Delta
-		if json.Unmarshal(c.Delta, &d) == nil {
+		if json.Unmarshal(c.Delta, &d) == nil && (d.Unit == UnitChar) == chars {
 			return &d
 		}
 	}
-	return s.delta(c, cells, recs, want)
+	return s.delta(c, cells, recs, want, chars)
 }
 
 func profileNames(ps []Profile) string {

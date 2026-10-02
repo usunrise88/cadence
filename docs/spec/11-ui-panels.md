@@ -138,9 +138,13 @@ As built (phase 3, stream U; help `panels.eval`, `panels.diff`, `panels.golden-s
 - Eval report: the selection is `cell:<evc_id>` or `cell:<evc_id>/utt:<index>`; Ask agent attaches
   `@eval:<id>#cell:…/utt:…`. Deltas are shown in percentage points (the API's rates are fractions); a cell's tone
   comes from its interval (better, worse, inconclusive), with a glyph beside the colour. Charts: delta heatmap, forest
-  plot of deltas with intervals, S/D/I bars and WER by duration bucket. Not drawn yet: the per-utterance ECDF, partial
-  stability, latency CDFs, entity accuracy, WER against latency, confusion pairs and the robustness matrix — `evals.get`
-  already answers `robustness` and per-cell `metrics` (stream R landed beside U).
+  plot of deltas with intervals, S/D/I bars, WER by duration bucket, the per-utterance WER ECDF (from the `worst` rows,
+  at most 200 per cell: the whole set up to 200 utterances, else the labelled tail) and entity accuracy of the
+  selected cell; a folding "Streaming" section for the selected cell's golden set (WER against latency per model, the
+  primary profile marked and the subject's interval taken as the baseline's WER plus the delta's interval; latency to
+  final as p50/p95/max, with each cell's unavailable reason; partial stability) and a folding "Robustness" section
+  (degradation per golden set × augmentation × model × profile). Both start folded while empty. Not drawn: confusion
+  pairs, WER by SNR, bandwidth or speaker, emission delay (`evals.get` has no such data).
 - Golden set: the leakage row states the rule (the freeze checked it; nothing to recompute per view).
 - Language pack: Commit is enabled only for exactly the text that passed Check (the server's dry run).
 - Not built: "test a phrase", opening a row in Audio (stream A), Set as baseline and Adopt on the Model document, and

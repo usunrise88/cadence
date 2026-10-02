@@ -182,7 +182,7 @@ func TestEvalsEndToEnd(t *testing.T) {
 	expectProblem(t, e.do("POST", "/api/projects/evalp/evals", `{"subject":{}}`, "Idempotency-Key", e.key()), 422, "validation-failed")
 
 	// The dry run: target and replay golden sets at the primary profile (the matrix ∩ the family: 160ms), four cells to
-	// compute, the base model materialised first, 1.4 audio hours × 0.1 GPU-hours.
+	// compute, the base model materialised first, 1.4 audio hours × 0.015 GPU-hours.
 	var plan struct {
 		Subject, Baseline struct{ Kind, ModelKey, Source string }
 		Profiles          []struct{ Name string }
@@ -203,7 +203,7 @@ func TestEvalsEndToEnd(t *testing.T) {
 	if plan.Subject.Kind != "checkpoint" || plan.Baseline.Kind != "base_model" || plan.Baseline.Source != "request" ||
 		!strings.HasPrefix(plan.Baseline.ModelKey, "base:") || len(plan.Profiles) != 1 || plan.PrimaryProfile != "160ms" ||
 		len(plan.Cells) != 4 || plan.CellsCached != 0 || plan.CellsToCompute != 4 || plan.Estimate.AudioHours != 1.4 ||
-		plan.Estimate.GpuHours != 0.14 || len(plan.Steps) != 9 || plan.Steps[2] != (struct{ Step, Kind string }{"materialize-m2", "fx_materialize@1"}) {
+		plan.Estimate.GpuHours != 0.021 || len(plan.Steps) != 9 || plan.Steps[2] != (struct{ Step, Kind string }{"materialize-m2", "fx_materialize@1"}) {
 		t.Fatalf("plan %s", raw)
 	}
 	if n := e.count("SELECT count(*) FROM evals"); n != 0 {

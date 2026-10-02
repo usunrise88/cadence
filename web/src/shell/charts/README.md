@@ -62,7 +62,8 @@ Behaviour:
 
 ## `AnalyticsChart` (ECharts, lazy)
 
-For histograms, bars, heatmaps, scatter/Pareto, forest plots and parallel coordinates. ECharts loads on first render (its own chunk);
+For histograms, bars, heatmaps, scatter/Pareto, forest plots, parallel coordinates and lines (ECDFs, WER against
+latency). ECharts loads on first render (its own chunk);
 a small placeholder shows meanwhile.
 
 ```tsx
@@ -78,10 +79,12 @@ import { AnalyticsChart, type AnalyticsSpec } from "@/shell/charts";
 | `heatmap` | `x: string[]`, `y: string[]`, `cells: { x, y, value \| null }[]` (indexes), `colormap?: "magma" \| "viridis" \| "diverging"`, `range?`, `center?` (diverging: symmetric around it, default 0) |
 | `scatter` | `series: { id, label, slot?, points: { x, y, label? }[] }[]`, `front?: { x: "min" \| "max", y: "min" \| "max" }` (Pareto front line) |
 | `forest` | `rows: { label, estimate, low, high }[]`, `reference?` (default 0) |
+| `line` | `series: { id, label, slot?, step?, points: { x, y, low?, high?, label?, marked? }[] }[]`, `xMarks?: { label, value }[]` (vertical reference lines), `xType?: "value" \| "log"`, `yRange?` (a step series is an ECDF, drawn without symbols; `low`/`high` draw vertical interval bars in the series' colour; a marked point is larger and labelled with ★) |
 | `parallel` | `axes: { id, label, type?: "value" \| "log" \| "category", categories? }[]`, `lines: { id, label, slot?, values: (number \| string \| null)[], highlight? }[]` (one line per item, values in axis order; a highlighted line is wider and solid — the best run of an Experiment) |
 
-All kinds take `title`, `xLabel?`, `yLabel?`, `unit?`, `format?`. ARIA is on (the text summary is its
-description) and decal patterns are on for every series; scatter series also differ by symbol, heatmap cells print
+All kinds take `title`, `xLabel?`, `yLabel?`, `unit?`, `format?` and `note?` (appended to the text summary: what the
+data covers, how an interval was derived). ARIA is on (the text summary is its
+description) and decal patterns are on for every series; scatter and line series also differ by symbol (lines by dash too), heatmap cells print
 their values when there are at most 144. A theme switch calls `setTheme` on the live instance; nothing is
 re-created. Keyboard: ←/→ step through values, ↑/↓ move a row in heatmaps, Home/End, Escape; each stop is read out.
 

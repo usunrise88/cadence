@@ -8,7 +8,8 @@ import { PanelContext } from "@/shell/panel/context";
 import { useSelection } from "@/shell/selection/store";
 import { WORST_N } from "@/shell/evaluation/format";
 import { EvalPanel } from "./EvalPanel";
-import { EVAL, WORST } from "./testdata";
+import { ECDF_ROWS } from "./model";
+import { EVAL, EVAL_STREAMING, WORST } from "./testdata";
 
 const runCommand = vi.fn();
 const openDocument = vi.fn();
@@ -27,6 +28,8 @@ let qc: QueryClient;
 beforeEach(() => {
   qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
   qc.setQueryData(evalsGetQueryKey({ path: { id: "evl_1" }, query: { worst: WORST_N, cell: "evc_s_he_160" } }), { ...EVAL, cells: [{ ...EVAL.cells![0]!, worst: WORST }] });
+  // The ECDF reads up to ECDF_ROWS rows of the selected cell and of its baseline.
+  for (const c of EVAL.cells!.slice(0, 2)) qc.setQueryData(evalsGetQueryKey({ path: { id: "evl_1" }, query: { worst: ECDF_ROWS, cell: c.id } }), { ...EVAL, cells: [{ ...c, worst: WORST }] });
   useSelection.setState({ activeDoc: "eval:evl_1", selections: {}, pins: {} });
   runCommand.mockReset();
   openDocument.mockReset();
@@ -62,7 +65,7 @@ describe("Eval report", () => {
     expect(within(matrix).getByLabelText("Not evaluated at this profile")).toBeTruthy();
     expect(document.querySelector('[data-slot="gate-verdict"]')!.getAttribute("data-verdict")).toBe("passed");
     expect(screen.getByRole("list", { name: "Gate checks" }).querySelectorAll("li")).toHaveLength(2);
-    expect([...document.querySelectorAll("[data-chart]")].map((c) => c.getAttribute("data-chart"))).toEqual(["heatmap", "forest", "bar", "bar"]);
+    expect([...document.querySelectorAll("[data-chart]")].map((c) => c.getAttribute("data-chart"))).toEqual(["heatmap", "forest", "bar", "bar", "line", "line"]);
   });
 
   it("selects a cell into the selection bus and opens an utterance in Diff", async () => {
@@ -77,6 +80,40 @@ describe("Eval report", () => {
     fireEvent.keyDown(table.querySelector('[data-utterance="4"]')!, { key: "Enter" });
     expect(useSelection.getState().selections["eval:evl_1"]).toBe("cell:evc_s_he_160/utt:4");
     expect(openPanelById).toHaveBeenCalledWith("diff");
+  });
+
+  it("groups streaming and robustness charts; an empty section starts folded and still opens", () => {
+    wrap(EVAL);
+    const robustness = document.querySelector('[data-slot="robustness"]') as HTMLElement;
+    expect(robustness.getAttribute("data-empty")).toBe("true");
+    const toggle = within(robustness).getByRole("button", { name: "Robustness" });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(robustness.textContent).toContain("no augmentation axis");
+    const streaming = document.querySelector('[data-slot="streaming"]') as HTMLElement;
+    expect(within(streaming).getByRole("button", { name: "Streaming" }).getAttribute("aria-expanded")).toBe("true");
+    expect(within(streaming).getByText("WER against latency · fleurs-he")).toBeTruthy();
+  });
+
+  it("draws latency, stability, entity accuracy and the robustness matrix when the eval has them", () => {
+    wrap(EVAL_STREAMING);
+    const kinds = [...document.querySelectorAll("[data-chart]")].map((c) => c.textContent);
+    expect(kinds).toEqual(
+      expect.arrayContaining([
+        "Entity accuracy · fleurs-he · 160ms",
+        "WER against latency · fleurs-he",
+        "Latency to final · fleurs-he",
+        "Unstable partial words · fleurs-he",
+        "Partial edits per second · fleurs-he",
+        "WER degradation under augmentation",
+      ]),
+    );
+    expect(document.querySelector('[data-slot="robustness"]')!.textContent).toContain("telephony");
+    // The replay set has no latency: its reason shows instead of a chart.
+    fireEvent.click(document.querySelector('[data-cell="evc_s_sr_160"]')!);
+    const streaming = document.querySelector('[data-slot="streaming"]') as HTMLElement;
+    expect(within(streaming).getByRole("list", { name: "Why latency to final is unavailable" }).textContent).toContain("no VAD for sr");
   });
 
   it("runs the gate on this revision", async () => {
