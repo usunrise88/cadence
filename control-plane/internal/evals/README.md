@@ -20,7 +20,9 @@ scorer `wer_score` (newest published version of each).
   list for boost none.
 - **Cells and records**: one cell per role (subject, baseline) × golden set × profile × decoding; its record key is
   model key × golden set version × normalizer version × decoding hash × scorer `kind@version`, the decoding hash being
-  sha256 of `{transcribe: kind@version, profile, <locale param>: locale, boost?: {list, weight}}`. A key already in
+  sha256 of `{transcribe: kind@version, profile: <the family's own name>, <locale param>: <decode language>, params:
+  <every other transcribe parameter resolved against defaults.yaml but cuda_context_reserve_mb>, materialize?:
+  kind@version, boost?: {list, weight}, augment?}` (audit fix: a changed default makes new records). A key already in
   `eval_records` (any project) links the cell (`cached`); missing keys become units, one per key (a subject equal to
   its baseline computes once).
 - **Pipeline**: inputs `base_m<n>` / `model_m<n>`, `data_g<n>` (the golden set's dataset artifact), `norm_g<n>` (the
@@ -81,3 +83,14 @@ Phase 3 stream R (robustness and streaming scorers; `axes.go`, `metrics.go`, `li
 - **Lineage** (`LineageSource`, wired in `cmd/cadence`): an eval is built from its subject, baseline, golden sets,
   noise banks and the records of its cells; a record from its golden set, normalizer and model (checkpoints and model
   versions with its weights hash, or the base model version). Test: `evals_robustness_integration_test.go`.
+
+Phase 3 audit fixes (eval correctness; migration 0030 adds indexes):
+
+- Profiles line up by milliseconds (`sameLatency`, `profileFor`); `verdict` resolves the gate's `primaryProfile` with
+  `profileFor` against the eval's columns, as `chooseProfiles` does.
+- The VAD, entity and latency steps are `optional` pipeline steps: their failure leaves the run done, and `finish`
+  (`failedMetrics`) marks the metric unavailable with the step's error.
+- `checkLanguages` refuses a golden set whose decode language a compared base model lacks (`locale:` tags).
+- The model card and the robustness rows say CER for char-scored sets. Tests: `plan_test.go`,
+  `server/evals_audit_integration_test.go` (all axes with failing metric steps, retry reopening a failed eval, two
+  evals racing on one record key).

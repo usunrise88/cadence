@@ -22,6 +22,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/events"
 	"github.com/usunrise88/cadence/control-plane/internal/pipelines"
 	"github.com/usunrise88/cadence/control-plane/internal/problems"
+	"github.com/usunrise88/cadence/control-plane/internal/registry"
 	"github.com/usunrise88/cadence/control-plane/internal/runs"
 	"github.com/usunrise88/cadence/control-plane/internal/steps"
 	"github.com/usunrise88/cadence/control-plane/internal/storage"
@@ -116,6 +117,7 @@ type Model struct {
 
 	family   family
 	artifact steps.ArtifactRef // a checkpoint artifact, or the rendered base_model artifact of a base model
+	base     registry.Version  // the base model version (itself for a base model): its locale tags
 }
 
 // Profile is a latency profile of a family descriptor (R43).

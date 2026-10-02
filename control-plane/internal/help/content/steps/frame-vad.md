@@ -33,7 +33,9 @@ the latency summary names the model and revision it relied on.
 
 Evaluate — `vad-g<n>a<k>` once per dataset (golden or augmented) in an eval pipeline, before the `latency_score` steps
 of its streaming cells. The control plane picks the newest published step kind that turns a `dataset` into a `vad`
-artifact, so a later per-channel VAD (phase 4) replaces it without a change to the eval.
+artifact, so a later per-channel VAD (phase 4) replaces it without a change to the eval. The step is optional in the
+eval's pipeline: when it fails, the latency steps that read it are skipped, the eval still finishes and gates on WER,
+and those cells show latency to final unavailable.
 
 ## Fields and defaults
 

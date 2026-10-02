@@ -6685,6 +6685,7 @@ components:
         kind: { type: string, description: "kind@version, pinned" }
         in: { type: object, additionalProperties: { type: string }, description: "Step input → $inputs.<name> or <step>.<output>" }
         params: { type: object, description: Only the parameters that depart from defaults }
+        optional: { type: boolean, default: false, description: "The step's failure does not fail the run: the steps that read its outputs (optional too) are skipped and the run ends done without them" }
     PipelineRunNew:
       type: object
       additionalProperties: false
@@ -7662,7 +7663,7 @@ components:
         unicode: { type: string, enum: [NFC, NFKC], description: Unicode normalisation form applied first }
         casefold: { type: boolean }
         punctuation: { type: string, enum: [keep, strip], description: "strip turns every Unicode punctuation character (categories P*) into a space" }
-        removeMarks: { type: boolean, description: "Remove combining marks (niqqud, accents) after canonical decomposition, then recompose" }
+        removeMarks: { type: boolean, description: "Remove nonspacing combining marks (niqqud, accents) after canonical decomposition, then recompose in the unicode form" }
         mappings:
           type: array
           description: Literal replacements applied in order after the Unicode step and before punctuation
@@ -8235,6 +8236,7 @@ components:
         wer: { type: number, format: double, description: WER under the augmentation (absent until scored) }
         werNone: { type: number, format: double, description: WER of the same cell without augmentation }
         degradation: { type: number, format: double, description: "wer − werNone (absolute, a fraction)" }
+        unit: { type: string, enum: [char], description: "char when the golden set is scored on CER (eval.character_error_languages): wer, werNone and degradation are character error rates" }
     # ---------------------------------------------------------------- language packs, boost lists, lineage schemas (phase 3 · stream L) — add below
 
     PackLocaleName:

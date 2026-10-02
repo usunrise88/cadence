@@ -2,7 +2,8 @@
 # payload is the contract's NormalizerPayload: the rules both sides of a WER are compared after (the Unicode form
 # first, mappings before punctuation; the field descriptions say where each applies). A changed rule is a
 # new version of the same collection (the registry keeps the old one); a golden set pins the version it was frozen
-# with, so its scores stay comparable. The scorer (wer_score) interprets the payload; so does internal/textnorm (Go),
+# with, so its scores stay comparable, and a golden set frozen again (goldenSets.freeze) takes the newest version.
+# normalizer/he-il's second version (2026-10-02) added the typographic quotes U+2018/U+2019/U+201C/U+201D. The scorer (wer_score) interprets the payload; so does internal/textnorm (Go),
 # with the same steps, for the search index's per-locale folding.
 - name: normalizer/basic
   description: Language-neutral scoring normalizer — NFKC, case folded, punctuation stripped, marks kept, no mappings
@@ -38,6 +39,10 @@
       - { from: "\u05F3", to: "" }   # geresh ׳ (ג׳ → ג)
       - { from: "\"", to: "" }       # ASCII " written for gershayim
       - { from: "'", to: "" }        # ASCII ' written for geresh
+      - { from: "”", to: "" }   # ” written for gershayim (צה”ל), as word processors replace "
+      - { from: "“", to: "" }   # “ its opening twin
+      - { from: "’", to: "" }   # ’ written for geresh (ג’ירפה), as word processors replace '
+      - { from: "‘", to: "" }   # ‘ its opening twin
       - { from: "\u05BE", to: " " }  # maqaf ־ joins words: split them
       - { from: "\u200B", to: "" }   # zero-width space
       - { from: "\u200C", to: "" }   # zero-width non-joiner
@@ -62,6 +67,7 @@
       written for geresh and gershayim so acronyms compare as one word, then Whisper's BasicTextNormalizer (case
       folding, punctuation and symbols to spaces, whitespace collapsed). Cadence departs in two places: the Hebrew
       geresh (U+05F3) and gershayim (U+05F4) are joined like their ASCII stand-ins (ivrit.ai turns them into spaces,
-      so צה״ל and צה"ל scored differently), and the maqaf (U+05BE) splits words explicitly. Combining marks
+      so צה״ל and צה"ל scored differently), the typographic quotes word processors put in their place (U+2018,
+      U+2019, U+201C, U+201D) are joined too, and the maqaf (U+05BE) splits words explicitly. Combining marks
       (niqqud U+05B0–U+05C7 and cantillation U+0591–U+05AF) are removed after canonical decomposition. Numbers are
       compared as written until the language pack's inverse normalisation arrives (phase 4).

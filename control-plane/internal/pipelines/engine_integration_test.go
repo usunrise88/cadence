@@ -789,3 +789,34 @@ func TestOptionalOutputs(t *testing.T) {
 		t.Fatalf("plan of a pipeline wiring an optional output: %v", err)
 	}
 }
+
+// TestOptionalStepFailureLeavesTheRunDone: an optional step that fails skips the optional steps reading it, and the
+// run ends done once the rest has; a step reading an optional one must be optional too.
+func TestOptionalStepFailureLeavesTheRunDone(t *testing.T) {
+	r := newRig(t, nil)
+	p := &pipelines.Pipeline{Name: "soft", Inputs: map[string]string{"text": "text"}, Steps: []pipelines.Step{
+		{ID: "main", Kind: "echo@1", In: map[string]string{"text": "$inputs.text"}},
+		{ID: "extra", Kind: "echo@1", In: map[string]string{"text": "$inputs.text"}, Optional: true},
+		{ID: "after", Kind: "tally@1", In: map[string]string{"text": "extra.text"}, Optional: true},
+		{ID: "count", Kind: "tally@1", In: map[string]string{"text": "main.text"}},
+	}}
+	r.leases.Script("extra", pipelinestest.Action{Fail: &steps.StepError{Type: steps.ErrStep, Message: "no VAD"}})
+	in := r.input("abc")
+	in.Pipeline = p
+	run := r.wait(r.start(in).ID, pipelines.RunDone)
+	if s := stepOf(t, run, "extra"); s.State != pipelines.StepFailed || s.Error == nil || s.Error.Message != "no VAD" {
+		t.Fatalf("extra %+v", s)
+	}
+	if s := stepOf(t, run, "after"); s.State != pipelines.StepSkipped {
+		t.Fatalf("after %+v", s)
+	}
+	if s := stepOf(t, run, "count"); s.State != pipelines.StepDone {
+		t.Fatalf("count %+v", s)
+	}
+	p.Steps[2].Optional = false
+	err := p.Check("")
+	var pe *problems.Error
+	if !errors.As(err, &pe) || len(pe.Errors) == 0 || !strings.Contains(pe.Errors[0].Message, "optional") {
+		t.Fatalf("a required step reading an optional one: %v", err)
+	}
+}

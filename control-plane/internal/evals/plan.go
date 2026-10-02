@@ -181,6 +181,9 @@ func (s *Service) Prepare(ctx context.Context, q storage.Querier, in NewInput) (
 				Message: fmt.Sprintf("no golden set of this eval has locale %s", loc)}})
 		}
 	}
+	if err := checkLanguages(pl.GoldenSets, pl.Subject, pl.Baseline); err != nil {
+		return Plan{}, err
+	}
 	if pl.Profiles, pl.PrimaryProfile, err = chooseProfiles(d, gf.Gate.PrimaryProfile, in.Profiles, pl.Subject.family, pl.Baseline.family); err != nil {
 		return Plan{}, err
 	}
@@ -288,7 +291,7 @@ func (s *Service) checkpointModel(ctx context.Context, q storage.Querier, p proj
 	if key == "" {
 		key = c.Artifact
 	}
-	return Model{Kind: "checkpoint", ID: c.ID, Label: label, ModelKey: key, Family: f.Name, RunID: c.RunID, family: f, artifact: ref}, nil
+	return Model{Kind: "checkpoint", ID: c.ID, Label: label, ModelKey: key, Family: f.Name, RunID: c.RunID, family: f, artifact: ref, base: base}, nil
 }
 
 // modelPayload is the part of ModelPayload an eval reads.
@@ -315,7 +318,7 @@ func (s *Service) versionModel(ctx context.Context, q storage.Querier, v registr
 		if err != nil {
 			return Model{}, err
 		}
-		return Model{Kind: "base_model", ID: v.ID, Label: label, ModelKey: "base:" + v.ID, Family: f.Name, family: f, artifact: ref}, nil
+		return Model{Kind: "base_model", ID: v.ID, Label: label, ModelKey: "base:" + v.ID, Family: f.Name, family: f, artifact: ref, base: v}, nil
 	case registry.KindModel:
 		var mp modelPayload
 		if err := json.Unmarshal(v.Payload, &mp); err != nil {
@@ -337,7 +340,7 @@ func (s *Service) versionModel(ctx context.Context, q storage.Querier, v registr
 		if key == "" {
 			key = mp.CheckpointHash
 		}
-		return Model{Kind: "model", ID: v.ID, Label: label, ModelKey: key, Family: f.Name, RunID: mp.Lineage.RunID, family: f, artifact: ref}, nil
+		return Model{Kind: "model", ID: v.ID, Label: label, ModelKey: key, Family: f.Name, RunID: mp.Lineage.RunID, family: f, artifact: ref, base: base}, nil
 	}
 	return Model{}, problems.Conflict.New("%s %s is a %s; an eval compares checkpoints, model versions and base models", v.Name, v.Version, registry.Noun(v.Kind))
 }
@@ -547,6 +550,47 @@ func Target(gs GoldenSet, g Gate, locales []string) bool {
 	return !Replay(gs, g, locales)
 }
 
+// checkLanguages refuses, before any GPU time, a golden set whose decode language (its locale, or the language
+// evals.new's languages maps it to) a compared model's base model does not know: the base model's locale:<code> tags,
+// as runs.CheckLanguages reads them for a training stage. A base model without locale tags is not checked. The answer
+// names languages, the fix (decode the set in a close language the model knows).
+func checkLanguages(sets []GoldenSet, models ...Model) error {
+	var fields []problems.FieldError
+	seen := map[string]bool{}
+	for _, m := range models {
+		known := map[string]bool{}
+		var list []string
+		for _, t := range m.base.Tags {
+			if code, ok := strings.CutPrefix(t, "locale:"); ok && code != "" {
+				if l := language(code); !known[l] {
+					known[l] = true
+					list = append(list, l)
+				}
+			}
+		}
+		if len(known) == 0 {
+			continue
+		}
+		slices.Sort(list)
+		for _, gs := range sets {
+			l := gs.decodeLanguage()
+			if l == "" || known[language(l)] || seen[gs.VersionID+"|"+m.base.ID] {
+				continue
+			}
+			seen[gs.VersionID+"|"+m.base.ID] = true
+			fields = append(fields, problems.FieldError{Path: "/languages/" + gs.Locale, Message: fmt.Sprintf(
+				"golden set %s decodes in %s, a language %s (base model %s) does not know (it knows %s); set languages: {%q: <a close language it knows>} to decode the set in it",
+				gs.Name, l, m.Label, m.base.Name, strings.Join(list, ", "), gs.Locale)})
+		}
+	}
+	if len(fields) == 0 {
+		return nil
+	}
+	pe := problems.Validation(fields)
+	pe.Detail = fields[0].Message
+	return pe
+}
+
 func language(locale string) string {
 	l, _, _ := strings.Cut(strings.ReplaceAll(locale, "_", "-"), "-")
 	return strings.ToLower(strings.TrimSpace(l))
@@ -556,14 +600,50 @@ func language(locale string) string {
 
 var msRe = regexp.MustCompile(`^([0-9]+(?:\.[0-9]+)?)ms$`)
 
+// sameLatency reports whether two profiles are the same column: the same milliseconds when both state them (families
+// line up by latency, R43), else the same name.
+func sameLatency(a, b Profile) bool {
+	if a.LatencyMs > 0 && b.LatencyMs > 0 {
+		return a.LatencyMs == b.LatencyMs
+	}
+	return a.Name == b.Name
+}
+
+// profileFor finds the profile name names among ps: by name, else by the milliseconds the name states ("160ms" finds
+// the profile of 160 ms whatever a family calls it). The gate's primaryProfile and evals.new's profiles resolve
+// through it, in planning and in the verdict alike.
+func profileFor(ps []Profile, name string) (Profile, bool) {
+	name = strings.TrimSpace(name)
+	if i := slices.IndexFunc(ps, func(p Profile) bool { return p.Name == name }); i >= 0 {
+		return ps[i], true
+	}
+	if m := msRe.FindStringSubmatch(name); m != nil {
+		ms, _ := strconv.ParseFloat(m[1], 64)
+		if i := slices.IndexFunc(ps, func(p Profile) bool { return p.LatencyMs == ms }); i >= 0 {
+			return ps[i], true
+		}
+	}
+	return Profile{}, false
+}
+
+// own is the name family f gives the matrix column p (its profile at the same latency); p's name when f has none.
+// A transcribe step decodes at, and a decoding hash names, the family's own profile.
+func (f family) own(p Profile) string {
+	if i := slices.IndexFunc(f.Profiles, func(o Profile) bool { return sameLatency(o, p) }); i >= 0 {
+		return f.Profiles[i].Name
+	}
+	return p.Name
+}
+
 // chooseProfiles picks the matrix columns: the requested profiles, else eval.matrix_profiles that every model's family
-// declares (else all they share), always with the primary profile when the families have it (by name, else by
-// latency: families line up by milliseconds, R43).
+// declares (else all they share), always with the primary profile when the families have it. Families share a
+// profile when they declare its latency (R43); a column carries the first family's (the subject's) name, and a
+// requested name or the primary profile may be any compared family's name or "<n>ms".
 func chooseProfiles(d *defaults.Defaults, primary string, requested []string, fams ...family) ([]Profile, string, error) {
 	shared := slices.Clone(fams[0].Profiles)
 	for _, f := range fams[1:] {
 		shared = slices.DeleteFunc(shared, func(p Profile) bool {
-			return !slices.ContainsFunc(f.Profiles, func(o Profile) bool { return o.Name == p.Name })
+			return !slices.ContainsFunc(f.Profiles, func(o Profile) bool { return sameLatency(o, p) })
 		})
 	}
 	names := make([]string, 0, len(shared))
@@ -571,11 +651,20 @@ func chooseProfiles(d *defaults.Defaults, primary string, requested []string, fa
 		names = append(names, p.Name)
 	}
 	find := func(name string) (Profile, bool) {
-		i := slices.IndexFunc(shared, func(p Profile) bool { return p.Name == name })
-		if i < 0 {
-			return Profile{}, false
+		if p, ok := profileFor(shared, name); ok {
+			return p, true
 		}
-		return shared[i], true
+		for _, f := range fams[1:] { // another family's name for a shared latency
+			if fp, ok := profileFor(f.Profiles, name); ok {
+				if i := slices.IndexFunc(shared, func(p Profile) bool { return sameLatency(p, fp) }); i >= 0 {
+					return shared[i], true
+				}
+			}
+		}
+		return Profile{}, false
+	}
+	if len(shared) == 0 {
+		return nil, "", problems.FamilyUnavailable.New("the compared models' families share no latency profile")
 	}
 	var out []Profile
 	if len(requested) > 0 {
@@ -596,7 +685,7 @@ func chooseProfiles(d *defaults.Defaults, primary string, requested []string, fa
 		}
 	} else {
 		for _, name := range d.Eval.MatrixProfiles.Value {
-			if p, ok := find(name); ok {
+			if p, ok := find(name); ok && !slices.ContainsFunc(out, func(o Profile) bool { return o.Name == p.Name }) {
 				out = append(out, p)
 			}
 		}
@@ -604,18 +693,7 @@ func chooseProfiles(d *defaults.Defaults, primary string, requested []string, fa
 			out = slices.Clone(shared)
 		}
 	}
-	if len(shared) == 0 {
-		return nil, "", problems.FamilyUnavailable.New("the compared models' families share no latency profile")
-	}
 	prim, ok := find(primary)
-	if !ok {
-		if m := msRe.FindStringSubmatch(primary); m != nil {
-			ms, _ := strconv.ParseFloat(m[1], 64)
-			if i := slices.IndexFunc(shared, func(p Profile) bool { return p.LatencyMs == ms }); i >= 0 {
-				prim, ok = shared[i], true
-			}
-		}
-	}
 	if !ok {
 		return out, "", nil // the gate reports the missing primary cell
 	}
@@ -761,7 +839,7 @@ type unit struct {
 	gs        int
 	dec       int
 	aug       int
-	profile   string
+	profile   Profile // the column; the transcribe step decodes at its family's own profile
 	score     string
 	transcode string
 }
@@ -849,13 +927,49 @@ func (b *builder) kinds(ctx context.Context, m *Model) error {
 	return nil
 }
 
-// decoding is the decoding configuration a record key hashes (R22: latency, boost list, the decoder version) and,
-// for an augmented cell, the augmentation (the kind that applies it, the profile's content hash and the seed): an
-// unaugmented cell hashes exactly as before the robustness axis existed, so its records stay valid as none.
-func (b *builder) decoding(ms *modelSteps, profile string, gs GoldenSet, d Decoding, a Augmentation) (map[string]any, string) {
-	dec := map[string]any{"transcribe": ms.transcribe.Ref(), "profile": profile}
+// outputNeutralParams are transcribe parameters that change how a decode runs, never what it writes (the memory kept
+// back for the CUDA context): the decoding hash leaves them out, so tuning them keeps the eval records. The batch size
+// is not one: at 80 ms the card's batched matrix products flip the base model's near-ties, so a batch of 8 and a
+// batch of 1 can differ by a word (the streaming pack's batched decode, 2026-10-02 GPU check).
+var outputNeutralParams = []string{"cuda_context_reserve_mb"}
+
+// transcribeParams are the parameters an eval writes for a model's transcribe step: the family's own profile at the
+// column and the language the golden set decodes in.
+func (ms *modelSteps) transcribeParams(prof Profile, gs GoldenSet) map[string]any {
+	tp := map[string]any{}
+	if _, ok := kindParams(ms.transcribe)["profile"]; ok {
+		tp["profile"] = ms.model.family.own(prof)
+	}
+	if ms.localeParam != "" && gs.decodeLanguage() != "" {
+		tp[ms.localeParam] = gs.decodeLanguage()
+	}
+	return tp
+}
+
+// decoding is the decoding configuration a record key hashes (R22): the transcribe kind, the family's profile at the
+// column, the decode language, every other transcribe parameter as the run resolves it against defaults.yaml (a
+// changed default, e.g. the end-of-utterance history, makes new records; outputNeutralParams excepted), the boost
+// list, the materialize kind of a base model (its weights come from that step), and for an augmented cell the
+// augmentation (the kind that applies it, the profile's content hash and the seed).
+func (b *builder) decoding(ms *modelSteps, prof Profile, gs GoldenSet, d Decoding, a Augmentation) (map[string]any, string) {
+	own := ms.model.family.own(prof)
+	dec := map[string]any{"transcribe": ms.transcribe.Ref(), "profile": own}
 	if ms.localeParam != "" && gs.decodeLanguage() != "" {
 		dec[ms.localeParam] = gs.decodeLanguage()
+	}
+	written := ms.transcribeParams(prof, gs)
+	resolved, _ := pipelines.ResolveParams(ms.transcribe, written, b.s.defaults()) // problems surface when the pipeline is planned
+	params := map[string]any{}
+	for k, v := range resolved {
+		if _, set := written[k]; !set && !slices.Contains(outputNeutralParams, k) {
+			params[k] = v
+		}
+	}
+	if len(params) > 0 {
+		dec["params"] = params
+	}
+	if ms.materialize != nil {
+		dec["materialize"] = ms.materialize.Ref()
 	}
 	if d.Boost != "none" {
 		dec["boost"] = map[string]any{"list": d.Artifact, "weight": *d.Weight}
@@ -885,7 +999,7 @@ func (b *builder) cells(ctx context.Context) error {
 							m = &pl.Baseline
 						}
 						ms := b.models[m.ModelKey]
-						_, dhash := b.decoding(ms, prof.Name, gs, d, a)
+						_, dhash := b.decoding(ms, prof, gs, d, a)
 						k := Key{ModelKey: m.ModelKey, GoldenSetVersionID: gs.VersionID, NormalizerVersionID: gs.NormalizerVersionID,
 							DecodingHash: dhash, Scorer: b.scorer.Ref()}
 						c := PlanCell{Role: role, GoldenSetVersionID: gs.VersionID, Profile: prof.Name, DecodingIndex: di, AugmentationIndex: ai,
@@ -901,7 +1015,7 @@ func (b *builder) cells(ctx context.Context) error {
 						} else {
 							u, ok := b.units[k.String()]
 							if !ok {
-								u = &unit{key: k, ms: ms, gs: gi, dec: di, aug: ai, profile: prof.Name}
+								u = &unit{key: k, ms: ms, gs: gi, dec: di, aug: ai, profile: prof}
 								b.units[k.String()] = u
 								b.order = append(b.order, u)
 							}
@@ -1070,6 +1184,10 @@ func (g *gen) step(id string, k pipelines.Kind, in map[string]string) {
 	g.b.plan.Steps = append(g.b.plan.Steps, PlanStep{Step: id, Kind: k.Ref()})
 }
 
+// optional marks the step just added optional: a metric reported beside WER (and the VAD it reads) never fails the
+// eval; the cell shows that metric unavailable with the step's error (finish).
+func (g *gen) optional() { g.p.Steps[len(g.p.Steps)-1].Optional = true }
+
 func (g *gen) input(name, typ string, ref steps.ArtifactRef) string {
 	if _, ok := g.inputs[name]; !ok {
 		g.p.Inputs[name], g.inputs[name] = typ, ref
@@ -1155,6 +1273,7 @@ func (g *gen) vadOf(ctx context.Context, gi, ai int) (string, error) {
 	out, _ := producesType(k, TypeVAD)
 	id := fmt.Sprintf("vad-g%da%d", gi+1, ai)
 	g.step(id, k, map[string]string{port: data})
+	g.optional()
 	w := id + "." + out
 	g.vad[[2]int{gi, ai}] = w
 	return w, nil
@@ -1231,14 +1350,7 @@ func (g *gen) unit(ctx context.Context, u *unit) error {
 	if !ok {
 		return problems.RecipeMismatch.New("the transcribe step kind %s produces no hypotheses", ms.transcribe.Ref())
 	}
-	tp := map[string]any{}
-	if _, ok := kindParams(ms.transcribe)["profile"]; ok {
-		tp["profile"] = u.profile
-	}
-	if ms.localeParam != "" && gs.decodeLanguage() != "" {
-		tp[ms.localeParam] = gs.decodeLanguage()
-	}
-	g.params[tid] = tp
+	g.params[tid] = ms.transcribeParams(u.profile, gs)
 	g.estimates[tid] = gs.Hours * b.perAudioHour * 3600
 	g.step(tid, ms.transcribe, tin)
 	g.hyp[u.key.String()] = tid + "." + hyp
@@ -1318,6 +1430,7 @@ func (g *gen) metrics(ctx context.Context, ks string) error {
 			return problems.RecipeMismatch.New("the metric scorer %s produces no metric_scores", k.Ref())
 		}
 		g.step(id, k, in)
+		g.optional()
 		mp.Step = id
 		sl.plans[metric] = mp
 	}

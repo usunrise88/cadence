@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import random
 import unicodedata
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -66,6 +67,19 @@ def norm(**over: Any) -> Normalizer:
 )
 def test_examples(over: dict[str, Any], text: str, want: str) -> None:
     assert norm(**over)(text) == want
+
+
+PARITY = Path(__file__).parent / "fixtures" / "normalizer_parity.json"
+
+
+def test_parity_fixture() -> None:
+    """The shared fixture the control plane's interpreter (internal/textnorm) is tested against holds this
+    interpreter's outputs: the two give the same text for the same payload."""
+    doc = json.loads(PARITY.read_text(encoding="utf-8"))
+    assert doc["cases"]
+    ns = {name: Normalizer.from_json(json.dumps(p)) for name, p in doc["normalizers"].items()}
+    for c in doc["cases"]:
+        assert ns[c["normalizer"]](c["in"]) == c["want"], (c["normalizer"], c["in"])
 
 
 def test_mappings_apply_in_order_after_unicode_and_before_punctuation() -> None:

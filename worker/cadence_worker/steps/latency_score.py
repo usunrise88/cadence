@@ -1,4 +1,4 @@
-"""``latency_score@1`` — latency to final at real-time pace (R54; docs/spec/03-pipelines-defaults.md "Scorers and
+"""``latency_score@2`` — latency to final at real-time pace (R54; docs/spec/03-pipelines-defaults.md "Scorers and
 metrics"; phase 3 stream R): the time from an utterance's end to the final that covers it, p50 and p95, from the
 partial events of the ``hypotheses`` artifact (R42) and the utterance ends of a ``vad`` artifact (a frame-VAD step).
 
@@ -15,11 +15,13 @@ latency = the time that partial is emitted - the speech end the VAD found. A fin
 VAD's hangover after the last word) counts as 0 and is counted in ``earlyFinals``.
 
 Emit times at real-time pace. A decode run at real-time pace (``decoding.pace == "realtime"``) emits each partial at
-``emitMs`` after its stream started, used as is. A file decode runs as fast as the card allows (``emitMs`` is the wall
-time since the batch's decode started, the batch's streams decoded together); its emit times at real-time pace are
-simulated from its own compute times: chunk k's audio is available at ``audioOffsetMs[k]`` and takes
-``emitMs[k] - emitMs[k-1]`` to decode, so ``emit[k] = max(audioOffsetMs[k], emit[k-1]) + (emitMs[k] - emitMs[k-1])``
-(a decoder slower than real time queues). ``pace`` in the summary says which (``realtime`` | ``simulated``).
+``emitMs`` after its stream started, used as is. A file decode runs as fast as the card allows; its emit times at
+real-time pace are simulated from its own compute (:func:`paced_emits`): from the row's ``steps`` — every chunk the
+stream stepped, with the audio it made available and its compute (the batch step's wall time over the streams it
+stepped, so independent of the batch size) — when the partials name their chunk (``step``); else, for hypotheses
+written before them, from the partials' ``emitMs`` (version 1's method, which charged a partial the silent chunks
+before it and the batch's other streams). A decoder slower than real time queues. ``pace`` in the summary says
+``realtime`` | ``simulated``, ``timing`` what a simulation used (``steps`` | ``events``).
 Help: docs/help/steps/latency-score.md.
 """
 
@@ -38,7 +40,7 @@ from cadence_worker.steps.base import StepInputError
 from cadence_worker.steps.context import StepContext
 from cadence_worker.steps.wer_score import read_hypotheses, read_references
 
-SCORER = "latency_score@1"
+SCORER = "latency_score@2"
 METRIC = "latency"
 
 
@@ -70,16 +72,47 @@ def read_vad(path: Path) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
     return rows, header
 
 
-def paced_emits(partials: Sequence[Mapping[str, Any]], realtime: bool) -> list[float]:
-    """The emit time of each partial at real-time pace, in ms from the stream's start."""
+def chunk_steps(raw: Any, partials: Sequence[Mapping[str, Any]]) -> list[tuple[float, float]] | None:
+    """A hypotheses row's ``steps`` ([audio available ms, compute ms] per chunk) when every partial names its chunk
+    (``step``); None when the row predates them or they do not fit."""
+    if not isinstance(raw, list) or not raw:
+        return None
+    try:
+        steps = [(float(s[0]), max(0.0, float(s[1]))) for s in raw]
+    except (TypeError, ValueError, IndexError):
+        return None
+    for p in partials:
+        k = p.get("step")
+        if not isinstance(k, int) or isinstance(k, bool) or not 0 <= k < len(steps):
+            return None
+    return steps
+
+
+def paced_emits(
+    partials: Sequence[Mapping[str, Any]], realtime: bool, steps: Sequence[tuple[float, float]] | None = None
+) -> list[float]:
+    """The emit time of each partial at real-time pace, in ms from the stream's start.
+
+    With the decode's chunk steps (every chunk the stream stepped, silent ones included), chunk k's audio is available
+    at ``steps[k][0]`` and takes ``steps[k][1]`` to decode; a chunk waits for the one before it, so
+    ``done[k] = max(available[k], done[k-1]) + compute[k]``, and a partial is emitted when the chunk that produced it
+    is done. Without them (hypotheses of an older decode), the partials' own ``emitMs`` stand in: the wall time between
+    two partials is the second one's compute, which also charges it the silent chunks between them and, in a batched
+    decode, the other streams' compute (an overstatement)."""
+    if realtime:
+        return [float(p.get("emitMs") or 0.0) for p in partials]
+    if steps is not None:
+        done: list[float] = []
+        prev = 0.0
+        for available, compute in steps:
+            prev = max(available, prev) + compute
+            done.append(prev)
+        return [done[int(p["step"])] for p in partials]
     out: list[float] = []
     prev_wall = 0.0
     prev_emit = 0.0
     for p in partials:
         wall = float(p.get("emitMs") or 0.0)
-        if realtime:
-            out.append(wall)
-            continue
         offset = float(p.get("audioOffsetMs") or 0.0)
         compute = max(0.0, wall - prev_wall)
         emit = max(offset, prev_emit) + compute
@@ -104,6 +137,7 @@ def score(
     latencies: list[float] = []
     early = no_speech = empty = no_partials = 0
     paces: set[str] = set()
+    timings: set[str] = set()
     profile = None
     for i, r in enumerate(refs):
         h = hyps.get(r.audio)
@@ -129,7 +163,10 @@ def score(
             continue
         realtime = decoding.get("pace") == "realtime"
         paces.add("realtime" if realtime else "simulated")
-        emits = paced_emits(partials, realtime)
+        steps = None if realtime else chunk_steps(h.get("steps"), partials)
+        if not realtime:
+            timings.add("steps" if steps is not None else "events")
+        emits = paced_emits(partials, realtime, steps)
         k = final_index(partials, final)
         end_ms = float(end_s) * 1000
         lat = emits[k] - end_ms
@@ -157,6 +194,8 @@ def score(
         "metric": METRIC,
         "available": bool(latencies),
         "pace": "mixed" if len(paces) > 1 else (next(iter(paces)) if paces else "simulated"),
+        # what a simulated pace was computed from: the decode's chunk steps, or (older hypotheses) its partials' times
+        "timing": "mixed" if len(timings) > 1 else (next(iter(timings)) if timings else None),
         "utteranceEnd": "vad",
         "profile": profile,
         "utterances": len(refs),
@@ -178,7 +217,7 @@ def score(
 
 
 class LatencyScoreStep:
-    version: ClassVar[str] = "1"
+    version: ClassVar[str] = "2"
     consumes: ClassVar[Mapping[str, str]] = {"hypotheses": "hypotheses", "data": "dataset", "vad": "vad"}
     produces: ClassVar[Mapping[str, str]] = {"scores": "metric_scores"}
     resources: ClassVar[StepResources] = {"gpu": False, "gpus": 0, "jobKind": "eval"}

@@ -33,6 +33,7 @@ func TestSeededNormalizers(t *testing.T) {
 		{"normalizer/he-il", "שָׁלוֹם, עוֹלָם!", "שלום עולם"},
 		{"normalizer/he-il", "צה״ל וצה\"ל", "צהל וצהל"},
 		{"normalizer/he-il", "ג׳ירפה", "גירפה"},
+		{"normalizer/he-il", "צה”ל ג’ירפה “מרכאות” ‘ציטוט’", "צהל גירפה מרכאות ציטוט"},
 		{"normalizer/he-il", "בית־ספר", "בית ספר"},
 		{"normalizer/he-il", "\u200Fשלום\u200E", "שלום"},
 		{"normalizer/he-il", "WhatsApp", "whatsapp"},

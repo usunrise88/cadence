@@ -118,6 +118,11 @@ func (s *Service) scoresHook(ctx context.Context, tx pgx.Tx, out steps.Output) (
 		}
 	}
 	decoding := map[string]any{"profile": c.Profile}
+	for _, gs := range e.GoldenSets {
+		if gs.VersionID == c.GoldenSetVersionID && gs.decodeLanguage() != "" {
+			decoding["language"] = gs.decodeLanguage() // the language both models decoded in (evals.new languages)
+		}
+	}
 	if c.DecodingIndex < len(e.Decoding) {
 		d := e.Decoding[c.DecodingIndex]
 		decoding["boost"] = d.Boost
@@ -257,8 +262,50 @@ func (s *Service) finish(ctx context.Context, tx pgx.Tx, e *Eval) ([]events.Draf
 	if err := s.computeDeltas(ctx, tx, e, cells); err != nil {
 		return nil, err
 	}
+	if err := failedMetrics(ctx, tx, e, cells); err != nil {
+		return nil, err
+	}
 	e.Status, e.Error, e.FinishedAt = StatusDone, "", &now
 	return s.changed(ctx, tx, e)
+}
+
+// failedMetrics marks unavailable, with the step's error, each metric whose step failed or was skipped: metric steps
+// (and the VAD) are optional in the eval's pipeline, so their failure leaves the WER cells and the gate alone.
+func failedMetrics(ctx context.Context, tx pgx.Tx, e *Eval, cells []Cell) error {
+	if e.PipelineRunID == "" {
+		return nil
+	}
+	r, err := pipelines.Get(ctx, tx, e.PipelineRunID)
+	if err != nil {
+		return err
+	}
+	why := map[string]string{}
+	for _, st := range r.Steps {
+		switch {
+		case st.State == pipelines.StepFailed && st.Error != nil:
+			why[st.Step] = fmt.Sprintf("step %s failed (%s): %s", st.Step, st.Error.Type, st.Error.Message)
+		case st.State == pipelines.StepFailed:
+			why[st.Step] = fmt.Sprintf("step %s failed", st.Step)
+		case st.State == pipelines.StepSkipped:
+			why[st.Step] = fmt.Sprintf("step %s was skipped: a step it reads (the VAD) failed", st.Step)
+		}
+	}
+	for _, c := range cells {
+		changed := false
+		for metric, mp := range c.Metrics {
+			if reason, ok := why[mp.Step]; ok && mp.Step != "" && mp.Unavailable == "" {
+				mp.Unavailable = reason
+				c.Metrics[metric], changed = mp, true
+			}
+		}
+		if !changed {
+			continue
+		}
+		if _, err := tx.Exec(ctx, "UPDATE eval_cells SET metrics = $2 WHERE id = $1", c.ID, mustJSON(c.Metrics)); err != nil {
+			return fmt.Errorf("mark the metrics of %s unavailable: %w", c.ID, err)
+		}
+	}
+	return nil
 }
 
 // computeDeltas stores each subject cell's delta at the eval's significance.

@@ -1,0 +1,438 @@
+{
+ "description": "Scoring normalizer parity: the worker's interpreter (cadence_worker.normalize) and the control plane's (internal/textnorm) give these outputs for these payloads and inputs. The Python interpreter is the reference (it scores); regenerate the wants with it when a step changes on purpose.",
+ "normalizers": {
+  "basic": {
+   "locale": "*",
+   "unicode": "NFKC",
+   "casefold": true,
+   "punctuation": "strip",
+   "removeMarks": false,
+   "mappings": [],
+   "numbers": "keep"
+  },
+  "he-il": {
+   "locale": "he-IL",
+   "unicode": "NFKC",
+   "casefold": true,
+   "punctuation": "strip",
+   "removeMarks": true,
+   "mappings": [
+    {
+     "from": "״",
+     "to": ""
+    },
+    {
+     "from": "׳",
+     "to": ""
+    },
+    {
+     "from": "\"",
+     "to": ""
+    },
+    {
+     "from": "'",
+     "to": ""
+    },
+    {
+     "from": "”",
+     "to": ""
+    },
+    {
+     "from": "“",
+     "to": ""
+    },
+    {
+     "from": "’",
+     "to": ""
+    },
+    {
+     "from": "‘",
+     "to": ""
+    },
+    {
+     "from": "־",
+     "to": " "
+    },
+    {
+     "from": "​",
+     "to": ""
+    },
+    {
+     "from": "‌",
+     "to": ""
+    },
+    {
+     "from": "‍",
+     "to": ""
+    },
+    {
+     "from": "‎",
+     "to": ""
+    },
+    {
+     "from": "‏",
+     "to": ""
+    },
+    {
+     "from": "؜",
+     "to": ""
+    },
+    {
+     "from": "‪",
+     "to": ""
+    },
+    {
+     "from": "‫",
+     "to": ""
+    },
+    {
+     "from": "‬",
+     "to": ""
+    },
+    {
+     "from": "‭",
+     "to": ""
+    },
+    {
+     "from": "‮",
+     "to": ""
+    },
+    {
+     "from": "⁦",
+     "to": ""
+    },
+    {
+     "from": "⁧",
+     "to": ""
+    },
+    {
+     "from": "⁨",
+     "to": ""
+    },
+    {
+     "from": "⁩",
+     "to": ""
+    },
+    {
+     "from": "﻿",
+     "to": ""
+    }
+   ],
+   "numbers": "keep",
+   "description": "Follows ivrit.ai's Hebrew evaluation normalizer (github.com/ivrit-ai/asr-training, evaluate_model.py, HebrewTextNormalizer): remove bidirectional and zero-width marks, remove niqqud, drop the quote characters written for geresh and gershayim so acronyms compare as one word, then Whisper's BasicTextNormalizer (case folding, punctuation and symbols to spaces, whitespace collapsed). Cadence departs in two places: the Hebrew geresh (U+05F3) and gershayim (U+05F4) are joined like their ASCII stand-ins (ivrit.ai turns them into spaces, so צה״ל and צה\"ל scored differently), the typographic quotes word processors put in their place (U+2018, U+2019, U+201C, U+201D) are joined too, and the maqaf (U+05BE) splits words explicitly. Combining marks (niqqud U+05B0–U+05C7 and cantillation U+0591–U+05AF) are removed after canonical decomposition. Numbers are compared as written until the language pack's inverse normalisation arrives (phase 4)."
+  },
+  "nfc-marks-keep-case": {
+   "locale": "*",
+   "unicode": "NFC",
+   "casefold": false,
+   "punctuation": "keep",
+   "removeMarks": true,
+   "mappings": [],
+   "numbers": "keep"
+  },
+  "nfkc-marks-mapping": {
+   "locale": "*",
+   "unicode": "NFKC",
+   "casefold": false,
+   "punctuation": "strip",
+   "removeMarks": true,
+   "mappings": [
+    {
+     "from": "x",
+     "to": "ﬁ"
+    },
+    {
+     "from": "ﬁ",
+     "to": "ﬁ́"
+    }
+   ],
+   "numbers": "keep"
+  },
+  "nfc-fold": {
+   "locale": "*",
+   "unicode": "NFC",
+   "casefold": true,
+   "punctuation": "strip",
+   "removeMarks": false,
+   "mappings": [],
+   "numbers": "keep"
+  }
+ },
+ "cases": [
+  {
+   "normalizer": "basic",
+   "in": "שָׁלוֹם, עוֹלָם!",
+   "want": "שָׁלוֹם עוֹלָם"
+  },
+  {
+   "normalizer": "basic",
+   "in": "צה״ל וצה\"ל ג׳ירפה בית־ספר",
+   "want": "צה ל וצה ל ג ירפה בית ספר"
+  },
+  {
+   "normalizer": "basic",
+   "in": "‏שלום‎ ‫מה‬ נשמע⁩",
+   "want": "‏שלום‎ ‫מה‬ נשמע⁩"
+  },
+  {
+   "normalizer": "basic",
+   "in": "‘ציטוט’ “מרכאות” ״גרשיים״ ’ג",
+   "want": "ציטוט מרכאות גרשיים ג"
+  },
+  {
+   "normalizer": "basic",
+   "in": "Hello, World! Café — ¿Qué? «ok» a‐b 100% $5",
+   "want": "hello world café qué ok a b 100 $5"
+  },
+  {
+   "normalizer": "basic",
+   "in": "Straße ǅ ΣΑΣ ꭰ İstanbul ﬀ",
+   "want": "strasse dž σασ Ꭰ i̇stanbul ff"
+  },
+  {
+   "normalizer": "basic",
+   "in": "a\u001cb\u001dc\u001ed\u001fef g h i　j",
+   "want": "a b c d e f g h i j"
+  },
+  {
+   "normalizer": "basic",
+   "in": "x x́",
+   "want": "x x́"
+  },
+  {
+   "normalizer": "basic",
+   "in": "ﬁle ＡＢＣ",
+   "want": "file abc"
+  },
+  {
+   "normalizer": "basic",
+   "in": "Ćevapčići Đorđe",
+   "want": "ćevapčići đorđe"
+  },
+  {
+   "normalizer": "basic",
+   "in": "é è́",
+   "want": "é è́"
+  },
+  {
+   "normalizer": "he-il",
+   "in": "שָׁלוֹם, עוֹלָם!",
+   "want": "שלום עולם"
+  },
+  {
+   "normalizer": "he-il",
+   "in": "צה״ל וצה\"ל ג׳ירפה בית־ספר",
+   "want": "צהל וצהל גירפה בית ספר"
+  },
+  {
+   "normalizer": "he-il",
+   "in": "‏שלום‎ ‫מה‬ נשמע⁩",
+   "want": "שלום מה נשמע"
+  },
+  {
+   "normalizer": "he-il",
+   "in": "‘ציטוט’ “מרכאות” ״גרשיים״ ’ג",
+   "want": "ציטוט מרכאות גרשיים ג"
+  },
+  {
+   "normalizer": "he-il",
+   "in": "Hello, World! Café — ¿Qué? «ok» a‐b 100% $5",
+   "want": "hello world cafe que ok a b 100 $5"
+  },
+  {
+   "normalizer": "he-il",
+   "in": "Straße ǅ ΣΑΣ ꭰ İstanbul ﬀ",
+   "want": "strasse dz σασ Ꭰ istanbul ff"
+  },
+  {
+   "normalizer": "he-il",
+   "in": "a\u001cb\u001dc\u001ed\u001fef g h i　j",
+   "want": "a b c d e f g h i j"
+  },
+  {
+   "normalizer": "he-il",
+   "in": "x x́",
+   "want": "x x"
+  },
+  {
+   "normalizer": "he-il",
+   "in": "ﬁle ＡＢＣ",
+   "want": "file abc"
+  },
+  {
+   "normalizer": "he-il",
+   "in": "Ćevapčići Đorđe",
+   "want": "cevapcici đorđe"
+  },
+  {
+   "normalizer": "he-il",
+   "in": "é è́",
+   "want": "e e"
+  },
+  {
+   "normalizer": "nfc-marks-keep-case",
+   "in": "שָׁלוֹם, עוֹלָם!",
+   "want": "שלום, עולם!"
+  },
+  {
+   "normalizer": "nfc-marks-keep-case",
+   "in": "צה״ל וצה\"ל ג׳ירפה בית־ספר",
+   "want": "צה״ל וצה\"ל ג׳ירפה בית־ספר"
+  },
+  {
+   "normalizer": "nfc-marks-keep-case",
+   "in": "‏שלום‎ ‫מה‬ נשמע⁩",
+   "want": "‏שלום‎ ‫מה‬ נשמע⁩"
+  },
+  {
+   "normalizer": "nfc-marks-keep-case",
+   "in": "‘ציטוט’ “מרכאות” ״גרשיים״ ’ג",
+   "want": "‘ציטוט’ “מרכאות” ״גרשיים״ ’ג"
+  },
+  {
+   "normalizer": "nfc-marks-keep-case",
+   "in": "Hello, World! Café — ¿Qué? «ok» a‐b 100% $5",
+   "want": "Hello, World! Cafe — ¿Que? «ok» a‐b 100% $5"
+  },
+  {
+   "normalizer": "nfc-marks-keep-case",
+   "in": "Straße ǅ ΣΑΣ ꭰ İstanbul ﬀ",
+   "want": "Straße ǅ ΣΑΣ ꭰ Istanbul ﬀ"
+  },
+  {
+   "normalizer": "nfc-marks-keep-case",
+   "in": "a\u001cb\u001dc\u001ed\u001fef g h i　j",
+   "want": "a b c d e f g h i j"
+  },
+  {
+   "normalizer": "nfc-marks-keep-case",
+   "in": "x x́",
+   "want": "x x"
+  },
+  {
+   "normalizer": "nfc-marks-keep-case",
+   "in": "ﬁle ＡＢＣ",
+   "want": "ﬁle ＡＢＣ"
+  },
+  {
+   "normalizer": "nfc-marks-keep-case",
+   "in": "Ćevapčići Đorđe",
+   "want": "Cevapcici Đorđe"
+  },
+  {
+   "normalizer": "nfc-marks-keep-case",
+   "in": "é è́",
+   "want": "e e"
+  },
+  {
+   "normalizer": "nfkc-marks-mapping",
+   "in": "שָׁלוֹם, עוֹלָם!",
+   "want": "שלום עולם"
+  },
+  {
+   "normalizer": "nfkc-marks-mapping",
+   "in": "צה״ל וצה\"ל ג׳ירפה בית־ספר",
+   "want": "צה ל וצה ל ג ירפה בית ספר"
+  },
+  {
+   "normalizer": "nfkc-marks-mapping",
+   "in": "‏שלום‎ ‫מה‬ נשמע⁩",
+   "want": "‏שלום‎ ‫מה‬ נשמע⁩"
+  },
+  {
+   "normalizer": "nfkc-marks-mapping",
+   "in": "‘ציטוט’ “מרכאות” ״גרשיים״ ’ג",
+   "want": "ציטוט מרכאות גרשיים ג"
+  },
+  {
+   "normalizer": "nfkc-marks-mapping",
+   "in": "Hello, World! Café — ¿Qué? «ok» a‐b 100% $5",
+   "want": "Hello World Cafe Que ok a b 100 $5"
+  },
+  {
+   "normalizer": "nfkc-marks-mapping",
+   "in": "Straße ǅ ΣΑΣ ꭰ İstanbul ﬀ",
+   "want": "Straße Dz ΣΑΣ ꭰ Istanbul ff"
+  },
+  {
+   "normalizer": "nfkc-marks-mapping",
+   "in": "a\u001cb\u001dc\u001ed\u001fef g h i　j",
+   "want": "a b c d e f g h i j"
+  },
+  {
+   "normalizer": "nfkc-marks-mapping",
+   "in": "x x́",
+   "want": "fi fi"
+  },
+  {
+   "normalizer": "nfkc-marks-mapping",
+   "in": "ﬁle ＡＢＣ",
+   "want": "file ABC"
+  },
+  {
+   "normalizer": "nfkc-marks-mapping",
+   "in": "Ćevapčići Đorđe",
+   "want": "Cevapcici Đorđe"
+  },
+  {
+   "normalizer": "nfkc-marks-mapping",
+   "in": "é è́",
+   "want": "e e"
+  },
+  {
+   "normalizer": "nfc-fold",
+   "in": "שָׁלוֹם, עוֹלָם!",
+   "want": "שָׁלוֹם עוֹלָם"
+  },
+  {
+   "normalizer": "nfc-fold",
+   "in": "צה״ל וצה\"ל ג׳ירפה בית־ספר",
+   "want": "צה ל וצה ל ג ירפה בית ספר"
+  },
+  {
+   "normalizer": "nfc-fold",
+   "in": "‏שלום‎ ‫מה‬ נשמע⁩",
+   "want": "‏שלום‎ ‫מה‬ נשמע⁩"
+  },
+  {
+   "normalizer": "nfc-fold",
+   "in": "‘ציטוט’ “מרכאות” ״גרשיים״ ’ג",
+   "want": "ציטוט מרכאות גרשיים ג"
+  },
+  {
+   "normalizer": "nfc-fold",
+   "in": "Hello, World! Café — ¿Qué? «ok» a‐b 100% $5",
+   "want": "hello world café qué ok a b 100 $5"
+  },
+  {
+   "normalizer": "nfc-fold",
+   "in": "Straße ǅ ΣΑΣ ꭰ İstanbul ﬀ",
+   "want": "strasse ǆ σασ Ꭰ i̇stanbul ff"
+  },
+  {
+   "normalizer": "nfc-fold",
+   "in": "a\u001cb\u001dc\u001ed\u001fef g h i　j",
+   "want": "a b c d e f g h i j"
+  },
+  {
+   "normalizer": "nfc-fold",
+   "in": "x x́",
+   "want": "x x́"
+  },
+  {
+   "normalizer": "nfc-fold",
+   "in": "ﬁle ＡＢＣ",
+   "want": "file ａｂｃ"
+  },
+  {
+   "normalizer": "nfc-fold",
+   "in": "Ćevapčići Đorđe",
+   "want": "ćevapčići đorđe"
+  },
+  {
+   "normalizer": "nfc-fold",
+   "in": "é è́",
+   "want": "é è́"
+  }
+ ]
+}

@@ -189,7 +189,7 @@ Built in phase 2, used later (R44): `runs.new` carries `init: base | checkpoint`
 materialize-<m>   family.roles.materialize   in: {base}                                   once per base model version
 transcribe-<c>    family.roles.transcribe    in: {model: checkpoint, data: golden dataset, boost?: boost_list}
                                              params: {profile, target_lang}
-score-<c>         wer_score@1                in: {hypotheses, data: golden dataset, normalizer}
+score-<c>         wer_score@2                in: {hypotheses, data: golden dataset, normalizer}
 ```
 
 - Step kinds and versions come from the published family descriptor (R41): Go never names them. A base model version
@@ -232,19 +232,19 @@ Scorers are neutral core step kinds (CPU, every runtime): they read `hypotheses`
 `normalizer` artifact, and write `scores`. The normalizer interpreter is Python, driven by the payload (02
 "Evaluation entities"). Rates are fractions (0.123), never percent.
 
-`wer_score@1` writes a directory artifact:
+`wer_score@2` writes a directory artifact (version 2, 2026-10-02: CER without spaces, the final not counted as a partial):
 
 | File | Content |
 | --- | --- |
-| `summary.json` | `{schema: "cadence.scores/1", scorer: "wer_score@1", normalizer: {versionId}, language, utterances, refWords, refChars, wer, cer, werNoPunct, sub, del, ins, charErrors, buckets: [{lo, hi, utterances, refWords, wer}], stability?: {partialWords, unstableWords, ratio, editsPerSecond}}` |
+| `summary.json` | `{schema: "cadence.scores/1", scorer: "wer_score@2", normalizer: {versionId}, language, utterances, refWords, refChars, wer, cer, werNoPunct, sub, del, ins, charErrors, buckets: [{lo, hi, utterances, refWords, wer}], stability?: {partialWords, unstableWords, ratio, editsPerSecond}}` |
 | `utterances.jsonl` | One row per utterance in dataset order: `{audio, speaker?, group, durationS, ref, hyp, refWords, sub, del, ins, refChars, charErrors, ops: [[op, ref, hyp]]}`, `op` one of `=`, `S`, `D`, `I` (Diff reads them); `group` is the bootstrap unit: the call id when the dataset has one, else the speaker, else the audio hash |
 
 | Metric | Definition | Scorer, phase |
 | --- | --- | --- |
-| WER, CER, S/D/I | Word and character error rate after the scoring normalizer, with substitution, deletion and insertion counts from the alignment | `wer_score@1`, 3 |
-| `werNoPunct` | The same normalizer plus punctuation removal; equal to WER when the normalizer already strips punctuation (decision 5) | `wer_score@1`, 3 |
-| Duration buckets | WER per utterance-duration bucket, bounds `eval.duration_buckets_s`, the last open | `wer_score@1`, 3 |
-| Partial stability | Unstable partial word ratio: the share of words shown in partials that the final changed or dropped (Shangguan et al., Interspeech 2020), with edits per second beside it; from the `hypotheses` partial events (R54) | `wer_score@1`, 3 |
+| WER, CER, S/D/I | Word and character error rate after the scoring normalizer, with substitution, deletion and insertion counts from the alignment | `wer_score@2`, 3 |
+| `werNoPunct` | The same normalizer plus punctuation removal; equal to WER when the normalizer already strips punctuation (decision 5) | `wer_score@2`, 3 |
+| Duration buckets | WER per utterance-duration bucket, bounds `eval.duration_buckets_s`, the last open | `wer_score@2`, 3 |
+| Partial stability | Unstable partial word ratio: the share of words shown in partials that the final changed or dropped (Shangguan et al., Interspeech 2020), with edits per second beside it; from the `hypotheses` partial events (R54) | `wer_score@2`, 3 |
 | Latency to final | Time from utterance end to the final that covers it, audio fed at real-time pace, p50 and p95; utterance ends from a frame-VAD model until per-channel VAD (phase 4), else the aligned reference's end, reported unavailable without either (R54, R26) | Wave 2 (plan stream R), 3 |
 | Entity accuracy | Number classes (numbers, dates, phone numbers, amounts) compared after the pack's ITN; names and addresses need annotated spans (phase 4) | `entity_score@1`, wave 2 (plan stream R), 3 |
 | Emission delay | Time from a word's aligned end to its first appearance in a partial, PR50 and PR90 (Yu et al., FastEmit, ICASSP 2021) | Needs aligned references, 4 |
@@ -261,10 +261,15 @@ As built (stream Y; help `steps.wer-score`):
 - `group` is decided per dataset, all or nothing: the call id only when every row has a `callId`, else the speaker
   only when every row has one, else the audio hash — so one golden set never mixes resampling units.
 - The word alignment is Levenshtein with ties broken towards fewer substitutions; CER is the character edit distance
-  over the normalized texts with spaces counted.
+  over the normalized texts with every space removed (`wer_score@2`; `@1` counted spaces, which inflated the CER the
+  gate reads for `eval.character_error_languages`; FLEURS and Whisper report CER without spaces).
 - Partial stability, positionally: a word is *shown* when a partial puts it at a position the previous partial held
   empty or held another word, and *unstable* when the final does not have it at that position; `ratio` = unstable /
-  shown; `editsPerSecond` counts words a later partial changes or drops per second of audio. Both on normalized text.
+  shown; `editsPerSecond` counts words a later partial (or the final) changes or drops per second of audio. Both on
+  normalized text. The decode's last event (`final: true`) is not a partial: words only the final has never enter the
+  denominator (`@2`; `@1` counted them as shown and stable).
+- The scorer is part of the record key, so `wer_score@2` recomputes every eval record once (the `@1` records stay,
+  unread).
 - Utterances are joined to hypotheses by audio hash; a dataset utterance without a hypothesis fails the step
   (`input`).
 
@@ -284,18 +289,43 @@ As built (plan stream R; help `steps.augment-dataset`, `steps.entity-score`, `st
 - **Entity accuracy** (`entity_score@1`): the classes of the pack's `itn.yaml` (rendered as an `itn` artifact at the
   commit that last changed it), both texts first converted with the pack's examples (spoken → written), overlaps
   resolved longest first, multiset match per class.
-- **Latency to final** (`latency_score@1`): the first partial whose text is final minus the utterance end from a
+- **Latency to final** (`latency_score@2`): the first partial whose text is final minus the utterance end from a
   `vad` artifact. Eval decodes run faster than real time, so emit times at real-time pace are simulated from the
-  decode's own compute times (`emit[k] = max(audioOffset[k], emit[k−1]) + Δemit[k]`, the batch's streams decoded
-  together); a decode marked `pace: realtime` is used as is. Utterance ends come from the NeMo pack's `frame_vad@1`
+  decode's own compute: the hypotheses row's `steps` (`[audio available ms, compute ms]` per chunk, silent chunks
+  included, compute = the batch step's wall time over its streams) give `done[k] = max(available[k], done[k−1]) +
+  compute[k]`, and a partial (its `step`) is emitted when its chunk is done; hypotheses without `steps` fall back to
+  `@1`'s event times (`emit[k] = max(audioOffset[k], emit[k−1]) + Δemit[k]`, which charged a partial the silent chunks
+  before it and the batch's other streams); a decode marked `pace: realtime` is used as is. Utterance ends come from the NeMo pack's `frame_vad@1`
   (NVIDIA Frame-VAD Multilingual MarbleNet v2.0, NVIDIA Open Model License, checked against R26 on 2026-10-02); Go
   finds the VAD as the newest kind that turns a `dataset` into a `vad`. Without one, latency is reported unavailable.
   The VAD model is pinned in `defaults.yaml` `packs.nemo.vad_*` (model, revision, onset, offset, minimum speech and
   silence), not as a registry base model; its model card names no Hebrew, so Hebrew utterance ends are the model's
   multilingual guess until per-channel VAD (phase 4).
 - The gate reads augmentation 0 (none) only; robustness, entity accuracy and latency are reported, not gated (04
-  "Block 3"). A failed metric step fails the eval like a failed scoring step. Augmentation runs on target golden sets
-  only (replay sets get none).
+  "Block 3"). Augmentation runs on target golden sets only (replay sets get none).
+- Reported-only metrics never fail an eval (phase-3 audit fixes): the VAD, entity and latency steps are `optional`
+  pipeline steps — a failing optional step skips the (optional) steps that read it and the run still ends done — and
+  the eval marks those metrics `unavailable` with the step's error; the WER cells and the gate go on.
+
+As built (phase-3 audit fixes, eval correctness):
+
+- **Optional steps.** A pipeline step may say `optional: true` (contract `PipelineStepDefinition.optional`): its failure
+  (after the automatic OOM and lost-lease retries) skips the waiting steps that read it, which must be optional too
+  (`pipelines.Check`), and the run ends done once every other step has.
+- **Decoding hash.** A cell's decoding hash covers the transcribe kind, the family's own name for the column's
+  profile, the decode language, every other transcribe parameter as the run resolves it against `defaults.yaml`
+  (so a changed default such as `packs.nemo.live_stop_history_eou_ms` makes new records; only
+  `cuda_context_reserve_mb` is left out — the batch size is not, since at 80 ms batch 1 and batch 2+ can differ by a
+  word), the materialize kind of a base model, the boost list and the augmentation. Records computed before this
+  change are not found again (with `wer_score@2` every key changed anyway); the record's descriptive `decoding` JSON
+  names the decode `language`.
+- **Profiles by latency.** Families share a profile when they declare its milliseconds (R43); a column carries the
+  subject family's name and each transcribe step decodes at its own family's name for it. The gate resolves
+  `primaryProfile` against the eval's columns by name, else by the milliseconds its name states, as planning does.
+- **Languages.** `evals.new` refuses (422, path `/languages/<locale>`) a golden set whose decode language a compared
+  model's base model lacks among its `locale:` tags, naming `languages` as the fix (as `runs.new` does for training).
+- **CER where it is gated.** The model card and the robustness matrix (`EvalRobustnessRow.unit: char`) report CER for
+  the golden sets of `eval.character_error_languages`.
 
 ### What derives from the schema
 

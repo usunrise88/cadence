@@ -162,15 +162,21 @@ type RobustnessRow struct {
 	WER                *float64 `json:"wer,omitempty"`
 	WERNone            *float64 `json:"werNone,omitempty"`
 	Degradation        *float64 `json:"degradation,omitempty"`
+	// Unit is "char" when the golden set is scored on CER: the rates above are character error rates.
+	Unit string `json:"unit,omitempty"`
 }
 
-// robustness is the matrix golden set × augmentation × latency profile: every augmented cell's WER against the same
-// cell (role, golden set, profile, decoding) without augmentation. Empty when the eval has no augmentation.
-func robustness(cells []Cell, recs map[string]Record) []RobustnessRow {
+// robustness is the matrix golden set × augmentation × latency profile: every augmented cell's WER (CER for a golden
+// set chars reports char-scored) against the same cell (role, golden set, profile, decoding) without augmentation.
+// Empty when the eval has no augmentation.
+func robustness(cells []Cell, recs map[string]Record, chars func(gsID string) bool) []RobustnessRow {
 	wer := func(c Cell) *float64 {
 		var sm Summary
 		if r, ok := recs[c.RecordID]; ok && json.Unmarshal(r.Summary, &sm) == nil {
 			w := sm.WER
+			if chars(c.GoldenSetVersionID) {
+				w = sm.CER
+			}
 			return &w
 		}
 		return nil
@@ -182,6 +188,9 @@ func robustness(cells []Cell, recs map[string]Record) []RobustnessRow {
 		}
 		row := RobustnessRow{Role: c.Role, GoldenSetVersionID: c.GoldenSetVersionID, Profile: c.Profile, DecodingIndex: c.DecodingIndex,
 			AugmentationIndex: c.AugmentationIndex, CellID: c.ID, WER: wer(c)}
+		if chars(c.GoldenSetVersionID) {
+			row.Unit = UnitChar
+		}
 		for _, o := range cells {
 			if o.AugmentationIndex == 0 && o.Role == c.Role && o.GoldenSetVersionID == c.GoldenSetVersionID && o.Profile == c.Profile &&
 				o.DecodingIndex == c.DecodingIndex {

@@ -203,7 +203,15 @@ describe("Eval report: streaming, distribution and robustness charts", () => {
       { x: 1, y: 1, value: 25 },
     ]);
     expect(h.colormap).toBe("diverging");
+    expect(h.title).toBe("WER degradation under augmentation");
     expect(robustnessHeatmap(EVAL)).toBeUndefined();
     expect(robustnessHeatmap(EVAL_STREAMING, 1)).toBeUndefined();
+  });
+
+  it("says CER for a golden set scored on characters", () => {
+    const chars = { ...EVAL_STREAMING, robustness: (EVAL_STREAMING.robustness ?? []).map((r) => ({ ...r, unit: "char" as const })) };
+    const h = robustnessHeatmap(chars)!;
+    expect(h.title).toBe("CER degradation under augmentation");
+    expect(h.y[0]).toBe("fleurs-he (CER) · telephony · subject");
   });
 });

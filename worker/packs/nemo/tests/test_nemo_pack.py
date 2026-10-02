@@ -826,6 +826,26 @@ def test_hypothesis_rows_carry_every_field() -> None:
     assert row["family"] == NAME
     assert row["words"][0]["word"] == "שלום"
     assert decoding_hash(decoding) == decoding_hash(dict(reversed(list(decoding.items()))))
+    assert "steps" not in row  # a result without chunk steps (a live session's) writes none
+
+
+def test_collect_names_the_chunk_of_each_partial() -> None:
+    """decode_batch records every chunk's audio and compute (silent ones too); collect ties each event to its chunk and
+    the hypotheses row carries the steps for latency_score."""
+    events = [
+        {"type": "partial", "text": "a", "audioEnd": 0.16},
+        {"type": "final", "text": "a b", "words": [{"word": "a"}, {"word": "b"}], "audioEnd": 0.48, "space": True},
+    ]
+    steps = [(160, 4.5), (320, 4.0), (480, 5.0)]
+    r = pipeline.collect(events, 0.0, [0.01, 0.02], [0, 2], steps)
+    assert [p["step"] for p in r.partials] == [0, 2]
+    assert r.partials[-1]["final"] is True
+    assert r.text == "a b"
+    decoding = decoding_config(profile("160ms"), "he-IL", 800, None)
+    row = hypothesis_row("b3:" + "1" * 64, r, decoding, decoding_hash(decoding), "b3:" + "2" * 64)
+    assert row["steps"] == [[160, 4.5], [320, 4.0], [480, 5.0]]
+    # Without chunk steps (an empty file's lone final) no partial names a step.
+    assert "step" not in pipeline.collect(events[1:], 0.0, [0.01]).partials[0]
 
 
 def test_word_confidence_from_tokens_skips_the_locale_tag() -> None:

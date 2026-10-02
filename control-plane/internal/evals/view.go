@@ -152,7 +152,7 @@ func (s *Service) View(ctx context.Context, q storage.Querier, e Eval, vq ViewQu
 		}
 		v.Cells = append(v.Cells, cv)
 	}
-	v.Robustness = robustness(cells, recs)
+	v.Robustness = robustness(cells, recs, func(gsID string) bool { return s.charScored(e, gsID) })
 	return v, nil
 }
 
