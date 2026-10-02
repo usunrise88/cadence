@@ -2,7 +2,8 @@
 # payload is the contract's NormalizerPayload: the rules both sides of a WER are compared after (the Unicode form
 # first, mappings before punctuation; the field descriptions say where each applies). A changed rule is a
 # new version of the same collection (the registry keeps the old one); a golden set pins the version it was frozen
-# with, so its scores stay comparable. The scorer (wer_score) interprets the payload; Go never does.
+# with, so its scores stay comparable. The scorer (wer_score) interprets the payload; so does internal/textnorm (Go),
+# with the same steps, for the search index's per-locale folding.
 - name: normalizer/basic
   description: Language-neutral scoring normalizer — NFKC, case folded, punctuation stripped, marks kept, no mappings
   licence: internal

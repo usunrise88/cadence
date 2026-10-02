@@ -132,6 +132,20 @@ Version 1 has 33 panels: 13 documents that open in the centre and 20 tools that 
 | Annotation batch | Document | Progress per annotator, double-annotation sample, inter-annotator WER, adjudication queue, guidelines version | Invite an annotator; adjudicate; freeze as golden set (approval) | `entity.annotation_batch.{id}` |
 | Experiment | Document | Question, fixed mix and base, sweep grid or random set and GPU-hour cap, parameters × metrics table of its runs with departures from defaults highlighted, best run by validation WER; charts: parameter against metric scatter, parallel coordinates for sweeps (R53) | Run the sweep (dry run first); compare N; evaluate the best; register it (`models.register`, passed gate) | `entity.experiment.{id}`, `run.{id}.status` |
 
+As built (phase 3, stream U; help `panels.eval`, `panels.diff`, `panels.golden-set`, `panels.model`,
+`panels.lineage`, `panels.language-pack`):
+
+- Eval report: the selection is `cell:<evc_id>` or `cell:<evc_id>/utt:<index>`; Ask agent attaches
+  `@eval:<id>#cell:…/utt:…`. Deltas are shown in percentage points (the API's rates are fractions); a cell's tone
+  comes from its interval (better, worse, inconclusive), with a glyph beside the colour. Charts: delta heatmap, forest
+  plot of deltas with intervals, S/D/I bars and WER by duration bucket. Not drawn yet: the per-utterance ECDF, partial
+  stability, latency CDFs, entity accuracy, WER against latency, confusion pairs and the robustness matrix — `evals.get`
+  already answers `robustness` and per-cell `metrics` (stream R landed beside U).
+- Golden set: the leakage row states the rule (the freeze checked it; nothing to recompute per view).
+- Language pack: Commit is enabled only for exactly the text that passed Check (the server's dry run).
+- Not built: "test a phrase", opening a row in Audio (stream A), Set as baseline and Adopt on the Model document, and
+  the Playwright smoke of the Eval workspace.
+
 Topics follow the event model in the Cadence system tab; the backend contract below lists the endpoints.
 
 ## Default workspaces
@@ -141,7 +155,7 @@ Five workspaces ship by default, and Chat sits in the right column of every one,
 | Workspace | Centre (documents) | Left | Right | Bottom | Floating |
 | --- | --- | --- | --- | --- | --- |
 | Training | Run, Mix, Experiment | Library | Chat, Checkpoints, Getting started (until dismissed) | Metrics, Logs | — |
-| Eval | Eval report, Golden set, Annotation batch (phase 4) | Library | Chat, Inspector | Diff | Audio |
+| Eval | Eval report, Golden set, Annotation batch (phase 4) | Library | Chat, Inspector, Lineage | Diff | Audio |
 | Data | Dataset version, Source, Recipe, Language pack | Library | Chat, Inspector, Pipeline run | Logs | Audio |
 | Triage | Triage queue | — | Chat, Diff | Inspector | Audio |
 | Ops | Model | Queue & GPU | Chat, Approvals, Storage | Shadow, Logs | — |
@@ -181,7 +195,7 @@ Commands are the only way the UI changes anything: menus, buttons, shortcuts and
 | New stage from checkpoint | — | `POST /``projects/{p}/``runs` with `initFrom` and a required `peakLr` |
 | Pause / resume job | — | `POST /jobs/{id}:pause`, `:resume` |
 | Cancel job | — | `POST /jobs/{id}:cancel` — inline confirm |
-| Run eval matrix | — | `evals.new` (`POST /projects/{p}/evals`, dry run first) |
+| Run eval matrix | — | `evals.new` (`POST /projects/{p}/evals`, dry run first) — one command wherever an eval starts (Checkpoints, Experiment, Eval report) |
 | Set eval baseline | — | `aliases.set` on `baseline` (`PUT /projects/{p}/aliases/baseline`) — approval (R8, R23) |
 | New mix / Edit mix | — | `POST /projects/{p}/mixes` (`mixes.new`); `PATCH /mixes/{id}` (`mixes.edit`) — R13: a mix is saved as a revision, not a version |
 | Export dataset version to Shar | — | `POST /``projects/{p}/datasets/{id``}:export` |
@@ -203,7 +217,7 @@ Commands are the only way the UI changes anything: menus, buttons, shortcuts and
 | Average checkpoints | — | `POST /runs/{id}/checkpoints:average` |
 | Freeze golden set | — | `goldenSets.freeze` (registry scope) — approval, admin |
 | Evaluate gate / Edit gate | — | `evals.gate` (`POST /evals/{id}:gate`); `gates.edit` (the project's `gates.yaml`) |
-| Register model version | — | `models.register` (registry scope; needs a passed gate) — inline confirm |
+| Register model version | — | `models.register` (`POST /projects/{p}/models:register`, a registry version; needs a passed gate; an agent's call waits for approval) — inline confirm; one command for the Eval report, Model and Experiment (from the Experiment header it opens the experiment document, which confirms the best run's checkpoint) |
 | Parity check / Benchmark model | — | `POST /models/{id}:parity`, `:benchmark` |
 | Package correction batch | — | `POST /projects/{p}/corrections:package` |
 | New schedule | — | `POST /projects/{p}/schedules` — approval |
@@ -250,7 +264,7 @@ The shell needs fourteen things from the Go control plane, all in the OpenAPI 3.
 | Projects | `GET /projects`, `POST /projects`; every project-scoped path lives under `/projects/{p}/…`; workspaces at `PUT /me/projects/{p}/workspaces/{name}` | Events carry projectId; the client filters the stream to the current project |
 | Mounts and materialisation | `GET` / `POST /mounts`; `POST /mounts/{id}:scan`; `POST /projects/{p}/datasets/{id}:materialize`, `:evict` | Health on mount.{id}; materialisation progress on job.{id} |
 | Project bootstrap and agent profile | `POST /projects/{p}:bootstrap` (job: repository, files, worktree, workspaces); `PATCH /projects/{p}/agent-profile`; `GET /catalog/base-models`, `GET /catalog/agent-models`, `GET /catalog/instruction-templates` | The wizard reads the catalogues; bootstrap progress on job.{id}; profile changes commit to the repository |
-| Registry | `GET /registry/{kind}` with tag filters; `GET /registry/{kind}/{id}/versions`; `GET /registry/{kind}/{id}/lineage` (`registry.lineage`, phase 3); golden sets, normalizers and models under `/registry/golden-sets`, `/registry/normalizers`, `/registry/models`; `POST /projects/{p}/adoptions`; `PUT /projects/{p}/aliases/{name}` | Registry events carry no projectId; the Library shows them by reference. Versions are immutable; only aliases change |
+| Registry | `GET /registry/{kind}` with tag filters; `GET /registry/{kind}/{id}/versions`; `GET /registry/{id}:lineage` (`registry.lineage`, phase 3; the id's prefix names the kind); golden sets, normalizers and models under `/registry/golden-sets`, `/registry/normalizers`, `/registry/models`; `POST /projects/{p}/adoptions`; `PUT /projects/{p}/aliases/{name}` | Registry events carry no projectId; the Library shows them by reference. Versions are immutable; only aliases change |
 | Settings | `GET` / `PATCH /compute/{id}`; `POST /secrets` (values never returned); `GET /agent-credentials`, `PUT /agent-credentials/{id}`, `POST /agent-credentials/{id}:verify|archive`, `GET /agent-providers` (values never returned); `GET /catalog/*`; `GET` / `PATCH /policies` (budgets, timezone); `GET /notification-rules`, `PATCH /notification-rules/{id}`; `GET` / `PATCH /notification-settings`; `PUT /telegram-bot` (write-only token), `POST /telegram-bot:verify`; `GET` / `POST /backups`, `GET /backups/{id}`, `POST /backups/{id}:verify` (phase 2) | Admin only; compute health on compute.{id}; backup and restore-test outcomes on `backups` |
 | Search and help | `GET /search?q=&scope=` (query language above; grouped results); `GET /help/{slug}`, `GET /help/context?panel=&field=&error=`; `PUT /me/projects/{p}/views/{name}` | The index is fed from the outbox; help articles ship with the binary; problem+json type URIs resolve to help pages |
 | Audio and live audio | An utterance's `…/audio?channel=&start=&end=` and `…/peaks` (R25); `POST /projects/{p}/transcriptions` and `/api/transcriptions/{id}/stream` (WebSocket, R48) | Tag `media` (06 "Media"): exempt from the verb rule and MCP, unreachable with an agent token; range requests and short-lived signed URLs for audio, play-only for reviewers, every play audited; single-use ticket (60 s) and Origin check for the socket; `LiveClientMessage` and `LiveServerMessage` are contract components |

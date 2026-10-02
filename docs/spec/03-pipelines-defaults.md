@@ -97,7 +97,7 @@ Framework code stops at the role steps of a model family; everything after them 
 | `hypotheses` | JSON lines per utterance: text; words with start, end and confidence; the decoding config and its hash; family and weights hash; partial events (audio offset, emit time, text) for streaming decodes |
 | `analysis` | float16 arrays with frame rate and axis labels: model input features and per-frame emissions |
 | `normalizer` | A scoring normalizer version rendered by the control plane: the `NormalizerPayload` as JSON (`application/json`, `meta: {versionId}`), as a `base_model` artifact is rendered from its version (R21; 02 "Evaluation entities") |
-| `boost_list` | One boost list of a language pack (`lang/<locale>/boost/<domain>.txt`) with its weight, an optional input of a transcribe step; the decoding hash includes its hash and the weight (R24) |
+| `boost_list` | One boost list of a language pack (`lang/<locale>/boost/<domain>.txt`) with its weight, an optional input of a transcribe step; the decoding hash includes its hash and the weight (R24). Rendered by the control plane as JSON `{terms, weight}` (`format: cadence.boost_list/1` optional, other keys ignored); the NeMo pack also reads the pack file itself and caps a list at 10 000 terms of ≤ 100 characters, weight 0–100 |
 | `scores` | A directory artifact written by a scorer: `summary.json` and `utterances.jsonl` ("Scorers and metrics" below); the `scores` hook writes the eval record. R42's "eval report" is the `evals.get` view over an eval's cells, not an artifact |
 | `metric_scores` | A directory artifact written by a metric scorer beside WER (`entity_score`, `latency_score`): `summary.json` (`cadence.metric-scores/1`) and `utterances.jsonl`; the `metric_scores` hook keeps the summary beside the cell's eval record (stream R) |
 | `augment_profile` | An augmentation profile (`augment/<name>.yaml` at a commit) resolved with the `augment.*` defaults, with its seed and content hash, rendered by the control plane for `augment_dataset` (stream R) |
@@ -113,6 +113,11 @@ Also: `text` (the `echo` check), manifest, waveform peaks, correction batch. A d
 - A model family is a versioned descriptor the runtime publishes beside its step kinds (R41): framework and architecture; checkpoint and export formats and what loading needs; input (sample rate, channels) and features; tokenizer kind; capabilities (streaming, word timestamps, confidence, boosting method, language prompting, train modes `finetune | adapter | scratch`); latency profiles; the step kind for each role (calibrate, train, average, transcribe, materialize, export, parity reference; `materialize` turns a `base_model` artifact into a `checkpoint`, so an eval always transcribes a checkpoint, decision 6 of the phase-3 plan); its `defaults.yaml` section; help and skill slugs. Base models, checkpoints and model versions carry a family reference; the UI and MCP render family options from the descriptor's schemas.
 - No control-plane or web code branches on a family or runtime name; the Nemotron family is named only in the worker's NeMo pack, `defaults.yaml` data, templates and docs, and a test greps for it.
 - A latency profile has a name, the algorithmic latency, chunk and left context in milliseconds, the family parameters that realise it and a label. A family without streaming has one profile, `offline`. Eval matrices, the primary cell and eval records name profiles; families line up by milliseconds, not by parameter spelling (R43).
+- Spike A5 (`docs/spikes/A5-live-transcription.md` "Result", surprise 2) found that Nemotron 3.5 was trained at
+  `[56,0]`, `[56,3]`, `[56,6]` and `[56,13]` (80, 320, 560, 1120 ms) only: `160ms` (`[56,1]`) is an interpolated
+  look-ahead NeMo warns about and runs anyway. Its WER sits between its neighbours (A3 saw the same). Whether the
+  primary cell stays at `160ms` or moves to `320ms`, and a `trained` flag on latency profiles, are open for the owner
+  (07 "Open questions").
 
 The first family, Nemotron 3.5 streaming (cache-aware FastConformer RNNT, NeMo):
 
@@ -133,8 +138,21 @@ NeMo pack as built (phase 2, `worker/packs/nemo`, distribution `cadence-nemo`, h
 - `nemotron_finetune` (consumes `base`, `data`, `calibration`; produces `checkpoint`, `checkpoint_best`, `state`): NeMo + Lightning, bf16-mixed, AdamW + NoamAnnealing from `peak_lr` (the scale is derived and posted), the mix read from the content store in place as Lhotse `input_cfg` groups, the language prompt per clip (`unified` mode) with the locale tag appended, the augmentation profile on the fly, metrics through the step context, a training state every `state_every_minutes` and at a stop, resume from `overrides.resumeFrom`.
 - `checkpoint_average` averages the `.nemo` weights on the CPU; `nemotron_transcribe` streams with NeMo's cache-aware decoder at a profile and writes words timed by the emissions, token-derived word confidence and partial events.
 - Every GPU step caps PyTorch's allocator at the lease's cap minus `cuda_context_reserve_mb`, so the whole process stays under the cap nvidia-smi sees.
+- Phase 3 (stream Y): `checkpoint_from_base@1` (materialize) and `nemotron_transcribe@2`, whose optional `boost`
+  input applies NeMo's GPU phrase-boosting tree on the greedy label-looping decoder (`context_score` 1.0,
+  `depth_scaling` 2.0, its state carried across streaming chunks): score = acoustic + weight × tree score, the list's
+  weight or else `packs.nemo.boost_weight` (0.5). Unwired, the decode and its decoding hash equal version 1's.
+  Measured on FLEURS he_il test (120 utterances, base model at `160ms`, 40 missed words listed): entity recall 0.11 →
+  0.29 / 0.36 / 0.50 / 0.52 / 0.54 and WER 0.466 → 0.462 / 0.460 / 0.461 / 0.490 / 0.623 at weight 0.3 / 0.5 / 0.7 / 1
+  / 2; above ≈ 0.7 listed words replace others (help `steps.nemotron-transcribe`).
+- One decoder for live and evals (spike A5, "What the spec should change" 2): the pack's eval loop (whole-file
+  features, `CacheAwareStreamingAudioBuffer`) and NeMo's streaming pipeline API (chunked cache features), which live
+  sessions use, agree on most but not all words. The transcribe kind therefore moves to the pipeline decoder (with
+  the pack's two shims: the per-stream language prompt and stripping the trailing locale tag) in its next version,
+  which records the decoder in the decoding config, so its cells never mix with `@1`/`@2` records. Until then live
+  results and eval results may differ by a few words. Not built yet (stream T, with the `live` job).
 
-The toy pack's family `toy-ctc` (runtime `toy`) has the profiles `offline` and `320ms` and the kinds `toy_calibrate`, `toy_train`, `toy_average` and `toy_transcribe`, plus a materialize kind in phase 3, with its defaults under `packs.toy`.
+The toy pack's family `toy-ctc` (runtime `toy`) has the profiles `offline` and `320ms` and the kinds `toy_calibrate`, `toy_train`, `toy_average`, `toy_transcribe` and, in phase 3, `toy_checkpoint_from_base@1` (materialize; a framework kind's name belongs to one runtime, so it is not `checkpoint_from_base`), with its defaults under `packs.toy`.
 
 ### Framework packs and the conformance suite
 
@@ -150,6 +168,12 @@ The toy pack's family `toy-ctc` (runtime `toy`) has the profiles `offline` and `
 - Every parameter's default either is a literal with its source or comes from `defaults.yaml` through `x-cadence.defaultRef`; pack defaults sit under `packs.<pack>`, read from the control plane's own file, copied unchanged into each image (`CADENCE_DEFAULTS_FILE`). Ranges are enforced before `run`.
 - Secrets named by the kind reach only the step process's environment and are redacted from its forwarded logs.
 - A framework pack passes the conformance suite (`python -m cadence_worker.conformance --runtime <runtime>`, R45); the CPU toy pack (runtime `toy`, family `toy-ctc`) runs it on every pull request (`make conformance`). A new step is one module, its schema, `docs/help/steps/<kind with _ as ->.md` and an entry point.
+- Phase 3 (stream Y): a step kind's descriptor may list `optionalInputs` (`StepKindDescriptor.optionalInputs`); the
+  pipeline plan skips an optional input a pipeline leaves unwired, and the step then runs without it (the NeMo
+  transcribe kind's `boost`). Like `optionalOutputs` it does not change the kind's schema version. The conformance
+  suite requires the `materialize` role beside calibrate, train, average and transcribe, reads the base model from
+  the family descriptor's `conformance.base_model`, and reports the materialized base model's WER after the trained
+  model's.
 
 ### Seams for later training modes
 
@@ -180,6 +204,28 @@ score-<c>         wer_score@1                in: {hypotheses, data: golden datas
 - The bundled `eval-matrix.yaml` template is rewritten to this shape; the phase-2 playbook's `evals.new` and
   `evals.gate` steps go live with it.
 
+As built (stream E; `internal/evals`):
+
+- `evals.new` (`POST /projects/{p}/evals`) answers `201` with the eval, not `202` with a job (the eval is the handle,
+  as a run is; 00 decision log); `200` for its dry run (cells, cached and to compute, the estimate) and `202` when an
+  agent's estimate needs an approval (`gpu-spend`). The estimate is the audio hours of the missing cells ×
+  `eval.gpu_hours_per_audio_hour` (0.1, basis `table`; not calibrated yet). An eval whose cells are all cached is done
+  at once.
+- Step ids are `materialize-m<n>`, `transcribe-u<n>` and `score-u<n>` (one unit per missing record key; a subject
+  equal to its baseline computes once), plus `augment-g<n>a<k>` and the metric steps of stream R below. The pipeline
+  run's `RunID` is the eval id, so step metric points arrive on `run.evl_….metrics`.
+- Golden sets: the request's (`ver_…`, `@alias`, a collection, a `*` pattern), else those `gates.yaml` names (target
+  and replay), else every adopted golden set. Patterns match adopted versions only; an explicitly named collection the
+  project has not adopted falls back to its latest version.
+- Profiles: the request's, else `eval.matrix_profiles` every compared family declares, plus the primary profile
+  (matched by name, else by latency). Replay golden sets (the gate's replay list, or — without lists — a language
+  outside the project's locales) run at the primary profile only.
+- Events: `eval.created`, `eval.status_changed`, `eval.gated` on `entity.eval.{id}`; `eval.progress` on
+  `eval.{id}.progress`. The pipeline run's state is the eval's status; when it is done every subject cell's delta is
+  computed against the baseline's cell of the same golden set, profile, decoding and augmentation.
+- `evals.get` (`GET /evals/{id}`) filters with `worst` (worst-N utterances), `cell`, `goldenSet`, `profile` and
+  `role`; `evals.list` with `status` and `subject`.
+
 ### Scorers and metrics (phase 3)
 
 Scorers are neutral core step kinds (CPU, every runtime): they read `hypotheses`, the golden set's `dataset` and its
@@ -207,6 +253,21 @@ Scorers are neutral core step kinds (CPU, every runtime): they read `hypotheses`
 Live tests, paced replays and eval runs compute the streaming metrics from the same partial events, so they agree
 (R54). The conformance suite scores through `wer_score`.
 
+As built (stream Y; help `steps.wer-score`):
+
+- `summary.json` gains additive keys: `normalizer.hash`, `groups` (the unit used) and `hypotheses` (`family`,
+  `weightsHash`, `decodingHash`, `profile`). Readers ignore keys they do not know; the schema stays
+  `cadence.scores/1`.
+- `group` is decided per dataset, all or nothing: the call id only when every row has a `callId`, else the speaker
+  only when every row has one, else the audio hash — so one golden set never mixes resampling units.
+- The word alignment is Levenshtein with ties broken towards fewer substitutions; CER is the character edit distance
+  over the normalized texts with spaces counted.
+- Partial stability, positionally: a word is *shown* when a partial puts it at a position the previous partial held
+  empty or held another word, and *unstable* when the final does not have it at that position; `ratio` = unstable /
+  shown; `editsPerSecond` counts words a later partial changes or drops per second of audio. Both on normalized text.
+- Utterances are joined to hypotheses by audio hash; a dataset utterance without a hypothesis fails the step
+  (`input`).
+
 As built (plan stream R; help `steps.augment-dataset`, `steps.entity-score`, `steps.latency-score`, `steps.frame-vad`):
 
 - **Robustness axis.** `evals.new` `augmentations: [{profile: none | augment/<name>.yaml@<commit>, seed?}]` (none is
@@ -229,6 +290,12 @@ As built (plan stream R; help `steps.augment-dataset`, `steps.entity-score`, `st
   together); a decode marked `pace: realtime` is used as is. Utterance ends come from the NeMo pack's `frame_vad@1`
   (NVIDIA Frame-VAD Multilingual MarbleNet v2.0, NVIDIA Open Model License, checked against R26 on 2026-10-02); Go
   finds the VAD as the newest kind that turns a `dataset` into a `vad`. Without one, latency is reported unavailable.
+  The VAD model is pinned in `defaults.yaml` `packs.nemo.vad_*` (model, revision, onset, offset, minimum speech and
+  silence), not as a registry base model; its model card names no Hebrew, so Hebrew utterance ends are the model's
+  multilingual guess until per-channel VAD (phase 4).
+- The gate reads augmentation 0 (none) only; robustness, entity accuracy and latency are reported, not gated (04
+  "Block 3"). A failed metric step fails the eval like a failed scoring step. Augmentation runs on target golden sets
+  only (replay sets get none).
 
 ### What derives from the schema
 
@@ -337,8 +404,9 @@ chain:                                     # commands in order; the command's su
   - { id: train, command: runs.new, with: { baseModel: $inputs.base, steps: $inputs.steps, datasets: [$inputs.dataset, $inputs.replay] } }
   - { id: watch, command: runs.get, accepts: [jobs.wait], until: terminal }  # ticks when the run's status has ended
   - { id: checkpoints, command: checkpoints.list }         # top-k registered by the checkpoint hook
-  - { id: eval, command: evals.new, phase: 3 }               # live in phase 3 (plan stream E)
-  - { id: gate, command: evals.gate, phase: 3 }
+  - { id: eval, command: evals.new, estimate: { gpuHours: 0.5, minutes: 30, plusMinus: 0.5 } }  # live since phase 3
+  - { id: eval-wait, command: evals.get, until: terminal }
+  - { id: gate, command: evals.gate }
 stop: [ { gate: failed }, { budget: exceeded }, { step: failed }, { approval: denied } ]
 next: { done: …, stopped: … }              # the next-step suggestion written when the chain ends
 prompt: |                                  # Go text/template over .Inputs.<name> (as text) and .Project.{Name,Slug,Locales}
@@ -349,6 +417,12 @@ prompt: |                                  # Go text/template over .Inputs.<name
 - The estimate is the sum of the chain's step estimates (R12), shown before the session starts: an operation with its own estimator gets the step's `with` (`runs.new` from the table or the calibration; `runs.calibrate` from the calibrate kind's plan over a mix; `runs.stage` and `runs.resume` from the runs service's plans over a parent run); a step whose operation cannot plan yet (the mix or the parent run exists only during the session) and other spending steps use the step's `estimate` hint; steps whose phase has not shipped are listed and skipped; the rest spend nothing.
 - Stop conditions: a failed gate, an exhausted GPU or agent budget, a denied approval, a step failed after its retries.
 - As built (phase 2, stream K): `playbooks.list|get` (`?project=` fills project facts and estimates with them; the ETag of `get` is the template version) and `playbooks.run` (`POST /projects/{p}/playbooks/{name}:run`, If-Match the version or `*`; `dryRun` answers the resolved inputs, the estimate, the plan and the rendered prompt). Five templates ship: "Fine-tune from a dataset version" runs in phase 2; the other four are listed with `availableFrom: 4` and `playbooks.run` answers `playbook-unavailable`. Templates are validated at start and in CI (`internal/playbooks`): every operation of a step that can run now is an implemented contract operation; later-phase steps only need `<entity>.<verb>` with a vocabulary verb. Agents cannot start playbook sessions (preset rule `sessions-are-for-people`); `playbooks.get` shows them the estimate.
+- Phase 3 (stream E): the fine-tune playbook's eval steps run — `evals.new` (dry run first, a 0.5 GPU-hour hint until
+  `evals.new` has a playbook estimator), a wait on the eval (`evals.get` until terminal) and `evals.gate`; a failed
+  verdict stops it (`gate: failed`), and a passed one ends with "ask a person to register it" (`models.register` is an
+  approval for agents). `eval-matrix.yaml` is one cell by hand (transcribe → `wer_score`); `evals.new` generates the
+  matrix itself. The build still reports roadmap phase 2 to playbooks (`playbooks.CurrentPhase`), so the four
+  `availableFrom: 4` playbooks stay listed only, as they should.
 
 ### Smoke project
 
@@ -394,14 +468,24 @@ Phase 3 (plan stream L; R21):
   (unedited files update, edited or deleted ones stay, a missing pack comes whole). The search index folds with the
   scoring normalizer's character steps but keeps punctuation (identifiers stay searchable); `internal/textnorm` is
   the Go interpreter of `NormalizerPayload`, the same steps as the worker's scorer.
+- Also as built: `langpacks.list` (the project's packs with their versions); the copied packs are recorded in
+  `data.lock` as `template/langpack-<locale in lower case>` (`template/langpack-he-il`), like other templates, so `projects.sync` can diff them; defaults
+  `langpacks.boost_weight` (1.0, the `# weight:` a new list starts with) and `langpacks.boost_max_terms` (5 000). The
+  he-IL pack's scoring normalizer is `normalizer/he-il`; the sr pack references `normalizer/basic`, because Serbian
+  golden sets are imported transliterated to Latin (`sr-Cyrl-Latn`). In the Language pack document, Commit is offered
+  only for text that passed Check (the server's dry run) unchanged.
+- Not built: the "test a phrase" box (below); starter packs beyond he-IL and sr.
 - `boost.evaluate` and `augment.evaluate` are not operations (R1): boosting and augmentation are `evals.new` axes.
 
 ### Hot words
 
 - Static boosting: the project's boost lists are applied at decode through NeMo's context biasing for RNNT (phrase boosting), each list with a weight; the Triton model repository carries the lists as decoding configuration, so updating a list is a config release, not a new model version.
 - Dynamic boosting: Эра may pass per-call candidates (the person's name, the debtor's address) with the request; the inference contract defines the field and a cap on list size.
-- Boosting is evaluated, not assumed (R24): decoding is an eval axis, `evals.new` takes `decoding: [{boost: none}, {boost: <list SHA>, weight}]`, and the transcribe step decodes with static RNNT phrase boosting (`nemotron_transcribe@2`, an optional `boost_list` input). Boosted and unboosted cells score the golden-set subset that contains listed terms (entity recall) and general WER, because over-boosting shows up as insertions of listed terms; the gate is to use both (the entity-recall check waits for `entity_score@1`, 07 "Open questions").
-- Windows: Language pack (document) with the boost-list editor and a "test a phrase" box: a one-utterance eval with and without the list until the Transcription tool lands, then a two-target transcription, boost on and off (R47). Agent tools: `langpacks.get`, `langpacks.edit`, `boost.edit`; boosting is evaluated with `evals.new`.
+- Boosting is evaluated, not assumed (R24): decoding is an eval axis, `evals.new` takes `decoding: [{boost: none}, {boost: <list SHA>, weight}]`, and the transcribe step decodes with static RNNT phrase boosting (`nemotron_transcribe@2`, an optional `boost_list` input). Boosted and unboosted cells score the golden-set subset that contains listed terms (entity recall) and general WER, because over-boosting shows up as insertions of listed terms; the gate is to use both (the entity-recall check waits for `entity_score@1`, 07 "Open questions"). As built:
+  boosted and unboosted cells are computed and compared on general WER; recall of the listed terms is not a scorer
+  yet (`entity_score@1` reads the ITN number classes, not boost lists), so a boosted cell's term recall is measured by
+  hand (the numbers in "Framework packs" above).
+- Windows: Language pack (document) with the boost-list editor and a "test a phrase" box: a one-utterance eval with and without the list until the Transcription tool lands, then a two-target transcription, boost on and off (R47). The box is not built yet (phase 3, stream U left it out); the boost-list editor is. Agent tools: `langpacks.get`, `langpacks.edit`, `boost.edit`; boosting is evaluated with `evals.new`.
 
 ## Augmentation
 
@@ -423,6 +507,10 @@ Telephony audio differs from the training corpora in noise, handset processing a
 
 - A profile lists transforms with per-utterance probability and parameter ranges; `telephony` is the default profile, `clean` disables all; the seed is recorded on the run so an augmentation draw is reproducible.
 - Training applies the profile on the fly through Lhotse transforms and NeMo augmentors; nothing is written to disk except the noise bank, which is a registry asset with its licence.
+- One resampler (spike A5, "What the spec should change" 7): band-limiting and codec stages resample with the same
+  polyphase filter as imports and the live path (`resample_poly`, which also streams frame by frame), so the
+  Transcription tool's telephony simulation equals what training and the robustness matrix saw. The training
+  augmentation's telephone stage still uses an FFT resampler (it cannot stream) and moves to polyphase with stream T.
 - Evaluation runs the golden set through each profile as a robustness matrix (golden set × profile × latency): the augmentation profile is an `evals.new` axis, applied by a CPU core step `augment_dataset@1` (codec, band-limit, noise bank; seeded, the seed recorded) before transcription (phase 3, plan stream R); the gate can require a maximum WER degradation under `telephony` (not in `gates.yaml` yet, 07 "Open questions").
 - Windows: the Recipe document renders a profile as a schema-driven form with a listen preview (apply to a sample utterance and play). Agent tools: `augment.preview`; robustness is evaluated with `evals.new` (R1).
 
