@@ -47,7 +47,7 @@ func TestRobustnessComparesEachAugmentedCellWithItsUnaugmentedOne(t *testing.T) 
 		{ID: "c2", Role: RoleBaseline, GoldenSetVersionID: "g", Profile: "160ms", AugmentationIndex: 1, RecordID: "r2"},
 		{ID: "c3", Role: RoleSubject, GoldenSetVersionID: "g", Profile: "80ms", AugmentationIndex: 1},
 	}
-	rows := robustness(cells, recs)
+	rows := robustness(cells, recs, func(string) bool { return false })
 	if len(rows) != 3 {
 		t.Fatalf("rows %+v", rows)
 	}
@@ -60,7 +60,7 @@ func TestRobustnessComparesEachAugmentedCellWithItsUnaugmentedOne(t *testing.T) 
 	if r := rows[2]; r.WER != nil || r.Degradation != nil { // not scored yet
 		t.Fatalf("pending row %+v", r)
 	}
-	if robustness(cells[:1], recs) != nil {
+	if robustness(cells[:1], recs, func(string) bool { return false }) != nil {
 		t.Fatal("an eval without augmentation has a robustness matrix")
 	}
 }

@@ -6,7 +6,7 @@ contexts: [step:latency_score, artifact:metric_scores, artifact:vad, artifact:hy
 
 ## What this is
 
-`latency_score@1` is a core step kind (CPU, job kind `eval`, every runtime image). It measures what a caller waits
+`latency_score@2` is a core step kind (CPU, job kind `eval`, every runtime image). It measures what a caller waits
 for after they stop talking: the time from the end of speech to the final transcript, with audio fed at real-time pace,
 reported at p50 and p95 (R54; Pipecat's "time to final segment" is the same measure).
 
@@ -29,19 +29,25 @@ How:
   word) counts as 0 and is counted in `earlyFinals`; utterances without speech or with an empty final are counted and
   left out.
 - **Real-time pace.** A decode run at real-time pace (`decoding.pace: realtime` in the hypotheses) is used as it is. An
-  eval's file decode runs faster than real time, so its emit times at real-time pace are simulated from its own compute
-  times: chunk k's audio becomes available at `audioOffsetMs[k]` and takes `emitMs[k] − emitMs[k−1]` to decode (the
-  streams of a batch decode together, as concurrent calls on one card do), so
-  `emit[k] = max(audioOffsetMs[k], emit[k−1]) + compute[k]` — a decoder slower than real time queues. `pace` says
-  `simulated` or `realtime`.
+  eval's file decode runs faster than real time, so its emit times at real-time pace are simulated from its own
+  compute. The hypotheses row carries `steps`, one `[audio available ms, compute ms]` per chunk the stream stepped
+  (silent chunks included; compute is the batch step's wall time over the streams it stepped, so the batch size does
+  not inflate it), and each partial the `step` that emitted it: chunk k is done at
+  `done[k] = max(available[k], done[k−1]) + compute[k]` — a decoder slower than real time queues — and a partial is
+  emitted when its chunk is done. Hypotheses written before the steps existed fall back to the partials' own times
+  (`emitMs[k] − emitMs[k−1]` as the compute of partial k), which version 1 used and which charged a partial the silent
+  chunks before it and the batch's other streams. `pace` says `simulated` or `realtime`, `timing` what a simulation
+  used (`steps` or `events`).
 - Percentiles interpolate linearly between ranks (NumPy's default).
-- Measured on the staging card (2026-10-02; the base model at 160 ms on the NeMo pack's ten FLEURS he fixture clips,
+- Measured on the staging card with version 1's event timing (2026-10-02; the base model at 160 ms on the NeMo pack's ten FLEURS he fixture clips,
   batch 32, frame VAD on the CPU): p50 441 ms, p95 674 ms (8 measured, 2 empty finals); under the `telephony` profile
   p50 462 ms, p95 654 ms. The VAD took 10.6 s for the ten clips, model load included; the decode peaked at 4.9 GB.
 
 When it is unavailable: the transcribe step of a family without streaming writes no partials (no latency step is
 planned), and without a published VAD step kind (a runtime without the NeMo pack) `evals.get` reports latency to final
-as unavailable with that reason. The aligned reference's end (forced alignment) and per-channel VAD of call recordings
+as unavailable with that reason. The latency and VAD steps are optional in the eval's pipeline: when one fails, the
+eval still finishes and gates on WER, and the cell shows latency to final unavailable with the step's error (or "was
+skipped" when the VAD it reads failed). The aligned reference's end (forced alignment) and per-channel VAD of call recordings
 arrive in phase 4.
 
 ## Place in the loop

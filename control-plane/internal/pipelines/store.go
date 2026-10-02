@@ -69,6 +69,26 @@ func active(state string) bool { return state == StepQueued || state == StepRunn
 
 func finished(state string) bool { return state == StepDone || state == StepReused }
 
+// optional reports whether step is marked optional in the run's pipeline.
+func (r Run) optional(step string) bool {
+	for _, s := range r.Definition.Steps {
+		if s.ID == step {
+			return s.Optional
+		}
+	}
+	return false
+}
+
+// readsAny reports whether s reads an output of one of the steps.
+func readsAny(s StepRow, set map[string]bool) bool {
+	for _, v := range s.Wiring {
+		if w, ok := ParseWire(v); ok && w.Step != "" && set[w.Step] {
+			return true
+		}
+	}
+	return false
+}
+
 // Run is a pipeline run. Its JSON form is the contract's PipelineRun (PipelineRunSummary without steps).
 type Run struct {
 	ID         string                       `json:"id"`

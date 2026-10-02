@@ -699,6 +699,9 @@ class FileResult:
     text: str
     words: list[dict[str, Any]]
     partials: list[dict[str, Any]]
+    # (audio available ms, compute ms) of every chunk the stream stepped, silent ones included: latency_score
+    # simulates real-time pace from them (a partial's ``step`` indexes its chunk)
+    steps: list[tuple[int, float]] = field(default_factory=list)
 
 
 def join_finals(finals: Sequence[Event]) -> str:
@@ -712,39 +715,61 @@ def join_finals(finals: Sequence[Event]) -> str:
     return out.strip()
 
 
-def collect(events: Sequence[Event], t0: float, emitted: Sequence[float]) -> FileResult:
-    """A decode's events as a hypotheses row's text, words and partial events (``audioOffsetMs``, ``emitMs`` and the
-    text so far: finals plus the current partial)."""
+def collect(
+    events: Sequence[Event],
+    t0: float,
+    emitted: Sequence[float],
+    chunks: Sequence[int] | None = None,
+    steps: Sequence[tuple[int, float]] = (),
+) -> FileResult:
+    """A decode's events as a hypotheses row's text, words and partial events (``audioOffsetMs``, ``emitMs``, the text
+    so far: finals plus the current partial, and ``step``, the index in ``steps`` of the chunk that emitted it)."""
     finals: list[Event] = []
     words: list[dict[str, Any]] = []
     partials: list[dict[str, Any]] = []
-    for e, at in zip(events, emitted, strict=True):
+    for k, (e, at) in enumerate(zip(events, emitted, strict=True)):
         if e["type"] == "final":
             finals.append(e)
             words += e["words"]
             so_far = join_finals(finals)
         else:
             so_far = join_finals([*finals, {"text": e["text"], "space": True}])
-        partials.append(
-            {"audioOffsetMs": round(float(e["audioEnd"]) * 1000), "emitMs": round((at - t0) * 1000, 2), "text": so_far}
-        )
+        p: dict[str, Any] = {
+            "audioOffsetMs": round(float(e["audioEnd"]) * 1000),
+            "emitMs": round((at - t0) * 1000, 2),
+            "text": so_far,
+        }
+        if chunks is not None and k < len(chunks) and steps:
+            p["step"] = chunks[k]
+        partials.append(p)
     text = join_finals(finals)
     if partials:
         partials[-1]["final"] = True
         partials[-1]["text"] = text
-    return FileResult(text=text, words=words, partials=partials)
+    return FileResult(text=text, words=words, partials=partials, steps=list(steps))
 
 
 def decode_batch(streams: Sequence[PipelineStream], audios: Sequence[Audio]) -> list[FileResult]:
     """Decode whole files, one stream each, stepping every stream of the batch together (``transcribe_step`` over a
     list of feature buffers: continuous batching across streams); each file ends with ``finalize("end")``. The
     streams must share one pipeline; their chunks are the same as a live session's of the same audio, so a file
-    decodes to the same words either way."""
+    decodes to the same words either way.
+
+    Clips of different lengths batch safely: a clip's words do not depend on which clips share its steps (a sub-chunk
+    clip, a short and a long one decode as each alone at 80, 160 and 1120 ms). They can depend on how many do, at
+    80 ms: the card's batched matrix products round differently from batch 1, and the base model's near-ties there
+    flip (1 of the 10 he fixtures and a 3-clip concatenation differ by words between batch 1 and batch 2+, the same at
+    any batch of 2+; 160 and 1120 ms are unaffected; this stream's GPU check, 2026-10-02). The batch size therefore
+    stays in an eval's decoding hash. Each hypotheses row also carries ``steps``, the audio each chunk made available
+    and its compute (the step's wall time over the streams it stepped), and each partial the ``step`` that emitted it,
+    from which latency_score simulates real-time pace."""
     if not streams:
         return []
     pipe = streams[0].pipeline
     events: list[list[Event]] = [[] for _ in streams]
     stamps: list[list[float]] = [[] for _ in streams]
+    steps: list[list[tuple[int, float]]] = [[] for _ in streams]  # per stream: (audio ms, compute ms) per chunk
+    chunk_of: list[list[int]] = [[] for _ in streams]  # per event: the chunk whose step emitted it
     plans: list[list[Chunk]] = []
     for s, a in zip(streams, audios, strict=True):
         x = np.asarray(a, dtype=np.float32)
@@ -764,15 +789,21 @@ def decode_batch(streams: Sequence[PipelineStream], audios: Sequence[Audio]) -> 
         if not batch:
             break
         _first_step_flag(step == 0)
+        started = time.perf_counter()
         try:
             outs = pipe.transcribe_step([streams[i]._request(ch) for i, ch in batch])
         finally:
             _first_step_flag(False)
         now = time.perf_counter()
+        # The step's compute per stream: what one stream of the batch costs, whatever the batch size (at batch 1 a
+        # step also pays the card's fixed cost per call, so this is a lower bound of a lone stream's compute)
+        share = (now - started) * 1000 / len(batch)
         for (i, ch), out in zip(batch, outs, strict=True):
             evs = streams[i].consume(out, ch.real, ch.last, "end")
+            steps[i].append((round(streams[i].consumed / SR * 1000), round(share, 2)))
             events[i] += evs
             stamps[i] += [now] * len(evs)
+            chunk_of[i] += [len(steps[i]) - 1] * len(evs)
             if ch.last:
                 streams[i].feats = None
         step += 1
@@ -780,4 +811,4 @@ def decode_batch(streams: Sequence[PipelineStream], audios: Sequence[Audio]) -> 
         if not plan:  # an empty file: one empty final
             events[i].append(streams[i]._final([], "end", streams[i].consumed, "", True))
             stamps[i].append(time.perf_counter())
-    return [collect(e, t0, st) for e, st in zip(events, stamps, strict=True)]
+    return [collect(e, t0, st, ch, sp) for e, st, ch, sp in zip(events, stamps, chunk_of, steps, strict=True)]

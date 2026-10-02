@@ -73,7 +73,7 @@ def decoding_config(
 def hypothesis_row(
     audio_hash: str, r: pipeline.FileResult, decoding: Mapping[str, Any], dhash: str, whash: str
 ) -> dict[str, Any]:
-    return {
+    row: dict[str, Any] = {
         "audio": audio_hash,
         "text": r.text,
         "words": r.words,
@@ -83,6 +83,9 @@ def hypothesis_row(
         "weightsHash": whash,
         "partials": r.partials,
     }
+    if r.steps:  # [audio available ms, compute ms] per chunk: latency_score's real-time pace
+        row["steps"] = [list(s) for s in r.steps]
+    return row
 
 
 def boost_input(inputs: Mapping[str, Path], default_weight: float) -> streaming.Boost | None:

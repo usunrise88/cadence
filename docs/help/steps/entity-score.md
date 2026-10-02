@@ -43,7 +43,8 @@ gains an entity check only when `gates.yaml` defines one.
 
 Evaluate — `entities-u<n>` beside `score-u<n>` in an eval pipeline (and for cells whose WER was cached, from the cached
 hypotheses). Its summary is kept beside the cell's eval record, keyed by the record key, the scorer and the ITN file's
-hash; `evals.get` shows it under each cell's `metrics.entities`.
+hash; `evals.get` shows it under each cell's `metrics.entities`. The step is optional in the eval's pipeline: when it
+fails, the eval still finishes and gates on WER, and the cell shows entity accuracy unavailable with the step's error.
 
 ## Fields and defaults
 

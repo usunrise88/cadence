@@ -496,7 +496,9 @@ export function robustnessHeatmap(e: Eval, decoding = 0): HeatmapSpec | undefine
         const mine = rows.filter((r) => r.goldenSetVersionId === gs.versionId && r.augmentationIndex === aug && r.role === role);
         if (!mine.length) continue;
         const yi = y.length;
-        y.push(`${shortName(gs.name)} · ${augmentationLabel(e, aug)} · ${role}`);
+        // A golden set scored on characters (eval.character_error_languages) degrades in CER, not WER.
+        const cer = mine.some((r) => r.unit === "char");
+        y.push(`${shortName(gs.name)}${cer ? " (CER)" : ""} · ${augmentationLabel(e, aug)} · ${role}`);
         profiles.forEach((p, xi) => {
           const d = mine.find((r) => r.profile === p.name)?.degradation;
           cells.push({ x: xi, y: yi, value: d == null ? null : pct2(d) });
@@ -504,9 +506,11 @@ export function robustnessHeatmap(e: Eval, decoding = 0): HeatmapSpec | undefine
       }
     }
   }
+  const allCer = rows.every((r) => r.unit === "char");
+  const anyCer = rows.some((r) => r.unit === "char");
   return {
     kind: "heatmap",
-    title: "WER degradation under augmentation",
+    title: `${allCer ? "CER" : anyCer ? "WER / CER" : "WER"} degradation under augmentation`,
     xLabel: "Latency profile",
     yLabel: "Golden set · augmentation · model",
     unit: "pp",
@@ -516,6 +520,7 @@ export function robustnessHeatmap(e: Eval, decoding = 0): HeatmapSpec | undefine
     colormap: "diverging",
     center: 0,
     cells,
-    note: "Degradation is WER under the augmentation minus WER without it, in percentage points; positive is worse; empty cells are not scored yet.",
+    note:
+      "Degradation is WER under the augmentation minus WER without it (CER for golden sets marked so, languages written without spaces), in percentage points; positive is worse; empty cells are not scored yet.",
   };
 }

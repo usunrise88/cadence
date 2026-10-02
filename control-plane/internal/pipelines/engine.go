@@ -415,7 +415,7 @@ func (e *Engine) advance(ctx context.Context, tx pgx.Tx, r *Run, sts []StepRow) 
 	}
 	all := true
 	for _, s := range sts {
-		all = all && finished(s.State)
+		all = all && (finished(s.State) || (r.optional(s.Step) && (s.State == StepFailed || s.State == StepSkipped)))
 	}
 	if all {
 		now := time.Now()
@@ -902,6 +902,30 @@ func (e *Engine) fail(ctx context.Context, tx pgx.Tx, r *Run, sts []StepRow, i i
 	drafts := []events.Draft{stepDraft(*r, *s)}
 	if r.State != RunRunning {
 		return drafts, nil
+	}
+	if r.optional(s.Step) {
+		// An optional step's failure skips the steps that read it, at any depth (optional too, Check), and the run
+		// goes on: it ends done once the rest has.
+		failed := map[string]bool{s.Step: true}
+		for changed := true; changed; {
+			changed = false
+			for j := range sts {
+				if sts[j].State != StepWaiting || !readsAny(sts[j], failed) {
+					continue
+				}
+				sts[j].State, sts[j].FinishedAt = StepSkipped, &now
+				if sts[j], err = saveStep(ctx, tx, sts[j]); err != nil {
+					return nil, err
+				}
+				failed[sts[j].Step], changed = true, true
+				drafts = append(drafts, stepDraft(*r, sts[j]))
+			}
+		}
+		more, err := e.advance(ctx, tx, r, sts)
+		if err != nil {
+			return nil, err
+		}
+		return append(drafts, more...), nil
 	}
 	for j := range sts {
 		if sts[j].State != StepWaiting {

@@ -1,11 +1,12 @@
-"""``wer_score@1`` — the runtime-neutral word error rate scorer (docs/review/2026-10-02-phase-3-plan.md "The scores
-artifact"; R21, R54).
+"""``wer_score@2`` — the runtime-neutral word error rate scorer (docs/review/2026-10-02-phase-3-plan.md "The scores
+artifact"; R21, R54). Version 2 computes CER without spaces (version 1 counted them, which inflated the CER of
+languages written without spaces between words and so the CER gate of eval.character_error_languages).
 
 Consumes ``hypotheses`` (a transcribe step's JSON lines, R42), the ``dataset`` they decode (the golden set's dataset
 artifact) and a ``normalizer`` (a scoring normalizer payload, :mod:`cadence_worker.normalize`); produces ``scores``, a
 directory artifact:
 
-    summary.json      {schema: cadence.scores/1, scorer: wer_score@1, normalizer: {versionId, hash}, language,
+    summary.json      {schema: cadence.scores/1, scorer: wer_score@2, normalizer: {versionId, hash}, language,
                       utterances, refWords, refChars, wer, cer, werNoPunct, sub, del, ins, charErrors,
                       buckets: [{lo, hi, utterances, refWords, wer}], stability?: {partialWords, unstableWords, ratio,
                       editsPerSecond}, groups, hypotheses: {family, weightsHash, decodingHash, profile}}
@@ -13,7 +14,9 @@ directory artifact:
                       sub, del, ins, refChars, charErrors, ops: [[op, ref, hyp]]}
 
 Hypotheses join the dataset by the BLAKE3 hash of each audio file. Words are the normalized text split on spaces; S/D/I
-come from a Levenshtein alignment; CER is the character edit distance over the normalized texts (spaces included);
+come from a Levenshtein alignment; CER is the character edit distance over the normalized texts with every space
+removed (as FLEURS and Whisper report it: a space is not a character a reader checks, and a language written without
+spaces would otherwise count a segmenter's spaces as errors), ``refChars`` the reference's characters without spaces;
 ``werNoPunct`` uses the same normalizer with punctuation stripped. Rates are fractions. ``group`` is the bootstrap's
 resampling unit (R54): the call id when every utterance has one (``callId``), else the speaker when every utterance
 has one, else the audio hash (``groups`` names which). Partial stability (Shangguan et al., Interspeech 2020) comes
@@ -39,7 +42,7 @@ from cadence_worker.steps.base import StepInputError, cadence_field
 from cadence_worker.steps.context import StepContext
 
 SCHEMA = "cadence.scores/1"
-SCORER = "wer_score@1"
+SCORER = "wer_score@2"
 DATASET_FORMAT = "cadence.dataset/1"
 CALL_FIELDS = ("callId", "call")
 
@@ -166,11 +169,14 @@ def partial_stability(partials: Iterable[Mapping[str, Any]], final: str, norm: N
 
     A word is *shown* when a partial puts it at a position the previous partial held empty or held another word; it is
     *unstable* when the final text does not have it at that position (changed or dropped). An *edit* is a word of a
-    partial that the next partial (or the final) changes or drops."""
-    seqs = [norm.words(str(p.get("text") or "")) for p in partials]
+    partial that the next partial (or the final) changes or drops.
+
+    The final is not a partial: the event that carries it (``final: true``, a decode's last event) shows no words to
+    count, so the ratio's denominator holds only words a reader saw before the end (version 1 counted the final's words
+    as shown, stable by definition, which lowered the ratio). The final still ends the last partial: its changes are
+    edits."""
+    seqs = [norm.words(str(p.get("text") or "")) for p in partials if p.get("final") is not True]
     fin = norm.words(final)
-    if not seqs or seqs[-1] != fin:
-        seqs.append(fin)
     st = Stability(seconds=seconds)
     prev: list[str] = []
     for words in seqs:
@@ -181,6 +187,7 @@ def partial_stability(partials: Iterable[Mapping[str, Any]], final: str, norm: N
                     st.unstable_words += 1
         st.edits += sum(1 for i, w in enumerate(prev) if i >= len(words) or words[i] != w)
         prev = words
+    st.edits += sum(1 for i, w in enumerate(prev) if i >= len(fin) or fin[i] != w)
     return st
 
 
@@ -225,14 +232,15 @@ def score(
         ref_n, hyp_n = norm(r.text), norm(str(h["text"]))
         ref_w, hyp_w = ref_n.split(), hyp_n.split()
         a = align(ref_w, hyp_w)
-        ce = char_distance(ref_n, hyp_n)
+        ref_c, hyp_c = "".join(ref_w), "".join(hyp_w)  # CER over the characters, spaces removed
+        ce = char_distance(ref_c, hyp_c)
         if nopunct is norm:
             np_err, np_words = a.errors, len(ref_w)
         else:
             np_ref = nopunct.words(r.text)
             np_err, np_words = align(np_ref, nopunct.words(str(h["text"]))).errors, len(np_ref)
         totals["refWords"] += len(ref_w)
-        totals["refChars"] += len(ref_n)
+        totals["refChars"] += len(ref_c)
         totals["sub"] += a.sub
         totals["del"] += a.dele
         totals["ins"] += a.ins
@@ -263,7 +271,7 @@ def score(
                 "sub": a.sub,
                 "del": a.dele,
                 "ins": a.ins,
-                "refChars": len(ref_n),
+                "refChars": len(ref_c),
                 "charErrors": ce,
                 "ops": [list(op) for op in a.ops],
             }
@@ -312,7 +320,7 @@ def score(
 
 
 class WerScoreStep:
-    version: ClassVar[str] = "1"
+    version: ClassVar[str] = "2"
     consumes: ClassVar[Mapping[str, str]] = {"hypotheses": "hypotheses", "data": "dataset", "normalizer": "normalizer"}
     produces: ClassVar[Mapping[str, str]] = {"scores": "scores"}
     resources: ClassVar[StepResources] = {"gpu": False, "gpus": 0, "jobKind": "eval"}

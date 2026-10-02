@@ -171,16 +171,19 @@ func (s *Service) verdict(e Eval, locales []string, gf GateFile, cells []Cell, r
 	if st.baseline != nil {
 		v.Checks = append(v.Checks, *st.baseline)
 	}
-	if !slices.ContainsFunc(e.Profiles, func(p Profile) bool { return p.Name == g.PrimaryProfile }) {
+	// The gate's primary profile is the eval's column of that name, else of the latency it states (as planned).
+	prim, ok := profileFor(e.Profiles, g.PrimaryProfile)
+	if !ok {
 		v.Checks = append(v.Checks, Check{Kind: CheckPrimaryProfile, Profile: g.PrimaryProfile, State: CheckFailed,
 			Message: fmt.Sprintf("the eval has no %s cells (it ran %s); run evals.new with that profile, or set primaryProfile in gates.yaml to a profile of the model's family",
 				g.PrimaryProfile, profileNames(e.Profiles))})
 		v.Verdict = VerdictFailed
 		return v
 	}
+	primary := prim.Name
 	at := func(gsID, role string) (Cell, bool) {
 		for _, c := range cells {
-			if c.Role == role && c.GoldenSetVersionID == gsID && c.Profile == g.PrimaryProfile && c.DecodingIndex == 0 && c.AugmentationIndex == 0 {
+			if c.Role == role && c.GoldenSetVersionID == gsID && c.Profile == primary && c.DecodingIndex == 0 && c.AugmentationIndex == 0 {
 				return c, true
 			}
 		}
@@ -205,7 +208,7 @@ func (s *Service) verdict(e Eval, locales []string, gf GateFile, cells []Cell, r
 		}
 		chars := CharScored(gs.Locale, s.defaults().Eval.CharacterErrorLanguages.Value)
 		metric := "WER"
-		base := Check{GoldenSetVersionID: gs.VersionID, GoldenSet: gs.Name, Profile: g.PrimaryProfile}
+		base := Check{GoldenSetVersionID: gs.VersionID, GoldenSet: gs.Name, Profile: primary}
 		if chars {
 			metric, base.Unit = "CER", UnitChar
 		}
@@ -288,7 +291,7 @@ func (s *Service) verdict(e Eval, locales []string, gf GateFile, cells []Cell, r
 		if i := slices.IndexFunc(e.GoldenSets, func(gs GoldenSet) bool { return gs.Name == rv.Name }); i >= 0 {
 			msg = fmt.Sprintf("the eval scored %s %s, not the version the project adopted (%s); run evals.new with it", rv.Name, e.GoldenSets[i].Version, rv.Version)
 		}
-		v.Checks = append(v.Checks, Check{Kind: kind, GoldenSetVersionID: rv.ID, GoldenSet: rv.Name, Profile: g.PrimaryProfile, State: CheckFailed, Message: msg})
+		v.Checks = append(v.Checks, Check{Kind: kind, GoldenSetVersionID: rv.ID, GoldenSet: rv.Name, Profile: primary, State: CheckFailed, Message: msg})
 		if kind == CheckTarget {
 			targets++
 		}
@@ -298,13 +301,13 @@ func (s *Service) verdict(e Eval, locales []string, gf GateFile, cells []Cell, r
 			continue // reported above
 		}
 		if !slices.ContainsFunc(e.GoldenSets, func(gs GoldenSet) bool { return Matches([]string{r}, gs.VersionID, gs.Name) }) {
-			v.Checks = append(v.Checks, Check{Kind: CheckTarget, GoldenSet: r, Profile: g.PrimaryProfile, State: CheckFailed,
+			v.Checks = append(v.Checks, Check{Kind: CheckTarget, GoldenSet: r, Profile: primary, State: CheckFailed,
 				Message: fmt.Sprintf("the target golden set %s is not in this eval; run evals.new with it", r)})
 			targets++
 		}
 	}
 	if targets == 0 {
-		v.Checks = append(v.Checks, Check{Kind: CheckTarget, Profile: g.PrimaryProfile, State: CheckFailed,
+		v.Checks = append(v.Checks, Check{Kind: CheckTarget, Profile: primary, State: CheckFailed,
 			Message: "the eval has no target golden set; name target goldenSets in gates.yaml or evaluate on a golden set of the project's locales"})
 	}
 	v.Verdict = VerdictPassed

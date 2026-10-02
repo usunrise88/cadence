@@ -78,6 +78,9 @@ type Step struct {
 	Kind   string            `yaml:"kind" json:"kind"` // name@version
 	In     map[string]string `yaml:"in,omitempty" json:"in,omitempty"`
 	Params map[string]any    `yaml:"params,omitempty" json:"params,omitempty"`
+	// Optional marks a step whose failure does not fail the run: the steps that read its outputs (optional too) are
+	// skipped and the run ends done without them (an eval's reported-only metrics, R54).
+	Optional bool `yaml:"optional,omitempty" json:"optional,omitempty"`
 }
 
 // KindRef splits the pinned kind into name and version.
@@ -223,8 +226,12 @@ func (p Pipeline) Check(file string) error {
 			case w.Step == s.ID:
 				errs.Add(path, "step %q cannot read its own output", s.ID)
 			default:
-				if _, known := ids[w.Step]; !known {
+				j, known := ids[w.Step]
+				switch {
+				case !known:
 					errs.Add(path, "no step %q in this pipeline", w.Step)
+				case p.Steps[j].Optional && !s.Optional:
+					errs.Add(path, "step %q reads the optional step %q: mark it optional too (an optional step's failure skips the steps that read it)", s.ID, w.Step)
 				}
 			}
 		}

@@ -1,4 +1,4 @@
-"""entity_score@1 and latency_score@1: the metric_scores artifact (phase 3 stream R)."""
+"""entity_score@1 and latency_score@2: the metric_scores artifact (phase 3 stream R)."""
 
 from __future__ import annotations
 
@@ -107,6 +107,47 @@ def test_paced_emits_simulate_real_time() -> None:
     ]
     assert paced_emits(partials, realtime=False) == [170, 330, 860, 870]
     assert paced_emits(partials, realtime=True) == [10, 20, 400, 410]
+
+
+def test_paced_emits_from_chunk_steps_charge_each_chunk_its_own_compute() -> None:
+    """A batched file decode: four chunks of 160 ms, two silent (no event). From the events alone the third partial
+    would be charged the wall time since the second (the silent chunk and the batch's other streams: 400 ms); from the
+    chunk steps each chunk pays only its own share."""
+    partials = [
+        {"audioOffsetMs": 160, "emitMs": 50, "step": 0},
+        {"audioOffsetMs": 480, "emitMs": 150, "step": 2},
+        {"audioOffsetMs": 640, "emitMs": 550, "step": 3},
+    ]
+    steps = [(160.0, 10.0), (320.0, 10.0), (480.0, 10.0), (640.0, 300.0)]  # the last chunk is slower than real time
+    assert paced_emits(partials, realtime=False, steps=steps) == [170, 490, 940]
+    assert paced_emits(partials, realtime=False) == [210, 580, 1040]  # version 1's estimate, without the steps
+
+
+def test_latency_from_chunk_steps(tmp_path: Path) -> None:
+    hashes = dataset(tmp_path / "data", [{"text": "one two", "duration": 1.0}])
+    partials = [
+        {"audioOffsetMs": 320, "emitMs": 900, "text": "one", "step": 1},
+        {"audioOffsetMs": 640, "emitMs": 1800, "text": "one two", "step": 3},
+        {"audioOffsetMs": 960, "emitMs": 2700, "text": "one two", "final": True, "step": 5},
+    ]
+    # Six chunks of 160 ms decoded in a batch of 30: 900 ms per batch step, 30 ms each stream's share.
+    steps = [[160 * (k + 1), 30] for k in range(6)]
+    hyps_file(tmp_path / "hyps.jsonl", hashes, [{"text": "one two", "partials": partials, "steps": steps}])
+    (tmp_path / "vad.jsonl").write_text(json.dumps({"audio": hashes[0], "speechEndS": 0.6}) + "\n", encoding="utf-8")
+    out = tmp_path / "scores"
+    LatencyScoreStep().run(
+        LatencyScoreParams(),
+        {"hypotheses": tmp_path / "hyps.jsonl", "data": tmp_path / "data", "vad": tmp_path / "vad.jsonl"},
+        {"scores": out},
+        StepContext(lambda e: None, work_dir=tmp_path),
+    )
+    summary, rows = read(out)
+    # Settles at partial 1, chunk 3: available at 640 ms, done 30 ms later; speech ended at 600 ms → 70 ms, not the
+    # 1240 ms the batch's wall clock would say.
+    assert summary["scorer"] == "latency_score@2"
+    assert summary["timing"] == "steps"
+    assert rows[0]["finalAtMs"] == 670.0
+    assert rows[0]["latencyMs"] == 70.0
 
 
 def test_final_index_is_where_the_text_settles() -> None:

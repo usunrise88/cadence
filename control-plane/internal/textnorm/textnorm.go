@@ -8,10 +8,15 @@
 //  2. mappings: literal replacements, applied one after another in the order given (each sees the result of the
 //     previous one).
 //  3. removeMarks: canonical decomposition (NFD), every nonspacing combining mark (category Mn: Hebrew niqqud and
-//     cantillation, Latin accents) removed, then canonical composition (NFC).
+//     cantillation, Latin accents) removed, then recomposed in the form of step 1 (NFKC also folds a compatibility
+//     character a mapping introduced).
 //  4. casefold: Unicode full case folding (ß → ss), as Python's str.casefold.
 //  5. punctuation strip: every Unicode punctuation character (categories P*) becomes a space.
-//  6. Whitespace collapses to single spaces, trimmed at both ends.
+//  6. Whitespace collapses to single spaces, trimmed at both ends (whitespace as Python's str.split sees it: Unicode
+//     White_Space and U+001C–U+001F).
+//
+// worker/tests/fixtures/normalizer_parity.json holds payloads, inputs and the worker's outputs; both interpreters'
+// tests read it.
 //
 // numbers is "keep" only (phase 3): numbers compare as written.
 package textnorm
@@ -117,8 +122,12 @@ func (n *Normalizer) Apply(s string) string {
 	if n.spec.Punctuation == PunctStrip {
 		s = StripPunctuation(s)
 	}
-	return strings.Join(strings.Fields(s), " ")
+	return strings.Join(strings.FieldsFunc(s, isSpace), " ")
 }
+
+// isSpace is Python's str.split whitespace, which the worker's scorer collapses: Unicode White_Space plus the
+// information separators U+001C–U+001F (bidirectional classes B and S).
+func isSpace(r rune) bool { return unicode.IsSpace(r) || (r >= 0x1C && r <= 0x1F) }
 
 // Fold runs the character-level steps only (Unicode form, mappings, marks, case) and keeps punctuation and spacing.
 // The search index uses it: identifiers and quoted phrases stay searchable while the letters fold as scoring
@@ -129,7 +138,7 @@ func (n *Normalizer) Fold(s string) string {
 		s = strings.ReplaceAll(s, m.From, m.To)
 	}
 	if n.spec.RemoveMarks {
-		s = RemoveMarks(s)
+		s = n.form.String(RemoveMarks(s)) // recomposed in the payload's form, as the worker does
 	}
 	if n.spec.Casefold {
 		s = n.fold.String(s)

@@ -1,4 +1,4 @@
-"""wer_score@1: the scores artifact (docs/review/2026-10-02-phase-3-plan.md "The scores artifact")."""
+"""wer_score@2: the scores artifact (docs/review/2026-10-02-phase-3-plan.md "The scores artifact")."""
 
 from __future__ import annotations
 
@@ -96,7 +96,7 @@ def read(out: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
 
 def test_registered_as_a_neutral_eval_kind() -> None:
     d = registry()["wer_score"]
-    assert d["version"] == "1"
+    assert d["version"] == "2"
     assert d.get("neutral") is True
     assert "role" not in d
     assert d["consumes"] == {"hypotheses": "hypotheses", "data": "dataset", "normalizer": "normalizer"}
@@ -117,7 +117,7 @@ def test_scores_wer_cer_and_operations(tmp_path: Path) -> None:
     summary, rows = read(out)
     assert set(summary) >= SUMMARY_KEYS
     assert summary["schema"] == "cadence.scores/1"
-    assert summary["scorer"] == "wer_score@1"
+    assert summary["scorer"] == "wer_score@2"
     assert summary["normalizer"] == {"versionId": "ver_n", "hash": hash_file(tmp_path / "norm.json")}
     assert summary["language"] == "he-IL"
     assert summary["utterances"] == 3
@@ -147,9 +147,10 @@ def test_scores_wer_cer_and_operations(tmp_path: Path) -> None:
     ]
     assert rows[2]["ref"] == "שלום עולם"
     assert rows[2]["del"] == 1
-    # CER over the normalized texts, spaces included.
+    # CER over the normalized texts, spaces removed (wer_score@2).
     assert rows[0]["charErrors"] == 0
-    assert rows[2]["charErrors"] == len(" עולם")
+    assert rows[2]["charErrors"] == len("עולם")
+    assert rows[2]["refChars"] == len("שלוםעולם")
     assert summary["charErrors"] == sum(r["charErrors"] for r in rows)
     assert summary["cer"] == pytest.approx(summary["charErrors"] / summary["refChars"])
     # Buckets [0,2) [2,5) [5,10) [10,20) [20,∞).
@@ -224,9 +225,22 @@ def test_partial_stability(tmp_path: Path) -> None:
     # A stable stream: every shown word survives.
     stable = [{"text": "a"}, {"text": "a b"}, {"text": "a b c"}]
     assert partial_stability(stable, "a b c", n, 1.0).unstable_words == 0
-    # The final differs from the last partial (dropped word): the final counts as one more emission.
+    # The final differs from the last partial (dropped word): the drop is an edit and the word unstable.
     st = partial_stability([{"text": "a b"}], "a", n, 1.0)
     assert (st.partial_words, st.unstable_words, st.edits) == (2, 1, 1)
+    # The final is not a partial: words it adds were never shown, so they do not dilute the ratio.
+    st = partial_stability([{"text": "a x"}, {"text": "a b c", "final": True}], "a b c", n, 1.0)
+    assert (st.partial_words, st.unstable_words, st.edits) == (2, 1, 1)
+    assert st.to_json()["ratio"] == 0.5
+    # A stream whose only event is the final shows no partial words.
+    assert partial_stability([{"text": "a b", "final": True}], "a b", n, 1.0).partial_words == 0
+
+    # CER ignores spaces: a hypothesis that only segments differently is perfect on characters.
+    zh = run(tmp_path / "zh", [{"text": "我们 今天 去", "duration": 1}], ["我 们今天去"])
+    zs, zr = read(zh)
+    assert zs["cer"] == 0.0
+    assert zr[0]["refChars"] == 5
+    assert zs["wer"] > 0
     # Through the step: stability appears when hypotheses carry partials.
     out = run(tmp_path, [{"text": "ice cream", "duration": 2.0}], [{"text": "Ice cream", "partials": partials}])
     summary, _ = read(out)

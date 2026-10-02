@@ -6,7 +6,7 @@ contexts: [step:wer_score, artifact:scores, artifact:normalizer, artifact:hypoth
 
 ## What this is
 
-`wer_score@1` is a core step kind (CPU, job kind `eval`, shipped in every runtime image). It reads three inputs:
+`wer_score@2` is a core step kind (CPU, job kind `eval`, shipped in every runtime image). It reads three inputs:
 
 - `hypotheses` — what a family's transcribe step wrote (one JSON line per utterance: `audio`, `text`, optional
   `partials`);
@@ -18,7 +18,7 @@ It joins each utterance to its hypothesis by the BLAKE3 hash of the audio file a
 utterance of the dataset has no hypothesis (hypotheses for audio outside the dataset are ignored with a warning). It
 writes `scores`, a directory artifact:
 
-- `summary.json` — `schema` `cadence.scores/1`, `scorer` `wer_score@1`, `normalizer` (`versionId`, `hash`),
+- `summary.json` — `schema` `cadence.scores/1`, `scorer` `wer_score@2`, `normalizer` (`versionId`, `hash`),
   `language`, `utterances`, `refWords`, `refChars`, `wer`, `cer`, `werNoPunct`, `sub`, `del`, `ins`, `charErrors`,
   `buckets` (`lo`, `hi`, `utterances`, `refWords`, `wer`; the last bucket's `hi` is null), `stability` when the
   hypotheses carry partials (`partialWords`, `unstableWords`, `ratio`, `editsPerSecond`), `groups` (`call`, `speaker`
@@ -36,15 +36,18 @@ How the numbers are made:
   maqaf, geresh and gershayim included, becomes a space); whitespace collapsed. A normalizer that strips punctuation
   splits `צה״ל` into two words on both sides; map `״` to nothing first to keep acronyms whole.
 - **WER** is (S + D + I) / reference words over the whole set, from a Levenshtein alignment of the normalized words.
-  **CER** is the character edit distance over the normalized texts (spaces included) / reference characters.
+  **CER** is the character edit distance over the normalized texts with every space removed / reference characters
+  without spaces (as FLEURS and Whisper report it; version 1 counted spaces, which inflated the CER of languages
+  written without spaces between words, the ones `eval.character_error_languages` gates on CER).
   **werNoPunct** is the WER with punctuation stripped as well; equal to the WER when the normalizer strips it already.
 - **Duration buckets** group utterances by duration (`duration_buckets_s`, the lower bounds; the last is open).
 - **group** is the unit the eval's bootstrap resamples (R54): the call id when every utterance has one (`callId`),
   else the speaker when every utterance has one, else the utterance (its audio hash).
 - **Partial stability** (Shangguan et al., Interspeech 2020): a word is *shown* when a partial puts it at a position
   the previous partial held empty or held another word; it is *unstable* when the final text does not have it at that
-  position. `ratio` is unstable / shown; `editsPerSecond` counts words a later partial changes or drops, per second of
-  audio. Both use the normalized texts, so a case or punctuation change is no edit when the normalizer folds it.
+  position. `ratio` is unstable / shown; `editsPerSecond` counts words a later partial (or the final) changes or
+  drops, per second of audio. The final is not a partial: the decode's last event (`final: true`) shows no words of
+  its own, so words only the final has never enter the denominator (version 1 counted them as shown and stable). Both use the normalized texts, so a case or punctuation change is no edit when the normalizer folds it.
 
 ## Place in the loop
 

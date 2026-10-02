@@ -147,7 +147,7 @@ func (s *Service) PlanRegister(ctx context.Context, q storage.Querier, in Regist
 		return Registration{}, err
 	}
 	mp.Card = Card(CardInput{Name: name, Project: p, Checkpoint: c, Run: run, Base: base, Eval: view, Verdict: v, Datasets: datasets,
-		MixHours: mixHours})
+		MixHours: mixHours, CharLanguages: s.defaults().Eval.CharacterErrorLanguages.Value})
 	desc := strings.TrimSpace(in.Description)
 	if desc == "" {
 		desc = fmt.Sprintf("Models of project %s, registered from checkpoints whose gate passed", p.Name)
@@ -253,6 +253,8 @@ type CardInput struct {
 	Verdict    Verdict
 	Datasets   []registry.Version
 	MixHours   float64
+	// CharLanguages are eval.character_error_languages: their golden sets are reported on CER.
+	CharLanguages []string
 }
 
 // Card writes the model card (Markdown): what the model is, the gate it passed, its eval cells, composition, lineage
@@ -275,29 +277,47 @@ func Card(in CardInput) string {
 		sha = "`gates.yaml` at " + shortSHA(sha)
 	}
 	w("Verdict **%s** on eval `%s` against the baseline %s, with %s.\n\n", in.Verdict.Verdict, in.Eval.ID, in.Eval.Baseline.Label, sha)
-	w("| Check | Golden set | Profile | Delta WER | Interval | State |\n| --- | --- | --- | --- | --- | --- |\n")
-	for _, c := range in.Verdict.Checks {
-		delta, ci := "—", "—"
-		if c.Delta != nil {
-			delta, ci = fmt.Sprintf("%+.4f", c.Delta.Value), fmt.Sprintf("[%+.4f, %+.4f]", c.Delta.Low, c.Delta.High)
-		}
-		w("| %s | %s | %s | %s | %s | %s |\n", c.Kind, or(c.GoldenSet, "—"), or(c.Profile, "—"), delta, ci, c.State)
-	}
-	w("\n## Eval cells\n\n")
+	// A golden set of a language written without spaces is scored on CER: its rows say so (the metric column).
+	chars := map[string]bool{}
 	names := map[string]string{}
 	for _, g := range in.Eval.GoldenSets {
 		names[g.VersionID] = g.Name
+		chars[g.VersionID] = CharScored(g.Locale, in.CharLanguages)
 	}
+	metric := func(gsID string) string {
+		if chars[gsID] {
+			return "CER"
+		}
+		return "WER"
+	}
+	rate := func(sm Summary, gsID string) float64 {
+		if chars[gsID] {
+			return sm.CER
+		}
+		return sm.WER
+	}
+	w("| Check | Golden set | Profile | Metric | Delta | Interval | State |\n| --- | --- | --- | --- | --- | --- | --- |\n")
+	for _, c := range in.Verdict.Checks {
+		delta, ci, m := "—", "—", "WER"
+		if c.Unit == UnitChar {
+			m = "CER"
+		}
+		if c.Delta != nil {
+			delta, ci = fmt.Sprintf("%+.4f", c.Delta.Value), fmt.Sprintf("[%+.4f, %+.4f]", c.Delta.Low, c.Delta.High)
+		}
+		w("| %s | %s | %s | %s | %s | %s | %s |\n", c.Kind, or(c.GoldenSet, "—"), or(c.Profile, "—"), m, delta, ci, c.State)
+	}
+	w("\n## Eval cells\n\n")
 	baseWER := map[string]float64{}
 	for _, c := range in.Eval.Cells {
 		if c.Role == RoleBaseline {
 			var sm Summary
 			if json.Unmarshal(c.Summary, &sm) == nil {
-				baseWER[fmt.Sprintf("%s|%s|%d|%d", c.GoldenSetVersionID, c.Profile, c.DecodingIndex, c.AugmentationIndex)] = sm.WER
+				baseWER[fmt.Sprintf("%s|%s|%d|%d", c.GoldenSetVersionID, c.Profile, c.DecodingIndex, c.AugmentationIndex)] = rate(sm, c.GoldenSetVersionID)
 			}
 		}
 	}
-	w("| Golden set | Profile | Decoding | WER | Baseline WER | Delta WER [interval] |\n| --- | --- | --- | --- | --- | --- |\n")
+	w("| Golden set | Profile | Decoding | Metric | Rate | Baseline | Delta [interval] |\n| --- | --- | --- | --- | --- | --- | --- |\n")
 	for _, c := range in.Eval.Cells {
 		if c.Role != RoleSubject {
 			continue
@@ -320,7 +340,8 @@ func Card(in CardInput) string {
 		if v, ok := baseWER[fmt.Sprintf("%s|%s|%d|%d", c.GoldenSetVersionID, c.Profile, c.DecodingIndex, c.AugmentationIndex)]; ok {
 			bw = fmt.Sprintf("%.4f", v)
 		}
-		w("| %s | %s | %s | %.4f | %s | %s |\n", or(names[c.GoldenSetVersionID], c.GoldenSetVersionID), c.Profile, dec, sm.WER, bw, delta)
+		w("| %s | %s | %s | %s | %.4f | %s | %s |\n", or(names[c.GoldenSetVersionID], c.GoldenSetVersionID), c.Profile, dec,
+			metric(c.GoldenSetVersionID), rate(sm, c.GoldenSetVersionID), bw, delta)
 	}
 	w("\n## Composition\n\n")
 	w("Mix **%s** revision %d (`%s`), %.3g hours:\n\n", in.Run.Mix.Name, in.Run.Mix.Revision, shortSHA(in.Run.Mix.Hash), in.MixHours)

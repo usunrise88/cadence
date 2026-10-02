@@ -189,3 +189,72 @@ def test_live_words_equal_the_eval_decode(tmp_path: Path) -> None:
     doc = json.loads(out.read_text(encoding="utf-8"))
     assert doc["files"] == doc["lives"]
     assert any(doc["files"]), "the base model decodes some fixture words"
+
+
+MIXED = """
+import json, sys
+from pathlib import Path
+import numpy as np
+from cadence_nemo import pipeline
+from cadence_nemo.checkpoint import NEMO_FILE
+from cadence_nemo.family import att_context_size, profile
+from cadence_nemo.steps.transcribe import read_clip
+
+model, data, out = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])
+names = ["80ms", "1120ms"]
+m = pipeline.load(str(model / NEMO_FILE), {n: att_context_size(profile(n)) for n in names}, stop_history_eou_ms=800)
+he = [read_clip(data / f"he0{i}.wav") for i in range(1, 7)]
+clips = {
+    "tiny": he[0][:4000],  # 0.25 s: less than a first chunk, its only buffer is first and last at once
+    "short": he[1][:19200],  # 1.2 s
+    "mid": he[2],
+    "long": np.concatenate([he[3], he[4], he[5]]),
+}
+clips["long2"] = clips["long"].copy()
+doc = {}
+for n in names:
+    def decode(keys):
+        streams = [pipeline.PipelineStream(target="A", pipeline=m.pipelines[n], att=m.att[n], profile=n,
+                                           language="he-IL")
+                   for _ in keys]
+        return {k: {"text": r.text, "words": [w["word"] for w in r.words], "partials": [p["text"] for p in r.partials]}
+                for k, r in zip(keys, pipeline.decode_batch(streams, [clips[k] for k in keys]))}
+    doc[n] = {
+        "mixed": decode(["tiny", "long", "short"]),
+        "alone": {k: decode([k])[k] for k in ("tiny", "short", "long")},
+        "with_mid": decode(["mid", "long"])["long"],
+        "with_copy": decode(["long", "long2"]),
+    }
+out.write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
+"""
+
+
+def test_a_batch_of_short_and_long_clips_decodes_each_as_alone(tmp_path: Path) -> None:
+    """decode_batch steps streams of different lengths together (a short clip's last buffer beside a long clip's
+    middle ones, a sub-chunk clip whose first buffer is also its last): each clip gets the words, and the partials, it
+    gets decoded alone, and a clip's words never depend on which clips share its steps (at 80 ms they may depend on
+    how many do: see decode_batch)."""
+    torch = pytest.importorskip("torch")
+    pytest.importorskip("nemo")
+    if not torch.cuda.is_available():
+        pytest.skip("no CUDA card")
+    base = {
+        "format": "cadence.base_model/1",
+        "versionId": "ver_base",
+        "family": {"name": NAME},
+        "model": FAMILY.conformance["base_model"],
+    }
+    (tmp_path / "base.json").write_text(json.dumps(base), encoding="utf-8")
+    model = tmp_path / "model"
+    CheckpointFromBaseStep().run(
+        CheckpointFromBaseStep.Params(), {"base": tmp_path / "base.json"}, {"checkpoint": model}, _ctx(tmp_path)
+    )
+    out = tmp_path / "mixed.json"
+    subprocess.run([sys.executable, "-c", MIXED, str(model), str(FIXTURES), str(out)], check=True)
+    doc = json.loads(out.read_text(encoding="utf-8"))
+    for prof, d in doc.items():
+        # The short clips end early, so the long one steps alone most of the way: as alone, at every profile.
+        assert d["mixed"] == d["alone"], prof
+        # Two streams of the same audio in one batch decode alike, and like the long clip beside another clip.
+        assert d["with_copy"]["long"] == d["with_copy"]["long2"] == d["with_mid"], prof
+    assert any(d["alone"]["long"]["text"] for d in doc.values()), "the base model decodes the long clip"

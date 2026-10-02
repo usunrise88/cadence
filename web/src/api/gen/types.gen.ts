@@ -3687,6 +3687,10 @@ export type PipelineStepDefinition = {
     params?: {
         [key: string]: unknown;
     };
+    /**
+     * The step's failure does not fail the run: the steps that read its outputs (optional too) are skipped and the run ends done without them
+     */
+    optional?: boolean;
 };
 
 export type PipelineRunNew = {
@@ -5201,7 +5205,7 @@ export type NormalizerPayload = {
      */
     punctuation: 'keep' | 'strip';
     /**
-     * Remove combining marks (niqqud, accents) after canonical decomposition, then recompose
+     * Remove nonspacing combining marks (niqqud, accents) after canonical decomposition, then recompose in the unicode form
      */
     removeMarks: boolean;
     /**
@@ -6074,6 +6078,10 @@ export type EvalRobustnessRow = {
      * wer − werNone (absolute, a fraction)
      */
     degradation?: number;
+    /**
+     * char when the golden set is scored on CER (eval.character_error_languages): wer, werNone and degradation are character error rates
+     */
+    unit?: 'char';
 };
 
 /**
