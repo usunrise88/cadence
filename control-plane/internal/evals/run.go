@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -270,7 +271,7 @@ func (s *Service) computeDeltas(ctx context.Context, tx pgx.Tx, e *Eval, cells [
 		if c.Role != RoleSubject {
 			continue
 		}
-		d := s.delta(c, cells, recs, e.Significance)
+		d := s.delta(c, cells, recs, e.Significance, s.charScored(*e, c.GoldenSetVersionID))
 		if d == nil {
 			continue
 		}
@@ -293,19 +294,22 @@ func recordsOf(ctx context.Context, tx pgx.Tx, cells []Cell) (map[string]Record,
 
 // Delta is a subject cell's comparison with the baseline (the contract's EvalDelta).
 type Delta struct {
-	BaselineCellID string   `json:"baselineCellId"`
-	WER            Interval `json:"wer"`
-	Del            Interval `json:"del"`
-	Ins            Interval `json:"ins"`
-	Significant    bool     `json:"significant"`
-	Groups         int      `json:"groups"`
-	Samples        int      `json:"samples"`
-	Level          float64  `json:"level"`
-	Error          string   `json:"error,omitempty"`
+	BaselineCellID string `json:"baselineCellId"`
+	// Unit is "char" when the golden set is scored on CER (eval.character_error_languages): WER then holds the
+	// character error rate's delta and Del and Ins are not computed.
+	Unit        string   `json:"unit,omitempty"`
+	WER         Interval `json:"wer"`
+	Del         Interval `json:"del"`
+	Ins         Interval `json:"ins"`
+	Significant bool     `json:"significant"`
+	Groups      int      `json:"groups"`
+	Samples     int      `json:"samples"`
+	Level       float64  `json:"level"`
+	Error       string   `json:"error,omitempty"`
 }
 
 // delta compares subject cell c with the baseline's cell at the same place; nil when the eval has none.
-func (s *Service) delta(c Cell, cells []Cell, recs map[string]Record, sig Significance) *Delta {
+func (s *Service) delta(c Cell, cells []Cell, recs map[string]Record, sig Significance, chars bool) *Delta {
 	var base *Cell
 	for i := range cells {
 		if cells[i].Role == RoleBaseline && cells[i].sameCell(c) {
@@ -316,6 +320,10 @@ func (s *Service) delta(c Cell, cells []Cell, recs map[string]Record, sig Signif
 		return nil
 	}
 	d := &Delta{BaselineCellID: base.ID, Samples: sig.Samples, Level: sig.Level}
+	pairFn := Pair
+	if chars {
+		d.Unit, pairFn = UnitChar, PairChars
+	}
 	sr, ok1 := recs[c.RecordID]
 	br, ok2 := recs[base.RecordID]
 	if !ok1 || !ok2 {
@@ -327,7 +335,7 @@ func (s *Service) delta(c Cell, cells []Cell, recs map[string]Record, sig Signif
 		var bu []Utterance
 		if bu, err = ReadUtterances(s.CAS, br.Scores); err == nil {
 			var groups []Group
-			if groups, err = Pair(su, bu); err == nil {
+			if groups, err = pairFn(su, bu); err == nil {
 				var cmp Comparison
 				if cmp, err = Compare(groups, sig); err == nil {
 					d.WER, d.Del, d.Ins, d.Groups = cmp.WER, cmp.Del, cmp.Ins, cmp.Groups
@@ -340,4 +348,23 @@ func (s *Service) delta(c Cell, cells []Cell, recs map[string]Record, sig Signif
 		d.Error = err.Error()
 	}
 	return d
+}
+
+// UnitChar marks a delta and a check computed on characters.
+const UnitChar = "char"
+
+// CharScored reports whether a locale's golden sets are scored on CER: its language (primary subtag) is one of
+// langs (eval.character_error_languages).
+func CharScored(locale string, langs []string) bool {
+	return locale != "" && slices.Contains(langs, language(locale))
+}
+
+// charScored reports whether the eval's golden set gsID is scored on CER.
+func (s *Service) charScored(e Eval, gsID string) bool {
+	for _, g := range e.GoldenSets {
+		if g.VersionID == gsID {
+			return CharScored(g.Locale, s.defaults().Eval.CharacterErrorLanguages.Value)
+		}
+	}
+	return false
 }

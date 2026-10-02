@@ -7815,6 +7815,7 @@ components:
       required: [baselineCellId, wer, del, ins, significant, groups, samples, level]
       properties:
         baselineCellId: { type: string }
+        unit: { type: string, enum: [char], description: "char when the golden set's language is written without spaces between words (eval.character_error_languages): wer then holds the CER delta, del and ins are not computed" }
         wer: { $ref: "#/components/schemas/EvalInterval" }
         del: { $ref: "#/components/schemas/EvalInterval", description: Deletion rate delta (deleted words / reference words) }
         ins: { $ref: "#/components/schemas/EvalInterval", description: Insertion rate delta }
@@ -7877,6 +7878,7 @@ components:
         threshold: { type: number, format: double, description: "Replay: the allowed regression" }
         baselineWer: { type: number, format: double }
         candidateWer: { type: number, format: double }
+        unit: { type: string, enum: [char], description: "char when the set is gated on CER: delta, baselineWer and candidateWer are character error rates" }
         message: { type: string }
     EvalGate:
       type: object

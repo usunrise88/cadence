@@ -141,6 +141,28 @@ func TestPairGroupsByCallAndAudio(t *testing.T) {
 	}
 }
 
+// A language written without spaces is compared on characters: a group's units are reference characters and its
+// errors character edits; deletions and insertions are not counted.
+func TestPairCharsCountsCharacters(t *testing.T) {
+	sub := []Utterance{{Audio: "a1", Group: "s1", RefWords: 1, Sub: 1, RefChars: 12, CharErrors: 2}, {Audio: "a2", Group: "s1", RefWords: 1, Del: 1, RefChars: 8, CharErrors: 1}}
+	base := []Utterance{{Audio: "a1", Group: "s1", RefWords: 1, Sub: 1, RefChars: 12, CharErrors: 5}, {Audio: "a2", Group: "s1", RefWords: 1, Sub: 1, RefChars: 8, CharErrors: 4}}
+	groups, err := PairChars(sub, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []Group{{Key: "s1", RefWords: 20, SubjectErrors: 3, BaseErrors: 9}}; !slices.Equal(groups, want) {
+		t.Fatalf("groups %+v, want %+v", groups, want)
+	}
+	for _, tt := range []struct {
+		locale string
+		want   bool
+	}{{"zh-CN", true}, {"ja-JP", true}, {"th-TH", true}, {"he-IL", false}, {"sr-RS", false}, {"", false}} {
+		if got := CharScored(tt.locale, []string{"zh", "ja", "th"}); got != tt.want {
+			t.Errorf("CharScored(%q) = %v", tt.locale, got)
+		}
+	}
+}
+
 func TestQuantile(t *testing.T) {
 	s := []float64{1, 2, 3, 4}
 	for _, c := range []struct{ p, want float64 }{{0, 1}, {1, 4}, {0.5, 2.5}, {0.25, 1.75}} {

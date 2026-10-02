@@ -5551,6 +5551,10 @@ export type EvalInterval = {
  */
 export type EvalDelta = {
     baselineCellId: string;
+    /**
+     * char when the golden set's language is written without spaces between words (eval.character_error_languages): wer then holds the CER delta, del and ins are not computed
+     */
+    unit?: 'char';
     wer: EvalInterval;
     /**
      * Deletion rate delta (deleted words / reference words)
@@ -5649,6 +5653,10 @@ export type EvalGateCheck = {
     threshold?: number;
     baselineWer?: number;
     candidateWer?: number;
+    /**
+     * char when the set is gated on CER: delta, baselineWer and candidateWer are character error rates
+     */
+    unit?: 'char';
     message: string;
 };
 

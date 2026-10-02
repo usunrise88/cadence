@@ -229,9 +229,11 @@ type Eval struct {
 	MatrixProfiles   Param[[]string]  `yaml:"matrix_profiles"`
 	Normalizer       Param[string]    `yaml:"normalizer"`
 	DurationBucketsS Param[[]float64] `yaml:"duration_buckets_s"`
-	BootstrapSamples Param[int]       `yaml:"bootstrap_samples"`
-	Confidence       Param[float64]   `yaml:"confidence"`
-	BootstrapSeed    Param[int]       `yaml:"bootstrap_seed"`
+	// CharacterErrorLanguages are scored and gated on CER (languages without spaces between words).
+	CharacterErrorLanguages Param[[]string] `yaml:"character_error_languages"`
+	BootstrapSamples        Param[int]      `yaml:"bootstrap_samples"`
+	Confidence              Param[float64]  `yaml:"confidence"`
+	BootstrapSeed           Param[int]      `yaml:"bootstrap_seed"`
 	// GPUHoursPerAudioHour prices an eval cell for the policy (stream E): golden audio hours × this.
 	GPUHoursPerAudioHour Param[float64] `yaml:"gpu_hours_per_audio_hour"`
 }

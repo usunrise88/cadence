@@ -122,7 +122,14 @@ func round6(v float64) float64 { return math.Round(v*1e6) / 1e6 }
 // list the same audio in the same order (the scores contract: dataset order), else by audio hash; a row of one side
 // without its pair is an error. The group of a pair is its group field (call, else speaker, else audio), else its
 // position.
-func Pair(subject, baseline []Utterance) ([]Group, error) {
+func Pair(subject, baseline []Utterance) ([]Group, error) { return pair(subject, baseline, false) }
+
+// PairChars is Pair at the character level, for golden sets of languages written without spaces between words
+// (eval.character_error_languages): a group's units are reference characters and its errors character edits.
+// Character-level deletions and insertions are not in the scores, so the Del and Ins deltas stay zero.
+func PairChars(subject, baseline []Utterance) ([]Group, error) { return pair(subject, baseline, true) }
+
+func pair(subject, baseline []Utterance, chars bool) ([]Group, error) {
 	if len(subject) != len(baseline) {
 		return nil, fmt.Errorf("the cells scored %d and %d utterances of one golden set", len(subject), len(baseline))
 	}
@@ -159,6 +166,12 @@ func Pair(subject, baseline []Utterance) ([]Group, error) {
 			out = append(out, Group{Key: key})
 		}
 		g := &out[k]
+		if chars {
+			g.RefWords += s.RefChars
+			g.SubjectErrors += s.CharErrors
+			g.BaseErrors += b.CharErrors
+			continue
+		}
 		g.RefWords += s.RefWords
 		g.SubjectErrors += s.Sub + s.Del + s.Ins
 		g.BaseErrors += b.Sub + b.Del + b.Ins
