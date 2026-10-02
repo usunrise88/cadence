@@ -203,6 +203,9 @@ The source feeds three outputs. None of them is edited by hand.
      highlights on them;
    - It is built by a script from the same Markdown and the tour captures (§5.5) and published as an Artifact or
      static files.
+   - Screenshots are embedded in the page as data URIs, so a chapter is one self-contained file. Some viewers,
+     Claude Code's among them, do not load images published as separate files.
+   - Mind the size: a 2× PNG of the full shell is about 0.5 MB, and a page holds 16 MB at most.
 3. **Plain Markdown on GitHub**, readable without either.
 
 ### 5.2 Tours
