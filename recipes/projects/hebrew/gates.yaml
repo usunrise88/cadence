@@ -1,0 +1,12 @@
+# The project's gate (docs/spec/04-blocks.md Block 3, "The gate"). Not written at bootstrap: without this file the
+# defaults.yaml gate.* and eval.* values apply. gates.edit commits it (dry run first; an approval for agents); every
+# value left out takes its default, and every named golden-set collection must be adopted by the project.
+primaryProfile: 160ms
+target:
+  goldenSets: [golden-set/fleurs-he]
+  rule: beat-baseline
+replay:
+  goldenSets: [golden-set/replay-golden-*]
+  maxRegression: 0.005
+deletionsInsertions: true
+significance: { samples: 1000, level: 0.95, seed: 1 }

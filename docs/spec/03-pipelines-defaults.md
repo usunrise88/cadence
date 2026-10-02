@@ -129,14 +129,14 @@ The first family, Nemotron 3.5 streaming (cache-aware FastConformer RNNT, NeMo):
 | `560ms` | `[56,6]` | 560 ms · [56,6] | — |
 | `1120ms` | `[56,13]` | 1120 ms · [56,13] | Eval axis |
 
-Latency is 80 × (r + 1) ms for `[56,r]`, with a left context of 56 frames (4.48 s). Its step kinds: `oomptimizer_calibrate` (calibrate), `nemotron_finetune` (train), `checkpoint_average` (average), `nemotron_transcribe` (transcribe: file decode in streaming simulation at a profile → `hypotheses`; `@2` in phase 3 adds static RNNT phrase boosting from an optional `boost_list` input, R24), `checkpoint_from_base` (materialize, phase 3); export and parity join in phase 5. No `checkpoint_register` kind: the control plane's checkpoint hook registers every `checkpoint` output of a run (07, stream N).
+Latency is 80 × (r + 1) ms for `[56,r]`, with a left context of 56 frames (4.48 s). Its step kinds: `oomptimizer_calibrate` (calibrate), `nemotron_finetune` (train), `checkpoint_average` (average), `nemotron_transcribe` (transcribe: file decode in streaming simulation at a profile → `hypotheses`; `@2` in phase 3 adds static RNNT phrase boosting from an optional `boost_list` input, R24; `@3` decodes through NeMo's streaming pipeline, the decoder live sessions use), `checkpoint_from_base` (materialize, phase 3); export and parity join in phase 5. No `checkpoint_register` kind: the control plane's checkpoint hook registers every `checkpoint` output of a run (07, stream N).
 
 NeMo pack as built (phase 2, `worker/packs/nemo`, distribution `cadence-nemo`, help `guides.nemo-pack`):
 
 - The family is published as `nemo.fastconformer-rnnt.cache-aware` (the seeded base model's `familyId`); defaults under `packs.nemo`. The image installs the pack and makes NeMo's editable install readable by the worker's non-root user.
 - `oomptimizer_calibrate` (consumes `base`: base_model, `data`: mix): OOMptimizer re-implemented in the pack with the prompt model's fixes (five-tensor batch with the language's prompt index, no endless loop when batch 1 does not fit, cuFFT failures count as out of memory), buckets from the longest down and merged, then timed optimiser steps on the mix; the `calibration` artifact carries `secondsPerStep`, `secondsPerStepStd`, `plusMinus`, `batchSize`, `batchSizes` and `bucketConfig`.
 - `nemotron_finetune` (consumes `base`, `data`, `calibration`; produces `checkpoint`, `checkpoint_best`, `state`): NeMo + Lightning, bf16-mixed, AdamW + NoamAnnealing from `peak_lr` (the scale is derived and posted), the mix read from the content store in place as Lhotse `input_cfg` groups, the language prompt per clip (`unified` mode) with the locale tag appended, the augmentation profile on the fly, metrics through the step context, a training state every `state_every_minutes` and at a stop, resume from `overrides.resumeFrom`.
-- `checkpoint_average` averages the `.nemo` weights on the CPU; `nemotron_transcribe` streams with NeMo's cache-aware decoder at a profile and writes words timed by the emissions, token-derived word confidence and partial events.
+- `checkpoint_average` averages the `.nemo` weights on the CPU; `nemotron_transcribe` streams at a profile (`@3`: NeMo's cache-aware streaming pipeline, the decoder live sessions use) and writes words timed by the emissions, token-derived word confidence and partial events.
 - Every GPU step caps PyTorch's allocator at the lease's cap minus `cuda_context_reserve_mb`, so the whole process stays under the cap nvidia-smi sees.
 - Phase 3 (stream Y): `checkpoint_from_base@1` (materialize) and `nemotron_transcribe@2`, whose optional `boost`
   input applies NeMo's GPU phrase-boosting tree on the greedy label-looping decoder (`context_score` 1.0,
@@ -145,12 +145,13 @@ NeMo pack as built (phase 2, `worker/packs/nemo`, distribution `cadence-nemo`, h
   Measured on FLEURS he_il test (120 utterances, base model at `160ms`, 40 missed words listed): entity recall 0.11 →
   0.29 / 0.36 / 0.50 / 0.52 / 0.54 and WER 0.466 → 0.462 / 0.460 / 0.461 / 0.490 / 0.623 at weight 0.3 / 0.5 / 0.7 / 1
   / 2; above ≈ 0.7 listed words replace others (help `steps.nemotron-transcribe`).
-- One decoder for live and evals (spike A5, "What the spec should change" 2): the pack's eval loop (whole-file
-  features, `CacheAwareStreamingAudioBuffer`) and NeMo's streaming pipeline API (chunked cache features), which live
-  sessions use, agree on most but not all words. The transcribe kind therefore moves to the pipeline decoder (with
-  the pack's two shims: the per-stream language prompt and stripping the trailing locale tag) in its next version,
-  which records the decoder in the decoding config, so its cells never mix with `@1`/`@2` records. Until then live
-  results and eval results may differ by a few words. Not built yet (stream T, with the `live` job).
+- One decoder for live and evals (spike A5, "What the spec should change" 2), as built: `nemotron_transcribe@3`
+  decodes through NeMo's streaming pipeline API (`nemo.collections.asr.inference`), the decoder `nemotron_live` runs,
+  with the pack's shims (the per-stream language prompt, stripping the trailing locale tag, whole-window features, a
+  feature buffer of cache plus chunk). Its decoding config names the decoder (`"decoder": "nemo-pipeline-cache-aware"`
+  with `stopHistoryEouMs`), so its records never mix with `@1`/`@2` records (NeMo's cache-aware loop). Utterances of a
+  batch step together (`packs.nemo.transcribe_batch_size`, 8 for evals; batch 1 gives exactly a live session's words);
+  on the stand it matches version 2's WER at every profile (help `steps.nemotron-transcribe`).
 
 The toy pack's family `toy-ctc` (runtime `toy`) has the profiles `offline` and `320ms` and the kinds `toy_calibrate`, `toy_train`, `toy_average`, `toy_transcribe` and, in phase 3, `toy_checkpoint_from_base@1` (materialize; a framework kind's name belongs to one runtime, so it is not `checkpoint_from_base`), with its defaults under `packs.toy`.
 
@@ -209,7 +210,8 @@ As built (stream E; `internal/evals`):
 - `evals.new` (`POST /projects/{p}/evals`) answers `201` with the eval, not `202` with a job (the eval is the handle,
   as a run is; 00 decision log); `200` for its dry run (cells, cached and to compute, the estimate) and `202` when an
   agent's estimate needs an approval (`gpu-spend`). The estimate is the audio hours of the missing cells ×
-  `eval.gpu_hours_per_audio_hour` (0.1, basis `table`; not calibrated yet). An eval whose cells are all cached is done
+  `eval.gpu_hours_per_audio_hour` (0.025, basis `table`: measured on the stand, the pipeline decoder at batch 8 runs
+  at RTF 0.0165, plus a 1.5× margin). An eval whose cells are all cached is done
   at once.
 - Step ids are `materialize-m<n>`, `transcribe-u<n>` and `score-u<n>` (one unit per missing record key; a subject
   equal to its baseline computes once), plus `augment-g<n>a<k>` and the metric steps of stream R below. The pipeline
@@ -481,7 +483,7 @@ Phase 3 (plan stream L; R21):
 
 - Static boosting: the project's boost lists are applied at decode through NeMo's context biasing for RNNT (phrase boosting), each list with a weight; the Triton model repository carries the lists as decoding configuration, so updating a list is a config release, not a new model version.
 - Dynamic boosting: Эра may pass per-call candidates (the person's name, the debtor's address) with the request; the inference contract defines the field and a cap on list size.
-- Boosting is evaluated, not assumed (R24): decoding is an eval axis, `evals.new` takes `decoding: [{boost: none}, {boost: <list SHA>, weight}]`, and the transcribe step decodes with static RNNT phrase boosting (`nemotron_transcribe@2`, an optional `boost_list` input). Boosted and unboosted cells score the golden-set subset that contains listed terms (entity recall) and general WER, because over-boosting shows up as insertions of listed terms; the gate is to use both (the entity-recall check waits for `entity_score@1`, 07 "Open questions"). As built:
+- Boosting is evaluated, not assumed (R24): decoding is an eval axis, `evals.new` takes `decoding: [{boost: none}, {boost: <list SHA>, weight}]`, and the transcribe step decodes with static RNNT phrase boosting (`nemotron_transcribe@2` and `@3`, an optional `boost_list` input). Boosted and unboosted cells score the golden-set subset that contains listed terms (entity recall) and general WER, because over-boosting shows up as insertions of listed terms; the gate is to use both (the entity-recall check waits for `entity_score@1`, 07 "Open questions"). As built:
   boosted and unboosted cells are computed and compared on general WER; recall of the listed terms is not a scorer
   yet (`entity_score@1` reads the ITN number classes, not boost lists), so a boosted cell's term recall is measured by
   hand (the numbers in "Framework packs" above).
