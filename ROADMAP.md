@@ -504,8 +504,14 @@ worker protocol; S5 (audio view) before the Audio panel — it needs only the ph
 - [ ] Transcription tool (R47–R50): a file, the microphone or an utterance span through one WebSocket session; up to
       three targets, blind compare; telephony simulation; a typed reference gives WER on the page; nothing is stored;
       "test a phrase" becomes a two-target transcription
-- [ ] Eval charts (R53): matrix heatmap, forest plot of deltas with intervals, S/D/I, buckets, latency CDFs, WER
+- [x] Eval charts (R53): matrix heatmap, forest plot of deltas with intervals, S/D/I, buckets, latency CDFs, WER
       against latency; the utterance table opens rows in Diff and Audio
+      — built 2026-10-02 (streams U, U2): beside the four above, the per-utterance WER ECDF (subject against
+      baseline; `evals.get?worst=` caps at 200, so a larger golden set shows its worst 200 rows, labelled), entity
+      accuracy per class, and folding "Streaming" (WER against latency per model with the primary marked and the
+      delta's interval, latency to final as p50/p95/max per profile — the API has no full distribution — with the
+      unavailable reasons, partial stability) and "Robustness" (degradation heatmap) sections; `@/shell/charts` gained
+      the `line` spec. Not drawn (no API data yet): confusion pairs, WER by SNR, bandwidth or speaker, emission delay
 - [ ] Generator: the `media` tag — exempt from the verb rule and from MCP — for R25's audio endpoint, `…/peaks`,
       `transcriptions.new` and its socket (R48)
       — the tag and audio serving built 2026-10-02 (stream A: `audio.get|sign`, `peaks.get`, `spectrogram.get`,
@@ -536,8 +542,8 @@ L, R, U, X and spikes S5, A5, folded into the spec by stream S2 on 2026-10-02):
   (`langpacks.boost_weight` 1.0 vs the measured 0.5; 07 "Open questions").
 - Lineage is one operation (`GET /registry/{id}:lineage`) over the ids a payload names; evals add their own source.
   Agents' language-pack edits land on a `langpack/<locale>-<date>` branch under the draft policy.
-- Web: one `models.register` and one `evals.new` command; the Eval report draws the heatmap, forest plot, S/D/I and
-  bucket charts but not yet robustness, latency, entity accuracy or the ECDF; "test a phrase", Set as baseline and
+- Web: one `models.register` and one `evals.new` command; the Eval report draws every chart of the ROADMAP item
+  (stream U2 added the ECDF, entity accuracy, the Streaming and Robustness sections); "test a phrase", Set as baseline and
   Adopt on the Model document and the Eval workspace's Playwright smoke are not built.
 - Spike S5 (done with caveats): no wavesurfer.js; `AudioView` + `useAudioAxis()`, one renderer per window; peaks 720 KB
   per channel-hour; a JavaScript FFT in a Web Worker; new `views.audio` defaults (stream A adds them).

@@ -99,3 +99,47 @@ export const EVAL: Eval = {
   updatedAt: "2026-10-02T10:00:00Z",
   finishedAt: "2026-10-02T09:30:00Z",
 };
+
+const latency = (p50: number, p95: number, measured = 10) => ({ scorer: "latency_score@1", available: true, pace: "simulated" as const, measured, p50Ms: p50, p95Ms: p95, maxMs: p95 + 40, meanMs: p50 + 5 });
+const entities = (accuracy: number, number: number, phone?: number) => ({
+  scorer: "entity_score@1",
+  available: true,
+  refEntities: 12,
+  correct: Math.round(accuracy * 12),
+  accuracy,
+  classes: [
+    { class: "number", refEntities: 8, hypEntities: 8, correct: Math.round(number * 8), accuracy: number },
+    ...(phone === undefined ? [] : [{ class: "phone", refEntities: 4, hypEntities: 3, correct: Math.round(phone * 4), accuracy: phone }]),
+  ],
+});
+
+/** EVAL with the streaming metrics, partial stability and one augmentation (telephony) of fleurs-he. */
+export const EVAL_STREAMING: Eval = {
+  ...EVAL,
+  augmentations: [
+    { index: 0, profile: "none" },
+    { index: 1, profile: "augment/telephony.yaml@abc1234", seed: 7 },
+  ],
+  cells: [
+    // An augmented cell listed first: the matrix and the per-profile charts must not pick it.
+    cell("evc_s_he_160_tel", "subject", "ver_gs_he", "160ms", { augmentationIndex: 1, summary: summary(0.3, 15, 10, 5) }),
+    ...EVAL.cells!.map((c): EvalCell => {
+      const subject = c.role === "subject";
+      if (c.goldenSetVersionId !== "ver_gs_he") return { ...c, metrics: { unavailable: [{ metric: "latency", reason: "no VAD for sr" }] } };
+      const at160 = c.profile === "160ms";
+      return {
+        ...c,
+        summary: { ...c.summary!, stability: { partialWords: 100, unstableWords: subject ? 8 : 12, ratio: subject ? 0.08 : 0.12, editsPerSecond: subject ? 0.5 : 0.75 } },
+        metrics: {
+          latency: at160 ? latency(subject ? 180 : 200, subject ? 320 : 360) : latency(subject ? 120 : 130, subject ? 210 : 220),
+          ...(at160 ? { entities: subject ? entities(0.75, 0.875, 0.5) : entities(0.5, 0.625) } : {}),
+        },
+      };
+    }),
+  ],
+  robustness: [
+    { role: "subject", goldenSetVersionId: "ver_gs_he", profile: "160ms", decodingIndex: 0, augmentationIndex: 1, cellId: "evc_s_he_160_tel", wer: 0.3, werNone: 0.1, degradation: 0.2 },
+    { role: "baseline", goldenSetVersionId: "ver_gs_he", profile: "160ms", decodingIndex: 0, augmentationIndex: 1, cellId: "evc_b_he_160_tel", wer: 0.37, werNone: 0.12, degradation: 0.25 },
+    { role: "subject", goldenSetVersionId: "ver_gs_he", profile: "80ms", decodingIndex: 0, augmentationIndex: 1, cellId: "evc_s_he_80_tel" },
+  ],
+};
