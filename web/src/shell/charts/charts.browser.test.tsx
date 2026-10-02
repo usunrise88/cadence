@@ -162,6 +162,15 @@ describe("AnalyticsChart (ECharts)", () => {
         { id: "r2", label: "run 2", values: [0.001, "telephony", 0.25], highlight: true },
       ],
     },
+    {
+      kind: "line",
+      title: "WER against latency",
+      xMarks: [{ label: "primary", value: 160 }],
+      series: [
+        { id: "s", label: "Subject", points: [{ x: 80, y: 15, low: 13, high: 16, label: "80ms" }, { x: 160, y: 10, low: 9, high: 11, label: "160ms", marked: true }, { x: 1120, y: 8, label: "1120ms" }] },
+        { id: "e", label: "ECDF", step: true, points: [{ x: 0, y: 0 }, { x: 0, y: 30 }, { x: 50, y: 80 }, { x: 100, y: 100 }] },
+      ],
+    },
   ])("renders the $kind preset and walks it with the keyboard", async (spec) => {
     const container = box();
     const { findByTestId, getByRole } = render(<AnalyticsChart spec={spec} />, { container });
