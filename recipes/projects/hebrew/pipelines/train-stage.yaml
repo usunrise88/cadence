@@ -8,5 +8,5 @@ steps:
     kind: oomptimizer_calibrate@1
     in: { base: $inputs.base, data: $inputs.mix }
   - id: train
-    kind: nemotron_finetune@1
+    kind: nemotron_finetune@2
     in: { base: $inputs.base, data: $inputs.mix, calibration: calibrate.calibration }

@@ -17,8 +17,15 @@ cache-aware FastConformer RNN-T with a language prompt, the family the seeded ba
 | calibrate | [`oomptimizer_calibrate`](../steps/oomptimizer-calibrate.md) | yes | OOMptimizer bucket batches under the cap + timed steps → `calibration` |
 | train | [`nemotron_finetune`](../steps/nemotron-finetune.md) | yes | fine-tune on a mix → `checkpoint`, `checkpoint_best`, `training-state` |
 | average | [`checkpoint_average`](../steps/checkpoint-average.md) | no | mean of checkpoints → `checkpoint` |
-| transcribe | [`nemotron_transcribe`](../steps/nemotron-transcribe.md) | yes | cache-aware streaming decode at a profile, optionally phrase-boosted by a `boost_list` → `hypotheses` |
+| transcribe | [`nemotron_transcribe`](../steps/nemotron-transcribe.md) | yes | streaming decode through NeMo's cache-aware pipeline (the live decoder) at a profile, optionally phrase-boosted by a `boost_list` → `hypotheses` |
 | materialize | [`checkpoint_from_base`](../steps/checkpoint-from-base.md) | no | the base model at its pinned revision → `checkpoint` (evals of the base model) |
+| live | [`nemotron_live`](../steps/nemotron-live.md) | yes (job kind `interactive`) | serves a manual transcription session: up to three targets on the live channel, nothing stored |
+
+Live sessions and evals decode with one decoder, NeMo's cache-aware streaming pipeline with the pack's shims
+(`cadence_nemo/pipeline.py`): the per-stream language prompt, the stripped locale tag, and a restore on the CPU (the
+card holds 2.6 GiB per model instead of a 4.8 GiB load peak; two distinct models of a session load side by side). The
+descriptor's `interactive` entry is what a session reserves on a card: 6 000 MB for one model and 2 600 MB per further
+distinct model (spike A5).
 
 Scoring is family-neutral: the core [`wer_score`](../steps/wer-score.md) kind, in every runtime image, scores the
 `hypotheses`.

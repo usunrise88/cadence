@@ -52,7 +52,10 @@ FAMILY = Family(
             "average": "toy_average",
             "transcribe": "toy_transcribe",
             "materialize": "toy_checkpoint_from_base",
+            "live": "toy_live",
         },
+        # A live session runs on the CPU (toy_live needs no card); the reservation only matters for GPU kinds.
+        "interactive": {"memoryMb": 512},
         "defaultsSection": "packs.toy",
         "help": "guides.toy-pack",
     },

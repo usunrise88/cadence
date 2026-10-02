@@ -12,6 +12,7 @@ OPERATIONS: dict[str, tuple[str, str]] = {
     "workerLeases.claim": ("POST", "/worker-leases:claim"),
     "workerLeases.release": ("POST", "/worker-leases/{id}:release"),
     "workerLeases.report": ("POST", "/worker-leases/{id}:report"),
+    "workerLive.connect": ("GET", "/worker-live/{jobId}"),
     "workerLogs.new": ("POST", "/worker-leases/{id}/worker-logs"),
     "workerMetrics.new": ("POST", "/worker-leases/{id}/worker-metrics"),
     "workerOutputs.new": ("POST", "/worker-leases/{id}/worker-outputs"),
@@ -61,6 +62,180 @@ class LeaseCard(TypedDict):
     memoryCapMb: int
 
 
+class LiveEnd(TypedDict):
+    """Flush every target, send summary, close with 1000"""
+
+    type: Literal["end"]
+
+
+class LiveError(TypedDict):
+    type: Literal["error"]
+    problem: Problem
+    fatal: bool
+
+
+class LiveFileEnd(TypedDict):
+    """file: every byte was sent; the worker decodes the file (ffmpeg) and streams it at the session's pace"""
+
+    type: Literal["fileEnd"]
+
+
+class LiveFinal(TypedDict):
+    type: Literal["final"]
+    target: Literal["A", "B", "C"]
+    segment: int
+    seq: int
+    text: str
+    words: list[LiveWord]
+    endpoint: Literal["eou", "finalize", "end"]
+    audioEnd: float
+    space: bool
+
+
+class LiveFinalize(TypedDict):
+    """A segment boundary: pad the right context with silence, force end of utterance, emit the finals; the next audio
+    opens a new decoder stream (fresh encoder cache)
+    """
+
+    type: Literal["finalize"]
+
+
+class LiveInput(TypedDict):
+    kind: Literal["microphone", "file", "span"]
+    sampleRate: NotRequired[int]
+    frameMs: NotRequired[float]
+    settings: NotRequired[dict[str, Any]]
+    raw: NotRequired[bool]
+    fileName: NotRequired[str]
+    fileBytes: NotRequired[int]
+
+
+class LiveKeepalive(TypedDict):
+    """Keeps the session open without audio; the worker answers pong (source worker), behind any audio already sent"""
+
+    type: Literal["keepalive"]
+    t: NotRequired[float]
+
+
+class LivePartial(TypedDict):
+    type: Literal["partial"]
+    target: Literal["A", "B", "C"]
+    segment: int
+    seq: int
+    text: str
+    audioEnd: float
+
+
+class LivePing(TypedDict):
+    """Answered by the relay itself (pong, source relay): the control plane hop alone"""
+
+    type: Literal["ping"]
+    t: NotRequired[float]
+
+
+class LivePong(TypedDict):
+    type: Literal["pong"]
+    source: Literal["relay", "worker"]
+    t: NotRequired[float]
+
+
+class LiveStart(TypedDict):
+    """The first message: what the audio is. Telephony, pace and targets were fixed by transcriptions.new"""
+
+    type: Literal["start"]
+    input: LiveInput
+
+
+class LiveStarted(TypedDict):
+    """Every target is loaded and the decoder takes audio: the effective configuration per target"""
+
+    type: Literal["started"]
+    targets: list[LiveStartedTarget]
+    captureRate: NotRequired[int]
+    resampler: str
+    telephony: NotRequired[LiveTelephony]
+    pace: NotRequired[Literal["realtime", "fast"]]
+    input: NotRequired[LiveInput]
+    durationS: NotRequired[float]
+
+
+class LiveStartedTarget(TypedDict):
+    target: Literal["A", "B", "C"]
+    profile: str
+    chunkMs: int
+    language: str
+    loadS: float
+    decoder: NotRequired[str]
+    boost: NotRequired[LiveStartedTargetBoost]
+
+
+class LiveStartedTargetBoost(TypedDict):
+    terms: NotRequired[int]
+    weight: NotRequired[float]
+
+
+class LiveStats(TypedDict):
+    type: Literal["stats"]
+    source: Literal["worker", "relay"]
+    rtf: NotRequired[float]
+    audioS: NotRequired[float]
+    queued: NotRequired[int]
+    upP50Us: NotRequired[float]
+    upP95Us: NotRequired[float]
+    downP50Us: NotRequired[float]
+    downP95Us: NotRequired[float]
+    upN: NotRequired[int]
+    downN: NotRequired[int]
+
+
+class LiveSummary(TypedDict):
+    """The session's totals, last; the socket then closes with 1000. Nothing of it is stored"""
+
+    type: Literal["summary"]
+    audioS: float
+    rtf: float
+    targets: dict[str, LiveTargetSummary]
+    gpu: NotRequired[dict[str, Any]]
+    load: NotRequired[dict[str, Any]]
+    frameMsP50: NotRequired[float]
+    frameMsP95: NotRequired[float]
+
+
+class LiveTargetSummary(TypedDict):
+    profile: NotRequired[str]
+    steps: NotRequired[int]
+    stepMsP50: NotRequired[float]
+    stepMsP95: NotRequired[float]
+    stepMsMax: NotRequired[float]
+    finals: NotRequired[int]
+
+
+class LiveTelephony(TypedDict):
+    chain: str
+    codec: Literal["ulaw", "alaw", "none"]
+    sampleRate: int
+
+
+class LiveWaiting(TypedDict):
+    """From the relay until started: the job waits for a card (queued, with its place and why) or the worker loads the
+    targets (loading)
+    """
+
+    type: Literal["waiting"]
+    state: Literal["queued", "loading"]
+    position: NotRequired[int]
+    reason: NotRequired[str]
+    reservationMb: NotRequired[int]
+    waitedS: NotRequired[float]
+
+
+class LiveWord(TypedDict):
+    word: str
+    start: NotRequired[float]
+    end: NotRequired[float]
+    confidence: NotRequired[float]
+
+
 class MetricPoint(TypedDict):
     name: str
     step: NotRequired[int]
@@ -82,6 +257,7 @@ class ModelFamilyDescriptor(TypedDict):
     capabilities: NotRequired[ModelFamilyDescriptorCapabilities]
     latencyProfiles: list[LatencyProfile]
     roles: dict[str, str]
+    interactive: NotRequired[ModelFamilyDescriptorInteractive]
     defaultsSection: NotRequired[str]
     help: NotRequired[str]
     skill: NotRequired[str]
@@ -99,6 +275,28 @@ class ModelFamilyDescriptorCapabilities(TypedDict):
 class ModelFamilyDescriptorInput(TypedDict):
     sampleRate: NotRequired[int]
     channels: NotRequired[int]
+
+
+class ModelFamilyDescriptorInteractive(TypedDict):
+    """The card memory a live transcription session of the family reserves (R49, phase 3 · stream T)"""
+
+    memoryMb: int
+    extraCheckpointMb: NotRequired[int]
+
+
+class Problem(TypedDict):
+    type: str
+    title: str
+    status: int
+    detail: NotRequired[str]
+    instance: NotRequired[str]
+    currentRev: NotRequired[int]
+    errors: NotRequired[list[ProblemFieldError]]
+
+
+class ProblemFieldError(TypedDict):
+    path: str
+    message: str
 
 
 class RuntimeDescriptor(TypedDict):
@@ -142,7 +340,7 @@ class StepResources(TypedDict):
     gpus: NotRequired[int]
     memoryGb: NotRequired[float]
     diskGb: NotRequired[float]
-    jobKind: NotRequired[Literal["training", "eval", "export", "data"]]
+    jobKind: NotRequired[Literal["training", "eval", "export", "data", "interactive"]]
 
 
 class StepSpec(TypedDict):

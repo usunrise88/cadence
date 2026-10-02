@@ -12,6 +12,7 @@ toy_train = "cadence_toy.steps.train:TrainStep"
 toy_average = "cadence_toy.steps.average:AverageStep"
 toy_transcribe = "cadence_toy.steps.transcribe:TranscribeStep"
 toy_checkpoint_from_base = "cadence_toy.steps.materialize:CheckpointFromBaseStep"
+toy_live = "cadence_toy.steps.live:LiveStep"
 
 [project.entry-points."cadence.families"]
 toy-ctc = "cadence_toy.family:FAMILY"

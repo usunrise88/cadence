@@ -6,7 +6,7 @@ contexts: [step:nemotron_finetune, artifact:checkpoint, artifact:training-state,
 
 ## What this is
 
-`nemotron_finetune@1` fills the `train` role of the Nemotron 3.5 streaming family (runtime `nemo-speech`, one card,
+`nemotron_finetune@2` fills the `train` role of the Nemotron 3.5 streaming family (runtime `nemo-speech`, one card,
 job kind `training`). Inputs:
 
 - `base` — a `base_model` artifact (Hugging Face repository and pinned revision; the `.nemo` is fetched into the
@@ -24,7 +24,10 @@ prompt comes from its dataset language (`he` or `he-IL` → the model's `he-IL`)
 `unified` prompt mode half the clips get `auto`. Training text keeps the base model's style and ends with the locale
 tag when the tokenizer has it as one piece; decoding strips it. The `augmentation` profile runs on the fly in the
 dataloader workers (band-limit to 8 kHz with G.711 μ-law/A-law or GSM, level jitter, speed 0.95–1.05); `{profile:
-clean}` turns it off.
+clean}` turns it off. Version 2 band-limits with the polyphase resampler (`scipy.signal.resample_poly`, the import
+resampler): the chain a live session's telephony simulation streams with, so "telephony" on the Transcription panel is
+what training saw (spike A5 finding 7). Version 1 resampled through the FFT, which cannot stream; pipelines that pin
+`nemotron_finetune@1` (a project's `pipelines/train-stage.yaml` from before) must be edited to `@2`.
 
 Metrics during training (every `log_every` steps): `loss` (the RNN-T loss, a per-utterance sum, so it moves with clip
 length), `lr`, `grad_norm` (before clipping), `throughput_audio_s_per_s`, `gpu_memory_mb`; `val_wer` after every

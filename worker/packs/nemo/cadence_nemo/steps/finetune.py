@@ -125,7 +125,7 @@ def resume_best(
 
 
 class FinetuneStep:
-    version: ClassVar[str] = "1"
+    version: ClassVar[str] = "2"
     consumes: ClassVar[Mapping[str, str]] = {"base": "base_model", "data": "mix", "calibration": "calibration"}
     produces: ClassVar[Mapping[str, str]] = {
         "checkpoint": "checkpoint",

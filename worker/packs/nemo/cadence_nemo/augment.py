@@ -4,9 +4,9 @@ dataloader reads it; nothing is written to disk.
 A profile (the ``augmentation`` parameter; ``packs.nemo.augmentation`` is the ``telephony`` default, ``{"profile":
 "clean"}`` turns everything off) is a chain, each stage drawn per clip with its probability:
 
-1. ``telephone``: band-limit to 8 kHz (resample down), optionally through one codec — G.711 μ-law or A-law (computed
-   here) or GSM 06.10 (libsndfile, present in the NeMo Speech image) — then back to the model's rate. AMR-NB and Opus
-   need ffmpeg, which the image lacks: a profile naming them is refused at the start, not skipped silently.
+1. ``telephone``: band-limit to 8 kHz (polyphase resampling down), optionally through one codec — G.711 μ-law or A-law
+   (computed here) or GSM 06.10 (libsndfile, present in the NeMo Speech image) — then back to the model's rate. AMR-NB
+   and Opus need ffmpeg, which the image lacks: a profile naming them is refused at the start, not skipped silently.
 2. ``gain``: a level change drawn uniformly in dB, with clipping at full scale.
 3. ``speed``: speed perturbation by resampling (tempo and pitch together, as Kaldi and NeMo do), factor drawn uniformly.
    A factor below 1 lengthens the clip, so training scales the calibrated bucket batch sizes by the smallest factor.
@@ -23,6 +23,7 @@ import numpy as np
 from numpy.typing import NDArray
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
+from cadence_worker.resample import resample_poly
 from cadence_worker.steps.base import StepInputError
 
 Codec = Literal["ulaw", "alaw", "gsm"]
@@ -98,16 +99,10 @@ def parse_profile(raw: Any) -> Profile:
 
 
 def resample(x: Audio, src: int, dst: int) -> Audio:
-    """Band-limited resampling through the FFT (the spectrum above the lower Nyquist rate is dropped)."""
-    if src == dst or x.size == 0:
-        return x.astype(np.float32, copy=False)
-    n_out = max(1, round(x.size * dst / src))
-    spec = np.fft.rfft(x.astype(np.float64))
-    keep = min(spec.size, n_out // 2 + 1)
-    out_spec = np.zeros(n_out // 2 + 1, dtype=np.complex128)
-    out_spec[:keep] = spec[:keep]
-    y = np.fft.irfft(out_spec, n=n_out) * (n_out / x.size)
-    return y.astype(np.float32)
+    """Polyphase resampling (``scipy.signal.resample_poly``, :mod:`cadence_worker.resample`): the import resampler,
+    and the one a live session's telephony simulation streams with, so the simulated phone line equals the trained
+    one (spike A5 finding 7; ``nemotron_finetune@2`` — version 1 resampled through the FFT, which cannot stream)."""
+    return resample_poly(x, src, dst)
 
 
 MU = 255.0

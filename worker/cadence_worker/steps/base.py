@@ -38,7 +38,7 @@ if TYPE_CHECKING:
     from cadence_worker.steps.context import StepContext
 
 X_CADENCE_KEYS = ("default", "description", "source", "range")
-ROLES = ("calibrate", "train", "average", "transcribe", "export", "parity", "materialize")
+ROLES = ("calibrate", "train", "average", "transcribe", "export", "parity", "materialize", "live")
 
 
 class StepInputError(Exception):

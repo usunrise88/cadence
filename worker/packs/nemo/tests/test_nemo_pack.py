@@ -14,7 +14,7 @@ import numpy as np
 import pytest
 import torch
 
-from cadence_nemo import augment, lang, noam, oomptimizer, valwer
+from cadence_nemo import augment, lang, noam, oomptimizer, pipeline, valwer
 from cadence_nemo import checkpoint as ck
 from cadence_nemo.family import FAMILY, NAME, PROFILES, att_context_size, profile
 from cadence_nemo.mixdata import input_cfg, nemo_rows, read_training_data
@@ -29,11 +29,13 @@ from cadence_nemo.steps.finetune import (
     resume_best,
     validation_clips,
 )
+from cadence_nemo.steps.live import LiveStep, NemotronLiveParams
 from cadence_nemo.steps.materialize import CheckpointFromBaseStep, materialize
 from cadence_nemo.steps.transcribe import (
     TranscribeParams,
     TranscribeStep,
     boost_input,
+    decoding_config,
     decoding_hash,
     hypothesis_row,
 )
@@ -47,7 +49,7 @@ from cadence_worker.steps.context import StepContext
 from cadence_worker.steps.dataset_import import DatasetImportParams, records, write_dataset
 
 FIXTURES = Path(__file__).resolve().parents[1] / "cadence_nemo" / "fixtures"
-KINDS = (CalibrateStep, FinetuneStep, AverageStep, TranscribeStep, CheckpointFromBaseStep)
+KINDS = (CalibrateStep, FinetuneStep, AverageStep, TranscribeStep, CheckpointFromBaseStep, LiveStep)
 PROMPTS = {"en-US": 0, "en": 0, "he-IL": 64, "fr-FR": 8, "fr-CA": 100, "auto": 101}
 
 
@@ -69,7 +71,7 @@ def test_every_kind_has_complete_x_cadence_and_valid_defaults() -> None:
 
 
 def test_kinds_declare_their_role_runtime_and_card() -> None:
-    assert {k.role for k in KINDS} == {"calibrate", "train", "average", "transcribe", "materialize"}
+    assert {k.role for k in KINDS} == {"calibrate", "train", "average", "transcribe", "materialize", "live"}
     assert all(k.runtime == "nemo-speech" for k in KINDS)
     assert FinetuneStep.resources["gpu"]
     assert FinetuneStep.resources["gpus"] == 1
@@ -95,6 +97,9 @@ def test_family_descriptor_profiles() -> None:
     assert d["capabilities"]["languagePrompt"] is True
     assert d["tokenizer"] == "sentencepiece"
     assert d["input"] == {"sampleRate": 16000, "channels": 1}
+    # A live session reserves 6 GB for one model and 2.6 GB per further distinct model (spike A5 finding 6).
+    assert d["interactive"] == {"memoryMb": 6000, "extraCheckpointMb": 2600}
+    assert d["roles"]["live"] == "nemotron_live"
 
 
 def test_base_model_fixture_names_this_family() -> None:
@@ -635,8 +640,14 @@ def test_transforms() -> None:
     assert float(np.corrcoef(back, x)[0, 1]) > 0.99
     noise = np.random.default_rng(0).standard_normal(16000).astype(np.float32) * 0.1
     limited = augment.resample(augment.resample(noise, 16000, 8000), 8000, 16000)
-    spec = np.abs(np.fft.rfft(limited))
-    assert spec[4100:].sum() < 1e-3 * spec.sum()  # nothing above 4 kHz after band-limiting
+    spec = np.abs(np.fft.rfft(limited)) ** 2
+    assert spec[4300:].sum() < 1e-3 * spec.sum()  # next to nothing above 4 kHz after band-limiting
+    # The polyphase resampler of live telephony (finetune@2; version 1 resampled through the FFT).
+    from cadence_worker.resample import telephone
+
+    tel = telephone(x, "ulaw")
+    assert tel.size == x.size
+    assert float(np.corrcoef(tel, x)[0, 1]) > 0.99
     assert augment.speed(x, 1.1).size == round(16000 / 1.1)
 
 
@@ -802,9 +813,15 @@ def test_partials_and_words() -> None:
 
 
 def test_hypothesis_rows_carry_every_field() -> None:
-    s = Stream(frames=10, partials=[{"audioOffsetMs": 100, "emitMs": 3.0, "text": "שלום", "final": True}], text="שלום")
-    decoding = {"profile": "160ms", "attContextSize": [56, 1]}
-    row = hypothesis_row("b3:" + "1" * 64, s, decoding, decoding_hash(decoding), "b3:" + "2" * 64)
+    r = pipeline.FileResult(
+        text="שלום",
+        words=[{"word": "שלום", "start": 0.0, "end": 0.1, "confidence": 0.9}],
+        partials=[{"audioOffsetMs": 100, "emitMs": 3.0, "text": "שלום", "final": True}],
+    )
+    decoding = decoding_config(profile("160ms"), "he-IL", 800, None)
+    assert decoding["decoder"] == "nemo-pipeline-cache-aware"
+    assert decoding["attContextSize"] == [56, 1]
+    row = hypothesis_row("b3:" + "1" * 64, r, decoding, decoding_hash(decoding), "b3:" + "2" * 64)
     assert all(k in row for k in HYPOTHESIS_FIELDS)
     assert row["family"] == NAME
     assert row["words"][0]["word"] == "שלום"
@@ -863,12 +880,12 @@ def test_materialize_writes_the_checkpoint_layout_of_a_trained_one(tmp_path: Pat
     assert FAMILY.descriptor["roles"]["materialize"] == "checkpoint_from_base"
 
 
-# ---------------------------------------------------------------- phrase boosting (nemotron_transcribe@2)
+# ---------------------------------------------------------------- phrase boosting (nemotron_transcribe@3)
 
 
 def test_transcribe_takes_an_optional_boost_list() -> None:
     d = descriptor("nemotron_transcribe", TranscribeStep)
-    assert d["version"] == "2"
+    assert d["version"] == "3"
     assert d["consumes"]["boost"] == "boost_list"
     assert d.get("optionalInputs") == ["boost"]
     assert FAMILY.descriptor["capabilities"]["boosting"] == "nemo-phrase-boosting"
@@ -934,3 +951,82 @@ def test_frame_vad_segments_hysteresis_and_minimums() -> None:
     assert vad_row("b3:x", 1.2, segs) == {"audio": "b3:x", "durationS": 1.2, "speech": [[0.2, 1.0]], "speechEndS": 1.0}
     assert vad_row("b3:x", 1.2, [])["speechEndS"] is None
     assert vad_row("b3:x", 0.99, segs)["speechEndS"] == 0.99  # the last frame runs past the audio
+
+
+# ---------------------------------------------------------------- the pipeline decoder (nemotron_live, transcribe@3)
+
+
+class _Seg:
+    """A word segment as NeMo's streaming pipeline reports it."""
+
+    def __init__(self, text: str, start: float, end: float, conf: float) -> None:
+        self.text, self.start, self.end, self.conf = text, start, end, conf
+
+
+class _Out:
+    def __init__(self, final: str = "", partial: str = "", segs: tuple[_Seg, ...] = ()) -> None:
+        self.final_transcript, self.partial_transcript, self.final_segments = final, partial, list(segs)
+
+
+def test_pipeline_stream_events_mark_a_split_word() -> None:
+    s = pipeline.PipelineStream(target="A", pipeline=None, att=[56, 0], profile="80ms", language="ru-RU")
+    (p,) = s.consume(_Out(partial="Ma"), 1280, False, "")
+    assert p == {"type": "partial", "target": "A", "segment": 0, "seq": 1, "text": "Ma", "audioEnd": 0.08}
+    assert s.consume(_Out(partial="Ma"), 1280, False, "") == [], "an unchanged partial is not sent again"
+    # At 80 ms the end-of-utterance detector fires right after the first token, inside a word (A5 finding 4).
+    (f1,) = s.consume(_Out(final="Ma", segs=(_Seg("Ma", 0.0, 0.16, 0.8),)), 1280, False, "")
+    assert (f1["type"], f1["endpoint"], f1["space"], f1["segment"]) == ("final", "eou", True, 0)
+    split = _Out(final="dagascar <ru-RU>", segs=(_Seg("dagascar <ru-RU>", 0.0, 0.4, 0.9),))
+    evs = s.consume(split, 1280, False, "")
+    f2 = evs[0]
+    assert f2["text"] == "dagascar"
+    assert f2["space"] is False, "it continues the previous final's word"
+    assert f2["words"][0]["word"] == "dagascar"
+    (f3,) = s.consume(_Out(final=" i", segs=(_Seg("i", 0.5, 0.6, 0.7),)), 1280, False, "")
+    assert f3["space"] is True
+    (end,) = s.consume(_Out(), 640, True, "finalize")
+    assert (end["endpoint"], end["text"], end["words"]) == ("finalize", "", [])
+    assert end["audioEnd"] == round((5 * 1280 + 640) / 16000, 3)
+    assert not s.stream_open
+    assert s.new_word
+    assert pipeline.join_finals([f1, f2, f3, end]) == "Madagascar i"
+    assert [e["seq"] for e in (p, f1, f2, f3, end)] == [1, 2, 3, 4, 5]
+
+
+def test_collect_builds_hypotheses_partials() -> None:
+    events: list[dict[str, Any]] = [
+        {"type": "partial", "text": "a", "audioEnd": 0.16},
+        {"type": "final", "text": "a b", "words": [{"word": "a"}, {"word": "b"}], "space": True, "audioEnd": 0.32},
+        {"type": "partial", "text": "c", "audioEnd": 0.48},
+        {"type": "final", "text": "c", "words": [{"word": "c"}], "space": True, "audioEnd": 0.64},
+    ]
+    r = pipeline.collect(events, 1.0, [1.001, 1.002, 1.003, 1.004])
+    assert r.text == "a b c"
+    assert [w["word"] for w in r.words] == ["a", "b", "c"]
+    assert [x["text"] for x in r.partials] == ["a", "a b", "a b c", "a b c"]
+    assert [x["audioOffsetMs"] for x in r.partials] == [160, 320, 480, 640]
+    assert r.partials[-1]["final"] is True
+
+
+def test_live_kind_descriptor() -> None:
+    d = descriptor("nemotron_live", LiveStep)
+    assert d.get("role") == "live"
+    assert d["resources"].get("jobKind") == "interactive"
+    assert d["resources"].get("gpu") is True
+    assert sorted(d.get("optionalInputs") or []) == ["audio", "base", "boost", "model"]
+    assert d["produces"] == {}
+    params = NemotronLiveParams.model_validate(
+        {
+            "session": "trs_x",
+            "targets": [{"target": "A", "model": "model.0", "profile": "160ms", "language": "he-IL"}],
+            "input": {"kind": "microphone"},
+            "telephony": {"codec": "alaw", "sampleRate": 8000},
+            "pace": "fast",
+            "maxFileSeconds": 900,
+            "maxFileBytes": 1000,
+            "frameMs": 20,
+        }
+    )
+    assert params.stop_history_eou_ms == 800
+    assert params.telephony is not None
+    assert params.telephony.codec == "alaw"

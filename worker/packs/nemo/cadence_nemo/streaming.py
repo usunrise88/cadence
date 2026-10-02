@@ -1,4 +1,7 @@
-"""File decode in streaming simulation with the real cache-aware streaming decoder (spike A3 step 3: NeMo's
+"""Versions 1 and 2 of nemotron_transcribe (version 3 decodes with :mod:`cadence_nemo.pipeline`, the live decoder; this
+module keeps their decoder for comparisons and the :class:`Boost` type).
+
+File decode in streaming simulation with the real cache-aware streaming decoder (spike A3 step 3: NeMo's
 ``speech_to_text_cache_aware_streaming_infer.py`` logic, chunk by chunk with the encoder caches carried; never an
 offline decode re-labelled): ``att_context_size`` from the latency profile, greedy RNNT, the language prompt, tags
 stripped from the text.

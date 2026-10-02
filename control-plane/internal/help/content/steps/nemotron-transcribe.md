@@ -1,15 +1,16 @@
 ---
 title: nemotron_transcribe (step kind)
-summary: The Nemotron family's transcribe role — decode a dataset with a checkpoint in true cache-aware streaming at a latency profile, optionally with static phrase boosting, and write hypotheses with words, confidence and partial events.
+summary: The Nemotron family's transcribe role — decode a dataset with a checkpoint through NeMo's cache-aware streaming pipeline (the decoder live sessions use) at a latency profile, optionally with phrase boosting, and write hypotheses with words, confidence and partial events.
 contexts: [step:nemotron_transcribe, artifact:hypotheses, artifact:boost_list, family:nemo.fastconformer-rnnt.cache-aware]
 ---
 
 ## What this is
 
-`nemotron_transcribe@2` fills the `transcribe` role of the Nemotron 3.5 streaming family (runtime `nemo-speech`, a
+`nemotron_transcribe@3` fills the `transcribe` role of the Nemotron 3.5 streaming family (runtime `nemo-speech`, a
 card, job kind `eval`). It streams every utterance of a `dataset` (input `data`) through a `checkpoint` (input
-`model`) with NeMo's **cache-aware streaming decoder** — chunk by chunk with the encoder caches carried, never an
-offline decode relabelled — at the latency `profile`:
+`model`) at the latency `profile` with **NeMo's cache-aware streaming pipeline** (`nemo.collections.asr.inference`) —
+the decoder a live session runs ([`nemotron_live`](nemotron-live.md)), so an eval, a paced replay and a live session
+give the same words (spike A5):
 
 | Profile | `att_context_size` | Latency |
 | --- | --- | --- |
@@ -19,21 +20,33 @@ offline decode relabelled — at the latency `profile`:
 | `560ms` | [56,6] | 560 ms |
 | `1120ms` | [56,13] | 1120 ms |
 
-Decoding is greedy RNN-T in fp32 with the language prompt of the dataset's language (or `target_lang`) and the locale
-tag stripped. The `hypotheses` artifact (R42) has one JSON line per utterance: `audio` (the BLAKE3 hash of its audio),
-`text`, `words` (`word`, `start`, `end` in seconds, `confidence` — NeMo's word confidence, minimum over the word's
-tokens, or null), `decoding` (profile, context, decoder, prompt) and its `decodingHash`, `family`, `weightsHash`, and
-`partials`: after each chunk that reached the utterance, `audioOffsetMs` (audio consumed including the chunk's right
-context), `emitMs` (wall time since the batch's decode started; a batch's streams decode together) and the text so far;
-the last is `final`. Word times come from those emissions, so their resolution is one chunk (the profile's latency).
+Each utterance is one pipeline stream fed chunk by chunk (16 kHz, the training resampler for any other rate, channel
+0) and closed with a forced end of utterance; the utterances of a batch (`batch_size`) step together. Decoding is
+greedy RNN-T in fp32 with the language prompt of the dataset's language (or `target_lang`), the locale tag stripped,
+and the pipeline's end-of-utterance endpointing (`stop_history_eou_ms`, as live sessions): a long utterance may come
+out as several finals, joined into one text (a final that continues a word split by an end of utterance is joined
+without a space).
+
+The `hypotheses` artifact (R42) has one JSON line per utterance: `audio` (the BLAKE3 hash of its audio), `text`,
+`words` (`word`, `start`, `end` in seconds and `confidence` from the pipeline's word segments: NeMo's entropy-based
+confidence, the minimum over the word's tokens), `decoding` and its `decodingHash`, `family`, `weightsHash`, and
+`partials`: one event per partial or final the stream emitted, with `audioOffsetMs` (the audio the event covers),
+`emitMs` (wall time since the batch's decode started) and the text so far; the last is `final`.
+
+`decoding` names the decoder — `"decoder": "nemo-pipeline-cache-aware"` with `profile`, `attContextSize`,
+`targetLang`, `stopHistoryEouMs` — so records of versions 1 and 2 (NeMo's cache-aware loop over whole-file features,
+`"decoder": "rnnt-greedy-batch"`) never mix with these: the two decoders agree on most words but not all (A5: 10 of 22
+clips identical at 160 ms, at a similar WER). An eval keys its records by the transcribe kind's version too.
+
+Two shims fix NeMo 3.0.0 gaps (`cadence_nemo/pipeline.py`): the per-stream language prompt is applied (as shipped the
+pipeline builds it and drops it, and Nemotron 3.5 emits only blanks), and the trailing locale tag is stripped.
 
 One language per step; scoring (normalisation, WER) belongs to the core [`wer_score`](wer-score.md) kind.
 
-### Phrase boosting (version 2)
+### Phrase boosting
 
 The optional input `boost` takes a `boost_list` artifact; a pipeline may leave it unwired (the kind publishes
-`optionalInputs: [boost]`), and then the decode and its `decodingHash` are exactly those of version 1. A boost list is
-either
+`optionalInputs: [boost]`). A boost list is either
 
 - JSON `{"terms": ["Tel Aviv", "Haifa"], "weight": 0.5}` — `weight` optional, `format` `cadence.boost_list/1` when
   named, other keys ignored; what the control plane renders from a language pack's boost file; or
@@ -41,24 +54,21 @@ either
   skipped, and a line `# weight: <number>` for the list's weight.
 
 Phrases are NFC, trimmed, inner whitespace collapsed and deduplicated (at most 10 000, each ≤ 100 characters); write
-them in the model's output style (cased, spelled as in transcripts). They are fused into greedy RNN-T decoding as
-NeMo's GPU phrase boosting tree (the label-looping decoder, `context_score` 1.0, `depth_scaling` 2.0, its state carried
-across streaming chunks): score = acoustic + weight × tree score, with the list's weight or else `boost_weight`. The
-decoding config gains `boost` (`method: nemo-phrase-boosting`, `list` — the BLAKE3 hash of the boost artifact,
-`terms`, `weight`, `contextScore`, `depthScaling`), so the list and its weight are part of the `decodingHash` an eval
-record is keyed by.
+them in the model's output style (cased, spelled as in transcripts). Each stream gets the list as NeMo's per-stream
+phrase boosting tree (the label-looping greedy decoder's biasing multi-model, `context_score` 1.0, `depth_scaling`
+2.0): score = acoustic + weight × tree score, with the list's weight or else `boost_weight`. The decoding config gains
+`boost` (`method: nemo-phrase-boosting`, `list` — the BLAKE3 hash of the boost artifact, `terms`, `weight`,
+`contextScore`, `depthScaling`), so the list and its weight are part of the `decodingHash`.
 
-Measured on the staging card (2026-10-02; FLEURS he_il test, 120 utterances, base model, 160 ms; the 40 words of ≥ 5
-letters the plain decode missed, boosted): entity recall 0.11 → 0.29 / 0.36 / 0.50 / 0.52 / 0.54 and WER 0.466 →
-0.462 / 0.460 / 0.461 / 0.490 / 0.623 at weight 0.3 / 0.5 / 0.7 / 1 / 2. Above about 0.7 listed words replace others
-(94 extra listed-word insertions at weight 1). Six distractor words that occur nowhere were never inserted at 0.5 but
-still moved WER from 0.466 to 0.472 — boosting is evaluated, not assumed (R24): compare entity recall and WER with and
-without the list. Decode time and memory are unchanged (45 s and 4.9 GB peak for the 120 utterances).
+Version 2's measurement (the same boosting tree in NeMo's cache-aware loop; staging card, 2026-10-02, FLEURS he_il
+test, 120 utterances, base model, 160 ms, the 40 words of ≥ 5 letters the plain decode missed): entity recall 0.11 →
+0.29 / 0.36 / 0.50 / 0.52 / 0.54 and WER 0.466 → 0.462 / 0.460 / 0.461 / 0.490 / 0.623 at weight 0.3 / 0.5 / 0.7 / 1 /
+2. Boosting is evaluated, not assumed (R24): compare entity recall and WER with and without the list.
 
 ## Place in the loop
 
-Evaluate — the `transcribe-<cell>` step of an eval pipeline (a cell's decoding names its boost list, or none); the
-conformance suite runs it at every profile.
+Evaluate — the `transcribe-<cell>` step of an eval pipeline (evals take the newest published transcribe kind of the
+family's role); the conformance suite runs it at every profile.
 
 ## Fields and defaults
 
@@ -69,6 +79,7 @@ conformance suite runs it at every profile.
 | `target_lang` | `packs.nemo.target_lang` (from the data) | Cadence recommendation | a prompt key |
 | `cuda_context_reserve_mb` | `packs.nemo.cuda_context_reserve_mb` (1024) | Spike A3 | 0–8192 MiB |
 | `boost_weight` | `packs.nemo.boost_weight` (0.5) | Measured on the staging card (above) | 0–10 |
+| `stop_history_eou_ms` | `packs.nemo.live_stop_history_eou_ms` (800) | Spike A5 | 80–10 000 ms |
 
 ## Commands
 
@@ -80,7 +91,7 @@ None yet (phase 3 evaluation).
 
 ## Sources
 
-- NeMo `examples/asr/asr_cache_aware_streaming/speech_to_text_cache_aware_streaming_infer.py` (v3.0.0), as run in spike
-  A3 step 3; docs/spec/08-resolutions.md R24 (boosting in evaluation), R42 (hypotheses), R43 (latency profiles).
-- NeMo 3.0.0 `nemo/collections/asr/parts/context_biasing/boosting_graph_batched.py` (`BoostingTreeModelConfig`,
-  `GPUBoostingTreeModel`) and `parts/submodules/rnnt_decoding.py` (`greedy.boosting_tree`, `boosting_tree_alpha`).
+- docs/spikes/A5-live-transcription.md "Result" (one decoder for live and evals; the shims).
+- NeMo 3.0.0 `nemo/collections/asr/inference/pipelines/cache_aware_rnnt_pipeline.py` (per-stream prompts, biasing,
+  endpointing) and `parts/context_biasing/biasing_multi_model.py` (`BiasingRequestItemConfig`).
+- docs/spec/08-resolutions.md R24 (boosting in evaluation), R42 (hypotheses), R43 (latency profiles).

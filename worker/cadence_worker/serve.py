@@ -6,16 +6,20 @@ from __future__ import annotations
 
 import json
 import logging
+import shutil
 import signal
 import threading
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
+from pathlib import Path
 from typing import Any
 
 from cadence_worker.cas import Store
 from cadence_worker.client import ApiError, WorkerClient, with_retry
 from cadence_worker.config import Config
+from cadence_worker.defaults import DefaultsError, lookup
 from cadence_worker.executor import LeaseRunner
+from cadence_worker.live import URL_ENV, live_url
 from cadence_worker.protocol_gen import (
     Lease,
     MetricPoint,
@@ -38,6 +42,45 @@ FLUSH_SECONDS = 1.0
 # How long shutdown waits for a stopping lease beyond the step stop grace: hashing its training state and the release.
 # A worker container's stop_grace_period in docker-compose.yml must cover both (tests/test_compose.py).
 RELEASE_MARGIN_SECONDS = 15.0
+# How often the claim loop looks for scratch directories a crashed step process left behind.
+SWEEP_EVERY_SECONDS = 600.0
+INTERACTIVE = "interactive"
+
+
+def lease_env(lease: Lease, url: str) -> dict[str, str]:
+    """The environment the harness adds for a lease: an interactive job (a live transcription session) dials its relay
+    socket at ``CADENCE_LIVE_URL``; the lease's env carries its token (``CADENCE_LIVE_TOKEN``)."""
+    if (lease["spec"].get("resources") or {}).get("jobKind") == INTERACTIVE:
+        return {URL_ENV: live_url(url, lease["jobId"])}
+    return {}
+
+
+def scratch_max_age() -> float:
+    """``transcriptions.scratch_sweep_minutes`` in seconds (60 minutes when defaults.yaml lacks it)."""
+    try:
+        return float(lookup("transcriptions.scratch_sweep_minutes").value) * 60
+    except DefaultsError:
+        return 3600.0
+
+
+def sweep_scratch(scratch: Path, active: Collection[str], max_age: float, now: float | None = None) -> list[str]:
+    """Remove the scratch directories of leases this worker no longer runs that are older than ``max_age`` seconds:
+    what a crashed step process left (a live session's uploaded file included, R47). Returns the names removed."""
+    now = time.time() if now is None else now
+    removed: list[str] = []
+    if not scratch.is_dir():
+        return removed
+    for d in scratch.iterdir():
+        if not d.is_dir() or d.name in active or not d.name.startswith("lse_"):
+            continue
+        try:
+            age = now - d.stat().st_mtime
+        except OSError:
+            continue
+        if age > max_age:
+            shutil.rmtree(d, ignore_errors=True)
+            removed.append(d.name)
+    return removed
 
 
 class Batcher[T]:
@@ -168,7 +211,13 @@ class LeaseSession:
         self.telemetry = telemetry
         self.sink = HttpSink(client, lease["id"])
         self.runner = LeaseRunner(
-            lease, kinds=kinds, store=store, scratch=cfg.scratch, sink=self.sink, stop_grace=cfg.stop_grace
+            lease,
+            kinds=kinds,
+            store=store,
+            scratch=cfg.scratch,
+            sink=self.sink,
+            stop_grace=cfg.stop_grace,
+            extra_env=lease_env(lease, cfg.url),
         )
         self.lost = False
         self._done = threading.Event()
@@ -299,10 +348,24 @@ class WorkerService:
         with self._lock:
             return len(self.sessions)
 
+    def sweep(self) -> None:
+        with self._lock:
+            active = set(self.sessions)
+        removed = sweep_scratch(self.cfg.scratch, active, scratch_max_age())
+        if removed:
+            log.info("removed %d stale scratch directories: %s", len(removed), ", ".join(removed))
+
     def loop(self) -> None:
         self.register()
         delay = 1.0
+        swept = 0.0
         while not self.stopping.is_set():
+            if time.monotonic() - swept > SWEEP_EVERY_SECONDS:
+                swept = time.monotonic()
+                try:
+                    self.sweep()
+                except OSError as e:
+                    log.warning("scratch sweep failed: %s", e)
             if self.active() >= self.cfg.max_leases:
                 self.sleep(0.5)
                 continue

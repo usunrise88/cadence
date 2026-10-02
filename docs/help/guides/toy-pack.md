@@ -11,7 +11,9 @@ descriptor with its latency profiles, a `defaults.yaml` section and help. The to
 runtime `toy` (python:3.12-slim with CPU PyTorch, image `cadence/worker-toy`), family `toy-ctc` (a linear layer, a layer norm and a
 unidirectional GRU with a CTC head, character tokenizer, log-mel features computed on the fly), latency profiles
 `offline` and a simulated streaming `320ms`, and the step kinds `toy_calibrate`, `toy_train`, `toy_average`,
-`toy_transcribe` and `toy_checkpoint_from_base` (role `materialize`: the untrained network from a base model's seed).
+`toy_transcribe`, `toy_checkpoint_from_base` (role `materialize`: the untrained network from a base model's seed) and
+[`toy_live`](../steps/toy-live.md) (role `live`: a manual transcription session on the CPU, so the live channel runs
+end to end without a card).
 It declares no boosting capability, so its transcribe kind takes no boost list. It trains in seconds on synthetic tone clips and exists only to keep the seams honest; NeMo is the
 only real pack. Its kinds read the `dataset` directory artifact `dataset_import` writes (`dataset.json`,
 `manifest.jsonl` with `audio` as a path inside the artifact, the audio files) and name each utterance by the BLAKE3

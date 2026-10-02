@@ -112,3 +112,80 @@ def test_materialize_transcribe_boost_and_score(tmp_path: Path) -> None:
         return sum(1 for r in rows for w in r["hyp"].split() if w in missed and w in r["ref"].split())
 
     assert recalled("boosted") > recalled("plain"), (s0["wer"], s1["wer"])
+
+
+LIVE = """
+import json, sys
+from pathlib import Path
+import numpy as np
+from cadence_nemo import pipeline
+from cadence_nemo.checkpoint import NEMO_FILE
+from cadence_nemo.family import att_context_size, profile
+from cadence_nemo.steps.transcribe import read_clip
+from cadence_worker import live
+
+model, data, out = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])
+clips = sorted((data / "audio").rglob("*.wav")) if (data / "audio").is_dir() else sorted(data.rglob("*.wav"))
+m = pipeline.load(str(model / NEMO_FILE), {"160ms": att_context_size(profile("160ms"))}, stop_history_eou_ms=800)
+pipe, att = m.pipelines["160ms"], m.att["160ms"]
+auds = [read_clip(c) for c in clips]
+streams = [
+    pipeline.PipelineStream(target="A", pipeline=pipe, att=att, profile="160ms", language="he-IL") for _ in clips
+]
+files = [r.text for r in pipeline.decode_batch(streams, auds)]
+
+
+class Channel:
+    def __init__(self, msgs):
+        self.inbox, self.sent = msgs, []
+
+    def recv(self, timeout):
+        if self.inbox:
+            return self.inbox.pop(0)
+        raise live.ChannelClosedError("closed")
+
+    def send(self, text):
+        self.sent.append(json.loads(text))
+
+    def close(self, code=1000, reason=""):
+        pass
+
+
+lives = []
+for a in auds:
+    pcm = np.clip(np.round(a * 32768), -32768, 32767).astype("<i2")
+    frames = [pcm[i : i + 320].tobytes() for i in range(0, pcm.size, 320)]
+    start = json.dumps({"type": "start", "input": {"kind": "microphone", "sampleRate": 16000}})
+    ch = Channel([start, *frames, json.dumps({"type": "end"})])
+    st = pipeline.PipelineStream(target="A", pipeline=pipe, att=att, profile="160ms", language="he-IL")
+    p = live.LiveParams.model_validate({"session": "t", "targets": [{"target": "A", "model": "m", "profile": "160ms",
+                                        "language": "he-IL"}], "input": {"kind": "microphone"}})
+    live.serve(ch, [st], p, work_dir=out.parent)
+    lives.append(pipeline.join_finals([e for e in ch.sent if e["type"] == "final"]))
+out.write_text(json.dumps({"files": files, "lives": lives}, ensure_ascii=False), encoding="utf-8")
+"""
+
+
+def test_live_words_equal_the_eval_decode(tmp_path: Path) -> None:
+    """A live session (20 ms microphone frames through cadence_worker.live) and nemotron_transcribe@3's batched file
+    decode give the same words: one decoder for live and evals (spike A5 finding 2)."""
+    torch = pytest.importorskip("torch")
+    pytest.importorskip("nemo")
+    if not torch.cuda.is_available():
+        pytest.skip("no CUDA card")
+    base = {
+        "format": "cadence.base_model/1",
+        "versionId": "ver_base",
+        "family": {"name": NAME},
+        "model": FAMILY.conformance["base_model"],
+    }
+    (tmp_path / "base.json").write_text(json.dumps(base), encoding="utf-8")
+    model = tmp_path / "model"
+    CheckpointFromBaseStep().run(
+        CheckpointFromBaseStep.Params(), {"base": tmp_path / "base.json"}, {"checkpoint": model}, _ctx(tmp_path)
+    )
+    out = tmp_path / "live.json"
+    subprocess.run([sys.executable, "-c", LIVE, str(model), str(FIXTURES), str(out)], check=True)
+    doc = json.loads(out.read_text(encoding="utf-8"))
+    assert doc["files"] == doc["lives"]
+    assert any(doc["files"]), "the base model decodes some fixture words"

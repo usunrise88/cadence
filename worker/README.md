@@ -39,6 +39,15 @@ docker compose --profile toy up -d worker-toy    # CPU, for trying the seams end
 
 `python -m cadence_worker registry [RUNTIME]` and `families [RUNTIME]` print what a worker of that runtime publishes.
 
+Live sessions (phase 3 · stream T, R47–R50): a lease whose `resources.jobKind` is `interactive` runs a family's `live`
+role kind. The harness adds `CADENCE_LIVE_URL` (the control plane's `/api/worker-live/{jobId}`, `ws://` or `wss://`) to
+the step's environment, and the lease's secret env carries `CADENCE_LIVE_TOKEN`; the kind loads its targets, dials the
+relay with that token (header `Cadence-Live-Token`) and serves the session with `cadence_worker/live.py` (the live
+channel's messages, the streaming polyphase resampler and the phone line of `cadence_worker/resample.py`; files decoded
+with ffmpeg when the image has it). The worker never hands a step its own credential. Every ten minutes the claim loop
+removes scratch directories of leases it no longer runs that are older than `transcriptions.scratch_sweep_minutes`
+(60): what a crashed step process left, a session's uploaded file included.
+
 ## The step contract
 
 A step kind is a class registered under the `cadence.steps` entry-point group:
@@ -110,10 +119,13 @@ calibrate stage's output), `checkpoint`. `--memory-cap-mb` is the card cap a lea
 the staging card with vLLM).
 
 The NeMo pack (`packs/nemo`, help `docs/help/guides/nemo-pack.md`): `oomptimizer_calibrate`, `nemotron_finetune`,
-`checkpoint_average`, `nemotron_transcribe` (static phrase boosting from an optional `boost_list`, `cadence_worker/
-boost.py`), `checkpoint_from_base` (role `materialize`), defaults `packs.nemo`. Its pure parts (mix reading, Noam arithmetic,
-averaging, augmentation, the OOMptimizer search, the training monitor, hypotheses) are unit-tested here without NeMo;
-the NeMo glue (`training.py`, `streaming.py`, `nemo_data.py`) runs in the image. `CADENCE_NEMO_DEVICE=cpu` lets the
+`checkpoint_average`, `nemotron_transcribe` (version 3: NeMo's cache-aware streaming pipeline, `pipeline.py`, with
+per-stream phrase boosting from an optional `boost_list`, `cadence_worker/boost.py`), `checkpoint_from_base` (role
+`materialize`), `nemotron_live` (role `live`, the same decoder), defaults `packs.nemo`. Its pure parts (mix reading,
+Noam arithmetic, averaging, augmentation, the OOMptimizer search, the training monitor, hypotheses, the pipeline
+decoder's events) are unit-tested here without NeMo; the NeMo glue (`training.py`, `pipeline.py`, `streaming.py` — the
+cache-aware loop of transcribe versions 1–2, kept for its boost list type and comparisons — `nemo_data.py`) runs in
+the image. `CADENCE_NEMO_DEVICE=cpu` lets the
 train and transcribe steps run on a CPU (slowly, fp32) to check the glue without a card — development only.
 
 The suite checks the schemas (complete `x-cadence`, help articles, declared profiles, every required role mapped to a
