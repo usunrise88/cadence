@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { AgentReference, AgentSession } from "@/api/gen/types.gen";
+import { openAudio } from "@/shell/audio/target";
 import { openPanel } from "@/shell/dock/layout";
 import { dockApi } from "@/shell/dock/store";
 import { parseDocRef } from "@/shell/entity/manifest";
@@ -184,6 +185,17 @@ export function attachSelectionToChat(): string {
   return target;
 }
 
+/** Attaches references (an audio span, say) to the current Chat's composer and focuses it. */
+export function attachToChat(refs: AgentReference[]): string {
+  const target = targetChat();
+  const b = useChatBridge.getState();
+  if (refs.length) b.addRefs(target, refs);
+  activate(target);
+  b.setLastChat(target);
+  b.focusComposer(target);
+  return target;
+}
+
 /**
  * "Ask agent" on an entity or an empty state: Chat opens with the references attached and a prefilled prompt
  * naming the entity and the intent (docs/spec/11-ui-panels.md "Progressive disclosure": never blank).
@@ -225,6 +237,11 @@ export function openReference(ref: string): void {
   if (p.kind === "help_article") {
     useHelp.getState().show(p.id);
     openPanel("help");
+    return;
+  }
+  if (p.kind === "utterance" && p.fragment && /(^|&)t=/.test(p.fragment)) {
+    // A span (`@utt:<id>#t=1.20,2.35`, R51) plays in the Audio panel.
+    openAudio(`utt:${p.id}#${p.fragment}`);
     return;
   }
   const doc = `${p.kind}:${p.id}`;

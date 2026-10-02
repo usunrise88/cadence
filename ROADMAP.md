@@ -482,6 +482,10 @@ worker protocol; S5 (audio view) before the Audio panel — it needs only the ph
 - [ ] Audio view (R51, R52) as a shell primitive: waveform, spectrogram (FFT in a Web Worker, WebGL2), model input and
       emissions from the transcribe step, hypothesis words with confidence, reference/hypothesis alignment (S/D/I),
       streaming timeline; spans as selections and chat references (`#t=`); TextGrid, CTM and WebVTT export
+      — built 2026-10-02 (stream A): `@/shell/audio` with waveform, spectrogram (worker FFT, one WebGL2 renderer per
+      window, server tiles from `spectrogram_tiles@1`), hypothesis words with confidence and S/D/I, spans and `#t=`
+      references, the three exports, the Audio panel, Diff's embedded view; open: model input and emissions (needs
+      the transcribe step's `analysis` artifact), streaming timeline lane, presets, TextGrid/CTM import
 - [ ] Transcription tool (R47–R50): a file, the microphone or an utterance span through one WebSocket session; up to
       three targets, blind compare; telephony simulation; a typed reference gives WER on the page; nothing is stored;
       "test a phrase" becomes a two-target transcription
@@ -489,6 +493,8 @@ worker protocol; S5 (audio view) before the Audio panel — it needs only the ph
       against latency; the utterance table opens rows in Diff and Audio
 - [ ] Generator: the `media` tag — exempt from the verb rule and from MCP — for R25's audio endpoint, `…/peaks`,
       `transcriptions.new` and its socket (R48)
+      — the tag and audio serving built 2026-10-02 (stream A: `audio.get|sign`, `peaks.get`, `spectrogram.get`,
+      `words.get`); `transcriptions.new` and the socket belong to stream T
 - [ ] Queue: job kind `interactive` beside training under the card's cap, never beside a benchmark, 1 GPU-hour per
       project per day (R49)
 

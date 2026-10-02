@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Copy, NavArrowLeft, NavArrowRight } from "iconoir-react";
+import { Copy, NavArrowLeft, NavArrowRight, SoundHigh } from "iconoir-react";
 import { evalsGetOptions } from "@/api/gen/@tanstack/react-query.gen";
-import type { Eval, EvalUtterance } from "@/api/gen/types.gen";
+import type { Eval, EvalCell, EvalUtterance } from "@/api/gen/types.gen";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { AudioView, openAudio } from "@/shell/audio";
 import { EmptyState, PanelToolbar } from "@/shell/entity/primitives";
 import {
   alignedWords,
@@ -29,7 +30,8 @@ import {
 // the active Eval report (cell:<id>/utt:<n>), word by word from the scores rows' alignment ops, after the scoring
 // normalizer. Substitutions, deletions and insertions are marked by glyph, a word and colour (colour is never the
 // only channel); every word is bidi-isolated and the line runs in the golden set's direction (Hebrew right to left).
-// Previous / next step through the cell's worst utterances. The texts on request; copy puts both on the clipboard.
+// Previous / next step through the cell's worst utterances. The texts on request; copy puts both on the clipboard. The
+// utterance's audio view (R51) carries the hypothesis word track; Open in Audio shows it in the floating Audio panel.
 
 export function DiffEmpty() {
   return <EmptyState step="review" title="No utterance selected" hint="Select a cell in an Eval report, then an utterance in its table." />;
@@ -87,7 +89,7 @@ function CellDiff({ doc, evalId, cellId, utterance }: { doc: string; evalId: str
         </span>
       </PanelToolbar>
       <div className="min-h-0 flex-1 overflow-auto">
-        {row ? <UtteranceDiff row={row} ev={ev} locale={gs?.locale} /> : <EmptyState step="review" title="No utterance rows" hint="The cell has no scored utterances yet." />}
+        {row ? <UtteranceDiff row={row} ev={ev} cell={cell} locale={gs?.locale} /> : <EmptyState step="review" title="No utterance rows" hint="The cell has no scored utterances yet." />}
       </div>
     </div>
   );
@@ -100,7 +102,7 @@ const OP_CLASS: Readonly<Record<AlignOp, string>> = {
   I: "bg-diff-added text-diff-added-foreground underline underline-offset-4",
 };
 
-function UtteranceDiff({ row, ev, locale }: { row: EvalUtterance; ev: Eval; locale?: string }) {
+function UtteranceDiff({ row, ev, cell, locale }: { row: EvalUtterance; ev: Eval; cell: EvalCell; locale?: string }) {
   const [texts, setTexts] = useState(false);
   const [copied, setCopied] = useState(false);
   const words = alignedWords(row.ops);
@@ -128,6 +130,7 @@ function UtteranceDiff({ row, ev, locale }: { row: EvalUtterance; ev: Eval; loca
         {row.speaker ? <Num label="Speaker" value={row.speaker} /> : null}
       </dl>
       <Alignment words={words} dir={dir} />
+      <AudioView key={row.audio} utterance={row.audio} compact title={`Audio of utterance #${row.index}`} hypotheses={cell.hypotheses} scores={cell.scores} lang={locale} />
       <p className="flex flex-wrap gap-x-3 text-[11px] text-muted-foreground" data-slot="diff-legend">
         {(["S", "D", "I"] as const).map((op) => (
           <span key={op}>
@@ -142,6 +145,10 @@ function UtteranceDiff({ row, ev, locale }: { row: EvalUtterance; ev: Eval; loca
       <div className="flex flex-wrap gap-1">
         <Button size="xs" variant="outline" aria-pressed={texts} onClick={() => setTexts((t) => !t)}>
           {texts ? "Hide texts" : "Show texts"}
+        </Button>
+        <Button size="xs" variant="outline" onClick={() => openAudio({ utterance: row.audio, cell: cell.id, hypotheses: cell.hypotheses, scores: cell.scores })}>
+          <SoundHigh aria-hidden />
+          Open in Audio
         </Button>
         <Button size="xs" variant="ghost" onClick={(e) => void copy(e.currentTarget)}>
           <Copy aria-hidden />

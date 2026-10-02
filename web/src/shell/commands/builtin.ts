@@ -28,6 +28,7 @@ import { useTheme } from "@/shell/theme/store";
 import { DEFAULT_WORKSPACES } from "@/shell/workspaces/schema";
 import { applyPlan, defaultPlan, restoreWorkspace, saveWorkspace } from "@/shell/workspaces/persistence";
 import { registerAgentCommands } from "./agents";
+import { registerAudioCommands } from "./audio";
 import { registerApiCommands } from "./api";
 import { registerExperimentCommands } from "./experiments";
 import { registerEvaluationCommands } from "./evaluation";
@@ -236,6 +237,7 @@ export function registerBuiltinCommands(): void {
   registerAgentCommands();
   registerTrainingCommands();
   registerExperimentCommands();
+  registerAudioCommands();
   registerEvaluationCommands();
 
   // One "Open <panel>" command per registered tool panel.

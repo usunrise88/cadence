@@ -110,6 +110,19 @@ Two shell primitives draw everything acoustic and numeric (R51–R53; spike S5 s
   locale's direction, and hovering a word highlights it in both places.
 - Keys are `view.audio.*` commands, active only while a view has focus (Keyboard map below). Exports: Praat TextGrid,
   NIST CTM and WebVTT; TextGrid and CTM also import as a reference track.
+- As built (2026-10-02, stream A): `AudioView` composes the imperative `AudioEngine` (ruler, waveform per channel
+  with clipping ticks, spectrogram per channel, hypothesis word lane with confidence shading, ≠/+ glyphs and deletion
+  markers, minimap, playhead, loop and drag-to-select) on an `AudioAxis` several views may share; the engine is built
+  in the container's own document and rebuilt when the panel changes window, and each window has one frame loop and
+  one WebGL2 renderer (`TEXTURE_2D_ARRAY` of R8 tile slots with LRU, a lookup texture of the colormaps, copy-out into
+  each view's 2D canvas so a lost context keeps the last picture). Browser STFT (≤ `browser_stft_max_s`) is a
+  TypeScript radix-2 FFT in a Web Worker, not WASM: S5 measured the FFT at ≈ 45 ms per minute, so WASM buys nothing
+  yet. Colormaps: magma, viridis, cividis, inferno, grey, inverse grey (Roseus and Turbo not shipped). Not built yet:
+  model input and emissions (no `analysis` artifact), the streaming timeline lane (partials are returned by
+  `words.get`), presets, Canvas 2D fallback (a note says WebGL2 is missing), MSE playback, Inspector span statistics,
+  TextGrid/CTM import. Keys are `view.audio<Action>` ids (client-only ids take one dot). A chat reference with a
+  temporal fragment (`@utt:<id>#t=…`) opens the Audio panel. Lint rejects `<audio>`, `<video>`, `<canvas>` and
+  `new Audio/AudioContext` in panels.
 - `@/shell/charts` offers a time-series chart (uPlot: synced cursors, EMA smoothing over a faint raw line, min/max
   envelopes) and an analytics chart (ECharts 6: histograms, bars, forest plots with intervals, heatmaps, scatter,
   Pareto fronts). Chart data is contract data: bins, intervals and aggregates arrive from the same `get` operation an

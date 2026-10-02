@@ -1,12 +1,13 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { OpenNewWindow } from "iconoir-react";
+import { OpenNewWindow, SoundHigh } from "iconoir-react";
 import { evalsGetOptions, eventsListOptions } from "@/api/gen/@tanstack/react-query.gen";
 import type { Eval, EvalCell, EvalGateCheck, ModelRegistration } from "@/api/gen/types.gen";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { cn } from "@/lib/utils";
+import { openAudio } from "@/shell/audio";
 import { AnalyticsChart } from "@/shell/charts";
 import { ActorBadge, EmptyState, StatusChip } from "@/shell/entity/primitives";
 import {
@@ -508,6 +509,9 @@ function Utterances({ ev, cell, doc, selected }: { ev: Eval; cell: EvalCell; doc
               <th className="w-24 font-normal">S · D · I</th>
               <th className="font-normal">Reference</th>
               <th className="font-normal">Hypothesis</th>
+              <th className="w-8 font-normal">
+                <span className="sr-only">Audio</span>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -536,6 +540,21 @@ function Utterances({ ev, cell, doc, selected }: { ev: Eval; cell: EvalCell; doc
                 </td>
                 <td className="truncate" dir={dir} title={r.hyp}>
                   {r.hyp}
+                </td>
+                <td>
+                  <Button
+                    size="icon-xs"
+                    variant="ghost"
+                    aria-label={`Open utterance ${r.index} in Audio`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      select(doc, evalItem(cell.id, r.index));
+                      openAudio({ utterance: r.audio, cell: cell.id, hypotheses: cell.hypotheses, scores: cell.scores });
+                    }}
+                    onKeyDown={(e) => e.stopPropagation()}
+                  >
+                    <SoundHigh aria-hidden />
+                  </Button>
                 </td>
               </tr>
             ))}

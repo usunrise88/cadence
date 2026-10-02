@@ -295,6 +295,33 @@ transcription socket.
   file URL in the page. This is a deterrent, not a guarantee: anyone who can hear audio can record it.
 - The audit log records who played what: viewer, utterance, span, time.
 
+Audio serving as built (2026-10-02, stream A; `internal/media`, `internal/server/handlers_media.go`, migration 0029):
+
+- Five operations under `/registry/utterances/{id}` (id: `utt_…` or the audio's `b3:` hash), tag `media`, refused to
+  any agent actor or `cst_` token, registry read required: `audio.get` (WAV, byte ranges, `416`
+  `range-not-satisfiable`), `audio.sign` (POST, `{channel?, start?, end?}` → `AudioLink`: a relative URL with
+  `viewer`, `exp`, `sig`), `peaks.get` (`hopMs` a multiple of 10, `start`, `end`), `spectrogram.get` (the manifest, or
+  one tile with `tile=c<ch>/l<L>/<i>`) and `words.get` (`hypotheses`, `scores` artifacts → the row's timed words with
+  `op`/`ref` from the alignment, deletions, partials). `audio.get` and `spectrogram.get` answer bytes from the
+  non-strict router layer.
+- `audio.get` serves the stored file as is when it is 16 kHz 16-bit PCM and asked whole; any other span is decoded
+  (PCM 8/16/24/32-bit, float 32), the channel picked, resampled to 16 kHz (polyphase Hann-windowed sinc, ±0.01 dB to
+  0.9 × Nyquist, −60 dB stopband) and encoded as 16-bit PCM, up to `media.max_span_s`. No MSE segments yet: the
+  element plays the signed WAV URL with `controlsList="nodownload"` and no context menu (play-only remains a
+  deterrent).
+- Signed links: HMAC-SHA256 over utterance, channel, start, end, viewer and expiry with a key derived from the master
+  key (links die with it); lifetime `media.signed_link_ttl_s` (300 s). A request carrying `sig` passes the session
+  check and is the viewer's play; any change to the query or an expiry gives `403 media-link-invalid`.
+- Audit: `audio.sign` and every `audio.get` that starts a play (no `Range`, or one from byte 0) write an audit row with
+  the utterance, audio hash, span, channel and `via` (`session` or `link`); further ranges of the same play do not.
+- Peaks are computed on the first `peaks.get` from the stored audio at 10 ms (int8 min/max, clipping frames) and
+  recorded as a registry `peaks` artifact (`meta.audio`, `meta.format` `cadence.peaks/1`); later reads pool it. Phase 4
+  computes them at ingest instead.
+- The server tile pyramid is the worker step `spectrogram_tiles@1` (manifest `cadence.spectrogram-tiles/1`, uint8 dB
+  `-120 + 0.5 × v`, 512-frame tiles, bins up to the origin's Nyquist, levels max-pooled by two); `spectrogram.get`
+  serves the newest such artifact whose `meta.audio` is the utterance's hash. Nothing starts the step automatically
+  yet (phase-3 golden sets are short; long calls arrive with phase 4).
+
 **Manual transcription tests (R47).** A person runs one to three models on a file, the microphone or an utterance
 span and watches the words appear; nothing outlives the session.
 

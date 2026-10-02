@@ -78,6 +78,7 @@ export default defineConfig([
             { group: ["@/shell/dock/*", "@/shell/floating-snap/*"], message: "Panels use the panel SDK (@/shell/panel), not shell internals." },
             // Allowed shell primitives: @/shell/panel, the entity primitives, @/shell/charts (and @/shell/audio, R51).
             { group: ["@/shell/charts/*"], message: "Panels import charts from @/shell/charts (its index), not its files." },
+            { group: ["@/shell/audio/*"], message: "Panels import the audio view from @/shell/audio (its index), not its files." },
             chartsOnly("Panels never import uPlot or ECharts; use @/shell/charts (TimeSeriesChart, AnalyticsChart)."),
           ],
         },
@@ -92,6 +93,8 @@ export default defineConfig([
         { selector: "JSXAttribute[name.name='asChild']", message: "Base UI uses the `render` prop, not Radix's `asChild`." },
         { selector: "JSXOpeningElement[name.name=/^(header|h1|h2)$/]", message: "Document headers are rendered by the shell from the entity manifest (EntityHeader); use h3+ inside a panel." },
         { selector: "JSXAttribute[name.name='role'][value.value='banner']", message: "Document headers are rendered by the shell from the entity manifest." },
+        { selector: "JSXOpeningElement[name.name=/^(audio|video|canvas)$/]", message: "Panels never draw or play audio themselves; compose AudioView from @/shell/audio (R51)." },
+        { selector: "NewExpression[callee.name=/^(Audio|AudioContext|OfflineAudioContext)$/]", message: "Panels never draw or play audio themselves; compose AudioView from @/shell/audio (R51)." },
         { selector: "Literal[value=/#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?([0-9a-fA-F]{2})?\\b/]", message: "No colour literals; use theme tokens." },
       ],
     },

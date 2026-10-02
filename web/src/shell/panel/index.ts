@@ -21,6 +21,7 @@ export { isAsleep, sessionLabel, sessionStateLabel } from "@/shell/agents/labels
 export { useUnread, viewSession } from "@/shell/agents/unread";
 export {
   askAgent,
+  attachToChat,
   CHAT_PANEL,
   currentSelectionReferences,
   openBranch,
