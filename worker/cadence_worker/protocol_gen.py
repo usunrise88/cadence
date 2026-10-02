@@ -120,6 +120,7 @@ class StepKindDescriptor(TypedDict):
     version: str
     params: dict[str, Any]
     consumes: dict[str, str]
+    optionalInputs: NotRequired[list[str]]
     produces: dict[str, str]
     optionalOutputs: NotRequired[list[str]]
     resources: StepResources

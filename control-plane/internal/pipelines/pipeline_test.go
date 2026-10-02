@@ -126,6 +126,8 @@ func testKinds() fakeKinds {
 			Params: json.RawMessage(`{"type":"object","required":["steps"],"properties":{
 				"steps":{"type":"integer","minimum":1,"x-cadence":{"defaultRef":"training.steps","default":1,"description":"d","source":"s","range":{"min":1,"max":200000}}},
 				"precision":{"type":"string","enum":["bf16","fp16","fp32"],"x-cadence":{"defaultRef":"training.precision","default":"bf16","description":"d","source":"s","range":{"values":["bf16","fp16","fp32"]}}}}}`)},
+		"boosted@1": {Name: "boosted", Version: "1", Consumes: map[string]string{"text": "text", "boost": "text"},
+			OptionalInputs: []string{"boost"}, Produces: map[string]string{"text": "text"}, Params: json.RawMessage(`{"type":"object"}`)},
 		"needs@1": {Name: "needs", Version: "1", Consumes: map[string]string{"tally": "tally"}, Produces: map[string]string{},
 			Params: json.RawMessage(`{"type":"object","required":["must"],"properties":{"must":{"type":"string"},
 				"ref":{"type":"string","x-cadence":{"defaultRef":"nowhere.at_all"}}}}`)},
@@ -172,6 +174,37 @@ func TestPlanResolvesDefaultsAndDepartures(t *testing.T) {
 	if plan.Estimate.Known || plan.Estimate.Seconds == nil || *plan.Estimate.Seconds != 1800 || *plan.Estimate.GPUHours != 0.5 ||
 		len(plan.Estimate.UnknownSteps) != 1 || plan.Estimate.UnknownSteps[0] != "first" {
 		t.Errorf("estimate %+v", plan.Estimate)
+	}
+}
+
+// An optional input may stay unwired; a required one may not, and a wired optional input is type-checked.
+func TestPlanOptionalInputs(t *testing.T) {
+	text := map[string]steps.ArtifactRef{"text": {Hash: textHash, Type: "text"}}
+	for _, doc := range []string{
+		"name: demo\ninputs: {text: text}\nsteps:\n  - {id: a, kind: boosted@1, in: {text: $inputs.text}}\n",
+		"name: demo\ninputs: {text: text}\nsteps:\n  - {id: a, kind: boosted@1, in: {text: $inputs.text, boost: $inputs.text}}\n",
+	} {
+		p, err := Parse([]byte(doc), "demo")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := testEngine().Plan(t.Context(), nil, p, PlanInput{Inputs: text}); err != nil {
+			t.Errorf("%s: %v", doc, err)
+		}
+	}
+	tests := []struct{ doc, want string }{
+		{"name: demo\ninputs: {text: text}\nsteps:\n  - {id: a, kind: boosted@1, in: {boost: $inputs.text}}\n",
+			"steps[0].in.text: boosted@1 consumes \"text\""},
+		{"name: demo\ninputs: {text: text}\nsteps:\n  - {id: t, kind: tally@1, in: {text: $inputs.text}}\n  - {id: a, kind: boosted@1, in: {text: $inputs.text, boost: t.tally}}\n",
+			"steps[1].in.boost: boosted@1 consumes a text artifact as \"boost\", but t.tally is a tally"},
+	}
+	for _, tt := range tests {
+		p, err := Parse([]byte(tt.doc), "demo")
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = testEngine().Plan(t.Context(), nil, p, PlanInput{Inputs: text})
+		expectErrors(t, err, tt.want)
 	}
 }
 

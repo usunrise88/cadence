@@ -3027,6 +3027,10 @@ export type StepKindDescriptor = {
         [key: string]: string;
     };
     /**
+     * Inputs of consumes a pipeline may leave unwired (a transcribe step's boost list); the step runs without them
+     */
+    optionalInputs?: Array<string>;
+    /**
      * Output name → artifact type
      */
     produces: {
@@ -3038,7 +3042,7 @@ export type StepKindDescriptor = {
     optionalOutputs?: Array<string>;
     resources: StepResources;
     /**
-     * The model-family role this kind fills (calibrate, train, average, transcribe, export, parity), empty for neutral kinds
+     * The model-family role this kind fills (calibrate, train, average, transcribe, export, parity, materialize), empty for neutral kinds
      */
     role?: string;
     /**

@@ -22,7 +22,9 @@ type Kind struct {
 	RuntimeVersionID string            `json:"runtimeVersionId,omitempty"`
 	Params           json.RawMessage   `json:"params"`
 	Consumes         map[string]string `json:"consumes"`
-	Produces         map[string]string `json:"produces"`
+	// OptionalInputs may be left unwired by a pipeline (a transcribe step's boost list); the step runs without them.
+	OptionalInputs []string          `json:"optionalInputs,omitempty"`
+	Produces       map[string]string `json:"produces"`
 	// OptionalOutputs may be left unwritten by a successful step; no pipeline wires them into another step.
 	OptionalOutputs []string        `json:"optionalOutputs,omitempty"`
 	Resources       steps.Resources `json:"resources"`

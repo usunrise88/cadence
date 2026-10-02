@@ -116,7 +116,7 @@ func (e *Engine) Plan(ctx context.Context, q storage.Querier, p Pipeline, in Pla
 			wired[ConsumedName(name)] = true
 		}
 		for _, name := range sortedKeys(k.Consumes) {
-			if !wired[name] {
+			if !wired[name] && !slices.Contains(k.OptionalInputs, name) {
 				errs.Add(path+".in."+name, "%s consumes %q (%s); wire it from $inputs.<name> or <step>.<output>", s.Kind, name, k.Consumes[name])
 			}
 		}
