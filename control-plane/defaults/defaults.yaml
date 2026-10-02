@@ -467,10 +467,10 @@ eval:
     source: Cadence recommendation
     range: { min: 0, max: 2147483647 }
   gpu_hours_per_audio_hour:
-    value: 0.015
+    value: 0.025
     unit: GPU-hours per audio hour
     description: GPU time one eval cell spends per hour of golden-set audio (streaming decode at one latency profile, model load included); evals.new multiplies it by the audio of the cells it computes, and the policy weighs the result against the GPU budgets
-    source: "Measured on the stand's phase-3 gate run (2026-10-02): Nemotron 3.5 0.6B transcribe steps took 0.81 GPU-hours for 79 audio hours (0.010 per audio hour) on the 96 GB card; 1.5× margin"
+    source: "Measured on the stand (2026-10-02): the reference loop at batch 32 took 0.81 GPU-hours for 79 audio hours (0.010); the pipeline decoder at batch 8 runs at RTF 0.0165 (stream T); 1.5× margin over the latter"
     range: { min: 0.001, max: 10 }
 
 gate:
@@ -916,10 +916,10 @@ packs:
       source: docs/spec/03-pipelines-defaults.md "Key defaults" (eval latency [56,1], 160 ms)
       range: { values: [80ms, 160ms, 320ms, 560ms, 1120ms] }
     transcribe_batch_size:
-      value: 1
+      value: 8
       unit: utterances
-      description: Utterances streamed together (each keeps its own encoder cache); 1 decodes every utterance to the same words a live session of that audio gives, a larger batch is about 4x faster and changes a few words through the order of floating-point sums (same WER on the check set)
-      source: Phase 3 stream T GPU check (pipeline decoder, FLEURS he and ru at 80, 160 and 1120 ms; batch 8 differed from batch 1 in 3 of 22 clips at 80 ms, none at 160 ms); spike A3 used 32 for the reference loop
+      description: Utterances streamed together in an eval (each keeps its own encoder cache); 8 is about 4x faster than 1 at the same WER, while 1 decodes every utterance to exactly the words a live session of that audio gives (a batch changes a few words through the order of floating-point sums)
+      source: Phase 3 stream T GPU check (pipeline decoder, FLEURS he and ru at 80, 160 and 1120 ms; batch 8 differed from batch 1 in 3 of 22 clips at 80 ms with equal WER, none at 160 ms; RTF 0.0165 at batch 8); spike A3 used 32 for the reference loop
       range: { min: 1, max: 256 }
     boost_weight:
       value: 0.5

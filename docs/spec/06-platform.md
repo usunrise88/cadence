@@ -446,7 +446,7 @@ the Transcription panel):
   stand card, FLEURS he fixtures and ru clips with the base model: @3 has @2's WER at every profile (he 75.6 / 77.9 /
   65.1 / 66.3 / 69.8, ru 16.2 / 17.2 / 17.2 / 16.2 / 14.1 at 80 / 160 / 320 / 560 / 1120 ms, the same empty clips),
   its words differing only where @2 drops an utterance's last tokens; a live session in 20 ms frames and @3 at batch 1
-  give the same words (22/22 at every profile; batch 8 changes 3 of 22 at 80 ms, so `transcribe_batch_size` is 1).
+  give the same words (22/22 at every profile; batch 8 changes 3 of 22 at 80 ms with equal WER, so evals keep `transcribe_batch_size` 8 for throughput and 1 is the exact-match setting).
   One model peaks at 2.8 GiB allocated, load 29–30 s, RTF about 0.06 at batch 1. NeMo's own frame path was worse (he
   at 160 ms: 5 empty clips, WER 80.2; at 80 ms WER 91.9). Two distinct models in one job turn NeMo's CUDA-graph
   decoder off (it crashes with two). The training telephone stage moved to polyphase resampling

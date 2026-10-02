@@ -23,7 +23,7 @@ give the same words (spike A5):
 Each utterance is one pipeline stream (16 kHz, the training resampler for any other rate, channel 0): its log-mel
 features are those of the whole utterance, cut like the reference cache-aware loop's (a short first chunk without
 cache, then the pre-encode cache and a chunk), and the stream is closed with a forced end of utterance; the utterances
-of a batch (`batch_size`, default 1) step together. Decoding is
+of a batch (`batch_size`, default 8; 1 gives exactly the words of a live session, about 4× slower) step together. Decoding is
 greedy RNN-T in fp32 with the language prompt of the dataset's language (or `target_lang`), the locale tag stripped,
 and the pipeline's end-of-utterance endpointing (`stop_history_eou_ms`, as live sessions): a long utterance may come
 out as several finals, joined into one text (a final that continues a word split by an end of utterance is joined
