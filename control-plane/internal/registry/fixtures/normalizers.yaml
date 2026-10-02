@@ -1,0 +1,66 @@
+# The scoring normalizers registered at start (docs/spec/08-resolutions.md R21; phase-3 plan "Registry payloads").
+# payload is the contract's NormalizerPayload: the rules both sides of a WER are compared after (the Unicode form
+# first, mappings before punctuation; the field descriptions say where each applies). A changed rule is a
+# new version of the same collection (the registry keeps the old one); a golden set pins the version it was frozen
+# with, so its scores stay comparable. The scorer (wer_score) interprets the payload; Go never does.
+- name: normalizer/basic
+  description: Language-neutral scoring normalizer — NFKC, case folded, punctuation stripped, marks kept, no mappings
+  licence: internal
+  tags: [scoring]
+  payload:
+    locale: "*"
+    unicode: NFKC
+    casefold: true
+    punctuation: strip
+    removeMarks: false
+    mappings: []
+    numbers: keep
+    description: >-
+      The default scoring normalizer (defaults.yaml eval.normalizer): NFKC, case folding, every Unicode punctuation
+      character (P*) to a space. Combining marks are kept, so accents still count. Numbers are compared as written.
+      Cadence recommendation, after the punctuation- and case-insensitive scoring common to ASR benchmarks
+      (Whisper's BasicTextNormalizer, Radford et al. 2022, appendix C).
+
+- name: normalizer/he-il
+  description: Hebrew scoring normalizer — NFKC, case folded, punctuation stripped, niqqud and cantillation removed, geresh/gershayim joined, maqaf split
+  licence: internal
+  tags: [locale:he-IL]
+  payload:
+    locale: he-IL
+    unicode: NFKC
+    casefold: true
+    punctuation: strip
+    removeMarks: true
+    # Mappings run after NFKC and before punctuation, so an acronym's quote joins the word instead of splitting it.
+    mappings:
+      - { from: "\u05F4", to: "" }   # gershayim ״ (צה״ל → צהל)
+      - { from: "\u05F3", to: "" }   # geresh ׳ (ג׳ → ג)
+      - { from: "\"", to: "" }       # ASCII " written for gershayim
+      - { from: "'", to: "" }        # ASCII ' written for geresh
+      - { from: "\u05BE", to: " " }  # maqaf ־ joins words: split them
+      - { from: "\u200B", to: "" }   # zero-width space
+      - { from: "\u200C", to: "" }   # zero-width non-joiner
+      - { from: "\u200D", to: "" }   # zero-width joiner
+      - { from: "\u200E", to: "" }   # left-to-right mark
+      - { from: "\u200F", to: "" }   # right-to-left mark
+      - { from: "\u061C", to: "" }   # Arabic letter mark
+      - { from: "\u202A", to: "" }   # bidi embeddings and overrides
+      - { from: "\u202B", to: "" }
+      - { from: "\u202C", to: "" }
+      - { from: "\u202D", to: "" }
+      - { from: "\u202E", to: "" }
+      - { from: "\u2066", to: "" }   # bidi isolates
+      - { from: "\u2067", to: "" }
+      - { from: "\u2068", to: "" }
+      - { from: "\u2069", to: "" }
+      - { from: "\uFEFF", to: "" }   # byte-order mark / zero-width no-break space
+    numbers: keep
+    description: >-
+      Follows ivrit.ai's Hebrew evaluation normalizer (github.com/ivrit-ai/asr-training, evaluate_model.py,
+      HebrewTextNormalizer): remove bidirectional and zero-width marks, remove niqqud, drop the quote characters
+      written for geresh and gershayim so acronyms compare as one word, then Whisper's BasicTextNormalizer (case
+      folding, punctuation and symbols to spaces, whitespace collapsed). Cadence departs in two places: the Hebrew
+      geresh (U+05F3) and gershayim (U+05F4) are joined like their ASCII stand-ins (ivrit.ai turns them into spaces,
+      so צה״ל and צה"ל scored differently), and the maqaf (U+05BE) splits words explicitly. Combining marks
+      (niqqud U+05B0–U+05C7 and cantillation U+0591–U+05AF) are removed after canonical decomposition. Numbers are
+      compared as written until the language pack's inverse normalisation arrives (phase 4).

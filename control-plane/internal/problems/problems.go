@@ -82,6 +82,10 @@ var (
 	NoTrainingState   = Type{"no-training-state", http.StatusConflict, "No training state"}
 	// Content-store retention (phase 2 · stream E).
 	ArtifactNotEvictable = Type{"artifact-not-evictable", http.StatusConflict, "Artifact not evictable"}
+	// Golden sets, normalizers and leakage (phase 3 · stream G).
+	GoldenSetLeakage     = Type{"golden-set-leakage", http.StatusUnprocessableEntity, "Golden set leakage"}
+	GoldenSetNotEvalOnly = Type{"golden-set-not-eval-only", http.StatusUnprocessableEntity, "Dataset is not eval-only"}
+	NormalizerUnknown    = Type{"normalizer-unknown", http.StatusUnprocessableEntity, "Unknown normalizer"}
 )
 
 // Types lists every registered type.
@@ -94,6 +98,7 @@ func Types() []Type {
 		LeaseEnded, StepKindConflict, ArtifactHashMismatch, ArtifactMissing,
 		PlaybookDryRunRequired, PlaybookStopped, PlaybookUnavailable,
 		FamilyUnavailable, RecipeMismatch, NoTrainingState, ArtifactNotEvictable,
+		GoldenSetLeakage, GoldenSetNotEvalOnly, NormalizerUnknown,
 	}
 }
 

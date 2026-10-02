@@ -31,12 +31,14 @@ Entities:
   defaults       get
   drafts         accept get list revert
   events         list
+  goldenSets     freeze get list
   help           get search
   jobLogs        list
   jobs           cancel edit get list pause resume wait
   metrics        get
   mixes          edit get list new preview
   modelFamilies  get list
+  normalizers    get list
   notificationRules edit list
   notificationSettings edit get
   pipelineRuns   cancel get list retry wait

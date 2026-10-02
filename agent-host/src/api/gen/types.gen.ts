@@ -5228,6 +5228,47 @@ export type ModelPayload = {
     card?: string;
 };
 
+export type NormalizerVersion = RegistryVersion & {
+    normalizer: NormalizerPayload;
+    usedBy: Array<UsedBy>;
+};
+
+export type NormalizerVersionList = {
+    items: Array<NormalizerVersion>;
+};
+
+export type GoldenSetVersion = RegistryVersion & {
+    goldenSet: GoldenSetPayload;
+    usedBy: Array<UsedBy>;
+};
+
+export type GoldenSetVersionList = {
+    items: Array<GoldenSetVersion>;
+};
+
+export type GoldenSetFreeze = {
+    /**
+     * The dataset version to freeze: ver_… or a dataset collection name (its newest frozen version); it must be registered eval-only
+     */
+    datasetVersionId: string;
+    /**
+     * The scoring normalizer: ver_… or a normalizer collection name (its newest frozen version); default defaults.yaml eval.normalizer
+     */
+    normalizerVersionId?: string;
+    /**
+     * The golden set's collection, golden-set/<name> or <name>; default the dataset collection's name (dataset/replay-golden-he → golden-set/replay-golden-he)
+     */
+    name?: string;
+    /**
+     * telephone, read-speech, …; default the dataset collection's domain:<x> tag, if any
+     */
+    domain?: string;
+    /**
+     * The bootstrap's resampling unit (R54); default speaker when the dataset's utterances name speakers, else utterance
+     */
+    groups?: 'call' | 'speaker' | 'utterance';
+};
+
 export type SecretNewWritable = {
     name: SecretName;
     kind: SecretKind;
@@ -11202,6 +11243,178 @@ export type ArtifactsEvictResponses = {
 };
 
 export type ArtifactsEvictResponse = ArtifactsEvictResponses[keyof ArtifactsEvictResponses];
+
+export type NormalizersListData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)
+         */
+        collection?: string;
+        /**
+         * Only versions in this state
+         */
+        state?: VersionState;
+    };
+    url: '/registry/normalizers';
+};
+
+export type NormalizersListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type NormalizersListError = NormalizersListErrors[keyof NormalizersListErrors];
+
+export type NormalizersListResponses = {
+    /**
+     * Normalizer versions, newest first
+     */
+    200: NormalizerVersionList;
+};
+
+export type NormalizersListResponse = NormalizersListResponses[keyof NormalizersListResponses];
+
+export type NormalizersGetData = {
+    body?: never;
+    path: {
+        /**
+         * Registry version id (ver_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/registry/normalizers/{id}';
+};
+
+export type NormalizersGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type NormalizersGetError = NormalizersGetErrors[keyof NormalizersGetErrors];
+
+export type NormalizersGetResponses = {
+    /**
+     * The version
+     */
+    200: NormalizerVersion;
+};
+
+export type NormalizersGetResponse = NormalizersGetResponses[keyof NormalizersGetResponses];
+
+export type GoldenSetsListData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)
+         */
+        collection?: string;
+        /**
+         * Only versions in this state
+         */
+        state?: VersionState;
+    };
+    url: '/registry/golden-sets';
+};
+
+export type GoldenSetsListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type GoldenSetsListError = GoldenSetsListErrors[keyof GoldenSetsListErrors];
+
+export type GoldenSetsListResponses = {
+    /**
+     * Golden set versions, newest first
+     */
+    200: GoldenSetVersionList;
+};
+
+export type GoldenSetsListResponse = GoldenSetsListResponses[keyof GoldenSetsListResponses];
+
+export type GoldenSetsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Registry version id (ver_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/registry/golden-sets/{id}';
+};
+
+export type GoldenSetsGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type GoldenSetsGetError = GoldenSetsGetErrors[keyof GoldenSetsGetErrors];
+
+export type GoldenSetsGetResponses = {
+    /**
+     * The version
+     */
+    200: GoldenSetVersion;
+};
+
+export type GoldenSetsGetResponse = GoldenSetsGetResponses[keyof GoldenSetsGetResponses];
+
+export type GoldenSetsFreezeData = {
+    body: GoldenSetFreeze;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/registry/golden-sets:freeze';
+};
+
+export type GoldenSetsFreezeErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type GoldenSetsFreezeError = GoldenSetsFreezeErrors[keyof GoldenSetsFreezeErrors];
+
+export type GoldenSetsFreezeResponses = {
+    /**
+     * Dry run — the golden set that would be frozen; or the version this content was already frozen as
+     */
+    200: GoldenSetVersion;
+    /**
+     * Frozen (the approved request)
+     */
+    201: GoldenSetVersion;
+    /**
+     * Gated; a person decides the approval on the approvals topic
+     */
+    202: ApprovalAccepted;
+};
+
+export type GoldenSetsFreezeResponse = GoldenSetsFreezeResponses[keyof GoldenSetsFreezeResponses];
 
 export type MountsListData = {
     body?: never;

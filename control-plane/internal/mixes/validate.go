@@ -91,7 +91,7 @@ func Normalize(ctx context.Context, q storage.Querier, projectID string, in Inpu
 	}
 	names := map[string]bool{}
 	used := map[string]string{} // version id → group path
-	var evalOnly []problems.FieldError
+	var evalOnly, leaked, overlaps []problems.FieldError
 	replay, plain := 0, 0
 	for i, g := range in.Groups {
 		p := fmt.Sprintf("/groups/%d", i)
@@ -139,8 +139,14 @@ func Normalize(ctx context.Context, q storage.Querier, projectID string, in Inpu
 					return Content{}, err
 				}
 				fail(dp, "%s", pe.Detail)
-				if pe.Type == problems.EvalOnlyDataset {
+				switch pe.Type {
+				case problems.EvalOnlyDataset:
 					evalOnly = append(evalOnly, errs[len(errs)-1])
+				case problems.GoldenSetLeakage:
+					leaked = append(leaked, errs[len(errs)-1])
+					for _, o := range pe.Errors {
+						overlaps = append(overlaps, problems.FieldError{Path: fmt.Sprintf("/overlaps/%d", len(overlaps)), Message: o.Message})
+					}
 				}
 				continue
 			}
@@ -171,6 +177,12 @@ func Normalize(ctx context.Context, q storage.Querier, projectID string, in Inpu
 		// A mix is training data: an eval-only version is refused with its own type, whatever else is wrong.
 		pe := problems.EvalOnlyDataset.New("the mix is not valid: %s %s", evalOnly[0].Path, evalOnly[0].Message)
 		pe.Errors = errs
+		return Content{}, pe
+	}
+	if len(leaked) > 0 {
+		// Golden-set audio never reaches training: refused with its own type, listing every overlap after the fields.
+		pe := problems.GoldenSetLeakage.New("the mix is not valid: %s %s", leaked[0].Path, leaked[0].Message)
+		pe.Errors = append(errs, overlaps...)
 		return Content{}, pe
 	}
 	if len(errs) > 0 {

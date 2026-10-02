@@ -3117,6 +3117,104 @@ paths:
         default: { $ref: "#/components/responses/Problem" }
 
   # ---------------------------------------------------------------- golden sets, normalizers, leakage (phase 3 · stream G) — add paths below this line
+  /registry/normalizers:
+    x-cadence: { entity: normalizers, kind: normalizer }
+    get:
+      operationId: normalizers.list
+      summary: List scoring normalizer versions (the text rules both sides of a WER are compared after, R21)
+      tags: [registry]
+      x-cadence:
+        toolDescription: >
+          List scoring normalizer versions (normalizer/basic, normalizer/he-IL, …): the Unicode form, case folding,
+          punctuation, combining-mark removal and literal mappings applied to reference and hypothesis before WER is
+          computed. Every golden set is frozen with one normalizer version, so its scores stay comparable over time.
+      parameters:
+        - $ref: "#/components/parameters/RegistryCollectionFilter"
+        - $ref: "#/components/parameters/RegistryStateFilter"
+      responses:
+        "200":
+          description: Normalizer versions, newest first
+          content: { application/json: { schema: { $ref: "#/components/schemas/NormalizerVersionList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/normalizers/{id}:
+    x-cadence: { entity: normalizers, kind: normalizer }
+    parameters: [{ $ref: "#/components/parameters/VersionId" }]
+    get:
+      operationId: normalizers.get
+      summary: Get a scoring normalizer version with its rules and the projects that use it
+      tags: [registry]
+      responses:
+        "200":
+          description: The version
+          content: { application/json: { schema: { $ref: "#/components/schemas/NormalizerVersion" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/golden-sets:
+    x-cadence: { entity: goldenSets, kind: golden_set }
+    get:
+      operationId: goldenSets.list
+      summary: List golden set versions (frozen eval-only dataset versions tied to a scoring normalizer)
+      tags: [registry]
+      x-cadence:
+        toolDescription: >
+          List golden sets: frozen, held-out test sets per language and domain, each an eval-only dataset version
+          tied to one scoring normalizer version. Runs never read them: a dataset version or mix sharing an
+          utterance (by id or fingerprint) with any golden set is refused for training (golden-set-leakage).
+          Adopt one into a project with projects.adopt.
+      parameters:
+        - $ref: "#/components/parameters/RegistryCollectionFilter"
+        - $ref: "#/components/parameters/RegistryStateFilter"
+      responses:
+        "200":
+          description: Golden set versions, newest first
+          content: { application/json: { schema: { $ref: "#/components/schemas/GoldenSetVersionList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/golden-sets/{id}:
+    x-cadence: { entity: goldenSets, kind: golden_set }
+    parameters: [{ $ref: "#/components/parameters/VersionId" }]
+    get:
+      operationId: goldenSets.get
+      summary: Get a golden set version with its dataset, normalizer, size and the projects that use it
+      tags: [registry]
+      responses:
+        "200":
+          description: The version
+          content: { application/json: { schema: { $ref: "#/components/schemas/GoldenSetVersion" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/golden-sets:freeze:
+    x-cadence: { entity: goldenSets, kind: golden_set }
+    post:
+      operationId: goldenSets.freeze
+      summary: Freeze an eval-only dataset version and a scoring normalizer into a golden set (always waits for the admin's approval)
+      tags: [registry]
+      x-cadence:
+        toolDescription: >
+          Freeze a golden set from a frozen dataset version registered eval-only (datasets.get shows
+          dataset.evalOnly: true) and a scoring normalizer version (normalizers.list; default defaults.yaml
+          eval.normalizer). The dataset's utterances must not overlap any trainable dataset version by utterance or
+          fingerprint, else golden-set-leakage lists the overlapping versions and counts. dryRun=true checks
+          everything and answers the would-be golden set. A real call always answers 202 with an approvalId, for
+          people too: freezing is a registry-scope approval only the admin decides; the approved request registers
+          golden-set/<name> (default: the dataset collection's name). Freezing the same content again answers the
+          version already frozen.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/GoldenSetFreeze" } } }
+      responses:
+        "200":
+          description: Dry run — the golden set that would be frozen; or the version this content was already frozen as
+          content: { application/json: { schema: { $ref: "#/components/schemas/GoldenSetVersion" } } }
+        "201":
+          description: Frozen (the approved request)
+          content: { application/json: { schema: { $ref: "#/components/schemas/GoldenSetVersion" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
 
   # ---------------------------------------------------------------- evals, gates, models (phase 3 · stream E) — add paths below this line
 
@@ -6945,6 +7043,42 @@ components:
         card: { type: string, description: The generated model card (Markdown) }
 
     # ---------------------------------------------------------------- golden sets, normalizers, leakage schemas (phase 3 · stream G) — add below
+    NormalizerVersion:
+      allOf:
+        - $ref: "#/components/schemas/RegistryVersion"
+        - type: object
+          required: [normalizer, usedBy]
+          properties:
+            normalizer: { $ref: "#/components/schemas/NormalizerPayload" }
+            usedBy: { type: array, items: { $ref: "#/components/schemas/UsedBy" } }
+    NormalizerVersionList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/NormalizerVersion" } }
+    GoldenSetVersion:
+      allOf:
+        - $ref: "#/components/schemas/RegistryVersion"
+        - type: object
+          required: [goldenSet, usedBy]
+          properties:
+            goldenSet: { $ref: "#/components/schemas/GoldenSetPayload" }
+            usedBy: { type: array, items: { $ref: "#/components/schemas/UsedBy" } }
+    GoldenSetVersionList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/GoldenSetVersion" } }
+    GoldenSetFreeze:
+      type: object
+      required: [datasetVersionId]
+      additionalProperties: false
+      properties:
+        datasetVersionId: { type: string, minLength: 1, description: "The dataset version to freeze: ver_… or a dataset collection name (its newest frozen version); it must be registered eval-only" }
+        normalizerVersionId: { type: string, minLength: 1, description: "The scoring normalizer: ver_… or a normalizer collection name (its newest frozen version); default defaults.yaml eval.normalizer" }
+        name: { type: string, minLength: 1, description: "The golden set's collection, golden-set/<name> or <name>; default the dataset collection's name (dataset/replay-golden-he → golden-set/replay-golden-he)" }
+        domain: { type: string, minLength: 1, description: "telephone, read-speech, …; default the dataset collection's domain:<x> tag, if any" }
+        groups: { type: string, enum: [call, speaker, utterance], description: "The bootstrap's resampling unit (R54); default speaker when the dataset's utterances name speakers, else utterance" }
 
     # ---------------------------------------------------------------- evals, gates, models schemas (phase 3 · stream E) — add below
 
