@@ -74,8 +74,9 @@ func (s *Server) EvalsNew(ctx context.Context, req api.EvalsNewRequestObject) (a
 	for _, a := range deref(b.Augmentations) {
 		in.Augmentations = append(in.Augmentations, evals.AugmentationIn{Profile: a.Profile, Seed: a.Seed})
 	}
+	weighed := true
 	if pl, err := s.evals.Prepare(ctx, s.Pool, in); err != nil {
-		ctx = spending(ctx, 0) // the command fails on the same plan; nothing to weigh
+		ctx, weighed = spending(ctx, 0), false // the command fails on the same plan; nothing to weigh
 	} else {
 		ctx = spending(ctx, pl.Estimate.GPUHours)
 	}
@@ -85,6 +86,9 @@ func (s *Server) EvalsNew(ctx context.Context, req api.EvalsNewRequestObject) (a
 		pl, err := s.evals.Prepare(ctx, tx, in)
 		if err != nil {
 			return commands.Result{}, nil, err
+		}
+		if !weighed {
+			return commands.Result{}, nil, unweighed(cmd.Operation)
 		}
 		if cmd.DryRun {
 			return commands.Result{Status: http.StatusOK, Body: pl}, nil, nil
