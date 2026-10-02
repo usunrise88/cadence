@@ -34,8 +34,12 @@ export const goldenSetEntity: EntityManifest = {
   apiEntity: "goldenSets",
   layer: "registry",
   template: "registry",
-  // Freeze makes a new golden set version from an eval-only dataset version (the form in the document).
-  verbs: [{ verb: "freeze", primary: true }],
+  // Adopt brings it into the open project (the document's card dry-runs the leakage check first); freeze makes a new
+  // golden set version from an eval-only dataset version (the form in the document).
+  verbs: [
+    { verb: "adopt", command: "projects.adopt", primary: true },
+    { verb: "freeze" },
+  ],
   facts: [
     { label: "Locale", value: (e) => gsOf(e)?.locale ?? "—" },
     { label: "Utterances", value: (e) => (gsOf(e) ? gsOf(e)!.utterances.toLocaleString() : "—") },
@@ -48,7 +52,7 @@ export const goldenSetEntity: EntityManifest = {
   nextStep: (e) =>
     (e.goldenSet as GoldenSetVersion | undefined)?.usedBy.length
       ? { step: "record", title: "Projects that adopted it evaluate on it; its utterances never reach a training mix" }
-      : { step: "record", title: "Adopt it into a project (and name it in gates.yaml) so evals score on it" },
+      : { step: "record", title: "Adopt it into a project (and name it in gates.yaml) so evals score on it", command: "projects.adopt" },
   icon: Medal,
   live: {
     topics: (id) => [`entity.golden_set.${id}`],
@@ -84,8 +88,9 @@ export const modelEntity: EntityManifest = {
   apiEntity: "models",
   layer: "registry",
   template: "registry",
-  // Registering happens from a passed eval (models.register takes a checkpoint); export and promote arrive in phase 5.
-  verbs: [],
+  // Registering happens from a passed eval (models.register takes a checkpoint); Set as baseline points the project's
+  // @baseline at it (aliases.set, always an approval); export and promote arrive in phase 5.
+  verbs: [{ verb: "set", command: "aliases.set", primary: true }],
   facts: [
     { label: "Gate", value: (e) => (modelOf(e) ? (modelOf(e)!.gate.verdict === "passed" ? "✓ passed" : "✗ failed") : "—") },
     { label: "Family", value: (e) => modelOf(e)?.familyId ?? "—" },
@@ -95,7 +100,7 @@ export const modelEntity: EntityManifest = {
   comparable: false,
   draftable: false,
   loopStep: () => "record",
-  nextStep: () => ({ step: "record", title: "Evaluate other checkpoints against it, or set it as the project's baseline (aliases.set, approval)" }),
+  nextStep: () => ({ step: "record", title: "Evaluate other checkpoints against it, or set it as the project's baseline (an approval)", command: "aliases.set" }),
   icon: BookmarkBook,
   live: {
     topics: (id) => [`entity.model.${id}`],

@@ -22,7 +22,8 @@ every target's words on one time axis.
 **Targets.** Each lane runs a checkpoint of the project, a registered model version or a base model, at a latency
 profile (default: the primary profile), in a language (default: the project's first locale), with or without a boost
 list of the project's language pack. The same model at `1120ms` beside its deployment profile shows the gap to the
-high-latency reference; two targets that differ only in their boost list are the Language pack's "test a phrase".
+high-latency reference; two targets that differ only in their boost list test a phrase with and without boosting (the Language pack's own
+"test a phrase" box is **not built yet**; set up the two lanes here by hand).
 Targets of one model share its weights on the card.
 
 **Telephony** simulates a phone line: down to 8 kHz, through G.711 μ-law (or A-law, or none), and back to 16 kHz with

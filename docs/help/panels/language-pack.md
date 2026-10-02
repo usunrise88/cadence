@@ -23,8 +23,10 @@ A document for one **language pack**, the project repository's `lang/<locale>/` 
 - An agent's edit under the draft policy lands on a branch; the document says which, and it is accepted like any
   session branch.
 
-Testing a phrase with and without boosting is not here yet: it needs a one-utterance eval or the Transcription panel.
-Meanwhile evaluate with a boost list as a decoding variant (`evals.new` with `decoding`) and compare the matrix.
+**"Test a phrase" is not built.** The spec's box (one phrase decoded with and without the list) does not exist in this
+document yet. Meanwhile: in the Transcription panel, open two targets that differ only in their boost list and speak
+or play the phrase; or evaluate the list as a decoding variant (Run eval… or `evals.new` with `decoding`) and compare
+the boosted and unboosted cells of the matrix.
 
 ## Place in the loop
 

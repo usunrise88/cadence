@@ -1,7 +1,7 @@
 ---
 title: Project
 summary: The project home — locales, base model, repository, agent profile, budgets, the five blocks, gates and notes.
-contexts: [panel:project, command:projects.new, command:projects.note, command:projects.sync]
+contexts: [panel:project, command:projects.new, command:projects.note, command:projects.sync, command:gates.edit]
 ---
 
 ## What this is
@@ -22,8 +22,23 @@ the project when it ends.
 Every loop starts here: the next-step bar names what to prepare next. After the bootstrap the repository holds
 `project.yaml`, `AGENTS.md` (rendered from the instructions template), `CLAUDE.md` (`@AGENTS.md`), `NOTES.md`,
 `data.lock`, the agent config rendered from the permission preset, Cadence's skills under `.claude/skills` and the
-starter pipelines. The blocks fill as their phases land (training in phase 2, evaluation in 3, data in 4, deployment
-and flywheel in 5).
+starter pipelines. The five blocks show what the project holds: Training counts mixes and runs (and how many
+finished); Evaluation counts the golden sets the project adopted and its evals, with the newest gate verdict and what
+`@baseline` points at (the base model while it is unset). Data arrives in phase 4, deployment and the flywheel in 5.
+
+## Gate
+
+The **Gate** section shows the project's gate as `gates.get` reads it from `gates.yaml` on `main`: the primary
+profile, the target golden sets and their rule, the replay sets and the regression they may show, the
+deletions-and-insertions check and the significance settings, with every value that departs from `defaults.yaml`
+highlighted. Without a `gates.yaml` the defaults apply: golden sets in the project's languages are targets, the
+others replay sets.
+
+**Edit gates.yaml** (`gates.edit`; also from the Eval report's Gate section and the palette) edits the file in place:
+**Check** is a dry run that parses it, checks every golden set it names is adopted and shows the gate it would make;
+**Commit to main** commits it with `If-Match` on the commit that last changed the file (`defaults` while there is
+none). If someone changed it meanwhile nothing is committed and you reload. A person's edit commits; an agent's waits
+for an approval and the editor shows the approval id. See the [evaluation guide](../guides/evaluation.md).
 
 ## Fields and defaults
 
@@ -47,6 +62,7 @@ are accepted and appear as recipe changes.
 - `projects.note` — Add a note: one dated learning appended to `NOTES.md` and committed to `main`
 - `projects.sync` — Sync templates and skills: the update arrives as a draft branch `sync/<date>` to review in Recipe
 - `projects.archive` — Archive project (inline confirm, reversible): worktrees go, the repository and artifacts stay read-only
+- `gates.edit` — Edit gates.yaml: Check (dry run), then Commit to main; an agent's change waits for an approval
 - `agentProfile.edit` — Open Agent settings
 
 ## Playbooks

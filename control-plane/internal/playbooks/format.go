@@ -29,7 +29,7 @@ import (
 
 // CurrentPhase is the roadmap phase this build ships: a playbook available from a later phase is listed and not run,
 // and a step of a later phase is in the plan as skipped.
-const CurrentPhase = 2
+const CurrentPhase = 3
 
 // Dir is the playbooks directory of the templates tree.
 const Dir = "playbooks"

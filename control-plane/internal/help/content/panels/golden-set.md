@@ -1,7 +1,7 @@
 ---
 title: Golden set
 summary: A frozen golden set version — the eval-only dataset version and scoring normalizer it pins, locale, size, resampling unit, the projects that use it — and the freeze form (admin approval).
-contexts: [panel:golden-set, command:goldenSets.freeze, command:goldenSets.get]
+contexts: [panel:golden-set, command:goldenSets.freeze, command:goldenSets.get, command:projects.adopt]
 ---
 
 ## What this is
@@ -20,6 +20,12 @@ across checkpoints, projects and time (R21). It shows:
 
 A golden set's utterances are kept out of training: freezing checks for leakage, and mixes and pipelines refuse any
 dataset that overlaps a golden set (`golden-set-leakage`).
+
+**Adopt into project** (the header's primary action, **Adopt into <project>…** under Used by, or **Adopt…** on the
+Library row; `projects.adopt`) opens the adopt card for the open project. It dry-runs first: adopting re-runs the
+leakage check against what the project trained on, so a refusal (`golden-set-leakage`) lists the overlapping dataset
+versions before anything changes. **Adopt** then adopts it (`data.lock` lists it); name it in `gates.yaml` (Project
+home → Gate) to make it a target or replay set.
 
 **Freeze a new version…** opens the freeze form: an eval-only dataset version (`ver_…` or `dataset/<name>`), a
 normalizer (default `defaults.yaml` `eval.normalizer`), the collection name, domain and resampling unit. **Check**

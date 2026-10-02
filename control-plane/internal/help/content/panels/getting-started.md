@@ -15,11 +15,15 @@ Cadence already has; nothing is recorded separately:
 | Attach the call recordings | A mount exists (phase 4) | `mounts.new` |
 | Create a project | A project exists | `projects.new` |
 | Freeze the first dataset version | A dataset version frozen by a person or an agent (bundled fixtures do not count) | `datasets.freeze` |
-| Finish the first training run | A run is done (phase 2) | `runs.new` |
-| Pass the first gate | An eval passes the project's gate (phase 3) | `evals.gate` |
+| Finish the first training run | A run of the open project is done (`runs.list`) | `playbooks.run` |
+| Pass the first gate | An eval of the open project passed its gate (`evals.list`) | `evals.gate` |
 
 Steps whose block has not shipped yet show the phase they arrive in. The command name is the same string as the
-palette entry and the agent's MCP tool.
+palette entry and the agent's MCP tool. The gate step's **Run the gate** gates the open project's newest finished
+eval; until an eval has finished it says to evaluate a checkpoint first (Checkpoints → Evaluate).
+
+When the first gate passes the checklist retires: it says so, and it no longer opens with the default workspaces
+(View → Open Getting started still shows it).
 
 ## Place in the loop
 

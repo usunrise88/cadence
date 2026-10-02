@@ -202,6 +202,7 @@ export function LibraryPanel(_props: PanelProps) {
             placeholder="Filter — text, kind:, tag:, status:, updated:>…"
             aria-label="Filter the library"
           />
+          <RowActions row={current} />
           <NewMixButton />
           <LibraryAgentMenu row={current} query={query} />
         </div>
@@ -355,6 +356,37 @@ function rowReference(r: ListRow): AgentReference | undefined {
   const at = r.id.indexOf(":");
   const ref = r.id.startsWith("@") ? r.id : at > 0 ? formatReference(r.id.slice(0, at), r.id.slice(at + 1)) : undefined;
   return ref && parseReference(ref) ? { ref, label: r.name } : undefined;
+}
+
+/**
+ * What the highlighted registry row offers the open project: a model or base model becomes its @baseline
+ * (aliases.set, an approval; the command reports the approval id), a golden set opens its adopt card.
+ */
+function RowActions({ row }: { row: ListRow | undefined }) {
+  const project = useProject();
+  const m = row ? /^(base_model|model|golden_set):(ver_[A-Za-z0-9]+)$/.exec(row.id) : null;
+  if (!row || !m || !project) return null;
+  const entity = { id: m[2]!, name: row.name, state: row.state };
+  if (m[1] === "golden_set") {
+    return (
+      <Button type="button" size="sm" variant="outline" className="shrink-0" onClick={() => void runCommand("projects.adopt", { entity })} data-command="projects.adopt">
+        Adopt…
+      </Button>
+    );
+  }
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant="outline"
+      className="shrink-0"
+      title={`Point ${project}'s @baseline at ${row.name} (an approval)`}
+      onClick={() => void runCommand("aliases.set", { entity })}
+      data-command="aliases.set"
+    >
+      Set as baseline
+    </Button>
+  );
 }
 
 /** The project's work starts here: a visible way to create a mix (also in the palette as New mix…). */

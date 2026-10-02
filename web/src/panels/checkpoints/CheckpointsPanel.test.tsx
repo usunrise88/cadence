@@ -57,7 +57,7 @@ describe("Checkpoints", () => {
     runCommand.mockImplementation((_id: string, a: { dryRun?: boolean }) =>
       Promise.resolve(
         a.dryRun
-          ? { goldenSets: [{}], profiles: [{}, {}], baseline: { label: "base" }, cells: [{}, {}, {}, {}], cellsCached: 2, cellsToCompute: 2, estimate: { gpuHours: 0.25, basis: "table" } }
+          ? { goldenSets: [{}], profiles: [{}, {}], baseline: { label: "base" }, cells: [{}, {}, {}, {}], cellsCached: 2, cellsToCompute: 2, decoding: [{}], estimate: { gpuHours: 0.25, audioHours: 0.5, basis: "table" } }
           : { id: "evl_1" },
       ),
     );

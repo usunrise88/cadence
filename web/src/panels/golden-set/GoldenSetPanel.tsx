@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { normalizersGetOptions, normalizersListOptions } from "@/api/gen/@tanstack/react-query.gen";
-import type { GoldenSetFreeze, GoldenSetVersion, NormalizerPayload } from "@/api/gen/types.gen";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { goldenSetsGetQueryKey, normalizersGetOptions, normalizersListOptions } from "@/api/gen/@tanstack/react-query.gen";
+import type { GoldenSetFreeze, GoldenSetVersion, NormalizerPayload, Problem } from "@/api/gen/types.gen";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { ActorBadge, EmptyState } from "@/shell/entity/primitives";
-import { errorMessage, openDocument, openPanelById, runCommand, useEditRequest, type PanelProps } from "@/shell/panel";
+import { ADOPT_REQUEST, errorMessage, openDocument, openPanelById, problemOf, runCommand, useEditRequest, useProject, type PanelProps } from "@/shell/panel";
 
 // The Golden set document (docs/spec/11-ui-panels.md "Panel catalogue", Golden set; R21): a frozen golden set version
 // — the eval-only dataset version and scoring normalizer version it pins, locale, domain, size, the bootstrap's
@@ -52,10 +52,15 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 function Overview({ g, doc }: { g: GoldenSetVersion; doc?: string }) {
   const p = g.goldenSet;
   const [freezeOpen, setFreezeOpen] = useState(false);
+  const [adoptOpen, setAdoptOpen] = useState(false);
+  const project = useProject();
+  const adopted = !!project && g.usedBy.some((u) => u.projectSlug === project);
   useEditRequest(doc, () => setFreezeOpen(true));
+  useEditRequest(doc ? `${ADOPT_REQUEST}${doc}` : undefined, () => setAdoptOpen(true));
   return (
     <div className="flex flex-col gap-5 p-4 text-xs" data-golden-set={g.id}>
       {freezeOpen ? <FreezeForm g={g} onClose={() => setFreezeOpen(false)} /> : null}
+      {adoptOpen && project ? <AdoptCard g={g} project={project} adopted={adopted} onClose={() => setAdoptOpen(false)} /> : null}
       <section aria-labelledby={`gs-pins-${g.id}`} className="flex flex-col gap-1.5">
         <h3 id={`gs-pins-${g.id}`} className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
           What it pins
@@ -125,7 +130,84 @@ function Overview({ g, doc }: { g: GoldenSetVersion; doc?: string }) {
         ) : (
           <p className="text-muted-foreground">No project has adopted it yet. Adopt it into a project and name it in gates.yaml so evals score on it.</p>
         )}
+        {project && !adopted && !adoptOpen ? (
+          <Button size="xs" variant="outline" className="w-fit" onClick={() => setAdoptOpen(true)} data-command="projects.adopt">
+            Adopt into {project}…
+          </Button>
+        ) : null}
       </section>
+    </div>
+  );
+}
+
+/**
+ * projects.adopt (R21, the leakage check): the dry run asks first whether the project may adopt the golden set — a
+ * project whose training data already holds some of its utterances is refused (golden-set-leakage, with the
+ * overlapping dataset versions) — then Adopt does it.
+ */
+function AdoptCard({ g, project, adopted, onClose }: { g: GoldenSetVersion; project: string; adopted: boolean; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [busy, setBusy] = useState(false);
+  const [checked, setChecked] = useState(false);
+  const [done, setDone] = useState(false);
+  const [problem, setProblem] = useState<{ text: string; problem?: Problem } | null>(null);
+  const act = async (dryRun: boolean) => {
+    setBusy(true);
+    setProblem(null);
+    try {
+      await runCommand("projects.adopt", { project, version: g.id, dryRun });
+      if (dryRun) setChecked(true);
+      else {
+        setDone(true);
+        void qc.invalidateQueries({ queryKey: goldenSetsGetQueryKey({ path: { id: g.id } }) });
+      }
+    } catch (err) {
+      setProblem({ text: errorMessage(err), problem: problemOf(err) });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const asked = useRef(false);
+  useEffect(() => {
+    if (asked.current || adopted) return;
+    asked.current = true;
+    void act(true);
+  });
+  const leakage = problem?.problem?.type.endsWith("/golden-set-leakage");
+  return (
+    <div className="flex flex-col gap-1.5 rounded-md border bg-tool p-2" role="group" aria-label="Adopt into project" data-slot="adopt-card">
+      <p>
+        Adopt <span className="font-medium">{g.name}</span> {g.version} into <span className="font-medium">{project}</span>: evals of the project score on it, and its
+        utterances can never enter the project's training mixes.
+      </p>
+      {adopted && !done ? <p className="text-muted-foreground">{project} already adopted it.</p> : null}
+      {checked && !done && !problem ? <p role="status">Checked: no training data of the project overlaps it.</p> : null}
+      {done ? (
+        <p role="status" className="text-status-done-foreground">
+          Adopted. Name it in gates.yaml (Project home → Gate) to make it a target or replay set.
+        </p>
+      ) : null}
+      {problem ? (
+        <div role="alert" className="text-destructive" data-slot="adopt-problem" data-leakage={leakage || undefined}>
+          <p className="font-medium">{leakage ? "Refused: the project's training data overlaps this golden set" : "Not adopted"}</p>
+          <p>{problem.text}</p>
+          {problem.problem?.errors?.length ? (
+            <ul className="mt-1 list-disc pl-5">
+              {problem.problem.errors.map((e, i) => (
+                <li key={i}>{e.message}</li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
+      <div className="flex gap-1">
+        <Button size="xs" disabled={busy || adopted || done || !!problem || !checked} onClick={() => void act(false)} data-command="projects.adopt">
+          Adopt
+        </Button>
+        <Button size="xs" variant="ghost" onClick={onClose}>
+          {done ? "Close" : "Cancel"}
+        </Button>
+      </div>
     </div>
   );
 }

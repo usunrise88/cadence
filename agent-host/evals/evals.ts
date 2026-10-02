@@ -11,6 +11,7 @@ import {
   draftField,
   dryRunFirst,
   dryRunCalled,
+  evalSteps,
   mixUnchanged,
   noApprovalBypass,
   noDrafts,
@@ -155,17 +156,59 @@ export const gatedBaseline: Eval = {
 
 // ---------------------------------------------------------------- 4. playbook: fine-tune from a dataset version
 
-// The playbook session of the phase-2 gate (R16), started by playbooks.run: the plan is the chain, the prompt the
-// template's. Its last line is what the scripted agent recognises. Graded: the chain's calls in order, a dry run
-// before every spending call, and the plan ticked by the server from the session's own commands.
-const playbookBudget: Budget = { turns: 3, tokens: 600_000, wallSeconds: 600 };
-const SPENDING = ["runs.new", "runs.calibrate", "runs.resume", "runs.stage", "checkpoints.average"];
+// The playbook session of the phase-2 gate (R16) with the phase-3 evaluation steps, started by playbooks.run: the
+// plan is the chain, the prompt the template's. Its last line is what the scripted agent recognises (a test keeps it
+// equal to the template's). Graded: the chain's calls in order, a dry run before every spending call, the plan
+// ticked by the server from the session's own commands, and the evaluation steps once the run has checkpoints.
+const playbookBudget: Budget = { turns: 3, tokens: 600_000, wallSeconds: 900 };
+const SPENDING = ["runs.new", "runs.calibrate", "runs.resume", "runs.stage", "checkpoints.average", "evals.new"];
+const ENDED = new Set(["done", "failed", "cancelled"]);
+
+type CheckpointData = { id: string; kept?: boolean; valWer?: number; rank?: number };
+
+/** The run's best kept checkpoint: rank 1, else the lowest validation WER. */
+export function bestCheckpoint(data: unknown): CheckpointData | undefined {
+  const items = ((data as { items?: CheckpointData[] } | undefined)?.items ?? []).filter((c) => c.kept !== false);
+  const key = (c: CheckpointData) => [c.rank ?? Number.POSITIVE_INFINITY, c.valWer ?? Number.POSITIVE_INFINITY] as const;
+  return [...items].sort((a, b) => key(a)[0] - key(b)[0] || key(a)[1] - key(b)[1])[0];
+}
+
+/** Steps 6–8 of the playbook: the eval's dry run, the same request for real, evals.get until it ends, evals.gate. */
+async function evaluate(t: ScriptedTools, checkpointId: string, notes: string[]): Promise<void> {
+  const body = { subject: { checkpointId } };
+  const plan = await must(t, "evals.new", { p: t.project, dryRun: true, body });
+  if (plan.status >= 400) {
+    notes.push(`the eval's dry run answered ${plan.status}`);
+    return;
+  }
+  const est = (plan.data as { estimate?: { gpuHours?: number; cellsToCompute?: number } } | undefined)?.estimate;
+  notes.push(`eval plan: ${est?.cellsToCompute ?? "?"} cell(s) to compute, ${est?.gpuHours ?? "?"} GPU-hours`);
+  const started = await must(t, "evals.new", { p: t.project, body });
+  const evalId = (started.data as { id?: string } | undefined)?.id;
+  if (started.status !== 201 || !evalId) {
+    notes.push(`evals.new answered ${started.status}`);
+    return;
+  }
+  let got = started;
+  for (let i = 0; i < 100; i++) {
+    got = await must(t, "evals.get", { id: evalId });
+    const status = (got.data as { status?: string } | undefined)?.status;
+    if (status === "done" || status === "failed") break;
+    await new Promise((r) => setTimeout(r, 5000));
+  }
+  const status = (got.data as { status?: string } | undefined)?.status;
+  notes.push(`eval ${evalId} ${status ?? "unknown"}`);
+  if (status !== "done") return;
+  const gated = await must(t, "evals.gate", { id: evalId, ifMatch: got.etag ?? "" });
+  const verdict = (gated.data as { gate?: { verdict?: string } } | undefined)?.gate?.verdict;
+  notes.push(verdict ? `gate ${verdict}` : `evals.gate answered ${gated.status}`);
+}
 
 export const playbookFinetune: Eval = {
   id: "playbook-finetune",
-  title: "Playbook: fine-tune from a dataset version — the chain in order, a dry run before each spending step",
+  title: "Playbook: fine-tune from a dataset version — the chain in order, a dry run before each spending step, eval and gate",
   kind: "playbook",
-  prompt: "The eval matrix and the gate arrive in phase 3: skip them. Finish with a short summary and the next step.",
+  prompt: "Finish with a short summary and the next step.",
   playbook: { name: "finetune-from-dataset", inputs: { dataset: ["dataset/fleurs-he-smoke"], steps: 300 } },
   fixture: { mixes: [] },
   observe: { mixes: [], aliases: [] },
@@ -174,8 +217,8 @@ export const playbookFinetune: Eval = {
     callsInOrder(["mixes.new", "runs.calibrate?dryRun", "runs.new?dryRun", "runs.new"]),
     dryRunFirst(SPENDING),
     planItem("mix", "done"),
-    planItem("eval", "skipped"),
-    onlyOperations(["mixes.new", "mixes.edit", "runs.calibrate", "runs.new", "projects.note"]),
+    evalSteps(),
+    onlyOperations(["mixes.new", "mixes.edit", "runs.calibrate", "runs.new", "evals.new", "evals.gate", "projects.note"]),
     noApprovalBypass(),
     throughMcp(),
     sessionFinished(),
@@ -205,20 +248,23 @@ export const playbookFinetune: Eval = {
     const started = await must(t, "runs.new", { p: t.project, body: run });
     const r = started.data as { id?: string; currentJobId?: string } | undefined;
     if (!ok(started) || !r?.id) {
+      // No run (the evals stack has no worker), so no checkpoint: the evaluation steps wait for a person.
       notes.push(`runs.new answered ${started.status}`);
-    } else {
-      for (let i = 0; i < 10; i++) {
-        if (r.currentJobId) await must(t, "jobs.wait", { id: r.currentJobId, timeout: 30 });
-        const got = await must(t, "runs.get", { id: r.id });
-        const status = (got.data as { status?: string } | undefined)?.status;
-        if (status === "done" || status === "failed" || status === "cancelled") {
-          notes.push(`run ${r.id} ${status}`);
-          break;
-        }
-      }
-      await must(t, "checkpoints.list", { p: t.project, run: r.id });
+      await t.say(`Playbook steps so far: ${notes.join("; ")}. Next: fix why the run did not start, then evaluate its best checkpoint.`);
+      return;
     }
-    await t.say(`Playbook steps so far: ${notes.join("; ")}. Next: evaluate the checkpoints once phase 3 ships.`);
+    let status: string | undefined;
+    for (let i = 0; i < 10 && !ENDED.has(status ?? ""); i++) {
+      if (r.currentJobId) await must(t, "jobs.wait", { id: r.currentJobId, timeout: 30 });
+      const got = await must(t, "runs.get", { id: r.id });
+      status = (got.data as { status?: string } | undefined)?.status;
+    }
+    notes.push(`run ${r.id} ${status ?? "unknown"}`);
+    const ckps = await must(t, "checkpoints.list", { p: t.project, run: r.id });
+    const best = status === "done" ? bestCheckpoint(ckps.data) : undefined;
+    if (best) await evaluate(t, best.id, notes);
+    else notes.push("no kept checkpoint to evaluate");
+    await t.say(`Playbook steps: ${notes.join("; ")}. Next: a person registers a checkpoint that passed the gate (models.register).`);
   },
 };
 

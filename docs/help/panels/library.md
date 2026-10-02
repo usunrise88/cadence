@@ -30,8 +30,11 @@ Prepare: pick what a mix, a run or an eval will use. Any step: keep the lists yo
 ## Commands
 
 Keys in the list: arrows move, Enter opens, Space previews in Inspector. **Save view** stores the current filter
-under a name (`views.set`, per user per project); saving under an existing name replaces its query. Adopt, compare and
-set alias arrive with the registry documents.
+under a name (`views.set`, per user per project); saving under an existing name replaces its query.
+
+With a registry row highlighted the toolbar offers what the open project can do with it: **Set as baseline** on a
+model or base model (`aliases.set`; moving `@baseline` always waits for an approval, and a notice gives its id) and
+**Adopt…** on a golden set (opens its adopt card, which checks for leakage first). Compare arrives later.
 
 The AI menu (the sparks icon next to New mix) asks the agent about the highlighted row, asks it to find what the
 filter describes in plain words, or explains the Library in a read-only session.

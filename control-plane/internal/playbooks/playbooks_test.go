@@ -94,7 +94,7 @@ func TestValidate(t *testing.T) {
 		{"bad defaultRef", strings.Replace(minimal, "training.steps", "training.nope", 1), "does not resolve"},
 		{"two sources", strings.Replace(minimal, "defaultRef: training.steps", "defaultRef: training.steps, required: true", 1), "exactly one of"},
 		{"unknown operation", strings.Replace(minimal, "command: runs.new", "command: runs.fly", 1), `unknown operation "runs.fly"`},
-		{"later phase needs only the form", strings.Replace(minimal, "command: runs.new }", "command: evals.gate, phase: 3 }", 1), ""},
+		{"later phase needs only the form", strings.Replace(minimal, "command: runs.new }", "command: evals.gate, phase: 4 }", 1), ""},
 		{"not an operation", strings.Replace(minimal, "command: runs.new", "command: Runs", 1), "is not an operation"},
 		{"prompt names a missing input", strings.Replace(minimal, ".Inputs.steps", ".Inputs.nope", 1), "prompt"},
 		{"bad stop", strings.Replace(minimal, "step: failed", "gate: passed", 1), "stop[0]"},

@@ -47,7 +47,7 @@ baseline, then register it when its gate passed.
 | New experiment | `experiments.new` | From the empty Experiment panel: name, question, mix (at its current revision); the base model is the defaults' |
 | Run sweep / New sweep | `sweeps.run` | **Estimate** (dry run) lists the points with their estimates and the total against the cap and today's budget; **Start sweep** sends exactly that request and is offered only when it fits the cap. An agent's sweep over the GPU budget waits for an approval |
 | Compare N | — | Select runs, then Compare N: the table and both charts show only them; Show all returns |
-| Evaluate best | `evals.new` | The plan (cells to compute and cached, GPU-hours) first, then Start eval; gate it with `evals.gate` |
+| Evaluate best | `evals.new` | The Run eval form for the best checkpoint (axes as on Checkpoints); Plan first, then Start eval opens the Eval report; gate it with `evals.gate` |
 | Register best | `models.register` | Enabled when the best checkpoint's latest gated eval passed (otherwise the button says why); Show registration (dry run) names the model collection, Confirm register publishes it (approval for agents) |
 | Stop a sweep | `jobs.cancel` on its current run | Cancelling the run that trains now cancels the sweep |
 

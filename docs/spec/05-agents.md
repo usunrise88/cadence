@@ -62,7 +62,7 @@ Every mutating tool accepts `dryRun`; the verbs come from the vocabulary in the 
 
 ### Context bridge
 
-- From the UI: the current selection attaches to a prompt as references (`@run:123`, `@eval:45#he-IL/[56,1]`, `@utterance:9f3c`); Ask agent on any entity opens Chat with a prefilled prompt naming the entity and the intent.
+- From the UI: the current selection attaches to a prompt as references (`@run:123`, `@eval:<id>#cell:<evc_id>` or `…#cell:<evc_id>/utt:<index>` from the Eval report, `@utterance:9f3c`); Ask agent on any entity opens Chat with a prefilled prompt naming the entity and the intent.
 - From the agent: references in replies render as links that open the document; an attribution badge on any entity the agent changed jumps to the tool call in Chat.
 - Between sessions: `projects.note` writes to `NOTES.md`, which the next session reads through `AGENTS.md`; the transcript of any session is searchable.
 

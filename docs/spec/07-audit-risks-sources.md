@@ -43,12 +43,12 @@ The biggest unknowns are how complete the Claude Code ACP adapter is and how rou
 
 Spikes:
 
-- [ ] A1: ACP client against `opencode acp` and `claude-agent-acp`: chat, tool-call diffs, permission round trip, cancel, resume
-- [ ] A2: Cadence MCP server with ten generated tools; both agents create a mix and launch a dry-run
-- [ ] A3: Nemotron 3.5 fine-tune on the staging card under a 24 GB cap, then ONNX export and a parity check
-- [ ] A4: Outbox → SSE → cache patching with an agent editing a mix while the Mix panel is open
-- [ ] A5: live microphone → WebSocket relay → Nemotron checkpoint in the worker and back, beside a training job (before phase 3's live mode)
-- [ ] S5: one audio view with a 30-minute call, spectrogram and word tracks at 60 fps across popouts (before phase 3's Audio panel)
+- [x] A1 (done): ACP client against `opencode acp` and `claude-agent-acp`: chat, tool-call diffs, permission round trip, cancel, resume
+- [x] A2 (done): Cadence MCP server with ten generated tools; both agents create a mix and launch a dry-run
+- [ ] A3 (partial): Nemotron 3.5 fine-tune on the staging card under a 24 GB cap, then ONNX export and a parity check — training, streaming eval and ONNX parity pass; Triton serving waits for phase 5
+- [x] A4 (done): Outbox → SSE → cache patching with an agent editing a mix while the Mix panel is open
+- [x] A5 (partial, enough for phase 3): live microphone → WebSocket relay → Nemotron checkpoint in the worker and back, beside a training job (before phase 3's live mode) — the 160 ms budget holds beside training; Firefox, Safari and Caddy are left to the owner
+- [x] S5 (done with caveats): one audio view with a 30-minute call, spectrogram and word tracks at 60 fps across popouts (before phase 3's Audio panel)
 - [ ] F1: k2/icefall through the framework seams without changes outside its pack (deferred with the packs beyond NeMo)
 
 Open questions:
@@ -598,8 +598,12 @@ Found while folding the plan into the spec; answered by the streams as built (st
       degradation under `telephony`): still reported, not gated; boosted-term recall has no scorer yet (03 "Hot words")
 - [x] S3 · robustness cells: answered — the augmentation (kind, profile hash, seed) enters the decoding hash, so only
       augmented cells change key (03 "Scorers and metrics", stream R)
-- [ ] S3 · utterance audio path, signed URL lifetime and the audited event: stream A (in progress)
-- [ ] S3 · `transcriptions.new` as a command under the `media` tag: stream T (in progress)
+- [x] S3 · utterance audio path, signed URL lifetime and the audited event: answered by stream A as built —
+      `audio.get|sign`, `peaks.get`, `spectrogram.get`, `words.get` under the `media` tag; signed links live
+      `media.signed_link_ttl_s` (300 s); `audio.sign` and every play that starts write an audit row (06 "Media")
+- [x] S3 · `transcriptions.new` as a command under the `media` tag: answered by stream T as built — a single-use
+      ticket (`transcriptions.ticket_ttl_s`) opens the live socket; the `interactive` job kind (06 "Transcriptions and
+      the live channel as built")
 - [x] S3 · `models.register` approval: answered — a passed gate for everyone, and a registry-scope approval for an
       agent's call (preset rule `registry-changes`); people register without one (02 "Model versions", as built;
       00 decision log)
@@ -630,8 +634,8 @@ overrule; stream S2 folded them into the spec, 2026-10-02):
       fewer substitutions; CER counts spaces; partial stability is positional (03 "Scorers and metrics", as built)
 - [x] Y · NeMo phrase boosting is the GPU boosting tree on the greedy label-looping decoder, `packs.nemo.boost_weight`
       0.5 (measured: over-boosting from ≈ 0.7)
-- [x] E · `evals.new` answers `201` with the eval (00 decision log); estimate `eval.gpu_hours_per_audio_hour` 0.1, a
-      Cadence recommendation until calibrated
+- [x] E · `evals.new` answers `201` with the eval (00 decision log); estimate `eval.gpu_hours_per_audio_hour` 0.025,
+      calibrated on the stand (2026-10-02: the pipeline decoder at batch 8 runs at RTF 0.0165, plus a 1.5× margin)
 - [x] E · the gate reads decoding 0 (and augmentation 0) at the primary profile, matched by name then latency; with no
       golden sets in `gates.yaml`, the project's locales are targets and the rest replay; no target → the target check
       fails
@@ -662,17 +666,18 @@ Still open after waves 1–2:
       passes the list's weight to the step, while the measured NeMo optimum is 0.5 (`packs.nemo.boost_weight`) and 1.0
       already over-boosts (WER 0.466 → 0.490). Proposal: `langpacks.boost_weight` 0.5
 - [ ] E · not built: eval records and their `scores` are not protected from eviction (an evicted cell shows a delta
-      error); `evals.new` has no playbook estimator (the playbook uses a 0.5 GPU-hour hint); the GPU-hours factor is
-      not calibrated; `playbooks.CurrentPhase` still says 2
+      error); `evals.new` has no playbook estimator (the playbook uses a 0.5 GPU-hour hint). Resolved: the GPU-hours
+      factor is calibrated (0.025, above); `playbooks.CurrentPhase` is 3 (audit fix F4)
 - [ ] R · GSM-FR, AMR-NB and Opus are left out of `augment_dataset@1`'s draw (reported per cell); the frame-VAD's card
       names no Hebrew
-- [ ] A5 · live and eval decoders differ until the transcribe kind moves to NeMo's pipeline decoder (03 "Runtimes,
-      model families and latency profiles"); the training augmentation's telephone stage still resamples by FFT
-- [ ] U · not built: "test a phrase", Audio from Eval report and Diff rows (stream A), Set as baseline and Adopt on the
-      Model document, the Eval workspace's Playwright smoke; the Eval report draws no robustness, metric or latency
-      chart yet
-- [ ] Contract text: `normalizers.list`'s description in `api/openapi.yaml` still says `normalizer/he-IL` (the
-      collection is `normalizer/he-il`); fix with the next contract change and `make gen`
+- [x] A5 · resolved: live and eval use one decoder — `nemotron_transcribe@3` decodes through NeMo's streaming
+      pipeline (03 "Runtimes, model families and latency profiles"); the training augmentation's telephone stage
+      resamples polyphase (`nemotron_finetune@2`, `cadence_worker.resample`)
+- [ ] U · not built: "test a phrase" in the Language pack, the Eval workspace's Playwright smoke. Resolved: Audio
+      opens from Eval report and Diff rows (stream A); the Eval report draws the Robustness, entity accuracy and
+      Streaming (latency) sections (stream U2); Set as baseline, Adopt into project, the gate editor and the Run eval…
+      form are built (audit fix F4; 11 "Panel catalogue", as built)
+- [x] Contract text: resolved — `normalizers.list`'s description in `api/openapi.yaml` names `normalizer/he-il`
 
 ## Sources
 

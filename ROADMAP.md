@@ -448,8 +448,8 @@ FLEURS he was replaced by the locale the phase-2 checkpoint was trained on) and 
   the primary profile (160 ms is not a trained look-ahead, A5) waits for the owner (07).
 - Found and fixed on the way: leakage checks counted a trainable import's test split (now train and validation only);
   evals could not decode a locale the model has no prompt for (`evals.new.languages`); zh/ja/th were scored by words
-  over unsegmented text (now CER, `eval.character_error_languages`); the eval GPU estimate was 8× high (now 0.015
-  GPU-hours per audio hour, measured). Open: the base model's empty output for th-TH (checked with stream T's
+  over unsegmented text (now CER, `eval.character_error_languages`); the eval GPU estimate was 8× high (now 0.025
+  GPU-hours per audio hour: the pipeline decoder at batch 8 runs at RTF 0.0165, plus a 1.5× margin). Open: the base model's empty output for th-TH (checked with stream T's
   decoder).
 
 Decide before starting:
@@ -509,7 +509,7 @@ worker protocol; S5 (audio view) before the Audio panel — it needs only the ph
       stays in phase 5 — `POST /projects/{p}/models:register`, an approval for agents, adopted by the project
 - [x] Robustness matrix: augmentation profile as another `evals.new` axis (golden set × profile × latency) —
       `augment_dataset@1` on target golden sets; GSM-FR, AMR-NB and Opus left out of the draw; `evals.get` answers
-      the matrix, the Eval report does not draw it yet
+      the matrix, the Eval report draws it in its Robustness section (stream U2)
 - [x] Experiments and sweeps: grid/random over recipe params, GPU-hour cap, Compare N, register best —
       `experiments.new|list|get`, `sweeps.run` (one per project, approval covers its runs); Experiment document
 - [x] Lineage both ways: `GET /registry/{kind}/{id}/lineage`, "used by" (before the Lineage panel) — one read,
@@ -554,7 +554,8 @@ L, R, U, X and spikes S5, A5, folded into the spec by stream S2 on 2026-10-02):
   `normalizer/he-il` (collection names are lower case); Serbian scores with `normalizer/basic`.
 - No `streaming_eval` or `gate_evaluate` kind: `evals.new` generates one pipeline per eval with only the missing
   cells (`materialize-m<n>` → `transcribe-u<n>` → `score-u<n>`, plus augment, VAD and metric steps), answers `201`
-  with the eval, and estimates 0.1 GPU-hour per audio hour. Base models are materialised by the family role
+  with the eval, and estimates 0.025 GPU-hour per audio hour (`eval.gpu_hours_per_audio_hour`, calibrated on the
+  stand). Base models are materialised by the family role
   `materialize` (`checkpoint_from_base@1`, toy `toy_checkpoint_from_base@1`); step kinds may declare
   `optionalInputs`.
 - The gate reads decoding 0 and augmentation 0 at the primary profile; without golden sets in `gates.yaml` the
@@ -567,17 +568,20 @@ L, R, U, X and spikes S5, A5, folded into the spec by stream S2 on 2026-10-02):
 - Lineage is one operation (`GET /registry/{id}:lineage`) over the ids a payload names; evals add their own source.
   Agents' language-pack edits land on a `langpack/<locale>-<date>` branch under the draft policy.
 - Web: one `models.register` and one `evals.new` command; the Eval report draws every chart of the ROADMAP item
-  (stream U2 added the ECDF, entity accuracy, the Streaming and Robustness sections); "test a phrase", Set as baseline and
-  Adopt on the Model document and the Eval workspace's Playwright smoke are not built.
+  (stream U2 added the ECDF, entity accuracy, the Streaming and Robustness sections). Audit fix F4 added evaluation
+  setup: Adopt into project on the Golden set, Set as baseline (`aliases.set`, approval-gated) on the Model document
+  and a base model, a gate editor (`gates.get|edit`) and the Run eval… form (`evals.new` with every axis, dry-run plan
+  first). "test a phrase" and the Eval workspace's Playwright smoke are not built.
 - Spike S5 (done with caveats): no wavesurfer.js; `AudioView` + `useAudioAxis()`, one renderer per window; peaks 720 KB
   per channel-hour; a JavaScript FFT in a Web Worker; new `views.audio` defaults (stream A adds them).
 - Spike A5 (partial; Firefox, Safari and Caddy left to the owner): the live path meets the 160 ms budget beside
   training (p95 finalize → final 43 ms, 70 ms beside training); the interactive reservation is 6 000 MB + 2 600 MB per
   further checkpoint; live and eval need one decoder (the transcribe kind moves to NeMo's pipeline API) and one
   polyphase resampler; `160ms` is not a trained look-ahead — the primary cell is the owner's call (07).
-- Not done in waves 1–2: eviction protection of eval records, a playbook estimator for `evals.new`, calibration of the
-  eval GPU-hours factor, `playbooks.CurrentPhase` (still 2); streams A (audio endpoints, the `media` tag, the Audio
-  panel) and T (transcriptions, the `interactive` job kind) are in progress.
+- Not done: eviction protection of eval records and a playbook estimator for `evals.new` (the playbook's eval step
+  uses a fixed 0.5 GPU-hour hint). Done since waves 1–2: the eval GPU-hours factor is calibrated (0.025),
+  `playbooks.CurrentPhase` is 3, and streams A (audio endpoints, the `media` tag, the Audio panel) and T
+  (transcriptions, the `interactive` job kind) are built (items above).
 
 ---
 

@@ -30,7 +30,7 @@ Training · Review → Decide: which checkpoint goes on to evaluation, or become
 | --- | --- | --- |
 | Average selected | `checkpoints.average` | Two or more checkpoints of the run; runs the family's average step as a pipeline run, and the result joins the list |
 | New stage from here | `runs.stage` | Opens the Run document's stage form with this checkpoint; the peak LR is asked for explicitly |
-| Evaluate | `evals.new` | Plans the eval first (golden sets × profiles, cells already cached, GPU-hours), then Start eval opens the Eval report |
+| Evaluate | `evals.new` | The Run eval form: golden sets the project adopted, latency profiles of the family, decoding (boost lists with a weight), robustness profiles (`augment/*.yaml`), the languages map (prefilled when the run used `target_lang`) and the baseline; the plan (cells cached and to compute, GPU-hours) first, then Start eval opens the Eval report |
 | Export | — | Arrives with deployment (phase 5) |
 | From step | — | Opens the pipeline run that saved it |
 

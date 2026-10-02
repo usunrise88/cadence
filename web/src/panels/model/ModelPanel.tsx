@@ -1,16 +1,18 @@
-import type { AnchorHTMLAttributes } from "react";
+import { useState, type AnchorHTMLAttributes } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Streamdown } from "streamdown";
+import { aliasesGetOptions } from "@/api/gen/@tanstack/react-query.gen";
 import type { ModelVersion } from "@/api/gen/types.gen";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ActorBadge, EmptyState } from "@/shell/entity/primitives";
-import { GATE_CLASS, GATE_GLYPH, openDocument, openPanelById, type PanelProps } from "@/shell/panel";
+import { errorMessage, GATE_CLASS, GATE_GLYPH, openDocument, openPanelById, runCommand, useProject, type PanelProps } from "@/shell/panel";
 
 // The Model document (docs/spec/11-ui-panels.md "Panel catalogue", Model; R22): a registered model version — the
 // checkpoint it publishes, the gate verdict and the eval it was registered with, its lineage (run, mix, recipe,
 // dataset versions), the projects that use it, and the model card. The card is Markdown written by the control plane
-// from the eval; it renders without raw HTML, and links open in a new tab. Export, promote and roll back arrive with
-// deployment (phase 5).
+// from the eval; it renders without raw HTML, and links open in a new tab. Set as baseline points the open project's
+// @baseline at it (aliases.set, an approval). Export, promote and roll back arrive with deployment (phase 5).
 
 export function ModelEmpty() {
   return <EmptyState step="record" title="No model open" hint="Register a checkpoint from a passed Eval report, or open a model from the Library." />;
@@ -53,6 +55,66 @@ function CardLink({ href, children, ...rest }: AnchorHTMLAttributes<HTMLAnchorEl
 }
 
 const CARD_COMPONENTS = { a: CardLink };
+
+/**
+ * Set as baseline (aliases.set baseline, R8): evals of the open project then compare against this model. Moving
+ * @baseline always waits for an approval, so the answer is the approval id.
+ */
+function BaselineSection({ m }: { m: ModelVersion }) {
+  const project = useProject();
+  const baseline = useQuery({ ...aliasesGetOptions({ path: { p: project ?? "", name: "baseline" } }), enabled: !!project, retry: false });
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ error: boolean; text: string } | null>(null);
+  const current = baseline.data?.version;
+  const isBaseline = current?.id === m.id;
+  const set = async () => {
+    if (!project) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const res = await runCommand("aliases.set", { project, name: "baseline", version: m.id });
+      if (res && "approvalId" in res) setMessage({ error: false, text: `Waiting for an approval (${res.approvalId}): @baseline moves once a person approves it in Approvals.` });
+      else if (res) {
+        setMessage({ error: false, text: `@baseline now points at ${res.version.name} ${res.version.version}.` });
+        void baseline.refetch();
+      }
+    } catch (err) {
+      setMessage({ error: true, text: errorMessage(err) });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <section aria-labelledby={`model-baseline-${m.id}`} className="flex flex-col gap-1.5" data-slot="model-baseline">
+      <h3 id={`model-baseline-${m.id}`} className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+        Baseline
+      </h3>
+      {!project ? (
+        <p className="text-muted-foreground">Open a project to set its @baseline.</p>
+      ) : (
+        <p className="flex flex-wrap items-center gap-2">
+          <span className={isBaseline ? "font-medium" : "text-muted-foreground"}>
+            {isBaseline
+              ? `@baseline of ${project}`
+              : current
+                ? `@baseline of ${project} is ${current.name} ${current.version}`
+                : `${project} has no @baseline: evals compare against its base model`}
+          </span>
+          {!isBaseline ? (
+            <Button size="xs" variant="outline" disabled={busy} onClick={() => void set()} data-command="aliases.set">
+              Set as baseline
+            </Button>
+          ) : null}
+        </p>
+      )}
+      {message ? (
+        <p role={message.error ? "alert" : "status"} className={message.error ? "text-destructive" : "text-muted-foreground"}>
+          {message.text}
+        </p>
+      ) : null}
+    </section>
+  );
+}
 
 function Overview({ m }: { m: ModelVersion }) {
   const p = m.model;
@@ -121,6 +183,7 @@ function Overview({ m }: { m: ModelVersion }) {
           <p className="text-muted-foreground">No project uses it.</p>
         )}
       </section>
+      <BaselineSection m={m} />
       <section aria-labelledby={`model-card-${m.id}`} className="flex flex-col gap-1.5">
         <h3 id={`model-card-${m.id}`} className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
           Model card

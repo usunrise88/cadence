@@ -291,6 +291,38 @@ export function callsInOrder(steps: readonly string[]): Grader {
   };
 }
 
+/**
+ * The evaluation steps of a playbook session: once the server's plan has the run's checkpoints (`after` done), the
+ * session dry-runs evals.new on a checkpoint, starts it with the same request and gates it (evals.new?dryRun →
+ * evals.new → evals.gate). Before that there is nothing to evaluate, so it must not have started an eval: an eval
+ * without a checkpoint of the session's own run is the mistake (a stack without a worker never gets that far).
+ */
+export function evalSteps(after = "checkpoints"): Grader {
+  const steps = ["evals.new?dryRun", "evals.new", "evals.gate"];
+  return {
+    id: "eval-steps",
+    grade(o) {
+      const plan = o.session.playbook?.plan;
+      if (!plan) return fail("the session has no playbook");
+      const due = plan.find((p) => p.id === after);
+      if (!due) return fail(`no plan item ${after}`);
+      const calls = toolCalls(o).filter((c) => c.class === "mcp" && c.operation);
+      const started = calls.filter((c) => c.operation === "evals.new" && !isDryRun(c.input));
+      if (due.state !== "done") {
+        if (started.length) return fail(`evals.new started while ${after} is ${due.state}: no checkpoint to evaluate`);
+        return ok(`${after} ${due.state}: no checkpoint yet, no eval started`);
+      }
+      const names = calls.map(callName);
+      let i = 0;
+      for (const c of names) if (i < steps.length && c === steps[i]) i++;
+      if (i < steps.length) return fail(`missing ${steps[i]} after ${steps.slice(0, i).join(" → ") || `${after} done`}; calls: ${list(names.slice(-12), 12)}`);
+      const subject = (started[0]?.input as { body?: { subject?: { checkpointId?: unknown } } } | undefined)?.body?.subject;
+      if (typeof subject?.checkpointId !== "string") return fail("evals.new's subject is not a checkpoint");
+      return ok(`${steps.join(" → ")} on ${subject.checkpointId}`);
+    },
+  };
+}
+
 /** Every real call of a spending operation follows a completed dry run of the same operation since the last real one. */
 export function dryRunFirst(spending: readonly string[]): Grader {
   return {

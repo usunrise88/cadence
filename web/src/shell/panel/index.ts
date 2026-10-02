@@ -80,6 +80,11 @@ export {
   type GateState,
 } from "@/shell/evaluation/format";
 export { invalidateEval, invalidateLangpacks } from "@/shell/evaluation/cache";
+// Evaluation setup: the Run eval form (evals.new's axes, the plan before Start) that Checkpoints, the Experiment and
+// the Eval report share, and the requests only an open document completes (adopt card, Run eval form, gate editor).
+export { EvalForm, type EvalFormProps } from "@/shell/evaluation/EvalForm";
+export { emptyEvalForm, formFromEval, subjectRefOf, type EvalFormState } from "@/shell/evaluation/evalForm";
+export { ADOPT_REQUEST, EVAL_FORM_REQUEST, GATE_REQUEST } from "@/shell/commands/evaluation";
 // Transcription (phase 3, R47–R50): the live channel's client, lanes, microphone capture and the page-side reference
 // check the Transcription panel composes (no audio or text is kept beyond the page).
 export * from "@/shell/transcription";

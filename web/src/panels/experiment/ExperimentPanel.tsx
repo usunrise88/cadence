@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { BookmarkBook, Plus, StatsReport } from "iconoir-react";
 import { eventsListOptions, experimentsGetQueryKey, mixesListOptions } from "@/api/gen/@tanstack/react-query.gen";
-import type { EvalPlan, Experiment, ExperimentRun, ModelRegistration, Sweep } from "@/api/gen/types.gen";
+import type { Experiment, ExperimentRun, ModelRegistration, Sweep } from "@/api/gen/types.gen";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { AnalyticsChart } from "@/shell/charts";
 import { ActorBadge, EmptyState, StatusChip } from "@/shell/entity/primitives";
-import { errorMessage, openDocument, runCommand, useEditRequest, useProject, useTopic, type PanelProps } from "@/shell/panel";
+import { errorMessage, EvalForm, openDocument, runCommand, useEditRequest, useProject, useTopic, type PanelProps } from "@/shell/panel";
 import { numericParams, parallelSpec, scatterSpec, shortRun, showValue } from "./model";
 import { SweepForm } from "./SweepForm";
 
@@ -127,7 +127,16 @@ function Overview({ e, doc }: { e: Experiment; doc?: string }) {
         </Button>
       </div>
       {sweepOpen ? <SweepForm experiment={e} onClose={() => setSweepOpen(false)} onStarted={refresh} /> : null}
-      {evalOpen && best && project ? <EvaluateBest project={project} checkpointId={best.checkpointId} onClose={() => setEvalOpen(false)} onDone={refresh} /> : null}
+      {evalOpen && best && project ? (
+        <EvalForm
+          project={project}
+          subject={{ checkpointId: best.checkpointId }}
+          subjectLabel="the best checkpoint"
+          runId={best.runId}
+          onStarted={refresh}
+          onClose={() => setEvalOpen(false)}
+        />
+      ) : null}
       {registerOpen && best && project ? <RegisterBest project={project} checkpointId={best.checkpointId} reason={best.registrable ? undefined : best.reason} onClose={() => setRegisterOpen(false)} onDone={refresh} /> : null}
 
       <Section id={`exp-sweeps-${e.id}`} title="Sweeps">
@@ -293,58 +302,6 @@ function ComparisonRow({ r, params, checked, onToggle }: { r: ExperimentRun; par
       </td>
       <td>{r.eval ? (r.eval.verdict ?? r.eval.status) : "—"}</td>
     </tr>
-  );
-}
-
-/** Evaluate the best checkpoint: evals.new's plan first (cells cached and to compute, GPU-hours), then start. */
-function EvaluateBest({ project, checkpointId, onClose, onDone }: { project: string; checkpointId: string; onClose: () => void; onDone: () => void }) {
-  const [plan, setPlan] = useState<EvalPlan>();
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<{ error: boolean; text: string } | null>(null);
-  const body = { subject: { checkpointId } };
-  const act = async (dryRun: boolean) => {
-    setBusy(true);
-    setMessage(null);
-    try {
-      const res = await runCommand("evals.new", { project, body, dryRun });
-      if ("approvalId" in res) setMessage({ error: false, text: `The eval waits for an approval (${res.approvalId}).` });
-      else if ("id" in res) {
-        setMessage({ error: false, text: `Eval ${res.id} is ${res.status}; gate it with evals.gate when it is done.` });
-        onDone();
-      } else setPlan(res);
-    } catch (err) {
-      setMessage({ error: true, text: errorMessage(err) });
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <div className="flex flex-col gap-2 rounded-md border bg-tool p-3" role="group" aria-label="Evaluate the best checkpoint" data-slot="evaluate-best">
-      <p>
-        Evaluate checkpoint <code className="font-mono">{checkpointId}</code> against the baseline on the project's golden sets.
-      </p>
-      {plan ? (
-        <p className="tabular-nums" data-slot="eval-plan">
-          {plan.cellsToCompute} cells to compute, {plan.cellsCached} cached · ~{n(plan.estimate.gpuHours)} GPU-h ({n(plan.estimate.audioHours)} h of audio)
-        </p>
-      ) : null}
-      <div className="flex gap-1">
-        <Button size="xs" variant="outline" disabled={busy} onClick={() => void act(true)}>
-          Plan
-        </Button>
-        <Button size="xs" disabled={busy || !plan} onClick={() => void act(false)}>
-          Start eval
-        </Button>
-        <Button size="xs" variant="ghost" onClick={onClose}>
-          Close
-        </Button>
-      </div>
-      {message ? (
-        <p role={message.error ? "alert" : "status"} className={message.error ? "text-destructive" : "text-muted-foreground"}>
-          {message.text}
-        </p>
-      ) : null}
-    </div>
   );
 }
 

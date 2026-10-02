@@ -72,6 +72,9 @@ checkpoint is recorded as a model version.
 | Command | API | Notes |
 | --- | --- | --- |
 | Evaluate (Checkpoints) | `evals.new` | The plan first (cells, cached, GPU-hours), then the eval starts and this report opens |
+| Run eval… | `evals.new` | The Run eval form for this eval's subject with the default axes (golden sets, profiles, decoding, robustness, languages, baseline); Plan, then Start eval |
+| Re-run missing cells | `evals.new` | The same form filled with this eval's axes, planned at once: scored cells come back cached, only the missing ones compute (after a failed step) |
+| Edit gates.yaml | `gates.edit` | Opens the Project home's gate editor (the effective gate, Check, Commit to main) |
 | Run the gate | `evals.gate` | A finished eval; the verdict and its checks are stored on the eval |
 | Register model… | `models.register` | Check, then Register with an inline confirm; agents' registrations wait for approval |
 | Open in Diff | — | A row of the worst-utterance table |

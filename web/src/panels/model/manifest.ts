@@ -14,6 +14,7 @@ const manifest: PanelManifest = {
   defaultLocation: "centre",
   entity: "model",
   help: "panels.model",
+  commands: ["aliases.set"],
   empty: ModelEmpty,
   component: ModelPanel,
 };
