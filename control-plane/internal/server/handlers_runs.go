@@ -79,7 +79,8 @@ func (s *Server) RunsNew(ctx context.Context, req api.RunsNewRequestObject) (api
 	ctx = commands.WithProject(ctx, p.ID)
 	b := req.Body
 	actor, _ := auth.FromContext(ctx)
-	if refOr(b.Mix) == "" {
+	experiment := refOr(b.Experiment)
+	if refOr(b.Mix) == "" && experiment == "" {
 		if req.Params.DryRun == nil || !*req.Params.DryRun {
 			return nil, problems.Validation([]problems.FieldError{{Path: "/mix", Message: "name the mix to train on (mix_… or its name); without one only a dry run answers, from datasets"}})
 		}
@@ -110,9 +111,19 @@ func (s *Server) RunsNew(ctx context.Context, req api.RunsNewRequestObject) (api
 	if b.Precision != nil {
 		in.Precision = string(*b.Precision)
 	}
+	outside := in
+	if experiment != "" { // a run of an experiment trains on its mix revision from its base model
+		if err := s.experiments.ForRun(ctx, s.Pool, p.ID, experiment, &outside); err != nil {
+			outside = runs.NewInput{} // the command reports the problem
+		}
+	}
 	return s.startRun(ctx, "runs.new", req.Params.IdempotencyKey, req.Params.DryRun, func(ctx context.Context, q pgx.Tx) (runs.NewInput, error) {
-		return in, nil
-	}, in)
+		if experiment == "" {
+			return in, nil
+		}
+		x := in
+		return x, s.experiments.ForRun(ctx, q, p.ID, experiment, &x)
+	}, outside)
 }
 
 // startRun runs runs.new or runs.stage: input builds the run's input inside the command (checks that need the
@@ -152,7 +163,7 @@ func (s *Server) RunsList(ctx context.Context, req api.RunsListRequestObject) (a
 	if err != nil {
 		return nil, err
 	}
-	f := runs.ListFilter{ProjectID: p.ID, Limit: deref(req.Params.Limit)}
+	f := runs.ListFilter{ProjectID: p.ID, ExperimentID: deref(req.Params.Experiment), Limit: deref(req.Params.Limit)}
 	if req.Params.Status != nil {
 		f.Status = string(*req.Params.Status)
 	}

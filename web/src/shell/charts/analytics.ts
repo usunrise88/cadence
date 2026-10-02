@@ -54,7 +54,20 @@ export type ForestSpec = Base & {
   reference?: number;
 };
 
-export type AnalyticsSpec = HistogramSpec | BarSpec | HeatmapSpec | ScatterSpec | ForestSpec;
+/** One axis of a parallel-coordinates chart: a numeric (linear or log) or a categorical dimension. */
+export type ParallelAxis = { id: string; label: string; type?: "value" | "log" | "category"; categories?: string[] };
+
+/**
+ * Parallel coordinates (R53, Experiment: swept parameters and the metric of each run). One line per item; values
+ * follow `axes` (a category axis takes the category's string). `highlight` draws a line wider and solid (the best run).
+ */
+export type ParallelSpec = Base & {
+  kind: "parallel";
+  axes: ParallelAxis[];
+  lines: { id: string; label: string; slot?: number; values: (number | string | null)[]; highlight?: boolean }[];
+};
+
+export type AnalyticsSpec = HistogramSpec | BarSpec | HeatmapSpec | ScatterSpec | ForestSpec | ParallelSpec;
 
 /** One keyboard-cursor stop: which ECharts item to highlight and what to announce. */
 export type CursorItem = { seriesIndex: number; dataIndex: number; text: string };
@@ -274,6 +287,42 @@ export function buildOption(spec: AnalyticsSpec, theme: ChartTheme, summary: str
         ],
       };
     }
+    case "parallel": {
+      const tooltipValue = (v: number | string | null) => (v == null ? "—" : typeof v === "number" ? f(v) : v);
+      return {
+        ...common,
+        ...legend(spec.lines.length),
+        tooltip: {
+          trigger: "item",
+          confine: true,
+          formatter: (p: { seriesName: string; value: (number | string | null)[] }) =>
+            `${p.seriesName}<br/>${spec.axes.map((a, i) => `${a.label}: ${tooltipValue(p.value[i] ?? null)}`).join("<br/>")}`,
+        },
+        parallel: { left: 48, right: 56, top: spec.lines.length > 1 ? 48 : 32, bottom: 24 },
+        parallelAxis: spec.axes.map((a, i) => ({
+          dim: i,
+          name: a.label,
+          type: a.type ?? "value",
+          ...(a.type === "category" ? { data: a.categories ?? [] } : { scale: true }),
+          nameTextStyle: { color: theme.axis },
+          axisLine: { lineStyle: { color: theme.axis } },
+          axisLabel: { color: theme.axis, ...(a.type === "category" ? {} : { formatter: (v: number) => f(v) }) },
+        })),
+        series: spec.lines.map((l, i) => {
+          const slot = l.slot ?? i;
+          return {
+            type: "parallel",
+            name: l.label,
+            id: l.id,
+            data: [l.values.map((v) => v ?? "-")],
+            // The highlighted line differs by width and a solid stroke, never by colour alone.
+            lineStyle: { color: seriesColor(theme, slot), width: l.highlight ? 3.5 : 1.5, opacity: l.highlight ? 1 : 0.8, type: l.highlight ? "solid" : [...dashFor(slot)] },
+            emphasis: { lineStyle: { width: 4 } },
+            z: l.highlight ? 3 : 2,
+          };
+        }),
+      };
+    }
   }
 }
 
@@ -307,6 +356,11 @@ export function analyticsTable(spec: AnalyticsSpec): Table {
       };
     case "forest":
       return { columns: [spec.yLabel ?? "Row", "Estimate", "Low", "High"], rows: spec.rows.map((r) => [r.label, r.estimate, r.low, r.high]) };
+    case "parallel":
+      return {
+        columns: [spec.yLabel ?? "Line", ...spec.axes.map((a) => a.label)],
+        rows: spec.lines.map((l) => [l.highlight ? `${l.label} (highlighted)` : l.label, ...spec.axes.map((_, i) => l.values[i] ?? null)]),
+      };
   }
   return unreachable(spec);
 }
@@ -358,6 +412,18 @@ export function summarizeAnalytics(spec: AnalyticsSpec): string {
       const across = spec.rows.length - above - below;
       return `${spec.title}: ${spec.rows.length} estimates with intervals against ${formatCell(ref)}. ${above} entirely above, ${below} entirely below, ${across} include it.`;
     }
+    case "parallel": {
+      const ranges = spec.axes.map((a, i) => {
+        if (a.type === "category") {
+          const seen = new Set(spec.lines.map((l) => l.values[i]).filter((v): v is string | number => v != null).map(String));
+          return `${a.label} takes ${seen.size} value${seen.size === 1 ? "" : "s"}`;
+        }
+        const vals = spec.lines.map((l) => l.values[i]).filter((v): v is number => typeof v === "number" && Number.isFinite(v));
+        return vals.length ? `${a.label} ${f(Math.min(...vals))} to ${f(Math.max(...vals))}` : `${a.label} has no values`;
+      });
+      const hi = spec.lines.filter((l) => l.highlight).map((l) => l.label);
+      return `${spec.title}: parallel coordinates of ${spec.lines.length} lines over ${spec.axes.length} axes. ${ranges.join("; ")}.${hi.length ? ` Highlighted: ${hi.join(", ")}.` : ""}`;
+    }
   }
   return unreachable(spec);
 }
@@ -386,6 +452,15 @@ export function cursorItems(spec: AnalyticsSpec): { items: CursorItem[]; rowLeng
       };
     case "forest":
       return { items: spec.rows.map((r, i) => ({ seriesIndex: 1, dataIndex: i, text: `${r.label}: ${u(r.estimate)}, interval ${f(r.low)} to ${f(r.high)}` })), rowLength: 1 };
+    case "parallel":
+      return {
+        items: spec.lines.map((l, si) => ({
+          seriesIndex: si,
+          dataIndex: 0,
+          text: `${l.label}${l.highlight ? " (highlighted)" : ""}: ${spec.axes.map((a, i) => { const v = l.values[i]; return `${a.label} ${v == null ? "no value" : typeof v === "number" ? f(v) : v}`; }).join(", ")}`,
+        })),
+        rowLength: 1,
+      };
   }
   return unreachable(spec);
 }

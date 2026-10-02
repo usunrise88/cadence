@@ -51,7 +51,7 @@ estimate notice. The server ticks the plan, never the agent:
 
 - The command pipeline's session hook (`commands.SessionHook`): `Done` ticks from a command that succeeded, in its
   transaction; `DryRun` records a dry run; `Admit` refuses a real spending command (`Spending`: runs.new|calibrate|
-  resume|stage, checkpoints.average, evals.new) unless the session's last dry run of that operation since its last real one
+  resume|stage, checkpoints.average, evals.new, sweeps.run) unless the session's last dry run of that operation since its last real one
   was the same request (`commands.HashRequest`: path, query, If-Match and canonical body, never the Idempotency-Key;
   `State.DryRunRequests`) (`playbook-dry-run-required`), and any spending command once the playbook ended (`playbook-stopped`).
 - Reads a chain names (`runs.get`, `jobs.wait`, `checkpoints.list`) are observed by the server's `observeReads` middleware.

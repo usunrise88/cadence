@@ -25,7 +25,12 @@ step kind of each role (`calibrate`, `train`, `average`).
 - **Status** (`Observe`, installed as the engine's `RunObserver`, and `JobChanged` from jobs.pause|resume): derived
   from the pipeline run — done | failed | cancelled when it ended; while it runs, `paused` when an active step's job
   is paused, `running` when a worker holds a step (step job leased), else `queued`. A change bumps `rev` and emits
-  `run.status_changed` on `run.{id}.status` (payload `{run: {id, status, error, rev, pipelineRunId, …}}`).
+  `run.status_changed` on `run.{id}.status` (payload `{run: {id, status, error, rev, pipelineRunId, …}}`). The
+  optional `OnStatus` hook is told about every created run and status change in the same transaction
+  (`internal/experiments` drives sweeps with it).
+- **Experiments** (phase 3, migration 0027): a run may carry `experimentId` and `sweepId` (`NewInput`, the row and
+  the view; `runs.list?experiment=`), and `NewInput.ReplayShare` replaces the mix revision's replay share when the
+  mix is rendered (checked like `mixes.edit`; the revision stays, the rendered hash differs).
 - **Resume** (`PlanResume`, `Resume`): a failed or cancelled run continues its train step from the newest
   `training-state` still in the CAS — from released leases of its step jobs (a stop saves one) or the train step's
   own outputs — as a new attempt of the same pipeline run (`Engine.Retry` with `ResumeFrom`, reason `resume`).

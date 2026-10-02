@@ -500,6 +500,38 @@ langpacks:
     source: Cadence recommendation (docs/spec/08-resolutions.md R24, over-boosting shows as insertions)
     range: { min: 1, max: 100000 }
 
+# Sweeps (phase 3, stream X; docs/spec/04-blocks.md "Experiments and sweeps"): sweeps.run generates an experiment's
+# runs from a grid or a random draw over recipe parameters and runs them one after another under a GPU-hour cap.
+sweeps:
+  mode:
+    value: grid
+    description: How a sweep picks its points — grid (every combination of the listed values) or random (a seeded draw from values or ranges)
+    source: docs/spec/04-blocks.md "Experiments and sweeps"
+    range: { values: [grid, random] }
+  max_runs:
+    value: 16
+    unit: runs
+    description: Most runs one sweep may queue; a grid with more combinations is refused until it names fewer values or a smaller runs count
+    source: Cadence recommendation (a sweep runs sequentially on one card; 16 short stages fit a few days of the staging card)
+    range: { min: 1, max: 64 }
+  random_runs:
+    value: 8
+    unit: runs
+    description: Points a random sweep draws when the request names no count
+    source: Cadence recommendation (Bergstra & Bengio, JMLR 13, 2012 — a handful of random points covers the important parameter)
+    range: { min: 1, max: 64 }
+  gpu_hour_cap:
+    value: 8
+    unit: GPU-hours
+    description: Most GPU-hours a sweep's runs may use when the request names no cap; the whole estimate must fit it and the sweep stops before a run would pass it
+    source: Cadence recommendation (about two days of the default project budget)
+    range: { min: 0.001, max: 500 }
+  seed:
+    value: 1
+    description: Seed of a random sweep's draw, so the same request draws the same points
+    source: Cadence recommendation
+    range: { min: 0, max: 2147483647 }
+
 # Framework packs (R45): one section per pack, read by its step kinds through x-cadence defaultRef packs.<pack>.<key>.
 packs:
   # The CPU toy pack (runtime `toy`, family `toy-ctc`): a tiny CTC model trained in seconds that exists only to keep the

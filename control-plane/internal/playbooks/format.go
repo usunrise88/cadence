@@ -57,7 +57,7 @@ const UntilTerminal = "terminal"
 // before each spending step"). The list is the server's, never the template's, so a template cannot opt out.
 var Spending = map[string]bool{
 	"runs.new": true, "runs.calibrate": true, "runs.resume": true, "runs.stage": true, "checkpoints.average": true,
-	"evals.new": true,
+	"evals.new": true, "sweeps.run": true,
 }
 
 // Pending are operations a chain may name before the contract carries them (a parallel stream builds them);

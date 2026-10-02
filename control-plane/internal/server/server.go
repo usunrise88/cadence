@@ -29,6 +29,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/evals"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
 	"github.com/usunrise88/cadence/control-plane/internal/eviction"
+	"github.com/usunrise88/cadence/control-plane/internal/experiments"
 	"github.com/usunrise88/cadence/control-plane/internal/help"
 	"github.com/usunrise88/cadence/control-plane/internal/jobs"
 	"github.com/usunrise88/cadence/control-plane/internal/langpacks"
@@ -134,6 +135,8 @@ type Server struct {
 	runs *runs.Service
 	// evals are evals over generated pipelines, eval records, gates and model registration (phase 3).
 	evals *evals.Service
+	// experiments group runs and drive sweeps (phase 3 · stream X).
+	experiments *experiments.Service
 }
 
 var _ api.StrictServerInterface = (*Server)(nil)
@@ -186,6 +189,8 @@ func New(c Config) (*Server, error) {
 	s.runs.Install(c.StepHooks) // checkpoint and calibration outputs; the engine reports run status changes
 	s.evals = s.newEvalsService()
 	s.evals.Install(c.StepHooks) // scores outputs write eval records; the engine reports eval pipeline changes
+	s.experiments = s.newExperimentsService()
+	s.experiments.Install() // a run that ends starts its sweep's next run
 	window := time.Duration(s.defaultsDoc().Drafts.PresenceSeconds.Value) * time.Second
 	s.drafts = drafts.NewStore(time.Now, window)
 	s.mixes = mixes.NewService(s.drafts, s.defaultsDoc)

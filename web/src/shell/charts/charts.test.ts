@@ -250,4 +250,44 @@ describe("analytics presets", () => {
     const bar: AnalyticsSpec = { kind: "bar", title: "SDI", categories: ["x", "y"], series: [{ id: "s", label: "S", values: [2, 5] }], stacked: true };
     expect(summarizeAnalytics(bar)).toContain("highest y 5");
   });
+  it("parallel coordinates: one series per line, axes by type, the highlighted line wider and solid", () => {
+    const par: AnalyticsSpec = {
+      kind: "parallel",
+      title: "Sweep",
+      axes: [
+        { id: "lr", label: "peak_lr", type: "log" },
+        { id: "aug", label: "augmentation", type: "category", categories: ["clean", "telephony"] },
+        { id: "wer", label: "val WER" },
+      ],
+      lines: [
+        { id: "r1", label: "run 1", values: [0.0001, "clean", 0.3] },
+        { id: "r2", label: "run 2", values: [0.0003, "telephony", 0.25], highlight: true },
+        { id: "r3", label: "run 3", values: [0.001, "clean", null] },
+      ],
+    };
+    const o = buildOption(par, theme, "s") as {
+      parallelAxis: { dim: number; type: string; data?: string[] }[];
+      series: { type: string; data: unknown[][]; lineStyle: { color: string; width: number; type: unknown } }[];
+    };
+    expect(o.parallelAxis.map((a) => a.type)).toEqual(["log", "category", "value"]);
+    expect(o.parallelAxis[1]?.data).toEqual(["clean", "telephony"]);
+    expect(o.series.map((s) => s.type)).toEqual(["parallel", "parallel", "parallel"]);
+    expect(o.series[2]?.data[0]).toEqual([0.001, "clean", "-"]);
+    expect(o.series[1]?.lineStyle).toMatchObject({ color: "c2", type: "solid" });
+    expect(o.series[1]!.lineStyle.width).toBeGreaterThan(o.series[0]!.lineStyle.width);
+    expect(analyticsTable(par)).toEqual({
+      columns: ["Line", "peak_lr", "augmentation", "val WER"],
+      rows: [
+        ["run 1", 0.0001, "clean", 0.3],
+        ["run 2 (highlighted)", 0.0003, "telephony", 0.25],
+        ["run 3", 0.001, "clean", null],
+      ],
+    });
+    const sum = summarizeAnalytics(par);
+    expect(sum).toContain("3 lines over 3 axes");
+    expect(sum).toContain("augmentation takes 2 values");
+    expect(sum).toContain("val WER 0.25 to 0.3");
+    expect(sum).toContain("Highlighted: run 2.");
+    expect(cursorItems(par).items[2]).toEqual({ seriesIndex: 2, dataIndex: 0, text: "run 3: peak_lr 0.001, augmentation clean, val WER no value" });
+  });
 });
