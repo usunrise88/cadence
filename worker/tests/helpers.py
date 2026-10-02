@@ -25,6 +25,7 @@ def kinds() -> dict[str, KindEntry]:
         "CardOom",
         "Forgetful",
         "SkipsOptional",
+        "Lingering",
         "EnvProbe",
         "Publisher",
         "NonFinite",

@@ -148,4 +148,10 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv))
+    code = main(sys.argv)
+    # The result is written: leave at once. A library may keep non-daemon threads alive (a streamed Hugging Face
+    # dataset abandoned at its cap leaves one per configuration), and a normal exit would wait for them forever while
+    # the lease waits for this process (the replay import on the stand, 2026-10-02).
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(code)

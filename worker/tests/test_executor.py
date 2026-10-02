@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import threading
 from pathlib import Path
+from typing import Any
 
 import pytest
 from helpers import lease, runner
@@ -246,3 +247,12 @@ def test_an_optional_output_may_stay_unwritten(tmp_path: Path) -> None:
     out = runner(tmp_path, lease("SkipsOptional"))[0].run()
     assert out["state"] == "done", out
     assert set(out.get("outputs") or {}) == {"out"}
+
+
+def test_a_lingering_library_thread_does_not_hold_the_lease(tmp_path: Path) -> None:
+    done: dict[str, Any] = {}
+    t = threading.Thread(target=lambda: done.update(runner(tmp_path, lease("Lingering"))[0].run()), daemon=True)
+    t.start()
+    t.join(timeout=60)
+    assert not t.is_alive(), "the step process never exited: a non-daemon thread held it"
+    assert done["state"] == "done", done
