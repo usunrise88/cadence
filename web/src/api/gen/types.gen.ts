@@ -5330,6 +5330,10 @@ export type EvalNew = {
      */
     decoding?: Array<EvalDecodingVariant>;
     /**
+     * The robustness axis: augmentation profiles of the project (augment/<name>.yaml@<commit>) applied to the golden sets before transcription; none is always included; default [{profile: none}]
+     */
+    augmentations?: Array<EvalAugmentationVariant>;
+    /**
      * The baseline model (ver_…, @alias, base-model/<name> or model/<name>); default the project's @baseline, else its default base model
      */
     baseline?: string;
@@ -5571,6 +5575,10 @@ export type EvalCell = {
     goldenSetVersionId: string;
     profile: string;
     decodingIndex: number;
+    /**
+     * Index into the eval's augmentations (0: none)
+     */
+    augmentationIndex?: number;
     decodingHash: string;
     modelKey: string;
     state: EvalCellState;
@@ -5589,6 +5597,7 @@ export type EvalCell = {
     summary?: EvalSummary;
     delta?: EvalDelta;
     worst?: Array<EvalUtterance>;
+    metrics?: EvalCellMetrics;
 };
 
 export type EvalGateCheck = {
@@ -5645,6 +5654,10 @@ export type Eval = {
      */
     primaryProfile: string;
     decoding: Array<EvalDecoding>;
+    /**
+     * The robustness axis: index 0 is always none (phase 3 · stream R)
+     */
+    augmentations?: Array<EvalAugmentation>;
     significance: EvalSignificance;
     /**
      * The pipeline run computing the missing cells (absent when every cell was cached)
@@ -5657,6 +5670,10 @@ export type Eval = {
      * Absent in evals.list
      */
     cells?: Array<EvalCell>;
+    /**
+     * The robustness matrix when the eval has augmentations beyond none (absent in evals.list)
+     */
+    robustness?: Array<EvalRobustnessRow>;
     rev: number;
     actor: Actor;
     createdAt: string;
@@ -5673,6 +5690,10 @@ export type EvalPlanCell = {
     goldenSetVersionId: string;
     profile: string;
     decodingIndex: number;
+    /**
+     * Index into augmentations (0: none)
+     */
+    augmentationIndex?: number;
     decodingHash: string;
     modelKey: string;
     cached: boolean;
@@ -5686,6 +5707,10 @@ export type EvalPlan = {
     profiles: Array<EvalProfile>;
     primaryProfile: string;
     decoding: Array<EvalDecoding>;
+    /**
+     * The robustness axis (phase 3 · stream R)
+     */
+    augmentations?: Array<EvalAugmentation>;
     significance: EvalSignificance;
     cells: Array<EvalPlanCell>;
     cellsCached: number;
@@ -5811,6 +5836,180 @@ export type ModelVersion = RegistryVersion & {
 
 export type ModelVersionList = {
     items: Array<ModelVersion>;
+};
+
+export type EvalAugmentationVariant = {
+    /**
+     * none, or an augmentation profile of the project repository at a commit: augment/<name>.yaml@<commit sha>
+     */
+    profile: string;
+    /**
+     * Seed of the augmentation draw; default the profile file's seed, else augment.seed
+     */
+    seed?: number;
+};
+
+/**
+ * One augmentation of an eval (the robustness axis): none, or a profile applied by augment_dataset before transcription
+ */
+export type EvalAugmentation = {
+    index: number;
+    /**
+     * none or augment/<name>.yaml@<commit>
+     */
+    profile: string;
+    /**
+     * The profile's name
+     */
+    name?: string;
+    seed?: number;
+    /**
+     * sha256 of the resolved profile (transforms and seed); the cell's decoding hash, and so its eval-record key, includes it
+     */
+    hash?: string;
+    /**
+     * The rendered augment_profile artifact (b3:…)
+     */
+    artifact?: string;
+    /**
+     * The noise bank version (ver_…) the noise transform mixes from
+     */
+    noiseBank?: string;
+    /**
+     * The resolved transforms (defaults.yaml augment.* where the file is silent)
+     */
+    transforms?: {
+        [key: string]: unknown;
+    };
+};
+
+export type EvalMetricUnavailable = {
+    metric: 'entities' | 'latency';
+    reason: string;
+};
+
+export type EvalEntityClass = {
+    /**
+     * An ITN class of the language pack (number, phone, date, amount, …)
+     */
+    class: string;
+    refEntities: number;
+    hypEntities: number;
+    correct: number;
+    /**
+     * correct / refEntities (absent or null without reference entities)
+     */
+    accuracy?: number;
+    /**
+     * correct / hypEntities
+     */
+    precision?: number;
+};
+
+/**
+ * Entity accuracy of a cell (entity_score): the pack's ITN classes compared between references and hypotheses; reported, not gated
+ */
+export type EvalEntityScores = {
+    scorer: string;
+    /**
+     * The metric_scores artifact (b3:…)
+     */
+    scores?: string;
+    available: boolean;
+    reason?: string;
+    /**
+     * {locale, commit}: the itn.yaml the classes came from
+     */
+    itn?: {
+        [key: string]: unknown;
+    };
+    utterances?: number;
+    utterancesWithEntities?: number;
+    refEntities: number;
+    hypEntities?: number;
+    correct: number;
+    accuracy?: number;
+    precision?: number;
+    classes?: Array<EvalEntityClass>;
+};
+
+/**
+ * Latency to final at real-time pace (R54, latency_score): speech end (frame VAD) to the partial whose text is final
+ */
+export type EvalLatencyScores = {
+    scorer: string;
+    /**
+     * The metric_scores artifact (b3:…)
+     */
+    scores?: string;
+    available: boolean;
+    reason?: string;
+    /**
+     * simulated: emit times at real-time pace from a file decode's compute times; realtime: a decode run at real-time pace
+     */
+    pace?: 'simulated' | 'realtime' | 'mixed';
+    /**
+     * Where utterance ends come from
+     */
+    utteranceEnd?: 'vad';
+    /**
+     * {kind, model, revision, …} of the VAD step
+     */
+    vad?: {
+        [key: string]: unknown;
+    };
+    profile?: string;
+    utterances?: number;
+    /**
+     * Utterances with speech and a non-empty final
+     */
+    measured: number;
+    p50Ms?: number;
+    p95Ms?: number;
+    meanMs?: number;
+    maxMs?: number;
+    /**
+     * Finals emitted before the VAD's speech end (counted as 0 ms)
+     */
+    earlyFinals?: number;
+    noSpeech?: number;
+    emptyFinals?: number;
+};
+
+/**
+ * Metrics beside WER, kept with the cell's eval record (absent while their steps run)
+ */
+export type EvalCellMetrics = {
+    entities?: EvalEntityScores;
+    latency?: EvalLatencyScores;
+    /**
+     * Metrics this cell does not get, and why
+     */
+    unavailable?: Array<EvalMetricUnavailable>;
+};
+
+/**
+ * One cell of the robustness matrix (golden set × augmentation × latency profile): WER under the augmentation against the same cell without it
+ */
+export type EvalRobustnessRow = {
+    role: EvalCellRole;
+    goldenSetVersionId: string;
+    profile: string;
+    decodingIndex: number;
+    augmentationIndex: number;
+    cellId: string;
+    /**
+     * WER under the augmentation (absent until scored)
+     */
+    wer?: number;
+    /**
+     * WER of the same cell without augmentation
+     */
+    werNone?: number;
+    /**
+     * wer − werNone (absolute, a fraction)
+     */
+    degradation?: number;
 };
 
 /**

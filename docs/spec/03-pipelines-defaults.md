@@ -99,6 +99,10 @@ Framework code stops at the role steps of a model family; everything after them 
 | `normalizer` | A scoring normalizer version rendered by the control plane: the `NormalizerPayload` as JSON (`application/json`, `meta: {versionId}`), as a `base_model` artifact is rendered from its version (R21; 02 "Evaluation entities") |
 | `boost_list` | One boost list of a language pack (`lang/<locale>/boost/<domain>.txt`) with its weight, an optional input of a transcribe step; the decoding hash includes its hash and the weight (R24) |
 | `scores` | A directory artifact written by a scorer: `summary.json` and `utterances.jsonl` ("Scorers and metrics" below); the `scores` hook writes the eval record. R42's "eval report" is the `evals.get` view over an eval's cells, not an artifact |
+| `metric_scores` | A directory artifact written by a metric scorer beside WER (`entity_score`, `latency_score`): `summary.json` (`cadence.metric-scores/1`) and `utterances.jsonl`; the `metric_scores` hook keeps the summary beside the cell's eval record (stream R) |
+| `augment_profile` | An augmentation profile (`augment/<name>.yaml` at a commit) resolved with the `augment.*` defaults, with its seed and content hash, rendered by the control plane for `augment_dataset` (stream R) |
+| `itn` | A language pack's `itn.yaml` (classes with patterns and examples) rendered as JSON at the commit that last changed it, read by `entity_score` (stream R) |
+| `vad` | Speech segments per utterance of a dataset (JSON lines: `speech`, `speechEndS`) after a header naming the VAD model; written by a VAD step (`frame_vad`), read by `latency_score` (stream R) |
 | `deployable` | An export (format, files, serving metadata); phase 5 |
 
 Also: `text` (the `echo` check), manifest, waveform peaks, correction batch. A directory artifact carries `meta.layout: dir` (a file `layout: file`), which the worker adds to every output it releases. Scorers, gates, Diff, Audio, Shadow, triage and the Transcription panel read only these types.
@@ -202,6 +206,29 @@ Scorers are neutral core step kinds (CPU, every runtime): they read `hypotheses`
 
 Live tests, paced replays and eval runs compute the streaming metrics from the same partial events, so they agree
 (R54). The conformance suite scores through `wer_score`.
+
+As built (plan stream R; help `steps.augment-dataset`, `steps.entity-score`, `steps.latency-score`, `steps.frame-vad`):
+
+- **Robustness axis.** `evals.new` `augmentations: [{profile: none | augment/<name>.yaml@<commit>, seed?}]` (none is
+  always index 0; target golden sets only). The control plane renders the profile with `augment.*` defaults into an
+  `augment_profile` artifact; the core kind `augment_dataset@1` applies it deterministically (per-utterance seed from
+  the profile's seed and the audio hash; speed, noise from a noise bank, level, band-limit, G.711 μ-law/A-law; GSM-FR,
+  AMR-NB and Opus are left out of the draw and reported) and writes a `dataset` of purpose `augmented`, which is never
+  registered. The augmentation (kind, profile hash, seed) enters the cell's decoding hash, so unaugmented records keep
+  their keys. `evals.get` answers the robustness matrix (each augmented cell's WER against the same cell without).
+- **Metrics beside WER** are a second artifact type, `metric_scores` (`summary.json` `cadence.metric-scores/1` and
+  `utterances.jsonl`), not an extension of `scores` (so `wer_score@1` and its records stay as they are). They are kept
+  in `eval_metrics` beside the record (key: model × golden set × decoding hash × scorer × the configuration read) and
+  shown per cell under `metrics`; reported, not gated.
+- **Entity accuracy** (`entity_score@1`): the classes of the pack's `itn.yaml` (rendered as an `itn` artifact at the
+  commit that last changed it), both texts first converted with the pack's examples (spoken → written), overlaps
+  resolved longest first, multiset match per class.
+- **Latency to final** (`latency_score@1`): the first partial whose text is final minus the utterance end from a
+  `vad` artifact. Eval decodes run faster than real time, so emit times at real-time pace are simulated from the
+  decode's own compute times (`emit[k] = max(audioOffset[k], emit[k−1]) + Δemit[k]`, the batch's streams decoded
+  together); a decode marked `pace: realtime` is used as is. Utterance ends come from the NeMo pack's `frame_vad@1`
+  (NVIDIA Frame-VAD Multilingual MarbleNet v2.0, NVIDIA Open Model License, checked against R26 on 2026-10-02); Go
+  finds the VAD as the newest kind that turns a `dataset` into a `vad`. Without one, latency is reported unavailable.
 
 ### What derives from the schema
 

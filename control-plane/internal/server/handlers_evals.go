@@ -71,6 +71,9 @@ func (s *Server) EvalsNew(ctx context.Context, req api.EvalsNewRequestObject) (a
 	for _, d := range deref(b.Decoding) {
 		in.Decoding = append(in.Decoding, evals.DecodingIn{Boost: d.Boost, Weight: d.Weight})
 	}
+	for _, a := range deref(b.Augmentations) {
+		in.Augmentations = append(in.Augmentations, evals.AugmentationIn{Profile: a.Profile, Seed: a.Seed})
+	}
 	if pl, err := s.evals.Prepare(ctx, s.Pool, in); err != nil {
 		ctx = spending(ctx, 0) // the command fails on the same plan; nothing to weigh
 	} else {

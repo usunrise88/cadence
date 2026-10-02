@@ -3056,7 +3056,7 @@
     {
       "name": "evals.get",
       "title": "Get an eval with its cells, deltas against the baseline with confidence intervals, and the worst utterances of a cell",
-      "description": "An eval: status, progress, and one cell per role (subject, baseline) × golden set × profile × decoding with WER, CER, the punctuation-insensitive WER, substitutions / deletions / insertions, duration buckets and partial stability; subject cells carry the delta against the baseline's cell with a paired blockwise bootstrap interval (significant when it excludes zero). worst=N adds the N utterances with the most errors to each subject cell that passes the filters (cell=evc_… for one cell): reference, hypothesis and the alignment ops (=, S, D, I). Filters: goldenSet, profile, role.",
+      "description": "An eval: status, progress, and one cell per role (subject, baseline) × golden set × profile × decoding with WER, CER, the punctuation-insensitive WER, substitutions / deletions / insertions, duration buckets and partial stability; subject cells carry the delta against the baseline's cell with a paired blockwise bootstrap interval (significant when it excludes zero). worst=N adds the N utterances with the most errors to each subject cell that passes the filters (cell=evc_… for one cell): reference, hypothesis and the alignment ops (=, S, D, I). Filters: goldenSet, profile, role. Each cell's metrics carry entity accuracy for the language pack's ITN classes and latency to final (p50/p95 ms, real-time pace) when available, else the reason; with augmentations, robustness lists each augmented cell's WER against the same cell without augmentation (reported, not gated).",
       "method": "GET",
       "path": "/evals/{id}",
       "inputSchema": {
@@ -3205,7 +3205,7 @@
     {
       "name": "evals.new",
       "title": "Evaluate a checkpoint, model or base model against the baseline on golden sets × latency profiles × decoding; ?dryRun=true answers the plan",
-      "description": "Run the eval matrix (R20–R24): subject (exactly one of checkpointId ckp_…, modelVersionId or baseModelVersionId ver_…) × golden sets × latency profiles × decoding variants, each cell compared with the same cell of the baseline. Everything is optional but the subject: golden sets default to the ones the project's gates.yaml names (target and replay), else its adopted golden sets; profiles to eval.matrix_profiles the model family declares, always with the primary profile; decoding to [{boost: none}]; baseline to the project's @baseline alias, else its default base model. Cells already in the eval records (any project, same weights × golden set × normalizer × decoding × scorer) are reused; only missing cells run (baseline cells included). Always call it with dryRun=true first: the answer is the plan — cells cached and to compute and the GPU-hour estimate. Without dryRun it answers 201 with the eval (follow it with evals.get; eval.{id}.progress reports cells done), or 202 with an approvalId when the estimate exceeds today's GPU budget. Then evals.gate applies the project's gate. Pass dryRun=true to see what would happen without changing anything.",
+      "description": "Run the eval matrix (R20–R24): subject (exactly one of checkpointId ckp_…, modelVersionId or baseModelVersionId ver_…) × golden sets × latency profiles × decoding variants, each cell compared with the same cell of the baseline. Everything is optional but the subject: golden sets default to the ones the project's gates.yaml names (target and replay), else its adopted golden sets; profiles to eval.matrix_profiles the model family declares, always with the primary profile; decoding to [{boost: none}]; augmentations (the robustness axis) to [{profile: none}] — add {profile: augment/\u003cname\u003e.yaml@\u003ccommit\u003e, seed?} to decode the golden sets also through that augmentation profile; baseline to the project's @baseline alias, else its default base model. Cells already in the eval records (any project, same weights × golden set × normalizer × decoding × scorer) are reused; only missing cells run (baseline cells included). Always call it with dryRun=true first: the answer is the plan — cells cached and to compute and the GPU-hour estimate. Without dryRun it answers 201 with the eval (follow it with evals.get; eval.{id}.progress reports cells done), or 202 with an approvalId when the estimate exceeds today's GPU budget. Then evals.gate applies the project's gate. Pass dryRun=true to see what would happen without changing anything.",
       "method": "POST",
       "path": "/projects/{p}/evals",
       "inputSchema": {
@@ -3214,6 +3214,29 @@
           "body": {
             "additionalProperties": false,
             "properties": {
+              "augmentations": {
+                "description": "The robustness axis: augmentation profiles of the project (augment/\u003cname\u003e.yaml@\u003ccommit\u003e) applied to the golden sets before transcription; none is always included; default [{profile: none}]",
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "profile": {
+                      "description": "none, or an augmentation profile of the project repository at a commit: augment/\u003cname\u003e.yaml@\u003ccommit sha\u003e",
+                      "type": "string"
+                    },
+                    "seed": {
+                      "description": "Seed of the augmentation draw; default the profile file's seed, else augment.seed",
+                      "maximum": 2147483647,
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "profile"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
               "baseline": {
                 "description": "The baseline model (ver_…, @alias, base-model/\u003cname\u003e or model/\u003cname\u003e); default the project's @baseline, else its default base model",
                 "type": "string"

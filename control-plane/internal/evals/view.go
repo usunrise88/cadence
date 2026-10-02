@@ -18,6 +18,7 @@ type CellView struct {
 	GoldenSetVersionID string          `json:"goldenSetVersionId"`
 	Profile            string          `json:"profile"`
 	DecodingIndex      int             `json:"decodingIndex"`
+	AugmentationIndex  int             `json:"augmentationIndex"`
 	DecodingHash       string          `json:"decodingHash"`
 	ModelKey           string          `json:"modelKey"`
 	State              string          `json:"state"`
@@ -27,6 +28,7 @@ type CellView struct {
 	Summary            json.RawMessage `json:"summary,omitempty"`
 	Delta              json.RawMessage `json:"delta,omitempty"`
 	Worst              []Worst         `json:"worst,omitempty"`
+	Metrics            *MetricsView    `json:"metrics,omitempty"`
 }
 
 // Progress counts an eval's cells.
@@ -48,12 +50,14 @@ type View struct {
 	Profiles       []Profile       `json:"profiles"`
 	PrimaryProfile string          `json:"primaryProfile"`
 	Decoding       []Decoding      `json:"decoding"`
+	Augmentations  []Augmentation  `json:"augmentations"`
 	Significance   Significance    `json:"significance"`
 	PipelineRunID  string          `json:"pipelineRunId,omitempty"`
 	Progress       Progress        `json:"progress"`
 	Estimate       Estimate        `json:"estimate"`
 	Gate           json.RawMessage `json:"gate,omitempty"`
 	Cells          []CellView      `json:"cells,omitempty"`
+	Robustness     []RobustnessRow `json:"robustness,omitempty"`
 	Rev            int             `json:"rev"`
 	Actor          auth.Actor      `json:"actor"`
 	CreatedAt      time.Time       `json:"createdAt"`
@@ -90,7 +94,7 @@ func (vq ViewQuery) matches(c Cell, gsName string) bool {
 func (s *Service) View(ctx context.Context, q storage.Querier, e Eval, vq ViewQuery) (View, error) {
 	v := View{
 		ID: e.ID, ProjectID: e.ProjectID, Status: e.Status, Error: e.Error, Subject: e.Subject, Baseline: e.Baseline,
-		GoldenSets: e.GoldenSets, Profiles: e.Profiles, PrimaryProfile: e.PrimaryProfile, Decoding: e.Decoding,
+		GoldenSets: e.GoldenSets, Profiles: e.Profiles, PrimaryProfile: e.PrimaryProfile, Decoding: e.Decoding, Augmentations: e.Augmentations,
 		Significance: e.Significance, PipelineRunID: e.PipelineRunID, Estimate: e.Estimate, Rev: e.Rev, Actor: e.Actor,
 		CreatedAt: e.CreatedAt, UpdatedAt: e.UpdatedAt, FinishedAt: e.FinishedAt,
 	}
@@ -128,7 +132,10 @@ func (s *Service) View(ctx context.Context, q storage.Querier, e Eval, vq ViewQu
 			continue
 		}
 		cv := CellView{ID: c.ID, Role: c.Role, GoldenSetVersionID: c.GoldenSetVersionID, Profile: c.Profile, DecodingIndex: c.DecodingIndex,
-			DecodingHash: c.DecodingHash, ModelKey: c.ModelKey, State: c.State, RecordID: c.RecordID}
+			AugmentationIndex: c.AugmentationIndex, DecodingHash: c.DecodingHash, ModelKey: c.ModelKey, State: c.State, RecordID: c.RecordID}
+		if cv.Metrics, err = metricsOf(ctx, q, c); err != nil {
+			return View{}, err
+		}
 		if c.State == CellQueued && running[c.ScoreStep] {
 			cv.State = CellRunning
 		}
@@ -145,6 +152,7 @@ func (s *Service) View(ctx context.Context, q storage.Querier, e Eval, vq ViewQu
 		}
 		v.Cells = append(v.Cells, cv)
 	}
+	v.Robustness = robustness(cells, recs)
 	return v, nil
 }
 
