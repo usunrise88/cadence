@@ -65,7 +65,7 @@ func (s *Server) EvalsNew(ctx context.Context, req api.EvalsNewRequestObject) (a
 	b := req.Body
 	actor, _ := auth.FromContext(ctx)
 	in := evals.NewInput{ProjectID: p.ID, Actor: actor, GoldenSets: deref(b.GoldenSets), Profiles: deref(b.Profiles),
-		Baseline: deref(b.Baseline), Priority: deref(b.Priority),
+		Baseline: deref(b.Baseline), Priority: deref(b.Priority), Languages: deref(b.Languages),
 		Subject: evals.SubjectRef{CheckpointID: deref(b.Subject.CheckpointId), ModelVersionID: deref(b.Subject.ModelVersionId),
 			BaseModelVersionID: deref(b.Subject.BaseModelVersionId)}}
 	for _, d := range deref(b.Decoding) {

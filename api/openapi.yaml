@@ -3128,7 +3128,7 @@ paths:
       tags: [registry]
       x-cadence:
         toolDescription: >
-          List scoring normalizer versions (normalizer/basic, normalizer/he-IL, …): the Unicode form, case folding,
+          List scoring normalizer versions (normalizer/basic, normalizer/he-il, …): the Unicode form, case folding,
           punctuation, combining-mark removal and literal mappings applied to reference and hypothesis before WER is
           computed. Every golden set is frozen with one normalizer version, so its scores stay comparable over time.
       parameters:
@@ -7702,6 +7702,10 @@ components:
         augmentations: { type: array, items: { $ref: "#/components/schemas/EvalAugmentationVariant" }, description: "The robustness axis: augmentation profiles of the project (augment/<name>.yaml@<commit>) applied to the golden sets before transcription; none is always included; default [{profile: none}]" }
         baseline: { type: string, description: "The baseline model (ver_…, @alias, base-model/<name> or model/<name>); default the project's @baseline, else its default base model" }
         priority: { type: integer, minimum: 0, maximum: 100, description: "Queue priority of the eval's steps" }
+        languages:
+          type: object
+          additionalProperties: { type: string, minLength: 1 }
+          description: "Golden-set locale → the language the models decode it in (the transcribe kind's language parameter), for both the subject and the baseline, e.g. {\"sr-RS\": \"hr-HR\"} when the model has no prompt for the locale and was fine-tuned under a neighbour's; default each golden set's own locale. Part of the decoding hash"
     EvalModel:
       type: object
       description: A model an eval compares (the subject or the baseline)
@@ -7728,6 +7732,7 @@ components:
         hours: { type: number, format: double }
         groups: { type: string, enum: [call, speaker, utterance], description: The bootstrap's resampling unit }
         replay: { type: boolean, description: "A replay golden set (the gate's replay list, or a language outside the project's locales): scored at the primary profile only" }
+        decodeAs: { type: string, description: "The language the models decode this set in when evals.new mapped its locale (languages)" }
     EvalProfile:
       type: object
       required: [name, latencyMs]

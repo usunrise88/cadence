@@ -593,6 +593,7 @@ var Operations = []Operation{
 			{Name: "baseline", Type: "string", Description: "The baseline model (ver_…, @alias, base-model/<name> or model/<name>); default the project's @baseline, else its default base model"},
 			{Name: "decoding", Type: "array of object", Description: "Decoding variants (R24); default [{boost: none}]"},
 			{Name: "goldenSets", Type: "array of string", Description: "Golden set versions (ver_…, @alias, golden-set/<name>); default: those gates.yaml names, else the project's adopted golden sets"},
+			{Name: "languages", Type: "object", Description: "Golden-set locale → the language the models decode it in (the transcribe kind's language parameter), for both the subject and the baseline, e.g. {\"sr-RS\": \"hr-HR\"} when the model has no prompt for the locale and was fine-tuned under a neighbour's; default each golden set's own locale. Part of the decoding hash"},
 			{Name: "priority", Type: "integer", Description: "Queue priority of the eval's steps"},
 			{Name: "profiles", Type: "array of string", Description: "Latency profiles (R43); default: eval.matrix_profiles that the model families declare, plus the primary profile"},
 			{Name: "subject", Required: true, Type: "object", Description: "Exactly one of the three"},
@@ -966,7 +967,7 @@ var Operations = []Operation{
 	{
 		ID: "normalizers.list", Entity: "normalizers", Verb: "list", Method: "GET", Path: "/registry/normalizers",
 		Summary:     "List scoring normalizer versions (the text rules both sides of a WER are compared after, R21)",
-		Description: "List scoring normalizer versions (normalizer/basic, normalizer/he-IL, …): the Unicode form, case folding, punctuation, combining-mark removal and literal mappings applied to reference and hypothesis before WER is computed. Every golden set is frozen with one normalizer version, so its scores stay comparable over time.",
+		Description: "List scoring normalizer versions (normalizer/basic, normalizer/he-il, …): the Unicode form, case folding, punctuation, combining-mark removal and literal mappings applied to reference and hypothesis before WER is computed. Every golden set is frozen with one normalizer version, so its scores stay comparable over time.",
 		Params: []Param{
 			{Name: "collection", In: "query", Flag: "collection", Type: "string", Description: "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)"},
 			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated"}},

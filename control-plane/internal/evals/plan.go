@@ -53,6 +53,9 @@ type NewInput struct {
 	Augmentations []AugmentationIn
 	Baseline      string
 	Priority      int
+	// Languages maps a golden-set locale to the language both models decode it in (a model fine-tuned under a
+	// neighbour's prompt, e.g. sr-RS under hr-HR); unmapped locales decode as themselves.
+	Languages map[string]string
 }
 
 // PlanCell is one cell of a planned eval (the contract's EvalPlanCell).
@@ -162,6 +165,21 @@ func (s *Service) Prepare(ctx context.Context, q storage.Querier, in NewInput) (
 	}
 	if pl.GoldenSets, err = s.resolveGoldenSets(ctx, q, p, in.GoldenSets, gf.Gate); err != nil {
 		return Plan{}, err
+	}
+	used := map[string]bool{}
+	for i, g := range pl.GoldenSets {
+		if l, ok := in.Languages[g.Locale]; ok {
+			used[g.Locale] = true
+			if l != g.Locale {
+				pl.GoldenSets[i].DecodeAs = l
+			}
+		}
+	}
+	for _, loc := range sortedKeys(in.Languages) {
+		if !used[loc] {
+			return Plan{}, problems.Validation([]problems.FieldError{{Path: "/languages/" + loc,
+				Message: fmt.Sprintf("no golden set of this eval has locale %s", loc)}})
+		}
 	}
 	if pl.Profiles, pl.PrimaryProfile, err = chooseProfiles(d, gf.Gate.PrimaryProfile, in.Profiles, pl.Subject.family, pl.Baseline.family); err != nil {
 		return Plan{}, err
@@ -836,8 +854,8 @@ func (b *builder) kinds(ctx context.Context, m *Model) error {
 // unaugmented cell hashes exactly as before the robustness axis existed, so its records stay valid as none.
 func (b *builder) decoding(ms *modelSteps, profile string, gs GoldenSet, d Decoding, a Augmentation) (map[string]any, string) {
 	dec := map[string]any{"transcribe": ms.transcribe.Ref(), "profile": profile}
-	if ms.localeParam != "" && gs.Locale != "" {
-		dec[ms.localeParam] = gs.Locale
+	if ms.localeParam != "" && gs.decodeLanguage() != "" {
+		dec[ms.localeParam] = gs.decodeLanguage()
 	}
 	if d.Boost != "none" {
 		dec["boost"] = map[string]any{"list": d.Artifact, "weight": *d.Weight}
@@ -1217,8 +1235,8 @@ func (g *gen) unit(ctx context.Context, u *unit) error {
 	if _, ok := kindParams(ms.transcribe)["profile"]; ok {
 		tp["profile"] = u.profile
 	}
-	if ms.localeParam != "" && gs.Locale != "" {
-		tp[ms.localeParam] = gs.Locale
+	if ms.localeParam != "" && gs.decodeLanguage() != "" {
+		tp[ms.localeParam] = gs.decodeLanguage()
 	}
 	g.params[tid] = tp
 	g.estimates[tid] = gs.Hours * b.perAudioHour * 3600

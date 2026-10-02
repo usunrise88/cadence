@@ -137,8 +137,19 @@ type GoldenSet struct {
 	Hours               float64 `json:"hours"`
 	Groups              string  `json:"groups"`
 	Replay              bool    `json:"replay,omitempty"` // a replay golden set: scored at the primary profile only
+	// DecodeAs is the language the models decode the set in when evals.new mapped its locale (Languages); empty
+	// means the set's own locale.
+	DecodeAs string `json:"decodeAs,omitempty"`
 
 	datasetHash string
+}
+
+// decodeLanguage is the language a transcribe step decodes the set in.
+func (g GoldenSet) decodeLanguage() string {
+	if g.DecodeAs != "" {
+		return g.DecodeAs
+	}
+	return g.Locale
 }
 
 // Decoding is one decoding variant of an eval (R24; the contract's EvalDecoding).

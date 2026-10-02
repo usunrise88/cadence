@@ -5367,6 +5367,12 @@ export type EvalNew = {
      * Queue priority of the eval's steps
      */
     priority?: number;
+    /**
+     * Golden-set locale → the language the models decode it in (the transcribe kind's language parameter), for both the subject and the baseline, e.g. {"sr-RS": "hr-HR"} when the model has no prompt for the locale and was fine-tuned under a neighbour's; default each golden set's own locale. Part of the decoding hash
+     */
+    languages?: {
+        [key: string]: string;
+    };
 };
 
 /**
@@ -5417,6 +5423,10 @@ export type EvalGoldenSet = {
      * A replay golden set (the gate's replay list, or a language outside the project's locales): scored at the primary profile only
      */
     replay?: boolean;
+    /**
+     * The language the models decode this set in when evals.new mapped its locale (languages)
+     */
+    decodeAs?: string;
 };
 
 export type EvalProfile = {

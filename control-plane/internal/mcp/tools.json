@@ -3271,6 +3271,14 @@
                 },
                 "type": "array"
               },
+              "languages": {
+                "additionalProperties": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "description": "Golden-set locale → the language the models decode it in (the transcribe kind's language parameter), for both the subject and the baseline, e.g. {\"sr-RS\": \"hr-HR\"} when the model has no prompt for the locale and was fine-tuned under a neighbour's; default each golden set's own locale. Part of the decoding hash",
+                "type": "object"
+              },
               "priority": {
                 "description": "Queue priority of the eval's steps",
                 "maximum": 100,
@@ -5399,7 +5407,7 @@
     {
       "name": "normalizers.list",
       "title": "List scoring normalizer versions (the text rules both sides of a WER are compared after, R21)",
-      "description": "List scoring normalizer versions (normalizer/basic, normalizer/he-IL, …): the Unicode form, case folding, punctuation, combining-mark removal and literal mappings applied to reference and hypothesis before WER is computed. Every golden set is frozen with one normalizer version, so its scores stay comparable over time.",
+      "description": "List scoring normalizer versions (normalizer/basic, normalizer/he-il, …): the Unicode form, case folding, punctuation, combining-mark removal and literal mappings applied to reference and hypothesis before WER is computed. Every golden set is frozen with one normalizer version, so its scores stay comparable over time.",
       "method": "GET",
       "path": "/registry/normalizers",
       "inputSchema": {

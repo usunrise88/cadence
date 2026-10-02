@@ -210,6 +210,33 @@ func TestEvalsEndToEnd(t *testing.T) {
 		t.Fatalf("a dry run wrote %d evals", n)
 	}
 
+	// languages: a locale the models decode as another (a checkpoint fine-tuned under a neighbour's prompt) shows on
+	// the golden set and changes the cells' decoding hash; a locale no golden set has is refused.
+	type langPlan struct {
+		GoldenSets []struct{ Locale, DecodeAs string }
+		Cells      []struct{ GoldenSetVersionID, DecodingHash string }
+	}
+	var plain, mapped langPlan
+	_ = json.Unmarshal(raw, &plain)
+	mbody := strings.TrimSuffix(body, "}") + `,"languages":{"he-IL":"ar-AR"}}`
+	status, mraw := newEval("evalp", mbody, "dryRun=true")
+	if status != 200 {
+		t.Fatalf("dry run with languages %d: %s", status, mraw)
+	}
+	_ = json.Unmarshal(mraw, &mapped)
+	for i, g := range mapped.GoldenSets {
+		if (g.Locale == "he-IL") != (g.DecodeAs == "ar-AR") {
+			t.Fatalf("golden set %d decodes as %q: %s", i, g.DecodeAs, mraw)
+		}
+	}
+	for i, c := range mapped.Cells {
+		if (c.GoldenSetVersionID == golden["fx-golden-he"]) == (c.DecodingHash == plain.Cells[i].DecodingHash) {
+			t.Fatalf("cell %d: decoding hash %s vs %s", i, c.DecodingHash, plain.Cells[i].DecodingHash)
+		}
+	}
+	expectProblem(t, e.do("POST", "/api/projects/evalp/evals?dryRun=true", strings.TrimSuffix(body, "}")+`,"languages":{"xx-XX":"he-IL"}}`,
+		"Idempotency-Key", e.key()), 422, "validation-failed")
+
 	// The real eval runs on the fake worker; the scores hook links every cell to a new record.
 	status, raw = newEval("evalp", body)
 	if status != 201 {
