@@ -432,6 +432,26 @@ trained on, against the baseline, with confidence intervals, and a gate turns th
 from phase 2) runs on staging and `evals.gate` returns a verdict (target-locale WER vs baseline with bootstrap CI,
 replay-locale regression ≤ 0.5, deletions/insertions check). The telephone golden set from own calls needs phase 4.
 
+**Gate run (2026-10-02, staging).** `evals.gate` returned a verdict on eval `evl_01a0fd78…` of the phase-2 Serbian
+checkpoint (`ckp_01a0f902…`, run `run_01a0f902…`, 1 000 steps on `dataset/fleurs-sr-latn` under the `hr-HR` prompt, no
+replay) against the base model, on 35 frozen golden sets: `golden-set/fleurs-sr-latn-test` (700 utterances, 2.1 h;
+FLEURS he was replaced by the locale the phase-2 checkpoint was trained on) and the 34 replay golden sets (33 h).
+76 cells, 79 audio hours computed in 25 minutes (0.81 GPU-hours of transcribe steps), `languages: {sr-RS: hr-HR}`.
+- Verdict **failed**, as it should: the target passed — WER 0.346 → 0.256 at `160ms`, Δ −0.090 [−0.101, −0.081], and
+  deletions were not traded for insertions — but 32 of 34 replay sets regressed far beyond 0.5 points (e.g. ru-RU
+  0.149 → 0.447, de-DE 0.109 → 0.326, uk-UA 0.167 → 0.717): catastrophic forgetting of a run without replay, which is
+  exactly what the gate is for. hr-HR held (+0.004, interval includes zero); th-TH passed only because the base model
+  emits nothing for it (below).
+- The target across profiles (subject / baseline WER): 80 ms 0.266 / 0.356, 160 ms 0.256 / 0.346, 320 ms 0.246 /
+  0.333, 1120 ms 0.234 / 0.310; unstable partial word ratio 0.61, 0.55, 0.40, 0.16; latency to final (simulated pace,
+  frame-VAD ends) p50 ≈ 1.05–1.15 s at every profile — the endpointer, not the look-ahead, dominates it. The choice of
+  the primary profile (160 ms is not a trained look-ahead, A5) waits for the owner (07).
+- Found and fixed on the way: leakage checks counted a trainable import's test split (now train and validation only);
+  evals could not decode a locale the model has no prompt for (`evals.new.languages`); zh/ja/th were scored by words
+  over unsegmented text (now CER, `eval.character_error_languages`); the eval GPU estimate was 8× high (now 0.015
+  GPU-hours per audio hour, measured). Open: the base model's empty output for th-TH (checked with stream T's
+  decoder).
+
 Decide before starting:
 - [x] **decide** → *R20* The latency set and primary cell (`[56,1]` vs `[56,0]`, offline vs `[56,13]`) (C2), named as
       latency profiles (R43) — `160ms` primary, matrix `80ms`/`160ms`/`1120ms` (03 "Key defaults", `eval.*`)
