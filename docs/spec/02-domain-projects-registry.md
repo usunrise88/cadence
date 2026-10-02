@@ -13,17 +13,17 @@ Forty-seven entities across the five blocks, the project layer and the registry 
 | Transcript | Data | Text for an utterance with origin (human, pseudo-label, model id) and confidence | Utterance |
 | Recipe | Data, Training, Eval | A versioned file in the recipes repository: SDP config, mix, training YAML, eval-set definition | Commit SHA |
 | Dataset version | Data | Immutable, fingerprinted selection with splits, statistics and lineage | Utterances, Recipe |
-| Base model | Training | Upstream checkpoint: Hugging Face repo, revision, licence, model family | Model family |
+| Base model | Training | Upstream checkpoint: Hugging Face repo, revision, licence, model family; its registry version is also the first baseline model version ("Evaluation entities" below) | Model family |
 | Mix | Training | Groups, weights, temperature and replay share over dataset versions | Dataset versions, Recipe |
 | Run | Training | One optimisation stage (`run_…`): `init` (`base` or `checkpoint`, R44), model family, mix revision with the content hash of its rendered `input_cfg`, recipe (pipeline at a commit), card, step budget, seed, runtime version (image digest), status mirrored from its pipeline run, parent run for a stage | Base model or Checkpoint, Mix, Recipe, Pipeline run, parent Run |
 | Job | All | A unit of work: a River job (`job_`); a pipeline step runs as a job of kind `step` that waits in the step queue and is leased to a worker (`lse_`) on one card, with resources (`gpu`, `gpus`, memory, disk, job kind), priority, pause, a log file, state | Run, Eval run, Export, Pipeline run |
 | Checkpoint | Training | A `checkpoint` artifact at a step (`ckp_…`): the family's payload, what loading it needs, the tokenizer it was trained with, validation WER, weights hash; trained or averaged (from other checkpoints of the run); ranked by validation WER with the top k kept; optimiser state is a separate `training-state` artifact (R42) | Run, Model family, Artifact, averaged-from Checkpoints |
-| Golden set | Eval | Frozen held-out test set per language and domain, never trainable | Dataset version, Normalizer |
-| Normalizer | Eval | Versioned text normalisation used for scoring one language | — |
-| Eval run | Eval | Checkpoint × golden sets × latency settings | Checkpoint, Golden sets |
-| Eval result | Eval | Per-cell WER, CER, substitutions, deletions, insertions, plus per-utterance rows | Eval run |
-| Gate | Eval | Thresholds and allowed regressions per language, including replay languages | Golden sets |
-| Model version | Deploy | A registered checkpoint with its artifacts (`.nemo`, ONNX, GGUF, Triton repository) and gate verdict | Checkpoint, Eval run |
+| Golden set | Eval (registry) | Frozen held-out test set per language and domain (registry kind `golden_set`, collection `golden-set/<name>`): an eval-only dataset version tied to one scoring normalizer version, never trainable; frozen by `goldenSets.freeze` with approval | Dataset version, Normalizer |
+| Normalizer | Eval (registry) | A scoring normalizer (registry kind `normalizer`, collection `normalizer/<name>`): the versioned text normalisation both sides of a WER are compared after (R21); not the training text style, which is the language pack's | Golden sets, Eval records, Language packs that reference it |
+| Eval | Eval (project) | One evaluation (`evl_`): models (checkpoints, model versions, base model versions) × golden sets × latency profiles × decoding configs, plus the baseline's cells; one cell (`evc_`) per combination, each linked to an Eval record; progress on `eval.{id}.progress` | Checkpoints, Model versions, Golden sets, Eval records, Pipeline run |
+| Eval result | Eval | A cell's `scores` artifact: WER, CER, substitutions, deletions, insertions, `werNoPunct`, duration buckets, partial stability, per-utterance rows with alignment (03 "Scorers and metrics") | Eval record |
+| Gate | Eval (project) | The project's `gates.yaml` in its repository: primary profile, target and replay golden sets, allowed regression, the deletions/insertions check, significance (04 "Block 3"); an eval's verdict records the file's SHA | Golden sets, Evals |
+| Model version | Eval, Deploy (registry) | A checkpoint published by `models.register` once its eval passed the gate (registry kind `model`, collection `model/<name>`, R22): weights hash, family, base model, gate verdict with the gates SHA, lineage, model card; exports (ONNX, Triton repository) join in phase 5 | Checkpoint, Eval, Base model |
 | Deployment | Deploy | A model version on a target at a stage: shadow, canary with traffic share, production | Model version |
 | Promotion | Deploy | Signed record of who moved what to which stage, and why | Deployment, Approval |
 | Production sample | Flywheel | An utterance captured from calls, PII-redacted, with the production hypothesis; published monthly into a registry Source | Deployment |
@@ -39,14 +39,14 @@ Forty-seven entities across the five blocks, the project layer and the registry 
 | Agent profile | Cross-cutting | A project's agent configuration: driver, model, permission preset, references to the committed config files and instructions template | Project, Agent sessions |
 | Compute | Cross-cutting (registry) | A host (`cmp_`) and its cards: card class, memory, memory cap per card, allowed job kinds (training, eval, shadow, export, data), availability windows per job kind (R19; a window without a time zone follows the instance's `policies.timezone`), each card's last worker telemetry, host health from worker heartbeats (`unknown`, `healthy`, `unreachable`); workers (`wrk_`, one per runtime and host) register on it; the control plane owns one slot per card | Jobs, Workers, Mounts reachable from the host |
 | Secret | Cross-cutting (registry) | A named credential (Hugging Face, NGC, GitHub, S3, judge API): name, kind, where it lives; the value never enters the database or an agent context | Mounts, project repositories, jobs |
-| Eval record | Eval (registry) | Cached result for one model version × golden set version × normalizer version × latency setting; project eval runs reuse it and compute only missing cells; the unit an Eval run is assembled from | Model version, Golden set, Normalizer |
+| Eval record | Eval (registry) | Cached result (`erc_`) for one model key × golden set version × normalizer version × decoding hash × scorer version, with its `scores` artifact; evals of every project reuse it and compute only missing cells; the unit an Eval is assembled from | Checkpoint, Model version or Base model; Golden set, Normalizer, `scores` artifact |
 | Saved search | Cross-cutting | A named query in the qualifier language, per user per project; appears as a Library view and in the palette | — |
 | Help article | Cross-cutting (registry, bundled) | Versioned markdown shipped with the app; addressed by slug from panel manifests, step schemas, error types and skills | Panels, Step kinds, error types |
 | Step kind | All (registry) | A versioned worker plugin published by a runtime: parameter schema with x-cadence defaults, artifact types consumed and produced, resource needs, the family role it fills or `neutral`, secret names, help slug | Runtime, Pipelines, Pipeline runs, Help article |
 | Playbook | All (registry) | A pipeline chain with defaults filled in, a prefilled agent prompt and a cost estimate; a button on the Project home and an MCP tool | Pipeline templates, Agent sessions it starts |
 | Template | Cross-cutting (registry) | Bundled, versioned configuration the bootstrap copies into a project: pipeline templates, instruction templates, permission presets, skills; projects.sync diffs a project against the current versions | Projects |
 | Credential | Cross-cutting | A session, invitation, agent token, API key, or a service token (agent host `cah_`, egress proxy `cep_`, worker `cwk_`, one per host): kind, scope, hash, expiry, last use | Project or registry scope; Agent session; Annotation batch; Compute host |
-| Language pack | Data, Eval, Deploy (project) | A locale's directory in the project repository: normalizer, inverse normalisation, transliteration, LID config, boost lists, golden-set recipe | Commit SHA; Evals and Runs pin it |
+| Language pack | Data, Eval, Deploy (project) | A locale's directory in the project repository: the scoring normalizer reference and the training text style, inverse normalisation, transliteration, LID config, boost lists, golden-set recipe (03 "Language packs and hot words") | Commit SHA; Evals and Runs pin it; the Normalizer version it references |
 | Annotation batch | Eval, Flywheel (project) | Items to annotate or triage, guidelines version, annotators, double-annotation sample, agreement, adjudication state | Utterances, Credential (invitation), Golden set it freezes |
 | Experiment | Training (project) | A question, a fixed mix and base, the runs that answer it, an optional sweep definition with a GPU-hour cap, the best run | Runs, Mix, Base model |
 | Augmentation profile | Training, Eval (project) | A versioned file of transforms with probabilities and ranges; telephony by default | Commit SHA; Runs, Eval runs; Noise bank |
@@ -65,7 +65,7 @@ A project is the unit of work — "Hebrew telephony", "Western Balkans regional"
 | Scope | Work entities carry a `projectId`; registry assets do not (see Registry). Work lives under `/projects/{p}/…`, assets under `/registry``/…`; MCP tokens and agent sessions are bound to one project but may read the whole registry |
 | Recipes | One repository per project — a GitHub repository chosen in the wizard or the internal bare repository — with `main` as the project branch; each agent session gets a worktree; a person's edits from the UI commit to `main` directly |
 | Base model | A project has a default base model and may adopt several; a run starts from the default or any adopted base model, and the choice is recorded in lineage |
-| Golden sets and gates | Golden sets live in the registry; a project adopts the ones its gates use; thresholds and replay languages are per project |
+| Golden sets and gates | Golden sets live in the registry; a project adopts the ones its gates use; the gate is the project's `gates.yaml` (thresholds, target and replay golden sets), versioned like any recipe |
 | Budgets | GPU-hours per day, agent spend per day and queue priority are set per project (`budgets.gpuHoursPerDay`, `agentTokensPerDay`, `queuePriority` −100…100, default `defaults.yaml` `budgets.queue_priority_per_project` = 0; `projects.new`/`projects.edit`); the queue interleaves projects by priority — waiting step jobs start by the project's queue priority (read live, so an edit reorders jobs already waiting), then the job's own priority, then first come — and one training slot per card still holds |
 | Sharing | Everything reusable is in the registry: sources, dataset versions, golden sets, normalizers, base models, registered model versions. Projects own mixes, runs, evals, deployments and flywheel state; a model registered by one project can be adopted as base model by another |
 | Workspaces | Layouts are saved per user per project; the URL is `/p/{project}/w/{workspace}` |
@@ -101,7 +101,7 @@ This is the pattern of [W&B Registry](https://docs.wandb.ai/models/registry): or
 
 | Registry — shared, versioned, immutable | Project — the work |
 | --- | --- |
-| Source, Utterance, Dataset version, Golden set, Normalizer, Base model, Model version, Mount, Step kind, Runtime, Model family, Pipeline template, Playbook, Instruction template, Permission preset, Skill; artifacts in the content store | Mix, Run, Checkpoint, Eval run and results, Gate, Deployment, Promotion, Production sample, Signal, Triage item, Correction batch (until packaged), Agent profile, Agent session, Schedule, Approval, workspace layouts |
+| Source, Utterance, Dataset version, Golden set, Normalizer, Base model, Model version, Eval record, Mount, Step kind, Runtime, Model family, Pipeline template, Playbook, Instruction template, Permission preset, Skill; artifacts in the content store | Mix, Run, Checkpoint, Eval and its cells, Gate (`gates.yaml`), Deployment, Promotion, Production sample, Signal, Triage item, Correction batch (until packaged), Agent profile, Agent session, Schedule, Approval, workspace layouts |
 
 Rules:
 
@@ -114,9 +114,9 @@ Rules:
 - Storage: registry assets live in the content store and on mounts; a project repository holds recipes and the lockfile, never data.
 - Deletion: a registry version referenced by anything cannot be deleted; otherwise admin-only soft delete.
 - Events: work events carry `projectId`; registry events carry none, and a client shows them by reference ("used by this project").
-- Adoption re-runs the leakage check: adopting a golden set is blocked if any dataset version the project has trained on overlaps it, until those datasets are re-frozen without the overlap.
+- Adoption re-runs the leakage check: adopting a golden set is blocked (`golden-set-leakage`) if any dataset version the project has trained on overlaps it by fingerprint, until those datasets are re-frozen without the overlap.
 - Production samples, once PII-redacted, are published as a registry Source per deployment target and month; any project adopts them like any other source, and retention applies to the source.
-- Eval results are cached as registry Eval records keyed by model version, golden set version, normalizer version and latency; two projects evaluating the same model on the same set never compute it twice.
+- Eval results are cached as registry Eval records keyed by model key, golden set version, normalizer version, decoding hash and scorer version ("Evaluation entities" below); two projects evaluating the same model on the same set never compute it twice.
 - Templates and skills: bootstrap copies them into the project; projects.sync later diffs the project against Cadence's current templates and skills and offers the update as a draft commit.
 - Runtimes, step kinds and model families are published by workers at start (06 "Worker protocol") and stored as registry versions named by their published JSON; no person registers them, and a runtime beyond the bundled ones needs `runtimes.new` with approval (deferred with the packs beyond NeMo).
 - Step kinds: a version can be deprecated but not removed while any pipeline template or project pipeline pins it; deprecation shows as a warning on the Pipeline run and in the Recipe document.
@@ -154,6 +154,101 @@ What an import step produces and the `dataset` output hook reads (artifact type 
 The hook runs in the transaction that marks the step done: it reads the artifact strictly (unknown fields, missing audio, an audio twice, or counts and hours that disagree with the lines fail the step), ensures the source, upserts utterances by content hash and transcripts with origin, writes fingerprints, and registers a **frozen** `dataset_version` in `dataset/<step param name | header name | source name>`. Its fingerprint is the sha256 of the sorted `[audio hash, split, transcript text]` tuples, so the same content re-imported (in any order, from any pipeline run) returns the version already there. Its payload is the `DatasetPayload` with `sourceIds`, `licence`, hours and counts per split and language, `artifact` (the hash training steps read), `evalOnly`, `splitRule`, `tags` and `lineage` (pipeline run, step, step kind).
 
 Starter pipelines: `pipelines/import.yaml` (one corpus, FLEURS Hebrew as shipped) and `pipelines/replay-base.yaml` (R17: `dataset/replay-base`, ≈ 1 h per locale of FLEURS train across the base model's 34 FLEURS-covered other locales, and one `dataset/replay-golden-<locale>` per locale, FLEURS test ≤ 300 utterances, `evalOnly`, tags `golden`, `replay`).
+
+### Evaluation entities (phase 3)
+
+Golden sets, scoring normalizers, eval records and model versions are registry data; evals, their cells and the gate
+are project work. The plan `docs/review/2026-10-02-phase-3-plan.md` fixes the shapes (decisions 1–7, recorded in
+`00-overview.md`); payload schemas are `GoldenSetPayload`, `NormalizerPayload` and `ModelPayload` in
+`api/openapi.yaml`. IDs: golden sets, normalizers and model versions are registry versions (`ver_`); evals `evl_`,
+cells `evc_`, eval records `erc_`. Events: `entity.golden_set.{id}`, `entity.model.{id}`, `entity.eval.{id}`,
+`eval.{id}.progress`.
+
+**Scoring normalizers (R21).** Scoring and text style are different jobs:
+
+| | Scoring normalizer | Training text style |
+| --- | --- | --- |
+| What it does | The text both reference and hypothesis are compared after; WER is computed on its output | Punctuation, casing and numbers in training targets |
+| Where it lives | Registry kind `normalizer`, collection `normalizer/<name>`, immutable versions named `YYYY-MM-DD.<sha of the canonical JSON>` | The project's language pack (`lang/<locale>/normalizer.yaml`), pinned by commit SHA |
+| Who pins it | Golden sets, eval records, the language pack (by reference) | Runs |
+
+- Payload (`NormalizerPayload`): `locale` (BCP 47 or `*`), `unicode` (`NFC | NFKC`, applied first), `casefold`,
+  `mappings` (literal `{from, to}` replacements in order, after the Unicode step and before punctuation),
+  `punctuation` (`keep | strip`: every Unicode `P*` character becomes a space), `removeMarks` (combining marks such as
+  niqqud and accents removed after canonical decomposition), `numbers` (`keep`; spoken/written conversion through the
+  pack's ITN comes in phase 4).
+- Seeds: `normalizer/basic` and `normalizer/he-IL`; a freeze that names none uses `defaults.yaml`
+  `eval.normalizer` (`normalizer/basic`). `normalizers.list|get` read them.
+- The control plane renders a version into a `normalizer` artifact (the payload as JSON, `meta: {versionId}`), as it
+  renders a base model version into a `base_model` artifact; scorer steps read only that artifact.
+- A changed scoring rule is a new registry version, never an edit; golden sets pin the version, so a new one means a
+  new golden-set version whose cells (the baseline's included) are computed afresh: a new normalizer forces a new
+  baseline by construction.
+
+**Golden sets.** Registry kind `golden_set`, collection `golden-set/<name>` (decision 7).
+
+- `goldenSets.freeze` takes a frozen, **eval-only** dataset version (02 "Data entities as built") and a normalizer
+  version, and registers a `golden_set` version whose payload (`GoldenSetPayload`) holds `datasetVersionId`,
+  `datasetHash` (the `dataset` artifact), `normalizerVersionId`, `locale`, `domain`, `utterances`, `hours`, the dataset
+  version's `fingerprint` and `groups` (`call | speaker | utterance`: the bootstrap's resampling unit, R54).
+- The freeze is a registry action: an approval at registry scope that only the admin decides (05 "Guardrails"); an
+  agent's call answers the approval id. Refusals: `golden-set-not-eval-only` (the dataset version is trainable),
+  `normalizer-unknown`, `golden-set-leakage` (below).
+- `goldenSets.list|get` read them; `get` adds "used by" (projects that adopted it, gates that name it, evals).
+- The 34 replay golden datasets (`dataset/replay-golden-<locale>`) and FLEURS he become golden sets by freezing them on
+  the stand at the phase-3 gate.
+
+**Leakage and training exclusion.** A golden set's utterances never reach training, checked by utterance fingerprint
+(`utterance_fingerprints`: `audio-b3` today, an acoustic fingerprint in phase 4):
+
+| Where | Check | Refusal |
+| --- | --- | --- |
+| `goldenSets.freeze` | No fingerprint of the set appears in a dataset version a run has already trained on | `golden-set-leakage` (422) with the overlapping dataset versions and counts |
+| Mix validation (`mixes.new`, `mixes.edit`, `mixes.preview`, draft accept) | No dataset version of the mix overlaps a frozen golden set | `golden-set-leakage` |
+| Pipeline engine (`pipelines.run`, `runs.new`, every facade) | No `dataset` input or rendered `mix` input of a training step overlaps a frozen golden set | `golden-set-leakage` |
+| `projects.adopt` of a golden set | No dataset version the project has trained on overlaps it | `golden-set-leakage` until those datasets are re-frozen without the overlap |
+
+Runs cannot reference golden sets at all, so checkpoint selection can only use validation splits.
+
+**Eval records and the cross-project cache (R22, decision 4).** An eval record is a global row (registry scope, no
+project) keyed by:
+
+| Key part | Value |
+| --- | --- |
+| `modelKey` | The weights hash (`b3:`) for checkpoints and model versions; `base:<versionId>` for a base model version (its weights are materialised by the family's `materialize` step, so the hash is not known before the first run) |
+| `goldenSetVersionId` | The golden set version |
+| `normalizerVersionId` | The scoring normalizer version (the golden set's) |
+| `decodingHash` | The transcribe step's decoding config hash: latency profile, boost list hash and weight, beam (R24, R43) |
+| `scorer` | The scorer `kind@version` (`wer_score@1`) |
+
+- The `scores` output hook writes the record in the transaction that marks the scoring step done (idempotent per
+  artifact hash), and the eval links its cell to it. A cell whose key already has a record is never computed again,
+  in any project.
+- An eval's pipeline is generated per eval with only the missing cells (03 "The eval pipeline").
+
+**Model versions and registration (R22).** `models.register` publishes a checkpoint as a registry version of kind
+`model` (collection `model/<name>`) once an eval of it passed its gate; without a passing verdict it answers
+`gate-not-passed`. The payload (`ModelPayload`) holds `checkpointId`, `weightsHash`, `checkpointHash`, `familyId`,
+`baseModelVersionId`, `projectId`, `evalId`, `gate {verdict, gatesSha}`, `lineage {runId, mixSha, recipeSha,
+datasetVersionIds}` and the generated model card (Markdown: composition, licences, lineage, eval records, departures
+from defaults). `models.list|get` read them; another project can adopt a model version as its base model. Export,
+parity and benchmark stay in phase 5. Experiments' "register best" is the same call.
+
+**Baseline (R23, decisions 1–2).**
+
+- The base model's existing `base_model` registry version *is* the baseline model version: the `baseline` alias may
+  point at a `base_model` or a `model` version, and the base model is never registered a second time.
+- A project whose `baseline` alias is unset uses its default base model.
+- Changing the baseline is `aliases.set` with name `baseline`, approval-gated (R8); there is no `baselines.set`.
+- Baseline cells are ordinary eval records (`modelKey` `base:<versionId>` or the model's weights hash), computed once
+  and reused by every project; an eval computes the ones it lacks (`eval-baseline-missing` when `evals.gate` finds
+  none for a gated cell).
+
+**Lineage both ways.** `registry.lineage` (`GET /registry/{kind}/{id}/lineage`) answers the graph around a registry
+version in both directions: upstream (a model version → checkpoint → run → mix SHA, recipe SHA, dataset versions →
+sources; base model; a golden set → dataset version and normalizer) and downstream ("used by": golden sets and eval
+records for a normalizer; projects, gates and evals for a golden set; projects that adopted a model version, evals of
+it). The Lineage panel draws the same answer.
 
 ## Storage and mounts
 

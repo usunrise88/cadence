@@ -74,22 +74,56 @@ Built in phase 2 (stream R; `control-plane/internal/runs`, guide `guides.runs`):
 
 ## Block 3 — Evaluation
 
-A checkpoint is judged only in true streaming at deployment latency, on frozen golden sets it never trained on, against the current production model.
+A checkpoint is judged only in true streaming at deployment latency, on frozen golden sets it never trained on, against the baseline — the base model until something is promoted.
 
-Process:
+Process (phase 3; plan `docs/review/2026-10-02-phase-3-plan.md`, entities in 02 "Evaluation entities"):
 
-1. Keep golden sets frozen per language and domain — a telephone set from own calls, public sets such as FLEURS — each tied to one normalizer version.
-2. Run the matrix: checkpoint × golden sets × latency settings (`[56,0]`, `[56,1]`, `[56,13]`), with the right `target_lang`, through NeMo's cache-aware streaming inference.
-3. Score WER and CER with substitutions, deletions and insertions, per-utterance rows, duration buckets and a punctuation-insensitive companion score.
-4. Compare every cell with the baseline, normally the model version in production, with a bootstrap 95% confidence interval on each WER delta; a change counts only when the interval excludes zero.
-5. Apply the gate: thresholds for target languages, maximum regression for replay languages, and a check that fewer deletions were not bought with more insertions.
-6. Publish the eval report; the worst utterances of failing cells become triage candidates.
+1. Keep golden sets frozen per language and domain — a telephone set from own calls (phase 4), public sets such as FLEURS, the replay locales' FLEURS test sets — each an eval-only dataset version tied to one scoring normalizer version (`goldenSets.freeze`, approval).
+2. Run the matrix (`evals.new`): models × golden sets × latency profiles (`80ms`, `160ms`, `1120ms`; replay sets at the primary profile only) × decoding configs (boost none or a list with a weight, R24), through the family's transcribe step in real streaming with the right `target_lang`; base models are materialised into checkpoints first. Cells already in the eval-record cache are linked, not recomputed (03 "The eval pipeline").
+3. Score WER and CER with substitutions, deletions and insertions, per-utterance rows with alignment, duration buckets, the punctuation-insensitive companion score `werNoPunct` and partial stability (03 "Scorers and metrics").
+4. Compare every cell with the baseline's cell of the same golden set, profile and decoding: a paired blockwise bootstrap gives each WER delta a 95 % confidence interval (below); a change counts only when the interval excludes zero.
+5. Apply the gate (`evals.gate`): the project's `gates.yaml` turns the primary-profile cells into a verdict (below).
+6. Register a checkpoint whose verdict passed (`models.register`, R22); the worst utterances of failing cells become triage candidates (phase 5).
 
-Windows: Eval report, Diff, Audio, Inspector, Golden set, Library, Transcription (a manual test on a file or the microphone, shown live, nothing stored; R47–R50).
+**The gate.** `gates.yaml` lives in the project repository, versioned like recipes; people and agents edit it through
+commits, and `gates.get|edit` read and write it through the recipes service (decision 3). A missing file or key falls
+back to `defaults.yaml` `gate.*` and `eval.*`; an invalid file answers `gate-config-invalid`.
 
-Agent tools: `goldenSets.list`, `goldenSets.``freez``e`, `evals.``new`, `evals.``get` (cells, worst-N utterances, filters), `evals.g``ate`, gates.edit, `baselines.``set`.
+```yaml
+primaryProfile: 160ms                     # R20: the gate reads this cell only (eval.primary_profile)
+target: { goldenSets: [golden-set/fleurs-he], rule: beat-baseline }            # gate.target_rule
+replay: { goldenSets: [golden-set/replay-golden-*], maxRegression: 0.005 }     # gate.replay_max_regression: 0.5 WER points
+deletionsInsertions: true                 # gate.deletions_insertions
+significance: { samples: 1000, level: 0.95, seed: 1 }                          # eval.bootstrap_samples, confidence, bootstrap_seed
+```
 
-Gates: freezing a golden set and changing a baseline need a person; a new normalizer version forces a new baseline; runs cannot reference golden sets, so checkpoint selection can only use validation splits — the leakage the Kenyan Nemotron study reported is impossible by construction.
+Golden sets are named by collection (a `*` matches several) and resolve to the versions the project adopted. Checks,
+all at the primary profile against the baseline's cells:
+
+| Check | Passes when | Does not pass when |
+| --- | --- | --- |
+| Target (each target golden set, rule `beat-baseline`) | The WER delta (candidate − baseline) < 0 and the interval's upper bound < 0 | Anything else: `failed`, or `inconclusive` while the interval spans zero |
+| Replay (each replay golden set) | Not failed | `failed` when the delta > `maxRegression` and the interval's lower bound > 0 |
+| Deletions and insertions (target cells) | Not failed | `failed` when the deletion-rate delta's interval lies below zero and the insertion-rate delta's above zero |
+
+The verdict is `passed` only when every check passed, else `failed`; each check reports `passed | failed |
+inconclusive` with its numbers (delta, interval, baseline and candidate WER). The eval records the verdict with the SHA of the `gates.yaml` it read; `models.register`
+needs a passed verdict (`gate-not-passed`). `evals.gate` without the baseline's cells answers `eval-baseline-missing`.
+Entity accuracy, boosted-term recall (R24) and a maximum degradation under the `telephony` augmentation profile are
+reported, not gated, until `gates.yaml` grows those checks (07 "Open questions").
+
+**Significance (R54).** Every WER delta gets a paired bootstrap interval: 1 000 resamples (`eval.bootstrap_samples`)
+at 95 % (`eval.confidence`) with a fixed seed (`eval.bootstrap_seed`), computed in Go from the `scores` rows of the
+candidate and baseline cells. Resampling is blockwise over the golden set's `groups` — whole calls, else speakers,
+else utterances — because utterances of one call are correlated (Liu & Peng, arXiv:1912.09508); Bisani & Ney's
+1 000-sample bootstrap (ICASSP 2004) stays the method, only the resampling unit changes. Deletion and insertion rates
+get intervals the same way.
+
+Windows: Eval report, Golden set, Diff, Audio, Inspector, Lineage, Library, Language pack ("test a phrase"), Transcription (a manual test on a file, the microphone or an utterance span, shown live, nothing stored; R47–R50).
+
+Agent tools (R1 names): `goldenSets.list`, `goldenSets.get`, `goldenSets.freeze` (approval), `normalizers.list`, `normalizers.get`, `evals.new`, `evals.get` (cells, deltas with intervals, worst-N utterances, filters), `evals.list`, `evals.gate`, `gates.get`, `gates.edit`, `models.register`, `models.list`, `models.get`, `langpacks.get`, `langpacks.edit`, `boost.edit`, `registry.lineage`, `aliases.set` (name `baseline`, approval). Not a tool: `transcriptions.new` (tag `media`; agents test models through evals).
+
+Gates: freezing a golden set and changing the baseline need a person; a new normalizer version forces a new baseline; runs cannot reference golden sets and no training input may overlap one by fingerprint (`golden-set-leakage`), so checkpoint selection can only use validation splits — the leakage the Kenyan Nemotron study reported is impossible by construction.
 
 ## Block 4 — Export and deployment
 
@@ -107,7 +141,7 @@ Process:
 
 Windows: Model, Shadow, Approvals, Queue & GPU, Metrics (latency view), Library.
 
-Agent tools: `models.register`, `models.export`, `models.parity`, `models.benchmark`, `deployments.``promo``te` (shadow directly; canary and production as approval requests), `deployments.rollback` (approval request).
+Agent tools: `models.register` (phase 3, Block 3), `models.export`, `models.parity`, `models.benchmark`, `deployments.``promo``te` (shadow directly; canary and production as approval requests), `deployments.rollback` (approval request).
 
 Gates: parity and latency budget must pass; shadow must reach a minimum volume before canary; canary, production and rollback need a person, and production and rollback are executed by that person through the generated delivery script.
 
@@ -137,13 +171,13 @@ WER stays the headline, but a voice agent fails on a wrong phone number or a lat
 | Metric | How it is computed | Needs |
 | --- | --- | --- |
 | Entity accuracy | Numbers, dates, phone numbers and amounts compared after inverse normalisation; names and addresses compared on annotated spans | Annotated spans in the golden set (optional; unannotated sets report the number classes only) |
-| Latency to final | Time from utterance end (per-channel VAD, else the aligned reference) to the final that covers it, per latency profile, with audio fed at real-time pace; p50 and p95 (R54) | Streaming eval with timestamps |
+| Latency to final | Time from utterance end (per-channel VAD, else the aligned reference; a frame-VAD model in phase 3) to the final that covers it, per latency profile, with audio fed at real-time pace; p50 and p95 (R54) | Streaming eval with timestamps |
 | Emission delay | Time from a word's aligned end to its first appearance in a partial, as PR50 and PR90 (Yu et al., FastEmit, ICASSP 2021; R54) | Streaming eval keeps partials; aligned references |
 | Partial stability | Unstable partial word ratio: the share of words shown in partials that the final changed or dropped (Shangguan et al., Interspeech 2020); edits per second reported beside it (R54) | Streaming eval keeps partials |
 | End-of-utterance | Delay and false end-of-utterance rate against the VAD reference | Per-channel VAD on the golden set |
 | Throughput | RTF and maximum concurrent streams within the latency budget | The benchmark step on the staging card |
 
-All are scorer step kinds with versions; the default gate uses WER plus entity accuracy for the target locale, the rest are reported. Sources: the metrics beyond WER are Cadence recommendations, re-checked against the first production shadow.
+All are scorer step kinds with versions; definitions and the phase each arrives in are in 03 "Scorers and metrics". The phase-3 gate uses WER (04 "Block 3"); entity accuracy for the target locale joins it when `entity_score@1` exists, the rest are reported. Sources: the metrics beyond WER are Cadence recommendations, re-checked against the first production shadow.
 
 ## Annotation workflow
 
@@ -164,8 +198,8 @@ An experiment groups the runs that answer one question; a sweep generates those 
 
 - Experiment: a project entity with a question, a fixed mix and base, and the runs that belong to it; every run created from it inherits the tag.
 - Sweep: a declared grid or random set over recipe parameters (peak LR, warmup, replay share, augmentation profile), a run count and a GPU-hour cap; runs are queued sequentially on the project's slot; a sweep stops when the cap is reached.
-- Comparison: parameters × metrics table with the departures from defaults highlighted; Compare N replaces Compare 2 inside an experiment; the best run is marked by validation WER and can be registered directly.
-- Windows: Experiment (document). Agent tools: `experiments.new`, `experiments.get`, `sweeps.run`. Playbooks may open an experiment instead of a single run.
+- Comparison: parameters × metrics table with the departures from defaults highlighted; Compare N replaces Compare 2 inside an experiment; the best run is marked by validation WER and its checkpoint can be registered with `models.register` once an eval of it passed the gate (R22 moves registration into phase 3).
+- Windows: Experiment (document). Agent tools: `experiments.new`, `experiments.get`, `experiments.list`, `sweeps.run` (dry run first; the GPU-hour cap is enforced). IDs `exp_` and `swp_`, events `entity.experiment.{id}` (phase 3, plan stream X). Playbooks may open an experiment instead of a single run.
 
 ## Consistency check
 
@@ -186,13 +220,18 @@ Every step now has a window, a palette command, an API operation, an agent tool 
 | Control a job | Queue & GPU | Pause / resume / cancel | `POST /jobs/{id}:pause`, `:resume`, `:cancel` | `jobs.*`, `jobs.wait` | `queue`, `job.{id}` |
 | Continue | Checkpoints, Run | Resume; New stage | `POST /runs/{id}:resume`; `POST /runs/{id}:stage` | `runs.resume`, `runs.stage` | `run.{id}.status` |
 | Average checkpoints | Checkpoints | Average checkpoints | `POST /runs/{id}/checkpoints:average` | `checkpoints.average` | `pipeline_run.{id}`, `run.{id}.checkpoints` |
-| Golden set | Golden set | Propose / approve freeze | `POST /projects/{p}/golden-sets`; `…:freeze` | `goldenSets.``freez``e` | `entity.golden_set.{id}`, `approvals` |
-| Eval run | Eval report | Run eval matrix | `POST /projects/{p}/evals` | `evals.create` | `eval.{id}.progress` |
-| Inspect results | Diff, Audio, Inspector | — | `GET /evals/{id}/results` | `evals.``get` | — |
-| Try a model by hand | Transcription, Audio | Try a model (file, microphone) | `POST /projects/{p}/transcriptions`; audio and words over `GET /transcriptions/{id}/stream` (WebSocket) | — (a person speaks or listens; agents use `evals.new`) | `job.{id}` |
-| Gate | Eval report | Evaluate gate; Edit gate | `POST /evals/{id}:gate`; `PATCH /projects/{p}/gates/{id}` | `evals.g``ate`, `gates.``edit` | `entity.gate.{id}` |
-| Baseline | Eval report | Set eval baseline (approval) | `PATCH /projects/{p}/baseline` | `baselines.``set` | `approvals` |
-| Register model | Model | Register model version | `POST /projects/{p}/models` | `models.register` | `entity.model_version.{id}` |
+| Experiment and sweep | Experiment | New experiment; Run sweep (dry run first) | `experiments.new`, `experiments.get`, `experiments.list`; `sweeps.run` | `experiments.*`, `sweeps.run` | `entity.experiment.{id}`, `run.{id}.status` |
+| Golden set | Golden set, Library | Freeze golden set (approval) | `goldenSets.freeze` (registry scope); `goldenSets.list`, `goldenSets.get` under `/registry/golden-sets` | `goldenSets.freeze`, `goldenSets.list`, `goldenSets.get` | `entity.golden_set.{id}`, `approvals` |
+| Scoring normalizer | Golden set, Language pack, Library | — (versions are seeded or frozen, R21) | `normalizers.list`, `normalizers.get` under `/registry/normalizers` | `normalizers.list`, `normalizers.get` | — |
+| Eval run | Eval report | Run eval matrix | `POST /projects/{p}/evals` (`evals.new`, with `dryRun`) | `evals.new` | `eval.{id}.progress`, `entity.eval.{id}`, `pipeline_run.{id}` |
+| Inspect results | Eval report, Diff, Audio, Inspector | — | `GET /evals/{id}` (`evals.get`); `GET /projects/{p}/evals` (`evals.list`) | `evals.get`, `evals.list` | — |
+| Try a model by hand | Transcription, Audio | Try a model (file, microphone) | `POST /projects/{p}/transcriptions` (`transcriptions.new`, tag `media`); audio and words over `GET /api/transcriptions/{id}/stream` (WebSocket, 06 "Media") | — (a person speaks or listens; agents use `evals.new`) | `job.{id}` |
+| Listen to an utterance | Audio, Diff, Eval report | Play; loop a span | Utterance audio and peaks (tag `media`, R25; 06 "Media") | — (agents never read raw audio) | — |
+| Gate | Eval report, Recipe | Evaluate gate; Edit gate | `POST /evals/{id}:gate` (`evals.gate`); `gates.get`, `gates.edit` (the project's `gates.yaml` through the recipes service) | `evals.gate`, `gates.get`, `gates.edit` | `entity.eval.{id}`, `recipe.{path}` |
+| Baseline | Eval report, Library | Set eval baseline (approval) | `PUT /projects/{p}/aliases/baseline` (`aliases.set`, R8) | `aliases.set` | `entity.project.{id}`, `approvals` |
+| Register model | Eval report, Model, Experiment | Register model version | `models.register` (registry scope, needs a passed gate); `models.list`, `models.get` under `/registry/models` | `models.register`, `models.list`, `models.get` | `entity.model.{id}` |
+| Lineage | Lineage, Library | — | `GET /registry/{kind}/{id}/lineage` (`registry.lineage`) | `registry.lineage` | — |
+| Language pack, boost lists | Language pack | Edit language pack; Edit boost list | `langpacks.get`, `langpacks.edit`, `boost.edit` (files in `lang/<locale>/`) | `langpacks.get`, `langpacks.edit`, `boost.edit` | `recipe.{path}` |
 | Export, parity, benchmark | Model, Queue & GPU | Export; Parity check; Benchmark | `POST /models/{id}:export`, `:parity`, `:benchmark` | `models.*` | `job.{id}` |
 | Shadow, canary, production, rollback | Model, Shadow, Approvals | Promote; Roll back | `POST /projects/{p}/deployments`; `…:rollback` | `deployments.``promo``te`, `deployments.rollback` | `deploy.{id}`, `shadow.{deployment}`, `approvals` |
 | Capture and signals | Shadow, Triage queue | — | `GET /projects/{p}/samples`, `/signals` | `samples.query`, `signals.list` | `triage.new` |
@@ -210,7 +249,7 @@ Gaps found and closed:
 
 1. The command palette covered training and deployment but not data, gates, model registration or the flywheel — fifteen commands added.
 2. Batch calibration (OOMptimizer) was a process step with no tool or command — `runs.calibrate` added.
-3. Gate thresholds were editable in the Eval report but had no API or tool — `gates.update` added.
+3. Gate thresholds were editable in the Eval report but had no API or tool — `gates.update` added (now `gates.edit` over `gates.yaml`, R1).
 4. Checkpoint averaging had a tool but no command — added.
 5. Schedules were used by Block 5 but were not an entity — Schedule added.
 6. Project, Mount and Pipeline run did not exist — added, with sections above.

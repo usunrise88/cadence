@@ -36,7 +36,7 @@ type CadenceEvent = {
   An agent is mid-edit while it has an open draft on the entity, or for `drafts.presence_seconds` after a direct
   edit; the entity carries `presence` (actor, tool call, draft) and `presence.changed` sends the whole list.
 - Agent transcripts are events too (`agent.session.{id}`), so a chat is durable and can be opened from any tab or after a restart.
-- Audio is not an event. The manual transcription test (R48) is the one media channel: a WebSocket per session carries audio up and words down, relayed by the control plane to a worker job; the job reports its state on `job.{id}` like any job, and nothing of the session is stored.
+- Audio is not an event. The manual transcription test (R48) is the one media channel: a WebSocket per session carries audio up and words down, relayed by the control plane to a worker job; the job reports its state on `job.{id}` like any job, and nothing of the session is stored ("Media: audio and the live channel" below).
 
 Topic scheme, canonical for both tabs:
 
@@ -46,7 +46,7 @@ Topic scheme, canonical for both tabs:
 | `job.{id}`, `job.{id}.log` | Job state and progress (`job.state_changed`, `job.progress`); log lines from workers (`job.log`, ≤ 200 lines per event) |
 | `pipeline_run.{id}` | `pipeline_run.started`, `pipeline_run.step_changed`, `pipeline_run.state_changed` |
 | `run.{id}.status`, `run.{id}.metrics` | Training run state; metric points (`run.metrics`) |
-| `eval.{id}.progress` | Cells completed, utterances scored |
+| `eval.{id}.progress`, `entity.eval.{id}` | Cells done and total and the eval's state (phase 3); the eval's revision changes, its gate verdict included |
 | `deploy.{id}`, `shadow.{deployment}` | Deployment stage changes; divergence samples |
 | `queue`, `gpu`, `mount.{id}` | Queue changes (`queue.changed` with `change`); card telemetry (`gpu.telemetry`, ≤ 1 per 5 s per host); mount health |
 | `triage.new`, `approvals` | New triage items; approval requests and decisions |
@@ -113,7 +113,8 @@ Rules:
   gets a waiting step job only when the worker published its pinned `kind@version` (neutral core kinds match in any
   runtime, since their schema hashes must agree), the job is neither paused nor cancelled, and a card of the worker's
   host fits it: the card allows the job kind, holds no other training job when this is one, has the reservation left
-  under its memory cap, shows that much free memory in the last telemetry when no Cadence step runs on it (1 GB
+  under its memory cap (`interactive` jobs, phase 3, share a card with training but never with a benchmark; "Media"
+  below), shows that much free memory in the last telemetry when no Cadence step runs on it (1 GB
   slack for resident services and the driver), and the kind's availability window is open with the estimate ending
   before it closes (R19). The reservation is the step's declared `memoryGb`, or the card's whole remaining cap when it
   declares none, so a training step takes the card alone. Candidates are taken by the project's queue priority (higher first;
@@ -269,6 +270,107 @@ read any of them (R15).
   becomes `job.log` events on `job.{id}.log` of at most 200 lines. `jobLogs.list` reads a job's lines with their line
   numbers, filtered by minimum level and message text, paging with `after` or reading the `tail`. Field search and a
   global search index of `warn`+ lines (R15) are not built yet. A daily chore deletes log files untouched for 14 days.
+
+## Media: audio and the live channel (phase 3)
+
+Audio reaches people through four endpoints tagged `media`, the only surfaces besides the event stream that do not
+answer JSON (R25, R47–R50; plan streams A and T, gated by spikes S5 and A5).
+
+**The `media` tag.** Like `auth`, `me`, `host` and `worker`, operations tagged `media` are exempt from the verb
+vocabulary and are never MCP tools; the generator enforces both. They still need an identity (the session cookie, or
+a signed URL below), and an agent session token reaches none of them: agents read no raw audio (05 "What the agent
+sees") and test models through evals. Members: an utterance's audio, its peaks, `transcriptions.new` and the
+transcription socket.
+
+**Audio serving (R25).**
+
+- `GET …/utterances/{id}/audio?channel=&start=&end=` answers a span of an utterance as 16 kHz 16-bit PCM, with range
+  requests (`Range: bytes=…` → `206 Partial Content`, RFC 9110). R25 wrote the path as `/utterances/{id}/audio`;
+  utterances live under `/registry/utterances` (R1), and the contract fixes the path (07 "Open questions").
+- `GET …/utterances/{id}/peaks`: min/max peaks per channel for the waveform track; short audio from its PCM, long
+  audio from a `peaks` artifact computed at ingest (≈ 450 KB per hour, phase 4; R51).
+- Players fetch audio through short-lived signed URLs (the signature binds the utterance, span, viewer and expiry), so
+  a media element needs no headers and a copied link soon stops working; the lifetime is an open question.
+- Play-only mode (the reviewer role, "Authentication and access" above): audio is streamed through Media Source Extensions with no download control and no
+  file URL in the page. This is a deterrent, not a guarantee: anyone who can hear audio can record it.
+- The audit log records who played what: viewer, utterance, span, time.
+
+**Manual transcription tests (R47).** A person runs one to three models on a file, the microphone or an utterance
+span and watches the words appear; nothing outlives the session.
+
+- `transcriptions.new` (`POST /projects/{p}/transcriptions`, id `trs_`) is the only operation: nothing to get or
+  list. It takes the input kind, targets (checkpoint, model version or base model; the staging Triton deployment from
+  phase 5), each with its latency profile, boost list or none and language, an optional blind option (lanes unnamed
+  until the person picks one; the pick is not recorded) and `analysis: [features, emissions]` for the audio view's
+  model tracks. It answers the session with a `streamUrl` and a single-use ticket valid 60 s; the socket also checks
+  `Origin`.
+- Inputs: a file chosen in the browser (≤ 15 minutes of audio; its bytes go to the worker's temporary directory for
+  the session only, decoded with ffmpeg and the training resampler, deleted when the socket closes, and a sweep
+  removes what a crashed session left within an hour), the microphone, or an utterance span
+  (`utt:123#t=1.2,3.4`). One streaming decoder serves all three; a file plays at real-time pace or as fast as the card
+  allows, and the microphone and paced files show latency.
+- Streaming families decode at the target's profile, so the page shows what production would have written; adding
+  the same checkpoint at `1120ms` shows the gap to the high-latency reference. A typed reference gives WER and a diff
+  on the page. The Language pack's "test a phrase" is a two-target transcription, boost on and off.
+- Kept: only the interactive job's record (who, when, which targets, GPU time) for the queue and the allowance. The
+  page can copy the text; no audio, text or metric is stored.
+
+**The live channel (R48).** The browser opens one WebSocket, `/api/transcriptions/{id}/stream`, with the ticket. No
+WebRTC: its Opus encoding and echo processing would change the audio under test. The protocol has the shape the
+streaming vendors converged on (Deepgram, AssemblyAI, Speechmatics, Soniox, NVIDIA NIM): configuration first, then
+binary audio; partials replace each other, finals never change. The message schemas are the contract components
+`LiveClientMessage` and `LiveServerMessage` (JSON messages discriminated by `type`), and the TypeScript types are
+generated like the rest.
+
+| Message | Direction | Frame | Carries |
+| --- | --- | --- | --- |
+| `start` | Client → server, first | JSON | The input: microphone (capture rate and `getSettings()`), file, or utterance span; telephony simulation on or off; the pace for files |
+| audio | Client → server | Binary | 16-bit little-endian mono PCM at the capture rate, 80 ms per frame; or a file's bytes |
+| `fileEnd` | Client → server | JSON | The file's bytes are complete |
+| `finalize` | Client → server | JSON | Flush pending words without closing |
+| `keepalive` | Client → server | JSON | Keep the session open without audio |
+| `end` | Client → server | JSON | Flush, summarise and close |
+| `started` | Server → client | JSON | The effective configuration per target and its model load time |
+| `partial` | Server → client | JSON | Target, segment, sequence, text, audio end; replaces the segment's previous partial |
+| `final` | Server → client | JSON | Target, segment, words with audio-time start, end and confidence, the endpoint reason |
+| `stats` | Server → client | JSON | Real-time factor, queue, relay time |
+| `error` | Server → client | JSON | A problem+json body |
+| `summary` | Server → client, last | JSON | The session's totals; then close code 1000 |
+
+- Every result states the audio offset it covers, so latency is measured on audio time; the client adds its own
+  wall-clock stamps. Latency and stability figures on the page come from the session's own events (R54) and go with
+  it.
+- The control plane relays frames to a `live` job and enforces backpressure, caps and timeouts. The worker dials out
+  for the job (`/worker/live/{jobId}`, tag `worker`), so the pull model of R14 holds. In the NeMo runtime the job
+  runs NeMo's streaming pipeline API (`nemo.collections.asr.inference`, the cache-aware RNNT pipeline): one socket per
+  stream id, streams batched continuously, end-of-utterance detection, boosting and language per stream. A hard
+  finalize pads the right context with silence; up to three targets receive the same audio. A5 measures it.
+- Limits in v1: one session per user, 15 minutes each, closed after 5 minutes idle.
+
+**Interactive compute (R49).**
+
+- Job kind `interactive` (transcription sessions): a memory reservation from the family (Nemotron 0.6B: 3 GB, measured
+  in A5), the highest queue priority, beside training under the card's cap but never beside a benchmark (R30), and
+  counted in a daily GPU-hour allowance per project (default 1 GPU-hour, 03 "Key defaults").
+- When no card has room the session waits in the queue, the page shows its place, and live mode is disabled with the
+  reason. Cards allow the kind like any other (Compute: allowed job kinds, availability windows).
+- From phase 5 a Triton target needs no worker job.
+
+**Capture in the browser (R50).**
+
+- The microphone is captured with an AudioWorklet at the device rate; the worker resamples with the training data's
+  resampler. MediaRecorder's lossy formats are not used.
+- `getUserMedia` runs with echo cancellation, noise suppression and automatic gain off by default ("raw
+  microphone"), as Google and Deepgram advise for recognition; a toggle turns them on to hear what a call stack does
+  to the audio. Only channel 0 is taken (Safari returns stereo with audio on the left when echo cancellation is off).
+- Telephony simulation: down to 8 kHz through the codec of the project's augmentation profile (G.711 by default),
+  then back up to 16 kHz with the training resampler, the path NeMo recommends for telephone audio; the profile's SHA
+  and seed are shown with the result.
+- A device picker and an input level meter with a clipping mark; a secure context is required (HTTPS through Caddy,
+  or localhost).
+- Display: Hebrew right to left with bidi isolation around digits and Latin text; grey partials update in place,
+  finals are solid with endpoint marks; confidence shades words, timestamps show on hover; live p50/p95 time to final
+  and the real-time factor sit under the lanes.
 
 ## Operations
 

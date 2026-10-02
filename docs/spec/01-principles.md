@@ -6,7 +6,7 @@ _Part of the Cadence specification v0.2 (2026-09-29). Source of truth: the Claud
 
 The UI is one client of the API among three; if a thing can only be done by clicking, it is a bug.
 
-1. One contract. OpenAPI 3.1 is the source of truth; the UI client, the MCP tools and the `cadence` CLI are generated from it. The only UI-only endpoints are workspace layouts and the manual transcription test (R47), which needs a person at the microphone and stores nothing.
+1. One contract. OpenAPI 3.1 is the source of truth; the UI client, the MCP tools and the `cadence` CLI are generated from it. The only UI-only endpoints are workspace layouts and the media endpoints (tag `media`, 06 "Media"): the manual transcription test (R47), which needs a person at the microphone and stores nothing, and utterance audio and peaks (R25), because agents read no raw audio.
 2. Commands, not writes. Every mutation is a command with an id, an actor (user, agent session or automation), an idempotency key and a `dryRun` flag, and it emits a domain event.
 3. Jobs for anything long. The call returns a job id at once; progress arrives as events. Agents wait with a `jobs.wait` tool that has a timeout, never by sleeping in a shell.
 4. Estimate before spending. GPU-consuming commands answer `dryRun` with GPU-hours, card, data volume and expected duration; the estimate is what approval gates check.

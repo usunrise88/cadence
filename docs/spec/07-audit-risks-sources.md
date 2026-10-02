@@ -565,6 +565,61 @@ Open questions:
 - [ ] H: `TestProjectQueuePriority`'s one failure did not reproduce (20 runs alone, 8 beside `TestPipelinesOverHTTP`,
       two full integration runs); nothing changed there. The cancel flake was a real race (fixed in `internal/jobs`)
 
+Phase 3 (stream S, 2026-10-02). Answered by the owner-delegated decisions of `docs/review/2026-10-02-phase-3-plan.md`
+"Decisions taken for phase 3" (decision-log rows in `00-overview.md`; folded into 02, 03, 04, 06, 10 and 11):
+
+- [x] S3 · answered (decision 1, R23): the base model's existing `base_model` registry version is the baseline model
+      version; the `baseline` alias points at a `base_model` or a `model` version; unset means the default base model
+- [x] S3 · answered (decision 2): `baselines.set` is `aliases.set` with name `baseline` (approval-gated, R8)
+- [x] S3 · answered (decision 3): gates are the project repository's `gates.yaml`; `gates.get|edit` go through the
+      recipes service; an eval's verdict records the file's SHA
+- [x] S3 · answered (decision 4, R22): eval records are a global table keyed by `modelKey × goldenSetVersionId ×
+      normalizerVersionId × decodingHash × scorer@version`; `modelKey` = weights hash, or `base:<versionId>` for a base
+      model version
+- [x] S3 · answered (decision 5): the punctuation-insensitive companion score is `werNoPunct` (the scoring normalizer
+      plus punctuation removal)
+- [x] S3 · answered (decision 6): base models are evaluated through the family role `materialize` (`base_model` →
+      `checkpoint`); evals always transcribe a checkpoint
+- [x] S3 · answered (decision 7): `goldenSets.freeze` takes a frozen eval-only dataset version and a normalizer version
+      and registers `golden-set/<name>` (registry approval); the replay golden datasets and FLEURS he are frozen at the gate
+
+Open, found while folding the plan into the spec (the spec text states the assumption; streams confirm or correct):
+
+- [ ] S3 · toy materialize kind: the plan gives the toy pack "the same" `checkpoint_from_base@1`, but a framework kind's
+      `name@version` is published by one runtime only (06 "Worker protocol", `step-kind-conflict`); the toy pack needs
+      its own kind name (03 says "a materialize kind") unless the kind is runtime-neutral (stream Y)
+- [ ] S3 · leakage at `goldenSets.freeze`: assumed to mean "no fingerprint of the set in a dataset version any run has
+      already trained on, in any project" (02 "Evaluation entities"); future training is fenced by the mix and engine
+      checks (stream G)
+- [ ] S3 · `gates.yaml` names golden sets by collection (with `*`); assumed to resolve to the versions the project
+      adopted (02 "Golden sets and gates"). What a gate naming an unadopted collection does — `gate-config-invalid`, or
+      no cell — is stream E's call
+- [ ] S3 · new normalizer versions: phase 3 has seeds (`normalizer/basic`, `normalizer/he-IL`) and `normalizers.list|get`
+      only; R21's "project changes to scoring rules are frozen into a new registry version" has no operation yet, and how
+      a language pack's collection reference resolves to a version (newest, or pinned) is open (streams G, L)
+- [ ] S3 · gate checks the spec names but the plan's `gates.yaml` lacks: entity recall on boosted terms (R24), entity
+      accuracy for the target locale (04 "Task and streaming metrics"), maximum degradation under `telephony` (03
+      "Augmentation"); written as reported-not-gated until `gates.yaml` grows them
+- [ ] S3 · robustness cells: the eval-record key has no augmentation part, yet an augmented cell's audio differs from
+      the golden set's; the augmentation profile's hash and seed must enter the key (in the decoding hash or beside it)
+      before stream R caches augmented cells (streams E, R)
+- [ ] S3 · utterance audio path: R25 writes `GET /utterances/{id}/audio`, but utterances live under
+      `/registry/utterances` (R1); 06 "Media" leaves the prefix to the contract (stream A)
+- [ ] S3 · signed audio URLs: their lifetime and which operation mints them are unspecified (R25 says "short-lived");
+      whether every play or every minted URL is the audited event likewise (stream A)
+- [ ] S3 · `transcriptions.new` under the `media` tag: exempt from the verb rule and MCP, but whether it stays a
+      command (actor, Idempotency-Key, audit, `dryRun` with the allowance) as `agentCredentials` do is unstated; R47
+      keeps who, when, targets and GPU time on the job record (stream T)
+- [ ] S3 · `models.register` approval: 05 "Guardrails" lists model registration among registry-scope approvals, the
+      plan requires only a passed gate; the spec keeps both until stream E decides
+- [ ] S3 · agents and gates: the Guardrails row ("change a baseline or gate: approval") and decision 3 ("editable by
+      agents through commits") are reconciled as: an agent's `gates.yaml` edit lands on its session branch and reaches
+      `main` only through accepted session changes; an agent's `gates.edit` call is approval-gated (05 "Guardrails")
+- [ ] S3 · the `boost_list` artifact's format and who renders it (the control plane from `boost/<domain>.txt`, as it
+      renders `normalizer`) are unspecified (streams L, Y)
+- [ ] S3 · R42's `eval report` artifact is not produced: the report is the `evals.get` view over the cells' `scores`
+      artifacts (03 "Artifact types"); an exported report file, if wanted, comes with model cards
+
 ## Sources
 
 - [Nemotron 3.5 ASR model card](https://huggingface.co/nvidia/nemotron-3.5-asr-streaming-0.6b) — release date, languages, latency settings, licence
