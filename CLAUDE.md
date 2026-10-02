@@ -78,7 +78,7 @@ Phase 1 has nothing open (live evals on the stand: 6/6, 2026-09-30). Built after
 (`make evals`); claude.ai connectors are off in every Claude session.
 
 Phase 2 (training) passed its gate on 2026-10-01 (an agent's playbook session fine-tuned Nemotron on the stand; ROADMAP
-"Phase 2" gate paragraph); the replay corpus import is still open (disk). Plan and interfaces: `docs/review/2026-09-30-phase-2-plan.md`; what differs: ROADMAP "Phase 2 notes"; the
+"Phase 2" gate paragraph); the replay corpus and the 34 replay golden sets are imported on the stand. Plan and interfaces: `docs/review/2026-09-30-phase-2-plan.md`; what differs: ROADMAP "Phase 2 notes"; the
 real-card rehearsal: `docs/review/2026-10-01-phase-2-rehearsal.md`. What exists:
 - **Worker protocol** (tag `worker`, `cwk_`): workers register runtime, step kinds and model families as registry
   versions, long-poll leases on River `step` jobs (`internal/workers`, `internal/queue`: card slots, priorities,

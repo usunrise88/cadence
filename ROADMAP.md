@@ -332,11 +332,10 @@ Worker and jobs
 - [x] Minimal data entities for imports: Source (licence, eval-only until cleared, archive), Utterance, Transcript,
       per-utterance fingerprints — the full ingest path arrives in phase 4 (stream D: internal/data, `sources.*`,
       `utterances.*`, the `dataset` output hook)
-- [ ] Replay corpus and replay golden sets imported per the **spec** above — `pipelines/replay-base.yaml` is ready
-      (≈ 1 h per locale, golden sets ≤ 300 per locale). Not imported yet: the import downloads each locale's whole
-      FLEURS archive (≈ 5 GB for he), ≈ 34 locales do not fit the stand's free disk (≈ 40 GB); needs more disk or a
-      streaming import. Not part of the gate; the phase-3 replay-locale golden sets depend on it. Streaming built
-      2026-10-01 (a capped `hf-dataset` import streams and stops at the cap); the import itself still waits for a run
+- [x] Replay corpus and replay golden sets imported per the **spec** above — on the stand 2026-10-02 from
+      `pipelines/replay-base.yaml` (`dataset_import@3`, streamed and capped): `dataset/replay-base` with 34 locales,
+      34.06 h and 10 789 utterances, and 34 eval-only golden sets `dataset/replay-golden-<locale>` (≤ 300 test
+      utterances each); the source `fleurs` stays eval-only until a person clears it for training
 - [x] Runtimes (R40): the worker announces `runtime@version` and the NeMo runtime is registered from it;
       `runtimes.list|get`; card slots are owned per host and card, so two runtimes could share a card; `runtimes.new`
       (a second runtime, with approval) waits with the deferred packs — `nemo-speech` registers when its worker
@@ -411,7 +410,8 @@ Phase 2 notes (what differs from the plan above):
   now ends cancelled (the flaky pipeline-run cancel); the toy model converges (a layer norm: WER 0 at 300 steps on
   every seed tried) and the conformance suite requires the trained model to beat a one-step baseline.
 - Still open, not small (07 "Open questions"): per-card health and `compute.card_closed`; job-log field search; the
-  nightly NeMo conformance runner; backups to a separate host (the 16 TB backup server); the noise import.
+  nightly NeMo conformance runner; backups to a separate host (the 16 TB backup server); the noise import; clearing
+  the `fleurs` source for training (a person's licence decision, R17).
 - Hardening after the gate (2026-10-01, PRs #8 and #10 and their follow-ups), from an audit of the phase and a day on
   the stand (a Serbian fine-tune, budget and restart reproductions): budgets fail closed and count queued work; reaper
   grace after a control-plane start; language check before GPU time and shared parameters; transliteration and a
