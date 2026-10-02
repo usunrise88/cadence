@@ -161,8 +161,10 @@ func (s *Server) workerLiveConnect(w http.ResponseWriter, r *http.Request, jobID
 	if err != nil {
 		return err
 	}
-	if c.Host != "" && c.Host != host {
-		return problems.Forbidden.New("job %s runs on host %q; this token belongs to %q", jobID, host, c.Host)
+	// A worker token dials only the jobs its own host holds the lease of (a token bound to no host dials none); the
+	// development actor without a credential is not a token.
+	if (c.CredentialID != "" && c.Host == "") || (c.Host != "" && c.Host != host) {
+		return problems.Forbidden.New("job %s's lease is held on host %q; this worker token belongs to %q", jobID, host, c.Host)
 	}
 	return s.transcriptions.ServeWorker(w, r, jobID)
 }

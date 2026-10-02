@@ -298,8 +298,10 @@ transcription socket.
 
 Audio serving as built (2026-10-02, stream A; `internal/media`, `internal/server/handlers_media.go`, migration 0029):
 
-- Five operations under `/registry/utterances/{id}` (id: `utt_…` or the audio's `b3:` hash), tag `media`, refused to
-  any agent actor or `cst_` token, registry read required: `audio.get` (WAV, byte ranges, `416`
+- Five operations under `/registry/utterances/{id}` (id: `utt_…` or the audio's `b3:` hash), tag `media`, people
+  only — the actor must be a user (a session, or a signed link for the viewer it names); agent actors and `cst_`
+  tokens, API keys (`cdk_`, automation actors), worker and host tokens are refused (`403 forbidden`, 2026-10-02),
+  and so is `transcriptions.new` — registry read required: `audio.get` (WAV, byte ranges, `416`
   `range-not-satisfiable`), `audio.sign` (POST, `{channel?, start?, end?}` → `AudioLink`: a relative URL with
   `viewer`, `exp`, `sig`), `peaks.get` (`hopMs` a multiple of 10, `start`, `end`), `spectrogram.get` (the manifest, or
   one tile with `tile=c<ch>/l<L>/<i>`) and `words.get` (`hypotheses`, `scores` artifacts → the row's timed words with
@@ -307,14 +309,24 @@ Audio serving as built (2026-10-02, stream A; `internal/media`, `internal/server
   non-strict router layer.
 - `audio.get` serves the stored file as is when it is 16 kHz 16-bit PCM and asked whole; any other span is decoded
   (PCM 8/16/24/32-bit, float 32), the channel picked, resampled to 16 kHz (polyphase Hann-windowed sinc, ±0.01 dB to
-  0.9 × Nyquist, −60 dB stopband) and encoded as 16-bit PCM, up to `media.max_span_s`. No MSE segments yet: the
+  0.9 × Nyquist, −60 dB stopband) and encoded as 16-bit PCM, up to `media.max_span_s` (600 s since 2026-10-02, the
+  audio view's `browser_stft_max_s`; it was 3600 s, which held ≈ 0.7 GB per conversion). As built 2026-10-02: the
+  conversion runs in 10 s blocks (a few MB whatever the span) straight into the span cache — files under the content
+  store's `cache/media-spans`, named by audio hash, frame span and channel, never backed up, least recently served
+  dropped beyond `media.span_cache_mb` (2048) — so the ranges a media element fetches read a file instead of
+  converting again; at most `media.max_conversions` (2) run at once across viewers, one more answers `429
+  media-busy` with `Retry-After`. No MSE segments yet: the
   element plays the signed WAV URL with `controlsList="nodownload"` and no context menu (play-only remains a
   deterrent).
 - Signed links: HMAC-SHA256 over utterance, channel, start, end, viewer and expiry with a key derived from the master
   key (links die with it); lifetime `media.signed_link_ttl_s` (300 s). A request carrying `sig` passes the session
   check and is the viewer's play; any change to the query or an expiry gives `403 media-link-invalid`.
-- Audit: `audio.sign` and every `audio.get` that starts a play (no `Range`, or one from byte 0) write an audit row with
-  the utterance, audio hash, span, channel and `via` (`session` or `link`); further ranges of the same play do not.
+- Audit: `audio.sign` and every `audio.get` that starts a play write an audit row with the utterance, audio hash,
+  span, channel, `via` (`session` or `link`) and the `range` asked; further ranges of the same play do not. As built
+  2026-10-02 a play is the first request of a viewer, utterance, span and channel within `media.play_audit_window_s`
+  (600 s), whatever its `Range` (before, only requests from byte 0 counted, so `bytes=1-` played unaudited); the
+  window is kept in the control plane's memory, so a restart audits a play again rather than never. The row is
+  written before the first byte is sent.
 - Peaks are computed on the first `peaks.get` from the stored audio at 10 ms (int8 min/max, clipping frames) and
   recorded as a registry `peaks` artifact (`meta.audio`, `meta.format` `cadence.peaks/1`); later reads pool it. Phase 4
   computes them at ingest instead.
@@ -334,7 +346,11 @@ span and watches the words appear; nothing outlives the session.
   `Origin`.
 - Inputs: a file chosen in the browser (≤ 15 minutes of audio; its bytes go to the worker's temporary directory for
   the session only, decoded with ffmpeg and the training resampler, deleted when the socket closes, and a sweep
-  removes what a crashed session left within an hour), the microphone, or an utterance span
+  removes what a crashed session left within an hour; as built 2026-10-02, ffprobe reads the local file first —
+  `-protocol_whitelist file`, `-format_whitelist` of the audio containers wav, flac, mp3, ogg, mov/mp4/m4a, aac,
+  matroska/webm, so a playlist or a concat list never reaches a demuxer — and a declared duration over the limit or a
+  rate above 192 kHz is refused before decoding; ffmpeg then decodes channel 0 cut at the limit + 1 s (`-t`) and
+  capped in size (`-fs`), so a small file that expands to hours costs nothing), the microphone, or an utterance span
   (`utt:123#t=1.2,3.4`). One streaming decoder serves all three; a file plays at real-time pace or as fast as the card
   allows, and the microphone and paced files show latency. The worker resamples every input with the import and
   training resampler, streaming polyphase (`resample_poly`; 03 "Augmentation", spike A5).
@@ -423,15 +439,22 @@ the Transcription panel):
   `{codec: ulaw|alaw|none, sampleRate: 8000}` set at `transcriptions.new` (not in `start`); the project's augmentation
   profile is not read yet.
 - The ticket is kept as a SHA-256 hash and is single-use; the socket checks `Origin` against the request's host (or
-  `X-Forwarded-Host`, or `CADENCE_ALLOWED_ORIGINS`) and that the signed-in person owns the session. The worker dials
-  with the lease's `CADENCE_LIVE_TOKEN` (header `Cadence-Live-Token`; a fresh token per lease, hash kept) or its
-  `cwk_` credential; the harness sets `CADENCE_LIVE_URL`.
+  `X-Forwarded-Host`, or `CADENCE_ALLOWED_ORIGINS`) and that the signed-in person owns the session — since 2026-10-02
+  before the socket is registered in the relay's hub, so someone else's socket never holds a session's place. A
+  socket that registered but then failed its ticket or upgrade hands back a worker socket it was given (re-parked for
+  the session's next socket). The worker dials with the lease's `CADENCE_LIVE_TOKEN` (header `Cadence-Live-Token`; a
+  fresh token per lease, hash kept) or its `cwk_` credential, which must belong to the host that holds the job's
+  active lease; the harness sets `CADENCE_LIVE_URL`.
 - Interactive jobs are River kind `live` awaiting a step job of kind `interactive` (`steps.LiveJobKind`): leased
   before every other kind, beside training under the card's cap (training's whole-cap reservation leaves no room, so
   a session waits for a training step that took the whole cap), never beside a `benchmark`; priority
   `transcriptions.interactive_job_priority`. Their lease wall time counts against
-  `budgets.manual_test_gpu_hours_per_project_per_day` and not against the project's GPU budget; a session's cap is
-  the smaller of `transcriptions.session_max_minutes` and what the allowance has left when its worker joins.
+  `budgets.manual_test_gpu_hours_per_project_per_day` and not against the project's GPU budget. Since 2026-10-02
+  the allowance is granted, not only checked: `transcriptions.new` grants a GPU session its seconds (the smaller of
+  `transcriptions.session_max_minutes` and what is left) under a per-project advisory lock, from what is left net of
+  the other open sessions' grants less what their jobs leased (`transcriptions.session_seconds`, migration 0032), so
+  sessions opened side by side cannot together overspend; the relay caps the session at its grant less the card time
+  its job leased (the model's loading included). A CPU session is granted nothing and spends nothing.
 - The relay is in process (one control plane). Close codes: 1000 after the summary, 4001 idle, 4002 cap, 4003 worker
   lost, 4004 not started (job ended, queue wait limit), 1013 backpressure, 1001 stopping; at the idle and cap limits
   it injects `end` so the summary still arrives. A 30 s sweep ends sessions whose ticket expired unused or whose
@@ -543,9 +566,17 @@ Phase 2 as built (2026-09-30, stream O):
   `done` → progress) except step jobs, whose pipeline step tells them — `pipeline_run.step_changed` on
   `pipeline_run.{id}` (step `done` → progress, `failed` with no retry left → failure); a host turning `unreachable`
   (`compute.health` on `compute.{id}`) → failure; backups by type. The table also names types no stream emits yet —
-  `mount.unhealthy`, `gate.verdict`, `deployment.promoted`, `schedule.finished`, `batch.closed`, `checkpoint.saved`,
+  `mount.unhealthy`, `deployment.promoted`, `schedule.finished`, `batch.closed`, `checkpoint.saved`,
   `triage.item_added` arrive with their phases; `compute.card_closed` joins when per-card health closes a card's slot
   (not built).
+- Evaluation (2026-10-02, phase-3 audit): the gate verdict is `eval.gated` (evals.gate; `passed` or `failed`, both
+  outcome — a failed gate is a result, not an operational failure; the placeholder `gate.verdict` is gone); an eval's
+  end is `eval.status_changed` (`failed` → failure, `done` → progress, telling to run `evals.gate`); `sweep.ended` →
+  outcome; `golden_set.frozen` → progress. They announce on entity topics only (`entity.eval.{id}`,
+  `entity.experiment.{id}`, `entity.golden_set.{id}`), which the router reads for these types and the web history
+  subscribes to. The steps of an eval's pipeline run (its `pipeline_run.step_changed` carries `runId: evl_…`) tell
+  nothing when done — an eval of a few hundred cells would send as many notices; a failed step still does. The daily
+  digest lists the gate verdicts of its window ("project: subject — verdict", at most 20).
 - The control plane reaches `api.telegram.org` over the compose `default` network (not internal); nothing else is
   needed. Reviewer messages (batch assigned/closing) arrive with batches in phase 4.
 

@@ -20,6 +20,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/artifacts"
 	"github.com/usunrise88/cadence/control-plane/internal/auth"
 	"github.com/usunrise88/cadence/control-plane/internal/cas"
+	"github.com/usunrise88/cadence/control-plane/internal/credentials"
 	"github.com/usunrise88/cadence/control-plane/internal/media"
 	"github.com/usunrise88/cadence/control-plane/internal/steps"
 )
@@ -136,6 +137,21 @@ func TestMediaAudio(t *testing.T) {
 	if !strings.Contains(p.Detail, "64044") {
 		t.Fatalf("416 detail %q", p.Detail)
 	}
+	// A play that starts past byte 0 is audited all the same; its further ranges are not.
+	for _, rg := range []string{"bytes=1-", "bytes=1000-", "bytes=0-"} {
+		resp = e.do("GET", "/api/registry/utterances/"+callID+"/audio?channel=1", "", "Range", rg)
+		readAll(t, resp)
+		if resp.StatusCode != 206 {
+			t.Fatalf("range %s: %d", rg, resp.StatusCode)
+		}
+	}
+	// The converted span is cached: the next request reads the cache, with the same bytes.
+	resp = e.do("GET", "/api/registry/utterances/"+callID+"/audio?channel=1", "")
+	again := readAll(t, resp)
+	resp = e.do("GET", "/api/registry/utterances/"+callID+"/audio?channel=1", "")
+	if cached := readAll(t, resp); len(again) != 64044 || string(again) != string(cached) {
+		t.Fatalf("cached span differs (%d vs %d bytes)", len(again), len(cached))
+	}
 
 	// The canonical clip asked whole is the stored file itself.
 	resp = e.do("GET", "/api/registry/utterances/"+clipID+"/audio", "")
@@ -148,11 +164,13 @@ func TestMediaAudio(t *testing.T) {
 	expectProblem(t, e.do("GET", "/api/registry/utterances/"+callID+"/audio?start=1.5&end=1", ""), 400, "bad-request")
 	expectProblem(t, e.do("GET", "/api/registry/utterances/utt_missing/audio", ""), 404, "not-found")
 
-	// Plays are audited: requests from byte 0, not other ranges (3 plays above: whole call, span, clip).
+	// Plays are audited once per viewer, utterance, span and channel within media.play_audit_window_s, whatever range
+	// the first request asks for (5 plays above: whole call, span, channel 0 from byte 44, channel 1 from byte 1, clip).
 	plays := mediaAudits(t, e)
-	if len(plays) != 3 || plays[0].ActorID != "usr_admin" || plays[1].Detail["channel"] != float64(1) ||
+	if len(plays) != 5 || plays[0].ActorID != "usr_admin" || plays[1].Detail["channel"] != float64(1) ||
 		plays[1].Detail["start"] != 0.5 || plays[1].Detail["end"] != 1.5 || plays[1].Detail["utteranceId"] != callID ||
-		plays[1].Detail["via"] != "session" {
+		plays[1].Detail["via"] != "session" || plays[2].Detail["range"] != "bytes=44-143" || plays[2].Detail["channel"] != float64(0) ||
+		plays[3].Detail["range"] != "bytes=1-" || plays[3].Detail["channel"] != float64(1) || plays[4].Detail["utteranceId"] != clipID {
 		t.Fatalf("audit %+v", plays)
 	}
 
@@ -187,7 +205,7 @@ func TestMediaAudio(t *testing.T) {
 	q.Set("exp", fmt.Sprint(time.Now().Add(-time.Minute).Unix()))
 	expectProblem(t, e.do("GET", u.Path+"?"+q.Encode(), ""), 403, "media-link-invalid")
 	plays = mediaAudits(t, e)
-	if len(plays) != 5 || plays[3].Operation != "audio.sign" || plays[3].Detail["start"] != 0.25 || plays[4].Detail["via"] != "link" {
+	if len(plays) != 7 || plays[5].Operation != "audio.sign" || plays[5].Detail["start"] != 0.25 || plays[6].Detail["via"] != "link" {
 		t.Fatalf("audit after link %+v", plays)
 	}
 
@@ -201,7 +219,7 @@ func TestMediaAudio(t *testing.T) {
 	} {
 		expectProblem(t, e.agent(r.method, r.path, r.body), 403, "forbidden")
 	}
-	if n := len(mediaAudits(t, e)); n != 5 {
+	if n := len(mediaAudits(t, e)); n != 7 {
 		t.Fatalf("an agent's refused request was audited as a play (%d rows)", n)
 	}
 }
@@ -222,6 +240,26 @@ func TestMediaSignedLinkWithoutSession(t *testing.T) {
 	}
 	// A signature does not open any other path.
 	expectProblem(t, e.do("GET", "/api/registry/utterances/"+id+"/peaks?sig=x", ""), 401, "unauthenticated")
+
+	// People only: an API key that may read the registry hears nothing, signed link or not.
+	var key string
+	if err := pgx.BeginFunc(t.Context(), e.pool, func(tx pgx.Tx) error {
+		var err error
+		key, _, _, err = credentials.NewAPIKey(t.Context(), tx, credentials.NewAPIKeyInput{UserID: "usr_admin", Name: "ci", Registry: true})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{
+		"/api/registry/utterances/" + id + "/audio",
+		"/api/registry/utterances/" + id + "/audio?" + e.admin.mediaLinks.Query(l).Encode(),
+		"/api/registry/utterances/" + id + "/peaks",
+	} {
+		expectProblem(t, e.do("GET", path, "", bearer(key)...), 403, "forbidden")
+	}
+	if plays := mediaAudits(t, e); len(plays) != 1 {
+		t.Fatalf("a refused API key was audited as a play: %+v", plays)
+	}
 }
 
 func TestMediaPeaksWordsTiles(t *testing.T) {

@@ -132,6 +132,7 @@ func startWith(t *testing.T, adjust func(*Config), register ...func(*pgxpool.Poo
 	srv := httptest.NewServer(admin.Handler())
 	agentSrv := httptest.NewServer(newTestServer(t, pool, hub, obs.NewMetrics(), withJobs, asAgent).Handler())
 	t.Cleanup(func() {
+		admin.CloseLive() // live sessions' timers end before the pool closes
 		hub.Close()
 		srv.Close()
 		agentSrv.Close()

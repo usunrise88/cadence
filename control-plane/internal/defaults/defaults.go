@@ -255,8 +255,11 @@ type Langpacks struct {
 
 // Media holds the audio serving defaults (R25).
 type Media struct {
-	SignedLinkTTLSeconds Param[int] `yaml:"signed_link_ttl_s"`
-	MaxSpanSeconds       Param[int] `yaml:"max_span_s"`
+	SignedLinkTTLSeconds   Param[int] `yaml:"signed_link_ttl_s"`
+	MaxSpanSeconds         Param[int] `yaml:"max_span_s"`
+	MaxConversions         Param[int] `yaml:"max_conversions"`
+	SpanCacheMB            Param[int] `yaml:"span_cache_mb"`
+	PlayAuditWindowSeconds Param[int] `yaml:"play_audit_window_s"`
 }
 
 // Sweeps holds the sweep defaults (phase 3, stream X): the mode, how many runs a grid or a random draw makes, the

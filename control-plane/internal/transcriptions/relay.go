@@ -137,6 +137,29 @@ func (h *hub) unregister(ls *liveSession) {
 	}
 }
 
+// abandon unregisters a session that never relayed (its ticket or upgrade failed): a worker socket the hub handed
+// it goes back to the parked sockets, where the session's next socket (a retry with a valid ticket) takes it, or the
+// worker's dial timeout closes it.
+func (h *hub) abandon(ls *liveSession) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.sessions[ls.id] == ls {
+		delete(h.sessions, ls.id)
+	}
+	if h.byJob[ls.jobID] == ls {
+		delete(h.byJob, ls.jobID)
+	}
+	select {
+	case w := <-ls.worker:
+		if ls.jobID != "" && !h.stopped && h.parked[ls.jobID] == nil {
+			h.parked[ls.jobID] = w
+		} else {
+			w.finish()
+		}
+	default:
+	}
+}
+
 // has reports whether session id has its browser on a socket here.
 func (h *hub) has(id string) bool {
 	h.mu.Lock()
@@ -311,9 +334,14 @@ func closeNote(err error) string {
 // ServeClient checks the ticket (single-use, userID's) and upgrades the browser's request, then relays the session
 // until it ends. The caller checked the Origin. Before the upgrade a failure is returned as a problem.
 func (s *Service) ServeClient(w http.ResponseWriter, r *http.Request, id, ticket, userID string) error {
-	var jobID string
-	if err := s.Pool.QueryRow(r.Context(), "SELECT coalesce(job_id, '') FROM transcriptions WHERE id = $1", id).Scan(&jobID); err != nil {
+	var jobID, owner string
+	if err := s.Pool.QueryRow(r.Context(), "SELECT coalesce(job_id, ''), user_id FROM transcriptions WHERE id = $1", id).Scan(&jobID, &owner); err != nil {
 		return problems.TranscriptionTicketInvalid.New("no transcription session %s", id)
+	}
+	// Someone else's session never reaches the hub: there it would hold the session's place (and its worker's
+	// socket) from the person it belongs to.
+	if owner != userID {
+		return problems.Forbidden.New("session %s belongs to someone else", id)
 	}
 	ls := &liveSession{id: id, jobID: jobID, userID: userID, worker: make(chan *workerConn, 1), ended: make(chan steps.Outcome, 1)}
 	// The session is in the hub before its ticket is used, so the sweeper never takes a used ticket without a socket
@@ -323,14 +351,14 @@ func (s *Service) ServeClient(w http.ResponseWriter, r *http.Request, id, ticket
 	}
 	c, err := s.claimTicket(r.Context(), id, ticket, userID)
 	if err != nil {
-		s.hub.unregister(ls)
+		s.hub.abandon(ls)
 		return err
 	}
 	ls.projectID, ls.reservationMB = c.projectID, c.reservationMB
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true, CompressionMode: websocket.CompressionDisabled})
 	ctx := context.WithoutCancel(r.Context())
 	if err != nil {
-		s.hub.unregister(ls)
+		s.hub.abandon(ls)
 		s.endRecord(ctx, id, "the socket upgrade failed")
 		s.cancelJob(ctx, jobID)
 		return nil // Accept answered the request
@@ -460,12 +488,17 @@ func (s *Service) relay(ctx context.Context, ls *liveSession, client *websocket.
 		s.cancelJob(ctx, ls.jobID)
 		return
 	}
-	// The worker sent its summary and releases its lease itself; a job still running after a grace is cancelled.
+	// The worker sent its summary and releases its lease itself; a job still running after a grace is cancelled. A
+	// stopping control plane leaves it (the sweep and the lease reaper end what is left after a restart).
+	closing := s.hub.closingCh()
 	go func() {
 		timer := time.NewTimer(cv.t.Drain)
 		defer timer.Stop()
-		<-timer.C
-		s.cancelJob(context.WithoutCancel(ctx), ls.jobID)
+		select {
+		case <-timer.C:
+			s.cancelJob(context.WithoutCancel(ctx), ls.jobID)
+		case <-closing:
+		}
 	}()
 }
 
@@ -546,11 +579,12 @@ func (cv *conversation) wait(ctx context.Context) (*workerConn, *relayEnd) {
 func (cv *conversation) pump(ctx context.Context, w *workerConn) *relayEnd {
 	s, ls, t := cv.s, cv.ls, cv.t
 	sessionCap := t.Cap
-	if a, err := s.allowance(ctx, s.Pool, ls.projectID); err == nil {
-		// What the allowance has left now (this session's loading time included) bounds the session.
-		if left := time.Duration(a.RemainingGPUHours * float64(time.Hour)); left > 0 && left < sessionCap {
-			sessionCap = left
-		}
+	if left, granted, err := s.grantLeft(ctx, s.Pool, ls.id); err != nil {
+		s.log().WarnContext(ctx, "read a session's grant", "session", ls.id, "err", err)
+	} else if granted && left < sessionCap {
+		// What the session was granted from the allowance at transcriptions.new, less the card time it has leased
+		// (its loading included), bounds it.
+		sessionCap = max(left, time.Second)
 	}
 	workerErr := make(chan error, 1)
 	go func() { // queue → worker

@@ -513,11 +513,29 @@ media:
     source: Cadence recommendation (docs/spec/08-resolutions.md R25, short-lived signed URLs)
     range: { min: 30, max: 3600 }
   max_span_s:
-    value: 3600
+    value: 600
     unit: s
-    description: Longest span audio.get converts in one response (a stored 16 kHz WAV asked whole is served as is, at any length)
-    source: Cadence recommendation (a 60-minute 16 kHz mono span is 115 MB of PCM)
-    range: { min: 60, max: 14400 }
+    description: Longest span audio.get converts in one response (a stored 16 kHz WAV asked whole is served as is, at any length); the audio view asks for no more than the audio it draws
+    source: docs/spikes/S5-audio-view.md and views.audio.browser_stft_max_s (the longest audio the audio view handles in the browser, 10 minutes, R52)
+    range: { min: 60, max: 3600 }
+  max_conversions:
+    value: 2
+    unit: conversions
+    description: Span conversions (decode, resample, encode) audio.get runs at once across all viewers; one more answers 429 media-busy with Retry-After
+    source: Cadence recommendation (each converts in 10 s blocks, a few MB each; the bound keeps a burst of seeks from taking the control plane's CPU)
+    range: { min: 1, max: 32 }
+  span_cache_mb:
+    value: 2048
+    unit: MB
+    description: Size of the converted-span cache (the content store's cache/media-spans directory, never backed up); the least recently played spans are dropped beyond it
+    source: Cadence recommendation (a 10-minute 16 kHz mono span is 19 MB)
+    range: { min: 64, max: 65536 }
+  play_audit_window_s:
+    value: 600
+    unit: s
+    description: A play (viewer, utterance, span, channel) is written to the audit log once within this window, whatever byte range its first request asks for
+    source: Cadence recommendation (a media element refetches ranges while it plays and seeks)
+    range: { min: 10, max: 86400 }
 
 # Manual transcription tests and the live channel (phase 3, stream T; docs/spec/06-platform.md "Media", R47–R50; the
 # numbers come from spike A5, docs/spikes/A5-live-transcription.md "Result").

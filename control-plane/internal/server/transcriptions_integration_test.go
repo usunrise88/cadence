@@ -542,3 +542,55 @@ func TestInteractiveJobsLeaseFirst(t *testing.T) {
 	e.release(first.ID, steps.Outcome{State: steps.StateDone})
 	e.waitEnded(s.ID)
 }
+
+// The manual-test allowance is granted, not only checked: an open session's grant (session_seconds, less what its job
+// leased) is spent already for every other session of the project, so sessions opened side by side cannot overspend.
+// And someone else's session never reaches the relay's hub.
+func TestTranscriptionAllowanceGrants(t *testing.T) {
+	e, _ := startLive(t, "grants")
+	ctx := context.Background()
+	d := *defaults.Get()
+	d.Budgets.ManualTestGPUHoursPerProjectPerDay.Value = 0.3 // 1080 s
+	e.admin.Defaults = &d
+	defer func() { e.admin.Defaults = nil }()
+	one := `{"input":{"kind":"microphone"},"targets":[{"baseModelVersionId":"` + liveBase + `"}]}`
+	pid := e.projectID("grants")
+
+	// Another person's open session was granted 900 s and has leased nothing yet: 180 s are left.
+	actor, _ := json.Marshal(auth.Actor{Kind: auth.KindUser, ID: "usr_other", Name: "other"})
+	if _, err := e.pool.Exec(ctx, `INSERT INTO transcriptions (id, project_id, user_id, actor, targets, state, session_seconds)
+		VALUES ('trs_00000000-0000-7000-8000-000000000001', $1, 'usr_other', $2, '[]', 'queued', 900)`, pid, actor); err != nil {
+		t.Fatal(err)
+	}
+	var dry liveSession
+	e.ok(e.do("POST", "/api/projects/grants/transcriptions?dryRun=true", one, "Idempotency-Key", e.key()), 200, &dry)
+	if dry.Limits.SessionSeconds != 180 || dry.Allowance.RemainingGPUHours != 0.05 {
+		t.Fatalf("dry run beside a granted session: limits %+v allowance %+v", dry.Limits, dry.Allowance)
+	}
+	s := e.openLive("grants", one)
+	var granted int
+	if err := e.pool.QueryRow(ctx, `SELECT session_seconds FROM transcriptions WHERE id = $1`, s.ID).Scan(&granted); err != nil {
+		t.Fatal(err)
+	}
+	if s.Limits.SessionSeconds != 180 || granted != 180 {
+		t.Fatalf("granted %d s (limits %d), want the 180 s left", granted, s.Limits.SessionSeconds)
+	}
+
+	// Someone else's session: refused before its socket is registered (its owner's socket is not displaced).
+	resp := e.do("GET", "/api/transcriptions/trs_00000000-0000-7000-8000-000000000001/stream?ticket=xxxxxxxxxxxxxxxx", "", "Origin", e.url)
+	if body := readAll(t, resp); resp.StatusCode != http.StatusForbidden || !strings.Contains(string(body), "someone else") {
+		t.Fatalf("someone else's session: %d %s", resp.StatusCode, body)
+	}
+	if e.admin.Transcriptions().Connected("trs_00000000-0000-7000-8000-000000000001") {
+		t.Fatal("someone else's session reached the hub")
+	}
+
+	// Everything granted: the next person is refused at once.
+	if _, err := e.pool.Exec(ctx, `UPDATE transcriptions SET state = 'ended' WHERE id = $1`, s.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.pool.Exec(ctx, `UPDATE transcriptions SET session_seconds = 1080 WHERE id = 'trs_00000000-0000-7000-8000-000000000001'`); err != nil {
+		t.Fatal(err)
+	}
+	expectProblem(t, e.do("POST", "/api/projects/grants/transcriptions", one, "Idempotency-Key", e.key()), 429, "transcription-allowance-exhausted")
+}

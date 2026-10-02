@@ -59,6 +59,9 @@ a word swallowed at a cut. Phase 4's Triage and Annotate use the same view.
 | `views.audio.colormap` | magma | Also viridis, cividis, inferno, grey, inverse grey; never jet or rainbow |
 | `views.audio.words_max_visible` | 400 | Above it the word track shows density blocks; zoom in for words |
 | `media.signed_link_ttl_s` | 300 s | How long a playback link works |
+| `media.max_span_s` | 600 s | Longest span converted to 16 kHz in one response (a stored 16 kHz WAV plays whole at any length) |
+| `media.max_conversions`, `media.span_cache_mb` | 2, 2048 MB | Conversions at once (one more waits: `media-busy`); converted spans kept for the next plays |
+| `media.play_audit_window_s` | 600 s | A play is written to the audit log once per viewer, span and channel within it |
 
 The toolbar changes colormap, axis, range and gain for this view without touching the defaults.
 
@@ -69,7 +72,8 @@ The toolbar changes colormap, axis, range and gain for this view without touchin
 - **Attach to Chat** — the span as `@utt:<id>#t=1.20,2.35` (W3C Media Fragments) in the composer.
 - **Export…** — the hypothesis words as Praat TextGrid, NIST CTM or WebVTT (with per-word timestamps).
 - `audio.sign`, `audio.get`, `peaks.get`, `spectrogram.get`, `words.get` — the media operations behind the view (people
-  only; agents read no raw audio).
+  only: a signed-in person or a signed link for its viewer; agents, API keys, worker and host tokens read no raw
+  audio).
 
 ## Playbooks
 
