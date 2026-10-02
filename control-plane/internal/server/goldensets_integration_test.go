@@ -302,7 +302,7 @@ func TestGoldenSetLeakage(t *testing.T) {
 	asRef := func(r steps.ArtifactRef) string { return fmt.Sprintf(`{"hash":%q,"type":%q}`, r.Hash, r.Type) }
 	run("fit", "data", asRef(leaky), true)
 	run("fit", "data", asRef(leaky), false)
-	run("fitmix", "mix", fmt.Sprintf(`{"hash":%q,"type":"mix","meta":{"datasets":[%q]}}`, "b3:"+strings.Repeat("7", 64), leakyID), true)
+	run("fitmix", "mix", fmt.Sprintf(`{"hash":%q,"type":"mix"}`, renderedMix(t, store, mixEntry{leakyID, leaky.Hash})), true)
 	if n := e.count("SELECT count(*) FROM pipeline_runs"); n != 0 {
 		t.Fatalf("%d pipeline runs started", n)
 	}

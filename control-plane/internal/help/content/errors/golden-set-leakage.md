@@ -15,6 +15,7 @@ answered in three places:
 | --- | --- | --- |
 | `goldenSets.freeze` (dry run included, and before the admin is asked) | The dataset version to freeze shares utterances with a dataset version not registered eval-only | A golden set is never audio a run may train on |
 | `mixes.new`, `mixes.edit`, `mixes.preview`, accepting a mix draft, `runs.new` (and its dry run), `pipelines.run` | A dataset version — directly, or through a mix — that a training step reads shares utterances with a golden set | Runs cannot reference golden-set audio by construction (docs/spec/04-blocks.md Block 3) |
+| `pipelines.run` (and a training step about to be queued) | A `dataset` artifact whose index meta says `purpose: augmented` — an augmented copy of a golden set made by `augment_dataset` for an eval | Augmented golden audio is golden audio: it is scored, never trained on |
 | `projects.adopt` of a golden set | A dataset version the project trained on (its runs' mixes, its pipelines' training inputs) shares utterances with it | A project never scores a model on audio it trained on (spec 02, "Adoption re-runs the leakage check") |
 
 Nothing was written.

@@ -212,9 +212,11 @@ func (e *Engine) Prepare(ctx context.Context, q storage.Querier, in StartInput) 
 	return src, plan, err
 }
 
-// trainable refuses (eval-only-dataset) a run input that a training step reads directly — a dataset artifact of an
-// eval-only version, or a mix artifact referencing one (data.TrainableArtifact). An input only non-training steps
-// read (eval, data, export: resources.jobKind) may be eval-only: golden and replay sets are evaluated, never trained.
+// trainable refuses a run input that a training step reads directly unless all it trains on is registered and
+// trainable (data.TrainableArtifact: the type and meta come from the artifact index, a mix's datasets from its
+// content). An input only non-training steps read (eval, data, export: resources.jobKind) may be eval-only: golden
+// and replay sets are evaluated, never trained. Inputs a training step gets from other steps are checked when it is
+// queued (advance).
 func (e *Engine) trainable(ctx context.Context, q storage.Querier, plan Plan, inputs map[string]steps.ArtifactRef) error {
 	for _, name := range sortedKeys(inputs) {
 		for _, ps := range plan.Steps {
@@ -363,6 +365,21 @@ func (e *Engine) advance(ctx context.Context, tx pgx.Tx, r *Run, sts []StepRow) 
 				continue
 			}
 			s.Inputs = inputs
+			if trains(s.Resources) {
+				// The indirect path: a step that does not train may pass a golden set (or anything else) through
+				// to one that does; the resolved inputs get the run inputs' check before the step is queued or reused.
+				refused, err := e.trainableInputs(ctx, tx, *s)
+				if err != nil {
+					return nil, err
+				}
+				if refused != "" {
+					failed, err := e.fail(ctx, tx, r, sts, i, steps.StepError{Type: steps.ErrInput, Message: refused})
+					if err != nil {
+						return nil, err
+					}
+					return append(drafts, failed...), nil
+				}
+			}
 			runtime, err := runtimeOf(ctx, tx, s.StepKindVersionID)
 			if err != nil {
 				return nil, err
@@ -411,6 +428,21 @@ func (e *Engine) advance(ctx context.Context, tx pgx.Tx, r *Run, sts []StepRow) 
 		drafts = append(drafts, runDraft(*r, EventStateChanged))
 	}
 	return drafts, nil
+}
+
+// trainableInputs checks the resolved inputs of training step s (data.TrainableArtifact); a refusal comes back as
+// the message the step fails with, any other error as err.
+func (e *Engine) trainableInputs(ctx context.Context, q storage.Querier, s StepRow) (string, error) {
+	for _, name := range sortedKeys(s.Inputs) {
+		err := data.TrainableArtifact(ctx, q, e.o.CAS, s.Inputs[name])
+		if pe, ok := problems.As(err); ok {
+			return fmt.Sprintf("input %s refused for training (%s): %s", name, pe.Type.Slug, pe.Detail), nil
+		}
+		if err != nil {
+			return "", err
+		}
+	}
+	return "", nil
 }
 
 // inputsOf resolves a step's inputs; ready is false while a producer has not finished.

@@ -150,8 +150,8 @@ func (a *datasetArtifact) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// MixFormat is the format tag of a mix artifact.
-const MixFormat = "cadence.mix/1"
+// MixFormat is the format tag of a mix artifact (the training guard, data.TrainableArtifact, reads only this format).
+const MixFormat = datasets.MixFormat
 
 // RenderMix resolves every dataset version of c (trainable now, with a content-store artifact), renders the mix
 // artifact and puts it in the store. A phase-1 fixture version without an artifact cannot be trained on.

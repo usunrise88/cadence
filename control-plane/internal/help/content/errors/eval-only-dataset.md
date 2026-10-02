@@ -10,7 +10,12 @@ A `422 Unprocessable Entity` problem of type `eval-only-dataset`: a mix (`mixes.
 `mixes.preview`, accepting a mix draft), a run estimate (`runs.new`) or a pipeline run (`pipelines.run`, dry run
 included) named a dataset version that must not reach training (docs/spec/08-resolutions.md R18). `pipelines.run`
 refuses a `dataset` input of such a version, or a `mix` input referencing one, only when a training step
-(`resources.jobKind: training`) reads it; steps that evaluate, import or export may read eval-only data. A dataset version is eval-only when either holds:
+(`resources.jobKind: training`) reads it; steps that evaluate, import or export may read eval-only data. The same
+check runs again when a training step is queued with inputs other steps produced (a step that passes a golden set
+through fails the run with this reason). A training step reads only **registered** dataset versions: a `dataset`
+artifact that no dataset version registers is refused too, and a `mix` input counts by its content (the
+`cadence.mix/1` rendering `runs.new` writes: every dataset version and dataset artifact it names), never by what the
+caller says in `meta`. A dataset version is eval-only when either holds:
 
 | Why | How to tell | What changes it |
 | --- | --- | --- |
@@ -43,6 +48,9 @@ what is not cleared, so evaluation data can never leak into training.
 - `datasets.get` — `dataset.evalOnly`, `dataset.sourceIds`.
 
 ## Playbooks
+
+- An unregistered dataset artifact: import it (`pipelines/import`), clear its source, and train on the version
+  through a mix (`runs.new`).
 
 - Agents: do not retry with the same version. Tell the person which source needs clearing and why you need it, or
   choose a dataset version that is cleared.

@@ -85,15 +85,9 @@ func TestPipelinesRunRefusesEvalOnlyDatasets(t *testing.T) {
 		t.Errorf("score on the golden set: %d %s", code, d)
 	}
 
-	// A mix artifact referencing the golden set, by its metadata or by its content, is refused for training.
-	metaMix := fmt.Sprintf(`{"hash":%q,"type":"mix","meta":{"datasets":[%q]}}`, "b3:"+strings.Repeat("7", 64), goldID)
-	code, d = post("fitmix", "mix", metaMix, true)
-	refused("fitmix on a mix naming the golden set in meta", code, d, "evaluation only")
-	content, err := store.PutBytes([]byte(`{"name":"m","groups":[{"name":"target","weight":1,"datasets":["` + goldID + `"]}]}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	code, d = post("fitmix", "mix", fmt.Sprintf(`{"hash":%q,"type":"mix"}`, content), true)
+	// A mix artifact rendering the golden set is refused for training, whatever its meta says.
+	content := renderedMix(t, store, mixEntry{goldID, gold.Hash})
+	code, d = post("fitmix", "mix", fmt.Sprintf(`{"hash":%q,"type":"mix","meta":{"datasets":[]}}`, content), true)
 	refused("fitmix on a mix rendering the golden set", code, d, "evaluation only")
 
 	// A person clears fleurs: its corpus may be trained on; the golden set never.
