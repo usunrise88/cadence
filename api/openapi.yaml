@@ -3116,6 +3116,12 @@ paths:
         "202": { $ref: "#/components/responses/ApprovalAccepted" }
         default: { $ref: "#/components/responses/Problem" }
 
+  # ---------------------------------------------------------------- golden sets, normalizers, leakage (phase 3 · stream G) — add paths below this line
+
+  # ---------------------------------------------------------------- evals, gates, models (phase 3 · stream E) — add paths below this line
+
+  # ---------------------------------------------------------------- language packs, boost lists, lineage (phase 3 · stream L) — add paths below this line
+
   # ---------------------------------------------------------------- planned (later phases)
   /mounts:
     x-cadence: { entity: mounts, planned: 4 }
@@ -3605,8 +3611,8 @@ components:
     #
     RegistryKind:
       type: string
-      enum: [base_model, dataset_version, template, runtime, model_family, step_kind, noise_bank]
-      description: "The kinds registered so far; runtime, model_family and step_kind are published by workers (R40, R41, R45); noise_bank holds background noise for augmentation, registered by dataset_import with purpose noise; golden sets, normalizers and model versions join in later phases"
+      enum: [base_model, dataset_version, template, runtime, model_family, step_kind, noise_bank, golden_set, normalizer, model]
+      description: "The kinds registered so far; runtime, model_family and step_kind are published by workers (R40, R41, R45); noise_bank holds background noise for augmentation, registered by dataset_import with purpose noise; golden_set (goldenSets.freeze), normalizer (scoring normalizers, R21) and model (models.register, R22) arrive in phase 3"
     VersionState:
       type: string
       enum: [draft, frozen, deprecated]
@@ -3973,6 +3979,8 @@ components:
         notifications: { $ref: "#/components/schemas/DefaultSection" }
         backups: { $ref: "#/components/schemas/DefaultSection" }
         augment: { $ref: "#/components/schemas/DefaultSection", description: "The recommended augmentation profile (docs/spec/03 \"Augmentation\"): what the Recipe form's Reset to recommended writes" }
+        eval: { $ref: "#/components/schemas/DefaultSection", description: "Evaluation (phase 3): matrix profiles, primary cell, scoring normalizer, duration buckets, bootstrap" }
+        gate: { $ref: "#/components/schemas/DefaultSection", description: "The default gate a project's gates.yaml departs from (phase 3)" }
         estimates:
           type: object
           required: [bytes_per_audio_hour, training]
@@ -5545,7 +5553,7 @@ components:
           items: { $ref: "#/components/schemas/LatencyProfile" }
         roles:
           type: object
-          description: "Role → step kind (calibrate, train, average, transcribe, export, parity)"
+          description: "Role → step kind (calibrate, train, average, transcribe, export, parity; materialize turns a base_model artifact into a checkpoint so evals can transcribe a base model)"
           additionalProperties: { type: string }
         defaultsSection: { type: string, description: "The defaults.yaml section of this family" }
         help: { type: string }
@@ -6871,3 +6879,74 @@ components:
         at: { type: string, format: date-time }
         by: { $ref: "#/components/schemas/Actor" }
         jobId: { type: string }
+
+    # ---------------------------------------------------------------- evaluation registry payloads (phase 3 · wave 0)
+    NormalizerPayload:
+      type: object
+      description: "A scoring normalizer (R21): the text both sides of a WER are compared after. Registry kind normalizer, collection normalizer/<name>; the control plane renders it into a normalizer artifact (this JSON) for scorer steps"
+      required: [locale, unicode, casefold, punctuation, removeMarks, mappings, numbers]
+      properties:
+        locale: { type: string, description: "BCP 47 locale it is meant for, or * for any" }
+        unicode: { type: string, enum: [NFC, NFKC], description: Unicode normalisation form applied first }
+        casefold: { type: boolean }
+        punctuation: { type: string, enum: [keep, strip], description: "strip turns every Unicode punctuation character (categories P*) into a space" }
+        removeMarks: { type: boolean, description: "Remove combining marks (niqqud, accents) after canonical decomposition, then recompose" }
+        mappings:
+          type: array
+          description: Literal replacements applied in order after the Unicode step and before punctuation
+          items:
+            type: object
+            required: [from, to]
+            properties:
+              from: { type: string, minLength: 1 }
+              to: { type: string }
+        numbers: { type: string, enum: [keep], description: "keep compares numbers as written; spoken/written conversion through the pack's ITN arrives in phase 4" }
+        description: { type: string }
+    GoldenSetPayload:
+      type: object
+      description: "A frozen golden set (goldenSets.freeze): an eval-only dataset version tied to one scoring normalizer version. Runs never read it"
+      required: [datasetVersionId, datasetHash, normalizerVersionId, locale, utterances, hours, fingerprint, groups]
+      properties:
+        datasetVersionId: { type: string }
+        datasetHash: { type: string, description: "b3: hash of the dataset artifact" }
+        normalizerVersionId: { type: string }
+        locale: { type: string }
+        domain: { type: string, description: "telephone, read speech, …" }
+        utterances: { type: integer }
+        hours: { type: number }
+        fingerprint: { type: string, description: The dataset version's content fingerprint }
+        groups: { type: string, enum: [call, speaker, utterance], description: "The bootstrap's resampling unit (R54): whole calls, else speakers, else utterances" }
+        approvalId: { type: string }
+    ModelPayload:
+      type: object
+      description: "A registered model version (models.register, R22): a checkpoint whose gate passed, published with its eval report and model card"
+      required: [checkpointId, weightsHash, checkpointHash, familyId, baseModelVersionId, projectId, evalId, gate, lineage]
+      properties:
+        checkpointId: { type: string }
+        weightsHash: { type: string }
+        checkpointHash: { type: string, description: "b3: hash of the checkpoint artifact" }
+        familyId: { type: string }
+        baseModelVersionId: { type: string }
+        projectId: { type: string }
+        evalId: { type: string }
+        gate:
+          type: object
+          required: [verdict, gatesSha]
+          properties:
+            verdict: { type: string, enum: [passed, failed] }
+            gatesSha: { type: string, description: The commit SHA of the project's gates.yaml the verdict used }
+        lineage:
+          type: object
+          properties:
+            runId: { type: string }
+            mixSha: { type: string }
+            recipeSha: { type: string }
+            datasetVersionIds: { type: array, items: { type: string } }
+        card: { type: string, description: The generated model card (Markdown) }
+
+    # ---------------------------------------------------------------- golden sets, normalizers, leakage schemas (phase 3 · stream G) — add below
+
+    # ---------------------------------------------------------------- evals, gates, models schemas (phase 3 · stream E) — add below
+
+    # ---------------------------------------------------------------- language packs, boost lists, lineage schemas (phase 3 · stream L) — add below
+

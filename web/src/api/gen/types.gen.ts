@@ -425,9 +425,9 @@ export type CredentialList = {
 };
 
 /**
- * The kinds registered so far; runtime, model_family and step_kind are published by workers (R40, R41, R45); noise_bank holds background noise for augmentation, registered by dataset_import with purpose noise; golden sets, normalizers and model versions join in later phases
+ * The kinds registered so far; runtime, model_family and step_kind are published by workers (R40, R41, R45); noise_bank holds background noise for augmentation, registered by dataset_import with purpose noise; golden_set (goldenSets.freeze), normalizer (scoring normalizers, R21) and model (models.register, R22) arrive in phase 3
  */
-export type RegistryKind = 'base_model' | 'dataset_version' | 'template' | 'runtime' | 'model_family' | 'step_kind' | 'noise_bank';
+export type RegistryKind = 'base_model' | 'dataset_version' | 'template' | 'runtime' | 'model_family' | 'step_kind' | 'noise_bank' | 'golden_set' | 'normalizer' | 'model';
 
 /**
  * draft → frozen → deprecated; a frozen version never changes
@@ -873,6 +873,14 @@ export type Defaults = {
      * The recommended augmentation profile (docs/spec/03 "Augmentation"): what the Recipe form's Reset to recommended writes
      */
     augment?: DefaultSection;
+    /**
+     * Evaluation (phase 3): matrix profiles, primary cell, scoring normalizer, duration buckets, bootstrap
+     */
+    eval?: DefaultSection;
+    /**
+     * The default gate a project's gates.yaml departs from (phase 3)
+     */
+    gate?: DefaultSection;
     estimates: {
         bytes_per_audio_hour: DefaultValue;
         measured_plus_minus?: DefaultValue;
@@ -3101,7 +3109,7 @@ export type ModelFamilyDescriptor = {
     };
     latencyProfiles: Array<LatencyProfile>;
     /**
-     * Role → step kind (calibrate, train, average, transcribe, export, parity)
+     * Role → step kind (calibrate, train, average, transcribe, export, parity; materialize turns a base_model artifact into a checkpoint so evals can transcribe a base model)
      */
     roles: {
         [key: string]: string;
@@ -5122,6 +5130,102 @@ export type ArtifactEviction = {
     at: string;
     by: Actor;
     jobId?: string;
+};
+
+/**
+ * A scoring normalizer (R21): the text both sides of a WER are compared after. Registry kind normalizer, collection normalizer/<name>; the control plane renders it into a normalizer artifact (this JSON) for scorer steps
+ */
+export type NormalizerPayload = {
+    /**
+     * BCP 47 locale it is meant for, or * for any
+     */
+    locale: string;
+    /**
+     * Unicode normalisation form applied first
+     */
+    unicode: 'NFC' | 'NFKC';
+    casefold: boolean;
+    /**
+     * strip turns every Unicode punctuation character (categories P*) into a space
+     */
+    punctuation: 'keep' | 'strip';
+    /**
+     * Remove combining marks (niqqud, accents) after canonical decomposition, then recompose
+     */
+    removeMarks: boolean;
+    /**
+     * Literal replacements applied in order after the Unicode step and before punctuation
+     */
+    mappings: Array<{
+        from: string;
+        to: string;
+    }>;
+    /**
+     * keep compares numbers as written; spoken/written conversion through the pack's ITN arrives in phase 4
+     */
+    numbers: 'keep';
+    description?: string;
+};
+
+/**
+ * A frozen golden set (goldenSets.freeze): an eval-only dataset version tied to one scoring normalizer version. Runs never read it
+ */
+export type GoldenSetPayload = {
+    datasetVersionId: string;
+    /**
+     * b3: hash of the dataset artifact
+     */
+    datasetHash: string;
+    normalizerVersionId: string;
+    locale: string;
+    /**
+     * telephone, read speech, …
+     */
+    domain?: string;
+    utterances: number;
+    hours: number;
+    /**
+     * The dataset version's content fingerprint
+     */
+    fingerprint: string;
+    /**
+     * The bootstrap's resampling unit (R54): whole calls, else speakers, else utterances
+     */
+    groups: 'call' | 'speaker' | 'utterance';
+    approvalId?: string;
+};
+
+/**
+ * A registered model version (models.register, R22): a checkpoint whose gate passed, published with its eval report and model card
+ */
+export type ModelPayload = {
+    checkpointId: string;
+    weightsHash: string;
+    /**
+     * b3: hash of the checkpoint artifact
+     */
+    checkpointHash: string;
+    familyId: string;
+    baseModelVersionId: string;
+    projectId: string;
+    evalId: string;
+    gate: {
+        verdict: 'passed' | 'failed';
+        /**
+         * The commit SHA of the project's gates.yaml the verdict used
+         */
+        gatesSha: string;
+    };
+    lineage: {
+        runId?: string;
+        mixSha?: string;
+        recipeSha?: string;
+        datasetVersionIds?: Array<string>;
+    };
+    /**
+     * The generated model card (Markdown)
+     */
+    card?: string;
 };
 
 export type SecretNewWritable = {

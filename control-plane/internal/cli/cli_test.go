@@ -87,7 +87,7 @@ func TestGolden(t *testing.T) {
 		{name: "accepted", args: []string{"projects", "archive", "--project", "alpha", "--if-match", `"2"`}},
 		{name: "missing-required", args: []string{"projects", "edit", "--project", "alpha"}},
 		{name: "bad-integer", args: []string{"projects", "search", "--project", "alpha", "--limit", "many"}},
-		{name: "bad-enum", args: []string{"adoptions", "list", "--project", "alpha", "--kind", "model"}},
+		{name: "bad-enum", args: []string{"adoptions", "list", "--project", "alpha", "--kind", "checkpoint"}},
 		{name: "unknown-flag", args: []string{"projects", "list", "--colour", "blue"}},
 		{name: "invalid-body", args: []string{"projects", "new", "--body", "{nope"}},
 		{name: "unknown-verb", args: []string{"projects", "explode"}},

@@ -414,6 +414,60 @@ data:
     description: Whether an import normalises transcripts; off keeps the source's cased, punctuated text, the style the base model is trained on
     source: nvidia/nemotron-3.5-asr-streaming-0.6b model card (punctuated, cased output); .claude/rules/worker.md
 
+# Evaluation (phase 3; docs/review/2026-10-02-phase-3-plan.md): the matrix, scoring and significance.
+eval:
+  primary_profile:
+    value: 160ms
+    description: Latency profile of the primary cell, the one the gate reads; the latency production runs at (a project may change it in gates.yaml)
+    source: docs/spec/08-resolutions.md R20 ([56,1], 160 ms)
+  matrix_profiles:
+    value: [80ms, 160ms, 1120ms]
+    description: Latency profiles an eval runs by default (those the model's family declares); 1120ms is the high-latency reference
+    source: docs/spec/08-resolutions.md R20, R43 ([56,0], [56,1], [56,13])
+  normalizer:
+    value: normalizer/basic
+    description: Scoring normalizer a golden set is frozen with when the freeze names none (the locale's language pack names its own)
+    source: docs/spec/08-resolutions.md R21
+  duration_buckets_s:
+    value: [0, 2, 5, 10, 20]
+    unit: s
+    description: Lower bounds of the utterance-duration buckets an eval reports WER for; the last bucket is open
+    source: Cadence recommendation (docs/spec/04-blocks.md Block 3, duration buckets)
+  bootstrap_samples:
+    value: 1000
+    unit: samples
+    description: Bootstrap resamples behind every confidence interval on a WER delta
+    source: Bisani & Ney, ICASSP 2004 (docs/spec/03-pipelines-defaults.md "Key defaults", Significance)
+    range: { min: 100, max: 100000 }
+  confidence:
+    value: 0.95
+    unit: fraction
+    description: Coverage of the confidence intervals; a gain or regression counts only when the interval excludes zero
+    source: docs/spec/03-pipelines-defaults.md "Key defaults" (Significance)
+    range: { min: 0.5, max: 0.999 }
+  bootstrap_seed:
+    value: 1
+    description: Seed of the bootstrap resampling, so a verdict is reproducible
+    source: Cadence recommendation
+    range: { min: 0, max: 2147483647 }
+
+gate:
+  target_rule:
+    value: beat-baseline
+    description: What the target golden sets must show at the primary cell; beat-baseline needs a WER delta below zero with the whole interval below zero
+    source: docs/spec/03-pipelines-defaults.md "Key defaults" (Gate)
+    range: { values: [beat-baseline] }
+  replay_max_regression:
+    value: 0.005
+    unit: fraction
+    description: Largest WER rise (absolute, 0.005 = 0.5 points) a replay-locale golden set may show before the gate fails, counted only when the interval excludes zero
+    source: docs/spec/03-pipelines-defaults.md "Key defaults" (Gate)
+    range: { min: 0, max: 0.1 }
+  deletions_insertions:
+    value: true
+    description: Fail the gate when the target cells' deletion rate falls while their insertion rate rises (both intervals excluding zero)
+    source: docs/spec/03-pipelines-defaults.md "Key defaults" (Gate)
+
 # Framework packs (R45): one section per pack, read by its step kinds through x-cadence defaultRef packs.<pack>.<key>.
 packs:
   # The CPU toy pack (runtime `toy`, family `toy-ctc`): a tiny CTC model trained in seconds that exists only to keep the

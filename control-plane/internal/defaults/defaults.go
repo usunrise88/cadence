@@ -80,6 +80,10 @@ type Defaults struct {
 	// x-cadence defaultRef. The control plane serves and validates these sections and never branches on a pack.
 	Packs map[string]map[string]any `yaml:"packs"`
 
+	// Evaluation and the default gate (phase 3).
+	Eval Eval `yaml:"eval"`
+	Gate Gate `yaml:"gate"`
+
 	document map[string]any
 }
 
@@ -207,6 +211,24 @@ type Backups struct {
 	RestoreTestAt      Param[string] `yaml:"restore_test_at"`
 	KeepNightly        Param[int]    `yaml:"keep_nightly"`
 	KeepWeekly         Param[int]    `yaml:"keep_weekly"`
+}
+
+// Eval holds the evaluation defaults: the matrix, scoring and significance (phase 3).
+type Eval struct {
+	PrimaryProfile   Param[string]    `yaml:"primary_profile"`
+	MatrixProfiles   Param[[]string]  `yaml:"matrix_profiles"`
+	Normalizer       Param[string]    `yaml:"normalizer"`
+	DurationBucketsS Param[[]float64] `yaml:"duration_buckets_s"`
+	BootstrapSamples Param[int]       `yaml:"bootstrap_samples"`
+	Confidence       Param[float64]   `yaml:"confidence"`
+	BootstrapSeed    Param[int]       `yaml:"bootstrap_seed"`
+}
+
+// Gate holds the default gate a project's gates.yaml departs from (phase 3).
+type Gate struct {
+	TargetRule          Param[string]  `yaml:"target_rule"`
+	ReplayMaxRegression Param[float64] `yaml:"replay_max_regression"`
+	DeletionsInsertions Param[bool]    `yaml:"deletions_insertions"`
 }
 
 // Compute holds the hosts seeded at first start.
