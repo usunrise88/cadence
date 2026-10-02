@@ -300,9 +300,14 @@ How each output renders it:
 
 | Output | Rendering |
 | --- | --- |
-| HTML edition | The image with an SVG overlay: each region outlined and given a numbered badge, the rest of the image slightly dimmed while a region is active. Beside or below it, a numbered list of labels and notes. Hovering or focusing an item highlights its region and the other way round; ←/→ step through the regions; click zooms the region. Works with keyboard and screen reader (each region is a list item; the image has the alt text) |
-| Help panel inside Cadence | The same component, from the same block. "Show me on screen" turns the figure into a tour of the live UI when every region has a `target` |
+| HTML edition, wide screens (≥ 1024 px) | The screenshot stays in place on the left with an SVG overlay: each region outlined with a numbered badge, the rest dimmed while a region is active. The notes scroll on the right; a note crossing the middle of the window lights its region, and so does pointing at it. Click zooms the region. ←/→ step through the regions, Enter zooms, Esc zooms out |
+| HTML edition, narrow screens (phones, tablets) | A full-screen screenshot shrunk to phone width is unreadable. The figure becomes a small overview with numbered badges kept at a readable size, followed by a strip of cards to swipe, each with a magnified crop of its region (wide rows are cropped from their left edge) and its note. Tapping a badge brings its card; ‹ › buttons and "n of N" sit under the strip |
+| Help panel inside Cadence | The same component, from the same block, in its narrow layout when the panel is narrow. "Show me on screen" turns the figure into a tour of the live UI when every region has a `target` |
 | Plain Markdown (GitHub) | The image, then a numbered list `① **Estimate** — note…`; the regions are not drawn |
+
+Both HTML layouts work with a keyboard and a screen reader: each note is a button whose label carries its number,
+label and note, and the image keeps its alt text. Numbers in the running text are buttons too: they light the
+region and bring its note into view. The reference implementation is `build/annotated-prototype.html`.
 
 The capture script (§5.5) records each target's box in the image's pixels next to the screenshot
 (`screens/<id>.json`). The builder reads the boxes from there, so a block never holds coordinates for a `target`.
