@@ -250,7 +250,7 @@ project) keyed by:
 | `goldenSetVersionId` | The golden set version |
 | `normalizerVersionId` | The scoring normalizer version (the golden set's) |
 | `decodingHash` | The transcribe step's decoding config hash: transcribe kind and version, latency profile, language, boost list hash and weight, augmentation (R24, R43; as built below) |
-| `scorer` | The scorer `kind@version` (`wer_score@1`) |
+| `scorer` | The scorer `kind@version` (`wer_score@2`) |
 
 - The `scores` output hook writes the record in the transaction that marks the scoring step done (idempotent per
   artifact hash), and the eval links its cell to it. A cell whose key already has a record is never computed again,

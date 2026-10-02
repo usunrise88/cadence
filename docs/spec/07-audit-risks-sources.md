@@ -679,6 +679,35 @@ Still open after waves 1–2:
       form are built (audit fix F4; 11 "Panel catalogue", as built)
 - [x] Contract text: resolved — `normalizers.list`'s description in `api/openapi.yaml` names `normalizer/he-il`
 
+Phase-3 audit (2026-10-02; four read-only auditors, fixes F1–F4 merged into the phase-3 PR). Fixed: the training
+guard reads artifact types from the index and checks resolved inputs; agent branches that touch `gates.yaml`,
+`lang/`, `project.yaml`, `.claude/` or `opencode.json` wait for a person; the verdict requires the project's
+baseline and every gates.yaml set; registration uses the latest gated eval; spending commands never run unweighed;
+the primary profile resolves by latency; the decoding hash covers resolved transcribe params; CER drops spaces
+(`wer_score@2`); reported-only metric steps are optional; per-chunk latency timing; normalizer parity Go ↔ Python;
+stale step-kind pins are refused at planning; gate verdicts notify; media is people-only with bounded conversions,
+range-proof audit and hardened ffmpeg input; eval artifacts are protected from eviction. Open, answered by default:
+
+- [ ] Eval artifacts (hypotheses ≈ 280 MB, scores ≈ 27 MB per 76-cell eval on the stand) are never evicted and the
+      backup mirror copies them: a retention policy is needed before evals run nightly (default meanwhile: keep all)
+- [ ] The media span cache is bounded by size only; the play-audit dedupe is in memory (a restart audits a play
+      again); the conversion bound is global, not per user (default: 2 conversions)
+- [ ] A failed gate notifies as an outcome, not a failure (a gate saying no is the system working)
+- [ ] Step-kind versions a runtime stops publishing are not marked `deprecated` (that state is one-way and would block
+      an image rollback); planning reads the workers' latest registrations instead
+- [ ] `batch_size` stays in the eval decoding hash: at 80 ms, batch 1 and batch ≥ 2 differ by a word in 1 of 10 clips
+      (GPU numerics); an OOM retry at 0.75× batch can still change words without changing the key
+- [ ] The eval record cache reset once with `wer_score@2` (CER without spaces for every language, the FLEURS/Whisper
+      convention) and the fuller decoding hash; earlier records stay but are not read
+- [ ] Latency to final paces each chunk by the step's wall time divided by the streams in it, a lower bound for a lone
+      stream; the measured numbers in the latency_score help predate it
+- [ ] **owner:** the NeMo GPU tests and the nightly NeMo conformance never run in CI: a self-hosted runner on the GPU host
+      is not installed because the repository is public (a pull request from a fork could run code on the host).
+      Options: a runner restricted to the default branch and `workflow_dispatch`, or a host cron that runs the
+      conformance suite and reports to Telegram. Not answered by default
+- [ ] The base model has no usable Thai (empty output with every decoder and prompt): drop `replay-golden-th-th` from
+      the replay sets or keep it as a documented always-empty set (default: keep, it cannot regress)
+
 ## Sources
 
 - [Nemotron 3.5 ASR model card](https://huggingface.co/nvidia/nemotron-3.5-asr-streaming-0.6b) — release date, languages, latency settings, licence

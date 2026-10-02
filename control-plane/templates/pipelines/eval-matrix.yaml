@@ -13,5 +13,5 @@ steps:
     in: { model: $inputs.model, data: $inputs.data }
     params: { profile: 160ms, target_lang: "" }
   - id: score
-    kind: wer_score@1
+    kind: wer_score@2
     in: { hypotheses: transcribe.hypotheses, data: $inputs.data, normalizer: $inputs.normalizer }
