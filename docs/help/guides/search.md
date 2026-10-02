@@ -32,7 +32,7 @@ hold (`tag:telephony tag:fixture` needs both tags).
 
 | Qualifier | Example | Matches |
 | --- | --- | --- |
-| `kind:` | `kind:dataset_version`, `kind:job,approval` | The entity kind: `project`, `base_model`, `dataset_version`, `template`, `registry_collection`, `job`, `approval`, `mix`, `help_article` (short forms `dataset`, `model`, `collection`, `help` work too) |
+| `kind:` | `kind:dataset_version`, `kind:job,approval`, `kind:golden-set` | The entity kind: `project`, `base_model`, `dataset_version`, `template`, `golden_set`, `normalizer`, `model` (registered models), `registry_collection`, `job`, `approval`, `mix`, `eval`, `experiment`, `help_article` (short forms `dataset`, `base-model`, `golden-set`, `collection`, `help` work too) |
 | `status:` / `state:` | `status:failed`, `state:frozen` | The entity's state |
 | `lang:` | `lang:he` | The locale; `he` matches `he-IL` and `he-IL` matches `he` |
 | `actor:` | `actor:agent`, `actor:user`, `actor:automation`, `actor:usr_admin` | Who made the last change: a kind of actor or an actor id or name |
