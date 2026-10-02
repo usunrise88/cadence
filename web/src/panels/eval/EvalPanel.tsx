@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { OpenNewWindow, SoundHigh } from "iconoir-react";
+import { NavArrowDown, NavArrowRight, OpenNewWindow, SoundHigh } from "iconoir-react";
 import { evalsGetOptions, eventsListOptions } from "@/api/gen/@tanstack/react-query.gen";
 import type { Eval, EvalCell, EvalGateCheck, ModelRegistration } from "@/api/gen/types.gen";
 import { Button } from "@/components/ui/button";
@@ -36,12 +36,39 @@ import {
   WORST_N,
   type PanelProps,
 } from "@/shell/panel";
-import { baselineOf, bucketBars, buildMatrix, cellTitle, decodingLabel, defaultCell, deltaForest, deltaHeatmap, profileLabel, progressOf, sdiBars, shortName, type Matrix, type MatrixCell } from "./model";
+import {
+  augmentationLabel,
+  baselineOf,
+  bucketBars,
+  buildMatrix,
+  cellTitle,
+  decodingLabel,
+  defaultCell,
+  deltaForest,
+  deltaHeatmap,
+  ECDF_ROWS,
+  entityBars,
+  latencyBars,
+  profileCells,
+  profileLabel,
+  progressOf,
+  robustnessHeatmap,
+  sdiBars,
+  shortName,
+  stabilityBars,
+  unavailableReasons,
+  werEcdf,
+  werLatency,
+  type Matrix,
+  type MatrixCell,
+} from "./model";
 
 // The Eval report (docs/spec/11-ui-panels.md "Panel catalogue", Eval report; R20–R24, R43, R53, R54): one eval from
 // evals.get. The matrix of golden sets × latency profiles fills live (eval.{id}.progress); each cell shows the
 // subject's WER, the baseline's, and the delta with its 95 % interval, toned by glyph and colour; the primary cell
-// (the one the gate reads) is starred. Charts: delta heatmap, forest plot, S/D/I bars, WER by duration. The gate
+// (the one the gate reads) is starred. Charts: delta heatmap, forest plot, S/D/I bars, WER by duration, the
+// per-utterance WER ECDF and entity accuracy of the selected cell; under "Streaming" WER against latency, latency to
+// final and partial stability of the selected cell's golden set; under "Robustness" the augmentation matrix. The gate
 // (evals.gate) and model registration (models.register, inline confirm) act here. A cell selects into the selection
 // bus (cell:<id>), its worst utterances list below, and a row opens in Diff (cell:<id>/utt:<n>).
 
@@ -140,9 +167,174 @@ function Report({ ev, doc }: { ev: Eval; doc: string }) {
             <p className="text-muted-foreground">Duration buckets appear when the selected cell is scored.</p>
           )}
         </Section>
+        {cell ? <EcdfSection ev={ev} cell={cell} base={base} /> : null}
+        {cell && (cell.metrics || base?.metrics) ? <EntitySection ev={ev} cell={cell} base={base} /> : null}
       </div>
+      {cell ? <Streaming ev={ev} goldenSet={cell.goldenSetVersionId} decoding={decoding} /> : null}
+      <Robustness ev={ev} decoding={decoding} />
       {cell ? <Utterances ev={ev} cell={cell} doc={doc} selected={utterance} /> : null}
     </div>
+  );
+}
+
+/** A report section that folds; it starts collapsed while it has nothing to show and opens when data arrives, unless
+ * the reader toggled it. */
+function Foldable({ id, slot, title, empty, emptyHint, context, children }: { id: string; slot: string; title: string; empty: boolean; emptyHint: string; context?: React.ReactNode; children: React.ReactNode }) {
+  const [choice, setChoice] = useState<boolean | null>(null);
+  const open = choice ?? !empty;
+  return (
+    <section aria-labelledby={id} className="flex min-w-0 flex-col gap-1.5" data-slot={slot} data-empty={empty || undefined}>
+      <div className="flex flex-wrap items-center gap-2">
+        <h3 id={id} className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+          <button type="button" className="flex min-h-6 items-center gap-1 uppercase" aria-expanded={open} aria-controls={`${id}-body`} onClick={() => setChoice(!open)}>
+            {open ? <NavArrowDown aria-hidden className="size-3.5" /> : <NavArrowRight aria-hidden className="size-3.5" />}
+            {title}
+          </button>
+        </h3>
+        {context ? <span className="text-muted-foreground">{context}</span> : null}
+        {empty && !open ? <span className="text-muted-foreground">nothing yet</span> : null}
+      </div>
+      {open ? (
+        <div id={`${id}-body`} className="flex flex-col gap-3">
+          {empty ? <p className="text-muted-foreground">{emptyHint}</p> : children}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function Reasons({ items, label }: { items: { reason: string; cells: string[] }[]; label: string }) {
+  if (!items.length) return null;
+  return (
+    <ul className="flex flex-col gap-0.5 text-muted-foreground" aria-label={label} data-slot="metric-unavailable">
+      {items.map((u) => (
+        <li key={u.reason}>
+          <span className="text-status-warning-foreground">Unavailable:</span> {u.reason} <span className="text-[11px]">({u.cells.join("; ")})</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** Per-utterance WER ECDF of the selected cell against its baseline (the API's worst rows, up to ECDF_ROWS each). */
+function EcdfSection({ ev, cell, base }: { ev: Eval; cell: EvalCell; base?: EvalCell }) {
+  const opts = (c?: EvalCell) => ({ ...evalsGetOptions({ path: { id: ev.id }, query: { worst: ECDF_ROWS, cell: c?.id ?? "" } }), enabled: !!c?.summary });
+  const qs = useQuery(opts(cell));
+  const qb = useQuery(opts(base));
+  const side = (c: EvalCell | undefined, data: Eval | undefined) => {
+    const rows = c && data?.cells?.find((x) => x.id === c.id)?.worst;
+    return rows && c?.summary ? { rows, total: c.summary.utterances } : undefined;
+  };
+  const s = side(cell, qs.data);
+  const b = side(base, qb.data);
+  return (
+    <Section id={`eval-ecdf-${ev.id}`} title="WER per utterance">
+      {s || b ? (
+        <div className="h-56">
+          <AnalyticsChart spec={werEcdf(cellTitle(ev, cell), s, b)} hideTitle />
+        </div>
+      ) : qs.isLoading || qb.isLoading ? (
+        <p className="text-muted-foreground">Loading…</p>
+      ) : qs.error ? (
+        <p className="text-destructive">{errorMessage(qs.error)}</p>
+      ) : (
+        <p className="text-muted-foreground">The distribution appears when the selected cell is scored.</p>
+      )}
+    </Section>
+  );
+}
+
+function EntitySection({ ev, cell, base }: { ev: Eval; cell: EvalCell; base?: EvalCell }) {
+  const spec = entityBars(cellTitle(ev, cell), cell.metrics?.entities, base?.metrics?.entities);
+  const reasons = unavailableReasons(ev, "entities", base ? [cell, base] : [cell]);
+  return (
+    <Section id={`eval-entities-${ev.id}`} title="Entity accuracy">
+      {spec ? (
+        <div className="h-56">
+          <AnalyticsChart spec={spec} hideTitle />
+        </div>
+      ) : !reasons.length ? (
+        <p className="text-muted-foreground">Entity accuracy appears when its scorer finishes for the selected cell.</p>
+      ) : null}
+      <Reasons items={reasons} label="Why entity accuracy is unavailable" />
+    </Section>
+  );
+}
+
+/** WER against latency, latency to final and partial stability of one golden set across the profiles. */
+function Streaming({ ev, goldenSet, decoding }: { ev: Eval; goldenSet: string; decoding: number }) {
+  const rows = profileCells(ev, goldenSet, decoding);
+  const wl = werLatency(ev, goldenSet, decoding);
+  const lat = latencyBars(ev, goldenSet, decoding);
+  const stab = stabilityBars(ev, goldenSet, decoding);
+  const reasons = unavailableReasons(ev, "latency", rows.flatMap((r) => [r.subject, r.baseline].filter((c): c is EvalCell => !!c)));
+  const hasWl = wl.series.some((s) => s.points.length > 0);
+  const empty = !hasWl && !lat && !stab && !reasons.length;
+  const gs = ev.goldenSets.find((g) => g.versionId === goldenSet);
+  return (
+    <Foldable
+      id={`eval-streaming-${ev.id}`}
+      slot="streaming"
+      title="Streaming"
+      empty={empty}
+      emptyHint="WER against latency, latency to final and partial stability appear as the cells are scored."
+      context={`${gs ? shortName(gs.name) : goldenSet}${ev.decoding.length > 1 ? ` · ${decodingLabel(ev.decoding.find((d) => d.index === decoding))}` : ""} · follows the selected cell`}
+    >
+      <div className="grid gap-5 lg:grid-cols-2">
+        {hasWl ? (
+          <Section id={`eval-wer-latency-${ev.id}`} title="WER against latency" className="lg:col-span-2">
+            <div className="h-64">
+              <AnalyticsChart spec={wl} hideTitle />
+            </div>
+          </Section>
+        ) : null}
+        <Section id={`eval-latency-${ev.id}`} title="Latency to final">
+          {lat ? (
+            <div className="h-56">
+              <AnalyticsChart spec={lat} hideTitle />
+            </div>
+          ) : !reasons.length ? (
+            <p className="text-muted-foreground">Latency to final appears when its scorer finishes.</p>
+          ) : null}
+          <Reasons items={reasons} label="Why latency to final is unavailable" />
+        </Section>
+        <Section id={`eval-stability-${ev.id}`} title="Partial stability">
+          {stab ? (
+            <div className="flex flex-col gap-3">
+              <div className="h-44">
+                <AnalyticsChart spec={stab.ratio} hideTitle />
+              </div>
+              <div className="h-44">
+                <AnalyticsChart spec={stab.edits} hideTitle />
+              </div>
+            </div>
+          ) : (
+            <p className="text-muted-foreground">No partial stability in these scores (the decode wrote no partials).</p>
+          )}
+        </Section>
+      </div>
+    </Foldable>
+  );
+}
+
+function Robustness({ ev, decoding }: { ev: Eval; decoding: number }) {
+  const spec = robustnessHeatmap(ev, decoding);
+  const augs = (ev.augmentations ?? []).filter((a) => a.index > 0);
+  return (
+    <Foldable
+      id={`eval-robustness-${ev.id}`}
+      slot="robustness"
+      title="Robustness"
+      empty={!spec}
+      emptyHint={augs.length ? "The robustness matrix fills as the augmented cells are scored." : "This eval has no augmentation axis (evals.new with augmentations adds one)."}
+      context={augs.length ? augs.map((a) => augmentationLabel(ev, a.index)).join(", ") : undefined}
+    >
+      {spec ? (
+        <div style={{ height: Math.max(160, 48 + spec.y.length * 28) }}>
+          <AnalyticsChart spec={spec} hideTitle />
+        </div>
+      ) : null}
+    </Foldable>
   );
 }
 
