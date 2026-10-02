@@ -1,0 +1,36 @@
+# written by Cadence — the he-IL language pack's text rules (docs/spec/03-pipelines-defaults.md "Language packs and
+# hot words"). Keys are stable; keep prose in comments and in README.md. Edit with langpacks.edit or in a session.
+#
+# scoring: the registry normalizer WER is computed after (docs/spec/08-resolutions.md R21) — a collection (its newest
+# frozen version) or a pinned ver_ id. Scoring rules are shared and versioned in the registry so WER stays comparable
+# across projects and over time; changing them is a new registry version, which forces a new baseline.
+# training: the text style transcripts are trained in (punctuation, case, marks, spellings). It is project
+# configuration: runs pin it by the commit that changed this file.
+version: 1
+locale: he-IL
+scoring:
+  normalizer: normalizer/he-il
+training:
+  unicode: NFC
+  # Modern Hebrew is written unpointed; ivrit.ai's corpora and models are unpointed too (vowels are left to
+  # predictors such as Dicta's Nakdan: https://huggingface.co/datasets/ivrit-ai/audio-transcripts/discussions/3).
+  removeMarks: true
+  casefold: false
+  # The base model writes punctuated, cased text (defaults.yaml data.normalize_transcripts); Latin words keep case.
+  punctuation: keep
+  # Numbers stay as the transcript wrote them; itn.yaml describes the written forms output should use.
+  numbers: keep
+  mappings:
+    # Bidirectional controls pasted with web text (LRM, RLM, ALM) carry no speech.
+    - { from: "‎", to: "" }
+    - { from: "‏", to: "" }
+    - { from: "؜", to: "" }
+    # One spelling of geresh and gershayim: ASCII, which every tokenizer covers (Cadence recommendation). Typists
+    # use ASCII ' and " far more often than U+05F3 and U+05F4, and a mixed corpus teaches the model both.
+    - { from: "׳", to: "'" }
+    - { from: "״", to: "\"" }
+    - { from: "’", to: "'" }
+    - { from: "”", to: "\"" }
+    - { from: "“", to: "\"" }
+    # Maqaf (U+05BE) is kept as a hyphen-minus for the same reason.
+    - { from: "־", to: "-" }

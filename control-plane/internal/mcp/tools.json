@@ -1710,6 +1710,115 @@
       ]
     },
     {
+      "name": "boost.edit",
+      "title": "Replace one boost list of a language pack (terms and weight) in one commit",
+      "description": "Replace the terms and weight of one boost list (lang/\u003clocale\u003e/boost/\u003cdomain\u003e.txt; created when missing) in one commit. Terms are whole phrases as the decoder should write them, one per entry, without duplicates; weight is how strongly the list is boosted at decode (defaults.yaml langpacks.boost_weight when the list is new and none is sent). If-Match is the pack's sha from langpacks.get. Boosting is evaluated, not assumed: an eval with decoding {boost: \u003clist\u003e} shows what it does to WER and to the listed terms. Under the draft policy language_pack: draft an agent's edit lands on a branch, like langpacks.edit. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "PATCH",
+      "path": "/projects/{p}/langpacks/{locale}/boost/{domain}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "properties": {
+              "message": {
+                "maxLength": 500,
+                "type": "string"
+              },
+              "terms": {
+                "description": "The list's terms",
+                "items": {
+                  "maxLength": 200,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 100000,
+                "replacing the current ones": null,
+                "type": "array"
+              },
+              "weight": {
+                "description": "Boost weight; the list's current one when omitted, else defaults.yaml langpacks.boost_weight",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "terms"
+            ],
+            "type": "object"
+          },
+          "domain": {
+            "description": "The list's domain: boost/\u003cdomain\u003e.txt (names, products, streets, …)",
+            "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+            "type": "string"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          },
+          "locale": {
+            "description": "Locale of a language pack: its directory lang/\u003clocale\u003e/ (he-IL, sr)",
+            "pattern": "^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8}){0,3}$",
+            "type": "string"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "domain",
+          "ifMatch",
+          "locale",
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "locale",
+          "in": "path",
+          "name": "locale"
+        },
+        {
+          "property": "domain",
+          "in": "path",
+          "name": "domain"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
       "name": "branches.accept",
       "title": "Merge a sync branch into main (fast-forward when possible, otherwise a merge commit)",
       "description": "Merge a draft branch (sync/\u003cdate\u003e) into main: fast-forward when main has not moved, otherwise a merge commit. A conflict answers 409 merge-conflict with the conflicting files and leaves main unchanged. Session branches are merged with agentSessions.accept. Send ifMatch with the branch head from branches.get, so you accept exactly what you reviewed. Pass dryRun=true to see what would happen without changing anything.",
@@ -3478,6 +3587,193 @@
           "property": "timeout",
           "in": "query",
           "name": "timeout"
+        }
+      ]
+    },
+    {
+      "name": "langpacks.edit",
+      "title": "Write or delete files of one language pack in one commit (If-Match is the pack's commit)",
+      "description": "Change files of one language pack in one commit: each entry writes a file (path relative to lang/\u003clocale\u003e/, e.g. normalizer.yaml or boost/names.txt) or deletes it (delete: true). If-Match is the pack's sha from langpacks.get. YAML files are checked against their shape (normalizer.yaml, itn.yaml, translit.yaml, lid.yaml, golden-recipe.yaml) and boost lists against the boost format before anything is committed; dryRun only checks. A person's edit commits to main; an agent's edit, under the project's draft policy language_pack: draft, lands on a branch langpack/\u003clocale\u003e-\u003cdate\u003e for a person to accept (branches.accept). Use boost.edit to replace one boost list. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "PATCH",
+      "path": "/projects/{p}/langpacks/{locale}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "properties": {
+              "files": {
+                "items": {
+                  "properties": {
+                    "content": {
+                      "description": "The new UTF-8 content (omit with delete)",
+                      "maxLength": 1000000,
+                      "type": "string"
+                    },
+                    "delete": {
+                      "description": "Remove the file",
+                      "type": "boolean"
+                    },
+                    "path": {
+                      "description": "Path inside the pack, e.g. normalizer.yaml or boost/names.txt",
+                      "maxLength": 200,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "path"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 100,
+                "minItems": 1,
+                "type": "array"
+              },
+              "message": {
+                "description": "The commit message",
+                "maxLength": 500,
+                "type": "string"
+              }
+            },
+            "required": [
+              "files"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          },
+          "locale": {
+            "description": "Locale of a language pack: its directory lang/\u003clocale\u003e/ (he-IL, sr)",
+            "pattern": "^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8}){0,3}$",
+            "type": "string"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "ifMatch",
+          "locale",
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "locale",
+          "in": "path",
+          "name": "locale"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "langpacks.get",
+      "title": "One language pack with its files, scoring normalizer and boost lists; ETag is the pack's commit",
+      "description": "Read the language pack of one locale (lang/\u003clocale\u003e/ on main): every file with its content, the scoring normalizer normalizer.yaml names (R21: a registry normalizer; the training text style stays in the pack), the boost lists with their weights, and the pack's commit sha (the last commit that changed it), which langpacks.edit and boost.edit take as If-Match. issues lists files whose shape is wrong.",
+      "method": "GET",
+      "path": "/projects/{p}/langpacks/{locale}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "locale": {
+            "description": "Locale of a language pack: its directory lang/\u003clocale\u003e/ (he-IL, sr)",
+            "pattern": "^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8}){0,3}$",
+            "type": "string"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "locale",
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "locale",
+          "in": "path",
+          "name": "locale"
+        }
+      ]
+    },
+    {
+      "name": "langpacks.list",
+      "title": "The project's language packs (lang/\u003clocale\u003e/ on main) and the locales Cadence ships packs for",
+      "description": "List the language packs in the project repository (lang/\u003clocale\u003e/ on main): per locale the pack's commit, its scoring normalizer and its boost lists. shipped names the locales Cadence has starter packs for; projects.sync offers a shipped pack for every project locale that lacks one. Read one with langpacks.get.",
+      "method": "GET",
+      "path": "/projects/{p}/langpacks",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
         }
       ]
     },
@@ -5950,6 +6246,78 @@
       ]
     },
     {
+      "name": "registry.lineage",
+      "title": "The lineage graph around an entity — what it was built from (upstream) and what uses it (downstream)",
+      "description": "Walk the lineage graph from one entity, both ways: upstream is what it was built from (a model's checkpoint, run, mix and base model; a dataset version's sources and pipeline run; a golden set's dataset and normalizer), downstream what uses it (projects that adopted it and their aliases, golden sets over a dataset, mixes and runs that read it, models from a base). depth bounds the hops each way. Nodes in projects the caller cannot see are left out and counted in hidden.",
+      "method": "GET",
+      "path": "/registry/{id}:lineage",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "depth": {
+            "default": 3,
+            "description": "Hops to follow each way",
+            "maximum": 10,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "direction": {
+            "default": "both",
+            "description": "Which way to walk",
+            "enum": [
+              "both",
+              "upstream",
+              "downstream"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "description": "Any entity id lineage knows: a registry version (ver_…), source (src_…), pipeline run (plr_…), run (run_…), checkpoint (ckp_…), mix (mix_…)",
+            "pattern": "^[a-z]{3}_[A-Za-z0-9-]{1,64}$",
+            "type": "string"
+          },
+          "limit": {
+            "default": 200,
+            "description": "Most nodes returned; the walk stops there and says truncated",
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "direction",
+          "in": "query",
+          "name": "direction"
+        },
+        {
+          "property": "depth",
+          "in": "query",
+          "name": "depth"
+        },
+        {
+          "property": "limit",
+          "in": "query",
+          "name": "limit"
+        }
+      ]
+    },
+    {
       "name": "registry.search",
       "title": "Search registry versions of every kind by text and qualifiers (kind:, tag:, locale:, state:)",
       "description": "Search registry versions of every kind (base models, dataset versions, templates). q is free text matched against collection names and descriptions plus qualifiers: kind:base_model, tag:telephony, locale:he-IL, state:frozen. project=\u003cslug\u003e keeps only what that project adopted. Get one version with baseModels.get, datasets.get or templates.get.",
@@ -7133,7 +7501,8 @@
               "skill",
               "pipeline",
               "agent-config",
-              "playbook"
+              "playbook",
+              "langpack"
             ],
             "type": "string"
           }

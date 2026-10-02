@@ -1,0 +1,16 @@
+# written by Cadence — how golden sets for he-IL are sampled and sized (Cadence recommendation). Keys are stable.
+# A golden set is frozen from an eval-only dataset version with one scoring normalizer (goldenSets.freeze); this
+# recipe is what the person or agent building that dataset aims for.
+version: 1
+locale: he-IL
+normalizer: normalizer/he-il
+# About 2 hours (15–20 thousand words) keeps the 95% interval of a WER delta near half a point.
+targetHours: 2
+minUtterances: 300
+utteranceSeconds: { min: 1, max: 30 }
+# The bootstrap's resampling unit (R54): whole calls when the audio has call ids, else speakers.
+groups: call
+splitRule: speaker-disjoint
+maxSpeakerShare: 0.05
+stratify: [speaker, domain]
+domains: [telephony]

@@ -1,0 +1,36 @@
+# written by Cadence — inverse text normalisation for Serbian: the written forms output uses. Keys are stable; keep
+# prose in comments. Patterns (RE2 / Python re syntax) find each class's written form in a reference; the spoken →
+# written conversion arrives with the ITN step (phase 4).
+version: 1
+locale: sr
+classes:
+  - name: number
+    description: Cardinal numbers in digits; a decimal comma, a dot between thousands
+    pattern: "\\d{1,3}(?:\\.\\d{3})*(?:,\\d+)?|\\d+"
+    examples:
+      - { spoken: "tri stotine dvadeset", written: "320" }
+  - name: ordinal
+    description: Ordinals are digits followed by a dot
+    pattern: "\\d+\\."
+    examples:
+      - { spoken: "prvi", written: "1." }
+  - name: date
+    description: Dates day first with dots, the year closed by a dot
+    pattern: "\\d{1,2}\\.\\s?\\d{1,2}\\.\\s?\\d{4}\\.?"
+    examples:
+      - { spoken: "prvi oktobar dve hiljade dvadeset šeste", written: "1. 10. 2026." }
+  - name: time
+    description: Clock times with a colon
+    pattern: "\\d{1,2}:\\d{2}"
+    examples:
+      - { spoken: "osam i trideset", written: "8:30" }
+  - name: amount
+    description: Amounts in dinars, the number before RSD or din.
+    pattern: "\\d+(?:[.,]\\d+)*\\s?(?:RSD|din\\.?|dinara)"
+    examples:
+      - { spoken: "dve stotine dinara", written: "200 dinara" }
+  - name: percent
+    description: Percentages with the sign after the number
+    pattern: "\\d+(?:,\\d+)?\\s?%"
+    examples:
+      - { spoken: "dvadeset posto", written: "20%" }

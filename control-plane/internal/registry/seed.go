@@ -117,6 +117,7 @@ var templateDirs = map[string]string{
 	"pipelines":    "pipeline",
 	"agent-config": "agent-config",
 	"playbooks":    "playbook",
+	"lang":         "langpack", // lang/<locale>/: starter language packs (template/langpack-he-il)
 }
 
 // TemplateFile is one file of a template version.

@@ -1,0 +1,8 @@
+# written by Cadence — language identification for Serbian projects. Keys are stable; keep prose in comments.
+# Serbian, Croatian, Bosnian and Montenegrin are mutually intelligible standards of one language: an identifier
+# confuses them, so they are accepted together and the confidence floor is lower than for a distinct language.
+version: 1
+locale: sr
+accept: [sr, hr, bs, cnr]
+codeSwitch: keep
+minConfidence: 0.5

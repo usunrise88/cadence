@@ -1,0 +1,20 @@
+# written by Cadence — the sr language pack's text rules (docs/spec/03-pipelines-defaults.md "Language packs and hot
+# words"). Keys are stable; keep prose in comments and in README.md. Edit with langpacks.edit or in a session.
+#
+# scoring: the registry normalizer WER is computed after (docs/spec/08-resolutions.md R21). There is no Serbian
+# scoring normalizer yet, so the language-neutral one scores; both sides must be in the same script (README.md).
+# training: the text style transcripts are trained in — Gaj's Latin alphabet, through the sr-Cyrl-Latn scheme of
+# translit.yaml, because the base model's tokenizer lacks six Serbian Cyrillic letters (ђ ј љ њ ћ џ; 2026-10-01, the
+# test stand's Serbian fine-tune).
+version: 1
+locale: sr
+scoring:
+  normalizer: normalizer/basic
+training:
+  unicode: NFC
+  removeMarks: false   # č ć ž š đ are letters, not decorations
+  casefold: false
+  punctuation: keep
+  numbers: keep
+  transliterate: sr-Cyrl-Latn
+  mappings: []

@@ -84,6 +84,9 @@ type Defaults struct {
 	Eval Eval `yaml:"eval"`
 	Gate Gate `yaml:"gate"`
 
+	// Language packs: boost list defaults (phase 3, stream L).
+	Langpacks Langpacks `yaml:"langpacks"`
+
 	document map[string]any
 }
 
@@ -229,6 +232,12 @@ type Gate struct {
 	TargetRule          Param[string]  `yaml:"target_rule"`
 	ReplayMaxRegression Param[float64] `yaml:"replay_max_regression"`
 	DeletionsInsertions Param[bool]    `yaml:"deletions_insertions"`
+}
+
+// Langpacks holds the language pack defaults: what a new boost list starts with and how long one may be.
+type Langpacks struct {
+	BoostWeight   Param[float64] `yaml:"boost_weight"`
+	BoostMaxTerms Param[int]     `yaml:"boost_max_terms"`
 }
 
 // Compute holds the hosts seeded at first start.

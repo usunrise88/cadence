@@ -317,6 +317,24 @@ var Operations = []Operation{
 		},
 	},
 	{
+		ID: "boost.edit", Entity: "boost", Verb: "edit", Method: "PATCH", Path: "/projects/{p}/langpacks/{locale}/boost/{domain}",
+		Summary:        "Replace one boost list of a language pack (terms and weight) in one commit",
+		Description:    "Replace the terms and weight of one boost list (lang/<locale>/boost/<domain>.txt; created when missing) in one commit. Terms are whole phrases as the decoder should write them, one per entry, without duplicates; weight is how strongly the list is boosted at decode (defaults.yaml langpacks.boost_weight when the list is new and none is sent). If-Match is the pack's sha from langpacks.get. Boosting is evaluated, not assumed: an eval with decoding {boost: <list>} shows what it does to WER and to the listed terms. Under the draft policy language_pack: draft an agent's edit lands on a branch, like langpacks.edit.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "locale", In: "path", Flag: "locale", Required: true, Type: "string", Description: "Locale of a language pack: its directory lang/<locale>/ (he-IL, sr)"},
+			{Name: "domain", In: "path", Flag: "domain", Required: true, Type: "string", Description: "The list's domain: boost/<domain>.txt (names, products, streets, …)"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "message", Type: "string"},
+			{Name: "terms", Required: true, Type: "array of string", Description: "The list's terms"},
+			{Name: "weight", Type: "number", Description: "Boost weight; the list's current one when omitted, else defaults.yaml langpacks.boost_weight"},
+		}},
+	},
+	{
 		ID: "branches.accept", Entity: "branches", Verb: "accept", Method: "POST", Path: "/projects/{p}/branches/{name}:accept",
 		Summary:        "Merge a sync branch into main (fast-forward when possible, otherwise a merge commit)",
 		Description:    "Merge a draft branch (sync/<date>) into main: fast-forward when main has not moved, otherwise a merge commit. A conflict answers 409 merge-conflict with the conflicting files and leaves main unchanged. Session branches are merged with agentSessions.accept. Send ifMatch with the branch head from branches.get, so you accept exactly what you reviewed.",
@@ -635,6 +653,39 @@ var Operations = []Operation{
 		Params: []Param{
 			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string"},
 			{Name: "timeout", In: "query", Flag: "timeout", Type: "integer", Description: "Seconds to wait at most", Default: "30"},
+		},
+	},
+	{
+		ID: "langpacks.edit", Entity: "langpacks", Verb: "edit", Method: "PATCH", Path: "/projects/{p}/langpacks/{locale}",
+		Summary:        "Write or delete files of one language pack in one commit (If-Match is the pack's commit)",
+		Description:    "Change files of one language pack in one commit: each entry writes a file (path relative to lang/<locale>/, e.g. normalizer.yaml or boost/names.txt) or deletes it (delete: true). If-Match is the pack's sha from langpacks.get. YAML files are checked against their shape (normalizer.yaml, itn.yaml, translit.yaml, lid.yaml, golden-recipe.yaml) and boost lists against the boost format before anything is committed; dryRun only checks. A person's edit commits to main; an agent's edit, under the project's draft policy language_pack: draft, lands on a branch langpack/<locale>-<date> for a person to accept (branches.accept). Use boost.edit to replace one boost list.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "locale", In: "path", Flag: "locale", Required: true, Type: "string", Description: "Locale of a language pack: its directory lang/<locale>/ (he-IL, sr)"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "files", Required: true, Type: "array of object"},
+			{Name: "message", Type: "string", Description: "The commit message"},
+		}},
+	},
+	{
+		ID: "langpacks.get", Entity: "langpacks", Verb: "get", Method: "GET", Path: "/projects/{p}/langpacks/{locale}",
+		Summary:     "One language pack with its files, scoring normalizer and boost lists; ETag is the pack's commit",
+		Description: "Read the language pack of one locale (lang/<locale>/ on main): every file with its content, the scoring normalizer normalizer.yaml names (R21: a registry normalizer; the training text style stays in the pack), the boost lists with their weights, and the pack's commit sha (the last commit that changed it), which langpacks.edit and boost.edit take as If-Match. issues lists files whose shape is wrong.",
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "locale", In: "path", Flag: "locale", Required: true, Type: "string", Description: "Locale of a language pack: its directory lang/<locale>/ (he-IL, sr)"},
+		},
+	},
+	{
+		ID: "langpacks.list", Entity: "langpacks", Verb: "list", Method: "GET", Path: "/projects/{p}/langpacks",
+		Summary:     "The project's language packs (lang/<locale>/ on main) and the locales Cadence ships packs for",
+		Description: "List the language packs in the project repository (lang/<locale>/ on main): per locale the pack's commit, its scoring normalizer and its boost lists. shipped names the locales Cadence has starter packs for; projects.sync offers a shipped pack for every project locale that lacks one. Read one with langpacks.get.",
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
 		},
 	},
 	{
@@ -1069,6 +1120,17 @@ var Operations = []Operation{
 		}},
 	},
 	{
+		ID: "registry.lineage", Entity: "registry", Verb: "lineage", Method: "GET", Path: "/registry/{id}:lineage",
+		Summary:     "The lineage graph around an entity — what it was built from (upstream) and what uses it (downstream)",
+		Description: "Walk the lineage graph from one entity, both ways: upstream is what it was built from (a model's checkpoint, run, mix and base model; a dataset version's sources and pipeline run; a golden set's dataset and normalizer), downstream what uses it (projects that adopted it and their aliases, golden sets over a dataset, mixes and runs that read it, models from a base). depth bounds the hops each way. Nodes in projects the caller cannot see are left out and counted in hidden.",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Any entity id lineage knows: a registry version (ver_…), source (src_…), pipeline run (plr_…), run (run_…), checkpoint (ckp_…), mix (mix_…)"},
+			{Name: "direction", In: "query", Flag: "direction", Type: "string", Description: "Which way to walk", Default: "both", Enum: []string{"both", "upstream", "downstream"}},
+			{Name: "depth", In: "query", Flag: "depth", Type: "integer", Description: "Hops to follow each way", Default: "3"},
+			{Name: "limit", In: "query", Flag: "limit", Type: "integer", Description: "Most nodes returned; the walk stops there and says truncated", Default: "200"},
+		},
+	},
+	{
 		ID: "registry.search", Entity: "registry", Verb: "search", Method: "GET", Path: "/registry",
 		Summary:     "Search registry versions of every kind by text and qualifiers (kind:, tag:, locale:, state:)",
 		Description: "Search registry versions of every kind (base models, dataset versions, templates). q is free text matched against collection names and descriptions plus qualifiers: kind:base_model, tag:telephony, locale:he-IL, state:frozen. project=<slug> keeps only what that project adopted. Get one version with baseModels.get, datasets.get or templates.get.",
@@ -1306,7 +1368,7 @@ var Operations = []Operation{
 		Params: []Param{
 			{Name: "collection", In: "query", Flag: "collection", Type: "string", Description: "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)"},
 			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated"}},
-			{Name: "templateKind", In: "query", Flag: "template-kind", Type: "string", Description: "Only templates of this kind", Enum: []string{"instructions", "preset", "skill", "pipeline", "agent-config", "playbook"}},
+			{Name: "templateKind", In: "query", Flag: "template-kind", Type: "string", Description: "Only templates of this kind", Enum: []string{"instructions", "preset", "skill", "pipeline", "agent-config", "playbook", "langpack"}},
 		},
 	},
 	{

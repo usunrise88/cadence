@@ -54,6 +54,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/eviction"
 	"github.com/usunrise88/cadence/control-plane/internal/help"
 	"github.com/usunrise88/cadence/control-plane/internal/jobs"
+	"github.com/usunrise88/cadence/control-plane/internal/langpacks"
 	"github.com/usunrise88/cadence/control-plane/internal/notify"
 	"github.com/usunrise88/cadence/control-plane/internal/obs"
 	"github.com/usunrise88/cadence/control-plane/internal/policy"
@@ -221,6 +222,7 @@ func serve(ctx context.Context, getenv func(string) string) error {
 		return err
 	}
 	projectRepos.Register(jobSvc)
+	scorers := langpacks.NewScorers(templates.FS, repoStore) // locale scoring normalizers for search (language packs)
 
 	metrics := obs.NewMetrics()
 	hub := events.NewHub(256)
@@ -304,6 +306,7 @@ func serve(ctx context.Context, getenv func(string) string) error {
 		Eviction: evictSvc,
 		Telegram: bot,
 		Poller:   poller,
+		Scorers:  scorers,
 	})
 	if err != nil {
 		return err
@@ -376,7 +379,11 @@ func serve(ctx context.Context, getenv func(string) string) error {
 	}
 	g, gctx := errgroup.WithContext(runCtx)
 	g.Go(func() error { return events.NewDispatcher(pool, hub, log, metrics.EventsDispatched).Run(gctx) })
-	g.Go(func() error { return search.NewIndexer(pool, hub, log, search.Sources()).Run(gctx) })
+	g.Go(func() error {
+		ix := search.NewIndexer(pool, hub, log, search.Sources())
+		ix.Folder = scorers // documents fold with their locale's scoring normalizer (language packs)
+		return ix.Run(gctx)
+	})
 	g.Go(func() error {
 		return (&notify.Router{Pool: pool, Hub: hub, Log: log, Defaults: defaults.Get, Wake: notifyWake}).Run(gctx)
 	})

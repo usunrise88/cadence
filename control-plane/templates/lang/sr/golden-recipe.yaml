@@ -1,0 +1,15 @@
+# written by Cadence — how golden sets for Serbian are sampled and sized (Cadence recommendation). Keys are stable.
+version: 1
+locale: sr
+normalizer: normalizer/basic
+# Import the golden audio with the same transliteration as the training data (dataset_import transliterate:
+# sr-Cyrl-Latn), so reference and hypothesis are in one script.
+transliterate: sr-Cyrl-Latn
+targetHours: 2
+minUtterances: 300
+utteranceSeconds: { min: 1, max: 30 }
+groups: speaker
+splitRule: speaker-disjoint
+maxSpeakerShare: 0.05
+stratify: [speaker, domain]
+domains: [telephony]

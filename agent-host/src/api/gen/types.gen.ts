@@ -594,7 +594,7 @@ export type DatasetVersionList = {
     items: Array<DatasetVersion>;
 };
 
-export type TemplateKind = 'instructions' | 'preset' | 'skill' | 'pipeline' | 'agent-config' | 'playbook';
+export type TemplateKind = 'instructions' | 'preset' | 'skill' | 'pipeline' | 'agent-config' | 'playbook' | 'langpack';
 
 export type TemplateFile = {
     /**
@@ -881,6 +881,10 @@ export type Defaults = {
      * The default gate a project's gates.yaml departs from (phase 3)
      */
     gate?: DefaultSection;
+    /**
+     * Language packs (phase 3): the boost weight a new list starts with and the size cap of a list
+     */
+    langpacks?: DefaultSection;
     estimates: {
         bytes_per_audio_hour: DefaultValue;
         measured_plus_minus?: DefaultValue;
@@ -5228,6 +5232,205 @@ export type ModelPayload = {
     card?: string;
 };
 
+/**
+ * BCP 47 locale of a language pack: its directory lang/<locale>/ (he-IL, sr)
+ */
+export type PackLocaleName = string;
+
+/**
+ * A boost list's domain: the file boost/<domain>.txt
+ */
+export type BoostDomain = string;
+
+export type LanguagePackFile = {
+    /**
+     * Path inside the pack (normalizer.yaml, boost/names.txt)
+     */
+    path: string;
+    bytes: number;
+    /**
+     * The file as UTF-8 text
+     */
+    content: string;
+};
+
+/**
+ * One boost list (boost/<domain>.txt): a '# weight: <float>' header, then one term per line; blank lines and other # lines are comments. The eval decoder receives it as a boost_list artifact {terms, weight}
+ */
+export type BoostList = {
+    domain: BoostDomain;
+    /**
+     * Path inside the pack, boost/<domain>.txt
+     */
+    path: string;
+    weight: number;
+    terms: Array<string>;
+    /**
+     * sha256 (hex) of the list's canonical JSON {"terms":[…],"weight":w}: the identity an eval's decoding names
+     */
+    sha256: string;
+};
+
+/**
+ * The scoring normalizer normalizer.yaml names (R21): a registry normalizer collection (its newest frozen version) or a pinned version
+ */
+export type PackScoring = {
+    /**
+     * normalizer/<name> or ver_…
+     */
+    normalizer: string;
+    /**
+     * The version it resolves to now; absent when the registry has none
+     */
+    versionId?: string;
+    version?: string;
+};
+
+export type LanguagePackSummary = {
+    locale: PackLocaleName;
+    /**
+     * lang/<locale>
+     */
+    path: string;
+    /**
+     * The last commit on main that changed the pack
+     */
+    sha: string;
+    files: number;
+    /**
+     * Domains of its boost lists
+     */
+    boost: Array<string>;
+    scoring: PackScoring;
+};
+
+export type LanguagePackList = {
+    items: Array<LanguagePackSummary>;
+    /**
+     * Locales Cadence ships starter packs for
+     */
+    shipped: Array<string>;
+};
+
+/**
+ * A language pack (docs/spec/03-pipelines-defaults.md "Language packs and hot words"): lang/<locale>/ in the project repository
+ */
+export type LanguagePack = {
+    locale: PackLocaleName;
+    /**
+     * lang/<locale>
+     */
+    path: string;
+    /**
+     * The last commit that changed the pack: the ETag, and what entities pin
+     */
+    sha: string;
+    /**
+     * The commit the pack was read at
+     */
+    commit: string;
+    /**
+     * The branch the change landed on when it is not main (an agent's edit under the draft policy language_pack: draft); accept it with branches.accept
+     */
+    branch?: string;
+    files: Array<LanguagePackFile>;
+    boost: Array<BoostList>;
+    scoring: PackScoring;
+    /**
+     * Files whose shape is wrong (a hand edit); empty when the pack checks out
+     */
+    issues: Array<ProblemFieldError>;
+};
+
+export type LanguagePackFileChange = {
+    /**
+     * Path inside the pack, e.g. normalizer.yaml or boost/names.txt
+     */
+    path: string;
+    /**
+     * The new UTF-8 content (omit with delete)
+     */
+    content?: string;
+    /**
+     * Remove the file
+     */
+    delete?: boolean;
+};
+
+export type LanguagePackEdit = {
+    files: Array<LanguagePackFileChange>;
+    /**
+     * The commit message
+     */
+    message?: string;
+};
+
+export type BoostEdit = {
+    /**
+     * The list's terms
+     */
+    terms: Array<string>;
+    /**
+     * Boost weight; the list's current one when omitted, else defaults.yaml langpacks.boost_weight
+     */
+    weight?: number;
+    message?: string;
+};
+
+export type LineageNode = {
+    id: string;
+    /**
+     * Entity kind: a registry kind (dataset_version, golden_set, model, …), source, pipeline_run, run, checkpoint, mix, project, or one another domain adds (eval)
+     */
+    kind: string;
+    /**
+     * What to show: collection and version, a run's mix, a project's slug
+     */
+    label: string;
+    /**
+     * Project work only
+     */
+    projectId?: string;
+    /**
+     * The entity's state or status, when it has one
+     */
+    state?: string;
+    direction: 'root' | 'upstream' | 'downstream';
+    /**
+     * Hops from the root
+     */
+    distance: number;
+};
+
+export type LineageEdge = {
+    /**
+     * The entity that was used
+     */
+    from: string;
+    /**
+     * The entity that used it
+     */
+    to: string;
+    /**
+     * How: the payload field that names it (datasetVersionId, lineage.runId, sourceIds), or mix, base, init, run, adopted, …
+     */
+    relation: string;
+};
+
+export type Lineage = {
+    root: string;
+    nodes: Array<LineageNode>;
+    edges: Array<LineageEdge>;
+    /**
+     * The node limit stopped the walk
+     */
+    truncated: boolean;
+    /**
+     * Nodes left out because they belong to projects the caller cannot see
+     */
+    hidden: number;
+};
+
 export type SecretNewWritable = {
     name: SecretName;
     kind: SecretKind;
@@ -5280,6 +5483,11 @@ export type IfMatchOptional = string;
  * Validate and report what would happen without changing anything
  */
 export type DryRun = boolean;
+
+/**
+ * Locale of a language pack: its directory lang/<locale>/ (he-IL, sr)
+ */
+export type PackLocale = PackLocaleName;
 
 /**
  * Project slug
@@ -11202,6 +11410,215 @@ export type ArtifactsEvictResponses = {
 };
 
 export type ArtifactsEvictResponse = ArtifactsEvictResponses[keyof ArtifactsEvictResponses];
+
+export type LangpacksListData = {
+    body?: never;
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: never;
+    url: '/projects/{p}/langpacks';
+};
+
+export type LangpacksListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type LangpacksListError = LangpacksListErrors[keyof LangpacksListErrors];
+
+export type LangpacksListResponses = {
+    /**
+     * Packs by locale
+     */
+    200: LanguagePackList;
+};
+
+export type LangpacksListResponse = LangpacksListResponses[keyof LangpacksListResponses];
+
+export type LangpacksGetData = {
+    body?: never;
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+        /**
+         * Locale of a language pack: its directory lang/<locale>/ (he-IL, sr)
+         */
+        locale: PackLocaleName;
+    };
+    query?: never;
+    url: '/projects/{p}/langpacks/{locale}';
+};
+
+export type LangpacksGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type LangpacksGetError = LangpacksGetErrors[keyof LangpacksGetErrors];
+
+export type LangpacksGetResponses = {
+    /**
+     * The pack
+     */
+    200: LanguagePack;
+};
+
+export type LangpacksGetResponse = LangpacksGetResponses[keyof LangpacksGetResponses];
+
+export type LangpacksEditData = {
+    body: LanguagePackEdit;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+        /**
+         * Locale of a language pack: its directory lang/<locale>/ (he-IL, sr)
+         */
+        locale: PackLocaleName;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/projects/{p}/langpacks/{locale}';
+};
+
+export type LangpacksEditErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type LangpacksEditError = LangpacksEditErrors[keyof LangpacksEditErrors];
+
+export type LangpacksEditResponses = {
+    /**
+     * The pack as committed (or, for a dry run, as it would be)
+     */
+    200: LanguagePack;
+};
+
+export type LangpacksEditResponse = LangpacksEditResponses[keyof LangpacksEditResponses];
+
+export type BoostEditData = {
+    body: BoostEdit;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+        /**
+         * Locale of a language pack: its directory lang/<locale>/ (he-IL, sr)
+         */
+        locale: PackLocaleName;
+        /**
+         * The list's domain: boost/<domain>.txt (names, products, streets, …)
+         */
+        domain: BoostDomain;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/projects/{p}/langpacks/{locale}/boost/{domain}';
+};
+
+export type BoostEditErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type BoostEditError = BoostEditErrors[keyof BoostEditErrors];
+
+export type BoostEditResponses = {
+    /**
+     * The pack with the list as committed (or, for a dry run, as it would be)
+     */
+    200: LanguagePack;
+};
+
+export type BoostEditResponse = BoostEditResponses[keyof BoostEditResponses];
+
+export type RegistryLineageData = {
+    body?: never;
+    path: {
+        /**
+         * Any entity id lineage knows: a registry version (ver_…), source (src_…), pipeline run (plr_…), run (run_…), checkpoint (ckp_…), mix (mix_…)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Which way to walk
+         */
+        direction?: 'both' | 'upstream' | 'downstream';
+        /**
+         * Hops to follow each way
+         */
+        depth?: number;
+        /**
+         * Most nodes returned; the walk stops there and says truncated
+         */
+        limit?: number;
+    };
+    url: '/registry/{id}:lineage';
+};
+
+export type RegistryLineageErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type RegistryLineageError = RegistryLineageErrors[keyof RegistryLineageErrors];
+
+export type RegistryLineageResponses = {
+    /**
+     * Nodes and edges; edges point from what was used to what used it
+     */
+    200: Lineage;
+};
+
+export type RegistryLineageResponse = RegistryLineageResponses[keyof RegistryLineageResponses];
 
 export type MountsListData = {
     body?: never;

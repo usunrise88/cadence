@@ -1,0 +1,43 @@
+# written by Cadence — script maps for Serbian, which is written in Cyrillic and in Gaj's Latin alphabet one to one.
+# Keys are stable; keep prose in comments. A scheme's name is the worker transliteration it runs
+# (dataset_import's transliterate parameter, worker/cadence_worker/translit.py); map lists the lower-case letters,
+# and a capital digraph letter becomes Lj / Nj / Dž before lower case and LJ / NJ / DŽ inside an all-caps word.
+# Anything that is not Serbian Cyrillic passes unchanged.
+version: 1
+locale: sr
+schemes:
+  - name: sr-Cyrl-Latn
+    from: Cyrl
+    to: Latn
+    reversible: true
+    map:
+      - { from: "а", to: "a" }
+      - { from: "б", to: "b" }
+      - { from: "в", to: "v" }
+      - { from: "г", to: "g" }
+      - { from: "д", to: "d" }
+      - { from: "ђ", to: "đ" }
+      - { from: "е", to: "e" }
+      - { from: "ж", to: "ž" }
+      - { from: "з", to: "z" }
+      - { from: "и", to: "i" }
+      - { from: "ј", to: "j" }
+      - { from: "к", to: "k" }
+      - { from: "л", to: "l" }
+      - { from: "љ", to: "lj" }
+      - { from: "м", to: "m" }
+      - { from: "н", to: "n" }
+      - { from: "њ", to: "nj" }
+      - { from: "о", to: "o" }
+      - { from: "п", to: "p" }
+      - { from: "р", to: "r" }
+      - { from: "с", to: "s" }
+      - { from: "т", to: "t" }
+      - { from: "ћ", to: "ć" }
+      - { from: "у", to: "u" }
+      - { from: "ф", to: "f" }
+      - { from: "х", to: "h" }
+      - { from: "ц", to: "c" }
+      - { from: "ч", to: "č" }
+      - { from: "џ", to: "dž" }
+      - { from: "ш", to: "š" }

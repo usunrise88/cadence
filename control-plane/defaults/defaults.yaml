@@ -468,6 +468,20 @@ gate:
     description: Fail the gate when the target cells' deletion rate falls while their insertion rate rises (both intervals excluding zero)
     source: docs/spec/03-pipelines-defaults.md "Key defaults" (Gate)
 
+# Language packs (phase 3, stream L; docs/spec/03-pipelines-defaults.md "Language packs and hot words").
+langpacks:
+  boost_weight:
+    value: 1.0
+    description: Weight a new boost list starts with (its file's '# weight:' header), passed with the list to the transcribe step's phrase boosting; boosting is evaluated before it is trusted
+    source: Cadence recommendation (docs/spec/08-resolutions.md R24)
+    range: { min: 0, max: 10 }
+  boost_max_terms:
+    value: 5000
+    unit: terms
+    description: Most terms one boost list may hold; long lists slow decoding and invite insertions of listed terms
+    source: Cadence recommendation (docs/spec/08-resolutions.md R24, over-boosting shows as insertions)
+    range: { min: 1, max: 100000 }
+
 # Framework packs (R45): one section per pack, read by its step kinds through x-cadence defaultRef packs.<pack>.<key>.
 packs:
   # The CPU toy pack (runtime `toy`, family `toy-ctc`): a tiny CTC model trained in seconds that exists only to keep the

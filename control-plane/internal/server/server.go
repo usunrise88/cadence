@@ -30,6 +30,8 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/eviction"
 	"github.com/usunrise88/cadence/control-plane/internal/help"
 	"github.com/usunrise88/cadence/control-plane/internal/jobs"
+	"github.com/usunrise88/cadence/control-plane/internal/langpacks"
+	"github.com/usunrise88/cadence/control-plane/internal/lineage"
 	"github.com/usunrise88/cadence/control-plane/internal/mcp"
 	"github.com/usunrise88/cadence/control-plane/internal/mixes"
 	"github.com/usunrise88/cadence/control-plane/internal/notify"
@@ -103,6 +105,13 @@ type Config struct {
 	Telegram notify.Bot
 	// Poller is the Telegram long-poll loop, read for its status only; nil when it does not run.
 	Poller *notify.Poller
+
+	// Lineage walks registry.lineage (phase 3 · stream L); nil means lineage.New() — the built-in sources. Domains
+	// whose work lives in tables (evals) pass theirs: lineage.New(evalsSource).
+	Lineage *lineage.Graph
+	// Scorers finds a locale's scoring normalizer for the search index and its queries (language packs, R21); nil
+	// keeps the index's own folding.
+	Scorers *langpacks.Scorers
 }
 
 // Server implements api.StrictServerInterface. Planned operations fall through to api.Planned (501).

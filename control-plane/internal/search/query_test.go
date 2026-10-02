@@ -67,6 +67,7 @@ func TestParse(t *testing.T) {
 			}
 			tt.want.Raw = tt.q
 			got.Qualifiers = nil // checked in TestParseQualifiers
+			got.free = nil       // the unnormalised free text Refold starts from
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("Parse(%q)\n got %+v\nwant %+v", tt.q, got, tt.want)
 			}

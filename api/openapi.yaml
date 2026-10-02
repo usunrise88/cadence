@@ -3122,6 +3122,130 @@ paths:
 
   # ---------------------------------------------------------------- language packs, boost lists, lineage (phase 3 · stream L) — add paths below this line
 
+  /projects/{p}/langpacks:
+    x-cadence: { entity: langpacks, kind: language_pack }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    get:
+      operationId: langpacks.list
+      summary: The project's language packs (lang/<locale>/ on main) and the locales Cadence ships packs for
+      tags: [projects]
+      x-cadence:
+        toolDescription: >
+          List the language packs in the project repository (lang/<locale>/ on main): per locale the pack's commit,
+          its scoring normalizer and its boost lists. shipped names the locales Cadence has starter packs for;
+          projects.sync offers a shipped pack for every project locale that lacks one. Read one with langpacks.get.
+      responses:
+        "200":
+          description: Packs by locale
+          content: { application/json: { schema: { $ref: "#/components/schemas/LanguagePackList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /projects/{p}/langpacks/{locale}:
+    x-cadence: { entity: langpacks, kind: language_pack }
+    parameters:
+      - $ref: "#/components/parameters/ProjectSlug"
+      - $ref: "#/components/parameters/PackLocale"
+    get:
+      operationId: langpacks.get
+      summary: One language pack with its files, scoring normalizer and boost lists; ETag is the pack's commit
+      tags: [projects]
+      x-cadence:
+        toolDescription: >
+          Read the language pack of one locale (lang/<locale>/ on main): every file with its content, the scoring
+          normalizer normalizer.yaml names (R21: a registry normalizer; the training text style stays in the pack),
+          the boost lists with their weights, and the pack's commit sha (the last commit that changed it), which
+          langpacks.edit and boost.edit take as If-Match. issues lists files whose shape is wrong.
+      responses:
+        "200":
+          description: The pack
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/LanguagePack" } } }
+        default: { $ref: "#/components/responses/Problem" }
+    patch:
+      operationId: langpacks.edit
+      summary: Write or delete files of one language pack in one commit (If-Match is the pack's commit)
+      tags: [projects]
+      x-cadence:
+        toolDescription: >
+          Change files of one language pack in one commit: each entry writes a file (path relative to
+          lang/<locale>/, e.g. normalizer.yaml or boost/names.txt) or deletes it (delete: true). If-Match is the
+          pack's sha from langpacks.get. YAML files are checked against their shape (normalizer.yaml, itn.yaml,
+          translit.yaml, lid.yaml, golden-recipe.yaml) and boost lists against the boost format before anything is
+          committed; dryRun only checks. A person's edit commits to main; an agent's edit, under the project's draft
+          policy language_pack: draft, lands on a branch langpack/<locale>-<date> for a person to accept
+          (branches.accept). Use boost.edit to replace one boost list.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/LanguagePackEdit" } } }
+      responses:
+        "200":
+          description: The pack as committed (or, for a dry run, as it would be)
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/LanguagePack" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /projects/{p}/langpacks/{locale}/boost/{domain}:
+    x-cadence: { entity: boost, kind: boost_list }
+    parameters:
+      - $ref: "#/components/parameters/ProjectSlug"
+      - $ref: "#/components/parameters/PackLocale"
+      - { name: domain, in: path, required: true, description: "The list's domain: boost/<domain>.txt (names, products, streets, …)", schema: { $ref: "#/components/schemas/BoostDomain" } }
+    patch:
+      operationId: boost.edit
+      summary: Replace one boost list of a language pack (terms and weight) in one commit
+      tags: [projects]
+      x-cadence:
+        toolDescription: >
+          Replace the terms and weight of one boost list (lang/<locale>/boost/<domain>.txt; created when missing) in
+          one commit. Terms are whole phrases as the decoder should write them, one per entry, without duplicates;
+          weight is how strongly the list is boosted at decode (defaults.yaml langpacks.boost_weight when the list
+          is new and none is sent). If-Match is the pack's sha from langpacks.get. Boosting is evaluated, not
+          assumed: an eval with decoding {boost: <list>} shows what it does to WER and to the listed terms. Under
+          the draft policy language_pack: draft an agent's edit lands on a branch, like langpacks.edit.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/BoostEdit" } } }
+      responses:
+        "200":
+          description: The pack with the list as committed (or, for a dry run, as it would be)
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/LanguagePack" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/{id}:lineage:
+    x-cadence: { entity: registry, kind: registry_version }
+    parameters:
+      - { name: id, in: path, required: true, description: "Any entity id lineage knows: a registry version (ver_…), source (src_…), pipeline run (plr_…), run (run_…), checkpoint (ckp_…), mix (mix_…)", schema: { type: string, pattern: "^[a-z]{3}_[A-Za-z0-9-]{1,64}$" } }
+    get:
+      operationId: registry.lineage
+      summary: The lineage graph around an entity — what it was built from (upstream) and what uses it (downstream)
+      tags: [registry]
+      x-cadence:
+        toolDescription: >
+          Walk the lineage graph from one entity, both ways: upstream is what it was built from (a model's
+          checkpoint, run, mix and base model; a dataset version's sources and pipeline run; a golden set's dataset
+          and normalizer), downstream what uses it (projects that adopted it and their aliases, golden sets over a
+          dataset, mixes and runs that read it, models from a base). depth bounds the hops each way. Nodes in
+          projects the caller cannot see are left out and counted in hidden.
+      parameters:
+        - { name: direction, in: query, description: "Which way to walk", schema: { type: string, enum: [both, upstream, downstream], default: both } }
+        - { name: depth, in: query, description: Hops to follow each way, schema: { type: integer, minimum: 1, maximum: 10, default: 3 } }
+        - { name: limit, in: query, description: Most nodes returned; the walk stops there and says truncated, schema: { type: integer, minimum: 1, maximum: 1000, default: 200 } }
+      responses:
+        "200":
+          description: Nodes and edges; edges point from what was used to what used it
+          content: { application/json: { schema: { $ref: "#/components/schemas/Lineage" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+
   # ---------------------------------------------------------------- planned (later phases)
   /mounts:
     x-cadence: { entity: mounts, planned: 4 }
@@ -3164,6 +3288,12 @@ components:
       required: false
       description: Validate and report what would happen without changing anything
       schema: { type: boolean, default: false }
+    PackLocale:
+      name: locale
+      in: path
+      required: true
+      description: "Locale of a language pack: its directory lang/<locale>/ (he-IL, sr)"
+      schema: { $ref: "#/components/schemas/PackLocaleName" }
     ProjectSlug:
       name: p
       in: path
@@ -3732,7 +3862,7 @@ components:
 
     TemplateKind:
       type: string
-      enum: [instructions, preset, skill, pipeline, agent-config, playbook]
+      enum: [instructions, preset, skill, pipeline, agent-config, playbook, langpack]
     TemplateFile:
       type: object
       required: [path, sha256, bytes]
@@ -3981,6 +4111,7 @@ components:
         augment: { $ref: "#/components/schemas/DefaultSection", description: "The recommended augmentation profile (docs/spec/03 \"Augmentation\"): what the Recipe form's Reset to recommended writes" }
         eval: { $ref: "#/components/schemas/DefaultSection", description: "Evaluation (phase 3): matrix profiles, primary cell, scoring normalizer, duration buckets, bootstrap" }
         gate: { $ref: "#/components/schemas/DefaultSection", description: "The default gate a project's gates.yaml departs from (phase 3)" }
+        langpacks: { $ref: "#/components/schemas/DefaultSection", description: "Language packs (phase 3): the boost weight a new list starts with and the size cap of a list" }
         estimates:
           type: object
           required: [bytes_per_audio_hour, training]
@@ -6949,4 +7080,116 @@ components:
     # ---------------------------------------------------------------- evals, gates, models schemas (phase 3 · stream E) — add below
 
     # ---------------------------------------------------------------- language packs, boost lists, lineage schemas (phase 3 · stream L) — add below
+
+    PackLocaleName:
+      type: string
+      pattern: "^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8}){0,3}$"
+      description: "BCP 47 locale of a language pack: its directory lang/<locale>/ (he-IL, sr)"
+    BoostDomain:
+      type: string
+      pattern: "^[a-z0-9][a-z0-9-]{0,62}$"
+      description: "A boost list's domain: the file boost/<domain>.txt"
+    LanguagePackFile:
+      type: object
+      required: [path, bytes, content]
+      properties:
+        path: { type: string, description: "Path inside the pack (normalizer.yaml, boost/names.txt)" }
+        bytes: { type: integer }
+        content: { type: string, description: The file as UTF-8 text }
+    BoostList:
+      type: object
+      description: "One boost list (boost/<domain>.txt): a '# weight: <float>' header, then one term per line; blank lines and other # lines are comments. The eval decoder receives it as a boost_list artifact {terms, weight}"
+      required: [domain, path, weight, terms, sha256]
+      properties:
+        domain: { $ref: "#/components/schemas/BoostDomain" }
+        path: { type: string, description: "Path inside the pack, boost/<domain>.txt" }
+        weight: { type: number, format: double }
+        terms: { type: array, items: { type: string } }
+        sha256: { type: string, description: "sha256 (hex) of the list's canonical JSON {\"terms\":[…],\"weight\":w}: the identity an eval's decoding names" }
+    PackScoring:
+      type: object
+      description: "The scoring normalizer normalizer.yaml names (R21): a registry normalizer collection (its newest frozen version) or a pinned version"
+      required: [normalizer]
+      properties:
+        normalizer: { type: string, description: "normalizer/<name> or ver_…" }
+        versionId: { type: string, description: The version it resolves to now; absent when the registry has none }
+        version: { type: string }
+    LanguagePackSummary:
+      type: object
+      required: [locale, path, sha, files, boost, scoring]
+      properties:
+        locale: { $ref: "#/components/schemas/PackLocaleName" }
+        path: { type: string, description: "lang/<locale>" }
+        sha: { type: string, description: The last commit on main that changed the pack }
+        files: { type: integer }
+        boost: { type: array, items: { type: string }, description: Domains of its boost lists }
+        scoring: { $ref: "#/components/schemas/PackScoring" }
+    LanguagePackList:
+      type: object
+      required: [items, shipped]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/LanguagePackSummary" } }
+        shipped: { type: array, items: { type: string }, description: Locales Cadence ships starter packs for }
+    LanguagePack:
+      type: object
+      description: "A language pack (docs/spec/03-pipelines-defaults.md \"Language packs and hot words\"): lang/<locale>/ in the project repository"
+      required: [locale, path, sha, commit, files, boost, scoring, issues]
+      properties:
+        locale: { $ref: "#/components/schemas/PackLocaleName" }
+        path: { type: string, description: "lang/<locale>" }
+        sha: { type: string, description: "The last commit that changed the pack: the ETag, and what entities pin" }
+        commit: { type: string, description: The commit the pack was read at }
+        branch: { type: string, description: "The branch the change landed on when it is not main (an agent's edit under the draft policy language_pack: draft); accept it with branches.accept" }
+        files: { type: array, items: { $ref: "#/components/schemas/LanguagePackFile" } }
+        boost: { type: array, items: { $ref: "#/components/schemas/BoostList" } }
+        scoring: { $ref: "#/components/schemas/PackScoring" }
+        issues: { type: array, items: { $ref: "#/components/schemas/ProblemFieldError" }, description: Files whose shape is wrong (a hand edit); empty when the pack checks out }
+    LanguagePackFileChange:
+      type: object
+      required: [path]
+      properties:
+        path: { type: string, maxLength: 200, description: "Path inside the pack, e.g. normalizer.yaml or boost/names.txt" }
+        content: { type: string, maxLength: 1000000, description: The new UTF-8 content (omit with delete) }
+        delete: { type: boolean, description: Remove the file }
+    LanguagePackEdit:
+      type: object
+      required: [files]
+      properties:
+        files: { type: array, minItems: 1, maxItems: 100, items: { $ref: "#/components/schemas/LanguagePackFileChange" } }
+        message: { type: string, maxLength: 500, description: The commit message }
+    BoostEdit:
+      type: object
+      required: [terms]
+      properties:
+        terms: { type: array, maxItems: 100000, items: { type: string, minLength: 1, maxLength: 200 }, description: The list's terms, replacing the current ones }
+        weight: { type: number, format: double, description: "Boost weight; the list's current one when omitted, else defaults.yaml langpacks.boost_weight" }
+        message: { type: string, maxLength: 500 }
+    LineageNode:
+      type: object
+      required: [id, kind, label, distance, direction]
+      properties:
+        id: { type: string }
+        kind: { type: string, description: "Entity kind: a registry kind (dataset_version, golden_set, model, …), source, pipeline_run, run, checkpoint, mix, project, or one another domain adds (eval)" }
+        label: { type: string, description: "What to show: collection and version, a run's mix, a project's slug" }
+        projectId: { type: string, description: Project work only }
+        state: { type: string, description: "The entity's state or status, when it has one" }
+        direction: { type: string, enum: [root, upstream, downstream] }
+        distance: { type: integer, description: Hops from the root }
+    LineageEdge:
+      type: object
+      required: [from, to, relation]
+      properties:
+        from: { type: string, description: The entity that was used }
+        to: { type: string, description: The entity that used it }
+        relation: { type: string, description: "How: the payload field that names it (datasetVersionId, lineage.runId, sourceIds), or mix, base, init, run, adopted, …" }
+    Lineage:
+      type: object
+      required: [root, nodes, edges, truncated, hidden]
+      properties:
+        root: { type: string }
+        nodes: { type: array, items: { $ref: "#/components/schemas/LineageNode" } }
+        edges: { type: array, items: { $ref: "#/components/schemas/LineageEdge" } }
+        truncated: { type: boolean, description: The node limit stopped the walk }
+        hidden: { type: integer, description: Nodes left out because they belong to projects the caller cannot see }
+
 

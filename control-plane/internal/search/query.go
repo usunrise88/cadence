@@ -77,6 +77,25 @@ type Query struct {
 	Tags     []string
 	Aliases  []string
 	Numbers  []NumBound
+
+	free []Term // the free text as typed (Text unnormalised), for Refold
+}
+
+// Refold normalises the free text again with fold (FoldFor: the locale's scoring normalizer, then Normalize), so
+// terms match documents the index folded the same way.
+func (q *Query) Refold(fold func(string) string) {
+	q.Terms = nil
+	for _, t := range q.free {
+		if t.Phrase {
+			if n := strings.TrimSpace(fold(t.Text)); n != "" {
+				q.Terms = append(q.Terms, Term{Text: n, Phrase: true})
+			}
+			continue
+		}
+		for _, w := range Words(fold(t.Text)) {
+			q.Terms = append(q.Terms, Term{Text: w})
+		}
+	}
 }
 
 // Scope values of the scope: qualifier.
@@ -160,9 +179,7 @@ func Parse(q string, kinds map[string]string) (Query, error) {
 	for _, tok := range tokens {
 		if tok.quoted {
 			text = append(text, `"`+tok.text+`"`)
-			if n := strings.TrimSpace(Normalize(tok.text)); n != "" {
-				out.Terms = append(out.Terms, Term{Text: n, Phrase: true})
-			}
+			out.free = append(out.free, Term{Text: tok.text, Phrase: true})
 			continue
 		}
 		qual, isQual, err := parseQualifier(tok)
@@ -171,9 +188,7 @@ func Parse(q string, kinds map[string]string) (Query, error) {
 		}
 		if !isQual {
 			text = append(text, tok.text)
-			for _, w := range Words(Normalize(tok.text)) {
-				out.Terms = append(out.Terms, Term{Text: w})
-			}
+			out.free = append(out.free, Term{Text: tok.text})
 			continue
 		}
 		if err := out.apply(qual, kinds); err != nil {
@@ -182,6 +197,7 @@ func Parse(q string, kinds map[string]string) (Query, error) {
 		out.Qualifiers = append(out.Qualifiers, qual)
 	}
 	out.Text = strings.Join(text, " ")
+	out.Refold(Normalize)
 	return out, nil
 }
 

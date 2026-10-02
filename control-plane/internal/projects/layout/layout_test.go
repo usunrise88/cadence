@@ -119,6 +119,30 @@ func TestBootstrapFiles(t *testing.T) {
 	}
 }
 
+func TestLanguagePacks(t *testing.T) {
+	r := renderer(t)
+	f := facts()
+	f.Locales = []string{"he-IL", "sr-Latn", "ru-RU"}
+	files, err := r.Render(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{"lang/he-IL/normalizer.yaml", "lang/he-IL/boost/names.txt", "lang/he-IL/README.md",
+		"lang/sr-Latn/translit.yaml", "lang/sr-Latn/normalizer.yaml"} {
+		if _, ok := files[p]; !ok {
+			t.Errorf("missing %s", p)
+		}
+	}
+	for _, p := range files.Paths() {
+		if strings.HasPrefix(p, "lang/ru-RU/") {
+			t.Errorf("rendered %s, but Cadence ships no ru-RU pack", p)
+		}
+	}
+	if pack, ok := r.PackFor("he"); !ok || pack != "he-IL" {
+		t.Errorf("PackFor(he) = %q, %v", pack, ok)
+	}
+}
+
 func TestCustomInstructionsAndPresets(t *testing.T) {
 	r := renderer(t)
 	f := facts()
