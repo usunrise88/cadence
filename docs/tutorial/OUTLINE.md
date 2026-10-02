@@ -1,6 +1,6 @@
 # Outline, term map and status
 
-The table of contents of **Fine-Tuning ASR Models with Cadence: From Start to Finish**. The method is in
+The table of contents of **Fine-Tuning ASR Models with Cadence: From Start to Finnish**. The method is in
 `GUIDELINES.md`.
 
 Keep this file current:
@@ -143,16 +143,16 @@ The chapters in this map are the plan; correct the map when a chapter is written
 | Tour and `annotated` block parser shared by the HTML build and the shell | planned |
 | Annotated-screenshot component (SVG overlay, numbered regions, linked notes, keyboard) for the HTML edition and the Help panel | planned |
 | Capture script (Playwright): plays tours, saves screenshots and target boxes | planned |
-| Documentation account on the stand for captures (owner provides) | planned |
+| Documentation API key `.docs-key` (owner creates: Settings → Credentials, project scope + registry read, expiry) | planned |
+| Reference project `book-serbian`, `reference/scenario.md`, `reference/numbers.yaml` and the refresh script | planned |
 | HTML edition builder: chapters, glossary with hover, search, tours over screenshots; published as an Artifact | planned |
 | In-app tour engine ("Show me" in the Help panel): spec in `11-ui-panels.md` + decision-log row first | planned |
 | `data-tour` attributes for tour targets that have no `data-command` / `data-panel` | planned, per chapter |
 
 ## Open questions
 
-- Title: "From Start to Finish" is the working title; the owner's draft read "From Start to Finnish", a pun that fits
-  a book whose replay sets include Finnish — keep or drop.
 - Language of the first edition: English (repository convention); a Russian edition would translate reviewed
   chapters.
-- Which stand the captures run against, and whether its project `test` is kept frozen as the book's reference
-  data (deleting its evals or checkpoints would break figures).
+- The reference project `book-serbian` does not exist yet. Until it does, numbers come from project `test`
+  (table above), which development will break. Build it by replaying the scenario (GUIDELINES §5.4) once the
+  scenario covers chapters 5–9.

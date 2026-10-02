@@ -1,6 +1,7 @@
 # How this book is written
 
-Working title: **Fine-Tuning ASR Models with Cadence: From Start to Finish**.
+Title: **Fine-Tuning ASR Models with Cadence: From Start to Finnish**. The pun is intended: Finnish is one of the
+languages the running example must not forget.
 
 This file is the method. `OUTLINE.md` holds the table of contents, the term map and the status of each chapter.
 `.claude/skills/cadence-tutorial/SKILL.md` gives agents the same rules as a checklist. Change the method here
@@ -200,7 +201,7 @@ The source feeds three outputs. None of them is edited by hand.
    - chapters, glossary with hover definitions, a search box;
    - screenshots: annotated ones with numbered regions and linked notes (§5.3), and the tours played as numbered
      highlights on them;
-   - It is built by a script from the same Markdown and the tour captures (§5.4) and published as an Artifact or
+   - It is built by a script from the same Markdown and the tour captures (§5.5) and published as an Artifact or
      static files.
 3. **Plain Markdown on GitHub**, readable without either.
 
@@ -250,7 +251,7 @@ holds more than two things worth reading. Here is one, as a fenced block:
 
 ````markdown
 ```annotated id=run-estimate
-image: screens/run-estimate.png          # from the capture script (§5.4); never a hand-made screenshot
+image: screens/run-estimate.png          # from the capture script (§5.5); never a hand-made screenshot
 caption: "Figure 7-3. The Run document before anything is spent"
 alt: The Run document showing the plan, the GPU-hour estimate, the budget bar and the Check and Start buttons.
 regions:
@@ -300,10 +301,34 @@ How each output renders it:
 | Help panel inside Cadence | The same component, from the same block. "Show me on screen" turns the figure into a tour of the live UI when every region has a `target` |
 | Plain Markdown (GitHub) | The image, then a numbered list `① **Estimate** — note…`; the regions are not drawn |
 
-The capture script (§5.4) records each target's box in the image's pixels next to the screenshot
+The capture script (§5.5) records each target's box in the image's pixels next to the screenshot
 (`screens/<id>.json`). The builder reads the boxes from there, so a block never holds coordinates for a `target`.
 
-### 5.4 Screenshots and tour captures
+### 5.4 Reference data: a project the book can rebuild
+
+The book's screenshots and numbers come from one project on a stand. Development will break it from time to
+time (migrations, resets, re-imports), and nobody can prevent that. So the book never depends on the project
+surviving. It depends on being able to rebuild it.
+
+- **A dedicated project, `book-serbian`.** No development work runs in it. Its project notes say so.
+- **A scenario file.** `docs/tutorial/reference/scenario.md` lists every action of the running example in order:
+  import, freeze, mix, calibrate, train, freeze golden sets, eval, gate, and later chapters' steps. Each action is
+  a Cadence command with its body, so an agent or the CLI can replay it on a fresh stand.
+  - A chapter that adds hands-on steps adds them to the scenario.
+  - Actions that need an approval are marked. The owner approves them; the scenario never approves anything.
+- **A numbers manifest.** `docs/tutorial/reference/numbers.yaml` keeps every number the text quotes, with the
+  entity id it came from and the date.
+  - The text quotes the manifest's value and keeps the id in an HTML comment.
+  - After a rebuild, a script refreshes the manifest from the API and lists every number that moved by more than
+    its stated tolerance. A person rewrites the sentences around the numbers that changed meaning.
+- **Rebuild when the project breaks:** replay the scenario, refresh the numbers, re-run the capture (§5.5), and
+  review the diff of screenshots and numbers like any other change.
+
+Training is not bit-for-bit reproducible, so the numbers will move a little after a rebuild. The prose must
+survive that. Write "about nine points better", not "8.97 points better", unless the exact number is the
+lesson.
+
+### 5.5 Screenshots and tour captures
 
 - **Capture by script, never by hand.**
   - A Playwright script (`docs/tutorial/capture/`) opens the UI, plays each tour and saves
@@ -316,8 +341,13 @@ The capture script (§5.4) records each target's box in the image's pixels next 
   - Data comes from a stand that holds the running project: the real eval and run ids cited in the text.
   - No personal data appears: no real call audio, no names and no tokens.
   - Light theme, 1440×900, browser zoom 100 %.
-- **Login:** the capture logs in with a dedicated documentation account. The owner provides it; never use the
-  admin's password or the `.dev-key`.
+- **Access:**
+  - The capture sends an API key as a Bearer header on every request (Playwright `extraHTTPHeaders`).
+  - The key is scoped to the book's project, with registry read, and an expiry date.
+  - The owner creates it in **Settings → Credentials** and stores it in `.docs-key` at the repository root
+    (git-ignored, mode 600). The script reads it from there and never takes it on the command line.
+  - The capture only reads; it never runs a command that changes anything.
+  - Never use the admin's password, a session cookie or the `.dev-key`.
 
 ## 6. Facts and sources
 
