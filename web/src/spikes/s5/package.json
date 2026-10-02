@@ -1,0 +1,11 @@
+{
+  "name": "cadence-spike-s5",
+  "private": true,
+  "description": "Spike S5 (docs/spikes/S5-audio-view.md): throwaway harness, never part of the product build. React, Dockview, Vite and Playwright resolve from web/node_modules.",
+  "type": "module",
+  "dependencies": {
+    "@echogarden/pffft-wasm": "0.4.2",
+    "fourier-transform": "2.5.1",
+    "wavesurfer.js": "8.0.1"
+  }
+}

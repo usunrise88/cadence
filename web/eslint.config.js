@@ -11,7 +11,8 @@ const CHART_LIBS = ["uplot", "uplot/*", "echarts", "echarts/*", "zrender", "zren
 const chartsOnly = (message) => ({ group: CHART_LIBS, message });
 
 export default defineConfig([
-  globalIgnores(["dist", "src/api/gen", "src/api/operations.gen.ts", "playwright-report", "test-results"]),
+  // src/spikes/s5: the S5 spike harness (own package, tsconfig and Vite root; never in the product build).
+  globalIgnores(["dist", "src/api/gen", "src/api/operations.gen.ts", "playwright-report", "test-results", "src/spikes/s5"]),
   {
     files: ["**/*.{ts,tsx}"],
     extends: [js.configs.recommended, tseslint.configs.recommended, reactHooks.configs.flat.recommended],
