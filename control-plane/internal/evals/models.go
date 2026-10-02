@@ -71,8 +71,9 @@ type Registration struct {
 
 var modelNameRe = regexp.MustCompile(`^model/[a-z0-9][a-z0-9._-]{0,98}[a-z0-9]$`)
 
-// PlanRegister checks that checkpoint in.CheckpointID may be published — its latest gated eval (or in.EvalID) passed
-// (gate-not-passed otherwise) — and builds the version's payload with its lineage and model card.
+// PlanRegister checks that checkpoint in.CheckpointID may be published — its latest gated eval passed; in.EvalID may
+// name an older passed eval only then (gate-not-passed otherwise) — and builds the version's payload with its lineage
+// and model card.
 func (s *Service) PlanRegister(ctx context.Context, q storage.Querier, in RegisterInput) (Registration, error) {
 	p, err := projects.GetByID(ctx, q, in.ProjectID)
 	if err != nil {
@@ -161,17 +162,21 @@ func (s *Service) PlanRegister(ctx context.Context, q storage.Querier, in Regist
 	return Registration{Name: name, Model: mp, description: desc, tags: tags, licence: base.Licence}, nil
 }
 
-// gatedEval is the eval models.register publishes with: evalID, or the checkpoint's latest gated eval.
+// gatedEval is the eval models.register publishes with: the checkpoint's latest gated eval (the newest verdict), or
+// evalID when the latest verdict passed too. An explicit older eval whose verdict passed never outvotes a later
+// failed one (gate-not-passed): the checkpoint's standing is its latest verdict.
 func (s *Service) gatedEval(ctx context.Context, q storage.Querier, p projects.Project, checkpointID, evalID string) (Eval, error) {
+	var latestID string
+	err := q.QueryRow(ctx, `SELECT id FROM evals WHERE project_id = $1 AND subject_id = $2 AND gate IS NOT NULL AND gate <> 'null'::jsonb
+		ORDER BY gated_at DESC NULLS LAST, id DESC LIMIT 1`, p.ID, checkpointID).Scan(&latestID)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return Eval{}, fmt.Errorf("find the gated eval of %s: %w", checkpointID, err)
+	}
 	if evalID == "" {
-		err := q.QueryRow(ctx, `SELECT id FROM evals WHERE project_id = $1 AND subject_id = $2 AND gate IS NOT NULL
-			ORDER BY gated_at DESC, id DESC LIMIT 1`, p.ID, checkpointID).Scan(&evalID)
-		if errors.Is(err, pgx.ErrNoRows) {
+		if latestID == "" {
 			return Eval{}, problems.GateNotPassed.New("checkpoint %s has no gated eval; run evals.new on it, then evals.gate", checkpointID)
 		}
-		if err != nil {
-			return Eval{}, fmt.Errorf("find the gated eval of %s: %w", checkpointID, err)
-		}
+		evalID = latestID
 	}
 	e, err := Get(ctx, q, evalID)
 	if err != nil {
@@ -182,6 +187,20 @@ func (s *Service) gatedEval(ctx context.Context, q storage.Querier, p projects.P
 		return Eval{}, problems.Validation([]problems.FieldError{{Path: "/evalId", Message: fmt.Sprintf("%s is not an eval of checkpoint %s", evalID, checkpointID)}})
 	case len(e.Gate) == 0 || string(e.Gate) == "null":
 		return Eval{}, problems.GateNotPassed.New("eval %s was not gated; run evals.gate on it", evalID)
+	}
+	if latestID != "" && latestID != e.ID {
+		latest, err := Get(ctx, q, latestID)
+		if err != nil {
+			return Eval{}, err
+		}
+		var v Verdict
+		if err := json.Unmarshal(latest.Gate, &v); err != nil {
+			return Eval{}, fmt.Errorf("decode the verdict of %s: %w", latest.ID, err)
+		}
+		if v.Verdict != VerdictPassed {
+			return Eval{}, problems.GateNotPassed.New("the latest gated eval of checkpoint %s is %s, whose gate failed (%s); an older passed eval (%s) does not count: only a checkpoint whose latest gated eval passed is registered",
+				checkpointID, latest.ID, failedChecks(v), e.ID)
+		}
 	}
 	return e, nil
 }

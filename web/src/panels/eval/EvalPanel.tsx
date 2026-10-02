@@ -375,7 +375,7 @@ function Progress({ ev }: { ev: Eval }) {
 }
 
 function checkTitle(ev: Eval, c: EvalGateCheck): string {
-  const what = c.kind === "target" ? "Target" : c.kind === "replay" ? "Replay" : c.kind === "deletionsInsertions" ? "Deletions vs insertions" : "Primary profile";
+  const what = c.kind === "target" ? "Target" : c.kind === "replay" ? "Replay" : c.kind === "deletionsInsertions" ? "Deletions vs insertions" : c.kind === "baseline" ? "Baseline" : "Primary profile";
   const gs = c.goldenSet ? ` · ${shortName(c.goldenSet)}` : "";
   return `${what}${gs}${c.profile && c.profile !== ev.primaryProfile ? ` · ${c.profile}` : ""}`;
 }

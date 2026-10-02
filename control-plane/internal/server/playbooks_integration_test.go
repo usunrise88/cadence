@@ -273,6 +273,8 @@ func TestPlaybooks(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	// The gate compares against the project's own baseline: the fixture base model becomes the default.
+	h.setBaseModel("hebrew", pipelinestest.BaseModel)
 	evalBody := `{"subject":{"checkpointId":"` + h.checkpoints("hebrew", trained.ID)[0].ID + `"},"baseline":"` + pipelinestest.BaseModel + `"}`
 	expectProblem(t, agent("POST", "/api/projects/hebrew/evals", evalBody, "Idempotency-Key", h.key()), 409, "playbook-dry-run-required")
 	h.ok(agent("POST", "/api/projects/hebrew/evals?dryRun=true", evalBody, "Idempotency-Key", h.key()), 200, nil)

@@ -106,7 +106,7 @@ func evalProject(t *testing.T, e *env, slug string) (projectID, checkpointID str
 	if _, err := compute.Seed(ctx, e.pool, defaults.Get().Compute.Hosts, registry.Bundled()); err != nil {
 		t.Fatal(err)
 	}
-	p := e.createProject(`{"slug":"`+slug+`","name":"`+slug+`","locales":["he-IL"]}`, slug)
+	p := e.createProject(`{"slug":"`+slug+`","name":"`+slug+`","locales":["he-IL"],"baseModel":"`+pipelinestest.BaseModel+`"}`, slug)
 	e.commitPipeline(slug, "train-stage", pipelinestest.TrainStage)
 	if _, err := pipelinestest.RegisterDataset(ctx, e.pool, e.admin.CAS, "fx-he", 2, false); err != nil {
 		t.Fatal(err)
@@ -288,7 +288,7 @@ func TestEvalsEndToEnd(t *testing.T) {
 	}
 
 	// Another project reuses the baseline's records: the base model against itself on the he set computes nothing.
-	e.createProject(`{"slug":"other","name":"other","locales":["he-IL"]}`, "other")
+	e.createProject(`{"slug":"other","name":"other","locales":["he-IL"],"baseModel":"`+pipelinestest.BaseModel+`"}`, "other")
 	status, raw = newEval("other", `{"subject":{"baseModelVersionId":"`+pipelinestest.BaseModel+`"},"baseline":"`+pipelinestest.BaseModel+
 		`","goldenSets":["golden-set/fx-golden-he"]}`)
 	var cross evalView

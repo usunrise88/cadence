@@ -126,7 +126,14 @@ As built (stream E; `internal/evals` `gates.go`, `verdict.go`):
   the rest replay; an eval without a target golden set fails the target check. A dry run computes the verdict without
   recording it; a significance different from the eval's recomputes the deltas. The verdict is stored on the eval with
   `gatesSha` (empty for the defaults) and announced as `eval.gated` on `entity.eval.{id}`.
-- A `passed` verdict of the checkpoint's latest gated eval is what `models.register` needs (02 "Model versions").
+- Gate integrity (audit 2026-10-02): the verdict fails a `baseline` check when the eval's baseline is neither the
+  project's `@baseline` nor its default base model (a baseline the request chose proves nothing the project agreed
+  on), and fails a target or replay check for every golden set `gates.yaml` names — resolved to the project's
+  adopted version — that the eval did not score at that version ("not in this eval; run evals.new with it"). Leaving
+  a regressing replay set out of an eval therefore fails the gate instead of passing it.
+- A `passed` verdict of the checkpoint's latest gated eval is what `models.register` needs (02 "Model versions"): an
+  explicit `evalId` may name an older passed eval only while the latest gated eval (by `gated_at`) passed too, else
+  `gate-not-passed`.
 
 **Significance (R54).** Every WER delta gets a paired bootstrap interval: 1 000 resamples (`eval.bootstrap_samples`)
 at 95 % (`eval.confidence`) with a fixed seed (`eval.bootstrap_seed`), computed in Go from the `scores` rows of the

@@ -47,8 +47,11 @@ scorer `wer_score` (newest published version of each).
   (failed when the delta exceeds `maxRegression` and the interval excludes zero), deletions/insertions; the verdict is
   passed only when every check passed. Stored on the eval with the file's commit (`gatesSha`, empty for the
   defaults); `eval.gated` on `entity.eval.{id}`. A significance other than the eval's recomputes the deltas.
-- **Models** (`models.go`): `PlanRegister` takes the checkpoint's latest gated eval (or `evalId`), refuses a failed or
-  missing verdict (`gate-not-passed`), and builds `ModelPayload` with lineage (run, mix hash, recipe commit, the mix's
+- **Gate integrity** (audit 2026-10-02, `standing`): a baseline that is neither the project's `@baseline` nor its
+  default base model adds a failed `baseline` check; every golden set `gates.yaml` names, resolved to the project's
+  adopted version, that the eval did not score adds a failed target or replay check.
+- **Models** (`models.go`): `PlanRegister` takes the checkpoint's latest gated eval (an explicit `evalId` only while
+  that latest verdict passed too), refuses a failed or missing verdict (`gate-not-passed`), and builds `ModelPayload` with lineage (run, mix hash, recipe commit, the mix's
   dataset versions) and the Markdown card (gate checks, eval cells, composition, lineage, departures); `Register`
   registers it frozen in `model/<name>` and adopts it into the project (`model.registered` on `entity.model.{id}`).
 

@@ -11,6 +11,7 @@ import (
 
 	"github.com/usunrise88/cadence/control-plane/internal/defaults"
 	"github.com/usunrise88/cadence/control-plane/internal/problems"
+	"github.com/usunrise88/cadence/control-plane/internal/registry"
 )
 
 // exactBootstrap enumerates every ordered resample of groups (len^len of them, equally likely) and returns the sorted
@@ -280,7 +281,7 @@ func TestVerdict(t *testing.T) {
 	recs := map[string]Record{"rver_tsubject": {Summary: json.RawMessage(`{"wer":0.1}`)}, "rver_tbaseline": {Summary: json.RawMessage(`{"wer":0.12}`)}}
 	s := &Service{}
 	gf := GateFile{Exists: true, Commit: "abc123", Gate: DefaultGate(defaults.Get())}
-	v := s.verdict(e, []string{"he-IL"}, gf, cells, recs)
+	v := s.verdict(e, []string{"he-IL"}, gf, cells, recs, standing{})
 	states := map[string]string{}
 	for _, c := range v.Checks {
 		states[c.Kind+":"+c.GoldenSetVersionID] = c.State
@@ -301,17 +302,42 @@ func TestVerdict(t *testing.T) {
 	// Without the D/I trade and the regressing replay set, the gate passes.
 	gf.Gate.DeletionsInsertions = false
 	e.GoldenSets = e.GoldenSets[:2]
-	if v := s.verdict(e, []string{"he-IL"}, gf, cells, recs); v.Verdict != VerdictPassed {
+	if v := s.verdict(e, []string{"he-IL"}, gf, cells, recs, standing{}); v.Verdict != VerdictPassed {
 		t.Fatalf("verdict %s: %+v", v.Verdict, v.Checks)
+	}
+	// The gate's standing: a baseline the request chose fails; so does a set gates.yaml names that the eval left out
+	// (a replay set) or scored at a version other than the adopted one (the target).
+	bad := &Check{Kind: CheckBaseline, State: CheckFailed, Message: "not the project's baseline"}
+	if v := s.verdict(e, []string{"he-IL"}, gf, cells, recs, standing{baseline: bad}); v.Verdict != VerdictFailed || v.Checks[0].Kind != CheckBaseline {
+		t.Fatalf("request baseline: %s %+v", v.Verdict, v.Checks)
+	}
+	required := []registry.Version{{ID: "ver_t", Name: "golden-set/fleurs-he", Version: "1"},
+		{ID: "ver_r9", Name: "golden-set/replay-golden-de", Version: "9"}}
+	gr := gf
+	gr.Gate.TargetGoldenSets, gr.Gate.ReplayGoldenSets = []string{"golden-set/fleurs-he"}, []string{"golden-set/replay-golden-*"}
+	v = s.verdict(e, []string{"he-IL"}, gr, cells, recs, standing{required: required})
+	last := v.Checks[len(v.Checks)-1]
+	if v.Verdict != VerdictFailed || last.Kind != CheckReplay || last.GoldenSetVersionID != "ver_r9" || last.State != CheckFailed ||
+		!strings.Contains(last.Message, "not in this eval") {
+		t.Fatalf("missing replay set: %s %+v", v.Verdict, v.Checks)
+	}
+	if v := s.verdict(e, []string{"he-IL"}, gr, cells, recs, standing{required: required[:1]}); v.Verdict != VerdictPassed {
+		t.Fatalf("every named set present: %s %+v", v.Verdict, v.Checks)
+	}
+	older := []registry.Version{{ID: "ver_t2", Name: "golden-set/fleurs-he", Version: "2"}}
+	v = s.verdict(e, []string{"he-IL"}, gr, cells, recs, standing{required: older})
+	last = v.Checks[len(v.Checks)-1]
+	if v.Verdict != VerdictFailed || last.Kind != CheckTarget || !strings.Contains(last.Message, "not the version the project adopted") {
+		t.Fatalf("an older version of the target set: %s %+v", v.Verdict, v.Checks)
 	}
 	// An interval spanning zero on the target is inconclusive, which fails the verdict.
 	cells[0].Delta = delta(-0.01, -0.02, 0.001, zero, zero)
-	if v := s.verdict(e, []string{"he-IL"}, gf, cells, recs); v.Verdict != VerdictFailed || v.Checks[0].State != CheckInconclusive {
+	if v := s.verdict(e, []string{"he-IL"}, gf, cells, recs, standing{}); v.Verdict != VerdictFailed || v.Checks[0].State != CheckInconclusive {
 		t.Fatalf("inconclusive target: %s %+v", v.Verdict, v.Checks)
 	}
 	// A primary profile the eval did not run fails at once.
 	gf.Gate.PrimaryProfile = "80ms"
-	if v := s.verdict(e, nil, gf, cells, recs); v.Verdict != VerdictFailed || v.Checks[0].Kind != CheckPrimaryProfile ||
+	if v := s.verdict(e, nil, gf, cells, recs, standing{}); v.Verdict != VerdictFailed || v.Checks[0].Kind != CheckPrimaryProfile ||
 		!strings.Contains(v.Checks[0].Message, "80ms") {
 		t.Fatalf("missing primary: %+v", v.Checks)
 	}

@@ -7957,7 +7957,7 @@ components:
       type: object
       required: [kind, state, message]
       properties:
-        kind: { type: string, enum: [target, replay, deletionsInsertions, primaryProfile] }
+        kind: { type: string, enum: [target, replay, deletionsInsertions, primaryProfile, baseline], description: "baseline: the eval's baseline is not the project's @baseline or default base model (always failed when present)" }
         goldenSetVersionId: { type: string }
         goldenSet: { type: string }
         profile: { type: string }

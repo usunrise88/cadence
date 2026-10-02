@@ -5658,7 +5658,10 @@ export type EvalCell = {
 };
 
 export type EvalGateCheck = {
-    kind: 'target' | 'replay' | 'deletionsInsertions' | 'primaryProfile';
+    /**
+     * baseline: the eval's baseline is not the project's @baseline or default base model (always failed when present)
+     */
+    kind: 'target' | 'replay' | 'deletionsInsertions' | 'primaryProfile' | 'baseline';
     goldenSetVersionId?: string;
     goldenSet?: string;
     profile?: string;

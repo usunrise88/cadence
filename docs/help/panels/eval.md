@@ -37,7 +37,12 @@ boost list of a language pack).
 - **Worst utterances** of the selected cell (the 50 with most errors), filterable by text or speaker. Enter or a click
   opens the utterance in **Diff**.
 - **Gate.** The verdict, the `gates.yaml` commit it used and each check with its numbers. **Run the gate** applies the
-  project's `gates.yaml` at main to a finished eval; it can be run again after the file changes.
+  project's `gates.yaml` at main to a finished eval; it can be run again after the file changes. The verdict passes
+  only against the project's own baseline (`@baseline`, or the default base model: an eval that named another
+  baseline gets a failed **Baseline** check) and only when the eval scored every target and replay golden set
+  `gates.yaml` names, at the version the project adopted (a missing one is a failed check: run `evals.new` with it).
+- A checkpoint's standing is its **latest** gated eval: registration refuses an older passed eval while a later one
+  failed.
 - **Register model…** publishes the checkpoint as a model version with this eval and a generated model card. It is
   offered only for a checkpoint whose gate passed (`gate-not-passed` otherwise). **Check** shows what would be
   registered; **Register** then asks for an inline confirm, because a registration cannot be undone.

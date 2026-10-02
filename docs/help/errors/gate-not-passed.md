@@ -7,7 +7,9 @@ contexts: [error:gate-not-passed, field:checkpointId, field:evalId]
 ## What this is
 
 A `409 Conflict` problem of type `gate-not-passed`: `models.register` was asked to publish a checkpoint whose latest
-gated eval (or the eval named in `evalId`) failed the gate, or that has no gated eval at all. Registration publishes a
+gated eval (or the eval named in `evalId`) failed the gate, or that has no gated eval at all. The checkpoint's
+standing is its **latest** verdict: an `evalId` naming an older eval that passed is refused while a later gated eval
+of the same checkpoint failed. Registration publishes a
 model version to every project with its eval report (R22), so only a checkpoint that beat the baseline under the
 project's `gates.yaml` qualifies. Nothing was written.
 

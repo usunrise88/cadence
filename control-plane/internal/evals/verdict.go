@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -14,6 +15,8 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/events"
 	"github.com/usunrise88/cadence/control-plane/internal/problems"
 	"github.com/usunrise88/cadence/control-plane/internal/projects"
+	"github.com/usunrise88/cadence/control-plane/internal/registry"
+	"github.com/usunrise88/cadence/control-plane/internal/storage"
 )
 
 // Check states and kinds of a gate verdict (04 "Block 3", the gate).
@@ -26,6 +29,7 @@ const (
 	CheckReplay         = "replay"
 	CheckDelIns         = "deletionsInsertions"
 	CheckPrimaryProfile = "primaryProfile"
+	CheckBaseline       = "baseline"
 
 	VerdictPassed = "passed"
 	VerdictFailed = "failed"
@@ -97,7 +101,11 @@ func (s *Service) Gate(ctx context.Context, tx pgx.Tx, id string, rev int, actor
 	if err != nil {
 		return View{}, nil, err
 	}
-	v := s.verdict(e, p.Locales, gf, cells, recs)
+	st, err := s.standing(ctx, tx, p, gf.Gate, e)
+	if err != nil {
+		return View{}, nil, err
+	}
+	v := s.verdict(e, p.Locales, gf, cells, recs, st)
 	v.At, v.By = time.Now(), actor
 	if err := tx.QueryRow(ctx, `UPDATE evals SET gate = $2, gated_at = $3, rev = rev + 1, updated_at = now() WHERE id = $1
 		RETURNING rev, updated_at`, e.ID, mustJSON(v), v.At).Scan(&e.Rev, &e.UpdatedAt); err != nil {
@@ -113,12 +121,55 @@ func (s *Service) Gate(ctx context.Context, tx pgx.Tx, id string, rev int, actor
 	return view, []events.Draft{ev}, nil
 }
 
+// standing is what a verdict needs beyond the eval: whether the eval's baseline is the project's own, and the
+// golden set versions gates.yaml names, resolved to the project's adopted versions.
+type standing struct {
+	baseline *Check             // a failed baseline check, nil when the baseline is the project's
+	required []registry.Version // the target and replay golden sets gates.yaml names (adopted versions)
+}
+
+// standing reads the project's baseline (@baseline, and its default base model) and the golden sets gates.yaml
+// names. An eval whose baseline the request chose is gated against nothing the project agreed on, and one that
+// leaves out a set the gate names (a replay set that would regress) proves nothing about it: both fail.
+func (s *Service) standing(ctx context.Context, q storage.Querier, p projects.Project, g Gate, e Eval) (standing, error) {
+	var st standing
+	var allowed, names []string
+	a, err := registry.GetAlias(ctx, q, p.ID, "baseline")
+	switch pe, ok := problems.As(err); {
+	case err == nil:
+		allowed, names = append(allowed, a.Version.ID), append(names, "@baseline ("+a.Version.Name+" "+a.Version.Version+")")
+	case ok && pe.Type == problems.NotFound:
+	default:
+		return standing{}, err
+	}
+	if p.BaseModel != nil && p.BaseModel.VersionID != "" {
+		allowed, names = append(allowed, p.BaseModel.VersionID), append(names, "the default base model ("+p.BaseModel.VersionID+")")
+	}
+	if !slices.Contains(allowed, e.Baseline.ID) {
+		want := "the project has neither @baseline nor a default base model; set @baseline (aliases.set, approval)"
+		if len(names) > 0 {
+			want = "the gate compares against " + strings.Join(names, " or ") + "; run evals.new without baseline"
+		}
+		st.baseline = &Check{Kind: CheckBaseline, State: CheckFailed,
+			Message: fmt.Sprintf("the eval's baseline %s is not the project's baseline: %s", e.Baseline.Label, want)}
+	}
+	if named := append(append([]string{}, g.TargetGoldenSets...), g.ReplayGoldenSets...); len(named) > 0 {
+		if st.required, err = adoptedGoldenSets(ctx, q, p.ID, named); err != nil {
+			return standing{}, err
+		}
+	}
+	return st, nil
+}
+
 // verdict evaluates the checks at the primary profile and decoding variant 0 (the decoding the project deploys).
-func (s *Service) verdict(e Eval, locales []string, gf GateFile, cells []Cell, recs map[string]Record) Verdict {
+func (s *Service) verdict(e Eval, locales []string, gf GateFile, cells []Cell, recs map[string]Record, st standing) Verdict {
 	g := gf.Gate
 	v := Verdict{GatesSHA: gf.Commit, Config: g.Config(), Checks: []Check{}}
 	if !gf.Exists {
 		v.GatesSHA = ""
+	}
+	if st.baseline != nil {
+		v.Checks = append(v.Checks, *st.baseline)
 	}
 	if !slices.ContainsFunc(e.Profiles, func(p Profile) bool { return p.Name == g.PrimaryProfile }) {
 		v.Checks = append(v.Checks, Check{Kind: CheckPrimaryProfile, Profile: g.PrimaryProfile, State: CheckFailed,
@@ -222,7 +273,30 @@ func (s *Service) verdict(e Eval, locales []string, gf GateFile, cells []Cell, r
 		}
 		v.Checks = append(v.Checks, c)
 	}
+	in := func(id string) bool {
+		return slices.ContainsFunc(e.GoldenSets, func(gs GoldenSet) bool { return gs.VersionID == id })
+	}
+	for _, rv := range st.required {
+		if in(rv.ID) {
+			continue
+		}
+		kind := CheckTarget
+		if Matches(g.ReplayGoldenSets, rv.ID, rv.Name) && !Matches(g.TargetGoldenSets, rv.ID, rv.Name) {
+			kind = CheckReplay
+		}
+		msg := fmt.Sprintf("the %s golden set %s %s (named in gates.yaml, adopted by the project) is not in this eval; run evals.new with it", kind, rv.Name, rv.Version)
+		if i := slices.IndexFunc(e.GoldenSets, func(gs GoldenSet) bool { return gs.Name == rv.Name }); i >= 0 {
+			msg = fmt.Sprintf("the eval scored %s %s, not the version the project adopted (%s); run evals.new with it", rv.Name, e.GoldenSets[i].Version, rv.Version)
+		}
+		v.Checks = append(v.Checks, Check{Kind: kind, GoldenSetVersionID: rv.ID, GoldenSet: rv.Name, Profile: g.PrimaryProfile, State: CheckFailed, Message: msg})
+		if kind == CheckTarget {
+			targets++
+		}
+	}
 	for _, r := range g.TargetGoldenSets {
+		if slices.ContainsFunc(st.required, func(rv registry.Version) bool { return Matches([]string{r}, rv.ID, rv.Name) }) {
+			continue // reported above
+		}
 		if !slices.ContainsFunc(e.GoldenSets, func(gs GoldenSet) bool { return Matches([]string{r}, gs.VersionID, gs.Name) }) {
 			v.Checks = append(v.Checks, Check{Kind: CheckTarget, GoldenSet: r, Profile: g.PrimaryProfile, State: CheckFailed,
 				Message: fmt.Sprintf("the target golden set %s is not in this eval; run evals.new with it", r)})
