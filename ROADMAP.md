@@ -341,13 +341,17 @@ Worker and jobs
       `runtimes.list|get`; card slots are owned per host and card, so two runtimes could share a card; `runtimes.new`
       (a second runtime, with approval) waits with the deferred packs — `nemo-speech` registers when its worker
       starts (stream N image); `toy` registers in CI
-- [ ] Model families (R41, R43): published by the runtime; Nemotron 3.5 streaming first, with latency profiles
+- [x] Model families (R41, R43): published by the runtime; Nemotron 3.5 streaming first, with latency profiles
       `80ms`–`1120ms`; base models and checkpoints carry their family; no code branches on a family name — the seams
       are built (entry point `cadence.families`, `modelFamilies.list|get`, `family` on runs and checkpoints, a test
-      that no control-plane or web source names the family or runtime); the Nemotron descriptor is stream N's
+      that no control-plane or web source names the family or runtime); the Nemotron descriptor is published by the
+      NeMo worker (`model-family/nemo.fastconformer-rnnt.cache-aware` on the stand, five latency profiles)
 - [ ] CPU `toy` framework pack (a tiny CTC model) and the conformance suite in CI; the NeMo pack runs it nightly (R45)
       — the toy half is built (`make conformance` in CI; the trained model must beat a one-step baseline and reach
-      WER ≤ 0.1); the nightly NeMo run is stream N's (`nightly.yml` holds placeholders)
+      WER ≤ 0.1). The NeMo pack passed the full suite on the RTX PRO 6000 card on 2026-10-01 (calibrate 0.109 s/step,
+      train → stop → resume → average, transcribe at all five profiles, WER 0.57–0.70 under the 0.9 bound) — the
+      `nemo-conformance` job in `nightly.yml` is real but still waits for a runner on the staging host (the repository
+      is public, so a self-hosted runner is not used; a host cron is the proposal)
 
 Step kinds: `oomptimizer_calibrate`, `nemotron_finetune` (bf16, Noam with computed peak LR shown, `target_lang`),
 `checkpoint_register` (top-k), `checkpoint_average`, minimal dataset import, `nemotron_transcribe` (file decode in
@@ -406,9 +410,16 @@ Phase 2 notes (what differs from the plan above):
   control-plane or web source names the family or runtime); a job cancelled between River's fetch and its handler
   now ends cancelled (the flaky pipeline-run cancel); the toy model converges (a layer norm: WER 0 at 300 steps on
   every seed tried) and the conformance suite requires the trained model to beat a one-step baseline.
-- Still open, not small (07 "Open questions"): per-card health and `compute.card_closed`; a checkpoint and training
-  state every 20 minutes (no key, no kind yet); job-log field search; the NeMo pack, its nightly conformance run and
-  the gate wave's stand work (staging host, replay and noise imports).
+- Still open, not small (07 "Open questions"): per-card health and `compute.card_closed`; job-log field search; the
+  nightly NeMo conformance runner; backups to a separate host (the 16 TB backup server); the noise import.
+- Hardening after the gate (2026-10-01, PRs #8 and #10 and their follow-ups), from an audit of the phase and a day on
+  the stand (a Serbian fine-tune, budget and restart reproductions): budgets fail closed and count queued work; reaper
+  grace after a control-plane start; language check before GPU time and shared parameters; transliteration and a
+  streaming capped import (`dataset_import@3`); periodic training states published mid-lease and resumed after a lost
+  lease; optional step outputs (a finished fine-tune writes no training state); training states skip the backup
+  mirror (07 D); the content store in Settings with a low-space warning; the Recipe editor; the agent's own commits
+  scanned and pushed; Telegram `/status` and `/approvals`; and every High, Medium and Low audit finding except two the
+  owner took (step access to the worker token, binding an artifact to a project by its hash).
 
 ---
 

@@ -10,14 +10,15 @@
 
 <p align="center">
   <img alt="Status: work in progress" src="https://img.shields.io/badge/status-work%20in%20progress-f5a524">
-  <img alt="Phase 2 of 6" src="https://img.shields.io/badge/roadmap-phase%202%20of%206-3e63dd">
+  <img alt="Phase 3 of 6" src="https://img.shields.io/badge/roadmap-phase%203%20of%206-3e63dd">
   <img alt="Go" src="https://img.shields.io/badge/Go-control%20plane-00add8">
   <img alt="React" src="https://img.shields.io/badge/React-web%20shell-61dafb">
 </p>
 
 > [!WARNING]
-> **Work in progress.** The shell and the agent loop work today. Training, evaluation, data and deployment are next,
-> in the order of the [roadmap](ROADMAP.md). Expect breaking changes; there is no release yet.
+> **Work in progress.** The shell, the agent loop and training work today: an agent's playbook session fine-tunes
+> Nemotron 3.5 streaming on a GPU worker under budgets and approvals. Evaluation, data and deployment are next, in the
+> order of the [roadmap](ROADMAP.md). Expect breaking changes; there is no release yet.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/workbench-dark.png">
@@ -48,10 +49,23 @@ and every mutation has an actor, an idempotency key and an audit row.
 | --- | --- | --- |
 | 0 · Shell | Contract toolchain, control plane, dockable web shell | ✅ |
 | 1 · Agent loop | Auth, MCP, agent host, sessions, drafts, approvals, projects, registry core | ✅ |
-| 2 · Training | GPU worker protocol, artifact store, queue, runs, playbooks | ⏳ next |
-| 3 · Evaluation | Golden sets, streaming eval, gates, manual transcription tests | |
+| 2 · Training | GPU worker protocol, content store, queue, pipelines, runs, playbooks, notifications, backups | ✅ |
+| 3 · Evaluation | Golden sets, streaming eval, gates, manual transcription tests | ⏳ next |
 | 4 · Data | Mounts, ingest, freeze, annotation | |
 | 5 · Deploy and flywheel | Export, shadow and canary, triage, schedules | |
+
+What training looks like today:
+
+- **Workers** register their runtime, step kinds and model families, lease step jobs over HTTP, heartbeat, stream
+  logs and metrics, and publish checkpoints and training states while they run. The NeMo pack trains, calibrates,
+  averages and decodes Nemotron 3.5 streaming; a CPU toy pack proves the framework seams in CI.
+- **Pipelines** are YAML in the project's git repository, pinned to `kind@version`, validated before they run and
+  reused by input hash. A run is a training stage over a pipeline: calibrated estimates, top-k checkpoints, live
+  metrics, pause and resume.
+- **Guardrails**: GPU budgets per project and agent session fail closed and count queued work; anything over budget
+  waits for an approval — in the Approvals panel or from Telegram.
+- **Operations**: the content store with its disk gauge and eviction, nightly backups with a weekly restore test,
+  notifications and a daily digest.
 
 ## Architecture
 
@@ -68,7 +82,7 @@ CLI ────────────────────┘             
 | `control-plane/` | Go: REST API, MCP server, outbox → SSE, jobs, policy engine, internal git |
 | `web/` | Vite + React SPA: Dockview shell, shadcn on Base UI, Radix colours, Iconoir |
 | `agent-host/` | TypeScript ACP client hosting Claude Code and opencode sessions; agent evals |
-| `worker/` | Python step registry, runs inside the NeMo Speech container (phase 2) |
+| `worker/` | Python worker harness and step kinds; packs: NeMo (runs in the NeMo Speech container) and a CPU toy pack |
 | `docs/spec/` | The specification; `docs/help/` the in-app help |
 
 ## Run it
@@ -79,7 +93,12 @@ make up            # postgres, control plane (SPA embedded), agent host, egress 
 ```
 
 Open http://127.0.0.1:8080; the first visit creates the admin account. Agent model accounts are connected in
-Settings → Agents.
+Settings → Agents, the Telegram bot in Settings → Notifications.
+
+```sh
+docker compose --profile gpu up -d worker      # the NeMo GPU worker (a card with the NVIDIA container toolkit)
+docker compose --profile toy up -d worker-toy  # or the CPU toy worker, to try the pipeline without a GPU
+```
 
 ## Develop
 
@@ -89,6 +108,7 @@ make lint test           # Go, TypeScript and Python checks, unit and contract t
 make test-integration    # control plane against Postgres
 make ui-e2e              # Playwright against the real control plane
 make evals               # agent evals, scripted by default; CADENCE_LIVE_AGENTS=1 runs real agents
+make conformance         # framework-pack conformance suite on the CPU toy pack
 ```
 
 Read [`CLAUDE.md`](CLAUDE.md) and [`docs/spec/README.md`](docs/spec/README.md) before changing behaviour; work is
