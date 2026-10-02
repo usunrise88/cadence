@@ -7,9 +7,11 @@ A step kind is a class registered under the ``cadence.steps`` entry-point group.
 - ``resources``: ``gpu``, ``gpus`` (1 in v1, R44), ``memoryGb``, ``diskGb``, ``jobKind``;
 - ``Params``: a pydantic v2 model in which every field carries ``x-cadence`` metadata (default, description, source,
   safe range, optionally ``defaultRef`` into defaults.yaml) — build fields with :func:`cadence_field`;
-- optionally ``role`` (the model-family role it fills: calibrate, train, average, transcribe, export, parity),
-  ``neutral`` (a runtime-neutral core kind shipped in every image), ``runtime`` (the runtime a framework kind belongs
-  to; None for neutral kinds) and ``secrets`` (secret names it needs as environment variables);
+- optionally ``role`` (the model-family role it fills: calibrate, train, average, transcribe, export, parity,
+  materialize), ``neutral`` (a runtime-neutral core kind shipped in every image), ``runtime`` (the runtime a framework
+  kind belongs to; None for neutral kinds), ``secrets`` (secret names it needs as environment variables),
+  ``optional_inputs`` (inputs of ``consumes`` a pipeline may leave unwired: a transcribe step's boost list; published
+  as ``optionalInputs``) and ``optional_outputs`` (outputs a successful step may leave unwritten);
 - ``run(params, inputs, outputs, ctx)``: read the input paths, write each output path (a file, or a directory for a
   directory artifact) and report through the :class:`~cadence_worker.steps.context.StepContext`. Steps never touch
   the database or the API.
@@ -36,7 +38,7 @@ if TYPE_CHECKING:
     from cadence_worker.steps.context import StepContext
 
 X_CADENCE_KEYS = ("default", "description", "source", "range")
-ROLES = ("calibrate", "train", "average", "transcribe", "export", "parity")
+ROLES = ("calibrate", "train", "average", "transcribe", "export", "parity", "materialize")
 
 
 class StepInputError(Exception):
@@ -187,6 +189,8 @@ def descriptor(name: str, kind: type[StepKind]) -> StepKindDescriptor:
         d["secrets"] = secrets
     if optional := sorted(getattr(kind, "optional_outputs", ())):
         d["optionalOutputs"] = optional
+    if optional_in := sorted(getattr(kind, "optional_inputs", ())):
+        d["optionalInputs"] = optional_in
     return d
 
 

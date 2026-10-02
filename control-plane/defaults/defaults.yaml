@@ -685,3 +685,8 @@ packs:
       description: Utterances streamed together (each keeps its own encoder cache)
       source: Spike A3 (batch 32, fp32)
       range: { min: 1, max: 256 }
+    boost_weight:
+      value: 0.5
+      description: Weight of a boost list's phrase-boosting score in decoding (NeMo's boosting_tree_alpha) when the list names none; 0 turns boosting off. Above about 0.7 listed words start replacing others (over-boosting)
+      source: "Cadence recommendation: FLEURS he_il test, 120 utterances, base model at 160 ms, 40 missed words boosted — recall 0.11 → 0.29 / 0.36 / 0.50 / 0.52 / 0.54 and WER 0.466 → 0.462 / 0.460 / 0.461 / 0.490 / 0.623 at weight 0.3 / 0.5 / 0.7 / 1 / 2 (staging card, 2026-10-02)"
+      range: { min: 0, max: 10 }
