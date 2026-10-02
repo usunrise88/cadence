@@ -25,20 +25,22 @@ type Overlap struct {
 }
 
 // The overlap query: utterances of the versions in $1, matched to the memberships of the versions the condition
-// selects, by identity and by any shared fingerprint. It starts from the $1 side and reaches the other side only
+// selects, by identity and by any shared fingerprint. Only the training side's train and validation splits count
+// ({asplit} or {msplit}): training reads those two (validation for checkpoint selection) and never a dataset's test
+// split, so a FLEURS import holding its test split beside train can still have that split frozen as a golden set. It starts from the $1 side and reaches the other side only
 // through index lookups (dataset_utterances by version, then by utterance; utterance_fingerprints by utterance, then
 // by kind and value), so its cost follows the size of the $1 side, not the size of the registry.
-const overlapSQL = `WITH a AS (SELECT version_id, utterance_id FROM dataset_utterances WHERE version_id = ANY($1)),
+const overlapSQL = `WITH a AS (SELECT version_id, utterance_id FROM dataset_utterances WHERE version_id = ANY($1){asplit}),
 	hits AS (
 		SELECT a.version_id AS a_id, m.version_id AS b_id, a.utterance_id, false AS by_fp
 		FROM a JOIN dataset_utterances m ON m.utterance_id = a.utterance_id
-		WHERE m.version_id <> a.version_id AND {other}
+		WHERE m.version_id <> a.version_id AND {other}{msplit}
 		UNION ALL
 		SELECT a.version_id, m.version_id, a.utterance_id, true
 		FROM a JOIN utterance_fingerprints fa ON fa.utterance_id = a.utterance_id
 		JOIN utterance_fingerprints fb ON fb.kind = fa.kind AND fb.value = fa.value AND fb.utterance_id <> fa.utterance_id
 		JOIN dataset_utterances m ON m.utterance_id = fb.utterance_id
-		WHERE m.version_id <> a.version_id AND {other})
+		WHERE m.version_id <> a.version_id AND {other}{msplit})
 	SELECT a_id, b_id, count(DISTINCT utterance_id)::int,
 		(count(DISTINCT utterance_id) - count(DISTINCT utterance_id) FILTER (WHERE NOT by_fp))::int
 	FROM hits GROUP BY a_id, b_id ORDER BY a_id, b_id`
@@ -56,11 +58,19 @@ const (
 	otherGolden = `m.version_id IN (SELECT dataset_version_id FROM golden_sets)`
 )
 
-// overlapQueries holds the overlap query for each other side, built once from constants.
+// trainedSplits restricts a membership to the splits training reads.
+const trainedSplits = ` AND split IN ('train', 'validation')`
+
+// overlapQueries holds the overlap query for each other side, built once from constants. For the freeze and adoption
+// checks the other side (m) is the training side; for the training exclusion it is the $1 side (a).
 var overlapQueries = map[string]string{
-	otherListed:    strings.ReplaceAll(overlapSQL, "{other}", otherListed),
-	otherTrainable: strings.ReplaceAll(overlapSQL, "{other}", otherTrainable),
-	otherGolden:    strings.ReplaceAll(overlapSQL, "{other}", otherGolden),
+	otherListed:    buildOverlap(otherListed, "", " AND m.split IN ('train', 'validation')"),
+	otherTrainable: buildOverlap(otherTrainable, "", " AND m.split IN ('train', 'validation')"),
+	otherGolden:    buildOverlap(otherGolden, trainedSplits, ""),
+}
+
+func buildOverlap(other, asplit, msplit string) string {
+	return strings.NewReplacer("{other}", other, "{asplit}", asplit, "{msplit}", msplit).Replace(overlapSQL)
 }
 
 // GoldenOverlapsQuery is the query behind GoldenOverlaps ($1: the dataset version ids), for EXPLAIN in tests.
@@ -90,8 +100,8 @@ func overlaps(ctx context.Context, q storage.Querier, ids []string, other string
 	return out, nil
 }
 
-// Overlaps returns what each dataset version of ids shares with each version of others (pairs that share nothing
-// are left out; a version never overlaps itself).
+// Overlaps returns what each dataset version of ids shares with the train and validation splits of each version of
+// others (pairs that share nothing are left out; a version never overlaps itself).
 func Overlaps(ctx context.Context, q storage.Querier, ids, others []string) ([]Overlap, error) {
 	if len(others) == 0 {
 		return nil, nil
@@ -99,8 +109,8 @@ func Overlaps(ctx context.Context, q storage.Querier, ids, others []string) ([]O
 	return overlaps(ctx, q, ids, otherListed, others)
 }
 
-// TrainableOverlaps returns what the dataset version id shares with every dataset version not registered eval-only:
-// a golden set frozen from id must share nothing with them.
+// TrainableOverlaps returns what the dataset version id shares with the train and validation splits of every dataset
+// version not registered eval-only: a golden set frozen from id must share nothing with them.
 func TrainableOverlaps(ctx context.Context, q storage.Querier, id string) ([]Overlap, error) {
 	return overlaps(ctx, q, []string{id}, otherTrainable)
 }
@@ -198,8 +208,9 @@ func plural(n int) string {
 	return "s"
 }
 
-// NotGolden fails with golden-set-leakage when the dataset version v shares an utterance (by identity or by
-// fingerprint) with any golden set: golden-set audio never reaches training (docs/spec/04-blocks.md Block 3).
+// NotGolden fails with golden-set-leakage when the train or validation split of the dataset version v shares an
+// utterance (by identity or by fingerprint) with any golden set: golden-set audio never reaches training
+// (docs/spec/04-blocks.md Block 3).
 func NotGolden(ctx context.Context, q storage.Querier, v registry.Version) error {
 	list, err := GoldenOverlaps(ctx, q, []string{v.ID})
 	if err != nil || len(list) == 0 {

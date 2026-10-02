@@ -78,9 +78,46 @@ func dataset(t *testing.T, pool *pgxpool.Pool, name, lang string, evalOnly bool,
 	}); err != nil {
 		t.Fatal(err)
 	}
+	split := "train" // a trainable version trains on its utterances; an eval-only one holds a test split
+	if evalOnly {
+		split = "test"
+	}
 	exec(t, pool, `INSERT INTO dataset_utterances (version_id, utterance_id, split, transcript_id)
-		SELECT $1, 'utt_' || i, 'test', 'trn_' || i FROM generate_series($2::int, $3::int) i`, id, lo, hi)
+		SELECT $1, 'utt_' || i, $4, 'trn_' || i FROM generate_series($2::int, $3::int) i`, id, lo, hi, split)
 	return id
+}
+
+// TestLeakageCountsTrainedSplitsOnly: an import that holds a test split beside train (FLEURS sr with train,
+// validation and test) never trains on the test split, so that split may be frozen as a golden set, and the import
+// stays trainable afterwards; the same audio in a train split leaks.
+func TestLeakageCountsTrainedSplitsOnly(t *testing.T) {
+	pool := openDB(t)
+	ctx := context.Background()
+	exec(t, pool, `INSERT INTO sources (id, name, licence, kind, training_cleared, created_by) VALUES ('src_bench', 'bench', 'CC-BY-4.0', 'public', true, '{}')`)
+	full := dataset(t, pool, "dataset/fleurs-xx", "sr-RS", false, 1, 100)
+	exec(t, pool, `UPDATE dataset_utterances SET split = 'test' WHERE version_id = $1 AND utterance_id IN
+		(SELECT 'utt_' || i FROM generate_series(61, 100) i)`, full)
+	golden := dataset(t, pool, "dataset/fleurs-xx-test", "sr-RS", true, 61, 100)
+	exec(t, pool, "ANALYZE")
+
+	d := defaults.Get()
+	if err := pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
+		_, _, drafts, err := Freeze(ctx, tx, FreezeInput{Dataset: golden, Actor: auth.DevActor()}, d, time.Now())
+		if err != nil {
+			return err
+		}
+		return events.Append(ctx, tx, auth.DevActor(), nil, drafts)
+	}); err != nil {
+		t.Fatalf("freeze the test split of a trainable import: %v", err)
+	}
+	if hits, err := data.GoldenOverlaps(ctx, pool, []string{full}); err != nil || len(hits) != 0 {
+		t.Fatalf("the import's train and validation splits overlap nothing, got %+v, %v", hits, err)
+	}
+	exec(t, pool, `UPDATE dataset_utterances SET split = 'validation' WHERE version_id = $1 AND utterance_id = 'utt_61'`, full)
+	hits, err := data.GoldenOverlaps(ctx, pool, []string{full})
+	if err != nil || len(hits) != 1 || hits[0].Utterances != 1 {
+		t.Fatalf("a golden utterance in the validation split leaks, got %+v, %v", hits, err)
+	}
 }
 
 func timed(t *testing.T, what string, limit time.Duration, fn func() error) {
