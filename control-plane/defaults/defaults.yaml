@@ -916,10 +916,10 @@ packs:
       source: docs/spec/03-pipelines-defaults.md "Key defaults" (eval latency [56,1], 160 ms)
       range: { values: [80ms, 160ms, 320ms, 560ms, 1120ms] }
     transcribe_batch_size:
-      value: 32
+      value: 1
       unit: utterances
-      description: Utterances streamed together (each keeps its own encoder cache)
-      source: Spike A3 (batch 32, fp32)
+      description: Utterances streamed together (each keeps its own encoder cache); 1 decodes every utterance to the same words a live session of that audio gives, a larger batch is about 4x faster and changes a few words through the order of floating-point sums (same WER on the check set)
+      source: Phase 3 stream T GPU check (pipeline decoder, FLEURS he and ru at 80, 160 and 1120 ms; batch 8 differed from batch 1 in 3 of 22 clips at 80 ms, none at 160 ms); spike A3 used 32 for the reference loop
       range: { min: 1, max: 256 }
     boost_weight:
       value: 0.5

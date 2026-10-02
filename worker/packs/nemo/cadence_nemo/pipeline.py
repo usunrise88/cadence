@@ -1,23 +1,35 @@
 """One decoder for live sessions and evals (spike A5 finding 2): NeMo's cache-aware streaming pipeline API
-(``nemo.collections.asr.inference``, NeMo Speech 26.07 / NeMo 3.0.0) with two shims.
+(``nemo.collections.asr.inference``, NeMo Speech 26.07 / NeMo 3.0.0) with five shims.
 
-A :class:`PipelineStream` turns 16 kHz float audio pushed in any frame size into chunk-sized ``Frame``\\ s of one
-pipeline stream and the pipeline's outputs into the live channel's events (R48): ``partial`` replaces the segment's
-previous partial, ``final`` never changes, every event states the audio it covers (``audioEnd``). ``finalize`` pads
-the pending chunk with silence and sends it as the stream's last frame (the pipeline flushes with
-``keep_all_outputs`` and forces an end of utterance); the next audio opens a new pipeline stream at the same audio
-clock, with a fresh encoder cache — a segment boundary, not just a flush.
+A :class:`PipelineStream` turns 16 kHz float audio pushed in any frame size into log-mel features (:class:`Features`,
+equal to the whole stream's), cuts them into the feature buffers of the reference cache-aware loop
+(``nemotron_transcribe@2``'s, NeMo's ``CacheAwareStreamingAudioBuffer``: a short first chunk without cache, then the
+pre-encode cache and a chunk) and turns the pipeline's outputs into the live channel's events (R48): ``partial``
+replaces the segment's previous partial, ``final`` never changes, every event states the audio it covers
+(``audioEnd``). ``finalize`` sends the rest of the stream's features as its last buffer (the pipeline keeps all
+outputs and forces an end of utterance); the next audio opens a new pipeline stream at the same audio clock, with a
+fresh encoder cache — a segment boundary, not just a flush.
 
 ``nemotron_live`` serves sessions with it and ``nemotron_transcribe@3`` decodes golden sets with it
-(:func:`decode_batch`), so a live session, a paced replay and an eval give the same words (A5: 22/22 clips).
+(:func:`decode_batch`): a live session in 20 ms frames and a file decode give the same words (22/22 FLEURS he and ru
+clips at every profile, batch 1), and the same WER as the reference loop at every profile (this stream's GPU check:
+he 75.6 / 77.9 / 65.1 / 66.3 / 69.8 at 80 / 160 / 320 / 560 / 1120 ms, same empty clips). The words differ from the
+reference loop only where it drops a short tail (the clip's last tokens, "כתבית." → "כתבי").
 
-Shims, both NeMo 3.0.0 gaps that belong upstream:
+Shims, NeMo 3.0.0 gaps that belong upstream:
 
 1. :func:`patch_prompt`: ``CacheAwareRNNTInferenceWrapper.execute_step`` takes the per-stream ``prompt_vectors`` the
    pipeline builds from ``ASRRequestOptions.language_code`` but never applies them, so a prompt model such as
    Nemotron 3.5 gets un-prompted encoder output and emits only blanks. The patch applies the model's
-   ``prompt_kernel`` per stream, as ``PromptStreamingMixin._apply_prompt_to_encoded`` does for its single index.
+   ``prompt_kernel`` per stream, as ``PromptStreamingMixin._apply_prompt_to_encoded`` does for its single index. It
+   also drops no extra pre-encoded frames on a stream's first step (it has no cache) and reads the count for the
+   others from the encoder's current streaming config (the wrapper read it once, at load).
 2. The pipeline keeps the model's trailing locale tag (``… <he-IL>``) in its text and words: :func:`lang.strip_tags`.
+3. :func:`patch_load`: restore on the CPU, then move to the card.
+4. :class:`Features`: NeMo's frame path featurizes each chunk alone, so the frames at every chunk edge see zero
+   padding where audio belongs (he fixtures at 160 ms: 5 empty transcripts instead of 2, WER 80.2 against 77.9).
+5. :func:`fix_buffer_length`: NeMo sizes a feature buffer as ``int(seconds / stride)``, 16 instead of 17 frames at
+   80 ms (WER 91.9 against 75.6).
 
 Boosting: the pipeline supports per-stream phrase boosting (``ASRRequestOptions.biasing_cfg``, a GPU boosting tree
 per stream in the label-looping greedy decoder's multi-model) when the decoding config enables
@@ -164,6 +176,14 @@ def patch_prompt() -> None:
         prompt_vectors: Any = None,
     ) -> Any:
         m = self.asr_model
+        if getattr(cls, "_cadence_first_step", False):
+            # A stream's first chunk carries no pre-encode cache, so nothing extra was pre-encoded to drop (the
+            # reference loop passes 0 on its first step; see Features)
+            drop_extra_pre_encoded = 0
+        elif drop_extra_pre_encoded:
+            # The wrapper read this once, at load, from whatever look-ahead the encoder had then; the encoder's
+            # streaming config is the current profile's (activate), as in the reference loop
+            drop_extra_pre_encoded = int(m.encoder.streaming_cfg.drop_extra_pre_encoded)
         (encoded, encoded_len, c_ch, c_t, c_len) = m.encoder.cache_aware_stream_step(
             processed_signal=processed_signal,
             processed_signal_length=processed_signal_length,
@@ -288,12 +308,27 @@ def load(
     pipes: dict[str, Any] = {names[0]: first}
     for n in names[1:]:
         pipes[n] = CacheAwareRNNTPipeline(cfg(profiles[n]), first.asr_model)
+    for n, p in pipes.items():
+        fix_buffer_length(p, profiles[n])
     return Model(
         path=model_path,
         pipelines=pipes,
         att={n: [int(v) for v in a] for n, a in profiles.items()},
         load_s=time.perf_counter() - t0,
     )
+
+
+def fix_buffer_length(pipeline: Any, att: Sequence[int]) -> None:
+    """The fifth shim: NeMo 3.0.0 sizes a feature buffer as ``int(seconds / window_stride)``, and at 80 ms
+    ``(0.09 + 0.08) / 0.01`` is 16.999…, so every buffer lost its newest frame (he fixtures at 80 ms: WER 91.9 against
+    the reference loop's 75.6). The length is the encoder's pre-encode cache plus its chunk, in frames."""
+    activate(pipeline, att)
+    sc = pipeline.asr_model.asr_model.encoder.streaming_cfg
+
+    def later(v: Any) -> int:
+        return int(v[1]) if isinstance(v, list | tuple) else int(v)
+
+    pipeline.expected_feature_buffer_len = later(sc.pre_encode_cache_size) + later(sc.chunk_size)
 
 
 def activate(pipeline: Any, att: Sequence[int]) -> None:
@@ -307,6 +342,95 @@ def activate(pipeline: Any, att: Sequence[int]) -> None:
 
 def chunk_samples(pipeline: Any) -> int:
     return round(float(pipeline.chunk_size_in_secs) * SR)
+
+
+def _first_step_flag(on: bool) -> None:
+    """Mark the next ``execute_step`` as a stream's first step (no extra pre-encoded frames to drop; see
+    :func:`patch_prompt`)."""
+    from nemo.collections.asr.inference.model_wrappers import cache_aware_rnnt_inference_wrapper as w
+
+    w.CacheAwareRNNTInferenceWrapper._cadence_first_step = on
+
+
+@dataclass
+class Features:
+    """The log-mel features of one pipeline stream, computed as its audio arrives and equal to the features of the
+    whole stream's audio (the fourth shim, from the follow-up GPU check).
+
+    NeMo's own frame path computes a chunk's features from that chunk's audio plus 10 ms, so the frames at every chunk
+    edge see zero padding where the next chunk's audio belongs: on the ten FLEURS he fixtures that turned 2 empty
+    transcripts into 5 (WER 77.9 → 80.2 at 160 ms) against the reference cache-aware loop
+    (``nemotron_transcribe@2``), which featurizes the whole file. Here a frame is computed only once its whole STFT
+    window has arrived (``half`` samples past its centre, 16 ms at 512-point FFT), from a window of audio that starts
+    two frames before it (the pre-emphasis of the window's first sample is the only thing a cut changes, and no kept
+    frame reads it); at the stream's end the last frames see the end padding a whole-file featurization sees.
+    """
+
+    preprocessor: Any
+    hop: int
+    half: int
+    audio: Audio = field(default_factory=lambda: np.zeros(0, dtype=np.float32))
+    a0: int = 0  # stream sample index of audio[0]
+    total: int = 0  # stream samples received
+    feats: Any = None  # (n_mels, k) tensor of frames f0 .. n-1
+    f0: int = 0
+    n: int = 0  # frames computed
+    final: bool = False
+
+    def push(self, x: Audio) -> None:
+        self.audio = np.concatenate([self.audio, np.asarray(x, dtype=np.float32)])
+        self.total += int(np.asarray(x).size)
+        self._compute(final=False)
+
+    def finish(self) -> None:
+        self.final = True
+        self._compute(final=True)
+
+    def _compute(self, final: bool) -> None:
+        import torch
+
+        if self.total == 0:
+            return
+        last = self.total // self.hop if final else (self.total - self.half) // self.hop
+        if last < self.n:
+            return
+        a = max(0, (self.n - 2) * self.hop)
+        seg = self.audio[a - self.a0 :]
+        t = next(itertools.chain(self.preprocessor.parameters(), self.preprocessor.buffers()), None)
+        dev = t.device if t is not None else "cpu"
+        with torch.inference_mode():
+            sig = torch.from_numpy(np.ascontiguousarray(seg))[None].to(dev)
+            f, _ = self.preprocessor(input_signal=sig, length=torch.tensor([seg.size], device=dev))
+        j0, j1 = self.n - a // self.hop, last - a // self.hop + 1
+        new = f[0, :, j0:j1].float()
+        self.feats = new if self.feats is None else torch.cat([self.feats, new], dim=1)
+        self.n = last + 1
+        keep = max(0, (self.n - 2) * self.hop)  # the next window starts here
+        if keep > self.a0:
+            self.audio = self.audio[keep - self.a0 :]
+            self.a0 = keep
+
+    def frames(self, start: int, end: int) -> Any:
+        """Frames [start, end) (all computed, none trimmed)."""
+        return self.feats[:, start - self.f0 : end - self.f0]
+
+    def trim(self, keep_from: int) -> None:
+        if self.feats is not None and keep_from > self.f0:
+            self.feats = self.feats[:, keep_from - self.f0 :]
+            self.f0 = keep_from
+
+
+@dataclass
+class Chunk:
+    """One feature buffer of a stream: the pre-encode cache and a chunk of frames (the reference cache-aware loop's
+    chunking, NeMo's ``CacheAwareStreamingAudioBuffer``: a shorter first chunk without cache, then chunks with
+    ``pre_encode_cache_size`` frames of cache), and the stream samples it accounts for."""
+
+    features: Any
+    length: int  # valid frames (with the cache); the buffer is right-padded to the pipeline's length when last
+    first: bool
+    last: bool
+    real: int
 
 
 @dataclass
@@ -324,7 +448,6 @@ class PipelineStream:
     decoder: str = DECODER
     step_ms: list[float] = field(default_factory=list)
     stream_id: int = 0
-    buf: Audio = field(default_factory=lambda: np.zeros(0, dtype=np.float32))
     stream_open: bool = False
     stream_start: int = 0  # absolute 16 kHz sample where the current pipeline stream began
     consumed: int = 0  # absolute real samples handed to the pipeline
@@ -332,6 +455,11 @@ class PipelineStream:
     seq: int = 0
     last_partial: str = ""
     new_word: bool = True  # the next final starts a word (nothing before it, or a stream boundary)
+    feats: Features | None = None
+    idx: int = 0  # the stream's next feature frame to send
+    sent: int = 0  # stream samples accounted for by the chunks sent
+    first_pending: bool = True
+    cfg: tuple[int, int, int, int, int, int] | None = None  # c0, c1, p0, p1, sampling0, sampling1
 
     @property
     def chunk(self) -> int:
@@ -345,51 +473,121 @@ class PipelineStream:
     def boost(self) -> dict[str, Any] | None:
         return {"terms": len(self.boost_cfg.terms), "weight": self.boost_cfg.weight} if self.boost_cfg else None
 
-    # -------------------------------------------------------------- frames
+    # -------------------------------------------------------------- features and chunks
 
-    def has_chunk(self) -> bool:
-        return self.buf.size >= self.chunk
+    def _streaming_cfg(self) -> tuple[int, int, int, int, int, int]:
+        if self.cfg is None:
+            activate(self.pipeline, self.att)
+            enc = self.pipeline.asr_model.asr_model.encoder
+            sc = enc.streaming_cfg
 
-    def next_frame(self, last: bool = False) -> tuple[Any, int, int]:
-        """The next frame of the stream: a whole chunk of pending audio, or (``last``) the rest padded with silence.
-        Returns the frame, the samples of real audio it carries and its valid length."""
-        from nemo.collections.asr.inference.streaming.framing.request import Frame
-        from nemo.collections.asr.inference.streaming.framing.request_options import ASRRequestOptions
+            def two(v: Any) -> tuple[int, int]:
+                return (int(v[0]), int(v[1])) if isinstance(v, list | tuple) else (int(v), int(v))
 
-        if last:
-            real = int(self.buf.size)
-            frame = np.zeros(self.chunk, dtype=np.float32)
-            frame[:real] = self.buf[: self.chunk]
-            self.buf = np.zeros(0, dtype=np.float32)
-            # with no pending audio the whole chunk is silence given to the model as right context
-            valid = real if real > 0 else self.chunk
-        else:
-            frame, self.buf = self.buf[: self.chunk], self.buf[self.chunk :]
-            real = valid = self.chunk
-        first = not self.stream_open
-        if first:
-            self.stream_id = next(_stream_ids)
-            self.stream_open = True
-            self.stream_start = self.consumed
+            c0, c1 = two(sc.chunk_size)
+            p0, p1 = two(sc.pre_encode_cache_size)
+            pe = getattr(enc, "pre_encode", None)
+            sf = pe.get_sampling_frames() if pe is not None and hasattr(pe, "get_sampling_frames") else 1
+            s0, s1 = two(sf)
+            self.cfg = (c0, c1, p0, p1, s0, s1)
+        return self.cfg
+
+    def _open(self) -> None:
+        if self.stream_open:
+            return
+        am = self.pipeline.asr_model.asr_model
+        pcfg = am.cfg.preprocessor
+        hop = round(float(pcfg.window_stride) * SR)
+        half = int(pcfg.get("n_fft", 512) or 512) // 2
+        self.stream_id = next(_stream_ids)
+        self.stream_open = True
+        self.stream_start = self.consumed
+        self.feats = Features(preprocessor=am.preprocessor, hop=hop, half=half)
+        self.idx, self.sent, self.first_pending = 0, 0, True
+        self._streaming_cfg()
+
+    def _buffer(self, start: int, length: int, first: bool, last: bool) -> Any:
         import torch
 
-        options = None
+        assert self.feats is not None
+        assert self.cfg is not None
+        _, _, p0, p1, _, _ = self.cfg
+        f = self.feats
+        n_mels = int(
+            f.feats.shape[0] if f.feats is not None else self.pipeline.asr_model.asr_model.cfg.preprocessor.features
+        )
+        dev = f.feats.device if f.feats is not None else "cpu"
         if first:
+            cache = torch.zeros((n_mels, p0), device=dev)
+        else:
+            lo = max(0, start - p1)
+            cache = f.frames(lo, start)
+            if cache.shape[1] < p1:
+                cache = torch.cat([torch.zeros((n_mels, p1 - cache.shape[1]), device=dev), cache], dim=1)
+        body = f.frames(start, start + length) if length > 0 else torch.zeros((n_mels, 0), device=dev)
+        buf = torch.cat([cache, body], dim=1)
+        full = int(self.pipeline.expected_feature_buffer_len)
+        if last and buf.shape[1] < full:
+            buf = torch.cat([buf, torch.zeros((n_mels, full - buf.shape[1]), device=dev)], dim=1)
+        return buf, cache.shape[1] + length
+
+    def _chunks(self, final: bool) -> list[Chunk]:
+        """The chunks the features computed so far make: whole chunks while the stream goes on; at its end, the rest,
+        the last one marked."""
+        assert self.feats is not None
+        c0, c1, _, p1, _, _ = self._streaming_cfg()
+        hop = self.feats.hop
+        plan: list[tuple[int, int, bool]] = []
+        idx, first = self.idx, self.first_pending
+        while True:
+            cs = c0 if first else c1
+            avail = self.feats.n - idx
+            if not final and avail < cs:
+                break
+            if final and avail <= 0:
+                break
+            plan.append((idx, min(cs, avail), first))
+            idx += cs
+            first = False
+        out: list[Chunk] = []
+        # At the end a tail shorter than the subsampling's frames still goes out (the reference loop drops it and with
+        # it the clip's last tokens, "כתבית." → "כתבי"); with the cache before it the step has enough frames. When every
+        # frame went out in whole chunks, the stream still ends with a step (the cache alone) that keeps all outputs.
+        if final and not plan:
+            plan.append((self.feats.n, 0, self.first_pending))
+        for k, (start, length, first_chunk) in enumerate(plan):
+            last = final and k == len(plan) - 1
+            buf, valid = self._buffer(start, length, first_chunk, last)
+            real = (self.feats.total - self.sent) if last else length * hop
+            real = max(0, min(real, self.feats.total - self.sent))
+            self.sent += real
+            out.append(Chunk(features=buf, length=valid, first=first_chunk, last=last, real=real))
+        if plan:
+            self.idx = plan[-1][0] + (c0 if plan[-1][2] else c1)
+            self.first_pending = False
+        self.feats.trim(max(0, self.idx - p1))
+        return out
+
+    def _request(self, ch: Chunk) -> Any:
+        from nemo.collections.asr.inference.streaming.framing.request import FeatureBuffer
+        from nemo.collections.asr.inference.streaming.framing.request_options import ASRRequestOptions
+
+        options = None
+        if ch.first:
             options = ASRRequestOptions(
                 language_code=self.language,
                 asr_output_granularity="word",
                 stop_history_eou=self.stop_history_eou_ms,
                 biasing_cfg=biasing_request(self.boost_cfg) if self.boost_cfg else None,
             )
-        fr = Frame(
-            samples=torch.from_numpy(np.ascontiguousarray(frame)),
+        return FeatureBuffer(
+            features=ch.features,
             stream_id=self.stream_id,
-            is_first=first,
-            is_last=last,
-            length=valid if last else -1,
+            is_first=ch.first,
+            is_last=ch.last,
+            length=ch.length if ch.last else -1,
             options=options,
         )
-        return fr, real, valid
 
     def consume(self, out: Any, real: int, last: bool, reason: str) -> list[Event]:
         """The events of one step's output for this stream."""
@@ -455,28 +653,42 @@ class PipelineStream:
         self.last_partial = ""
         return ev
 
-    def step(self, last: bool = False, reason: str = "") -> list[Event]:
-        fr, real, _ = self.next_frame(last)
-        t0 = time.perf_counter()
-        activate(self.pipeline, self.att)
-        (out,) = self.pipeline.transcribe_step([fr])
-        self.step_ms.append((time.perf_counter() - t0) * 1000)
-        return self.consume(out, real, last, reason)
+    def _send(self, chunks: Sequence[Chunk], reason: str) -> list[Event]:
+        ev: list[Event] = []
+        for ch in chunks:
+            t0 = time.perf_counter()
+            activate(self.pipeline, self.att)
+            _first_step_flag(ch.first)
+            try:
+                (out,) = self.pipeline.transcribe_step([self._request(ch)])
+            finally:
+                _first_step_flag(False)
+            self.step_ms.append((time.perf_counter() - t0) * 1000)
+            ev += self.consume(out, ch.real, ch.last, reason)
+        if chunks and chunks[-1].last:
+            self.feats = None
+        return ev
 
     # -------------------------------------------------------------- the live Decoder
 
     def push(self, x: Audio) -> list[Event]:
-        self.buf = np.concatenate([self.buf, np.asarray(x, dtype=np.float32)])
-        ev: list[Event] = []
-        while self.has_chunk():
-            ev += self.step()
-        return ev
+        x = np.asarray(x, dtype=np.float32)
+        if x.size == 0:
+            return []
+        self._open()
+        assert self.feats is not None
+        self.feats.push(x)
+        return self._send(self._chunks(final=False), "")
 
     def finalize(self, reason: str) -> list[Event]:
-        """Pad the pending audio with silence to a whole chunk and close the pipeline stream (forced EOU)."""
-        if not self.stream_open and self.buf.size == 0:
+        """Close the pipeline stream: the rest of its features (with the end padding a whole-file featurization sees)
+        go out, the last step keeps all outputs and forces the end of utterance. The next audio opens a new stream."""
+        if not self.stream_open or self.feats is None or self.feats.total == 0:
+            self.stream_open = False
+            self.feats = None
             return [self._final([], reason, self.consumed, "", True)]
-        return self.step(last=True, reason=reason)
+        self.feats.finish()
+        return self._send(self._chunks(final=True), reason)
 
 
 # ---------------------------------------------------------------- file decoding (nemotron_transcribe@3)
@@ -525,34 +737,47 @@ def collect(events: Sequence[Event], t0: float, emitted: Sequence[float]) -> Fil
 
 def decode_batch(streams: Sequence[PipelineStream], audios: Sequence[Audio]) -> list[FileResult]:
     """Decode whole files, one stream each, stepping every stream of the batch together (``transcribe_step`` over a
-    list of frames: continuous batching across streams); each file ends with ``finalize("end")``. The streams must
-    share one pipeline."""
+    list of feature buffers: continuous batching across streams); each file ends with ``finalize("end")``. The
+    streams must share one pipeline; their chunks are the same as a live session's of the same audio, so a file
+    decodes to the same words either way."""
     if not streams:
         return []
     pipe = streams[0].pipeline
     events: list[list[Event]] = [[] for _ in streams]
     stamps: list[list[float]] = [[] for _ in streams]
+    plans: list[list[Chunk]] = []
     for s, a in zip(streams, audios, strict=True):
-        s.buf = np.asarray(a, dtype=np.float32)
-    active = list(range(len(streams)))
+        x = np.asarray(a, dtype=np.float32)
+        if x.size == 0:
+            plans.append([])
+            continue
+        s._open()
+        assert s.feats is not None
+        s.feats.push(x)
+        s.feats.finish()
+        plans.append(s._chunks(final=True))
     t0 = time.perf_counter()
     activate(pipe, streams[0].att)
-    while active:
-        frames, meta = [], []
-        for i in active:
-            s = streams[i]
-            last = not s.has_chunk()
-            fr, real, _ = s.next_frame(last)
-            frames.append(fr)
-            meta.append((i, real, last))
-        outs = pipe.transcribe_step(frames)
+    step = 0
+    while True:
+        batch = [(i, plan[step]) for i, plan in enumerate(plans) if step < len(plan)]
+        if not batch:
+            break
+        _first_step_flag(step == 0)
+        try:
+            outs = pipe.transcribe_step([streams[i]._request(ch) for i, ch in batch])
+        finally:
+            _first_step_flag(False)
         now = time.perf_counter()
-        nxt = []
-        for (i, real, last), out in zip(meta, outs, strict=True):
-            evs = streams[i].consume(out, real, last, "end")
+        for (i, ch), out in zip(batch, outs, strict=True):
+            evs = streams[i].consume(out, ch.real, ch.last, "end")
             events[i] += evs
             stamps[i] += [now] * len(evs)
-            if not last:
-                nxt.append(i)
-        active = nxt
+            if ch.last:
+                streams[i].feats = None
+        step += 1
+    for i, plan in enumerate(plans):
+        if not plan:  # an empty file: one empty final
+            events[i].append(streams[i]._final([], "end", streams[i].consumed, "", True))
+            stamps[i].append(time.perf_counter())
     return [collect(e, t0, st) for e, st in zip(events, stamps, strict=True)]

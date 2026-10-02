@@ -438,13 +438,19 @@ the Transcription panel):
   socket is gone. Problem types: `transcription-in-progress`, `transcription-allowance-exhausted`,
   `transcription-ticket-invalid`, `transcription-input-invalid`, `transcription-limit`. Limits: `transcriptions.*`
   in `defaults.yaml`.
-- One decoder (A5 proposal 2): the NeMo pack's `pipeline.py` (NeMo's cache-aware streaming pipeline with the prompt
-  and tag shims, the model restored on the CPU then moved to the card, per-stream phrase boosting) serves
-  `nemotron_live@1` and `nemotron_transcribe@3` (decoding `decoder: nemo-pipeline-cache-aware`; evals pick @3 as the
-  newest transcribe kind, so @2 records do not mix). On the stand card: live (20 ms frames) and @3 file decode give the
-  same words 22/22, @3 at batch 8 equals batch 1; WER @2 → @3 at 160 ms: he fixtures 77.9 → 80.2, ru 15.7 → 14.6;
-  one model peaks at 2.8 GiB allocated, load 29–30 s. Two distinct models in one job turn NeMo's CUDA-graph decoder
-  off (it crashes with two). The training telephone stage moved to polyphase resampling (`nemotron_finetune@2`).
+- One decoder (A5 proposal 2): the NeMo pack's `pipeline.py` (NeMo's cache-aware streaming pipeline, model restored
+  on the CPU, per-stream phrase boosting, and five shims: the per-stream prompt, tag stripping, features computed once
+  their whole window has arrived and cut like the reference loop's chunks, the first step's pre-encoded frames, the
+  feature buffer's length) serves `nemotron_live@1` and `nemotron_transcribe@3` (decoding
+  `decoder: nemo-pipeline-cache-aware`; evals pick @3 as the newest transcribe kind, so @2 records do not mix). On the
+  stand card, FLEURS he fixtures and ru clips with the base model: @3 has @2's WER at every profile (he 75.6 / 77.9 /
+  65.1 / 66.3 / 69.8, ru 16.2 / 17.2 / 17.2 / 16.2 / 14.1 at 80 / 160 / 320 / 560 / 1120 ms, the same empty clips),
+  its words differing only where @2 drops an utterance's last tokens; a live session in 20 ms frames and @3 at batch 1
+  give the same words (22/22 at every profile; batch 8 changes 3 of 22 at 80 ms, so `transcribe_batch_size` is 1).
+  One model peaks at 2.8 GiB allocated, load 29–30 s, RTF about 0.06 at batch 1. NeMo's own frame path was worse (he
+  at 160 ms: 5 empty clips, WER 80.2; at 80 ms WER 91.9). Two distinct models in one job turn NeMo's CUDA-graph
+  decoder off (it crashes with two). The training telephone stage moved to polyphase resampling
+  (`nemotron_finetune@2`).
 - Not built: `analysis: [features, emissions]`; a conformance stage for the live role; the Triton target (phase 5).
 
 ## Operations

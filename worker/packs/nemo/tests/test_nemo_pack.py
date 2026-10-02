@@ -1030,3 +1030,87 @@ def test_live_kind_descriptor() -> None:
     assert params.stop_history_eou_ms == 800
     assert params.telephony is not None
     assert params.telephony.codec == "alaw"
+
+
+class _FakeMel(torch.nn.Module):
+    """A log-filterbank-like preprocessor with the properties the streaming features rely on: pre-emphasis, a centred
+    512-point window with zero padding at both ends, a 160-sample hop and N // hop + 1 frames."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        g = torch.Generator().manual_seed(0)
+        self.register_buffer("w", torch.rand((3, 512), generator=g, dtype=torch.float64))
+
+    def forward(self, input_signal: torch.Tensor, length: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        x = input_signal.double()
+        y = torch.cat([x[:, :1], x[:, 1:] - 0.97 * x[:, :-1]], dim=1)
+        y = torch.nn.functional.pad(y, (256, 256))
+        n = int(length[0]) // 160 + 1
+        frames = torch.stack([y[:, t * 160 : t * 160 + 512] for t in range(n)], dim=2)  # (B, 512, T)
+        feats = torch.einsum("fk,bkt->bft", self.w, frames * frames)
+        return torch.log(feats + 2.0**-24), torch.tensor([n])
+
+
+def test_streamed_features_equal_whole_file_features() -> None:
+    """Features computed as audio arrives, in any frame size, equal the whole stream's (the fourth pipeline shim)."""
+    rng = np.random.default_rng(1)
+    x = rng.standard_normal(16000 * 2 + 777).astype(np.float32) * 0.1
+    mel = _FakeMel()
+    whole, n = mel(torch.from_numpy(x)[None], torch.tensor([x.size]))
+    for sizes in ([320], [1280], [37, 512, 4000], [x.size]):
+        f = pipeline.Features(preprocessor=mel, hop=160, half=256)
+        i, k = 0, 0
+        while i < x.size:
+            step = sizes[k % len(sizes)]
+            f.push(x[i : i + step])
+            assert f.n <= max(0, (i + step - 256) // 160 + 1), "a frame left before its window arrived"
+            i, k = i + step, k + 1
+        f.finish()
+        assert f.n == int(n[0])
+        assert torch.allclose(f.frames(0, f.n), whole[0].float(), atol=1e-5), sizes
+
+
+class _Cfg(dict[str, Any]):
+    def __getattr__(self, k: str) -> Any:
+        return self[k]
+
+
+def _fake_pipeline(chunk: list[int], cache: list[int]) -> Any:
+    sc = _Cfg(chunk_size=chunk, pre_encode_cache_size=cache, drop_extra_pre_encoded=2)
+    enc = _Cfg(att_context_size=[56, 1], streaming_cfg=sc, pre_encode=None, setup_streaming_params=lambda: None)
+    pre = _Cfg(window_stride=0.01, n_fft=512, features=3)
+    am = _Cfg(encoder=enc, preprocessor=_FakeMel(), cfg=_Cfg(preprocessor=pre))
+    return _Cfg(asr_model=_Cfg(asr_model=am), expected_feature_buffer_len=cache[1] + chunk[1], chunk_size_in_secs=0.16)
+
+
+def test_chunks_follow_the_reference_loop_and_account_for_every_sample() -> None:
+    """The first chunk is short and carries no cache, later ones carry the pre-encode cache; the stream's last chunk
+    keeps a short tail, is padded to the buffer length and accounts for the rest of the samples; pushing 20 ms frames
+    and decoding the whole file give the same chunks."""
+    x = np.random.default_rng(2).standard_normal(16000 + 1234).astype(np.float32) * 0.1
+
+    def chunks(frames: int) -> list[pipeline.Chunk]:
+        s = pipeline.PipelineStream(
+            target="A", pipeline=_fake_pipeline([9, 16], [0, 9]), att=[56, 1], profile="160ms", language="he-IL"
+        )
+        s._open()
+        assert s.feats is not None
+        out: list[pipeline.Chunk] = []
+        for i in range(0, x.size, frames):
+            s.feats.push(x[i : i + frames])
+            out += s._chunks(final=False)
+        s.feats.finish()
+        return out + s._chunks(final=True)
+
+    live, whole = chunks(320), chunks(x.size)
+    assert [(c.first, c.last, c.length, c.real) for c in live] == [(c.first, c.last, c.length, c.real) for c in whole]
+    assert all(torch.equal(a.features, b.features) for a, b in zip(live, whole, strict=True))
+    first, second, last = whole[0], whole[1], whole[-1]
+    assert (first.first, first.length, first.features.shape[1]) == (True, 9, 9)
+    assert (second.first, second.length, second.features.shape[1]) == (False, 25, 25)
+    assert torch.equal(second.features[:, :9], first.features), "the cache is the frames before the chunk"
+    total_frames = x.size // 160 + 1
+    assert last.last
+    assert last.length == 9 + (total_frames - 9 - 16 * (len(whole) - 2))
+    assert last.features.shape[1] == 25
+    assert sum(c.real for c in whole) == x.size

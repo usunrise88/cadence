@@ -20,8 +20,10 @@ give the same words (spike A5):
 | `560ms` | [56,6] | 560 ms |
 | `1120ms` | [56,13] | 1120 ms |
 
-Each utterance is one pipeline stream fed chunk by chunk (16 kHz, the training resampler for any other rate, channel
-0) and closed with a forced end of utterance; the utterances of a batch (`batch_size`) step together. Decoding is
+Each utterance is one pipeline stream (16 kHz, the training resampler for any other rate, channel 0): its log-mel
+features are those of the whole utterance, cut like the reference cache-aware loop's (a short first chunk without
+cache, then the pre-encode cache and a chunk), and the stream is closed with a forced end of utterance; the utterances
+of a batch (`batch_size`, default 1) step together. Decoding is
 greedy RNN-T in fp32 with the language prompt of the dataset's language (or `target_lang`), the locale tag stripped,
 and the pipeline's end-of-utterance endpointing (`stop_history_eou_ms`, as live sessions): a long utterance may come
 out as several finals, joined into one text (a final that continues a word split by an end of utterance is joined
@@ -34,12 +36,22 @@ confidence, the minimum over the word's tokens), `decoding` and its `decodingHas
 `emitMs` (wall time since the batch's decode started) and the text so far; the last is `final`.
 
 `decoding` names the decoder — `"decoder": "nemo-pipeline-cache-aware"` with `profile`, `attContextSize`,
-`targetLang`, `stopHistoryEouMs` — so records of versions 1 and 2 (NeMo's cache-aware loop over whole-file features,
-`"decoder": "rnnt-greedy-batch"`) never mix with these: the two decoders agree on most words but not all (A5: 10 of 22
-clips identical at 160 ms, at a similar WER). An eval keys its records by the transcribe kind's version too.
+`targetLang`, `stopHistoryEouMs` — so records of versions 1 and 2 (NeMo's cache-aware loop, `"decoder":
+"rnnt-greedy-batch"`) never mix with these; an eval keys its records by the transcribe kind's version too. On the
+stand card (FLEURS: ten he fixtures, twelve ru clips, the base model) version 3 gives the same WER as version 2 at
+every profile — he 75.6 / 77.9 / 65.1 / 66.3 / 69.8 and ru 16.2 / 17.2 / 17.2 / 16.2 / 14.1 at 80 / 160 / 320 / 560 /
+1120 ms, the same two empty he clips — and its words differ only where version 2 drops an utterance's last tokens (a
+tail shorter than the subsampling, "כתבית." → "כתבי"). At batch 1 an utterance decodes to the same words as a live
+session of the same audio in 20 ms frames (22/22 clips at every profile); a larger batch is about 4× faster and
+changes a few words through the order of floating-point sums (batch 8: 3 of 22 clips at 80 ms, none at 160 ms, same
+WER).
 
-Two shims fix NeMo 3.0.0 gaps (`cadence_nemo/pipeline.py`): the per-stream language prompt is applied (as shipped the
-pipeline builds it and drops it, and Nemotron 3.5 emits only blanks), and the trailing locale tag is stripped.
+Five shims fix NeMo 3.0.0 gaps (`cadence_nemo/pipeline.py`): the per-stream language prompt is applied (as shipped the
+pipeline builds it and drops it, and Nemotron 3.5 emits only blanks); the trailing locale tag is stripped; the model
+is restored on the CPU; features are computed once their whole window has arrived (NeMo's frame path featurizes each
+chunk alone, so chunk edges saw zero padding: at 160 ms 5 empty he transcripts instead of 2, WER 80.2 against 77.9);
+and a feature buffer holds the encoder's cache plus chunk (NeMo rounds 16.999 down at 80 ms and dropped a frame, WER
+91.9 against 75.6).
 
 One language per step; scoring (normalisation, WER) belongs to the core [`wer_score`](wer-score.md) kind.
 
@@ -75,7 +87,7 @@ family's role); the conformance suite runs it at every profile.
 | Parameter | Default | Source | Range |
 | --- | --- | --- | --- |
 | `profile` | `packs.nemo.profile` (160ms) | Key defaults (eval latency [56,1]) | 80ms, 160ms, 320ms, 560ms, 1120ms |
-| `batch_size` | `packs.nemo.transcribe_batch_size` (32) | Spike A3 | 1–256 |
+| `batch_size` | `packs.nemo.transcribe_batch_size` (1) | Stream T GPU check | 1–256 |
 | `target_lang` | `packs.nemo.target_lang` (from the data) | Cadence recommendation | a prompt key |
 | `cuda_context_reserve_mb` | `packs.nemo.cuda_context_reserve_mb` (1024) | Spike A3 | 0–8192 MiB |
 | `boost_weight` | `packs.nemo.boost_weight` (0.5) | Measured on the staging card (above) | 0–10 |
