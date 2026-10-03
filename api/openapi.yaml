@@ -3860,6 +3860,12 @@ paths:
         "101": { description: "Switching Protocols: the session's messages (LiveClientMessage and audio down to the worker, LiveServerMessage up)" }
         default: { $ref: "#/components/responses/Problem" }
 
+  # ---------------------------------------------------------------- mounts, cache, storage (phase 4 · stream M) — add paths below this line (move /mounts from planned)
+
+  # ---------------------------------------------------------------- ingest, draft datasets, freeze, sources, utterance search (phase 4 · stream D) — add paths below this line
+
+  # ---------------------------------------------------------------- auxiliary models, pseudo-labels, triage queue (phase 4 · stream X) — add paths below this line
+
   # ---------------------------------------------------------------- planned (later phases)
   /mounts:
     x-cadence: { entity: mounts, planned: 4 }
@@ -8976,3 +8982,6 @@ components:
           properties:
             remainingGpuHours: { type: number, format: double, description: "The project's daily budget minus today's use and committed work" }
             withinDailyBudget: { type: boolean, description: "The whole estimate fits today's remaining budget (over it, an agent's sweep waits for an approval)" }
+    # ---------------------------------------------------------------- mounts, cache, storage schemas (phase 4 · stream M) — add below
+    # ---------------------------------------------------------------- ingest, draft datasets, freeze schemas (phase 4 · stream D) — add below
+    # ---------------------------------------------------------------- auxiliary models, pseudo-labels schemas (phase 4 · stream X) — add below
