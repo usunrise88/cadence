@@ -1,4 +1,4 @@
-# weight: 1.0
+# weight: 0.5
 # Boost list: people's and companies' names the project's calls mention. One term per line, written as the model
 # should write it; blank lines and other lines starting with # are comments. The weight header says how strongly
 # the list is boosted at decode. Change it with boost.edit; evaluate it with an eval whose decoding names it.

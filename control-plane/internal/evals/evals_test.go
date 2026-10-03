@@ -280,7 +280,9 @@ func TestVerdict(t *testing.T) {
 	}
 	recs := map[string]Record{"rver_tsubject": {Summary: json.RawMessage(`{"wer":0.1}`)}, "rver_tbaseline": {Summary: json.RawMessage(`{"wer":0.12}`)}}
 	s := &Service{}
-	gf := GateFile{Exists: true, Commit: "abc123", Gate: DefaultGate(defaults.Get())}
+	gate := DefaultGate(defaults.Get())
+	gate.PrimaryProfile = "160ms" // the cells below are at 160ms; the default primary is a deployment choice
+	gf := GateFile{Exists: true, Commit: "abc123", Gate: gate}
 	v := s.verdict(e, []string{"he-IL"}, gf, cells, recs, standing{})
 	states := map[string]string{}
 	for _, c := range v.Checks {

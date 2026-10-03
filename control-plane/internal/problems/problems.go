@@ -82,6 +82,8 @@ var (
 	NoTrainingState   = Type{"no-training-state", http.StatusConflict, "No training state"}
 	// Content-store retention (phase 2 · stream E).
 	ArtifactNotEvictable = Type{"artifact-not-evictable", http.StatusConflict, "Artifact not evictable"}
+	// ArtifactEvicted: a read of per-utterance eval artifacts that the age retention evicted (owner decision 2026-10-03).
+	ArtifactEvicted = Type{"artifact-evicted", http.StatusGone, "Artifact evicted"}
 	// Evals, gates and models (phase 3 · stream E).
 	EvalBaselineMissing = Type{"eval-baseline-missing", http.StatusUnprocessableEntity, "No baseline to compare with"}
 	GateNotPassed       = Type{"gate-not-passed", http.StatusConflict, "Gate not passed"}
@@ -113,7 +115,7 @@ func Types() []Type {
 		RepositoryUnavailable, EvalOnlyDataset, PipelineInvalid,
 		LeaseEnded, StepKindConflict, ArtifactHashMismatch, ArtifactMissing,
 		PlaybookDryRunRequired, PlaybookStopped, PlaybookUnavailable,
-		FamilyUnavailable, RecipeMismatch, NoTrainingState, ArtifactNotEvictable,
+		FamilyUnavailable, RecipeMismatch, NoTrainingState, ArtifactNotEvictable, ArtifactEvicted,
 		EvalBaselineMissing, GateNotPassed, GateConfigInvalid,
 		GoldenSetLeakage, GoldenSetNotEvalOnly, NormalizerUnknown,
 		MediaLinkInvalid, RangeNotSatisfiable, MediaBusy,

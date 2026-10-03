@@ -36,7 +36,7 @@ description: Cadence block "eval" workflow: golden sets, adoption, the baseline,
 ## 4. The gate (`gates.yaml`)
 - `gates.get` — `exists`, the file, the effective gate with defaults filled in, and the departures from
   `defaults.yaml`. Its etag is the commit that last changed the file, or `defaults`.
-- Keys: `primaryProfile` (the profile the gate reads, default `160ms`); `target: {goldenSets, rule: beat-baseline}`
+- Keys: `primaryProfile` (the profile the gate reads, default `80ms`); `target: {goldenSets, rule: beat-baseline}`
   (the WER delta's whole interval below zero); `replay: {goldenSets, maxRegression}` (default 0.005 = 0.5 points; fails
   only when the interval excludes zero); `deletionsInsertions` (fail when deletions fall while insertions rise);
   `significance: {samples, level, seed}`. Golden sets are `golden-set/<name>` (a `*` matches several) or `ver_…` and

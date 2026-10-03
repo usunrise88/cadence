@@ -7912,7 +7912,7 @@ components:
         groups: { type: integer, description: Resampling units (calls, speakers or utterances) }
         samples: { type: integer }
         level: { type: number, format: double }
-        error: { type: string, description: Why the delta could not be computed (an artifact left the store) }
+        error: { type: string, description: "Why the delta could not be computed (e.g. per-utterance scores evicted: older than eval.artifact_retention_days)" }
     EvalUtterance:
       type: object
       required: [index, audio, ref, hyp, refWords, sub, del, ins, errors, wer, ops]
@@ -7954,6 +7954,18 @@ components:
         delta: { $ref: "#/components/schemas/EvalDelta" }
         worst: { type: array, items: { $ref: "#/components/schemas/EvalUtterance" } }
         metrics: { $ref: "#/components/schemas/EvalCellMetrics" }
+        evicted: { $ref: "#/components/schemas/EvalCellEvicted" }
+    EvalCellEvicted:
+      type: object
+      description: >
+        The cell's per-utterance scores left the content store (eval.artifact_retention_days after the record's last
+        use, owner decision 2026-10-03): summary, delta and the gate verdict stay; worst is empty and a delta at another
+        significance cannot be computed until an eval computes the cell again
+      required: [at, note]
+      properties:
+        at: { type: string, format: date-time, description: When the scores were evicted }
+        retentionDays: { type: integer, description: "eval.artifact_retention_days at the time of reading" }
+        note: { type: string, description: What is gone and how to get it back }
     EvalGateCheck:
       type: object
       required: [kind, state, message]

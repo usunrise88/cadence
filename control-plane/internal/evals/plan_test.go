@@ -93,6 +93,7 @@ func TestVerdictResolvesThePrimaryProfileByLatency(t *testing.T) {
 		{ID: "b-slow", Role: RoleBaseline, GoldenSetVersionID: "ver_t", Profile: "slow", RecordID: "r4"},
 	}
 	g := DefaultGate(defaults.Get())
+	g.PrimaryProfile = "160ms" // the cells are at 160ms
 	g.PrimaryProfile, g.DeletionsInsertions = "160ms", false
 	v := (&Service{}).verdict(e, []string{"he-IL"}, GateFile{Gate: g}, cells, map[string]Record{}, standing{})
 	if v.Verdict != VerdictPassed || len(v.Checks) != 1 || v.Checks[0].Profile != "mid" {
@@ -122,6 +123,7 @@ func TestVerdictOnCERReadsOnlyThePrimaryCell(t *testing.T) {
 	}
 	recs := map[string]Record{"rs": {Summary: json.RawMessage(`{"wer":0.95,"cer":0.20}`)}, "rb": {Summary: json.RawMessage(`{"wer":0.97,"cer":0.25}`)}}
 	g := DefaultGate(defaults.Get())
+	g.PrimaryProfile = "160ms" // the cells are at 160ms
 	g.DeletionsInsertions = true
 	v := (&Service{}).verdict(e, []string{"zh-CN"}, GateFile{Gate: g}, cells, recs, standing{})
 	if v.Verdict != VerdictPassed || len(v.Checks) != 2 {

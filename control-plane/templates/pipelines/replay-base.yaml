@@ -14,7 +14,11 @@
 # at most 300 utterances per locale, each its own dataset version dataset/replay-golden-<locale>, tagged golden,
 # replay and eval-only (registered as dataset versions until the Golden set entity arrives in phase 3).
 #
-# FLEURS has one configuration per language, not per regional variant: 34 configurations cover 34 locales. Five
+# Thai (th-TH, FLEURS th_th) is left out (owner decision 2026-10-03): the base model emits nothing for it with any
+# decoder or prompt (its tokenizer has 119 single-character Thai pieces; stand gate run 2026-10-02), so a Thai replay
+# set can never regress and only spends GPU time.
+#
+# FLEURS has one configuration per language, not per regional variant: 33 configurations cover 33 locales. Five
 # locales have no configuration of their own and are covered by their sister variant only (a known gap, closed by
 # the Common Voice re-freeze):
 #   en-GB → en_us (shared with en-US)
@@ -61,7 +65,6 @@
 #   lv-LV  adaptation-ready     lv_lv
 #   mt-MT  adaptation-ready     mt_mt
 #   sl-SI  adaptation-ready     sl_si
-#   th-TH  adaptation-ready     th_th
 #   nn-NO  adaptation-ready     nb_no (shared with nb-NO)
 #
 # Do not run this on a laptop: ≈ 34 h of training audio plus ≈ 10 000 test utterances (≈ 4 GB of 16 kHz WAV).
@@ -108,7 +111,6 @@ steps:
         lv_lv: lv-LV
         mt_mt: mt-MT
         sl_si: sl-SI
-        th_th: th-TH
       max_hours: 1
       split_rule: all-train
       tags: [replay]
@@ -568,20 +570,6 @@ steps:
       licence: CC-BY-4.0
       locale: sl-SI
       hf_config: sl_si
-      hf_split: test
-      hf_revision: 70bb2e84b976b7e960aa89f1c648e09c59f894dd
-      max_utterances: 300
-      split_rule: all-test
-      eval_only: true
-      tags: [golden, replay]
-  - id: golden-th-th
-    kind: dataset_import@3
-    params:
-      name: replay-golden-th-th
-      source_name: fleurs
-      licence: CC-BY-4.0
-      locale: th-TH
-      hf_config: th_th
       hf_split: test
       hf_revision: 70bb2e84b976b7e960aa89f1c648e09c59f894dd
       max_utterances: 300
