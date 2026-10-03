@@ -119,16 +119,18 @@ Also: `text` (the `echo` check), manifest, waveform peaks, correction batch. A d
 - A latency profile has a name, the algorithmic latency, chunk and left context in milliseconds, the family parameters that realise it and a label. A family without streaming has one profile, `offline`. Eval matrices, the primary cell and eval records name profiles; families line up by milliseconds, not by parameter spelling (R43).
 - Spike A5 (`docs/spikes/A5-live-transcription.md` "Result", surprise 2) found that Nemotron 3.5 was trained at
   `[56,0]`, `[56,3]`, `[56,6]` and `[56,13]` (80, 320, 560, 1120 ms) only: `160ms` (`[56,1]`) is an interpolated
-  look-ahead NeMo warns about and runs anyway. Its WER sits between its neighbours (A3 saw the same). Whether the
-  primary cell stays at `160ms` or moves to `320ms`, and a `trained` flag on latency profiles, are open for the owner
-  (07 "Open questions").
+  look-ahead NeMo warns about and runs anyway. Its WER sits between its neighbours (A3 saw the same). The owner
+  moved the primary cell to `80ms` (2026-10-03): the lowest latency and a trained look-ahead. On the stand's Serbian
+  checkpoint it costs about one WER point against `160ms` (0.266 against 0.256) and its partials change more
+  (unstable ratio 0.61 against 0.55); at `80ms` the endpointer can split a word, which finals mark with
+  `space: false` (06 "Media"). A `trained` flag on latency profiles is not built.
 
 The first family, Nemotron 3.5 streaming (cache-aware FastConformer RNNT, NeMo):
 
 | Profile | `att_context_size` | Label | Role |
 | --- | --- | --- | --- |
-| `80ms` | `[56,0]` | 80 ms · [56,0] | Eval axis |
-| `160ms` | `[56,1]` | 160 ms · [56,1] | Primary cell |
+| `80ms` | `[56,0]` | 80 ms · [56,0] | Primary cell (owner decision 2026-10-03) |
+| `160ms` | `[56,1]` | 160 ms · [56,1] | |
 | `320ms` | `[56,3]` | 320 ms · [56,3] | — |
 | `560ms` | `[56,6]` | 560 ms · [56,6] | — |
 | `1120ms` | `[56,13]` | 1120 ms · [56,13] | Eval axis |
@@ -376,7 +378,7 @@ Rules:
 | Area | Default | Source |
 | --- | --- | --- |
 | Base model | `nvidia/nemotron-3.5-asr-streaming-0.6b`, pinned revision | Model card |
-| Eval latency | Primary cell `160ms` (`[56,1]`, `eval.primary_profile`); the matrix runs `80ms`, `160ms` and `1120ms` (`eval.matrix_profiles`, those the family declares); replay golden sets at the primary profile only (R17, R20, R43) | NVIDIA guide: evaluate at deployment latency |
+| Eval latency | Primary cell `80ms` (`[56,0]`, `eval.primary_profile`; owner decision 2026-10-03); the matrix runs `80ms`, `160ms` and `1120ms` (`eval.matrix_profiles`, those the family declares); replay golden sets at the primary profile only (R17, R20, R43) | NVIDIA guide: evaluate at deployment latency |
 | Scoring | Normalizer `normalizer/basic` when a golden set names none (`eval.normalizer`); duration buckets from 0, 2, 5, 10, 20 s, the last open (`eval.duration_buckets_s`) | R21; buckets are a Cadence recommendation |
 | Training stage (Nemotron family) | `init_from_nemo_model`, bf16, 3 000 steps, peak LR 2e-4, warmup 100, grad clip 5, clips ≤ 40 s | Community fine-tune kit; North Sami fine-tune |
 | Continuation stage | New optimiser, peak LR 2e-5 | Community fine-tune kit (trial setting) |

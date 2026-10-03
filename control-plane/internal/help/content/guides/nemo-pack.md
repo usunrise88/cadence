@@ -33,7 +33,7 @@ Scoring is family-neutral: the core [`wer_score`](../steps/wer-score.md) kind, i
 The family descriptor: framework `nemo`, format `.nemo` (ONNX joins with export in phase 5), 16 kHz mono input,
 features computed by the model's own preprocessor (never stored), sentencepiece tokenizer (a checkpoint names the base
 model's), capabilities streaming, word timestamps, confidence, phrase boosting, language prompt, train mode `finetune`,
-and five latency profiles `80ms` [56,0], `160ms` [56,1] (the primary cell), `320ms` [56,3], `560ms` [56,6] and
+and five latency profiles `80ms` [56,0] (the primary cell), `160ms` [56,1], `320ms` [56,3], `560ms` [56,6] and
 `1120ms` [56,13] — 80 × (r + 1) ms with 4.48 s of left context. Its defaults are `packs.nemo` in `defaults.yaml`.
 
 Registering checkpoints needs no step kind: the control plane's checkpoint hook registers every `checkpoint` output of
@@ -48,7 +48,7 @@ Train, and the decode half of Evaluate. `pipelines/train-stage` runs calibrate t
 
 Every parameter of the five kinds defaults from `packs.nemo` (or `training.*`) in `defaults.yaml`; each step article
 lists its table. The ones people change most: `peak_lr` (2e-4), `steps` (3000), `val_every` (500), `augmentation`
-(telephony; `{profile: clean}` off), `profile` (160ms).
+(telephony; `{profile: clean}` off), `profile` (80ms).
 
 ### The shared card
 

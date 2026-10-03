@@ -238,6 +238,9 @@ type Eval struct {
 	BootstrapSeed           Param[int]      `yaml:"bootstrap_seed"`
 	// GPUHoursPerAudioHour prices an eval cell for the policy (stream E): golden audio hours × this.
 	GPUHoursPerAudioHour Param[float64] `yaml:"gpu_hours_per_audio_hour"`
+	// ArtifactRetentionDays keeps an eval record's per-utterance artifacts this long after the record's last use
+	// (internal/eviction's daily sweep; owner decision 2026-10-03).
+	ArtifactRetentionDays Param[int] `yaml:"artifact_retention_days"`
 }
 
 // Gate holds the default gate a project's gates.yaml departs from (phase 3).

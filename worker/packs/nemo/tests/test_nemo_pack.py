@@ -66,7 +66,7 @@ def test_every_kind_has_complete_x_cadence_and_valid_defaults() -> None:
         check_ranges(kind.Params())
     assert FinetuneParams().precision == "bf16"
     assert FinetuneParams().augmentation["profile"] == "telephony"
-    assert TranscribeParams().profile == "160ms"
+    assert TranscribeParams().profile == "80ms"  # the primary cell (owner decision 2026-10-03)
     assert CalibrateParams().bucket_bins[-1] == 20
 
 

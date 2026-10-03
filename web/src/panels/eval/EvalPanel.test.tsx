@@ -82,6 +82,15 @@ describe("Eval report", () => {
     expect(openPanelById).toHaveBeenCalledWith("diff");
   });
 
+  it("says when the selected cell's per-utterance scores were evicted, instead of the rows", () => {
+    const note = "the per-utterance scores were evicted on 2026-11-02 (eval artifacts are kept 30 days after their eval record's last use)";
+    const ev: Eval = { ...EVAL, cells: EVAL.cells!.map((c) => (c.id === "evc_s_he_160" ? { ...c, evicted: { at: "2026-11-02T03:00:00Z", retentionDays: 30, note } } : c)) };
+    wrap(ev);
+    expect(document.querySelector('[data-slot="utterances-evicted"]')!.textContent).toBe(note);
+    expect(screen.queryByRole("table", { name: /Worst utterances/ })).toBeNull();
+    expect(screen.queryByText("No utterance rows in the scores.")).toBeNull();
+  });
+
   it("groups streaming and robustness charts; an empty section starts folded and still opens", () => {
     wrap(EVAL);
     const robustness = document.querySelector('[data-slot="robustness"]') as HTMLElement;

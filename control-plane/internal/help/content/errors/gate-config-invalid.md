@@ -11,7 +11,7 @@ pointer into the file and a message). The project's gate is `gates.yaml` in its 
 takes `defaults.yaml` `gate.*` and `eval.*`:
 
 ```yaml
-primaryProfile: 160ms
+primaryProfile: 80ms
 target: { goldenSets: [golden-set/fleurs-he], rule: beat-baseline }
 replay: { goldenSets: [golden-set/replay-golden-*], maxRegression: 0.005 }
 deletionsInsertions: true

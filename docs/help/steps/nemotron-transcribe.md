@@ -14,8 +14,8 @@ give the same words (spike A5):
 
 | Profile | `att_context_size` | Latency |
 | --- | --- | --- |
-| `80ms` | [56,0] | 80 ms |
-| `160ms` (default, primary cell) | [56,1] | 160 ms |
+| `80ms` (default, primary cell) | [56,0] | 80 ms |
+| `160ms` | [56,1] | 160 ms |
 | `320ms` | [56,3] | 320 ms |
 | `560ms` | [56,6] | 560 ms |
 | `1120ms` | [56,13] | 1120 ms |
@@ -86,7 +86,7 @@ family's role); the conformance suite runs it at every profile.
 
 | Parameter | Default | Source | Range |
 | --- | --- | --- | --- |
-| `profile` | `packs.nemo.profile` (160ms) | Key defaults (eval latency [56,1]) | 80ms, 160ms, 320ms, 560ms, 1120ms |
+| `profile` | `packs.nemo.profile` (80ms) | Key defaults (eval latency [56,0], owner decision 2026-10-03) | 80ms, 160ms, 320ms, 560ms, 1120ms |
 | `batch_size` | `packs.nemo.transcribe_batch_size` (1) | Stream T GPU check | 1–256 |
 | `target_lang` | `packs.nemo.target_lang` (from the data) | Cadence recommendation | a prompt key |
 | `cuda_context_reserve_mb` | `packs.nemo.cuda_context_reserve_mb` (1024) | Spike A3 | 0–8192 MiB |

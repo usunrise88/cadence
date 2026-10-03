@@ -181,7 +181,7 @@ func TestEvalsEndToEnd(t *testing.T) {
 
 	expectProblem(t, e.do("POST", "/api/projects/evalp/evals", `{"subject":{}}`, "Idempotency-Key", e.key()), 422, "validation-failed")
 
-	// The dry run: target and replay golden sets at the primary profile (the matrix ∩ the family: 160ms), four cells to
+	// The dry run: target and replay golden sets at the primary profile (the matrix ∩ the family: 80ms), four cells to
 	// compute, the base model materialised first, 1.4 audio hours × 0.025 GPU-hours.
 	var plan struct {
 		Subject, Baseline struct{ Kind, ModelKey, Source string }
@@ -201,7 +201,7 @@ func TestEvalsEndToEnd(t *testing.T) {
 	}
 	_ = json.Unmarshal(raw, &plan)
 	if plan.Subject.Kind != "checkpoint" || plan.Baseline.Kind != "base_model" || plan.Baseline.Source != "request" ||
-		!strings.HasPrefix(plan.Baseline.ModelKey, "base:") || len(plan.Profiles) != 1 || plan.PrimaryProfile != "160ms" ||
+		!strings.HasPrefix(plan.Baseline.ModelKey, "base:") || len(plan.Profiles) != 1 || plan.PrimaryProfile != "80ms" ||
 		len(plan.Cells) != 4 || plan.CellsCached != 0 || plan.CellsToCompute != 4 || plan.Estimate.AudioHours != 1.4 ||
 		plan.Estimate.GpuHours != 0.035 || len(plan.Steps) != 9 || plan.Steps[2] != (struct{ Step, Kind string }{"materialize-m2", "fx_materialize@1"}) {
 		t.Fatalf("plan %s", raw)
@@ -319,13 +319,13 @@ func TestEvalsEndToEnd(t *testing.T) {
 		Departures      []struct{ Param string }
 	}
 	resp := e.ok(e.do("GET", "/api/projects/evalp/gates", ""), 200, &g)
-	if g.Exists || resp.Header.Get("ETag") != `"defaults"` || g.Config.PrimaryProfile != "160ms" || !strings.Contains(g.Content, "primaryProfile") {
+	if g.Exists || resp.Header.Get("ETag") != `"defaults"` || g.Config.PrimaryProfile != "80ms" || !strings.Contains(g.Content, "primaryProfile") {
 		t.Fatalf("gates %+v", g)
 	}
 	bad := `{"content":"target: { goldenSets: [golden-set/not-adopted] }\n"}`
 	expectProblem(t, e.do("PATCH", "/api/projects/evalp/gates?dryRun=true", bad, "Idempotency-Key", e.key(), "If-Match", `"defaults"`), 422, "gate-config-invalid")
 	expectProblem(t, e.do("PATCH", "/api/projects/evalp/gates", `{"content":"primaryProfile: [1]\n"}`, "Idempotency-Key", e.key(), "If-Match", `"defaults"`), 422, "gate-config-invalid")
-	good := `{"config":{"primaryProfile":"160ms","target":{"goldenSets":["golden-set/fx-golden-he"]},"replay":{"goldenSets":["golden-set/fx-golden-r*"],"maxRegression":0.01}}}`
+	good := `{"config":{"primaryProfile":"80ms","target":{"goldenSets":["golden-set/fx-golden-he"]},"replay":{"goldenSets":["golden-set/fx-golden-r*"],"maxRegression":0.01}}}`
 	resp = e.ok(e.do("PATCH", "/api/projects/evalp/gates", good, "Idempotency-Key", e.key(), "If-Match", `"defaults"`), 200, &g)
 	if !g.Exists || g.Commit == "" || resp.Header.Get("ETag") != `"`+g.Commit+`"` || len(g.Departures) != 3 {
 		t.Fatalf("edited gates %+v", g)

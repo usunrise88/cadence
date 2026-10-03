@@ -4,7 +4,7 @@
 # the control-plane binary and packaged with the worker. Every value carries a description, a source and, where it
 # applies, a safe range; a value without a published source is a "Cadence recommendation" re-checked after the spikes.
 # Keys are addressed as <section>.<key> (x-cadence.defaultRef: training.steps). Bump `version` on every change.
-version: 11
+version: 12
 
 # The project wizard's Recommended mode (docs/spec/02-domain-projects-registry.md "Project wizard").
 wizard:
@@ -429,9 +429,9 @@ data:
 # Evaluation (phase 3; docs/review/2026-10-02-phase-3-plan.md): the matrix, scoring and significance.
 eval:
   primary_profile:
-    value: 160ms
+    value: 80ms
     description: Latency profile of the primary cell, the one the gate reads; the latency production runs at (a project may change it in gates.yaml)
-    source: docs/spec/08-resolutions.md R20 ([56,1], 160 ms)
+    source: "Owner decision 2026-10-03: the lowest latency, [56,0], a look-ahead the model was trained at (R20 asked for the latency production runs at; 160 ms is not a trained look-ahead, spike A5). Stand gate run: WER 0.266 at 80 ms against 0.256 at 160 ms"
   matrix_profiles:
     value: [80ms, 160ms, 1120ms]
     description: Latency profiles an eval runs by default (those the model's family declares); 1120ms is the high-latency reference
@@ -472,6 +472,12 @@ eval:
     description: GPU time one eval cell spends per hour of golden-set audio (streaming decode at one latency profile, model load included); evals.new multiplies it by the audio of the cells it computes, and the policy weighs the result against the GPU budgets
     source: "Measured on the stand (2026-10-02): the reference loop at batch 32 took 0.81 GPU-hours for 79 audio hours (0.010); the pipeline decoder at batch 8 runs at RTF 0.0165 (stream T); 1.5× margin over the latter"
     range: { min: 0.001, max: 10 }
+  artifact_retention_days:
+    value: 30
+    unit: days
+    description: Days an eval record's per-utterance artifacts (hypotheses, scores, metric scores) stay in the content store after the record was last used (computed or linked by an eval); then a daily sweep evicts them unless a registered model's eval or an unfinished eval reads them. The record's summary, each cell's delta and the gate verdict are kept for ever
+    source: "Owner decision 2026-10-03: eval artifacts are kept by age; the cells' summaries, deltas and verdicts are kept for ever"
+    range: { min: 1, max: 3650 }
 
 gate:
   target_rule:
@@ -493,9 +499,9 @@ gate:
 # Language packs (phase 3, stream L; docs/spec/03-pipelines-defaults.md "Language packs and hot words").
 langpacks:
   boost_weight:
-    value: 1.0
+    value: 0.5
     description: Weight a new boost list starts with (its file's '# weight:' header), passed with the list to the transcribe step's phrase boosting; boosting is evaluated before it is trusted
-    source: Cadence recommendation (docs/spec/08-resolutions.md R24)
+    source: "Owner decision 2026-10-03: the measured optimum (packs.nemo.boost_weight; FLEURS he_il on the staging card, WER 0.460 at 0.5 against 0.490 at 1.0, where listed words start replacing others)"
     range: { min: 0, max: 10 }
   boost_max_terms:
     value: 5000
@@ -929,9 +935,9 @@ packs:
       source: Cadence recommendation
       range: { min: 0, max: 50 }
     profile:
-      value: 160ms
+      value: 80ms
       description: Latency profile a transcription streams at — the primary cell
-      source: docs/spec/03-pipelines-defaults.md "Key defaults" (eval latency [56,1], 160 ms)
+      source: docs/spec/03-pipelines-defaults.md "Key defaults" (eval.primary_profile, 80 ms, owner decision 2026-10-03)
       range: { values: [80ms, 160ms, 320ms, 560ms, 1120ms] }
     transcribe_batch_size:
       value: 8

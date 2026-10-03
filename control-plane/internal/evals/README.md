@@ -97,3 +97,10 @@ Phase 3 audit fixes (eval correctness; migration 0030 adds indexes):
 - The model card and the robustness rows say CER for char-scored sets. Tests: `plan_test.go`,
   `server/evals_audit_integration_test.go` (all axes with failing metric steps, retry reopening a failed eval, two
   evals racing on one record key).
+
+Eval artifacts by age (owner decision 2026-10-03; selection in `internal/eviction`): `Record.ScoresEvicted` /
+`HypothesesEvicted` read the artifacts' `evicted_at`. A stale record (`Stale`) is not linked as cached by planning: the
+cell is computed again and `scoresHook` refreshes the record (`scores_hash`, `hypotheses_hash`, provenance; the summary
+stays). `delta` answers `EvictedScores(days)` as its error when a side's scores were evicted (the gate reuses stored
+deltas at the eval's significance; a recomputation turns the check inconclusive with that message); `View` gives such a
+cell `evicted {at, retentionDays, note}` and no `worst`. Test: `server/evals_retention_integration_test.go`.

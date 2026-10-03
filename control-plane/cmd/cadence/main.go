@@ -253,6 +253,11 @@ func serve(ctx context.Context, getenv func(string) string) error {
 	evictSvc.Register(jobSvc)
 	storeWatch := &eviction.Watcher{Service: evictSvc, Defaults: defaults.Get}
 	jobSvc.AddPeriodic("storage.watch", 10*time.Minute, storeWatch.Tick)
+	// Eval artifacts are kept by age (eval.artifact_retention_days, owner decision 2026-10-03): a daily sweep queues
+	// the eviction of those past it.
+	jobSvc.AddPeriodic("evalArtifacts.retention", 24*time.Hour, func(ctx context.Context) error {
+		return evictSvc.SweepEvalArtifacts(ctx, defaults.Get())
+	})
 	if indexed, restored, err := eviction.Backfill(ctx, pool, blobs); err != nil {
 		return fmt.Errorf("content-store file index: %w", err)
 	} else if indexed+restored > 0 {
