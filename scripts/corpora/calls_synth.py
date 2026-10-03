@@ -173,7 +173,7 @@ def main() -> int:
         left = np.pad(caller, (0, n - len(caller))) + noise[0]
         right = np.pad(bot, (0, n - len(bot))) + noise[1]
         write_mulaw_stereo(calls / f"{cid}.wav", left, right)
-        side = {"roles": ["caller", "bot"], "speakers": {"0": f"{cid}-caller", "1": "bot"}, "language": "sr-RS", "script": script}
+        side = {"roles": ["caller", "bot"], "speakers": [f"{cid}-caller", "bot"], "language": "sr-RS", "script": script}
         (calls / f"{cid}.cadence.json").write_text(json.dumps(side, ensure_ascii=False, indent=1))
         (truth / f"{cid}.json").write_text(json.dumps({"call": cid, "turns": refs}, ensure_ascii=False, indent=1))
         print(f"{cid}: {n / RATE:.1f} s, {len(script)} bot turns, {len(refs)} caller turns")
