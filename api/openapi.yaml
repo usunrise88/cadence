@@ -2510,6 +2510,32 @@ paths:
           description: Sources by name
           content: { application/json: { schema: { $ref: "#/components/schemas/SourceList" } } }
         default: { $ref: "#/components/responses/Problem" }
+    post:
+      operationId: sources.new
+      summary: Register a source (a corpus with its licence, kind and languages) before ingesting it; it starts eval-only
+      tags: [registry]
+      x-cadence:
+        toolDescription: >
+          Register a corpus as a source before pipelines/data-ingest reads it from a mount: name, licence (the
+          corpus card's, an SPDX id where one exists), kind (public, production, synthetic), languages, url. No
+          licence, no ingest: the pipeline engine refuses an ingest step whose source is missing, archived or has no
+          usable licence (unknown, none, NOASSERTION). A new source is eval-only (trainingCleared false) until a
+          person clears it with sources.edit.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/SourceNew" } } }
+      responses:
+        "200":
+          description: Dry run — the source that would be registered; nothing was written
+          content: { application/json: { schema: { $ref: "#/components/schemas/Source" } } }
+        "201":
+          description: Registered
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Source" } } }
+        default: { $ref: "#/components/responses/Problem" }
 
   /registry/sources/{id}:
     x-cadence: { entity: sources }
@@ -3864,6 +3890,90 @@ paths:
 
   # ---------------------------------------------------------------- ingest, draft datasets, freeze, sources, utterance search (phase 4 · stream D) — add paths below this line
 
+  /registry/datasets:preview:
+    x-cadence: { entity: datasets, kind: dataset_version }
+    post:
+      operationId: datasets.preview
+      summary: Hours per language and split of a dataset version after filters (metadata only; nothing is written)
+      tags: [registry]
+      x-cadence:
+        toolDescription: >
+          Preview a dataset version (a draft from pipelines/data-ingest, or a frozen one) under filters before you
+          freeze or mix it: utterances and hours per language and split, and how many each filter would drop
+          (duration, characters per second, origin, language, split). Reads the registry only; no audio is read and
+          nothing is written. A body with only version previews the version as it is.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/DatasetPreviewRequest" } } }
+      responses:
+        "200":
+          description: The preview
+          content: { application/json: { schema: { $ref: "#/components/schemas/DatasetPreview" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/datasets:freeze:
+    x-cadence: { entity: datasets, kind: dataset_version }
+    post:
+      operationId: datasets.freeze
+      summary: Freeze a draft dataset version — leakage check, then cut its segments into the content store (202 with the pipeline run)
+      tags: [registry]
+      x-cadence:
+        toolDescription: >
+          Freeze a draft dataset version (state draft, dataset.frozen false — what pipelines/data-ingest ends in).
+          First the leakage check: the draft's train and validation utterances must share nothing (by canonical hash
+          or fingerprint) with any golden set, else golden-set-leakage lists the overlaps and nothing starts. Then a
+          CPU pipeline run in the draft's project cuts every segment from its mount into the content store
+          (dataset_freeze, mode cut), verifies each hash, writes the shards, quality checks and the dataset card, and
+          sets frozen: true. Only frozen versions can be mixed, trained on, exported or adopted. dryRun=true runs the
+          leakage check only. Answers 202 with the jobId of the cut step (datasets.get shows dataset.freeze with the
+          pipeline run); a version already frozen, or a cut reused from an earlier identical freeze, answers 200.
+          A draft is frozen once: a second call answers the frozen version, or the freeze already running.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/DatasetFreezeRequest" } } }
+      responses:
+        "200":
+          description: Dry run (the leakage check passed; nothing started), or the version is already frozen
+          content: { application/json: { schema: { $ref: "#/components/schemas/DatasetFreeze" } } }
+        "202": { $ref: "#/components/responses/JobAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/utterances:search:
+    x-cadence: { entity: utterances }
+    get:
+      operationId: utterances.search
+      summary: Search utterances by transcript text, source, language, speaker, duration, origin and split
+      tags: [registry]
+      x-cadence:
+        toolDescription: >
+          Search utterances, oldest first, a page at a time. q matches transcript text (case-insensitive substring);
+          source (id or name), language (he or he-IL), speaker, origin (human, pseudo-label, model:<id>),
+          minDuration/maxDuration in seconds, and dataset (ver_…) with split narrow it. Each result carries its
+          transcripts and, within a dataset, its split. Pass next as after for the next page.
+      parameters:
+        - { name: q, in: query, description: Text the transcript contains (case-insensitive), schema: { type: string, maxLength: 200 } }
+        - { name: source, in: query, description: Source id (src_…) or name, schema: { type: string } }
+        - { name: language, in: query, description: "Language (he or he-IL; either matches the other)", schema: { type: string } }
+        - { name: speaker, in: query, description: Speaker id within the source, schema: { type: string } }
+        - { name: origin, in: query, description: "Transcript origin (human, pseudo-label, model:<id>)", schema: { type: string } }
+        - { name: minDuration, in: query, description: Shortest duration in seconds, schema: { type: number, format: double, minimum: 0 } }
+        - { name: maxDuration, in: query, description: Longest duration in seconds, schema: { type: number, format: double, minimum: 0 } }
+        - { name: dataset, in: query, description: Dataset version id (ver_…), schema: { type: string } }
+        - { name: split, in: query, description: Split within the dataset version (needs dataset), schema: { $ref: "#/components/schemas/DatasetSplitName" } }
+        - { name: after, in: query, description: "Cursor: the `next` value of the previous page", schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+      responses:
+        "200":
+          description: A page of matching utterances, oldest first
+          content: { application/json: { schema: { $ref: "#/components/schemas/UtteranceList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
   # ---------------------------------------------------------------- auxiliary models, pseudo-labels, triage queue (phase 4 · stream X) — add paths below this line
 
   # ---------------------------------------------------------------- planned (later phases)
@@ -4472,6 +4582,15 @@ components:
         speakers: { type: integer }
         tags: { type: array, items: { type: string }, description: "Tags given at import (golden, replay, eval-only, …)" }
         lineage: { $ref: "#/components/schemas/DatasetLineage" }
+        frozen: { type: boolean, description: "false for a draft (pipelines/data-ingest: segments indexed in place on a mount, no audio copied); datasets.freeze cuts it into the content store and sets true. Absent on phase-2 imports, which are frozen at import" }
+        quality: { $ref: "#/components/schemas/DatasetQuality" }
+        card: { $ref: "#/components/schemas/DatasetCard" }
+        stats: { $ref: "#/components/schemas/DatasetStats" }
+        shards: { type: array, items: { $ref: "#/components/schemas/DatasetShard" }, description: "The frozen audio in shards of the content store (empty for a draft)" }
+        segments: { $ref: "#/components/schemas/ArtifactRef" }
+        recipe: { $ref: "#/components/schemas/DatasetRecipe" }
+        contentFingerprint: { type: string, description: "sha256 of the sorted [audio hash, split, text] tuples; with the recipe commit it makes the version's fingerprint" }
+        freeze: { $ref: "#/components/schemas/DatasetFreezeState" }
     DatasetVersion:
       allOf:
         - $ref: "#/components/schemas/RegistryVersion"
@@ -6856,6 +6975,8 @@ components:
         utterances: { type: integer, description: Utterances this source owns }
         hours: { type: number, format: double, description: Their total duration in hours }
         datasets: { type: array, items: { type: string }, description: "Dataset version ids built from this source (sources.get only; empty in lists)" }
+        clearances: { type: array, items: { $ref: "#/components/schemas/SourceClearance" }, description: "Licence and training-clearance history, oldest first (sources.get only)" }
+        ingests: { type: array, items: { $ref: "#/components/schemas/SourceIngest" }, description: "Imports and ingests that registered dataset versions from this source, newest first (sources.get only; at most 100)" }
         createdBy: { $ref: "#/components/schemas/Actor" }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
@@ -8984,4 +9105,182 @@ components:
             withinDailyBudget: { type: boolean, description: "The whole estimate fits today's remaining budget (over it, an agent's sweep waits for an approval)" }
     # ---------------------------------------------------------------- mounts, cache, storage schemas (phase 4 · stream M) — add below
     # ---------------------------------------------------------------- ingest, draft datasets, freeze schemas (phase 4 · stream D) — add below
+    SourceNew:
+      type: object
+      required: [name, licence, kind]
+      additionalProperties: false
+      properties:
+        name: { type: string, pattern: "^[a-z0-9][a-z0-9._-]{0,98}[a-z0-9]$", description: "Lowercase letters, digits, dots, dashes and underscores (parlaspeech-rs)" }
+        licence: { type: string, minLength: 1, maxLength: 200, description: "The corpus's licence, an SPDX id where one exists (CC-BY-4.0); unknown, none and NOASSERTION are refused for ingest" }
+        kind: { $ref: "#/components/schemas/SourceKind" }
+        languages: { type: array, maxItems: 50, items: { type: string, minLength: 2, maxLength: 35 } }
+        url: { type: string, maxLength: 500, description: "Where the corpus comes from (a homepage, hf://datasets/…, mount://corpora/…)" }
+        description: { type: string, maxLength: 2000 }
+    SourceClearance:
+      type: object
+      description: One change of a source's licence or training clearance
+      required: [licence, trainingCleared, actor, at]
+      properties:
+        licence: { type: string }
+        trainingCleared: { type: boolean }
+        actor: { $ref: "#/components/schemas/Actor" }
+        at: { type: string, format: date-time }
+        change: { type: string, enum: [created, licence, cleared, uncleared], description: What changed }
+    SourceIngest:
+      type: object
+      description: A dataset version registered from the source by an import or an ingest
+      required: [datasetVersionId, utterances, hours, at]
+      properties:
+        datasetVersionId: { type: string }
+        pipelineRunId: { type: string }
+        projectId: { type: string }
+        stepKind: { type: string, example: sdp_ingest@1 }
+        frozen: { type: boolean }
+        utterances: { type: integer }
+        hours: { type: number, format: double }
+        at: { type: string, format: date-time }
+    DatasetQualityCheck:
+      type: object
+      required: [name, status, value, threshold]
+      properties:
+        name: { type: string, enum: [silence_share, clipping_share, length_outliers], description: "silence_share: mean non-speech share; clipping_share: share of segments with clipped samples; length_outliers: share of segments whose characters per second lie past the z threshold" }
+        status: { type: string, enum: [pass, warn] }
+        value: { type: number, format: double }
+        threshold: { type: number, format: double }
+        message: { type: string }
+    DatasetQuality:
+      type: object
+      description: Data-quality checks of the version (warnings never block a freeze; they are in the card)
+      required: [passed, checks]
+      properties:
+        passed: { type: boolean }
+        checks: { type: array, items: { $ref: "#/components/schemas/DatasetQualityCheck" } }
+    DatasetCard:
+      type: object
+      description: The dataset card (Markdown) in the content store
+      required: [hash]
+      properties:
+        hash: { type: string, pattern: "^b3:[0-9a-f]{64}$" }
+        bytes: { type: integer, format: int64 }
+    DatasetHistogram:
+      type: object
+      description: Binned counts; edges are lower bounds and the last bucket is open
+      required: [edges, counts]
+      properties:
+        edges: { type: array, items: { type: number, format: double } }
+        counts: { type: array, items: { type: integer } }
+    DatasetStatsGroup:
+      type: object
+      required: [utterances, hours]
+      properties:
+        origin: { type: string }
+        role: { type: string, description: "caller, bot or mono" }
+        utterances: { type: integer }
+        hours: { type: number, format: double }
+    DatasetStats:
+      type: object
+      description: Statistics the Dataset version panel charts (R53), binned by the step that computed them
+      properties:
+        durationHistogram: { $ref: "#/components/schemas/DatasetHistogram" }
+        charsPerSecondHistogram: { $ref: "#/components/schemas/DatasetHistogram" }
+        levelHistogram: { $ref: "#/components/schemas/DatasetHistogram" }
+        durationPercentiles:
+          type: object
+          properties:
+            p5: { type: number, format: double }
+            p50: { type: number, format: double }
+            p95: { type: number, format: double }
+        origins: { type: array, items: { $ref: "#/components/schemas/DatasetStatsGroup" } }
+        roles: { type: array, items: { $ref: "#/components/schemas/DatasetStatsGroup" } }
+        sourceRates:
+          type: array
+          items:
+            type: object
+            required: [rate, utterances]
+            properties: { rate: { type: integer }, utterances: { type: integer } }
+        speakers: { type: integer }
+    DatasetShard:
+      type: object
+      description: "One shard of a frozen version: a Lhotse cuts manifest over the version's audio in the content store"
+      required: [index, hash, utterances, bytes, seconds, location, pinned]
+      properties:
+        index: { type: integer }
+        hash: { type: string, description: "b3 hash of the shard's cuts manifest (shards/cuts.NNNNNN.jsonl.gz)" }
+        path: { type: string, description: Path of the cuts manifest inside the dataset artifact }
+        utterances: { type: integer }
+        bytes: { type: integer, format: int64, description: Audio bytes of the shard's utterances }
+        seconds: { type: number, format: double }
+        location: { type: string, description: "Where the shard lives: cas (the content store); mounts and exports come with the cache (stream M)" }
+        pinned: { type: boolean, description: "Kept from eviction (set by the cache; false until it pins the version)" }
+    DatasetRecipe:
+      type: object
+      description: The project recipe a draft was ingested from
+      properties:
+        projectId: { type: string }
+        pipeline: { type: string, example: data-ingest }
+        commit: { type: string, description: The commit of the project repository the pipeline was read at }
+        stepKind: { type: string, example: dataset_freeze@1 }
+        params: { type: object, additionalProperties: true, description: The draft step's parameters }
+    DatasetFreezeState:
+      type: object
+      description: The freeze of a draft
+      properties:
+        pipelineRunId: { type: string }
+        startedAt: { type: string, format: date-time }
+        frozenAt: { type: string, format: date-time }
+        actor: { $ref: "#/components/schemas/Actor" }
+    DatasetLeakage:
+      type: object
+      required: [passed, goldenSets]
+      properties:
+        passed: { type: boolean }
+        goldenSets: { type: integer, description: Golden sets checked }
+    DatasetFreeze:
+      type: object
+      required: [version, leakage]
+      properties:
+        version: { $ref: "#/components/schemas/DatasetVersion" }
+        leakage: { $ref: "#/components/schemas/DatasetLeakage" }
+        pipelineRunId: { type: string, description: "The freeze pipeline run, when one was started" }
+    DatasetFreezeRequest:
+      type: object
+      required: [version]
+      additionalProperties: false
+      properties:
+        version: { type: string, description: "The draft dataset version (ver_…)" }
+    DatasetPreviewRequest:
+      type: object
+      required: [version]
+      additionalProperties: false
+      properties:
+        version: { type: string, description: "The dataset version to preview (ver_…)" }
+        minDuration: { type: number, format: double, minimum: 0, description: Drop utterances shorter than this (seconds) }
+        maxDuration: { type: number, format: double, minimum: 0, description: Drop utterances longer than this (seconds) }
+        minCharsPerSecond: { type: number, format: double, minimum: 0 }
+        maxCharsPerSecond: { type: number, format: double, minimum: 0 }
+        languages: { type: array, maxItems: 50, items: { type: string }, description: "Keep only these languages (he matches he-IL)" }
+        origins: { type: array, maxItems: 20, items: { type: string }, description: Keep only transcripts of these origins }
+        splits: { type: array, items: { $ref: "#/components/schemas/DatasetSplitName" }, description: Keep only these splits }
+    DatasetPreviewCell:
+      type: object
+      required: [language, split, utterances, hours]
+      properties:
+        language: { type: string }
+        split: { $ref: "#/components/schemas/DatasetSplitName" }
+        utterances: { type: integer }
+        hours: { type: number, format: double }
+        speakers: { type: integer }
+    DatasetPreview:
+      type: object
+      required: [versionId, frozen, utterances, hours, cells, dropped]
+      properties:
+        versionId: { type: string }
+        frozen: { type: boolean }
+        utterances: { type: integer, description: Kept after the filters }
+        hours: { type: number, format: double }
+        cells: { type: array, items: { $ref: "#/components/schemas/DatasetPreviewCell" }, description: Kept utterances and hours per language and split }
+        dropped:
+          type: object
+          description: Utterances each filter drops (the first filter that drops one counts it)
+          additionalProperties: { type: integer }
     # ---------------------------------------------------------------- auxiliary models, pseudo-labels schemas (phase 4 · stream X) — add below

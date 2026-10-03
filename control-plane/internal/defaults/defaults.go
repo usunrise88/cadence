@@ -201,6 +201,28 @@ type Data struct {
 	MaxUtterances           Param[int]     `yaml:"max_utterances"`
 	SampleRate              Param[int]     `yaml:"sample_rate"`
 	TextNormalisation       Param[bool]    `yaml:"text_normalisation"`
+
+	// Ingest, filter, freeze and quality checks (phase 4 · stream D; the worker's sdp_ingest, manifest_filter and
+	// dataset_freeze read them through defaultRef).
+	IngestVADFrameMs        Param[int]     `yaml:"ingest_vad_frame_ms"`
+	IngestVADMarginDB       Param[float64] `yaml:"ingest_vad_margin_db"`
+	IngestVADFloorDB        Param[float64] `yaml:"ingest_vad_floor_db"`
+	IngestVADMinSpeechMs    Param[int]     `yaml:"ingest_vad_min_speech_ms"`
+	IngestVADMinSilenceMs   Param[int]     `yaml:"ingest_vad_min_silence_ms"`
+	IngestVADPadMs          Param[int]     `yaml:"ingest_vad_pad_ms"`
+	IngestMaxSegmentS       Param[float64] `yaml:"ingest_max_segment_s"`
+	IngestMinSegmentS       Param[float64] `yaml:"ingest_min_segment_s"`
+	FilterMinDurationS      Param[float64] `yaml:"filter_min_duration_s"`
+	FilterMaxDurationS      Param[float64] `yaml:"filter_max_duration_s"`
+	FilterMinCharsPerSecond Param[float64] `yaml:"filter_min_chars_per_second"`
+	FilterMaxCharsPerSecond Param[float64] `yaml:"filter_max_chars_per_second"`
+	FilterMinSpeechRatio    Param[float64] `yaml:"filter_min_speech_ratio"`
+	FilterMaxCrosstalk      Param[float64] `yaml:"filter_max_crosstalk"`
+	ShardUtterances         Param[int]     `yaml:"shard_utterances"`
+	QualityMaxSilenceShare  Param[float64] `yaml:"quality_max_silence_share"`
+	QualityMaxClippedShare  Param[float64] `yaml:"quality_max_clipped_share"`
+	QualityOutlierZ         Param[float64] `yaml:"quality_outlier_z"`
+	QualityMaxOutlierShare  Param[float64] `yaml:"quality_max_outlier_share"`
 }
 
 // Operations holds instance-wide operational defaults.

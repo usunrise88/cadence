@@ -583,6 +583,24 @@ export type DatasetPayload = {
      */
     tags?: Array<string>;
     lineage?: DatasetLineage;
+    /**
+     * false for a draft (pipelines/data-ingest: segments indexed in place on a mount, no audio copied); datasets.freeze cuts it into the content store and sets true. Absent on phase-2 imports, which are frozen at import
+     */
+    frozen?: boolean;
+    quality?: DatasetQuality;
+    card?: DatasetCard;
+    stats?: DatasetStats;
+    /**
+     * The frozen audio in shards of the content store (empty for a draft)
+     */
+    shards?: Array<DatasetShard>;
+    segments?: ArtifactRef;
+    recipe?: DatasetRecipe;
+    /**
+     * sha256 of the sorted [audio hash, split, text] tuples; with the recipe commit it makes the version's fingerprint
+     */
+    contentFingerprint?: string;
+    freeze?: DatasetFreezeState;
 };
 
 export type DatasetVersion = RegistryVersion & {
@@ -3979,6 +3997,14 @@ export type Source = {
      * Dataset version ids built from this source (sources.get only; empty in lists)
      */
     datasets: Array<string>;
+    /**
+     * Licence and training-clearance history, oldest first (sources.get only)
+     */
+    clearances?: Array<SourceClearance>;
+    /**
+     * Imports and ingests that registered dataset versions from this source, newest first (sources.get only; at most 100)
+     */
+    ingests?: Array<SourceIngest>;
     createdBy: Actor;
     createdAt: string;
     updatedAt: string;
@@ -7335,6 +7361,257 @@ export type SweepPlan = {
          * The whole estimate fits today's remaining budget (over it, an agent's sweep waits for an approval)
          */
         withinDailyBudget: boolean;
+    };
+};
+
+export type SourceNew = {
+    /**
+     * Lowercase letters, digits, dots, dashes and underscores (parlaspeech-rs)
+     */
+    name: string;
+    /**
+     * The corpus's licence, an SPDX id where one exists (CC-BY-4.0); unknown, none and NOASSERTION are refused for ingest
+     */
+    licence: string;
+    kind: SourceKind;
+    languages?: Array<string>;
+    /**
+     * Where the corpus comes from (a homepage, hf://datasets/…, mount://corpora/…)
+     */
+    url?: string;
+    description?: string;
+};
+
+/**
+ * One change of a source's licence or training clearance
+ */
+export type SourceClearance = {
+    licence: string;
+    trainingCleared: boolean;
+    actor: Actor;
+    at: string;
+    /**
+     * What changed
+     */
+    change?: 'created' | 'licence' | 'cleared' | 'uncleared';
+};
+
+/**
+ * A dataset version registered from the source by an import or an ingest
+ */
+export type SourceIngest = {
+    datasetVersionId: string;
+    pipelineRunId?: string;
+    projectId?: string;
+    stepKind?: string;
+    frozen?: boolean;
+    utterances: number;
+    hours: number;
+    at: string;
+};
+
+export type DatasetQualityCheck = {
+    /**
+     * silence_share: mean non-speech share; clipping_share: share of segments with clipped samples; length_outliers: share of segments whose characters per second lie past the z threshold
+     */
+    name: 'silence_share' | 'clipping_share' | 'length_outliers';
+    status: 'pass' | 'warn';
+    value: number;
+    threshold: number;
+    message?: string;
+};
+
+/**
+ * Data-quality checks of the version (warnings never block a freeze; they are in the card)
+ */
+export type DatasetQuality = {
+    passed: boolean;
+    checks: Array<DatasetQualityCheck>;
+};
+
+/**
+ * The dataset card (Markdown) in the content store
+ */
+export type DatasetCard = {
+    hash: string;
+    bytes?: number;
+};
+
+/**
+ * Binned counts; edges are lower bounds and the last bucket is open
+ */
+export type DatasetHistogram = {
+    edges: Array<number>;
+    counts: Array<number>;
+};
+
+export type DatasetStatsGroup = {
+    origin?: string;
+    /**
+     * caller, bot or mono
+     */
+    role?: string;
+    utterances: number;
+    hours: number;
+};
+
+/**
+ * Statistics the Dataset version panel charts (R53), binned by the step that computed them
+ */
+export type DatasetStats = {
+    durationHistogram?: DatasetHistogram;
+    charsPerSecondHistogram?: DatasetHistogram;
+    levelHistogram?: DatasetHistogram;
+    durationPercentiles?: {
+        p5?: number;
+        p50?: number;
+        p95?: number;
+    };
+    origins?: Array<DatasetStatsGroup>;
+    roles?: Array<DatasetStatsGroup>;
+    sourceRates?: Array<{
+        rate: number;
+        utterances: number;
+    }>;
+    speakers?: number;
+};
+
+/**
+ * One shard of a frozen version: a Lhotse cuts manifest over the version's audio in the content store
+ */
+export type DatasetShard = {
+    index: number;
+    /**
+     * b3 hash of the shard's cuts manifest (shards/cuts.NNNNNN.jsonl.gz)
+     */
+    hash: string;
+    /**
+     * Path of the cuts manifest inside the dataset artifact
+     */
+    path?: string;
+    utterances: number;
+    /**
+     * Audio bytes of the shard's utterances
+     */
+    bytes: number;
+    seconds: number;
+    /**
+     * Where the shard lives: cas (the content store); mounts and exports come with the cache (stream M)
+     */
+    location: string;
+    /**
+     * Kept from eviction (set by the cache; false until it pins the version)
+     */
+    pinned: boolean;
+};
+
+/**
+ * The project recipe a draft was ingested from
+ */
+export type DatasetRecipe = {
+    projectId?: string;
+    pipeline?: string;
+    /**
+     * The commit of the project repository the pipeline was read at
+     */
+    commit?: string;
+    stepKind?: string;
+    /**
+     * The draft step's parameters
+     */
+    params?: {
+        [key: string]: unknown;
+    };
+};
+
+/**
+ * The freeze of a draft
+ */
+export type DatasetFreezeState = {
+    pipelineRunId?: string;
+    startedAt?: string;
+    frozenAt?: string;
+    actor?: Actor;
+};
+
+export type DatasetLeakage = {
+    passed: boolean;
+    /**
+     * Golden sets checked
+     */
+    goldenSets: number;
+};
+
+export type DatasetFreeze = {
+    version: DatasetVersion;
+    leakage: DatasetLeakage;
+    /**
+     * The freeze pipeline run, when one was started
+     */
+    pipelineRunId?: string;
+};
+
+export type DatasetFreezeRequest = {
+    /**
+     * The draft dataset version (ver_…)
+     */
+    version: string;
+};
+
+export type DatasetPreviewRequest = {
+    /**
+     * The dataset version to preview (ver_…)
+     */
+    version: string;
+    /**
+     * Drop utterances shorter than this (seconds)
+     */
+    minDuration?: number;
+    /**
+     * Drop utterances longer than this (seconds)
+     */
+    maxDuration?: number;
+    minCharsPerSecond?: number;
+    maxCharsPerSecond?: number;
+    /**
+     * Keep only these languages (he matches he-IL)
+     */
+    languages?: Array<string>;
+    /**
+     * Keep only transcripts of these origins
+     */
+    origins?: Array<string>;
+    /**
+     * Keep only these splits
+     */
+    splits?: Array<DatasetSplitName>;
+};
+
+export type DatasetPreviewCell = {
+    language: string;
+    split: DatasetSplitName;
+    utterances: number;
+    hours: number;
+    speakers?: number;
+};
+
+export type DatasetPreview = {
+    versionId: string;
+    frozen: boolean;
+    /**
+     * Kept after the filters
+     */
+    utterances: number;
+    hours: number;
+    /**
+     * Kept utterances and hours per language and split
+     */
+    cells: Array<DatasetPreviewCell>;
+    /**
+     * Utterances each filter drops (the first filter that drops one counts it)
+     */
+    dropped: {
+        [key: string]: number;
     };
 };
 
@@ -12180,6 +12457,46 @@ export type SourcesListResponses = {
 
 export type SourcesListResponse = SourcesListResponses[keyof SourcesListResponses];
 
+export type SourcesNewData = {
+    body: SourceNew;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/registry/sources';
+};
+
+export type SourcesNewErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type SourcesNewError = SourcesNewErrors[keyof SourcesNewErrors];
+
+export type SourcesNewResponses = {
+    /**
+     * Dry run — the source that would be registered; nothing was written
+     */
+    200: Source;
+    /**
+     * Registered
+     */
+    201: Source;
+};
+
+export type SourcesNewResponse = SourcesNewResponses[keyof SourcesNewResponses];
+
 export type SourcesGetData = {
     body?: never;
     path: {
@@ -14566,6 +14883,149 @@ export type WorkerLiveConnectResponses = {
 };
 
 export type WorkerLiveConnectResponse = WorkerLiveConnectResponses[keyof WorkerLiveConnectResponses];
+
+export type DatasetsPreviewData = {
+    body: DatasetPreviewRequest;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/registry/datasets:preview';
+};
+
+export type DatasetsPreviewErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type DatasetsPreviewError = DatasetsPreviewErrors[keyof DatasetsPreviewErrors];
+
+export type DatasetsPreviewResponses = {
+    /**
+     * The preview
+     */
+    200: DatasetPreview;
+};
+
+export type DatasetsPreviewResponse = DatasetsPreviewResponses[keyof DatasetsPreviewResponses];
+
+export type DatasetsFreezeData = {
+    body: DatasetFreezeRequest;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/registry/datasets:freeze';
+};
+
+export type DatasetsFreezeErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type DatasetsFreezeError = DatasetsFreezeErrors[keyof DatasetsFreezeErrors];
+
+export type DatasetsFreezeResponses = {
+    /**
+     * Dry run (the leakage check passed; nothing started), or the version is already frozen
+     */
+    200: DatasetFreeze;
+    /**
+     * Accepted; follow the job on job.{jobId}
+     */
+    202: JobAccepted;
+};
+
+export type DatasetsFreezeResponse = DatasetsFreezeResponses[keyof DatasetsFreezeResponses];
+
+export type UtterancesSearchData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Text the transcript contains (case-insensitive)
+         */
+        q?: string;
+        /**
+         * Source id (src_…) or name
+         */
+        source?: string;
+        /**
+         * Language (he or he-IL; either matches the other)
+         */
+        language?: string;
+        /**
+         * Speaker id within the source
+         */
+        speaker?: string;
+        /**
+         * Transcript origin (human, pseudo-label, model:<id>)
+         */
+        origin?: string;
+        /**
+         * Shortest duration in seconds
+         */
+        minDuration?: number;
+        /**
+         * Longest duration in seconds
+         */
+        maxDuration?: number;
+        /**
+         * Dataset version id (ver_…)
+         */
+        dataset?: string;
+        /**
+         * Split within the dataset version (needs dataset)
+         */
+        split?: DatasetSplitName;
+        /**
+         * Cursor: the `next` value of the previous page
+         */
+        after?: string;
+        limit?: number;
+    };
+    url: '/registry/utterances:search';
+};
+
+export type UtterancesSearchErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type UtterancesSearchError = UtterancesSearchErrors[keyof UtterancesSearchErrors];
+
+export type UtterancesSearchResponses = {
+    /**
+     * A page of matching utterances, oldest first
+     */
+    200: UtteranceList;
+};
+
+export type UtterancesSearchResponse = UtterancesSearchResponses[keyof UtterancesSearchResponses];
 
 export type MountsListData = {
     body?: never;

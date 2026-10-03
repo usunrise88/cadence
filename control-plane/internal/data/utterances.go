@@ -68,6 +68,14 @@ type UtteranceFilter struct {
 	Language string
 	After    string // cursor: the last id of the previous page
 	Limit    int    // 1–500, default 100
+
+	// utterances.search (phase 4): Text is a case-insensitive substring of a transcript (within a dataset version, of
+	// the transcript the version uses); Origin a transcript origin; durations in seconds (0 = no bound).
+	Text        string
+	Speaker     string
+	Origin      string
+	MinDuration float64
+	MaxDuration float64
 }
 
 // DefaultLimit and MaxLimit bound a page of utterances.
@@ -110,6 +118,28 @@ func ListUtterances(ctx context.Context, q storage.Querier, f UtteranceFilter) (
 	if f.Language != "" {
 		conds = append(conds, languageMatch("u.language", arg(f.Language)))
 	}
+	if f.Speaker != "" {
+		conds = append(conds, "u.speaker = "+arg(f.Speaker))
+	}
+	if f.MinDuration > 0 {
+		conds = append(conds, "u.duration_s >= "+arg(f.MinDuration))
+	}
+	if f.MaxDuration > 0 {
+		conds = append(conds, "u.duration_s <= "+arg(f.MaxDuration))
+	}
+	if f.Text != "" || f.Origin != "" {
+		tcond := []string{"t.utterance_id = u.id"}
+		if f.Dataset != "" {
+			tcond = []string{"t.id = d.transcript_id"}
+		}
+		if f.Text != "" {
+			tcond = append(tcond, "lower(t.text) LIKE "+arg("%"+escapeLike(strings.ToLower(f.Text))+"%"))
+		}
+		if f.Origin != "" {
+			tcond = append(tcond, "t.origin = "+arg(f.Origin))
+		}
+		conds = append(conds, "EXISTS (SELECT 1 FROM transcripts t WHERE "+strings.Join(tcond, " AND ")+")")
+	}
 	if f.After != "" {
 		conds = append(conds, "u.id > "+arg(f.After))
 	}
@@ -136,6 +166,11 @@ func ListUtterances(ctx context.Context, q storage.Querier, f UtteranceFilter) (
 		return nil, "", err
 	}
 	return list, next, nil
+}
+
+// escapeLike escapes LIKE's wildcards and its escape character (the backslash) in s.
+func escapeLike(s string) string {
+	return strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`).Replace(s)
 }
 
 func scanUtterance(row pgx.CollectableRow) (Utterance, error) {

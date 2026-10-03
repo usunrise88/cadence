@@ -72,13 +72,23 @@ func (im *Importer) Import(ctx context.Context, tx pgx.Tx, out steps.Output) (re
 	if im.Now != nil {
 		now = im.Now().UTC()
 	}
+	actor := auth.Actor{Kind: auth.KindAutomation, ID: out.PipelineRunID, Name: "pipeline run " + out.PipelineRunID}
+	if out.PipelineRunID == "" {
+		actor = registry.Bundled()
+	}
+	format, err := artifactFormat(im.CAS, out.Artifact.Hash)
+	if err != nil {
+		return registry.Version{}, nil, err
+	}
+	if format == FormatDraft {
+		return im.importDraft(ctx, tx, out, actor, now)
+	}
 	a, err := ReadArtifact(im.CAS, out.Artifact.Hash)
 	if err != nil {
 		return registry.Version{}, nil, err
 	}
-	actor := auth.Actor{Kind: auth.KindAutomation, ID: out.PipelineRunID, Name: "pipeline run " + out.PipelineRunID}
-	if out.PipelineRunID == "" {
-		actor = registry.Bundled()
+	if a.Header.DraftVersionID != "" {
+		return im.completeFreeze(ctx, tx, out, a, now)
 	}
 	h := a.Header
 	src, _, drafts, err := Ensure(ctx, tx, SourceInput{Name: h.Source.Name, Licence: h.Source.Licence, Kind: h.Source.Kind,
@@ -101,6 +111,8 @@ func (im *Importer) Import(ctx context.Context, tx pgx.Tx, out steps.Output) (re
 
 	name := collectionName(out, h)
 	payload := buildPayload(a, src, out)
+	frozen := true
+	payload.Frozen = &frozen
 	evalOnly := h.EvalOnly || !src.TrainingCleared
 	tags := collectionTags(a, src, evalOnly)
 	body, err := json.Marshal(payload)
@@ -121,6 +133,9 @@ func (im *Importer) Import(ctx context.Context, tx pgx.Tx, out steps.Output) (re
 	drafts = append(drafts, regDrafts...)
 	if created {
 		if err := insertMembership(ctx, tx, v.ID, uttIDs, trnIDs, a.Lines); err != nil {
+			return registry.Version{}, nil, err
+		}
+		if err := recordIngest(ctx, tx, v.ID, payload.Lineage, now); err != nil {
 			return registry.Version{}, nil, err
 		}
 	}
@@ -241,6 +256,48 @@ type payload struct {
 	Speakers       int               `json:"speakers"`
 	Tags           []string          `json:"tags"`
 	Lineage        lineage           `json:"lineage"`
+
+	// Phase 4 (drafts and freezing; the contract's DatasetPayload).
+	Frozen             *bool              `json:"frozen,omitempty"`
+	Quality            json.RawMessage    `json:"quality,omitempty"`
+	Card               *cardRef           `json:"card,omitempty"`
+	Stats              json.RawMessage    `json:"stats,omitempty"`
+	Shards             []shard            `json:"shards,omitempty"`
+	Segments           *steps.ArtifactRef `json:"segments,omitempty"`
+	Recipe             *recipe            `json:"recipe,omitempty"`
+	ContentFingerprint string             `json:"contentFingerprint,omitempty"`
+	Freeze             *freezeState       `json:"freeze,omitempty"`
+}
+
+type cardRef struct {
+	Hash  string `json:"hash"`
+	Bytes int64  `json:"bytes,omitempty"`
+}
+
+type shard struct {
+	Index      int     `json:"index"`
+	Hash       string  `json:"hash"`
+	Path       string  `json:"path,omitempty"`
+	Utterances int     `json:"utterances"`
+	Bytes      int64   `json:"bytes"`
+	Seconds    float64 `json:"seconds"`
+	Location   string  `json:"location"`
+	Pinned     bool    `json:"pinned"`
+}
+
+type recipe struct {
+	ProjectID string          `json:"projectId,omitempty"`
+	Pipeline  string          `json:"pipeline,omitempty"`
+	Commit    string          `json:"commit,omitempty"`
+	StepKind  string          `json:"stepKind,omitempty"`
+	Params    json.RawMessage `json:"params,omitempty"`
+}
+
+type freezeState struct {
+	PipelineRunID string      `json:"pipelineRunId,omitempty"`
+	StartedAt     *time.Time  `json:"startedAt,omitempty"`
+	FrozenAt      *time.Time  `json:"frozenAt,omitempty"`
+	Actor         *auth.Actor `json:"actor,omitempty"`
 }
 
 type splitStats struct {

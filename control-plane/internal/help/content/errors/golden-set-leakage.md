@@ -40,6 +40,9 @@ leakage check is what makes their scores mean "held out". Selecting checkpoints 
 - `datasets.get`, `utterances.list` (filter `dataset`) — what a dataset version holds; `utterances.get` shows an
   utterance's fingerprints and every dataset version it is in.
 - Re-import the training data without the overlapping utterances (a new dataset version), then use that version.
+- `datasets.freeze` (phase 4) runs the same check on a draft before it cuts any audio, and again when the cut lands:
+  a draft that shares an utterance with a golden set cannot be frozen; filter those segments out of the ingest and
+  freeze the new draft.
 
 ## Playbooks
 

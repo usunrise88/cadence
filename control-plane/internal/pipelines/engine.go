@@ -12,6 +12,7 @@
 package pipelines
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -25,6 +26,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -209,7 +211,42 @@ func (e *Engine) Prepare(ctx context.Context, q storage.Querier, in StartInput) 
 	if err == nil {
 		err = e.trainable(ctx, q, plan, in.Inputs)
 	}
+	if err == nil {
+		err = licensed(ctx, q, plan)
+	}
 	return src, plan, err
+}
+
+// RegistrySource is the x-cadence.registry value of a step parameter that names a registry source (sdp_ingest's
+// source): the engine applies "no licence, no ingest" to it.
+const RegistrySource = "source"
+
+// licensed refuses a step whose parameters name a registry source (x-cadence.registry: source) that is missing,
+// archived or without a usable licence (data.IngestAllowed: source-unlicensed) — docs/spec/04-blocks.md Block 1,
+// "no licence, no ingest". The dataset hook checks the source again when the draft registers.
+func licensed(ctx context.Context, q storage.Querier, plan Plan) error {
+	for _, ps := range plan.Steps {
+		if len(bytes.TrimSpace(ps.Kind.Params)) == 0 || string(ps.Kind.Params) == "null" {
+			continue
+		}
+		var schema jsonschema.Schema
+		if err := json.Unmarshal(ps.Kind.Params, &schema); err != nil {
+			continue // Plan has reported it
+		}
+		for _, name := range sortedKeys(schema.Properties) {
+			if reg, _ := xCadence(schema.Properties[name])["registry"].(string); reg != RegistrySource {
+				continue
+			}
+			v, _ := ps.Params[name].(string)
+			if _, err := data.IngestAllowed(ctx, q, v); err != nil {
+				if pe, ok := problems.As(err); ok {
+					pe.Detail = fmt.Sprintf("step %s (%s), parameter %s: %s", ps.Step, ps.Kind.Ref(), name, pe.Detail)
+				}
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // trainable refuses a run input that a training step reads directly unless all it trains on is registered and

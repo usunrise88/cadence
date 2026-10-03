@@ -53,6 +53,7 @@ def cadence_field(
     range: Mapping[str, Any] | str | None = None,
     default_ref: str | None = None,
     shared: bool = False,
+    registry: str | None = None,
 ) -> Any:
     """A pydantic field with the ``x-cadence`` metadata the UI, help and MCP tool descriptions render from.
 
@@ -61,6 +62,10 @@ def cadence_field(
 
     ``shared`` marks a parameter that a run-level override (``runs.new`` params) sets on every step of the stage that
     declares it, not only on the train step — the data's language, say, means the same to a calibration.
+
+    ``registry`` names the registry entity the value refers to (``source``: a registered source's name). The control
+    plane checks it when it plans a pipeline: an ingest from a source that is missing, archived or has no licence is
+    refused ("no licence, no ingest").
     """
     if default_ref:
         if default is not PydanticUndefined or source is not None or range is not None:
@@ -82,6 +87,8 @@ def cadence_field(
         meta["defaultRef"] = default_ref
     if shared:
         meta["shared"] = True
+    if registry:
+        meta["registry"] = registry
     return Field(default=default, description=description, json_schema_extra={"x-cadence": meta})
 
 

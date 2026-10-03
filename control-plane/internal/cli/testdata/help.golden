@@ -28,7 +28,7 @@ Entities:
   collections    get list
   compute        edit get list
   credentials    list new revoke
-  datasets       get list
+  datasets       freeze get list preview
   defaults       get
   drafts         accept get list revert
   evals          gate get list new
@@ -58,12 +58,12 @@ Entities:
   runs           calibrate get list new resume stage
   runtimes       get list
   secrets        list new
-  sources        archive edit get list
+  sources        archive edit get list new
   stepKinds      get list
   sweeps         run
   telegramBot    set verify
   templates      get list
-  utterances     get list
+  utterances     get list search
 
 Global flags:
   --url URL               control plane (env CADENCE_URL, default http://127.0.0.1:8080; /api is appended)

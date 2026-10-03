@@ -104,6 +104,9 @@ var (
 	TranscriptionTicketInvalid      = Type{"transcription-ticket-invalid", http.StatusForbidden, "Transcription ticket invalid"}
 	TranscriptionInputInvalid       = Type{"transcription-input-invalid", http.StatusUnprocessableEntity, "Transcription input invalid"}
 	TranscriptionLimit              = Type{"transcription-limit", http.StatusConflict, "Transcription session limit reached"}
+	// Ingest, draft dataset versions and freezing (phase 4 · stream D).
+	DatasetNotFrozen = Type{"dataset-not-frozen", http.StatusUnprocessableEntity, "Dataset version not frozen"}
+	SourceUnlicensed = Type{"source-unlicensed", http.StatusUnprocessableEntity, "Source without a usable licence"}
 )
 
 // Types lists every registered type.
@@ -122,6 +125,7 @@ func Types() []Type {
 		SweepOverCap,
 		TranscriptionInProgress, TranscriptionAllowanceExhausted, TranscriptionTicketInvalid, TranscriptionInputInvalid,
 		TranscriptionLimit,
+		DatasetNotFrozen, SourceUnlicensed,
 	}
 }
 

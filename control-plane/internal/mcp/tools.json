@@ -2713,6 +2713,57 @@
       ]
     },
     {
+      "name": "datasets.freeze",
+      "title": "Freeze a draft dataset version — leakage check, then cut its segments into the content store (202 with the pipeline run)",
+      "description": "Freeze a draft dataset version (state draft, dataset.frozen false — what pipelines/data-ingest ends in). First the leakage check: the draft's train and validation utterances must share nothing (by canonical hash or fingerprint) with any golden set, else golden-set-leakage lists the overlaps and nothing starts. Then a CPU pipeline run in the draft's project cuts every segment from its mount into the content store (dataset_freeze, mode cut), verifies each hash, writes the shards, quality checks and the dataset card, and sets frozen: true. Only frozen versions can be mixed, trained on, exported or adopted. dryRun=true runs the leakage check only. Answers 202 with the jobId of the cut step (datasets.get shows dataset.freeze with the pipeline run); a version already frozen, or a cut reused from an earlier identical freeze, answers 200. A draft is frozen once: a second call answers the frozen version, or the freeze already running. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/registry/datasets:freeze",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "version": {
+                "description": "The draft dataset version (ver_…)",
+                "type": "string"
+              }
+            },
+            "required": [
+              "version"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
       "name": "datasets.get",
       "title": "Get a dataset version with its splits, statistics and the projects that use it",
       "description": "Get a dataset version with its splits, statistics and the projects that use it",
@@ -2784,6 +2835,107 @@
           "property": "state",
           "in": "query",
           "name": "state"
+        }
+      ]
+    },
+    {
+      "name": "datasets.preview",
+      "title": "Hours per language and split of a dataset version after filters (metadata only; nothing is written)",
+      "description": "Preview a dataset version (a draft from pipelines/data-ingest, or a frozen one) under filters before you freeze or mix it: utterances and hours per language and split, and how many each filter would drop (duration, characters per second, origin, language, split). Reads the registry only; no audio is read and nothing is written. A body with only version previews the version as it is. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/registry/datasets:preview",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "languages": {
+                "description": "Keep only these languages (he matches he-IL)",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 50,
+                "type": "array"
+              },
+              "maxCharsPerSecond": {
+                "format": "double",
+                "minimum": 0,
+                "type": "number"
+              },
+              "maxDuration": {
+                "description": "Drop utterances longer than this (seconds)",
+                "format": "double",
+                "minimum": 0,
+                "type": "number"
+              },
+              "minCharsPerSecond": {
+                "format": "double",
+                "minimum": 0,
+                "type": "number"
+              },
+              "minDuration": {
+                "description": "Drop utterances shorter than this (seconds)",
+                "format": "double",
+                "minimum": 0,
+                "type": "number"
+              },
+              "origins": {
+                "description": "Keep only transcripts of these origins",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "type": "array"
+              },
+              "splits": {
+                "description": "Keep only these splits",
+                "items": {
+                  "enum": [
+                    "train",
+                    "validation",
+                    "test"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "version": {
+                "description": "The dataset version to preview (ver_…)",
+                "type": "string"
+              }
+            },
+            "required": [
+              "version"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
         }
       ]
     },
@@ -8364,6 +8516,92 @@
       ]
     },
     {
+      "name": "sources.new",
+      "title": "Register a source (a corpus with its licence, kind and languages) before ingesting it; it starts eval-only",
+      "description": "Register a corpus as a source before pipelines/data-ingest reads it from a mount: name, licence (the corpus card's, an SPDX id where one exists), kind (public, production, synthetic), languages, url. No licence, no ingest: the pipeline engine refuses an ingest step whose source is missing, archived or has no usable licence (unknown, none, NOASSERTION). A new source is eval-only (trainingCleared false) until a person clears it with sources.edit. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/registry/sources",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "description": {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "public",
+                  "production",
+                  "synthetic"
+                ],
+                "type": "string"
+              },
+              "languages": {
+                "items": {
+                  "maxLength": 35,
+                  "minLength": 2,
+                  "type": "string"
+                },
+                "maxItems": 50,
+                "type": "array"
+              },
+              "licence": {
+                "description": "The corpus's licence, an SPDX id where one exists (CC-BY-4.0); unknown, none and NOASSERTION are refused for ingest",
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "name": {
+                "description": "Lowercase letters, digits, dots, dashes and underscores (parlaspeech-rs)",
+                "pattern": "^[a-z0-9][a-z0-9._-]{0,98}[a-z0-9]$",
+                "type": "string"
+              },
+              "url": {
+                "description": "Where the corpus comes from (a homepage, hf://datasets/…, mount://corpora/…)",
+                "maxLength": 500,
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "licence",
+              "kind"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
       "name": "stepKinds.get",
       "title": "Get a step kind version",
       "description": "Get a step kind version",
@@ -8877,6 +9115,137 @@
           "property": "language",
           "in": "query",
           "name": "language"
+        },
+        {
+          "property": "after",
+          "in": "query",
+          "name": "after"
+        },
+        {
+          "property": "limit",
+          "in": "query",
+          "name": "limit"
+        }
+      ]
+    },
+    {
+      "name": "utterances.search",
+      "title": "Search utterances by transcript text, source, language, speaker, duration, origin and split",
+      "description": "Search utterances, oldest first, a page at a time. q matches transcript text (case-insensitive substring); source (id or name), language (he or he-IL), speaker, origin (human, pseudo-label, model:\u003cid\u003e), minDuration/maxDuration in seconds, and dataset (ver_…) with split narrow it. Each result carries its transcripts and, within a dataset, its split. Pass next as after for the next page.",
+      "method": "GET",
+      "path": "/registry/utterances:search",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "after": {
+            "description": "Cursor: the `next` value of the previous page",
+            "type": "string"
+          },
+          "dataset": {
+            "description": "Dataset version id (ver_…)",
+            "type": "string"
+          },
+          "language": {
+            "description": "Language (he or he-IL; either matches the other)",
+            "type": "string"
+          },
+          "limit": {
+            "default": 100,
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "maxDuration": {
+            "description": "Longest duration in seconds",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "minDuration": {
+            "description": "Shortest duration in seconds",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "origin": {
+            "description": "Transcript origin (human, pseudo-label, model:\u003cid\u003e)",
+            "type": "string"
+          },
+          "q": {
+            "description": "Text the transcript contains (case-insensitive)",
+            "maxLength": 200,
+            "type": "string"
+          },
+          "source": {
+            "description": "Source id (src_…) or name",
+            "type": "string"
+          },
+          "speaker": {
+            "description": "Speaker id within the source",
+            "type": "string"
+          },
+          "split": {
+            "description": "Split within the dataset version (needs dataset)",
+            "enum": [
+              "train",
+              "validation",
+              "test"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "q",
+          "in": "query",
+          "name": "q"
+        },
+        {
+          "property": "source",
+          "in": "query",
+          "name": "source"
+        },
+        {
+          "property": "language",
+          "in": "query",
+          "name": "language"
+        },
+        {
+          "property": "speaker",
+          "in": "query",
+          "name": "speaker"
+        },
+        {
+          "property": "origin",
+          "in": "query",
+          "name": "origin"
+        },
+        {
+          "property": "minDuration",
+          "in": "query",
+          "name": "minDuration"
+        },
+        {
+          "property": "maxDuration",
+          "in": "query",
+          "name": "maxDuration"
+        },
+        {
+          "property": "dataset",
+          "in": "query",
+          "name": "dataset"
+        },
+        {
+          "property": "split",
+          "in": "query",
+          "name": "split"
         },
         {
           "property": "after",
