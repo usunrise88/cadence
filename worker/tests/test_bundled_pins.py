@@ -18,14 +18,9 @@ PIPELINE_DIRS = [
     *sorted((ROOT / "recipes" / "projects").glob("*/pipelines")),
 ]
 
-# Step kinds of the data-ingest starter pipeline arrive with phase 4 (ROADMAP "Phase 4"); no worker publishes them yet.
+# The pseudo-label ensemble arrives with phase 4 · stream X; no worker publishes it yet.
 PLANNED = {
-    "sdp_ingest",
     "pseudolabel_ensemble",
-    "text_normalise",
-    "manifest_filter",
-    "speaker_disjoint_split",
-    "dataset_freeze",
 }
 
 PIN = re.compile(r"^([a-z][a-z0-9_]*)@([0-9]+)$")

@@ -27,6 +27,11 @@ spectrogram_tiles = "cadence_worker.steps.spectrogram_tiles:SpectrogramTilesStep
 augment_dataset = "cadence_worker.steps.augment_dataset:AugmentDatasetStep"
 entity_score = "cadence_worker.steps.entity_score:EntityScoreStep"
 latency_score = "cadence_worker.steps.latency_score:LatencyScoreStep"
+sdp_ingest = "cadence_worker.steps.sdp_ingest:SdpIngestStep"
+text_normalise = "cadence_worker.steps.text_normalise:TextNormaliseStep"
+manifest_filter = "cadence_worker.steps.manifest_filter:ManifestFilterStep"
+speaker_disjoint_split = "cadence_worker.steps.speaker_disjoint_split:SpeakerDisjointSplitStep"
+dataset_freeze = "cadence_worker.steps.dataset_freeze:DatasetFreezeStep"
 
 [dependency-groups]
 dev = [
