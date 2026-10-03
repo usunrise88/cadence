@@ -488,6 +488,18 @@ var Operations = []Operation{
 		},
 	},
 	{
+		ID: "datasets.freeze", Entity: "datasets", Verb: "freeze", Method: "POST", Path: "/registry/datasets:freeze",
+		Summary:        "Freeze a draft dataset version — leakage check, then cut its segments into the content store (202 with the pipeline run)",
+		Description:    "Freeze a draft dataset version (state draft, dataset.frozen false — what pipelines/data-ingest ends in). First the leakage check: the draft's train and validation utterances must share nothing (by canonical hash or fingerprint) with any golden set, else golden-set-leakage lists the overlaps and nothing starts. Then a CPU pipeline run in the draft's project cuts every segment from its mount into the content store (dataset_freeze, mode cut), verifies each hash, writes the shards, quality checks and the dataset card, and sets frozen: true. Only frozen versions can be mixed, trained on, exported or adopted. dryRun=true runs the leakage check only. Answers 202 with the jobId of the cut step (datasets.get shows dataset.freeze with the pipeline run); a version already frozen, or a cut reused from an earlier identical freeze, answers 200. A draft is frozen once: a second call answers the frozen version, or the freeze already running.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "version", Required: true, Type: "string", Description: "The draft dataset version (ver_…)"},
+		}},
+	},
+	{
 		ID: "datasets.get", Entity: "datasets", Verb: "get", Method: "GET", Path: "/registry/datasets/{id}",
 		Summary: "Get a dataset version with its splits, statistics and the projects that use it",
 		Params: []Param{
@@ -501,6 +513,25 @@ var Operations = []Operation{
 			{Name: "collection", In: "query", Flag: "collection", Type: "string", Description: "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)"},
 			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated"}},
 		},
+	},
+	{
+		ID: "datasets.preview", Entity: "datasets", Verb: "preview", Method: "POST", Path: "/registry/datasets:preview",
+		Summary:        "Hours per language and split of a dataset version after filters (metadata only; nothing is written)",
+		Description:    "Preview a dataset version (a draft from pipelines/data-ingest, or a frozen one) under filters before you freeze or mix it: utterances and hours per language and split, and how many each filter would drop (duration, characters per second, origin, language, split). Reads the registry only; no audio is read and nothing is written. A body with only version previews the version as it is.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "languages", Type: "array of string", Description: "Keep only these languages (he matches he-IL)"},
+			{Name: "maxCharsPerSecond", Type: "number"},
+			{Name: "maxDuration", Type: "number", Description: "Drop utterances longer than this (seconds)"},
+			{Name: "minCharsPerSecond", Type: "number"},
+			{Name: "minDuration", Type: "number", Description: "Drop utterances shorter than this (seconds)"},
+			{Name: "origins", Type: "array of string", Description: "Keep only transcripts of these origins"},
+			{Name: "splits", Type: "array of string", Description: "Keep only these splits"},
+			{Name: "version", Required: true, Type: "string", Description: "The dataset version to preview (ver_…)"},
+		}},
 	},
 	{
 		ID: "defaults.get", Entity: "defaults", Verb: "get", Method: "GET", Path: "/defaults",
@@ -1512,6 +1543,23 @@ var Operations = []Operation{
 		},
 	},
 	{
+		ID: "sources.new", Entity: "sources", Verb: "new", Method: "POST", Path: "/registry/sources",
+		Summary:        "Register a source (a corpus with its licence, kind and languages) before ingesting it; it starts eval-only",
+		Description:    "Register a corpus as a source before pipelines/data-ingest reads it from a mount: name, licence (the corpus card's, an SPDX id where one exists), kind (public, production, synthetic), languages, url. No licence, no ingest: the pipeline engine refuses an ingest step whose source is missing, archived or has no usable licence (unknown, none, NOASSERTION). A new source is eval-only (trainingCleared false) until a person clears it with sources.edit.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "description", Type: "string"},
+			{Name: "kind", Required: true, Type: "string"},
+			{Name: "languages", Type: "array of string"},
+			{Name: "licence", Required: true, Type: "string", Description: "The corpus's licence, an SPDX id where one exists (CC-BY-4.0); unknown, none and NOASSERTION are refused for ingest"},
+			{Name: "name", Required: true, Type: "string", Description: "Lowercase letters, digits, dots, dashes and underscores (parlaspeech-rs)"},
+			{Name: "url", Type: "string", Description: "Where the corpus comes from (a homepage, hf://datasets/…, mount://corpora/…)"},
+		}},
+	},
+	{
 		ID: "stepKinds.get", Entity: "stepKinds", Verb: "get", Method: "GET", Path: "/registry/step-kinds/{id}",
 		Summary: "Get a step kind version",
 		Params: []Param{
@@ -1600,6 +1648,24 @@ var Operations = []Operation{
 			{Name: "dataset", In: "query", Flag: "dataset", Type: "string", Description: "Dataset version id (ver_…)"},
 			{Name: "split", In: "query", Flag: "split", Type: "string", Description: "Split within the dataset version (needs dataset)", Enum: []string{"train", "validation", "test"}},
 			{Name: "language", In: "query", Flag: "language", Type: "string", Description: "Language (he or he-IL; either matches the other)"},
+			{Name: "after", In: "query", Flag: "after", Type: "string", Description: "Cursor: the `next` value of the previous page"},
+			{Name: "limit", In: "query", Flag: "limit", Type: "integer", Default: "100"},
+		},
+	},
+	{
+		ID: "utterances.search", Entity: "utterances", Verb: "search", Method: "GET", Path: "/registry/utterances:search",
+		Summary:     "Search utterances by transcript text, source, language, speaker, duration, origin and split",
+		Description: "Search utterances, oldest first, a page at a time. q matches transcript text (case-insensitive substring); source (id or name), language (he or he-IL), speaker, origin (human, pseudo-label, model:<id>), minDuration/maxDuration in seconds, and dataset (ver_…) with split narrow it. Each result carries its transcripts and, within a dataset, its split. Pass next as after for the next page.",
+		Params: []Param{
+			{Name: "q", In: "query", Flag: "q", Type: "string", Description: "Text the transcript contains (case-insensitive)"},
+			{Name: "source", In: "query", Flag: "source", Type: "string", Description: "Source id (src_…) or name"},
+			{Name: "language", In: "query", Flag: "language", Type: "string", Description: "Language (he or he-IL; either matches the other)"},
+			{Name: "speaker", In: "query", Flag: "speaker", Type: "string", Description: "Speaker id within the source"},
+			{Name: "origin", In: "query", Flag: "origin", Type: "string", Description: "Transcript origin (human, pseudo-label, model:<id>)"},
+			{Name: "minDuration", In: "query", Flag: "min-duration", Type: "number", Description: "Shortest duration in seconds"},
+			{Name: "maxDuration", In: "query", Flag: "max-duration", Type: "number", Description: "Longest duration in seconds"},
+			{Name: "dataset", In: "query", Flag: "dataset", Type: "string", Description: "Dataset version id (ver_…)"},
+			{Name: "split", In: "query", Flag: "split", Type: "string", Description: "Split within the dataset version (needs dataset)", Enum: []string{"train", "validation", "test"}},
 			{Name: "after", In: "query", Flag: "after", Type: "string", Description: "Cursor: the `next` value of the previous page"},
 			{Name: "limit", In: "query", Flag: "limit", Type: "integer", Default: "100"},
 		},
