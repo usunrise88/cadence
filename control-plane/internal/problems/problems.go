@@ -104,6 +104,9 @@ var (
 	TranscriptionTicketInvalid      = Type{"transcription-ticket-invalid", http.StatusForbidden, "Transcription ticket invalid"}
 	TranscriptionInputInvalid       = Type{"transcription-input-invalid", http.StatusUnprocessableEntity, "Transcription input invalid"}
 	TranscriptionLimit              = Type{"transcription-limit", http.StatusConflict, "Transcription session limit reached"}
+	// Auxiliary models and pseudo-labels (phase 4 · stream X, R26).
+	AuxiliaryUnavailable    = Type{"auxiliary-unavailable", http.StatusServiceUnavailable, "Auxiliary service unavailable"}
+	AuxiliaryLicenceRefused = Type{"auxiliary-licence-refused", http.StatusUnprocessableEntity, "Auxiliary licence refused"}
 )
 
 // Types lists every registered type.
@@ -122,6 +125,7 @@ func Types() []Type {
 		SweepOverCap,
 		TranscriptionInProgress, TranscriptionAllowanceExhausted, TranscriptionTicketInvalid, TranscriptionInputInvalid,
 		TranscriptionLimit,
+		AuxiliaryUnavailable, AuxiliaryLicenceRefused,
 	}
 }
 

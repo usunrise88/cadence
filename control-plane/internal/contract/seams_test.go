@@ -10,9 +10,11 @@ import (
 )
 
 // frameworkNames are the model family and runtime names only a framework pack may know (R41): the Nemotron family,
-// the NeMo runtime and its architecture names. Data (defaults.yaml, templates), docs, the worker and generated files
-// (whose comments quote the contract's examples) may name them; control-plane and web source may not.
-var frameworkNames = regexp.MustCompile(`(?i)nemotron|\bnemo\b|nemo[-_]speech|fastconformer|parakeet`)
+// the NeMo runtime and its architecture names, and (phase 4) the auxiliary models and services a worker pack serves —
+// Whisper, the OASIS service, SpeechBrain's VoxLingua107 classifier. Data (defaults.yaml, templates, the auxiliary
+// seeds), docs, the worker and generated files (whose comments quote the contract's examples) may name them;
+// control-plane and web source may not.
+var frameworkNames = regexp.MustCompile(`(?i)nemotron|\bnemo\b|nemo[-_]speech|fastconformer|parakeet|whisper|oasis|speechbrain|voxlingua`)
 
 // TestNoCodeNamesAFramework is the R41 seam check of the phase-2 gate: no control-plane (Go, non-test) or web source
 // names the Nemotron family or the NeMo runtime, so nothing can branch on them.

@@ -31,6 +31,7 @@ import (
 
 	"github.com/usunrise88/cadence/control-plane/internal/artifacts"
 	"github.com/usunrise88/cadence/control-plane/internal/auth"
+	"github.com/usunrise88/cadence/control-plane/internal/auxiliary"
 	"github.com/usunrise88/cadence/control-plane/internal/cas"
 	"github.com/usunrise88/cadence/control-plane/internal/commands"
 	"github.com/usunrise88/cadence/control-plane/internal/data"
@@ -66,6 +67,9 @@ type Options struct {
 	Repos     Repo                      // project repositories; nil: bundled templates only
 	Templates fs.FS                     // the bundled templates tree (pipelines/*.yaml); templates.FS when nil
 	Log       *slog.Logger
+	// Prober checks the services auxiliary references name before a run starts (dry runs included); nil checks
+	// nothing.
+	Prober auxiliary.Prober
 }
 
 // Engine runs pipelines.
@@ -143,6 +147,9 @@ func New(o Options) *Engine {
 // SetLeases replaces the worker protocol the step jobs wait on (main sets it once the worker protocol exists).
 func (e *Engine) SetLeases(l steps.Leases) { e.o.Leases = l }
 
+// SetProber replaces the check of auxiliary services (tests); call it before the engine plans runs.
+func (e *Engine) SetProber(p auxiliary.Prober) { e.o.Prober = p }
+
 // Hooks returns the output hooks the engine runs.
 func (e *Engine) Hooks() *steps.Hooks { return e.o.Hooks }
 
@@ -205,9 +212,17 @@ func (e *Engine) Prepare(ctx context.Context, q storage.Querier, in StartInput) 
 		return Source{}, Plan{}, problems.PreconditionFailed.New("pipeline %s is at version %s, not %s; re-read it (pipelines.list) and retry",
 			src.Pipeline.Name, src.Version, in.Version)
 	}
-	plan, err := e.Plan(ctx, q, src.Pipeline, PlanInput{Inputs: in.Inputs, Params: in.Params, Estimates: in.Estimates})
+	plan, err := e.Plan(ctx, q, src.Pipeline, PlanInput{Inputs: in.Inputs, Params: in.Params, Estimates: in.Estimates,
+		ProjectID: in.ProjectID})
 	if err == nil {
 		err = e.trainable(ctx, q, plan, in.Inputs)
+	}
+	for _, ps := range plan.Steps {
+		if err != nil {
+			break
+		}
+		// A service an auxiliary names must answer before anything is queued: Cadence never starts one (R26).
+		err = auxiliary.CheckServices(ctx, e.o.Prober, ps.Step, ps.Auxiliaries)
 	}
 	return src, plan, err
 }
@@ -310,6 +325,7 @@ func (e *Engine) Start(ctx context.Context, tx pgx.Tx, in StartInput) (Run, []ev
 			Position: ps.Position, Kind: ps.Kind.Name, KindVersion: ps.Kind.Version, StepKindVersionID: ps.Kind.VersionID,
 			Params: ps.Params, Departures: ps.Departures, Wiring: ps.In, Produces: ps.Kind.Produces,
 			Resources: ps.Kind.Resources, SecretNames: ps.Kind.Secrets, EstimateSeconds: ps.EstimateSeconds,
+			Auxiliaries: ps.Auxiliaries,
 		}
 		if row.Produces == nil {
 			row.Produces = map[string]string{}
@@ -384,7 +400,7 @@ func (e *Engine) advance(ctx context.Context, tx pgx.Tx, r *Run, sts []StepRow) 
 			if err != nil {
 				return nil, err
 			}
-			if s.InputHash, err = InputHash(s.Kind, s.KindVersion, runtime, s.Params, inputs); err != nil {
+			if s.InputHash, err = InputHash(s.Kind, s.KindVersion, runtime, hashParams(*s), inputs); err != nil {
 				return nil, err
 			}
 			ev, reused, err := e.reuse(ctx, tx, r, s)
@@ -546,7 +562,10 @@ func (e *Engine) enqueue(ctx context.Context, tx pgx.Tx, r Run, s *StepRow, reas
 		StepID: s.ID, PipelineRunID: r.ID, ProjectID: r.ProjectID, RunID: r.RunID, Kind: s.Kind, KindVersion: s.KindVersion,
 		Params: mustJSON(s.Params), Inputs: s.Inputs, Outputs: s.Produces, Resources: s.Resources, Priority: r.Priority,
 		EstimateSeconds: s.EstimateSeconds, Overrides: ov, SecretNames: s.SecretNames,
-		Attempt: s.Attempts + 1,
+		Attempt: s.Attempts + 1, Auxiliaries: s.Auxiliaries,
+	}
+	if len(spec.Auxiliaries) == 0 {
+		spec.Auxiliaries = nil
 	}
 	if spec.Inputs == nil {
 		spec.Inputs = map[string]steps.ArtifactRef{}

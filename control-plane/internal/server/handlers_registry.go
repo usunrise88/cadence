@@ -12,6 +12,7 @@ import (
 
 	"github.com/usunrise88/cadence/control-plane/internal/api"
 	"github.com/usunrise88/cadence/control-plane/internal/auth"
+	"github.com/usunrise88/cadence/control-plane/internal/auxiliary"
 	"github.com/usunrise88/cadence/control-plane/internal/commands"
 	"github.com/usunrise88/cadence/control-plane/internal/compute"
 	"github.com/usunrise88/cadence/control-plane/internal/defaults"
@@ -356,11 +357,31 @@ func (s *Server) ProjectsAdopt(ctx context.Context, req api.ProjectsAdoptRequest
 	if err := auth.CheckProject(ctx, pr.ID); err != nil {
 		return nil, err
 	}
-	ctx = commands.WithProject(ctx, pr.ID) // project work: the policy engine, audit and approvals see the project
+	// An auxiliary model (R26) is adopted by a registry-scope approval the admin decides, for everyone: the policy
+	// engine sees the version's kind (preset rule auxiliary-adoption) and no project, and a licence that forbids
+	// commercial use of the outputs is refused before anyone is asked.
+	v, err := registry.GetVersion(ctx, s.Pool, "", req.Body.Version)
+	auxiliaryAdoption := err == nil && v.Kind == registry.KindAuxiliary
+	if auxiliaryAdoption {
+		if err := auxiliary.CheckAdoption(v); err != nil {
+			return nil, err
+		}
+	} else {
+		ctx = commands.WithProject(ctx, pr.ID) // project work: the policy engine, audit and approvals see the project
+	}
 	cmd := command(ctx, "projects.adopt", req.Params.IdempotencyKey, req.Params.DryRun)
+	if auxiliaryAdoption {
+		if cmd.PathParams == nil {
+			cmd.PathParams = map[string]string{}
+		}
+		cmd.PathParams["kind"] = registry.KindAuxiliary
+	}
 	return s.run(ctx, cmd, func(ctx context.Context, tx pgx.Tx) (commands.Result, []events.Draft, error) {
 		a, p, drafts, err := registry.Adopt(ctx, tx, req.P, rev, req.Body.Version, cmd.Actor)
 		if err != nil {
+			return commands.Result{}, nil, err
+		}
+		if err := auxiliary.CheckAdoption(a.Version); err != nil {
 			return commands.Result{}, nil, err
 		}
 		// Adopting a golden set re-runs the leakage check against what the project trained on (spec 02).

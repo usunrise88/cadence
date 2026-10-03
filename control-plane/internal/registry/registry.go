@@ -41,6 +41,9 @@ const (
 	KindGoldenSet  = "golden_set"
 	KindNormalizer = "normalizer"
 	KindModel      = "model"
+	// Auxiliary models (phase 4, R26): LID classifiers, pseudo-label members and aligners, by licence
+	// (internal/auxiliary checks the payload and gates adoption).
+	KindAuxiliary = "auxiliary"
 )
 
 // CollectionKind is the EntityKind of collections.
@@ -65,6 +68,7 @@ var kinds = map[string]struct{ prefix, noun string }{
 	KindGoldenSet:   {"golden-set/", "golden set"},
 	KindNormalizer:  {"normalizer/", "normalizer"},
 	KindModel:       {"model/", "model"},
+	KindAuxiliary:   {"auxiliary/", "auxiliary model"},
 }
 
 // Known reports whether kind is a registry kind.

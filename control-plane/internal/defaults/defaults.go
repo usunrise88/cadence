@@ -93,6 +93,9 @@ type Defaults struct {
 	Views map[string]map[string]any `yaml:"views"`
 	// Sweeps over recipe parameters (phase 3, stream X).
 	Sweeps Sweeps `yaml:"sweeps"`
+	// Pseudolabel holds the pseudo-label ensemble's agreement rules (phase 4, stream X); read by the worker's
+	// pseudolabel_ensemble through its defaultRefs, never by the control plane.
+	Pseudolabel map[string]any `yaml:"pseudolabel"`
 	// Manual transcription tests and the live channel (phase 3, stream T).
 	Transcriptions Transcriptions `yaml:"transcriptions"`
 

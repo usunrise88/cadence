@@ -1,0 +1,109 @@
+# The auxiliary models registered at start (docs/review/2026-10-03-phase-4-plan.md "Auxiliary models and licences
+# (R26)"): only the rows the licence check of 2026-10-03 marked OK, each with the conditions it found. payload is the
+# contract's AuxiliaryPayload — roles, licence, outputsCommercialUse, languages, conditions, and either the weights a
+# worker step loads per job ({hfRepo, revision, engine}) or a running service ({service}). The control plane reads
+# only roles, outputsCommercialUse and service.endpoint (the dry run's reachability check); the worker pack that serves
+# the role reads the rest. Adoption (projects.adopt) is an approval for everyone and refuses outputsCommercialUse
+# false. A changed endpoint or revision is a new version of the same collection.
+#
+# Excluded by the same check (never seeded): facebook/mms-lid-*, facebook/mms-1b-all and torchaudio MMS_FA
+# (CC-BY-NC-4.0), community Hebrew wav2vec2 fine-tunes (licence or data unverified).
+- name: auxiliary/whisper-large-v3
+  description: Whisper large-v3 — multilingual pseudo-label member and the second-opinion language identification, loaded per job
+  licence: Apache-2.0
+  tags: [pseudolabel, lid, "locale:he", "locale:sr", "locale:hr", "locale:bs"]
+  payload:
+    roles: [pseudolabel, lid]
+    licence: Apache-2.0 (weights); the licence says nothing about outputs
+    outputsCommercialUse: true
+    languages: ["*"]
+    conditions:
+      - Keep the licence notice with redistributed weights
+    hfRepo: openai/whisper-large-v3
+    revision: 06f233fe06e710322aca913c1bc4249a0d71fce1
+    engine: transformers-whisper
+    sources:
+      - https://huggingface.co/openai/whisper-large-v3
+    checkedAt: "2026-10-03"
+
+- name: auxiliary/whisper-he-ivrit
+  description: ivrit.ai Whisper large-v3-turbo fine-tune — Hebrew-only pseudo-label member, loaded per job
+  licence: Apache-2.0
+  tags: [pseudolabel, "locale:he"]
+  payload:
+    roles: [pseudolabel]
+    licence: Apache-2.0 (weights); ivrit.ai training data CC-BY-4.0 with a no-deepfake clause
+    outputsCommercialUse: true
+    languages: [he]
+    conditions:
+      - Attribute ivrit.ai in dataset cards built from its outputs
+      - Never use its outputs or the model for voice cloning or deepfakes
+      - Hebrew audio only; its language identification is weakened by the fine-tune, so it is never the LID member
+    hfRepo: ivrit-ai/whisper-large-v3-turbo
+    revision: f33172a8c3c6efbc040a7200e00835257cac0447
+    engine: transformers-whisper
+    sources:
+      - https://huggingface.co/ivrit-ai/whisper-large-v3-turbo
+      - https://www.ivrit.ai/en/the-license/
+    checkedAt: "2026-10-03"
+
+- name: auxiliary/oasis
+  description: OASIS — the owner's omniASR ensemble (3B beam, 300M, CTC 1B, Qwen3 judge) as a running gRPC service; a pseudo-label member that is itself a vote
+  licence: Apache-2.0
+  tags: [pseudolabel, service, "locale:sr", "locale:hr", "locale:he", "locale:ru", "locale:en"]
+  payload:
+    roles: [pseudolabel]
+    licence: omniASR Apache-2.0 (training corpus CC-BY-4.0); Qwen3 Apache-2.0
+    outputsCommercialUse: true
+    languages: [sr, hr, he, ru, en]
+    conditions:
+      - Cadence never starts it; run `scripts/serve.sh ensemble no-300m` on the host (8.6 GB beside vLLM) before a pipeline that uses it
+      - Its text is spoken form without punctuation or capitals; text_normalise restores the training style
+    service:
+      kind: grpc-asr
+      endpoint: host.docker.internal:50051
+      protocol: oasis.v1
+      tokenSecret: oasis-token
+    sources:
+      - https://github.com/facebookresearch/omnilingual-asr
+      - https://huggingface.co/Qwen/Qwen3-0.6B-Base
+    checkedAt: "2026-10-03"
+
+- name: auxiliary/lid-voxlingua107
+  description: SpeechBrain ECAPA-TDNN language identification over VoxLingua107 (107 languages incl. he, sr, hr)
+  licence: Apache-2.0
+  tags: [lid]
+  payload:
+    roles: [lid]
+    licence: Apache-2.0 (model); VoxLingua107 CC-BY-4.0
+    outputsCommercialUse: true
+    languages: ["*"]
+    conditions:
+      - Attribute VoxLingua107 (Valk and Alumäe, 2021) in dataset cards whose filters used it
+      - Needs speechbrain and torchaudio in the runtime; the nemo-speech image has neither (lid_classify then uses auxiliary/whisper-large-v3)
+    hfRepo: speechbrain/lang-id-voxlingua107-ecapa
+    revision: 0253049ae131d6a4be1c4f0d8b0ff483a0f8c8e9
+    engine: speechbrain-ecapa
+    sources:
+      - https://huggingface.co/speechbrain/lang-id-voxlingua107-ecapa
+      - https://bark.phon.ioc.ee/voxlingua107/
+    checkedAt: "2026-10-03"
+
+- name: auxiliary/omniasr-ctc-1b
+  description: omniASR CTC 1B — CTC emissions for aligning reference texts (align_reference with torchaudio's forced_align)
+  licence: Apache-2.0
+  tags: [align, "locale:he", "locale:sr", "locale:hr"]
+  payload:
+    roles: [align]
+    licence: Apache-2.0 (weights); training corpus CC-BY-4.0
+    outputsCommercialUse: true
+    languages: [he, sr, hr]
+    conditions:
+      - Confirm heb_Hebr, srp_Cyrl and hrv_Latn in the repository's language list before aligning
+      - Needs fairseq2; stream L decides whether it runs in the nemo-speech runtime or its own image
+    hfRepo: facebook/omniASR-CTC-1B
+    revision: 8c22e3ffdaa4aab6431b128b84b991a7d9c2515c
+    engine: fairseq2-ctc
+    sources:
+      - https://huggingface.co/facebook/omniASR-CTC-1B
+    checkedAt: "2026-10-03"

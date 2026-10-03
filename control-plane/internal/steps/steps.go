@@ -107,6 +107,18 @@ type Spec struct {
 	Overrides       Overrides              `json:"overrides"`
 	SecretNames     []string               `json:"secretNames,omitempty"`
 	Attempt         int                    `json:"attempt"`
+	// Auxiliaries are the registry versions the step's parameters name (x-cadence.registryRef), by parameter.
+	Auxiliaries map[string]RegistryRef `json:"auxiliaries,omitempty"`
+}
+
+// RegistryRef is a registry version a step parameter names, resolved for the project when the run was planned (the
+// contract's StepRegistryRef): the worker reads the payload; the control plane never interprets it beyond the checks
+// of its kind.
+type RegistryRef struct {
+	VersionID string          `json:"versionId"`
+	Name      string          `json:"name"`
+	Version   string          `json:"version"`
+	Payload   json.RawMessage `json:"payload"`
 }
 
 // KindRef is the pinned "kind@version" of the spec.

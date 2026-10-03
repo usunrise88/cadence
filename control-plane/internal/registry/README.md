@@ -7,5 +7,6 @@ Projects adopt versions (`projects.adopt`, bumps the project's revision) and poi
 (`aliases.set`; `production` answers `reserved-alias`, `baseline` is gated — `Gated(name)`). Registry events
 (`<kind>.registered` on `entity.<kind>.<ver_id>`) carry no projectId; adoption and alias events are project work.
 `Seed` registers the base-model catalogue, fixture datasets and the scoring normalizers `normalizer/basic` and
-`normalizer/he-il` (`fixtures/`) and every unit of the templates tree at
+`normalizer/he-il`, the auxiliary models of the R26 licence table (`fixtures/auxiliaries.yaml`, kind `auxiliary`, phase 4;
+`internal/auxiliary` checks their payload and gates their adoption) and every unit of the templates tree at
 start, idempotently. `Resolve` turns `ver_…`, `@alias` or a collection name into a version.
