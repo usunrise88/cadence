@@ -2,32 +2,16 @@
 
 package api
 
-import (
-	"context"
-	"strconv"
-)
+import "strconv"
 
 // Planned answers 501 for operations named in the contract but implemented in a later phase.
 // Embed it in the server; implementing an operation shadows its method here.
 type Planned struct{}
 
 // PlannedOperations maps each planned operationId to the roadmap phase that implements it.
-var PlannedOperations = map[string]int{
-	"mounts.list": 4,
-	"mounts.new":  4,
-}
+var PlannedOperations = map[string]int{}
 
 func plannedProblem(opID string, phase int) Problem {
 	detail := opID + " is planned for roadmap phase " + strconv.Itoa(phase) + " and not implemented yet"
 	return Problem{Type: "https://cadence.local/help/errors/not-implemented", Title: "Not implemented", Status: 501, Detail: &detail}
-}
-
-// MountsList answers 501 until phase 4.
-func (Planned) MountsList(_ context.Context, _ MountsListRequestObject) (MountsListResponseObject, error) {
-	return MountsListdefaultApplicationProblemPlusJSONResponse{Body: plannedProblem("mounts.list", 4), StatusCode: 501}, nil
-}
-
-// MountsNew answers 501 until phase 4.
-func (Planned) MountsNew(_ context.Context, _ MountsNewRequestObject) (MountsNewResponseObject, error) {
-	return MountsNewdefaultApplicationProblemPlusJSONResponse{Body: plannedProblem("mounts.new", 4), StatusCode: 501}, nil
 }

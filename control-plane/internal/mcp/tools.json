@@ -2713,6 +2713,56 @@
       ]
     },
     {
+      "name": "datasets.evict",
+      "title": "Free a dataset version's shards from the local cache when every shard also lives on a mount (202 with the job)",
+      "description": "Remove a dataset version's shards from the local cache. Only shards with a copy on a mount go (a shard that exists on no mount — imported audio — is never evicted), and a pinned version (a queued or running job or a promoted model needs it) is refused with artifact-not-evictable. Reversible: datasets.materialize copies the shards back. dryRun=true answers the bytes freed and what keeps it pinned. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/registry/datasets:evict",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "properties": {
+              "versionId": {
+                "description": "Dataset version id (ver_…)",
+                "type": "string"
+              }
+            },
+            "required": [
+              "versionId"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
       "name": "datasets.get",
       "title": "Get a dataset version with its splits, statistics and the projects that use it",
       "description": "Get a dataset version with its splits, statistics and the projects that use it",
@@ -2784,6 +2834,56 @@
           "property": "state",
           "in": "query",
           "name": "state"
+        }
+      ]
+    },
+    {
+      "name": "datasets.materialize",
+      "title": "Copy a dataset version's evicted shards back into the local cache from their mount copies (resumable job)",
+      "description": "Bring a dataset version's shards back onto the local cache (the content store) from the mounts that hold copies of them, verifying each by hash. Training reads only cached shards. dryRun=true answers how many shards and bytes must be copied and from which mounts (and which shards have no copy anywhere). The real call answers 202 with a job that copies shard by shard with progress; a retry skips what is already back. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/registry/datasets:materialize",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "properties": {
+              "versionId": {
+                "description": "Dataset version id (ver_…)",
+                "type": "string"
+              }
+            },
+            "required": [
+              "versionId"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
         }
       ]
     },
@@ -5370,6 +5470,279 @@
           "property": "body",
           "in": "body",
           "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "mounts.get",
+      "title": "Get a mount with its health, last scan, utterance URIs and content-store copies",
+      "description": "Get a mount with its health, last scan, utterance URIs and content-store copies",
+      "method": "GET",
+      "path": "/mounts/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Mount id (mnt_…) or name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        }
+      ]
+    },
+    {
+      "name": "mounts.list",
+      "title": "Registered mounts with their health and last scan",
+      "description": "List the storage mounts Cadence reads audio from and writes exports to: a local path, an NFS or SMB share the OS mounted at a path, an S3-compatible bucket or a Hugging Face Hub repository pinned to a revision. Each mount has a name (utterances name their audio as mount://\u003cname\u003e/\u003cpath\u003e[#t=\u003cstart\u003e,\u003cend\u003e][\u0026ch=\u003cn\u003e]), a read-only flag, its last health check (reachable, free space, a throughput sample, run by a worker) and its last scan (files, bytes, top-level entries, content-store blob copies found). A job never starts on an unhealthy mount.",
+      "method": "GET",
+      "path": "/mounts",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": null
+    },
+    {
+      "name": "mounts.new",
+      "title": "Register a local path, NFS/SMB path, S3-compatible bucket or Hub repository (registry approval, the admin decides)",
+      "description": "Ask for a new mount. Mounts are shared by every project, so the real call always answers 202 with an approvalId, for people too; the admin decides it, and the approved request registers the mount and queues its first health check on a worker. kind local, nfs and smb take root = the absolute path where workers and the control plane see the share; s3 takes root = bucket[/prefix], endpoint and credentials (the name of a secret holding \u003caccessKeyId\u003e:\u003csecretAccessKey\u003e); hf takes root = datasets/\u003corg\u003e/\u003cname\u003e (or \u003corg\u003e/\u003cmodel\u003e) and revision = a commit SHA. Mounts are read-only unless readOnly is false. dryRun=true validates. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/mounts",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "properties": {
+              "credentials": {
+                "description": "The name of a secret: s3 \u003caccessKeyId\u003e:\u003csecretAccessKey\u003e (required); hf a token (optional, gated repositories)",
+                "maxLength": 100,
+                "type": "string"
+              },
+              "description": {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              "endpoint": {
+                "description": "s3 only: the endpoint URL (https://minio.example:9000)",
+                "maxLength": 500,
+                "type": "string"
+              },
+              "kind": {
+                "description": "local, nfs and smb: a path the OS mounted (one driver); s3: an S3-compatible bucket; hf: a Hugging Face Hub repository at a pinned revision",
+                "enum": [
+                  "local",
+                  "nfs",
+                  "smb",
+                  "s3",
+                  "hf"
+                ],
+                "type": "string"
+              },
+              "licenceHint": {
+                "description": "The licence sources ingested from this mount usually carry (a hint; each source records its own)",
+                "maxLength": 200,
+                "type": "string"
+              },
+              "name": {
+                "description": "The name URIs use: mount://\u003cname\u003e/\u003cpath\u003e",
+                "pattern": "^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$",
+                "type": "string"
+              },
+              "readOnly": {
+                "default": true,
+                "description": "Cadence never writes to a read-only mount; writable mounts take exports",
+                "type": "boolean"
+              },
+              "region": {
+                "description": "s3 only: the signing region (default us-east-1)",
+                "maxLength": 64,
+                "type": "string"
+              },
+              "revision": {
+                "description": "hf only (required): the commit SHA every read is pinned to",
+                "pattern": "^[0-9a-f]{40}$",
+                "type": "string"
+              },
+              "root": {
+                "description": "local/nfs/smb: the absolute path where workers and the control plane see it (/mnt/corpora); s3: bucket[/prefix]; hf: datasets/\u003corg\u003e/\u003cname\u003e or \u003corg\u003e/\u003cmodel\u003e",
+                "maxLength": 1000,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "kind",
+              "root"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "mounts.scan",
+      "title": "Rescan a mount — files, bytes, top-level entries and content-store blob copies — and check its health (202 with the job)",
+      "description": "Walk a mount (or one path under it) and record what is there: files, bytes and the top-level entries (source/revision directories on a corpora mount), plus blobs laid out as a content store (cas/b3/\u003cab\u003e/\u003chash\u003e, e.g. an export or a backup mirror) — those become copies that let datasets.evict free cache space. The scan also queues a health check on a worker. Answers 202 with the job; the mount's inventory and health change when it ends (mount.{id}). Nothing on the mount is changed. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/mounts/{id}:scan",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "properties": {
+              "path": {
+                "description": "Scan only this path under the root (default: the whole mount)",
+                "maxLength": 1000,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Mount id (mnt_…) or name",
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "mounts.verify",
+      "title": "Check a mount's health on a worker now — reachable, free space, a throughput sample (202 with the job)",
+      "description": "Run the mount health check (step kind mount_check@1) on a worker: is the mount reachable from the worker host, how much space is free, and how fast a sample of its files reads. The result lands in the mount's health (mounts.get; event mount.health on mount.{id}). Health is also checked when a mount is registered, by every scan and every storage.mount_check_hours. A job that names an unhealthy mount fails at once (mount-unhealthy). Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/mounts/{id}:verify",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Mount id (mnt_…) or name",
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
         }
       ]
     },
@@ -8437,6 +8810,24 @@
           "name": "state"
         }
       ]
+    },
+    {
+      "name": "storage.get",
+      "title": "Cache use, water marks, per-project quotas, pinned and evictable dataset versions",
+      "description": "The local cache (the content store) as Cadence accounts it: the filesystem's size and free space, the high and low water marks (above the high mark unpinned dataset shards that also live on a mount are evicted, least recently used first, down to the low mark), each project's frozen dataset bytes against its quota, the dataset versions pinned (a queued or running job or a promoted model needs them) and those that are evictable or already evicted (datasets.materialize brings them back).",
+      "method": "GET",
+      "path": "/storage",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": null
     },
     {
       "name": "sweeps.run",

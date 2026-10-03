@@ -15,6 +15,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from cadence_worker.mounts import Mounts
+
 METRIC_NAME = re.compile(r"^[a-z][a-z0-9_./]{0,99}$")
 LEVELS = ("debug", "info", "warn", "error")
 
@@ -45,6 +47,7 @@ class StepContext:
         blob_path: Callable[[str], Path] | None = None,
         stop: threading.Event | None = None,
         attempt: int = 1,
+        mounts: Mounts | None = None,
     ) -> None:
         self._emit = emit
         self.work_dir = work_dir
@@ -52,6 +55,8 @@ class StepContext:
         self.batch_scale = batch_scale
         self.resume_from = resume_from
         self.attempt = attempt
+        # The lease's mounts: ctx.mounts.resolve("mount://corpora/…") is the local path of a file on a mount.
+        self.mounts = mounts if mounts is not None else Mounts(env={})
         self._blob_path = blob_path
         self._stop = stop or threading.Event()
         self.meta: dict[str, dict[str, Any]] = {}

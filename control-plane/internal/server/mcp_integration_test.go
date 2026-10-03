@@ -36,7 +36,7 @@ func TestMCPToolsAreTheImplementedOperations(t *testing.T) {
 			t.Errorf("tool %s missing from %v", want, names)
 		}
 	}
-	for _, never := range []string{"me.get", "workspaces.set", "mounts.new", "hostSessions.claim", "hostSessions.report"} { // exempt or planned
+	for _, never := range []string{"me.get", "workspaces.set", "hostSessions.claim", "hostSessions.report"} { // exempt
 		if slices.Contains(names, never) {
 			t.Errorf("tool %s must not be listed", never)
 		}

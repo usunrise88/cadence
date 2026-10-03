@@ -3266,6 +3266,10 @@ export type Lease = {
      */
     traceparent?: string;
     heartbeatSeconds: number;
+    /**
+     * Every registered mount, so the step can resolve mount://<name>/<path>[#t=<start>,<end>][&ch=<n>] URIs (cadence_worker.mounts); credentials only for steps that may read them
+     */
+    mounts?: Array<LeaseMount>;
 };
 
 export type StepSpec = {
@@ -4062,6 +4066,10 @@ export type Utterance = {
      * utterances.get only
      */
     datasets?: Array<UtteranceMembership>;
+    /**
+     * Where the audio also lives: mount://<name>/<path>[#t=<start>,<end>][&ch=<n>] (utterances.get only)
+     */
+    uris?: Array<string>;
     createdAt: string;
 };
 
@@ -7336,6 +7344,306 @@ export type SweepPlan = {
          */
         withinDailyBudget: boolean;
     };
+};
+
+/**
+ * local, nfs and smb: a path the OS mounted (one driver); s3: an S3-compatible bucket; hf: a Hugging Face Hub repository at a pinned revision
+ */
+export type MountKind = 'local' | 'nfs' | 'smb' | 's3' | 'hf';
+
+export type MountNew = {
+    /**
+     * The name URIs use: mount://<name>/<path>
+     */
+    name: string;
+    kind: MountKind;
+    /**
+     * local/nfs/smb: the absolute path where workers and the control plane see it (/mnt/corpora); s3: bucket[/prefix]; hf: datasets/<org>/<name> or <org>/<model>
+     */
+    root: string;
+    /**
+     * s3 only: the endpoint URL (https://minio.example:9000)
+     */
+    endpoint?: string;
+    /**
+     * s3 only: the signing region (default us-east-1)
+     */
+    region?: string;
+    /**
+     * hf only (required): the commit SHA every read is pinned to
+     */
+    revision?: string;
+    /**
+     * The name of a secret: s3 <accessKeyId>:<secretAccessKey> (required); hf a token (optional, gated repositories)
+     */
+    credentials?: string;
+    /**
+     * Cadence never writes to a read-only mount; writable mounts take exports
+     */
+    readOnly?: boolean;
+    /**
+     * The licence sources ingested from this mount usually carry (a hint; each source records its own)
+     */
+    licenceHint?: string;
+    description?: string;
+};
+
+export type MountScan = {
+    /**
+     * Scan only this path under the root (default: the whole mount)
+     */
+    path?: string;
+};
+
+/**
+ * The last health check a worker ran (mount_check@1)
+ */
+export type MountHealth = {
+    state: 'unknown' | 'checking' | 'healthy' | 'unhealthy';
+    checkedAt?: string;
+    /**
+     * The compute host whose worker checked
+     */
+    host?: string;
+    reachable?: boolean;
+    /**
+     * A writable mount accepted a probe file (removed again)
+     */
+    writable?: boolean;
+    freeBytes?: number;
+    totalBytes?: number;
+    /**
+     * MB/s reading a sample of the mount's files
+     */
+    throughputMBps?: number;
+    sampledBytes?: number;
+    /**
+     * Why the mount is unhealthy
+     */
+    detail?: string;
+    jobId?: string;
+};
+
+export type MountEntry = {
+    /**
+     * A top-level entry (or one level deeper: <source>/<revision>)
+     */
+    path: string;
+    files: number;
+    bytes: number;
+};
+
+/**
+ * The last scan
+ */
+export type MountInventory = {
+    scannedAt: string;
+    /**
+     * The path scanned under the root (empty for all of it)
+     */
+    path?: string;
+    files: number;
+    bytes: number;
+    /**
+     * The scan stopped at storage.mount_scan_max_files
+     */
+    truncated?: boolean;
+    entries: Array<MountEntry>;
+    /**
+     * Content-store blobs found under cas/b3/ (copies of cached blobs)
+     */
+    blobs: number;
+    blobBytes: number;
+    jobId?: string;
+};
+
+export type Mount = {
+    /**
+     * mnt_…
+     */
+    id: string;
+    name: string;
+    kind: MountKind;
+    root: string;
+    endpoint?: string;
+    region?: string;
+    revision?: string;
+    /**
+     * The secret's name (its value is never shown)
+     */
+    credentials?: string;
+    readOnly: boolean;
+    licenceHint: string;
+    description: string;
+    /**
+     * mount://<name>/ — the prefix of every URI on this mount
+     */
+    uri?: string;
+    health: MountHealth;
+    inventory?: MountInventory;
+    /**
+     * Utterances with a URI on this mount
+     */
+    utterances: number;
+    /**
+     * Content-store blobs with a copy on this mount
+     */
+    copies: number;
+    copyBytes: number;
+    rev: number;
+    createdBy: Actor;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type MountList = {
+    items: Array<Mount>;
+};
+
+/**
+ * A mount as a worker resolves mount://<name>/<path> URIs (cadence_worker.mounts)
+ */
+export type LeaseMount = {
+    name: string;
+    kind: MountKind;
+    root: string;
+    readOnly: boolean;
+    endpoint?: string;
+    region?: string;
+    revision?: string;
+    /**
+     * The lease env variable holding the mount's credentials, when the step may read them
+     */
+    credentialsEnv?: string;
+};
+
+export type StorageProject = {
+    projectId: string;
+    slug: string;
+    /**
+     * Cached bytes of the dataset versions this project froze
+     */
+    datasetBytes: number;
+    /**
+     * storage.project_quota_gb
+     */
+    quotaBytes: number;
+    over: boolean;
+};
+
+export type StorageDataset = {
+    versionId: string;
+    name: string;
+    version: string;
+    /**
+     * The dataset's directory artifact (b3)
+     */
+    artifact: string;
+    /**
+     * The project that froze it
+     */
+    projectId?: string;
+    bytes: number;
+    /**
+     * evicted: datasets.materialize brings it back
+     */
+    state: 'cached' | 'evicted';
+    /**
+     * Why it stays (empty when nothing pins it)
+     */
+    pinned: Array<string>;
+    /**
+     * Shards with a copy on a mount, of shards
+     */
+    copies: number;
+    shards?: number;
+    /**
+     * Every shard also lives on a mount (or in another cached artifact) and nothing pins it
+     */
+    evictable?: boolean;
+    lastUsedAt?: string;
+};
+
+export type StorageUse = {
+    /**
+     * The content store's filesystem
+     */
+    totalBytes: number;
+    freeBytes: number;
+    usedPct: number;
+    /**
+     * storage.cache_high_water_pct
+     */
+    highWaterPct: number;
+    /**
+     * storage.cache_low_water_pct
+     */
+    lowWaterPct: number;
+    /**
+     * Bytes of every live artifact in the store
+     */
+    artifactBytes: number;
+    /**
+     * Bytes of cached dataset versions
+     */
+    datasetBytes: number;
+    /**
+     * What an eviction down to the low mark could free
+     */
+    evictableBytes?: number;
+    lastSweepAt?: string;
+    projects: Array<StorageProject>;
+    /**
+     * Dataset versions with a content-store artifact, least recently used first
+     */
+    datasets: Array<StorageDataset>;
+};
+
+export type DatasetCacheRequest = {
+    /**
+     * Dataset version id (ver_…)
+     */
+    versionId: string;
+};
+
+export type DatasetCacheSource = {
+    mount: string;
+    shards: number;
+    bytes: number;
+};
+
+export type DatasetCachePlan = {
+    versionId: string;
+    artifact: string;
+    state: 'cached' | 'evicted';
+    shards: number;
+    bytes: number;
+    /**
+     * materialize: shards not in the cache
+     */
+    copyShards: number;
+    copyBytes: number;
+    /**
+     * materialize: where the copies come from
+     */
+    from: Array<DatasetCacheSource>;
+    /**
+     * materialize: shards in no cache and on no mount
+     */
+    missing: number;
+    /**
+     * evict: shards deleted from the cache
+     */
+    freeShards: number;
+    freeBytes: number;
+    /**
+     * What pins the version
+     */
+    pinned: Array<string>;
+    /**
+     * Why the command cannot proceed (empty when it can)
+     */
+    blocked: Array<string>;
 };
 
 export type SecretNewWritable = {
@@ -14585,17 +14893,15 @@ export type MountsListError = MountsListErrors[keyof MountsListErrors];
 
 export type MountsListResponses = {
     /**
-     * Shape defined when the operation's phase implements it
+     * Mounts by name
      */
-    200: {
-        [key: string]: unknown;
-    };
+    200: MountList;
 };
 
 export type MountsListResponse = MountsListResponses[keyof MountsListResponses];
 
 export type MountsNewData = {
-    body?: PlannedBody;
+    body: MountNew;
     headers: {
         /**
          * Client-chosen key; a repeat with the same key returns the original result
@@ -14623,9 +14929,250 @@ export type MountsNewError = MountsNewErrors[keyof MountsNewErrors];
 
 export type MountsNewResponses = {
     /**
+     * Dry run — the mount as it would be registered; nothing changed
+     */
+    200: Mount;
+    /**
+     * The registered mount (the approved request)
+     */
+    201: Mount;
+    /**
      * Gated; a person decides the approval on the approvals topic
      */
     202: ApprovalAccepted;
 };
 
 export type MountsNewResponse = MountsNewResponses[keyof MountsNewResponses];
+
+export type MountsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Mount id (mnt_…) or name
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/mounts/{id}';
+};
+
+export type MountsGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type MountsGetError = MountsGetErrors[keyof MountsGetErrors];
+
+export type MountsGetResponses = {
+    /**
+     * The mount
+     */
+    200: Mount;
+};
+
+export type MountsGetResponse = MountsGetResponses[keyof MountsGetResponses];
+
+export type MountsScanData = {
+    body?: MountScan;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Mount id (mnt_…) or name
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/mounts/{id}:scan';
+};
+
+export type MountsScanErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type MountsScanError = MountsScanErrors[keyof MountsScanErrors];
+
+export type MountsScanResponses = {
+    /**
+     * Dry run — the mount as it is now; nothing queued
+     */
+    200: Mount;
+    /**
+     * Accepted; follow the job on job.{jobId}
+     */
+    202: JobAccepted;
+};
+
+export type MountsScanResponse = MountsScanResponses[keyof MountsScanResponses];
+
+export type MountsVerifyData = {
+    body?: never;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Mount id (mnt_…) or name
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/mounts/{id}:verify';
+};
+
+export type MountsVerifyErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type MountsVerifyError = MountsVerifyErrors[keyof MountsVerifyErrors];
+
+export type MountsVerifyResponses = {
+    /**
+     * Dry run — the mount as it is now; nothing queued
+     */
+    200: Mount;
+    /**
+     * Accepted; follow the job on job.{jobId}
+     */
+    202: JobAccepted;
+};
+
+export type MountsVerifyResponse = MountsVerifyResponses[keyof MountsVerifyResponses];
+
+export type StorageGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/storage';
+};
+
+export type StorageGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type StorageGetError = StorageGetErrors[keyof StorageGetErrors];
+
+export type StorageGetResponses = {
+    /**
+     * The cache now
+     */
+    200: StorageUse;
+};
+
+export type StorageGetResponse = StorageGetResponses[keyof StorageGetResponses];
+
+export type DatasetsMaterializeData = {
+    body: DatasetCacheRequest;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/registry/datasets:materialize';
+};
+
+export type DatasetsMaterializeErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type DatasetsMaterializeError = DatasetsMaterializeErrors[keyof DatasetsMaterializeErrors];
+
+export type DatasetsMaterializeResponses = {
+    /**
+     * Dry run — what would be copied and from where; nothing changed
+     */
+    200: DatasetCachePlan;
+    /**
+     * Accepted; follow the job on job.{jobId}
+     */
+    202: JobAccepted;
+};
+
+export type DatasetsMaterializeResponse = DatasetsMaterializeResponses[keyof DatasetsMaterializeResponses];
+
+export type DatasetsEvictData = {
+    body: DatasetCacheRequest;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/registry/datasets:evict';
+};
+
+export type DatasetsEvictErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type DatasetsEvictError = DatasetsEvictErrors[keyof DatasetsEvictErrors];
+
+export type DatasetsEvictResponses = {
+    /**
+     * Dry run — what would be freed and what blocks it; nothing changed
+     */
+    200: DatasetCachePlan;
+    /**
+     * Accepted; follow the job on job.{jobId}
+     */
+    202: JobAccepted;
+};
+
+export type DatasetsEvictResponse = DatasetsEvictResponses[keyof DatasetsEvictResponses];

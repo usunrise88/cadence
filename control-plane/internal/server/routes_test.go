@@ -54,13 +54,25 @@ func TestEveryOperationIsRouted(t *testing.T) {
 func TestPlannedOperationsAnswer501(t *testing.T) {
 	srv := httptest.NewServer(newTestServer(t, nil, events.NewHub(1), obs.NewMetrics()).Handler())
 	defer srv.Close()
-	tests := []struct{ method, path string }{
-		{http.MethodPost, "/api/mounts"},
-		{http.MethodGet, "/api/mounts"},
+	spec, err := api.GetSpec()
+	if err != nil {
+		t.Fatal(err)
+	}
+	type call struct{ method, path string }
+	var tests []call
+	for path, item := range spec.Paths.Map() {
+		for method, op := range item.Operations() {
+			if _, ok := api.PlannedOperations[op.OperationID]; ok {
+				tests = append(tests, call{method, path})
+			}
+		}
+	}
+	if len(tests) == 0 {
+		t.Skip("no operation is planned for a later phase (phase 4 implemented the last ones, mounts)")
 	}
 	for _, tt := range tests {
 		t.Run(tt.method+" "+tt.path, func(t *testing.T) {
-			req, _ := http.NewRequestWithContext(t.Context(), tt.method, srv.URL+tt.path, strings.NewReader("{}"))
+			req, _ := http.NewRequestWithContext(t.Context(), tt.method, srv.URL+"/api"+tt.path, strings.NewReader("{}"))
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("Idempotency-Key", "key-12345678")
 			resp, err := http.DefaultClient.Do(req)

@@ -27,6 +27,7 @@ spectrogram_tiles = "cadence_worker.steps.spectrogram_tiles:SpectrogramTilesStep
 augment_dataset = "cadence_worker.steps.augment_dataset:AugmentDatasetStep"
 entity_score = "cadence_worker.steps.entity_score:EntityScoreStep"
 latency_score = "cadence_worker.steps.latency_score:LatencyScoreStep"
+mount_check = "cadence_worker.steps.mount_check:MountCheckStep"
 
 [dependency-groups]
 dev = [

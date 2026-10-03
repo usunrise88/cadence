@@ -20,6 +20,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/api"
 	"github.com/usunrise88/cadence/control-plane/internal/auth"
 	"github.com/usunrise88/cadence/control-plane/internal/backups"
+	"github.com/usunrise88/cadence/control-plane/internal/cache"
 	"github.com/usunrise88/cadence/control-plane/internal/cas"
 	"github.com/usunrise88/cadence/control-plane/internal/commands"
 	"github.com/usunrise88/cadence/control-plane/internal/credentials"
@@ -37,6 +38,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/mcp"
 	"github.com/usunrise88/cadence/control-plane/internal/media"
 	"github.com/usunrise88/cadence/control-plane/internal/mixes"
+	"github.com/usunrise88/cadence/control-plane/internal/mounts"
 	"github.com/usunrise88/cadence/control-plane/internal/notify"
 	"github.com/usunrise88/cadence/control-plane/internal/obs"
 	"github.com/usunrise88/cadence/control-plane/internal/pipelines"
@@ -148,6 +150,9 @@ type Server struct {
 	experiments *experiments.Service
 	// transcriptions are manual tests and the live channel's relay (phase 3 · stream T).
 	transcriptions *transcriptions.Service
+	// mounts scan and health-check mounts; cache accounts, evicts and materialises the local cache (phase 4 · stream M).
+	mounts *mounts.Service
+	cache  *cache.Service
 }
 
 var _ api.StrictServerInterface = (*Server)(nil)
@@ -204,6 +209,7 @@ func New(c Config) (*Server, error) {
 	s.experiments = s.newExperimentsService()
 	s.experiments.Install() // a run that ends starts its sweep's next run
 	s.transcriptions = s.newTranscriptions()
+	s.mounts, s.cache = s.newMounts(), s.newCache()
 	window := time.Duration(s.defaultsDoc().Drafts.PresenceSeconds.Value) * time.Second
 	s.drafts = drafts.NewStore(time.Now, window)
 	s.mixes = mixes.NewService(s.drafts, s.defaultsDoc)
@@ -248,6 +254,8 @@ func New(c Config) (*Server, error) {
 func (s *Server) RegisterJobs(j *jobs.Service) {
 	s.Pipelines.Register(j)
 	s.transcriptions.Register(j) // live transcription sessions (phase 3 · stream T)
+	s.mounts.Register(j)         // mount scans, health checks and their periodic check (phase 4 · stream M)
+	s.cache.Register(j)          // dataset eviction, materialisation and the cache sweep
 }
 
 // Handler is the whole HTTP surface: /api (the contract), /mcp (the same operations as MCP tools), /git (the

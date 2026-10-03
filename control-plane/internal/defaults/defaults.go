@@ -64,6 +64,7 @@ type Defaults struct {
 	Mix       Mix       `yaml:"mix"`
 	Drafts    Drafts    `yaml:"drafts"`
 	Cache     Cache     `yaml:"cache"`
+	Storage   Storage   `yaml:"storage"`
 	Compute   Compute   `yaml:"compute"`
 	Data      Data      `yaml:"data"`
 
@@ -185,11 +186,21 @@ type Drafts struct {
 	PresenceSeconds Param[int]    `yaml:"presence_seconds"`
 }
 
-// Cache holds the local cache limits.
+// Cache holds the content store's low-space warning (its eviction limits are Storage's, phase 4).
 type Cache struct {
-	HighWaterMark Param[float64] `yaml:"high_water_mark"`
-	ProjectQuota  Param[float64] `yaml:"project_quota"`
-	StoreLowFree  Param[float64] `yaml:"store_low_free"`
+	StoreLowFree Param[float64] `yaml:"store_low_free"`
+}
+
+// Storage holds the mounts' and the local cache tier's defaults (phase 4 · stream M).
+type Storage struct {
+	CacheHighWaterPct        Param[float64] `yaml:"cache_high_water_pct"`
+	CacheLowWaterPct         Param[float64] `yaml:"cache_low_water_pct"`
+	ProjectQuotaGB           Param[float64] `yaml:"project_quota_gb"`
+	CacheSweepMinutes        Param[int]     `yaml:"cache_sweep_minutes"`
+	MountCheckHours          Param[int]     `yaml:"mount_check_hours"`
+	MountCheckTimeoutMinutes Param[int]     `yaml:"mount_check_timeout_minutes"`
+	MountCheckSampleMB       Param[int]     `yaml:"mount_check_sample_mb"`
+	MountScanMaxFiles        Param[int]     `yaml:"mount_scan_max_files"`
 }
 
 // Data holds the import defaults (the dataset_import step kind's defaultRefs, phase 2).

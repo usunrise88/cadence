@@ -104,6 +104,9 @@ var (
 	TranscriptionTicketInvalid      = Type{"transcription-ticket-invalid", http.StatusForbidden, "Transcription ticket invalid"}
 	TranscriptionInputInvalid       = Type{"transcription-input-invalid", http.StatusUnprocessableEntity, "Transcription input invalid"}
 	TranscriptionLimit              = Type{"transcription-limit", http.StatusConflict, "Transcription session limit reached"}
+	// Mounts and the local cache (phase 4 · stream M).
+	MountUnhealthy       = Type{"mount-unhealthy", http.StatusConflict, "Mount unhealthy"}
+	StorageQuotaExceeded = Type{"storage-quota-exceeded", http.StatusConflict, "Project storage quota exceeded"}
 )
 
 // Types lists every registered type.
@@ -122,6 +125,7 @@ func Types() []Type {
 		SweepOverCap,
 		TranscriptionInProgress, TranscriptionAllowanceExhausted, TranscriptionTicketInvalid, TranscriptionInputInvalid,
 		TranscriptionLimit,
+		MountUnhealthy, StorageQuotaExceeded,
 	}
 }
 
