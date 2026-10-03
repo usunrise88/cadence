@@ -32,7 +32,7 @@ func (c commandResponse) VisitDatasetsMaterializeResponse(w http.ResponseWriter)
 }
 
 func (s *Server) newMounts() *mounts.Service {
-	svc := &mounts.Service{Pool: s.Pool, Leases: s.Leases, Log: s.Log, Defaults: s.defaultsDoc}
+	svc := &mounts.Service{Pool: s.Pool, Jobs: s.Jobs, Leases: s.Leases, Log: s.Log, Defaults: s.defaultsDoc}
 	if s.Secrets != nil {
 		svc.Secrets = s.Secrets
 	}
@@ -40,7 +40,7 @@ func (s *Server) newMounts() *mounts.Service {
 }
 
 func (s *Server) newCache() *cache.Service {
-	svc := &cache.Service{Pool: s.Pool, CAS: s.CAS, Log: s.Log, Defaults: s.defaultsDoc}
+	svc := &cache.Service{Pool: s.Pool, CAS: s.CAS, Jobs: s.Jobs, Log: s.Log, Defaults: s.defaultsDoc}
 	if s.Secrets != nil {
 		svc.Secrets = s.Secrets
 	}

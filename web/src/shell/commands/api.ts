@@ -62,6 +62,7 @@ import type { Command } from "./registry";
 import type { ExperimentCommands } from "./experiments";
 import type { EvaluationCommands } from "./evaluation";
 import type { TranscriptionCommands } from "./transcriptions";
+import type { StorageCommands } from "./storage";
 import type { TrainingCommands } from "./training";
 
 // Commands behind the Approvals, Settings and Getting started panels (phase 1). Each mutating command is exactly
@@ -112,7 +113,8 @@ export type ApiCommands = {
 } & TrainingCommands &
   ExperimentCommands &
   EvaluationCommands &
-  TranscriptionCommands;
+  TranscriptionCommands &
+  StorageCommands;
 export type ApiCommandId = keyof ApiCommands;
 
 /** Runs a registered command with typed arguments; rejects with the command's error (a ProblemError for the API). */

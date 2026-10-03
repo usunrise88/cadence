@@ -865,6 +865,10 @@ export type Defaults = {
     mix: DefaultSection;
     drafts: DefaultSection;
     cache: DefaultSection;
+    /**
+     * Mounts and the local cache (phase 4): water marks, project quota, sweep and health-check cadence, scan limit
+     */
+    storage?: DefaultSection;
     data?: DefaultSection;
     operations?: DefaultSection;
     notifications?: DefaultSection;

@@ -12,7 +12,7 @@ Cadence already has; nothing is recorded separately:
 | Step | Done when | Command |
 | --- | --- | --- |
 | Set up the admin account | You are signed in | first-start screen (`auth.setup`) |
-| Attach the call recordings | A mount exists (phase 4) | `mounts.new` |
+| Attach the call recordings | A mount exists (add one in the [Storage](storage.md) panel; the admin approves it) | `mounts.new` |
 | Create a project | A project exists | `projects.new` |
 | Freeze the first dataset version | A dataset version frozen by a person or an agent (bundled fixtures do not count) | `datasets.freeze` |
 | Finish the first training run | A run of the open project is done (`runs.list`) | `playbooks.run` |

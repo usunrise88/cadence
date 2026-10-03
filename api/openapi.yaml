@@ -4904,6 +4904,7 @@ components:
         mix: { $ref: "#/components/schemas/DefaultSection" }
         drafts: { $ref: "#/components/schemas/DefaultSection" }
         cache: { $ref: "#/components/schemas/DefaultSection" }
+        storage: { $ref: "#/components/schemas/DefaultSection", description: "Mounts and the local cache (phase 4): water marks, project quota, sweep and health-check cadence, scan limit" }
         data: { $ref: "#/components/schemas/DefaultSection" }
         operations: { $ref: "#/components/schemas/DefaultSection" }
         notifications: { $ref: "#/components/schemas/DefaultSection" }

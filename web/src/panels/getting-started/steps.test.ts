@@ -9,8 +9,10 @@ const gate = (verdict: "passed" | "failed") => ({ verdict, gatesSha: "", checks:
 describe("setupSteps", () => {
   it("starts with only sign-in done and later phases marked", () => {
     const steps = setupSteps({ signedIn: true, projects: 0, datasets: [] });
-    expect(state(steps)).toEqual({ admin: "done", mount: "later", project: "todo", dataset: "later", run: "todo", gate: "todo" });
+    expect(state(steps)).toEqual({ admin: "done", mount: "todo", project: "todo", dataset: "later", run: "todo", gate: "todo" });
     expect(step(steps, "run")).toMatchObject({ command: "playbooks.run", blocked: "Open a project first" });
+    expect(step(steps, "mount").blocked).toMatch(/Storage panel/);
+    expect(state(setupSteps({ signedIn: true, projects: 0, datasets: [], mounts: 1 })).mount).toBe("done");
     expect(steps.every((s) => /^[a-z][a-zA-Z]*\.[a-z]+$/.test(s.command))).toBe(true);
   });
 
