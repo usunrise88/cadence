@@ -90,7 +90,7 @@ commits, and `gates.get|edit` read and write it through the recipes service (dec
 back to `defaults.yaml` `gate.*` and `eval.*`; an invalid file answers `gate-config-invalid`.
 
 ```yaml
-primaryProfile: 160ms                     # R20: the gate reads this cell only (eval.primary_profile)
+primaryProfile: 80ms                      # R20: the gate reads this cell only (eval.primary_profile)
 target: { goldenSets: [golden-set/fleurs-he], rule: beat-baseline }            # gate.target_rule
 replay: { goldenSets: [golden-set/replay-golden-*], maxRegression: 0.005 }     # gate.replay_max_regression: 0.5 WER points
 deletionsInsertions: true                 # gate.deletions_insertions

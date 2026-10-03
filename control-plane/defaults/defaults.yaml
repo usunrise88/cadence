@@ -429,9 +429,9 @@ data:
 # Evaluation (phase 3; docs/review/2026-10-02-phase-3-plan.md): the matrix, scoring and significance.
 eval:
   primary_profile:
-    value: 160ms
+    value: 80ms
     description: Latency profile of the primary cell, the one the gate reads; the latency production runs at (a project may change it in gates.yaml)
-    source: docs/spec/08-resolutions.md R20 ([56,1], 160 ms)
+    source: "Owner decision 2026-10-03: the lowest latency, [56,0], a look-ahead the model was trained at (R20 asked for the latency production runs at; 160 ms is not a trained look-ahead, spike A5). Stand gate run: WER 0.266 at 80 ms against 0.256 at 160 ms"
   matrix_profiles:
     value: [80ms, 160ms, 1120ms]
     description: Latency profiles an eval runs by default (those the model's family declares); 1120ms is the high-latency reference
@@ -493,9 +493,9 @@ gate:
 # Language packs (phase 3, stream L; docs/spec/03-pipelines-defaults.md "Language packs and hot words").
 langpacks:
   boost_weight:
-    value: 1.0
+    value: 0.5
     description: Weight a new boost list starts with (its file's '# weight:' header), passed with the list to the transcribe step's phrase boosting; boosting is evaluated before it is trusted
-    source: Cadence recommendation (docs/spec/08-resolutions.md R24)
+    source: "Owner decision 2026-10-03: the measured optimum (packs.nemo.boost_weight; FLEURS he_il on the staging card, WER 0.460 at 0.5 against 0.490 at 1.0, where listed words start replacing others)"
     range: { min: 0, max: 10 }
   boost_max_terms:
     value: 5000
@@ -929,9 +929,9 @@ packs:
       source: Cadence recommendation
       range: { min: 0, max: 50 }
     profile:
-      value: 160ms
+      value: 80ms
       description: Latency profile a transcription streams at — the primary cell
-      source: docs/spec/03-pipelines-defaults.md "Key defaults" (eval latency [56,1], 160 ms)
+      source: docs/spec/03-pipelines-defaults.md "Key defaults" (eval.primary_profile, 80 ms, owner decision 2026-10-03)
       range: { values: [80ms, 160ms, 320ms, 560ms, 1120ms] }
     transcribe_batch_size:
       value: 8

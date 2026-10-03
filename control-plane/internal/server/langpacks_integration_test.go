@@ -68,7 +68,7 @@ func TestLanguagePacks(t *testing.T) {
 
 	var pk langPack
 	resp := e.ok(e.do("GET", base+"/he-IL", ""), 200, &pk)
-	if pk.Sha == "" || resp.Header.Get("ETag") != `"`+pk.Sha+`"` || len(pk.Issues) != 0 || len(pk.Boost) != 3 || pk.Boost[0].Weight != 1 {
+	if pk.Sha == "" || resp.Header.Get("ETag") != `"`+pk.Sha+`"` || len(pk.Issues) != 0 || len(pk.Boost) != 3 || pk.Boost[0].Weight != 0.5 {
 		t.Fatalf("langpacks.get %+v", pk)
 	}
 	if _, ok := pk.file("normalizer.yaml"); !ok {
@@ -107,7 +107,7 @@ func TestLanguagePacks(t *testing.T) {
 	var boosted langPack
 	e.ok(e.do("PATCH", base+"/he-IL/boost/names", `{"terms":["  Moshe Cohen ","Dana Levi"]}`, "Idempotency-Key", e.key(), "If-Match", `"`+edited.Sha+`"`), 200, &boosted)
 	names := e.recipe("packs", "lang/he-IL/boost/names.txt", "").Content
-	if !strings.HasPrefix(names, "# weight: 1\n# Boost list") || !strings.HasSuffix(names, "Moshe Cohen\nDana Levi\n") {
+	if !strings.HasPrefix(names, "# weight: 0.5\n# Boost list") || !strings.HasSuffix(names, "Moshe Cohen\nDana Levi\n") {
 		t.Fatalf("names.txt:\n%s", names)
 	}
 	e.ok(e.do("PATCH", base+"/he-IL/boost/brands", `{"terms":["WhatsApp"],"weight":2.5}`, "Idempotency-Key", e.key(), "If-Match", `"`+boosted.Sha+`"`), 200, &boosted)

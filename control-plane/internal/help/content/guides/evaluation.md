@@ -29,7 +29,7 @@ steps; each is one command, from the UI, the CLI or an agent.
    approval.
 
    ```yaml
-   primaryProfile: 160ms
+   primaryProfile: 80ms
    target: { goldenSets: [golden-set/fleurs-he], rule: beat-baseline }
    replay: { goldenSets: [golden-set/replay-golden-*], maxRegression: 0.005 }
    deletionsInsertions: true
@@ -90,7 +90,7 @@ Train → **evaluate** → register → (phase 5) deploy. Every playbook that tr
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `eval.primary_profile` | `160ms` | The profile the gate reads (`gates.yaml` `primaryProfile` overrides it) |
+| `eval.primary_profile` | `80ms` | The profile the gate reads (`gates.yaml` `primaryProfile` overrides it) |
 | `eval.matrix_profiles` | `80ms`, `160ms`, `1120ms` | Profiles an eval runs by default |
 | `eval.normalizer` | `normalizer/basic` | Normalizer a golden set is frozen with when none is named |
 | `eval.bootstrap_samples`, `eval.confidence`, `eval.bootstrap_seed` | 1000, 0.95, 1 | The interval on every delta |

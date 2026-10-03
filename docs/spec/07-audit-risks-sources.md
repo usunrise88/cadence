@@ -658,13 +658,15 @@ overrule; stream S2 folded them into the spec, 2026-10-02):
 
 Still open after waves 1–2:
 
-- [ ] A5 · **owner:** the primary cell `160ms` (`[56,1]`) is not a look-ahead Nemotron 3.5 was trained at (80, 320, 560,
+- [x] A5 · **owner:** the primary cell `160ms` (`[56,1]`) is not a look-ahead Nemotron 3.5 was trained at (80, 320, 560,
       1120 ms are); keep `160ms` (R20, its WER sits between its neighbours) or move the primary cell and the gate's
       `primaryProfile` to `320ms`? Proposal: a `trained` flag on the family's latency profiles either way
       (`docs/spikes/A5-live-transcription.md` "Result", surprise 2 and proposal 3). Not answered by default
-- [ ] L/Y · boost weight defaults disagree: a new boost list starts at `langpacks.boost_weight` 1.0 and `evals.new`
+      **Answered 2026-10-03:** the owner chose `80ms` (`eval.primary_profile`, `packs.nemo.profile`; 00 decision log); no `trained` flag yet
+- [x] L/Y · boost weight defaults disagree: a new boost list starts at `langpacks.boost_weight` 1.0 and `evals.new`
       passes the list's weight to the step, while the measured NeMo optimum is 0.5 (`packs.nemo.boost_weight`) and 1.0
       already over-boosts (WER 0.466 → 0.490). Proposal: `langpacks.boost_weight` 0.5
+      **Answered 2026-10-03:** `langpacks.boost_weight` 0.5 and the starter packs' headers 0.5 (owner)
 - [ ] E · not built: eval records and their `scores` are not protected from eviction (an evicted cell shows a delta
       error); `evals.new` has no playbook estimator (the playbook uses a 0.5 GPU-hour hint). Resolved: the GPU-hours
       factor is calibrated (0.025, above); `playbooks.CurrentPhase` is 3 (audit fix F4)
@@ -701,12 +703,14 @@ range-proof audit and hardened ffmpeg input; eval artifacts are protected from e
       convention) and the fuller decoding hash; earlier records stay but are not read
 - [ ] Latency to final paces each chunk by the step's wall time divided by the streams in it, a lower bound for a lone
       stream; the measured numbers in the latency_score help predate it
-- [ ] **owner:** the NeMo GPU tests and the nightly NeMo conformance never run in CI: a self-hosted runner on the GPU host
+- [x] **owner:** the NeMo GPU tests and the nightly NeMo conformance never run in CI: a self-hosted runner on the GPU host
       is not installed because the repository is public (a pull request from a fork could run code on the host).
       Options: a runner restricted to the default branch and `workflow_dispatch`, or a host cron that runs the
       conformance suite and reports to Telegram. Not answered by default
-- [ ] The base model has no usable Thai (empty output with every decoder and prompt): drop `replay-golden-th-th` from
+      **Answered 2026-10-03:** a cron job on the GPU host runs them nightly from `main` and reports to Telegram (`scripts/nightly-gpu.sh`; owner)
+- [x] The base model has no usable Thai (empty output with every decoder and prompt): drop `replay-golden-th-th` from
       the replay sets or keep it as a documented always-empty set (default: keep, it cannot regress)
+      **Answered 2026-10-03:** Thai leaves the replay corpus and golden sets (owner)
 
 ## Sources
 
