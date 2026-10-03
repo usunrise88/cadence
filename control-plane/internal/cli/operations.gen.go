@@ -9,7 +9,7 @@ var Operations = []Operation{
 		Summary: "Registry versions the project adopted, with the aliases pointing at each",
 		Params: []Param{
 			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
-			{Name: "kind", In: "query", Flag: "kind", Type: "string", Description: "Only versions of this kind", Enum: []string{"base_model", "dataset_version", "template", "runtime", "model_family", "step_kind", "noise_bank", "golden_set", "normalizer", "model"}},
+			{Name: "kind", In: "query", Flag: "kind", Type: "string", Description: "Only versions of this kind", Enum: []string{"base_model", "dataset_version", "template", "runtime", "model_family", "step_kind", "noise_bank", "golden_set", "normalizer", "model", "auxiliary"}},
 		},
 	},
 	{
@@ -270,6 +270,22 @@ var Operations = []Operation{
 		},
 	},
 	{
+		ID: "auxiliaries.get", Entity: "auxiliaries", Verb: "get", Method: "GET", Path: "/registry/auxiliaries/{id}",
+		Summary: "Get an auxiliary model version with its payload and the projects that adopted it",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Registry version id (ver_…)"},
+		},
+	},
+	{
+		ID: "auxiliaries.list", Entity: "auxiliaries", Verb: "list", Method: "GET", Path: "/registry/auxiliaries",
+		Summary:     "List auxiliary model versions (LID classifiers, pseudo-label members, aligners) with their licence check",
+		Description: "List auxiliary models (auxiliary/<name>): language classifiers, pseudo-label members and aligners Cadence uses to prepare data, never trains. Each carries its roles (lid, pseudolabel, align), the licence check (licence, outputsCommercialUse, conditions, sources) and either pinned weights (hfRepo, revision) or a running service (endpoint) that Cadence never starts. A project adopts one with projects.adopt — an approval the admin decides after reading the licence; step parameters then name it (whisper_transcribe, oasis_transcribe, lid_classify).",
+		Params: []Param{
+			{Name: "collection", In: "query", Flag: "collection", Type: "string", Description: "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)"},
+			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated"}},
+		},
+	},
+	{
 		ID: "backups.get", Entity: "backups", Verb: "get", Method: "GET", Path: "/backups/{id}",
 		Summary: "Get a backup set with its manifest and last restore test report",
 		Params: []Param{
@@ -426,7 +442,7 @@ var Operations = []Operation{
 		Summary:     "List registry collections (named series of immutable versions), optionally of one kind or tag",
 		Description: "List registry collections such as base-model/nemotron-3.5-asr-streaming-0.6b or dataset/fleurs-he-smoke. A collection groups immutable versions of one kind; list the versions with baseModels.list, datasets.list or templates.list (filter collection=<name>).",
 		Params: []Param{
-			{Name: "kind", In: "query", Flag: "kind", Type: "string", Description: "Only collections of this kind", Enum: []string{"base_model", "dataset_version", "template", "runtime", "model_family", "step_kind", "noise_bank", "golden_set", "normalizer", "model"}},
+			{Name: "kind", In: "query", Flag: "kind", Type: "string", Description: "Only collections of this kind", Enum: []string{"base_model", "dataset_version", "template", "runtime", "model_family", "step_kind", "noise_bank", "golden_set", "normalizer", "model", "auxiliary"}},
 			{Name: "tag", In: "query", Flag: "tag", Type: "string", Description: "Only collections carrying this tag (e.g. locale:he-IL)"},
 		},
 	},
@@ -1142,7 +1158,7 @@ var Operations = []Operation{
 	{
 		ID: "projects.adopt", Entity: "projects", Verb: "adopt", Method: "POST", Path: "/projects/{p}:adopt",
 		Summary:        "Adopt a registry version into the project by reference",
-		Description:    "Adopt a registry version (base model, dataset version, template) into this project by reference, so mixes, runs and aliases may use it. Only frozen versions are adoptable. Needs If-Match with the project's revision (projects.get); the project's revision goes up by one.",
+		Description:    "Adopt a registry version (base model, dataset version, template) into this project by reference, so mixes, runs and aliases may use it. Only frozen versions are adoptable. Needs If-Match with the project's revision (projects.get); the project's revision goes up by one. Adopting an auxiliary model (LID, pseudo-label member, aligner; R26) is a registry-scope approval for everyone (202 with an approvalId) and is refused when its licence forbids commercial use of its outputs.",
 		IdempotencyKey: true,
 		Params: []Param{
 			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
@@ -1327,7 +1343,7 @@ var Operations = []Operation{
 		Description: "Search registry versions of every kind (base models, dataset versions, templates). q is free text matched against collection names and descriptions plus qualifiers: kind:base_model, tag:telephony, locale:he-IL, state:frozen. project=<slug> keeps only what that project adopted. Get one version with baseModels.get, datasets.get or templates.get.",
 		Params: []Param{
 			{Name: "q", In: "query", Flag: "q", Type: "string", Description: "Free text with qualifiers (kind:, tag:, locale:, state:)"},
-			{Name: "kind", In: "query", Flag: "kind", Type: "string", Enum: []string{"base_model", "dataset_version", "template", "runtime", "model_family", "step_kind", "noise_bank", "golden_set", "normalizer", "model"}},
+			{Name: "kind", In: "query", Flag: "kind", Type: "string", Enum: []string{"base_model", "dataset_version", "template", "runtime", "model_family", "step_kind", "noise_bank", "golden_set", "normalizer", "model", "auxiliary"}},
 			{Name: "project", In: "query", Flag: "project", Type: "string", Description: "Only versions this project adopted (slug)"},
 			{Name: "limit", In: "query", Flag: "limit", Type: "integer", Default: "100"},
 		},
@@ -1582,6 +1598,18 @@ var Operations = []Operation{
 			{Name: "collection", In: "query", Flag: "collection", Type: "string", Description: "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)"},
 			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated"}},
 			{Name: "templateKind", In: "query", Flag: "template-kind", Type: "string", Description: "Only templates of this kind", Enum: []string{"instructions", "preset", "skill", "pipeline", "agent-config", "playbook", "langpack"}},
+		},
+	},
+	{
+		ID: "triage.list", Entity: "triage", Verb: "list", Method: "GET", Path: "/projects/{p}/triage",
+		Summary:     "The project's triage queue — segments whose pseudo-label members disagreed, newest first",
+		Description: "List the project's triage items, newest first. A pseudo-label ensemble (pseudolabel_ensemble) puts a segment here when its members' texts disagree (pairwise WER above pseudolabel.max_pairwise_wer for every pair), when language identification disagrees with the source's language, or when no member heard speech. Each item has the segment (mount:// URI, b3 hash, start/end, channel), every member's text, the best candidate and why it is disputed. Disputed segments never reach training; a person resolves them in the Triage panel.",
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "state", In: "query", Flag: "state", Type: "string", Enum: []string{"open", "accepted", "corrected", "rejected"}},
+			{Name: "reason", In: "query", Flag: "reason", Type: "string", Enum: []string{"disagreement", "lid-mismatch", "lid-unknown", "no-speech", "too-few-members"}},
+			{Name: "pipelineRun", In: "query", Flag: "pipeline-run", Type: "string", Description: "Only items from this pipeline run (plr_…)"},
+			{Name: "limit", In: "query", Flag: "limit", Type: "integer", Default: "100"},
 		},
 	},
 	{

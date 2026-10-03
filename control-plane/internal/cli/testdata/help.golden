@@ -20,6 +20,7 @@ Entities:
   approvals      approve deny get list
   artifacts      evict get
   audit          list
+  auxiliaries    get list
   backups        get list new verify
   baseModels     get list
   boost          edit
@@ -63,6 +64,7 @@ Entities:
   sweeps         run
   telegramBot    set verify
   templates      get list
+  triage         list
   utterances     get list
 
 Global flags:

@@ -27,6 +27,32 @@ class ArtifactRef(TypedDict):
     meta: NotRequired[dict[str, Any]]
 
 
+class AuxiliaryPayload(TypedDict):
+    """The payload of an auxiliary version (auxiliary/<name>): a model a step loads per job ({hfRepo, revision}) or a
+    running service ({service}), never both. Cadence never starts a service. Adoption (projects.adopt) is an approval
+    for everyone and refuses outputsCommercialUse false (R26).
+    """
+
+    roles: list[Literal["lid", "pseudolabel", "align"]]
+    licence: str
+    outputsCommercialUse: bool
+    conditions: NotRequired[list[str]]
+    languages: list[str]
+    hfRepo: NotRequired[str]
+    revision: NotRequired[str]
+    service: NotRequired[AuxiliaryService]
+    engine: NotRequired[str]
+    sources: NotRequired[list[str]]
+    checkedAt: NotRequired[str]
+
+
+class AuxiliaryService(TypedDict):
+    kind: str
+    endpoint: str
+    protocol: str
+    tokenSecret: NotRequired[str]
+
+
 class CardTelemetry(TypedDict):
     index: int
     name: NotRequired[str]
@@ -335,6 +361,17 @@ class StepOutcome(TypedDict):
     metrics: NotRequired[dict[str, float]]
 
 
+class StepRegistryRef(TypedDict):
+    """A registry version a step parameter names (x-cadence.registryRef), resolved for the project when the run was
+    planned; in v1 only auxiliary versions resolve, so payload is an AuxiliaryPayload
+    """
+
+    versionId: str
+    name: str
+    version: str
+    payload: AuxiliaryPayload
+
+
 class StepResources(TypedDict):
     gpu: NotRequired[bool]
     gpus: NotRequired[int]
@@ -358,6 +395,7 @@ class StepSpec(TypedDict):
     estimateSeconds: NotRequired[float]
     overrides: NotRequired[StepSpecOverrides]
     attempt: int
+    auxiliaries: NotRequired[dict[str, StepRegistryRef]]
 
 
 class StepSpecOverrides(TypedDict):
