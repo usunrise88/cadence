@@ -15,6 +15,13 @@ func card(windows compute.Windows, held ...Held) Card {
 		AllowedJobKinds: []string{"training", "eval", "data"}, Windows: windows}, Held: held}
 }
 
+// liveCard also takes interactive sessions and benchmarks.
+func liveCard(held ...Held) Card {
+	c := card(nil, held...)
+	c.Config.AllowedJobKinds = []string{"training", "eval", "data", "interactive", "benchmark"}
+	return c
+}
+
 func TestFit(t *testing.T) {
 	now := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC) // a Wednesday
 	nights := compute.Windows{"training": {{Days: []string{"mon", "tue", "wed", "thu", "fri"}, Start: "20:00", End: "08:00"}}}
@@ -40,6 +47,14 @@ func TestFit(t *testing.T) {
 		{"estimate does not fit", card(nights), Need{JobKind: "training", EstimateSeconds: ptr(13 * 3600.0)}, now.Add(10 * time.Hour), 0, "does not fit"},
 		{"resuming ignores the estimate", card(nights), Need{JobKind: "training", EstimateSeconds: ptr(13 * 3600.0), Resuming: true}, now.Add(10 * time.Hour), 24 * 1024, ""},
 		{"other kinds are always open", card(nights), Need{JobKind: "eval", MemoryMB: 1024}, now, 1024, ""},
+		{"interactive not accepted", card(nil), Need{JobKind: "interactive", MemoryMB: 6000}, now, 0, "does not accept interactive"},
+		{"interactive beside a sized training", liveCard(Held{"training", 16384}), Need{JobKind: "interactive", MemoryMB: 6000}, now, 6000, ""},
+		{"interactive beside training and an eval", liveCard(Held{"training", 12288}, Held{"eval", 4096}), Need{JobKind: "interactive", MemoryMB: 8600}, now, 0, "left under its cap"},
+		{"interactive waits beside a whole-cap training", liveCard(Held{"training", 24576}), Need{JobKind: "interactive", MemoryMB: 6000}, now, 0, "left under its cap"},
+		{"two interactive sessions share a card", liveCard(Held{"interactive", 6000}), Need{JobKind: "interactive", MemoryMB: 6000}, now, 6000, ""},
+		{"interactive never beside a benchmark", liveCard(Held{"benchmark", 4096}), Need{JobKind: "interactive", MemoryMB: 6000}, now, 0, "runs a benchmark"},
+		{"a benchmark never beside a session", liveCard(Held{"interactive", 6000}), Need{JobKind: "benchmark", MemoryMB: 4096}, now, 0, "holds a live session"},
+		{"training beside a session takes the rest", liveCard(Held{"interactive", 6000}), Need{JobKind: "training"}, now, 24*1024 - 6000, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

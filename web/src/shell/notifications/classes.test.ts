@@ -33,6 +33,24 @@ describe("event classes", () => {
     const health = (state: string) => ev({ topic: "compute.cmp_1", type: "compute.health", payload: { hostId: "cmp_1", health: { state } } });
     expect(classOf(health("unreachable"))).toBe("failure");
     expect(classOf(health("healthy"))).toBeUndefined();
+    const evalStep = (state: string) => ev({ topic: "pipeline_run.plr_2", type: "pipeline_run.step_changed", payload: { pipelineRunId: "plr_2", runId: "evl_1", step: { state } } });
+    expect(classOf(evalStep("done"))).toBeUndefined(); // the eval tells its end once
+    expect(classOf(evalStep("failed"))).toBe("failure");
+    expect(noticeFor(evalStep("done"))).toBeUndefined();
+    const evalStatus = (status: string) => ev({ topic: "entity.eval.evl_1", type: "eval.status_changed", payload: { eval: { id: "evl_1", status, subject: { id: "ckp_1", label: "run 7" } } } });
+    expect(classOf(evalStatus("failed"))).toBe("failure");
+    expect(classOf(evalStatus("done"))).toBe("progress");
+    expect(classOf(evalStatus("running"))).toBeUndefined();
+    expect(noticeFor(evalStatus("done"))).toMatchObject({ level: "success", title: "Eval done: run 7" });
+    const gated = ev({ topic: "entity.eval.evl_1", type: "eval.gated", payload: { eval: { id: "evl_1", subject: { label: "run 7" }, gate: { verdict: "failed" } } } });
+    expect(classOf(gated)).toBe("outcome");
+    expect(noticeFor(gated)).toMatchObject({ level: "warning", title: "Gate failed: run 7" });
+    const sweep = ev({ topic: "entity.experiment.exp_1", type: "sweep.ended", payload: { experiment: { id: "exp_1", sweep: { state: "done", points: 3, ended: 3 } } } });
+    expect(classOf(sweep)).toBe("outcome");
+    expect(noticeFor(sweep)).toMatchObject({ title: "Sweep done: exp_1", detail: "3 of 3 points ran" });
+    const frozen = ev({ topic: "entity.golden_set.ver_1", type: "golden_set.frozen", payload: { version: { id: "ver_1", name: "golden-set/he-calls", version: "2026-10-02.abc" } } });
+    expect(classOf(frozen)).toBe("progress");
+    expect(noticeFor(frozen)).toMatchObject({ title: "Golden set frozen: he-calls" });
   });
 
   it("lets a class into the in-app history only when its rule has in-app on", () => {

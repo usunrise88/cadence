@@ -99,22 +99,22 @@ Version 1 has 33 panels: 13 documents that open in the centre and 20 tools that 
 | Panel | Kind | Shows | Main actions | Live topic |
 | --- | --- | --- | --- | --- |
 | Run | Document | Config diff against the parent run, status, stage timeline, final metrics | Pause, resume, stop; resume from checkpoint; new stage from checkpoint with an explicit peak LR | `run.{id}.``status`, `run.{id}.``metrics` |
-| Eval report | Document | Matrix of languages and golden sets × latency profiles (`80ms`, `160ms`, `1120ms`; R43); WER/CER with delta to production and gate colour; charts: WER deltas with confidence intervals, S/D/I, duration and SNR buckets, latency to final, WER against latency (R53) | Open a cell in Diff; re-run; set as baseline; edit gate thresholds | `eval.{id}.progress` |
+| Eval report | Document | One eval (`evals.get`): the matrix of golden sets × latency profiles (`80ms`, `160ms`, `1120ms`; R43) × decoding, filling live; per cell WER, CER and `werNoPunct` with the delta to the baseline, its 95 % interval and the gate colour (glyph as well as colour); cached cells marked; the gate verdict with each check, its numbers and the `gates.yaml` SHA. Charts through `@/shell/charts` (R53): matrix heatmap, forest plot of WER deltas with intervals, S/D/I stacked bars, WER by duration bucket, per-utterance WER ECDF, partial stability; latency to final, entity accuracy, the robustness matrix and WER against latency as their scorers land. An utterance table (worst first, filters) whose rows open in Diff and Audio | Run the gate; open a cell in Diff; open a row in Audio; re-run missing cells; register the model (passed verdict); set the baseline (approval); open `gates.yaml` | `eval.{id}.progress`, `entity.eval.{id}` |
 | Dataset version | Document | Fingerprint, hours by language and source, applied filters, lineage; statistics charts: duration, characters per second, level and SNR, sample rates, speakers (R53) | Diff two versions; export to Shar | `entity.dataset_version.{id}`, `job.{id}` |
 | Mix | Document | Groups, weights, temperature, replay share; preview of hours per language; agents' drafts (dashed outline, diff on hover) and "agent editing" presence | Save (a new revision; 412 conflict notice with reload / reapply); accept or revert an agent draft; launch a run with this mix (phase 2) | `entity.mix.{id}` (drafts arrive here) |
 | Triage queue | Document | Disputed production utterances: audio with a channel switch, hypotheses from several models, consensus, the item's signals; an Annotate mode for annotation batches with an editable transcript, tags and a keyboard-first flow | Accept, correct, reject; send to the next dataset version | `triage.new` |
-| Model | Document | Checkpoint → ONNX → Triton repository; stage: shadow, canary, prod | Export; promote; roll back | `deploy.{id}` |
+| Model | Document | A model version: the checkpoint it publishes, gate verdict and eval, model card, lineage, "used by"; from phase 5 ONNX → Triton repository and stage (shadow, canary, prod) | Adopt as base model; set as baseline (approval); export, promote, roll back (phase 5) | `entity.model.{id}`, `deploy.{id}` |
 | Recipe | Document | A recipe file (SDP config, pipeline, mix, training or eval YAML, augmentation profile) with its commit history; open session branches and their diffs against `main`; agent edits stream in as a live diff | Edit; accept or revert an agent draft; accept or discard session changes (three-way diff on conflict); commit | `recipe.{path}` |
 | Source | Document | Licence, languages, kind, ingest history and utterance counts of a corpus | Clear the licence for training; run ingest | `entity.source.{id}` |
-| Golden set | Document | Frozen test set: languages, domain, normalizer version, size, lineage | Propose or approve a freeze; set the normalizer | `entity.golden_set.{id}` |
+| Golden set | Document | A golden set version: locale, domain, the dataset version and scoring normalizer version it pins, utterances, hours, resampling unit (`groups`), leakage check result, "used by" (projects, gates, evals), lineage; a sample of utterances that open in Audio | Freeze from an eval-only dataset version with a normalizer (approval, admin); adopt into the project; open the normalizer | `entity.golden_set.{id}`, `approvals` |
 | Library | Tool | The registry (sources, dataset versions, golden sets, models, normalizers, templates) and the project's work (runs, mixes, recipes) with search, tags and a this-project / all filter | Open as document; compare two; adopt into project; set alias | — |
 | Queue & GPU | Tool | Job queue per card; GPU memory and compute; who holds the training slot | Reorder, pause, cancel | `queue`, `gpu` |
 | Metrics | Tool | Loss, validation WER, LR, gradient norm, throughput and GPU memory of the active run by step, epoch, wall time or GPU-hours; checkpoint marks; pinned runs overlaid (R53) | Pin a run; change smoothing, x-axis and scale; show as table | `run.{id}.metrics` |
 | Checkpoints | Tool | Checkpoints of the active run with validation WER | Evaluate; export; new stage from here | `run.{id}.metrics` |
 | Logs | Tool | Streaming log of the active job | Follow, search, copy | `job.{id}.log` |
-| Diff | Tool | Reference vs hypothesis for the selected utterance; substitutions, deletions and insertions marked | Step through utterances; copy | — |
-| Audio | Tool | The audio view (R51) of the selected utterance or span: waveform, spectrogram, model input and emissions, reference and hypothesis word tracks, streaming timeline; renderer `always`; floating by default | Play, loop a span, change speed, zoom, choose tracks and colormap, attach the span to Chat, export TextGrid, CTM or WebVTT | — |
-| Transcription | Tool, floating by default | A manual test (R47–R50): a file, the microphone or an utterance span; one to three targets (checkpoint, model version, staging deployment) at chosen latency profiles; live partial and final words per target with level meter, latency and real-time factor; then the audio view with every target's words and the streaming timeline; nothing is stored | Choose the input; go live; finalize; stop; add a target; blind compare; type a reference (WER on the page); copy the text | `job.{id}` |
+| Diff | Tool | Reference vs hypothesis for the selected utterance from the cell's `scores` rows (`ops`), after the scoring normalizer, with the raw texts on request; substitutions, deletions and insertions marked by glyph as well as colour; Hebrew right to left with bidi isolation; the utterance's audio view with the hypothesis word track | Step through the cell's utterances (worst first); open in Audio; copy | — |
+| Audio | Tool | The audio view (`@/shell/audio`, R51, R52) of the selected utterance or span, played through signed segments (R25): waveform, spectrogram, model input and emissions, reference and hypothesis word tracks, streaming timeline; renderer `always`; floating by default; play-only for reviewers | Play, loop a span, change speed, zoom, choose tracks, spectrogram preset and colormap, attach the span to Chat, export TextGrid, CTM or WebVTT | — |
+| Transcription | Tool, floating by default | A manual test (R47–R50; 06 "Media"): a file, the microphone (device picker, level meter with clipping mark, raw-microphone toggle) or an utterance span; one to three targets (checkpoint, model version, base model; staging deployment from phase 5), each with latency profile, boost list and language; telephony simulation; live partial and final words per target, Hebrew right to left, with p50/p95 time to final and the real-time factor; the queue place while waiting for a card; then the audio view with every target's words and the streaming timeline; nothing is stored | Choose the input; go live; finalize; stop; add a target; blind compare; type a reference (WER and diff on the page); copy the text | `job.{id}` |
 | Inspector | Tool | Properties of the current selection: config values, manifest row, metadata | Copy a value; open its source | — |
 | Shadow | Tool | Divergence between the production and candidate models on live calls | Open an utterance in Diff; mark it for triage | `shadow.{``deployment``}` |
 | Chat | Tool, one per agent session | Streaming transcript: replies with entity links, plan checklist (a playbook's chain is the initial plan), tool-call cards with dry-run estimates and diffs, shell cards, approval cards; header chip with the session kind (interactive, playbook, scheduled, read-only) and state; budget meter for turns, tokens and GPU-hours | Send; stop; attach the selection; approve or deny; pause or resume; merge session changes | `agent.session.{id}` |
@@ -124,13 +124,42 @@ Version 1 has 33 panels: 13 documents that open in the centre and 20 tools that 
 | Pipeline run | Tool | Any pipeline run: steps with status, inputs and outputs, per-step logs; parameters rendered from the step schema | Retry a step; open an output; open the pipeline file in Recipe | `pipeline_run.{id}` |
 | Project | Document | Overview of one project: locales, base model revision, repository and branch, agent profile, budgets and today's use, gates, mounts, decision log | Edit any wizard choice; open Agent settings; archive | `entity.project.{id}` |
 | Agent settings | Tool | The project's agent profile: driver, model, permission preset with a preview of the rendered `.claude/settings.json` and `opencode.json`, auto-merge policy for session branches, draft policy per entity kind; raw config editors with schema validation; `AGENTS.md` editor | Save (commits to the project repository); reset to template; test-launch a session | `entity.project.{id}` |
-| Lineage | Tool | Graph around the selection: sources → dataset versions → mix and recipe SHA → run → checkpoint → model version → deployments; "used by" for registry entries | Open any node as document; copy version id | — |
+| Lineage | Tool | Graph around the selection from `registry.lineage`, both ways: sources → dataset versions → mix and recipe SHA → run → checkpoint → model version → deployments; golden set → dataset version and normalizer; "used by" for registry entries (golden sets, normalizers, models, dataset versions) | Open any node as document; copy version id | — |
 | Settings | Tool, admin only | Registry-level configuration: compute (hosts, cards, memory caps, allowed job kinds, availability windows; a table per host, each card edited in its own dialog), agents (the Claude Code subscription token and opencode providers: write-only values, status, expiry, Verify, default opencode model; 2026-09-30), secrets (names only, write-only values), catalogues (base models, agent models, instruction templates, permission presets), policies (retention, PII redaction, default budgets, cache quotas), notification rules and the Telegram bot, credentials (API keys, active sessions, invitations), backup status, the audit log (read-only; filter by actor, operation, project) | Edit; add secret; create API key; revoke; set, verify and archive agent credentials; sync templates across projects | `compute.{id}`, `entity.agent_credential.{id}` |
 | Getting started | Tool, until the first gate passes | Setup checklist with state: mount attached, project created, first dataset frozen, first run done, first gate passed; each step with its playbook or command | Run the step; dismiss | `entity.project.{id}` |
 | Help | Tool, follows focus unless pinned | The article for the focused panel, field or error: what it is, its place in the loop, fields and defaults from the schema, live commands, playbooks, sources | Search help; pin; Explain this (agent) | — |
-| Language pack | Document | One locale of the project: normalizer, inverse normalisation, transliteration, LID config, boost lists with weights, golden-set recipe, README; commit history | Edit; test a phrase with and without boosting; sync from the shipped pack | `recipe.{path}` |
+| Language pack | Document | One locale of the project (`langpacks.get`): the scoring normalizer it references (a registry version, R21) and the training text style, inverse normalisation, transliteration, LID config, boost lists with weights, golden-set recipe, README; commit history | Edit (`langpacks.edit`); edit a boost list (`boost.edit`); test a phrase with and without boosting (a one-utterance eval, then a two-target transcription once Transcription lands); sync from the shipped pack | `recipe.{path}` |
 | Annotation batch | Document | Progress per annotator, double-annotation sample, inter-annotator WER, adjudication queue, guidelines version | Invite an annotator; adjudicate; freeze as golden set (approval) | `entity.annotation_batch.{id}` |
-| Experiment | Document | Question, fixed mix and base, sweep grid and cap, parameters × metrics table of its runs with departures from defaults highlighted, best run | Run the sweep; compare N; register the best | `entity.experiment.{id}` |
+| Experiment | Document | Question, fixed mix and base, sweep grid or random set and GPU-hour cap, parameters × metrics table of its runs with departures from defaults highlighted, best run by validation WER; charts: parameter against metric scatter, parallel coordinates for sweeps (R53) | Run the sweep (dry run first); compare N; evaluate the best; register it (`models.register`, passed gate) | `entity.experiment.{id}`, `run.{id}.status` |
+
+As built (phase 3, stream U; help `panels.eval`, `panels.diff`, `panels.golden-set`, `panels.model`,
+`panels.lineage`, `panels.language-pack`):
+
+- Eval report: the selection is `cell:<evc_id>` or `cell:<evc_id>/utt:<index>`; Ask agent attaches
+  `@eval:<id>#cell:…/utt:…`. Deltas are shown in percentage points (the API's rates are fractions); a cell's tone
+  comes from its interval (better, worse, inconclusive), with a glyph beside the colour. Charts: delta heatmap, forest
+  plot of deltas with intervals, S/D/I bars, WER by duration bucket, the per-utterance WER ECDF (from the `worst` rows,
+  at most 200 per cell: the whole set up to 200 utterances, else the labelled tail) and entity accuracy of the
+  selected cell; a folding "Streaming" section for the selected cell's golden set (WER against latency per model, the
+  primary profile marked and the subject's interval taken as the baseline's WER plus the delta's interval; latency to
+  final as p50/p95/max, with each cell's unavailable reason; partial stability) and a folding "Robustness" section
+  (degradation per golden set × augmentation × model × profile). Both start folded while empty. Not drawn: confusion
+  pairs, WER by SNR, bandwidth or speaker, emission delay (`evals.get` has no such data).
+- Golden set: the leakage row states the rule (the freeze checked it; nothing to recompute per view).
+- Language pack: Commit is enabled only for exactly the text that passed Check (the server's dry run).
+- Built after the waves: opening an utterance row of the Eval report or Diff in Audio (stream A); evaluation setup
+  from the UI (audit fix F4): Adopt into project on the Golden set document and its Library row (`projects.adopt`;
+  the card dry-runs, so the leakage refusal shows with the overlapping dataset versions), Set as baseline on the Model
+  document and on a model or base model row in the Library (`aliases.set` `baseline`, approval-gated: the approval
+  id is shown), the Project home's Gate section (`gates.get|edit`: the effective gate with its departures, Check then
+  Commit to main with If-Match the file's commit or `defaults`; the Eval report's Gate section links to it), and one
+  Run eval form (`evals.new`: adopted golden sets, the family's profiles, decoding variants with boost lists and a
+  weight, augmentation profiles, the languages map prefilled from a run's `target_lang`, the baseline; Plan, then
+  Start eval) behind Checkpoints' Evaluate, the Experiment's Evaluate best and the Eval report's Run eval… and Re-run
+  missing cells (filled with the eval's axes). The Project home's blocks count mixes, runs, adopted golden sets and
+  evals with the newest verdict and `@baseline`; Getting started derives its run and gate steps from `runs.list` and
+  `evals.list` and retires once a gate passed.
+- Not built: "test a phrase" in the Language pack, and the Playwright smoke of the Eval workspace.
 
 Topics follow the event model in the Cadence system tab; the backend contract below lists the endpoints.
 
@@ -141,14 +170,14 @@ Five workspaces ship by default, and Chat sits in the right column of every one,
 | Workspace | Centre (documents) | Left | Right | Bottom | Floating |
 | --- | --- | --- | --- | --- | --- |
 | Training | Run, Mix, Experiment | Library | Chat, Checkpoints, Getting started (until dismissed) | Metrics, Logs | — |
-| Eval | Eval report, Annotation batch | Library | Chat, Inspector | Diff | Audio |
+| Eval | Eval report, Golden set, Annotation batch (phase 4) | Library | Chat, Inspector, Lineage | Diff | Audio |
 | Data | Dataset version, Source, Recipe, Language pack | Library | Chat, Inspector, Pipeline run | Logs | Audio |
 | Triage | Triage queue | — | Chat, Diff | Inspector | Audio |
 | Ops | Model | Queue & GPU | Chat, Approvals, Storage | Shadow, Logs | — |
 
 > **Figure:** Eval workspace wireframe · Library, Eval report, Diff, Chat, Inspector, floating Audio — see the drawing in the Claude Doc "Cadence — spec v0.2".
 
-Selecting a matrix cell attaches it to the next Chat message; an eval run the agent starts fills the matrix live, and its approval requests appear in the same column.
+Selecting a matrix cell attaches it to the next Chat message and fills Diff with the cell's utterances, worst first; a row opens in the floating Audio. An eval run the agent starts fills the matrix live (`eval.{id}.progress`), its gate verdict appears in the report header, and its approval requests appear in the same column.
 
 - The status bar's Branches badge counts the project's branches waiting for a person — ahead of main and not a live
   session's (a template sync, another branch, an ended session's unmerged changes); it blinks like Approvals, its popup
@@ -181,8 +210,8 @@ Commands are the only way the UI changes anything: menus, buttons, shortcuts and
 | New stage from checkpoint | — | `POST /``projects/{p}/``runs` with `initFrom` and a required `peakLr` |
 | Pause / resume job | — | `POST /jobs/{id}:pause`, `:resume` |
 | Cancel job | — | `POST /jobs/{id}:cancel` — inline confirm |
-| Run eval matrix | — | `POST /``projects/{p}/``evals` |
-| Set eval baseline | — | `PATCH /``projects/{p}/baseline — approval` |
+| Run eval matrix | — | `evals.new` (`POST /projects/{p}/evals`, dry run first) — one command wherever an eval starts (Checkpoints, Experiment, Eval report) |
+| Set eval baseline | — | `aliases.set` on `baseline` (`PUT /projects/{p}/aliases/baseline`) — approval (R8, R23) |
 | New mix / Edit mix | — | `POST /projects/{p}/mixes` (`mixes.new`); `PATCH /mixes/{id}` (`mixes.edit`) — R13: a mix is saved as a revision, not a version |
 | Export dataset version to Shar | — | `POST /``projects/{p}/datasets/{id``}:export` |
 | Accept / correct / reject triage item | Enter / E / Backspace in Triage queue | `PATCH /triage/{id}` |
@@ -201,9 +230,9 @@ Commands are the only way the UI changes anything: menus, buttons, shortcuts and
 | Materialise / Evict dataset version | — | `POST /projects/{p}/datasets/{id}:materialize`, `:evict` |
 | Calibrate run (OOMptimizer) | — | `POST /projects/{p}/runs:calibrate` |
 | Average checkpoints | — | `POST /runs/{id}/checkpoints:average` |
-| Propose / approve golden set freeze | — | `POST /projects/{p}/golden-sets/{id}:freeze` — approval |
-| Evaluate gate / Edit gate thresholds | — | `POST /evals/{id}:gate`, `PATCH /projects/{p}/gates/{id}` |
-| Register model version | — | `POST /projects/{p}/models` |
+| Freeze golden set | — | `goldenSets.freeze` (registry scope) — approval, admin |
+| Evaluate gate / Edit gate | — | `evals.gate` (`POST /evals/{id}:gate`); `gates.edit` (the project's `gates.yaml`) |
+| Register model version | — | `models.register` (`POST /projects/{p}/models:register`, a registry version; needs a passed gate; an agent's call waits for approval) — inline confirm; one command for the Eval report, Model and Experiment (from the Experiment header it opens the experiment document, which confirms the best run's checkpoint) |
 | Parity check / Benchmark model | — | `POST /models/{id}:parity`, `:benchmark` |
 | Package correction batch | — | `POST /projects/{p}/corrections:package` |
 | New schedule | — | `POST /projects/{p}/schedules` — approval |
@@ -217,11 +246,11 @@ Commands are the only way the UI changes anything: menus, buttons, shortcuts and
 | Search everything / Find in panel | Ctrl/Cmd+K (plain text) / Ctrl/Cmd+F | `GET /search?q=&scope=` / — (client) |
 | Help for this / Shortcut sheet / Explain this | ? / Ctrl/Cmd+/ / — | `GET /help/context?panel=&entity=`; `POST /agent-sessions` (read-only, with the article attached) |
 | Save search as view | — | `PUT /me/projects/{p}/views/{name}` |
-| Edit language pack / Test boosting | — | worktree edit; `POST /projects/{p}/boost:evaluate` |
-| Try a model (file, microphone) | — | `POST /projects/{p}/transcriptions` (tag `media`, not an MCP tool); audio and words over the WebSocket it returns |
+| Edit language pack / Edit boost list / Test boosting | — | `langpacks.edit`; `boost.edit`; `evals.new` with a `decoding` axis (R1, R24) |
+| Try a model (file, microphone) | — | `transcriptions.new` (`POST /projects/{p}/transcriptions`, tag `media`, not an MCP tool); audio and words over the WebSocket it returns |
 | New annotation batch / Adjudicate / Freeze batch | — | `POST /projects/{p}/batches`; `PATCH /batches/{id}/items/{i}`; `POST /batches/{id}:freeze` — approval |
-| New experiment / Run sweep | — | `POST /projects/{p}/experiments`; `POST /experiments/{id}/sweeps:run` (dry run first; cap enforced) |
-| Preview augmentation / Robustness matrix | — | `POST /projects/{p}/augment:preview`; `POST /projects/{p}/evals` with profiles |
+| New experiment / Run sweep | — | `experiments.new`; `sweeps.run` (dry run first; cap enforced) |
+| Preview augmentation / Robustness matrix | — | `POST /projects/{p}/augment:preview`; `evals.new` with an `augmentation` axis |
 | Import dataset / Export to Hub | — | `POST /projects/{p}/pipelines/import:run`; `POST /registry/{kind}/{id}:export` — approval |
 | Create API key / Revoke credential | — | `POST /credentials`; `POST /credentials/{id}:revoke` |
 | Start playbook | — | `POST /projects/{p}/playbooks/{name}:run` (shows the estimate first) |
@@ -250,10 +279,10 @@ The shell needs fourteen things from the Go control plane, all in the OpenAPI 3.
 | Projects | `GET /projects`, `POST /projects`; every project-scoped path lives under `/projects/{p}/…`; workspaces at `PUT /me/projects/{p}/workspaces/{name}` | Events carry projectId; the client filters the stream to the current project |
 | Mounts and materialisation | `GET` / `POST /mounts`; `POST /mounts/{id}:scan`; `POST /projects/{p}/datasets/{id}:materialize`, `:evict` | Health on mount.{id}; materialisation progress on job.{id} |
 | Project bootstrap and agent profile | `POST /projects/{p}:bootstrap` (job: repository, files, worktree, workspaces); `PATCH /projects/{p}/agent-profile`; `GET /catalog/base-models`, `GET /catalog/agent-models`, `GET /catalog/instruction-templates` | The wizard reads the catalogues; bootstrap progress on job.{id}; profile changes commit to the repository |
-| Registry | `GET /registry/{kind}` with tag filters; `GET /registry/{kind}/{id}/versions`; `GET /registry/{kind}/{id}/lineage`; `POST /projects/{p}/adoptions`; `PUT /projects/{p}/aliases/{name}` | Registry events carry no projectId; the Library shows them by reference. Versions are immutable; only aliases change |
+| Registry | `GET /registry/{kind}` with tag filters; `GET /registry/{kind}/{id}/versions`; `GET /registry/{id}:lineage` (`registry.lineage`, phase 3; the id's prefix names the kind); golden sets, normalizers and models under `/registry/golden-sets`, `/registry/normalizers`, `/registry/models`; `POST /projects/{p}/adoptions`; `PUT /projects/{p}/aliases/{name}` | Registry events carry no projectId; the Library shows them by reference. Versions are immutable; only aliases change |
 | Settings | `GET` / `PATCH /compute/{id}`; `POST /secrets` (values never returned); `GET /agent-credentials`, `PUT /agent-credentials/{id}`, `POST /agent-credentials/{id}:verify|archive`, `GET /agent-providers` (values never returned); `GET /catalog/*`; `GET` / `PATCH /policies` (budgets, timezone); `GET /notification-rules`, `PATCH /notification-rules/{id}`; `GET` / `PATCH /notification-settings`; `PUT /telegram-bot` (write-only token), `POST /telegram-bot:verify`; `GET` / `POST /backups`, `GET /backups/{id}`, `POST /backups/{id}:verify` (phase 2) | Admin only; compute health on compute.{id}; backup and restore-test outcomes on `backups` |
 | Search and help | `GET /search?q=&scope=` (query language above; grouped results); `GET /help/{slug}`, `GET /help/context?panel=&field=&error=`; `PUT /me/projects/{p}/views/{name}` | The index is fed from the outbox; help articles ship with the binary; problem+json type URIs resolve to help pages |
-| Audio and live audio | `GET /utterances/{id}/audio` (R25); `GET …/peaks`; `POST /projects/{p}/transcriptions` and `GET /transcriptions/{id}/stream` (WebSocket, R48) | Tag `media`: exempt from the verb rule and MCP; ranges and signed segments for audio; single-use ticket and Origin check for the socket; message schemas are contract components |
+| Audio and live audio | An utterance's `…/audio?channel=&start=&end=` and `…/peaks` (R25); `POST /projects/{p}/transcriptions` and `/api/transcriptions/{id}/stream` (WebSocket, R48) | Tag `media` (06 "Media"): exempt from the verb rule and MCP, unreachable with an agent token; range requests and short-lived signed URLs for audio, play-only for reviewers, every play audited; single-use ticket (60 s) and Origin check for the socket; `LiveClientMessage` and `LiveServerMessage` are contract components |
 | Credentials and notifications | `POST /login`, `POST /logout`; `GET` / `POST /credentials`, `POST /credentials/{id}:revoke`; `GET /invite/{token}`; `GET` / `PATCH /notification-rules` | Session cookie plus custom header on mutations, or Bearer; tokens hashed at rest; Telegram inline actions carry single-use signed tokens |
 
 Standards basis:

@@ -36,6 +36,11 @@ const (
 	KindStepKind    = "step_kind"
 	// Background noise for augmentation (spec 02 entity Noise bank): a dataset_import with purpose noise.
 	KindNoiseBank = "noise_bank"
+	// Evaluation (phase 3): golden sets frozen from eval-only dataset versions, scoring normalizers (R21) and model
+	// versions registered from checkpoints whose gate passed (R22).
+	KindGoldenSet  = "golden_set"
+	KindNormalizer = "normalizer"
+	KindModel      = "model"
 )
 
 // CollectionKind is the EntityKind of collections.
@@ -57,6 +62,9 @@ var kinds = map[string]struct{ prefix, noun string }{
 	KindModelFamily: {"model-family/", "model family"},
 	KindStepKind:    {"step-kind/", "step kind"},
 	KindNoiseBank:   {"noise-bank/", "noise bank"},
+	KindGoldenSet:   {"golden-set/", "golden set"},
+	KindNormalizer:  {"normalizer/", "normalizer"},
+	KindModel:       {"model/", "model"},
 }
 
 // Known reports whether kind is a registry kind.

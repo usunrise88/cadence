@@ -6,4 +6,8 @@ resolved:
     collection: base-model/nemotron-3.5-asr-streaming-0.6b
     version: "2026-09-29.6733473ea7a9"
     id: ver_01a0e000-0000-7000-8000-000000000001
-templates: []
+templates:
+  - kind: template
+    collection: template/langpack-he-il
+    version: "2026-10-02.4f1c2a9e7b30"
+    id: ver_01a0e000-0000-7000-8000-000000000101

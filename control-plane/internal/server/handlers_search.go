@@ -30,6 +30,17 @@ func (s *Server) ProjectsSearch(ctx context.Context, req api.ProjectsSearchReque
 	if err != nil {
 		return nil, err
 	}
+	if s.Scorers != nil { // fold the words as the index folded documents of their locale (language packs, R21)
+		lang := ""
+		if len(q.Langs) > 0 {
+			lang = q.Langs[0]
+		}
+		fold, err := search.FoldFor(ctx, s.Pool, s.Scorers, p.ID, lang, q.Text)
+		if err != nil {
+			return nil, err
+		}
+		q.Refold(fold)
+	}
 	sreq, slugs, err := s.searchRequest(ctx, p, q)
 	if err != nil {
 		return nil, err

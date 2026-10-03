@@ -22,7 +22,9 @@ type Kind struct {
 	RuntimeVersionID string            `json:"runtimeVersionId,omitempty"`
 	Params           json.RawMessage   `json:"params"`
 	Consumes         map[string]string `json:"consumes"`
-	Produces         map[string]string `json:"produces"`
+	// OptionalInputs may be left unwired by a pipeline (a transcribe step's boost list); the step runs without them.
+	OptionalInputs []string          `json:"optionalInputs,omitempty"`
+	Produces       map[string]string `json:"produces"`
 	// OptionalOutputs may be left unwritten by a successful step; no pipeline wires them into another step.
 	OptionalOutputs []string        `json:"optionalOutputs,omitempty"`
 	Resources       steps.Resources `json:"resources"`
@@ -73,6 +75,34 @@ func (RegistryKinds) Lookup(ctx context.Context, q storage.Querier, name, versio
 		return k, true, nil
 	}
 	return Kind{}, false, nil
+}
+
+// Publisher is implemented by Kinds that know what the registered workers publish now (RegistryKinds). Plan refuses
+// a pinned kind@version that its runtime's workers no longer publish: the step would wait in the queue for ever.
+type Publisher interface {
+	// Published reports whether a registered worker of k's runtime publishes k now, and every version of k's name
+	// that registered workers publish (sorted name@version). A runtime with no registered worker is not judged (ok
+	// is true): nothing has said what it publishes, and its step waits for a worker like any other.
+	Published(ctx context.Context, q storage.Querier, k Kind) (ok bool, versions []string, err error)
+}
+
+// Published implements Publisher from the workers table: a row is the latest registration of one runtime on one
+// host, and its step_kinds are what that registration published (a version a re-registering runtime dropped is gone
+// from it).
+func (RegistryKinds) Published(ctx context.Context, q storage.Querier, k Kind) (bool, []string, error) {
+	ref := k.Ref()
+	var (
+		workers, publishing int
+		versions            []string
+	)
+	err := q.QueryRow(ctx, `SELECT count(*) FILTER (WHERE runtime_name = $1),
+			count(*) FILTER (WHERE runtime_name = $1 AND $2 = ANY(step_kinds)),
+			coalesce((SELECT array_agg(DISTINCT r ORDER BY r) FROM workers, unnest(step_kinds) r WHERE split_part(r, '@', 1) = $3), '{}')
+		FROM workers`, k.Runtime, ref, k.Name).Scan(&workers, &publishing, &versions)
+	if err != nil {
+		return false, nil, fmt.Errorf("read what workers publish of %s: %w", ref, err)
+	}
+	return k.Runtime == "" || workers == 0 || publishing > 0, versions, nil
 }
 
 // runtimeOf returns the runtime version id (runtimeVersionId) of the pinned step kind registry version, part of a

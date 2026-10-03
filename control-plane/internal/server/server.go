@@ -26,11 +26,16 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/data"
 	"github.com/usunrise88/cadence/control-plane/internal/defaults"
 	"github.com/usunrise88/cadence/control-plane/internal/drafts"
+	"github.com/usunrise88/cadence/control-plane/internal/evals"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
 	"github.com/usunrise88/cadence/control-plane/internal/eviction"
+	"github.com/usunrise88/cadence/control-plane/internal/experiments"
 	"github.com/usunrise88/cadence/control-plane/internal/help"
 	"github.com/usunrise88/cadence/control-plane/internal/jobs"
+	"github.com/usunrise88/cadence/control-plane/internal/langpacks"
+	"github.com/usunrise88/cadence/control-plane/internal/lineage"
 	"github.com/usunrise88/cadence/control-plane/internal/mcp"
+	"github.com/usunrise88/cadence/control-plane/internal/media"
 	"github.com/usunrise88/cadence/control-plane/internal/mixes"
 	"github.com/usunrise88/cadence/control-plane/internal/notify"
 	"github.com/usunrise88/cadence/control-plane/internal/obs"
@@ -44,6 +49,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/secrets"
 	"github.com/usunrise88/cadence/control-plane/internal/sessions"
 	"github.com/usunrise88/cadence/control-plane/internal/steps"
+	"github.com/usunrise88/cadence/control-plane/internal/transcriptions"
 	"github.com/usunrise88/cadence/control-plane/internal/webui"
 	"github.com/usunrise88/cadence/control-plane/internal/workers"
 	"github.com/usunrise88/cadence/control-plane/templates"
@@ -103,6 +109,16 @@ type Config struct {
 	Telegram notify.Bot
 	// Poller is the Telegram long-poll loop, read for its status only; nil when it does not run.
 	Poller *notify.Poller
+
+	// Lineage walks registry.lineage (phase 3 · stream L); nil means lineage.New() — the built-in sources. Domains
+	// whose work lives in tables (evals) pass theirs: lineage.New(evalsSource).
+	Lineage *lineage.Graph
+	// Scorers finds a locale's scoring normalizer for the search index and its queries (language packs, R21); nil
+	// keeps the index's own folding.
+	Scorers *langpacks.Scorers
+	// AllowedOrigins are the origins besides the server's own host that may open the live transcription socket
+	// (CADENCE_ALLOWED_ORIGINS; phase 3 · stream T).
+	AllowedOrigins []string
 }
 
 // Server implements api.StrictServerInterface. Planned operations fall through to api.Planned (501).
@@ -122,6 +138,16 @@ type Server struct {
 	playbooks *playbooks.Service
 	// runs are training runs over the pipeline engine (checkpoint and calibration hooks, run status).
 	runs *runs.Service
+	// evals are evals over generated pipelines, eval records, gates and model registration (phase 3).
+	evals *evals.Service
+	// media serves audio, peaks, spectrogram tiles and words to people; mediaLinks signs short-lived audio links.
+	media      *media.Service
+	mediaLinks *media.Signer
+	mediaPlays media.Plays // which audio.get requests start a play (audited once per window)
+	// experiments group runs and drive sweeps (phase 3 · stream X).
+	experiments *experiments.Service
+	// transcriptions are manual tests and the live channel's relay (phase 3 · stream T).
+	transcriptions *transcriptions.Service
 }
 
 var _ api.StrictServerInterface = (*Server)(nil)
@@ -172,6 +198,12 @@ func New(c Config) (*Server, error) {
 	s := &Server{Config: c, spec: spec}
 	s.runs = s.newRunsService()
 	s.runs.Install(c.StepHooks) // checkpoint and calibration outputs; the engine reports run status changes
+	s.evals = s.newEvalsService()
+	s.evals.Install(c.StepHooks) // scores outputs write eval records; the engine reports eval pipeline changes
+	s.media, s.mediaLinks = s.newMedia()
+	s.experiments = s.newExperimentsService()
+	s.experiments.Install() // a run that ends starts its sweep's next run
+	s.transcriptions = s.newTranscriptions()
 	window := time.Duration(s.defaultsDoc().Drafts.PresenceSeconds.Value) * time.Second
 	s.drafts = drafts.NewStore(time.Now, window)
 	s.mixes = mixes.NewService(s.drafts, s.defaultsDoc)
@@ -213,7 +245,10 @@ func New(c Config) (*Server, error) {
 }
 
 // RegisterJobs registers the pipeline engine's step job kind and sweep; call it before the job service starts.
-func (s *Server) RegisterJobs(j *jobs.Service) { s.Pipelines.Register(j) }
+func (s *Server) RegisterJobs(j *jobs.Service) {
+	s.Pipelines.Register(j)
+	s.transcriptions.Register(j) // live transcription sessions (phase 3 · stream T)
+}
 
 // Handler is the whole HTTP surface: /api (the contract), /mcp (the same operations as MCP tools), /git (the
 // project repositories over smart HTTP), /healthz, /metrics, and the SPA for every other path.
@@ -257,7 +292,7 @@ func (s *Server) apiRouter(authenticate bool) http.Handler {
 		},
 		ResponseErrorHandlerFunc: s.writeProblem,
 	})
-	api.HandlerWithOptions(eventStream{ServerInterface: strict, s: s}, api.ChiServerOptions{
+	api.HandlerWithOptions(mediaRoutes{ServerInterface: eventStream{ServerInterface: strict, s: s}, s: s}, api.ChiServerOptions{
 		BaseRouter:       r,
 		Middlewares:      []api.MiddlewareFunc{newValidator(s.spec, APIPrefix, s.writeProblem).middleware},
 		ErrorHandlerFunc: s.paramError,

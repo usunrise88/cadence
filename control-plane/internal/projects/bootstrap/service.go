@@ -230,7 +230,7 @@ func (s *Service) facts(ctx context.Context, q storage.Querier, p projects.Proje
 		f.Lock = append(f.Lock, layout.Locked{Kind: ad.Version.Kind, Collection: ad.Version.Name, Version: ad.Version.Version, ID: ad.Version.ID})
 	}
 	var ids []string
-	for _, name := range s.templateCollections(a) {
+	for _, name := range s.templateCollections(p, a) {
 		v, err := registry.Latest(ctx, q, registry.KindTemplate, name)
 		var pe *problems.Error
 		if errors.As(err, &pe) && pe.Type == problems.NotFound {
@@ -246,12 +246,19 @@ func (s *Service) facts(ctx context.Context, q storage.Querier, p projects.Proje
 }
 
 // templateCollections names the registry template collections a project's files come from.
-func (s *Service) templateCollections(a projects.AgentProfile) []string {
+func (s *Service) templateCollections(p projects.Project, a projects.AgentProfile) []string {
+	packs := map[string]bool{}
+	for _, l := range p.Locales {
+		if pack, ok := s.render.PackFor(l); ok {
+			packs[pack] = true
+		}
+	}
 	var out []string
 	for path, name := range s.templates {
 		dir, rest, _ := strings.Cut(path, "/")
 		switch {
 		case dir == "skills", dir == "pipelines", dir == "playbooks", dir == "agent-config":
+		case dir == layout.LangDir && packs[rest]:
 		case dir == "presets" && strings.TrimSuffix(rest, ".yaml") == a.PermissionPreset:
 		case dir == "instructions" && rest == a.InstructionsTemplate:
 		default:

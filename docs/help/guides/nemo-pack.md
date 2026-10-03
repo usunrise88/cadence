@@ -10,14 +10,25 @@ The NeMo pack (R40–R45) is the real training runtime: distribution `cadence-ne
 the `nemo-speech` worker image (`worker/Dockerfile`, NeMo Speech 26.07 pinned by digest: NeMo 3.0.0, PyTorch 2.12,
 Lhotse 1.33). It publishes the model family **`nemo.fastconformer-rnnt.cache-aware`** — Nemotron 3.5 streaming, a
 cache-aware FastConformer RNN-T with a language prompt, the family the seeded base model
-`base-model/nemotron-3.5-asr-streaming-0.6b` names — and four step kinds:
+`base-model/nemotron-3.5-asr-streaming-0.6b` names — and five step kinds:
 
 | Role | Step kind | Card | Does |
 | --- | --- | --- | --- |
 | calibrate | [`oomptimizer_calibrate`](../steps/oomptimizer-calibrate.md) | yes | OOMptimizer bucket batches under the cap + timed steps → `calibration` |
 | train | [`nemotron_finetune`](../steps/nemotron-finetune.md) | yes | fine-tune on a mix → `checkpoint`, `checkpoint_best`, `training-state` |
 | average | [`checkpoint_average`](../steps/checkpoint-average.md) | no | mean of checkpoints → `checkpoint` |
-| transcribe | [`nemotron_transcribe`](../steps/nemotron-transcribe.md) | yes | cache-aware streaming decode at a profile → `hypotheses` |
+| transcribe | [`nemotron_transcribe`](../steps/nemotron-transcribe.md) | yes | streaming decode through NeMo's cache-aware pipeline (the live decoder) at a profile, optionally phrase-boosted by a `boost_list` → `hypotheses` |
+| materialize | [`checkpoint_from_base`](../steps/checkpoint-from-base.md) | no | the base model at its pinned revision → `checkpoint` (evals of the base model) |
+| live | [`nemotron_live`](../steps/nemotron-live.md) | yes (job kind `interactive`) | serves a manual transcription session: up to three targets on the live channel, nothing stored |
+
+Live sessions and evals decode with one decoder, NeMo's cache-aware streaming pipeline with the pack's shims
+(`cadence_nemo/pipeline.py`): the per-stream language prompt, the stripped locale tag, and a restore on the CPU (the
+card holds 2.6 GiB per model instead of a 4.8 GiB load peak; two distinct models of a session load side by side). The
+descriptor's `interactive` entry is what a session reserves on a card: 6 000 MB for one model and 2 600 MB per further
+distinct model (spike A5).
+
+Scoring is family-neutral: the core [`wer_score`](../steps/wer-score.md) kind, in every runtime image, scores the
+`hypotheses`.
 
 The family descriptor: framework `nemo`, format `.nemo` (ONNX joins with export in phase 5), 16 kHz mono input,
 features computed by the model's own preprocessor (never stored), sentencepiece tokenizer (a checkpoint names the base
@@ -35,7 +46,7 @@ Train, and the decode half of Evaluate. `pipelines/train-stage` runs calibrate t
 
 ## Fields and defaults
 
-Every parameter of the four kinds defaults from `packs.nemo` (or `training.*`) in `defaults.yaml`; each step article
+Every parameter of the five kinds defaults from `packs.nemo` (or `training.*`) in `defaults.yaml`; each step article
 lists its table. The ones people change most: `peak_lr` (2e-4), `steps` (3000), `val_every` (500), `augmentation`
 (telephony; `{profile: clean}` off), `profile` (160ms).
 
@@ -51,7 +62,10 @@ process may use as nvidia-smi sees it; the NeMo steps give PyTorch's allocator t
 `python -m cadence_worker.conformance --runtime nemo-speech --memory-cap-mb 22528` inside the worker image on the card
 (nightly on the staging host) imports the ten fixture clips (FLEURS he_il, CC-BY-4.0,
 `worker/packs/nemo/cadence_nemo/fixtures`) and runs calibrate → train 6 steps → stop → resume to 9 → average →
-transcribe at every profile → score. The fixtures are FLEURS **test** clips, so the scores only prove the path works.
+transcribe at every profile → materialize the base model → transcribe it at 160 ms → score, every transcription
+through `wer_score` with a case-folded, punctuation-stripped normalizer (from phase 3; the table below predates it and
+compared lower-cased references with punctuated hypotheses). The fixtures are FLEURS **test** clips, so the scores
+only prove the path works.
 
 ### Measured on the staging card (2026-09-30)
 

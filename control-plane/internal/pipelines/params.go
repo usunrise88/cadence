@@ -110,6 +110,17 @@ func resolveParams(k Kind, written, overrides map[string]any, d *defaults.Defaul
 	return resolved, deps, probs
 }
 
+// ResolveParams is what a step of kind k runs with when a pipeline writes written: the written values over the
+// defaults (as resolveParams; a facade hashes it, e.g. an eval's decoding). The error names the first problem; the
+// map holds what resolved anyway.
+func ResolveParams(k Kind, written map[string]any, d *defaults.Defaults) (map[string]any, error) {
+	resolved, _, probs := resolveParams(k, written, nil, d)
+	if len(probs) > 0 {
+		return resolved, fmt.Errorf("%s: %s: %s", k.Ref(), probs[0].param, probs[0].message)
+	}
+	return resolved, nil
+}
+
 // xCadence returns a property's x-cadence metadata.
 func xCadence(prop *jsonschema.Schema) map[string]any {
 	if prop == nil || prop.Extra == nil {

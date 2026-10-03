@@ -1,4 +1,7 @@
-"""File decode in streaming simulation with the real cache-aware streaming decoder (spike A3 step 3: NeMo's
+"""Versions 1 and 2 of nemotron_transcribe (version 3 decodes with :mod:`cadence_nemo.pipeline`, the live decoder; this
+module keeps their decoder for comparisons and the :class:`Boost` type).
+
+File decode in streaming simulation with the real cache-aware streaming decoder (spike A3 step 3: NeMo's
 ``speech_to_text_cache_aware_streaming_infer.py`` logic, chunk by chunk with the encoder caches carried; never an
 offline decode re-labelled): ``att_context_size`` from the latency profile, greedy RNNT, the language prompt, tags
 stripped from the text.
@@ -118,8 +121,33 @@ def hyp_word_confidence(h: Any, ids_to_tokens: Callable[[list[int]], list[str]])
         return None
 
 
-def prepare(model: Any, att_context_size: list[int], prompt_key: str) -> dict[str, Any]:
-    """Put the model in streaming mode at a profile: returns the decoding configuration it now uses."""
+@dataclass(frozen=True)
+class Boost:
+    """Static phrase boosting (NeMo's GPU phrase boosting tree, fused into greedy RNNT label-looping decoding):
+    ``final score = acoustic score + weight * boosting-tree score``; ``context_score`` and ``depth_scaling`` shape the
+    tree (NeMo's defaults for RNNT)."""
+
+    terms: tuple[str, ...]
+    weight: float
+    list_hash: str
+    context_score: float = 1.0
+    depth_scaling: float = 2.0
+
+    def decoding(self) -> dict[str, Any]:
+        return {
+            "method": "nemo-phrase-boosting",
+            "list": self.list_hash,
+            "terms": len(self.terms),
+            "weight": self.weight,
+            "contextScore": self.context_score,
+            "depthScaling": self.depth_scaling,
+        }
+
+
+def prepare(model: Any, att_context_size: list[int], prompt_key: str, boost: Boost | None = None) -> dict[str, Any]:
+    """Put the model in streaming mode at a profile, with static phrase boosting when ``boost`` is given: returns the
+    decoding configuration it now uses (without a boost list it is the same as before boosting existed, so its hash
+    is too)."""
     from nemo.collections.asr.parts.submodules.rnnt_decoding import RNNTDecodingConfig
     from omegaconf import OmegaConf, open_dict
 
@@ -127,12 +155,18 @@ def prepare(model: Any, att_context_size: list[int], prompt_key: str) -> dict[st
     dcfg = OmegaConf.structured(RNNTDecodingConfig(fused_batch_size=-1, strategy="greedy_batch"))
     with open_dict(dcfg):
         dcfg.confidence_cfg.preserve_token_confidence = True
+        if boost is not None:
+            dcfg.greedy.loop_labels = True  # the label-looping decoder is the one that fuses a boosting tree
+            dcfg.greedy.boosting_tree.key_phrases_list = list(boost.terms)
+            dcfg.greedy.boosting_tree.context_score = boost.context_score
+            dcfg.greedy.boosting_tree.depth_scaling = boost.depth_scaling
+            dcfg.greedy.boosting_tree_alpha = boost.weight
     model.change_decoding_strategy(dcfg, verbose=False)
     model.set_inference_prompt(prompt_key)
     model.decoding.set_strip_lang_tags(True)
     model.eval()
     model.encoder.setup_streaming_params()
-    return {
+    out: dict[str, Any] = {
         "decoder": "rnnt-greedy-batch",
         "attContextSize": list(att_context_size),
         "targetLang": prompt_key,
@@ -140,6 +174,9 @@ def prepare(model: Any, att_context_size: list[int], prompt_key: str) -> dict[st
         "wordConfidence": "min",
         "wordTimestamps": "emission",
     }
+    if boost is not None:
+        out["boost"] = boost.decoding()
+    return out
 
 
 def decode_batch(model: Any, files: Sequence[Path], stride_ms: float) -> list[Stream]:

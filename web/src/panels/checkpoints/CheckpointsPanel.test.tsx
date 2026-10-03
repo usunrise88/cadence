@@ -50,7 +50,25 @@ describe("Checkpoints", () => {
     expect(rows[0]!.textContent).toContain("best");
     expect(rows[0]!.textContent).toContain("val WER 31 %");
     expect(rows[2]!.textContent).toContain("not kept");
-    expect(within(rows[0] as HTMLElement).getByRole("button", { name: /Evaluate/ })).toHaveProperty("disabled", true);
+    expect(within(rows[0] as HTMLElement).getByRole("button", { name: /Evaluate/ })).toHaveProperty("disabled", false);
+  });
+
+  it("evaluates a checkpoint: the plan first, then the eval opens", async () => {
+    runCommand.mockImplementation((_id: string, a: { dryRun?: boolean }) =>
+      Promise.resolve(
+        a.dryRun
+          ? { goldenSets: [{}], profiles: [{}, {}], baseline: { label: "base" }, cells: [{}, {}, {}, {}], cellsCached: 2, cellsToCompute: 2, decoding: [{}], estimate: { gpuHours: 0.25, audioHours: 0.5, basis: "table" } }
+          : { id: "evl_1" },
+      ),
+    );
+    wrap();
+    const b = document.querySelector('[data-checkpoint="ckp_b"]') as HTMLElement;
+    fireEvent.click(within(b).getByRole("button", { name: "Evaluate" }));
+    expect(await within(b).findByText(/4 cells, 2 cached, 2 to compute · ~0.25 GPU-h/)).toBeTruthy();
+    expect(runCommand).toHaveBeenCalledWith("evals.new", { project: "demo", body: { subject: { checkpointId: "ckp_b" } }, dryRun: true });
+    fireEvent.click(within(b).getByRole("button", { name: "Start eval" }));
+    await waitFor(() => expect(openDocument).toHaveBeenCalledWith("eval:evl_1"));
+    expect(runCommand).toHaveBeenLastCalledWith("evals.new", { project: "demo", body: { subject: { checkpointId: "ckp_b" } }, dryRun: false });
   });
 
   it("averages the selected checkpoints", async () => {

@@ -43,12 +43,12 @@ The biggest unknowns are how complete the Claude Code ACP adapter is and how rou
 
 Spikes:
 
-- [ ] A1: ACP client against `opencode acp` and `claude-agent-acp`: chat, tool-call diffs, permission round trip, cancel, resume
-- [ ] A2: Cadence MCP server with ten generated tools; both agents create a mix and launch a dry-run
-- [ ] A3: Nemotron 3.5 fine-tune on the staging card under a 24 GB cap, then ONNX export and a parity check
-- [ ] A4: Outbox → SSE → cache patching with an agent editing a mix while the Mix panel is open
-- [ ] A5: live microphone → WebSocket relay → Nemotron checkpoint in the worker and back, beside a training job (before phase 3's live mode)
-- [ ] S5: one audio view with a 30-minute call, spectrogram and word tracks at 60 fps across popouts (before phase 3's Audio panel)
+- [x] A1 (done): ACP client against `opencode acp` and `claude-agent-acp`: chat, tool-call diffs, permission round trip, cancel, resume
+- [x] A2 (done): Cadence MCP server with ten generated tools; both agents create a mix and launch a dry-run
+- [ ] A3 (partial): Nemotron 3.5 fine-tune on the staging card under a 24 GB cap, then ONNX export and a parity check — training, streaming eval and ONNX parity pass; Triton serving waits for phase 5
+- [x] A4 (done): Outbox → SSE → cache patching with an agent editing a mix while the Mix panel is open
+- [x] A5 (partial, enough for phase 3): live microphone → WebSocket relay → Nemotron checkpoint in the worker and back, beside a training job (before phase 3's live mode) — the 160 ms budget holds beside training; Firefox, Safari and Caddy are left to the owner
+- [x] S5 (done with caveats): one audio view with a 30-minute call, spectrogram and word tracks at 60 fps across popouts (before phase 3's Audio panel)
 - [ ] F1: k2/icefall through the framework seams without changes outside its pack (deferred with the packs beyond NeMo)
 
 Open questions:
@@ -564,6 +564,149 @@ Open questions:
       declares no `memoryGb` (the NeMo kinds declared 24, above the staging cap)
 - [ ] H: `TestProjectQueuePriority`'s one failure did not reproduce (20 runs alone, 8 beside `TestPipelinesOverHTTP`,
       two full integration runs); nothing changed there. The cancel flake was a real race (fixed in `internal/jobs`)
+
+Phase 3 (stream S, 2026-10-02). Answered by the owner-delegated decisions of `docs/review/2026-10-02-phase-3-plan.md`
+"Decisions taken for phase 3" (decision-log rows in `00-overview.md`; folded into 02, 03, 04, 06, 10 and 11):
+
+- [x] S3 · answered (decision 1, R23): the base model's existing `base_model` registry version is the baseline model
+      version; the `baseline` alias points at a `base_model` or a `model` version; unset means the default base model
+- [x] S3 · answered (decision 2): `baselines.set` is `aliases.set` with name `baseline` (approval-gated, R8)
+- [x] S3 · answered (decision 3): gates are the project repository's `gates.yaml`; `gates.get|edit` go through the
+      recipes service; an eval's verdict records the file's SHA
+- [x] S3 · answered (decision 4, R22): eval records are a global table keyed by `modelKey × goldenSetVersionId ×
+      normalizerVersionId × decodingHash × scorer@version`; `modelKey` = weights hash, or `base:<versionId>` for a base
+      model version
+- [x] S3 · answered (decision 5): the punctuation-insensitive companion score is `werNoPunct` (the scoring normalizer
+      plus punctuation removal)
+- [x] S3 · answered (decision 6): base models are evaluated through the family role `materialize` (`base_model` →
+      `checkpoint`); evals always transcribe a checkpoint
+- [x] S3 · answered (decision 7): `goldenSets.freeze` takes a frozen eval-only dataset version and a normalizer version
+      and registers `golden-set/<name>` (registry approval); the replay golden datasets and FLEURS he are frozen at the gate
+
+Found while folding the plan into the spec; answered by the streams as built (stream S2, 2026-10-02):
+
+- [x] S3 · toy materialize kind: answered — the toy pack publishes its own kind `toy_checkpoint_from_base@1` (03
+      "Runtimes, model families and latency profiles")
+- [x] S3 · leakage at `goldenSets.freeze`: answered — the set is compared with every dataset version not registered
+      eval-only and every version a run trained on, in any project, counting only their train and validation splits
+      (02 "Leakage and training exclusion", as built)
+- [x] S3 · `gates.yaml` collections: answered — they resolve to the project's adopted versions (newest per
+      collection); a collection the project has not adopted is `gate-config-invalid` (04 "Block 3", as built)
+- [ ] S3 · new normalizer versions: still no operation to freeze one (seeds only); a pack references a collection and
+      golden sets pin the version they were frozen with. Phase 4 (the ITN and project-specific scoring rules)
+- [ ] S3 · gate checks the spec names but `gates.yaml` lacks (entity recall on boosted terms, entity accuracy, maximum
+      degradation under `telephony`): still reported, not gated; boosted-term recall has no scorer yet (03 "Hot words")
+- [x] S3 · robustness cells: answered — the augmentation (kind, profile hash, seed) enters the decoding hash, so only
+      augmented cells change key (03 "Scorers and metrics", stream R)
+- [x] S3 · utterance audio path, signed URL lifetime and the audited event: answered by stream A as built —
+      `audio.get|sign`, `peaks.get`, `spectrogram.get`, `words.get` under the `media` tag; signed links live
+      `media.signed_link_ttl_s` (300 s); `audio.sign` and every play that starts write an audit row (06 "Media")
+- [x] S3 · `transcriptions.new` as a command under the `media` tag: answered by stream T as built — a single-use
+      ticket (`transcriptions.ticket_ttl_s`) opens the live socket; the `interactive` job kind (06 "Transcriptions and
+      the live channel as built")
+- [x] S3 · `models.register` approval: answered — a passed gate for everyone, and a registry-scope approval for an
+      agent's call (preset rule `registry-changes`); people register without one (02 "Model versions", as built;
+      00 decision log)
+- [x] S3 · agents and gates: answered as written — an agent's `gates.edit` is approval-gated (`evaluation-gates`), its
+      worktree edit reaches main only through accepted session changes (04 "Block 3", as built)
+- [x] S3 · the `boost_list` artifact: answered — the control plane renders a pack's `boost/<domain>.txt` (`# weight:`
+      header, one term per line) as JSON `{terms, weight}` (03 "Artifact types")
+- [x] S3 · R42's `eval report` artifact: confirmed not produced; `evals.get` is the report
+
+Phase 3 waves 1–2, assumptions the streams made (owner-delegated: answered by default as built; the owner may
+overrule; stream S2 folded them into the spec, 2026-10-02):
+
+- [x] G · a golden set is frozen only from a dataset version *registered* `evalOnly`; one that is eval-only only because
+      a source is not cleared is refused (02 "Golden sets", as built)
+- [x] G · one locale per golden set; the normalizer's locale must share the dataset's primary language subtag unless
+      `*`; `groups: call` is refused until datasets carry call ids
+- [x] G · the freeze is an approval for everyone, people included (`golden-set-freeze`, `everyone: true`), not only for
+      agents (05 "Guardrails" said agents; R8's reasoning for baselines applies to golden sets)
+- [x] G · "trained on" = the dataset versions of the mix revisions a project's runs used plus the `dataset`/`mix` inputs
+      of its training pipeline steps; `goldenSets.get` "used by" lists adopting projects only (the rest through lineage)
+- [x] Gate finding (c8d9285) · leakage checks count only the training side's train and validation splits (00 decision
+      log)
+- [x] L · an agent's `langpacks.edit`/`boost.edit` follows the draft policy `language_pack`: `draft` → a branch
+      `langpack/<locale>-<date>` accepted with `branches.accept`; a person's edit commits to main
+- [x] L · the search index folds with the scoring normalizer's character steps but keeps punctuation
+- [x] L · Serbian scores with `normalizer/basic` (no transliteration step); its golden sets are imported transliterated
+- [x] Y · the scores `group` is all-or-nothing per dataset (call, else speaker, else audio hash); alignment ties go to
+      fewer substitutions; CER counts spaces; partial stability is positional (03 "Scorers and metrics", as built)
+- [x] Y · NeMo phrase boosting is the GPU boosting tree on the greedy label-looping decoder, `packs.nemo.boost_weight`
+      0.5 (measured: over-boosting from ≈ 0.7)
+- [x] E · `evals.new` answers `201` with the eval (00 decision log); estimate `eval.gpu_hours_per_audio_hour` 0.025,
+      calibrated on the stand (2026-10-02: the pipeline decoder at batch 8 runs at RTF 0.0165, plus a 1.5× margin)
+- [x] E · the gate reads decoding 0 (and augmentation 0) at the primary profile, matched by name then latency; with no
+      golden sets in `gates.yaml`, the project's locales are targets and the rest replay; no target → the target check
+      fails
+- [x] E · an explicitly named golden-set collection the project has not adopted falls back to its latest version in
+      `evals.new`; patterns match adopted versions only
+- [x] E · `models.register` defaults the collection to `model/<project slug>`, takes the base model's licence and
+      `locale:` tags, and adopts the new version into the project
+- [x] X · approving `sweeps.run` covers all its runs, also on later days (the GPU-hour cap is the bound); a failed run
+      does not stop the sweep; experiment runs start from the base model; sweep parameters are the train step's own;
+      every point reads the recipe at the first point's commit
+- [x] R · entity accuracy and latency to final are reported, not gated; latency uses simulated real-time pace; the VAD
+      model (NVIDIA Frame-VAD Multilingual MarbleNet v2.0, NVIDIA Open Model License, passes R26) is pinned in
+      `packs.nemo.vad_*`, not the registry; augmentation runs on target golden sets only; a failed metric step fails
+      the eval
+- [x] U · one `models.register` and one `evals.new` command in the web for every entry point (00 decision log);
+      Lineage sits in the Eval workspace's right column; deltas are shown in percentage points
+- [x] S5 · waveform, regions, timeline and minimap are Cadence code (wavesurfer.js rejected); peaks are 720 KB per
+      channel-hour; the spectrogram FFT is JavaScript in a Web Worker; the 150 MB budget is the renderer process's (10
+      "Audio view and charts"; 08 R51, R52 annotated)
+
+Still open after waves 1–2:
+
+- [ ] A5 · **owner:** the primary cell `160ms` (`[56,1]`) is not a look-ahead Nemotron 3.5 was trained at (80, 320, 560,
+      1120 ms are); keep `160ms` (R20, its WER sits between its neighbours) or move the primary cell and the gate's
+      `primaryProfile` to `320ms`? Proposal: a `trained` flag on the family's latency profiles either way
+      (`docs/spikes/A5-live-transcription.md` "Result", surprise 2 and proposal 3). Not answered by default
+- [ ] L/Y · boost weight defaults disagree: a new boost list starts at `langpacks.boost_weight` 1.0 and `evals.new`
+      passes the list's weight to the step, while the measured NeMo optimum is 0.5 (`packs.nemo.boost_weight`) and 1.0
+      already over-boosts (WER 0.466 → 0.490). Proposal: `langpacks.boost_weight` 0.5
+- [ ] E · not built: eval records and their `scores` are not protected from eviction (an evicted cell shows a delta
+      error); `evals.new` has no playbook estimator (the playbook uses a 0.5 GPU-hour hint). Resolved: the GPU-hours
+      factor is calibrated (0.025, above); `playbooks.CurrentPhase` is 3 (audit fix F4)
+- [ ] R · GSM-FR, AMR-NB and Opus are left out of `augment_dataset@1`'s draw (reported per cell); the frame-VAD's card
+      names no Hebrew
+- [x] A5 · resolved: live and eval use one decoder — `nemotron_transcribe@3` decodes through NeMo's streaming
+      pipeline (03 "Runtimes, model families and latency profiles"); the training augmentation's telephone stage
+      resamples polyphase (`nemotron_finetune@2`, `cadence_worker.resample`)
+- [ ] U · not built: "test a phrase" in the Language pack, the Eval workspace's Playwright smoke. Resolved: Audio
+      opens from Eval report and Diff rows (stream A); the Eval report draws the Robustness, entity accuracy and
+      Streaming (latency) sections (stream U2); Set as baseline, Adopt into project, the gate editor and the Run eval…
+      form are built (audit fix F4; 11 "Panel catalogue", as built)
+- [x] Contract text: resolved — `normalizers.list`'s description in `api/openapi.yaml` names `normalizer/he-il`
+
+Phase-3 audit (2026-10-02; four read-only auditors, fixes F1–F4 merged into the phase-3 PR). Fixed: the training
+guard reads artifact types from the index and checks resolved inputs; agent branches that touch `gates.yaml`,
+`lang/`, `project.yaml`, `.claude/` or `opencode.json` wait for a person; the verdict requires the project's
+baseline and every gates.yaml set; registration uses the latest gated eval; spending commands never run unweighed;
+the primary profile resolves by latency; the decoding hash covers resolved transcribe params; CER drops spaces
+(`wer_score@2`); reported-only metric steps are optional; per-chunk latency timing; normalizer parity Go ↔ Python;
+stale step-kind pins are refused at planning; gate verdicts notify; media is people-only with bounded conversions,
+range-proof audit and hardened ffmpeg input; eval artifacts are protected from eviction. Open, answered by default:
+
+- [ ] Eval artifacts (hypotheses ≈ 280 MB, scores ≈ 27 MB per 76-cell eval on the stand) are never evicted and the
+      backup mirror copies them: a retention policy is needed before evals run nightly (default meanwhile: keep all)
+- [ ] The media span cache is bounded by size only; the play-audit dedupe is in memory (a restart audits a play
+      again); the conversion bound is global, not per user (default: 2 conversions)
+- [ ] A failed gate notifies as an outcome, not a failure (a gate saying no is the system working)
+- [ ] Step-kind versions a runtime stops publishing are not marked `deprecated` (that state is one-way and would block
+      an image rollback); planning reads the workers' latest registrations instead
+- [ ] `batch_size` stays in the eval decoding hash: at 80 ms, batch 1 and batch ≥ 2 differ by a word in 1 of 10 clips
+      (GPU numerics); an OOM retry at 0.75× batch can still change words without changing the key
+- [ ] The eval record cache reset once with `wer_score@2` (CER without spaces for every language, the FLEURS/Whisper
+      convention) and the fuller decoding hash; earlier records stay but are not read
+- [ ] Latency to final paces each chunk by the step's wall time divided by the streams in it, a lower bound for a lone
+      stream; the measured numbers in the latency_score help predate it
+- [ ] **owner:** the NeMo GPU tests and the nightly NeMo conformance never run in CI: a self-hosted runner on the GPU host
+      is not installed because the repository is public (a pull request from a fork could run code on the host).
+      Options: a runner restricted to the default branch and `workflow_dispatch`, or a host cron that runs the
+      conformance suite and reports to Telegram. Not answered by default
+- [ ] The base model has no usable Thai (empty output with every decoder and prompt): drop `replay-golden-th-th` from
+      the replay sets or keep it as a documented always-empty set (default: keep, it cannot regress)
 
 ## Sources
 

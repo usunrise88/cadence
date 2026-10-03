@@ -444,7 +444,8 @@ type SyncResult struct {
 }
 
 // templateOwned are the files a sync re-renders; .claude/skills is replaced as a whole (a skill Cadence dropped
-// goes too), pipelines only file by file (a project's own pipelines stay).
+// goes too), pipelines only file by file (a project's own pipelines stay). Language packs are project-edited and
+// sync three-way instead (packUpdates).
 var templateOwned = []string{layout.AgentsMD, layout.ClaudeMD, layout.DataLock, layout.ClaudeSettings, layout.OpencodeJSON,
 	layout.SkillsDir + "/", layout.PipelinesDir + "/"}
 
@@ -471,6 +472,13 @@ func (s *Service) Sync(ctx context.Context, tx pgx.Tx, p projects.Project, actor
 	base, err := s.o.Repos.Head(ctx, p.Slug)
 	if err != nil {
 		return SyncResult{}, repoProblem(err)
+	}
+	packs, err := s.packUpdates(ctx, tx, p, base, rendered.Pick(layout.LangDir+"/"))
+	if err != nil {
+		return SyncResult{}, err
+	}
+	for path, b := range packs {
+		files[path] = b
 	}
 	changes, err := s.diffWith(ctx, p.Slug, base, files)
 	if err != nil {

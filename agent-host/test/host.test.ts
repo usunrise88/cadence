@@ -184,7 +184,8 @@ describe("session manager", () => {
     control(h, st, "end");
     await waitFor("done", () => h.cp.states().at(-1) === "done");
     await waitFor("cleanup", () => !existsSync(join(h.dataDir, "sessions", st.session.id)));
-    assert.equal(h.manager.sessions.size, 0);
+    // The directory goes before the manager forgets the session: wait for both (a CI run caught the gap).
+    await waitFor("forgotten", () => h.manager.sessions.size === 0);
   });
 
   test("the agent's own commits are pushed at the end of the turn", async () => {

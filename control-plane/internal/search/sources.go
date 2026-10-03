@@ -13,7 +13,9 @@ import (
 
 	"github.com/usunrise88/cadence/control-plane/internal/approvals"
 	"github.com/usunrise88/cadence/control-plane/internal/auth"
+	"github.com/usunrise88/cadence/control-plane/internal/evals"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
+	"github.com/usunrise88/cadence/control-plane/internal/experiments"
 	"github.com/usunrise88/cadence/control-plane/internal/jobs"
 	"github.com/usunrise88/cadence/control-plane/internal/mixes"
 	"github.com/usunrise88/cadence/control-plane/internal/problems"
@@ -69,13 +71,18 @@ type Source struct {
 func Sources() []Source {
 	return []Source{
 		{Kind: projects.Kind, Load: loadProject},
-		{Kind: registry.KindBaseModel, Aliases: []string{"model", "base-model", "basemodel"}, Load: loadVersion},
+		{Kind: registry.KindBaseModel, Aliases: []string{"base-model", "basemodel"}, Load: loadVersion},
 		{Kind: registry.KindDataset, Aliases: []string{"dataset", "dataset-version"}, Load: loadVersion},
 		{Kind: registry.KindTemplate, Load: loadVersion},
+		{Kind: registry.KindGoldenSet, Aliases: []string{"golden-set", "goldenset", "golden"}, Load: loadVersion},
+		{Kind: registry.KindNormalizer, Load: loadVersion},
+		{Kind: registry.KindModel, Load: loadVersion},
 		{Kind: registry.CollectionKind, Aliases: []string{"collection"}, Load: loadCollection},
 		{Kind: jobs.Kind, Load: loadJob},
 		{Kind: approvals.Kind, Load: loadApproval},
 		{Kind: mixes.Kind, Load: loadMix},
+		{Kind: evals.Kind, Load: loadEval},
+		{Kind: experiments.Kind, Load: loadExperiment},
 	}
 }
 
@@ -247,6 +254,80 @@ func loadMix(ctx context.Context, q storage.Querier, ev events.Record) ([]Docume
 		Title: m.Name, Text: joinText(parts...), Status: "active", Actor: &actor,
 		Numbers: map[string]float64{"rev": float64(m.Rev)}, UpdatedAt: m.UpdatedAt,
 	}}, nil
+}
+
+// loadEval indexes an eval: project work, found by its subject and baseline, its golden sets, profiles and its gate
+// verdict. Its status is the eval's; a gated eval also carries a verdict:<passed|failed|…> tag.
+func loadEval(ctx context.Context, q storage.Querier, ev events.Record) ([]Document, error) {
+	e, err := evals.Get(ctx, q, ev.Entity.ID)
+	if isNotFound(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	parts := []string{e.ID, e.Subject.Label, e.Subject.ID, e.Baseline.Label, e.Baseline.ID}
+	lang := ""
+	for _, g := range e.GoldenSets {
+		parts = append(parts, g.Name, g.Version, g.Locale, g.Domain)
+		if lang == "" {
+			lang = g.Locale
+		}
+	}
+	for _, p := range e.Profiles {
+		parts = append(parts, p.Name)
+	}
+	var tags []string
+	var gate struct {
+		Verdict string `json:"verdict"`
+	}
+	if len(e.Gate) > 0 && json.Unmarshal(e.Gate, &gate) == nil && gate.Verdict != "" {
+		tags = append(tags, "verdict:"+gate.Verdict)
+	}
+	title := "Eval of " + orElse(e.Subject.Label, e.Subject.ID)
+	if b := orElse(e.Baseline.Label, e.Baseline.ID); b != "" {
+		title += " vs " + b
+	}
+	actor := e.Actor
+	return []Document{{
+		Kind: evals.Kind, ID: e.ID, Scope: ScopeDocProject, ProjectID: e.ProjectID, Ref: ref(evals.Kind, e.ID),
+		Title: title, Text: joinText(parts...), Tags: tags, Status: e.Status, Lang: lang, Actor: &actor,
+		Numbers: map[string]float64{"rev": float64(e.Rev)}, UpdatedAt: e.UpdatedAt,
+	}}, nil
+}
+
+// loadExperiment indexes an experiment: project work, found by its name, question and tag.
+func loadExperiment(ctx context.Context, q storage.Querier, ev events.Record) ([]Document, error) {
+	var (
+		id, projectID, name, question, tag string
+		actor                              auth.Actor
+		rev                                int
+		updated                            time.Time
+	)
+	err := q.QueryRow(ctx, `SELECT id, project_id, name, question, tag, actor, rev, updated_at FROM experiments WHERE id = $1`,
+		ev.Entity.ID).Scan(&id, &projectID, &name, &question, &tag, &actor, &rev, &updated)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load experiment %s: %w", ev.Entity.ID, err)
+	}
+	var tags []string
+	if tag != "" {
+		tags = []string{"tag:" + tag}
+	}
+	return []Document{{
+		Kind: experiments.Kind, ID: id, Scope: ScopeDocProject, ProjectID: projectID, Ref: ref(experiments.Kind, id),
+		Title: name, Text: joinText(id, tag, question), Tags: tags, Status: "active", Actor: &actor,
+		Numbers: map[string]float64{"rev": float64(rev)}, UpdatedAt: updated,
+	}}, nil
+}
+
+func orElse(s, def string) string {
+	if s != "" {
+		return s
+	}
+	return def
 }
 
 func joinText(parts ...string) string {

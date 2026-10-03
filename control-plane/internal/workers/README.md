@@ -13,8 +13,11 @@ The worker protocol (docs/review/2026-09-30-phase-2-plan.md "Worker protocol", R
   close requeue the job in place with `overrides.resumeFrom` = its `training-state` output. Calling Await again
   after a restart resumes; an ended job answers its stored outcome. Register the `step` kind on
   `jobs.QueueSteps` with a long timeout.
+- **Live sessions** (phase 3 · stream T): Await also takes River kind `live` (`steps.LiveJobKind`, a transcription
+  session's interactive job, internal/transcriptions); `OnGranted` lets that package add a fresh live token to an
+  interactive lease's secret env.
 - **Claim** (long-poll ≤ 30 s): waiting jobs whose `kind@version` the worker published, not paused or cancelled,
-  by project queue priority, job priority, then FIFO, read in keyset pages of 50 (at most 20 per attempt) until one
+  interactive jobs first (R49), then by project queue priority, job priority, then FIFO, read in keyset pages of 50 (at most 20 per attempt) until one
   fits, so jobs that cannot fit never hide one further down; card slot rows are locked in card index order (the
   claim's FOR UPDATE and the telemetry upserts of claims and reports alike, `byCardIndex`, so concurrent claims
   never deadlock) and `internal/queue` decides the fit. The

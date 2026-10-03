@@ -5,6 +5,8 @@
 //
 // The rules (docs/review/2026-09-30-phase-2-plan.md "The step job"):
 //   - one training job per card;
+//   - an interactive job (a live transcription session, R49) shares a card with training under the cap, but never
+//     with a benchmark (R30: latency measured beside a session is meaningless), and a benchmark never joins one;
 //   - a job reserves its declared memory, or the card's whole remaining cap when it declares none;
 //   - a job fits when its reservation fits under the cap beside the card's other leases;
 //   - an idle card must also have the memory free that the reservation needs, by the worker's own telemetry (a
@@ -80,11 +82,14 @@ func Fit(c Card, n Need, now time.Time) (int, string) {
 	if !slices.Contains(c.Config.AllowedJobKinds, n.JobKind) {
 		return 0, fmt.Sprintf("card %d does not accept %s jobs", c.Config.Index, n.JobKind)
 	}
-	if n.JobKind == steps.JobTraining {
-		for _, h := range c.Held {
-			if h.JobKind == steps.JobTraining {
-				return 0, fmt.Sprintf("card %d already runs a training job", c.Config.Index)
-			}
+	for _, h := range c.Held {
+		switch {
+		case n.JobKind == steps.JobTraining && h.JobKind == steps.JobTraining:
+			return 0, fmt.Sprintf("card %d already runs a training job", c.Config.Index)
+		case n.JobKind == steps.JobInteractive && h.JobKind == steps.JobBenchmark:
+			return 0, fmt.Sprintf("card %d runs a benchmark; a live session never shares its card", c.Config.Index)
+		case n.JobKind == steps.JobBenchmark && h.JobKind == steps.JobInteractive:
+			return 0, fmt.Sprintf("card %d holds a live session; a benchmark never shares its card", c.Config.Index)
 		}
 	}
 	free := c.CapMB() - c.reservedMB()

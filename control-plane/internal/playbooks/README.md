@@ -20,7 +20,8 @@ chain:
   - { id: calibrate, title: …, command: runs.calibrate, estimate: { gpuHours: 0.1, minutes: 6, plusMinus: 0.5 } }
   - { id: train, title: …, command: runs.new, with: { baseModel: $inputs.base, steps: $inputs.steps, datasets: [$inputs.dataset, $inputs.replay] } }
   - { id: watch, title: …, command: runs.get, accepts: [jobs.wait], until: terminal }
-  - { id: eval, title: …, command: evals.new, phase: 3 }
+  - { id: eval, title: …, command: evals.new, estimate: { gpuHours: 0.5, minutes: 30, plusMinus: 0.5 } }
+  - { id: gate, title: …, command: evals.gate }       # a later-phase step would say phase: <n> and be skipped
 stop: [ { step: failed }, { approval: denied }, { budget: exceeded }, { gate: failed } ]
 next: { done: …, stopped: … }          # the next-step suggestion written when the chain ends
 prompt: |                              # Go text/template over .Inputs.<name> (text) and .Project.{Name,Slug,Locales}
@@ -50,7 +51,7 @@ estimate notice. The server ticks the plan, never the agent:
 
 - The command pipeline's session hook (`commands.SessionHook`): `Done` ticks from a command that succeeded, in its
   transaction; `DryRun` records a dry run; `Admit` refuses a real spending command (`Spending`: runs.new|calibrate|
-  resume|stage, checkpoints.average) unless the session's last dry run of that operation since its last real one
+  resume|stage, checkpoints.average, evals.new, sweeps.run) unless the session's last dry run of that operation since its last real one
   was the same request (`commands.HashRequest`: path, query, If-Match and canonical body, never the Idempotency-Key;
   `State.DryRunRequests`) (`playbook-dry-run-required`), and any spending command once the playbook ended (`playbook-stopped`).
 - Reads a chain names (`runs.get`, `jobs.wait`, `checkpoints.list`) are observed by the server's `observeReads` middleware.
@@ -58,6 +59,8 @@ estimate notice. The server ticks the plan, never the agent:
   (`until: terminal`) waits for what the nearest earlier step started: `runs.get` of that run with an ended status
   ticks it (`done`; `failed`/`cancelled` fail it and stop the playbook when the template stops on `step`); a job
   (`jobs.wait`) ends it only when the earlier step started just that job, else it marks the step running.
+- `evals.gate` ticks its step done with the verdict in the note; a `failed` verdict (the answer's `gate.verdict`) stops
+  the playbook when the template stops on `gate: failed`.
 - `sessions.PlaybookWatcher`: a denied approval stops the playbook (`approval: denied`); a pause on the agent budget
   stops it (`budget: exceeded`); a turn that ends after the playbook ended ends the session; a turn that ends without
   progress gets one reminder notice for the agent (at most `MaxNudges` in a row).

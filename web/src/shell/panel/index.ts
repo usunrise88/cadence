@@ -21,6 +21,7 @@ export { isAsleep, sessionLabel, sessionStateLabel } from "@/shell/agents/labels
 export { useUnread, viewSession } from "@/shell/agents/unread";
 export {
   askAgent,
+  attachToChat,
   CHAT_PANEL,
   currentSelectionReferences,
   openBranch,
@@ -51,3 +52,39 @@ export { runIdOfDoc, runLabel } from "@/shell/training/runs";
 export { sortEntries } from "@/shell/training/queue";
 export { useActiveRun } from "@/shell/training/useActiveRun";
 export { useKeyedEstimate, type KeyedEstimate } from "@/shell/training/estimate";
+// Evaluation (phase 3): rates, deltas, gate and alignment glyphs, writing direction, and the selection items an Eval
+// report shares with Diff (cell:<id>/utt:<n>); live invalidation of eval and language pack reads.
+export {
+  alignedWords,
+  alignmentCounts,
+  deltaTone,
+  evalIdOfDoc,
+  evalItem,
+  formatDelta,
+  formatInterval,
+  formatRate,
+  GATE_CLASS,
+  GATE_GLYPH,
+  OP_GLYPH,
+  OP_LABEL,
+  parseEvalItem,
+  registrable,
+  textDirection,
+  TONE_CLASS,
+  TONE_GLYPH,
+  TONE_LABEL,
+  WORST_N,
+  type AlignedWord,
+  type AlignOp,
+  type DeltaTone,
+  type GateState,
+} from "@/shell/evaluation/format";
+export { invalidateEval, invalidateLangpacks } from "@/shell/evaluation/cache";
+// Evaluation setup: the Run eval form (evals.new's axes, the plan before Start) that Checkpoints, the Experiment and
+// the Eval report share, and the requests only an open document completes (adopt card, Run eval form, gate editor).
+export { EvalForm, type EvalFormProps } from "@/shell/evaluation/EvalForm";
+export { emptyEvalForm, formFromEval, subjectRefOf, type EvalFormState } from "@/shell/evaluation/evalForm";
+export { ADOPT_REQUEST, EVAL_FORM_REQUEST, GATE_REQUEST } from "@/shell/commands/evaluation";
+// Transcription (phase 3, R47–R50): the live channel's client, lanes, microphone capture and the page-side reference
+// check the Transcription panel composes (no audio or text is kept beyond the page).
+export * from "@/shell/transcription";

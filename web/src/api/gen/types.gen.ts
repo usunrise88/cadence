@@ -425,9 +425,9 @@ export type CredentialList = {
 };
 
 /**
- * The kinds registered so far; runtime, model_family and step_kind are published by workers (R40, R41, R45); noise_bank holds background noise for augmentation, registered by dataset_import with purpose noise; golden sets, normalizers and model versions join in later phases
+ * The kinds registered so far; runtime, model_family and step_kind are published by workers (R40, R41, R45); noise_bank holds background noise for augmentation, registered by dataset_import with purpose noise; golden_set (goldenSets.freeze), normalizer (scoring normalizers, R21) and model (models.register, R22) arrive in phase 3
  */
-export type RegistryKind = 'base_model' | 'dataset_version' | 'template' | 'runtime' | 'model_family' | 'step_kind' | 'noise_bank';
+export type RegistryKind = 'base_model' | 'dataset_version' | 'template' | 'runtime' | 'model_family' | 'step_kind' | 'noise_bank' | 'golden_set' | 'normalizer' | 'model';
 
 /**
  * draft → frozen → deprecated; a frozen version never changes
@@ -594,7 +594,7 @@ export type DatasetVersionList = {
     items: Array<DatasetVersion>;
 };
 
-export type TemplateKind = 'instructions' | 'preset' | 'skill' | 'pipeline' | 'agent-config' | 'playbook';
+export type TemplateKind = 'instructions' | 'preset' | 'skill' | 'pipeline' | 'agent-config' | 'playbook' | 'langpack';
 
 export type TemplateFile = {
     /**
@@ -678,7 +678,7 @@ export type AliasList = {
     items: Array<Alias>;
 };
 
-export type JobKind = 'training' | 'eval' | 'shadow' | 'export' | 'data';
+export type JobKind = 'training' | 'eval' | 'shadow' | 'export' | 'data' | 'interactive';
 
 export type ComputeCard = {
     /**
@@ -873,6 +873,36 @@ export type Defaults = {
      * The recommended augmentation profile (docs/spec/03 "Augmentation"): what the Recipe form's Reset to recommended writes
      */
     augment?: DefaultSection;
+    /**
+     * Evaluation (phase 3): matrix profiles, primary cell, scoring normalizer, duration buckets, bootstrap
+     */
+    eval?: DefaultSection;
+    /**
+     * The default gate a project's gates.yaml departs from (phase 3)
+     */
+    gate?: DefaultSection;
+    /**
+     * Language packs (phase 3): the boost weight a new list starts with and the size cap of a list
+     */
+    langpacks?: DefaultSection;
+    /**
+     * Audio serving (phase 3): the signed link lifetime and the longest span served
+     */
+    media?: DefaultSection;
+    /**
+     * Client view defaults, one section per view (views.audio: the audio view's budgets and spectrogram, R52)
+     */
+    views?: {
+        [key: string]: DefaultSection;
+    };
+    /**
+     * Sweeps (phase 3): mode, run counts, the GPU-hour cap and the seed of a random draw
+     */
+    sweeps?: DefaultSection;
+    /**
+     * Manual transcription tests and the live channel (phase 3): ticket, session and idle limits, frame size, file caps, the relay's queue and the interactive job's priority
+     */
+    transcriptions?: DefaultSection;
     estimates: {
         bytes_per_audio_hour: DefaultValue;
         measured_plus_minus?: DefaultValue;
@@ -990,6 +1020,10 @@ export type RunNew = {
      * Queue priority of the run's step jobs (higher first)
      */
     priority?: number;
+    /**
+     * The experiment the run belongs to (exp_…): the run trains on its mix revision and base model (phase 3)
+     */
+    experiment?: string;
 };
 
 export type EstimateRange = {
@@ -3019,6 +3053,10 @@ export type StepKindDescriptor = {
         [key: string]: string;
     };
     /**
+     * Inputs of consumes a pipeline may leave unwired (a transcribe step's boost list); the step runs without them
+     */
+    optionalInputs?: Array<string>;
+    /**
      * Output name → artifact type
      */
     produces: {
@@ -3030,7 +3068,7 @@ export type StepKindDescriptor = {
     optionalOutputs?: Array<string>;
     resources: StepResources;
     /**
-     * The model-family role this kind fills (calibrate, train, average, transcribe, export, parity), empty for neutral kinds
+     * The model-family role this kind fills (calibrate, train, average, transcribe, export, parity, materialize, live), empty for neutral kinds
      */
     role?: string;
     /**
@@ -3059,9 +3097,9 @@ export type StepResources = {
     memoryGb?: number;
     diskGb?: number;
     /**
-     * Which compute job kinds may take it
+     * Which compute job kinds may take it (interactive: a live transcription session, R49)
      */
-    jobKind?: 'training' | 'eval' | 'export' | 'data';
+    jobKind?: 'training' | 'eval' | 'export' | 'data' | 'interactive';
 };
 
 export type ModelFamilyDescriptor = {
@@ -3101,10 +3139,23 @@ export type ModelFamilyDescriptor = {
     };
     latencyProfiles: Array<LatencyProfile>;
     /**
-     * Role → step kind (calibrate, train, average, transcribe, export, parity)
+     * Role → step kind (calibrate, train, average, transcribe, export, parity; materialize turns a base_model artifact into a checkpoint so evals can transcribe a base model; live serves transcription sessions, R48)
      */
     roles: {
         [key: string]: string;
+    };
+    /**
+     * The card memory a live transcription session of the family reserves (R49, phase 3 · stream T)
+     */
+    interactive?: {
+        /**
+         * One model loaded: steady memory plus the load peak and margin (Nemotron 0.6B: 6000, spike A5)
+         */
+        memoryMb: number;
+        /**
+         * Each further distinct model of the session (targets of one model share its weights)
+         */
+        extraCheckpointMb?: number;
     };
     /**
      * The defaults.yaml section of this family
@@ -3636,6 +3687,10 @@ export type PipelineStepDefinition = {
     params?: {
         [key: string]: unknown;
     };
+    /**
+     * The step's failure does not fail the run: the steps that read its outputs (optional too) are skipped and the run ends done without them
+     */
+    optional?: boolean;
 };
 
 export type PipelineRunNew = {
@@ -4520,6 +4575,14 @@ export type Run = {
      * The run the start checkpoint came from (runs.stage)
      */
     parentRunId?: string;
+    /**
+     * The experiment the run belongs to (exp_…)
+     */
+    experimentId?: string;
+    /**
+     * The sweep that generated the run (swp_…)
+     */
+    sweepId?: string;
     family: {
         /**
          * The model family of the base model (R41)
@@ -5124,6 +5187,2137 @@ export type ArtifactEviction = {
     jobId?: string;
 };
 
+/**
+ * A scoring normalizer (R21): the text both sides of a WER are compared after. Registry kind normalizer, collection normalizer/<name>; the control plane renders it into a normalizer artifact (this JSON) for scorer steps
+ */
+export type NormalizerPayload = {
+    /**
+     * BCP 47 locale it is meant for, or * for any
+     */
+    locale: string;
+    /**
+     * Unicode normalisation form applied first
+     */
+    unicode: 'NFC' | 'NFKC';
+    casefold: boolean;
+    /**
+     * strip turns every Unicode punctuation character (categories P*) into a space
+     */
+    punctuation: 'keep' | 'strip';
+    /**
+     * Remove nonspacing combining marks (niqqud, accents) after canonical decomposition, then recompose in the unicode form
+     */
+    removeMarks: boolean;
+    /**
+     * Literal replacements applied in order after the Unicode step and before punctuation
+     */
+    mappings: Array<{
+        from: string;
+        to: string;
+    }>;
+    /**
+     * keep compares numbers as written; spoken/written conversion through the pack's ITN arrives in phase 4
+     */
+    numbers: 'keep';
+    description?: string;
+};
+
+/**
+ * A frozen golden set (goldenSets.freeze): an eval-only dataset version tied to one scoring normalizer version. Runs never read it
+ */
+export type GoldenSetPayload = {
+    datasetVersionId: string;
+    /**
+     * b3: hash of the dataset artifact
+     */
+    datasetHash: string;
+    normalizerVersionId: string;
+    locale: string;
+    /**
+     * telephone, read speech, …
+     */
+    domain?: string;
+    utterances: number;
+    hours: number;
+    /**
+     * The dataset version's content fingerprint
+     */
+    fingerprint: string;
+    /**
+     * The bootstrap's resampling unit (R54): whole calls, else speakers, else utterances
+     */
+    groups: 'call' | 'speaker' | 'utterance';
+    approvalId?: string;
+};
+
+/**
+ * A registered model version (models.register, R22): a checkpoint whose gate passed, published with its eval report and model card
+ */
+export type ModelPayload = {
+    checkpointId: string;
+    weightsHash: string;
+    /**
+     * b3: hash of the checkpoint artifact
+     */
+    checkpointHash: string;
+    familyId: string;
+    baseModelVersionId: string;
+    projectId: string;
+    evalId: string;
+    gate: {
+        verdict: 'passed' | 'failed';
+        /**
+         * The commit SHA of the project's gates.yaml the verdict used
+         */
+        gatesSha: string;
+    };
+    lineage: {
+        runId?: string;
+        mixSha?: string;
+        recipeSha?: string;
+        datasetVersionIds?: Array<string>;
+    };
+    /**
+     * The generated model card (Markdown)
+     */
+    card?: string;
+};
+
+export type NormalizerVersion = RegistryVersion & {
+    normalizer: NormalizerPayload;
+    usedBy: Array<UsedBy>;
+};
+
+export type NormalizerVersionList = {
+    items: Array<NormalizerVersion>;
+};
+
+export type GoldenSetVersion = RegistryVersion & {
+    goldenSet: GoldenSetPayload;
+    usedBy: Array<UsedBy>;
+};
+
+export type GoldenSetVersionList = {
+    items: Array<GoldenSetVersion>;
+};
+
+export type GoldenSetFreeze = {
+    /**
+     * The dataset version to freeze: ver_… or a dataset collection name (its newest frozen version); it must be registered eval-only
+     */
+    datasetVersionId: string;
+    /**
+     * The scoring normalizer: ver_… or a normalizer collection name (its newest frozen version); default defaults.yaml eval.normalizer
+     */
+    normalizerVersionId?: string;
+    /**
+     * The golden set's collection, golden-set/<name> or <name>; default the dataset collection's name (dataset/replay-golden-he → golden-set/replay-golden-he)
+     */
+    name?: string;
+    /**
+     * telephone, read-speech, …; default the dataset collection's domain:<x> tag, if any
+     */
+    domain?: string;
+    /**
+     * The bootstrap's resampling unit (R54); default speaker when the dataset's utterances name speakers, else utterance
+     */
+    groups?: 'call' | 'speaker' | 'utterance';
+};
+
+export type EvalStatus = 'queued' | 'running' | 'done' | 'failed';
+
+export type EvalCellRole = 'subject' | 'baseline';
+
+/**
+ * cached: an eval record already held the cell; queued / running: its steps wait or run; done: computed now; failed
+ */
+export type EvalCellState = 'cached' | 'queued' | 'running' | 'done' | 'failed';
+
+/**
+ * Exactly one of the three
+ */
+export type EvalSubjectRef = {
+    /**
+     * A checkpoint of this project (ckp_…)
+     */
+    checkpointId?: string;
+    /**
+     * A registered model version (ver_…, @alias or model/<name>)
+     */
+    modelVersionId?: string;
+    /**
+     * A base model version (ver_…, @alias or base-model/<name>)
+     */
+    baseModelVersionId?: string;
+};
+
+export type EvalDecodingVariant = {
+    /**
+     * none, or a boost list of the project's language pack at a commit: lang/<locale>/boost/<file>@<commit sha>
+     */
+    boost: string;
+    /**
+     * Boosting weight (with a boost list; default 1)
+     */
+    weight?: number;
+};
+
+export type EvalNew = {
+    subject: EvalSubjectRef;
+    /**
+     * Golden set versions (ver_…, @alias, golden-set/<name>); default: those gates.yaml names, else the project's adopted golden sets
+     */
+    goldenSets?: Array<string>;
+    /**
+     * Latency profiles (R43); default: eval.matrix_profiles that the model families declare, plus the primary profile
+     */
+    profiles?: Array<string>;
+    /**
+     * Decoding variants (R24); default [{boost: none}]
+     */
+    decoding?: Array<EvalDecodingVariant>;
+    /**
+     * The robustness axis: augmentation profiles of the project (augment/<name>.yaml@<commit>) applied to the golden sets before transcription; none is always included; default [{profile: none}]
+     */
+    augmentations?: Array<EvalAugmentationVariant>;
+    /**
+     * The baseline model (ver_…, @alias, base-model/<name> or model/<name>); default the project's @baseline, else its default base model
+     */
+    baseline?: string;
+    /**
+     * Queue priority of the eval's steps
+     */
+    priority?: number;
+    /**
+     * Golden-set locale → the language the models decode it in (the transcribe kind's language parameter), for both the subject and the baseline, e.g. {"sr-RS": "hr-HR"} when the model has no prompt for the locale and was fine-tuned under a neighbour's; default each golden set's own locale. Part of the decoding hash
+     */
+    languages?: {
+        [key: string]: string;
+    };
+};
+
+/**
+ * A model an eval compares (the subject or the baseline)
+ */
+export type EvalModel = {
+    kind: 'checkpoint' | 'model' | 'base_model';
+    /**
+     * ckp_… or ver_…
+     */
+    id: string;
+    /**
+     * Readable name (collection and version, or the checkpoint's run and step)
+     */
+    label: string;
+    /**
+     * The eval-record key of the model: the weights hash, or base:<versionId> for a base model
+     */
+    modelKey: string;
+    /**
+     * The model family (R41)
+     */
+    family: string;
+    runId?: string;
+    /**
+     * Baseline only: where it came from
+     */
+    source?: 'request' | 'alias' | 'project-default';
+};
+
+export type EvalGoldenSet = {
+    versionId: string;
+    /**
+     * golden-set/<name>
+     */
+    name: string;
+    version: string;
+    normalizerVersionId: string;
+    locale: string;
+    domain?: string;
+    utterances: number;
+    hours: number;
+    /**
+     * The bootstrap's resampling unit
+     */
+    groups: 'call' | 'speaker' | 'utterance';
+    /**
+     * A replay golden set (the gate's replay list, or a language outside the project's locales): scored at the primary profile only
+     */
+    replay?: boolean;
+    /**
+     * The language the models decode this set in when evals.new mapped its locale (languages)
+     */
+    decodeAs?: string;
+};
+
+export type EvalProfile = {
+    name: string;
+    latencyMs: number;
+    label?: string;
+};
+
+export type EvalDecoding = {
+    index: number;
+    /**
+     * none or lang/<locale>/boost/<file>@<commit>
+     */
+    boost: string;
+    weight?: number;
+    /**
+     * Terms in the boost list
+     */
+    terms?: number;
+    /**
+     * The rendered boost_list artifact (b3:…)
+     */
+    artifact?: string;
+};
+
+export type EvalSignificance = {
+    /**
+     * Bootstrap resamples
+     */
+    samples: number;
+    /**
+     * Interval coverage (0.95)
+     */
+    level: number;
+    seed: number;
+};
+
+/**
+ * GPU time of the cells to compute: golden audio hours × eval.gpu_hours_per_audio_hour (defaults.yaml, to be calibrated)
+ */
+export type EvalEstimate = {
+    gpuHours: number;
+    /**
+     * Audio decoded by the cells to compute
+     */
+    audioHours: number;
+    cellsToCompute: number;
+    gpuHoursPerAudioHour: number;
+    basis: 'table';
+};
+
+export type EvalBucket = {
+    /**
+     * Lower bound of the duration bucket (seconds)
+     */
+    lo: number;
+    /**
+     * Upper bound; absent for the open last bucket
+     */
+    hi?: number;
+    utterances: number;
+    refWords: number;
+    wer: number;
+};
+
+/**
+ * Partial stability (R54)
+ */
+export type EvalStability = {
+    partialWords?: number;
+    unstableWords?: number;
+    /**
+     * Unstable partial word ratio
+     */
+    ratio?: number;
+    editsPerSecond?: number;
+};
+
+/**
+ * A cell's scores (the scores artifact's summary.json); rates are fractions (0.123), counts are words
+ */
+export type EvalSummary = {
+    scorer?: string;
+    language?: string;
+    utterances: number;
+    refWords: number;
+    refChars?: number;
+    wer: number;
+    cer: number;
+    /**
+     * WER with punctuation removed after the scoring normalizer
+     */
+    werNoPunct: number;
+    /**
+     * Substituted words
+     */
+    sub: number;
+    /**
+     * Deleted words
+     */
+    del: number;
+    /**
+     * Inserted words
+     */
+    ins: number;
+    charErrors?: number;
+    buckets?: Array<EvalBucket>;
+    stability?: EvalStability;
+};
+
+export type EvalInterval = {
+    /**
+     * The point estimate (subject − baseline, a fraction)
+     */
+    value: number;
+    low: number;
+    high: number;
+};
+
+/**
+ * Subject − baseline at the same golden set, profile and decoding: paired blockwise bootstrap over the golden set's groups (R54)
+ */
+export type EvalDelta = {
+    baselineCellId: string;
+    /**
+     * char when the golden set's language is written without spaces between words (eval.character_error_languages): wer then holds the CER delta, del and ins are not computed
+     */
+    unit?: 'char';
+    wer: EvalInterval;
+    /**
+     * Deletion rate delta (deleted words / reference words)
+     */
+    del: EvalInterval;
+    /**
+     * Insertion rate delta
+     */
+    ins: EvalInterval;
+    /**
+     * The WER interval excludes zero
+     */
+    significant: boolean;
+    /**
+     * Resampling units (calls
+     */
+    groups: number;
+    samples: number;
+    level: number;
+    /**
+     * Why the delta could not be computed (an artifact left the store)
+     */
+    error?: string;
+};
+
+export type EvalUtterance = {
+    /**
+     * Position in the golden set
+     */
+    index: number;
+    /**
+     * The audio's content hash
+     */
+    audio: string;
+    speaker?: string;
+    group?: string;
+    durationS?: number;
+    ref: string;
+    hyp: string;
+    refWords: number;
+    sub: number;
+    del: number;
+    ins: number;
+    errors: number;
+    wer: number;
+    /**
+     * Alignment: [op, ref word, hyp word] with op =, S, D or I
+     */
+    ops: Array<Array<string>>;
+};
+
+export type EvalCell = {
+    /**
+     * evc_…
+     */
+    id: string;
+    role: EvalCellRole;
+    goldenSetVersionId: string;
+    profile: string;
+    decodingIndex: number;
+    /**
+     * Index into the eval's augmentations (0: none)
+     */
+    augmentationIndex?: number;
+    decodingHash: string;
+    modelKey: string;
+    state: EvalCellState;
+    /**
+     * The eval record (erc_…) the scores come from
+     */
+    recordId?: string;
+    /**
+     * The scores artifact (b3:…)
+     */
+    scores?: string;
+    /**
+     * The hypotheses artifact (b3:…)
+     */
+    hypotheses?: string;
+    summary?: EvalSummary;
+    delta?: EvalDelta;
+    worst?: Array<EvalUtterance>;
+    metrics?: EvalCellMetrics;
+};
+
+export type EvalGateCheck = {
+    /**
+     * baseline: the eval's baseline is not the project's @baseline or default base model (always failed when present)
+     */
+    kind: 'target' | 'replay' | 'deletionsInsertions' | 'primaryProfile' | 'baseline';
+    goldenSetVersionId?: string;
+    goldenSet?: string;
+    profile?: string;
+    state: 'passed' | 'failed' | 'inconclusive';
+    delta?: EvalInterval;
+    /**
+     * Replay: the allowed regression
+     */
+    threshold?: number;
+    baselineWer?: number;
+    candidateWer?: number;
+    /**
+     * char when the set is gated on CER: delta, baselineWer and candidateWer are character error rates
+     */
+    unit?: 'char';
+    message: string;
+};
+
+export type EvalGate = {
+    verdict: 'passed' | 'failed';
+    /**
+     * The commit that last changed gates.yaml (empty: the defaults applied)
+     */
+    gatesSha: string;
+    checks: Array<EvalGateCheck>;
+    config: GateConfig;
+    at: string;
+    by?: Actor;
+};
+
+export type EvalProgress = {
+    cellsTotal: number;
+    /**
+     * Cells with scores (cached ones included)
+     */
+    cellsDone: number;
+    cellsCached: number;
+};
+
+export type Eval = {
+    /**
+     * evl_…
+     */
+    id: string;
+    projectId: string;
+    status: EvalStatus;
+    error?: string;
+    subject: EvalModel;
+    baseline: EvalModel;
+    goldenSets: Array<EvalGoldenSet>;
+    profiles: Array<EvalProfile>;
+    /**
+     * The cell the gate reads (R20)
+     */
+    primaryProfile: string;
+    decoding: Array<EvalDecoding>;
+    /**
+     * The robustness axis: index 0 is always none (phase 3 · stream R)
+     */
+    augmentations?: Array<EvalAugmentation>;
+    significance: EvalSignificance;
+    /**
+     * The pipeline run computing the missing cells (absent when every cell was cached)
+     */
+    pipelineRunId?: string;
+    progress: EvalProgress;
+    estimate: EvalEstimate;
+    gate?: EvalGate;
+    /**
+     * Absent in evals.list
+     */
+    cells?: Array<EvalCell>;
+    /**
+     * The robustness matrix when the eval has augmentations beyond none (absent in evals.list)
+     */
+    robustness?: Array<EvalRobustnessRow>;
+    rev: number;
+    actor: Actor;
+    createdAt: string;
+    updatedAt: string;
+    finishedAt?: string;
+};
+
+export type EvalList = {
+    items: Array<Eval>;
+};
+
+export type EvalPlanCell = {
+    role: EvalCellRole;
+    goldenSetVersionId: string;
+    profile: string;
+    decodingIndex: number;
+    /**
+     * Index into augmentations (0: none)
+     */
+    augmentationIndex?: number;
+    decodingHash: string;
+    modelKey: string;
+    cached: boolean;
+    recordId?: string;
+};
+
+export type EvalPlan = {
+    subject: EvalModel;
+    baseline: EvalModel;
+    goldenSets: Array<EvalGoldenSet>;
+    profiles: Array<EvalProfile>;
+    primaryProfile: string;
+    decoding: Array<EvalDecoding>;
+    /**
+     * The robustness axis (phase 3 · stream R)
+     */
+    augmentations?: Array<EvalAugmentation>;
+    significance: EvalSignificance;
+    cells: Array<EvalPlanCell>;
+    cellsCached: number;
+    /**
+     * Distinct records to compute (a subject equal to the baseline computes once)
+     */
+    cellsToCompute: number;
+    estimate: EvalEstimate;
+    /**
+     * The generated pipeline's steps (materialize → transcribe → score per missing cell)
+     */
+    steps: Array<{
+        step: string;
+        kind: string;
+    }>;
+};
+
+/**
+ * gates.yaml (docs/review/2026-10-02-phase-3-plan.md "Gate"); a value left out takes defaults.yaml gate.* / eval.*
+ */
+export type GateConfig = {
+    /**
+     * The latency profile the gate reads (R20)
+     */
+    primaryProfile?: string;
+    target?: {
+        /**
+         * golden-set/<name> (a * wildcard matches several)
+         */
+        goldenSets?: Array<string>;
+        rule?: 'beat-baseline';
+    };
+    replay?: {
+        goldenSets?: Array<string>;
+        /**
+         * Largest absolute WER rise (0.005 = 0.5 points)
+         */
+        maxRegression?: number;
+    };
+    deletionsInsertions?: boolean;
+    significance?: {
+        samples?: number;
+        level?: number;
+        seed?: number;
+    };
+};
+
+export type GateDeparture = {
+    param: string;
+    value: unknown;
+    default: unknown;
+};
+
+export type Gates = {
+    path: string;
+    /**
+     * false: the project has no gates.yaml and the defaults apply
+     */
+    exists: boolean;
+    ref: string;
+    /**
+     * The head of main the file was read at
+     */
+    head: string;
+    /**
+     * The commit that last changed gates.yaml
+     */
+    commit?: string;
+    /**
+     * The file (when it does not exist: the defaults rendered as a starting point)
+     */
+    content: string;
+    /**
+     * The effective gate with the defaults filled in
+     */
+    config: GateConfig;
+    departures: Array<GateDeparture>;
+};
+
+/**
+ * Exactly one of content and config
+ */
+export type GatesEdit = {
+    /**
+     * The new gates.yaml
+     */
+    content?: string;
+    config?: GateConfig;
+    /**
+     * The commit message
+     */
+    message?: string;
+};
+
+export type ModelRegister = {
+    /**
+     * ckp_…
+     */
+    checkpointId: string;
+    /**
+     * The collection, model/<name> (default model/<project slug>)
+     */
+    name?: string;
+    /**
+     * The gated eval to publish with (default the checkpoint's latest gated eval)
+     */
+    evalId?: string;
+    /**
+     * The collection's description when it is new
+     */
+    description?: string;
+};
+
+export type ModelRegistration = {
+    name: string;
+    model: ModelPayload;
+};
+
+export type ModelVersion = RegistryVersion & {
+    model: ModelPayload;
+    usedBy: Array<UsedBy>;
+};
+
+export type ModelVersionList = {
+    items: Array<ModelVersion>;
+};
+
+export type EvalAugmentationVariant = {
+    /**
+     * none, or an augmentation profile of the project repository at a commit: augment/<name>.yaml@<commit sha>
+     */
+    profile: string;
+    /**
+     * Seed of the augmentation draw; default the profile file's seed, else augment.seed
+     */
+    seed?: number;
+};
+
+/**
+ * One augmentation of an eval (the robustness axis): none, or a profile applied by augment_dataset before transcription
+ */
+export type EvalAugmentation = {
+    index: number;
+    /**
+     * none or augment/<name>.yaml@<commit>
+     */
+    profile: string;
+    /**
+     * The profile's name
+     */
+    name?: string;
+    seed?: number;
+    /**
+     * sha256 of the resolved profile (transforms and seed); the cell's decoding hash, and so its eval-record key, includes it
+     */
+    hash?: string;
+    /**
+     * The rendered augment_profile artifact (b3:…)
+     */
+    artifact?: string;
+    /**
+     * The noise bank version (ver_…) the noise transform mixes from
+     */
+    noiseBank?: string;
+    /**
+     * The resolved transforms (defaults.yaml augment.* where the file is silent)
+     */
+    transforms?: {
+        [key: string]: unknown;
+    };
+};
+
+export type EvalMetricUnavailable = {
+    metric: 'entities' | 'latency';
+    reason: string;
+};
+
+export type EvalEntityClass = {
+    /**
+     * An ITN class of the language pack (number, phone, date, amount, …)
+     */
+    class: string;
+    refEntities: number;
+    hypEntities: number;
+    correct: number;
+    /**
+     * correct / refEntities (absent or null without reference entities)
+     */
+    accuracy?: number;
+    /**
+     * correct / hypEntities
+     */
+    precision?: number;
+};
+
+/**
+ * Entity accuracy of a cell (entity_score): the pack's ITN classes compared between references and hypotheses; reported, not gated
+ */
+export type EvalEntityScores = {
+    scorer: string;
+    /**
+     * The metric_scores artifact (b3:…)
+     */
+    scores?: string;
+    available: boolean;
+    reason?: string;
+    /**
+     * {locale, commit}: the itn.yaml the classes came from
+     */
+    itn?: {
+        [key: string]: unknown;
+    };
+    utterances?: number;
+    utterancesWithEntities?: number;
+    refEntities: number;
+    hypEntities?: number;
+    correct: number;
+    accuracy?: number;
+    precision?: number;
+    classes?: Array<EvalEntityClass>;
+};
+
+/**
+ * Latency to final at real-time pace (R54, latency_score): speech end (frame VAD) to the partial whose text is final
+ */
+export type EvalLatencyScores = {
+    scorer: string;
+    /**
+     * The metric_scores artifact (b3:…)
+     */
+    scores?: string;
+    available: boolean;
+    reason?: string;
+    /**
+     * simulated: emit times at real-time pace from a file decode's compute times; realtime: a decode run at real-time pace
+     */
+    pace?: 'simulated' | 'realtime' | 'mixed';
+    /**
+     * Where utterance ends come from
+     */
+    utteranceEnd?: 'vad';
+    /**
+     * {kind, model, revision, …} of the VAD step
+     */
+    vad?: {
+        [key: string]: unknown;
+    };
+    profile?: string;
+    utterances?: number;
+    /**
+     * Utterances with speech and a non-empty final
+     */
+    measured: number;
+    p50Ms?: number;
+    p95Ms?: number;
+    meanMs?: number;
+    maxMs?: number;
+    /**
+     * Finals emitted before the VAD's speech end (counted as 0 ms)
+     */
+    earlyFinals?: number;
+    noSpeech?: number;
+    emptyFinals?: number;
+};
+
+/**
+ * Metrics beside WER, kept with the cell's eval record (absent while their steps run)
+ */
+export type EvalCellMetrics = {
+    entities?: EvalEntityScores;
+    latency?: EvalLatencyScores;
+    /**
+     * Metrics this cell does not get, and why
+     */
+    unavailable?: Array<EvalMetricUnavailable>;
+};
+
+/**
+ * One cell of the robustness matrix (golden set × augmentation × latency profile): WER under the augmentation against the same cell without it
+ */
+export type EvalRobustnessRow = {
+    role: EvalCellRole;
+    goldenSetVersionId: string;
+    profile: string;
+    decodingIndex: number;
+    augmentationIndex: number;
+    cellId: string;
+    /**
+     * WER under the augmentation (absent until scored)
+     */
+    wer?: number;
+    /**
+     * WER of the same cell without augmentation
+     */
+    werNone?: number;
+    /**
+     * wer − werNone (absolute, a fraction)
+     */
+    degradation?: number;
+    /**
+     * char when the golden set is scored on CER (eval.character_error_languages): wer, werNone and degradation are character error rates
+     */
+    unit?: 'char';
+};
+
+/**
+ * BCP 47 locale of a language pack: its directory lang/<locale>/ (he-IL, sr)
+ */
+export type PackLocaleName = string;
+
+/**
+ * A boost list's domain: the file boost/<domain>.txt
+ */
+export type BoostDomain = string;
+
+export type LanguagePackFile = {
+    /**
+     * Path inside the pack (normalizer.yaml, boost/names.txt)
+     */
+    path: string;
+    bytes: number;
+    /**
+     * The file as UTF-8 text
+     */
+    content: string;
+};
+
+/**
+ * One boost list (boost/<domain>.txt): a '# weight: <float>' header, then one term per line; blank lines and other # lines are comments. The eval decoder receives it as a boost_list artifact {terms, weight}
+ */
+export type BoostList = {
+    domain: BoostDomain;
+    /**
+     * Path inside the pack, boost/<domain>.txt
+     */
+    path: string;
+    weight: number;
+    terms: Array<string>;
+    /**
+     * sha256 (hex) of the list's canonical JSON {"terms":[…],"weight":w}: the identity an eval's decoding names
+     */
+    sha256: string;
+};
+
+/**
+ * The scoring normalizer normalizer.yaml names (R21): a registry normalizer collection (its newest frozen version) or a pinned version
+ */
+export type PackScoring = {
+    /**
+     * normalizer/<name> or ver_…
+     */
+    normalizer: string;
+    /**
+     * The version it resolves to now; absent when the registry has none
+     */
+    versionId?: string;
+    version?: string;
+};
+
+export type LanguagePackSummary = {
+    locale: PackLocaleName;
+    /**
+     * lang/<locale>
+     */
+    path: string;
+    /**
+     * The last commit on main that changed the pack
+     */
+    sha: string;
+    files: number;
+    /**
+     * Domains of its boost lists
+     */
+    boost: Array<string>;
+    scoring: PackScoring;
+};
+
+export type LanguagePackList = {
+    items: Array<LanguagePackSummary>;
+    /**
+     * Locales Cadence ships starter packs for
+     */
+    shipped: Array<string>;
+};
+
+/**
+ * A language pack (docs/spec/03-pipelines-defaults.md "Language packs and hot words"): lang/<locale>/ in the project repository
+ */
+export type LanguagePack = {
+    locale: PackLocaleName;
+    /**
+     * lang/<locale>
+     */
+    path: string;
+    /**
+     * The last commit that changed the pack: the ETag, and what entities pin
+     */
+    sha: string;
+    /**
+     * The commit the pack was read at
+     */
+    commit: string;
+    /**
+     * The branch the change landed on when it is not main (an agent's edit under the draft policy language_pack: draft); accept it with branches.accept
+     */
+    branch?: string;
+    files: Array<LanguagePackFile>;
+    boost: Array<BoostList>;
+    scoring: PackScoring;
+    /**
+     * Files whose shape is wrong (a hand edit); empty when the pack checks out
+     */
+    issues: Array<ProblemFieldError>;
+};
+
+export type LanguagePackFileChange = {
+    /**
+     * Path inside the pack, e.g. normalizer.yaml or boost/names.txt
+     */
+    path: string;
+    /**
+     * The new UTF-8 content (omit with delete)
+     */
+    content?: string;
+    /**
+     * Remove the file
+     */
+    delete?: boolean;
+};
+
+export type LanguagePackEdit = {
+    files: Array<LanguagePackFileChange>;
+    /**
+     * The commit message
+     */
+    message?: string;
+};
+
+export type BoostEdit = {
+    /**
+     * The list's terms
+     */
+    terms: Array<string>;
+    /**
+     * Boost weight; the list's current one when omitted, else defaults.yaml langpacks.boost_weight
+     */
+    weight?: number;
+    message?: string;
+};
+
+export type LineageNode = {
+    id: string;
+    /**
+     * Entity kind: a registry kind (dataset_version, golden_set, model, …), source, pipeline_run, run, checkpoint, mix, project, or one another domain adds (eval)
+     */
+    kind: string;
+    /**
+     * What to show: collection and version, a run's mix, a project's slug
+     */
+    label: string;
+    /**
+     * Project work only
+     */
+    projectId?: string;
+    /**
+     * The entity's state or status, when it has one
+     */
+    state?: string;
+    direction: 'root' | 'upstream' | 'downstream';
+    /**
+     * Hops from the root
+     */
+    distance: number;
+};
+
+export type LineageEdge = {
+    /**
+     * The entity that was used
+     */
+    from: string;
+    /**
+     * The entity that used it
+     */
+    to: string;
+    /**
+     * How: the payload field that names it (datasetVersionId, lineage.runId, sourceIds), or mix, base, init, run, adopted, …
+     */
+    relation: string;
+};
+
+export type Lineage = {
+    root: string;
+    nodes: Array<LineageNode>;
+    edges: Array<LineageEdge>;
+    /**
+     * The node limit stopped the walk
+     */
+    truncated: boolean;
+    /**
+     * Nodes left out because they belong to projects the caller cannot see
+     */
+    hidden: number;
+};
+
+export type AudioSignRequest = {
+    /**
+     * One channel (0-based); omitted: every channel
+     */
+    channel?: number;
+    /**
+     * Span start in seconds
+     */
+    start?: number;
+    /**
+     * Span end in seconds
+     */
+    end?: number;
+};
+
+export type AudioLink = {
+    /**
+     * audio.get with the span and the signature (relative to the server, starts with /api/)
+     */
+    url: string;
+    expiresAt: string;
+    utteranceId: string;
+    /**
+     * The audio's content hash (b3:…)
+     */
+    audio: string;
+    /**
+     * The utterance's duration
+     */
+    durationS: number;
+    /**
+     * Sample rate of what the link serves (16000)
+     */
+    sampleRate: number;
+    /**
+     * Channels of what the link serves
+     */
+    channels: number;
+    /**
+     * The stored audio's sample rate
+     */
+    originSampleRate?: number;
+    start?: number;
+    end?: number;
+};
+
+export type AudioPeaks = {
+    utteranceId: string;
+    channels: number;
+    /**
+     * Seconds per min/max pair
+     */
+    hopS: number;
+    /**
+     * Pairs per channel
+     */
+    frames: number;
+    /**
+     * Time of the first pair
+     */
+    start: number;
+    /**
+     * The utterance's duration
+     */
+    durationS: number;
+    /**
+     * The stored audio's sample rate
+     */
+    originSampleRate?: number;
+    /**
+     * Frames where a sample of any channel reached full scale (at most 1000)
+     */
+    clipped?: Array<number>;
+    /**
+     * frames × channels × [min, max], int8, value / 127 = sample
+     */
+    encoding: 'int8-minmax';
+    /**
+     * Base64 of the int8 bytes
+     */
+    data: string;
+    /**
+     * The cached 10 ms peaks artifact (b3:…)
+     */
+    artifact?: string;
+};
+
+export type SpectrogramLevel = {
+    level: number;
+    hopS: number;
+    frames: number;
+    tiles: number;
+};
+
+/**
+ * manifest.json of a spectrogram_tiles artifact (format cadence.spectrogram-tiles/1)
+ */
+export type SpectrogramManifest = {
+    schema: 'cadence.spectrogram-tiles/1';
+    /**
+     * The spectrogram_tiles artifact (b3:…)
+     */
+    artifact?: string;
+    /**
+     * The audio's content hash (b3:…)
+     */
+    audio?: string;
+    sampleRate: number;
+    originSampleRate: number;
+    channels: number;
+    windowSamples?: number;
+    hopSamples?: number;
+    nFft?: number;
+    /**
+     * Bins kept: up to the origin's Nyquist
+     */
+    bins: number;
+    binHz: number;
+    tileFrames: number;
+    encoding: {
+        floorDb: number;
+        stepDb: number;
+    };
+    levels: Array<SpectrogramLevel>;
+    peakDb: Array<number>;
+    durationS: number;
+};
+
+export type HypothesisWord = {
+    word: string;
+    start: number;
+    end: number;
+    confidence?: number;
+    /**
+     * Against the reference (with scores): = correct, S substituted, I inserted
+     */
+    op?: '=' | 'S' | 'I';
+    /**
+     * The reference word a substitution replaced
+     */
+    ref?: string;
+};
+
+export type DeletedWord = {
+    /**
+     * Index of the hypothesis word the deletion sits before (words.length: at the end)
+     */
+    before: number;
+    ref: string;
+};
+
+export type PartialEvent = {
+    text: string;
+    /**
+     * Audio time the partial covers up to
+     */
+    audioOffsetMs?: number;
+    /**
+     * When the decoder emitted it (wall clock from the stream's start)
+     */
+    emitMs?: number;
+};
+
+export type UtteranceWords = {
+    utteranceId: string;
+    /**
+     * The audio's content hash (b3:…)
+     */
+    audio: string;
+    /**
+     * The hypothesis text
+     */
+    text: string;
+    /**
+     * The normalised reference (with scores)
+     */
+    ref?: string;
+    words: Array<HypothesisWord>;
+    deletions: Array<DeletedWord>;
+    /**
+     * The scores' alignment was mapped onto the timed words (false without scores, or when the normaliser changed the word count)
+     */
+    aligned: boolean;
+    partials?: Array<PartialEvent>;
+    sub?: number;
+    del?: number;
+    ins?: number;
+    refWords?: number;
+};
+
+export type TranscriptionNew = {
+    input: TranscriptionInput;
+    /**
+     * One to three targets; they receive the same audio (lanes A, B, C in this order unless blind)
+     */
+    targets: Array<TranscriptionTargetIn>;
+    telephony?: TelephonySimulation;
+    /**
+     * File and span inputs: play at real-time pace (latency shows) or as fast as the card allows
+     */
+    pace?: 'realtime' | 'fast';
+    /**
+     * Shuffle the lanes; the page leaves them unnamed until the person picks the better one (the pick is not recorded)
+     */
+    blind?: boolean;
+};
+
+export type TranscriptionInput = {
+    /**
+     * microphone (PCM16 frames from the browser), file (its bytes, decoded by the worker), or span (an utterance's audio read by the worker)
+     */
+    kind: 'microphone' | 'file' | 'span';
+    /**
+     * kind span: the utterance (utt_… or its audio's b3: hash)
+     */
+    utteranceId?: string;
+    /**
+     * kind span: start in seconds (default 0)
+     */
+    start?: number;
+    /**
+     * kind span: end in seconds (default the end of the audio)
+     */
+    end?: number;
+    /**
+     * kind span: the channel (default 0)
+     */
+    channel?: number;
+};
+
+/**
+ * Exactly one of checkpointId, modelVersionId and baseModelVersionId
+ */
+export type TranscriptionTargetIn = {
+    /**
+     * A checkpoint of the project (ckp_…)
+     */
+    checkpointId?: string;
+    /**
+     * A model version (ver_…, model/<name>, or @alias)
+     */
+    modelVersionId?: string;
+    /**
+     * A base model version (ver_…, base-model/<name>, or @alias)
+     */
+    baseModelVersionId?: string;
+    /**
+     * Latency profile (default: eval.primary_profile when the family declares it, else its first streaming profile)
+     */
+    profile?: string;
+    /**
+     * BCP 47 language the model decodes in (default: the project's first locale)
+     */
+    language?: string;
+    /**
+     * none (default), or a boost list of the project's language pack: lang/<locale>/boost/<file>.txt, optionally @<commit> (default main)
+     */
+    boost?: string;
+    /**
+     * Overrides the list's '# weight:' header
+     */
+    boostWeight?: number;
+};
+
+/**
+ * Phone-line simulation (R50): down to sampleRate, through the codec, back up to 16 kHz with the training resampler (streaming polyphase)
+ */
+export type TelephonySimulation = {
+    /**
+     * G.711 μ-law (default), A-law, or band-limit only
+     */
+    codec?: 'ulaw' | 'alaw' | 'none';
+    sampleRate?: 8000;
+};
+
+export type TranscriptionSession = {
+    /**
+     * trs_…
+     */
+    id: string;
+    projectId: string;
+    /**
+     * The interactive job (job_…); absent in a dry run
+     */
+    jobId?: string;
+    /**
+     * queued: waiting for room on a card; loading: leased, the worker loads the targets; live: the worker is on the socket; ended
+     */
+    state: 'queued' | 'loading' | 'live' | 'ended';
+    /**
+     * The live channel, relative to the server (/api/transcriptions/{id}/stream?ticket=…); absent in a dry run
+     */
+    streamUrl?: string;
+    /**
+     * Single-use; absent in a dry run
+     */
+    ticket?: string;
+    ticketExpiresAt?: string;
+    input: TranscriptionInput;
+    targets: Array<TranscriptionLane>;
+    telephony?: TelephonySimulation;
+    pace: 'realtime' | 'fast';
+    blind: boolean;
+    /**
+     * The targets' model family
+     */
+    family: string;
+    /**
+     * The family's live role step kind (kind@version) that serves the session
+     */
+    liveKind: string;
+    /**
+     * Card memory the interactive job reserves: the family's interactive.memoryMb plus extraCheckpointMb per further distinct model
+     */
+    reservationMb: number;
+    /**
+     * Place among the waiting interactive jobs (1 = next)
+     */
+    position?: number;
+    /**
+     * Why the session waits, when it does
+     */
+    reason?: string;
+    limits: TranscriptionLimits;
+    allowance: ManualTestAllowance;
+    createdAt: string;
+};
+
+export type TranscriptionLane = {
+    /**
+     * The lane; live messages name it in target
+     */
+    target: 'A' | 'B' | 'C';
+    kind: 'checkpoint' | 'model' | 'base_model';
+    /**
+     * ckp_… or ver_…
+     */
+    id: string;
+    /**
+     * What the lane runs (the page hides it until the person picks, when blind)
+     */
+    label: string;
+    family: string;
+    profile: string;
+    latencyMs?: number;
+    chunkMs?: number;
+    language: string;
+    boost?: TranscriptionBoost;
+    /**
+     * Lanes with the same key share one model on the card
+     */
+    weightsKey: string;
+};
+
+export type TranscriptionBoost = {
+    /**
+     * lang/<locale>/boost/<file>.txt
+     */
+    list: string;
+    commit?: string;
+    weight: number;
+    terms: number;
+};
+
+export type TranscriptionLimits = {
+    /**
+     * Longest session once live (transcriptions.session_max_minutes, less when the allowance has less left)
+     */
+    sessionSeconds: number;
+    /**
+     * Closed after this long without audio, keepalive or ping
+     */
+    idleSeconds: number;
+    ticketSeconds: number;
+    /**
+     * Longest microphone frame (PCM16 at the capture rate)
+     */
+    frameMs: number;
+    maxFileSeconds: number;
+    maxFileBytes: number;
+    /**
+     * Largest message the socket accepts (send a file in chunks of this size or less)
+     */
+    maxMessageBytes: number;
+    /**
+     * Longest wait for a card before the session gives up
+     */
+    queueWaitSeconds: number;
+};
+
+/**
+ * The project's daily allowance of manual tests (budgets.manual_test_gpu_hours_per_project_per_day), metered as interactive lease wall time
+ */
+export type ManualTestAllowance = {
+    gpuHoursPerDay: number;
+    usedGpuHours: number;
+    remainingGpuHours: number;
+};
+
+/**
+ * Client → server text frames: start first, then fileEnd, finalize, keepalive, ping and end in any order; audio in binary frames
+ */
+export type LiveClientMessage = ({
+    type: 'start';
+} & LiveStart) | ({
+    type: 'fileEnd';
+} & LiveFileEnd) | ({
+    type: 'finalize';
+} & LiveFinalize) | ({
+    type: 'keepalive';
+} & LiveKeepalive) | ({
+    type: 'ping';
+} & LivePing) | ({
+    type: 'end';
+} & LiveEnd);
+
+/**
+ * The first message: what the audio is. Telephony, pace and targets were fixed by transcriptions.new
+ */
+export type LiveStart = {
+    type: 'start';
+    input: LiveInput;
+};
+
+export type LiveInput = {
+    kind: 'microphone' | 'file' | 'span';
+    /**
+     * microphone: the capture rate (the AudioContext's rate; no resampling in the browser)
+     */
+    sampleRate?: number;
+    /**
+     * microphone: the frame length the page sends (≤ limits.frameMs)
+     */
+    frameMs?: number;
+    /**
+     * microphone: the track's getSettings() (echo cancellation, noise suppression, auto gain, channel count, device)
+     */
+    settings?: {
+        [key: string]: unknown;
+    };
+    /**
+     * microphone: echo cancellation, noise suppression and auto gain were asked off
+     */
+    raw?: boolean;
+    fileName?: string;
+    /**
+     * file: the size the page will send
+     */
+    fileBytes?: number;
+};
+
+/**
+ * file: every byte was sent; the worker decodes the file (ffmpeg) and streams it at the session's pace
+ */
+export type LiveFileEnd = {
+    type: 'fileEnd';
+};
+
+/**
+ * A segment boundary: pad the right context with silence, force end of utterance, emit the finals; the next audio opens a new decoder stream (fresh encoder cache)
+ */
+export type LiveFinalize = {
+    type: 'finalize';
+};
+
+/**
+ * Keeps the session open without audio; the worker answers pong (source worker), behind any audio already sent
+ */
+export type LiveKeepalive = {
+    type: 'keepalive';
+    /**
+     * The client's clock, echoed in pong
+     */
+    t?: number;
+};
+
+/**
+ * Answered by the relay itself (pong, source relay): the control plane hop alone
+ */
+export type LivePing = {
+    type: 'ping';
+    /**
+     * The client's clock, echoed in pong
+     */
+    t?: number;
+};
+
+/**
+ * Flush every target, send summary, close with 1000
+ */
+export type LiveEnd = {
+    type: 'end';
+};
+
+/**
+ * Server → client text frames. partial replaces the segment's previous partial; final never changes; every result states the audio time it covers (audioEnd, seconds of session audio)
+ */
+export type LiveServerMessage = ({
+    type: 'waiting';
+} & LiveWaiting) | ({
+    type: 'started';
+} & LiveStarted) | ({
+    type: 'partial';
+} & LivePartial) | ({
+    type: 'final';
+} & LiveFinal) | ({
+    type: 'stats';
+} & LiveStats) | ({
+    type: 'pong';
+} & LivePong) | ({
+    type: 'error';
+} & LiveError) | ({
+    type: 'summary';
+} & LiveSummary);
+
+/**
+ * From the relay until started: the job waits for a card (queued, with its place and why) or the worker loads the targets (loading)
+ */
+export type LiveWaiting = {
+    type: 'waiting';
+    state: 'queued' | 'loading';
+    /**
+     * queued: place among the waiting interactive jobs (1 = next)
+     */
+    position?: number;
+    /**
+     * queued: why no card takes it yet
+     */
+    reason?: string;
+    reservationMb?: number;
+    waitedS?: number;
+};
+
+/**
+ * Every target is loaded and the decoder takes audio: the effective configuration per target
+ */
+export type LiveStarted = {
+    type: 'started';
+    targets: Array<LiveStartedTarget>;
+    /**
+     * The rate the worker resamples from (the start message's, or the file's)
+     */
+    captureRate?: number;
+    /**
+     * streaming polyphase (scipy.signal.resample_poly), the import and training resampler
+     */
+    resampler: string;
+    telephony?: LiveTelephony;
+    pace?: 'realtime' | 'fast';
+    input?: LiveInput;
+    /**
+     * file and span: the audio's duration
+     */
+    durationS?: number;
+};
+
+export type LiveStartedTarget = {
+    target: 'A' | 'B' | 'C';
+    profile: string;
+    chunkMs: number;
+    language: string;
+    /**
+     * Seconds the target's model took to load (shared weights load once)
+     */
+    loadS: number;
+    /**
+     * The decoder, as in an eval's decoding (same words as an eval of the same transcribe kind)
+     */
+    decoder?: string;
+    boost?: {
+        terms?: number;
+        weight?: number;
+    };
+};
+
+export type LiveTelephony = {
+    /**
+     * 16k → 8k (polyphase) → codec → 16k (polyphase)
+     */
+    chain: string;
+    codec: 'ulaw' | 'alaw' | 'none';
+    sampleRate: number;
+};
+
+export type LivePartial = {
+    type: 'partial';
+    target: 'A' | 'B' | 'C';
+    /**
+     * The segment it belongs to (a final closes it)
+     */
+    segment: number;
+    /**
+     * Per target, over partials and finals
+     */
+    seq: number;
+    text: string;
+    /**
+     * Seconds of session audio the partial covers
+     */
+    audioEnd: number;
+};
+
+export type LiveFinal = {
+    type: 'final';
+    target: 'A' | 'B' | 'C';
+    segment: number;
+    seq: number;
+    /**
+     * The segment's transcript (not the words joined: a word segmenter may split a word)
+     */
+    text: string;
+    words: Array<LiveWord>;
+    /**
+     * eou: the model's end of utterance; finalize: the client's; end: the session's
+     */
+    endpoint: 'eou' | 'finalize' | 'end';
+    audioEnd: number;
+    /**
+     * false: the text continues the previous final's last word (an end of utterance inside a word) — join without a space
+     */
+    space: boolean;
+};
+
+export type LiveWord = {
+    word: string;
+    /**
+     * Seconds of session audio (absent when the decoder gave no timing)
+     */
+    start?: number;
+    end?: number;
+    confidence?: number;
+};
+
+export type LiveStats = {
+    type: 'stats';
+    source: 'worker' | 'relay';
+    /**
+     * worker: decode time over audio time so far, every target together
+     */
+    rtf?: number;
+    /**
+     * worker: seconds of audio decoded
+     */
+    audioS?: number;
+    /**
+     * relay: messages waiting for the worker
+     */
+    queued?: number;
+    /**
+     * relay: forwarding time client → worker, µs
+     */
+    upP50Us?: number;
+    upP95Us?: number;
+    /**
+     * relay: forwarding time worker → client, µs
+     */
+    downP50Us?: number;
+    downP95Us?: number;
+    upN?: number;
+    downN?: number;
+};
+
+export type LivePong = {
+    type: 'pong';
+    source: 'relay' | 'worker';
+    t?: number;
+};
+
+export type LiveError = {
+    type: 'error';
+    problem: Problem;
+    /**
+     * The session closes after it
+     */
+    fatal: boolean;
+};
+
+/**
+ * The session's totals, last; the socket then closes with 1000. Nothing of it is stored
+ */
+export type LiveSummary = {
+    type: 'summary';
+    audioS: number;
+    rtf: number;
+    targets: {
+        [key: string]: LiveTargetSummary;
+    };
+    /**
+     * Peak memory of the job
+     */
+    gpu?: {
+        [key: string]: unknown;
+    };
+    load?: {
+        [key: string]: unknown;
+    };
+    frameMsP50?: number;
+    frameMsP95?: number;
+};
+
+export type LiveTargetSummary = {
+    profile?: string;
+    steps?: number;
+    stepMsP50?: number;
+    stepMsP95?: number;
+    stepMsMax?: number;
+    finals?: number;
+};
+
+export type ExperimentNew = {
+    /**
+     * A short name, unique in the project
+     */
+    name: string;
+    /**
+     * The question the experiment's runs answer
+     */
+    question: string;
+    /**
+     * The mix every run trains on (mix_… or its name)
+     */
+    mix: string;
+    /**
+     * The fixed mix revision (default the mix's current one)
+     */
+    mixRevision?: number;
+    /**
+     * Base model version (ver_…), collection name or @alias, pinned to a version (default the defaults' base model)
+     */
+    baseModel?: string;
+    /**
+     * A short tag for filters and search (default derived from the name)
+     */
+    tag?: string;
+};
+
+export type ExperimentMixRef = {
+    /**
+     * mix_…
+     */
+    id: string;
+    name: string;
+    /**
+     * The fixed mix revision
+     */
+    revision: number;
+    /**
+     * The revision's replay share (a sweep may vary it)
+     */
+    replayShare?: number;
+};
+
+export type ExperimentParameter = {
+    /**
+     * A train-step parameter, or replayShare (the mix's)
+     */
+    name: string;
+    /**
+     * The value runs get when nothing sets it (defaults.yaml, or the mix revision's replay share)
+     */
+    default?: unknown;
+    /**
+     * A sweep of the experiment varies it
+     */
+    swept: boolean;
+    /**
+     * At least one run departs from the default
+     */
+    departs: boolean;
+};
+
+export type ExperimentEval = {
+    /**
+     * evl_…
+     */
+    evalId: string;
+    status: EvalStatus;
+    /**
+     * The gate's verdict, once evals.gate ran
+     */
+    verdict?: 'passed' | 'failed';
+};
+
+export type ExperimentRun = {
+    /**
+     * run_…
+     */
+    runId: string;
+    status: RunStatus;
+    /**
+     * The sweep that generated the run (swp_…)
+     */
+    sweepId?: string;
+    /**
+     * The run's point in its sweep
+     */
+    point?: number;
+    /**
+     * The compared parameters' values for this run (parameter name → value)
+     */
+    values: {
+        [key: string]: unknown;
+    };
+    /**
+     * Compared parameters whose value differs from the default
+     */
+    departures: Array<string>;
+    /**
+     * The lowest validation WER of the run's checkpoints (a fraction)
+     */
+    bestValWer?: number;
+    /**
+     * The checkpoint with that WER
+     */
+    bestCheckpointId?: string;
+    /**
+     * The optimiser step of that checkpoint
+     */
+    bestStep?: number;
+    gpuHours: number;
+    /**
+     * The run's estimate at start
+     */
+    estimateGpuHours?: number;
+    /**
+     * The experiment's best run
+     */
+    best: boolean;
+    eval?: ExperimentEval;
+    error?: string;
+    createdAt: string;
+    finishedAt?: string;
+};
+
+export type ExperimentBest = {
+    runId: string;
+    checkpointId: string;
+    valWer: number;
+    eval?: ExperimentEval;
+    /**
+     * models.register would accept the checkpoint now: its latest gated eval passed
+     */
+    registrable: boolean;
+    /**
+     * Why it cannot be registered yet, and the next command
+     */
+    reason?: string;
+};
+
+export type Experiment = {
+    /**
+     * exp_…
+     */
+    id: string;
+    projectId: string;
+    name: string;
+    question: string;
+    tag?: string;
+    mix: ExperimentMixRef;
+    baseModel: RegistryVersion;
+    runCount: number;
+    /**
+     * The compared parameters, swept ones first (experiments.get only)
+     */
+    parameters?: Array<ExperimentParameter>;
+    /**
+     * Oldest first (experiments.get only)
+     */
+    runs?: Array<ExperimentRun>;
+    best?: ExperimentBest;
+    /**
+     * Newest first
+     */
+    sweeps: Array<Sweep>;
+    rev: number;
+    actor: Actor;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type ExperimentList = {
+    items: Array<Experiment>;
+};
+
+export type SweepMode = 'grid' | 'random';
+
+/**
+ * running: a run is queued or training; done: every point ran; stopped: the cap was reached first; cancelled: its running run was cancelled; failed: a run could not be started
+ */
+export type SweepState = 'running' | 'done' | 'stopped' | 'cancelled' | 'failed';
+
+export type SweepParameter = {
+    /**
+     * A train-step parameter (peak_lr, warmup_steps, augmentation, …) or replayShare
+     */
+    name: string;
+    /**
+     * The values to try (grid: required; random: drawn from)
+     */
+    values?: Array<unknown>;
+    /**
+     * random: the lower bound of a numeric range
+     */
+    min?: number;
+    /**
+     * random: the upper bound
+     */
+    max?: number;
+    /**
+     * random: draw uniformly on this scale (default linear; log for learning rates)
+     */
+    scale?: 'linear' | 'log';
+    /**
+     * random: round drawn values to integers
+     */
+    integer?: boolean;
+};
+
+export type SweepNew = {
+    mode?: SweepMode;
+    parameters: Array<SweepParameter>;
+    /**
+     * random: how many points (default sweeps.random_runs); grid: at most this many of the combinations (default all of them, up to sweeps.max_runs)
+     */
+    runs?: number;
+    /**
+     * Most GPU-hours the sweep's runs may use (default sweeps.gpu_hour_cap)
+     */
+    gpuHourCap?: number;
+    /**
+     * random: the seed of the draw (default sweeps.seed)
+     */
+    seed?: number;
+    /**
+     * Step budget of every run (default training.steps)
+     */
+    steps?: number;
+    /**
+     * Queue priority of the runs' step jobs (default 0)
+     */
+    priority?: number;
+};
+
+export type SweepPoint = {
+    index: number;
+    /**
+     * Parameter name → value
+     */
+    values: {
+        [key: string]: unknown;
+    };
+    /**
+     * pending: not started yet; skipped: the sweep ended first; else the run's status
+     */
+    state: 'pending' | 'queued' | 'running' | 'paused' | 'done' | 'failed' | 'cancelled' | 'skipped';
+    runId?: string;
+    /**
+     * The point's estimate when the sweep was planned
+     */
+    estimateGpuHours?: number;
+    gpuHours?: number;
+};
+
+export type Sweep = {
+    /**
+     * swp_…
+     */
+    id: string;
+    experimentId: string;
+    mode: SweepMode;
+    parameters: Array<SweepParameter>;
+    seed?: number;
+    steps?: number;
+    gpuHourCap: number;
+    state: SweepState;
+    /**
+     * Why the sweep ended before its last point (the cap, a cancelled or failed run)
+     */
+    stopReason?: string;
+    points: Array<SweepPoint>;
+    /**
+     * Runs that ended
+     */
+    runsDone: number;
+    /**
+     * The run queued or training now
+     */
+    currentRunId?: string;
+    /**
+     * GPU-hours the sweep's runs used
+     */
+    gpuHoursSpent: number;
+    /**
+     * The sum of the points' estimates when the sweep started
+     */
+    estimateGpuHours: number;
+    rev: number;
+    actor: Actor;
+    createdAt: string;
+    updatedAt: string;
+    finishedAt?: string;
+};
+
+export type SweepPlan = {
+    experimentId: string;
+    mode: SweepMode;
+    seed?: number;
+    steps?: number;
+    points: Array<SweepPoint>;
+    estimateGpuHours: EstimateRange;
+    gpuHourCap: number;
+    /**
+     * The whole estimate fits the cap (otherwise the real call answers sweep-over-cap)
+     */
+    withinCap: boolean;
+    /**
+     * How many points
+     */
+    fits: number;
+    /**
+     * table, measured or mixed: where the points' estimates come from
+     */
+    basis: string;
+    budget: {
+        /**
+         * The project's daily budget minus today's use and committed work
+         */
+        remainingGpuHours: number;
+        /**
+         * The whole estimate fits today's remaining budget (over it, an agent's sweep waits for an approval)
+         */
+        withinDailyBudget: boolean;
+    };
+};
+
 export type SecretNewWritable = {
     name: SecretName;
     kind: SecretKind;
@@ -5178,6 +7372,11 @@ export type IfMatchOptional = string;
 export type DryRun = boolean;
 
 /**
+ * Locale of a language pack: its directory lang/<locale>/ (he-IL, sr)
+ */
+export type PackLocale = PackLocaleName;
+
+/**
  * Project slug
  */
 export type ProjectSlug = Slug;
@@ -5203,6 +7402,11 @@ export type MixId = string;
  * Lease id (lse_…)
  */
 export type LeaseId = string;
+
+/**
+ * Utterance id (utt_…) or the audio's content hash (b3:…)
+ */
+export type UtteranceRef = string;
 
 /**
  * Artifact hash (b3:<64 hex>, BLAKE3-256 of the content)
@@ -10522,6 +12726,10 @@ export type RunsListData = {
          * Only runs in this status
          */
         status?: RunStatus;
+        /**
+         * Only runs of this experiment (exp_…)
+         */
+        experiment?: string;
         limit?: number;
     };
     url: '/projects/{p}/runs';
@@ -11098,6 +13306,1246 @@ export type ArtifactsEvictResponses = {
 };
 
 export type ArtifactsEvictResponse = ArtifactsEvictResponses[keyof ArtifactsEvictResponses];
+
+export type NormalizersListData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)
+         */
+        collection?: string;
+        /**
+         * Only versions in this state
+         */
+        state?: VersionState;
+    };
+    url: '/registry/normalizers';
+};
+
+export type NormalizersListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type NormalizersListError = NormalizersListErrors[keyof NormalizersListErrors];
+
+export type NormalizersListResponses = {
+    /**
+     * Normalizer versions, newest first
+     */
+    200: NormalizerVersionList;
+};
+
+export type NormalizersListResponse = NormalizersListResponses[keyof NormalizersListResponses];
+
+export type NormalizersGetData = {
+    body?: never;
+    path: {
+        /**
+         * Registry version id (ver_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/registry/normalizers/{id}';
+};
+
+export type NormalizersGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type NormalizersGetError = NormalizersGetErrors[keyof NormalizersGetErrors];
+
+export type NormalizersGetResponses = {
+    /**
+     * The version
+     */
+    200: NormalizerVersion;
+};
+
+export type NormalizersGetResponse = NormalizersGetResponses[keyof NormalizersGetResponses];
+
+export type GoldenSetsListData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)
+         */
+        collection?: string;
+        /**
+         * Only versions in this state
+         */
+        state?: VersionState;
+    };
+    url: '/registry/golden-sets';
+};
+
+export type GoldenSetsListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type GoldenSetsListError = GoldenSetsListErrors[keyof GoldenSetsListErrors];
+
+export type GoldenSetsListResponses = {
+    /**
+     * Golden set versions, newest first
+     */
+    200: GoldenSetVersionList;
+};
+
+export type GoldenSetsListResponse = GoldenSetsListResponses[keyof GoldenSetsListResponses];
+
+export type GoldenSetsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Registry version id (ver_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/registry/golden-sets/{id}';
+};
+
+export type GoldenSetsGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type GoldenSetsGetError = GoldenSetsGetErrors[keyof GoldenSetsGetErrors];
+
+export type GoldenSetsGetResponses = {
+    /**
+     * The version
+     */
+    200: GoldenSetVersion;
+};
+
+export type GoldenSetsGetResponse = GoldenSetsGetResponses[keyof GoldenSetsGetResponses];
+
+export type GoldenSetsFreezeData = {
+    body: GoldenSetFreeze;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/registry/golden-sets:freeze';
+};
+
+export type GoldenSetsFreezeErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type GoldenSetsFreezeError = GoldenSetsFreezeErrors[keyof GoldenSetsFreezeErrors];
+
+export type GoldenSetsFreezeResponses = {
+    /**
+     * Dry run — the golden set that would be frozen; or the version this content was already frozen as
+     */
+    200: GoldenSetVersion;
+    /**
+     * Frozen (the approved request)
+     */
+    201: GoldenSetVersion;
+    /**
+     * Gated; a person decides the approval on the approvals topic
+     */
+    202: ApprovalAccepted;
+};
+
+export type GoldenSetsFreezeResponse = GoldenSetsFreezeResponses[keyof GoldenSetsFreezeResponses];
+
+export type EvalsListData = {
+    body?: never;
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        status?: EvalStatus;
+        /**
+         * Only evals of this subject (ckp_…, or a model or base model version ver_…)
+         */
+        subject?: string;
+        limit?: number;
+    };
+    url: '/projects/{p}/evals';
+};
+
+export type EvalsListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type EvalsListError = EvalsListErrors[keyof EvalsListErrors];
+
+export type EvalsListResponses = {
+    /**
+     * Evals, newest first
+     */
+    200: EvalList;
+};
+
+export type EvalsListResponse = EvalsListResponses[keyof EvalsListResponses];
+
+export type EvalsNewData = {
+    body: EvalNew;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/projects/{p}/evals';
+};
+
+export type EvalsNewErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type EvalsNewError = EvalsNewErrors[keyof EvalsNewErrors];
+
+export type EvalsNewResponses = {
+    /**
+     * Dry run — the plan (cells, cached and to compute, estimate); nothing was written or queued
+     */
+    200: EvalPlan;
+    /**
+     * The eval, queued (done at once when every cell was cached)
+     */
+    201: Eval;
+    /**
+     * Gated; a person decides the approval on the approvals topic
+     */
+    202: ApprovalAccepted;
+};
+
+export type EvalsNewResponse = EvalsNewResponses[keyof EvalsNewResponses];
+
+export type EvalsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Eval id (evl_…)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Add the N worst utterances (most errors) to each matching cell
+         */
+        worst?: number;
+        /**
+         * Only this cell (evc_…)
+         */
+        cell?: string;
+        /**
+         * Only cells of this golden set (ver_… or its collection name)
+         */
+        goldenSet?: string;
+        /**
+         * Only cells of this latency profile
+         */
+        profile?: string;
+        role?: EvalCellRole;
+    };
+    url: '/evals/{id}';
+};
+
+export type EvalsGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type EvalsGetError = EvalsGetErrors[keyof EvalsGetErrors];
+
+export type EvalsGetResponses = {
+    /**
+     * The eval
+     */
+    200: Eval;
+};
+
+export type EvalsGetResponse = EvalsGetResponses[keyof EvalsGetResponses];
+
+export type EvalsGateData = {
+    body?: never;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Eval id (evl_…)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/evals/{id}:gate';
+};
+
+export type EvalsGateErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type EvalsGateError = EvalsGateErrors[keyof EvalsGateErrors];
+
+export type EvalsGateResponses = {
+    /**
+     * The eval with its verdict (a dry run computes it without recording)
+     */
+    200: Eval;
+};
+
+export type EvalsGateResponse = EvalsGateResponses[keyof EvalsGateResponses];
+
+export type GatesGetData = {
+    body?: never;
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: never;
+    url: '/projects/{p}/gates';
+};
+
+export type GatesGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type GatesGetError = GatesGetErrors[keyof GatesGetErrors];
+
+export type GatesGetResponses = {
+    /**
+     * The gate
+     */
+    200: Gates;
+};
+
+export type GatesGetResponse = GatesGetResponses[keyof GatesGetResponses];
+
+export type GatesEditData = {
+    body: GatesEdit;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/projects/{p}/gates';
+};
+
+export type GatesEditErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type GatesEditError = GatesEditErrors[keyof GatesEditErrors];
+
+export type GatesEditResponses = {
+    /**
+     * The gate as committed (a dry run shows it as it would be)
+     */
+    200: Gates;
+    /**
+     * Gated; a person decides the approval on the approvals topic
+     */
+    202: ApprovalAccepted;
+};
+
+export type GatesEditResponse = GatesEditResponses[keyof GatesEditResponses];
+
+export type ModelsRegisterData = {
+    body: ModelRegister;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/projects/{p}/models:register';
+};
+
+export type ModelsRegisterErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type ModelsRegisterError = ModelsRegisterErrors[keyof ModelsRegisterErrors];
+
+export type ModelsRegisterResponses = {
+    /**
+     * Dry run — the collection and payload the registration would write
+     */
+    200: ModelRegistration;
+    /**
+     * The model version, frozen and adopted by the project
+     */
+    201: ModelVersion;
+    /**
+     * Gated; a person decides the approval on the approvals topic
+     */
+    202: ApprovalAccepted;
+};
+
+export type ModelsRegisterResponse = ModelsRegisterResponses[keyof ModelsRegisterResponses];
+
+export type ModelsListData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)
+         */
+        collection?: string;
+        /**
+         * Only versions in this state
+         */
+        state?: VersionState;
+    };
+    url: '/registry/models';
+};
+
+export type ModelsListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type ModelsListError = ModelsListErrors[keyof ModelsListErrors];
+
+export type ModelsListResponses = {
+    /**
+     * Model versions, newest first
+     */
+    200: ModelVersionList;
+};
+
+export type ModelsListResponse = ModelsListResponses[keyof ModelsListResponses];
+
+export type ModelsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Registry version id (ver_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/registry/models/{id}';
+};
+
+export type ModelsGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type ModelsGetError = ModelsGetErrors[keyof ModelsGetErrors];
+
+export type ModelsGetResponses = {
+    /**
+     * The version
+     */
+    200: ModelVersion;
+};
+
+export type ModelsGetResponse = ModelsGetResponses[keyof ModelsGetResponses];
+
+export type LangpacksListData = {
+    body?: never;
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: never;
+    url: '/projects/{p}/langpacks';
+};
+
+export type LangpacksListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type LangpacksListError = LangpacksListErrors[keyof LangpacksListErrors];
+
+export type LangpacksListResponses = {
+    /**
+     * Packs by locale
+     */
+    200: LanguagePackList;
+};
+
+export type LangpacksListResponse = LangpacksListResponses[keyof LangpacksListResponses];
+
+export type LangpacksGetData = {
+    body?: never;
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+        /**
+         * Locale of a language pack: its directory lang/<locale>/ (he-IL, sr)
+         */
+        locale: PackLocaleName;
+    };
+    query?: never;
+    url: '/projects/{p}/langpacks/{locale}';
+};
+
+export type LangpacksGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type LangpacksGetError = LangpacksGetErrors[keyof LangpacksGetErrors];
+
+export type LangpacksGetResponses = {
+    /**
+     * The pack
+     */
+    200: LanguagePack;
+};
+
+export type LangpacksGetResponse = LangpacksGetResponses[keyof LangpacksGetResponses];
+
+export type LangpacksEditData = {
+    body: LanguagePackEdit;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+        /**
+         * Locale of a language pack: its directory lang/<locale>/ (he-IL, sr)
+         */
+        locale: PackLocaleName;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/projects/{p}/langpacks/{locale}';
+};
+
+export type LangpacksEditErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type LangpacksEditError = LangpacksEditErrors[keyof LangpacksEditErrors];
+
+export type LangpacksEditResponses = {
+    /**
+     * The pack as committed (or, for a dry run, as it would be)
+     */
+    200: LanguagePack;
+};
+
+export type LangpacksEditResponse = LangpacksEditResponses[keyof LangpacksEditResponses];
+
+export type BoostEditData = {
+    body: BoostEdit;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+        /**
+         * Locale of a language pack: its directory lang/<locale>/ (he-IL, sr)
+         */
+        locale: PackLocaleName;
+        /**
+         * The list's domain: boost/<domain>.txt (names, products, streets, …)
+         */
+        domain: BoostDomain;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/projects/{p}/langpacks/{locale}/boost/{domain}';
+};
+
+export type BoostEditErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type BoostEditError = BoostEditErrors[keyof BoostEditErrors];
+
+export type BoostEditResponses = {
+    /**
+     * The pack with the list as committed (or, for a dry run, as it would be)
+     */
+    200: LanguagePack;
+};
+
+export type BoostEditResponse = BoostEditResponses[keyof BoostEditResponses];
+
+export type RegistryLineageData = {
+    body?: never;
+    path: {
+        /**
+         * Any entity id lineage knows: a registry version (ver_…), source (src_…), pipeline run (plr_…), run (run_…), checkpoint (ckp_…), mix (mix_…)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Which way to walk
+         */
+        direction?: 'both' | 'upstream' | 'downstream';
+        /**
+         * Hops to follow each way
+         */
+        depth?: number;
+        /**
+         * Most nodes returned; the walk stops there and says truncated
+         */
+        limit?: number;
+    };
+    url: '/registry/{id}:lineage';
+};
+
+export type RegistryLineageErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type RegistryLineageError = RegistryLineageErrors[keyof RegistryLineageErrors];
+
+export type RegistryLineageResponses = {
+    /**
+     * Nodes and edges; edges point from what was used to what used it
+     */
+    200: Lineage;
+};
+
+export type RegistryLineageResponse = RegistryLineageResponses[keyof RegistryLineageResponses];
+
+export type ExperimentsListData = {
+    body?: never;
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        limit?: number;
+    };
+    url: '/projects/{p}/experiments';
+};
+
+export type ExperimentsListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type ExperimentsListError = ExperimentsListErrors[keyof ExperimentsListErrors];
+
+export type ExperimentsListResponses = {
+    /**
+     * Experiments, newest first (runs and parameters omitted; experiments.get has them)
+     */
+    200: ExperimentList;
+};
+
+export type ExperimentsListResponse = ExperimentsListResponses[keyof ExperimentsListResponses];
+
+export type ExperimentsNewData = {
+    body: ExperimentNew;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/projects/{p}/experiments';
+};
+
+export type ExperimentsNewErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type ExperimentsNewError = ExperimentsNewErrors[keyof ExperimentsNewErrors];
+
+export type ExperimentsNewResponses = {
+    /**
+     * Dry run — the experiment as it would be; nothing was written
+     */
+    200: Experiment;
+    /**
+     * The experiment
+     */
+    201: Experiment;
+};
+
+export type ExperimentsNewResponse = ExperimentsNewResponses[keyof ExperimentsNewResponses];
+
+export type ExperimentsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Experiment id (exp_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/experiments/{id}';
+};
+
+export type ExperimentsGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type ExperimentsGetError = ExperimentsGetErrors[keyof ExperimentsGetErrors];
+
+export type ExperimentsGetResponses = {
+    /**
+     * The experiment
+     */
+    200: Experiment;
+};
+
+export type ExperimentsGetResponse = ExperimentsGetResponses[keyof ExperimentsGetResponses];
+
+export type SweepsRunData = {
+    body: SweepNew;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Experiment id (exp_…)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/experiments/{id}/sweeps:run';
+};
+
+export type SweepsRunErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type SweepsRunError = SweepsRunErrors[keyof SweepsRunErrors];
+
+export type SweepsRunResponses = {
+    /**
+     * Dry run — the points, their estimates and the total against the cap; nothing was written or queued
+     */
+    200: SweepPlan;
+    /**
+     * The sweep with its first run queued
+     */
+    201: Sweep;
+    /**
+     * Gated; a person decides the approval on the approvals topic
+     */
+    202: ApprovalAccepted;
+};
+
+export type SweepsRunResponse = SweepsRunResponses[keyof SweepsRunResponses];
+
+export type AudioGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Byte range (RFC 9110), e.g. bytes=0-
+         */
+        Range?: string;
+    };
+    path: {
+        /**
+         * Utterance id (utt_…) or the audio's content hash (b3:…)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * One channel (0-based); omitted: every channel
+         */
+        channel?: number;
+        /**
+         * Span start in seconds (default 0)
+         */
+        start?: number;
+        /**
+         * Span end in seconds (default the end of the audio)
+         */
+        end?: number;
+        /**
+         * Signed link: expiry (Unix seconds)
+         */
+        exp?: number;
+        /**
+         * Signed link: the user it was minted for
+         */
+        viewer?: string;
+        /**
+         * Signed link: the signature over utterance, span, channel, viewer and expiry
+         */
+        sig?: string;
+    };
+    url: '/registry/utterances/{id}/audio';
+};
+
+export type AudioGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type AudioGetError = AudioGetErrors[keyof AudioGetErrors];
+
+export type AudioGetResponses = {
+    /**
+     * The WAV file
+     */
+    200: Blob | File;
+    /**
+     * The requested byte range of the WAV file
+     */
+    206: Blob | File;
+};
+
+export type AudioGetResponse = AudioGetResponses[keyof AudioGetResponses];
+
+export type AudioSignData = {
+    body?: AudioSignRequest;
+    path: {
+        /**
+         * Utterance id (utt_…) or the audio's content hash (b3:…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/registry/utterances/{id}/audio:sign';
+};
+
+export type AudioSignErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type AudioSignError = AudioSignErrors[keyof AudioSignErrors];
+
+export type AudioSignResponses = {
+    /**
+     * The signed link
+     */
+    200: AudioLink;
+};
+
+export type AudioSignResponse = AudioSignResponses[keyof AudioSignResponses];
+
+export type PeaksGetData = {
+    body?: never;
+    path: {
+        /**
+         * Utterance id (utt_…) or the audio's content hash (b3:…)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Resolution: milliseconds per min/max pair, a multiple of 10
+         */
+        hopMs?: number;
+        /**
+         * Span start in seconds (default 0)
+         */
+        start?: number;
+        /**
+         * Span end in seconds (default the end of the audio)
+         */
+        end?: number;
+    };
+    url: '/registry/utterances/{id}/peaks';
+};
+
+export type PeaksGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type PeaksGetError = PeaksGetErrors[keyof PeaksGetErrors];
+
+export type PeaksGetResponses = {
+    /**
+     * The peaks
+     */
+    200: AudioPeaks;
+};
+
+export type PeaksGetResponse = PeaksGetResponses[keyof PeaksGetResponses];
+
+export type SpectrogramGetData = {
+    body?: never;
+    path: {
+        /**
+         * Utterance id (utt_…) or the audio's content hash (b3:…)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * A tile: c<channel>/l<level>/<index>
+         */
+        tile?: string;
+    };
+    url: '/registry/utterances/{id}/spectrogram';
+};
+
+export type SpectrogramGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type SpectrogramGetError = SpectrogramGetErrors[keyof SpectrogramGetErrors];
+
+export type SpectrogramGetResponses = {
+    /**
+     * The manifest (no tile) or the tile's bytes
+     */
+    200: SpectrogramManifest;
+};
+
+export type SpectrogramGetResponse = SpectrogramGetResponses[keyof SpectrogramGetResponses];
+
+export type WordsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Utterance id (utt_…) or the audio's content hash (b3:…)
+         */
+        id: string;
+    };
+    query: {
+        /**
+         * The hypotheses artifact (b3:…), e.g. an eval cell's
+         */
+        hypotheses: string;
+        /**
+         * The scores artifact (b3:…) of the same cell
+         */
+        scores?: string;
+    };
+    url: '/registry/utterances/{id}/words';
+};
+
+export type WordsGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type WordsGetError = WordsGetErrors[keyof WordsGetErrors];
+
+export type WordsGetResponses = {
+    /**
+     * The words
+     */
+    200: UtteranceWords;
+};
+
+export type WordsGetResponse = WordsGetResponses[keyof WordsGetResponses];
+
+export type TranscriptionsNewData = {
+    body: TranscriptionNew;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/projects/{p}/transcriptions';
+};
+
+export type TranscriptionsNewErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type TranscriptionsNewError = TranscriptionsNewErrors[keyof TranscriptionsNewErrors];
+
+export type TranscriptionsNewResponses = {
+    /**
+     * ?dryRun=true: the session it would open (no ticket, nothing queued)
+     */
+    200: TranscriptionSession;
+    /**
+     * The session, waiting for its socket
+     */
+    201: TranscriptionSession;
+};
+
+export type TranscriptionsNewResponse = TranscriptionsNewResponses[keyof TranscriptionsNewResponses];
+
+export type StreamConnectData = {
+    body?: never;
+    path: {
+        /**
+         * The session (trs_…)
+         */
+        id: string;
+    };
+    query: {
+        /**
+         * The single-use ticket transcriptions.new answered
+         */
+        ticket: string;
+    };
+    url: '/transcriptions/{id}/stream';
+};
+
+export type StreamConnectErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type StreamConnectError = StreamConnectErrors[keyof StreamConnectErrors];
+
+export type StreamConnectResponses = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type StreamConnectResponse = StreamConnectResponses[keyof StreamConnectResponses];
+
+export type WorkerLiveConnectData = {
+    body?: never;
+    headers?: {
+        /**
+         * The lease's live token (CADENCE_LIVE_TOKEN)
+         */
+        'Cadence-Live-Token'?: string;
+    };
+    path: {
+        /**
+         * The interactive job the worker leased (job_…)
+         */
+        jobId: string;
+    };
+    query?: never;
+    url: '/worker-live/{jobId}';
+};
+
+export type WorkerLiveConnectErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type WorkerLiveConnectError = WorkerLiveConnectErrors[keyof WorkerLiveConnectErrors];
+
+export type WorkerLiveConnectResponses = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type WorkerLiveConnectResponse = WorkerLiveConnectResponses[keyof WorkerLiveConnectResponses];
 
 export type MountsListData = {
     body?: never;

@@ -30,7 +30,7 @@ turn, gated commands and the agent's own permission requests wait for a person i
 | budget.tokensPerTurn | 1 000 000 | `budgets.agent_tokens_per_turn` |
 | stuck turn | 5 min | `timeouts.stuck_turn_minutes`: no update during a turn cancels it and pauses |
 | idle | 30 min | `timeouts.idle_session_minutes`: no message pauses an interactive session ("asleep"); the next message wakes it |
-| auto-merge | when-clean | the agent profile: at the end the branch merges if it applies cleanly |
+| auto-merge | when-clean | the agent profile: at the end the branch merges if it applies cleanly — never when it touches `gates.yaml`, `lang/`, `project.yaml`, `.claude/` or `opencode.json` (the gate, the language packs and the settings wait for a person to accept the branch) |
 
 States: `created` → `running` ⇄ `waiting_approval` (a permission request or a gated command is pending; waiting never
 pauses) → `paused` (a person, idleness, a stuck turn, three identical tool calls in a row, a budget) → `done`,

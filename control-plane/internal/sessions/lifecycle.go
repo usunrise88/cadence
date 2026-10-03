@@ -385,6 +385,10 @@ func (s *Service) autoMerge(ctx context.Context, tx pgx.Tx, sess Session, ok boo
 	if !ok || sess.AutoMerge != "when-clean" || p.Archived() {
 		return Merge{State: MergePending, Head: d.Branch.Head}, waiting("the session ended without merging its changes"), nil
 	}
+	if guarded := GuardedFiles(d.Files); len(guarded) > 0 {
+		return Merge{State: MergePending, Head: d.Branch.Head},
+			waiting("changes to the project's gate/language packs/settings need a person: accept the branch (" + strings.Join(guarded, ", ") + ")"), nil
+	}
 	m, drafts, err := s.Projects.Merge(ctx, tx, p, sess.Branch, d.Branch.Head, System)
 	if err != nil {
 		var pe *problems.Error

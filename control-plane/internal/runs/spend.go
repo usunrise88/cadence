@@ -34,9 +34,11 @@ func leaseHours(ctx context.Context, q storage.Querier, join, cond string, arg a
 	return h, nil
 }
 
-// ProjectGPUHours is what the project's leases on GPU cards used in [since, until).
+// ProjectGPUHours is what the project's leases on GPU cards used in [since, until). Interactive leases (manual
+// transcription tests) are not counted: they have their own daily allowance (R49, internal/transcriptions).
 func ProjectGPUHours(ctx context.Context, q storage.Querier, projectID string, since, until time.Time) (float64, error) {
-	return leaseHours(ctx, q, "JOIN step_jobs s ON s.job_id = l.job_id", "s.project_id = $1", projectID, since, until)
+	return leaseHours(ctx, q, "JOIN step_jobs s ON s.job_id = l.job_id", "s.project_id = $1 AND l.job_kind <> 'interactive'",
+		projectID, since, until)
 }
 
 // SessionGPUHours is what the leases of step jobs an agent session started (their actor's session) used so far.

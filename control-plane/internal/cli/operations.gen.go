@@ -9,7 +9,7 @@ var Operations = []Operation{
 		Summary: "Registry versions the project adopted, with the aliases pointing at each",
 		Params: []Param{
 			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
-			{Name: "kind", In: "query", Flag: "kind", Type: "string", Description: "Only versions of this kind", Enum: []string{"base_model", "dataset_version", "template", "runtime", "model_family", "step_kind", "noise_bank"}},
+			{Name: "kind", In: "query", Flag: "kind", Type: "string", Description: "Only versions of this kind", Enum: []string{"base_model", "dataset_version", "template", "runtime", "model_family", "step_kind", "noise_bank", "golden_set", "normalizer", "model"}},
 		},
 	},
 	{
@@ -317,6 +317,24 @@ var Operations = []Operation{
 		},
 	},
 	{
+		ID: "boost.edit", Entity: "boost", Verb: "edit", Method: "PATCH", Path: "/projects/{p}/langpacks/{locale}/boost/{domain}",
+		Summary:        "Replace one boost list of a language pack (terms and weight) in one commit",
+		Description:    "Replace the terms and weight of one boost list (lang/<locale>/boost/<domain>.txt; created when missing) in one commit. Terms are whole phrases as the decoder should write them, one per entry, without duplicates; weight is how strongly the list is boosted at decode (defaults.yaml langpacks.boost_weight when the list is new and none is sent). If-Match is the pack's sha from langpacks.get. Boosting is evaluated, not assumed: an eval with decoding {boost: <list>} shows what it does to WER and to the listed terms. Under the draft policy language_pack: draft an agent's edit lands on a branch, like langpacks.edit.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "locale", In: "path", Flag: "locale", Required: true, Type: "string", Description: "Locale of a language pack: its directory lang/<locale>/ (he-IL, sr)"},
+			{Name: "domain", In: "path", Flag: "domain", Required: true, Type: "string", Description: "The list's domain: boost/<domain>.txt (names, products, streets, …)"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "message", Type: "string"},
+			{Name: "terms", Required: true, Type: "array of string", Description: "The list's terms"},
+			{Name: "weight", Type: "number", Description: "Boost weight; the list's current one when omitted, else defaults.yaml langpacks.boost_weight"},
+		}},
+	},
+	{
 		ID: "branches.accept", Entity: "branches", Verb: "accept", Method: "POST", Path: "/projects/{p}/branches/{name}:accept",
 		Summary:        "Merge a sync branch into main (fast-forward when possible, otherwise a merge commit)",
 		Description:    "Merge a draft branch (sync/<date>) into main: fast-forward when main has not moved, otherwise a merge commit. A conflict answers 409 merge-conflict with the conflicting files and leaves main unchanged. Session branches are merged with agentSessions.accept. Send ifMatch with the branch head from branches.get, so you accept exactly what you reviewed.",
@@ -408,7 +426,7 @@ var Operations = []Operation{
 		Summary:     "List registry collections (named series of immutable versions), optionally of one kind or tag",
 		Description: "List registry collections such as base-model/nemotron-3.5-asr-streaming-0.6b or dataset/fleurs-he-smoke. A collection groups immutable versions of one kind; list the versions with baseModels.list, datasets.list or templates.list (filter collection=<name>).",
 		Params: []Param{
-			{Name: "kind", In: "query", Flag: "kind", Type: "string", Description: "Only collections of this kind", Enum: []string{"base_model", "dataset_version", "template", "runtime", "model_family", "step_kind", "noise_bank"}},
+			{Name: "kind", In: "query", Flag: "kind", Type: "string", Description: "Only collections of this kind", Enum: []string{"base_model", "dataset_version", "template", "runtime", "model_family", "step_kind", "noise_bank", "golden_set", "normalizer", "model"}},
 			{Name: "tag", In: "query", Flag: "tag", Type: "string", Description: "Only collections carrying this tag (e.g. locale:he-IL)"},
 		},
 	},
@@ -528,6 +546,60 @@ var Operations = []Operation{
 		},
 	},
 	{
+		ID: "evals.gate", Entity: "evals", Verb: "gate", Method: "POST", Path: "/evals/{id}:gate",
+		Summary:        "Apply the project's gate (gates.yaml at main) to a finished eval and record the verdict",
+		Description:    "Apply the gate to a done eval: gates.yaml at the head of main (defaults gate.* and eval.* where it is silent). At the primary profile it checks the target golden sets (beat-baseline: the WER delta's whole interval below zero), the replay golden sets (fail when the delta exceeds maxRegression and its interval excludes zero) and deletions bought with insertions on the target sets. Answers the eval with gate: verdict passed | failed, each check passed | failed | inconclusive with its numbers, and the gates.yaml commit used. models.register needs the latest gated eval of a checkpoint to have passed.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Eval id (evl_…)"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+	},
+	{
+		ID: "evals.get", Entity: "evals", Verb: "get", Method: "GET", Path: "/evals/{id}",
+		Summary:     "Get an eval with its cells, deltas against the baseline with confidence intervals, and the worst utterances of a cell",
+		Description: "An eval: status, progress, and one cell per role (subject, baseline) × golden set × profile × decoding with WER, CER, the punctuation-insensitive WER, substitutions / deletions / insertions, duration buckets and partial stability; subject cells carry the delta against the baseline's cell with a paired blockwise bootstrap interval (significant when it excludes zero). worst=N adds the N utterances with the most errors to each subject cell that passes the filters (cell=evc_… for one cell): reference, hypothesis and the alignment ops (=, S, D, I). Filters: goldenSet, profile, role. Each cell's metrics carry entity accuracy for the language pack's ITN classes and latency to final (p50/p95 ms, real-time pace) when available, else the reason; with augmentations, robustness lists each augmented cell's WER against the same cell without augmentation (reported, not gated).",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Eval id (evl_…)"},
+			{Name: "worst", In: "query", Flag: "worst", Type: "integer", Description: "Add the N worst utterances (most errors) to each matching cell"},
+			{Name: "cell", In: "query", Flag: "cell", Type: "string", Description: "Only this cell (evc_…)"},
+			{Name: "goldenSet", In: "query", Flag: "golden-set", Type: "string", Description: "Only cells of this golden set (ver_… or its collection name)"},
+			{Name: "profile", In: "query", Flag: "profile", Type: "string", Description: "Only cells of this latency profile"},
+			{Name: "role", In: "query", Flag: "role", Type: "string", Enum: []string{"subject", "baseline"}},
+		},
+	},
+	{
+		ID: "evals.list", Entity: "evals", Verb: "list", Method: "GET", Path: "/projects/{p}/evals",
+		Summary: "List the project's evals, newest first (cells omitted; evals.get has them)",
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "status", In: "query", Flag: "status", Type: "string", Enum: []string{"queued", "running", "done", "failed"}},
+			{Name: "subject", In: "query", Flag: "subject", Type: "string", Description: "Only evals of this subject (ckp_…, or a model or base model version ver_…)"},
+			{Name: "limit", In: "query", Flag: "limit", Type: "integer", Default: "50"},
+		},
+	},
+	{
+		ID: "evals.new", Entity: "evals", Verb: "new", Method: "POST", Path: "/projects/{p}/evals",
+		Summary:        "Evaluate a checkpoint, model or base model against the baseline on golden sets × latency profiles × decoding; ?dryRun=true answers the plan",
+		Description:    "Run the eval matrix (R20–R24): subject (exactly one of checkpointId ckp_…, modelVersionId or baseModelVersionId ver_…) × golden sets × latency profiles × decoding variants, each cell compared with the same cell of the baseline. Everything is optional but the subject: golden sets default to the ones the project's gates.yaml names (target and replay), else its adopted golden sets; profiles to eval.matrix_profiles the model family declares, always with the primary profile; decoding to [{boost: none}]; augmentations (the robustness axis) to [{profile: none}] — add {profile: augment/<name>.yaml@<commit>, seed?} to decode the golden sets also through that augmentation profile; baseline to the project's @baseline alias, else its default base model. Cells already in the eval records (any project, same weights × golden set × normalizer × decoding × scorer) are reused; only missing cells run (baseline cells included). Always call it with dryRun=true first: the answer is the plan — cells cached and to compute and the GPU-hour estimate. Without dryRun it answers 201 with the eval (follow it with evals.get; eval.{id}.progress reports cells done), or 202 with an approvalId when the estimate exceeds today's GPU budget. Then evals.gate applies the project's gate.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "augmentations", Type: "array of object", Description: "The robustness axis: augmentation profiles of the project (augment/<name>.yaml@<commit>) applied to the golden sets before transcription; none is always included; default [{profile: none}]"},
+			{Name: "baseline", Type: "string", Description: "The baseline model (ver_…, @alias, base-model/<name> or model/<name>); default the project's @baseline, else its default base model"},
+			{Name: "decoding", Type: "array of object", Description: "Decoding variants (R24); default [{boost: none}]"},
+			{Name: "goldenSets", Type: "array of string", Description: "Golden set versions (ver_…, @alias, golden-set/<name>); default: those gates.yaml names, else the project's adopted golden sets"},
+			{Name: "languages", Type: "object", Description: "Golden-set locale → the language the models decode it in (the transcribe kind's language parameter), for both the subject and the baseline, e.g. {\"sr-RS\": \"hr-HR\"} when the model has no prompt for the locale and was fine-tuned under a neighbour's; default each golden set's own locale. Part of the decoding hash"},
+			{Name: "priority", Type: "integer", Description: "Queue priority of the eval's steps"},
+			{Name: "profiles", Type: "array of string", Description: "Latency profiles (R43); default: eval.matrix_profiles that the model families declare, plus the primary profile"},
+			{Name: "subject", Required: true, Type: "object", Description: "Exactly one of the three"},
+		}},
+	},
+	{
 		ID: "events.list", Entity: "events", Verb: "list", Method: "GET", Path: "/events",
 		Summary:     "Events after a sequence number; with Accept text/event-stream, the live stream",
 		Description: "Events after a sequence number, oldest first, optionally filtered by topic patterns (a trailing * matches the remaining segments, e.g. run.123.*) and project. Use the last seq as `after` to continue.",
@@ -536,6 +608,96 @@ var Operations = []Operation{
 			{Name: "project", In: "query", Flag: "project", Type: "string", Description: "Keep work events of this project (registry events, which carry no projectId, always pass)"},
 			{Name: "after", In: "query", Flag: "after", Type: "integer", Description: "Only events with seq greater than this; SSE clients may send Last-Event-ID instead"},
 			{Name: "limit", In: "query", Flag: "limit", Type: "integer", Description: "Page size for the JSON form", Default: "200"},
+		},
+	},
+	{
+		ID: "experiments.get", Entity: "experiments", Verb: "get", Method: "GET", Path: "/experiments/{id}",
+		Summary:     "Get an experiment with its runs as parameters × metrics, the best run by validation WER, and its sweeps",
+		Description: "The comparison of an experiment: one row per run with the values of the compared parameters (every swept parameter and every train-step parameter some run departs from defaults with; departures marked), the best validation WER and its checkpoint, GPU-hours, and the latest eval of that checkpoint with its gate verdict. best names the run with the lowest validation WER and whether its checkpoint can be registered now (models.register needs a passed gate: evals.new, then evals.gate). sweeps lists each sweep's state, points and GPU-hours spent against its cap.",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Experiment id (exp_…)"},
+		},
+	},
+	{
+		ID: "experiments.list", Entity: "experiments", Verb: "list", Method: "GET", Path: "/projects/{p}/experiments",
+		Summary: "List the project's experiments, newest first (question, mix, base model, run count, best run, sweeps)",
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "limit", In: "query", Flag: "limit", Type: "integer", Default: "50"},
+		},
+	},
+	{
+		ID: "experiments.new", Entity: "experiments", Verb: "new", Method: "POST", Path: "/projects/{p}/experiments",
+		Summary:        "Open an experiment — a question with a fixed mix revision and base model — that runs and sweeps join",
+		Description:    "Group the runs that answer one question: name, question, the mix (mix_… or its name, pinned to its current revision unless mixRevision) and the base model (pinned to a version; default the defaults' base model). Every run of the experiment trains on exactly that mix revision and base model: runs.new with experiment=exp_… inherits them, and sweeps.run generates runs over recipe parameters. dryRun checks the mix and base model and answers the experiment as it would be. Follow with sweeps.run (dry run first) or runs.new, then experiments.get for the comparison.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "baseModel", Type: "string", Description: "Base model version (ver_…), collection name or @alias, pinned to a version (default the defaults' base model)"},
+			{Name: "mix", Required: true, Type: "string", Description: "The mix every run trains on (mix_… or its name)"},
+			{Name: "mixRevision", Type: "integer", Description: "The fixed mix revision (default the mix's current one)"},
+			{Name: "name", Required: true, Type: "string", Description: "A short name, unique in the project"},
+			{Name: "question", Required: true, Type: "string", Description: "The question the experiment's runs answer"},
+			{Name: "tag", Type: "string", Description: "A short tag for filters and search (default derived from the name)"},
+		}},
+	},
+	{
+		ID: "gates.edit", Entity: "gates", Verb: "edit", Method: "PATCH", Path: "/projects/{p}/gates",
+		Summary:        "Commit a new gates.yaml to main (approval for agents); dryRun validates",
+		Description:    "Change the project's gate: send content (the YAML) or config (the same as an object) with If-Match = the ETag of gates.get. The file is validated first (gate-config-invalid lists every problem); dryRun validates and commits nothing. For agents this waits for a person's approval (gates decide what counts as better).",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "config", Type: "object", Description: "gates.yaml (docs/review/2026-10-02-phase-3-plan.md \"Gate\"); a value left out takes defaults.yaml gate.* / eval.*"},
+			{Name: "content", Type: "string", Description: "The new gates.yaml"},
+			{Name: "message", Type: "string", Description: "The commit message"},
+		}},
+	},
+	{
+		ID: "gates.get", Entity: "gates", Verb: "get", Method: "GET", Path: "/projects/{p}/gates",
+		Summary:     "Get the project's gate (gates.yaml at main, with the defaults it departs from)",
+		Description: "The project's gate: gates.yaml at the head of main (exists false when the project has none and the defaults apply), its effective configuration with defaults filled in, and the departures from defaults.yaml. The ETag is the commit that last changed the file (\"defaults\" when there is none); gates.edit takes it as If-Match.",
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+		},
+	},
+	{
+		ID: "goldenSets.freeze", Entity: "goldenSets", Verb: "freeze", Method: "POST", Path: "/registry/golden-sets:freeze",
+		Summary:        "Freeze an eval-only dataset version and a scoring normalizer into a golden set (always waits for the admin's approval)",
+		Description:    "Freeze a golden set from a frozen dataset version registered eval-only (datasets.get shows dataset.evalOnly: true) and a scoring normalizer version (normalizers.list; default defaults.yaml eval.normalizer). The dataset's utterances must not overlap any trainable dataset version by utterance or fingerprint, else golden-set-leakage lists the overlapping versions and counts. dryRun=true checks everything and answers the would-be golden set. A real call always answers 202 with an approvalId, for people too: freezing is a registry-scope approval only the admin decides; the approved request registers golden-set/<name> (default: the dataset collection's name). Freezing the same content again answers the version already frozen.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "datasetVersionId", Required: true, Type: "string", Description: "The dataset version to freeze: ver_… or a dataset collection name (its newest frozen version); it must be registered eval-only"},
+			{Name: "domain", Type: "string", Description: "telephone, read-speech, …; default the dataset collection's domain:<x> tag, if any"},
+			{Name: "groups", Type: "string", Description: "The bootstrap's resampling unit (R54); default speaker when the dataset's utterances name speakers, else utterance"},
+			{Name: "name", Type: "string", Description: "The golden set's collection, golden-set/<name> or <name>; default the dataset collection's name (dataset/replay-golden-he → golden-set/replay-golden-he)"},
+			{Name: "normalizerVersionId", Type: "string", Description: "The scoring normalizer: ver_… or a normalizer collection name (its newest frozen version); default defaults.yaml eval.normalizer"},
+		}},
+	},
+	{
+		ID: "goldenSets.get", Entity: "goldenSets", Verb: "get", Method: "GET", Path: "/registry/golden-sets/{id}",
+		Summary: "Get a golden set version with its dataset, normalizer, size and the projects that use it",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Registry version id (ver_…)"},
+		},
+	},
+	{
+		ID: "goldenSets.list", Entity: "goldenSets", Verb: "list", Method: "GET", Path: "/registry/golden-sets",
+		Summary:     "List golden set versions (frozen eval-only dataset versions tied to a scoring normalizer)",
+		Description: "List golden sets: frozen, held-out test sets per language and domain, each an eval-only dataset version tied to one scoring normalizer version. Runs never read them: a dataset version or mix sharing an utterance (by id or fingerprint) with any golden set is refused for training (golden-set-leakage). Adopt one into a project with projects.adopt.",
+		Params: []Param{
+			{Name: "collection", In: "query", Flag: "collection", Type: "string", Description: "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)"},
+			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated"}},
 		},
 	},
 	{
@@ -638,6 +800,39 @@ var Operations = []Operation{
 		},
 	},
 	{
+		ID: "langpacks.edit", Entity: "langpacks", Verb: "edit", Method: "PATCH", Path: "/projects/{p}/langpacks/{locale}",
+		Summary:        "Write or delete files of one language pack in one commit (If-Match is the pack's commit)",
+		Description:    "Change files of one language pack in one commit: each entry writes a file (path relative to lang/<locale>/, e.g. normalizer.yaml or boost/names.txt) or deletes it (delete: true). If-Match is the pack's sha from langpacks.get. YAML files are checked against their shape (normalizer.yaml, itn.yaml, translit.yaml, lid.yaml, golden-recipe.yaml) and boost lists against the boost format before anything is committed; dryRun only checks. A person's edit commits to main; an agent's edit, under the project's draft policy language_pack: draft, lands on a branch langpack/<locale>-<date> for a person to accept (branches.accept). Use boost.edit to replace one boost list.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "locale", In: "path", Flag: "locale", Required: true, Type: "string", Description: "Locale of a language pack: its directory lang/<locale>/ (he-IL, sr)"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "files", Required: true, Type: "array of object"},
+			{Name: "message", Type: "string", Description: "The commit message"},
+		}},
+	},
+	{
+		ID: "langpacks.get", Entity: "langpacks", Verb: "get", Method: "GET", Path: "/projects/{p}/langpacks/{locale}",
+		Summary:     "One language pack with its files, scoring normalizer and boost lists; ETag is the pack's commit",
+		Description: "Read the language pack of one locale (lang/<locale>/ on main): every file with its content, the scoring normalizer normalizer.yaml names (R21: a registry normalizer; the training text style stays in the pack), the boost lists with their weights, and the pack's commit sha (the last commit that changed it), which langpacks.edit and boost.edit take as If-Match. issues lists files whose shape is wrong.",
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "locale", In: "path", Flag: "locale", Required: true, Type: "string", Description: "Locale of a language pack: its directory lang/<locale>/ (he-IL, sr)"},
+		},
+	},
+	{
+		ID: "langpacks.list", Entity: "langpacks", Verb: "list", Method: "GET", Path: "/projects/{p}/langpacks",
+		Summary:     "The project's language packs (lang/<locale>/ on main) and the locales Cadence ships packs for",
+		Description: "List the language packs in the project repository (lang/<locale>/ on main): per locale the pack's commit, its scoring normalizer and its boost lists. shipped names the locales Cadence has starter packs for; projects.sync offers a shipped pack for every project locale that lacks one. Read one with langpacks.get.",
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+		},
+	},
+	{
 		ID: "metrics.get", Entity: "metrics", Verb: "get", Method: "GET", Path: "/metrics/{id}",
 		Summary:     "A run's metric series, binned server-side for charts (min and max per bucket), with checkpoint marks",
 		Description: "Metric series of a training run (loss, val_wer, lr, …) for charts and for judging progress: choose names, the x axis (step, epoch, wall seconds since the first point, or GPU-hours), and maxPoints — longer series are binned server-side, each point carrying the bucket's mean value with min and max. afterStep returns only newer points (live append). Checkpoint marks come along.",
@@ -726,6 +921,53 @@ var Operations = []Operation{
 		ID: "modelFamilies.list", Entity: "modelFamilies", Verb: "list", Method: "GET", Path: "/registry/model-families",
 		Summary:     "List model family versions (architecture, capabilities, latency profiles, role step kinds) published by runtimes",
 		Description: "List model families: what a runtime can train and decode — framework, architecture, capabilities, latency profiles (e.g. 160 ms) and the step kind that fills each role (calibrate, train, average, transcribe). Render options from the descriptor; never assume a family by name.",
+		Params: []Param{
+			{Name: "collection", In: "query", Flag: "collection", Type: "string", Description: "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)"},
+			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated"}},
+		},
+	},
+	{
+		ID: "models.get", Entity: "models", Verb: "get", Method: "GET", Path: "/registry/models/{id}",
+		Summary: "Get a model version with its model card, gate, lineage and the projects that use it",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Registry version id (ver_…)"},
+		},
+	},
+	{
+		ID: "models.list", Entity: "models", Verb: "list", Method: "GET", Path: "/registry/models",
+		Summary: "List registered model versions (checkpoints whose gate passed) with their gate and lineage",
+		Params: []Param{
+			{Name: "collection", In: "query", Flag: "collection", Type: "string", Description: "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)"},
+			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated"}},
+		},
+	},
+	{
+		ID: "models.register", Entity: "models", Verb: "register", Method: "POST", Path: "/projects/{p}/models:register",
+		Summary:        "Register a checkpoint whose latest gated eval passed as a model version, with its model card (approval for agents)",
+		Description:    "Publish a checkpoint (ckp_…) as a registry model version (collection model/<name>, default model/<project slug>) with its eval, gate verdict, lineage (run, mix, recipe, dataset versions) and a generated model card. The checkpoint's latest gated eval (or evalId) must have passed (gate-not-passed otherwise). dryRun shows the version's payload and card. For agents it waits for a person's approval (registry changes are shared).",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "checkpointId", Required: true, Type: "string", Description: "ckp_…"},
+			{Name: "description", Type: "string", Description: "The collection's description when it is new"},
+			{Name: "evalId", Type: "string", Description: "The gated eval to publish with (default the checkpoint's latest gated eval)"},
+			{Name: "name", Type: "string", Description: "The collection, model/<name> (default model/<project slug>)"},
+		}},
+	},
+	{
+		ID: "normalizers.get", Entity: "normalizers", Verb: "get", Method: "GET", Path: "/registry/normalizers/{id}",
+		Summary: "Get a scoring normalizer version with its rules and the projects that use it",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Registry version id (ver_…)"},
+		},
+	},
+	{
+		ID: "normalizers.list", Entity: "normalizers", Verb: "list", Method: "GET", Path: "/registry/normalizers",
+		Summary:     "List scoring normalizer versions (the text rules both sides of a WER are compared after, R21)",
+		Description: "List scoring normalizer versions (normalizer/basic, normalizer/he-il, …): the Unicode form, case folding, punctuation, combining-mark removal and literal mappings applied to reference and hypothesis before WER is computed. Every golden set is frozen with one normalizer version, so its scores stay comparable over time.",
 		Params: []Param{
 			{Name: "collection", In: "query", Flag: "collection", Type: "string", Description: "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)"},
 			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated"}},
@@ -1069,12 +1311,23 @@ var Operations = []Operation{
 		}},
 	},
 	{
+		ID: "registry.lineage", Entity: "registry", Verb: "lineage", Method: "GET", Path: "/registry/{id}:lineage",
+		Summary:     "The lineage graph around an entity — what it was built from (upstream) and what uses it (downstream)",
+		Description: "Walk the lineage graph from one entity, both ways: upstream is what it was built from (a model's checkpoint, run, mix and base model; a dataset version's sources and pipeline run; a golden set's dataset and normalizer), downstream what uses it (projects that adopted it and their aliases, golden sets over a dataset, mixes and runs that read it, models from a base). depth bounds the hops each way. Nodes in projects the caller cannot see are left out and counted in hidden.",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Any entity id lineage knows: a registry version (ver_…), source (src_…), pipeline run (plr_…), run (run_…), checkpoint (ckp_…), mix (mix_…)"},
+			{Name: "direction", In: "query", Flag: "direction", Type: "string", Description: "Which way to walk", Default: "both", Enum: []string{"both", "upstream", "downstream"}},
+			{Name: "depth", In: "query", Flag: "depth", Type: "integer", Description: "Hops to follow each way", Default: "3"},
+			{Name: "limit", In: "query", Flag: "limit", Type: "integer", Description: "Most nodes returned; the walk stops there and says truncated", Default: "200"},
+		},
+	},
+	{
 		ID: "registry.search", Entity: "registry", Verb: "search", Method: "GET", Path: "/registry",
 		Summary:     "Search registry versions of every kind by text and qualifiers (kind:, tag:, locale:, state:)",
 		Description: "Search registry versions of every kind (base models, dataset versions, templates). q is free text matched against collection names and descriptions plus qualifiers: kind:base_model, tag:telephony, locale:he-IL, state:frozen. project=<slug> keeps only what that project adopted. Get one version with baseModels.get, datasets.get or templates.get.",
 		Params: []Param{
 			{Name: "q", In: "query", Flag: "q", Type: "string", Description: "Free text with qualifiers (kind:, tag:, locale:, state:)"},
-			{Name: "kind", In: "query", Flag: "kind", Type: "string", Enum: []string{"base_model", "dataset_version", "template", "runtime", "model_family", "step_kind", "noise_bank"}},
+			{Name: "kind", In: "query", Flag: "kind", Type: "string", Enum: []string{"base_model", "dataset_version", "template", "runtime", "model_family", "step_kind", "noise_bank", "golden_set", "normalizer", "model"}},
 			{Name: "project", In: "query", Flag: "project", Type: "string", Description: "Only versions this project adopted (slug)"},
 			{Name: "limit", In: "query", Flag: "limit", Type: "integer", Default: "100"},
 		},
@@ -1112,6 +1365,7 @@ var Operations = []Operation{
 		Params: []Param{
 			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
 			{Name: "status", In: "query", Flag: "status", Type: "string", Description: "Only runs in this status", Enum: []string{"queued", "running", "paused", "done", "failed", "cancelled"}},
+			{Name: "experiment", In: "query", Flag: "experiment", Type: "string", Description: "Only runs of this experiment (exp_…)"},
 			{Name: "limit", In: "query", Flag: "limit", Type: "integer", Default: "100"},
 		},
 	},
@@ -1129,6 +1383,7 @@ var Operations = []Operation{
 			{Name: "checkpoint", Type: "string", Description: "The checkpoint to start from (ckp_…); required when init is checkpoint. The run's base model is then the checkpoint's"},
 			{Name: "compute", Type: "string", Description: "Host id or name; default the first host whose card allows training"},
 			{Name: "datasets", Type: "array of string", Description: "Dry runs without a mix only: dataset versions (ver_… or @alias) for the data volume"},
+			{Name: "experiment", Type: "string", Description: "The experiment the run belongs to (exp_…): the run trains on its mix revision and base model (phase 3)"},
 			{Name: "gpus", Type: "integer", Description: "Cards for the run; v1 accepts 1 (training.gpus)"},
 			{Name: "init", Type: "string", Description: "Where the weights start (R44); scratch is deferred"},
 			{Name: "mix", Type: "string", Description: "The mix to train on (mix_… or its name); required unless dryRun with datasets"},
@@ -1273,6 +1528,26 @@ var Operations = []Operation{
 		},
 	},
 	{
+		ID: "sweeps.run", Entity: "sweeps", Verb: "run", Method: "POST", Path: "/experiments/{id}/sweeps:run",
+		Summary:        "Run a grid or random sweep over recipe parameters as sequential runs of the experiment under a GPU-hour cap",
+		Description:    "Generate the experiment's runs from a parameter set: mode grid (every combination of the listed values) or random (points drawn with seed from each parameter's values or its min–max range, log scale for learning rates). Parameters are the train step's (peak_lr, warmup_steps, augmentation, … — any parameter with an x-cadence range) and replayShare (the mix's replay share; the mix revision stays fixed). Each point becomes one run through runs.new on the experiment's mix and base model; runs are queued one after another on the project's training slot. Always call it with dryRun=true first: the answer lists the points with their estimates and the total against gpuHourCap. The whole estimate must fit the cap (sweep-over-cap) and is weighed against the GPU budgets like runs.new (202 with an approvalId when it exceeds them). The sweep stops when the GPU-hours its runs used plus the next run's estimate would pass the cap. Cancelling the running run (jobs.cancel on its current job) cancels the sweep. Watch experiments.get or entity.experiment.{id}.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Experiment id (exp_…)"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "gpuHourCap", Type: "number", Description: "Most GPU-hours the sweep's runs may use (default sweeps.gpu_hour_cap)"},
+			{Name: "mode", Type: "string"},
+			{Name: "parameters", Required: true, Type: "array of object"},
+			{Name: "priority", Type: "integer", Description: "Queue priority of the runs' step jobs (default 0)"},
+			{Name: "runs", Type: "integer", Description: "random: how many points (default sweeps.random_runs); grid: at most this many of the combinations (default all of them, up to sweeps.max_runs)"},
+			{Name: "seed", Type: "integer", Description: "random: the seed of the draw (default sweeps.seed)"},
+			{Name: "steps", Type: "integer", Description: "Step budget of every run (default training.steps)"},
+		}},
+	},
+	{
 		ID: "telegramBot.set", Entity: "telegramBot", Verb: "set", Method: "PUT", Path: "/telegram-bot",
 		Summary:        "Store or replace the Telegram bot token (write-only, kept in the secret store as telegram-bot-token)",
 		Description:    "Store or replace the Telegram bot token. The value is write-only, encrypted in the secret store and never returned. Admin only; agents must not call this — secrets never enter an agent context.",
@@ -1306,7 +1581,7 @@ var Operations = []Operation{
 		Params: []Param{
 			{Name: "collection", In: "query", Flag: "collection", Type: "string", Description: "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)"},
 			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated"}},
-			{Name: "templateKind", In: "query", Flag: "template-kind", Type: "string", Description: "Only templates of this kind", Enum: []string{"instructions", "preset", "skill", "pipeline", "agent-config", "playbook"}},
+			{Name: "templateKind", In: "query", Flag: "template-kind", Type: "string", Description: "Only templates of this kind", Enum: []string{"instructions", "preset", "skill", "pipeline", "agent-config", "playbook", "langpack"}},
 		},
 	},
 	{

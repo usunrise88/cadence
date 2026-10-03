@@ -64,6 +64,18 @@ var Fixtures = []map[string]any{
 	},
 }
 
+// KindRelay is a data step kind (not training) that passes its dataset input through as its output: the indirect
+// path by which a golden set could reach a training step, which the engine's training guard closes.
+const KindRelay = "fx_relay"
+
+// RelayFixture is the KindRelay step kind as a worker publishes it.
+var RelayFixture = map[string]any{
+	"name": KindRelay, "version": "1", "runtime": "test", "runtimeVersionId": "ver_test",
+	"params":   map[string]any{"type": "object", "properties": map[string]any{}},
+	"consumes": map[string]string{"data": "dataset"}, "produces": map[string]string{"data": "dataset"},
+	"resources": map[string]any{"gpu": false, "jobKind": "data"}, "help": "steps.fx-relay",
+}
+
 // RegisterKinds publishes the fixture step kinds in the registry.
 func RegisterKinds(ctx context.Context, pool *pgxpool.Pool) error {
 	return Register(ctx, pool, Fixtures...)
@@ -197,6 +209,15 @@ func (l *Leases) Await(ctx context.Context, jobID string) (steps.Outcome, error)
 func (l *Leases) run(spec steps.Spec) (steps.Outcome, error) {
 	if o, ok, err := l.runTraining(spec); ok {
 		return o, err
+	}
+	if o, ok, err := l.runEvaluation(spec); ok {
+		return o, err
+	}
+	if o, ok, err := l.runRobustness(spec); ok {
+		return o, err
+	}
+	if spec.Kind == KindRelay {
+		return steps.Outcome{State: steps.StateDone, Outputs: map[string]steps.ArtifactRef{"data": spec.Inputs["data"]}}, nil
 	}
 	in, ok := spec.Inputs["text"]
 	if !ok {

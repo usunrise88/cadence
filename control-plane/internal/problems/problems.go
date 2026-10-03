@@ -82,6 +82,26 @@ var (
 	NoTrainingState   = Type{"no-training-state", http.StatusConflict, "No training state"}
 	// Content-store retention (phase 2 · stream E).
 	ArtifactNotEvictable = Type{"artifact-not-evictable", http.StatusConflict, "Artifact not evictable"}
+	// Evals, gates and models (phase 3 · stream E).
+	EvalBaselineMissing = Type{"eval-baseline-missing", http.StatusUnprocessableEntity, "No baseline to compare with"}
+	GateNotPassed       = Type{"gate-not-passed", http.StatusConflict, "Gate not passed"}
+	GateConfigInvalid   = Type{"gate-config-invalid", http.StatusUnprocessableEntity, "Gate configuration invalid"}
+	// Golden sets, normalizers and leakage (phase 3 · stream G).
+	GoldenSetLeakage     = Type{"golden-set-leakage", http.StatusUnprocessableEntity, "Golden set leakage"}
+	GoldenSetNotEvalOnly = Type{"golden-set-not-eval-only", http.StatusUnprocessableEntity, "Dataset is not eval-only"}
+	NormalizerUnknown    = Type{"normalizer-unknown", http.StatusUnprocessableEntity, "Unknown normalizer"}
+	// Media: audio serving (phase 3 · stream A).
+	MediaLinkInvalid    = Type{"media-link-invalid", http.StatusForbidden, "Audio link invalid or expired"}
+	RangeNotSatisfiable = Type{"range-not-satisfiable", http.StatusRequestedRangeNotSatisfiable, "Range not satisfiable"}
+	MediaBusy           = Type{"media-busy", http.StatusTooManyRequests, "Audio conversions busy"}
+	// Experiments and sweeps (phase 3 · stream X).
+	SweepOverCap = Type{"sweep-over-cap", http.StatusUnprocessableEntity, "Sweep over its GPU-hour cap"}
+	// Manual transcription tests and the live channel (phase 3 · stream T).
+	TranscriptionInProgress         = Type{"transcription-in-progress", http.StatusConflict, "A transcription session is already open"}
+	TranscriptionAllowanceExhausted = Type{"transcription-allowance-exhausted", http.StatusTooManyRequests, "Manual-test allowance used up"}
+	TranscriptionTicketInvalid      = Type{"transcription-ticket-invalid", http.StatusForbidden, "Transcription ticket invalid"}
+	TranscriptionInputInvalid       = Type{"transcription-input-invalid", http.StatusUnprocessableEntity, "Transcription input invalid"}
+	TranscriptionLimit              = Type{"transcription-limit", http.StatusConflict, "Transcription session limit reached"}
 )
 
 // Types lists every registered type.
@@ -94,6 +114,12 @@ func Types() []Type {
 		LeaseEnded, StepKindConflict, ArtifactHashMismatch, ArtifactMissing,
 		PlaybookDryRunRequired, PlaybookStopped, PlaybookUnavailable,
 		FamilyUnavailable, RecipeMismatch, NoTrainingState, ArtifactNotEvictable,
+		EvalBaselineMissing, GateNotPassed, GateConfigInvalid,
+		GoldenSetLeakage, GoldenSetNotEvalOnly, NormalizerUnknown,
+		MediaLinkInvalid, RangeNotSatisfiable, MediaBusy,
+		SweepOverCap,
+		TranscriptionInProgress, TranscriptionAllowanceExhausted, TranscriptionTicketInvalid, TranscriptionInputInvalid,
+		TranscriptionLimit,
 	}
 }
 

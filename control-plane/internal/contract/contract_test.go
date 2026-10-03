@@ -298,3 +298,40 @@ func TestCLIFlags(t *testing.T) {
 		})
 	}
 }
+
+// Media operations (tag media, phase 3 · stream A) are exempt from the vocabulary, never MCP tools and never CLI
+// commands; an utterance's media action (audio.sign) is not a command.
+func TestMediaOperationsExempt(t *testing.T) {
+	c, err := Load(specPath, vocabPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tools, err := c.ToolsJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cli, err := c.CLIGo()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]bool{"audio.get": true, "audio.sign": true, "peaks.get": true, "spectrogram.get": true, "words.get": true,
+		"transcriptions.new": true, "stream.connect": true}
+	for _, o := range c.Ops {
+		if !hasTag(o, "media") || !want[o.ID] {
+			continue
+		}
+		delete(want, o.ID)
+		if !o.Exempt {
+			t.Errorf("%s is tagged media but not exempt", o.ID)
+		}
+		if bytes.Contains(tools, []byte(`"`+o.ID+`"`)) {
+			t.Errorf("%s is an MCP tool", o.ID)
+		}
+		if bytes.Contains(cli, []byte(`"`+o.ID+`"`)) {
+			t.Errorf("%s is a CLI command", o.ID)
+		}
+	}
+	for id := range want {
+		t.Errorf("%s is missing from the contract (or not tagged media)", id)
+	}
+}

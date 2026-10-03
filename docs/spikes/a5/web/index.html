@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A5 live capture</title>
+<style>
+  body { font: 14px/1.4 system-ui, sans-serif; margin: 16px; background: #fff; color: #111; }
+  .lane { border: 1px solid #ccc; padding: 8px; margin: 8px 0; min-height: 2em; unicode-bidi: plaintext; }
+  .partial { color: #888; }
+  pre { font-size: 12px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<h1>A5 · live capture</h1>
+<p>
+  <button id="go">Start</button> <button id="fin">Finalize</button> <button id="stop">End</button>
+  <label><input type="checkbox" id="raw" checked> raw microphone (EC/NS/AGC off)</label>
+  <label><input type="checkbox" id="tel"> telephony</label>
+  <select id="lang"><option>he-IL</option><option>ru-RU</option></select>
+</p>
+<div id="lanes"></div>
+<pre id="log"></pre>
+<script type="module">
+// Minimal R50 capture page. Everything Playwright needs ends up in window.__a5.
+const st = (window.__a5 = { events: [], settings: null, sampleRate: null, frames: 0, errors: [], closes: [] });
+const log = (m) => { document.getElementById('log').textContent += m + '\n'; };
+let ws, ctx, node, stream, sess;
+
+async function openSession() {
+  const r = await fetch('/api/transcriptions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+  sess = await r.json();
+  st.session = sess;
+  return sess;
+}
+
+function openSocket(url) {
+  return new Promise((resolve, reject) => {
+    const s = new WebSocket(new URL(url, location.href).href.replace(/^http/, 'ws'));
+    s.binaryType = 'arraybuffer';
+    s.onopen = () => resolve(s);
+    s.onerror = () => reject(new Error('socket error'));
+    s.onclose = (e) => st.closes.push({ code: e.code, reason: e.reason, t: performance.now() });
+  });
+}
+
+function show(e) {
+  let lane = document.getElementById('lane-' + e.target);
+  if (!lane && e.target) {
+    lane = document.createElement('div');
+    lane.className = 'lane';
+    lane.id = 'lane-' + e.target;
+    lane.innerHTML = '<span class="final"></span> <span class="partial"></span>';
+    document.getElementById('lanes').append(lane);
+  }
+  if (e.type === 'partial') lane.querySelector('.partial').textContent = e.text;
+  if (e.type === 'final') {
+    lane.querySelector('.partial').textContent = '';
+    if (e.text) lane.querySelector('.final').textContent += e.text + ' · ';
+  }
+}
+
+window.a5start = async ({ raw = true, telephony = false, language = 'he-IL', deviceId } = {}) => {
+  const constraints = {
+    audio: {
+      echoCancellation: !raw ? true : false,
+      noiseSuppression: !raw ? true : false,
+      autoGainControl: !raw ? true : false,
+      channelCount: { ideal: 1 },
+      ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+    },
+  };
+  stream = await navigator.mediaDevices.getUserMedia(constraints);
+  const track = stream.getAudioTracks()[0];
+  st.settings = track.getSettings();
+  st.constraints = constraints.audio;
+  st.devices = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audioinput').map((d) => d.label);
+  ctx = new AudioContext(); // the device rate: no resampling in the browser
+  await ctx.resume(); // Safari starts a context suspended unless resumed inside the click
+  st.sampleRate = ctx.sampleRate;
+  await ctx.audioWorklet.addModule('capture-worklet.js');
+  const src = ctx.createMediaStreamSource(stream);
+  node = new AudioWorkletNode(ctx, 'a5-capture', { channelCount: 1, channelCountMode: 'explicit', numberOfInputs: 1, numberOfOutputs: 0 });
+  src.connect(node);
+  await openSession();
+  ws = await openSocket(sess.streamUrl);
+  ws.onmessage = (m) => {
+    const e = JSON.parse(m.data);
+    e._t = performance.now();
+    st.events.push(e);
+    show(e);
+  };
+  ws.send(JSON.stringify({ type: 'start', input: { kind: 'microphone', sampleRate: ctx.sampleRate, settings: st.settings }, telephony, language }));
+  node.port.onmessage = (m) => {
+    if (ws.readyState === 1) {
+      ws.send(m.data.pcm);
+      st.frames++;
+      st.bytes = (st.bytes || 0) + m.data.pcm.byteLength;
+      st.peak = m.data.peak;
+      st.clipped = m.data.clipped;
+    }
+  };
+  log('started at ' + ctx.sampleRate + ' Hz, settings ' + JSON.stringify(st.settings));
+  return { sampleRate: ctx.sampleRate, settings: st.settings };
+};
+window.a5finalize = () => { st.tFinalize = performance.now(); ws.send(JSON.stringify({ type: 'finalize' })); };
+window.a5end = () => { ws.send(JSON.stringify({ type: 'end' })); node && node.disconnect(); stream && stream.getTracks().forEach((t) => t.stop()); };
+// R48: a ticket is single-use — a second socket with it must fail, and a reconnect needs a new session.
+window.a5reuseTicket = async () => {
+  try { const s = await openSocket(sess.streamUrl); s.close(); return 'opened (BAD)'; } catch (e) { return 'refused'; }
+};
+window.a5dropAndReconnect = async (language = 'he-IL') => {
+  ws.close(4000, 'simulated drop');
+  await openSession();
+  ws = await openSocket(sess.streamUrl);
+  ws.onmessage = (m) => { const e = JSON.parse(m.data); e._t = performance.now(); e._afterReconnect = true; st.events.push(e); show(e); };
+  ws.send(JSON.stringify({ type: 'start', input: { kind: 'microphone', sampleRate: ctx.sampleRate, settings: st.settings }, language }));
+  return sess.id;
+};
+document.getElementById('go').onclick = () => window.a5start({ raw: document.getElementById('raw').checked, telephony: document.getElementById('tel').checked, language: document.getElementById('lang').value });
+document.getElementById('fin').onclick = () => window.a5finalize();
+document.getElementById('stop').onclick = () => window.a5end();
+</script>
+</body>
+</html>

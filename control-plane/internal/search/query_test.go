@@ -29,7 +29,8 @@ func TestParse(t *testing.T) {
 		{"fleurs hebrew", Query{Text: "fleurs hebrew", Terms: []Term{{Text: "fleurs"}, {Text: "hebrew"}}}},
 		{"Fleurs-HE-smoke", Query{Text: "Fleurs-HE-smoke", Terms: []Term{{Text: "fleurs"}, {Text: "he"}, {Text: "smoke"}}}},
 		{`"call center" kind:job`, Query{Text: `"call center"`, Terms: []Term{{Text: "call center", Phrase: true}}, Kinds: []string{"job"}}},
-		{"kind:dataset,model,job", Query{Kinds: []string{"dataset_version", "base_model", "job"}}},
+		{"kind:dataset,model,job", Query{Kinds: []string{"dataset_version", "model", "job"}}},
+		{"kind:base-model,base_model,golden-set,eval,experiment,normalizer", Query{Kinds: []string{"base_model", "golden_set", "eval", "experiment", "normalizer"}}},
 		{"is:collection", Query{Kinds: []string{"registry_collection"}}},
 		{"status:Running state:done", Query{Statuses: []string{"running", "done"}}},
 		{"lang:he-IL locale:ru", Query{Langs: []string{"he-il", "ru"}}},
@@ -67,6 +68,7 @@ func TestParse(t *testing.T) {
 			}
 			tt.want.Raw = tt.q
 			got.Qualifiers = nil // checked in TestParseQualifiers
+			got.free = nil       // the unnormalised free text Refold starts from
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("Parse(%q)\n got %+v\nwant %+v", tt.q, got, tt.want)
 			}

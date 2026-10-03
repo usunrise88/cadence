@@ -250,4 +250,85 @@ describe("analytics presets", () => {
     const bar: AnalyticsSpec = { kind: "bar", title: "SDI", categories: ["x", "y"], series: [{ id: "s", label: "S", values: [2, 5] }], stacked: true };
     expect(summarizeAnalytics(bar)).toContain("highest y 5");
   });
+  it("parallel coordinates: one series per line, axes by type, the highlighted line wider and solid", () => {
+    const par: AnalyticsSpec = {
+      kind: "parallel",
+      title: "Sweep",
+      axes: [
+        { id: "lr", label: "peak_lr", type: "log" },
+        { id: "aug", label: "augmentation", type: "category", categories: ["clean", "telephony"] },
+        { id: "wer", label: "val WER" },
+      ],
+      lines: [
+        { id: "r1", label: "run 1", values: [0.0001, "clean", 0.3] },
+        { id: "r2", label: "run 2", values: [0.0003, "telephony", 0.25], highlight: true },
+        { id: "r3", label: "run 3", values: [0.001, "clean", null] },
+      ],
+    };
+    const o = buildOption(par, theme, "s") as {
+      parallelAxis: { dim: number; type: string; data?: string[] }[];
+      series: { type: string; data: unknown[][]; lineStyle: { color: string; width: number; type: unknown } }[];
+    };
+    expect(o.parallelAxis.map((a) => a.type)).toEqual(["log", "category", "value"]);
+    expect(o.parallelAxis[1]?.data).toEqual(["clean", "telephony"]);
+    expect(o.series.map((s) => s.type)).toEqual(["parallel", "parallel", "parallel"]);
+    expect(o.series[2]?.data[0]).toEqual([0.001, "clean", "-"]);
+    expect(o.series[1]?.lineStyle).toMatchObject({ color: "c2", type: "solid" });
+    expect(o.series[1]!.lineStyle.width).toBeGreaterThan(o.series[0]!.lineStyle.width);
+    expect(analyticsTable(par)).toEqual({
+      columns: ["Line", "peak_lr", "augmentation", "val WER"],
+      rows: [
+        ["run 1", 0.0001, "clean", 0.3],
+        ["run 2 (highlighted)", 0.0003, "telephony", 0.25],
+        ["run 3", 0.001, "clean", null],
+      ],
+    });
+    const sum = summarizeAnalytics(par);
+    expect(sum).toContain("3 lines over 3 axes");
+    expect(sum).toContain("augmentation takes 2 values");
+    expect(sum).toContain("val WER 0.25 to 0.3");
+    expect(sum).toContain("Highlighted: run 2.");
+    expect(cursorItems(par).items[2]).toEqual({ seriesIndex: 2, dataIndex: 0, text: "run 3: peak_lr 0.001, augmentation clean, val WER no value" });
+  });
+  it("lines: step ECDFs without symbols, interval bars, a marked point and x marks; table, summary and cursor", () => {
+    const line: AnalyticsSpec = {
+      kind: "line",
+      title: "WER against latency",
+      xLabel: "Latency (ms)",
+      yLabel: "WER",
+      unit: "%",
+      note: "Intervals: baseline + delta.",
+      xMarks: [{ label: "primary", value: 160 }],
+      series: [
+        { id: "s", label: "Subject", points: [{ x: 80, y: 15, low: 13.5, high: 16, label: "80ms" }, { x: 160, y: 10, low: 9, high: 11, label: "160ms", marked: true }] },
+        { id: "b", label: "Baseline", points: [{ x: 80, y: 14, label: "80ms" }, { x: 160, y: 12, label: "160ms", marked: true }] },
+        { id: "e", label: "ECDF", slot: 2, step: true, points: [{ x: 0, y: 0 }, { x: 50, y: 1 }] },
+      ],
+    };
+    const o = buildOption(line, theme, "s") as {
+      series: { type: string; step?: string; showSymbol?: boolean; data: unknown[]; lineStyle?: { type: unknown }; markLine?: { data: { xAxis: number }[] } }[];
+    };
+    expect(o.series.map((x) => x.type)).toEqual(["line", "line", "line", "custom"]);
+    expect(o.series[0]?.lineStyle?.type).toBe("solid");
+    expect(o.series[1]?.lineStyle?.type).toEqual([8, 4]);
+    expect(o.series[2]).toMatchObject({ step: "end", showSymbol: false });
+    expect(o.series[0]?.markLine?.data[0]?.xAxis).toBe(160);
+    expect(o.series[0]?.data[1]).toMatchObject({ value: [160, 10], symbolSize: 14 });
+    // Only the subject has intervals: one custom series with its two bars.
+    expect(o.series[3]?.data).toEqual([
+      [80, 13.5, 16],
+      [160, 9, 11],
+    ]);
+    const t = analyticsTable(line);
+    expect(t.columns).toEqual(["Series", "Point", "Latency (ms)", "WER", "Low", "High"]);
+    expect(t.rows[1]).toEqual(["Subject", "160ms ★", 160, 10, 9, 11]);
+    expect(t.rows[4]).toEqual(["ECDF", null, 0, 0, null, null]);
+    const sum = summarizeAnalytics(line);
+    expect(sum).toContain("step lines for 3 series");
+    expect(sum).toContain("Subject: 2 points, Latency (ms) 80 to 160, WER 10 % to 15 %, marked 160ms 10 %, 2 with intervals");
+    expect(sum.endsWith("Intervals: baseline + delta.")).toBe(true);
+    const cur = cursorItems(line).items;
+    expect(cur).toHaveLength(6);
+    expect(cur[1]).toEqual({ seriesIndex: 0, dataIndex: 1, text: "Subject 160ms (marked): Latency (ms) 160, WER 10 %, interval 9 to 11" });
+  });
 });

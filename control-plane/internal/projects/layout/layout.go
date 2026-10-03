@@ -1,7 +1,8 @@
 // Package layout renders the files of a project repository from the project's facts and the bundled templates
 // (docs/spec/02-domain-projects-registry.md "Project wizard"; control-plane/templates/README.md): project.yaml,
 // AGENTS.md from the instructions template, CLAUDE.md, NOTES.md, data.lock, the agent config files rendered from
-// the permission preset (R7; permissions only, no MCP section — R2), the product skills and the starter pipelines.
+// the permission preset (R7; permissions only, no MCP section — R2), the product skills, the starter pipelines and
+// the starter language pack of each project locale (lang/<locale>/).
 // It is pure: no git, no database.
 package layout
 
@@ -18,6 +19,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/usunrise88/cadence/control-plane/internal/langpacks"
 	"github.com/usunrise88/cadence/control-plane/internal/policy"
 )
 
@@ -33,6 +35,7 @@ const (
 	SkillsDir      = ".claude/skills"
 	PipelinesDir   = "pipelines"
 	PlaybooksDir   = "playbooks"
+	LangDir        = langpacks.Dir // lang/<locale>/: the language packs
 )
 
 // CustomInstructions is the instructions template of a project whose AGENTS.md was edited by hand: it is never
@@ -186,7 +189,28 @@ func (r Renderer) Render(f Facts) (Files, error) {
 			return nil, err
 		}
 	}
+	for _, locale := range f.Locales {
+		if pack, ok := r.PackFor(locale); ok {
+			if err := r.copyDir(path.Join(LangDir, pack), path.Join(LangDir, locale), out); err != nil {
+				return nil, err
+			}
+		}
+	}
 	return out, nil
+}
+
+// PackFor names the starter language pack (templates/lang/<pack>) that serves a project locale, if Cadence ships
+// one: the same locale, a less specific one (sr for sr-Latn) or one of the same language (he-IL for he). The
+// project gets it as lang/<locale>/.
+func (r Renderer) PackFor(locale string) (string, bool) {
+	if !langpacks.ValidLocale(locale) {
+		return "", false
+	}
+	shipped, err := langpacks.Bundled(r.Tree)
+	if err != nil {
+		return "", false
+	}
+	return langpacks.Match(shipped, locale)
 }
 
 // Bootstrap is Render plus the first NOTES.md.

@@ -7,8 +7,9 @@ contexts: [shell:charts]
 ## What this is
 
 Every chart in Cadence is one of two kinds. Time series (loss, validation WER, learning rate, throughput, GPU
-memory, latency) are line charts that update live. Analytics charts (histograms, bars, heatmaps, scatter plots and
-forest plots) show numbers the server has already binned. The chart shows the same numbers an agent gets from the
+memory, latency) are line charts that update live. Analytics charts (histograms, bars, heatmaps, scatter plots,
+forest plots, parallel coordinates and lines such as an ECDF or WER against latency) show numbers the server has
+already computed. The chart shows the same numbers an agent gets from the
 same API call. Your browser only zooms, smooths and switches scales.
 
 ## Place in the loop

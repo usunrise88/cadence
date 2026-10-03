@@ -4,7 +4,7 @@
 # the control-plane binary and packaged with the worker. Every value carries a description, a source and, where it
 # applies, a safe range; a value without a published source is a "Cadence recommendation" re-checked after the spikes.
 # Keys are addressed as <section>.<key> (x-cadence.defaultRef: training.steps). Bump `version` on every change.
-version: 10
+version: 11
 
 # The project wizard's Recommended mode (docs/spec/02-domain-projects-registry.md "Project wizard").
 wizard:
@@ -362,6 +362,18 @@ augment:
     description: Range the speed factor is drawn from (tempo and pitch change together)
     source: Ko et al., "Audio augmentation for speech recognition", Interspeech 2015 (factors 0.9, 1.0, 1.1); NeMo and Lhotse defaults
     range: { min: 0.8, max: 1.2 }
+  noise_probability:
+    value: 0.5
+    unit: fraction
+    description: Share of utterances mixed with a clip of the profile's noise bank (a noise transform names the bank)
+    source: Cadence recommendation
+    range: { min: 0, max: 1 }
+  noise_snr_db:
+    value: [0, 20]
+    unit: dB
+    description: Range the signal-to-noise ratio of the mixed noise is drawn from
+    source: docs/spec/03-pipelines-defaults.md "Augmentation" (Background noise, SNR 0–20 dB)
+    range: { min: -5, max: 40 }
 
 # Hosts seeded into the compute entity at first start; Settings edits them afterwards (compute.edit).
 compute:
@@ -375,7 +387,7 @@ compute:
           card_class: blackwell-48gb
           memory_gb: 48
           memory_cap_gb: 22
-          allowed_job_kinds: [training, eval, shadow, export, data]
+          allowed_job_kinds: [training, eval, shadow, export, data, interactive]
 
 # Imports (docs/spec/08-resolutions.md R17, R18): what the dataset_import step kind starts from.
 data:
@@ -413,6 +425,316 @@ data:
     value: false
     description: Whether an import normalises transcripts; off keeps the source's cased, punctuated text, the style the base model is trained on
     source: nvidia/nemotron-3.5-asr-streaming-0.6b model card (punctuated, cased output); .claude/rules/worker.md
+
+# Evaluation (phase 3; docs/review/2026-10-02-phase-3-plan.md): the matrix, scoring and significance.
+eval:
+  primary_profile:
+    value: 160ms
+    description: Latency profile of the primary cell, the one the gate reads; the latency production runs at (a project may change it in gates.yaml)
+    source: docs/spec/08-resolutions.md R20 ([56,1], 160 ms)
+  matrix_profiles:
+    value: [80ms, 160ms, 1120ms]
+    description: Latency profiles an eval runs by default (those the model's family declares); 1120ms is the high-latency reference
+    source: docs/spec/08-resolutions.md R20, R43 ([56,0], [56,1], [56,13])
+  normalizer:
+    value: normalizer/basic
+    description: Scoring normalizer a golden set is frozen with when the freeze names none (the locale's language pack names its own)
+    source: docs/spec/08-resolutions.md R21
+  character_error_languages:
+    value: [zh, yue, ja, th, lo, km, my]
+    description: Languages (primary subtags) written without spaces between words; their golden sets are compared and gated on the character error rate, since a word error rate over unsegmented text counts whole sentences
+    source: Cadence recommendation (FLEURS and Common Voice report CER for zh, ja and th; the stand's phase-3 gate run measured base-model WER of 0.91–1.04 on them)
+  duration_buckets_s:
+    value: [0, 2, 5, 10, 20]
+    unit: s
+    description: Lower bounds of the utterance-duration buckets an eval reports WER for; the last bucket is open
+    source: Cadence recommendation (docs/spec/04-blocks.md Block 3, duration buckets)
+  bootstrap_samples:
+    value: 1000
+    unit: samples
+    description: Bootstrap resamples behind every confidence interval on a WER delta
+    source: Bisani & Ney, ICASSP 2004 (docs/spec/03-pipelines-defaults.md "Key defaults", Significance)
+    range: { min: 100, max: 100000 }
+  confidence:
+    value: 0.95
+    unit: fraction
+    description: Coverage of the confidence intervals; a gain or regression counts only when the interval excludes zero
+    source: docs/spec/03-pipelines-defaults.md "Key defaults" (Significance)
+    range: { min: 0.5, max: 0.999 }
+  bootstrap_seed:
+    value: 1
+    description: Seed of the bootstrap resampling, so a verdict is reproducible
+    source: Cadence recommendation
+    range: { min: 0, max: 2147483647 }
+  gpu_hours_per_audio_hour:
+    value: 0.025
+    unit: GPU-hours per audio hour
+    description: GPU time one eval cell spends per hour of golden-set audio (streaming decode at one latency profile, model load included); evals.new multiplies it by the audio of the cells it computes, and the policy weighs the result against the GPU budgets
+    source: "Measured on the stand (2026-10-02): the reference loop at batch 32 took 0.81 GPU-hours for 79 audio hours (0.010); the pipeline decoder at batch 8 runs at RTF 0.0165 (stream T); 1.5× margin over the latter"
+    range: { min: 0.001, max: 10 }
+
+gate:
+  target_rule:
+    value: beat-baseline
+    description: What the target golden sets must show at the primary cell; beat-baseline needs a WER delta below zero with the whole interval below zero
+    source: docs/spec/03-pipelines-defaults.md "Key defaults" (Gate)
+    range: { values: [beat-baseline] }
+  replay_max_regression:
+    value: 0.005
+    unit: fraction
+    description: Largest WER rise (absolute, 0.005 = 0.5 points) a replay-locale golden set may show before the gate fails, counted only when the interval excludes zero
+    source: docs/spec/03-pipelines-defaults.md "Key defaults" (Gate)
+    range: { min: 0, max: 0.1 }
+  deletions_insertions:
+    value: true
+    description: Fail the gate when the target cells' deletion rate falls while their insertion rate rises (both intervals excluding zero)
+    source: docs/spec/03-pipelines-defaults.md "Key defaults" (Gate)
+
+# Language packs (phase 3, stream L; docs/spec/03-pipelines-defaults.md "Language packs and hot words").
+langpacks:
+  boost_weight:
+    value: 1.0
+    description: Weight a new boost list starts with (its file's '# weight:' header), passed with the list to the transcribe step's phrase boosting; boosting is evaluated before it is trusted
+    source: Cadence recommendation (docs/spec/08-resolutions.md R24)
+    range: { min: 0, max: 10 }
+  boost_max_terms:
+    value: 5000
+    unit: terms
+    description: Most terms one boost list may hold; long lists slow decoding and invite insertions of listed terms
+    source: Cadence recommendation (docs/spec/08-resolutions.md R24, over-boosting shows as insertions)
+    range: { min: 1, max: 100000 }
+
+# Audio serving (phase 3, stream A; docs/spec/06-platform.md "Media", R25).
+media:
+  signed_link_ttl_s:
+    value: 300
+    unit: s
+    description: How long a signed audio link (audio.sign) plays; a media element refetches ranges while it plays, so the link must outlive a listening session but a copied link soon stops working
+    source: Cadence recommendation (docs/spec/08-resolutions.md R25, short-lived signed URLs)
+    range: { min: 30, max: 3600 }
+  max_span_s:
+    value: 600
+    unit: s
+    description: Longest span audio.get converts in one response (a stored 16 kHz WAV asked whole is served as is, at any length); the audio view asks for no more than the audio it draws
+    source: docs/spikes/S5-audio-view.md and views.audio.browser_stft_max_s (the longest audio the audio view handles in the browser, 10 minutes, R52)
+    range: { min: 60, max: 3600 }
+  max_conversions:
+    value: 2
+    unit: conversions
+    description: Span conversions (decode, resample, encode) audio.get runs at once across all viewers; one more answers 429 media-busy with Retry-After
+    source: Cadence recommendation (each converts in 10 s blocks, a few MB each; the bound keeps a burst of seeks from taking the control plane's CPU)
+    range: { min: 1, max: 32 }
+  span_cache_mb:
+    value: 2048
+    unit: MB
+    description: Size of the converted-span cache (the content store's cache/media-spans directory, never backed up); the least recently played spans are dropped beyond it
+    source: Cadence recommendation (a 10-minute 16 kHz mono span is 19 MB)
+    range: { min: 64, max: 65536 }
+  play_audit_window_s:
+    value: 600
+    unit: s
+    description: A play (viewer, utterance, span, channel) is written to the audit log once within this window, whatever byte range its first request asks for
+    source: Cadence recommendation (a media element refetches ranges while it plays and seeks)
+    range: { min: 10, max: 86400 }
+
+# Manual transcription tests and the live channel (phase 3, stream T; docs/spec/06-platform.md "Media", R47–R50; the
+# numbers come from spike A5, docs/spikes/A5-live-transcription.md "Result").
+transcriptions:
+  ticket_ttl_s:
+    value: 60
+    unit: s
+    description: How long the single-use ticket transcriptions.new answers may open the live socket
+    source: docs/spec/08-resolutions.md R48 (single-use ticket valid 60 s)
+    range: { min: 10, max: 300 }
+  session_max_minutes:
+    value: 15
+    unit: min
+    description: Longest live session; the session also ends earlier when the project's manual-test allowance runs out
+    source: docs/spec/08-resolutions.md R48 (limits in v1)
+    range: { min: 1, max: 60 }
+  idle_minutes:
+    value: 5
+    unit: min
+    description: A live session without audio, keepalive or ping for this long is closed
+    source: docs/spec/08-resolutions.md R48 (limits in v1)
+    range: { min: 1, max: 30 }
+  queue_wait_minutes:
+    value: 15
+    unit: min
+    description: Longest a session waits in the queue (or for its worker to load) before it gives up; the page shows its place meanwhile
+    source: Cadence recommendation (docs/spec/08-resolutions.md R49, the session waits and reports its place)
+    range: { min: 1, max: 120 }
+  frame_ms:
+    value: 20
+    unit: ms
+    description: Longest microphone frame the page sends (PCM16 at the capture rate); 80 ms frames with a 48 kHz microphone add one frame of lag at times
+    source: docs/spikes/A5-live-transcription.md "Result" (surprise 6, proposal 6)
+    range: { min: 10, max: 80 }
+  max_file_minutes:
+    value: 15
+    unit: min
+    description: Longest audio file a session accepts (the worker refuses a longer one after decoding it)
+    source: docs/spec/08-resolutions.md R47 (files capped at 15 minutes of audio)
+    range: { min: 1, max: 60 }
+  max_file_mb:
+    value: 300
+    unit: MB
+    description: Largest file a session accepts, counted by the relay as the bytes arrive (15 minutes of 48 kHz stereo 24-bit WAV is 260 MB)
+    source: Cadence recommendation
+    range: { min: 1, max: 2048 }
+  max_message_kb:
+    value: 64
+    unit: KB
+    description: Largest message the live socket accepts from the browser; a file is sent in chunks of this size or less
+    source: docs/spikes/A5-live-transcription.md (the relay's frame limit)
+    range: { min: 16, max: 1024 }
+  relay_queue_messages:
+    value: 256
+    unit: messages
+    description: Messages the relay holds for the worker before it stops reading from the browser (5 s of 20 ms frames)
+    source: docs/spikes/A5-live-transcription.md (bounded upstream queue = backpressure)
+    range: { min: 16, max: 4096 }
+  backpressure_wait_s:
+    value: 5
+    unit: s
+    description: How long the relay waits for room in a full queue before it closes the socket with 1013 (the worker fell behind)
+    source: Cadence recommendation
+    range: { min: 1, max: 60 }
+  interactive_job_priority:
+    value: 1000
+    unit: priority
+    description: Job priority of an interactive job; interactive jobs also start before every other kind of job, whatever the project's priority
+    source: docs/spec/08-resolutions.md R49 (highest queue priority)
+    range: { min: 0, max: 100000 }
+  worker_dial_timeout_s:
+    value: 120
+    unit: s
+    description: How long the relay keeps a worker's live socket that no browser joined (and how long a leased job may take to dial)
+    source: Cadence recommendation (a model loads in about 22 s, spike A5)
+    range: { min: 10, max: 900 }
+  scratch_sweep_minutes:
+    value: 60
+    unit: min
+    description: A worker removes a lease's scratch directory (a live session's uploaded file included) left by a crashed process after this long
+    source: docs/spec/08-resolutions.md R47 (a sweep removes what a crashed session left within an hour)
+    range: { min: 5, max: 1440 }
+
+# Client view defaults (docs/spec/10-ui-shell.md "Audio view and charts"; R51, R52; spike S5).
+views:
+  audio:
+    window_ms:
+      value: 25
+      unit: ms
+      description: Spectrogram analysis window (Hann), the model's frame length
+      source: docs/spec/08-resolutions.md R52 ("Model frames" preset)
+      range: { min: 5, max: 100 }
+    hop_ms:
+      value: 10
+      unit: ms
+      description: Spectrogram hop, the model's frame grid; tiles' base level
+      source: docs/spec/08-resolutions.md R52
+      range: { min: 5, max: 50 }
+    n_fft:
+      value: 512
+      unit: points
+      description: FFT size of the acoustic spectrogram (257 bins at 16 kHz, 31.25 Hz apart)
+      source: docs/spec/08-resolutions.md R52
+      range: { min: 256, max: 1024 }
+    fmax_hz:
+      value: 8000
+      unit: Hz
+      description: Top of the frequency axis for 16 kHz audio; audio of 8 kHz origin stops at its Nyquist with a line
+      source: docs/spec/08-resolutions.md R52
+      range: { min: 1000, max: 8000 }
+    axis:
+      value: mel
+      description: Frequency axis of the acoustic spectrogram
+      source: docs/spec/08-resolutions.md R52
+      range: { values: [mel, hz] }
+    range_db:
+      value: 80
+      unit: dB
+      description: Dynamic range shown below the peak
+      source: docs/spec/08-resolutions.md R52
+      range: { min: 20, max: 120 }
+    gain_db:
+      value: 0
+      unit: dB
+      description: Gain added before the range is applied
+      source: docs/spec/08-resolutions.md R52
+      range: { min: -40, max: 40 }
+    colormap:
+      value: magma
+      description: Spectrogram colormap (perceptually uniform; never jet or rainbow); the theme does not change it
+      source: docs/spec/08-resolutions.md R52
+      range: { values: [magma, viridis, cividis, inferno, grey, grey-inverse] }
+    tile_frames:
+      value: 512
+      unit: frames
+      description: Frames per spectrogram tile (spectrogram_tiles@1 and the browser STFT share the shape)
+      source: docs/spikes/S5-audio-view.md (tile format)
+      range: { min: 512, max: 512 }
+    tile_slots:
+      value: 64
+      unit: tiles
+      description: Tiles one window's WebGL2 texture array holds (LRU); 64 × 512 × 257 bytes is 8.4 MB of GPU memory
+      source: docs/spikes/S5-audio-view.md (what brings a 30-minute call under 150 MB)
+      range: { min: 16, max: 256 }
+    tile_cache_mb:
+      value: 12
+      unit: MiB
+      description: Tile bytes a view keeps in memory (LRU) besides the top level
+      source: docs/spikes/S5-audio-view.md
+      range: { min: 4, max: 128 }
+    model_input_max_span_s:
+      value: 60
+      unit: s
+      description: Widest span at which the model-input track loads its features
+      source: docs/spikes/S5-audio-view.md
+      range: { min: 5, max: 600 }
+    words_max_visible:
+      value: 300
+      unit: words
+      description: Most word elements a word track shows; above it the track shows density blocks
+      source: docs/spikes/S5-audio-view.md
+      range: { min: 50, max: 2000 }
+    browser_stft_max_s:
+      value: 600
+      unit: s
+      description: Longest audio whose spectrogram the browser computes (STFT in a Web Worker, ≈ 45 ms per minute); longer audio reads the server tile pyramid (spectrogram_tiles@1)
+      source: docs/spec/08-resolutions.md R52 (10 minutes); docs/spikes/S5-audio-view.md (FFT time)
+      range: { min: 10, max: 3600 }
+# Sweeps (phase 3, stream X; docs/spec/04-blocks.md "Experiments and sweeps"): sweeps.run generates an experiment's
+# runs from a grid or a random draw over recipe parameters and runs them one after another under a GPU-hour cap.
+sweeps:
+  mode:
+    value: grid
+    description: How a sweep picks its points — grid (every combination of the listed values) or random (a seeded draw from values or ranges)
+    source: docs/spec/04-blocks.md "Experiments and sweeps"
+    range: { values: [grid, random] }
+  max_runs:
+    value: 16
+    unit: runs
+    description: Most runs one sweep may queue; a grid with more combinations is refused until it names fewer values or a smaller runs count
+    source: Cadence recommendation (a sweep runs sequentially on one card; 16 short stages fit a few days of the staging card)
+    range: { min: 1, max: 64 }
+  random_runs:
+    value: 8
+    unit: runs
+    description: Points a random sweep draws when the request names no count
+    source: Cadence recommendation (Bergstra & Bengio, JMLR 13, 2012 — a handful of random points covers the important parameter)
+    range: { min: 1, max: 64 }
+  gpu_hour_cap:
+    value: 8
+    unit: GPU-hours
+    description: Most GPU-hours a sweep's runs may use when the request names no cap; the whole estimate must fit it and the sweep stops before a run would pass it
+    source: Cadence recommendation (about two days of the default project budget)
+    range: { min: 0.001, max: 500 }
+  seed:
+    value: 1
+    description: Seed of a random sweep's draw, so the same request draws the same points
+    source: Cadence recommendation
+    range: { min: 0, max: 2147483647 }
 
 # Framework packs (R45): one section per pack, read by its step kinds through x-cadence defaultRef packs.<pack>.<key>.
 packs:
@@ -612,8 +934,52 @@ packs:
       source: docs/spec/03-pipelines-defaults.md "Key defaults" (eval latency [56,1], 160 ms)
       range: { values: [80ms, 160ms, 320ms, 560ms, 1120ms] }
     transcribe_batch_size:
-      value: 32
+      value: 8
       unit: utterances
-      description: Utterances streamed together (each keeps its own encoder cache)
-      source: Spike A3 (batch 32, fp32)
+      description: Utterances streamed together in an eval (each keeps its own encoder cache); 8 is about 4x faster than 1 at the same WER, while 1 decodes every utterance to exactly the words a live session of that audio gives (a batch changes a few words through the order of floating-point sums)
+      source: Phase 3 stream T GPU check (pipeline decoder, FLEURS he and ru at 80, 160 and 1120 ms; batch 8 differed from batch 1 in 3 of 22 clips at 80 ms with equal WER, none at 160 ms; RTF 0.0165 at batch 8); spike A3 used 32 for the reference loop
       range: { min: 1, max: 256 }
+    boost_weight:
+      value: 0.5
+      description: Weight of a boost list's phrase-boosting score in decoding (NeMo's boosting_tree_alpha) when the list names none; 0 turns boosting off. Above about 0.7 listed words start replacing others (over-boosting)
+      source: "Cadence recommendation: FLEURS he_il test, 120 utterances, base model at 160 ms, 40 missed words boosted — recall 0.11 → 0.29 / 0.36 / 0.50 / 0.52 / 0.54 and WER 0.466 → 0.462 / 0.460 / 0.461 / 0.490 / 0.623 at weight 0.3 / 0.5 / 0.7 / 1 / 2 (staging card, 2026-10-02)"
+      range: { min: 0, max: 10 }
+    live_stop_history_eou_ms:
+      value: 800
+      unit: ms
+      description: Trailing silence (in the decoder's emissions) after which NeMo's streaming pipeline closes a segment with an automatic end of utterance; live sessions and nemotron_transcribe@3 use the same value, so their words agree
+      source: "docs/spikes/A5-live-transcription.md \"Result\" (800 ms: the automatic endpoint lands 1.5 s after the utterance at 160 ms, 2.0 s at 1120 ms)"
+      range: { min: 80, max: 10000 }
+    # frame_vad (utterance ends for latency to final, R54; phase 3 stream R).
+    vad_model:
+      value: nvidia/Frame_VAD_Multilingual_MarbleNet_v2.0
+      description: Hugging Face repository of the frame-VAD model whose speech ends latency to final is measured from
+      source: "NVIDIA Frame-VAD Multilingual MarbleNet v2.0, NVIDIA Open Model License (commercial use; licence checked against R26 on 2026-10-02, docs/help/steps/frame-vad.md)"
+    vad_revision:
+      value: 9d25eb877d9edab5101ccc843edd04787a6c72c4
+      description: Pinned revision (commit) of the frame-VAD model
+      source: "The repository's main branch on 2026-10-02 (last modified 2025-05-14)"
+    vad_onset:
+      value: 0.5
+      unit: probability
+      description: Speech probability at which a speech segment starts (hysteresis onset)
+      source: "The model card's example threshold (frames above 0.5 count as speech)"
+      range: { min: 0.05, max: 0.95 }
+    vad_offset:
+      value: 0.3
+      unit: probability
+      description: Speech probability below which a speech segment ends (hysteresis offset, at most the onset)
+      source: Cadence recommendation (a lower offset keeps trailing low-energy phonemes inside the segment)
+      range: { min: 0.05, max: 0.95 }
+    vad_min_speech_ms:
+      value: 100
+      unit: ms
+      description: Shortest speech segment kept (shorter blips are dropped)
+      source: Cadence recommendation
+      range: { min: 0, max: 2000 }
+    vad_min_silence_ms:
+      value: 200
+      unit: ms
+      description: Shortest pause that splits two speech segments (shorter gaps are closed)
+      source: Cadence recommendation
+      range: { min: 0, max: 5000 }

@@ -60,6 +60,8 @@ func orArgv(argv []string, def string) []string {
 var KeyTables = []string{
 	"users", "credentials", "projects", "registry_collections", "registry_versions", "secrets", "approvals", "jobs",
 	"audit_log", "mixes", "agent_sessions", "notification_rules", "backups",
+	// Evaluation (phase 3): the records and metrics are shared caches every project's evals and gates read.
+	"evals", "eval_cells", "eval_records", "eval_metrics",
 }
 
 // manifest is the set's manifest.json.

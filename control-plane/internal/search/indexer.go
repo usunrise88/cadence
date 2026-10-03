@@ -32,6 +32,9 @@ type Indexer struct {
 	PollInterval time.Duration
 	// Batch is the most events applied per transaction.
 	Batch int
+	// Folder, when set, folds a document's text with its locale's scoring normalizer before Normalize (FoldFor):
+	// the document's lang, else the locale its script suggests.
+	Folder LocaleFolder
 }
 
 // NewIndexer returns an indexer over sources. hub may be nil: the indexer then only polls.
@@ -162,7 +165,11 @@ func (ix *Indexer) apply(ctx context.Context, tx pgx.Tx, batch []events.Record) 
 				actor := ev.Actor // the last actor that changed it, when the entity keeps none
 				d.Actor = &actor
 			}
-			if err := Upsert(ctx, tx, d, ev.Seq); err != nil {
+			fold, err := FoldFor(ctx, tx, ix.Folder, d.ProjectID, d.Lang, d.Title+" "+d.Text)
+			if err != nil {
+				return err
+			}
+			if err := UpsertWith(ctx, tx, d, ev.Seq, fold); err != nil {
 				return err
 			}
 		}
@@ -170,8 +177,13 @@ func (ix *Indexer) apply(ctx context.Context, tx pgx.Tx, batch []events.Record) 
 	return nil
 }
 
-// Upsert writes one document, normalising its text.
+// Upsert writes one document, normalising its text with Normalize.
 func Upsert(ctx context.Context, q storage.Querier, d Document, seq int64) error {
+	return UpsertWith(ctx, q, d, seq, Normalize)
+}
+
+// UpsertWith writes one document, normalising its text with norm.
+func UpsertWith(ctx context.Context, q storage.Querier, d Document, seq int64, norm func(string) string) error {
 	tags := d.Tags
 	if tags == nil {
 		tags = []string{}
@@ -197,7 +209,7 @@ func Upsert(ctx context.Context, q storage.Querier, d Document, seq int64) error
 			numbers = EXCLUDED.numbers, title_norm = EXCLUDED.title_norm, body_norm = EXCLUDED.body_norm,
 			seq = EXCLUDED.seq, updated_at = EXCLUDED.updated_at, indexed_at = now()`,
 		d.Kind, d.ID, d.Scope, projectID, d.Ref, d.Title, d.Text, tags, d.Status, d.Lang, d.Actor, actorKind, numbers,
-		Normalize(d.Title), Normalize(joinText(d.Text, joinText(tags...))), seq, d.UpdatedAt)
+		norm(d.Title), norm(joinText(d.Text, joinText(tags...))), seq, d.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("index %s %s: %w", d.Kind, d.ID, err)
 	}

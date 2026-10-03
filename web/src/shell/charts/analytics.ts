@@ -10,6 +10,8 @@ type Base = {
   yLabel?: string;
   unit?: string;
   format?: (v: number) => string;
+  /** Appended to the text summary (what the data covers, how an interval was derived). */
+  note?: string;
 };
 
 export type Bin = { start: number; end: number; count: number };
@@ -54,7 +56,36 @@ export type ForestSpec = Base & {
   reference?: number;
 };
 
-export type AnalyticsSpec = HistogramSpec | BarSpec | HeatmapSpec | ScatterSpec | ForestSpec;
+/** One axis of a parallel-coordinates chart: a numeric (linear or log) or a categorical dimension. */
+export type ParallelAxis = { id: string; label: string; type?: "value" | "log" | "category"; categories?: string[] };
+
+/**
+ * Parallel coordinates (R53, Experiment: swept parameters and the metric of each run). One line per item; values
+ * follow `axes` (a category axis takes the category's string). `highlight` draws a line wider and solid (the best run).
+ */
+export type ParallelSpec = Base & {
+  kind: "parallel";
+  axes: ParallelAxis[];
+  lines: { id: string; label: string; slot?: number; values: (number | string | null)[]; highlight?: boolean }[];
+};
+
+/** One point of a line; `low`/`high` draw a vertical interval bar, `marked` a larger symbol with its label. */
+export type LinePoint = { x: number; y: number; low?: number; high?: number; label?: string; marked?: boolean };
+
+/**
+ * Lines over a numeric x (R53, Eval report: per-utterance WER ECDF, WER against latency). `step` draws a step
+ * function (an ECDF) without symbols; other lines show a symbol per point (shape per slot). Series differ by colour,
+ * dash and symbol. `xMarks` are vertical reference lines (the primary profile).
+ */
+export type LineSpec = Base & {
+  kind: "line";
+  series: { id: string; label: string; slot?: number; step?: boolean; points: LinePoint[] }[];
+  xMarks?: { label: string; value: number }[];
+  xType?: "value" | "log";
+  yRange?: [number, number];
+};
+
+export type AnalyticsSpec = HistogramSpec | BarSpec | HeatmapSpec | ScatterSpec | ForestSpec | ParallelSpec | LineSpec;
 
 /** One keyboard-cursor stop: which ECharts item to highlight and what to announce. */
 export type CursorItem = { seriesIndex: number; dataIndex: number; text: string };
@@ -274,7 +305,110 @@ export function buildOption(spec: AnalyticsSpec, theme: ChartTheme, summary: str
         ],
       };
     }
+    case "parallel": {
+      const tooltipValue = (v: number | string | null) => (v == null ? "—" : typeof v === "number" ? f(v) : v);
+      return {
+        ...common,
+        ...legend(spec.lines.length),
+        tooltip: {
+          trigger: "item",
+          confine: true,
+          formatter: (p: { seriesName: string; value: (number | string | null)[] }) =>
+            `${p.seriesName}<br/>${spec.axes.map((a, i) => `${a.label}: ${tooltipValue(p.value[i] ?? null)}`).join("<br/>")}`,
+        },
+        parallel: { left: 48, right: 56, top: spec.lines.length > 1 ? 48 : 32, bottom: 24 },
+        parallelAxis: spec.axes.map((a, i) => ({
+          dim: i,
+          name: a.label,
+          type: a.type ?? "value",
+          ...(a.type === "category" ? { data: a.categories ?? [] } : { scale: true }),
+          nameTextStyle: { color: theme.axis },
+          axisLine: { lineStyle: { color: theme.axis } },
+          axisLabel: { color: theme.axis, ...(a.type === "category" ? {} : { formatter: (v: number) => f(v) }) },
+        })),
+        series: spec.lines.map((l, i) => {
+          const slot = l.slot ?? i;
+          return {
+            type: "parallel",
+            name: l.label,
+            id: l.id,
+            data: [l.values.map((v) => v ?? "-")],
+            // The highlighted line differs by width and a solid stroke, never by colour alone.
+            lineStyle: { color: seriesColor(theme, slot), width: l.highlight ? 3.5 : 1.5, opacity: l.highlight ? 1 : 0.8, type: l.highlight ? "solid" : [...dashFor(slot)] },
+            emphasis: { lineStyle: { width: 4 } },
+            z: l.highlight ? 3 : 2,
+          };
+        }),
+      };
+    }
+    case "line":
+      return lineOption(spec, theme, common, legend, nameOf);
   }
+}
+
+function lineOption(
+  spec: LineSpec,
+  theme: ChartTheme,
+  common: { grid: Record<string, unknown> } & Record<string, unknown>,
+  legend: (n: number) => Record<string, unknown>,
+  nameOf: (s?: string) => Record<string, unknown>,
+): EChartsCoreOption {
+  const f = fmtOf(spec);
+  const intervals = spec.series.flatMap((s, i) => (s.points.some((p) => p.low != null && p.high != null) ? [{ s, slot: s.slot ?? i }] : []));
+  const marks = (spec.xMarks ?? []).map((m) => ({ xAxis: m.value, name: m.label, label: { formatter: m.label, color: theme.axis, position: "insideEndTop" }, lineStyle: { color: theme.marker, type: "dashed" } }));
+  return {
+    ...common,
+    ...legend(spec.series.length),
+    tooltip: { trigger: "item", confine: true },
+    grid: { ...common.grid, top: spec.series.length > 1 ? 32 : 16 },
+    xAxis: { type: spec.xType ?? "value", scale: true, ...nameOf(spec.xLabel), axisLabel: { formatter: (v: number) => f(v), hideOverlap: true } },
+    yAxis: { type: "value", ...(spec.yRange ? { min: spec.yRange[0], max: spec.yRange[1] } : { scale: true }), ...nameOf(spec.yLabel), nameGap: 40 },
+    series: [
+      ...spec.series.map((s, i) => {
+        const slot = s.slot ?? i;
+        const color = seriesColor(theme, slot);
+        return {
+          type: "line",
+          name: s.label,
+          id: s.id,
+          step: s.step ? "end" : undefined,
+          showSymbol: !s.step,
+          symbol: SYMBOLS[slot % SYMBOLS.length],
+          symbolSize: 8,
+          data: s.points.map((p) => ({
+            value: [p.x, p.y],
+            name: p.label,
+            // The marked point (the primary profile) is larger and labelled: never colour alone.
+            ...(p.marked ? { symbolSize: 14, label: { show: true, formatter: p.label ? `${p.label} ★` : "★", position: "top", color: theme.text } } : {}),
+          })),
+          lineStyle: { color, width: 2, type: dashFor(slot).length ? [...dashFor(slot)] : "solid" },
+          itemStyle: { color, borderColor: theme.surface, borderWidth: 1 },
+          ...(i === 0 && marks.length ? { markLine: { symbol: "none", silent: true, data: marks } } : {}),
+        };
+      }),
+      ...intervals.map(({ s, slot }) => ({
+        type: "custom",
+        name: `${s.label} interval`,
+        silent: true,
+        data: s.points.filter((p) => p.low != null && p.high != null).map((p) => [p.x, p.low, p.high]),
+        encode: { x: 0, y: [1, 2] },
+        renderItem: (_params: unknown, api: CustomApi) => {
+          const lo = api.coord([api.value(0), api.value(1)]);
+          const hi = api.coord([api.value(0), api.value(2)]);
+          const cap = 5;
+          const style = { stroke: seriesColor(theme, slot), lineWidth: 1.5 };
+          return {
+            type: "group",
+            children: [
+              { type: "line", shape: { x1: lo[0], y1: lo[1], x2: hi[0], y2: hi[1] }, style },
+              { type: "line", shape: { x1: lo[0] - cap, y1: lo[1], x2: lo[0] + cap, y2: lo[1] }, style },
+              { type: "line", shape: { x1: hi[0] - cap, y1: hi[1], x2: hi[0] + cap, y2: hi[1] }, style },
+            ],
+          };
+        },
+      })),
+    ],
+  };
 }
 
 function unreachable(x: never): never {
@@ -307,12 +441,31 @@ export function analyticsTable(spec: AnalyticsSpec): Table {
       };
     case "forest":
       return { columns: [spec.yLabel ?? "Row", "Estimate", "Low", "High"], rows: spec.rows.map((r) => [r.label, r.estimate, r.low, r.high]) };
+    case "parallel":
+      return {
+        columns: [spec.yLabel ?? "Line", ...spec.axes.map((a) => a.label)],
+        rows: spec.lines.map((l) => [l.highlight ? `${l.label} (highlighted)` : l.label, ...spec.axes.map((_, i) => l.values[i] ?? null)]),
+      };
+    case "line": {
+      const withIntervals = spec.series.some((s) => s.points.some((p) => p.low != null || p.high != null));
+      return {
+        columns: ["Series", "Point", spec.xLabel ?? "x", spec.yLabel ?? "y", ...(withIntervals ? ["Low", "High"] : [])],
+        rows: spec.series.flatMap((s) =>
+          s.points.map((p) => [s.label, p.label ? `${p.label}${p.marked ? " ★" : ""}` : p.marked ? "★" : null, p.x, p.y, ...(withIntervals ? [p.low ?? null, p.high ?? null] : [])]),
+        ),
+      };
+    }
   }
   return unreachable(spec);
 }
 
-/** The text summary of a preset (R53 accessibility). */
+/** The text summary of a preset (R53 accessibility), with the spec's note. */
 export function summarizeAnalytics(spec: AnalyticsSpec): string {
+  const s = summarizeKind(spec);
+  return spec.note ? `${s} ${spec.note}` : s;
+}
+
+function summarizeKind(spec: AnalyticsSpec): string {
   const f = fmtOf(spec);
   const u = (v: number) => withUnit(spec, f(v));
   switch (spec.kind) {
@@ -358,6 +511,29 @@ export function summarizeAnalytics(spec: AnalyticsSpec): string {
       const across = spec.rows.length - above - below;
       return `${spec.title}: ${spec.rows.length} estimates with intervals against ${formatCell(ref)}. ${above} entirely above, ${below} entirely below, ${across} include it.`;
     }
+    case "parallel": {
+      const ranges = spec.axes.map((a, i) => {
+        if (a.type === "category") {
+          const seen = new Set(spec.lines.map((l) => l.values[i]).filter((v): v is string | number => v != null).map(String));
+          return `${a.label} takes ${seen.size} value${seen.size === 1 ? "" : "s"}`;
+        }
+        const vals = spec.lines.map((l) => l.values[i]).filter((v): v is number => typeof v === "number" && Number.isFinite(v));
+        return vals.length ? `${a.label} ${f(Math.min(...vals))} to ${f(Math.max(...vals))}` : `${a.label} has no values`;
+      });
+      const hi = spec.lines.filter((l) => l.highlight).map((l) => l.label);
+      return `${spec.title}: parallel coordinates of ${spec.lines.length} lines over ${spec.axes.length} axes. ${ranges.join("; ")}.${hi.length ? ` Highlighted: ${hi.join(", ")}.` : ""}`;
+    }
+    case "line": {
+      const parts = spec.series.map((s) => {
+        if (!s.points.length) return `${s.label}: no points`;
+        const ys = s.points.map((p) => p.y);
+        const xs = s.points.map((p) => p.x);
+        const marked = s.points.filter((p) => p.marked).map((p) => `${p.label ?? f(p.x)} ${u(p.y)}`);
+        const iv = s.points.filter((p) => p.low != null && p.high != null).length;
+        return `${s.label}: ${s.points.length} points, ${spec.xLabel ?? "x"} ${f(Math.min(...xs))} to ${f(Math.max(...xs))}, ${spec.yLabel ?? "y"} ${u(Math.min(...ys))} to ${u(Math.max(...ys))}${marked.length ? `, marked ${marked.join(", ")}` : ""}${iv ? `, ${iv} with intervals` : ""}`;
+      });
+      return `${spec.title}: ${spec.series.some((s) => s.step) ? "step lines" : "lines"} for ${spec.series.length} series. ${parts.join("; ")}.`;
+    }
   }
   return unreachable(spec);
 }
@@ -386,6 +562,26 @@ export function cursorItems(spec: AnalyticsSpec): { items: CursorItem[]; rowLeng
       };
     case "forest":
       return { items: spec.rows.map((r, i) => ({ seriesIndex: 1, dataIndex: i, text: `${r.label}: ${u(r.estimate)}, interval ${f(r.low)} to ${f(r.high)}` })), rowLength: 1 };
+    case "parallel":
+      return {
+        items: spec.lines.map((l, si) => ({
+          seriesIndex: si,
+          dataIndex: 0,
+          text: `${l.label}${l.highlight ? " (highlighted)" : ""}: ${spec.axes.map((a, i) => { const v = l.values[i]; return `${a.label} ${v == null ? "no value" : typeof v === "number" ? f(v) : v}`; }).join(", ")}`,
+        })),
+        rowLength: 1,
+      };
+    case "line":
+      return {
+        items: spec.series.flatMap((s, si) =>
+          s.points.map((p, i) => ({
+            seriesIndex: si,
+            dataIndex: i,
+            text: `${s.label}${p.label ? ` ${p.label}` : ""}${p.marked ? " (marked)" : ""}: ${spec.xLabel ?? "x"} ${f(p.x)}, ${spec.yLabel ?? "y"} ${u(p.y)}${p.low != null && p.high != null ? `, interval ${f(p.low)} to ${f(p.high)}` : ""}`,
+          })),
+        ),
+        rowLength: 1,
+      };
   }
   return unreachable(spec);
 }

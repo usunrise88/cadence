@@ -54,7 +54,9 @@ type Digest struct {
 	OpenApprovals int            `json:"openApprovals"`
 	Approvals     []string       `json:"approvals"` // the oldest pending operations, at most 5
 	Held          []string       `json:"held"`      // titles of events held for the digest
-	LastBackup    string         `json:"lastBackup,omitempty"`
+	// Gates are the gate verdicts of the window (evals.gate), oldest first, at most 20: "project: subject — verdict".
+	Gates      []string `json:"gates"`
+	LastBackup string   `json:"lastBackup,omitempty"`
 	// Branches are the branches waiting for a person (project: branch), when the digester knows them.
 	Branches []string `json:"branches,omitempty"`
 }
@@ -64,7 +66,8 @@ type BranchesFunc func(ctx context.Context) ([]string, error)
 
 // BuildDigest gathers the digest of [since, until) in q.
 func BuildDigest(ctx context.Context, q storage.Querier, since, until time.Time, spend SpendFunc) (Digest, error) {
-	d := Digest{Since: since, Until: until, Jobs: []JobCount{}, Spend: []ProjectSpend{}, Approvals: []string{}, Held: []string{}}
+	d := Digest{Since: since, Until: until, Jobs: []JobCount{}, Spend: []ProjectSpend{}, Approvals: []string{}, Held: []string{},
+		Gates: []string{}}
 	rows, err := q.Query(ctx, `SELECT kind,
 			count(*) FILTER (WHERE state = 'done' AND finished_at >= $1 AND finished_at < $2),
 			count(*) FILTER (WHERE state = 'failed' AND finished_at >= $1 AND finished_at < $2),
@@ -118,6 +121,16 @@ func BuildDigest(ctx context.Context, q storage.Querier, since, until time.Time,
 	if d.Held, err = pgx.CollectRows(rows, pgx.RowTo[string]); err != nil {
 		return d, fmt.Errorf("digest held events: %w", err)
 	}
+	rows, err = q.Query(ctx, `SELECT p.slug || ': ' || coalesce(nullif(e.subject->>'label', ''), e.subject_id) || ' — ' ||
+			coalesce(e.gate->>'verdict', '?')
+		FROM evals e JOIN projects p ON p.id = e.project_id
+		WHERE e.gated_at >= $1 AND e.gated_at < $2 ORDER BY e.gated_at LIMIT 20`, since, until)
+	if err != nil {
+		return d, fmt.Errorf("digest gate verdicts: %w", err)
+	}
+	if d.Gates, err = pgx.CollectRows(rows, pgx.RowTo[string]); err != nil {
+		return d, fmt.Errorf("digest gate verdicts: %w", err)
+	}
 	var (
 		state string
 		at    time.Time
@@ -162,6 +175,12 @@ func (d Digest) Text() string {
 			continue
 		}
 		fmt.Fprintf(&b, "\n• %s: %.1f of %.1f GPU-h", s.Project, *s.UsedGPUHours, s.BudgetGPUHours)
+	}
+	if len(d.Gates) > 0 {
+		fmt.Fprintf(&b, "\n\nGate verdicts (%d):", len(d.Gates))
+		for _, g := range d.Gates {
+			b.WriteString("\n• " + g)
+		}
 	}
 	fmt.Fprintf(&b, "\n\nOpen approvals: %d", d.OpenApprovals)
 	for _, a := range d.Approvals {

@@ -223,6 +223,8 @@ This also makes long runs preemption-safe, which the shared staging card needs a
 
 ## Evaluation (phase 3)
 
+_Folded into the spec files on 2026-10-02 with the phase-3 plan (`docs/review/2026-10-02-phase-3-plan.md`): 02 "Evaluation entities", 03 "The eval pipeline" and "Scorers and metrics", 04 "Block 3", 06 "Media" (R25, R47–R50), 10 "Audio view and charts" (R51–R53), 11 "Panel catalogue". Where the plan is more precise, the spec files follow the plan._
+
 **R20 · Latency set** (C2)
 Primary cell = the latency Эра runs in production, a project setting defaulting to `[56,1]` (160 ms). Matrix =
 `[56,0]`, `[56,1]`, `[56,13]`; the "offline" column in 11 is `[56,13]`, labelled "high-latency reference". The gate
@@ -541,7 +543,8 @@ none of them.
 
 **R49 · Interactive compute**
 - Job kind `interactive` (transcription sessions):
-  - memory reservation from the family (Nemotron 0.6B: 3 GB, measured in A5);
+  - memory reservation from the family (Nemotron 0.6B: 3 GB, measured in A5; *A5 measured 6 000 MB plus 2 600 MB per
+    further distinct checkpoint — 06 "Media" as corrected 2026-10-02*);
   - highest queue priority;
   - may run beside training under the card's cap, never beside a benchmark (R30);
   - counted in a small daily GPU-hour allowance per project (default 1).
@@ -580,7 +583,7 @@ none of them.
 
   | Track | Shows | Data | Phase |
   | --- | --- | --- | --- |
-  | Overview, waveform | Min/max peaks per channel (caller and bot lanes for calls), clipping marks | Session audio and short utterances from their PCM; long audio from a `peaks` artifact (≈ 450 KB per hour) computed at ingest (phase 4) | 3 |
+  | Overview, waveform | Min/max peaks per channel (caller and bot lanes for calls), clipping marks | Session audio and short utterances from their PCM; long audio from a `peaks` artifact (≈ 450 KB per hour; *S5: 720 KB per channel-hour, 10 ms int8 min/max*) computed at ingest (phase 4) | 3 |
   | Spectrogram | The acoustic view (R52) | Browser FFT for session audio and short spans; server tiles for long audio | 3 |
   | Model input | The family's features as the model saw them, from its own preprocessor; SpecAugment masks in training previews | `analysis` artifact | 3 |
   | Emissions | CTC posteriors or RNNT per-frame emissions (top tokens and blank) | `analysis` artifact | 3 |
@@ -595,7 +598,8 @@ none of them.
   spectrogram library exists.
 - wavesurfer.js 8 (BSD-3) may provide the waveform, regions, timeline and minimap tracks, but only if S5 shows that it
   follows the external time axis and renders in popouts. Otherwise those tracks are Cadence code too; they are simple
-  over precomputed peaks.
+  over precomputed peaks. *S5 (2026-10-02) decided: Cadence code — wavesurfer's region drag is dead in popouts,
+  following an external axis drops half the frames while zooming, and it is 3× the size of the whole view.*
 - Excluded for their licences: peaks.js and waveform-data (LGPL-3.0), audiowaveform (GPL-3.0; peaks come from our own
   step), audioMotion-analyzer (AGPL-3.0).
 - Spans are selections: `utt:123#t=1.20,2.35`, in the W3C Media Fragments temporal syntax. They work in chat
@@ -637,7 +641,8 @@ none of them.
   - The colormap ignores the light/dark theme; axes, grid and labels follow it at 3:1 or better.
 - Where it is computed:
   - Browser, for session audio and spans under 10 minutes:
-    - the served 16 kHz PCM (R25) goes through an FFT in a Web Worker (WASM);
+    - the served 16 kHz PCM (R25) goes through an FFT in a Web Worker (WASM; *S5: a JavaScript FFT, `fourier-transform`
+      (MIT), matches PFFFT-WASM at 45 ms per minute of audio and no maintained WASM FFT exists*);
     - uint8 dB values go to WebGL2 once, as R8 textures with a 256×1 colour lookup texture;
     - gain, range and colormap are shader parameters, so they change instantly;
     - Canvas 2D is the fallback.

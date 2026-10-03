@@ -13,6 +13,9 @@ With the streaming profile `320ms` it feeds the audio in 320 ms chunks, carrying
 one event per chunk with `audioOffsetMs`, `emitMs` (milliseconds since the decode started) and the text so far; the
 last is marked `final`. The model is unidirectional, so the streaming result equals the offline one.
 
+The `toy-ctc` family declares no boosting capability (`boosting: ""`), so this kind takes no `boost` input; an eval
+wires a boost list only into a transcribe kind that consumes one.
+
 ## Place in the loop
 
 Evaluate — the conformance suite's file and streaming transcription stages.

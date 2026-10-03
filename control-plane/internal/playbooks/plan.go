@@ -187,8 +187,22 @@ func (st *State) Observe(o Observation) bool {
 	}
 	it.CommandID, it.ToolCallID = o.CommandID, o.ToolCallID
 	st.Nudges = 0
+	if v := gateVerdict(o.Body); v != "" && it.State == ItemDone {
+		it.Note = it.EntityID + ": gate " + v
+		if v == "failed" && st.StopOn("gate", "failed", "the eval "+it.EntityID+" failed the gate (evals.get shows the checks)", at) {
+			return true
+		}
+	}
 	st.advance(at)
 	return true
+}
+
+// gateVerdict is the verdict an evals.gate answered (its eval's gate.verdict), or "".
+func gateVerdict(body map[string]any) string {
+	if g, ok := body["gate"].(map[string]any); ok {
+		return str(g["verdict"])
+	}
+	return ""
 }
 
 // before is the nearest earlier item that is done and not itself a wait: what a terminal item waits for.

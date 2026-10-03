@@ -8,7 +8,9 @@ contexts: [error:conflict]
 
 A `409 Conflict` problem (RFC 9110 §15.5.10): the request is valid but cannot be applied to the current state of the
 target. Examples: `projects.new` with a slug another project uses; `projects.archive` on a project that is already
-archived.
+archived. A spending command (`evals.new`, `sweeps.run`, `runs.new|stage|calibrate|resume`, `checkpoints.average`,
+`pipelines.run`) whose plan failed when its GPU time was weighed against the budget, but succeeds by the time it runs,
+answers `conflict` rather than spend unweighed GPU time: send it again.
 
 It is not a revision race: a stale `If-Match` answers `precondition-failed` (412) instead.
 

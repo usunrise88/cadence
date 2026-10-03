@@ -1,0 +1,10 @@
+# written by Cadence — language identification for he-IL projects. Keys are stable; keep prose in comments.
+# accept: locales whose speech the project transcribes; codeSwitch: what happens to an utterance that mixes an
+# accepted locale with another (keep it, drop it, or flag it for review); minConfidence: below it an utterance's
+# language counts as unknown and is flagged. Read by ingest and triage (phase 4).
+version: 1
+locale: he-IL
+accept: [he-IL]
+# Israeli speech mixes in English terms and names all the time; dropping those utterances would bias the data.
+codeSwitch: keep
+minConfidence: 0.7

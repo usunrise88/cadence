@@ -41,6 +41,8 @@ tags:
   - { name: backups, description: "Nightly backup sets (pg_dump plus the content store), the weekly restore test and retention" }
   - { name: playbooks, description: "Prefilled chains of commands with inputs, stop conditions and an estimate, run as playbook sessions (R16)" }
   - { name: runs, description: "Training runs (one optimisation stage each), calibration, checkpoints and metric series (R12, R13, R44)" }
+  - { name: evals, description: "The eval matrix against the baseline, eval records, the project's gate and model registration (R20–R24)" }
+  - { name: media, description: "Audio for people: an utterance's audio, peaks, spectrogram tiles and words, live transcription (R25, R47); exempt from the vocabulary and never MCP tools; agents are refused" }
   - { name: planned, description: Named now, implemented in a later phase (501 until then) }
 
 paths:
@@ -2783,6 +2785,7 @@ paths:
           by status. Open one with runs.get.
       parameters:
         - { name: status, in: query, description: Only runs in this status, schema: { $ref: "#/components/schemas/RunStatus" } }
+        - { name: experiment, in: query, description: "Only runs of this experiment (exp_…)", schema: { type: string } }
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
       responses:
         "200":
@@ -3116,6 +3119,747 @@ paths:
         "202": { $ref: "#/components/responses/ApprovalAccepted" }
         default: { $ref: "#/components/responses/Problem" }
 
+  # ---------------------------------------------------------------- golden sets, normalizers, leakage (phase 3 · stream G) — add paths below this line
+  /registry/normalizers:
+    x-cadence: { entity: normalizers, kind: normalizer }
+    get:
+      operationId: normalizers.list
+      summary: List scoring normalizer versions (the text rules both sides of a WER are compared after, R21)
+      tags: [registry]
+      x-cadence:
+        toolDescription: >
+          List scoring normalizer versions (normalizer/basic, normalizer/he-il, …): the Unicode form, case folding,
+          punctuation, combining-mark removal and literal mappings applied to reference and hypothesis before WER is
+          computed. Every golden set is frozen with one normalizer version, so its scores stay comparable over time.
+      parameters:
+        - $ref: "#/components/parameters/RegistryCollectionFilter"
+        - $ref: "#/components/parameters/RegistryStateFilter"
+      responses:
+        "200":
+          description: Normalizer versions, newest first
+          content: { application/json: { schema: { $ref: "#/components/schemas/NormalizerVersionList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/normalizers/{id}:
+    x-cadence: { entity: normalizers, kind: normalizer }
+    parameters: [{ $ref: "#/components/parameters/VersionId" }]
+    get:
+      operationId: normalizers.get
+      summary: Get a scoring normalizer version with its rules and the projects that use it
+      tags: [registry]
+      responses:
+        "200":
+          description: The version
+          content: { application/json: { schema: { $ref: "#/components/schemas/NormalizerVersion" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/golden-sets:
+    x-cadence: { entity: goldenSets, kind: golden_set }
+    get:
+      operationId: goldenSets.list
+      summary: List golden set versions (frozen eval-only dataset versions tied to a scoring normalizer)
+      tags: [registry]
+      x-cadence:
+        toolDescription: >
+          List golden sets: frozen, held-out test sets per language and domain, each an eval-only dataset version
+          tied to one scoring normalizer version. Runs never read them: a dataset version or mix sharing an
+          utterance (by id or fingerprint) with any golden set is refused for training (golden-set-leakage).
+          Adopt one into a project with projects.adopt.
+      parameters:
+        - $ref: "#/components/parameters/RegistryCollectionFilter"
+        - $ref: "#/components/parameters/RegistryStateFilter"
+      responses:
+        "200":
+          description: Golden set versions, newest first
+          content: { application/json: { schema: { $ref: "#/components/schemas/GoldenSetVersionList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/golden-sets/{id}:
+    x-cadence: { entity: goldenSets, kind: golden_set }
+    parameters: [{ $ref: "#/components/parameters/VersionId" }]
+    get:
+      operationId: goldenSets.get
+      summary: Get a golden set version with its dataset, normalizer, size and the projects that use it
+      tags: [registry]
+      responses:
+        "200":
+          description: The version
+          content: { application/json: { schema: { $ref: "#/components/schemas/GoldenSetVersion" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/golden-sets:freeze:
+    x-cadence: { entity: goldenSets, kind: golden_set }
+    post:
+      operationId: goldenSets.freeze
+      summary: Freeze an eval-only dataset version and a scoring normalizer into a golden set (always waits for the admin's approval)
+      tags: [registry]
+      x-cadence:
+        toolDescription: >
+          Freeze a golden set from a frozen dataset version registered eval-only (datasets.get shows
+          dataset.evalOnly: true) and a scoring normalizer version (normalizers.list; default defaults.yaml
+          eval.normalizer). The dataset's utterances must not overlap any trainable dataset version by utterance or
+          fingerprint, else golden-set-leakage lists the overlapping versions and counts. dryRun=true checks
+          everything and answers the would-be golden set. A real call always answers 202 with an approvalId, for
+          people too: freezing is a registry-scope approval only the admin decides; the approved request registers
+          golden-set/<name> (default: the dataset collection's name). Freezing the same content again answers the
+          version already frozen.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/GoldenSetFreeze" } } }
+      responses:
+        "200":
+          description: Dry run — the golden set that would be frozen; or the version this content was already frozen as
+          content: { application/json: { schema: { $ref: "#/components/schemas/GoldenSetVersion" } } }
+        "201":
+          description: Frozen (the approved request)
+          content: { application/json: { schema: { $ref: "#/components/schemas/GoldenSetVersion" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  # ---------------------------------------------------------------- evals, gates, models (phase 3 · stream E) — add paths below this line
+  /projects/{p}/evals:
+    x-cadence: { entity: evals }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    get:
+      operationId: evals.list
+      summary: List the project's evals, newest first (cells omitted; evals.get has them)
+      tags: [evals]
+      parameters:
+        - { name: status, in: query, required: false, schema: { $ref: "#/components/schemas/EvalStatus" } }
+        - { name: subject, in: query, required: false, description: "Only evals of this subject (ckp_…, or a model or base model version ver_…)", schema: { type: string } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+      responses:
+        "200":
+          description: Evals, newest first
+          content: { application/json: { schema: { $ref: "#/components/schemas/EvalList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+    post:
+      operationId: evals.new
+      summary: Evaluate a checkpoint, model or base model against the baseline on golden sets × latency profiles × decoding; ?dryRun=true answers the plan
+      tags: [evals]
+      x-cadence:
+        toolDescription: >
+          Run the eval matrix (R20–R24): subject (exactly one of checkpointId ckp_…, modelVersionId or
+          baseModelVersionId ver_…) × golden sets × latency profiles × decoding variants, each cell compared with the
+          same cell of the baseline. Everything is optional but the subject: golden sets default to the ones the
+          project's gates.yaml names (target and replay), else its adopted golden sets; profiles to
+          eval.matrix_profiles the model family declares, always with the primary profile; decoding to [{boost: none}];
+          augmentations (the robustness axis) to [{profile: none}] — add {profile: augment/<name>.yaml@<commit>,
+          seed?} to decode the golden sets also through that augmentation profile; baseline to the project's
+          @baseline alias, else its default base model. Cells already in the eval records
+          (any project, same weights × golden set × normalizer × decoding × scorer) are reused; only missing cells run
+          (baseline cells included). Always call it with dryRun=true first: the answer is the plan — cells cached and
+          to compute and the GPU-hour estimate. Without dryRun it answers 201 with the eval (follow it with evals.get;
+          eval.{id}.progress reports cells done), or 202 with an approvalId when the estimate exceeds today's GPU budget.
+          Then evals.gate applies the project's gate.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/EvalNew" } } }
+      responses:
+        "200":
+          description: Dry run — the plan (cells, cached and to compute, estimate); nothing was written or queued
+          content: { application/json: { schema: { $ref: "#/components/schemas/EvalPlan" } } }
+        "201":
+          description: The eval, queued (done at once when every cell was cached)
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Eval" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /evals/{id}:
+    x-cadence: { entity: evals }
+    parameters: [{ name: id, in: path, required: true, description: "Eval id (evl_…)", schema: { type: string } }]
+    get:
+      operationId: evals.get
+      summary: Get an eval with its cells, deltas against the baseline with confidence intervals, and the worst utterances of a cell
+      tags: [evals]
+      x-cadence:
+        toolDescription: >
+          An eval: status, progress, and one cell per role (subject, baseline) × golden set × profile × decoding with
+          WER, CER, the punctuation-insensitive WER, substitutions / deletions / insertions, duration buckets and
+          partial stability; subject cells carry the delta against the baseline's cell with a paired blockwise
+          bootstrap interval (significant when it excludes zero). worst=N adds the N utterances with the most errors to
+          each subject cell that passes the filters (cell=evc_… for one cell): reference, hypothesis and the alignment
+          ops (=, S, D, I). Filters: goldenSet, profile, role. Each cell's metrics carry entity accuracy for the
+          language pack's ITN classes and latency to final (p50/p95 ms, real-time pace) when available, else the
+          reason; with augmentations, robustness lists each augmented cell's WER against the same cell without
+          augmentation (reported, not gated).
+      parameters:
+        - { name: worst, in: query, required: false, description: "Add the N worst utterances (most errors) to each matching cell", schema: { type: integer, minimum: 1, maximum: 200 } }
+        - { name: cell, in: query, required: false, description: "Only this cell (evc_…)", schema: { type: string } }
+        - { name: goldenSet, in: query, required: false, description: "Only cells of this golden set (ver_… or its collection name)", schema: { type: string } }
+        - { name: profile, in: query, required: false, description: Only cells of this latency profile, schema: { type: string } }
+        - { name: role, in: query, required: false, schema: { $ref: "#/components/schemas/EvalCellRole" } }
+      responses:
+        "200":
+          description: The eval
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Eval" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /evals/{id}:gate:
+    x-cadence: { entity: evals }
+    parameters: [{ name: id, in: path, required: true, description: "Eval id (evl_…)", schema: { type: string } }]
+    post:
+      operationId: evals.gate
+      summary: Apply the project's gate (gates.yaml at main) to a finished eval and record the verdict
+      tags: [evals]
+      x-cadence:
+        toolDescription: >
+          Apply the gate to a done eval: gates.yaml at the head of main (defaults gate.* and eval.* where it is
+          silent). At the primary profile it checks the target golden sets (beat-baseline: the WER delta's whole
+          interval below zero), the replay golden sets (fail when the delta exceeds maxRegression and its interval
+          excludes zero) and deletions bought with insertions on the target sets. Answers the eval with gate: verdict
+          passed | failed, each check passed | failed | inconclusive with its numbers, and the gates.yaml commit used.
+          models.register needs the latest gated eval of a checkpoint to have passed.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      responses:
+        "200":
+          description: The eval with its verdict (a dry run computes it without recording)
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Eval" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /projects/{p}/gates:
+    x-cadence: { entity: gates, singleton: true }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    get:
+      operationId: gates.get
+      summary: Get the project's gate (gates.yaml at main, with the defaults it departs from)
+      tags: [evals]
+      x-cadence:
+        toolDescription: >
+          The project's gate: gates.yaml at the head of main (exists false when the project has none and the defaults
+          apply), its effective configuration with defaults filled in, and the departures from defaults.yaml. The ETag
+          is the commit that last changed the file ("defaults" when there is none); gates.edit takes it as If-Match.
+      responses:
+        "200":
+          description: The gate
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Gates" } } }
+        default: { $ref: "#/components/responses/Problem" }
+    patch:
+      operationId: gates.edit
+      summary: Commit a new gates.yaml to main (approval for agents); dryRun validates
+      tags: [evals]
+      x-cadence:
+        toolDescription: >
+          Change the project's gate: send content (the YAML) or config (the same as an object) with If-Match = the
+          ETag of gates.get. The file is validated first (gate-config-invalid lists every problem); dryRun validates
+          and commits nothing. For agents this waits for a person's approval (gates decide what counts as better).
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/GatesEdit" } } }
+      responses:
+        "200":
+          description: The gate as committed (a dry run shows it as it would be)
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Gates" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /projects/{p}/models:register:
+    x-cadence: { entity: models }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    post:
+      operationId: models.register
+      summary: Register a checkpoint whose latest gated eval passed as a model version, with its model card (approval for agents)
+      tags: [evals]
+      x-cadence:
+        toolDescription: >
+          Publish a checkpoint (ckp_…) as a registry model version (collection model/<name>, default model/<project
+          slug>) with its eval, gate verdict, lineage (run, mix, recipe, dataset versions) and a generated model card.
+          The checkpoint's latest gated eval (or evalId) must have passed (gate-not-passed otherwise). dryRun shows the
+          version's payload and card. For agents it waits for a person's approval (registry changes are shared).
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ModelRegister" } } }
+      responses:
+        "200":
+          description: Dry run — the collection and payload the registration would write
+          content: { application/json: { schema: { $ref: "#/components/schemas/ModelRegistration" } } }
+        "201":
+          description: The model version, frozen and adopted by the project
+          content: { application/json: { schema: { $ref: "#/components/schemas/ModelVersion" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/models:
+    x-cadence: { entity: models, kind: model }
+    get:
+      operationId: models.list
+      summary: List registered model versions (checkpoints whose gate passed) with their gate and lineage
+      tags: [registry]
+      parameters:
+        - $ref: "#/components/parameters/RegistryCollectionFilter"
+        - $ref: "#/components/parameters/RegistryStateFilter"
+      responses:
+        "200":
+          description: Model versions, newest first
+          content: { application/json: { schema: { $ref: "#/components/schemas/ModelVersionList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/models/{id}:
+    x-cadence: { entity: models, kind: model }
+    parameters: [{ $ref: "#/components/parameters/VersionId" }]
+    get:
+      operationId: models.get
+      summary: Get a model version with its model card, gate, lineage and the projects that use it
+      tags: [registry]
+      responses:
+        "200":
+          description: The version
+          content: { application/json: { schema: { $ref: "#/components/schemas/ModelVersion" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  # ---------------------------------------------------------------- language packs, boost lists, lineage (phase 3 · stream L) — add paths below this line
+
+  /projects/{p}/langpacks:
+    x-cadence: { entity: langpacks, kind: language_pack }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    get:
+      operationId: langpacks.list
+      summary: The project's language packs (lang/<locale>/ on main) and the locales Cadence ships packs for
+      tags: [projects]
+      x-cadence:
+        toolDescription: >
+          List the language packs in the project repository (lang/<locale>/ on main): per locale the pack's commit,
+          its scoring normalizer and its boost lists. shipped names the locales Cadence has starter packs for;
+          projects.sync offers a shipped pack for every project locale that lacks one. Read one with langpacks.get.
+      responses:
+        "200":
+          description: Packs by locale
+          content: { application/json: { schema: { $ref: "#/components/schemas/LanguagePackList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /projects/{p}/langpacks/{locale}:
+    x-cadence: { entity: langpacks, kind: language_pack }
+    parameters:
+      - $ref: "#/components/parameters/ProjectSlug"
+      - $ref: "#/components/parameters/PackLocale"
+    get:
+      operationId: langpacks.get
+      summary: One language pack with its files, scoring normalizer and boost lists; ETag is the pack's commit
+      tags: [projects]
+      x-cadence:
+        toolDescription: >
+          Read the language pack of one locale (lang/<locale>/ on main): every file with its content, the scoring
+          normalizer normalizer.yaml names (R21: a registry normalizer; the training text style stays in the pack),
+          the boost lists with their weights, and the pack's commit sha (the last commit that changed it), which
+          langpacks.edit and boost.edit take as If-Match. issues lists files whose shape is wrong.
+      responses:
+        "200":
+          description: The pack
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/LanguagePack" } } }
+        default: { $ref: "#/components/responses/Problem" }
+    patch:
+      operationId: langpacks.edit
+      summary: Write or delete files of one language pack in one commit (If-Match is the pack's commit)
+      tags: [projects]
+      x-cadence:
+        toolDescription: >
+          Change files of one language pack in one commit: each entry writes a file (path relative to
+          lang/<locale>/, e.g. normalizer.yaml or boost/names.txt) or deletes it (delete: true). If-Match is the
+          pack's sha from langpacks.get. YAML files are checked against their shape (normalizer.yaml, itn.yaml,
+          translit.yaml, lid.yaml, golden-recipe.yaml) and boost lists against the boost format before anything is
+          committed; dryRun only checks. A person's edit commits to main; an agent's edit, under the project's draft
+          policy language_pack: draft, lands on a branch langpack/<locale>-<date> for a person to accept
+          (branches.accept). Use boost.edit to replace one boost list.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/LanguagePackEdit" } } }
+      responses:
+        "200":
+          description: The pack as committed (or, for a dry run, as it would be)
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/LanguagePack" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /projects/{p}/langpacks/{locale}/boost/{domain}:
+    x-cadence: { entity: boost, kind: boost_list }
+    parameters:
+      - $ref: "#/components/parameters/ProjectSlug"
+      - $ref: "#/components/parameters/PackLocale"
+      - { name: domain, in: path, required: true, description: "The list's domain: boost/<domain>.txt (names, products, streets, …)", schema: { $ref: "#/components/schemas/BoostDomain" } }
+    patch:
+      operationId: boost.edit
+      summary: Replace one boost list of a language pack (terms and weight) in one commit
+      tags: [projects]
+      x-cadence:
+        toolDescription: >
+          Replace the terms and weight of one boost list (lang/<locale>/boost/<domain>.txt; created when missing) in
+          one commit. Terms are whole phrases as the decoder should write them, one per entry, without duplicates;
+          weight is how strongly the list is boosted at decode (defaults.yaml langpacks.boost_weight when the list
+          is new and none is sent). If-Match is the pack's sha from langpacks.get. Boosting is evaluated, not
+          assumed: an eval with decoding {boost: <list>} shows what it does to WER and to the listed terms. Under
+          the draft policy language_pack: draft an agent's edit lands on a branch, like langpacks.edit.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/BoostEdit" } } }
+      responses:
+        "200":
+          description: The pack with the list as committed (or, for a dry run, as it would be)
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/LanguagePack" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/{id}:lineage:
+    x-cadence: { entity: registry, kind: registry_version }
+    parameters:
+      - { name: id, in: path, required: true, description: "Any entity id lineage knows: a registry version (ver_…), source (src_…), pipeline run (plr_…), run (run_…), checkpoint (ckp_…), mix (mix_…)", schema: { type: string, pattern: "^[a-z]{3}_[A-Za-z0-9-]{1,64}$" } }
+    get:
+      operationId: registry.lineage
+      summary: The lineage graph around an entity — what it was built from (upstream) and what uses it (downstream)
+      tags: [registry]
+      x-cadence:
+        toolDescription: >
+          Walk the lineage graph from one entity, both ways: upstream is what it was built from (a model's
+          checkpoint, run, mix and base model; a dataset version's sources and pipeline run; a golden set's dataset
+          and normalizer), downstream what uses it (projects that adopted it and their aliases, golden sets over a
+          dataset, mixes and runs that read it, models from a base). depth bounds the hops each way. Nodes in
+          projects the caller cannot see are left out and counted in hidden.
+      parameters:
+        - { name: direction, in: query, description: "Which way to walk", schema: { type: string, enum: [both, upstream, downstream], default: both } }
+        - { name: depth, in: query, description: Hops to follow each way, schema: { type: integer, minimum: 1, maximum: 10, default: 3 } }
+        - { name: limit, in: query, description: Most nodes returned; the walk stops there and says truncated, schema: { type: integer, minimum: 1, maximum: 1000, default: 200 } }
+      responses:
+        "200":
+          description: Nodes and edges; edges point from what was used to what used it
+          content: { application/json: { schema: { $ref: "#/components/schemas/Lineage" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  # ---------------------------------------------------------------- experiments and sweeps (phase 3 · stream X) — add paths below this line
+  /projects/{p}/experiments:
+    x-cadence: { entity: experiments }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    get:
+      operationId: experiments.list
+      summary: List the project's experiments, newest first (question, mix, base model, run count, best run, sweeps)
+      tags: [runs]
+      parameters:
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+      responses:
+        "200":
+          description: Experiments, newest first (runs and parameters omitted; experiments.get has them)
+          content: { application/json: { schema: { $ref: "#/components/schemas/ExperimentList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+    post:
+      operationId: experiments.new
+      summary: Open an experiment — a question with a fixed mix revision and base model — that runs and sweeps join
+      tags: [runs]
+      x-cadence:
+        toolDescription: >
+          Group the runs that answer one question: name, question, the mix (mix_… or its name, pinned to its current
+          revision unless mixRevision) and the base model (pinned to a version; default the defaults' base model).
+          Every run of the experiment trains on exactly that mix revision and base model: runs.new with
+          experiment=exp_… inherits them, and sweeps.run generates runs over recipe parameters. dryRun checks the mix
+          and base model and answers the experiment as it would be. Follow with sweeps.run (dry run first) or
+          runs.new, then experiments.get for the comparison.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ExperimentNew" } } }
+      responses:
+        "200":
+          description: Dry run — the experiment as it would be; nothing was written
+          content: { application/json: { schema: { $ref: "#/components/schemas/Experiment" } } }
+        "201":
+          description: The experiment
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Experiment" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /experiments/{id}:
+    x-cadence: { entity: experiments }
+    parameters: [{ name: id, in: path, required: true, description: "Experiment id (exp_…)", schema: { type: string } }]
+    get:
+      operationId: experiments.get
+      summary: Get an experiment with its runs as parameters × metrics, the best run by validation WER, and its sweeps
+      tags: [runs]
+      x-cadence:
+        toolDescription: >
+          The comparison of an experiment: one row per run with the values of the compared parameters (every swept
+          parameter and every train-step parameter some run departs from defaults with; departures marked), the
+          best validation WER and its checkpoint, GPU-hours, and the latest eval of that checkpoint with its gate
+          verdict. best names the run with the lowest validation WER and whether its checkpoint can be registered
+          now (models.register needs a passed gate: evals.new, then evals.gate). sweeps lists each sweep's state,
+          points and GPU-hours spent against its cap.
+      responses:
+        "200":
+          description: The experiment
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Experiment" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /experiments/{id}/sweeps:run:
+    x-cadence: { entity: sweeps }
+    parameters: [{ name: id, in: path, required: true, description: "Experiment id (exp_…)", schema: { type: string } }]
+    post:
+      operationId: sweeps.run
+      summary: Run a grid or random sweep over recipe parameters as sequential runs of the experiment under a GPU-hour cap
+      tags: [runs]
+      x-cadence:
+        toolDescription: >
+          Generate the experiment's runs from a parameter set: mode grid (every combination of the listed values) or
+          random (points drawn with seed from each parameter's values or its min–max range, log scale for learning
+          rates). Parameters are the train step's (peak_lr, warmup_steps, augmentation, … — any parameter with an
+          x-cadence range) and replayShare (the mix's replay share; the mix revision stays fixed). Each point becomes
+          one run through runs.new on the experiment's mix and base model; runs are queued one after another on the
+          project's training slot. Always call it with dryRun=true first: the answer lists the points with their
+          estimates and the total against gpuHourCap. The whole estimate must fit the cap (sweep-over-cap) and is
+          weighed against the GPU budgets like runs.new (202 with an approvalId when it exceeds them). The sweep
+          stops when the GPU-hours its runs used plus the next run's estimate would pass the cap. Cancelling the
+          running run (jobs.cancel on its current job) cancels the sweep. Watch experiments.get or
+          entity.experiment.{id}.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/SweepNew" } } }
+      responses:
+        "200":
+          description: Dry run — the points, their estimates and the total against the cap; nothing was written or queued
+          content: { application/json: { schema: { $ref: "#/components/schemas/SweepPlan" } } }
+        "201":
+          description: The sweep with its first run queued
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Sweep" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+
+  # ---------------------------------------------------------------- media: audio serving (phase 3 · stream A) — add paths below this line
+  # Tag media (R25, 06 "Media"): exempt from the verb vocabulary and never MCP tools; people only (an agent session
+  # token is refused). Utterances live under /registry/utterances (R1), so R25's /utterances/{id}/audio is
+  # /registry/utterances/{id}/audio here.
+  /registry/utterances/{id}/audio:
+    x-cadence: { entity: audio, kind: utterance_audio, singleton: true }
+    parameters: [{ $ref: "#/components/parameters/UtteranceRef" }]
+    get:
+      operationId: audio.get
+      summary: A span of an utterance's audio as 16 kHz 16-bit PCM WAV, with byte ranges; a signed link plays without a session
+      tags: [media]
+      description: >
+        The utterance's audio, or a span of it, as a 16 kHz 16-bit PCM WAV file (the stored file itself when it is
+        already one and the whole file is asked). Byte ranges (Range: bytes=…) answer 206 Partial Content. A request
+        signed by audio.sign (exp, viewer, sig) needs no session and is attributed to its viewer. Every play — a request
+        from byte 0 — is written to the audit log with the viewer and the span. Agent session tokens are refused.
+      parameters:
+        - { name: channel, in: query, description: "One channel (0-based); omitted: every channel", schema: { type: integer, minimum: 0, maximum: 15 } }
+        - { name: start, in: query, description: "Span start in seconds (default 0)", schema: { type: number, format: double, minimum: 0 } }
+        - { name: end, in: query, description: "Span end in seconds (default the end of the audio)", schema: { type: number, format: double, minimum: 0 } }
+        - { name: exp, in: query, description: "Signed link: expiry (Unix seconds)", schema: { type: integer, format: int64 } }
+        - { name: viewer, in: query, description: "Signed link: the user it was minted for", schema: { type: string, maxLength: 100 } }
+        - { name: sig, in: query, description: "Signed link: the signature over utterance, span, channel, viewer and expiry", schema: { type: string, maxLength: 100 } }
+        - { name: Range, in: header, description: "Byte range (RFC 9110), e.g. bytes=0-", schema: { type: string, maxLength: 200 } }
+      responses:
+        "200":
+          description: The WAV file
+          headers:
+            Accept-Ranges: { schema: { type: string } }
+            Content-Length: { schema: { type: integer } }
+          content: { audio/wav: { schema: { type: string, format: binary } } }
+        "206":
+          description: The requested byte range of the WAV file
+          headers:
+            Content-Range: { schema: { type: string } }
+          content: { audio/wav: { schema: { type: string, format: binary } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/utterances/{id}/audio:sign:
+    x-cadence: { entity: audio, kind: utterance_audio, singleton: true }
+    parameters: [{ $ref: "#/components/parameters/UtteranceRef" }]
+    post:
+      operationId: audio.sign
+      summary: Mint a short-lived signed link that plays a span of an utterance (bound to the span, the viewer and an expiry)
+      tags: [media]
+      description: >
+        A link a media element can play without headers: audio.get with exp, viewer and sig. It is bound to the
+        utterance, the span, the channel and the signed-in viewer, and expires after defaults media.signed_link_ttl_s.
+        Minting writes an audit row (who, which span). Not a command: it changes no entity, so it takes no
+        Idempotency-Key, If-Match or dryRun. Agent session tokens are refused.
+      requestBody:
+        required: false
+        content: { application/json: { schema: { $ref: "#/components/schemas/AudioSignRequest" } } }
+      responses:
+        "200":
+          description: The signed link
+          content: { application/json: { schema: { $ref: "#/components/schemas/AudioLink" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/utterances/{id}/peaks:
+    x-cadence: { entity: peaks, kind: utterance_peaks, singleton: true }
+    parameters: [{ $ref: "#/components/parameters/UtteranceRef" }]
+    get:
+      operationId: peaks.get
+      summary: Min/max peaks per channel of an utterance (or a span) at a resolution, for the waveform track
+      tags: [media]
+      description: >
+        int8 min/max pairs (value / 127 = sample) per hop and channel, frames × channels × [min, max], base64. The 10 ms
+        peaks are computed from the audio on first use and cached in the content store as a peaks artifact (a stored
+        peaks artifact of the audio is used when present); coarser hops are max-pooled from them.
+      parameters:
+        - { name: hopMs, in: query, description: "Resolution: milliseconds per min/max pair, a multiple of 10", schema: { type: integer, minimum: 10, maximum: 60000, default: 10 } }
+        - { name: start, in: query, description: "Span start in seconds (default 0)", schema: { type: number, format: double, minimum: 0 } }
+        - { name: end, in: query, description: "Span end in seconds (default the end of the audio)", schema: { type: number, format: double, minimum: 0 } }
+      responses:
+        "200":
+          description: The peaks
+          content: { application/json: { schema: { $ref: "#/components/schemas/AudioPeaks" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/utterances/{id}/spectrogram:
+    x-cadence: { entity: spectrogram, kind: utterance_spectrogram, singleton: true }
+    parameters: [{ $ref: "#/components/parameters/UtteranceRef" }]
+    get:
+      operationId: spectrogram.get
+      summary: The spectrogram tile pyramid of an utterance's audio (spectrogram_tiles@1) — its manifest, or one tile
+      tags: [media]
+      description: >
+        For audio longer than views.audio.browser_stft_max_s the audio view reads a server tile pyramid: the newest
+        spectrogram_tiles artifact computed for the utterance's audio. Without tile: the manifest (JSON). With
+        tile=c<ch>/l<level>/<index>: that tile's bytes (uint8 dB, bins × 512 frames, dB = -120 + 0.5 × value). 404 when
+        no pyramid was computed for this audio.
+      parameters:
+        - { name: tile, in: query, description: "A tile: c<channel>/l<level>/<index>", schema: { type: string, pattern: "^c[0-9]{1,2}/l[0-9]{1,2}/[0-9]{1,7}$" } }
+      responses:
+        "200":
+          description: The manifest (no tile) or the tile's bytes
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/SpectrogramManifest" } }
+            application/octet-stream: { schema: { type: string, format: binary } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/utterances/{id}/words:
+    x-cadence: { entity: words, kind: utterance_words, singleton: true }
+    parameters: [{ $ref: "#/components/parameters/UtteranceRef" }]
+    get:
+      operationId: words.get
+      summary: An utterance's hypothesis words with times from a hypotheses artifact, marked S/D/I against the reference by a scores artifact
+      tags: [media]
+      description: >
+        The audio view's word track for one utterance: its row of a hypotheses artifact (words with start, end and
+        confidence; partial events of a streaming decode), and, with scores, the alignment of that utterance's row in
+        the scores artifact — each hypothesis word marked =, S or I (with the reference word for S), and the reference
+        words the hypothesis deleted placed between hypothesis words.
+      parameters:
+        - { name: hypotheses, in: query, required: true, description: "The hypotheses artifact (b3:…), e.g. an eval cell's", schema: { type: string, pattern: "^b3:[0-9a-f]{64}$" } }
+        - { name: scores, in: query, description: "The scores artifact (b3:…) of the same cell", schema: { type: string, pattern: "^b3:[0-9a-f]{64}$" } }
+      responses:
+        "200":
+          description: The words
+          content: { application/json: { schema: { $ref: "#/components/schemas/UtteranceWords" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  # ---------------------------------------------------------------- transcriptions and the live channel (phase 3 · stream T) — add paths below this line
+  # Tag media (R47, R48, 06 "Media"): exempt from the verb vocabulary and never MCP tools; people only (an agent
+  # session token is refused). transcriptions.new is the only operation on transcriptions: there is nothing to get or
+  # list, because nothing outlives the session but the interactive job's record (who, when, targets, GPU time).
+  /projects/{p}/transcriptions:
+    x-cadence: { entity: transcriptions }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    post:
+      operationId: transcriptions.new
+      summary: Open a manual transcription test of one to three models on a file, the microphone or an utterance span; answers the live socket's URL and a single-use ticket
+      tags: [media]
+      description: >
+        A manual test (R47): one to three targets (a checkpoint, a model version or a base model version, each with
+        its latency profile, language and optional boost list) receive the same audio and stream partial and final
+        words back over the live channel (stream.connect, R48). The answer carries the session (trs_…), the socket URL
+        and a single-use ticket valid transcriptions.ticket_ttl_s (60 s); the socket also checks Origin. The session is
+        an interactive job (R49): it reserves the family's interactive memory on a card beside training under the
+        card's cap, never beside a benchmark, at the highest queue priority, and counts against the project's daily
+        budgets.manual_test_gpu_hours_per_project_per_day (lease wall time). One open session per person, at most
+        transcriptions.session_max_minutes long, closed after transcriptions.idle_minutes without audio or keepalive.
+        Nothing else is stored: no audio, text or metric. ?dryRun=true checks the targets and the allowance and
+        answers the session without opening it (no ticket). Agent session tokens are refused.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/TranscriptionNew" } } }
+      responses:
+        "200":
+          description: "?dryRun=true: the session it would open (no ticket, nothing queued)"
+          content: { application/json: { schema: { $ref: "#/components/schemas/TranscriptionSession" } } }
+        "201":
+          description: The session, waiting for its socket
+          content: { application/json: { schema: { $ref: "#/components/schemas/TranscriptionSession" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /transcriptions/{id}/stream:
+    x-cadence: { entity: stream, kind: transcription_stream, singleton: true }
+    parameters:
+      - { name: id, in: path, required: true, description: "The session (trs_…)", schema: { type: string, pattern: "^trs_[0-9a-f-]{36}$" } }
+    get:
+      operationId: stream.connect
+      summary: The live channel of a transcription session — a WebSocket opened with the session's single-use ticket from a same-origin page
+      tags: [media]
+      description: >
+        Upgrades to a WebSocket (no WebRTC, R48). The ticket from transcriptions.new is single-use and valid 60 s; the
+        Origin header must name this server (or one of CADENCE_ALLOWED_ORIGINS); the signed-in user must be the
+        session's. Client → server: text frames are LiveClientMessage (start first, then fileEnd, finalize, keepalive,
+        ping, end) and binary frames carry audio — PCM16 little-endian mono at the capture rate in frames of at most
+        transcriptions.frame_ms (20 ms) for the microphone, or a file's bytes. Server → client: LiveServerMessage
+        (waiting while the job is queued or loading, started, partial, final, stats, pong, error, summary). The socket
+        closes with 1000 after summary; 4001 idle, 4002 session cap, 4003 the worker was lost, 4004 the job could not
+        start, 1013 backpressure (the worker fell behind), 1001 the control plane is stopping.
+      parameters:
+        - { name: ticket, in: query, required: true, description: "The single-use ticket transcriptions.new answered", schema: { type: string, minLength: 16, maxLength: 128 } }
+      responses:
+        "101": { description: "Switching Protocols: the live channel (LiveClientMessage up, LiveServerMessage down)" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /worker-live/{jobId}:
+    x-cadence: { entity: workerLive, kind: worker_live, singleton: true }
+    parameters:
+      - { name: jobId, in: path, required: true, description: "The interactive job the worker leased (job_…)", schema: { type: string, maxLength: 100 } }
+    get:
+      operationId: workerLive.connect
+      summary: A worker's live job dials out to its session (WebSocket) and receives the browser's messages unchanged
+      tags: [worker]
+      description: >
+        The pull model of R14 for the live channel: a worker running an interactive job (a family's live role kind)
+        loads every target, then dials this socket with the lease's live token (header Cadence-Live-Token, from the
+        lease's env CADENCE_LIVE_TOKEN) or its worker credential (Bearer cwk_…, the lease's host). The relay forwards
+        the browser's frames byte for byte (it reads only "type") and the worker's LiveServerMessage frames back. One
+        dial serves one session; a dial for a session that ended answers 409 lease-ended.
+      parameters:
+        - { name: Cadence-Live-Token, in: header, required: false, description: "The lease's live token (CADENCE_LIVE_TOKEN)", schema: { type: string, maxLength: 128 } }
+      responses:
+        "101": { description: "Switching Protocols: the session's messages (LiveClientMessage and audio down to the worker, LiveServerMessage up)" }
+        default: { $ref: "#/components/responses/Problem" }
+
   # ---------------------------------------------------------------- planned (later phases)
   /mounts:
     x-cadence: { entity: mounts, planned: 4 }
@@ -3158,6 +3902,12 @@ components:
       required: false
       description: Validate and report what would happen without changing anything
       schema: { type: boolean, default: false }
+    PackLocale:
+      name: locale
+      in: path
+      required: true
+      description: "Locale of a language pack: its directory lang/<locale>/ (he-IL, sr)"
+      schema: { $ref: "#/components/schemas/PackLocaleName" }
     ProjectSlug:
       name: p
       in: path
@@ -3193,6 +3943,12 @@ components:
       required: true
       description: Lease id (lse_…)
       schema: { type: string }
+    UtteranceRef:
+      name: id
+      in: path
+      required: true
+      description: "Utterance id (utt_…) or the audio's content hash (b3:…)"
+      schema: { type: string, maxLength: 100 }
     ArtifactHash:
       name: hash
       in: path
@@ -3605,8 +4361,8 @@ components:
     #
     RegistryKind:
       type: string
-      enum: [base_model, dataset_version, template, runtime, model_family, step_kind, noise_bank]
-      description: "The kinds registered so far; runtime, model_family and step_kind are published by workers (R40, R41, R45); noise_bank holds background noise for augmentation, registered by dataset_import with purpose noise; golden sets, normalizers and model versions join in later phases"
+      enum: [base_model, dataset_version, template, runtime, model_family, step_kind, noise_bank, golden_set, normalizer, model]
+      description: "The kinds registered so far; runtime, model_family and step_kind are published by workers (R40, R41, R45); noise_bank holds background noise for augmentation, registered by dataset_import with purpose noise; golden_set (goldenSets.freeze), normalizer (scoring normalizers, R21) and model (models.register, R22) arrive in phase 3"
     VersionState:
       type: string
       enum: [draft, frozen, deprecated]
@@ -3726,7 +4482,7 @@ components:
 
     TemplateKind:
       type: string
-      enum: [instructions, preset, skill, pipeline, agent-config, playbook]
+      enum: [instructions, preset, skill, pipeline, agent-config, playbook, langpack]
     TemplateFile:
       type: object
       required: [path, sha256, bytes]
@@ -3810,7 +4566,7 @@ components:
 
     JobKind:
       type: string
-      enum: [training, eval, shadow, export, data]
+      enum: [training, eval, shadow, export, data, interactive]
     ComputeCard:
       type: object
       required: [index, name, cardClass, memoryGb, memoryCapGb, allowedJobKinds]
@@ -3973,6 +4729,16 @@ components:
         notifications: { $ref: "#/components/schemas/DefaultSection" }
         backups: { $ref: "#/components/schemas/DefaultSection" }
         augment: { $ref: "#/components/schemas/DefaultSection", description: "The recommended augmentation profile (docs/spec/03 \"Augmentation\"): what the Recipe form's Reset to recommended writes" }
+        eval: { $ref: "#/components/schemas/DefaultSection", description: "Evaluation (phase 3): matrix profiles, primary cell, scoring normalizer, duration buckets, bootstrap" }
+        gate: { $ref: "#/components/schemas/DefaultSection", description: "The default gate a project's gates.yaml departs from (phase 3)" }
+        langpacks: { $ref: "#/components/schemas/DefaultSection", description: "Language packs (phase 3): the boost weight a new list starts with and the size cap of a list" }
+        media: { $ref: "#/components/schemas/DefaultSection", description: "Audio serving (phase 3): the signed link lifetime and the longest span served" }
+        views:
+          type: object
+          description: "Client view defaults, one section per view (views.audio: the audio view's budgets and spectrogram, R52)"
+          additionalProperties: { $ref: "#/components/schemas/DefaultSection" }
+        sweeps: { $ref: "#/components/schemas/DefaultSection", description: "Sweeps (phase 3): mode, run counts, the GPU-hour cap and the seed of a random draw" }
+        transcriptions: { $ref: "#/components/schemas/DefaultSection", description: "Manual transcription tests and the live channel (phase 3): ticket, session and idle limits, frame size, file caps, the relay's queue and the interactive job's priority" }
         estimates:
           type: object
           required: [bytes_per_audio_hour, training]
@@ -4055,6 +4821,7 @@ components:
           type: object
           description: "Overrides of the train step's parameters (recorded as departures when they differ from the default)"
         priority: { type: integer, minimum: -100, maximum: 100, default: 0, description: "Queue priority of the run's step jobs (higher first)" }
+        experiment: { type: string, maxLength: 200, description: "The experiment the run belongs to (exp_…): the run trains on its mix revision and base model (phase 3)" }
     EstimateRange:
       type: object
       required: [value, low, high]
@@ -5499,13 +6266,17 @@ components:
         version: { type: string, maxLength: 20 }
         params: { type: object, description: "JSON Schema of the parameters; every property carries x-cadence {default, description, source, range[, defaultRef]}" }
         consumes: { type: object, additionalProperties: { type: string }, description: "Input name → artifact type" }
+        optionalInputs:
+          type: array
+          items: { type: string }
+          description: "Inputs of consumes a pipeline may leave unwired (a transcribe step's boost list); the step runs without them"
         produces: { type: object, additionalProperties: { type: string }, description: "Output name → artifact type" }
         optionalOutputs:
           type: array
           items: { type: string }
           description: "Outputs of produces a successful step may leave unwritten (a train step's final training state); no pipeline may wire them into another step"
         resources: { $ref: "#/components/schemas/StepResources" }
-        role: { type: string, maxLength: 40, description: "The model-family role this kind fills (calibrate, train, average, transcribe, export, parity), empty for neutral kinds" }
+        role: { type: string, maxLength: 40, description: "The model-family role this kind fills (calibrate, train, average, transcribe, export, parity, materialize, live), empty for neutral kinds" }
         neutral: { type: boolean, description: "Runtime-neutral core kind shipped in every runtime image" }
         secrets: { type: array, items: { type: string }, description: Secret names the step needs as environment variables }
         help: { type: string, description: "Help slug (steps.<name>)" }
@@ -5516,7 +6287,7 @@ components:
         gpus: { type: integer, minimum: 0, maximum: 1, description: "Cards (1 in v1, R44)" }
         memoryGb: { type: number, minimum: 0, description: Card memory the step needs; a training step takes the card's whole cap }
         diskGb: { type: number, minimum: 0 }
-        jobKind: { type: string, enum: [training, eval, export, data], description: "Which compute job kinds may take it" }
+        jobKind: { type: string, enum: [training, eval, export, data, interactive], description: "Which compute job kinds may take it (interactive: a live transcription session, R49)" }
     ModelFamilyDescriptor:
       type: object
       required: [name, version, framework, architecture, latencyProfiles, roles]
@@ -5545,8 +6316,15 @@ components:
           items: { $ref: "#/components/schemas/LatencyProfile" }
         roles:
           type: object
-          description: "Role → step kind (calibrate, train, average, transcribe, export, parity)"
+          description: "Role → step kind (calibrate, train, average, transcribe, export, parity; materialize turns a base_model artifact into a checkpoint so evals can transcribe a base model; live serves transcription sessions, R48)"
           additionalProperties: { type: string }
+        interactive:
+          type: object
+          required: [memoryMb]
+          description: "The card memory a live transcription session of the family reserves (R49, phase 3 · stream T)"
+          properties:
+            memoryMb: { type: integer, minimum: 1, description: "One model loaded: steady memory plus the load peak and margin (Nemotron 0.6B: 6000, spike A5)" }
+            extraCheckpointMb: { type: integer, minimum: 0, description: "Each further distinct model of the session (targets of one model share its weights)" }
         defaultsSection: { type: string, description: "The defaults.yaml section of this family" }
         help: { type: string }
         skill: { type: string }
@@ -5907,6 +6685,7 @@ components:
         kind: { type: string, description: "kind@version, pinned" }
         in: { type: object, additionalProperties: { type: string }, description: "Step input → $inputs.<name> or <step>.<output>" }
         params: { type: object, description: Only the parameters that depart from defaults }
+        optional: { type: boolean, default: false, description: "The step's failure does not fail the run: the steps that read its outputs (optional too) are skipped and the run ends done without them" }
     PipelineRunNew:
       type: object
       additionalProperties: false
@@ -6495,6 +7274,8 @@ components:
         baseModel: { $ref: "#/components/schemas/RegistryVersion" }
         checkpointId: { type: string, description: "init checkpoint: the checkpoint the run starts from" }
         parentRunId: { type: string, description: "The run the start checkpoint came from (runs.stage)" }
+        experimentId: { type: string, description: "The experiment the run belongs to (exp_…)" }
+        sweepId: { type: string, description: "The sweep that generated the run (swp_…)" }
         family:
           type: object
           required: [name, versionId]
@@ -6871,3 +7652,1315 @@ components:
         at: { type: string, format: date-time }
         by: { $ref: "#/components/schemas/Actor" }
         jobId: { type: string }
+
+    # ---------------------------------------------------------------- evaluation registry payloads (phase 3 · wave 0)
+    NormalizerPayload:
+      type: object
+      description: "A scoring normalizer (R21): the text both sides of a WER are compared after. Registry kind normalizer, collection normalizer/<name>; the control plane renders it into a normalizer artifact (this JSON) for scorer steps"
+      required: [locale, unicode, casefold, punctuation, removeMarks, mappings, numbers]
+      properties:
+        locale: { type: string, description: "BCP 47 locale it is meant for, or * for any" }
+        unicode: { type: string, enum: [NFC, NFKC], description: Unicode normalisation form applied first }
+        casefold: { type: boolean }
+        punctuation: { type: string, enum: [keep, strip], description: "strip turns every Unicode punctuation character (categories P*) into a space" }
+        removeMarks: { type: boolean, description: "Remove nonspacing combining marks (niqqud, accents) after canonical decomposition, then recompose in the unicode form" }
+        mappings:
+          type: array
+          description: Literal replacements applied in order after the Unicode step and before punctuation
+          items:
+            type: object
+            required: [from, to]
+            properties:
+              from: { type: string, minLength: 1 }
+              to: { type: string }
+        numbers: { type: string, enum: [keep], description: "keep compares numbers as written; spoken/written conversion through the pack's ITN arrives in phase 4" }
+        description: { type: string }
+    GoldenSetPayload:
+      type: object
+      description: "A frozen golden set (goldenSets.freeze): an eval-only dataset version tied to one scoring normalizer version. Runs never read it"
+      required: [datasetVersionId, datasetHash, normalizerVersionId, locale, utterances, hours, fingerprint, groups]
+      properties:
+        datasetVersionId: { type: string }
+        datasetHash: { type: string, description: "b3: hash of the dataset artifact" }
+        normalizerVersionId: { type: string }
+        locale: { type: string }
+        domain: { type: string, description: "telephone, read speech, …" }
+        utterances: { type: integer }
+        hours: { type: number }
+        fingerprint: { type: string, description: The dataset version's content fingerprint }
+        groups: { type: string, enum: [call, speaker, utterance], description: "The bootstrap's resampling unit (R54): whole calls, else speakers, else utterances" }
+        approvalId: { type: string }
+    ModelPayload:
+      type: object
+      description: "A registered model version (models.register, R22): a checkpoint whose gate passed, published with its eval report and model card"
+      required: [checkpointId, weightsHash, checkpointHash, familyId, baseModelVersionId, projectId, evalId, gate, lineage]
+      properties:
+        checkpointId: { type: string }
+        weightsHash: { type: string }
+        checkpointHash: { type: string, description: "b3: hash of the checkpoint artifact" }
+        familyId: { type: string }
+        baseModelVersionId: { type: string }
+        projectId: { type: string }
+        evalId: { type: string }
+        gate:
+          type: object
+          required: [verdict, gatesSha]
+          properties:
+            verdict: { type: string, enum: [passed, failed] }
+            gatesSha: { type: string, description: The commit SHA of the project's gates.yaml the verdict used }
+        lineage:
+          type: object
+          properties:
+            runId: { type: string }
+            mixSha: { type: string }
+            recipeSha: { type: string }
+            datasetVersionIds: { type: array, items: { type: string } }
+        card: { type: string, description: The generated model card (Markdown) }
+
+    # ---------------------------------------------------------------- golden sets, normalizers, leakage schemas (phase 3 · stream G) — add below
+    NormalizerVersion:
+      allOf:
+        - $ref: "#/components/schemas/RegistryVersion"
+        - type: object
+          required: [normalizer, usedBy]
+          properties:
+            normalizer: { $ref: "#/components/schemas/NormalizerPayload" }
+            usedBy: { type: array, items: { $ref: "#/components/schemas/UsedBy" } }
+    NormalizerVersionList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/NormalizerVersion" } }
+    GoldenSetVersion:
+      allOf:
+        - $ref: "#/components/schemas/RegistryVersion"
+        - type: object
+          required: [goldenSet, usedBy]
+          properties:
+            goldenSet: { $ref: "#/components/schemas/GoldenSetPayload" }
+            usedBy: { type: array, items: { $ref: "#/components/schemas/UsedBy" } }
+    GoldenSetVersionList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/GoldenSetVersion" } }
+    GoldenSetFreeze:
+      type: object
+      required: [datasetVersionId]
+      additionalProperties: false
+      properties:
+        datasetVersionId: { type: string, minLength: 1, description: "The dataset version to freeze: ver_… or a dataset collection name (its newest frozen version); it must be registered eval-only" }
+        normalizerVersionId: { type: string, minLength: 1, description: "The scoring normalizer: ver_… or a normalizer collection name (its newest frozen version); default defaults.yaml eval.normalizer" }
+        name: { type: string, minLength: 1, description: "The golden set's collection, golden-set/<name> or <name>; default the dataset collection's name (dataset/replay-golden-he → golden-set/replay-golden-he)" }
+        domain: { type: string, minLength: 1, description: "telephone, read-speech, …; default the dataset collection's domain:<x> tag, if any" }
+        groups: { type: string, enum: [call, speaker, utterance], description: "The bootstrap's resampling unit (R54); default speaker when the dataset's utterances name speakers, else utterance" }
+
+    # ---------------------------------------------------------------- evals, gates, models schemas (phase 3 · stream E) — add below
+    EvalStatus:
+      type: string
+      enum: [queued, running, done, failed]
+    EvalCellRole:
+      type: string
+      enum: [subject, baseline]
+    EvalCellState:
+      type: string
+      description: "cached: an eval record already held the cell; queued / running: its steps wait or run; done: computed now; failed"
+      enum: [cached, queued, running, done, failed]
+    EvalSubjectRef:
+      type: object
+      description: Exactly one of the three
+      properties:
+        checkpointId: { type: string, description: "A checkpoint of this project (ckp_…)" }
+        modelVersionId: { type: string, description: "A registered model version (ver_…, @alias or model/<name>)" }
+        baseModelVersionId: { type: string, description: "A base model version (ver_…, @alias or base-model/<name>)" }
+    EvalDecodingVariant:
+      type: object
+      required: [boost]
+      properties:
+        boost: { type: string, description: "none, or a boost list of the project's language pack at a commit: lang/<locale>/boost/<file>@<commit sha>" }
+        weight: { type: number, format: double, minimum: 0, maximum: 100, description: "Boosting weight (with a boost list; default 1)" }
+    EvalNew:
+      type: object
+      required: [subject]
+      additionalProperties: false
+      properties:
+        subject: { $ref: "#/components/schemas/EvalSubjectRef" }
+        goldenSets: { type: array, items: { type: string }, description: "Golden set versions (ver_…, @alias, golden-set/<name>); default: those gates.yaml names, else the project's adopted golden sets" }
+        profiles: { type: array, items: { type: string }, description: "Latency profiles (R43); default: eval.matrix_profiles that the model families declare, plus the primary profile" }
+        decoding: { type: array, items: { $ref: "#/components/schemas/EvalDecodingVariant" }, description: "Decoding variants (R24); default [{boost: none}]" }
+        augmentations: { type: array, items: { $ref: "#/components/schemas/EvalAugmentationVariant" }, description: "The robustness axis: augmentation profiles of the project (augment/<name>.yaml@<commit>) applied to the golden sets before transcription; none is always included; default [{profile: none}]" }
+        baseline: { type: string, description: "The baseline model (ver_…, @alias, base-model/<name> or model/<name>); default the project's @baseline, else its default base model" }
+        priority: { type: integer, minimum: 0, maximum: 100, description: "Queue priority of the eval's steps" }
+        languages:
+          type: object
+          additionalProperties: { type: string, minLength: 1 }
+          description: "Golden-set locale → the language the models decode it in (the transcribe kind's language parameter), for both the subject and the baseline, e.g. {\"sr-RS\": \"hr-HR\"} when the model has no prompt for the locale and was fine-tuned under a neighbour's; default each golden set's own locale. Part of the decoding hash"
+    EvalModel:
+      type: object
+      description: A model an eval compares (the subject or the baseline)
+      required: [kind, id, label, modelKey, family]
+      properties:
+        kind: { type: string, enum: [checkpoint, model, base_model] }
+        id: { type: string, description: "ckp_… or ver_…" }
+        label: { type: string, description: "Readable name (collection and version, or the checkpoint's run and step)" }
+        modelKey: { type: string, description: "The eval-record key of the model: the weights hash, or base:<versionId> for a base model" }
+        family: { type: string, description: The model family (R41) }
+        runId: { type: string }
+        source: { type: string, enum: [request, alias, project-default], description: "Baseline only: where it came from" }
+    EvalGoldenSet:
+      type: object
+      required: [versionId, name, version, normalizerVersionId, locale, utterances, hours, groups]
+      properties:
+        versionId: { type: string }
+        name: { type: string, description: "golden-set/<name>" }
+        version: { type: string }
+        normalizerVersionId: { type: string }
+        locale: { type: string }
+        domain: { type: string }
+        utterances: { type: integer }
+        hours: { type: number, format: double }
+        groups: { type: string, enum: [call, speaker, utterance], description: The bootstrap's resampling unit }
+        replay: { type: boolean, description: "A replay golden set (the gate's replay list, or a language outside the project's locales): scored at the primary profile only" }
+        decodeAs: { type: string, description: "The language the models decode this set in when evals.new mapped its locale (languages)" }
+    EvalProfile:
+      type: object
+      required: [name, latencyMs]
+      properties:
+        name: { type: string, example: 160ms }
+        latencyMs: { type: number, format: double }
+        label: { type: string, example: "160 ms · [56,1]" }
+    EvalDecoding:
+      type: object
+      required: [index, boost]
+      properties:
+        index: { type: integer }
+        boost: { type: string, description: "none or lang/<locale>/boost/<file>@<commit>" }
+        weight: { type: number, format: double }
+        terms: { type: integer, description: Terms in the boost list }
+        artifact: { type: string, description: "The rendered boost_list artifact (b3:…)" }
+    EvalSignificance:
+      type: object
+      required: [samples, level, seed]
+      properties:
+        samples: { type: integer, description: Bootstrap resamples }
+        level: { type: number, format: double, description: "Interval coverage (0.95)" }
+        seed: { type: integer }
+    EvalEstimate:
+      type: object
+      description: "GPU time of the cells to compute: golden audio hours × eval.gpu_hours_per_audio_hour (defaults.yaml, to be calibrated)"
+      required: [gpuHours, audioHours, cellsToCompute, gpuHoursPerAudioHour, basis]
+      properties:
+        gpuHours: { type: number, format: double }
+        audioHours: { type: number, format: double, description: Audio decoded by the cells to compute }
+        cellsToCompute: { type: integer }
+        gpuHoursPerAudioHour: { type: number, format: double }
+        basis: { type: string, enum: [table] }
+    EvalBucket:
+      type: object
+      required: [lo, utterances, refWords, wer]
+      properties:
+        lo: { type: number, format: double, description: Lower bound of the duration bucket (seconds) }
+        hi: { type: number, format: double, description: "Upper bound; absent for the open last bucket" }
+        utterances: { type: integer }
+        refWords: { type: integer }
+        wer: { type: number, format: double }
+    EvalStability:
+      type: object
+      description: Partial stability (R54)
+      properties:
+        partialWords: { type: integer }
+        unstableWords: { type: integer }
+        ratio: { type: number, format: double, description: Unstable partial word ratio }
+        editsPerSecond: { type: number, format: double }
+    EvalSummary:
+      type: object
+      description: "A cell's scores (the scores artifact's summary.json); rates are fractions (0.123), counts are words"
+      required: [wer, cer, werNoPunct, sub, del, ins, utterances, refWords]
+      properties:
+        scorer: { type: string, example: wer_score@1 }
+        language: { type: string }
+        utterances: { type: integer }
+        refWords: { type: integer }
+        refChars: { type: integer }
+        wer: { type: number, format: double }
+        cer: { type: number, format: double }
+        werNoPunct: { type: number, format: double, description: WER with punctuation removed after the scoring normalizer }
+        sub: { type: integer, description: Substituted words }
+        del: { type: integer, description: Deleted words }
+        ins: { type: integer, description: Inserted words }
+        charErrors: { type: integer }
+        buckets: { type: array, items: { $ref: "#/components/schemas/EvalBucket" } }
+        stability: { $ref: "#/components/schemas/EvalStability" }
+    EvalInterval:
+      type: object
+      required: [value, low, high]
+      properties:
+        value: { type: number, format: double, description: "The point estimate (subject − baseline, a fraction)" }
+        low: { type: number, format: double }
+        high: { type: number, format: double }
+    EvalDelta:
+      type: object
+      description: "Subject − baseline at the same golden set, profile and decoding: paired blockwise bootstrap over the golden set's groups (R54)"
+      required: [baselineCellId, wer, del, ins, significant, groups, samples, level]
+      properties:
+        baselineCellId: { type: string }
+        unit: { type: string, enum: [char], description: "char when the golden set's language is written without spaces between words (eval.character_error_languages): wer then holds the CER delta, del and ins are not computed" }
+        wer: { $ref: "#/components/schemas/EvalInterval" }
+        del: { $ref: "#/components/schemas/EvalInterval", description: Deletion rate delta (deleted words / reference words) }
+        ins: { $ref: "#/components/schemas/EvalInterval", description: Insertion rate delta }
+        significant: { type: boolean, description: The WER interval excludes zero }
+        groups: { type: integer, description: Resampling units (calls, speakers or utterances) }
+        samples: { type: integer }
+        level: { type: number, format: double }
+        error: { type: string, description: Why the delta could not be computed (an artifact left the store) }
+    EvalUtterance:
+      type: object
+      required: [index, audio, ref, hyp, refWords, sub, del, ins, errors, wer, ops]
+      properties:
+        index: { type: integer, description: Position in the golden set }
+        audio: { type: string, description: "The audio's content hash" }
+        speaker: { type: string }
+        group: { type: string }
+        durationS: { type: number, format: double }
+        ref: { type: string }
+        hyp: { type: string }
+        refWords: { type: integer }
+        sub: { type: integer }
+        del: { type: integer }
+        ins: { type: integer }
+        errors: { type: integer }
+        wer: { type: number, format: double }
+        ops:
+          type: array
+          description: "Alignment: [op, ref word, hyp word] with op =, S, D or I"
+          items: { type: array, items: { type: string } }
+    EvalCell:
+      type: object
+      required: [id, role, goldenSetVersionId, profile, decodingIndex, decodingHash, modelKey, state]
+      properties:
+        id: { type: string, description: "evc_…" }
+        role: { $ref: "#/components/schemas/EvalCellRole" }
+        goldenSetVersionId: { type: string }
+        profile: { type: string }
+        decodingIndex: { type: integer }
+        augmentationIndex: { type: integer, description: "Index into the eval's augmentations (0: none)" }
+        decodingHash: { type: string }
+        modelKey: { type: string }
+        state: { $ref: "#/components/schemas/EvalCellState" }
+        recordId: { type: string, description: "The eval record (erc_…) the scores come from" }
+        scores: { type: string, description: "The scores artifact (b3:…)" }
+        hypotheses: { type: string, description: "The hypotheses artifact (b3:…)" }
+        summary: { $ref: "#/components/schemas/EvalSummary" }
+        delta: { $ref: "#/components/schemas/EvalDelta" }
+        worst: { type: array, items: { $ref: "#/components/schemas/EvalUtterance" } }
+        metrics: { $ref: "#/components/schemas/EvalCellMetrics" }
+    EvalGateCheck:
+      type: object
+      required: [kind, state, message]
+      properties:
+        kind: { type: string, enum: [target, replay, deletionsInsertions, primaryProfile, baseline], description: "baseline: the eval's baseline is not the project's @baseline or default base model (always failed when present)" }
+        goldenSetVersionId: { type: string }
+        goldenSet: { type: string }
+        profile: { type: string }
+        state: { type: string, enum: [passed, failed, inconclusive] }
+        delta: { $ref: "#/components/schemas/EvalInterval" }
+        threshold: { type: number, format: double, description: "Replay: the allowed regression" }
+        baselineWer: { type: number, format: double }
+        candidateWer: { type: number, format: double }
+        unit: { type: string, enum: [char], description: "char when the set is gated on CER: delta, baselineWer and candidateWer are character error rates" }
+        message: { type: string }
+    EvalGate:
+      type: object
+      required: [verdict, gatesSha, checks, at, config]
+      properties:
+        verdict: { type: string, enum: [passed, failed] }
+        gatesSha: { type: string, description: "The commit that last changed gates.yaml (empty: the defaults applied)" }
+        checks: { type: array, items: { $ref: "#/components/schemas/EvalGateCheck" } }
+        config: { $ref: "#/components/schemas/GateConfig" }
+        at: { type: string, format: date-time }
+        by: { $ref: "#/components/schemas/Actor" }
+    EvalProgress:
+      type: object
+      required: [cellsTotal, cellsDone, cellsCached]
+      properties:
+        cellsTotal: { type: integer }
+        cellsDone: { type: integer, description: Cells with scores (cached ones included) }
+        cellsCached: { type: integer }
+    Eval:
+      type: object
+      required: [id, projectId, status, subject, baseline, goldenSets, profiles, primaryProfile, decoding, significance, progress,
+        estimate, rev, actor, createdAt, updatedAt]
+      properties:
+        id: { type: string, description: "evl_…" }
+        projectId: { type: string }
+        status: { $ref: "#/components/schemas/EvalStatus" }
+        error: { type: string }
+        subject: { $ref: "#/components/schemas/EvalModel" }
+        baseline: { $ref: "#/components/schemas/EvalModel" }
+        goldenSets: { type: array, items: { $ref: "#/components/schemas/EvalGoldenSet" } }
+        profiles: { type: array, items: { $ref: "#/components/schemas/EvalProfile" } }
+        primaryProfile: { type: string, description: "The cell the gate reads (R20)" }
+        decoding: { type: array, items: { $ref: "#/components/schemas/EvalDecoding" } }
+        augmentations: { type: array, items: { $ref: "#/components/schemas/EvalAugmentation" }, description: "The robustness axis: index 0 is always none (phase 3 · stream R)" }
+        significance: { $ref: "#/components/schemas/EvalSignificance" }
+        pipelineRunId: { type: string, description: The pipeline run computing the missing cells (absent when every cell was cached) }
+        progress: { $ref: "#/components/schemas/EvalProgress" }
+        estimate: { $ref: "#/components/schemas/EvalEstimate" }
+        gate: { $ref: "#/components/schemas/EvalGate" }
+        cells: { type: array, items: { $ref: "#/components/schemas/EvalCell" }, description: "Absent in evals.list" }
+        robustness: { type: array, items: { $ref: "#/components/schemas/EvalRobustnessRow" }, description: "The robustness matrix when the eval has augmentations beyond none (absent in evals.list)" }
+        rev: { type: integer }
+        actor: { $ref: "#/components/schemas/Actor" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time }
+    EvalList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Eval" } }
+    EvalPlanCell:
+      type: object
+      required: [role, goldenSetVersionId, profile, decodingIndex, decodingHash, modelKey, cached]
+      properties:
+        role: { $ref: "#/components/schemas/EvalCellRole" }
+        goldenSetVersionId: { type: string }
+        profile: { type: string }
+        decodingIndex: { type: integer }
+        augmentationIndex: { type: integer, description: "Index into augmentations (0: none)" }
+        decodingHash: { type: string }
+        modelKey: { type: string }
+        cached: { type: boolean }
+        recordId: { type: string }
+    EvalPlan:
+      type: object
+      required: [subject, baseline, goldenSets, profiles, primaryProfile, decoding, significance, cells, cellsCached, cellsToCompute,
+        estimate, steps]
+      properties:
+        subject: { $ref: "#/components/schemas/EvalModel" }
+        baseline: { $ref: "#/components/schemas/EvalModel" }
+        goldenSets: { type: array, items: { $ref: "#/components/schemas/EvalGoldenSet" } }
+        profiles: { type: array, items: { $ref: "#/components/schemas/EvalProfile" } }
+        primaryProfile: { type: string }
+        decoding: { type: array, items: { $ref: "#/components/schemas/EvalDecoding" } }
+        augmentations: { type: array, items: { $ref: "#/components/schemas/EvalAugmentation" }, description: "The robustness axis (phase 3 · stream R)" }
+        significance: { $ref: "#/components/schemas/EvalSignificance" }
+        cells: { type: array, items: { $ref: "#/components/schemas/EvalPlanCell" } }
+        cellsCached: { type: integer }
+        cellsToCompute: { type: integer, description: "Distinct records to compute (a subject equal to the baseline computes once)" }
+        estimate: { $ref: "#/components/schemas/EvalEstimate" }
+        steps:
+          type: array
+          description: "The generated pipeline's steps (materialize → transcribe → score per missing cell)"
+          items:
+            type: object
+            required: [step, kind]
+            properties: { step: { type: string }, kind: { type: string } }
+    GateConfig:
+      type: object
+      description: "gates.yaml (docs/review/2026-10-02-phase-3-plan.md \"Gate\"); a value left out takes defaults.yaml gate.* / eval.*"
+      additionalProperties: false
+      properties:
+        primaryProfile: { type: string, description: "The latency profile the gate reads (R20)" }
+        target:
+          type: object
+          additionalProperties: false
+          properties:
+            goldenSets: { type: array, items: { type: string }, description: "golden-set/<name> (a * wildcard matches several)" }
+            rule: { type: string, enum: [beat-baseline] }
+        replay:
+          type: object
+          additionalProperties: false
+          properties:
+            goldenSets: { type: array, items: { type: string } }
+            maxRegression: { type: number, format: double, minimum: 0, maximum: 0.1, description: "Largest absolute WER rise (0.005 = 0.5 points)" }
+        deletionsInsertions: { type: boolean }
+        significance:
+          type: object
+          additionalProperties: false
+          properties:
+            samples: { type: integer, minimum: 100, maximum: 100000 }
+            level: { type: number, format: double, minimum: 0.5, maximum: 0.999 }
+            seed: { type: integer, minimum: 0 }
+    GateDeparture:
+      type: object
+      required: [param, value, default]
+      properties:
+        param: { type: string }
+        value: {}
+        default: {}
+    Gates:
+      type: object
+      required: [path, exists, ref, head, content, config, departures]
+      properties:
+        path: { type: string, example: gates.yaml }
+        exists: { type: boolean, description: "false: the project has no gates.yaml and the defaults apply" }
+        ref: { type: string, example: main }
+        head: { type: string, description: The head of main the file was read at }
+        commit: { type: string, description: The commit that last changed gates.yaml }
+        content: { type: string, description: "The file (when it does not exist: the defaults rendered as a starting point)" }
+        config: { $ref: "#/components/schemas/GateConfig", description: The effective gate with the defaults filled in }
+        departures: { type: array, items: { $ref: "#/components/schemas/GateDeparture" } }
+    GatesEdit:
+      type: object
+      additionalProperties: false
+      description: Exactly one of content and config
+      properties:
+        content: { type: string, description: The new gates.yaml }
+        config: { $ref: "#/components/schemas/GateConfig" }
+        message: { type: string, description: The commit message }
+    ModelRegister:
+      type: object
+      required: [checkpointId]
+      additionalProperties: false
+      properties:
+        checkpointId: { type: string, description: "ckp_…" }
+        name: { type: string, description: "The collection, model/<name> (default model/<project slug>)" }
+        evalId: { type: string, description: "The gated eval to publish with (default the checkpoint's latest gated eval)" }
+        description: { type: string, description: The collection's description when it is new }
+    ModelRegistration:
+      type: object
+      required: [name, model]
+      properties:
+        name: { type: string }
+        model: { $ref: "#/components/schemas/ModelPayload" }
+    ModelVersion:
+      allOf:
+        - $ref: "#/components/schemas/RegistryVersion"
+        - type: object
+          required: [model, usedBy]
+          properties:
+            model: { $ref: "#/components/schemas/ModelPayload" }
+            usedBy: { type: array, items: { $ref: "#/components/schemas/UsedBy" } }
+    ModelVersionList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/ModelVersion" } }
+
+    # ---------------------------------------------------------------- robustness and streaming scorers schemas (phase 3 · stream R) — add below
+    EvalAugmentationVariant:
+      type: object
+      required: [profile]
+      additionalProperties: false
+      properties:
+        profile: { type: string, description: "none, or an augmentation profile of the project repository at a commit: augment/<name>.yaml@<commit sha>" }
+        seed: { type: integer, minimum: 0, maximum: 2147483647, description: "Seed of the augmentation draw; default the profile file's seed, else augment.seed" }
+    EvalAugmentation:
+      type: object
+      description: "One augmentation of an eval (the robustness axis): none, or a profile applied by augment_dataset before transcription"
+      required: [index, profile]
+      properties:
+        index: { type: integer }
+        profile: { type: string, description: "none or augment/<name>.yaml@<commit>" }
+        name: { type: string, description: The profile's name }
+        seed: { type: integer }
+        hash: { type: string, description: "sha256 of the resolved profile (transforms and seed); the cell's decoding hash, and so its eval-record key, includes it" }
+        artifact: { type: string, description: "The rendered augment_profile artifact (b3:…)" }
+        noiseBank: { type: string, description: "The noise bank version (ver_…) the noise transform mixes from" }
+        transforms: { type: object, additionalProperties: true, description: "The resolved transforms (defaults.yaml augment.* where the file is silent)" }
+    EvalMetricUnavailable:
+      type: object
+      required: [metric, reason]
+      properties:
+        metric: { type: string, enum: [entities, latency] }
+        reason: { type: string }
+    EvalEntityClass:
+      type: object
+      required: [class, refEntities, hypEntities, correct]
+      properties:
+        class: { type: string, description: "An ITN class of the language pack (number, phone, date, amount, …)" }
+        refEntities: { type: integer }
+        hypEntities: { type: integer }
+        correct: { type: integer }
+        accuracy: { type: number, format: double, description: "correct / refEntities (absent or null without reference entities)" }
+        precision: { type: number, format: double, description: correct / hypEntities }
+    EvalEntityScores:
+      type: object
+      description: "Entity accuracy of a cell (entity_score): the pack's ITN classes compared between references and hypotheses; reported, not gated"
+      required: [scorer, available, refEntities, correct]
+      properties:
+        scorer: { type: string, example: entity_score@1 }
+        scores: { type: string, description: "The metric_scores artifact (b3:…)" }
+        available: { type: boolean }
+        reason: { type: string }
+        itn: { type: object, additionalProperties: true, description: "{locale, commit}: the itn.yaml the classes came from" }
+        utterances: { type: integer }
+        utterancesWithEntities: { type: integer }
+        refEntities: { type: integer }
+        hypEntities: { type: integer }
+        correct: { type: integer }
+        accuracy: { type: number, format: double }
+        precision: { type: number, format: double }
+        classes: { type: array, items: { $ref: "#/components/schemas/EvalEntityClass" } }
+    EvalLatencyScores:
+      type: object
+      description: "Latency to final at real-time pace (R54, latency_score): speech end (frame VAD) to the partial whose text is final"
+      required: [scorer, available, measured]
+      properties:
+        scorer: { type: string, example: latency_score@1 }
+        scores: { type: string, description: "The metric_scores artifact (b3:…)" }
+        available: { type: boolean }
+        reason: { type: string }
+        pace: { type: string, enum: [simulated, realtime, mixed], description: "simulated: emit times at real-time pace from a file decode's compute times; realtime: a decode run at real-time pace" }
+        utteranceEnd: { type: string, enum: [vad], description: Where utterance ends come from }
+        vad: { type: object, additionalProperties: true, description: "{kind, model, revision, …} of the VAD step" }
+        profile: { type: string }
+        utterances: { type: integer }
+        measured: { type: integer, description: Utterances with speech and a non-empty final }
+        p50Ms: { type: number, format: double }
+        p95Ms: { type: number, format: double }
+        meanMs: { type: number, format: double }
+        maxMs: { type: number, format: double }
+        earlyFinals: { type: integer, description: Finals emitted before the VAD's speech end (counted as 0 ms) }
+        noSpeech: { type: integer }
+        emptyFinals: { type: integer }
+    EvalCellMetrics:
+      type: object
+      description: Metrics beside WER, kept with the cell's eval record (absent while their steps run)
+      properties:
+        entities: { $ref: "#/components/schemas/EvalEntityScores" }
+        latency: { $ref: "#/components/schemas/EvalLatencyScores" }
+        unavailable: { type: array, items: { $ref: "#/components/schemas/EvalMetricUnavailable" }, description: "Metrics this cell does not get, and why" }
+    EvalRobustnessRow:
+      type: object
+      description: "One cell of the robustness matrix (golden set × augmentation × latency profile): WER under the augmentation against the same cell without it"
+      required: [role, goldenSetVersionId, profile, decodingIndex, augmentationIndex, cellId]
+      properties:
+        role: { $ref: "#/components/schemas/EvalCellRole" }
+        goldenSetVersionId: { type: string }
+        profile: { type: string }
+        decodingIndex: { type: integer }
+        augmentationIndex: { type: integer }
+        cellId: { type: string }
+        wer: { type: number, format: double, description: WER under the augmentation (absent until scored) }
+        werNone: { type: number, format: double, description: WER of the same cell without augmentation }
+        degradation: { type: number, format: double, description: "wer − werNone (absolute, a fraction)" }
+        unit: { type: string, enum: [char], description: "char when the golden set is scored on CER (eval.character_error_languages): wer, werNone and degradation are character error rates" }
+    # ---------------------------------------------------------------- language packs, boost lists, lineage schemas (phase 3 · stream L) — add below
+
+    PackLocaleName:
+      type: string
+      pattern: "^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8}){0,3}$"
+      description: "BCP 47 locale of a language pack: its directory lang/<locale>/ (he-IL, sr)"
+    BoostDomain:
+      type: string
+      pattern: "^[a-z0-9][a-z0-9-]{0,62}$"
+      description: "A boost list's domain: the file boost/<domain>.txt"
+    LanguagePackFile:
+      type: object
+      required: [path, bytes, content]
+      properties:
+        path: { type: string, description: "Path inside the pack (normalizer.yaml, boost/names.txt)" }
+        bytes: { type: integer }
+        content: { type: string, description: The file as UTF-8 text }
+    BoostList:
+      type: object
+      description: "One boost list (boost/<domain>.txt): a '# weight: <float>' header, then one term per line; blank lines and other # lines are comments. The eval decoder receives it as a boost_list artifact {terms, weight}"
+      required: [domain, path, weight, terms, sha256]
+      properties:
+        domain: { $ref: "#/components/schemas/BoostDomain" }
+        path: { type: string, description: "Path inside the pack, boost/<domain>.txt" }
+        weight: { type: number, format: double }
+        terms: { type: array, items: { type: string } }
+        sha256: { type: string, description: "sha256 (hex) of the list's canonical JSON {\"terms\":[…],\"weight\":w}: the identity an eval's decoding names" }
+    PackScoring:
+      type: object
+      description: "The scoring normalizer normalizer.yaml names (R21): a registry normalizer collection (its newest frozen version) or a pinned version"
+      required: [normalizer]
+      properties:
+        normalizer: { type: string, description: "normalizer/<name> or ver_…" }
+        versionId: { type: string, description: The version it resolves to now; absent when the registry has none }
+        version: { type: string }
+    LanguagePackSummary:
+      type: object
+      required: [locale, path, sha, files, boost, scoring]
+      properties:
+        locale: { $ref: "#/components/schemas/PackLocaleName" }
+        path: { type: string, description: "lang/<locale>" }
+        sha: { type: string, description: The last commit on main that changed the pack }
+        files: { type: integer }
+        boost: { type: array, items: { type: string }, description: Domains of its boost lists }
+        scoring: { $ref: "#/components/schemas/PackScoring" }
+    LanguagePackList:
+      type: object
+      required: [items, shipped]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/LanguagePackSummary" } }
+        shipped: { type: array, items: { type: string }, description: Locales Cadence ships starter packs for }
+    LanguagePack:
+      type: object
+      description: "A language pack (docs/spec/03-pipelines-defaults.md \"Language packs and hot words\"): lang/<locale>/ in the project repository"
+      required: [locale, path, sha, commit, files, boost, scoring, issues]
+      properties:
+        locale: { $ref: "#/components/schemas/PackLocaleName" }
+        path: { type: string, description: "lang/<locale>" }
+        sha: { type: string, description: "The last commit that changed the pack: the ETag, and what entities pin" }
+        commit: { type: string, description: The commit the pack was read at }
+        branch: { type: string, description: "The branch the change landed on when it is not main (an agent's edit under the draft policy language_pack: draft); accept it with branches.accept" }
+        files: { type: array, items: { $ref: "#/components/schemas/LanguagePackFile" } }
+        boost: { type: array, items: { $ref: "#/components/schemas/BoostList" } }
+        scoring: { $ref: "#/components/schemas/PackScoring" }
+        issues: { type: array, items: { $ref: "#/components/schemas/ProblemFieldError" }, description: Files whose shape is wrong (a hand edit); empty when the pack checks out }
+    LanguagePackFileChange:
+      type: object
+      required: [path]
+      properties:
+        path: { type: string, maxLength: 200, description: "Path inside the pack, e.g. normalizer.yaml or boost/names.txt" }
+        content: { type: string, maxLength: 1000000, description: The new UTF-8 content (omit with delete) }
+        delete: { type: boolean, description: Remove the file }
+    LanguagePackEdit:
+      type: object
+      required: [files]
+      properties:
+        files: { type: array, minItems: 1, maxItems: 100, items: { $ref: "#/components/schemas/LanguagePackFileChange" } }
+        message: { type: string, maxLength: 500, description: The commit message }
+    BoostEdit:
+      type: object
+      required: [terms]
+      properties:
+        terms: { type: array, maxItems: 100000, items: { type: string, minLength: 1, maxLength: 200 }, description: The list's terms, replacing the current ones }
+        weight: { type: number, format: double, description: "Boost weight; the list's current one when omitted, else defaults.yaml langpacks.boost_weight" }
+        message: { type: string, maxLength: 500 }
+    LineageNode:
+      type: object
+      required: [id, kind, label, distance, direction]
+      properties:
+        id: { type: string }
+        kind: { type: string, description: "Entity kind: a registry kind (dataset_version, golden_set, model, …), source, pipeline_run, run, checkpoint, mix, project, or one another domain adds (eval)" }
+        label: { type: string, description: "What to show: collection and version, a run's mix, a project's slug" }
+        projectId: { type: string, description: Project work only }
+        state: { type: string, description: "The entity's state or status, when it has one" }
+        direction: { type: string, enum: [root, upstream, downstream] }
+        distance: { type: integer, description: Hops from the root }
+    LineageEdge:
+      type: object
+      required: [from, to, relation]
+      properties:
+        from: { type: string, description: The entity that was used }
+        to: { type: string, description: The entity that used it }
+        relation: { type: string, description: "How: the payload field that names it (datasetVersionId, lineage.runId, sourceIds), or mix, base, init, run, adopted, …" }
+    Lineage:
+      type: object
+      required: [root, nodes, edges, truncated, hidden]
+      properties:
+        root: { type: string }
+        nodes: { type: array, items: { $ref: "#/components/schemas/LineageNode" } }
+        edges: { type: array, items: { $ref: "#/components/schemas/LineageEdge" } }
+        truncated: { type: boolean, description: The node limit stopped the walk }
+        hidden: { type: integer, description: Nodes left out because they belong to projects the caller cannot see }
+
+    # ---------------------------------------------------------------- media: audio serving schemas (phase 3 · stream A) — add below
+    AudioSignRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        channel: { type: integer, minimum: 0, maximum: 15, description: "One channel (0-based); omitted: every channel" }
+        start: { type: number, format: double, minimum: 0, description: Span start in seconds }
+        end: { type: number, format: double, minimum: 0, description: Span end in seconds }
+    AudioLink:
+      type: object
+      required: [url, expiresAt, utteranceId, audio, durationS, sampleRate, channels]
+      properties:
+        url: { type: string, description: "audio.get with the span and the signature (relative to the server, starts with /api/)" }
+        expiresAt: { type: string, format: date-time }
+        utteranceId: { type: string }
+        audio: { type: string, description: "The audio's content hash (b3:…)" }
+        durationS: { type: number, format: double, description: The utterance's duration }
+        sampleRate: { type: integer, description: "Sample rate of what the link serves (16000)" }
+        channels: { type: integer, description: Channels of what the link serves }
+        originSampleRate: { type: integer, description: The stored audio's sample rate }
+        start: { type: number, format: double }
+        end: { type: number, format: double }
+    AudioPeaks:
+      type: object
+      required: [utteranceId, channels, hopS, frames, start, durationS, encoding, data]
+      properties:
+        utteranceId: { type: string }
+        channels: { type: integer }
+        hopS: { type: number, format: double, description: Seconds per min/max pair }
+        frames: { type: integer, description: Pairs per channel }
+        start: { type: number, format: double, description: Time of the first pair }
+        durationS: { type: number, format: double, description: The utterance's duration }
+        originSampleRate: { type: integer, description: The stored audio's sample rate }
+        clipped: { type: array, items: { type: integer }, description: "Frames where a sample of any channel reached full scale (at most 1000)" }
+        encoding: { type: string, enum: [int8-minmax], description: "frames × channels × [min, max], int8, value / 127 = sample" }
+        data: { type: string, format: byte, description: Base64 of the int8 bytes }
+        artifact: { type: string, description: "The cached 10 ms peaks artifact (b3:…)" }
+    SpectrogramLevel:
+      type: object
+      required: [level, hopS, frames, tiles]
+      properties:
+        level: { type: integer }
+        hopS: { type: number, format: double }
+        frames: { type: integer }
+        tiles: { type: integer }
+    SpectrogramManifest:
+      type: object
+      description: "manifest.json of a spectrogram_tiles artifact (format cadence.spectrogram-tiles/1)"
+      required: [schema, sampleRate, originSampleRate, channels, bins, binHz, tileFrames, encoding, levels, peakDb, durationS]
+      properties:
+        schema: { type: string, enum: [cadence.spectrogram-tiles/1] }
+        artifact: { type: string, description: "The spectrogram_tiles artifact (b3:…)" }
+        audio: { type: string, description: "The audio's content hash (b3:…)" }
+        sampleRate: { type: integer }
+        originSampleRate: { type: integer }
+        channels: { type: integer }
+        windowSamples: { type: integer }
+        hopSamples: { type: integer }
+        nFft: { type: integer }
+        bins: { type: integer, description: "Bins kept: up to the origin's Nyquist" }
+        binHz: { type: number, format: double }
+        tileFrames: { type: integer }
+        encoding:
+          type: object
+          required: [floorDb, stepDb]
+          properties:
+            floorDb: { type: number, format: double }
+            stepDb: { type: number, format: double }
+        levels: { type: array, items: { $ref: "#/components/schemas/SpectrogramLevel" } }
+        peakDb: { type: array, items: { type: number, format: double } }
+        durationS: { type: number, format: double }
+    HypothesisWord:
+      type: object
+      required: [word, start, end]
+      properties:
+        word: { type: string }
+        start: { type: number, format: double }
+        end: { type: number, format: double }
+        confidence: { type: number, format: double }
+        op: { type: string, enum: ["=", S, I], description: "Against the reference (with scores): = correct, S substituted, I inserted" }
+        ref: { type: string, description: "The reference word a substitution replaced" }
+    DeletedWord:
+      type: object
+      required: [before, ref]
+      properties:
+        before: { type: integer, description: "Index of the hypothesis word the deletion sits before (words.length: at the end)" }
+        ref: { type: string }
+    PartialEvent:
+      type: object
+      required: [text]
+      properties:
+        text: { type: string }
+        audioOffsetMs: { type: number, format: double, description: Audio time the partial covers up to }
+        emitMs: { type: number, format: double, description: When the decoder emitted it (wall clock from the stream's start) }
+    UtteranceWords:
+      type: object
+      required: [utteranceId, audio, text, words, deletions, aligned]
+      properties:
+        utteranceId: { type: string }
+        audio: { type: string, description: "The audio's content hash (b3:…)" }
+        text: { type: string, description: The hypothesis text }
+        ref: { type: string, description: "The normalised reference (with scores)" }
+        words: { type: array, items: { $ref: "#/components/schemas/HypothesisWord" } }
+        deletions: { type: array, items: { $ref: "#/components/schemas/DeletedWord" } }
+        aligned: { type: boolean, description: "The scores' alignment was mapped onto the timed words (false without scores, or when the normaliser changed the word count)" }
+        partials: { type: array, items: { $ref: "#/components/schemas/PartialEvent" } }
+        sub: { type: integer }
+        del: { type: integer }
+        ins: { type: integer }
+        refWords: { type: integer }
+
+    # ---------------------------------------------------------------- transcriptions and the live channel schemas (phase 3 · stream T) — add below
+    TranscriptionNew:
+      type: object
+      additionalProperties: false
+      required: [input, targets]
+      properties:
+        input: { $ref: "#/components/schemas/TranscriptionInput" }
+        targets:
+          type: array
+          minItems: 1
+          maxItems: 3
+          description: "One to three targets; they receive the same audio (lanes A, B, C in this order unless blind)"
+          items: { $ref: "#/components/schemas/TranscriptionTargetIn" }
+        telephony: { $ref: "#/components/schemas/TelephonySimulation" }
+        pace: { type: string, enum: [realtime, fast], default: realtime, description: "File and span inputs: play at real-time pace (latency shows) or as fast as the card allows" }
+        blind: { type: boolean, default: false, description: "Shuffle the lanes; the page leaves them unnamed until the person picks the better one (the pick is not recorded)" }
+    TranscriptionInput:
+      type: object
+      additionalProperties: false
+      required: [kind]
+      properties:
+        kind: { type: string, enum: [microphone, file, span], description: "microphone (PCM16 frames from the browser), file (its bytes, decoded by the worker), or span (an utterance's audio read by the worker)" }
+        utteranceId: { type: string, maxLength: 100, description: "kind span: the utterance (utt_… or its audio's b3: hash)" }
+        start: { type: number, format: double, minimum: 0, description: "kind span: start in seconds (default 0)" }
+        end: { type: number, format: double, minimum: 0, description: "kind span: end in seconds (default the end of the audio)" }
+        channel: { type: integer, minimum: 0, maximum: 15, description: "kind span: the channel (default 0)" }
+    TranscriptionTargetIn:
+      type: object
+      additionalProperties: false
+      description: "Exactly one of checkpointId, modelVersionId and baseModelVersionId"
+      properties:
+        checkpointId: { type: string, maxLength: 100, description: "A checkpoint of the project (ckp_…)" }
+        modelVersionId: { type: string, maxLength: 200, description: "A model version (ver_…, model/<name>, or @alias)" }
+        baseModelVersionId: { type: string, maxLength: 200, description: "A base model version (ver_…, base-model/<name>, or @alias)" }
+        profile: { type: string, maxLength: 40, description: "Latency profile (default: eval.primary_profile when the family declares it, else its first streaming profile)" }
+        language: { type: string, maxLength: 35, description: "BCP 47 language the model decodes in (default: the project's first locale)" }
+        boost: { type: string, maxLength: 300, description: "none (default), or a boost list of the project's language pack: lang/<locale>/boost/<file>.txt, optionally @<commit> (default main)" }
+        boostWeight: { type: number, format: double, minimum: 0, maximum: 100, description: "Overrides the list's '# weight:' header" }
+    TelephonySimulation:
+      type: object
+      additionalProperties: false
+      description: "Phone-line simulation (R50): down to sampleRate, through the codec, back up to 16 kHz with the training resampler (streaming polyphase)"
+      properties:
+        codec: { type: string, enum: [ulaw, alaw, none], default: ulaw, description: "G.711 μ-law (default), A-law, or band-limit only" }
+        sampleRate: { type: integer, enum: [8000], default: 8000 }
+    TranscriptionSession:
+      type: object
+      required: [id, projectId, state, input, targets, pace, blind, family, liveKind, reservationMb, limits, allowance, createdAt]
+      properties:
+        id: { type: string, description: "trs_…" }
+        projectId: { type: string }
+        jobId: { type: string, description: "The interactive job (job_…); absent in a dry run" }
+        state: { type: string, enum: [queued, loading, live, ended], description: "queued: waiting for room on a card; loading: leased, the worker loads the targets; live: the worker is on the socket; ended" }
+        streamUrl: { type: string, description: "The live channel, relative to the server (/api/transcriptions/{id}/stream?ticket=…); absent in a dry run" }
+        ticket: { type: string, description: "Single-use; absent in a dry run" }
+        ticketExpiresAt: { type: string, format: date-time }
+        input: { $ref: "#/components/schemas/TranscriptionInput" }
+        targets: { type: array, items: { $ref: "#/components/schemas/TranscriptionLane" } }
+        telephony: { $ref: "#/components/schemas/TelephonySimulation" }
+        pace: { type: string, enum: [realtime, fast] }
+        blind: { type: boolean }
+        family: { type: string, description: "The targets' model family" }
+        liveKind: { type: string, description: "The family's live role step kind (kind@version) that serves the session" }
+        reservationMb: { type: integer, description: "Card memory the interactive job reserves: the family's interactive.memoryMb plus extraCheckpointMb per further distinct model" }
+        position: { type: integer, description: "Place among the waiting interactive jobs (1 = next)" }
+        reason: { type: string, description: "Why the session waits, when it does" }
+        limits: { $ref: "#/components/schemas/TranscriptionLimits" }
+        allowance: { $ref: "#/components/schemas/ManualTestAllowance" }
+        createdAt: { type: string, format: date-time }
+    TranscriptionLane:
+      type: object
+      required: [target, kind, id, label, family, profile, language, weightsKey]
+      properties:
+        target: { type: string, enum: [A, B, C], description: "The lane; live messages name it in target" }
+        kind: { type: string, enum: [checkpoint, model, base_model] }
+        id: { type: string, description: "ckp_… or ver_…" }
+        label: { type: string, description: "What the lane runs (the page hides it until the person picks, when blind)" }
+        family: { type: string }
+        profile: { type: string }
+        latencyMs: { type: integer }
+        chunkMs: { type: integer }
+        language: { type: string }
+        boost: { $ref: "#/components/schemas/TranscriptionBoost" }
+        weightsKey: { type: string, description: "Lanes with the same key share one model on the card" }
+    TranscriptionBoost:
+      type: object
+      required: [list, weight, terms]
+      properties:
+        list: { type: string, description: "lang/<locale>/boost/<file>.txt" }
+        commit: { type: string }
+        weight: { type: number, format: double }
+        terms: { type: integer }
+    TranscriptionLimits:
+      type: object
+      required: [sessionSeconds, idleSeconds, ticketSeconds, frameMs, maxFileSeconds, maxFileBytes, maxMessageBytes, queueWaitSeconds]
+      properties:
+        sessionSeconds: { type: integer, description: "Longest session once live (transcriptions.session_max_minutes, less when the allowance has less left)" }
+        idleSeconds: { type: integer, description: "Closed after this long without audio, keepalive or ping" }
+        ticketSeconds: { type: integer }
+        frameMs: { type: integer, description: "Longest microphone frame (PCM16 at the capture rate)" }
+        maxFileSeconds: { type: integer }
+        maxFileBytes: { type: integer }
+        maxMessageBytes: { type: integer, description: "Largest message the socket accepts (send a file in chunks of this size or less)" }
+        queueWaitSeconds: { type: integer, description: "Longest wait for a card before the session gives up" }
+    ManualTestAllowance:
+      type: object
+      required: [gpuHoursPerDay, usedGpuHours, remainingGpuHours]
+      description: "The project's daily allowance of manual tests (budgets.manual_test_gpu_hours_per_project_per_day), metered as interactive lease wall time"
+      properties:
+        gpuHoursPerDay: { type: number, format: double }
+        usedGpuHours: { type: number, format: double }
+        remainingGpuHours: { type: number, format: double }
+
+    # The live channel (R48). Text frames are JSON discriminated by type; audio goes in binary frames.
+    LiveClientMessage:
+      description: "Client → server text frames: start first, then fileEnd, finalize, keepalive, ping and end in any order; audio in binary frames"
+      oneOf:
+        - $ref: "#/components/schemas/LiveStart"
+        - $ref: "#/components/schemas/LiveFileEnd"
+        - $ref: "#/components/schemas/LiveFinalize"
+        - $ref: "#/components/schemas/LiveKeepalive"
+        - $ref: "#/components/schemas/LivePing"
+        - $ref: "#/components/schemas/LiveEnd"
+      discriminator:
+        propertyName: type
+        mapping:
+          start: "#/components/schemas/LiveStart"
+          fileEnd: "#/components/schemas/LiveFileEnd"
+          finalize: "#/components/schemas/LiveFinalize"
+          keepalive: "#/components/schemas/LiveKeepalive"
+          ping: "#/components/schemas/LivePing"
+          end: "#/components/schemas/LiveEnd"
+    LiveStart:
+      type: object
+      required: [type, input]
+      description: "The first message: what the audio is. Telephony, pace and targets were fixed by transcriptions.new"
+      properties:
+        type: { type: string, enum: [start] }
+        input: { $ref: "#/components/schemas/LiveInput" }
+    LiveInput:
+      type: object
+      required: [kind]
+      properties:
+        kind: { type: string, enum: [microphone, file, span] }
+        sampleRate: { type: integer, minimum: 8000, maximum: 192000, description: "microphone: the capture rate (the AudioContext's rate; no resampling in the browser)" }
+        frameMs: { type: number, description: "microphone: the frame length the page sends (≤ limits.frameMs)" }
+        settings: { type: object, additionalProperties: true, description: "microphone: the track's getSettings() (echo cancellation, noise suppression, auto gain, channel count, device)" }
+        raw: { type: boolean, description: "microphone: echo cancellation, noise suppression and auto gain were asked off" }
+        fileName: { type: string, maxLength: 255 }
+        fileBytes: { type: integer, minimum: 0, description: "file: the size the page will send" }
+    LiveFileEnd:
+      type: object
+      required: [type]
+      description: "file: every byte was sent; the worker decodes the file (ffmpeg) and streams it at the session's pace"
+      properties:
+        type: { type: string, enum: [fileEnd] }
+    LiveFinalize:
+      type: object
+      required: [type]
+      description: "A segment boundary: pad the right context with silence, force end of utterance, emit the finals; the next audio opens a new decoder stream (fresh encoder cache)"
+      properties:
+        type: { type: string, enum: [finalize] }
+    LiveKeepalive:
+      type: object
+      required: [type]
+      description: "Keeps the session open without audio; the worker answers pong (source worker), behind any audio already sent"
+      properties:
+        type: { type: string, enum: [keepalive] }
+        t: { type: number, description: "The client's clock, echoed in pong" }
+    LivePing:
+      type: object
+      required: [type]
+      description: "Answered by the relay itself (pong, source relay): the control plane hop alone"
+      properties:
+        type: { type: string, enum: [ping] }
+        t: { type: number, description: "The client's clock, echoed in pong" }
+    LiveEnd:
+      type: object
+      required: [type]
+      description: "Flush every target, send summary, close with 1000"
+      properties:
+        type: { type: string, enum: [end] }
+
+    LiveServerMessage:
+      description: "Server → client text frames. partial replaces the segment's previous partial; final never changes; every result states the audio time it covers (audioEnd, seconds of session audio)"
+      oneOf:
+        - $ref: "#/components/schemas/LiveWaiting"
+        - $ref: "#/components/schemas/LiveStarted"
+        - $ref: "#/components/schemas/LivePartial"
+        - $ref: "#/components/schemas/LiveFinal"
+        - $ref: "#/components/schemas/LiveStats"
+        - $ref: "#/components/schemas/LivePong"
+        - $ref: "#/components/schemas/LiveError"
+        - $ref: "#/components/schemas/LiveSummary"
+      discriminator:
+        propertyName: type
+        mapping:
+          waiting: "#/components/schemas/LiveWaiting"
+          started: "#/components/schemas/LiveStarted"
+          partial: "#/components/schemas/LivePartial"
+          final: "#/components/schemas/LiveFinal"
+          stats: "#/components/schemas/LiveStats"
+          pong: "#/components/schemas/LivePong"
+          error: "#/components/schemas/LiveError"
+          summary: "#/components/schemas/LiveSummary"
+    LiveWaiting:
+      type: object
+      required: [type, state]
+      description: "From the relay until started: the job waits for a card (queued, with its place and why) or the worker loads the targets (loading)"
+      properties:
+        type: { type: string, enum: [waiting] }
+        state: { type: string, enum: [queued, loading] }
+        position: { type: integer, description: "queued: place among the waiting interactive jobs (1 = next)" }
+        reason: { type: string, description: "queued: why no card takes it yet" }
+        reservationMb: { type: integer }
+        waitedS: { type: number }
+    LiveStarted:
+      type: object
+      required: [type, targets, resampler]
+      description: "Every target is loaded and the decoder takes audio: the effective configuration per target"
+      properties:
+        type: { type: string, enum: [started] }
+        targets: { type: array, items: { $ref: "#/components/schemas/LiveStartedTarget" } }
+        captureRate: { type: integer, description: "The rate the worker resamples from (the start message's, or the file's)" }
+        resampler: { type: string, description: "streaming polyphase (scipy.signal.resample_poly), the import and training resampler" }
+        telephony: { $ref: "#/components/schemas/LiveTelephony" }
+        pace: { type: string, enum: [realtime, fast] }
+        input: { $ref: "#/components/schemas/LiveInput" }
+        durationS: { type: number, description: "file and span: the audio's duration" }
+    LiveStartedTarget:
+      type: object
+      required: [target, profile, chunkMs, language, loadS]
+      properties:
+        target: { type: string, enum: [A, B, C] }
+        profile: { type: string }
+        chunkMs: { type: integer }
+        language: { type: string }
+        loadS: { type: number, description: "Seconds the target's model took to load (shared weights load once)" }
+        decoder: { type: string, description: "The decoder, as in an eval's decoding (same words as an eval of the same transcribe kind)" }
+        boost: { type: object, properties: { terms: { type: integer }, weight: { type: number } } }
+    LiveTelephony:
+      type: object
+      required: [chain, codec, sampleRate]
+      properties:
+        chain: { type: string, description: "16k → 8k (polyphase) → codec → 16k (polyphase)" }
+        codec: { type: string, enum: [ulaw, alaw, none] }
+        sampleRate: { type: integer }
+    LivePartial:
+      type: object
+      required: [type, target, segment, seq, text, audioEnd]
+      properties:
+        type: { type: string, enum: [partial] }
+        target: { type: string, enum: [A, B, C] }
+        segment: { type: integer, description: "The segment it belongs to (a final closes it)" }
+        seq: { type: integer, description: "Per target, over partials and finals" }
+        text: { type: string }
+        audioEnd: { type: number, description: "Seconds of session audio the partial covers" }
+    LiveFinal:
+      type: object
+      required: [type, target, segment, seq, text, words, endpoint, audioEnd, space]
+      properties:
+        type: { type: string, enum: [final] }
+        target: { type: string, enum: [A, B, C] }
+        segment: { type: integer }
+        seq: { type: integer }
+        text: { type: string, description: "The segment's transcript (not the words joined: a word segmenter may split a word)" }
+        words: { type: array, items: { $ref: "#/components/schemas/LiveWord" } }
+        endpoint: { type: string, enum: [eou, finalize, end], description: "eou: the model's end of utterance; finalize: the client's; end: the session's" }
+        audioEnd: { type: number }
+        space: { type: boolean, description: "false: the text continues the previous final's last word (an end of utterance inside a word) — join without a space" }
+    LiveWord:
+      type: object
+      required: [word]
+      properties:
+        word: { type: string }
+        start: { type: number, description: "Seconds of session audio (absent when the decoder gave no timing)" }
+        end: { type: number }
+        confidence: { type: number, minimum: 0, maximum: 1 }
+    LiveStats:
+      type: object
+      required: [type, source]
+      properties:
+        type: { type: string, enum: [stats] }
+        source: { type: string, enum: [worker, relay] }
+        rtf: { type: number, description: "worker: decode time over audio time so far, every target together" }
+        audioS: { type: number, description: "worker: seconds of audio decoded" }
+        queued: { type: integer, description: "relay: messages waiting for the worker" }
+        upP50Us: { type: number, description: "relay: forwarding time client → worker, µs" }
+        upP95Us: { type: number }
+        downP50Us: { type: number, description: "relay: forwarding time worker → client, µs" }
+        downP95Us: { type: number }
+        upN: { type: integer }
+        downN: { type: integer }
+    LivePong:
+      type: object
+      required: [type, source]
+      properties:
+        type: { type: string, enum: [pong] }
+        source: { type: string, enum: [relay, worker] }
+        t: { type: number }
+    LiveError:
+      type: object
+      required: [type, problem, fatal]
+      properties:
+        type: { type: string, enum: [error] }
+        problem: { $ref: "#/components/schemas/Problem" }
+        fatal: { type: boolean, description: "The session closes after it" }
+    LiveSummary:
+      type: object
+      required: [type, audioS, rtf, targets]
+      description: "The session's totals, last; the socket then closes with 1000. Nothing of it is stored"
+      properties:
+        type: { type: string, enum: [summary] }
+        audioS: { type: number }
+        rtf: { type: number }
+        targets: { type: object, additionalProperties: { $ref: "#/components/schemas/LiveTargetSummary" } }
+        gpu: { type: object, additionalProperties: true, description: "Peak memory of the job" }
+        load: { type: object, additionalProperties: true }
+        frameMsP50: { type: number }
+        frameMsP95: { type: number }
+    LiveTargetSummary:
+      type: object
+      properties:
+        profile: { type: string }
+        steps: { type: integer }
+        stepMsP50: { type: number }
+        stepMsP95: { type: number }
+        stepMsMax: { type: number }
+        finals: { type: integer }
+
+    # ---------------------------------------------------------------- experiments and sweeps schemas (phase 3 · stream X) — add below
+    ExperimentNew:
+      type: object
+      additionalProperties: false
+      required: [name, question, mix]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 80, description: "A short name, unique in the project" }
+        question: { type: string, minLength: 1, maxLength: 2000, description: "The question the experiment's runs answer" }
+        mix: { type: string, maxLength: 200, description: "The mix every run trains on (mix_… or its name)" }
+        mixRevision: { type: integer, minimum: 1, description: "The fixed mix revision (default the mix's current one)" }
+        baseModel: { type: string, description: "Base model version (ver_…), collection name or @alias, pinned to a version (default the defaults' base model)" }
+        tag: { type: string, maxLength: 63, pattern: "^[a-z0-9][a-z0-9._-]*$", description: "A short tag for filters and search (default derived from the name)" }
+    ExperimentMixRef:
+      type: object
+      required: [id, name, revision]
+      properties:
+        id: { type: string, description: "mix_…" }
+        name: { type: string }
+        revision: { type: integer, description: The fixed mix revision }
+        replayShare: { type: number, format: double, description: "The revision's replay share (a sweep may vary it)" }
+    ExperimentParameter:
+      type: object
+      required: [name, swept, departs]
+      properties:
+        name: { type: string, description: "A train-step parameter, or replayShare (the mix's)" }
+        default: { description: "The value runs get when nothing sets it (defaults.yaml, or the mix revision's replay share)" }
+        swept: { type: boolean, description: A sweep of the experiment varies it }
+        departs: { type: boolean, description: At least one run departs from the default }
+    ExperimentEval:
+      type: object
+      required: [evalId, status]
+      properties:
+        evalId: { type: string, description: "evl_…" }
+        status: { $ref: "#/components/schemas/EvalStatus" }
+        verdict: { type: string, enum: [passed, failed], description: "The gate's verdict, once evals.gate ran" }
+    ExperimentRun:
+      type: object
+      required: [runId, status, values, departures, gpuHours, best, createdAt]
+      properties:
+        runId: { type: string, description: "run_…" }
+        status: { $ref: "#/components/schemas/RunStatus" }
+        sweepId: { type: string, description: "The sweep that generated the run (swp_…)" }
+        point: { type: integer, description: The run's point in its sweep }
+        values: { type: object, additionalProperties: true, description: "The compared parameters' values for this run (parameter name → value)" }
+        departures: { type: array, items: { type: string }, description: Compared parameters whose value differs from the default }
+        bestValWer: { type: number, format: double, description: The lowest validation WER of the run's checkpoints (a fraction) }
+        bestCheckpointId: { type: string, description: The checkpoint with that WER }
+        bestStep: { type: integer, format: int64, description: The optimiser step of that checkpoint }
+        gpuHours: { type: number, format: double }
+        estimateGpuHours: { type: number, format: double, description: The run's estimate at start }
+        best: { type: boolean, description: The experiment's best run }
+        eval: { $ref: "#/components/schemas/ExperimentEval" }
+        error: { type: string }
+        createdAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time }
+    ExperimentBest:
+      type: object
+      required: [runId, checkpointId, valWer, registrable]
+      properties:
+        runId: { type: string }
+        checkpointId: { type: string }
+        valWer: { type: number, format: double }
+        eval: { $ref: "#/components/schemas/ExperimentEval" }
+        registrable: { type: boolean, description: "models.register would accept the checkpoint now: its latest gated eval passed" }
+        reason: { type: string, description: "Why it cannot be registered yet, and the next command" }
+    Experiment:
+      type: object
+      required: [id, projectId, name, question, mix, baseModel, runCount, sweeps, rev, actor, createdAt, updatedAt]
+      properties:
+        id: { type: string, description: "exp_…" }
+        projectId: { type: string }
+        name: { type: string }
+        question: { type: string }
+        tag: { type: string }
+        mix: { $ref: "#/components/schemas/ExperimentMixRef" }
+        baseModel: { $ref: "#/components/schemas/RegistryVersion" }
+        runCount: { type: integer }
+        parameters: { type: array, items: { $ref: "#/components/schemas/ExperimentParameter" }, description: "The compared parameters, swept ones first (experiments.get only)" }
+        runs: { type: array, items: { $ref: "#/components/schemas/ExperimentRun" }, description: "Oldest first (experiments.get only)" }
+        best: { $ref: "#/components/schemas/ExperimentBest" }
+        sweeps: { type: array, items: { $ref: "#/components/schemas/Sweep" }, description: Newest first }
+        rev: { type: integer }
+        actor: { $ref: "#/components/schemas/Actor" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ExperimentList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Experiment" } }
+    SweepMode:
+      type: string
+      enum: [grid, random]
+    SweepState:
+      type: string
+      description: "running: a run is queued or training; done: every point ran; stopped: the cap was reached first; cancelled: its running run was cancelled; failed: a run could not be started"
+      enum: [running, done, stopped, cancelled, failed]
+    SweepParameter:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 63, description: "A train-step parameter (peak_lr, warmup_steps, augmentation, …) or replayShare" }
+        values: { type: array, minItems: 1, maxItems: 32, items: {}, description: "The values to try (grid: required; random: drawn from)" }
+        min: { type: number, format: double, description: "random: the lower bound of a numeric range" }
+        max: { type: number, format: double, description: "random: the upper bound" }
+        scale: { type: string, enum: [linear, log], description: "random: draw uniformly on this scale (default linear; log for learning rates)" }
+        integer: { type: boolean, description: "random: round drawn values to integers" }
+    SweepNew:
+      type: object
+      additionalProperties: false
+      required: [parameters]
+      properties:
+        mode: { $ref: "#/components/schemas/SweepMode" }
+        parameters: { type: array, minItems: 1, maxItems: 8, items: { $ref: "#/components/schemas/SweepParameter" } }
+        runs: { type: integer, minimum: 1, maximum: 64, description: "random: how many points (default sweeps.random_runs); grid: at most this many of the combinations (default all of them, up to sweeps.max_runs)" }
+        gpuHourCap: { type: number, format: double, minimum: 0.001, description: "Most GPU-hours the sweep's runs may use (default sweeps.gpu_hour_cap)" }
+        seed: { type: integer, minimum: 0, maximum: 2147483647, description: "random: the seed of the draw (default sweeps.seed)" }
+        steps: { type: integer, minimum: 1, description: "Step budget of every run (default training.steps)" }
+        priority: { type: integer, minimum: -100, maximum: 100, description: "Queue priority of the runs' step jobs (default 0)" }
+    SweepPoint:
+      type: object
+      required: [index, values, state]
+      properties:
+        index: { type: integer }
+        values: { type: object, additionalProperties: true, description: "Parameter name → value" }
+        state: { type: string, enum: [pending, queued, running, paused, done, failed, cancelled, skipped], description: "pending: not started yet; skipped: the sweep ended first; else the run's status" }
+        runId: { type: string }
+        estimateGpuHours: { type: number, format: double, description: "The point's estimate when the sweep was planned" }
+        gpuHours: { type: number, format: double }
+    Sweep:
+      type: object
+      required: [id, experimentId, mode, parameters, gpuHourCap, state, points, runsDone, gpuHoursSpent, estimateGpuHours, rev, actor, createdAt, updatedAt]
+      properties:
+        id: { type: string, description: "swp_…" }
+        experimentId: { type: string }
+        mode: { $ref: "#/components/schemas/SweepMode" }
+        parameters: { type: array, items: { $ref: "#/components/schemas/SweepParameter" } }
+        seed: { type: integer }
+        steps: { type: integer }
+        gpuHourCap: { type: number, format: double }
+        state: { $ref: "#/components/schemas/SweepState" }
+        stopReason: { type: string, description: "Why the sweep ended before its last point (the cap, a cancelled or failed run)" }
+        points: { type: array, items: { $ref: "#/components/schemas/SweepPoint" } }
+        runsDone: { type: integer, description: Runs that ended }
+        currentRunId: { type: string, description: The run queued or training now }
+        gpuHoursSpent: { type: number, format: double, description: GPU-hours the sweep's runs used }
+        estimateGpuHours: { type: number, format: double, description: The sum of the points' estimates when the sweep started }
+        rev: { type: integer }
+        actor: { $ref: "#/components/schemas/Actor" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time }
+    SweepPlan:
+      type: object
+      required: [experimentId, mode, points, estimateGpuHours, gpuHourCap, withinCap, fits, basis, budget]
+      properties:
+        experimentId: { type: string }
+        mode: { $ref: "#/components/schemas/SweepMode" }
+        seed: { type: integer }
+        steps: { type: integer }
+        points: { type: array, items: { $ref: "#/components/schemas/SweepPoint" } }
+        estimateGpuHours: { $ref: "#/components/schemas/EstimateRange" }
+        gpuHourCap: { type: number, format: double }
+        withinCap: { type: boolean, description: "The whole estimate fits the cap (otherwise the real call answers sweep-over-cap)" }
+        fits: { type: integer, description: How many points, in order, fit the cap by their estimates }
+        basis: { type: string, description: "table, measured or mixed: where the points' estimates come from" }
+        budget:
+          type: object
+          required: [remainingGpuHours, withinDailyBudget]
+          properties:
+            remainingGpuHours: { type: number, format: double, description: "The project's daily budget minus today's use and committed work" }
+            withinDailyBudget: { type: boolean, description: "The whole estimate fits today's remaining budget (over it, an agent's sweep waits for an approval)" }

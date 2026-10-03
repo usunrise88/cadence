@@ -28,7 +28,11 @@ import { useTheme } from "@/shell/theme/store";
 import { DEFAULT_WORKSPACES } from "@/shell/workspaces/schema";
 import { applyPlan, defaultPlan, restoreWorkspace, saveWorkspace } from "@/shell/workspaces/persistence";
 import { registerAgentCommands } from "./agents";
+import { registerAudioCommands } from "./audio";
 import { registerApiCommands } from "./api";
+import { registerExperimentCommands } from "./experiments";
+import { registerEvaluationCommands } from "./evaluation";
+import { registerTranscriptionCommands } from "./transcriptions";
 import { registerTrainingCommands } from "./training";
 import { registerProjectCommands } from "./projects";
 import type { Command } from "./registry";
@@ -233,6 +237,10 @@ export function registerBuiltinCommands(): void {
   registerProjectCommands();
   registerAgentCommands();
   registerTrainingCommands();
+  registerExperimentCommands();
+  registerAudioCommands();
+  registerEvaluationCommands();
+  registerTranscriptionCommands();
 
   // One "Open <panel>" command per registered tool panel.
   for (const m of panels.all()) {

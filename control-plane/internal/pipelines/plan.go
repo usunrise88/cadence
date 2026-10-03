@@ -99,6 +99,17 @@ func (e *Engine) Plan(ctx context.Context, q storage.Querier, p Pipeline, in Pla
 			errs.Add(fmt.Sprintf("steps[%d].kind", i), "no runtime publishes step kind %s: check stepKinds.list for the kinds and versions workers offer", s.Kind)
 			continue
 		}
+		if pub, ok := e.o.Kinds.(Publisher); ok {
+			current, versions, err := pub.Published(ctx, q, k)
+			if err != nil {
+				return Plan{}, err
+			}
+			if !current {
+				errs.Add(fmt.Sprintf("steps[%d].kind", i), "no registered %s worker publishes step kind %s any more (they publish %s), so its step would wait for ever; pin a published version in the pipeline file (projects.sync brings the bundled pipelines up to date)",
+					k.Runtime, s.Kind, listOr(versions, "no version of "+name))
+				continue
+			}
+		}
 		kinds[i] = &k
 	}
 
@@ -116,7 +127,7 @@ func (e *Engine) Plan(ctx context.Context, q storage.Querier, p Pipeline, in Pla
 			wired[ConsumedName(name)] = true
 		}
 		for _, name := range sortedKeys(k.Consumes) {
-			if !wired[name] {
+			if !wired[name] && !slices.Contains(k.OptionalInputs, name) {
 				errs.Add(path+".in."+name, "%s consumes %q (%s); wire it from $inputs.<name> or <step>.<output>", s.Kind, name, k.Consumes[name])
 			}
 		}

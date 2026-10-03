@@ -6,6 +6,8 @@
 FROM nvcr.io/nvidia/nemo-speech:26.07@sha256:b8b1c094f1bbd1a28acec4a742ae8984f420c021293dd68e7cadb21ac2963ef0
 
 ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1 PYTHONUNBUFFERED=1
+# ffmpeg decodes the files a live transcription session uploads (any container; R47) — the image has libsndfile only.
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
 COPY worker/pyproject.toml /src/worker/pyproject.toml
 COPY worker/cadence_worker /src/worker/cadence_worker
 COPY worker/packs/nemo/pyproject.toml /src/nemo/pyproject.toml

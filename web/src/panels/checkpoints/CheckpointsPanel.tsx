@@ -6,12 +6,13 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { EmptyState, PanelToolbar } from "@/shell/entity/primitives";
-import { errorMessage, focusPipelineRun, openDocument, openPanelById, runCommand, runLabel, useActiveRun, useProject, useSelection, useTopic, type PanelProps } from "@/shell/panel";
+import { errorMessage, EvalForm, focusPipelineRun, openDocument, openPanelById, runCommand, runLabel, useActiveRun, useProject, useSelection, useTopic, type PanelProps } from "@/shell/panel";
 
 // Checkpoints (docs/spec/11-ui-panels.md "Panel catalogue"): the checkpoints of the active run with validation WER,
 // ranked, the run's top k marked kept, averaged ones marked with what they were made from. Average the selected ones
-// (checkpoints.average), start a new stage from one (the Run document's stage form, runs.stage), evaluate and export
-// wait for their phases. Live on run.{id}.checkpoints.
+// (checkpoints.average), start a new stage from one (the Run document's stage form, runs.stage), evaluate one
+// (the shared Run eval form: evals.new's axes, the plan first, then the Eval report opens); export waits for phase 5.
+// Live on run.{id}.checkpoints.
 
 export function CheckpointsEmpty() {
   return <EmptyState step="review" title="No run yet" hint="Checkpoints of the active run appear here as the train step saves them." />;
@@ -54,6 +55,7 @@ function RunCheckpoints({ project, runId }: { project: string; runId: string }) 
   useTopic([`run.${runId}.checkpoints`], () => void qc.invalidateQueries({ queryKey: opts.queryKey }));
   const select = useSelection((s) => s.select);
   const [chosen, setChosen] = useState<string[]>([]);
+  const [evaluating, setEvaluating] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ error: boolean; text: string } | null>(null);
   const items = orderCheckpoints(list.data?.items ?? []);
@@ -122,7 +124,9 @@ function RunCheckpoints({ project, runId }: { project: string; runId: string }) 
                 <Button size="xs" variant="outline" onClick={() => stageFrom(c)} data-command="runs.stage">
                   New stage from here
                 </Button>
-                <Later label="Evaluate" reason="Evaluation arrives in phase 3" />
+                <Button size="xs" variant="outline" aria-expanded={evaluating === c.id} onClick={() => setEvaluating(evaluating === c.id ? null : c.id)} data-command="evals.new">
+                  Evaluate
+                </Button>
                 <Later label="Export" reason="Export arrives in phase 5" />
                 <Button
                   size="xs"
@@ -137,6 +141,17 @@ function RunCheckpoints({ project, runId }: { project: string; runId: string }) 
                   From step
                 </Button>
               </div>
+              {evaluating === c.id ? (
+                <EvalForm
+                  project={project}
+                  subject={{ checkpointId: c.id }}
+                  subjectLabel={c.kind === "averaged" ? "the averaged checkpoint" : `the checkpoint at step ${c.step ?? "?"}`}
+                  family={c.family}
+                  runId={runId}
+                  planOnOpen
+                  onClose={() => setEvaluating(null)}
+                />
+              ) : null}
             </li>
           ))}
         </ul>

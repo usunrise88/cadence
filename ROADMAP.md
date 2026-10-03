@@ -432,65 +432,156 @@ trained on, against the baseline, with confidence intervals, and a gate turns th
 from phase 2) runs on staging and `evals.gate` returns a verdict (target-locale WER vs baseline with bootstrap CI,
 replay-locale regression ≤ 0.5, deletions/insertions check). The telephone golden set from own calls needs phase 4.
 
+**Gate run (2026-10-02, staging).** `evals.gate` returned a verdict on eval `evl_01a0fd78…` of the phase-2 Serbian
+checkpoint (`ckp_01a0f902…`, run `run_01a0f902…`, 1 000 steps on `dataset/fleurs-sr-latn` under the `hr-HR` prompt, no
+replay) against the base model, on 35 frozen golden sets: `golden-set/fleurs-sr-latn-test` (700 utterances, 2.1 h;
+FLEURS he was replaced by the locale the phase-2 checkpoint was trained on) and the 34 replay golden sets (33 h).
+76 cells, 79 audio hours computed in 25 minutes (0.81 GPU-hours of transcribe steps), `languages: {sr-RS: hr-HR}`.
+- Verdict **failed**, as it should: the target passed — WER 0.346 → 0.256 at `160ms`, Δ −0.090 [−0.101, −0.081], and
+  deletions were not traded for insertions — but 32 of 34 replay sets regressed far beyond 0.5 points (e.g. ru-RU
+  0.149 → 0.447, de-DE 0.109 → 0.326, uk-UA 0.167 → 0.717): catastrophic forgetting of a run without replay, which is
+  exactly what the gate is for. hr-HR held (+0.004, interval includes zero); th-TH passed only because the base model
+  emits nothing for it (below).
+- The target across profiles (subject / baseline WER): 80 ms 0.266 / 0.356, 160 ms 0.256 / 0.346, 320 ms 0.246 /
+  0.333, 1120 ms 0.234 / 0.310; unstable partial word ratio 0.61, 0.55, 0.40, 0.16; latency to final (simulated pace,
+  frame-VAD ends) p50 ≈ 1.05–1.15 s at every profile — the endpointer, not the look-ahead, dominates it. The choice of
+  the primary profile (160 ms is not a trained look-ahead, A5) waits for the owner (07).
+- Found and fixed on the way: leakage checks counted a trainable import's test split (now train and validation only);
+  evals could not decode a locale the model has no prompt for (`evals.new.languages`); zh/ja/th were scored by words
+  over unsegmented text (now CER, `eval.character_error_languages`); the eval GPU estimate was 8× high (now 0.025
+  GPU-hours per audio hour: the pipeline decoder at batch 8 runs at RTF 0.0165, plus a 1.5× margin). Open: the base model's empty output for th-TH (checked with stream T's
+  decoder).
+
 Decide before starting:
-- [ ] **decide** → *R20* The latency set and primary cell (`[56,1]` vs `[56,0]`, offline vs `[56,13]`) (C2), named as
-      latency profiles (R43)
-- [ ] **decide** → *R22* What evaluations are keyed by before a model version exists: registry Eval records are keyed by
+- [x] **decide** → *R20* The latency set and primary cell (`[56,1]` vs `[56,0]`, offline vs `[56,13]`) (C2), named as
+      latency profiles (R43) — `160ms` primary, matrix `80ms`/`160ms`/`1120ms` (03 "Key defaults", `eval.*`)
+- [x] **decide** → *R22* What evaluations are keyed by before a model version exists: registry Eval records are keyed by
       model version, but phase 3 evaluates checkpoints and registration is phase 5 — key by checkpoint content hash,
-      or move `models.register` into phase 3
-- [ ] **decide** → *R23* Baseline before anything is in production: the base model at its pinned revision
+      or move `models.register` into phase 3 — both: weights-hash key (plan decision 4) and `models.register` in
+      phase 3 (02 "Evaluation entities")
+- [x] **decide** → *R23* Baseline before anything is in production: the base model at its pinned revision — its
+      `base_model` version is the baseline, set with `aliases.set` (plan decisions 1–2; 02 "Evaluation entities")
 
 Write before starting:
-- [ ] **spec** → *R21* Normalizer identity: 02 makes it a registry entity (Eval records keyed by normalizer version), 03 makes
+- [x] **spec** → *R21* Normalizer identity: 02 makes it a registry entity (Eval records keyed by normalizer version), 03 makes
       it a file in a project language pack with "no registry version" — a cross-project Eval record cannot pin one
-      project's file SHA; pick one
-- [ ] **spec** → *R25* Audio serving: an endpoint that streams an utterance span (range requests) for the Audio panel, with
-      a play-only mode for reviewers; missing from the 13-item backend contract
-- [ ] **spec** → *R47–R50* Manual transcription tests and the live channel: message schemas in the contract, the `media` tag in
+      project's file SHA; pick one — 02 "Evaluation entities", 03 "Language pack"
+- [x] **spec** → *R25* Audio serving: an endpoint that streams an utterance span (range requests) for the Audio panel, with
+      a play-only mode for reviewers; missing from the 13-item backend contract — 06 "Media", 11 "Backend contract"
+- [x] **spec** → *R47–R50* Manual transcription tests and the live channel: message schemas in the contract, the `media` tag in
       the generator, interactive jobs beside training, capture defaults; *R51–R54* the audio view, spectrogram defaults,
-      charts, streaming metric definitions
+      charts, streaming metric definitions — 06 "Media", 10 "Audio view and charts", 11 "Panel catalogue", 03
+      "Scorers and metrics", 04 "Block 3"
 
 Spikes before the items they gate: A5 (live transcription) before live mode — it needs a phase-2 checkpoint and the
 worker protocol; S5 (audio view) before the Audio panel — it needs only the phase-0 shell and can run any time before.
 
-- [ ] Golden sets as registry assets from imports (FLEURS he), freeze with approval, fingerprint exclusion, runs
-      cannot reference them; adoption re-runs the leakage check against fingerprints of imported versions
-- [ ] Language packs `lang/<locale>/` (normalizer, ITN, translit, LID, boost lists, golden recipe); he-IL starter pack;
+- [x] Golden sets as registry assets from imports (FLEURS he), freeze with approval, fingerprint exclusion, runs
+      cannot reference them; adoption re-runs the leakage check against fingerprints of imported versions — as built:
+      frozen from a dataset version registered eval-only, one locale each, an approval for people too; the checks
+      count only train and validation splits (02 "Evaluation entities")
+- [x] Language packs `lang/<locale>/` (normalizer, ITN, translit, LID, boost lists, golden recipe); he-IL starter pack;
       added to existing projects through `projects.sync`; entities pin the pack SHA; a new normalizer version forces
-      a new baseline; the search index starts using per-locale normalisation
-- [ ] `streaming_eval` (cache-aware, per latency profile — R43), WER/CER/S/D/I, per-utterance rows, duration buckets,
-      punctuation-insensitive companion score
-- [ ] Scorer step kinds available now (R54 definitions): entity accuracy for number classes (names and addresses need
+      a new baseline; the search index starts using per-locale normalisation — starter packs for he-IL and sr only;
+      `langpacks.list|get|edit`, `boost.edit`; sync is three-way by `data.lock`; no operation freezes a new normalizer
+      version yet (seeds `normalizer/basic`, `normalizer/he-il`)
+- [x] `streaming_eval` (cache-aware, per latency profile — R43), WER/CER/S/D/I, per-utterance rows, duration buckets,
+      punctuation-insensitive companion score — no `streaming_eval` kind: `evals.new` generates the eval pipeline
+      (the family's `materialize` and `transcribe` roles → core `wer_score@1`; `werNoPunct`; 03 "The eval pipeline")
+- [x] Scorer step kinds available now (R54 definitions): entity accuracy for number classes (names and addresses need
       annotated spans, phase 4); latency to final at p50/p95 with audio at real-time pace, utterance ends from a NeMo
       frame-VAD model until per-channel VAD lands in phase 4; partial stability as the unstable partial word ratio.
       Emission delay PR50/PR90 needs aligned references and end-of-utterance needs per-channel VAD (both phase 4); RTF
-      and streams per card come from the benchmark step (phase 5)
-- [ ] Eval records cache (per the **decide** above); only missing cells computed
-- [ ] Baselines (approval), gates per project (`gates.edit`), 1 000-sample bootstrap CI on every delta, resampling whole
-      calls or speakers (R54)
-- [ ] Decoding config as an eval axis (R24): static RNNT context biasing in the eval decoder; `langpacks.get|edit`,
+      and streams per card come from the benchmark step (phase 5) — `entity_score@1`, `latency_score@1` (core) and
+      `frame_vad@1` (NeMo, MarbleNet v2.0) write `metric_scores`; partial stability is in `wer_score@1`. Only WER is
+      gated; entity accuracy, latency and stability are reported. Latency uses a simulated real-time pace; emission
+      delay waits for phase 4
+- [x] Eval records cache (per the **decide** above); only missing cells computed — `eval_records` (global) and
+      `eval_metrics`; not yet protected from eviction
+- [x] Baselines (approval), gates per project (`gates.edit`), 1 000-sample bootstrap CI on every delta, resampling whole
+      calls or speakers (R54) — baseline = `aliases.set baseline`; `gates.yaml` in the repository; the gate reads
+      decoding 0 and augmentation 0 at the primary profile; `call` groups wait for call ids (phase 4)
+- [x] Decoding config as an eval axis (R24): static RNNT context biasing in the eval decoder; `langpacks.get|edit`,
       `boost.edit`; boosted vs unboosted cells in `evals.new` (entity recall + general WER); the Language pack
-      "test a phrase" box as a one-utterance eval
-- [ ] `models.register` (R22): publish a checkpoint whose gate passed, with its eval report and model card; export
-      stays in phase 5
-- [ ] Robustness matrix: augmentation profile as another `evals.new` axis (golden set × profile × latency)
-- [ ] Experiments and sweeps: grid/random over recipe params, GPU-hour cap, Compare N, register best
-- [ ] Lineage both ways: `GET /registry/{kind}/{id}/lineage`, "used by" (before the Lineage panel)
+      "test a phrase" box as a one-utterance eval — `nemotron_transcribe@2` (NeMo GPU phrase boosting, weight 0.5);
+      boosted cells compare general WER; boosted-term recall has no scorer yet and "test a phrase" is not built
+- [x] `models.register` (R22): publish a checkpoint whose gate passed, with its eval report and model card; export
+      stays in phase 5 — `POST /projects/{p}/models:register`, an approval for agents, adopted by the project
+- [x] Robustness matrix: augmentation profile as another `evals.new` axis (golden set × profile × latency) —
+      `augment_dataset@1` on target golden sets; GSM-FR, AMR-NB and Opus left out of the draw; `evals.get` answers
+      the matrix, the Eval report draws it in its Robustness section (stream U2)
+- [x] Experiments and sweeps: grid/random over recipe params, GPU-hour cap, Compare N, register best —
+      `experiments.new|list|get`, `sweeps.run` (one per project, approval covers its runs); Experiment document
+- [x] Lineage both ways: `GET /registry/{kind}/{id}/lineage`, "used by" (before the Lineage panel) — one read,
+      `GET /registry/{id}:lineage` (`direction`, `depth`, `limit`), with the Lineage panel
 - [ ] Audio view (R51, R52) as a shell primitive: waveform, spectrogram (FFT in a Web Worker, WebGL2), model input and
       emissions from the transcribe step, hypothesis words with confidence, reference/hypothesis alignment (S/D/I),
       streaming timeline; spans as selections and chat references (`#t=`); TextGrid, CTM and WebVTT export
-- [ ] Transcription tool (R47–R50): a file, the microphone or an utterance span through one WebSocket session; up to
+      — built 2026-10-02 (stream A): `@/shell/audio` with waveform, spectrogram (worker FFT, one WebGL2 renderer per
+      window, server tiles from `spectrogram_tiles@1`), hypothesis words with confidence and S/D/I, spans and `#t=`
+      references, the three exports, the Audio panel, Diff's embedded view; open: model input and emissions (needs
+      the transcribe step's `analysis` artifact), streaming timeline lane, presets, TextGrid/CTM import
+- [x] Transcription tool (R47–R50): a file, the microphone or an utterance span through one WebSocket session; up to
       three targets, blind compare; telephony simulation; a typed reference gives WER on the page; nothing is stored;
       "test a phrase" becomes a two-target transcription
-- [ ] Eval charts (R53): matrix heatmap, forest plot of deltas with intervals, S/D/I, buckets, latency CDFs, WER
+      — built 2026-10-02 (stream T; 06 "Transcriptions and the live channel as built"): `transcriptions.new`, the
+      relay, the worker's `live` role (NeMo and toy), the Transcription panel; open: "test a phrase" in the Language
+      pack, `analysis` (features, emissions), Firefox/Safari/Caddy checks (owner)
+- [x] Eval charts (R53): matrix heatmap, forest plot of deltas with intervals, S/D/I, buckets, latency CDFs, WER
       against latency; the utterance table opens rows in Diff and Audio
-- [ ] Generator: the `media` tag — exempt from the verb rule and from MCP — for R25's audio endpoint, `…/peaks`,
+      — built 2026-10-02 (streams U, U2): beside the four above, the per-utterance WER ECDF (subject against
+      baseline; `evals.get?worst=` caps at 200, so a larger golden set shows its worst 200 rows, labelled), entity
+      accuracy per class, and folding "Streaming" (WER against latency per model with the primary marked and the
+      delta's interval, latency to final as p50/p95/max per profile — the API has no full distribution — with the
+      unavailable reasons, partial stability) and "Robustness" (degradation heatmap) sections; `@/shell/charts` gained
+      the `line` spec. Not drawn (no API data yet): confusion pairs, WER by SNR, bandwidth or speaker, emission delay
+- [x] Generator: the `media` tag — exempt from the verb rule and from MCP — for R25's audio endpoint, `…/peaks`,
       `transcriptions.new` and its socket (R48)
-- [ ] Queue: job kind `interactive` beside training under the card's cap, never beside a benchmark, 1 GPU-hour per
-      project per day (R49)
+      — the tag and audio serving built 2026-10-02 (stream A: `audio.get|sign`, `peaks.get`, `spectrogram.get`,
+      `words.get`); `transcriptions.new` and `stream.connect` by stream T
+- [x] Queue: job kind `interactive` beside training under the card's cap, never beside a benchmark, 1 GPU-hour per
+      project per day (R49) — built 2026-10-02 (stream T): leased before every other kind; the reservation comes
+      from the family descriptor (`interactive`); lease wall time against the manual-test allowance
 
 Panels: Eval report, Diff, Audio, Golden set, Lineage (over what the registry holds so far), Language pack,
 Experiment, Transcription; Eval workspace.
+
+Phase 3 notes (what differs from the plan above and from `docs/review/2026-10-02-phase-3-plan.md`; streams G, Y, E,
+L, R, U, X and spikes S5, A5, folded into the spec by stream S2 on 2026-10-02):
+- Golden sets are frozen only from dataset versions registered `evalOnly`, hold one locale, and are an approval for
+  everyone (people included); `groups: call` waits for call ids. Leakage checks count only the training side's train
+  and validation splits (found at the gate: FLEURS sr's test split sat beside its train split). The seed is
+  `normalizer/he-il` (collection names are lower case); Serbian scores with `normalizer/basic`.
+- No `streaming_eval` or `gate_evaluate` kind: `evals.new` generates one pipeline per eval with only the missing
+  cells (`materialize-m<n>` → `transcribe-u<n>` → `score-u<n>`, plus augment, VAD and metric steps), answers `201`
+  with the eval, and estimates 0.025 GPU-hour per audio hour (`eval.gpu_hours_per_audio_hour`, calibrated on the
+  stand). Base models are materialised by the family role
+  `materialize` (`checkpoint_from_base@1`, toy `toy_checkpoint_from_base@1`); step kinds may declare
+  `optionalInputs`.
+- The gate reads decoding 0 and augmentation 0 at the primary profile; without golden sets in `gates.yaml` the
+  project's locales are targets and the rest replay. `models.register` is a project path that writes a registry
+  version (`model/<project slug>` by default), needs a passed gate, is an approval for agents, and adopts the version.
+- Metrics beside WER are their own artifact (`metric_scores`, table `eval_metrics`) and are reported, not gated;
+  latency to final uses a simulated real-time pace and the NeMo pack's frame-VAD (pinned in `packs.nemo.vad_*`). The
+  augmentation enters the decoding hash. Boosted-term recall has no scorer; the default boost weights disagree
+  (`langpacks.boost_weight` 1.0 vs the measured 0.5; 07 "Open questions").
+- Lineage is one operation (`GET /registry/{id}:lineage`) over the ids a payload names; evals add their own source.
+  Agents' language-pack edits land on a `langpack/<locale>-<date>` branch under the draft policy.
+- Web: one `models.register` and one `evals.new` command; the Eval report draws every chart of the ROADMAP item
+  (stream U2 added the ECDF, entity accuracy, the Streaming and Robustness sections). Audit fix F4 added evaluation
+  setup: Adopt into project on the Golden set, Set as baseline (`aliases.set`, approval-gated) on the Model document
+  and a base model, a gate editor (`gates.get|edit`) and the Run eval… form (`evals.new` with every axis, dry-run plan
+  first). "test a phrase" and the Eval workspace's Playwright smoke are not built.
+- Spike S5 (done with caveats): no wavesurfer.js; `AudioView` + `useAudioAxis()`, one renderer per window; peaks 720 KB
+  per channel-hour; a JavaScript FFT in a Web Worker; new `views.audio` defaults (stream A adds them).
+- Spike A5 (partial; Firefox, Safari and Caddy left to the owner): the live path meets the 160 ms budget beside
+  training (p95 finalize → final 43 ms, 70 ms beside training); the interactive reservation is 6 000 MB + 2 600 MB per
+  further checkpoint; live and eval need one decoder (the transcribe kind moves to NeMo's pipeline API) and one
+  polyphase resampler; `160ms` is not a trained look-ahead — the primary cell is the owner's call (07).
+- Not done: eviction protection of eval records and a playbook estimator for `evals.new` (the playbook's eval step
+  uses a fixed 0.5 GPU-hour hint). Done since waves 1–2: the eval GPU-hours factor is calibrated (0.025),
+  `playbooks.CurrentPhase` is 3, and streams A (audio endpoints, the `media` tag, the Audio panel) and T
+  (transcriptions, the `interactive` job kind) are built (items above).
 
 ---
 

@@ -32,7 +32,7 @@ hold (`tag:telephony tag:fixture` needs both tags).
 
 | Qualifier | Example | Matches |
 | --- | --- | --- |
-| `kind:` | `kind:dataset_version`, `kind:job,approval` | The entity kind: `project`, `base_model`, `dataset_version`, `template`, `registry_collection`, `job`, `approval`, `mix`, `help_article` (short forms `dataset`, `model`, `collection`, `help` work too) |
+| `kind:` | `kind:dataset_version`, `kind:job,approval`, `kind:golden-set` | The entity kind: `project`, `base_model`, `dataset_version`, `template`, `golden_set`, `normalizer`, `model` (registered models), `registry_collection`, `job`, `approval`, `mix`, `eval`, `experiment`, `help_article` (short forms `dataset`, `base-model`, `golden-set`, `collection`, `help` work too) |
 | `status:` / `state:` | `status:failed`, `state:frozen` | The entity's state |
 | `lang:` | `lang:he` | The locale; `he` matches `he-IL` and `he-IL` matches `he` |
 | `actor:` | `actor:agent`, `actor:user`, `actor:automation`, `actor:usr_admin` | Who made the last change: a kind of actor or an actor id or name |
@@ -56,8 +56,10 @@ What you can see follows your credential, never the query:
 
 Text is normalised the same way when indexed and when searched: case is folded; for Hebrew the niqqud and cantillation
 marks are stripped and a short list of spelling variants (ktiv male and ktiv haser, for example תוכנית / תכנית) is
-folded to one form, so a phrase is found however it was written. The list is a stub that grows with the Hebrew
-language pack.
+folded to one form, so a phrase is found however it was written. Where a [language pack](language-packs.md) applies —
+the project's own for its locales, else the pack Cadence ships — the locale's scoring normalizer folds the text first
+(Unicode form, its mappings such as צה"ל → צהל, marks and case; punctuation stays, so identifiers remain
+searchable). A document uses its locale, a query its `lang:` or the locale its script suggests.
 
 ## Commands
 

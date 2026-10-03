@@ -5,13 +5,28 @@ description = "Cadence worker: the lease harness, the step contract and the runt
 requires-python = ">=3.12"
 # Framework stacks (NeMo Speech, Lhotse, PyTorch) come from each runtime's image; do not pin them here.
 # Runtime deps are ranges because the images provide some of them; uv.lock pins the dev environment.
-dependencies = ["httpx>=0.28,<1", "pydantic>=2.11,<3", "pyyaml>=6,<7", "blake3>=1,<2"]
+dependencies = [
+  "httpx>=0.28,<1",
+  "pydantic>=2.11,<3",
+  "pyyaml>=6,<7",
+  "blake3>=1,<2",
+  "numpy>=1.26",
+  # The import and training resampler (resample_poly), streamed by live sessions; already in the NeMo image.
+  "scipy>=1.11",
+  # The live channel's client (a live job dials the relay; BSD-3).
+  "websockets>=13,<16",
+]
 
 # Runtime-neutral core step kinds ship in every runtime image (docs/review/2026-09-30-phase-2-plan.md). Framework
 # packs register their own kinds and families from their own distributions (packs/toy, the NeMo pack).
 [project.entry-points."cadence.steps"]
 echo = "cadence_worker.steps.echo:EchoStep"
 dataset_import = "cadence_worker.steps.dataset_import:DatasetImportStep"
+wer_score = "cadence_worker.steps.wer_score:WerScoreStep"
+spectrogram_tiles = "cadence_worker.steps.spectrogram_tiles:SpectrogramTilesStep"
+augment_dataset = "cadence_worker.steps.augment_dataset:AugmentDatasetStep"
+entity_score = "cadence_worker.steps.entity_score:EntityScoreStep"
+latency_score = "cadence_worker.steps.latency_score:LatencyScoreStep"
 
 [dependency-groups]
 dev = [
@@ -62,7 +77,7 @@ plugins = ["pydantic.mypy"]
 
 # The NeMo pack imports its framework stack from the NeMo Speech image; the dev environment does not install it.
 [[tool.mypy.overrides]]
-module = ["nemo.*", "lightning.*", "omegaconf.*", "lhotse.*", "huggingface_hub.*", "soundfile.*"]
+module = ["nemo.*", "lightning.*", "omegaconf.*", "lhotse.*", "huggingface_hub.*", "soundfile.*", "scipy.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

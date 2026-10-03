@@ -5,7 +5,7 @@ import type { Approval, Backup, CadenceEvent, Credential, Job, NotificationRule 
 import { actorLabel, estimateLine } from "@/shell/approvals/format";
 import { patchApprovals } from "@/shell/approvals/cache";
 import { events } from "@/shell/registries";
-import { inAppAllowed } from "./classes";
+import { EVAL_RUN_PREFIX, inAppAllowed } from "./classes";
 import { playNoticeSound, unlockSoundOnInteraction } from "./sound";
 import { notify, type Notice } from "./store";
 
@@ -15,7 +15,20 @@ import { notify, type Notice } from "./store";
 // also reaches the polite live region (WCAG 4.1.3). The routing table (Settings → Notifications) decides which
 // classes the history shows; Telegram is routed on the server by the same table.
 
-export const NOTICE_TOPICS = ["approvals", "job.*", "pipeline_run.*", "compute.*", "entity.credential.*", "backups", "notifications", "storage", "branches"];
+export const NOTICE_TOPICS = [
+  "approvals",
+  "job.*",
+  "pipeline_run.*",
+  "compute.*",
+  "entity.credential.*",
+  "entity.eval.*",
+  "entity.experiment.*",
+  "entity.golden_set.*",
+  "backups",
+  "notifications",
+  "storage",
+  "branches",
+];
 
 type NoticeInput = Omit<Notice, "id" | "at" | "read">;
 
@@ -57,12 +70,35 @@ export function noticeFor(e: CadenceEvent): NoticeInput | undefined {
     return undefined;
   }
   if (e.type === "pipeline_run.step_changed" && e.topic.startsWith("pipeline_run.")) {
-    const sp = e.payload as { pipelineRunId?: string; step?: { step?: string; kind?: string; state?: string; error?: { type?: string; message?: string } } } | undefined;
+    const sp = e.payload as { pipelineRunId?: string; runId?: string; step?: { step?: string; kind?: string; state?: string; error?: { type?: string; message?: string } } } | undefined;
     const s = sp?.step;
     const name = `${s?.step ?? "step"}${s?.kind ? ` (${s.kind})` : ""}`;
     if (s?.state === "failed") return { level: "error", title: `Step failed: ${name}`, detail: s.error ? `${s.error.type}: ${s.error.message}` : sp?.pipelineRunId, seq: e.seq };
-    if (s?.state === "done") return { level: "success", title: `Step done: ${name}`, detail: sp?.pipelineRunId, seq: e.seq };
+    if (s?.state === "done" && !sp?.runId?.startsWith(EVAL_RUN_PREFIX)) return { level: "success", title: `Step done: ${name}`, detail: sp?.pipelineRunId, seq: e.seq };
     return undefined;
+  }
+  if (e.type === "eval.status_changed" || e.type === "eval.gated") {
+    const ev = (e.payload as { eval?: { id?: string; status?: string; error?: string; subject?: { id?: string; label?: string }; gate?: { verdict?: string } } } | undefined)?.eval;
+    if (!ev) return undefined;
+    const subject = ev.subject?.label || ev.subject?.id || ev.id;
+    if (e.type === "eval.gated") {
+      if (!ev.gate) return undefined;
+      return { level: ev.gate.verdict === "passed" ? "success" : "warning", title: `Gate ${ev.gate.verdict ?? ""}: ${subject}`, detail: ev.id, seq: e.seq };
+    }
+    if (ev.status === "failed") return { level: "error", title: `Eval failed: ${subject}`, detail: ev.error ?? ev.id, seq: e.seq };
+    if (ev.status === "done") return { level: "success", title: `Eval done: ${subject}`, detail: `${ev.id} · run evals.gate for the verdict`, seq: e.seq };
+    return undefined;
+  }
+  if (e.type === "sweep.ended") {
+    const x = (e.payload as { experiment?: { id?: string; sweep?: { state?: string; stopReason?: string; points?: number; ended?: number } } } | undefined)?.experiment;
+    if (!x?.sweep) return undefined;
+    const sw = x.sweep;
+    return { level: sw.state === "failed" ? "error" : "info", title: `Sweep ${sw.state ?? "ended"}: ${x.id ?? ""}`, detail: `${sw.stopReason ? `${sw.stopReason} · ` : ""}${sw.ended ?? 0} of ${sw.points ?? 0} points ran`, seq: e.seq };
+  }
+  if (e.type === "golden_set.frozen") {
+    const v = (e.payload as { version?: { id?: string; name?: string; version?: string } } | undefined)?.version;
+    if (!v) return undefined;
+    return { level: "success", title: `Golden set frozen: ${(v.name ?? "").replace(/^golden-set\//, "")}`, detail: `version ${v.version ?? ""}`, seq: e.seq };
   }
   if (e.type === "compute.health" && e.topic.startsWith("compute.")) {
     const h = e.payload as { hostId?: string; health?: { state?: string; detail?: string } } | undefined;

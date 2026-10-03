@@ -80,6 +80,22 @@ type Defaults struct {
 	// x-cadence defaultRef. The control plane serves and validates these sections and never branches on a pack.
 	Packs map[string]map[string]any `yaml:"packs"`
 
+	// Evaluation and the default gate (phase 3).
+	Eval Eval `yaml:"eval"`
+	Gate Gate `yaml:"gate"`
+
+	// Language packs: boost list defaults (phase 3, stream L).
+	Langpacks Langpacks `yaml:"langpacks"`
+
+	// Audio serving (phase 3, stream A): the signed link lifetime and the longest span converted.
+	Media Media `yaml:"media"`
+	// Views holds the client views' defaults; the control plane serves them (views.audio, R52) and reads none.
+	Views map[string]map[string]any `yaml:"views"`
+	// Sweeps over recipe parameters (phase 3, stream X).
+	Sweeps Sweeps `yaml:"sweeps"`
+	// Manual transcription tests and the live channel (phase 3, stream T).
+	Transcriptions Transcriptions `yaml:"transcriptions"`
+
 	document map[string]any
 }
 
@@ -207,6 +223,70 @@ type Backups struct {
 	RestoreTestAt      Param[string] `yaml:"restore_test_at"`
 	KeepNightly        Param[int]    `yaml:"keep_nightly"`
 	KeepWeekly         Param[int]    `yaml:"keep_weekly"`
+}
+
+// Eval holds the evaluation defaults: the matrix, scoring and significance (phase 3).
+type Eval struct {
+	PrimaryProfile   Param[string]    `yaml:"primary_profile"`
+	MatrixProfiles   Param[[]string]  `yaml:"matrix_profiles"`
+	Normalizer       Param[string]    `yaml:"normalizer"`
+	DurationBucketsS Param[[]float64] `yaml:"duration_buckets_s"`
+	// CharacterErrorLanguages are scored and gated on CER (languages without spaces between words).
+	CharacterErrorLanguages Param[[]string] `yaml:"character_error_languages"`
+	BootstrapSamples        Param[int]      `yaml:"bootstrap_samples"`
+	Confidence              Param[float64]  `yaml:"confidence"`
+	BootstrapSeed           Param[int]      `yaml:"bootstrap_seed"`
+	// GPUHoursPerAudioHour prices an eval cell for the policy (stream E): golden audio hours × this.
+	GPUHoursPerAudioHour Param[float64] `yaml:"gpu_hours_per_audio_hour"`
+}
+
+// Gate holds the default gate a project's gates.yaml departs from (phase 3).
+type Gate struct {
+	TargetRule          Param[string]  `yaml:"target_rule"`
+	ReplayMaxRegression Param[float64] `yaml:"replay_max_regression"`
+	DeletionsInsertions Param[bool]    `yaml:"deletions_insertions"`
+}
+
+// Langpacks holds the language pack defaults: what a new boost list starts with and how long one may be.
+type Langpacks struct {
+	BoostWeight   Param[float64] `yaml:"boost_weight"`
+	BoostMaxTerms Param[int]     `yaml:"boost_max_terms"`
+}
+
+// Media holds the audio serving defaults (R25).
+type Media struct {
+	SignedLinkTTLSeconds   Param[int] `yaml:"signed_link_ttl_s"`
+	MaxSpanSeconds         Param[int] `yaml:"max_span_s"`
+	MaxConversions         Param[int] `yaml:"max_conversions"`
+	SpanCacheMB            Param[int] `yaml:"span_cache_mb"`
+	PlayAuditWindowSeconds Param[int] `yaml:"play_audit_window_s"`
+}
+
+// Sweeps holds the sweep defaults (phase 3, stream X): the mode, how many runs a grid or a random draw makes, the
+// GPU-hour cap and the seed of a random draw.
+type Sweeps struct {
+	Mode       Param[string]  `yaml:"mode"`
+	MaxRuns    Param[int]     `yaml:"max_runs"`
+	RandomRuns Param[int]     `yaml:"random_runs"`
+	GPUHourCap Param[float64] `yaml:"gpu_hour_cap"`
+	Seed       Param[int]     `yaml:"seed"`
+}
+
+// Transcriptions holds the limits of manual transcription tests and the live channel (R47–R50, spike A5).
+type Transcriptions struct {
+	TicketTTLSeconds         Param[int] `yaml:"ticket_ttl_s"`
+	SessionMaxMinutes        Param[int] `yaml:"session_max_minutes"`
+	IdleMinutes              Param[int] `yaml:"idle_minutes"`
+	QueueWaitMinutes         Param[int] `yaml:"queue_wait_minutes"`
+	FrameMs                  Param[int] `yaml:"frame_ms"`
+	MaxFileMinutes           Param[int] `yaml:"max_file_minutes"`
+	MaxFileMB                Param[int] `yaml:"max_file_mb"`
+	MaxMessageKB             Param[int] `yaml:"max_message_kb"`
+	RelayQueueMessages       Param[int] `yaml:"relay_queue_messages"`
+	BackpressureWaitSeconds  Param[int] `yaml:"backpressure_wait_s"`
+	InteractiveJobPriority   Param[int] `yaml:"interactive_job_priority"`
+	WorkerDialTimeoutSeconds Param[int] `yaml:"worker_dial_timeout_s"`
+	ScratchSweepMinutes      Param[int] `yaml:"scratch_sweep_minutes"`
 }
 
 // Compute holds the hosts seeded at first start.

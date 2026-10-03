@@ -2,8 +2,9 @@
 // that names the problem, on what a misbehaving one would.
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, test } from "node:test";
-import { EVALS, evalForPrompt } from "./evals.ts";
+import { EVALS, bestCheckpoint, evalForPrompt, playbookFinetune } from "./evals.ts";
 import {
   aliasUnset,
   approvalPending,
@@ -12,6 +13,7 @@ import {
   draftField,
   dryRunCalled,
   dryRunFirst,
+  evalSteps,
   grade,
   metricsOf,
   mixUnchanged,
@@ -318,5 +320,46 @@ describe("playbook graders", () => {
     assert.equal(planItem("mix", "done").grade(obs({ session: session({ kind: "playbook", playbook }) })).pass, true);
     assert.match(planItem("mix", "pending").grade(obs({ session: session({ kind: "playbook", playbook }) })).detail, /is done, want pending/);
     assert.match(planItem("mix", "done").grade(obs()).detail, /no playbook/);
+  });
+  test("evalSteps: once the run has checkpoints, dry run → evals.new on a checkpoint → evals.gate; before, no eval", () => {
+    const range = { value: 0, low: 0, high: 0 };
+    const withPlan = (state: "done" | "pending") =>
+      session({
+        kind: "playbook",
+        playbook: {
+          name: "p", title: "P", state: "running", inputs: {},
+          estimate: { basis: "none", plusMinus: 0, gpuHours: range, durationSeconds: range, steps: [] },
+          plan: [{ id: "checkpoints", title: "Checkpoints", command: "checkpoints.list", state, spending: false }],
+        },
+      });
+    const body = { subject: { checkpointId: "ckp_1" } };
+    const evalChain = [
+      mcpCall("e1", "evals.new", { p: "ev-1", dryRun: true, body }),
+      mcpCall("e2", "evals.new", { p: "ev-1", body }),
+      mcpCall("e3", "evals.get", { id: "evl_1" }),
+      mcpCall("e4", "evals.gate", { id: "evl_1", ifMatch: '"3"' }),
+    ];
+    const done = evalSteps().grade(obs({ session: withPlan("done"), transcript: [...chain, ...evalChain] }));
+    assert.equal(done.pass, true, done.detail);
+    assert.match(done.detail, /on ckp_1/);
+    const noGate = evalSteps().grade(obs({ session: withPlan("done"), transcript: [...chain, ...evalChain.slice(0, 3)] }));
+    assert.match(noGate.detail, /missing evals\.gate after evals\.new\?dryRun → evals\.new/);
+    const base = [mcpCall("e1", "evals.new", { dryRun: true, body: { subject: { baseModelVersionId: "ver_1" } } }), mcpCall("e2", "evals.new", { body: { subject: { baseModelVersionId: "ver_1" } } }), evalChain[3]!];
+    assert.match(evalSteps().grade(obs({ session: withPlan("done"), transcript: base })).detail, /not a checkpoint/);
+    // No checkpoint yet (no worker): passes while no eval was started, fails when one was.
+    assert.equal(evalSteps().grade(obs({ session: withPlan("pending"), transcript: chain })).pass, true);
+    assert.match(evalSteps().grade(obs({ session: withPlan("pending"), transcript: evalChain })).detail, /started while checkpoints is pending/);
+    assert.match(evalSteps().grade(obs()).detail, /no playbook/);
+  });
+  test("the playbook eval's prompt is the template prompt's last line", () => {
+    const template = readFileSync(new URL("../../control-plane/templates/playbooks/finetune-from-dataset.yaml", import.meta.url), "utf8");
+    const prompt = template.slice(template.indexOf("\nprompt: |"));
+    const last = prompt.split("\n").map((l) => l.trim()).filter(Boolean).at(-1);
+    assert.equal(playbookFinetune.prompt, last);
+  });
+  test("bestCheckpoint: the kept rank 1, else the lowest validation WER", () => {
+    assert.equal(bestCheckpoint({ items: [{ id: "a", rank: 2, kept: true }, { id: "b", rank: 1, kept: true }] })?.id, "b");
+    assert.equal(bestCheckpoint({ items: [{ id: "a", valWer: 0.3 }, { id: "b", valWer: 0.2 }, { id: "c", valWer: 0.1, kept: false }] })?.id, "b");
+    assert.equal(bestCheckpoint({ items: [] }), undefined);
   });
 });

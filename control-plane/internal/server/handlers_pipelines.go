@@ -173,18 +173,22 @@ func (s *Server) PipelinesRun(ctx context.Context, req api.PipelinesRunRequestOb
 	// The policy weighs GPU spending against the budget: plan once outside the command to learn the estimate. A
 	// broken pipeline is reported by the command itself (the same plan fails inside it), so it is not gated; a step
 	// that needs a card without an estimate makes the cost unknown, which the policy does not allow without a person.
+	weighed := true
 	if _, plan, err := s.Pipelines.Prepare(ctx, s.Pool, in); err != nil {
-		ctx = commands.WithEstimate(ctx, policy.Estimate{})
+		ctx, weighed = commands.WithEstimate(ctx, policy.Estimate{}), false
 	} else {
 		ctx = commands.WithEstimate(ctx, policy.Estimate{GPUHours: deref(plan.Estimate.GPUHours), Unknown: plan.Estimate.UnknownGPU})
 	}
 	cmd := command(ctx, "pipelines.run", req.Params.IdempotencyKey, req.Params.DryRun)
 	return s.run(ctx, cmd, func(ctx context.Context, tx pgx.Tx) (commands.Result, []events.Draft, error) {
 		in.Actor = cmd.Actor
-		if cmd.DryRun {
+		if cmd.DryRun || !weighed {
 			src, plan, err := s.Pipelines.Prepare(ctx, tx, in)
 			if err != nil {
 				return commands.Result{}, nil, err
+			}
+			if !weighed {
+				return commands.Result{}, nil, unweighed(cmd.Operation)
 			}
 			return commands.Result{Status: http.StatusOK, Body: planView(src, plan)}, nil, nil
 		}

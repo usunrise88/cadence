@@ -15,10 +15,10 @@ the Approvals panel.
 | Event class | Covers | In-app | Telegram | Timing (seeded) |
 | --- | --- | --- | --- | --- |
 | Approval requested | agent, automation and registry approvals | yes | message with the estimate and Approve / Deny | as it happens |
-| Failure | job failed, pipeline step failed (no retry left), compute host unreachable, mount unhealthy, backup or restore test failed, content store low on space (below `cache.store_low_free`, at most once a day) | yes | yes, even in quiet hours | as it happens |
-| Outcome | gate verdict, promotion, schedule finished, batch closed, a branch waiting for review (a template sync, or an agent session that ended without merging) | yes | yes | as it happens |
-| Progress | job done, pipeline step done, checkpoint saved, triage item added, backup taken | yes | no | — |
-| Daily digest | runs and evals (their jobs), GPU spend against budgets, open approvals, branches waiting for review, events held for it, the last backup | yes | yes | 09:00 local |
+| Failure | job failed, pipeline step failed (no retry left), eval failed, compute host unreachable, mount unhealthy, backup or restore test failed, content store low on space (below `cache.store_low_free`, at most once a day) | yes | yes, even in quiet hours | as it happens |
+| Outcome | gate verdict (`evals.gate`, passed or failed), sweep ended, promotion, schedule finished, batch closed, a branch waiting for review (a template sync, or an agent session that ended without merging) | yes | yes | as it happens |
+| Progress | job done, pipeline step done (not the steps of an eval: the eval says once that it is done), eval done, golden set frozen, checkpoint saved, triage item added, backup taken | yes | no | — |
+| Daily digest | runs and evals (their jobs), the day's gate verdicts, GPU spend against budgets, open approvals, branches waiting for review, events held for it, the last backup | yes | yes | 09:00 local |
 
 ## Place in the loop
 

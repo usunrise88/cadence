@@ -29,7 +29,7 @@ docs/spec/      The specification (read before changing behaviour); docs/spikes/
                 control-plane/templates/skills/ and copied into project repos at bootstrap
 ```
 
-## Current state (phases 0, 1 and 2 done; phase 3 next)
+## Current state (phases 0–3 done; phase 4 next)
 
 Work follows `ROADMAP.md`: six phases (0 Shell → 1 Agent loop → 2 Training → 3 Evaluation → 4 Data → 5 Deploy and
 flywheel), each closed by a gate. Pick work from the current phase; tick items there as they merge; don't start an
@@ -107,6 +107,27 @@ real-card rehearsal: `docs/review/2026-10-01-phase-2-rehearsal.md`. What exists:
   `dataset_import@3` transliterates (`sr-Cyrl-Latn`) and streams a capped `hf-dataset`; the NeMo pack passes the
   conformance suite on the card (`nightly.yml` needs a runner, below).
 
+Phase 3 (evaluation) passed its gate on 2026-10-02: `evals.gate` returned a verdict on the stand (the Serbian
+checkpoint beat the base model on its target and failed on 32 of 34 replay sets — forgetting; ROADMAP "Phase 3" gate
+paragraph). Plan: `docs/review/2026-10-02-phase-3-plan.md`; what differs: ROADMAP "Phase 3 notes"; spikes S5 and A5
+have numbers. What exists:
+- **Registry**: golden sets (`goldenSets.freeze`, admin approval), scoring normalizers, model versions
+  (`models.register`: passed gate + approval), lineage both ways (`registry.lineage`); leakage checks count the
+  splits training reads.
+- **Evals** (`internal/evals`): `evals.new|get|list|gate`, eval records cached across projects by model × golden set ×
+  normalizer × decoding hash, the eval pipeline generated per eval (materialize → transcribe → score), paired
+  blockwise bootstrap, `gates.yaml` (`gates.get|edit`), CER for languages without spaces, robustness axis,
+  `languages` for a model trained under a neighbour's prompt.
+- **Worker**: `wer_score`, `entity_score`, `latency_score`, `augment_dataset`, `spectrogram_tiles`; NeMo
+  `nemotron_transcribe@3` and `nemotron_live@1` share one pipeline decoder (`cadence_nemo/pipeline.py`, five shims
+  over NeMo 3.0 bugs), phrase boosting, `frame_vad`, `checkpoint_from_base` (role `materialize`).
+- **Media and live** (tag `media`, never MCP; agents and API keys are refused): utterance audio with ranges and
+  signed links, peaks, spectrogram tiles, `transcriptions.new` + the WebSocket relay to a worker live job (job kind
+  `interactive`, daily allowance).
+- **Web**: Eval report, Diff, Audio (`@/shell/audio`), Transcription, Golden set, Model, Lineage, Language pack,
+  Experiment; language packs (he-IL, sr) in `templates/lang/`; experiments and sweeps.
+- **The book**: `docs/tutorial/` (method in GUIDELINES.md, skill `cadence-tutorial`).
+
 Known spec conflicts and gaps: `docs/review/2026-09-29-spec-kickoff-review.md` (statuses updated); assumptions made
 while building are in `docs/spec/07-audit-risks-sources.md` "Open questions".
 
@@ -140,6 +161,8 @@ Gotchas:
   it) and the bundled pipelines' pins; `optionalOutputs` and `x-cadence.shared` do not count.
 - CI lints with golangci-lint v2.14.0 (`.github/workflows/ci.yml`); locally `docker run … golangci/golangci-lint:v2.14.0
   golangci-lint run ./...` in `control-plane` when the binary is not installed.
+- A golden set's locale the model has no prompt for (Serbian) needs `evals.new.languages` (`{"sr-RS": "hr-HR"}`);
+  the base model has no usable Thai. Evals transcribe at batch 8; batch 1 matches a live session word for word.
 - For live agent runs keep prompts tiny; Claude sessions use `sonnet` (`haiku` delegates to subagents and loops),
   opencode `minimax/MiniMax-M3` on the stand (the free `opencode/big-pickle` elsewhere).
 

@@ -117,7 +117,8 @@ func Queue(ctx context.Context, q storage.Querier, projectID string) ([]Entry, e
 		LEFT JOIN workers w ON w.id = l.worker_id
 		LEFT JOIN compute_hosts h ON h.id = l.host_id
 		WHERE s.state <> 'ended' AND ($1 = '' OR s.project_id = $1)
-		ORDER BY (s.state = 'leased') DESC, `+projectPriority("$2")+` DESC, j.priority DESC, s.enqueued_at, s.job_id`,
+		ORDER BY (s.state = 'leased') DESC, s.job_kind = 'interactive' DESC, `+projectPriority("$2")+` DESC, j.priority DESC,
+			s.enqueued_at, s.job_id`,
 		projectID, defaultProjectPriority())
 	if err != nil {
 		return nil, fmt.Errorf("read the queue: %w", err)

@@ -56,6 +56,14 @@ func spending(ctx context.Context, gpuHours float64) context.Context {
 	return commands.WithEstimate(ctx, policy.Estimate{GPUHours: gpuHours})
 }
 
+// unweighed is the refusal of a spending command whose plan failed outside its transaction — the policy then
+// weighed nothing, since the command fails on the same plan — but succeeded inside it (the state changed in
+// between). The command never spends GPU time the budget did not weigh (it fails closed); sending it again weighs
+// the plan that now holds.
+func unweighed(op string) error {
+	return problems.Conflict.New("%s could not be planned when its GPU time was weighed against the budget, and can be now; send it again", op)
+}
+
 func refOr(p *string) string { return strings.TrimSpace(deref(p)) }
 
 // scopedRun reads the project of run id and checks the request's scope reaches it.
@@ -79,7 +87,8 @@ func (s *Server) RunsNew(ctx context.Context, req api.RunsNewRequestObject) (api
 	ctx = commands.WithProject(ctx, p.ID)
 	b := req.Body
 	actor, _ := auth.FromContext(ctx)
-	if refOr(b.Mix) == "" {
+	experiment := refOr(b.Experiment)
+	if refOr(b.Mix) == "" && experiment == "" {
 		if req.Params.DryRun == nil || !*req.Params.DryRun {
 			return nil, problems.Validation([]problems.FieldError{{Path: "/mix", Message: "name the mix to train on (mix_… or its name); without one only a dry run answers, from datasets"}})
 		}
@@ -110,17 +119,28 @@ func (s *Server) RunsNew(ctx context.Context, req api.RunsNewRequestObject) (api
 	if b.Precision != nil {
 		in.Precision = string(*b.Precision)
 	}
+	outside := in
+	if experiment != "" { // a run of an experiment trains on its mix revision from its base model
+		if err := s.experiments.ForRun(ctx, s.Pool, p.ID, experiment, &outside); err != nil {
+			outside = runs.NewInput{} // the command reports the problem
+		}
+	}
 	return s.startRun(ctx, "runs.new", req.Params.IdempotencyKey, req.Params.DryRun, func(ctx context.Context, q pgx.Tx) (runs.NewInput, error) {
-		return in, nil
-	}, in)
+		if experiment == "" {
+			return in, nil
+		}
+		x := in
+		return x, s.experiments.ForRun(ctx, q, p.ID, experiment, &x)
+	}, outside)
 }
 
 // startRun runs runs.new or runs.stage: input builds the run's input inside the command (checks that need the
 // transaction, such as the parent's revision); outside is the same input for the policy's estimate.
 func (s *Server) startRun(ctx context.Context, op, key string, dryRun *bool, input func(context.Context, pgx.Tx) (runs.NewInput, error),
 	outside runs.NewInput) (commandResponse, error) {
+	weighed := true
 	if pr, err := s.runs.Prepare(ctx, s.Pool, outside); err != nil {
-		ctx = spending(ctx, 0) // the command fails on the same plan; nothing to weigh
+		ctx, weighed = spending(ctx, 0), false // the command fails on the same plan; nothing to weigh
 	} else {
 		ctx = spending(ctx, pr.Estimate.GPUHours.Value)
 	}
@@ -134,6 +154,9 @@ func (s *Server) startRun(ctx context.Context, op, key string, dryRun *bool, inp
 		pr, err := s.runs.Prepare(ctx, tx, in)
 		if err != nil {
 			return commands.Result{}, nil, err
+		}
+		if !weighed {
+			return commands.Result{}, nil, unweighed(op)
 		}
 		if cmd.DryRun {
 			return commands.Result{Status: http.StatusOK, Body: s.runs.EstimateJSON(pr.Estimate)}, nil, nil
@@ -152,7 +175,7 @@ func (s *Server) RunsList(ctx context.Context, req api.RunsListRequestObject) (a
 	if err != nil {
 		return nil, err
 	}
-	f := runs.ListFilter{ProjectID: p.ID, Limit: deref(req.Params.Limit)}
+	f := runs.ListFilter{ProjectID: p.ID, ExperimentID: deref(req.Params.Experiment), Limit: deref(req.Params.Limit)}
 	if req.Params.Status != nil {
 		f.Status = string(*req.Params.Status)
 	}
@@ -198,8 +221,9 @@ func (s *Server) RunsCalibrate(ctx context.Context, req api.RunsCalibrateRequest
 	if b.Precision != nil {
 		in.Precision = string(*b.Precision)
 	}
+	weighed := true
 	if cp, err := s.runs.PlanCalibration(ctx, s.Pool, in); err != nil {
-		ctx = spending(ctx, 0) // the command fails on the same plan; nothing to weigh
+		ctx, weighed = spending(ctx, 0), false // the command fails on the same plan; nothing to weigh
 	} else {
 		ctx = spending(ctx, cp.GPUHours)
 	}
@@ -209,6 +233,9 @@ func (s *Server) RunsCalibrate(ctx context.Context, req api.RunsCalibrateRequest
 		cp, err := s.runs.PlanCalibration(ctx, tx, in)
 		if err != nil {
 			return commands.Result{}, nil, err
+		}
+		if !weighed {
+			return commands.Result{}, nil, unweighed(cmd.Operation)
 		}
 		body := map[string]any{"key": cp.Key, "family": cp.Family.Name, "step": cp.Kind.Ref(), "mix": cp.Mix.Ref}
 		if cp.Current != nil {
@@ -240,13 +267,20 @@ func (s *Server) RunsResume(ctx context.Context, req api.RunsResumeRequestObject
 	}
 	ctx = commands.WithProject(ctx, projectID)
 	actor, _ := auth.FromContext(ctx)
+	weighed := true
 	if rp, err := s.runs.PlanResume(ctx, s.Pool, req.Id, actor.SessionID); err != nil {
-		ctx = spending(ctx, 0) // the command fails on the same plan; nothing to weigh
+		ctx, weighed = spending(ctx, 0), false // the command fails on the same plan; nothing to weigh
 	} else {
 		ctx = spending(ctx, rp.Estimate.GPUHours.Value)
 	}
 	cmd := command(ctx, "runs.resume", req.Params.IdempotencyKey, req.Params.DryRun)
 	return s.run(ctx, cmd, func(ctx context.Context, tx pgx.Tx) (commands.Result, []events.Draft, error) {
+		if !weighed {
+			if _, err := s.runs.PlanResume(ctx, tx, req.Id, actor.SessionID); err != nil {
+				return commands.Result{}, nil, err
+			}
+			return commands.Result{}, nil, unweighed(cmd.Operation)
+		}
 		v, drafts, err := s.runs.Resume(ctx, tx, req.Id, rev, cmd.Actor)
 		if err != nil {
 			return commands.Result{}, nil, err
@@ -331,8 +365,9 @@ func (s *Server) CheckpointsAverage(ctx context.Context, req api.CheckpointsAver
 	ctx = commands.WithProject(ctx, projectID)
 	actor, _ := auth.FromContext(ctx)
 	ids, params := req.Body.Checkpoints, deref(req.Body.Params)
+	weighed := true
 	if ap, err := s.runs.PlanAverage(ctx, s.Pool, req.Id, ids, params, actor); err != nil {
-		ctx = spending(ctx, 0) // the command fails on the same plan; nothing to weigh
+		ctx, weighed = spending(ctx, 0), false // the command fails on the same plan; nothing to weigh
 	} else {
 		ctx = spending(ctx, ap.GPUHours)
 	}
@@ -341,6 +376,9 @@ func (s *Server) CheckpointsAverage(ctx context.Context, req api.CheckpointsAver
 		ap, err := s.runs.PlanAverage(ctx, tx, req.Id, ids, params, cmd.Actor)
 		if err != nil {
 			return commands.Result{}, nil, err
+		}
+		if !weighed {
+			return commands.Result{}, nil, unweighed(cmd.Operation)
 		}
 		body := map[string]any{"runId": req.Id, "step": ap.Kind.Ref(), "checkpoints": ap.Checkpoints}
 		if cmd.DryRun {

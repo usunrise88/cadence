@@ -65,7 +65,7 @@ func TestBundledPlaybooksValidate(t *testing.T) {
 	for _, s := range ft.Chain {
 		cmds = append(cmds, s.Command)
 	}
-	if got := strings.Join(cmds, " "); got != "mixes.new runs.calibrate runs.new runs.get checkpoints.list evals.new evals.gate" {
+	if got := strings.Join(cmds, " "); got != "mixes.new runs.calibrate runs.new runs.get checkpoints.list evals.new evals.get evals.gate" {
 		t.Errorf("fine-tune chain = %s", got)
 	}
 }
@@ -94,7 +94,7 @@ func TestValidate(t *testing.T) {
 		{"bad defaultRef", strings.Replace(minimal, "training.steps", "training.nope", 1), "does not resolve"},
 		{"two sources", strings.Replace(minimal, "defaultRef: training.steps", "defaultRef: training.steps, required: true", 1), "exactly one of"},
 		{"unknown operation", strings.Replace(minimal, "command: runs.new", "command: runs.fly", 1), `unknown operation "runs.fly"`},
-		{"later phase needs only the form", strings.Replace(minimal, "command: runs.new }", "command: evals.gate, phase: 3 }", 1), ""},
+		{"later phase needs only the form", strings.Replace(minimal, "command: runs.new }", "command: evals.gate, phase: 4 }", 1), ""},
 		{"not an operation", strings.Replace(minimal, "command: runs.new", "command: Runs", 1), "is not an operation"},
 		{"prompt names a missing input", strings.Replace(minimal, ".Inputs.steps", ".Inputs.nope", 1), "prompt"},
 		{"bad stop", strings.Replace(minimal, "step: failed", "gate: passed", 1), "stop[0]"},
@@ -148,14 +148,14 @@ func TestStepEstimatesAndSum(t *testing.T) {
 		t.Fatalf("runs.new estimator got with = %v (replay without a value is dropped)", seen)
 	}
 	e := Sum(steps)
-	// calibrate (hint 0.1 ± 50%) + train (table 0.5 ± 50%); eval and gate skipped; the rest spends nothing.
-	if e.GPUHours != (Range{Value: 0.6, Low: 0.3, High: 0.9}) || e.Basis != BasisMixed || e.PlusMinus != 0.5 {
+	// calibrate (hint 0.1 ± 50%) + train (table 0.5 ± 50%) + eval (hint 0.5 ± 50%); the rest spends nothing.
+	if e.GPUHours != (Range{Value: 1.1, Low: 0.55, High: 1.65}) || e.Basis != BasisMixed || e.PlusMinus != 0.5 {
 		t.Fatalf("sum = %+v", e)
 	}
-	if e.DurationSeconds.Value != 1800+360 {
+	if e.DurationSeconds.Value != 1800+360+1800 {
 		t.Fatalf("duration = %+v", e.DurationSeconds)
 	}
-	if !steps[5].Skipped || !steps[6].Skipped || steps[0].Basis != BasisNone {
+	if steps[5].Skipped || steps[5].Basis != BasisHint || steps[7].Basis != BasisNone || steps[0].Basis != BasisNone {
 		t.Fatalf("steps = %+v", steps)
 	}
 	// An estimator's problem is the step's note; the step is not counted.
@@ -166,7 +166,7 @@ func TestStepEstimatesAndSum(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if steps[2].Note != "no row" || Sum(steps).GPUHours.Value != 0.1 || Sum(steps).Basis != BasisHint {
+	if steps[2].Note != "no row" || Sum(steps).GPUHours.Value != 0.6 || Sum(steps).Basis != BasisHint {
 		t.Fatalf("with the table missing: %+v / %+v", steps[2], Sum(steps))
 	}
 	// An operation that cannot plan yet (no mix before the session) falls back to the step's hint, saying why.
@@ -206,7 +206,7 @@ func TestObserveTicksInOrder(t *testing.T) {
 	obs := func(op string, dry bool, body map[string]any) bool {
 		return st.Observe(Observation{Operation: op, DryRun: dry, Status: 200, Body: body, At: at})
 	}
-	if st.Plan[5].State != ItemSkipped || st.Plan[6].State != ItemSkipped || !st.Plan[1].Spending || st.Plan[0].Spending {
+	if st.Plan[5].State != ItemPending || !st.Plan[5].Spending || st.Plan[7].Spending || !st.Plan[1].Spending || st.Plan[0].Spending {
 		t.Fatalf("initial plan: %s", states(st))
 	}
 	// A later step's operation does not tick out of order.
@@ -251,7 +251,25 @@ func TestObserveTicksInOrder(t *testing.T) {
 		t.Fatalf("watch after the run: %+v", st.Plan[3])
 	}
 	obs("checkpoints.list", false, map[string]any{"items": []any{}})
-	if st.State != StateDone || !strings.Contains(st.Summary, "complete: 5 step(s) done") || st.Next == "" {
+	if st.Plan[4].State != ItemDone || st.State != StateRunning {
+		t.Fatalf("checkpoints: %s", states(st))
+	}
+	// The eval: dry run first, then the eval; its wait ends when the eval is done; the gate's verdict ends the chain.
+	obs("evals.new", true, map[string]any{"estimate": map[string]any{"gpuHours": 0.14}})
+	obs("evals.new", false, map[string]any{"id": "evl_1", "status": "queued"})
+	if st.Plan[5].State != ItemDone || st.Plan[5].EntityID != "evl_1" {
+		t.Fatalf("eval: %+v", st.Plan[5])
+	}
+	obs("evals.get", false, map[string]any{"id": "evl_1", "status": "running"})
+	if st.Plan[6].State != ItemRunning {
+		t.Fatalf("eval wait while running: %+v", st.Plan[6])
+	}
+	obs("evals.get", false, map[string]any{"id": "evl_1", "status": "done"})
+	obs("evals.gate", false, map[string]any{"id": "evl_1", "status": "done", "gate": map[string]any{"verdict": "passed"}})
+	if st.Plan[7].State != ItemDone || st.Plan[7].Note != "evl_1: gate passed" {
+		t.Fatalf("gate: %+v", st.Plan[7])
+	}
+	if st.State != StateDone || !strings.Contains(st.Summary, "complete: 8 step(s) done") || st.Next == "" {
 		t.Fatalf("end: %s — %s / %s", st.State, st.Summary, st.Next)
 	}
 	if obs("mixes.new", false, nil) {
@@ -271,6 +289,18 @@ func TestObserveFailedJobStops(t *testing.T) {
 	}
 	if !strings.Contains(st.Summary, "stopped (step failed)") {
 		t.Fatalf("summary: %s", st.Summary)
+	}
+}
+
+func TestObserveFailedGateStops(t *testing.T) {
+	st := testState(t)
+	for i := range 7 {
+		st.Plan[i].State = ItemDone
+	}
+	st.Observe(Observation{Operation: "evals.gate", Body: map[string]any{"id": "evl_1", "gate": map[string]any{"verdict": "failed"}}})
+	if st.State != StateStopped || st.Stop == nil || st.Stop.On != "gate" || st.Stop.When != "failed" || st.Plan[7].State != ItemDone ||
+		!strings.Contains(st.Summary, "stopped (gate failed)") {
+		t.Fatalf("stop: %s %+v — %s", st.State, st.Stop, st.Summary)
 	}
 }
 
@@ -335,7 +365,7 @@ func TestDryRunMatchesTheRequest(t *testing.T) {
 func TestNextItemSaysDryRunFirst(t *testing.T) {
 	st := testState(t)
 	st.Plan[0].State = ItemDone
-	if got := st.NextItem(); !strings.Contains(got, "runs.calibrate, dry run first") || !strings.HasPrefix(got, "step 2 of 7") {
+	if got := st.NextItem(); !strings.Contains(got, "runs.calibrate, dry run first") || !strings.HasPrefix(got, "step 2 of 8") {
 		t.Fatalf("next item: %s", got)
 	}
 }
@@ -371,7 +401,7 @@ func TestEstimateNotice(t *testing.T) {
 	e := Sum(steps)
 	e.Budget = &Budget{GPUHoursPerProjectPerDay: 8, WithinDailyBudget: true}
 	n := EstimateNotice(p, e)
-	for _, want := range []string{"estimate 0.83 GPU-hours (0.42–1.25, ±50%, basis table)", "within the daily budget", "3. Start the training run", "skipped"} {
+	for _, want := range []string{"estimate 0.83 GPU-hours (0.42–1.25, ±50%, basis table)", "within the daily budget", "3. Start the training run", "8. Gate against the baseline"} {
 		if !strings.Contains(n, want) {
 			t.Errorf("notice lacks %q:\n%s", want, n)
 		}

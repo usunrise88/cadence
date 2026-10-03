@@ -59,6 +59,9 @@ import type { MessageNewArgs, PlaybookRunArgs, SessionArgs, SessionCancelArgs, S
 import type { MixEditArgs } from "./entities";
 import type { BranchArgs, NoteArgs, ProfileEditArgs, ProfileEditResult, SyncArgs } from "./projects";
 import type { Command } from "./registry";
+import type { ExperimentCommands } from "./experiments";
+import type { EvaluationCommands } from "./evaluation";
+import type { TranscriptionCommands } from "./transcriptions";
 import type { TrainingCommands } from "./training";
 
 // Commands behind the Approvals, Settings and Getting started panels (phase 1). Each mutating command is exactly
@@ -106,7 +109,10 @@ export type ApiCommands = {
   "agentSessions.revert": { args: SessionArgs; result: AgentSession | undefined };
   "agentMessages.new": { args: MessageNewArgs; result: AgentMessage };
   "playbooks.run": { args: PlaybookRunArgs; result: PlaybookRunResult | undefined };
-} & TrainingCommands;
+} & TrainingCommands &
+  ExperimentCommands &
+  EvaluationCommands &
+  TranscriptionCommands;
 export type ApiCommandId = keyof ApiCommands;
 
 /** Runs a registered command with typed arguments; rejects with the command's error (a ProblemError for the API). */

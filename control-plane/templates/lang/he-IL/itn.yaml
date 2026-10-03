@@ -1,0 +1,44 @@
+# written by Cadence — inverse text normalisation for he-IL: the written forms output uses for spoken numbers, dates,
+# phone numbers and amounts. Keys are stable; keep prose in comments. Each class has a pattern (RE2 / Python re
+# syntax) that finds its written form in a reference, so an entity scorer can count how many of them a model got
+# right; the spoken → written conversion itself arrives with the ITN step (phase 4).
+version: 1
+locale: he-IL
+classes:
+  - name: number
+    description: Cardinal numbers in digits; Hebrew numerals agree in gender (שלוש / שלושה), which digits hide
+    pattern: "\\d+(?:[.,]\\d+)?"
+    examples:
+      - { spoken: "שלוש מאות ועשרים", written: "320" }
+      - { spoken: "אלף חמש מאות", written: "1,500" }
+  - name: prefixed-number
+    description: A number with a one-letter prefix (ב, ל, מ, ה, ו, ש, כ) is written with a hyphen before the digits
+    pattern: "[בלמהושכ]-\\d+"
+    examples:
+      - { spoken: "בשלוש", written: "ב-3" }
+      - { spoken: "מעשרים", written: "מ-20" }
+  - name: phone
+    description: Israeli phone numbers, mobile 05X and landline 0X, grouped with a hyphen after the prefix
+    pattern: "0(?:5\\d|[2-489]|7\\d)-?\\d{7}"
+    examples:
+      - { spoken: "אפס חמש ארבע, אחת שתיים שלוש, ארבע חמש שש שבע", written: "054-1234567" }
+  - name: date
+    description: Dates day first, dots between day, month and year
+    pattern: "\\d{1,2}\\.\\d{1,2}\\.(?:\\d{4}|\\d{2})"
+    examples:
+      - { spoken: "אחד באוקטובר אלפיים עשרים ושש", written: "1.10.2026" }
+  - name: time
+    description: Clock times with a colon
+    pattern: "\\d{1,2}:\\d{2}"
+    examples:
+      - { spoken: "שמונה וחצי", written: "8:30" }
+  - name: amount
+    description: Amounts in shekels, written with the number and ש"ח (or ₪ before the number)
+    pattern: "(?:₪\\s?\\d+(?:[.,]\\d+)?|\\d+(?:[.,]\\d+)?\\s?(?:ש\"ח|שקלים|₪))"
+    examples:
+      - { spoken: "מאתיים שקלים", written: "200 ש\"ח" }
+  - name: percent
+    description: Percentages with the sign after the number
+    pattern: "\\d+(?:[.,]\\d+)?%"
+    examples:
+      - { spoken: "עשרים אחוז", written: "20%" }

@@ -102,19 +102,21 @@ type row struct {
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 	FinishedAt      *time.Time
+	ExperimentID    string // the experiment the run belongs to (phase 3)
+	SweepID         string // the sweep that generated it
 }
 
 const rowCols = `id, project_id, init, base_version_id, coalesce(checkpoint_id, ''), coalesce(parent_run_id, ''), family,
 	family_version_id, mix_id, mix_rev, mix_name, mix_hash, recipe, pipeline_run_id, train_step, steps, seed, gpus, precision,
 	params, runtime, card, estimate, status, coalesce(error, ''), coalesce(resumed_from, ''), actor, rev, created_at,
-	updated_at, finished_at`
+	updated_at, finished_at, coalesce(experiment_id, ''), coalesce(sweep_id, '')`
 
 func scanRow(r pgx.CollectableRow) (row, error) {
 	var x row
 	err := r.Scan(&x.ID, &x.ProjectID, &x.Init, &x.BaseVersionID, &x.CheckpointID, &x.ParentRunID, &x.Family,
 		&x.FamilyVersionID, &x.Mix.ID, &x.Mix.Revision, &x.Mix.Name, &x.Mix.Hash, &x.Recipe, &x.PipelineRunID, &x.TrainStep,
 		&x.Steps, &x.Seed, &x.GPUs, &x.Precision, &x.Params, &x.Runtime, &x.Card, &x.Estimate, &x.Status, &x.Error,
-		&x.ResumedFrom, &x.Actor, &x.Rev, &x.CreatedAt, &x.UpdatedAt, &x.FinishedAt)
+		&x.ResumedFrom, &x.Actor, &x.Rev, &x.CreatedAt, &x.UpdatedAt, &x.FinishedAt, &x.ExperimentID, &x.SweepID)
 	if x.Params == nil {
 		x.Params = map[string]any{}
 	}
@@ -164,12 +166,12 @@ func rowByPipelineRun(ctx context.Context, tx pgx.Tx, plrID string) (row, bool, 
 func insertRow(ctx context.Context, tx pgx.Tx, x row) (row, error) {
 	rows, err := tx.Query(ctx, `INSERT INTO runs (id, project_id, init, base_version_id, checkpoint_id, parent_run_id, family,
 		family_version_id, mix_id, mix_rev, mix_name, mix_hash, recipe, pipeline_run_id, train_step, steps, seed, gpus, precision,
-		params, runtime, card, estimate, status, error, actor, finished_at)
+		params, runtime, card, estimate, status, error, actor, finished_at, experiment_id, sweep_id)
 		VALUES ($1, $2, $3, $4, NULLIF($5, ''), NULLIF($6, ''), $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-		$21, $22, $23, $24, NULLIF($25, ''), $26, $27) RETURNING `+rowCols,
+		$21, $22, $23, $24, NULLIF($25, ''), $26, $27, NULLIF($28, ''), NULLIF($29, '')) RETURNING `+rowCols,
 		x.ID, x.ProjectID, x.Init, x.BaseVersionID, x.CheckpointID, x.ParentRunID, x.Family, x.FamilyVersionID, x.Mix.ID,
 		x.Mix.Revision, x.Mix.Name, x.Mix.Hash, x.Recipe, x.PipelineRunID, x.TrainStep, x.Steps, x.Seed, x.GPUs, x.Precision,
-		x.Params, x.Runtime, x.Card, x.Estimate, x.Status, x.Error, x.Actor, x.FinishedAt)
+		x.Params, x.Runtime, x.Card, x.Estimate, x.Status, x.Error, x.Actor, x.FinishedAt, x.ExperimentID, x.SweepID)
 	out, _, err := oneRow(rows, err, x.ID)
 	return out, err
 }
@@ -184,9 +186,10 @@ func saveStatus(ctx context.Context, tx pgx.Tx, x row) (row, error) {
 
 // ListFilter narrows List.
 type ListFilter struct {
-	ProjectID string
-	Status    string
-	Limit     int
+	ProjectID    string
+	Status       string
+	ExperimentID string
+	Limit        int
 }
 
 func listRows(ctx context.Context, q storage.Querier, f ListFilter) ([]row, error) {
@@ -194,7 +197,8 @@ func listRows(ctx context.Context, q storage.Querier, f ListFilter) ([]row, erro
 		f.Limit = 100
 	}
 	rows, err := q.Query(ctx, "SELECT "+rowCols+` FROM runs WHERE project_id = $1 AND ($2 = '' OR status = $2)
-		ORDER BY created_at DESC, id DESC LIMIT $3`, f.ProjectID, f.Status, f.Limit)
+		AND ($4 = '' OR experiment_id = $4)
+		ORDER BY created_at DESC, id DESC LIMIT $3`, f.ProjectID, f.Status, f.Limit, f.ExperimentID)
 	if err != nil {
 		return nil, fmt.Errorf("list runs: %w", err)
 	}
@@ -213,6 +217,7 @@ func statusDraft(x row, typ string) events.Draft {
 		Payload: map[string]any{"run": map[string]any{
 			"id": x.ID, "projectId": x.ProjectID, "status": x.Status, "error": x.Error, "rev": x.Rev,
 			"pipelineRunId": x.PipelineRunID, "parentRunId": x.ParentRunID, "updatedAt": x.UpdatedAt, "finishedAt": x.FinishedAt,
+			"experimentId": x.ExperimentID, "sweepId": x.SweepID,
 		}},
 	}
 }

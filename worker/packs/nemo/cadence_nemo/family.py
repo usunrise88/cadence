@@ -80,7 +80,13 @@ FAMILY = Family(
             "train": "nemotron_finetune",
             "average": "checkpoint_average",
             "transcribe": "nemotron_transcribe",
+            "materialize": "checkpoint_from_base",
+            "live": "nemotron_live",
         },
+        # A live session's card memory (R49, spike A5 finding 6): one model loaded is 3.7 GB steady with a 5.6 GB
+        # load peak (the state dict and the model on the card together), plus margin; every further distinct model
+        # adds its fp32 weights; targets of one model share them.
+        "interactive": {"memoryMb": 6000, "extraCheckpointMb": 2600},
         "defaultsSection": "packs.nemo",
         "help": "guides.nemo-pack",
         "skill": "cadence-train",

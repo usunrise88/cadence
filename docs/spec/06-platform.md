@@ -36,7 +36,7 @@ type CadenceEvent = {
   An agent is mid-edit while it has an open draft on the entity, or for `drafts.presence_seconds` after a direct
   edit; the entity carries `presence` (actor, tool call, draft) and `presence.changed` sends the whole list.
 - Agent transcripts are events too (`agent.session.{id}`), so a chat is durable and can be opened from any tab or after a restart.
-- Audio is not an event. The manual transcription test (R48) is the one media channel: a WebSocket per session carries audio up and words down, relayed by the control plane to a worker job; the job reports its state on `job.{id}` like any job, and nothing of the session is stored.
+- Audio is not an event. The manual transcription test (R48) is the one media channel: a WebSocket per session carries audio up and words down, relayed by the control plane to a worker job; the job reports its state on `job.{id}` like any job, and nothing of the session is stored ("Media: audio and the live channel" below).
 
 Topic scheme, canonical for both tabs:
 
@@ -46,7 +46,7 @@ Topic scheme, canonical for both tabs:
 | `job.{id}`, `job.{id}.log` | Job state and progress (`job.state_changed`, `job.progress`); log lines from workers (`job.log`, ≤ 200 lines per event) |
 | `pipeline_run.{id}` | `pipeline_run.started`, `pipeline_run.step_changed`, `pipeline_run.state_changed` |
 | `run.{id}.status`, `run.{id}.metrics` | Training run state; metric points (`run.metrics`) |
-| `eval.{id}.progress` | Cells completed, utterances scored |
+| `eval.{id}.progress`, `entity.eval.{id}` | Cells done and total and the eval's state (phase 3); the eval's revision changes, its gate verdict included |
 | `deploy.{id}`, `shadow.{deployment}` | Deployment stage changes; divergence samples |
 | `queue`, `gpu`, `mount.{id}` | Queue changes (`queue.changed` with `change`); card telemetry (`gpu.telemetry`, ≤ 1 per 5 s per host); mount health |
 | `triage.new`, `approvals` | New triage items; approval requests and decisions |
@@ -113,7 +113,8 @@ Rules:
   gets a waiting step job only when the worker published its pinned `kind@version` (neutral core kinds match in any
   runtime, since their schema hashes must agree), the job is neither paused nor cancelled, and a card of the worker's
   host fits it: the card allows the job kind, holds no other training job when this is one, has the reservation left
-  under its memory cap, shows that much free memory in the last telemetry when no Cadence step runs on it (1 GB
+  under its memory cap (`interactive` jobs, phase 3, share a card with training but never with a benchmark; "Media"
+  below), shows that much free memory in the last telemetry when no Cadence step runs on it (1 GB
   slack for resident services and the driver), and the kind's availability window is open with the estimate ending
   before it closes (R19). The reservation is the step's declared `memoryGb`, or the card's whole remaining cap when it
   declares none, so a training step takes the card alone. Candidates are taken by the project's queue priority (higher first;
@@ -270,6 +271,211 @@ read any of them (R15).
   numbers, filtered by minimum level and message text, paging with `after` or reading the `tail`. Field search and a
   global search index of `warn`+ lines (R15) are not built yet. A daily chore deletes log files untouched for 14 days.
 
+## Media: audio and the live channel (phase 3)
+
+Audio reaches people through four endpoints tagged `media`, the only surfaces besides the event stream that do not
+answer JSON (R25, R47–R50; plan streams A and T, gated by spikes S5 and A5).
+
+**The `media` tag.** Like `auth`, `me`, `host` and `worker`, operations tagged `media` are exempt from the verb
+vocabulary and are never MCP tools; the generator enforces both. They still need an identity (the session cookie, or
+a signed URL below), and an agent session token reaches none of them: agents read no raw audio (05 "What the agent
+sees") and test models through evals. Members: an utterance's audio, its peaks, `transcriptions.new` and the
+transcription socket.
+
+**Audio serving (R25).**
+
+- `GET …/utterances/{id}/audio?channel=&start=&end=` answers a span of an utterance as 16 kHz 16-bit PCM, with range
+  requests (`Range: bytes=…` → `206 Partial Content`, RFC 9110). R25 wrote the path as `/utterances/{id}/audio`;
+  utterances live under `/registry/utterances` (R1), and the contract fixes the path (07 "Open questions").
+- `GET …/utterances/{id}/peaks`: min/max peaks per channel for the waveform track; short audio from its PCM, long
+  audio from a `peaks` artifact computed at ingest (10 ms int8 min/max per channel, ≈ 720 KB per channel-hour as
+  measured by spike S5, which corrects R51's 450 KB; phase 4).
+- Players fetch audio through short-lived signed URLs (the signature binds the utterance, span, viewer and expiry), so
+  a media element needs no headers and a copied link soon stops working; the lifetime is an open question.
+- Play-only mode (the reviewer role, "Authentication and access" above): audio is streamed through Media Source Extensions with no download control and no
+  file URL in the page. This is a deterrent, not a guarantee: anyone who can hear audio can record it.
+- The audit log records who played what: viewer, utterance, span, time.
+
+Audio serving as built (2026-10-02, stream A; `internal/media`, `internal/server/handlers_media.go`, migration 0029):
+
+- Five operations under `/registry/utterances/{id}` (id: `utt_…` or the audio's `b3:` hash), tag `media`, people
+  only — the actor must be a user (a session, or a signed link for the viewer it names); agent actors and `cst_`
+  tokens, API keys (`cdk_`, automation actors), worker and host tokens are refused (`403 forbidden`, 2026-10-02),
+  and so is `transcriptions.new` — registry read required: `audio.get` (WAV, byte ranges, `416`
+  `range-not-satisfiable`), `audio.sign` (POST, `{channel?, start?, end?}` → `AudioLink`: a relative URL with
+  `viewer`, `exp`, `sig`), `peaks.get` (`hopMs` a multiple of 10, `start`, `end`), `spectrogram.get` (the manifest, or
+  one tile with `tile=c<ch>/l<L>/<i>`) and `words.get` (`hypotheses`, `scores` artifacts → the row's timed words with
+  `op`/`ref` from the alignment, deletions, partials). `audio.get` and `spectrogram.get` answer bytes from the
+  non-strict router layer.
+- `audio.get` serves the stored file as is when it is 16 kHz 16-bit PCM and asked whole; any other span is decoded
+  (PCM 8/16/24/32-bit, float 32), the channel picked, resampled to 16 kHz (polyphase Hann-windowed sinc, ±0.01 dB to
+  0.9 × Nyquist, −60 dB stopband) and encoded as 16-bit PCM, up to `media.max_span_s` (600 s since 2026-10-02, the
+  audio view's `browser_stft_max_s`; it was 3600 s, which held ≈ 0.7 GB per conversion). As built 2026-10-02: the
+  conversion runs in 10 s blocks (a few MB whatever the span) straight into the span cache — files under the content
+  store's `cache/media-spans`, named by audio hash, frame span and channel, never backed up, least recently served
+  dropped beyond `media.span_cache_mb` (2048) — so the ranges a media element fetches read a file instead of
+  converting again; at most `media.max_conversions` (2) run at once across viewers, one more answers `429
+  media-busy` with `Retry-After`. No MSE segments yet: the
+  element plays the signed WAV URL with `controlsList="nodownload"` and no context menu (play-only remains a
+  deterrent).
+- Signed links: HMAC-SHA256 over utterance, channel, start, end, viewer and expiry with a key derived from the master
+  key (links die with it); lifetime `media.signed_link_ttl_s` (300 s). A request carrying `sig` passes the session
+  check and is the viewer's play; any change to the query or an expiry gives `403 media-link-invalid`.
+- Audit: `audio.sign` and every `audio.get` that starts a play write an audit row with the utterance, audio hash,
+  span, channel, `via` (`session` or `link`) and the `range` asked; further ranges of the same play do not. As built
+  2026-10-02 a play is the first request of a viewer, utterance, span and channel within `media.play_audit_window_s`
+  (600 s), whatever its `Range` (before, only requests from byte 0 counted, so `bytes=1-` played unaudited); the
+  window is kept in the control plane's memory, so a restart audits a play again rather than never. The row is
+  written before the first byte is sent.
+- Peaks are computed on the first `peaks.get` from the stored audio at 10 ms (int8 min/max, clipping frames) and
+  recorded as a registry `peaks` artifact (`meta.audio`, `meta.format` `cadence.peaks/1`); later reads pool it. Phase 4
+  computes them at ingest instead.
+- The server tile pyramid is the worker step `spectrogram_tiles@1` (manifest `cadence.spectrogram-tiles/1`, uint8 dB
+  `-120 + 0.5 × v`, 512-frame tiles, bins up to the origin's Nyquist, levels max-pooled by two); `spectrogram.get`
+  serves the newest such artifact whose `meta.audio` is the utterance's hash. Nothing starts the step automatically
+  yet (phase-3 golden sets are short; long calls arrive with phase 4).
+
+**Manual transcription tests (R47).** A person runs one to three models on a file, the microphone or an utterance
+span and watches the words appear; nothing outlives the session.
+
+- `transcriptions.new` (`POST /projects/{p}/transcriptions`, id `trs_`) is the only operation: nothing to get or
+  list. It takes the input kind, targets (checkpoint, model version or base model; the staging Triton deployment from
+  phase 5), each with its latency profile, boost list or none and language, an optional blind option (lanes unnamed
+  until the person picks one; the pick is not recorded) and `analysis: [features, emissions]` for the audio view's
+  model tracks. It answers the session with a `streamUrl` and a single-use ticket valid 60 s; the socket also checks
+  `Origin`.
+- Inputs: a file chosen in the browser (≤ 15 minutes of audio; its bytes go to the worker's temporary directory for
+  the session only, decoded with ffmpeg and the training resampler, deleted when the socket closes, and a sweep
+  removes what a crashed session left within an hour; as built 2026-10-02, ffprobe reads the local file first —
+  `-protocol_whitelist file`, `-format_whitelist` of the audio containers wav, flac, mp3, ogg, mov/mp4/m4a, aac,
+  matroska/webm, so a playlist or a concat list never reaches a demuxer — and a declared duration over the limit or a
+  rate above 192 kHz is refused before decoding; ffmpeg then decodes channel 0 cut at the limit + 1 s (`-t`) and
+  capped in size (`-fs`), so a small file that expands to hours costs nothing), the microphone, or an utterance span
+  (`utt:123#t=1.2,3.4`). One streaming decoder serves all three; a file plays at real-time pace or as fast as the card
+  allows, and the microphone and paced files show latency. The worker resamples every input with the import and
+  training resampler, streaming polyphase (`resample_poly`; 03 "Augmentation", spike A5).
+- Streaming families decode at the target's profile, so the page shows what production would have written; adding
+  the same checkpoint at `1120ms` shows the gap to the high-latency reference. A typed reference gives WER and a diff
+  on the page. The Language pack's "test a phrase" is a two-target transcription, boost on and off.
+- Kept: only the interactive job's record (who, when, which targets, GPU time) for the queue and the allowance. The
+  page can copy the text; no audio, text or metric is stored.
+
+**The live channel (R48).** The browser opens one WebSocket, `/api/transcriptions/{id}/stream`, with the ticket. No
+WebRTC: its Opus encoding and echo processing would change the audio under test. The protocol has the shape the
+streaming vendors converged on (Deepgram, AssemblyAI, Speechmatics, Soniox, NVIDIA NIM): configuration first, then
+binary audio; partials replace each other, finals never change. The message schemas are the contract components
+`LiveClientMessage` and `LiveServerMessage` (JSON messages discriminated by `type`), and the TypeScript types are
+generated like the rest.
+
+| Message | Direction | Frame | Carries |
+| --- | --- | --- | --- |
+| `start` | Client → server, first | JSON | The input: microphone (capture rate and `getSettings()`), file, or utterance span; telephony simulation on or off; the pace for files |
+| audio | Client → server | Binary | 16-bit little-endian mono PCM at the capture rate, at most 20 ms per frame (`transcriptions.frame_ms`, spike A5); or a file's bytes |
+| `fileEnd` | Client → server | JSON | The file's bytes are complete |
+| `finalize` | Client → server | JSON | Flush pending words without closing |
+| `keepalive` | Client → server | JSON | Keep the session open without audio |
+| `end` | Client → server | JSON | Flush, summarise and close |
+| `started` | Server → client | JSON | The effective configuration per target and its model load time |
+| `partial` | Server → client | JSON | Target, segment, sequence, text, audio end; replaces the segment's previous partial |
+| `final` | Server → client | JSON | Target, segment, words with audio-time start, end and confidence, the endpoint reason |
+| `stats` | Server → client | JSON | Real-time factor, queue, relay time |
+| `error` | Server → client | JSON | A problem+json body |
+| `summary` | Server → client, last | JSON | The session's totals; then close code 1000 |
+
+- Every result states the audio offset it covers, so latency is measured on audio time; the client adds its own
+  wall-clock stamps. Latency and stability figures on the page come from the session's own events (R54) and go with
+  it.
+- The control plane relays frames to a `live` job and enforces backpressure, caps and timeouts. The worker dials out
+  for the job (`/worker/live/{jobId}`, tag `worker`), so the pull model of R14 holds. In the NeMo runtime the job
+  runs NeMo's streaming pipeline API (`nemo.collections.asr.inference`, the cache-aware RNNT pipeline): one socket per
+  stream id, streams batched continuously, end-of-utterance detection, boosting and language per stream. A hard
+  finalize pads the right context with silence; up to three targets receive the same audio. Spike A5 measured it
+  (`docs/spikes/A5-live-transcription.md` "Result": p95 from `finalize` to the last final 43 ms at `160ms`, 70 ms
+  beside training; model load ≈ 22 s; the pipeline API needs two shims for Nemotron 3.5) and proposed the message
+  details, 20 ms frames and the worker's live-job protocol; stream T specifies them as it builds them. Evals move to
+  the same decoder so live and eval words agree (03 "Runtimes, model families and latency profiles").
+- Limits in v1: one session per user, 15 minutes each, closed after 5 minutes idle.
+
+**Interactive compute (R49).**
+
+- Job kind `interactive` (transcription sessions): a memory reservation from the family (Nemotron 0.6B: 6 000 MB —
+  3.7 GB steady plus the 5.6 GB load peak and margin — and 2 600 MB per further distinct checkpoint, fp32 weights;
+  targets of one checkpoint share its weights; measured by spike A5, replacing the 3 GB placeholder), the highest queue priority, beside training under the card's cap but never beside a benchmark (R30), and
+  counted in a daily GPU-hour allowance per project (default 1 GPU-hour, 03 "Key defaults").
+- When no card has room the session waits in the queue, the page shows its place, and live mode is disabled with the
+  reason. Cards allow the kind like any other (Compute: allowed job kinds, availability windows).
+- From phase 5 a Triton target needs no worker job.
+
+**Capture in the browser (R50).**
+
+- The microphone is captured with an AudioWorklet at the device rate; the worker resamples with the training data's
+  resampler. MediaRecorder's lossy formats are not used.
+- `getUserMedia` runs with echo cancellation, noise suppression and automatic gain off by default ("raw
+  microphone"), as Google and Deepgram advise for recognition; a toggle turns them on to hear what a call stack does
+  to the audio. Only channel 0 is taken (Safari returns stereo with audio on the left when echo cancellation is off).
+- Telephony simulation: down to 8 kHz through the codec of the project's augmentation profile (G.711 by default),
+  then back up to 16 kHz with the training resampler, the path NeMo recommends for telephone audio; the profile's SHA
+  and seed are shown with the result.
+- A device picker and an input level meter with a clipping mark; a secure context is required (HTTPS through Caddy,
+  or localhost).
+- Display: Hebrew right to left with bidi isolation around digits and Latin text; grey partials update in place,
+  finals are solid with endpoint marks; confidence shades words, timestamps show on hover; live p50/p95 time to final
+  and the real-time factor sit under the lanes.
+
+Transcriptions and the live channel as built (2026-10-02, stream T; `internal/transcriptions`,
+`internal/server/handlers_transcriptions.go`, migration 0026, `cadence_worker/live.py`, the packs' `live` role kinds,
+the Transcription panel):
+
+- Operations: `transcriptions.new` (`POST /projects/{p}/transcriptions`, tag `media`, a command; `200` for a dry run,
+  `201` with `streamUrl` and `ticket`), `stream.connect` (`GET /transcriptions/{id}/stream?ticket=`, tag `media`) and
+  `workerLive.connect` (`GET /worker-live/{jobId}`, tag `worker`). The worker's path is `/worker-live/…`, not
+  `/worker/live/…`: the worker credential is confined to `/worker-*` paths. Message schemas: `LiveClientMessage`
+  (`start`, `fileEnd`, `finalize`, `keepalive`, `ping`, `end`) and `LiveServerMessage` (`waiting`, `started`,
+  `partial`, `final`, `stats`, `pong`, `error`, `summary`). `waiting` (from the relay: queued with position, reason
+  and reservation, then loading) and `ping`/`pong` (the relay's own hop) are additions to the table above.
+- Targets: one family per session (one worker job serves them all); the family descriptor names the kind in role
+  `live` and the reservation in `interactive {memoryMb, extraCheckpointMb}`. Lanes are `A`–`C`; blind shuffles them
+  on the server and still returns the labels (the page hides them until the pick). Telephony is
+  `{codec: ulaw|alaw|none, sampleRate: 8000}` set at `transcriptions.new` (not in `start`); the project's augmentation
+  profile is not read yet.
+- The ticket is kept as a SHA-256 hash and is single-use; the socket checks `Origin` against the request's host (or
+  `X-Forwarded-Host`, or `CADENCE_ALLOWED_ORIGINS`) and that the signed-in person owns the session — since 2026-10-02
+  before the socket is registered in the relay's hub, so someone else's socket never holds a session's place. A
+  socket that registered but then failed its ticket or upgrade hands back a worker socket it was given (re-parked for
+  the session's next socket). The worker dials with the lease's `CADENCE_LIVE_TOKEN` (header `Cadence-Live-Token`; a
+  fresh token per lease, hash kept) or its `cwk_` credential, which must belong to the host that holds the job's
+  active lease; the harness sets `CADENCE_LIVE_URL`.
+- Interactive jobs are River kind `live` awaiting a step job of kind `interactive` (`steps.LiveJobKind`): leased
+  before every other kind, beside training under the card's cap (training's whole-cap reservation leaves no room, so
+  a session waits for a training step that took the whole cap), never beside a `benchmark`; priority
+  `transcriptions.interactive_job_priority`. Their lease wall time counts against
+  `budgets.manual_test_gpu_hours_per_project_per_day` and not against the project's GPU budget. Since 2026-10-02
+  the allowance is granted, not only checked: `transcriptions.new` grants a GPU session its seconds (the smaller of
+  `transcriptions.session_max_minutes` and what is left) under a per-project advisory lock, from what is left net of
+  the other open sessions' grants less what their jobs leased (`transcriptions.session_seconds`, migration 0032), so
+  sessions opened side by side cannot together overspend; the relay caps the session at its grant less the card time
+  its job leased (the model's loading included). A CPU session is granted nothing and spends nothing.
+- The relay is in process (one control plane). Close codes: 1000 after the summary, 4001 idle, 4002 cap, 4003 worker
+  lost, 4004 not started (job ended, queue wait limit), 1013 backpressure, 1001 stopping; at the idle and cap limits
+  it injects `end` so the summary still arrives. A 30 s sweep ends sessions whose ticket expired unused or whose
+  socket is gone. Problem types: `transcription-in-progress`, `transcription-allowance-exhausted`,
+  `transcription-ticket-invalid`, `transcription-input-invalid`, `transcription-limit`. Limits: `transcriptions.*`
+  in `defaults.yaml`.
+- One decoder (A5 proposal 2): the NeMo pack's `pipeline.py` (NeMo's cache-aware streaming pipeline, model restored
+  on the CPU, per-stream phrase boosting, and five shims: the per-stream prompt, tag stripping, features computed once
+  their whole window has arrived and cut like the reference loop's chunks, the first step's pre-encoded frames, the
+  feature buffer's length) serves `nemotron_live@1` and `nemotron_transcribe@3` (decoding
+  `decoder: nemo-pipeline-cache-aware`; evals pick @3 as the newest transcribe kind, so @2 records do not mix). On the
+  stand card, FLEURS he fixtures and ru clips with the base model: @3 has @2's WER at every profile (he 75.6 / 77.9 /
+  65.1 / 66.3 / 69.8, ru 16.2 / 17.2 / 17.2 / 16.2 / 14.1 at 80 / 160 / 320 / 560 / 1120 ms, the same empty clips),
+  its words differing only where @2 drops an utterance's last tokens; a live session in 20 ms frames and @3 at batch 1
+  give the same words (22/22 at every profile; batch 8 changes 3 of 22 at 80 ms with equal WER, so evals keep `transcribe_batch_size` 8 for throughput and 1 is the exact-match setting).
+  One model peaks at 2.8 GiB allocated, load 29–30 s, RTF about 0.06 at batch 1. NeMo's own frame path was worse (he
+  at 160 ms: 5 empty clips, WER 80.2; at 80 ms WER 91.9). Two distinct models in one job turn NeMo's CUDA-graph
+  decoder off (it crashes with two). The training telephone stage moved to polyphase resampling
+  (`nemotron_finetune@2`).
+- Not built: `analysis: [features, emissions]`; a conformance stage for the live role; the Triton target (phase 5).
+
 ## Operations
 
 Cadence upgrades itself the way it upgrades models: versioned, forward-only, with a nightly backup that is restored on a schedule to prove it works.
@@ -360,9 +566,17 @@ Phase 2 as built (2026-09-30, stream O):
   `done` → progress) except step jobs, whose pipeline step tells them — `pipeline_run.step_changed` on
   `pipeline_run.{id}` (step `done` → progress, `failed` with no retry left → failure); a host turning `unreachable`
   (`compute.health` on `compute.{id}`) → failure; backups by type. The table also names types no stream emits yet —
-  `mount.unhealthy`, `gate.verdict`, `deployment.promoted`, `schedule.finished`, `batch.closed`, `checkpoint.saved`,
+  `mount.unhealthy`, `deployment.promoted`, `schedule.finished`, `batch.closed`, `checkpoint.saved`,
   `triage.item_added` arrive with their phases; `compute.card_closed` joins when per-card health closes a card's slot
   (not built).
+- Evaluation (2026-10-02, phase-3 audit): the gate verdict is `eval.gated` (evals.gate; `passed` or `failed`, both
+  outcome — a failed gate is a result, not an operational failure; the placeholder `gate.verdict` is gone); an eval's
+  end is `eval.status_changed` (`failed` → failure, `done` → progress, telling to run `evals.gate`); `sweep.ended` →
+  outcome; `golden_set.frozen` → progress. They announce on entity topics only (`entity.eval.{id}`,
+  `entity.experiment.{id}`, `entity.golden_set.{id}`), which the router reads for these types and the web history
+  subscribes to. The steps of an eval's pipeline run (its `pipeline_run.step_changed` carries `runId: evl_…`) tell
+  nothing when done — an eval of a few hundred cells would send as many notices; a failed step still does. The daily
+  digest lists the gate verdicts of its window ("project: subject — verdict", at most 20).
 - The control plane reaches `api.telegram.org` over the compose `default` network (not internal); nothing else is
   needed. Reviewer messages (batch assigned/closing) arrive with batches in phase 4.
 

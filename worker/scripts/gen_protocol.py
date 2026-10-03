@@ -6,6 +6,7 @@ mypy checks every request and response against the contract (CLAUDE.md: never ha
 
 from __future__ import annotations
 
+import textwrap
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SPEC = ROOT / "api" / "openapi.yaml"
 OUT = ROOT / "worker" / "cadence_worker" / "protocol_gen.py"
 PREFIX = "#/components/"
+LINE = 120  # ruff's line length (pyproject.toml)
 
 HEADER = '''"""Worker protocol types generated from api/openapi.yaml (tag `worker`) by worker/scripts/gen_protocol.py.
 
@@ -87,7 +89,14 @@ class Gen:
         self.classes[name] = lines
         lines.append(f"class {name}(TypedDict):")
         if desc := schema.get("description"):
-            lines.append(f'    """{" ".join(str(desc).split())}"""')
+            text = " ".join(str(desc).split())
+            if len(text) + 10 <= LINE:
+                lines.append(f'    """{text}"""')
+            else:  # wrapped to the line length ruff enforces
+                wrapped = textwrap.wrap(text, LINE - 4, break_long_words=False, break_on_hyphens=False)
+                lines.append('    """' + wrapped[0])
+                lines.extend("    " + w for w in wrapped[1:])
+                lines.append('    """')
             lines.append("")
         required = set(schema.get("required", []))
         props: dict[str, Any] = schema.get("properties", {})
@@ -115,6 +124,11 @@ class Gen:
                         self.want(schema["$ref"])
         # Types the worker writes into request bodies that are not JSON (NDJSON log lines).
         self.want(PREFIX + "schemas/WorkerLogLine")
+        # The live channel's messages (workerLive.connect relays them as WebSocket frames, phase 3 · stream T): every
+        # variant of LiveClientMessage the worker reads and LiveServerMessage it writes.
+        for union in ("LiveClientMessage", "LiveServerMessage"):
+            for variant in self.spec["components"]["schemas"][union]["oneOf"]:
+                self.want(variant["$ref"])
         while self.pending:
             self.emit(*self.pending.pop(0))
         out = [HEADER]

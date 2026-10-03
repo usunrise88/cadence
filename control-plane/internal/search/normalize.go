@@ -1,8 +1,12 @@
 package search
 
 import (
+	"context"
 	"strings"
 	"unicode"
+
+	"github.com/usunrise88/cadence/control-plane/internal/storage"
+	"github.com/usunrise88/cadence/control-plane/internal/textnorm"
 )
 
 // Text is normalised the same way when it is indexed and when it is searched, so a phrase is found however it was
@@ -114,6 +118,44 @@ func foldWords(s string, table map[string]string) string {
 }
 
 func isWordRune(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }
+
+// LocaleFolder finds the scoring normalizer of a locale (docs/spec/08-resolutions.md R21): the language pack of the
+// project (projectID, "" outside one) decides, else the pack Cadence ships for the locale. Nil means none applies.
+// internal/langpacks.Scorers implements it.
+type LocaleFolder interface {
+	For(ctx context.Context, q storage.Querier, projectID, locale string) (*textnorm.Normalizer, error)
+}
+
+// scriptLocale names the locale a text's script suggests (he for Hebrew letters), or "".
+func scriptLocale(s string) string {
+	for _, f := range folders {
+		if strings.IndexFunc(s, f.Applies) >= 0 {
+			return f.Locale
+		}
+	}
+	return ""
+}
+
+// FoldFor returns how text of locale lang (or, when empty, of the locale its script suggests) is normalised in
+// project projectID: the locale's scoring normalizer folds it first — Unicode form, mappings, marks and case, but
+// not punctuation, so identifiers and quoted phrases stay searchable — and Normalize runs after. Without a folder
+// or a normalizer for the locale it is Normalize alone, the behaviour before language packs.
+func FoldFor(ctx context.Context, q storage.Querier, f LocaleFolder, projectID, lang, text string) (func(string) string, error) {
+	if f == nil {
+		return Normalize, nil
+	}
+	if lang == "" {
+		lang = scriptLocale(text)
+	}
+	if lang == "" {
+		return Normalize, nil
+	}
+	n, err := f.For(ctx, q, projectID, lang)
+	if err != nil || n == nil {
+		return Normalize, err
+	}
+	return func(s string) string { return Normalize(n.Fold(s)) }, nil
+}
 
 // Words splits normalised text into the words the full-text index sees: runs of letters and digits.
 func Words(s string) []string {

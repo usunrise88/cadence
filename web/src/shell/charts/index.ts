@@ -2,7 +2,7 @@
 // rejects `uplot` and `echarts` anywhere else. API: README.md in this directory.
 export { TimeSeriesChart, type TimeSeriesChartProps } from "./TimeSeriesChart";
 export { AnalyticsChart, type AnalyticsChartProps } from "./AnalyticsChart";
-export type { AnalyticsSpec, BarSpec, Bin, ForestSpec, HeatmapSpec, HistogramSpec, ScatterSpec } from "./analytics";
+export type { AnalyticsSpec, BarSpec, Bin, ForestSpec, HeatmapSpec, HistogramSpec, LinePoint, LineSpec, ParallelAxis, ParallelSpec, ScatterSpec } from "./analytics";
 export { X_LABELS, type ChartMarker, type EnvelopeMode, type MarkerKind, type TimeSeries, type XKey } from "./series";
 export { ema } from "./math";
 export { REDRAW_INTERVAL_MS } from "./throttle";

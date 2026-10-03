@@ -29,8 +29,9 @@ func Bundled() auth.Actor {
 	return auth.Actor{Kind: auth.KindAutomation, ID: "cadence", Name: "Cadence (bundled)"}
 }
 
-// Seed registers, frozen, every bundled version the registry does not hold yet: the base-model catalogue and the
-// fixture dataset versions (internal/registry/fixtures) and each unit of the templates tree. It is idempotent —
+// Seed registers, frozen, every bundled version the registry does not hold yet: the base-model catalogue, the
+// fixture dataset versions and the scoring normalizers (internal/registry/fixtures) and each unit of the templates
+// tree. It is idempotent —
 // unchanged content is never registered twice — and returns how many versions it added.
 func Seed(ctx context.Context, pool *pgxpool.Pool, templates fs.FS, now time.Time) (int, error) {
 	inputs, err := BundledInputs(templates)
@@ -64,6 +65,7 @@ func BundledInputs(templates fs.FS) ([]RegisterInput, error) {
 	for _, f := range []struct{ file, kind string }{
 		{"fixtures/base-models.yaml", KindBaseModel},
 		{"fixtures/datasets.yaml", KindDataset},
+		{"fixtures/normalizers.yaml", KindNormalizer},
 	} {
 		ins, err := fixtureInputs(f.file, f.kind)
 		if err != nil {
@@ -117,6 +119,7 @@ var templateDirs = map[string]string{
 	"pipelines":    "pipeline",
 	"agent-config": "agent-config",
 	"playbooks":    "playbook",
+	"lang":         "langpack", // lang/<locale>/: starter language packs (template/langpack-he-il)
 }
 
 // TemplateFile is one file of a template version.

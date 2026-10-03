@@ -67,7 +67,7 @@ The full preferred stack is feasible as of September 2026: shadcn/ui made [Base 
 | Agent chat | Streamdown (streaming Markdown with Shiki code blocks) | Agent replies render cleanly mid-stream; entity references become links that open panels |
 | Diffs and recipe editing | CodeMirror 6 with its merge view | Recipe documents, tool-call cards and agent drafts show the same live diff |
 | Charts | uPlot (MIT) for time series and live data; Apache ECharts 6 (Apache-2.0, tree-shaken) for analytics (R53) | Metrics, latency and GPU curves; histograms, forest plots, heatmaps and scatter in Eval report, Dataset version, Experiment and Model; panels reach both only through `@/shell/charts` |
-| Audio view | Cadence's own tracks on one time axis: WebGL2 spectrogram with a colour lookup texture and FFT in a Web Worker; wavesurfer.js 8 (BSD-3) for waveform, regions and minimap if S5 confirms (R51, R52) | Audio, Diff, Triage, Transcription, Language pack and Recipe previews compose `@/shell/audio`; no maintained WebGL spectrogram library exists, and LGPL/GPL/AGPL audio libraries are excluded |
+| Audio view | Cadence's own tracks on one time axis: WebGL2 spectrogram with a colour lookup texture and FFT in a Web Worker; waveform, regions, timeline and minimap are Cadence code too (spike S5 rejected wavesurfer.js; R51, R52) | Audio, Diff, Triage, Transcription, Language pack and Recipe previews compose `@/shell/audio`; no maintained WebGL spectrogram library exists, and LGPL/GPL/AGPL audio libraries are excluded |
 
 Boundaries:
 
@@ -77,6 +77,76 @@ Boundaries:
 - Icons: one `IconoirProvider` at the root sets size 16 and stroke width 1.5 for the compact chrome; panels do not override it.
 - Audio and charts are shell primitives like the entity primitives: panels import `@/shell/audio` and `@/shell/charts`, never uPlot, ECharts, wavesurfer or WebGL directly, so the theme bridge, context budget and accessibility rules live in one place.
 - Existing conventions carry over inside panels: Page/Section/Stack primitives, single Skeleton and Spinner, notification history, language and theme switches.
+
+### Audio view and charts (`@/shell/audio`, `@/shell/charts`)
+
+Two shell primitives draw everything acoustic and numeric (R51–R53; spike S5, `docs/spikes/S5-audio-view.md`, set the
+budgets and decided against wavesurfer.js).
+
+- Lint allowlist: a panel imports only `@/shell/panel`, the entity primitives, `@/shell/charts` and `@/shell/audio`
+  (each through its index). uPlot, ECharts and zrender are imported only inside `src/shell/charts`
+  (`web/eslint.config.js`); the FFT worker and WebGL live only inside `src/shell/audio`, enforced the same way. No panel draws audio or charts itself, as no document draws its own `EntityHeader`.
+- `AudioView` owns one time axis — visible range, zoom, playhead, loop span — and stacks tracks against it (Sonic
+  Visualiser layers, Praat tiers); the axis runs left to right in every locale. Phase-3 tracks: waveform overview
+  (min/max peaks per channel, clipping marks), acoustic spectrogram, model input and emissions (from the transcribe
+  step's `analysis` artifact), hypothesis words (one lane per target, confidence shading, S/D/I against the reference
+  by glyph and colour), the streaming timeline (each word from first partial to final), boosted-term hits, and the
+  live energy meter; reference words and energy/VAD from steps arrive in phase 4 (the R51 table).
+- Spectrogram defaults live in `defaults.yaml` `views.audio` (R52): 25 ms Hann window, 10 ms hop, FFT 512, mel axis
+  0–8 kHz (4 kHz with a Nyquist line for audio of 8 kHz origin), range 80 dB below the peak, gain 0, magma; presets
+  "Praat broadband", "Narrowband", "Model frames" (the default). Model-input mode shows the checkpoint's own features
+  (sequential colormap without normalisation, diverging over ±3σ with it) and dims mel filters above 4 kHz for
+  upsampled 8 kHz audio. Colormaps: magma, viridis, cividis, inferno, Roseus, grey and inverse grey; Turbo only on
+  request; never jet or rainbow.
+- Computation: session audio and spans under 10 minutes in the browser (served 16 kHz PCM → FFT in a Web Worker,
+  a JavaScript FFT (`fourier-transform`, MIT; no maintained WASM FFT exists) → uint8 dB into WebGL2 R8 textures with a 256×1 lookup texture, so gain, range and colormap are shader
+  parameters; Canvas 2D fallback); long audio from a server tile pyramid cached in the content store; the live
+  microphone as a waterfall from AudioWorklet frames, never an AnalyserNode. One WebGL2 renderer per window (Chrome's
+  16-context limit); views survive context loss and hidden panels release their textures.
+- Playback goes through an HTMLMediaElement, with Media Source Extensions for signed segments (R25, 06 "Media").
+- As decided by spike S5 (2026-10-02; proposals in its "Proposed spec change"; built by plan stream A):
+  - `@/shell/audio` exports `AudioView` and `useAudioAxis()`; the axis (start, span, playhead, loop) is controlled or
+    uncontrolled, so Diff rows and Compare share one axis. Tracks are props: `waveform`, `spectrogram`
+    (`{tiles: url} | {pcm: url}`), `modelInput`, `words[]`, `streaming`.
+  - Waveform, regions, timeline and minimap are Cadence code drawn from max-pooled peaks (PCM below ≈ 10 s spans).
+    wavesurfer.js was rejected: its region drag is dead in popouts, following an external axis cost 62 ms p95 and
+    dropped half the frames while zooming, and it adds ≈ 38 KB, three times the whole view.
+  - One WebGL2 renderer and one frame loop per window (keyed by the view's `ownerDocument.defaultView`); each view
+    copies out into its own 2D canvas, so it keeps its image through a context loss; views are rebuilt when Dockview
+    moves a panel to another window. R8 tiles live in one texture array with LRU slots; coarser levels draw first.
+  - Media arrives as an MSE source of signed segments appended around the playhead and evicted behind it (a
+    SourceBuffer holds ≈ 8 MB; never append the whole file).
+  - Words are pooled DOM (`<bdi dir=auto>`), at most 300 visible, else density blocks; model input loads only for
+    spans ≤ 60 s.
+  - New `defaults.yaml` `views.audio` keys (added with stream A): `tile_slots` 64, `tile_cache_mb` 12,
+    `model_input_max_span_s` 60, `words_max_visible` 300, `browser_stft_max_s` 600.
+  - The 30-minute-call memory budget (150 MB) is for the renderer process (S5: ≈ 130 MB); renderer plus GPU process
+    measured ≈ 165 MB under SwiftShader.
+- Spans are selections in the W3C Media Fragments temporal syntax (`utt:123#t=1.20,2.35`): chat references, deep
+  links, the Inspector's span statistics and Ask agent all take them.
+- Words are DOM, not canvas: each word a bidi-isolated run; the flowing transcript beside the view follows the
+  locale's direction, and hovering a word highlights it in both places.
+- Keys are `view.audio.*` commands, active only while a view has focus (Keyboard map below). Exports: Praat TextGrid,
+  NIST CTM and WebVTT; TextGrid and CTM also import as a reference track.
+- As built (2026-10-02, stream A): `AudioView` composes the imperative `AudioEngine` (ruler, waveform per channel
+  with clipping ticks, spectrogram per channel, hypothesis word lane with confidence shading, ≠/+ glyphs and deletion
+  markers, minimap, playhead, loop and drag-to-select) on an `AudioAxis` several views may share; the engine is built
+  in the container's own document and rebuilt when the panel changes window, and each window has one frame loop and
+  one WebGL2 renderer (`TEXTURE_2D_ARRAY` of R8 tile slots with LRU, a lookup texture of the colormaps, copy-out into
+  each view's 2D canvas so a lost context keeps the last picture). Browser STFT (≤ `browser_stft_max_s`) is a
+  TypeScript radix-2 FFT in a Web Worker, not WASM: S5 measured the FFT at ≈ 45 ms per minute, so WASM buys nothing
+  yet. Colormaps: magma, viridis, cividis, inferno, grey, inverse grey (Roseus and Turbo not shipped). Not built yet:
+  model input and emissions (no `analysis` artifact), the streaming timeline lane (partials are returned by
+  `words.get`), presets, Canvas 2D fallback (a note says WebGL2 is missing), MSE playback, Inspector span statistics,
+  TextGrid/CTM import. Keys are `view.audio<Action>` ids (client-only ids take one dot). A chat reference with a
+  temporal fragment (`@utt:<id>#t=…`) opens the Audio panel. Lint rejects `<audio>`, `<video>`, `<canvas>` and
+  `new Audio/AudioContext` in panels.
+- `@/shell/charts` offers a time-series chart (uPlot: synced cursors, EMA smoothing over a faint raw line, min/max
+  envelopes) and an analytics chart (ECharts 6: histograms, bars, forest plots with intervals, heatmaps, scatter,
+  Pareto fronts). Chart data is contract data: bins, intervals and aggregates arrive from the same `get` operation an
+  agent reads, and the browser only zooms, smooths and switches scales. Every chart has a table view with CSV copy, a
+  keyboard cursor and a text summary; live charts redraw at most 4 times per second. The per-panel chart list is in
+  11 "Panel catalogue" and R53.
 
 ## Shell concepts
 
@@ -125,8 +195,8 @@ Each block is the same loop; only the nouns change. The stepper in every documen
 
 | Step | Data | Training | Evaluation | Deployment | Flywheel |
 | --- | --- | --- | --- | --- | --- |
-| Prepare (draft) | Source, filters, split | Mix, recipe | Golden sets, gate | Export config | Sampling policy |
-| Check (no spend) | Preview hours, leakage check | Calibrate, dry run | — | Parity, benchmark | Signal preview |
+| Prepare (draft) | Source, filters, split | Mix, recipe | Golden sets, `gates.yaml` | Export config | Sampling policy |
+| Check (no spend) | Preview hours, leakage check | Calibrate, dry run | Eval dry run: cells to compute, cached cells, estimate | Parity, benchmark | Signal preview |
 | Run (job) | Ingest, pseudo-label | Train | Eval matrix | Shadow replay | Capture, judge |
 | Review (results) | Dataset version stats, Diff | Metrics, checkpoints | Report, Diff, Audio | Divergence, latency | Triage queue |
 | Decide (gate) | Freeze | New stage or register | Gate verdict, baseline | Promote (approval) | Accept or reject |
@@ -208,8 +278,14 @@ Three state templates cover every kind: registry assets `draft → frozen → de
 | Pin | Keep a version materialised or a panel on an entity | Alias |
 | Note | A dated learning attached to an entity and committed to the project | Comment |
 | Registry | The Cadence-wide store of immutable, versioned assets that projects adopt | Library (the panel that browses it) |
-| Golden set | A frozen held-out test set a project adopts for its gates; never trainable | Validation split |
-| Gate | A project's pass rule over an eval: thresholds, allowed regressions, significance | Approval |
+| Golden set | A frozen held-out test set a project adopts for its gates: an eval-only dataset version tied to one scoring normalizer version; never trainable | Validation split |
+| Scoring normalizer | A registry version of the text normalisation WER is computed after; golden sets and eval records pin it (R21) | Text style (the language pack's rules for training targets) |
+| Eval | One evaluation in a project: models × golden sets × latency profiles × decoding configs, assembled from eval records, with a gate verdict | Eval record (the cached cell); Transcription |
+| Eval record | The cached result of one cell — model weights × golden set version × normalizer version × decoding × scorer — shared by every project (R22) | Eval (the project's matrix) |
+| Baseline | The model version every eval cell is compared with: the project's `baseline` alias, the default base model until set (R23) | Production (the deployed model) |
+| Primary cell | The latency profile the gate reads (`160ms` by default, R20); other profiles are reported | Latency profile |
+| Span | A time range of an utterance as a selection, `utt:123#t=1.20,2.35` (W3C Media Fragments) | Segment (an utterance itself) |
+| Gate | A project's pass rule over an eval, kept in its `gates.yaml`: target and replay golden sets, allowed regression, the deletions/insertions check, significance | Approval |
 | Playbook | A pipeline chain with defaults, a prefilled agent prompt and an estimate, run from the Project home | Pipeline |
 | Session | One agent conversation with its own worktree, branch, token and budget; a first-class entity | Chat (the panel that shows it) |
 | Session changes | Commits on a session branch not yet merged to main; accepted or discarded as a whole | Draft (an entity change awaiting Accept) |

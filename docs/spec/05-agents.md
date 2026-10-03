@@ -51,18 +51,18 @@ Cadence launches Claude Code or opencode inside a project worktree, hands it the
 
 | Block | Tools (`<entity>.<verb>`) |
 | --- | --- |
-| Project and registry | `projects.get`, `projects.note`, `projects.sync`, `projects.adopt`, `aliases.set`, `registry.search`, `search.query`, `help.get`, `playbooks.run`, `experiments.new`, `experiments.get`, `sweeps.run` |
-| Data | `sources.new`, `mounts.list`, `mounts.scan`, `pipelines.run`, `datasets.preview`, `datasets.freeze`, `datasets.materialize`, `datasets.evict`, `datasets.export`, `utterances.search`, `langpacks.get`, `langpacks.edit`, `boost.edit`, `boost.evaluate`, `augment.preview` |
+| Project and registry | `projects.get`, `projects.note`, `projects.sync`, `projects.adopt`, `aliases.set`, `registry.search`, `registry.lineage`, `search.query`, `help.get`, `playbooks.run`, `experiments.new`, `experiments.get`, `experiments.list`, `sweeps.run` |
+| Data | `sources.new`, `mounts.list`, `mounts.scan`, `pipelines.run`, `datasets.preview`, `datasets.freeze`, `datasets.materialize`, `datasets.evict`, `datasets.export`, `utterances.search`, `langpacks.get`, `langpacks.edit`, `boost.edit`, `augment.preview` |
 | Training | `mixes.new`, `mixes.get`, `mixes.list`, `mixes.edit`, `mixes.preview`, `drafts.list`, `drafts.get`, `drafts.revert`, `runs.calibrate`, `runs.new`, `runs.resume`, `runs.stage`, `jobs.pause`, `jobs.resume`, `jobs.cancel`, `jobs.wait`, `metrics.get`, `checkpoints.list`, `checkpoints.average` |
-| Evaluation | `goldenSets.list`, `goldenSets.freeze`, `evals.new`, `evals.get`, `evals.gate`, `gates.edit`, `baselines.set`, `augment.evaluate`, `batches.new`, `batches.get`, `batches.freeze` |
-| Deployment | `models.register`, `models.export`, `models.parity`, `models.benchmark`, `deployments.promote`, `deployments.rollback` |
+| Evaluation | `goldenSets.list`, `goldenSets.get`, `goldenSets.freeze` (approval), `normalizers.list`, `normalizers.get`, `evals.new`, `evals.get`, `evals.list`, `evals.gate`, `gates.get`, `gates.edit` (approval), `models.register` (approval; needs a passed gate), `models.list`, `models.get`, `langpacks.list`, `langpacks.get`, `langpacks.edit`, `boost.edit` (drafts on a `langpack/<locale>-<date>` branch under the draft policy `language_pack`), `registry.lineage`, `aliases.set` (`baseline`, approval); boosting and robustness are `evals.new` axes (R1, R24); phase 4: `batches.new`, `batches.get`, `batches.freeze` |
+| Deployment | `models.export`, `models.parity`, `models.benchmark`, `deployments.promote`, `deployments.rollback` |
 | Flywheel | `samples.query`, `signals.list`, `triage.next`, `triage.accept`, `triage.correct`, `triage.reject`, `corrections.package`, `schedules.new` |
 
-Every mutating tool accepts `dryRun`; the verbs come from the vocabulary in the UI shell tab; the same names are the API operation ids and the UI commands.
+Every mutating tool accepts `dryRun`; the verbs come from the vocabulary in the UI shell tab; the same names are the API operation ids and the UI commands. Operations tagged `media` (utterance audio and peaks, `transcriptions.new` and its socket) are never tools: agents read no raw audio and test models through evals (R47, R48).
 
 ### Context bridge
 
-- From the UI: the current selection attaches to a prompt as references (`@run:123`, `@eval:45#he-IL/[56,1]`, `@utterance:9f3c`); Ask agent on any entity opens Chat with a prefilled prompt naming the entity and the intent.
+- From the UI: the current selection attaches to a prompt as references (`@run:123`, `@eval:<id>#cell:<evc_id>` or `…#cell:<evc_id>/utt:<index>` from the Eval report, `@utterance:9f3c`); Ask agent on any entity opens Chat with a prefilled prompt naming the entity and the intent.
 - From the agent: references in replies render as links that open the document; an attribution badge on any entity the agent changed jumps to the tool call in Chat.
 - Between sessions: `projects.note` writes to `NOTES.md`, which the next session reads through `AGENTS.md`; the transcript of any session is searchable.
 
@@ -94,6 +94,7 @@ Every tool call starts collapsed; the attribution badge's jump opens the one it 
 - Entity changes go through MCP and land directly, or as drafts with Accept and Revert on draftable kinds (mix, gate, note, language pack) when the project's policy says so. Accepting is a person's decision: `drafts.accept` is forbidden to agents; an agent may revert its own draft (phase 1: mixes; the policy per kind is the project's agent profile `draftPolicy`, set in Agent settings and filled by the wizard from `defaults.yaml` `agent.draft_policy`; a project without a profile falls back to `defaults.yaml` `drafts.*`).
 - File changes commit on the session branch; the Recipe document lists open session branches and their diffs against `main`.
 - On session end the branch is merged fast-forward when it applies cleanly and the permission preset allows auto-merge; otherwise it stays as "Session changes" with a three-way diff for the user to accept or discard. Branches are kept 30 days after merge.
+- As built (audit 2026-10-02): a branch whose diff touches `gates.yaml`, `lang/`, `project.yaml`, `.claude/` or `opencode.json` is never auto-merged, whatever the profile's `autoMerge` (`sessions.GuardedPaths`): it stays `pending` with a `branch.waiting` reason naming the files, until a person accepts it — the guardrail "an agent's edit of `gates.yaml` reaches `main` only when a person accepts the session changes" (Guardrails table), extended to the language packs and the project and agent settings.
 - Parallel sessions never share a worktree; their conflicts appear only at merge, never at runtime.
 
 ### Playbooks and schedules as sessions
@@ -174,7 +175,7 @@ Agents may do anything reversible on their own; anything that spends real GPU ti
 | Create sources, dataset versions, mixes, eval runs | Allowed | — |
 | GPU job within the session budget, staging card | Allowed, notified | — |
 | GPU job over budget | Approval request | User |
-| Freeze a golden set, change a baseline or gate | Approval request | User |
+| Freeze a golden set, change a baseline or gate | Approval request; an agent's edit of `gates.yaml` in its worktree reaches `main` only when a person accepts the session changes | User (golden-set freeze: the admin, registry scope, and a person's freeze waits for the same approval — preset rule `golden-set-freeze`, `everyone: true`; phase 3) |
 | Shadow deployment | Allowed | — |
 | Canary, production, rollback | Approval request | User, through a confirm modal |
 | Delete anything | Not allowed | User only, soft delete |

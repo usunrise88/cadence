@@ -1,0 +1,6 @@
+# written by Cadence — script maps for he-IL. Hebrew has one script, so there is no scheme; English words stay in
+# Latin script as spoken (see README.md, code switching). A scheme here names a worker transliteration
+# (dataset_import's transliterate parameter) and lists its letter map for people and agents.
+version: 1
+locale: he-IL
+schemes: []

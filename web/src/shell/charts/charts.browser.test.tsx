@@ -153,6 +153,24 @@ describe("AnalyticsChart (ECharts)", () => {
     { kind: "heatmap", title: "Matrix", x: ["m1", "m2"], y: ["g1", "g2"], cells: [{ x: 0, y: 0, value: 10 }, { x: 1, y: 0, value: 12 }, { x: 0, y: 1, value: 8 }, { x: 1, y: 1, value: null }] },
     { kind: "scatter", title: "WER vs latency", series: [{ id: "p", label: "profiles", points: [{ x: 100, y: 12 }, { x: 200, y: 10 }, { x: 300, y: 11 }] }], front: { x: "min", y: "min" } },
     { kind: "forest", title: "WER delta", rows: [{ label: "a", estimate: -1, low: -2, high: -0.4 }, { label: "b", estimate: 0.3, low: -0.2, high: 0.9 }] },
+    {
+      kind: "parallel",
+      title: "Sweep",
+      axes: [{ id: "lr", label: "peak_lr", type: "log" }, { id: "aug", label: "augmentation", type: "category", categories: ["clean", "telephony"] }, { id: "wer", label: "val WER" }],
+      lines: [
+        { id: "r1", label: "run 1", values: [0.0001, "clean", 0.3] },
+        { id: "r2", label: "run 2", values: [0.001, "telephony", 0.25], highlight: true },
+      ],
+    },
+    {
+      kind: "line",
+      title: "WER against latency",
+      xMarks: [{ label: "primary", value: 160 }],
+      series: [
+        { id: "s", label: "Subject", points: [{ x: 80, y: 15, low: 13, high: 16, label: "80ms" }, { x: 160, y: 10, low: 9, high: 11, label: "160ms", marked: true }, { x: 1120, y: 8, label: "1120ms" }] },
+        { id: "e", label: "ECDF", step: true, points: [{ x: 0, y: 0 }, { x: 0, y: 30 }, { x: 50, y: 80 }, { x: 100, y: 100 }] },
+      ],
+    },
   ])("renders the $kind preset and walks it with the keyboard", async (spec) => {
     const container = box();
     const { findByTestId, getByRole } = render(<AnalyticsChart spec={spec} />, { container });

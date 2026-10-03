@@ -16,7 +16,9 @@ import (
 // Trainable fails with eval-only-dataset when the dataset version v may not be trained on: it was registered for
 // evaluation only (golden and replay test sets), or one of its sources is not cleared for training now. Clearance
 // is read at the time of asking, so clearing a source (sources.edit) makes its versions trainable without a
-// re-import. Versions without sources (the phase-1 fixtures) are trainable.
+// re-import. Versions without sources (the phase-1 fixtures) are trainable. A version that shares an utterance with
+// a golden set (by identity or fingerprint) fails with golden-set-leakage (NotGolden): mixes, runs and the pipeline
+// engine's training inputs all come through here, so runs cannot reference golden-set audio.
 func Trainable(ctx context.Context, q storage.Querier, v registry.Version) error {
 	var p struct {
 		EvalOnly  bool     `json:"evalOnly"`
@@ -32,7 +34,7 @@ func Trainable(ctx context.Context, q storage.Querier, v registry.Version) error
 			v.Name, v.Version)
 	}
 	if len(p.SourceIDs) == 0 {
-		return nil
+		return NotGolden(ctx, q, v)
 	}
 	rows, err := q.Query(ctx, "SELECT name FROM sources WHERE id = ANY($1) AND NOT training_cleared ORDER BY name", p.SourceIDs)
 	if err != nil {
@@ -46,5 +48,5 @@ func Trainable(ctx context.Context, q storage.Querier, v registry.Version) error
 		return problems.EvalOnlyDataset.New("%s %s is eval-only: source %s is not cleared for training; a person clears it with sources.edit (trainingCleared: true)",
 			v.Name, v.Version, strings.Join(blocked, ", "))
 	}
-	return nil
+	return NotGolden(ctx, q, v)
 }

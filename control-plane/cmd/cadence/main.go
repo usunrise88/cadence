@@ -50,10 +50,13 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/compute"
 	"github.com/usunrise88/cadence/control-plane/internal/credentials"
 	"github.com/usunrise88/cadence/control-plane/internal/defaults"
+	"github.com/usunrise88/cadence/control-plane/internal/evals"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
 	"github.com/usunrise88/cadence/control-plane/internal/eviction"
 	"github.com/usunrise88/cadence/control-plane/internal/help"
 	"github.com/usunrise88/cadence/control-plane/internal/jobs"
+	"github.com/usunrise88/cadence/control-plane/internal/langpacks"
+	"github.com/usunrise88/cadence/control-plane/internal/lineage"
 	"github.com/usunrise88/cadence/control-plane/internal/notify"
 	"github.com/usunrise88/cadence/control-plane/internal/obs"
 	"github.com/usunrise88/cadence/control-plane/internal/policy"
@@ -221,6 +224,7 @@ func serve(ctx context.Context, getenv func(string) string) error {
 		return err
 	}
 	projectRepos.Register(jobSvc)
+	scorers := langpacks.NewScorers(templates.FS, repoStore) // locale scoring normalizers for search (language packs)
 
 	metrics := obs.NewMetrics()
 	hub := events.NewHub(256)
@@ -304,6 +308,10 @@ func serve(ctx context.Context, getenv func(string) string) error {
 		Eviction: evictSvc,
 		Telegram: bot,
 		Poller:   poller,
+		Scorers:  scorers,
+		Lineage:  lineage.New(evals.LineageSource{}), // evals and eval records join the lineage graph (phase 3)
+		// Origins besides this server's own host that may open the live transcription socket (phase 3 · stream T).
+		AllowedOrigins: splitList(getenv("CADENCE_ALLOWED_ORIGINS")),
 	})
 	if err != nil {
 		return err
@@ -335,6 +343,7 @@ func serve(ctx context.Context, getenv func(string) string) error {
 	}
 	poller.Decider = srv
 	jobSvc.AddPeriodic("agentSessions.sweep", 30*time.Second, srv.SweepSessions)
+	jobSvc.AddPeriodic("transcriptions.sweep", 30*time.Second, srv.SweepTranscriptions)
 	jobSvc.AddPeriodic("agentCredentials.sweep", time.Minute, srv.SweepAgentCredentials)
 	if path := getenv("CADENCE_HOST_TOKEN_FILE"); path != "" {
 		issued, err := credentials.EnsureHostTokenFile(ctx, pool, path)
@@ -376,7 +385,11 @@ func serve(ctx context.Context, getenv func(string) string) error {
 	}
 	g, gctx := errgroup.WithContext(runCtx)
 	g.Go(func() error { return events.NewDispatcher(pool, hub, log, metrics.EventsDispatched).Run(gctx) })
-	g.Go(func() error { return search.NewIndexer(pool, hub, log, search.Sources()).Run(gctx) })
+	g.Go(func() error {
+		ix := search.NewIndexer(pool, hub, log, search.Sources())
+		ix.Folder = scorers // documents fold with their locale's scoring normalizer (language packs)
+		return ix.Run(gctx)
+	})
 	g.Go(func() error {
 		return (&notify.Router{Pool: pool, Hub: hub, Log: log, Defaults: defaults.Get, Wake: notifyWake}).Run(gctx)
 	})
@@ -393,7 +406,8 @@ func serve(ctx context.Context, getenv func(string) string) error {
 	g.Go(func() error {
 		<-gctx.Done()
 		log.Info("shutting down")
-		hub.Close() // end event streams so Shutdown does not wait for them
+		hub.Close()     // end event streams so Shutdown does not wait for them
+		srv.CloseLive() // end live transcription sockets (hijacked: Shutdown does not track them)
 		jctx, jcancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer jcancel()
 		if err := jobSvc.Stop(jctx); err != nil {
@@ -407,6 +421,17 @@ func serve(ctx context.Context, getenv func(string) string) error {
 		return nil
 	})
 	return g.Wait()
+}
+
+// splitList splits a comma-separated environment value, dropping empty items.
+func splitList(v string) []string {
+	var out []string
+	for _, s := range strings.Split(v, ",") {
+		if s = strings.TrimSpace(s); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // defaultWorkerHost is the compute host of the worker token in CADENCE_WORKER_TOKEN_FILE when CADENCE_WORKER_HOST is

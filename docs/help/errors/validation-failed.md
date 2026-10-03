@@ -13,6 +13,10 @@ characters.
 
 The `errors` array names every offending field, so a form can mark all of them at once.
 
+`pipelines.run` answers it without `errors` when an input artifact is sent with a type other than the one the
+artifact index records (`artifacts.get`: a dataset sent as a `mix`), or when a `mix` input a training step reads is
+not a `cadence.mix/1` rendering: the guard takes types and meta from the index, never from the caller.
+
 ## Place in the loop
 
 Validation runs before the command: nothing was written and no event was emitted. Fix the values and resend; the

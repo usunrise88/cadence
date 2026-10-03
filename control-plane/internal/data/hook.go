@@ -47,8 +47,23 @@ func (im *Importer) Register(h *steps.Hooks) { h.On(ArtifactType, im.Hook) }
 // their origin and the audio fingerprints, and registers a frozen dataset version. Re-importing the same content
 // into the same collection returns the version already there.
 func (im *Importer) Hook(ctx context.Context, tx pgx.Tx, out steps.Output) ([]events.Draft, error) {
+	if Derived(out.Artifact.Meta) {
+		return nil, nil
+	}
 	_, drafts, err := im.Import(ctx, tx, out)
 	return drafts, err
+}
+
+// PurposeAugmented marks a dataset an eval derived from a golden set (augment_dataset, phase 3 stream R): an eval
+// input, never registered as a dataset version, its utterances not utterances of the registry.
+const PurposeAugmented = "augmented"
+
+// Derived reports whether a dataset output's meta marks it as derived for an eval (purpose augmented).
+func Derived(meta json.RawMessage) bool {
+	var m struct {
+		Purpose string `json:"purpose"`
+	}
+	return len(meta) > 0 && json.Unmarshal(meta, &m) == nil && m.Purpose == PurposeAugmented
 }
 
 // Import is Hook that also returns the registered (or existing) version.

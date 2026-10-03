@@ -69,6 +69,26 @@ func active(state string) bool { return state == StepQueued || state == StepRunn
 
 func finished(state string) bool { return state == StepDone || state == StepReused }
 
+// optional reports whether step is marked optional in the run's pipeline.
+func (r Run) optional(step string) bool {
+	for _, s := range r.Definition.Steps {
+		if s.ID == step {
+			return s.Optional
+		}
+	}
+	return false
+}
+
+// readsAny reports whether s reads an output of one of the steps.
+func readsAny(s StepRow, set map[string]bool) bool {
+	for _, v := range s.Wiring {
+		if w, ok := ParseWire(v); ok && w.Step != "" && set[w.Step] {
+			return true
+		}
+	}
+	return false
+}
+
 // Run is a pipeline run. Its JSON form is the contract's PipelineRun (PipelineRunSummary without steps).
 type Run struct {
 	ID         string                       `json:"id"`
@@ -370,9 +390,13 @@ func runDraft(r Run, typ string) events.Draft {
 }
 
 func stepDraft(r Run, s StepRow) events.Draft {
+	p := map[string]any{"pipelineRunId": r.ID, "runState": r.State, "step": s}
+	if r.RunID != "" {
+		p["runId"] = r.RunID // the facade entity (run_…, evl_…): notifications leave an eval's steps to the eval
+	}
 	return events.Draft{
 		Topic: Topic(r.ID), Type: EventStepChanged, ProjectID: r.ProjectID,
 		Entity:  &events.EntityRef{Kind: StepKind, ID: s.ID, Rev: s.Rev},
-		Payload: map[string]any{"pipelineRunId": r.ID, "runState": r.State, "step": s},
+		Payload: p,
 	}
 }
