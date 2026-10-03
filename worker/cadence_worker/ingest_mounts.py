@@ -1,29 +1,23 @@
-"""Mount URIs for the ingest steps — a temporary, minimal resolver.
+"""Mount URIs as the ingest steps use them: walking a directory of a path-kind mount (local, nfs, smb).
 
-Stream M (phase 4) owns ``mount://`` URIs, the lease's ``mounts`` field and ``cadence_worker.mounts``; this module
-codes against the interface the phase-4 plan fixes ("Interfaces between streams", M → D) and is deleted when M's
-module lands (the steps then import ``cadence_worker.mounts``):
-
-- the one URI form ``mount://<name>/<path>[#t=<start>,<end>][&ch=<n>]``;
-- the worker learns mount roots from its lease: ``mounts: [{name, kind, root, readOnly}]``. Until the harness passes
-  them, a step reads them from the context's ``mounts`` attribute when it has one, else from ``CADENCE_MOUNTS`` (the
-  same list as JSON).
+``cadence_worker.mounts`` (the lease's mounts, ``ctx.mounts``) owns the URI form and file resolution; this module
+adds what ingest needs on top: a URI may name a directory (or the mount's root) to walk, a local path maps back to its
+URI, and URIs are written in the canonical form ``mounts.MountURI`` prints (the same string Go's ``URI.String()``
+gives), with times rounded to microseconds so the same cut always prints the same URI.
 """
 
 from __future__ import annotations
 
-import json
-import os
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from cadence_worker.mounts import Mounts, MountURI
 from cadence_worker.steps.base import StepInputError
 
 SCHEME = "mount://"
-ENV = "CADENCE_MOUNTS"
 NAME = re.compile(r"^[a-z0-9][a-z0-9._-]{0,62}$")
 
 
@@ -40,22 +34,12 @@ class MountRef:
         return format_uri(self.name, self.path)
 
 
-def seconds(x: float) -> str:
-    """A time in a URI fragment: up to six decimals, trailing zeros dropped (deterministic)."""
-    s = format(x, ".6f").rstrip("0").rstrip(".")
-    return s or "0"
-
-
 def format_uri(
     name: str, path: str, start: float | None = None, end: float | None = None, channel: int | None = None
 ) -> str:
-    uri = SCHEME + name + "/" + path.strip("/")
-    frag: list[str] = []
     if start is not None and end is not None:
-        frag.append(f"t={seconds(start)},{seconds(end)}")
-    if channel is not None:
-        frag.append(f"ch={channel}")
-    return uri + ("#" + "&".join(frag) if frag else "")
+        start, end = round(start, 6), round(end, 6)
+    return str(MountURI(name, path.strip("/"), start, end, channel))
 
 
 def parse(uri: str) -> MountRef:
@@ -84,20 +68,10 @@ def parse(uri: str) -> MountRef:
 
 
 def mounts_of(ctx: Any = None) -> list[Mapping[str, Any]]:
-    """The lease's mounts: the context's ``mounts`` when it has them, else ``CADENCE_MOUNTS``."""
+    """The lease's mounts: the context's ``mounts`` (``cadence_worker.mounts.Mounts``), else ``CADENCE_MOUNTS``."""
     found = getattr(ctx, "mounts", None)
-    if found:
-        return list(found)
-    raw = os.environ.get(ENV, "")
-    if not raw:
-        return []
-    try:
-        doc = json.loads(raw)
-    except ValueError as e:
-        raise StepInputError(f"{ENV} is not JSON: {e}") from e
-    if not isinstance(doc, list):
-        raise StepInputError(f"{ENV} must be a list of {{name, kind, root, readOnly}}")
-    return [m for m in doc if isinstance(m, dict)]
+    ms = found if isinstance(found, Mounts) and len(found) else Mounts.from_env()
+    return [m.to_lease() for m in ms]
 
 
 def resolve(uri: str, mounts: Sequence[Mapping[str, Any]]) -> Path:

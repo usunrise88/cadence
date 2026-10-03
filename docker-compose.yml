@@ -48,6 +48,11 @@ services:
       - cadence-backups:/backups
       - worker-credential:/worker-credential
       - artifacts:/var/lib/cadence
+      # Mounts (phase 4): the control plane reads local mounts to scan them and to copy evicted shards back. Bind a
+      # host directory with CADENCE_CORPORA_DIR / CADENCE_EXPORTS_DIR (unset: an empty named volume, no host bind);
+      # register them as mounts corpora (/mnt/corpora) and exports (/mnt/exports) — the same paths in every worker.
+      - ${CADENCE_CORPORA_DIR:-corpora}:/mnt/corpora:ro
+      - ${CADENCE_EXPORTS_DIR:-exports}:/mnt/exports:ro
     ports: ["127.0.0.1:${CADENCE_PORT:-8080}:8080"] # localhost only; TLS ends at the host's Caddy (R39)
     networks: [default, agents]
     depends_on:
@@ -125,6 +130,8 @@ services:
     volumes:
       - worker-credential:/worker-credential:ro
       - artifacts:/var/lib/cadence
+      - ${CADENCE_CORPORA_DIR:-corpora}:/mnt/corpora:ro # mount corpora, read in place (unset: no host bind)
+      - ${CADENCE_EXPORTS_DIR:-exports}:/mnt/exports # mount exports, the writable target of exports
     ipc: host # NeMo's data loaders need more shared memory than the 64 MB default
     depends_on: [control-plane]
     # On SIGTERM a training step writes its training state and the lease is released as cancelled with it: at least
@@ -155,6 +162,8 @@ services:
     volumes:
       - worker-credential:/worker-credential:ro
       - artifacts:/var/lib/cadence
+      - ${CADENCE_CORPORA_DIR:-corpora}:/mnt/corpora:ro # mount corpora, read in place (unset: no host bind)
+      - ${CADENCE_EXPORTS_DIR:-exports}:/mnt/exports # mount exports, the writable target of exports
     depends_on: [control-plane]
     # The step stop grace (CADENCE_STOP_GRACE_SECONDS, 60 s) plus the release, as for the GPU worker
     # (worker/tests/test_compose.py ties the numbers).
@@ -175,3 +184,5 @@ volumes:
   agent-sessions:
   worker-credential:
   artifacts: # the content store and the workers' scratch (one file system: hard links)
+  corpora: # stands in for CADENCE_CORPORA_DIR when it is unset (empty: no corpora mounted)
+  exports: # stands in for CADENCE_EXPORTS_DIR when it is unset

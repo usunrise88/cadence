@@ -20,6 +20,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/auth"
 	"github.com/usunrise88/cadence/control-plane/internal/cas"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
+	"github.com/usunrise88/cadence/control-plane/internal/mounts"
 	"github.com/usunrise88/cadence/control-plane/internal/problems"
 	"github.com/usunrise88/cadence/control-plane/internal/registry"
 	"github.com/usunrise88/cadence/control-plane/internal/steps"
@@ -265,6 +266,14 @@ func (im *Importer) importDraft(ctx context.Context, tx pgx.Tx, out steps.Output
 	}
 	uttIDs, err := upsertUtterances(ctx, tx, src.ID, d.Lines, now)
 	if err != nil {
+		return registry.Version{}, nil, err
+	}
+	// Where each utterance's audio also lives: its segment on the mount (utterance_uris, utterances.get uris).
+	uris := make([]string, len(d.Lines))
+	for i, l := range d.Lines {
+		uris[i] = l.URI
+	}
+	if err := mounts.RecordURIsBatch(ctx, tx, uttIDs, uris); err != nil {
 		return registry.Version{}, nil, err
 	}
 	trnIDs, err := upsertTranscripts(ctx, tx, uttIDs, d.Lines, now)

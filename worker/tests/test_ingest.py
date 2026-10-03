@@ -18,6 +18,7 @@ from cadence_worker import ingest_mounts as mounts
 from cadence_worker import segments as seg
 from cadence_worker.__main__ import registry
 from cadence_worker.cas import hash_bytes
+from cadence_worker.mounts import Mounts
 from cadence_worker.steps.base import StepInputError, missing_metadata
 from cadence_worker.steps.dataset_freeze import DatasetFreezeParams, DatasetFreezeStep
 from cadence_worker.steps.manifest_filter import ManifestFilterParams, ManifestFilterStep
@@ -36,7 +37,7 @@ KINDS: dict[str, Any] = {
 
 class Ctx:
     def __init__(self, root: Path) -> None:
-        self.mounts = [{"name": "corpora", "kind": "local", "root": str(root), "readOnly": True}]
+        self.mounts = Mounts([{"name": "corpora", "kind": "local", "root": str(root), "readOnly": True}], env={})
         self.logs: list[str] = []
 
     def progress(self, fraction: float, message: str = "") -> None:
@@ -157,7 +158,7 @@ def test_resolver_refuses_links_out_of_the_root(tmp_path: Path) -> None:
 
 
 def test_env_mounts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv(mounts.ENV, json.dumps([{"name": "corpora", "root": str(tmp_path)}]))
+    monkeypatch.setenv("CADENCE_MOUNTS", json.dumps([{"name": "corpora", "kind": "local", "root": str(tmp_path)}]))
     assert mounts.resolve("mount://corpora/a/b.wav", mounts.mounts_of(None)) == (tmp_path / "a" / "b.wav").resolve()
 
 

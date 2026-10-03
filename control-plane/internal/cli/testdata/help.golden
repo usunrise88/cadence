@@ -28,7 +28,7 @@ Entities:
   collections    get list
   compute        edit get list
   credentials    list new revoke
-  datasets       freeze get list preview
+  datasets       evict freeze get list materialize preview
   defaults       get
   drafts         accept get list revert
   evals          gate get list new
@@ -44,6 +44,7 @@ Entities:
   mixes          edit get list new preview
   modelFamilies  get list
   models         get list register
+  mounts         get list new scan verify
   normalizers    get list
   notificationRules edit list
   notificationSettings edit get
@@ -60,6 +61,7 @@ Entities:
   secrets        list new
   sources        archive edit get list new
   stepKinds      get list
+  storage        get
   sweeps         run
   telegramBot    set verify
   templates      get list

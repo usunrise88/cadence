@@ -32,6 +32,7 @@ text_normalise = "cadence_worker.steps.text_normalise:TextNormaliseStep"
 manifest_filter = "cadence_worker.steps.manifest_filter:ManifestFilterStep"
 speaker_disjoint_split = "cadence_worker.steps.speaker_disjoint_split:SpeakerDisjointSplitStep"
 dataset_freeze = "cadence_worker.steps.dataset_freeze:DatasetFreezeStep"
+mount_check = "cadence_worker.steps.mount_check:MountCheckStep"
 
 [dependency-groups]
 dev = [

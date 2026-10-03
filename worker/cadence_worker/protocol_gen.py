@@ -55,11 +55,25 @@ class Lease(TypedDict):
     env: NotRequired[dict[str, str]]
     traceparent: NotRequired[str]
     heartbeatSeconds: int
+    mounts: NotRequired[list[LeaseMount]]
 
 
 class LeaseCard(TypedDict):
     index: int
     memoryCapMb: int
+
+
+class LeaseMount(TypedDict):
+    """A mount as a worker resolves mount://<name>/<path> URIs (cadence_worker.mounts)"""
+
+    name: str
+    kind: Literal["local", "nfs", "smb", "s3", "hf"]
+    root: str
+    readOnly: bool
+    endpoint: NotRequired[str]
+    region: NotRequired[str]
+    revision: NotRequired[str]
+    credentialsEnv: NotRequired[str]
 
 
 class LiveEnd(TypedDict):

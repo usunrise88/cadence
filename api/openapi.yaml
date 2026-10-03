@@ -43,6 +43,7 @@ tags:
   - { name: runs, description: "Training runs (one optimisation stage each), calibration, checkpoints and metric series (R12, R13, R44)" }
   - { name: evals, description: "The eval matrix against the baseline, eval records, the project's gate and model registration (R20–R24)" }
   - { name: media, description: "Audio for people: an utterance's audio, peaks, spectrogram tiles and words, live transcription (R25, R47); exempt from the vocabulary and never MCP tools; agents are refused" }
+  - { name: storage, description: "Mounts (local, NFS/SMB, S3-compatible, Hub), the local cache with pinning, eviction and quotas, dataset materialisation" }
   - { name: planned, description: Named now, implemented in a later phase (501 until then) }
 
 paths:
@@ -3888,6 +3889,193 @@ paths:
 
   # ---------------------------------------------------------------- mounts, cache, storage (phase 4 · stream M) — add paths below this line (move /mounts from planned)
 
+  /mounts:
+    x-cadence: { entity: mounts }
+    get:
+      operationId: mounts.list
+      summary: Registered mounts with their health and last scan
+      tags: [storage]
+      x-cadence:
+        toolDescription: >
+          List the storage mounts Cadence reads audio from and writes exports to: a local path, an NFS or SMB share the
+          OS mounted at a path, an S3-compatible bucket or a Hugging Face Hub repository pinned to a revision. Each
+          mount has a name (utterances name their audio as mount://<name>/<path>[#t=<start>,<end>][&ch=<n>]), a
+          read-only flag, its last health check (reachable, free space, a throughput sample, run by a worker) and its
+          last scan (files, bytes, top-level entries, content-store blob copies found). A job never starts on an
+          unhealthy mount.
+      responses:
+        "200":
+          description: Mounts by name
+          content: { application/json: { schema: { $ref: "#/components/schemas/MountList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+    post:
+      operationId: mounts.new
+      summary: Register a local path, NFS/SMB path, S3-compatible bucket or Hub repository (registry approval, the admin decides)
+      tags: [storage]
+      x-cadence:
+        toolDescription: >
+          Ask for a new mount. Mounts are shared by every project, so the real call always answers 202 with an
+          approvalId, for people too; the admin decides it, and the approved request registers the mount and queues
+          its first health check on a worker. kind local, nfs and smb take root = the absolute path where workers and
+          the control plane see the share; s3 takes root = bucket[/prefix], endpoint and credentials (the name of a
+          secret holding <accessKeyId>:<secretAccessKey>); hf takes root = datasets/<org>/<name> (or <org>/<model>)
+          and revision = a commit SHA. Mounts are read-only unless readOnly is false. dryRun=true validates.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/MountNew" } } }
+      responses:
+        "200":
+          description: Dry run — the mount as it would be registered; nothing changed
+          content: { application/json: { schema: { $ref: "#/components/schemas/Mount" } } }
+        "201":
+          description: The registered mount (the approved request)
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Mount" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /mounts/{id}:
+    x-cadence: { entity: mounts }
+    parameters:
+      - { name: id, in: path, required: true, description: "Mount id (mnt_…) or name", schema: { type: string } }
+    get:
+      operationId: mounts.get
+      summary: Get a mount with its health, last scan, utterance URIs and content-store copies
+      tags: [storage]
+      responses:
+        "200":
+          description: The mount
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Mount" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /mounts/{id}:scan:
+    x-cadence: { entity: mounts }
+    parameters:
+      - { name: id, in: path, required: true, description: "Mount id (mnt_…) or name", schema: { type: string } }
+    post:
+      operationId: mounts.scan
+      summary: Rescan a mount — files, bytes, top-level entries and content-store blob copies — and check its health (202 with the job)
+      tags: [storage]
+      x-cadence:
+        toolDescription: >
+          Walk a mount (or one path under it) and record what is there: files, bytes and the top-level entries
+          (source/revision directories on a corpora mount), plus blobs laid out as a content store (cas/b3/<ab>/<hash>,
+          e.g. an export or a backup mirror) — those become copies that let datasets.evict free cache space. The scan
+          also queues a health check on a worker. Answers 202 with the job; the mount's inventory and health change
+          when it ends (mount.{id}). Nothing on the mount is changed.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: false
+        content: { application/json: { schema: { $ref: "#/components/schemas/MountScan" } } }
+      responses:
+        "200":
+          description: Dry run — the mount as it is now; nothing queued
+          content: { application/json: { schema: { $ref: "#/components/schemas/Mount" } } }
+        "202": { $ref: "#/components/responses/JobAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /mounts/{id}:verify:
+    x-cadence: { entity: mounts }
+    parameters:
+      - { name: id, in: path, required: true, description: "Mount id (mnt_…) or name", schema: { type: string } }
+    post:
+      operationId: mounts.verify
+      summary: Check a mount's health on a worker now — reachable, free space, a throughput sample (202 with the job)
+      tags: [storage]
+      x-cadence:
+        toolDescription: >
+          Run the mount health check (step kind mount_check@1) on a worker: is the mount reachable from the worker
+          host, how much space is free, and how fast a sample of its files reads. The result lands in the mount's
+          health (mounts.get; event mount.health on mount.{id}). Health is also checked when a mount is registered,
+          by every scan and every storage.mount_check_hours. A job that names an unhealthy mount fails at once
+          (mount-unhealthy).
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      responses:
+        "200":
+          description: Dry run — the mount as it is now; nothing queued
+          content: { application/json: { schema: { $ref: "#/components/schemas/Mount" } } }
+        "202": { $ref: "#/components/responses/JobAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /storage:
+    x-cadence: { entity: storage, singleton: true }
+    get:
+      operationId: storage.get
+      summary: Cache use, water marks, per-project quotas, pinned and evictable dataset versions
+      tags: [storage]
+      x-cadence:
+        toolDescription: >
+          The local cache (the content store) as Cadence accounts it: the filesystem's size and free space, the high
+          and low water marks (above the high mark unpinned dataset shards that also live on a mount are evicted,
+          least recently used first, down to the low mark), each project's frozen dataset bytes against its quota,
+          the dataset versions pinned (a queued or running job or a promoted model needs them) and those that are
+          evictable or already evicted (datasets.materialize brings them back).
+      responses:
+        "200":
+          description: The cache now
+          content: { application/json: { schema: { $ref: "#/components/schemas/StorageUse" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/datasets:materialize:
+    x-cadence: { entity: datasets }
+    post:
+      operationId: datasets.materialize
+      summary: Copy a dataset version's evicted shards back into the local cache from their mount copies (resumable job)
+      tags: [storage]
+      x-cadence:
+        toolDescription: >
+          Bring a dataset version's shards back onto the local cache (the content store) from the mounts that hold
+          copies of them, verifying each by hash. Training reads only cached shards. dryRun=true answers how many
+          shards and bytes must be copied and from which mounts (and which shards have no copy anywhere). The real
+          call answers 202 with a job that copies shard by shard with progress; a retry skips what is already back.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/DatasetCacheRequest" } } }
+      responses:
+        "200":
+          description: Dry run — what would be copied and from where; nothing changed
+          content: { application/json: { schema: { $ref: "#/components/schemas/DatasetCachePlan" } } }
+        "202": { $ref: "#/components/responses/JobAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/datasets:evict:
+    x-cadence: { entity: datasets }
+    post:
+      operationId: datasets.evict
+      summary: Free a dataset version's shards from the local cache when every shard also lives on a mount (202 with the job)
+      tags: [storage]
+      x-cadence:
+        toolDescription: >
+          Remove a dataset version's shards from the local cache. Only shards with a copy on a mount go (a shard that
+          exists on no mount — imported audio — is never evicted), and a pinned version (a queued or running job or a
+          promoted model needs it) is refused with artifact-not-evictable. Reversible: datasets.materialize copies the
+          shards back. dryRun=true answers the bytes freed and what keeps it pinned.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/DatasetCacheRequest" } } }
+      responses:
+        "200":
+          description: Dry run — what would be freed and what blocks it; nothing changed
+          content: { application/json: { schema: { $ref: "#/components/schemas/DatasetCachePlan" } } }
+        "202": { $ref: "#/components/responses/JobAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
   # ---------------------------------------------------------------- ingest, draft datasets, freeze, sources, utterance search (phase 4 · stream D) — add paths below this line
 
   /registry/datasets:preview:
@@ -3977,20 +4165,6 @@ paths:
   # ---------------------------------------------------------------- auxiliary models, pseudo-labels, triage queue (phase 4 · stream X) — add paths below this line
 
   # ---------------------------------------------------------------- planned (later phases)
-  /mounts:
-    x-cadence: { entity: mounts, planned: 4 }
-    get:
-      operationId: mounts.list
-      summary: Registered mounts and their health
-      tags: [planned]
-      responses: { "200": { $ref: "#/components/responses/PlannedEntity" }, default: { $ref: "#/components/responses/Problem" } }
-    post:
-      operationId: mounts.new
-      summary: Register a local path, NFS/SMB path, S3-compatible bucket or Hub source (approval)
-      tags: [planned]
-      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }, { $ref: "#/components/parameters/DryRun" }]
-      requestBody: { $ref: "#/components/requestBodies/PlannedBody" }
-      responses: { "202": { $ref: "#/components/responses/ApprovalAccepted" }, default: { $ref: "#/components/responses/Problem" } }
 
 components:
   parameters:
@@ -4849,6 +5023,7 @@ components:
         mix: { $ref: "#/components/schemas/DefaultSection" }
         drafts: { $ref: "#/components/schemas/DefaultSection" }
         cache: { $ref: "#/components/schemas/DefaultSection" }
+        storage: { $ref: "#/components/schemas/DefaultSection", description: "Mounts and the local cache (phase 4): water marks, project quota, sweep and health-check cadence, scan limit" }
         data: { $ref: "#/components/schemas/DefaultSection" }
         operations: { $ref: "#/components/schemas/DefaultSection" }
         notifications: { $ref: "#/components/schemas/DefaultSection" }
@@ -6514,6 +6689,10 @@ components:
         env: { type: object, additionalProperties: { type: string }, description: "Secret environment for the step subprocess only; never logged" }
         traceparent: { type: string, description: W3C trace context of the job }
         heartbeatSeconds: { type: integer }
+        mounts:
+          type: array
+          description: "Every registered mount, so the step can resolve mount://<name>/<path>[#t=<start>,<end>][&ch=<n>] URIs (cadence_worker.mounts); credentials only for steps that may read them"
+          items: { $ref: "#/components/schemas/LeaseMount" }
     StepSpec:
       type: object
       required: [stepId, pipelineRunId, kind, kindVersion, params, inputs, outputs, resources, attempt]
@@ -7035,6 +7214,7 @@ components:
         split: { $ref: "#/components/schemas/DatasetSplitName" }
         fingerprints: { type: object, additionalProperties: { type: string }, description: "Kind → value (audio-b3, …); utterances.get only" }
         datasets: { type: array, items: { $ref: "#/components/schemas/UtteranceMembership" }, description: "utterances.get only" }
+        uris: { type: array, items: { type: string }, description: "Where the audio also lives: mount://<name>/<path>[#t=<start>,<end>][&ch=<n>] (utterances.get only)" }
         createdAt: { type: string, format: date-time }
     UtteranceList:
       type: object
@@ -9104,6 +9284,181 @@ components:
             remainingGpuHours: { type: number, format: double, description: "The project's daily budget minus today's use and committed work" }
             withinDailyBudget: { type: boolean, description: "The whole estimate fits today's remaining budget (over it, an agent's sweep waits for an approval)" }
     # ---------------------------------------------------------------- mounts, cache, storage schemas (phase 4 · stream M) — add below
+    MountKind:
+      type: string
+      enum: [local, nfs, smb, s3, hf]
+      description: "local, nfs and smb: a path the OS mounted (one driver); s3: an S3-compatible bucket; hf: a Hugging Face Hub repository at a pinned revision"
+    MountNew:
+      type: object
+      required: [name, kind, root]
+      properties:
+        name: { type: string, pattern: "^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$", description: "The name URIs use: mount://<name>/<path>" }
+        kind: { $ref: "#/components/schemas/MountKind" }
+        root:
+          type: string
+          minLength: 1
+          maxLength: 1000
+          description: "local/nfs/smb: the absolute path where workers and the control plane see it (/mnt/corpora); s3: bucket[/prefix]; hf: datasets/<org>/<name> or <org>/<model>"
+        endpoint: { type: string, maxLength: 500, description: "s3 only: the endpoint URL (https://minio.example:9000)" }
+        region: { type: string, maxLength: 64, description: "s3 only: the signing region (default us-east-1)" }
+        revision: { type: string, pattern: "^[0-9a-f]{40}$", description: "hf only (required): the commit SHA every read is pinned to" }
+        credentials: { type: string, maxLength: 100, description: "The name of a secret: s3 <accessKeyId>:<secretAccessKey> (required); hf a token (optional, gated repositories)" }
+        readOnly: { type: boolean, default: true, description: "Cadence never writes to a read-only mount; writable mounts take exports" }
+        licenceHint: { type: string, maxLength: 200, description: "The licence sources ingested from this mount usually carry (a hint; each source records its own)" }
+        description: { type: string, maxLength: 1000 }
+    MountScan:
+      type: object
+      properties:
+        path: { type: string, maxLength: 1000, description: "Scan only this path under the root (default: the whole mount)" }
+    MountHealth:
+      type: object
+      required: [state]
+      description: The last health check a worker ran (mount_check@1)
+      properties:
+        state: { type: string, enum: [unknown, checking, healthy, unhealthy] }
+        checkedAt: { type: string, format: date-time }
+        host: { type: string, description: The compute host whose worker checked }
+        reachable: { type: boolean }
+        writable: { type: boolean, description: "A writable mount accepted a probe file (removed again)" }
+        freeBytes: { type: integer, format: int64 }
+        totalBytes: { type: integer, format: int64 }
+        throughputMBps: { type: number, format: double, description: "MB/s reading a sample of the mount's files" }
+        sampledBytes: { type: integer, format: int64 }
+        detail: { type: string, description: Why the mount is unhealthy, or what the check saw }
+        jobId: { type: string }
+    MountEntry:
+      type: object
+      required: [path, files, bytes]
+      properties:
+        path: { type: string, description: "A top-level entry (or one level deeper: <source>/<revision>)" }
+        files: { type: integer, format: int64 }
+        bytes: { type: integer, format: int64 }
+    MountInventory:
+      type: object
+      required: [scannedAt, files, bytes, entries, blobs, blobBytes]
+      description: The last scan
+      properties:
+        scannedAt: { type: string, format: date-time }
+        path: { type: string, description: The path scanned under the root (empty for all of it) }
+        files: { type: integer, format: int64 }
+        bytes: { type: integer, format: int64 }
+        truncated: { type: boolean, description: "The scan stopped at storage.mount_scan_max_files" }
+        entries: { type: array, items: { $ref: "#/components/schemas/MountEntry" } }
+        blobs: { type: integer, format: int64, description: "Content-store blobs found under cas/b3/ (copies of cached blobs)" }
+        blobBytes: { type: integer, format: int64 }
+        jobId: { type: string }
+    Mount:
+      type: object
+      required: [id, name, kind, root, readOnly, licenceHint, description, health, utterances, copies, copyBytes, rev, createdBy, createdAt, updatedAt]
+      properties:
+        id: { type: string, description: "mnt_…" }
+        name: { type: string }
+        kind: { $ref: "#/components/schemas/MountKind" }
+        root: { type: string }
+        endpoint: { type: string }
+        region: { type: string }
+        revision: { type: string }
+        credentials: { type: string, description: The secret's name (its value is never shown) }
+        readOnly: { type: boolean }
+        licenceHint: { type: string }
+        description: { type: string }
+        uri: { type: string, description: "mount://<name>/ — the prefix of every URI on this mount" }
+        health: { $ref: "#/components/schemas/MountHealth" }
+        inventory: { $ref: "#/components/schemas/MountInventory" }
+        utterances: { type: integer, format: int64, description: Utterances with a URI on this mount }
+        copies: { type: integer, format: int64, description: Content-store blobs with a copy on this mount }
+        copyBytes: { type: integer, format: int64 }
+        rev: { type: integer }
+        createdBy: { $ref: "#/components/schemas/Actor" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    MountList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Mount" } }
+    LeaseMount:
+      type: object
+      required: [name, kind, root, readOnly]
+      description: "A mount as a worker resolves mount://<name>/<path> URIs (cadence_worker.mounts)"
+      properties:
+        name: { type: string }
+        kind: { $ref: "#/components/schemas/MountKind" }
+        root: { type: string }
+        readOnly: { type: boolean }
+        endpoint: { type: string }
+        region: { type: string }
+        revision: { type: string }
+        credentialsEnv: { type: string, description: "The lease env variable holding the mount's credentials, when the step may read them" }
+    StorageProject:
+      type: object
+      required: [projectId, slug, datasetBytes, quotaBytes, over]
+      properties:
+        projectId: { type: string }
+        slug: { type: string }
+        datasetBytes: { type: integer, format: int64, description: Cached bytes of the dataset versions this project froze }
+        quotaBytes: { type: integer, format: int64, description: "storage.project_quota_gb" }
+        over: { type: boolean }
+    StorageDataset:
+      type: object
+      required: [versionId, name, version, artifact, bytes, state, pinned, copies]
+      properties:
+        versionId: { type: string }
+        name: { type: string }
+        version: { type: string }
+        artifact: { type: string, description: The dataset's directory artifact (b3) }
+        projectId: { type: string, description: The project that froze it, when one did }
+        bytes: { type: integer, format: int64 }
+        state: { type: string, enum: [cached, evicted], description: "evicted: datasets.materialize brings it back" }
+        pinned: { type: array, items: { type: string }, description: "Why it stays (empty when nothing pins it)" }
+        copies: { type: integer, description: "Shards with a copy on a mount, of shards" }
+        shards: { type: integer }
+        evictable: { type: boolean, description: "Every shard also lives on a mount (or in another cached artifact) and nothing pins it" }
+        lastUsedAt: { type: string, format: date-time }
+    StorageUse:
+      type: object
+      required: [totalBytes, freeBytes, usedPct, highWaterPct, lowWaterPct, artifactBytes, datasetBytes, projects, datasets]
+      properties:
+        totalBytes: { type: integer, format: int64, description: The content store's filesystem }
+        freeBytes: { type: integer, format: int64 }
+        usedPct: { type: number, format: double }
+        highWaterPct: { type: number, format: double, description: "storage.cache_high_water_pct" }
+        lowWaterPct: { type: number, format: double, description: "storage.cache_low_water_pct" }
+        artifactBytes: { type: integer, format: int64, description: Bytes of every live artifact in the store }
+        datasetBytes: { type: integer, format: int64, description: Bytes of cached dataset versions }
+        evictableBytes: { type: integer, format: int64, description: What an eviction down to the low mark could free }
+        lastSweepAt: { type: string, format: date-time }
+        projects: { type: array, items: { $ref: "#/components/schemas/StorageProject" } }
+        datasets: { type: array, items: { $ref: "#/components/schemas/StorageDataset" }, description: "Dataset versions with a content-store artifact, least recently used first" }
+    DatasetCacheRequest:
+      type: object
+      required: [versionId]
+      properties:
+        versionId: { type: string, description: "Dataset version id (ver_…)" }
+    DatasetCacheSource:
+      type: object
+      required: [mount, shards, bytes]
+      properties:
+        mount: { type: string }
+        shards: { type: integer }
+        bytes: { type: integer, format: int64 }
+    DatasetCachePlan:
+      type: object
+      required: [versionId, artifact, state, shards, bytes, copyShards, copyBytes, from, missing, freeShards, freeBytes, pinned, blocked]
+      properties:
+        versionId: { type: string }
+        artifact: { type: string }
+        state: { type: string, enum: [cached, evicted] }
+        shards: { type: integer }
+        bytes: { type: integer, format: int64 }
+        copyShards: { type: integer, description: "materialize: shards not in the cache" }
+        copyBytes: { type: integer, format: int64 }
+        from: { type: array, items: { $ref: "#/components/schemas/DatasetCacheSource" }, description: "materialize: where the copies come from" }
+        missing: { type: integer, description: "materialize: shards in no cache and on no mount" }
+        freeShards: { type: integer, description: "evict: shards deleted from the cache" }
+        freeBytes: { type: integer, format: int64 }
+        pinned: { type: array, items: { type: string }, description: What pins the version }
+        blocked: { type: array, items: { type: string }, description: "Why the command cannot proceed (empty when it can)" }
     # ---------------------------------------------------------------- ingest, draft datasets, freeze schemas (phase 4 · stream D) — add below
     SourceNew:
       type: object

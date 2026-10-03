@@ -12,6 +12,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/commands"
 	"github.com/usunrise88/cadence/control-plane/internal/data"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
+	"github.com/usunrise88/cadence/control-plane/internal/mounts"
 )
 
 // Sources and utterances: the minimal data entities of imports (phase 2 · stream D, R18). Registry data: no project.
@@ -122,7 +123,15 @@ func (s *Server) UtterancesGet(ctx context.Context, req api.UtterancesGetRequest
 	if err != nil {
 		return nil, err
 	}
-	return api.UtterancesGet200JSONResponse(apiUtterance(u)), nil
+	out := apiUtterance(u)
+	uris, err := mounts.URIsOf(ctx, s.Pool, u.ID) // where the audio also lives (phase 4 · stream M)
+	if err != nil {
+		return nil, err
+	}
+	if len(uris) > 0 {
+		out.Uris = &uris
+	}
+	return api.UtterancesGet200JSONResponse(out), nil
 }
 
 func apiSource(src data.Source) api.Source {

@@ -47,7 +47,8 @@ func TestDecide(t *testing.T) {
 		{"agent edits gates", Input{Actor: agent, Operation: "gates.edit", VerbClass: "mutate"}, Approval, "evaluation-gates"},
 		{"agent freezes a dataset", Input{Actor: agent, Operation: "datasets.freeze", VerbClass: "mutate"}, Allow, "draft"},
 		{"agent promotes", Input{Actor: agent, Operation: "deployments.promote", VerbClass: "mutate"}, Approval, "deployments"},
-		{"agent registers a mount", Input{Actor: agent, Operation: "mounts.new", VerbClass: "mutate"}, Approval, "registry-changes"},
+		{"agent registers a mount", Input{Actor: agent, Operation: "mounts.new", VerbClass: "mutate"}, Approval, "mount-registration"},
+		{"agent evicts a dataset from the cache", Input{Actor: agent, Operation: "datasets.evict", VerbClass: "mutate"}, Allow, "draft"},
 		{"agent sets a free alias", Input{Actor: agent, Operation: "aliases.set", VerbClass: "mutate",
 			PathParams: map[string]string{"p": "demo", "name": "candidate"}}, Allow, "draft"},
 		{"agent sets baseline", Input{Actor: agent, Operation: "aliases.set", VerbClass: "mutate",
@@ -97,6 +98,8 @@ func TestDecide(t *testing.T) {
 			Approval, "store-eviction"},
 		{"person freezes a golden set: gated for everyone", Input{Actor: person, Operation: "goldenSets.freeze", VerbClass: "mutate"},
 			Approval, "golden-set-freeze"},
+		{"person registers a mount: gated for everyone", Input{Actor: person, Operation: "mounts.new", VerbClass: "mutate"},
+			Approval, "mount-registration"},
 		{"agent evicts: never", Input{Actor: agent, Operation: "artifacts.evict", VerbClass: "mutate"},
 			Deny, "agents-never-evict"},
 	}

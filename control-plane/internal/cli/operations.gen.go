@@ -488,6 +488,18 @@ var Operations = []Operation{
 		},
 	},
 	{
+		ID: "datasets.evict", Entity: "datasets", Verb: "evict", Method: "POST", Path: "/registry/datasets:evict",
+		Summary:        "Free a dataset version's shards from the local cache when every shard also lives on a mount (202 with the job)",
+		Description:    "Remove a dataset version's shards from the local cache. Only shards with a copy on a mount go (a shard that exists on no mount — imported audio — is never evicted), and a pinned version (a queued or running job or a promoted model needs it) is refused with artifact-not-evictable. Reversible: datasets.materialize copies the shards back. dryRun=true answers the bytes freed and what keeps it pinned.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "versionId", Required: true, Type: "string", Description: "Dataset version id (ver_…)"},
+		}},
+	},
+	{
 		ID: "datasets.freeze", Entity: "datasets", Verb: "freeze", Method: "POST", Path: "/registry/datasets:freeze",
 		Summary:        "Freeze a draft dataset version — leakage check, then cut its segments into the content store (202 with the pipeline run)",
 		Description:    "Freeze a draft dataset version (state draft, dataset.frozen false — what pipelines/data-ingest ends in). First the leakage check: the draft's train and validation utterances must share nothing (by canonical hash or fingerprint) with any golden set, else golden-set-leakage lists the overlaps and nothing starts. Then a CPU pipeline run in the draft's project cuts every segment from its mount into the content store (dataset_freeze, mode cut), verifies each hash, writes the shards, quality checks and the dataset card, and sets frozen: true. Only frozen versions can be mixed, trained on, exported or adopted. dryRun=true runs the leakage check only. Answers 202 with the jobId of the cut step (datasets.get shows dataset.freeze with the pipeline run); a version already frozen, or a cut reused from an earlier identical freeze, answers 200. A draft is frozen once: a second call answers the frozen version, or the freeze already running.",
@@ -513,6 +525,18 @@ var Operations = []Operation{
 			{Name: "collection", In: "query", Flag: "collection", Type: "string", Description: "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)"},
 			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated"}},
 		},
+	},
+	{
+		ID: "datasets.materialize", Entity: "datasets", Verb: "materialize", Method: "POST", Path: "/registry/datasets:materialize",
+		Summary:        "Copy a dataset version's evicted shards back into the local cache from their mount copies (resumable job)",
+		Description:    "Bring a dataset version's shards back onto the local cache (the content store) from the mounts that hold copies of them, verifying each by hash. Training reads only cached shards. dryRun=true answers how many shards and bytes must be copied and from which mounts (and which shards have no copy anywhere). The real call answers 202 with a job that copies shard by shard with progress; a retry skips what is already back.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "versionId", Required: true, Type: "string", Description: "Dataset version id (ver_…)"},
+		}},
 	},
 	{
 		ID: "datasets.preview", Entity: "datasets", Verb: "preview", Method: "POST", Path: "/registry/datasets:preview",
@@ -987,6 +1011,64 @@ var Operations = []Operation{
 			{Name: "evalId", Type: "string", Description: "The gated eval to publish with (default the checkpoint's latest gated eval)"},
 			{Name: "name", Type: "string", Description: "The collection, model/<name> (default model/<project slug>)"},
 		}},
+	},
+	{
+		ID: "mounts.get", Entity: "mounts", Verb: "get", Method: "GET", Path: "/mounts/{id}",
+		Summary: "Get a mount with its health, last scan, utterance URIs and content-store copies",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Mount id (mnt_…) or name"},
+		},
+	},
+	{
+		ID: "mounts.list", Entity: "mounts", Verb: "list", Method: "GET", Path: "/mounts",
+		Summary:     "Registered mounts with their health and last scan",
+		Description: "List the storage mounts Cadence reads audio from and writes exports to: a local path, an NFS or SMB share the OS mounted at a path, an S3-compatible bucket or a Hugging Face Hub repository pinned to a revision. Each mount has a name (utterances name their audio as mount://<name>/<path>[#t=<start>,<end>][&ch=<n>]), a read-only flag, its last health check (reachable, free space, a throughput sample, run by a worker) and its last scan (files, bytes, top-level entries, content-store blob copies found). A job never starts on an unhealthy mount.",
+	},
+	{
+		ID: "mounts.new", Entity: "mounts", Verb: "new", Method: "POST", Path: "/mounts",
+		Summary:        "Register a local path, NFS/SMB path, S3-compatible bucket or Hub repository (registry approval, the admin decides)",
+		Description:    "Ask for a new mount. Mounts are shared by every project, so the real call always answers 202 with an approvalId, for people too; the admin decides it, and the approved request registers the mount and queues its first health check on a worker. kind local, nfs and smb take root = the absolute path where workers and the control plane see the share; s3 takes root = bucket[/prefix], endpoint and credentials (the name of a secret holding <accessKeyId>:<secretAccessKey>); hf takes root = datasets/<org>/<name> (or <org>/<model>) and revision = a commit SHA. Mounts are read-only unless readOnly is false. dryRun=true validates.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "credentials", Type: "string", Description: "The name of a secret: s3 <accessKeyId>:<secretAccessKey> (required); hf a token (optional, gated repositories)"},
+			{Name: "description", Type: "string"},
+			{Name: "endpoint", Type: "string", Description: "s3 only: the endpoint URL (https://minio.example:9000)"},
+			{Name: "kind", Required: true, Type: "string", Description: "local, nfs and smb: a path the OS mounted (one driver); s3: an S3-compatible bucket; hf: a Hugging Face Hub repository at a pinned revision"},
+			{Name: "licenceHint", Type: "string", Description: "The licence sources ingested from this mount usually carry (a hint; each source records its own)"},
+			{Name: "name", Required: true, Type: "string", Description: "The name URIs use: mount://<name>/<path>"},
+			{Name: "readOnly", Type: "boolean", Description: "Cadence never writes to a read-only mount; writable mounts take exports"},
+			{Name: "region", Type: "string", Description: "s3 only: the signing region (default us-east-1)"},
+			{Name: "revision", Type: "string", Description: "hf only (required): the commit SHA every read is pinned to"},
+			{Name: "root", Required: true, Type: "string", Description: "local/nfs/smb: the absolute path where workers and the control plane see it (/mnt/corpora); s3: bucket[/prefix]; hf: datasets/<org>/<name> or <org>/<model>"},
+		}},
+	},
+	{
+		ID: "mounts.scan", Entity: "mounts", Verb: "scan", Method: "POST", Path: "/mounts/{id}:scan",
+		Summary:        "Rescan a mount — files, bytes, top-level entries and content-store blob copies — and check its health (202 with the job)",
+		Description:    "Walk a mount (or one path under it) and record what is there: files, bytes and the top-level entries (source/revision directories on a corpora mount), plus blobs laid out as a content store (cas/b3/<ab>/<hash>, e.g. an export or a backup mirror) — those become copies that let datasets.evict free cache space. The scan also queues a health check on a worker. Answers 202 with the job; the mount's inventory and health change when it ends (mount.{id}). Nothing on the mount is changed.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Mount id (mnt_…) or name"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: false, Properties: []BodyProperty{
+			{Name: "path", Type: "string", Description: "Scan only this path under the root (default: the whole mount)"},
+		}},
+	},
+	{
+		ID: "mounts.verify", Entity: "mounts", Verb: "verify", Method: "POST", Path: "/mounts/{id}:verify",
+		Summary:        "Check a mount's health on a worker now — reachable, free space, a throughput sample (202 with the job)",
+		Description:    "Run the mount health check (step kind mount_check@1) on a worker: is the mount reachable from the worker host, how much space is free, and how fast a sample of its files reads. The result lands in the mount's health (mounts.get; event mount.health on mount.{id}). Health is also checked when a mount is registered, by every scan and every storage.mount_check_hours. A job that names an unhealthy mount fails at once (mount-unhealthy).",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Mount id (mnt_…) or name"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
 	},
 	{
 		ID: "normalizers.get", Entity: "normalizers", Verb: "get", Method: "GET", Path: "/registry/normalizers/{id}",
@@ -1574,6 +1656,11 @@ var Operations = []Operation{
 			{Name: "collection", In: "query", Flag: "collection", Type: "string", Description: "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)"},
 			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated"}},
 		},
+	},
+	{
+		ID: "storage.get", Entity: "storage", Verb: "get", Method: "GET", Path: "/storage",
+		Summary:     "Cache use, water marks, per-project quotas, pinned and evictable dataset versions",
+		Description: "The local cache (the content store) as Cadence accounts it: the filesystem's size and free space, the high and low water marks (above the high mark unpinned dataset shards that also live on a mount are evicted, least recently used first, down to the low mark), each project's frozen dataset bytes against its quota, the dataset versions pinned (a queued or running job or a promoted model needs them) and those that are evictable or already evicted (datasets.materialize brings them back).",
 	},
 	{
 		ID: "sweeps.run", Entity: "sweeps", Verb: "run", Method: "POST", Path: "/experiments/{id}/sweeps:run",

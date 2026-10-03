@@ -248,6 +248,7 @@ func TestIngestNeedsALicence(t *testing.T) {
 
 func TestDraftPreviewSearchAndFreeze(t *testing.T) {
 	e, store := startData(t)
+	e.corporaMount()
 	ctx := context.Background()
 	if err := pipelinestest.Register(ctx, e.pool, freezeKind); err != nil {
 		t.Fatal(err)
@@ -275,6 +276,10 @@ func TestDraftPreviewSearchAndFreeze(t *testing.T) {
 
 	if err := e.runOutput(draftOut); err != nil {
 		t.Fatal(err)
+	}
+	// Every draft utterance knows where its audio lives on the mount (utterance_uris).
+	if n := e.count("SELECT count(*) FROM utterance_uris WHERE mount_id = 'mnt_corpora'"); n != len(segs) {
+		t.Fatalf("utterance uris: %d, want %d", n, len(segs))
 	}
 	var list struct{ Items []dsDraftView }
 	e.ok(e.do("GET", "/api/registry/datasets?collection=dataset/parla-sr", ""), 200, &list)
@@ -411,6 +416,7 @@ func TestDraftPreviewSearchAndFreeze(t *testing.T) {
 
 func TestFreezeRefusesGoldenSetLeakage(t *testing.T) {
 	e, store := startData(t)
+	e.corporaMount()
 	ctx := context.Background()
 	p := e.newProject("ingest-leak")
 	e.ok(e.do("POST", "/api/registry/sources", `{"name":"parla","licence":"CC-BY-4.0","kind":"public"}`, "Idempotency-Key", e.key()), 201, nil)
@@ -445,5 +451,14 @@ func TestFreezeRefusesGoldenSetLeakage(t *testing.T) {
 	pr := expectProblem(t, e.do("POST", "/api/registry/datasets:freeze?dryRun=true", `{"version":"`+l.Items[0].ID+`"}`, "Idempotency-Key", e.key()), 422, "golden-set-leakage")
 	if !strings.Contains(pr.Detail, "cannot be frozen") {
 		t.Errorf("detail %q", pr.Detail)
+	}
+}
+
+// corporaMount registers the mount the drafts' URIs name (mount://corpora/…), as an admin's approved mounts.new would.
+func (e *env) corporaMount() {
+	e.t.Helper()
+	if _, err := e.pool.Exec(context.Background(), `INSERT INTO mounts (id, name, kind, root, created_by)
+		VALUES ('mnt_corpora', 'corpora', 'local', '/mnt/corpora', '{"kind":"user","id":"usr_admin"}') ON CONFLICT DO NOTHING`); err != nil {
+		e.t.Fatal(err)
 	}
 }

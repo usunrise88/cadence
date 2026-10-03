@@ -28,6 +28,8 @@ export type SetupFacts = {
   /** The current project's runs and evals (newest first); undefined without a project. */
   runs?: Pick<Run, "status">[];
   evals?: Pick<Eval, "id" | "rev" | "status" | "gate">[];
+  /** Registered mounts (phase 4); undefined while unknown. */
+  mounts?: number;
 };
 
 /** The first gate passed: the checklist has done its job (spec 11: shown until the first gate passes). */
@@ -59,7 +61,13 @@ export function setupSteps(f: SetupFacts): SetupStep[] {
   const frozen = f.datasets.some((d) => d.state === "frozen" && d.actor.id !== BUNDLED_ACTOR);
   return [
     { id: "admin", title: "Set up the admin account", detail: "First start: the admin password, then optional two-factor sign-in (Settings → Security).", state: f.signedIn ? "done" : "todo", command: "auth.setup" },
-    { id: "mount", title: "Attach the call recordings", detail: "A mount with the audio the project adapts to; the wizard lets you skip it until then.", state: "later", command: "mounts.new", phase: 4 },
+    {
+      id: "mount",
+      title: "Attach the call recordings",
+      detail: "A mount with the audio the project adapts to; the wizard lets you skip it until then.",
+      command: "mounts.new",
+      ...((f.mounts ?? 0) > 0 ? { state: "done" as const } : { state: "todo" as const, blocked: "Add one in the Storage panel (Add mount…); the admin approves it" }),
+    },
     { id: "project", title: "Create a project", detail: "Three fields — name, language, recordings — everything else from defaults.", state: f.projects > 0 ? "done" : "todo", command: "projects.new" },
     { id: "dataset", title: "Freeze the first dataset version", detail: "An immutable, fingerprinted selection the first mix trains on.", state: frozen ? "done" : "later", command: "datasets.freeze", phase: frozen ? undefined : 4 },
     { id: "run", title: "Finish the first training run", detail: "The playbook “Fine-tune from a dataset version” runs it: the estimate first, a dry run before every spending step.", command: "playbooks.run", ...runStep(f) },

@@ -92,11 +92,19 @@ tools:
     operations: [deployments.promote, deployments.rollback]
     reason: deployments reach real traffic
 
-  # Registry-scope approvals: mounts, model registration, and source edits — clearing a source for training (its
+  # A mount is shared by every project and reaches storage outside Cadence: registering one is a registry-scope
+  # approval the admin decides, for people too (phase-4 plan stream M).
+  - id: mount-registration
+    class: gated
+    everyone: true
+    operations: [mounts.new]
+    reason: a mount is shared by every project and opens storage outside Cadence; the admin decides which locations Cadence reads and writes
+
+  # Registry-scope approvals: model registration and source edits — clearing a source for training (its
   # licence allows it and the data may be used) is a person's decision (R18).
   - id: registry-changes
     class: gated
-    operations: [mounts.new, models.register, sources.edit]
+    operations: [models.register, sources.edit]
     reason: registry changes are shared by every project; clearing a source for training is a person's decision
 
   # Phase-1 fixture for the approval loop until real gated commands arrive: archiving a project is a soft delete.

@@ -243,3 +243,15 @@ func sameLanguage(a, b string) bool {
 	a, b = strings.ToLower(a), strings.ToLower(b)
 	return a == b || strings.HasPrefix(a, b+"-") || strings.HasPrefix(b, a+"-")
 }
+
+// CutBytes estimates what freezing version id writes into the content store: its utterances' audio as 16 kHz mono
+// PCM16 WAV (32 000 bytes a second plus a 44-byte header each).
+func CutBytes(ctx context.Context, q storage.Querier, id string) (int64, error) {
+	var seconds float64
+	var n int64
+	if err := q.QueryRow(ctx, `SELECT coalesce(sum(u.duration_s), 0), count(*) FROM dataset_utterances du
+		JOIN utterances u ON u.id = du.utterance_id WHERE du.version_id = $1`, id).Scan(&seconds, &n); err != nil {
+		return 0, fmt.Errorf("estimate the cut of %s: %w", id, err)
+	}
+	return int64(seconds*32000) + 44*n, nil
+}

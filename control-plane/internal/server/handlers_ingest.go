@@ -9,6 +9,7 @@ import (
 
 	"github.com/usunrise88/cadence/control-plane/internal/api"
 	"github.com/usunrise88/cadence/control-plane/internal/auth"
+	"github.com/usunrise88/cadence/control-plane/internal/cache"
 	"github.com/usunrise88/cadence/control-plane/internal/commands"
 	"github.com/usunrise88/cadence/control-plane/internal/data"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
@@ -97,8 +98,19 @@ func (s *Server) DatasetsFreeze(ctx context.Context, req api.DatasetsFreezeReque
 			body, err := freezeView(ctx, tx, id, plan.GoldenSets, runID)
 			return commands.Result{Status: http.StatusOK, Body: body}, nil, err
 		}
-		if plan.Frozen || plan.Running != "" || cmd.DryRun {
+		if plan.Frozen || plan.Running != "" {
 			return answer(plan.Running)
+		}
+		// The cut writes 16 kHz PCM16 audio into the content store, accounted to the freezing project (dry run too).
+		adding, err := data.CutBytes(ctx, tx, id)
+		if err != nil {
+			return commands.Result{}, nil, err
+		}
+		if err := cache.CheckQuota(ctx, tx, s.defaultsDoc(), plan.ProjectID, adding); err != nil {
+			return commands.Result{}, nil, err
+		}
+		if cmd.DryRun {
+			return answer("")
 		}
 		in := pipelines.StartInput{
 			ProjectID: plan.ProjectID,

@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Check, Circle, Clock } from "iconoir-react";
-import { authGetOptions, datasetsListOptions, evalsListOptions, projectsListOptions, runsListOptions } from "@/api/gen/@tanstack/react-query.gen";
+import { authGetOptions, datasetsListOptions, evalsListOptions, mountsListOptions, projectsListOptions, runsListOptions } from "@/api/gen/@tanstack/react-query.gen";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { EmptyState, PanelToolbar } from "@/shell/entity/primitives";
@@ -25,8 +25,10 @@ export function GettingStartedPanel({ instanceId }: PanelProps) {
   const project = useProject();
   const runs = useQuery({ ...runsListOptions({ path: { p: project ?? "" }, query: { status: "done", limit: 1 } }), enabled: !!project });
   const evals = useQuery({ ...evalsListOptions({ path: { p: project ?? "" }, query: { limit: 50 } }), enabled: !!project });
-  useTopic(["entity.project.*", "entity.dataset_version.*", "entity.run.*", "entity.eval.*"], () => {
+  const mounts = useQuery(mountsListOptions());
+  useTopic(["entity.project.*", "entity.dataset_version.*", "entity.run.*", "entity.eval.*", "mount.*"], () => {
     void projects.refetch();
+    void mounts.refetch();
     void datasets.refetch();
     if (project) {
       void runs.refetch();
@@ -37,6 +39,7 @@ export function GettingStartedPanel({ instanceId }: PanelProps) {
     signedIn: !!auth.data?.actor,
     projects: projects.data?.items.length ?? 0,
     datasets: datasets.data?.items ?? [],
+    mounts: mounts.data?.items.length,
     runs: project ? (runs.data?.items ?? []) : undefined,
     evals: project ? (evals.data?.items ?? []) : undefined,
   };

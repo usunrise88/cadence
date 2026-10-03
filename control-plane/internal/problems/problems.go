@@ -107,6 +107,9 @@ var (
 	// Ingest, draft dataset versions and freezing (phase 4 · stream D).
 	DatasetNotFrozen = Type{"dataset-not-frozen", http.StatusUnprocessableEntity, "Dataset version not frozen"}
 	SourceUnlicensed = Type{"source-unlicensed", http.StatusUnprocessableEntity, "Source without a usable licence"}
+	// Mounts and the local cache (phase 4 · stream M).
+	MountUnhealthy       = Type{"mount-unhealthy", http.StatusConflict, "Mount unhealthy"}
+	StorageQuotaExceeded = Type{"storage-quota-exceeded", http.StatusConflict, "Project storage quota exceeded"}
 )
 
 // Types lists every registered type.
@@ -126,6 +129,7 @@ func Types() []Type {
 		TranscriptionInProgress, TranscriptionAllowanceExhausted, TranscriptionTicketInvalid, TranscriptionInputInvalid,
 		TranscriptionLimit,
 		DatasetNotFrozen, SourceUnlicensed,
+		MountUnhealthy, StorageQuotaExceeded,
 	}
 }
 

@@ -29,6 +29,15 @@ const JobKind = "step"
 // queued in step_jobs and leased by a worker, but no pipeline run owns it.
 const LiveJobKind = "live"
 
+// MountCheckJobKind is the River job kind of a mount health check (internal/mounts): queued in step_jobs and leased
+// by a worker like a step job (core step kind mount_check@1), but no pipeline run owns it.
+const MountCheckJobKind = "mounts.verify"
+
+// WorkerJob reports whether River job kind runs on a worker through step_jobs (Leases.Await accepts it).
+func WorkerJob(kind string) bool {
+	return kind == JobKind || kind == LiveJobKind || kind == MountCheckJobKind
+}
+
 // Job kinds of compute cards (compute.allowed_job_kinds) a step can need.
 const (
 	JobTraining = "training"

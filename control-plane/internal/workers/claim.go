@@ -11,11 +11,14 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/usunrise88/cadence/control-plane/internal/cache"
 	"github.com/usunrise88/cadence/control-plane/internal/compute"
 	"github.com/usunrise88/cadence/control-plane/internal/defaults"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
 	"github.com/usunrise88/cadence/control-plane/internal/jobs"
+	"github.com/usunrise88/cadence/control-plane/internal/mounts"
 	"github.com/usunrise88/cadence/control-plane/internal/policies"
+	"github.com/usunrise88/cadence/control-plane/internal/problems"
 	"github.com/usunrise88/cadence/control-plane/internal/queue"
 	"github.com/usunrise88/cadence/control-plane/internal/secrets"
 	"github.com/usunrise88/cadence/control-plane/internal/steps"
@@ -64,6 +67,8 @@ type Grant struct {
 	Env              map[string]string `json:"env,omitempty"` // secret values: never log a Grant
 	Traceparent      string            `json:"traceparent"`
 	HeartbeatSeconds int               `json:"heartbeatSeconds"`
+	// Mounts lets the step resolve mount:// URIs (cadence_worker.mounts); credentials arrive in Env.
+	Mounts []mounts.LeaseMount `json:"mounts"`
 }
 
 // Claim long-polls for a step the worker may run: it answers a lease as soon as one fits, or nil when the wait
@@ -164,6 +169,16 @@ func (s *Service) claimOnce(ctx context.Context, tx pgx.Tx, c Caller, in Claim, 
 				continue
 			}
 			env, missing := s.secretEnv(ctx, tx, cand.spec)
+			if missing == "" {
+				// A job never starts on an unhealthy mount (phase 4 · stream M).
+				if err := mounts.CheckJob(ctx, tx, cand.spec); err != nil {
+					pe, ok := problems.As(err)
+					if !ok {
+						return nil, nil, err
+					}
+					missing = pe.Detail
+				}
+			}
 			if missing != "" {
 				d, err := s.endWaiting(ctx, tx, cand.jobID, steps.Outcome{State: steps.StateFailed,
 					Error: &steps.StepError{Type: steps.ErrInput, Message: missing}})
@@ -175,6 +190,12 @@ func (s *Service) claimOnce(ctx context.Context, tx pgx.Tx, c Caller, in Claim, 
 			}
 			g, d, err := s.lease(ctx, tx, w, *host, cand, card, capMB, now)
 			if err != nil {
+				return nil, nil, err
+			}
+			if g.Mounts, env, err = s.mountEnv(ctx, tx, cand.spec, env); err != nil {
+				return nil, nil, err
+			}
+			if err := cache.Touch(ctx, tx, cand.spec, now); err != nil {
 				return nil, nil, err
 			}
 			g.Env = env
@@ -356,6 +377,36 @@ func (s *Service) secretEnv(ctx context.Context, tx pgx.Tx, spec steps.Spec) (ma
 		env[envName(n)] = string(v)
 	}
 	return env, ""
+}
+
+// mountEnv lists the mounts for the lease of spec and adds the credentials the step may read to env (values in the
+// lease answer only, like secretEnv's). A credential that cannot be read leaves the mount without credentialsEnv:
+// the step then fails resolving its URIs with that said, and the lease still runs steps that do not read it.
+func (s *Service) mountEnv(ctx context.Context, tx pgx.Tx, spec steps.Spec, env map[string]string) ([]mounts.LeaseMount, map[string]string, error) {
+	list, creds, err := mounts.ForLease(ctx, tx, spec)
+	if err != nil {
+		return nil, nil, err
+	}
+	for i, m := range list {
+		if m.CredentialsEnv == "" {
+			continue
+		}
+		name := creds[m.CredentialsEnv]
+		var v []byte
+		if s.secrets != nil && secrets.CheckScope(ctx, tx, name, spec.ProjectID) == nil {
+			v, err = s.secrets.Read(ctx, name)
+		}
+		if s.secrets == nil || err != nil || v == nil {
+			s.log.WarnContext(ctx, "mount credentials not readable for a lease", "mount", m.Name, "secret", name)
+			list[i].CredentialsEnv = ""
+			continue
+		}
+		if env == nil {
+			env = map[string]string{}
+		}
+		env[m.CredentialsEnv] = string(v)
+	}
+	return list, env, nil
 }
 
 // envName is the environment variable of secret name: upper case, dashes as underscores (hf-token → HF_TOKEN).

@@ -43,6 +43,12 @@ export const STATE_TONES: Record<string, StatusTone> = {
   active: "done",
   archived: "neutral",
   bootstrapping: "running",
+  // Mount health and a dataset version in the local cache (phase 4, Storage).
+  healthy: "done",
+  unhealthy: "failed",
+  unknown: "neutral",
+  cached: "done",
+  evicted: "warning",
 };
 
 export type EntityVerb = {
