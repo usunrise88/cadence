@@ -5596,7 +5596,7 @@ export type EvalDelta = {
     samples: number;
     level: number;
     /**
-     * Why the delta could not be computed (an artifact left the store)
+     * Why the delta could not be computed (e.g. per-utterance scores evicted: older than eval.artifact_retention_days)
      */
     error?: string;
 };
@@ -5659,6 +5659,26 @@ export type EvalCell = {
     delta?: EvalDelta;
     worst?: Array<EvalUtterance>;
     metrics?: EvalCellMetrics;
+    evicted?: EvalCellEvicted;
+};
+
+/**
+ * The cell's per-utterance scores left the content store (eval.artifact_retention_days after the record's last use, owner decision 2026-10-03): summary, delta and the gate verdict stay; worst is empty and a delta at another significance cannot be computed until an eval computes the cell again
+ *
+ */
+export type EvalCellEvicted = {
+    /**
+     * When the scores were evicted
+     */
+    at: string;
+    /**
+     * eval.artifact_retention_days at the time of reading
+     */
+    retentionDays?: number;
+    /**
+     * What is gone and how to get it back
+     */
+    note: string;
 };
 
 export type EvalGateCheck = {

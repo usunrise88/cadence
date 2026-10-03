@@ -259,9 +259,15 @@ project) keyed by:
 - As built (stream E, migration 0024): tables `eval_records` (global, `erc_`), `evals` (`evl_`) and `eval_cells`
   (`evc_`); the decoding hash is the sha256 of `{transcribe: kind@version, profile, <the kind's locale parameter>:
   locale, boost?: {list: <boost_list hash>, weight}, augment?: {kind, profile: <hash>, seed}}` (no `beam` yet: no
-  transcribe kind takes one). A record whose `scores` artifact was evicted stays a record; the cell's delta then
-  carries an `error` instead of numbers until the cell is recomputed (records are not protected from eviction yet,
-  07 "Open questions"). Metrics beside WER (entity accuracy, latency to final) are kept in `eval_metrics` (`erm_`,
+  transcribe kind takes one). Eval artifacts are kept by age (owner decision 2026-10-03; 06 "Artifacts, metrics and
+  logs", Retention): a record's `scores` and `hypotheses` and the `metric_scores` beside it are evicted
+  `eval.artifact_retention_days` (30) after the record's last use, unless a registered model's eval or an unfinished
+  eval links it; the record (its summary), the cells' stored deltas and the verdicts stay for ever. `evals.get` marks
+  such a cell `evicted {at, retentionDays, note}` and answers no `worst` rows; `evals.gate` reuses a cell's stored delta
+  at the eval's significance and otherwise gets the delta error "per-utterance scores evicted (older than N days);
+  re-run the eval" (the check is inconclusive); `words.get` answers `410 artifact-evicted`. Planning never links a
+  record whose artifacts were evicted: the cell is computed again and the `scores` hook gives the record the new
+  artifacts (summary unchanged), so the older evals linking it get their rows back. Metrics beside WER (entity accuracy, latency to final) are kept in `eval_metrics` (`erm_`,
   migration 0028) under the same key plus the scorer's configuration (03 "Scorers and metrics").
 
 **Model versions and registration (R22).** `models.register` publishes a checkpoint as a registry version of kind

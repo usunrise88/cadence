@@ -257,6 +257,24 @@ read any of them (R15).
     cleared the mark) and which blobs a live artifact lists, and a Record after the deletion answers
     `artifact-missing`. The reference checks are index lookups (migration 0022: GIN on every `b3:` hash in step job
     specs, pipeline inputs and registry payloads; a btree on `checkpoints.artifact_hash`), no longer text scans.
+  - Eval artifacts by age (owner decision 2026-10-03; built the same day): the per-utterance artifacts of an eval
+    record — types `scores`, `hypotheses` (`eval_records`) and `metric_scores` (`eval_metrics`) — are evicted
+    `eval.artifact_retention_days` (30, range 1–3650) after the record's last use, the newest of its creation and the
+    creation of every eval whose cells link it (a metric row: the cells of its model, golden set and decoding). Kept:
+    whatever a registered model's eval links (`model` versions' `evalId` → its cells' records), whatever a queued or
+    running eval links, whatever the checks above protect (step jobs, running pipelines and steps, registry payloads,
+    checkpoints, files of live artifacts), and — with a backup mirror — anything the mirror does not hold yet (so the
+    eviction can be undone; `permanent` is false then). A periodic job `evalArtifacts.retention` (daily, and at start)
+    plans and, when something is evictable and no retention job of the system actor is queued, enqueues the
+    `artifacts.evict` job with `{retentionDays}` instead of hashes, as the system actor, without an approval (the owner
+    set the policy); the job re-plans under the store lock, marks, emits `artifact.evicted`, deletes and audits like an
+    approved eviction (`detail.retentionDays`). `eval_records`, `eval_cells.delta` and `evals.gate` are never touched.
+    Readers: `evals.get` → the cell's `evicted` note and no `worst`; the gate reuses stored deltas and only a
+    recomputation (another significance) turns inconclusive; `words.get` → `410 artifact-evicted`; `evals.new` computes
+    a record with evicted artifacts again and refreshes it (`scores_hash`, `hypotheses_hash`, provenance; not the
+    summary). The backup mirror is not pruned when the store evicts: it keeps every blob it copied (that is what
+    makes the eviction reversible); its own retention, `backups.keep_nightly` / `keep_weekly`, prunes the database sets
+    only (07 "Open questions": mirror growth).
 - Metrics: one Postgres table `metric_points` (migration 0012: job, run when there is one, pipeline step, project,
   name, optimiser step, epoch, value, wall time), indexed by (run, name, step) and (job, name, step); thousands of
   points per run need no TSDB. Points arrive from `workerMetrics.new` (≤ 5 000 per batch) and stream as `run.metrics`
@@ -490,7 +508,7 @@ Cadence upgrades itself the way it upgrades models: versioned, forward-only, wit
 | Failures | River retries with backoff; a worker heartbeat every 10 s, leases reaped after three missed beats (step error `lost`, one retry); an OOM gets one automatic retry at 0.75× batch; a host whose workers went quiet turns `unreachable` (`compute.health`); a full cache pauses freezes (phase 4); an unhealthy card closes its slot (not built: card health is per host today) — every case is an event, so it notifies |
 | Availability windows | Each compute card has windows per job kind (training, eval, shadow, export, data; none means always open, the default): each window is a set of weekdays, an opening and a closing time `HH:MM` (an end at or before the start closes the next day, `24:00` is midnight; a window past midnight belongs to the day it opens) and an IANA time zone per window (default: the instance time zone, `policies.timezone`, resolved when the queue checks the window — so a policy change moves windows that name none), edited with `compute.edit`. The queue starts a job only if its estimate fits before the window closes; a job without an estimate, or one resuming from a training state, starts in any open window. Training saves a checkpoint and its training state every 20 minutes (the training step's duty; the NeMo pack's); at a close the heartbeat answers `stop: window-closed` to training steps only (other kinds finish), the step saves and releases, and the job waits in its place for the next window and resumes from the last training state (`resumeFrom`). The same path makes long runs preemption-safe on the shared staging card (R19) |
 | Health | `/healthz` on the control plane, worker heartbeat, mount checks; a status card in Settings; a Prometheus endpoint |
-| Retention | Job log files are deleted 14 days after their last line (a daily chore); metric points live as long as their run; content-store blobs are kept until a person approves `artifacts.evict` (superseded training states only; Settings → Content store, and a `storage.low_space` failure notification below `cache.store_low_free` free); the audit log is kept one year; production audio follows the retention policy |
+| Retention | Job log files are deleted 14 days after their last line (a daily chore); metric points live as long as their run; content-store blobs are kept until a person approves `artifacts.evict` (superseded training states only; Settings → Content store, and a `storage.low_space` failure notification below `cache.store_low_free` free), except eval records' per-utterance artifacts, evicted `eval.artifact_retention_days` (30) after the record's last use by a daily sweep (owner decision 2026-10-03); the audit log is kept one year; production audio follows the retention policy |
 
 Phase 2 as built (2026-09-30, stream O):
 

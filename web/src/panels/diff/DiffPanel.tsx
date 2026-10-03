@@ -89,7 +89,11 @@ function CellDiff({ doc, evalId, cellId, utterance }: { doc: string; evalId: str
         </span>
       </PanelToolbar>
       <div className="min-h-0 flex-1 overflow-auto">
-        {row ? <UtteranceDiff row={row} ev={ev} cell={cell} locale={gs?.locale} /> : <EmptyState step="review" title="No utterance rows" hint="The cell has no scored utterances yet." />}
+        {row ? (
+          <UtteranceDiff row={row} ev={ev} cell={cell} locale={gs?.locale} />
+        ) : (
+          <EmptyState step="review" title="No utterance rows" hint={cell.evicted ? cell.evicted.note : "The cell has no scored utterances yet."} />
+        )}
       </div>
     </div>
   );

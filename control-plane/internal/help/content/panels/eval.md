@@ -35,7 +35,10 @@ boost list of a language pack).
   the same cell without it, by golden set, augmentation, model and latency profile. Both sections start folded while
   they have nothing to show; the arrow opens them.
 - **Worst utterances** of the selected cell (the 50 with most errors), filterable by text or speaker. Enter or a click
-  opens the utterance in **Diff**.
+  opens the utterance in **Diff**. Eval artifacts are kept by age (`eval.artifact_retention_days`, 30 days after the
+  record's last use): once a cell's per-utterance scores were evicted, the table and the per-utterance chart show the
+  cell's note (when, and how long artifacts are kept) instead of rows, and Audio answers *Artifact evicted*. The
+  matrix, the deltas and the verdict stay; **Run eval…** computes the cell again and brings the rows back.
 - **Gate.** The verdict, the `gates.yaml` commit it used and each check with its numbers. **Run the gate** applies the
   project's `gates.yaml` at main to a finished eval; it can be run again after the file changes. The verdict passes
   only against the project's own baseline (`@baseline`, or the default base model: an eval that named another
@@ -84,6 +87,8 @@ checkpoint is recorded as a model version.
 
 - **Does the new checkpoint beat the baseline?** Evaluate it from Checkpoints, wait for the matrix, read the ★
   column's deltas and the target check; open the worst utterances in Diff to see what changed.
+- **The worst utterances say "evicted".** The cell is older than the retention: Run eval… with the same axes; the
+  evicted cells compute again (they are not cached), the others come from the cache.
 - **Gate failed on a replay set.** Read the replay check's delta and threshold; compare deletions and insertions in
   the error-type chart before changing the mix's replay share.
 

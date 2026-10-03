@@ -1,7 +1,7 @@
 ---
 title: Freeing store space
-summary: How artifacts.evict deletes superseded training states from the content store after a person approves it, what it never touches, and why an eviction is permanent.
-contexts: [guide:freeing-store-space, entity:artifact, error:artifact-not-evictable, error:artifact-missing]
+summary: How artifacts.evict deletes superseded training states from the content store after a person approves it, how eval artifacts leave by age, what is never touched, and when an eviction is permanent.
+contexts: [guide:freeing-store-space, entity:artifact, error:artifact-not-evictable, error:artifact-missing, error:artifact-evicted]
 ---
 
 ## What this is
@@ -16,7 +16,21 @@ eviction is permanent: the dry run always says `permanent: true`.
 ## Place in the loop
 
 Train → the run finishes (or fails and you decide not to resume it) → dry-run the eviction → approve it → the job
-frees the space. Nothing evicts on its own in v1; automatic retention will use the same command later.
+frees the space. Training states never leave on their own. Eval artifacts do: they are kept by age (below).
+
+**Eval artifacts by age** (owner decision 2026-10-03). An eval record's per-utterance artifacts — `hypotheses`,
+`scores` and the `metric_scores` beside it (≈ 280 MB and 27 MB for a 76-cell eval) — are evicted
+`eval.artifact_retention_days` (30) days after the record's **last use**: when it was computed, or the newest eval that
+linked it from the cache. A daily sweep (`evalArtifacts.retention`) queues the same eviction job, without an approval:
+the owner set the policy, and with a backup mirror an artifact goes only once the mirror holds every blob of it, so
+the eviction can be undone. The record (its summary), each cell's delta and every gate verdict stay for ever. Never
+evicted by age: what a registered model's eval links (a model version's `evalId`), what an unfinished eval links, and
+anything the checks below protect. After the eviction the Eval report shows the cell's note instead of its worst
+utterances, a gate at the eval's own significance reuses the stored deltas (another significance turns the check
+inconclusive: "per-utterance scores evicted (older than 30 days); re-run the eval"), `words.get` answers
+`410 artifact-evicted`, and `evals.new` computes the cell again (the record takes the new artifacts). The backup
+mirror keeps what it copied: it is not pruned when the store evicts (it has its own set retention,
+`backups.keep_nightly` and `backups.keep_weekly`, for the database dumps only).
 
 ## Fields and defaults
 
@@ -65,6 +79,9 @@ left to do. Agents may not evict (the default preset's `agents-never-evict` rule
   under the content store (`b3/<first two hex>/<64 hex>`) and restart the control plane: at start it clears the
   eviction of every artifact whose blobs verify again. Producing the same artifact again clears it too.
 - A step input naming an evicted artifact fails with `artifact-missing`; restore it first.
+- **An eval's utterances are gone.** Its artifacts passed `eval.artifact_retention_days`: run the eval again
+  (`evals.new`); the cells compute again and the old eval's rows come back too. To keep an eval's rows, register the
+  model it gated; to keep everything longer, raise the default.
 
 ## Sources
 

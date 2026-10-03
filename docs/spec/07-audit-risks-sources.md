@@ -668,7 +668,7 @@ Still open after waves 1–2:
       already over-boosts (WER 0.466 → 0.490). Proposal: `langpacks.boost_weight` 0.5
       **Answered 2026-10-03:** `langpacks.boost_weight` 0.5 and the starter packs' headers 0.5 (owner)
 - [ ] E · not built: eval records and their `scores` are not protected from eviction (an evicted cell shows a delta
-      error); `evals.new` has no playbook estimator (the playbook uses a 0.5 GPU-hour hint). Resolved: the GPU-hours
+      error; superseded: protected by the phase-3 audit, kept by age since 2026-10-03, below); `evals.new` has no playbook estimator (the playbook uses a 0.5 GPU-hour hint). Resolved: the GPU-hours
       factor is calibrated (0.025, above); `playbooks.CurrentPhase` is 3 (audit fix F4)
 - [ ] R · GSM-FR, AMR-NB and Opus are left out of `augment_dataset@1`'s draw (reported per cell); the frame-VAD's card
       names no Hebrew
@@ -690,8 +690,18 @@ the primary profile resolves by latency; the decoding hash covers resolved trans
 stale step-kind pins are refused at planning; gate verdicts notify; media is people-only with bounded conversions,
 range-proof audit and hardened ffmpeg input; eval artifacts are protected from eviction. Open, answered by default:
 
-- [ ] Eval artifacts (hypotheses ≈ 280 MB, scores ≈ 27 MB per 76-cell eval on the stand) are never evicted and the
-      backup mirror copies them: a retention policy is needed before evals run nightly (default meanwhile: keep all)
+- [x] Eval artifacts (hypotheses ≈ 280 MB, scores ≈ 27 MB per 76-cell eval on the stand) are never evicted and the
+      backup mirror copies them: a retention policy is needed before evals run nightly (default meanwhile: keep all).
+      **Owner (2026-10-03): by age** — the per-utterance artifacts go `eval.artifact_retention_days` (30) after the
+      record's last use unless a registered model's eval or an unfinished eval links them; summaries, deltas and
+      verdicts stay for ever (06 "Artifacts, metrics and logs", Retention; decision log). Built the same day
+- [ ] Assumptions of the eval retention (2026-10-03): a record's "last use" includes evals that linked it from the
+      cache, not only its computation; evicted records are computed again rather than linked, and the refreshed
+      record keeps its first summary (a GPU decode may differ by a word, so a refreshed record's rows can disagree
+      slightly with its summary); the sweep runs without an approval but, with a backup mirror, only after the mirror
+      holds the blobs. Open: the mirror itself is never pruned, so eval artifacts accumulate there (≈ 307 MB per
+      76-cell eval); pruning mirror blobs evicted before the oldest kept backup set would make those evictions
+      permanent — owner to decide
 - [ ] The media span cache is bounded by size only; the play-audit dedupe is in memory (a restart audits a play
       again); the conversion bound is global, not per user (default: 2 conversions)
 - [ ] A failed gate notifies as an outcome, not a failure (a gate saying no is the system working)

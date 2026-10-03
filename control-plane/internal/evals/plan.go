@@ -1008,7 +1008,9 @@ func (b *builder) cells(ctx context.Context) error {
 						if err != nil {
 							return err
 						}
-						if found {
+						// A record whose per-utterance artifacts the age retention evicted is computed again: a delta, the
+						// worst utterances and the metric steps need them (the hook refreshes the record).
+						if found && !rec.Stale() {
 							c.Cached, c.RecordID = true, rec.ID
 							b.cached[k.String()] = rec
 							pl.CellsCached++

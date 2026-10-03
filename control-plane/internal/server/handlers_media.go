@@ -15,6 +15,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/audit"
 	"github.com/usunrise88/cadence/control-plane/internal/auth"
 	"github.com/usunrise88/cadence/control-plane/internal/credentials"
+	"github.com/usunrise88/cadence/control-plane/internal/defaults"
 	"github.com/usunrise88/cadence/control-plane/internal/media"
 	"github.com/usunrise88/cadence/control-plane/internal/problems"
 )
@@ -354,6 +355,12 @@ func (s *Server) WordsGet(ctx context.Context, req api.WordsGetRequestObject) (a
 			return nil, err
 		}
 		scA = &a
+	}
+	for _, a := range []*artifacts.Artifact{&hypA, scA} {
+		if a != nil && a.Evicted != nil {
+			return nil, problems.ArtifactEvicted.New("the %s artifact %s was evicted from the content store on %s (eval artifacts are kept %d days after their eval record's last use); run the eval again to see its words",
+				a.Type, a.Hash, a.Evicted.At.UTC().Format(time.DateOnly), defaults.Get().Eval.ArtifactRetentionDays.Value)
+		}
 	}
 	hyp, sc, err := s.media.Words(u, hypA, scA)
 	if err != nil {

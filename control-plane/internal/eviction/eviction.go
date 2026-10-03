@@ -325,7 +325,20 @@ func liveStates(ctx context.Context, tx pgx.Tx, f Filter) ([]state, error) {
 // referencesQuery answers why something still needs artifact hash $1, or an empty string. Each document check is a lookup in a
 // GIN index on artifact_hashes_in(doc) (migration 0022): the hashes that occur anywhere in the document's text. The
 // expressions and state predicates must stay exactly those of the partial indexes, or the planner scans.
-const referencesQuery = `SELECT CASE
+const referencesQuery = `SELECT CASE` + jobReferences + `
+		WHEN EXISTS (SELECT 1 FROM eval_records WHERE scores_hash = $1)
+			OR EXISTS (SELECT 1 FROM eval_records WHERE hypotheses_hash = $1)
+			OR EXISTS (SELECT 1 FROM eval_metrics WHERE scores_hash = $1)
+			THEN 'an eval record''s scores, hypotheses or metric scores (evals and gates read them)'` + fileReferences + `
+		ELSE '' END`
+
+// evalReferencesQuery is referencesQuery without the eval records: the age retention of eval artifacts weighs those
+// itself (evals.go).
+const evalReferencesQuery = `SELECT CASE` + jobReferences + fileReferences + `
+		ELSE '' END`
+
+// jobReferences are the checks of work and the registry that may still read artifact hash $1.
+const jobReferences = `
 		WHEN EXISTS (SELECT 1 FROM step_jobs WHERE state IN ('waiting', 'leased') AND artifact_hashes_in(spec) @> ARRAY[$1::text])
 			THEN 'a waiting or running step job names it (an input or overrides.resumeFrom)'
 		WHEN EXISTS (SELECT 1 FROM pipeline_runs WHERE state = 'running' AND artifact_hashes_in(inputs) @> ARRAY[$1::text])
@@ -335,15 +348,13 @@ const referencesQuery = `SELECT CASE
 		WHEN EXISTS (SELECT 1 FROM registry_versions WHERE artifact_hashes_in(payload) @> ARRAY[$1::text])
 			THEN 'a registry version references it'
 		WHEN EXISTS (SELECT 1 FROM checkpoints WHERE artifact_hash = $1)
-			THEN 'a registered checkpoint'
-		WHEN EXISTS (SELECT 1 FROM eval_records WHERE scores_hash = $1)
-			OR EXISTS (SELECT 1 FROM eval_records WHERE hypotheses_hash = $1)
-			OR EXISTS (SELECT 1 FROM eval_metrics WHERE scores_hash = $1)
-			THEN 'an eval record''s scores, hypotheses or metric scores (evals and gates read them)'
+			THEN 'a registered checkpoint'`
+
+// fileReferences is the check that another live artifact lists artifact hash $1 as a file.
+const fileReferences = `
 		WHEN EXISTS (SELECT 1 FROM artifact_files f JOIN artifacts o ON o.hash = f.hash
 				WHERE f.file_hash = $1 AND o.evicted_at IS NULL AND o.hash <> $1)
-			THEN 'a file of another live artifact'
-		ELSE '' END`
+			THEN 'a file of another live artifact'`
 
 // referenced answers why something still needs the artifact hash, or "".
 func referenced(ctx context.Context, q pgx.Tx, hash string) (string, error) {
