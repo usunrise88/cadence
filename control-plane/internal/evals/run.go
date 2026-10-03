@@ -162,6 +162,16 @@ func (s *Service) scoresHook(ctx context.Context, tx pgx.Tx, out steps.Output) (
 			return nil, fmt.Errorf("eval record of step %s vanished", step)
 		}
 		id, err = rec.ID, nil
+		if rec.Stale() {
+			// The age retention evicted the record's per-utterance artifacts and planning computed the cell again:
+			// the record takes the new ones (same key: same model, data, normalizer, decoding and scorer). Its summary
+			// stays as first computed, like every cell's delta and verdict that read it.
+			if _, err = tx.Exec(ctx, `UPDATE eval_records SET scores_hash = $2, hypotheses_hash = NULLIF($3, ''), project_id = $4,
+					eval_id = $5, pipeline_run_id = $6, step_id = $7 WHERE id = $1`,
+				rec.ID, out.Artifact.Hash, hyp, e.ProjectID, e.ID, out.PipelineRunID, out.StepID); err != nil {
+				return nil, fmt.Errorf("refresh eval record %s: %w", rec.ID, err)
+			}
+		}
 	}
 	if err != nil {
 		return nil, fmt.Errorf("insert eval record: %w", err)
@@ -375,6 +385,10 @@ func (s *Service) delta(c Cell, cells []Cell, recs map[string]Record, sig Signif
 	br, ok2 := recs[base.RecordID]
 	if !ok1 || !ok2 {
 		d.Error = "a side has no scores yet"
+		return d
+	}
+	if sr.ScoresEvicted != nil || br.ScoresEvicted != nil {
+		d.Error = EvictedScores(s.retentionDays())
 		return d
 	}
 	su, err := ReadUtterances(s.CAS, sr.Scores)

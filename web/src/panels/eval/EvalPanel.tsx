@@ -240,11 +240,11 @@ function Reasons({ items, label }: { items: { reason: string; cells: string[] }[
 
 /** Per-utterance WER ECDF of the selected cell against its baseline (the API's worst rows, up to ECDF_ROWS each). */
 function EcdfSection({ ev, cell, base }: { ev: Eval; cell: EvalCell; base?: EvalCell }) {
-  const opts = (c?: EvalCell) => ({ ...evalsGetOptions({ path: { id: ev.id }, query: { worst: ECDF_ROWS, cell: c?.id ?? "" } }), enabled: !!c?.summary });
+  const opts = (c?: EvalCell) => ({ ...evalsGetOptions({ path: { id: ev.id }, query: { worst: ECDF_ROWS, cell: c?.id ?? "" } }), enabled: !!c?.summary && !c.evicted });
   const qs = useQuery(opts(cell));
   const qb = useQuery(opts(base));
   const side = (c: EvalCell | undefined, data: Eval | undefined) => {
-    const rows = c && data?.cells?.find((x) => x.id === c.id)?.worst;
+    const rows = c && !c.evicted ? data?.cells?.find((x) => x.id === c.id)?.worst : undefined;
     return rows && c?.summary ? { rows, total: c.summary.utterances } : undefined;
   };
   const s = side(cell, qs.data);
@@ -259,6 +259,8 @@ function EcdfSection({ ev, cell, base }: { ev: Eval; cell: EvalCell; base?: Eval
         <p className="text-muted-foreground">Loading…</p>
       ) : qs.error ? (
         <p className="text-destructive">{errorMessage(qs.error)}</p>
+      ) : cell.evicted ? (
+        <p className="text-muted-foreground">{cell.evicted.note}</p>
       ) : (
         <p className="text-muted-foreground">The distribution appears when the selected cell is scored.</p>
       )}
@@ -702,8 +704,9 @@ function MatrixButton({ c, selected, onSelect }: { c: MatrixCell; selected: bool
 }
 
 function Utterances({ ev, cell, doc, selected }: { ev: Eval; cell: EvalCell; doc: string; selected?: number }) {
-  const q = useQuery({ ...evalsGetOptions({ path: { id: ev.id }, query: { worst: WORST_N, cell: cell.id } }), enabled: !!cell.summary });
-  const rows = q.data?.cells?.find((c) => c.id === cell.id)?.worst ?? [];
+  const q = useQuery({ ...evalsGetOptions({ path: { id: ev.id }, query: { worst: WORST_N, cell: cell.id } }), enabled: !!cell.summary && !cell.evicted });
+  // An evicted cell has no rows (its scores left the store): its note stands in for the table.
+  const rows = (!cell.evicted && q.data?.cells?.find((c) => c.id === cell.id)?.worst) || [];
   const select = useSelection((s) => s.select);
   const [filter, setFilter] = useState("");
   const [errorsOnly, setErrorsOnly] = useState(true);
@@ -730,9 +733,14 @@ function Utterances({ ev, cell, doc, selected }: { ev: Eval; cell: EvalCell; doc
       }
     >
       {!cell.summary ? <p className="text-muted-foreground">The cell is not scored yet.</p> : null}
+      {cell.evicted ? (
+        <p className="text-muted-foreground" data-slot="utterances-evicted">
+          {cell.evicted.note}
+        </p>
+      ) : null}
       {q.isLoading ? <p className="text-muted-foreground">Loading…</p> : null}
       {q.error ? <p className="text-destructive">{errorMessage(q.error)}</p> : null}
-      {cell.summary && q.data && rows.length === 0 ? <p className="text-muted-foreground">No utterance rows in the scores.</p> : null}
+      {cell.summary && !cell.evicted && q.data && rows.length === 0 ? <p className="text-muted-foreground">No utterance rows in the scores.</p> : null}
       {shown.length ? (
         <table className="w-full table-fixed" aria-label="Worst utterances; Enter opens one in Diff" data-slot="utterance-table">
           <thead className="text-left text-muted-foreground">

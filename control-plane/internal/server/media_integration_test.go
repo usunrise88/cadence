@@ -368,6 +368,17 @@ func TestMediaPeaksWordsTiles(t *testing.T) {
 	}
 	other, _ := mediaUtterance(t, e, "other", media.EncodeWAV([][]float32{tone(800, 8000, 100)}, 8000), 8000, 1, 0.1)
 	expectProblem(t, e.do("GET", "/api/registry/utterances/"+other+"/words?hypotheses="+hypHash, ""), 404, "not-found")
+	// The age retention evicted the cell's scores (eval.artifact_retention_days): 410 artifact-evicted, not a 404 or 500.
+	if _, err := e.pool.Exec(context.Background(), `UPDATE artifacts SET evicted_at = now() WHERE hash = $1`, scoresHash); err != nil {
+		t.Fatal(err)
+	}
+	if p := expectProblem(t, e.do("GET", "/api/registry/utterances/"+id+"/words?hypotheses="+hypHash+"&scores="+scoresHash, ""), 410,
+		"artifact-evicted"); !strings.Contains(p.Detail, "run the eval again") {
+		t.Fatalf("evicted words detail %q", p.Detail)
+	}
+	if _, err := e.pool.Exec(context.Background(), `UPDATE artifacts SET evicted_at = NULL WHERE hash = $1`, scoresHash); err != nil {
+		t.Fatal(err)
+	}
 
 	// Tiles: none computed yet, then a spectrogram_tiles artifact of the audio.
 	expectProblem(t, e.do("GET", "/api/registry/utterances/"+id+"/spectrogram", ""), 404, "not-found")

@@ -90,6 +90,15 @@ func (s *Service) defaults() *defaults.Defaults {
 	return defaults.Get()
 }
 
+// retentionDays is eval.artifact_retention_days: how long a record's per-utterance artifacts stay after its last use.
+func (s *Service) retentionDays() int { return s.defaults().Eval.ArtifactRetentionDays.Value }
+
+// EvictedScores is the delta error (and the gate check's message) of a cell whose per-utterance scores the age
+// retention evicted.
+func EvictedScores(days int) string {
+	return fmt.Sprintf("per-utterance scores evicted (older than %d days); re-run the eval", days)
+}
+
 func (s *Service) repo() pipelines.Repo {
 	if s.Repo == nil {
 		return nil
@@ -385,15 +394,25 @@ type Record struct {
 	Hypotheses          string
 	Summary             json.RawMessage
 	Family              string
+	// ScoresEvicted and HypothesesEvicted are when the age retention (internal/eviction, eval.artifact_retention_days)
+	// removed the record's per-utterance artifacts from the store; nil while they are there. The summary stays.
+	ScoresEvicted     *time.Time
+	HypothesesEvicted *time.Time
 }
 
+// Stale reports whether the record's per-utterance artifacts left the store: its summary still answers, but a delta,
+// the worst utterances and the metric steps need them, so planning computes the cell again (refreshing the record).
+func (r Record) Stale() bool { return r.ScoresEvicted != nil || r.HypothesesEvicted != nil }
+
 const recordCols = `id, model_key, golden_set_version_id, normalizer_version_id, decoding_hash, scorer, profile, decoding, scores_hash,
-	coalesce(hypotheses_hash, ''), summary, family`
+	coalesce(hypotheses_hash, ''), summary, family,
+	(SELECT a.evicted_at FROM artifacts a WHERE a.hash = eval_records.scores_hash),
+	(SELECT a.evicted_at FROM artifacts a WHERE a.hash = eval_records.hypotheses_hash)`
 
 func scanRecord(row pgx.CollectableRow) (Record, error) {
 	var r Record
 	err := row.Scan(&r.ID, &r.ModelKey, &r.GoldenSetVersionID, &r.NormalizerVersionID, &r.DecodingHash, &r.Scorer, &r.Profile, &r.Decoding,
-		&r.Scores, &r.Hypotheses, &r.Summary, &r.Family)
+		&r.Scores, &r.Hypotheses, &r.Summary, &r.Family, &r.ScoresEvicted, &r.HypothesesEvicted)
 	return r, err
 }
 

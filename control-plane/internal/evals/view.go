@@ -3,6 +3,7 @@ package evals
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -29,6 +30,14 @@ type CellView struct {
 	Delta              json.RawMessage `json:"delta,omitempty"`
 	Worst              []Worst         `json:"worst,omitempty"`
 	Metrics            *MetricsView    `json:"metrics,omitempty"`
+	Evicted            *CellEvicted    `json:"evicted,omitempty"`
+}
+
+// CellEvicted says that a cell's per-utterance scores left the store (the contract's EvalCellEvicted).
+type CellEvicted struct {
+	At            time.Time `json:"at"`
+	RetentionDays int       `json:"retentionDays,omitempty"`
+	Note          string    `json:"note"`
 }
 
 // Progress counts an eval's cells.
@@ -144,7 +153,12 @@ func (s *Service) View(ctx context.Context, q storage.Querier, e Eval, vq ViewQu
 		}
 		if r, ok := recs[c.RecordID]; ok {
 			cv.Scores, cv.Hypotheses, cv.Summary = r.Scores, r.Hypotheses, r.Summary
-			if vq.Worst > 0 && (c.Role == RoleSubject || vq.Cell != "") {
+			if r.ScoresEvicted != nil {
+				days := s.retentionDays()
+				cv.Evicted = &CellEvicted{At: *r.ScoresEvicted, RetentionDays: days, Note: fmt.Sprintf(
+					"the per-utterance scores were evicted on %s (eval artifacts are kept %d days after their eval record's last use); the summary, the delta and the gate verdict stay — run the eval again (evals.new) to see the utterances",
+					r.ScoresEvicted.UTC().Format(time.DateOnly), days)}
+			} else if vq.Worst > 0 && (c.Role == RoleSubject || vq.Cell != "") {
 				if rows, err := ReadUtterances(s.CAS, r.Scores); err == nil {
 					cv.Worst = WorstOf(rows, vq.Worst)
 				}

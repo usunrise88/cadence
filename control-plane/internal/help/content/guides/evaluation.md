@@ -96,6 +96,7 @@ Train → **evaluate** → register → (phase 5) deploy. Every playbook that tr
 | `eval.bootstrap_samples`, `eval.confidence`, `eval.bootstrap_seed` | 1000, 0.95, 1 | The interval on every delta |
 | `eval.gpu_hours_per_audio_hour` | 0.025 | GPU-hours per audio hour of a cell to compute (the estimate) |
 | `eval.character_error_languages` | zh, yue, ja, th, lo, km, my | Languages scored and gated on CER |
+| `eval.artifact_retention_days` | 30 | Days a record's hypotheses, scores and metric scores stay after its last use; summaries, deltas and verdicts stay for ever |
 | `gate.replay_max_regression` | 0.005 | Largest replay WER rise (0.5 points) before the gate fails |
 | `gate.deletions_insertions` | true | Fail when deletions fall while insertions rise |
 
@@ -119,6 +120,10 @@ Train → **evaluate** → register → (phase 5) deploy. Every playbook that tr
   0.5; compare general WER and look for insertions of listed terms in the worst utterances.
 - **Make a passed model the baseline.** Register it, then Set as baseline; the next evals compare against it, and its
   cells come from the cache.
+- **An old eval's utterances are gone.** Eval artifacts are kept by age (`eval.artifact_retention_days`, owner
+  decision 2026-10-03): the cell says its per-utterance scores were evicted, the matrix, deltas and verdict stay. Run
+  the eval again; cells whose artifacts were evicted are computed, not taken from the cache. A registered model's eval
+  is never evicted (see *Freeing store space*).
 
 ## Sources
 

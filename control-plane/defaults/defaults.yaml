@@ -4,7 +4,7 @@
 # the control-plane binary and packaged with the worker. Every value carries a description, a source and, where it
 # applies, a safe range; a value without a published source is a "Cadence recommendation" re-checked after the spikes.
 # Keys are addressed as <section>.<key> (x-cadence.defaultRef: training.steps). Bump `version` on every change.
-version: 11
+version: 12
 
 # The project wizard's Recommended mode (docs/spec/02-domain-projects-registry.md "Project wizard").
 wizard:
@@ -472,6 +472,12 @@ eval:
     description: GPU time one eval cell spends per hour of golden-set audio (streaming decode at one latency profile, model load included); evals.new multiplies it by the audio of the cells it computes, and the policy weighs the result against the GPU budgets
     source: "Measured on the stand (2026-10-02): the reference loop at batch 32 took 0.81 GPU-hours for 79 audio hours (0.010); the pipeline decoder at batch 8 runs at RTF 0.0165 (stream T); 1.5× margin over the latter"
     range: { min: 0.001, max: 10 }
+  artifact_retention_days:
+    value: 30
+    unit: days
+    description: Days an eval record's per-utterance artifacts (hypotheses, scores, metric scores) stay in the content store after the record was last used (computed or linked by an eval); then a daily sweep evicts them unless a registered model's eval or an unfinished eval reads them. The record's summary, each cell's delta and the gate verdict are kept for ever
+    source: "Owner decision 2026-10-03: eval artifacts are kept by age; the cells' summaries, deltas and verdicts are kept for ever"
+    range: { min: 1, max: 3650 }
 
 gate:
   target_rule:
