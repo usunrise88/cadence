@@ -233,7 +233,7 @@ One word per action, everywhere: in menus, the palette, API operation ids and MC
 | note, sync | Projects (learnings; template and skill sync) | Yes | None |
 | archive | Projects, sources | Yes | Inline confirm |
 | revoke | Credentials, tokens (R1) | No | Inline confirm |
-| verify | Agent credentials: a tiny real request through the agent, the result recorded (2026-09-30) | — | None |
+| verify | Agent credentials: a tiny real request through the agent, the result recorded (2026-09-30); mounts: the health check a worker runs (`mounts.verify`, phase 4) | — | None |
 
 This table is the whole vocabulary: every MCP tool, API operation id and command id is <entity>.<verb> with a verb from it (the system tab lists the tools). Each verb has one Iconoir icon and one default key, defined once in the command registry; a panel that needs a new verb adds it here first.
 

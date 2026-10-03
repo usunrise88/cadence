@@ -1,4 +1,4 @@
-import { Archive, Database, DatabaseRestore, Refresh, ShieldCheck } from "iconoir-react";
+import { Download, Plus, ScanBarcode, ShieldCheck, Upload } from "iconoir-react";
 import { commandHeaders } from "@/api/client";
 import { datasetsEvict, datasetsMaterialize, mountsNew, mountsScan, mountsVerify } from "@/api/gen/sdk.gen";
 import type { ApprovalAccepted, DatasetCachePlan, JobAccepted, Mount, MountNew } from "@/api/gen/types.gen";
@@ -35,7 +35,7 @@ export function registerStorageCommands(): void {
       operation: "mounts.new",
       title: "Add mount",
       group: "Edit",
-      icon: Database,
+      icon: Plus,
       hidden: true,
       run: async (_ctx, args) => {
         const a = need<StorageCommands["mounts.new"]["args"]>(args, "Add mount");
@@ -48,7 +48,7 @@ export function registerStorageCommands(): void {
       operation: "mounts.scan",
       title: "Rescan mount",
       group: "Edit",
-      icon: Refresh,
+      icon: ScanBarcode,
       hidden: true,
       run: async (_ctx, args) => {
         const a = need<MountArgs>(args, "Rescan mount");
@@ -80,7 +80,7 @@ export function registerStorageCommands(): void {
       operation: "datasets.evict",
       title: "Evict dataset from the cache",
       group: "Edit",
-      icon: Archive,
+      icon: Upload,
       hidden: true,
       run: async (_ctx, args) => {
         const a = need<DatasetCacheArgs>(args, "Evict dataset");
@@ -93,7 +93,7 @@ export function registerStorageCommands(): void {
       operation: "datasets.materialize",
       title: "Materialize dataset into the cache",
       group: "Edit",
-      icon: DatabaseRestore,
+      icon: Download,
       hidden: true,
       run: async (_ctx, args) => {
         const a = need<DatasetCacheArgs>(args, "Materialize dataset");
