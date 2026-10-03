@@ -55,6 +55,8 @@ services:
       - ${CADENCE_EXPORTS_DIR:-exports}:/mnt/exports:ro
     ports: ["127.0.0.1:${CADENCE_PORT:-8080}:8080"] # localhost only; TLS ends at the host's Caddy (R39)
     networks: [default, agents]
+    # A pipeline's dry run checks that a service an auxiliary model names answers (auxiliary/oasis on the host).
+    extra_hosts: ["host.docker.internal:host-gateway"]
     depends_on:
       postgres: { condition: service_healthy }
 
@@ -167,6 +169,29 @@ services:
     depends_on: [control-plane]
     # The step stop grace (CADENCE_STOP_GRACE_SECONDS, 60 s) plus the release, as for the GPU worker
     # (worker/tests/test_compose.py ties the numbers).
+    stop_grace_period: 90s
+
+  # The CPU services worker, runtime services: step kinds that call a running service an auxiliary model names
+  # (oasis_transcribe → auxiliary/oasis on the host at host.docker.internal:50051). Cadence never starts the service.
+  # `docker compose --profile services up -d worker-services`; create the secret oasis-token first (secrets.new).
+  worker-services:
+    image: cadence/worker-services:${CADENCE_VERSION:-dev}
+    profiles: [services]
+    build:
+      context: .
+      dockerfile: worker/Dockerfile.services
+      args: *version
+    environment:
+      CADENCE_URL: http://control-plane:8080
+      CADENCE_WORKER_TOKEN_FILE: /worker-credential/token
+      CADENCE_WORKER_HOST: staging
+      CADENCE_CAS_DIR: /var/lib/cadence/cas
+      CADENCE_WORKER_SCRATCH: /var/lib/cadence/scratch
+    volumes:
+      - worker-credential:/worker-credential:ro
+      - artifacts:/var/lib/cadence
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    depends_on: [control-plane]
     stop_grace_period: 90s
 
 networks:

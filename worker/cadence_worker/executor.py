@@ -190,6 +190,7 @@ class LeaseRunner:
             "attempt": spec.get("attempt", 1),
             # mount:// URIs resolve against these (cadence_worker.mounts); credentials come in the lease env.
             "mounts": list(self.lease.get("mounts") or []),
+            "auxiliaries": spec.get("auxiliaries") or {},
         }
         (self.dir / "step.json").write_text(json.dumps(job, indent=2), encoding="utf-8")
         return None

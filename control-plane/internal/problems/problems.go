@@ -110,6 +110,9 @@ var (
 	// Mounts and the local cache (phase 4 · stream M).
 	MountUnhealthy       = Type{"mount-unhealthy", http.StatusConflict, "Mount unhealthy"}
 	StorageQuotaExceeded = Type{"storage-quota-exceeded", http.StatusConflict, "Project storage quota exceeded"}
+	// Auxiliary models and pseudo-labels (phase 4 · stream X, R26).
+	AuxiliaryUnavailable    = Type{"auxiliary-unavailable", http.StatusServiceUnavailable, "Auxiliary service unavailable"}
+	AuxiliaryLicenceRefused = Type{"auxiliary-licence-refused", http.StatusUnprocessableEntity, "Auxiliary licence refused"}
 )
 
 // Types lists every registered type.
@@ -130,6 +133,7 @@ func Types() []Type {
 		TranscriptionLimit,
 		DatasetNotFrozen, SourceUnlicensed,
 		MountUnhealthy, StorageQuotaExceeded,
+		AuxiliaryUnavailable, AuxiliaryLicenceRefused,
 	}
 }
 

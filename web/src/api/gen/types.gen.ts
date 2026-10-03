@@ -425,9 +425,9 @@ export type CredentialList = {
 };
 
 /**
- * The kinds registered so far; runtime, model_family and step_kind are published by workers (R40, R41, R45); noise_bank holds background noise for augmentation, registered by dataset_import with purpose noise; golden_set (goldenSets.freeze), normalizer (scoring normalizers, R21) and model (models.register, R22) arrive in phase 3
+ * The kinds registered so far; runtime, model_family and step_kind are published by workers (R40, R41, R45); noise_bank holds background noise for augmentation, registered by dataset_import with purpose noise; golden_set (goldenSets.freeze), normalizer (scoring normalizers, R21) and model (models.register, R22) arrive in phase 3; auxiliary (LID classifiers, pseudo-label members, aligners: AuxiliaryPayload, R26) in phase 4
  */
-export type RegistryKind = 'base_model' | 'dataset_version' | 'template' | 'runtime' | 'model_family' | 'step_kind' | 'noise_bank' | 'golden_set' | 'normalizer' | 'model';
+export type RegistryKind = 'base_model' | 'dataset_version' | 'template' | 'runtime' | 'model_family' | 'step_kind' | 'noise_bank' | 'golden_set' | 'normalizer' | 'model' | 'auxiliary';
 
 /**
  * draft → frozen → deprecated; a frozen version never changes
@@ -925,6 +925,10 @@ export type Defaults = {
      * Manual transcription tests and the live channel (phase 3): ticket, session and idle limits, frame size, file caps, the relay's queue and the interactive job's priority
      */
     transcriptions?: DefaultSection;
+    /**
+     * Pseudo-labels (phase 4): when the members of a pseudo-label ensemble agree on a segment's text (pairwise WER, agreeing members, language identification)
+     */
+    pseudolabel?: DefaultSection;
     estimates: {
         bytes_per_audio_hour: DefaultValue;
         measured_plus_minus?: DefaultValue;
@@ -3336,6 +3340,12 @@ export type StepSpec = {
         resumeFrom?: string;
     };
     attempt: number;
+    /**
+     * Parameter name → the registry version it names (x-cadence.registryRef), resolved and adopted for the project (phase 4 · stream X)
+     */
+    auxiliaries?: {
+        [key: string]: StepRegistryRef;
+    };
 };
 
 export type ArtifactRef = {
@@ -7927,6 +7937,176 @@ export type DatasetPreview = {
     };
 };
 
+/**
+ * lid: language identification; pseudolabel: a member of the pseudo-label ensemble; align: a CTC aligner for reference texts
+ */
+export type AuxiliaryRole = 'lid' | 'pseudolabel' | 'align';
+
+export type AuxiliaryService = {
+    /**
+     * The service's interface, e.g. grpc-asr (unary Transcribe and GetModelInfo)
+     */
+    kind: string;
+    /**
+     * host:port as the control plane and the worker reach it (e.g. host.docker.internal:50051)
+     */
+    endpoint: string;
+    /**
+     * The wire contract the worker pack that serves the role speaks (its proto package and version)
+     */
+    protocol: string;
+    /**
+     * The secret (secrets.new) the step sends as a bearer token, when the service asks for one
+     */
+    tokenSecret?: string;
+};
+
+/**
+ * The payload of an auxiliary version (auxiliary/<name>): a model a step loads per job ({hfRepo, revision}) or a running service ({service}), never both. Cadence never starts a service. Adoption (projects.adopt) is an approval for everyone and refuses outputsCommercialUse false (R26).
+ *
+ */
+export type AuxiliaryPayload = {
+    roles: Array<AuxiliaryRole>;
+    /**
+     * The licence of the weights and, where it differs, of their training data (SPDX ids where they exist)
+     */
+    licence: string;
+    /**
+     * Whether the licence allows commercial use of what the model outputs (transcripts, labels); false is never adopted
+     */
+    outputsCommercialUse: boolean;
+    /**
+     * Conditions of use the licence check found (attribution, forbidden uses, languages it is fit for)
+     */
+    conditions?: Array<string>;
+    /**
+     * BCP-47 primary tags the model is fit for, or ["*"]
+     */
+    languages: Array<string>;
+    /**
+     * A Hugging Face repository the step loads (offline, from the worker's HF cache)
+     */
+    hfRepo?: string;
+    /**
+     * The pinned revision (commit) of hfRepo
+     */
+    revision?: string;
+    service?: AuxiliaryService;
+    /**
+     * What the worker pack loads the weights with (the pack reads it; the control plane does not)
+     */
+    engine?: string;
+    /**
+     * Where the licence check read the licence (model card, licence page)
+     */
+    sources?: Array<string>;
+    /**
+     * When the licence was checked
+     */
+    checkedAt?: string;
+};
+
+export type AuxiliaryVersion = RegistryVersion & {
+    auxiliary: AuxiliaryPayload;
+    usedBy: Array<UsedBy>;
+};
+
+export type AuxiliaryVersionList = {
+    items: Array<AuxiliaryVersion>;
+};
+
+/**
+ * A registry version a step parameter names (x-cadence.registryRef), resolved for the project when the run was planned; in v1 only auxiliary versions resolve, so payload is an AuxiliaryPayload
+ */
+export type StepRegistryRef = {
+    versionId: string;
+    name: string;
+    version: string;
+    payload: AuxiliaryPayload;
+};
+
+/**
+ * open until a person resolves it (the Triage panel and triage.accept/correct/reject arrive with annotation)
+ */
+export type TriageState = 'open' | 'accepted' | 'corrected' | 'rejected';
+
+/**
+ * disagreement: no two members within pseudolabel.max_pairwise_wer; lid-mismatch: language identification disagrees with the source's language; lid-unknown: no language identification reached its confidence floor while the step requires one; no-speech: every member returned empty text; too-few-members: fewer than two members produced a hypothesis
+ */
+export type TriageReason = 'disagreement' | 'lid-mismatch' | 'lid-unknown' | 'no-speech' | 'too-few-members';
+
+export type TriageCandidate = {
+    /**
+     * The member's label (its auxiliary or model family, from its hypotheses)
+     */
+    member: string;
+    text: string;
+    /**
+     * Mean pairwise WER of this text to the other members' texts, after the scoring normalizer
+     */
+    meanWer?: number;
+    /**
+     * The member's own confidence, when it reports one
+     */
+    confidence?: number;
+    /**
+     * The language the member detected, when it reports one
+     */
+    language?: string;
+};
+
+export type TriageItem = {
+    /**
+     * tri_…
+     */
+    id: string;
+    projectId: string;
+    state: TriageState;
+    reason: TriageReason;
+    pipelineRunId: string;
+    stepId: string;
+    /**
+     * The segments artifact the item came from (b3:…)
+     */
+    segmentsHash: string;
+    segment: {
+        /**
+         * b3 hash of the canonical 16 kHz PCM16 segment (the utterance identity)
+         */
+        hash: string;
+        /**
+         * mount://<mount>/<path>#t=<start>,<end>&ch=<n>
+         */
+        uri?: string;
+        start?: number;
+        end?: number;
+        channel?: number;
+        /**
+         * caller | bot | mono
+         */
+        role?: string;
+        language?: string;
+        speaker?: string;
+    };
+    candidates: Array<TriageCandidate>;
+    /**
+     * The prefilled best candidate (lowest mean WER to the others)
+     */
+    best: string;
+    lid?: {
+        language?: string;
+        confidence?: number;
+        agrees?: boolean;
+    };
+    confidence: number;
+    createdAt: string;
+    rev: number;
+};
+
+export type TriageItemList = {
+    items: Array<TriageItem>;
+};
+
 export type SecretNewWritable = {
     name: SecretName;
     kind: SecretKind;
@@ -9128,6 +9308,10 @@ export type ProjectsAdoptResponses = {
      * Adopted (or, for a dry run, what would be adopted); ETag is the project's new revision
      */
     200: Adoption;
+    /**
+     * Gated; a person decides the approval on the approvals topic
+     */
+    202: ApprovalAccepted;
 };
 
 export type ProjectsAdoptResponse = ProjectsAdoptResponses[keyof ProjectsAdoptResponses];
@@ -15640,3 +15824,105 @@ export type UtterancesSearchResponses = {
 };
 
 export type UtterancesSearchResponse = UtterancesSearchResponses[keyof UtterancesSearchResponses];
+
+export type AuxiliariesListData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)
+         */
+        collection?: string;
+        /**
+         * Only versions in this state
+         */
+        state?: VersionState;
+    };
+    url: '/registry/auxiliaries';
+};
+
+export type AuxiliariesListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type AuxiliariesListError = AuxiliariesListErrors[keyof AuxiliariesListErrors];
+
+export type AuxiliariesListResponses = {
+    /**
+     * Auxiliary versions, newest first
+     */
+    200: AuxiliaryVersionList;
+};
+
+export type AuxiliariesListResponse = AuxiliariesListResponses[keyof AuxiliariesListResponses];
+
+export type AuxiliariesGetData = {
+    body?: never;
+    path: {
+        /**
+         * Registry version id (ver_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/registry/auxiliaries/{id}';
+};
+
+export type AuxiliariesGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type AuxiliariesGetError = AuxiliariesGetErrors[keyof AuxiliariesGetErrors];
+
+export type AuxiliariesGetResponses = {
+    /**
+     * The version
+     */
+    200: AuxiliaryVersion;
+};
+
+export type AuxiliariesGetResponse = AuxiliariesGetResponses[keyof AuxiliariesGetResponses];
+
+export type TriageListData = {
+    body?: never;
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        state?: TriageState;
+        reason?: TriageReason;
+        /**
+         * Only items from this pipeline run (plr_…)
+         */
+        pipelineRun?: string;
+        limit?: number;
+    };
+    url: '/projects/{p}/triage';
+};
+
+export type TriageListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type TriageListError = TriageListErrors[keyof TriageListErrors];
+
+export type TriageListResponses = {
+    /**
+     * Triage items, newest first
+     */
+    200: TriageItemList;
+};
+
+export type TriageListResponse = TriageListResponses[keyof TriageListResponses];

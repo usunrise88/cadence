@@ -602,7 +602,11 @@ paths:
         toolDescription: >
           Adopt a registry version (base model, dataset version, template) into this project by reference, so mixes,
           runs and aliases may use it. Only frozen versions are adoptable. Needs If-Match with the project's revision
-          (projects.get); the project's revision goes up by one.
+          (projects.get); the project's revision goes up by one. Adopting an auxiliary model (LID, pseudo-label
+          member, aligner; R26) is a registry-scope approval for everyone (202 with an approvalId) and is refused when
+          its licence forbids commercial use of its outputs.
+        # The handler names the version's kind to the policy engine (preset rule auxiliary-adoption: kind=auxiliary).
+        gatedWhen: { param: kind, values: [auxiliary] }
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
         - $ref: "#/components/parameters/IfMatch"
@@ -615,6 +619,7 @@ paths:
           description: Adopted (or, for a dry run, what would be adopted); ETag is the project's new revision
           headers: { ETag: { $ref: "#/components/headers/ETag" } }
           content: { application/json: { schema: { $ref: "#/components/schemas/Adoption" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
         default: { $ref: "#/components/responses/Problem" }
 
   /projects/{p}/adoptions:
@@ -4163,6 +4168,67 @@ paths:
         default: { $ref: "#/components/responses/Problem" }
 
   # ---------------------------------------------------------------- auxiliary models, pseudo-labels, triage queue (phase 4 · stream X) — add paths below this line
+  /registry/auxiliaries:
+    x-cadence: { entity: auxiliaries, kind: auxiliary }
+    get:
+      operationId: auxiliaries.list
+      summary: List auxiliary model versions (LID classifiers, pseudo-label members, aligners) with their licence check
+      tags: [registry]
+      x-cadence:
+        toolDescription: >
+          List auxiliary models (auxiliary/<name>): language classifiers, pseudo-label members and aligners Cadence
+          uses to prepare data, never trains. Each carries its roles (lid, pseudolabel, align), the licence check
+          (licence, outputsCommercialUse, conditions, sources) and either pinned weights (hfRepo, revision) or a
+          running service (endpoint) that Cadence never starts. A project adopts one with projects.adopt — an approval
+          the admin decides after reading the licence; step parameters then name it (whisper_transcribe,
+          oasis_transcribe, lid_classify).
+      parameters:
+        - $ref: "#/components/parameters/RegistryCollectionFilter"
+        - $ref: "#/components/parameters/RegistryStateFilter"
+      responses:
+        "200":
+          description: Auxiliary versions, newest first
+          content: { application/json: { schema: { $ref: "#/components/schemas/AuxiliaryVersionList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/auxiliaries/{id}:
+    x-cadence: { entity: auxiliaries, kind: auxiliary }
+    parameters: [{ $ref: "#/components/parameters/VersionId" }]
+    get:
+      operationId: auxiliaries.get
+      summary: Get an auxiliary model version with its payload and the projects that adopted it
+      tags: [registry]
+      responses:
+        "200":
+          description: The version
+          content: { application/json: { schema: { $ref: "#/components/schemas/AuxiliaryVersion" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /projects/{p}/triage:
+    x-cadence: { entity: triage, kind: triage_item }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    get:
+      operationId: triage.list
+      summary: The project's triage queue — segments whose pseudo-label members disagreed, newest first
+      tags: [projects]
+      x-cadence:
+        toolDescription: >
+          List the project's triage items, newest first. A pseudo-label ensemble (pseudolabel_ensemble) puts a segment
+          here when its members' texts disagree (pairwise WER above pseudolabel.max_pairwise_wer for every pair), when
+          language identification disagrees with the source's language, or when no member heard speech. Each item has
+          the segment (mount:// URI, b3 hash, start/end, channel), every member's text, the best candidate and why it
+          is disputed. Disputed segments never reach training; a person resolves them in the Triage panel.
+      parameters:
+        - { name: state, in: query, required: false, schema: { $ref: "#/components/schemas/TriageState" } }
+        - { name: reason, in: query, required: false, schema: { $ref: "#/components/schemas/TriageReason" } }
+        - { name: pipelineRun, in: query, required: false, description: "Only items from this pipeline run (plr_…)", schema: { type: string, maxLength: 100 } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+      responses:
+        "200":
+          description: Triage items, newest first
+          content: { application/json: { schema: { $ref: "#/components/schemas/TriageItemList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
 
   # ---------------------------------------------------------------- planned (later phases)
 
@@ -4651,8 +4717,8 @@ components:
     #
     RegistryKind:
       type: string
-      enum: [base_model, dataset_version, template, runtime, model_family, step_kind, noise_bank, golden_set, normalizer, model]
-      description: "The kinds registered so far; runtime, model_family and step_kind are published by workers (R40, R41, R45); noise_bank holds background noise for augmentation, registered by dataset_import with purpose noise; golden_set (goldenSets.freeze), normalizer (scoring normalizers, R21) and model (models.register, R22) arrive in phase 3"
+      enum: [base_model, dataset_version, template, runtime, model_family, step_kind, noise_bank, golden_set, normalizer, model, auxiliary]
+      description: "The kinds registered so far; runtime, model_family and step_kind are published by workers (R40, R41, R45); noise_bank holds background noise for augmentation, registered by dataset_import with purpose noise; golden_set (goldenSets.freeze), normalizer (scoring normalizers, R21) and model (models.register, R22) arrive in phase 3; auxiliary (LID classifiers, pseudo-label members, aligners: AuxiliaryPayload, R26) in phase 4"
     VersionState:
       type: string
       enum: [draft, frozen, deprecated]
@@ -5039,6 +5105,7 @@ components:
           additionalProperties: { $ref: "#/components/schemas/DefaultSection" }
         sweeps: { $ref: "#/components/schemas/DefaultSection", description: "Sweeps (phase 3): mode, run counts, the GPU-hour cap and the seed of a random draw" }
         transcriptions: { $ref: "#/components/schemas/DefaultSection", description: "Manual transcription tests and the live channel (phase 3): ticket, session and idle limits, frame size, file caps, the relay's queue and the interactive job's priority" }
+        pseudolabel: { $ref: "#/components/schemas/DefaultSection", description: "Pseudo-labels (phase 4): when the members of a pseudo-label ensemble agree on a segment's text (pairwise WER, agreeing members, language identification)" }
         estimates:
           type: object
           required: [bytes_per_audio_hour, training]
@@ -6715,6 +6782,10 @@ components:
             batchScale: { type: number, exclusiveMinimum: 0, maximum: 1, description: "0.75 on the automatic OOM retry" }
             resumeFrom: { type: string, description: "b3 hash of a training-state artifact to resume from" }
         attempt: { type: integer, minimum: 1 }
+        auxiliaries:
+          type: object
+          description: "Parameter name → the registry version it names (x-cadence.registryRef), resolved and adopted for the project (phase 4 · stream X)"
+          additionalProperties: { $ref: "#/components/schemas/StepRegistryRef" }
     ArtifactRef:
       type: object
       required: [hash, type]
@@ -9639,3 +9710,109 @@ components:
           description: Utterances each filter drops (the first filter that drops one counts it)
           additionalProperties: { type: integer }
     # ---------------------------------------------------------------- auxiliary models, pseudo-labels schemas (phase 4 · stream X) — add below
+    AuxiliaryRole:
+      type: string
+      enum: [lid, pseudolabel, align]
+      description: "lid: language identification; pseudolabel: a member of the pseudo-label ensemble; align: a CTC aligner for reference texts"
+    AuxiliaryService:
+      type: object
+      additionalProperties: false
+      required: [kind, endpoint, protocol]
+      properties:
+        kind: { type: string, maxLength: 50, description: "The service's interface, e.g. grpc-asr (unary Transcribe and GetModelInfo)" }
+        endpoint: { type: string, maxLength: 300, description: "host:port as the control plane and the worker reach it (e.g. host.docker.internal:50051)" }
+        protocol: { type: string, maxLength: 50, description: "The wire contract the worker pack that serves the role speaks (its proto package and version)" }
+        tokenSecret: { type: string, maxLength: 100, description: "The secret (secrets.new) the step sends as a bearer token, when the service asks for one" }
+    AuxiliaryPayload:
+      type: object
+      additionalProperties: false
+      description: >
+        The payload of an auxiliary version (auxiliary/<name>): a model a step loads per job ({hfRepo, revision}) or a
+        running service ({service}), never both. Cadence never starts a service. Adoption (projects.adopt) is an
+        approval for everyone and refuses outputsCommercialUse false (R26).
+      required: [roles, licence, outputsCommercialUse, languages]
+      properties:
+        roles: { type: array, minItems: 1, uniqueItems: true, items: { $ref: "#/components/schemas/AuxiliaryRole" } }
+        licence: { type: string, maxLength: 300, description: "The licence of the weights and, where it differs, of their training data (SPDX ids where they exist)" }
+        outputsCommercialUse: { type: boolean, description: "Whether the licence allows commercial use of what the model outputs (transcripts, labels); false is never adopted" }
+        conditions: { type: array, items: { type: string, maxLength: 300 }, description: "Conditions of use the licence check found (attribution, forbidden uses, languages it is fit for)" }
+        languages: { type: array, minItems: 1, items: { type: string, maxLength: 20 }, description: "BCP-47 primary tags the model is fit for, or [\"*\"]" }
+        hfRepo: { type: string, maxLength: 200, description: "A Hugging Face repository the step loads (offline, from the worker's HF cache)" }
+        revision: { type: string, maxLength: 100, description: "The pinned revision (commit) of hfRepo" }
+        service: { $ref: "#/components/schemas/AuxiliaryService" }
+        engine: { type: string, maxLength: 100, description: "What the worker pack loads the weights with (the pack reads it; the control plane does not)" }
+        sources: { type: array, items: { type: string, maxLength: 300 }, description: "Where the licence check read the licence (model card, licence page)" }
+        checkedAt: { type: string, format: date, description: "When the licence was checked" }
+    AuxiliaryVersion:
+      allOf:
+        - $ref: "#/components/schemas/RegistryVersion"
+        - type: object
+          required: [auxiliary, usedBy]
+          properties:
+            auxiliary: { $ref: "#/components/schemas/AuxiliaryPayload" }
+            usedBy: { type: array, items: { $ref: "#/components/schemas/UsedBy" } }
+    AuxiliaryVersionList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/AuxiliaryVersion" } }
+    StepRegistryRef:
+      type: object
+      required: [versionId, name, version, payload]
+      description: "A registry version a step parameter names (x-cadence.registryRef), resolved for the project when the run was planned; in v1 only auxiliary versions resolve, so payload is an AuxiliaryPayload"
+      properties:
+        versionId: { type: string }
+        name: { type: string }
+        version: { type: string }
+        payload: { $ref: "#/components/schemas/AuxiliaryPayload" }
+    TriageState:
+      type: string
+      enum: [open, accepted, corrected, rejected]
+      description: "open until a person resolves it (the Triage panel and triage.accept/correct/reject arrive with annotation)"
+    TriageReason:
+      type: string
+      enum: [disagreement, lid-mismatch, lid-unknown, no-speech, too-few-members]
+      description: "disagreement: no two members within pseudolabel.max_pairwise_wer; lid-mismatch: language identification disagrees with the source's language; lid-unknown: no language identification reached its confidence floor while the step requires one; no-speech: every member returned empty text; too-few-members: fewer than two members produced a hypothesis"
+    TriageCandidate:
+      type: object
+      required: [member, text]
+      properties:
+        member: { type: string, description: "The member's label (its auxiliary or model family, from its hypotheses)" }
+        text: { type: string }
+        meanWer: { type: number, description: "Mean pairwise WER of this text to the other members' texts, after the scoring normalizer" }
+        confidence: { type: number, description: "The member's own confidence, when it reports one" }
+        language: { type: string, description: "The language the member detected, when it reports one" }
+    TriageItem:
+      type: object
+      required: [id, projectId, state, reason, pipelineRunId, stepId, segmentsHash, segment, candidates, best, confidence, createdAt, rev]
+      properties:
+        id: { type: string, description: "tri_…" }
+        projectId: { type: string }
+        state: { $ref: "#/components/schemas/TriageState" }
+        reason: { $ref: "#/components/schemas/TriageReason" }
+        pipelineRunId: { type: string }
+        stepId: { type: string }
+        segmentsHash: { type: string, description: "The segments artifact the item came from (b3:…)" }
+        segment:
+          type: object
+          required: [hash]
+          properties:
+            hash: { type: string, description: "b3 hash of the canonical 16 kHz PCM16 segment (the utterance identity)" }
+            uri: { type: string, description: "mount://<mount>/<path>#t=<start>,<end>&ch=<n>" }
+            start: { type: number }
+            end: { type: number }
+            channel: { type: integer }
+            role: { type: string, description: "caller | bot | mono" }
+            language: { type: string }
+            speaker: { type: string }
+        candidates: { type: array, items: { $ref: "#/components/schemas/TriageCandidate" } }
+        best: { type: string, description: "The prefilled best candidate (lowest mean WER to the others)" }
+        lid: { type: object, properties: { language: { type: string }, confidence: { type: number }, agrees: { type: boolean } } }
+        confidence: { type: number, minimum: 0, maximum: 1 }
+        createdAt: { type: string, format: date-time }
+        rev: { type: integer }
+    TriageItemList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/TriageItem" } }

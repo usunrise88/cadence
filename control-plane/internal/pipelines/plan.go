@@ -22,6 +22,9 @@ type PlanStep struct {
 	Departures      []Departure       `json:"departures"`
 	In              map[string]string `json:"in"`
 	EstimateSeconds *float64          `json:"estimateSeconds,omitempty"`
+	// Auxiliaries are the registry versions the step's parameters name (x-cadence.registryRef), resolved for the
+	// project: parameter → version with its payload.
+	Auxiliaries map[string]steps.RegistryRef `json:"-"`
 }
 
 // Estimate sums the steps' estimates (R12); a step without one makes it partial.
@@ -52,6 +55,9 @@ type PlanInput struct {
 	// Estimates are per-step wall-time estimates in seconds from the facade that starts the run (R12); they win
 	// over a kind's published estimate.
 	Estimates map[string]float64
+	// ProjectID resolves registry references (x-cadence.registryRef) to the versions the project adopted; empty (a
+	// file checked on save) resolves them to the newest frozen version without the adoption check.
+	ProjectID string
 }
 
 // Plan validates p for a run: every kind@version is published, every step input is wired to an artifact of the
@@ -172,7 +178,11 @@ func (e *Engine) Plan(ctx context.Context, q storage.Querier, p Pipeline, in Pla
 		if deps == nil {
 			deps = []Departure{}
 		}
-		ps := PlanStep{Step: s.ID, Position: pos, Kind: *k, Params: params, Departures: deps, In: s.In}
+		refs, err := resolveRefs(ctx, q, *k, params, in.ProjectID, path+".params", &errs)
+		if err != nil {
+			return Plan{}, err
+		}
+		ps := PlanStep{Step: s.ID, Position: pos, Kind: *k, Params: params, Departures: deps, In: s.In, Auxiliaries: refs}
 		if est, ok := in.Estimates[s.ID]; ok {
 			ps.EstimateSeconds = &est
 		} else if k.EstimateSeconds != nil {

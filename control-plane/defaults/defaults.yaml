@@ -580,6 +580,36 @@ data:
     source: Cadence recommendation
     range: { min: 0, max: 1 }
 
+# Pseudo-labels (phase 4 · stream X; docs/review/2026-10-03-phase-4-plan.md "Decisions taken for phase 4" 6–7, R26):
+# when the members of a pseudolabel_ensemble agree on a segment's text. The control plane reads none of these.
+pseudolabel:
+  max_pairwise_wer:
+    value: 0.15
+    unit: fraction
+    description: Largest word error rate between two members' texts (after the scoring normalizer, edits over the longer text) at which they agree
+    source: "docs/review/2026-10-03-phase-4-plan.md decision 6 (the owner's agreement threshold, after NVIDIA Granary's multi-model agreement filter)"
+    range: { min: 0, max: 1 }
+  min_agreeing_members:
+    value: 2
+    unit: members
+    description: Fewest members that must each agree with another member for a segment to keep a pseudo-label
+    source: docs/review/2026-10-03-phase-4-plan.md decision 6 (at least two members)
+    range: { min: 2, max: 10 }
+  lid_min_confidence:
+    value: 0.5
+    unit: probability
+    description: Confidence the language classifier (lid_classify) must reach to decide; below it the members' own detected languages decide
+    source: Cadence recommendation (a majority probability; Whisper's language token is the second opinion, decision 7)
+    range: { min: 0, max: 1 }
+  lid_equivalents:
+    value: [[sr, hr, bs]]
+    description: Groups of languages a classifier cannot tell apart reliably, counted as one when language identification is compared with the source's language
+    source: Cadence recommendation (Serbian, Croatian and Bosnian share one standard language base; VoxLingua107 and Whisper both confuse them, Valk and Alumäe 2021)
+  require_lid:
+    value: true
+    description: Whether a segment with a known language needs a language identification verdict to keep its pseudo-label (without one it is disputed as lid-unknown)
+    source: docs/review/2026-10-03-phase-4-plan.md decision 6 ("and LID agrees with the source's language")
+
 # Evaluation (phase 3; docs/review/2026-10-02-phase-3-plan.md): the matrix, scoring and significance.
 eval:
   primary_profile:
@@ -1143,3 +1173,70 @@ packs:
       description: Shortest pause that splits two speech segments (shorter gaps are closed)
       source: Cadence recommendation
       range: { min: 0, max: 5000 }
+    # Auxiliary models loaded per job (phase 4 · stream X, R26): whisper_transcribe and lid_classify. The weights come
+    # from the auxiliary version the project adopted (its hfRepo and pinned revision), never from here.
+    whisper_auxiliary:
+      value: auxiliary/whisper-large-v3
+      description: The Whisper auxiliary a whisper_transcribe member decodes with (auxiliary/whisper-he-ivrit for Hebrew only)
+      source: docs/review/2026-10-03-phase-4-plan.md "Auxiliary models and licences (R26)" (Apache-2.0, checked 2026-10-03)
+    whisper_batch_size:
+      value: 8
+      unit: utterances
+      description: Utterances per Whisper generate call (audio over 30 s decodes alone, long-form)
+      source: Cadence recommendation (large-v3 in fp16 at batch 8 stays under the 8 GB step cap)
+      range: { min: 1, max: 64 }
+    whisper_num_beams:
+      value: 1
+      unit: beams
+      description: Beam width of Whisper's decoding (1 is greedy)
+      source: Cadence recommendation (greedy; the ensemble's agreement, not one member's beam, buys accuracy)
+      range: { min: 1, max: 8 }
+    whisper_detect_language:
+      value: true
+      description: Whether the Whisper member also records its own language identification beside the text (the ensemble's second opinion on LID)
+      source: docs/review/2026-10-03-phase-4-plan.md decision 7
+    lid_auxiliary:
+      value: auxiliary/whisper-large-v3
+      description: The language classifier lid_classify uses (auxiliary/lid-voxlingua107 needs speechbrain and torchaudio, which this runtime lacks)
+      source: "docs/review/2026-10-03-phase-4-plan.md decision 7, with Whisper's language token as the fallback: torchaudio has no build for the nemo-speech image's torch 2.12 (checked 2026-10-03)"
+    lid_top_k:
+      value: 3
+      unit: languages
+      description: Most probable languages kept per utterance in the lid artifact
+      source: Cadence recommendation
+      range: { min: 1, max: 10 }
+    lid_batch_size:
+      value: 16
+      unit: utterances
+      description: Utterances per language identification batch
+      source: Cadence recommendation
+      range: { min: 1, max: 128 }
+  # The services pack (runtime `services`, CPU): step kinds that call a running service an auxiliary names. Cadence
+  # never starts the service; docs/help/guides/auxiliary-models.md.
+  services:
+    oasis_auxiliary:
+      value: auxiliary/oasis
+      description: The OASIS auxiliary oasis_transcribe calls (its payload names the endpoint and the token secret)
+      source: docs/review/2026-10-03-phase-4-plan.md "Owner decisions" 1
+    oasis_timeout_s:
+      value: 60
+      unit: s
+      description: Deadline of one Transcribe call (the ensemble decodes a 3B beam, a CTC model and a text judge)
+      source: Cadence recommendation
+      range: { min: 1, max: 600 }
+    oasis_health_timeout_s:
+      value: 5
+      unit: s
+      description: Deadline of the GetModelInfo call that checks the service answers before any segment is sent
+      source: Cadence recommendation
+      range: { min: 1, max: 60 }
+    oasis_concurrency:
+      value: 2
+      unit: requests
+      description: Transcribe calls in flight at once
+      source: Cadence recommendation (the service batches internally; two keeps its card busy without queueing behind live calls)
+      range: { min: 1, max: 16 }
+    oasis_campaign_id:
+      value: cadence-pseudolabel
+      description: Campaign id sent with every Transcribe call (the service labels its metrics with it)
+      source: Cadence recommendation

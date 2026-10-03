@@ -33,15 +33,19 @@ import numpy as np
 from numpy.typing import NDArray
 
 from cadence_worker import audio
-from cadence_worker.cas import hash_bytes
+from cadence_worker.cas import hash_bytes, valid_hash
 from cadence_worker.steps.base import StepInputError
 
 FORMAT = "cadence.segments/1"
 HEADER = "segments.json"
 LINES = "segments.jsonl"
+ROWS = LINES  # the name the pseudo-label steps use
 FILES = "files.jsonl"
 RATE = 16000
 ROLES = ("caller", "bot", "mono")
+REQUIRED = ("uri", "hash", "start", "end", "channel", "role")
+ORIGIN_PSEUDO = "pseudo-label"
+ORIGIN_DISPUTED = "pseudo-label:disputed"
 AUDIO_SUFFIXES = (".wav", ".flac", ".mp3", ".ogg", ".opus", ".m4a", ".aac", ".webm")
 FFMPEG_TIMEOUT_S = 1800
 CLIP_LEVEL = 0.999
@@ -368,3 +372,73 @@ def covered(runs: Sequence[Interval], a: float, b: float) -> float:
 def vad_of(runs: Sequence[Interval], a: float, b: float) -> dict[str, Any]:
     parts = within(runs, a, b)
     return {"speech": [[s, e] for s, e in parts], "ratio": round(covered(runs, a, b), 4)}
+
+
+# ---------------------------------------------------------------- strict reading for the pseudo-label members
+#
+# The ensemble and its members (phase 4 · stream X) read segments with the checks they rely on — required keys, a b3
+# hash, a known role, a positive span, each segment once — and write rows back with every key they do not know kept.
+
+
+def read_header(root: Path) -> dict[str, Any]:
+    """The header of a segments directory ({} when it has none)."""
+    if not root.is_dir() or not (root / HEADER).is_file():
+        return {}
+    try:
+        header = json.loads((root / HEADER).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        raise StepInputError(f"segments.json does not parse: {e}") from e
+    if not isinstance(header, dict) or header.get("format", FORMAT) != FORMAT:
+        raise StepInputError(f"segments.json is not {FORMAT}")
+    return header
+
+
+def read_segments(path: Path) -> list[dict[str, Any]]:
+    """The rows of a segments artifact (a directory with segments.jsonl, or the file itself), in order."""
+    f = path / ROWS if path.is_dir() else path
+    read_header(path)
+    try:
+        lines = f.read_text(encoding="utf-8").splitlines()
+    except OSError as e:
+        raise StepInputError(f"the segments input has no readable {ROWS}: {e}") from e
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for n, line in enumerate(lines, 1):
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except ValueError as e:
+            raise StepInputError(f"segments line {n} is not JSON") from e
+        if not isinstance(row, dict):
+            raise StepInputError(f"segments line {n} is not an object")
+        missing = [k for k in REQUIRED if k not in row]
+        if missing:
+            raise StepInputError(f"segments line {n} lacks {', '.join(missing)}")
+        if not isinstance(row["hash"], str) or not valid_hash(row["hash"]):
+            raise StepInputError(f"segments line {n}: hash {row['hash']!r} is not a b3 hash")
+        if row["role"] not in ROLES:
+            raise StepInputError(f"segments line {n}: role {row['role']!r} is not one of {', '.join(ROLES)}")
+        if not isinstance(row["start"], int | float) or not isinstance(row["end"], int | float):
+            raise StepInputError(f"segments line {n}: start and end are seconds")
+        if row["end"] <= row["start"]:
+            raise StepInputError(f"segments line {n}: end {row['end']} is not after start {row['start']}")
+        if row["hash"] in seen:
+            raise StepInputError(f"segments line {n}: segment {row['hash']} appears twice")
+        seen.add(row["hash"])
+        out.append(row)
+    return out
+
+
+def write_segments(root: Path, rows: Iterable[Mapping[str, Any]], header: Mapping[str, Any]) -> int:
+    """Write a segments directory (header and rows); returns the number of rows."""
+    root.mkdir(parents=True, exist_ok=True)
+    (root / HEADER).write_text(
+        json.dumps({**header, "format": FORMAT}, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    n = 0
+    with (root / ROWS).open("w", encoding="utf-8") as f:
+        for row in rows:
+            f.write(json.dumps(row, ensure_ascii=False, separators=(",", ":")) + "\n")
+            n += 1
+    return n

@@ -23,7 +23,7 @@ lint:          ## golangci-lint, eslint (panel, Dockview and Base UI rules), tsc
 	cd control-plane && golangci-lint run ./...
 	cd web && npx tsc -b && npx eslint . --max-warnings 0
 	cd agent-host && npm run typecheck
-	cd worker && uv run ruff check . && uv run ruff format --check . && uv run mypy --strict cadence_worker tests scripts packs/toy/cadence_toy packs/toy/tests packs/nemo/cadence_nemo packs/nemo/tests packs/nemo/scripts
+	cd worker && uv run ruff check . && uv run ruff format --check . && uv run mypy --strict cadence_worker tests scripts packs/toy/cadence_toy packs/toy/tests packs/nemo/cadence_nemo packs/nemo/tests packs/nemo/scripts packs/services/cadence_services packs/services/tests packs/services/scripts
 
 test:          ## unit + contract (no Docker): Go, Vitest (jsdom + headless Chromium), pytest, agent host
 	cd control-plane && go test ./...

@@ -113,6 +113,7 @@ def execute(lease_dir: Path, stop: threading.Event, emit: EventWriter) -> dict[s
                 job.get("mounts") or [],
                 cache_dir=Path(os.environ.get(CACHE_ENV) or Path(job["workDir"]) / "mount-cache"),
             ),
+            auxiliaries=job.get("auxiliaries") or {},
         )
         kind().run(params, inputs, outputs, ctx)
         if stop.is_set():

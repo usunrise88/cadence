@@ -65,6 +65,16 @@ tools:
     operations: [artifacts.evict]
     reason: eviction deletes blobs from the content store; only the backup mirror can bring them back
 
+  # R26: an auxiliary model (LID, pseudo-label member, aligner) writes text that reaches datasets, so adopting one is
+  # a registry-scope approval the admin decides after reading its licence, for people too. The handler names the
+  # version's kind to the engine (projects.adopt of an auxiliary version: kind=auxiliary).
+  - id: auxiliary-adoption
+    class: gated
+    everyone: true
+    operations: [projects.adopt]
+    params: { kind: auxiliary }
+    reason: an auxiliary model's outputs become training text; the admin checks its licence before any project uses it
+
   # A golden set decides what every project's gate compares against: freezing one is a registry-scope approval the
   # admin decides, for people too (05 "Approvals have a scope"; phase-3 plan stream G).
   - id: golden-set-freeze

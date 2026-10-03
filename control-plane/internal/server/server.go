@@ -19,6 +19,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/agentcreds"
 	"github.com/usunrise88/cadence/control-plane/internal/api"
 	"github.com/usunrise88/cadence/control-plane/internal/auth"
+	"github.com/usunrise88/cadence/control-plane/internal/auxiliary"
 	"github.com/usunrise88/cadence/control-plane/internal/backups"
 	"github.com/usunrise88/cadence/control-plane/internal/cache"
 	"github.com/usunrise88/cadence/control-plane/internal/cas"
@@ -52,6 +53,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/sessions"
 	"github.com/usunrise88/cadence/control-plane/internal/steps"
 	"github.com/usunrise88/cadence/control-plane/internal/transcriptions"
+	"github.com/usunrise88/cadence/control-plane/internal/triage"
 	"github.com/usunrise88/cadence/control-plane/internal/webui"
 	"github.com/usunrise88/cadence/control-plane/internal/workers"
 	"github.com/usunrise88/cadence/control-plane/templates"
@@ -94,6 +96,9 @@ type Config struct {
 	// StepHooks react to step outputs by artifact type (phase 2: dataset, checkpoint, calibration); New creates an
 	// empty registry when nil.
 	StepHooks *steps.Hooks
+	// AuxiliaryProber checks that a service an auxiliary model names answers before a pipeline that uses it starts
+	// (phase 4 · stream X); New dials TCP when it is nil.
+	AuxiliaryProber auxiliary.Prober
 	// Leases is the worker protocol as the pipeline engine sees it; Workers when nil and set, else steps.NoLeases.
 	Leases steps.Leases
 	// Pipelines is the pipeline engine; New builds one from the fields above when nil (register its step job
@@ -173,6 +178,10 @@ func New(c Config) (*Server, error) {
 		c.StepHooks = &steps.Hooks{}
 	}
 	(&data.Importer{CAS: c.CAS}).Register(c.StepHooks) // dataset artifacts register dataset versions (R18)
+	(&triage.Hook{CAS: c.CAS}).Register(c.StepHooks)   // disputed pseudo-labels join the triage queue (R26)
+	if c.AuxiliaryProber == nil {
+		c.AuxiliaryProber = auxiliary.DialProber{}
+	}
 	if c.Leases == nil && c.Workers != nil {
 		c.Leases = c.Workers
 	}
@@ -186,6 +195,7 @@ func New(c Config) (*Server, error) {
 		}
 		c.Pipelines = pipelines.New(pipelines.Options{
 			Pool: c.Pool, Jobs: c.Jobs, CAS: c.CAS, Hooks: c.StepHooks, Leases: c.Leases, Repos: repo, Log: c.Log,
+			Prober: c.AuxiliaryProber,
 			Defaults: func() *defaults.Defaults {
 				if c.Defaults != nil {
 					return c.Defaults

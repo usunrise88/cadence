@@ -22,7 +22,8 @@
               "noise_bank",
               "golden_set",
               "normalizer",
-              "model"
+              "model",
+              "auxiliary"
             ],
             "type": "string"
           },
@@ -1492,6 +1493,81 @@
       ]
     },
     {
+      "name": "auxiliaries.get",
+      "title": "Get an auxiliary model version with its payload and the projects that adopted it",
+      "description": "Get an auxiliary model version with its payload and the projects that adopted it",
+      "method": "GET",
+      "path": "/registry/auxiliaries/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Registry version id (ver_…)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        }
+      ]
+    },
+    {
+      "name": "auxiliaries.list",
+      "title": "List auxiliary model versions (LID classifiers, pseudo-label members, aligners) with their licence check",
+      "description": "List auxiliary models (auxiliary/\u003cname\u003e): language classifiers, pseudo-label members and aligners Cadence uses to prepare data, never trains. Each carries its roles (lid, pseudolabel, align), the licence check (licence, outputsCommercialUse, conditions, sources) and either pinned weights (hfRepo, revision) or a running service (endpoint) that Cadence never starts. A project adopts one with projects.adopt — an approval the admin decides after reading the licence; step parameters then name it (whisper_transcribe, oasis_transcribe, lid_classify).",
+      "method": "GET",
+      "path": "/registry/auxiliaries",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "collection": {
+            "description": "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)",
+            "type": "string"
+          },
+          "state": {
+            "description": "Only versions in this state",
+            "enum": [
+              "draft",
+              "frozen",
+              "deprecated"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "collection",
+          "in": "query",
+          "name": "collection"
+        },
+        {
+          "property": "state",
+          "in": "query",
+          "name": "state"
+        }
+      ]
+    },
+    {
       "name": "backups.get",
       "title": "Get a backup set with its manifest and last restore test report",
       "description": "Get a backup set with its manifest and last restore test report",
@@ -2284,7 +2360,8 @@
               "noise_bank",
               "golden_set",
               "normalizer",
-              "model"
+              "model",
+              "auxiliary"
             ],
             "type": "string"
           },
@@ -6885,7 +6962,7 @@
     {
       "name": "projects.adopt",
       "title": "Adopt a registry version into the project by reference",
-      "description": "Adopt a registry version (base model, dataset version, template) into this project by reference, so mixes, runs and aliases may use it. Only frozen versions are adoptable. Needs If-Match with the project's revision (projects.get); the project's revision goes up by one. Pass dryRun=true to see what would happen without changing anything.",
+      "description": "Adopt a registry version (base model, dataset version, template) into this project by reference, so mixes, runs and aliases may use it. Only frozen versions are adoptable. Needs If-Match with the project's revision (projects.get); the project's revision goes up by one. Adopting an auxiliary model (LID, pseudo-label member, aligner; R26) is a registry-scope approval for everyone (202 with an approvalId) and is refused when its licence forbids commercial use of its outputs. Pass dryRun=true to see what would happen without changing anything.",
       "method": "POST",
       "path": "/projects/{p}:adopt",
       "inputSchema": {
@@ -7931,7 +8008,7 @@
         "additionalProperties": false,
         "properties": {
           "kind": {
-            "description": "The kinds registered so far; runtime, model_family and step_kind are published by workers (R40, R41, R45); noise_bank holds background noise for augmentation, registered by dataset_import with purpose noise; golden_set (goldenSets.freeze), normalizer (scoring normalizers, R21) and model (models.register, R22) arrive in phase 3",
+            "description": "The kinds registered so far; runtime, model_family and step_kind are published by workers (R40, R41, R45); noise_bank holds background noise for augmentation, registered by dataset_import with purpose noise; golden_set (goldenSets.freeze), normalizer (scoring normalizers, R21) and model (models.register, R22) arrive in phase 3; auxiliary (LID classifiers, pseudo-label members, aligners: AuxiliaryPayload, R26) in phase 4",
             "enum": [
               "base_model",
               "dataset_version",
@@ -7942,7 +8019,8 @@
               "noise_bank",
               "golden_set",
               "normalizer",
-              "model"
+              "model",
+              "auxiliary"
             ],
             "type": "string"
           },
@@ -9403,6 +9481,91 @@
           "property": "templateKind",
           "in": "query",
           "name": "templateKind"
+        }
+      ]
+    },
+    {
+      "name": "triage.list",
+      "title": "The project's triage queue — segments whose pseudo-label members disagreed, newest first",
+      "description": "List the project's triage items, newest first. A pseudo-label ensemble (pseudolabel_ensemble) puts a segment here when its members' texts disagree (pairwise WER above pseudolabel.max_pairwise_wer for every pair), when language identification disagrees with the source's language, or when no member heard speech. Each item has the segment (mount:// URI, b3 hash, start/end, channel), every member's text, the best candidate and why it is disputed. Disputed segments never reach training; a person resolves them in the Triage panel.",
+      "method": "GET",
+      "path": "/projects/{p}/triage",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "default": 100,
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          },
+          "pipelineRun": {
+            "description": "Only items from this pipeline run (plr_…)",
+            "maxLength": 100,
+            "type": "string"
+          },
+          "reason": {
+            "description": "disagreement: no two members within pseudolabel.max_pairwise_wer; lid-mismatch: language identification disagrees with the source's language; lid-unknown: no language identification reached its confidence floor while the step requires one; no-speech: every member returned empty text; too-few-members: fewer than two members produced a hypothesis",
+            "enum": [
+              "disagreement",
+              "lid-mismatch",
+              "lid-unknown",
+              "no-speech",
+              "too-few-members"
+            ],
+            "type": "string"
+          },
+          "state": {
+            "description": "open until a person resolves it (the Triage panel and triage.accept/correct/reject arrive with annotation)",
+            "enum": [
+              "open",
+              "accepted",
+              "corrected",
+              "rejected"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "state",
+          "in": "query",
+          "name": "state"
+        },
+        {
+          "property": "reason",
+          "in": "query",
+          "name": "reason"
+        },
+        {
+          "property": "pipelineRun",
+          "in": "query",
+          "name": "pipelineRun"
+        },
+        {
+          "property": "limit",
+          "in": "query",
+          "name": "limit"
         }
       ]
     },

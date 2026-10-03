@@ -66,6 +66,7 @@ func BundledInputs(templates fs.FS) ([]RegisterInput, error) {
 		{"fixtures/base-models.yaml", KindBaseModel},
 		{"fixtures/datasets.yaml", KindDataset},
 		{"fixtures/normalizers.yaml", KindNormalizer},
+		{"fixtures/auxiliaries.yaml", KindAuxiliary},
 	} {
 		ins, err := fixtureInputs(f.file, f.kind)
 		if err != nil {

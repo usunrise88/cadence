@@ -45,6 +45,11 @@ class StepInputError(Exception):
     """The inputs or parameters are wrong (reported as error type ``input``; retrying does not help)."""
 
 
+class AuxiliaryUnavailable(Exception):  # noqa: N818 (named after its help article, errors/auxiliary-unavailable)
+    """A service an auxiliary model names does not answer (its health call failed). Reported as error type ``step``,
+    retryable, with the message prefixed ``auxiliary-unavailable:`` (the help article); Cadence never starts it."""
+
+
 def cadence_field(
     default: Any = PydanticUndefined,
     *,
@@ -54,6 +59,7 @@ def cadence_field(
     default_ref: str | None = None,
     shared: bool = False,
     registry: str | None = None,
+    registry_ref: Mapping[str, str] | None = None,
 ) -> Any:
     """A pydantic field with the ``x-cadence`` metadata the UI, help and MCP tool descriptions render from.
 
@@ -66,6 +72,11 @@ def cadence_field(
     ``registry`` names the registry entity the value refers to (``source``: a registered source's name). The control
     plane checks it when it plans a pipeline: an ingest from a source that is missing, archived or has no licence is
     refused ("no licence, no ingest").
+
+    ``registry_ref`` (``{"kind": "auxiliary", "role": "pseudolabel"}``) marks a string parameter whose value names a
+    registry version (a collection name, ``ver_…`` or ``@alias``): the control plane resolves it to the version the
+    project adopted when it plans the run and passes the version with its payload in the step spec, which the step
+    reads with :meth:`StepContext.auxiliary` (phase 4 · stream X).
     """
     if default_ref:
         if default is not PydanticUndefined or source is not None or range is not None:
@@ -89,6 +100,8 @@ def cadence_field(
         meta["shared"] = True
     if registry:
         meta["registry"] = registry
+    if registry_ref:
+        meta["registryRef"] = dict(registry_ref)
     return Field(default=default, description=description, json_schema_extra={"x-cadence": meta})
 
 
