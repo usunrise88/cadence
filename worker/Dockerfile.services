@@ -1,0 +1,36 @@
+# Cadence services worker — runtime `services` (CPU): python:3.12-slim, the worker harness, the runtime-neutral core
+# step kinds and the services pack (step kinds that call a running service an auxiliary model names, such as
+# oasis_transcribe; docs/help/guides/auxiliary-models.md). It loads no model and needs no card. Build context is the
+# repository root:
+#   docker build -f worker/Dockerfile.services -t cadence/worker-services:dev .
+FROM python:3.12-slim@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4db6d462c84e51f
+
+ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1 PYTHONUNBUFFERED=1
+
+COPY worker/pyproject.toml /src/worker/pyproject.toml
+COPY worker/cadence_worker /src/worker/cadence_worker
+COPY worker/packs/services /src/worker/packs/services
+RUN pip install /src/worker /src/worker/packs/services && rm -rf /src/worker
+
+# defaults.yaml is the control plane's file (R11), packaged unchanged; the runtime descriptor names this image.
+COPY control-plane/defaults/defaults.yaml /opt/cadence/defaults.yaml
+COPY worker/runtime/services.json /etc/cadence/runtime.json
+
+# Non-root with the control plane's uid, so blobs in the shared content store (mode 0440) are readable both ways.
+RUN groupadd --gid 65532 nonroot \
+ && useradd --uid 65532 --gid 65532 --no-create-home --home-dir /var/lib/cadence --shell /usr/sbin/nologin nonroot \
+ && mkdir -p /var/lib/cadence/cas /var/lib/cadence/scratch /worker-credential \
+ && chown -R 65532:65532 /var/lib/cadence /worker-credential
+
+ARG CADENCE_VERSION=dev
+ENV CADENCE_VERSION=${CADENCE_VERSION} \
+    CADENCE_DEFAULTS_FILE=/opt/cadence/defaults.yaml \
+    CADENCE_RUNTIME_FILE=/etc/cadence/runtime.json \
+    CADENCE_CAS_DIR=/var/lib/cadence/cas \
+    CADENCE_WORKER_SCRATCH=/var/lib/cadence/scratch \
+    CADENCE_WORKER_GPU=off \
+    HOME=/var/lib/cadence
+USER 65532:65532
+WORKDIR /var/lib/cadence
+ENTRYPOINT ["python", "-m", "cadence_worker"]
+CMD ["serve"]

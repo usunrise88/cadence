@@ -1,0 +1,261 @@
+// OASIS ASR contract — the interface between SecondChain, OASIS and oasis-eval.
+//
+// Source of truth: spec.md §4. Shaped by decisions D2, D4, D8, D10, D12 (spec.md §17.1).
+//
+// FROZEN in bootstrap. Everything downstream — the server, the harness and the
+// SecondChain client — is written against this file. Changing a field number or
+// semantics is a contract break: bump the package version, do not edit in place.
+//
+// Note the deliberate split between the file path and the proto package. The
+// wire identity of every message is `oasis.v1.*`, declared below — that is the
+// contract SecondChain implements. The *file* lives under `oasis_contract/`
+// because protoc derives generated Python import paths from the file path, and
+// a path of `oasis/v1/` would emit `from oasis.v1 import ...`, colliding with
+// the server's own `oasis` package. Wire names and module paths are independent;
+// only the former is the contract.
+//
+// Deliberately absent, do not re-add without revisiting the decision:
+//   - TurnContext.candidates / turn_type  — L3 candidate lists dropped (D8)
+//   - SLOT_MISMATCH postback              — no ground truth at turn time (D4)
+//   - any language-identification field   — lang is mandatory and campaign-pinned
+//   - ControlEvent                        — dev-console only, lives in dev.proto (§11.6)
+
+syntax = "proto3";
+
+package oasis.v1;
+
+service Asr {
+  // Session mode: one bidi stream per call leg, opened at call setup (D3).
+  rpc StreamingRecognize(stream ClientEvent) returns (stream ServerEvent);
+
+  // One-shot mode: offline, eval, batch. The harness always goes through this
+  // (eval spec P-1), so padding/normalization/decoding are inside the measurement.
+  rpc Transcribe(TranscribeRequest) returns (FinalResult);
+
+  rpc GetModelInfo(GetModelInfoRequest) returns (ModelInfo);
+
+  // Health is the standard grpc.health.v1.Health service, not redefined here.
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Client → server
+// ─────────────────────────────────────────────────────────────────────────────
+
+message ClientEvent {
+  oneof event {
+    SessionConfig config   = 1;  // must be the first message on the stream
+    AudioFrame    audio    = 2;
+    VadEvent      vad      = 3;
+    BargeIn       barge_in = 4;
+    Postback      postback = 5;
+    PhraseBoost   boost    = 6;
+    Close         close    = 7;
+  }
+}
+
+message SessionConfig {
+  // Client-generated UUIDv4, globally unique across all SecondChain instances
+  // (N:1 topology, D10).
+  string session_id  = 1;
+  // SecondChain instance name. Also carried in connection metadata; appears as a
+  // label on every metric series.
+  string client_id   = 2;
+  string campaign_id = 3;
+  // MANDATORY and campaign-pinned. Drives adapter routing, L1 pack selection and
+  // eval bucketing. There is no auto-LID anywhere in the system.
+  string lang        = 4;
+  uint32 sample_rate = 5;  // 8000 | 16000
+  string codec_hint  = 6;  // informational: the codec the caller leg arrived on
+}
+
+// Raw PCM16LE, mono, caller leg, 20 ms frames recommended. Never re-encoded on
+// the wire — a second codec in the ASR path has no train/serve symmetry (D10).
+message AudioFrame {
+  bytes  pcm    = 1;
+  uint64 seq    = 2;
+  uint64 t_ms   = 3;  // stream-relative timestamp of the first sample
+}
+
+message VadEvent {
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    VAD_START        = 1;
+    VAD_END          = 2;
+  }
+  Kind   kind = 1;
+  uint64 t_ms = 2;
+}
+
+// Agent TTS was playing at speech onset. Switches the padding policy for this
+// turn (spec §5.2, rule P3).
+message BargeIn {
+  uint64 t_ms = 1;
+}
+
+message Postback {
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    USER_RETRY       = 1;  // "что?", "повторите", re-prompt
+  }
+  Kind   kind     = 1;
+  string turn_ref = 2;
+  string details  = 3;
+}
+
+// Per-call decoding bias for CRM proper nouns (spec §7.6). Engines that do not
+// support it ignore it silently; capability is advertised in ModelInfo.
+message PhraseBoost {
+  enum Scope {
+    SCOPE_UNSPECIFIED = 0;
+    NEXT_TURN_ONLY    = 1;  // default, safest
+    ALL_TURNS         = 2;  // stable per-call vocab, e.g. the caller's name
+  }
+  message Phrase {
+    string phrase = 1;
+    float  weight = 2;  // advisory, typically 0.5–5.0
+  }
+  repeated Phrase phrases = 1;
+  Scope           scope   = 2;
+}
+
+message Close {}
+
+message TranscribeRequest {
+  string lang        = 1;  // mandatory, as in SessionConfig
+  string campaign_id = 2;
+  uint32 sample_rate = 3;
+  bytes  pcm         = 4;  // the turn content
+  // Optional real pre/post-roll so one-shot mode can exercise padding P1/P2
+  // exactly as session mode does (eval spec §3.3, `context_audio`).
+  bytes  context_pcm         = 5;
+  uint64 content_offset_ms   = 6;  // where the content starts inside context_pcm
+  uint64 content_dur_ms      = 7;
+  PhraseBoost boost          = 8;
+}
+
+message GetModelInfoRequest {}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Server → client
+// ─────────────────────────────────────────────────────────────────────────────
+
+message ServerEvent {
+  oneof event {
+    PartialResult partial        = 1;
+    EarlyEndpoint early_endpoint = 2;
+    FinalResult   final          = 3;
+    ErrorEvent    error          = 4;
+  }
+}
+
+// Universal telephony mega-intents. Scored on every turn against the
+// server-side per-language L1 pack (spec §7.2). NONE is what makes always-on
+// scoring safe: open turns rarely cross the floor.
+message L1Intent {
+  string             top          = 1;  // AFFIRM|REFUSE|POSTPONE|DNC|HANDOFF|REPEAT|WAIT|NONE
+  float              prob         = 2;  // calibrated [0,1] for `top`
+  map<string, float> distribution = 3;  // full distribution over the L1 enum
+}
+
+message Timings {
+  uint32 queue_ms         = 1;
+  uint32 infer_ms         = 2;
+  uint32 decode_ms        = 3;
+  uint32 e2e_ms           = 4;
+  uint32 presented_dur_ms = 5;  // what the model saw, after padding
+  uint32 content_dur_ms   = 6;  // the speech content itself
+}
+
+enum ResultReason {
+  RESULT_REASON_UNSPECIFIED = 0;
+  OK                        = 1;
+  NON_SPEECH                = 2;  // blank gate fired; text is empty
+  DEGRADED                  = 3;  // deadline breached, best available hypothesis
+}
+
+message PartialResult {
+  string   turn_id   = 1;
+  string   text      = 2;
+  L1Intent l1_intent = 3;  // always populated
+  uint32   stable_ms = 4;
+  uint64   seq       = 5;
+}
+
+// Advisory only. OASIS never ends turns itself — SecondChain decides.
+// Consumed by SC-22 speculative LLM prefill (spec §8.1).
+message EarlyEndpoint {
+  string turn_id   = 1;
+  uint32 stable_ms = 2;
+}
+
+message FinalResult {
+  string       turn_id       = 1;
+  string       text          = 2;  // free-decode, spoken form, no punct/caps
+  float        confidence    = 3;  // calibrated [0,1]
+  L1Intent     l1_intent     = 4;  // always populated (top=NONE if nothing fires)
+  float        blank_ratio   = 5;
+  ResultReason reason        = 6;
+  Timings      timings       = 7;
+  // base@hash + adapter@ver + calib@ver + config@hash (spec §11.3)
+  string       model_version = 8;
+  // Raw, UNCALIBRATED signals, keyed by name. Diagnostic only — SecondChain
+  // reads `text`, `l1_intent` and `confidence` and ignores this.
+  //
+  // It exists because eval §5.5 makes the harness fit the calibrators and every
+  // engine-declared threshold, while P-1 makes it measure through this API. A
+  // threshold on a quantity the wire does not carry cannot be fitted at all
+  // (`tau_nonblank` was exactly that), and a temperature fitted on the
+  // already-calibrated `confidence` would compose two calibrations. Both
+  // problems are the same problem: the harness needs the numbers the server
+  // saw, not the numbers it decided to publish.
+  //
+  // Keyed rather than typed so a new engine can expose whatever its own
+  // declared thresholds need without a contract change — the same
+  // engine-agnostic seam as `declared_thresholds`.
+  map<string, float> diagnostics = 9;
+}
+
+message ErrorEvent {
+  enum Code {
+    CODE_UNSPECIFIED   = 0;
+    INTERNAL           = 1;
+    DRAINING           = 2;  // graceful shutdown; fall back per SC-8
+    RESOURCE_EXHAUSTED = 3;  // aggregate session cap reached (spec §14)
+    INVALID_ARGUMENT   = 4;
+    DEADLINE_EXCEEDED  = 5;
+  }
+  Code   code    = 1;
+  string message = 2;
+  string turn_id = 3;
+}
+
+message ModelInfo {
+  string engine_id       = 1;
+  string model_version   = 2;
+  repeated float  supported_buckets     = 3;  // presented durations, seconds
+  repeated uint32 supported_batch_sizes = 4;
+  bool   supports_native_partials = 5;
+  bool   supports_phrase_boost    = 6;
+  string adapter_format  = 7;   // LoRA | FullFinetune | None
+  map<string, string> component_hashes = 8;  // base, adapter, calib, config, l1_pack
+  // Engines with an autoregressive component graph-capture only the encoder;
+  // this documents what is captured (spec §6.3).
+  string graph_capture_note = 9;
+  // Threshold names this engine needs the harness to fit (eval §5.5). On the
+  // wire because the harness is what fits them and it must not import the
+  // server (P-6); without this it cannot know what a new engine declares, and
+  // the portability the whole mechanism exists for is lost. Additive field —
+  // an older server simply reports none.
+  repeated string declared_thresholds = 10;
+  // Languages the engine will transcribe, bare codes (`ru`, `hr`). Empty means
+  // unconstrained — which is the honest answer for a massively multilingual
+  // model that ignores `lang` at inference, and a lie for one that does not.
+  //
+  // On the wire because the two v1 engines do NOT cover the same set (spec
+  // §6.1.3): Nemotron has no Serbian in any tier, Omnilingual has it. A client
+  // that cannot see the constraint has to infer it from a wrong transcript,
+  // and an ASR model asked for a language it never learned does not error —
+  // it returns fluent, confident, wrong text. Additive field: an older server
+  // reports none, which reads as "unconstrained" and matches how it behaved.
+  repeated string supported_languages = 11;
+}

@@ -17,6 +17,8 @@ nemotron_transcribe = "cadence_nemo.steps.transcribe:TranscribeStep"
 checkpoint_from_base = "cadence_nemo.steps.materialize:CheckpointFromBaseStep"
 frame_vad = "cadence_nemo.steps.vad:FrameVadStep"
 nemotron_live = "cadence_nemo.steps.live:LiveStep"
+whisper_transcribe = "cadence_nemo.steps.whisper_member:WhisperTranscribeStep"
+lid_classify = "cadence_nemo.steps.lid:LidClassifyStep"
 
 [project.entry-points."cadence.families"]
 "nemo.fastconformer-rnnt.cache-aware" = "cadence_nemo.family:FAMILY"

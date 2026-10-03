@@ -149,5 +149,17 @@ Core (runtime-neutral) step kinds: `echo` and `dataset_import` (imports a NeMo m
 as FLEURS, or a folder with `metadata.csv` as a `dataset` artifact; audio helpers in `cadence_worker/audio.py`; help
 `docs/help/steps/dataset-import.md`) and `wer_score` (hypotheses + dataset + scoring normalizer → `scores`: WER, CER,
 S/D/I, duration buckets, partial stability; the normalizer interpreter is `cadence_worker/normalize.py`, the
-alignment `cadence_worker/align.py`; help `docs/help/steps/wer-score.md`). Help slugs use dashes
-(`steps.dataset-import`).
+alignment `cadence_worker/align.py`; help `docs/help/steps/wer-score.md`) and `pseudolabel_ensemble` (members'
+hypotheses + `segments` + scoring normalizer + optional `lid` → `segments` with pseudo-labels or disputes and
+`hypotheses`; `cadence_worker/segments.py` reads and writes `cadence.segments/1`, `cadence_worker/members.py` holds what
+the members share; help `docs/help/steps/pseudolabel-ensemble.md`). Help slugs use dashes (`steps.dataset-import`).
+
+Auxiliary models (phase 4, R26): a parameter built with `cadence_field(registry_ref={"kind": "auxiliary", "role": …})`
+names an auxiliary version; the control plane resolves it to the version the project adopted and the step reads it
+with `ctx.auxiliary(param)` (`{versionId, name, version, payload}`). The NeMo pack loads Whisper per job for
+`whisper_transcribe` and `lid_classify` (`cadence_nemo/whisper.py`); the services pack (`packs/services`, runtime
+`services`, CPU, `Dockerfile.services`, compose profile `services`) calls running services: `oasis_transcribe`, a gRPC
+client of the OASIS contract vendored under `packs/services/proto/` (source commit in `proto/SOURCE.yaml`; regenerate
+with `uv run python packs/services/scripts/gen_proto.py`). A service that does not answer raises
+`AuxiliaryUnavailable` (error type `step`, retryable, message `auxiliary-unavailable: …`). Guide:
+`docs/help/guides/auxiliary-models.md`.

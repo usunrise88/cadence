@@ -1,0 +1,6 @@
+{
+  "name": "services",
+  "version": "1",
+  "image": "cadence/worker-services",
+  "environmentPackages": ["grpcio", "protobuf", "numpy", "pydantic", "cadence-worker", "cadence-services"]
+}

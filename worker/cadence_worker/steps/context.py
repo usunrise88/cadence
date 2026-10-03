@@ -45,6 +45,7 @@ class StepContext:
         blob_path: Callable[[str], Path] | None = None,
         stop: threading.Event | None = None,
         attempt: int = 1,
+        auxiliaries: Mapping[str, Mapping[str, Any]] | None = None,
     ) -> None:
         self._emit = emit
         self.work_dir = work_dir
@@ -56,6 +57,22 @@ class StepContext:
         self._stop = stop or threading.Event()
         self.meta: dict[str, dict[str, Any]] = {}
         self.final_metrics: dict[str, float] = {}
+        self._auxiliaries = {k: dict(v) for k, v in (auxiliaries or {}).items()}
+
+    def auxiliary(self, param: str) -> dict[str, Any]:
+        """The registry version a ``registry_ref`` parameter names, as the control plane resolved it for the project:
+        ``{versionId, name, version, payload}`` (an auxiliary's payload: roles, licence, languages, hfRepo and revision
+        or service, …). StepInputError when the spec carries none (a control plane before phase 4, or a local run that
+        passed none)."""
+        from cadence_worker.steps.base import StepInputError
+
+        ref = self._auxiliaries.get(param)
+        if not ref or not isinstance(ref.get("payload"), dict):
+            raise StepInputError(
+                f"parameter {param!r} names a registry version the step spec does not carry; plan the run through the "
+                "control plane (it resolves the version the project adopted)"
+            )
+        return ref
 
     @property
     def memory_cap_mb(self) -> int | None:

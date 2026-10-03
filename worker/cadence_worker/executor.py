@@ -187,6 +187,7 @@ class LeaseRunner:
             "resumeFrom": resume_path,
             "casDir": str(self.store.root),
             "attempt": spec.get("attempt", 1),
+            "auxiliaries": spec.get("auxiliaries") or {},
         }
         (self.dir / "step.json").write_text(json.dumps(job, indent=2), encoding="utf-8")
         return None

@@ -108,6 +108,7 @@ def execute(lease_dir: Path, stop: threading.Event, emit: EventWriter) -> dict[s
             blob_path=store.path if store else None,
             stop=stop,
             attempt=int(job.get("attempt") or 1),
+            auxiliaries=job.get("auxiliaries") or {},
         )
         kind().run(params, inputs, outputs, ctx)
         if stop.is_set():
