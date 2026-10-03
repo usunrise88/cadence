@@ -57,6 +57,26 @@ type Header struct {
 	Tags        []string       `json:"tags,omitempty"`
 	EvalOnly    bool           `json:"evalOnly,omitempty"` // golden and replay test sets: never trained on
 	Purpose     string         `json:"purpose,omitempty"`  // speech (empty) or noise: a noise bank, not utterances
+
+	// A freeze's cut (dataset_freeze mode cut, phase 4): the draft version it freezes, the quality checks, statistics
+	// and card the step computed, and the shards (Lhotse cuts manifests over the artifact's audio). The source is
+	// the draft's; the header names only the source's name.
+	DraftVersionID string          `json:"draftVersionId,omitempty"`
+	Quality        json.RawMessage `json:"quality,omitempty"`
+	Stats          json.RawMessage `json:"stats,omitempty"`
+	Card           string          `json:"card,omitempty"` // path of the card (Markdown) inside the artifact
+	Shards         []ShardFile     `json:"shards,omitempty"`
+	SourceInfo     json.RawMessage `json:"sourceInfo,omitempty"` // the corpus's SOURCE.yaml as the ingest read it
+	Steps          []string        `json:"steps,omitempty"`      // the step kinds the segments went through
+}
+
+// ShardFile is one shard of a cut dataset artifact: a cuts manifest (gzip JSON lines) inside the artifact.
+type ShardFile struct {
+	Index      int     `json:"index"`
+	Cuts       string  `json:"cuts"` // path inside the artifact, shards/cuts.000000.jsonl.gz
+	Utterances int     `json:"utterances"`
+	Bytes      int64   `json:"bytes"`
+	Seconds    float64 `json:"seconds"`
 }
 
 // Line is one utterance of manifest.jsonl.
@@ -72,6 +92,8 @@ type Line struct {
 	Confidence   *float64          `json:"confidence,omitempty"`
 	Split        string            `json:"split"` // train | validation | test
 	Fingerprints map[string]string `json:"fingerprints,omitempty"`
+	URI          string            `json:"uri,omitempty"`  // where the segment lives on a mount (an ingest's cut)
+	Role         string            `json:"role,omitempty"` // caller | bot | mono (an ingest's cut)
 
 	Hash string `json:"-"` // the audio file's blob hash (resolved from the artifact's manifest)
 	Size int64  `json:"-"`
@@ -143,8 +165,12 @@ func (h Header) check() error {
 	if h.Format != FormatV1 {
 		bad = append(bad, fmt.Sprintf("format %q is not %s", h.Format, FormatV1))
 	}
-	if err := (SourceInput{Name: h.Source.Name, Licence: h.Source.Licence, Kind: h.Source.Kind}).validate(); err != nil {
-		bad = append(bad, err.Error())
+	if h.DraftVersionID == "" {
+		if err := (SourceInput{Name: h.Source.Name, Licence: h.Source.Licence, Kind: h.Source.Kind}).validate(); err != nil {
+			bad = append(bad, err.Error())
+		}
+	} else if !sourceName.MatchString(h.Source.Name) {
+		bad = append(bad, fmt.Sprintf("source name %q must be 2–100 lowercase letters, digits, dots, dashes or underscores", h.Source.Name))
 	}
 	if h.Name != "" && !sourceName.MatchString(h.Name) {
 		bad = append(bad, fmt.Sprintf("name %q must be lowercase letters, digits, dots, dashes or underscores", h.Name))

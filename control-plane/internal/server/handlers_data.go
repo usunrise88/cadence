@@ -135,6 +135,7 @@ func apiSource(src data.Source) api.Source {
 	if out.Languages == nil {
 		out.Languages = []string{}
 	}
+	sourceHistory(src, &out)
 	if out.Datasets == nil {
 		out.Datasets = []string{}
 	}

@@ -1,21 +1,34 @@
-# Starter pipeline: index a mount, pseudo-label, normalise, filter, split, freeze (step kinds arrive in phase 4).
+# written by Cadence — starter pipeline: index audio on a mount, normalise, filter, split and register a draft dataset
+# version (docs/review/2026-10-03-phase-4-plan.md decisions 3–4; docs/spec/04-blocks.md Block 1).
+#
+# Nothing is copied: sdp_ingest writes a `segments` manifest (mount URIs, canonical hashes, voice activity), and
+# dataset_freeze (mode draft) ends in a draft dataset version. datasets.preview shows its hours per language and split;
+# datasets.freeze runs the leakage check against every golden set and cuts the audio into the content store.
+#
+# Before running, set the params marked "set me": the registered source (sources.new; no licence, no ingest), the
+# mount path, the language and the collection name. Copy text_normalise's params from lang/<locale>/normalizer.yaml
+# (training) and itn.yaml. For untranscribed audio, the pseudo-label ensemble (pseudolabel_ensemble@1) goes between
+# index and normalise. Only departures from defaults.yaml (data.*) are written. Help: docs/help/steps/sdp-ingest.md.
 name: data-ingest
-description: Turn audio on a mount into a frozen, fingerprinted dataset version
+description: Turn audio on a mount into a draft dataset version (freeze it with datasets.freeze)
 steps:
   - id: index
     kind: sdp_ingest@1
-  - id: pseudolabel
-    kind: pseudolabel_ensemble@1
-    in: { manifest: index.manifest }
+    params:
+      source: my-corpus                                # set me: a registered source
+      path: mount://corpora/my-corpus/2026-10-01       # set me: <mount>/<source>/<revision>
+      language: sr-RS                                  # set me
   - id: normalise
     kind: text_normalise@1
-    in: { manifest: pseudolabel.manifest }
+    in: { segments: index.segments }
   - id: filter
     kind: manifest_filter@1
-    in: { manifest: normalise.manifest }
+    in: { segments: normalise.segments }
   - id: split
     kind: speaker_disjoint_split@1
-    in: { manifest: filter.manifest }
-  - id: freeze
+    in: { segments: filter.segments }
+  - id: draft
     kind: dataset_freeze@1
-    in: { manifest: split.manifest }
+    in: { segments: split.segments }
+    params:
+      name: my-corpus                                  # set me: dataset/<name>

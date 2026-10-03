@@ -425,6 +425,120 @@ data:
     value: false
     description: Whether an import normalises transcripts; off keeps the source's cased, punctuated text, the style the base model is trained on
     source: nvidia/nemotron-3.5-asr-streaming-0.6b model card (punctuated, cased output); .claude/rules/worker.md
+  # Ingest from a mount, filter, split and freeze (phase 4 · stream D; docs/help/steps/sdp-ingest.md).
+  ingest_vad_frame_ms:
+    value: 20
+    unit: ms
+    description: Frame length of sdp_ingest's energy voice activity detection (one level per frame, per channel)
+    source: Cadence recommendation (20 ms frames, the frame_vad model's resolution)
+    range: { min: 10, max: 100 }
+  ingest_vad_margin_db:
+    value: 12
+    unit: dB
+    description: How far above a channel's noise floor (its 10th-percentile frame level) a frame must be to count as speech
+    source: Cadence recommendation
+    range: { min: 3, max: 40 }
+  ingest_vad_floor_db:
+    value: -55
+    unit: dBFS
+    description: Absolute level below which a frame is never speech, whatever the noise floor
+    source: Cadence recommendation (telephone line noise sits near -60 dBFS)
+    range: { min: -90, max: -20 }
+  ingest_vad_min_speech_ms:
+    value: 250
+    unit: ms
+    description: Speech runs shorter than this are dropped (clicks, breaths)
+    source: Cadence recommendation
+    range: { min: 0, max: 5000 }
+  ingest_vad_min_silence_ms:
+    value: 300
+    unit: ms
+    description: Pauses shorter than this do not end a segment
+    source: Cadence recommendation
+    range: { min: 0, max: 5000 }
+  ingest_vad_pad_ms:
+    value: 100
+    unit: ms
+    description: Audio kept before and after each speech run so word onsets and endings are not clipped
+    source: Cadence recommendation
+    range: { min: 0, max: 1000 }
+  ingest_max_segment_s:
+    value: 20
+    unit: s
+    description: Longest segment ingest writes; longer speech is split at its quietest frame
+    source: Cadence recommendation (training batches by duration; FastConformer fine-tunes typically cap utterances at 20 s)
+    range: { min: 1, max: 60 }
+  ingest_min_segment_s:
+    value: 0.3
+    unit: s
+    description: Shortest segment ingest writes
+    source: Cadence recommendation
+    range: { min: 0, max: 10 }
+  filter_min_duration_s:
+    value: 0.5
+    unit: s
+    description: manifest_filter drops segments shorter than this
+    source: Cadence recommendation
+    range: { min: 0, max: 60 }
+  filter_max_duration_s:
+    value: 30
+    unit: s
+    description: manifest_filter drops segments longer than this
+    source: Cadence recommendation (NeMo ASR fine-tuning recipes use max_duration 20–40 s)
+    range: { min: 1, max: 600 }
+  filter_min_chars_per_second:
+    value: 1
+    unit: chars/s
+    description: manifest_filter drops transcribed segments with fewer characters per second (text missing words)
+    source: Cadence recommendation (NeMo Speech Data Processor char-rate filters)
+    range: { min: 0, max: 50 }
+  filter_max_chars_per_second:
+    value: 30
+    unit: chars/s
+    description: manifest_filter drops transcribed segments with more characters per second (text of a longer clip, or audio cut short)
+    source: Cadence recommendation (NeMo Speech Data Processor char-rate filters)
+    range: { min: 1, max: 100 }
+  filter_min_speech_ratio:
+    value: 0.2
+    unit: fraction
+    description: manifest_filter drops segments whose voice-activity share is below this
+    source: Cadence recommendation
+    range: { min: 0, max: 1 }
+  filter_max_crosstalk:
+    value: 0.5
+    unit: fraction
+    description: manifest_filter drops segments during which another channel speaks for more than this share
+    source: Cadence recommendation
+    range: { min: 0, max: 1 }
+  shard_utterances:
+    value: 2000
+    unit: utterances
+    description: "Utterances per shard (a Lhotse cuts file) of a frozen dataset version: the unit of pinning, eviction and materialisation"
+    source: Cadence recommendation (Lhotse Shar's default shard size is 1000 cuts)
+    range: { min: 10, max: 100000 }
+  quality_max_silence_share:
+    value: 0.5
+    unit: fraction
+    description: A frozen version warns when its segments are on average more silence than this (1 − voice-activity share)
+    source: Cadence recommendation
+    range: { min: 0, max: 1 }
+  quality_max_clipped_share:
+    value: 0.01
+    unit: fraction
+    description: A frozen version warns when more than this share of segments clip (more than 0.1 % of samples at full scale)
+    source: Cadence recommendation
+    range: { min: 0, max: 1 }
+  quality_outlier_z:
+    value: 3.0
+    description: Characters-per-second z-score beyond which a segment's transcript length is an outlier
+    source: Cadence recommendation (three standard deviations)
+    range: { min: 1, max: 10 }
+  quality_max_outlier_share:
+    value: 0.02
+    unit: fraction
+    description: A frozen version warns when more than this share of segments are transcript-length outliers
+    source: Cadence recommendation
+    range: { min: 0, max: 1 }
 
 # Evaluation (phase 3; docs/review/2026-10-02-phase-3-plan.md): the matrix, scoring and significance.
 eval:

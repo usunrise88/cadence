@@ -56,7 +56,9 @@ type Source struct {
 	UpdatedAt       time.Time
 	Utterances      int
 	Hours           float64
-	Datasets        []string // Get only: dataset version ids built from the source
+	Datasets        []string    // Get only: dataset version ids built from the source
+	Clearances      []Clearance // Get only: licence and clearance history, oldest first
+	Ingests         []Ingest    // Get only: dataset versions registered from the source, newest first
 }
 
 const sourceSelect = `SELECT s.id, s.name, s.description, s.licence, s.kind, s.languages, s.url, s.training_cleared,
@@ -113,6 +115,9 @@ func GetSource(ctx context.Context, q storage.Querier, idOrName string) (Source,
 	if s.Datasets, err = pgx.CollectRows(rows, pgx.RowTo[string]); err != nil {
 		return Source{}, fmt.Errorf("query source datasets: %w", err)
 	}
+	if err := withHistory(ctx, q, &s); err != nil {
+		return Source{}, err
+	}
 	return s, nil
 }
 
@@ -155,10 +160,14 @@ func Edit(ctx context.Context, tx pgx.Tx, idOrName string, rev int, in EditInput
 	if s.Archived {
 		return Source{}, nil, problems.Conflict.New("source %s is archived; an archived source cannot be edited", s.Name)
 	}
+	var changes []string
 	if in.Licence != nil {
 		l := strings.TrimSpace(*in.Licence)
 		if l == "" {
 			return Source{}, nil, problems.Validation([]problems.FieldError{{Path: "/licence", Message: "must not be empty"}})
+		}
+		if l != s.Licence {
+			changes = append(changes, ChangeLicence)
 		}
 		s.Licence = l
 	}
@@ -169,14 +178,21 @@ func Edit(ctx context.Context, tx pgx.Tx, idOrName string, rev int, in EditInput
 		s.TrainingCleared = *in.TrainingCleared
 		if s.TrainingCleared {
 			s.ClearedBy, s.ClearedAt = &actor, &now
+			changes = append(changes, ChangeCleared)
 		} else {
 			s.ClearedBy, s.ClearedAt = nil, nil
+			changes = append(changes, ChangeUncleared)
 		}
 	}
 	if _, err := tx.Exec(ctx, `UPDATE sources SET description = $2, licence = $3, training_cleared = $4, cleared_by = $5,
 		cleared_at = $6, rev = rev + 1, updated_at = $7 WHERE id = $1`,
 		s.ID, s.Description, s.Licence, s.TrainingCleared, s.ClearedBy, s.ClearedAt, now); err != nil {
 		return Source{}, nil, fmt.Errorf("update source: %w", err)
+	}
+	for _, c := range changes {
+		if err := recordClearance(ctx, tx, s.ID, c, s.Licence, s.TrainingCleared, actor, now); err != nil {
+			return Source{}, nil, err
+		}
 	}
 	if s, err = GetSource(ctx, tx, s.ID); err != nil {
 		return Source{}, nil, err
@@ -219,8 +235,8 @@ func (in SourceInput) validate() error {
 	switch {
 	case !sourceName.MatchString(in.Name):
 		return fmt.Errorf("source name %q must be 2–100 lowercase letters, digits, dots, dashes or underscores", in.Name)
-	case strings.TrimSpace(in.Licence) == "":
-		return fmt.Errorf("source %s has no licence; an import must carry the licence of its corpus", in.Name)
+	case Unlicensed(in.Licence):
+		return fmt.Errorf("source %s has no usable licence (%q); an import must carry the licence of its corpus — no licence, no ingest", in.Name, in.Licence)
 	}
 	for _, k := range SourceKinds {
 		if in.Kind == k {
@@ -252,6 +268,9 @@ func Ensure(ctx context.Context, tx pgx.Tx, in SourceInput, actor auth.Actor, no
 		return Source{}, false, nil, err
 	}
 	if tag.RowsAffected() == 1 {
+		if err := recordClearance(ctx, tx, s.ID, ChangeCreated, s.Licence, false, actor, now); err != nil {
+			return Source{}, false, nil, err
+		}
 		return s, true, []events.Draft{SourceEvent(s, "source.created")}, nil
 	}
 	switch {
