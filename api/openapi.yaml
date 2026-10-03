@@ -8508,7 +8508,7 @@ components:
         modelVersionId: { type: string, maxLength: 200, description: "A model version (ver_…, model/<name>, or @alias)" }
         baseModelVersionId: { type: string, maxLength: 200, description: "A base model version (ver_…, base-model/<name>, or @alias)" }
         profile: { type: string, maxLength: 40, description: "Latency profile (default: eval.primary_profile when the family declares it, else its first streaming profile)" }
-        language: { type: string, maxLength: 35, description: "BCP 47 language the model decodes in (default: the project's first locale)" }
+        language: { type: string, maxLength: 35, description: "BCP 47 language the model decodes in (default: the language a checkpoint or model version was trained under, its run's target_lang, else the project's first locale)" }
         boost: { type: string, maxLength: 300, description: "none (default), or a boost list of the project's language pack: lang/<locale>/boost/<file>.txt, optionally @<commit> (default main)" }
         boostWeight: { type: number, format: double, minimum: 0, maximum: 100, description: "Overrides the list's '# weight:' header" }
     TelephonySimulation:

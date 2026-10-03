@@ -55,8 +55,9 @@ report() {
     # shellcheck disable=SC1090
     . "$env"
     if [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -n "${TELEGRAM_CHAT_ID:-}" ]; then
-      curl -fsS -m 20 -o /dev/null "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-        --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" --data-urlencode "text=${text}" \
+      # The URL (it holds the token) goes to curl on stdin, never on its command line where ps would show it.
+      printf 'url = "https://api.telegram.org/bot%s/sendMessage"\n' "$TELEGRAM_BOT_TOKEN" |
+        curl -fsS -m 20 -o /dev/null -K - --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" --data-urlencode "text=${text}" \
         || echo "telegram: the report could not be sent"
     fi
   fi
