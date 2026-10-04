@@ -41,14 +41,15 @@ operation the step names, never from what the agent reports:
 | Step | What the person does | What ticks it |
 | --- | --- | --- |
 | The mount exists | The admin approves the agent's `mounts.new` in Approvals | The approved request (it runs as the agent's), or `mounts.get` of an existing mount |
-| The source is cleared for training | The admin reads the licence and approves `sources.edit` `trainingCleared: true` | The approved edit, or `sources.get` answering `trainingCleared: true` |
+| The source is cleared for training | Only when `sources.get` answers `trainingCleared: false`: the admin reads the licence and approves the agent's `sources.edit` `trainingCleared: true` | `sources.get` answering `trainingCleared: true` — the same read that ticked "Register the source" ticks it too, so an already cleared source never asks for an approval — or the approved edit |
 | The project adopts the auxiliaries (optional) | The admin approves each `projects.adopt` of an auxiliary model after checking its licence (R26) | The approved adoption, or `adoptions.list` |
-| OASIS answers (optional) | Starts the service on the host: `scripts/serve.sh ensemble no-300m` in the OASIS checkout (about 8.6 GB beside vLLM). Cadence never starts it | `auxiliaries.get` answering `reachable: true` |
+| OASIS answers (pseudo-label only) | Starts the service on the host: `scripts/serve.sh ensemble no-300m` in the OASIS checkout (about 8.6 GB beside vLLM; its token in the secret `oasis-token`). Cadence never starts it | `auxiliaries.get` answering `reachable: true` |
 
-An optional step is skipped when the next step ticks first: a pseudo-label run started without OASIS goes on with
-two members (the pipeline's `oasis` step is optional; its dry run warns `auxiliary-unavailable` when the service does
-not answer, and `step-kind-unavailable` when no live worker publishes its kind — the step is then skipped). A read that does
-not meet a step's `when` marks it running ("waiting for a person"). While a step waits, tell the agent in Chat when
+An optional step is skipped when the next step ticks first: "OASIS answers" is passed over by a `data-ingest` run.
+`pipelines/pseudo-label` cannot run without OASIS — its ensemble votes Whisper and OASIS, so the `oasis` step is not
+optional and the dry run refuses with `auxiliary-unavailable` while the service does not answer. A read that does
+not meet a step's `when` marks it running ("waiting for a person"); a read that ticks one step ticks the `when` steps
+right after it that it already satisfies. While a step waits, tell the agent in Chat when
 you have done your part; a denied approval stops the playbook.
 
 ## Place in the loop
