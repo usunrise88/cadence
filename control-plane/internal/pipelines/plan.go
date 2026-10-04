@@ -240,10 +240,21 @@ func (e *Engine) Plan(ctx context.Context, q storage.Querier, p Pipeline, in Pla
 		if deps == nil {
 			deps = []Departure{}
 		}
-		refs, err := resolveRefs(ctx, q, *k, params, in.ProjectID, in.lock, path+".params", &errs)
+		refErrs := Errors{}
+		refs, err := resolveRefs(ctx, q, *k, params, in.ProjectID, in.lock, path+".params", &refErrs)
 		if err != nil {
 			return Plan{}, err
 		}
+		if len(refErrs) > 0 && s.Optional {
+			// An optional member whose auxiliary the project has not adopted (or may not use) is skipped like one whose
+			// worker is gone: the run goes on without it instead of refusing the whole plan.
+			name, version, _ := s.KindRef()
+			plan.Skipped = append(plan.Skipped, SkippedStep{Step: s.ID, Position: pos, Name: name, Version: version, In: s.In})
+			plan.Warnings = append(plan.Warnings, Warning{Code: WarningAuxiliaryUnavailable, Step: s.ID, Kind: s.Kind,
+				Message: refErrs[0].Message + " (the step is optional: it is skipped and the run goes on without it)"})
+			continue
+		}
+		errs = append(errs, refErrs...)
 		ps := PlanStep{Step: s.ID, Position: pos, Kind: *k, Params: params, Departures: deps, In: s.In, Auxiliaries: refs,
 			Deprecation: k.Deprecation}
 		if k.Deprecation != nil {

@@ -133,6 +133,17 @@ func TestAuxiliaryAdoptionAndRegistryRefs(t *testing.T) {
 		t.Fatalf("not adopted: %+v", p.Errors)
 	}
 
+	// Marked optional, the same step before the adoption is skipped with a warning; the plan stands.
+	e.commitPipeline("demo", "member-unadopted", "name: member-unadopted\ninputs: {text: text}\nsteps:\n  - {id: m, kind: fx_member@1, in: {text: $inputs.text}, optional: true}\n")
+	var skipped struct {
+		Warnings []struct{ Code, Step, Message string }
+	}
+	e.ok(e.do("POST", "/api/projects/demo/pipelines/member-unadopted:run?dryRun=true", body, "Idempotency-Key", e.key(), "If-Match", "*"), 200, &skipped)
+	if len(skipped.Warnings) != 1 || skipped.Warnings[0].Code != "auxiliary-unavailable" || skipped.Warnings[0].Step != "m" ||
+		!strings.Contains(skipped.Warnings[0].Message, "has not adopted auxiliary/oasis") {
+		t.Fatalf("an optional step naming an unadopted auxiliary: %+v", skipped.Warnings)
+	}
+
 	// Adoption is a registry-scope approval for everyone: the admin's own request and an agent's both wait for it.
 	e.adoptAuxiliary("demo", oasis.ID, e.do)
 	e.adoptAuxiliary("demo", whisper.ID, e.agent)
