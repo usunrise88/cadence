@@ -28,6 +28,7 @@ Entities:
   batches        freeze get list new
   boost          edit
   branches       accept compare get list revert
+  bundles        adopt
   checkpoints    average get list
   collections    get list
   compute        edit get list
@@ -58,7 +59,7 @@ Entities:
   pipelines      list run
   playbooks      get list run
   policies       edit get
-  projects       adopt archive edit get list new note search sync
+  projects       adopt archive edit export get list new note search sync
   queueEntries   list
   recipes        edit get list new
   registry       lineage search

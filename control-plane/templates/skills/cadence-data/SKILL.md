@@ -80,6 +80,9 @@ description: Cadence block "data" workflow: mounts, sources and licences, ingest
   `pipelines.run name=import` (`dataset_import`), frozen at import.
 - `datasets.export` (`shar`, `nemo-manifest`, `cadence-bundle` to `mount://exports/…`; `hf-hub` is an approval),
   `exports.list|get`. `storage.get` — cache use and quotas; `datasets.materialize|evict` move shards.
+- A whole project: `projects.export` (repository, `data.lock`, every referenced version) to `mount://exports/…`;
+  on another instance `bundles.adopt` or `projects.new` with `bundle` — plan with `dryRun=true`; the import is the
+  admin's approval (`bundle-import`).
 
 ## 7. Playbooks
 - **Adapt a new language** (`adapt-new-language`) runs sections 1–5, then mix → calibrate → train → eval → gate.

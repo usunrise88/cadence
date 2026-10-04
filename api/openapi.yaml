@@ -73,7 +73,14 @@ paths:
           instructions template, repository, budgets) defaults from defaults.yaml (defaults.get, section wizard).
           The project is created in state bootstrapping and the answer is 202 with the bootstrap job's id: follow
           job.{jobId} (jobs.wait) until the repository is written and the project is active. A dry run answers 200
-          with the project that would be created and queues nothing.
+          with the project that would be created and queues nothing. With bundle (mount://<mount>/<dir>, a project
+          bundle from projects.export) the project is made from the bundle: description, locales, domain and base model
+          default to the bundle's, the internal repository is the bundle's history (main at the bundled commit),
+          and the bootstrap job imports and adopts the bundle's registry versions as bundles.adopt does (the base model
+          becomes the bundle's when it is one of them), then commits project.yaml, AGENTS.md and data.lock for this
+          instance. Registering versions is a registry change, so a call with bundle is an approval the admin decides,
+          for people too (202 with an approvalId instead of a jobId; the approved call answers 202 with the job).
+        gatedWhen: { param: from, values: [bundle] }
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
         - $ref: "#/components/parameters/DryRun"
@@ -4164,6 +4171,88 @@ paths:
           content: { application/json: { schema: { $ref: "#/components/schemas/DatasetExport" } } }
         default: { $ref: "#/components/responses/Problem" }
 
+  # project bundles (phase 4 · tail · stream infra): projects.export writes one, bundles.adopt and projects.new read one
+
+  /projects/{p}:export:
+    x-cadence: { entity: projects }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    post:
+      operationId: projects.export
+      summary: Export the project as a Cadence project bundle (its repository at a commit, data.lock and every registry version it references, with their content) to a directory on a writable mount; 201 with the export
+      tags: [projects]
+      x-cadence:
+        toolDescription: >
+          Write a self-contained Cadence project bundle to a directory on a writable path mount, for another Cadence
+          instance (bundles.adopt, or projects.new with bundle) or for safekeeping: repository.bundle (a git bundle of
+          the repository at ref, default main), data.lock at that commit, bundle.json (the project's facts, its
+          aliases and the registry record of every version it adopted or that an adopted version names — dataset
+          versions, golden sets, normalizers, noise banks, auxiliary models' payloads, models, base models,
+          templates — with their sources and licences), one dataset bundle per dataset version and noise bank under
+          datasets/<name>/<version>/ (the layout datasets.export cadence-bundle writes) and every other blob a payload
+          names under cas/. Versions published by workers (runtimes, step kinds, model families) travel as references
+          only. Every dataset version must be in the cache (datasets.materialize an evicted one first). target
+          defaults to mount://<storage.export_mount>/projects/<slug>/<commit, 12 hex>; a directory that already holds
+          a bundle is refused. dryRun=true answers the plan (commit, target, versions, blobs, bytes). The real call
+          answers 201 with the export (exports.get; format cadence-project-bundle, follow job.{jobId}); the audio it
+          writes is recorded as mount copies of its content-store blobs. Needs If-Match with the project's revision
+          (projects.get): the bundle carries the adoptions and aliases of that revision.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ProjectExportRequest" } } }
+      responses:
+        "200":
+          description: Dry run — the bundle as it would be written; nothing started
+          content: { application/json: { schema: { $ref: "#/components/schemas/ProjectExportPlan" } } }
+        "201":
+          description: "The export, queued: follow entity.export.{id} or job.{jobId}"
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/DatasetExport" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /projects/{p}/bundles:adopt:
+    x-cadence: { entity: bundles }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    post:
+      operationId: bundles.adopt
+      summary: Import a Cadence project bundle's registry versions this instance lacks and adopt every version the bundle's project adopted into this project (approval for everyone); 201 with the import job
+      tags: [projects]
+      x-cadence:
+        toolDescription: >
+          Read a Cadence project bundle (projects.export on this or another instance) from a directory on a mount
+          (bundle: mount://<mount>/<dir>, the directory holding bundle.json) and adopt the versions its project adopted
+          into this project. Versions this instance already holds (same collection and content) are reused; the rest
+          are registered under their original version strings — their blobs copied into the content store and checked
+          against their hashes, dataset versions and noise banks re-imported from their dataset bundles with their
+          sources and licences (a source cleared for training there is cleared here), golden sets re-frozen through
+          this instance's leakage checks. Adoption runs the licence checks (and the golden-set leakage check against
+          what this project trained on); aliases the bundle sets are set where this project has no alias of that name
+          (production never). The repository is not changed (projects.new with bundle makes a new project from it).
+          Registering versions is a registry change for every project, so the call is an approval the admin decides,
+          for people too (202 with an approvalId); the approved call answers 201 with the import job (follow
+          job.{jobId}; its result lists what was registered, reused and adopted). dryRun=true answers the plan
+          without asking. Needs If-Match with the project's revision.
+        gatedWhen: { param: from, values: [bundle] }
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/BundleAdopt" } } }
+      responses:
+        "200":
+          description: Dry run — what the import would register, reuse and adopt; nothing changed
+          content: { application/json: { schema: { $ref: "#/components/schemas/BundlePlan" } } }
+        "201":
+          description: The import, queued
+          content: { application/json: { schema: { $ref: "#/components/schemas/BundleImport" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
   # ---------------------------------------------------------------- ingest, draft datasets, freeze, sources, utterance search (phase 4 · stream D) — add paths below this line
 
   /registry/datasets:preview:
@@ -4907,6 +4996,7 @@ components:
         instructionsTemplate: { $ref: "#/components/schemas/InstructionsTemplateName" }
         repository: { $ref: "#/components/schemas/RepositoryChoice" }
         budgets: { $ref: "#/components/schemas/ProjectBudgetsEdit" }
+        bundle: { type: string, maxLength: 1000, description: "Make the project from a project bundle (projects.export): mount://<mount>/<dir>, the directory holding bundle.json. Choices sent here override the bundle's facts; the repository must be internal" }
     ProjectEdit:
       type: object
       additionalProperties: false
@@ -10015,8 +10105,8 @@ components:
     # ---------------------------------------------------------------- interoperability: imports, exports, noise bank schemas (phase 4 · stream I) — add below
     DatasetExportFormat:
       type: string
-      enum: [lhotse-shar, nemo-manifest, cadence-bundle, hf-hub]
-      description: "lhotse-shar: Shar shards (cuts and recording tars); nemo-manifest: manifest.<split>.jsonl with the WAV files; cadence-bundle: the registry record, sources and blobs laid out as a content store, for another Cadence instance; hf-hub: an audiofolder dataset pushed to the Hugging Face Hub (approval)"
+      enum: [lhotse-shar, nemo-manifest, cadence-bundle, hf-hub, cadence-project-bundle]
+      description: "lhotse-shar: Shar shards (cuts and recording tars); nemo-manifest: manifest.<split>.jsonl with the WAV files; cadence-bundle: the registry record, sources and blobs laid out as a content store, for another Cadence instance; hf-hub: an audiofolder dataset pushed to the Hugging Face Hub (approval); cadence-project-bundle: a whole project (projects.export only; datasets.export refuses it)"
     DatasetExportRequest:
       type: object
       required: [version, format]
@@ -10083,7 +10173,10 @@ components:
         copies: { type: integer, description: "Content-store blobs the export placed on a mount unchanged (recorded as mount copies)" }
         sample: { type: array, items: { $ref: "#/components/schemas/DatasetExportFile" }, description: The first files written (up to 20) }
         hub: { $ref: "#/components/schemas/DatasetExportHub" }
-        error: { type: string, description: Why the export's pipeline run failed }
+        error: { type: string, description: Why the export's pipeline run (or job) failed }
+        jobId: { type: string, description: "cadence-project-bundle: the control-plane job that writes the bundle (no pipeline run)" }
+        commit: { type: string, description: "cadence-project-bundle: the repository commit bundled" }
+        versions: { type: integer, description: "cadence-project-bundle: registry versions carried" }
         createdBy: { $ref: "#/components/schemas/Actor" }
         approvalId: { type: string }
         createdAt: { type: string, format: date-time }
@@ -10094,6 +10187,99 @@ components:
       required: [items]
       properties:
         items: { type: array, items: { $ref: "#/components/schemas/DatasetExport" } }
+    # project bundles (phase 4 · tail · stream infra)
+    ProjectExportRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        ref: { type: string, maxLength: 200, description: "The branch or commit to export (default main)" }
+        target: { type: string, maxLength: 1000, description: "A directory on a writable path mount (mount://exports/<path>) that holds no bundle yet; default mount://<storage.export_mount>/projects/<slug>/<commit, 12 hex>" }
+    BundleVersion:
+      type: object
+      description: One registry version a project bundle carries
+      required: [id, kind, collection, version, adopted, blobs, bytes]
+      properties:
+        id: { type: string, description: "The version's id on the instance that wrote the bundle (ver_…)" }
+        kind: { $ref: "#/components/schemas/RegistryKind" }
+        collection: { type: string }
+        version: { type: string }
+        adopted: { type: boolean, description: "True when the project adopted it; false when an adopted version's payload names it" }
+        published: { type: boolean, description: "A runtime, step kind or model family: a reference only, never registered by an import" }
+        blobs: { type: integer, description: Content-store blobs carried for it }
+        bytes: { type: integer, format: int64 }
+        path: { type: string, description: "Its dataset bundle inside the project bundle (datasets/<name>/<version>), for dataset versions and noise banks" }
+    ProjectExportPlan:
+      type: object
+      required: [projectId, project, ref, commit, target, versions, aliases, blobs, bytes, sources]
+      properties:
+        projectId: { type: string }
+        project: { type: string, description: The project's slug }
+        ref: { type: string }
+        commit: { type: string, description: The commit the repository is bundled at }
+        target: { type: string, description: "mount://<mount>/<dir>" }
+        versions: { type: array, items: { $ref: "#/components/schemas/BundleVersion" } }
+        aliases: { type: array, items: { $ref: "#/components/schemas/BundleAlias" } }
+        blobs: { type: integer, description: Content-store blobs the bundle carries }
+        bytes: { type: integer, format: int64 }
+        sources: { type: array, items: { type: string }, description: Names of the sources the dataset versions hold }
+    BundleAlias:
+      type: object
+      required: [name, versionId]
+      properties:
+        name: { type: string }
+        versionId: { type: string, description: "The version in the bundle (its id there)" }
+        localVersionId: { type: string, description: "Import plan: the version here" }
+        action: { type: string, enum: [set, keep, skip], description: "Import plan: set (this project has no such alias), keep (it points there already), skip (this project's alias stays, or production)" }
+    BundleAdopt:
+      type: object
+      required: [bundle]
+      additionalProperties: false
+      properties:
+        bundle: { type: string, maxLength: 1000, description: "The bundle's directory on a mount: mount://<mount>/<dir> (the directory holding bundle.json)" }
+        aliases: { type: boolean, default: true, description: "Set the bundle's aliases this project does not have yet (production never)" }
+    BundleImportVersion:
+      type: object
+      required: [id, kind, collection, version, adopted, action]
+      properties:
+        id: { type: string, description: "The version's id in the bundle" }
+        kind: { $ref: "#/components/schemas/RegistryKind" }
+        collection: { type: string }
+        version: { type: string }
+        adopted: { type: boolean }
+        action: { type: string, enum: [register, reuse, reference, missing], description: "register: new here, registered from the bundle; reuse: this instance holds the same content; reference: published by workers, mapped to the version here; missing: a published version this instance lacks (payloads keep the bundle's id)" }
+        localId: { type: string, description: "The version here (reuse, reference)" }
+        blobs: { type: integer }
+        bytes: { type: integer, format: int64 }
+    BundlePlan:
+      type: object
+      required: [bundle, commit, project, versions, aliases, register, reuse, blobs, bytes, sources]
+      properties:
+        bundle: { type: string }
+        commit: { type: string, description: The commit the bundle's repository is at }
+        project:
+          type: object
+          required: [name, slug, locales, domain]
+          properties:
+            name: { type: string }
+            slug: { type: string }
+            description: { type: string }
+            locales: { type: array, items: { type: string } }
+            domain: { type: string }
+            baseModel: { type: string, description: "collection@version of its base model" }
+        createdAt: { type: string, format: date-time, description: When the bundle was written }
+        versions: { type: array, items: { $ref: "#/components/schemas/BundleImportVersion" } }
+        aliases: { type: array, items: { $ref: "#/components/schemas/BundleAlias" } }
+        register: { type: integer, description: Versions the import registers }
+        reuse: { type: integer, description: Versions this instance holds already }
+        blobs: { type: integer, description: Blobs to copy into the content store (those it lacks) }
+        bytes: { type: integer, format: int64 }
+        sources: { type: array, items: { type: string } }
+    BundleImport:
+      type: object
+      required: [jobId, plan]
+      properties:
+        jobId: { type: string, description: "Follow job.{jobId}; its result lists the versions registered, reused and adopted" }
+        plan: { $ref: "#/components/schemas/BundlePlan" }
     # ---------------------------------------------------------------- ingest, draft datasets, freeze schemas (phase 4 · stream D) — add below
     SourceNew:
       type: object

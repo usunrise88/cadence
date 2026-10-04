@@ -96,6 +96,10 @@ export type ProjectNew = {
     instructionsTemplate?: InstructionsTemplateName;
     repository?: RepositoryChoice;
     budgets?: ProjectBudgetsEdit;
+    /**
+     * Make the project from a project bundle (projects.export): mount://<mount>/<dir>, the directory holding bundle.json. Choices sent here override the bundle's facts; the repository must be internal
+     */
+    bundle?: string;
 };
 
 export type ProjectEdit = {
@@ -7771,9 +7775,9 @@ export type DatasetCachePlan = {
 };
 
 /**
- * lhotse-shar: Shar shards (cuts and recording tars); nemo-manifest: manifest.<split>.jsonl with the WAV files; cadence-bundle: the registry record, sources and blobs laid out as a content store, for another Cadence instance; hf-hub: an audiofolder dataset pushed to the Hugging Face Hub (approval)
+ * lhotse-shar: Shar shards (cuts and recording tars); nemo-manifest: manifest.<split>.jsonl with the WAV files; cadence-bundle: the registry record, sources and blobs laid out as a content store, for another Cadence instance; hf-hub: an audiofolder dataset pushed to the Hugging Face Hub (approval); cadence-project-bundle: a whole project (projects.export only; datasets.export refuses it)
  */
-export type DatasetExportFormat = 'lhotse-shar' | 'nemo-manifest' | 'cadence-bundle' | 'hf-hub';
+export type DatasetExportFormat = 'lhotse-shar' | 'nemo-manifest' | 'cadence-bundle' | 'hf-hub' | 'cadence-project-bundle';
 
 export type DatasetExportRequest = {
     /**
@@ -7895,9 +7899,21 @@ export type DatasetExport = {
     sample?: Array<DatasetExportFile>;
     hub?: DatasetExportHub;
     /**
-     * Why the export's pipeline run failed
+     * Why the export's pipeline run (or job) failed
      */
     error?: string;
+    /**
+     * cadence-project-bundle: the control-plane job that writes the bundle (no pipeline run)
+     */
+    jobId?: string;
+    /**
+     * cadence-project-bundle: the repository commit bundled
+     */
+    commit?: string;
+    /**
+     * cadence-project-bundle: registry versions carried
+     */
+    versions?: number;
     createdBy: Actor;
     approvalId?: string;
     createdAt: string;
@@ -7907,6 +7923,170 @@ export type DatasetExport = {
 
 export type DatasetExportList = {
     items: Array<DatasetExport>;
+};
+
+export type ProjectExportRequest = {
+    /**
+     * The branch or commit to export (default main)
+     */
+    ref?: string;
+    /**
+     * A directory on a writable path mount (mount://exports/<path>) that holds no bundle yet; default mount://<storage.export_mount>/projects/<slug>/<commit, 12 hex>
+     */
+    target?: string;
+};
+
+/**
+ * One registry version a project bundle carries
+ */
+export type BundleVersion = {
+    /**
+     * The version's id on the instance that wrote the bundle (ver_…)
+     */
+    id: string;
+    kind: RegistryKind;
+    collection: string;
+    version: string;
+    /**
+     * True when the project adopted it; false when an adopted version's payload names it
+     */
+    adopted: boolean;
+    /**
+     * A runtime, step kind or model family: a reference only, never registered by an import
+     */
+    published?: boolean;
+    /**
+     * Content-store blobs carried for it
+     */
+    blobs: number;
+    bytes: number;
+    /**
+     * Its dataset bundle inside the project bundle (datasets/<name>/<version>), for dataset versions and noise banks
+     */
+    path?: string;
+};
+
+export type ProjectExportPlan = {
+    projectId: string;
+    /**
+     * The project's slug
+     */
+    project: string;
+    ref: string;
+    /**
+     * The commit the repository is bundled at
+     */
+    commit: string;
+    /**
+     * mount://<mount>/<dir>
+     */
+    target: string;
+    versions: Array<BundleVersion>;
+    aliases: Array<BundleAlias>;
+    /**
+     * Content-store blobs the bundle carries
+     */
+    blobs: number;
+    bytes: number;
+    /**
+     * Names of the sources the dataset versions hold
+     */
+    sources: Array<string>;
+};
+
+export type BundleAlias = {
+    name: string;
+    /**
+     * The version in the bundle (its id there)
+     */
+    versionId: string;
+    /**
+     * Import plan: the version here
+     */
+    localVersionId?: string;
+    /**
+     * Import plan: set (this project has no such alias), keep (it points there already), skip (this project's alias stays, or production)
+     */
+    action?: 'set' | 'keep' | 'skip';
+};
+
+export type BundleAdopt = {
+    /**
+     * The bundle's directory on a mount: mount://<mount>/<dir> (the directory holding bundle.json)
+     */
+    bundle: string;
+    /**
+     * Set the bundle's aliases this project does not have yet (production never)
+     */
+    aliases?: boolean;
+};
+
+export type BundleImportVersion = {
+    /**
+     * The version's id in the bundle
+     */
+    id: string;
+    kind: RegistryKind;
+    collection: string;
+    version: string;
+    adopted: boolean;
+    /**
+     * register: new here, registered from the bundle; reuse: this instance holds the same content; reference: published by workers, mapped to the version here; missing: a published version this instance lacks (payloads keep the bundle's id)
+     */
+    action: 'register' | 'reuse' | 'reference' | 'missing';
+    /**
+     * The version here (reuse, reference)
+     */
+    localId?: string;
+    blobs?: number;
+    bytes?: number;
+};
+
+export type BundlePlan = {
+    bundle: string;
+    /**
+     * The commit the bundle's repository is at
+     */
+    commit: string;
+    project: {
+        name: string;
+        slug: string;
+        description?: string;
+        locales: Array<string>;
+        domain: string;
+        /**
+         * collection@version of its base model
+         */
+        baseModel?: string;
+    };
+    /**
+     * When the bundle was written
+     */
+    createdAt?: string;
+    versions: Array<BundleImportVersion>;
+    aliases: Array<BundleAlias>;
+    /**
+     * Versions the import registers
+     */
+    register: number;
+    /**
+     * Versions this instance holds already
+     */
+    reuse: number;
+    /**
+     * Blobs to copy into the content store (those it lacks)
+     */
+    blobs: number;
+    bytes: number;
+    sources: Array<string>;
+};
+
+export type BundleImport = {
+    /**
+     * Follow job.{jobId}; its result lists the versions registered, reused and adopted
+     */
+    jobId: string;
+    plan: BundlePlan;
 };
 
 export type SourceNew = {
@@ -16770,6 +16950,108 @@ export type ExportsGetResponses = {
 };
 
 export type ExportsGetResponse = ExportsGetResponses[keyof ExportsGetResponses];
+
+export type ProjectsExportData = {
+    body: ProjectExportRequest;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/projects/{p}:export';
+};
+
+export type ProjectsExportErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type ProjectsExportError = ProjectsExportErrors[keyof ProjectsExportErrors];
+
+export type ProjectsExportResponses = {
+    /**
+     * Dry run — the bundle as it would be written; nothing started
+     */
+    200: ProjectExportPlan;
+    /**
+     * The export, queued: follow entity.export.{id} or job.{jobId}
+     */
+    201: DatasetExport;
+};
+
+export type ProjectsExportResponse = ProjectsExportResponses[keyof ProjectsExportResponses];
+
+export type BundlesAdoptData = {
+    body: BundleAdopt;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/projects/{p}/bundles:adopt';
+};
+
+export type BundlesAdoptErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type BundlesAdoptError = BundlesAdoptErrors[keyof BundlesAdoptErrors];
+
+export type BundlesAdoptResponses = {
+    /**
+     * Dry run — what the import would register, reuse and adopt; nothing changed
+     */
+    200: BundlePlan;
+    /**
+     * The import, queued
+     */
+    201: BundleImport;
+    /**
+     * Gated; a person decides the approval on the approvals topic
+     */
+    202: ApprovalAccepted;
+};
+
+export type BundlesAdoptResponse = BundlesAdoptResponses[keyof BundlesAdoptResponses];
 
 export type DatasetsPreviewData = {
     body: DatasetPreviewRequest;
