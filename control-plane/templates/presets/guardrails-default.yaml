@@ -181,7 +181,7 @@ tools:
     class: draft
     verbs: [new, open, edit, preview, calibrate, run, pause, resume, cancel, retry, stage, freeze, materialize,
             evict, scan, export, parity, benchmark, average, gate, set, adopt, pin, accept, correct, reject, revert,
-            package, note, sync]
+            package, note, sync, verify]
 
 files:
   worktree: true          # nothing outside the session worktree

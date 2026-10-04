@@ -102,6 +102,8 @@ func TestDecide(t *testing.T) {
 			Approval, "mount-registration"},
 		{"agent evicts: never", Input{Actor: agent, Operation: "artifacts.evict", VerbClass: "mutate"},
 			Deny, "agents-never-evict"},
+		{"agent re-checks a mount's health (reversible)", Input{Actor: agent, Operation: "mounts.verify", VerbClass: "mutate"},
+			Allow, "draft"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
