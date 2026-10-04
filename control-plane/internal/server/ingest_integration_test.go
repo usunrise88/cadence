@@ -91,6 +91,13 @@ func putFiles(t *testing.T, store *cas.Store, files map[string][]byte, extra ...
 // draftArtifact writes a cadence.dataset-draft/1 artifact of segs from source.
 func draftArtifact(t *testing.T, store *cas.Store, source string, segs []seg) steps.ArtifactRef {
 	t.Helper()
+	return draftArtifactOf(t, store, source, segs, nil)
+}
+
+// draftArtifactOf is draftArtifact whose segments were cut from files: segment audio → the fixture audio of the whole
+// file, written as the segment's file-b3 fingerprint (sdp_ingest@2).
+func draftArtifactOf(t *testing.T, store *cas.Store, source string, segs []seg, files map[string]string) steps.ArtifactRef {
+	t.Helper()
 	var lines []string
 	counts, hours := map[string]int{}, 0.0
 	for i, s := range segs {
@@ -98,6 +105,10 @@ func draftArtifact(t *testing.T, store *cas.Store, source string, segs []seg) st
 		l := map[string]any{"uri": fmt.Sprintf("mount://corpora/%s/r1/call%d.wav#t=0,%g&ch=0", source, i, s.dur), "hash": h,
 			"bytes": size, "duration": s.dur, "sampleRate": 16000, "channels": 1, "language": "sr-RS", "text": s.text,
 			"origin": "human", "split": s.split, "role": "caller", "speaker": s.speaker}
+		if f, ok := files[s.audio]; ok {
+			fh, _ := blob(t, store, f)
+			l["fingerprints"] = map[string]string{data.FileFingerprint: fh}
+		}
 		b, _ := json.Marshal(l)
 		lines = append(lines, string(b))
 		counts[s.split]++
@@ -452,6 +463,57 @@ func TestFreezeRefusesGoldenSetLeakage(t *testing.T) {
 	if !strings.Contains(pr.Detail, "cannot be frozen") {
 		t.Errorf("detail %q", pr.Detail)
 	}
+}
+
+// The phase-4 audit's C1: the golden set holds a FLEURS file imported whole ("g1", its audio-b3); a draft ingested
+// from the mount cut that file by VAD into segments whose own hashes are new ("g1-a", "g1-b"), but whose file-b3 is
+// the file's canonical hash. The freeze finds them.
+func TestFreezeRefusesGoldenAudioRecutFromAMount(t *testing.T) {
+	e, store := startData(t)
+	e.corporaMount()
+	ctx := context.Background()
+	p := e.newProject("ingest-recut")
+	e.ok(e.do("POST", "/api/registry/sources", `{"name":"parla","licence":"CC-BY-4.0","kind":"public"}`, "Idempotency-Key", e.key()), 201, nil)
+	if err := e.runHook(artifact(t, store, fleursHeader("golden-sr"), []fixtureUtt{{"g1", "Zdravo.", "test", "sr-RS", ""}}), "plr_g", `{}`); err != nil {
+		t.Fatal(err)
+	}
+	golden := e.datasetIn("dataset/golden-sr")
+	err := pgx.BeginFunc(ctx, e.pool, func(tx pgx.Tx) error {
+		gs, _, _, err := registry.Register(ctx, tx, registry.RegisterInput{Kind: registry.KindGoldenSet, Name: "golden-set/sr",
+			Payload: []byte(`{"dataset":"` + golden.ID + `"}`), Freeze: true, Actor: auth.Actor{Kind: auth.KindUser, ID: "usr_admin"}}, time.Now())
+		if err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `INSERT INTO golden_sets (version_id, dataset_version_id, normalizer_version_id)
+			SELECT $1, $2, v.id FROM registry_versions v JOIN registry_collections c ON c.id = v.collection_id
+			WHERE c.name = 'normalizer/basic' LIMIT 1`, gs.ID, golden.ID)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	segRef := steps.ArtifactRef{Hash: putFiles(t, store, map[string][]byte{"segments.json": []byte(`{}`)}), Type: data.SegmentsType}
+	files := map[string]string{"g1-a": "g1", "g1-b": "g1", "n1": "n-file", "m1-a": "m1", "m1-b": "m1"}
+	draft := func(name string, segs []seg) string {
+		t.Helper()
+		if err := e.runOutput(steps.Output{ProjectID: p.ID, PipelineRunID: "plr_" + name, Name: "dataset",
+			Artifact: draftArtifactOf(t, store, "parla", segs, files),
+			Spec: steps.Spec{Kind: "dataset_freeze", KindVersion: "1", Params: json.RawMessage(`{"name":"` + name + `"}`),
+				Inputs: map[string]steps.ArtifactRef{"segments": segRef}}}); err != nil {
+			t.Fatal(err)
+		}
+		var l struct{ Items []dsDraftView }
+		e.ok(e.do("GET", "/api/registry/datasets?collection=dataset/"+name, ""), 200, &l)
+		return l.Items[0].ID
+	}
+	recut := draft("parla-recut", []seg{{"g1-a", "Zdra", "train", 0.5, ""}, {"g1-b", "vo.", "train", 0.5, ""}, {"n1", "Novo.", "train", 1, ""}})
+	pr := expectProblem(t, e.do("POST", "/api/registry/datasets:freeze?dryRun=true", `{"version":"`+recut+`"}`, "Idempotency-Key", e.key()), 422, "golden-set-leakage")
+	if len(pr.Errors) != 1 || !strings.Contains(pr.Errors[0].Message, "shares 2 utterances") || !strings.Contains(pr.Errors[0].Message, "2 only through a shared fingerprint") {
+		t.Errorf("overlaps %+v", pr.Errors)
+	}
+	// Segments of other files pass.
+	clean := draft("parla-clean", []seg{{"m1-a", "Dobar", "train", 0.5, ""}, {"m1-b", "dan.", "train", 0.5, ""}})
+	e.ok(e.do("POST", "/api/registry/datasets:freeze?dryRun=true", `{"version":"`+clean+`"}`, "Idempotency-Key", e.key()), 200, nil)
 }
 
 // corporaMount registers the mount the drafts' URIs name (mount://corpora/…), as an admin's approved mounts.new would.

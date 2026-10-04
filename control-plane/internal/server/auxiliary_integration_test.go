@@ -279,6 +279,26 @@ func TestTriageQueue(t *testing.T) {
 	if n := hook(steps.ArtifactRef{Hash: h("9"), Type: "segments", Meta: json.RawMessage(`{"disputed":0}`)}); n != 0 {
 		t.Fatalf("undisputed hook emitted %d events", n)
 	}
+	// Chained segments outputs (the phase-4 audit's C2): text_normalise keeps the disputed row with a new text under a
+	// new segments hash and no meta; a second ensemble pass disputes the same segment again. Neither adds an item.
+	rows[1]["text"] = "Zovem zbog računa za struju."
+	var normalised []byte
+	for _, r := range rows {
+		b, _ := json.Marshal(r)
+		normalised = append(append(normalised, b...), '\n')
+	}
+	fNorm := put(normalised)
+	fNorm.Path = "segments.jsonl"
+	norm, err := e.admin.CAS.PutManifest(cas.Manifest{Files: []cas.File{fNorm, fHead}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := hook(steps.ArtifactRef{Hash: norm, Type: "segments"}); n != 0 {
+		t.Fatalf("a step after the ensemble indexed the disputes again (%d events)", n)
+	}
+	if n := hook(steps.ArtifactRef{Hash: norm, Type: "segments", Meta: json.RawMessage(`{"disputed":1}`)}); n != 0 {
+		t.Fatalf("a second ensemble pass indexed an open dispute again (%d events)", n)
+	}
 
 	var list struct {
 		Items []struct {

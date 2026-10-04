@@ -4,9 +4,12 @@
 // ensemble step writes, and one open triage item here. Disputed segments never reach training; a person resolves
 // them (the Triage panel and triage.accept|correct|reject arrive with annotation).
 //
-// The output hook on segments artifacts indexes the disputed rows in the transaction that marks the step done; it is
-// idempotent per (project, segments artifact, segment), so a reused output indexes nothing twice. It reads only the
-// neutral segments format (cadence.segments/1), never a member's identity beyond the labels the rows carry.
+// The output hook on segments artifacts indexes the disputed rows in the transaction that marks the step done. Only
+// the ensemble's outputs are read (their meta counts disputed segments): a step after it (text_normalise,
+// manifest_filter with drop_origins []) keeps the disputed rows under a new segments hash and is not indexed again. A
+// segment gets no second item while one for it is open in the project, or from the same pipeline run; a reused output
+// indexes nothing twice. It reads only the neutral segments format (cadence.segments/1), never a member's identity
+// beyond the labels the rows carry.
 package triage
 
 import (
@@ -129,8 +132,10 @@ func (h *Hook) onSegments(ctx context.Context, tx pgx.Tx, out steps.Output) ([]e
 	var meta struct {
 		Disputed *int `json:"disputed"`
 	}
-	if len(out.Artifact.Meta) > 0 && json.Unmarshal(out.Artifact.Meta, &meta) == nil && meta.Disputed != nil && *meta.Disputed == 0 {
-		return nil, nil // the producer says nothing is disputed
+	if len(out.Artifact.Meta) == 0 || json.Unmarshal(out.Artifact.Meta, &meta) != nil || meta.Disputed == nil || *meta.Disputed == 0 {
+		// Not the ensemble's output (it counts disputed segments in its meta), or nothing is disputed: a later step
+		// that carries the disputed rows on is not indexed again.
+		return nil, nil
 	}
 	rows, err := h.disputed(out.Artifact.Hash)
 	if err != nil {
@@ -214,7 +219,10 @@ func insert(ctx context.Context, tx pgx.Tx, out steps.Output, r row) (bool, erro
 		conf = min(1, max(0, *r.Confidence))
 	}
 	tag, err := tx.Exec(ctx, `INSERT INTO triage_items (id, project_id, reason, pipeline_run_id, step_id, segments_hash,
-		segment_hash, segment, candidates, best, lid, confidence) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		segment_hash, segment, candidates, best, lid, confidence)
+		SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
+		WHERE NOT EXISTS (SELECT 1 FROM triage_items WHERE project_id = $2 AND segment_hash = $7
+			AND (state = 'open' OR pipeline_run_id = $4))
 		ON CONFLICT (project_id, segments_hash, segment_hash) DO NOTHING`,
 		"tri_"+uuid.Must(uuid.NewV7()).String(), out.ProjectID, reason, out.PipelineRunID, out.StepID, out.Artifact.Hash,
 		r.Hash, r.Segment, candidates, best, lid, conf)
