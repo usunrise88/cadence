@@ -202,6 +202,12 @@ so it vetoed five segments in six. An ensemble is only as useful as its members 
 remedies are in your hands: replace the weak member (the `oasis` service, or Whisper's Hebrew fine-tune for Hebrew),
 or keep the weak member out of the vote and use agreement between strong ones.
 
+Cadence took the second remedy after this run: since 2026-10-04 `pipelines/pseudo-label.yaml` votes Whisper and the
+`oasis` service, and the base model no longer has a vote. With two strong members the ensemble needs both — without
+the service the dry run refuses rather than let one member "agree" with itself — and when they agree it keeps
+Whisper's text, which has the capitals and punctuation a training target needs. <!-- decision 2026-10-04 (owner,
+3.5); pseudolabel_ensemble@2 -->
+
 > **In the field** — The first time the ensemble ran on Serbian, every segment was disputed. Whisper wrote
 > Cyrillic, Nemotron wrote Latin, and the two "disagreed" on every word. Nothing was wrong with either model; the
 > texts were in different scripts. The fix is the transliteration you met in Chapter 5, applied to each member's
@@ -322,7 +328,8 @@ learning rate, and the gate decides again.
    it name?
 3. Explain why the bot's channel of a call never needs a pseudo-label, and what would go wrong if you trained on
    it anyway.
-4. Which of the three members could you drop with the least loss? Use the ensemble's per-member numbers to argue.
+4. The run in this chapter used three members. Which one could you drop with the least loss? Use the per-member
+   numbers to argue, then compare with the template Cadence ships now.
 
 ## Further reading
 
