@@ -105,8 +105,18 @@ def primary(tag: str) -> str:
 
 # Individual languages folded to their macrolanguage before comparing with a model's or an auxiliary's languages: the
 # same table as the control plane's internal/langtag (BCP 47 / ISO 639-3 macrolanguage mappings), kept equal by hand.
-MACROLANGUAGES = {"nb": "no", "nn": "no", "zsm": "ms", "zlm": "ms", "arb": "ar", "cmn": "zh", "pes": "fa", "swh": "sw",
-                  "ekk": "et", "lvs": "lv"}
+MACROLANGUAGES = {
+    "nb": "no",
+    "nn": "no",
+    "zsm": "ms",
+    "zlm": "ms",
+    "arb": "ar",
+    "cmn": "zh",
+    "pes": "fa",
+    "swh": "sw",
+    "ekk": "et",
+    "lvs": "lv",
+}
 
 
 def macro(tag: str) -> str:
