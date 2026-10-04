@@ -5408,6 +5408,7 @@ export type NormalizerVersionList = {
 export type GoldenSetVersion = RegistryVersion & {
     goldenSet: GoldenSetPayload;
     usedBy: Array<UsedBy>;
+    alignment?: GoldenSetAlignment;
 };
 
 export type GoldenSetVersionList = {
@@ -6135,7 +6136,7 @@ export type EvalEntityScores = {
 };
 
 /**
- * Latency to final at real-time pace (R54, latency_score): speech end (frame VAD) to the partial whose text is final
+ * Latency to final at real-time pace (R54, latency_score): speech end (frame VAD) to the partial whose text is final; from latency_score@3 also emission delay (emission)
  */
 export type EvalLatencyScores = {
     scorer: string;
@@ -6175,6 +6176,7 @@ export type EvalLatencyScores = {
     earlyFinals?: number;
     noSpeech?: number;
     emptyFinals?: number;
+    emission?: EvalEmissionDelay;
 };
 
 /**
@@ -8976,6 +8978,80 @@ export type AudioTracks = {
         nextSpeech?: number;
         gapS?: number;
     };
+};
+
+/**
+ * Word timings of the golden set's reference texts (align_reference, R51/R54): the newest alignment artifact of its dataset artifact. Emission delay (latency_score) reads it; with no allowed aligner for the language the references stay unaligned and emission delay is n/a
+ */
+export type GoldenSetAlignment = {
+    /**
+     * aln_…
+     */
+    id: string;
+    /**
+     * The alignment artifact (b3:…, cadence.alignment/1: one row per utterance with words [{index, word, start, end, score}] or a reason)
+     */
+    artifact: string;
+    /**
+     * The aligner auxiliary, auxiliary/<name>
+     */
+    aligner: string;
+    alignerVersionId?: string;
+    /**
+     * torchaudio.forced_align or ctc-viterbi; empty when nothing was aligned
+     */
+    method?: string;
+    utterances: number;
+    /**
+     * Utterances with word timings
+     */
+    aligned: number;
+    /**
+     * Timed words
+     */
+    words: number;
+    /**
+     * Why utterances stayed unaligned (distinct, at most five)
+     */
+    reasons?: Array<string>;
+    pipelineRunId?: string;
+    createdAt: string;
+};
+
+/**
+ * Emission delay (R54; Yu et al., FastEmit, ICASSP 2021): each matched reference word's aligned end to the first partial from which the final's word stays in place, at real-time pace; PR50 and PR90 over the cell's words. available false with the reason when the golden set has no aligned references — never an estimate
+ */
+export type EvalEmissionDelay = {
+    available: boolean;
+    reason?: string;
+    /**
+     * {auxiliary, versionId, hfRepo, revision} of the alignment
+     */
+    aligner?: {
+        [key: string]: unknown;
+    };
+    utterances?: number;
+    alignedUtterances?: number;
+    /**
+     * Reference words of the aligned utterances
+     */
+    words?: number;
+    /**
+     * Timed reference words the final matched (the delays measured)
+     */
+    matchedWords?: number;
+    pr50Ms?: number;
+    pr90Ms?: number;
+    meanMs?: number;
+    /**
+     * Words shown before their aligned end (negative delays
+     */
+    earlyWords?: number;
+    unalignedUtterances?: number;
+    /**
+     * Utterances whose alignment was made for another text, or whose words the normalizer does not tie to tokens
+     */
+    mismatchedUtterances?: number;
 };
 
 export type SecretNewWritable = {

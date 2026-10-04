@@ -187,8 +187,9 @@ func (l *Leases) runRobustness(spec steps.Spec) (steps.Outcome, bool, error) {
 		}
 		return done("scores", out)
 	case KindLatency:
-		out, err := l.putMetric(map[string]any{"schema": "cadence.metric-scores/1", "scorer": KindLatency + "@1", "metric": "latency",
-			"available": true, "pace": "simulated", "utteranceEnd": "vad", "measured": 6, "p50Ms": LatencyP50, "p95Ms": LatencyP95})
+		out, err := l.putMetric(map[string]any{"schema": "cadence.metric-scores/1", "scorer": spec.KindRef(), "metric": "latency",
+			"available": true, "pace": "simulated", "utteranceEnd": "vad", "measured": 6, "p50Ms": LatencyP50, "p95Ms": LatencyP95,
+			"emission": emission(spec)})
 		if err != nil {
 			return steps.Outcome{}, true, err
 		}

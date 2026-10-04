@@ -31,7 +31,7 @@ role reads the rest. No control-plane code names a model or a service.
 | `auxiliary/whisper-he-ivrit` | pseudolabel | Apache-2.0; data CC-BY-4.0 | Attribution; never for voice cloning; Hebrew only |
 | `auxiliary/oasis` | pseudolabel | omniASR Apache-2.0, Qwen3 Apache-2.0 | A running service; start it before the pipeline |
 | `auxiliary/lid-voxlingua107` | lid | Apache-2.0; VoxLingua107 CC-BY-4.0 | Attribution; needs speechbrain + torchaudio (not in nemo-speech) |
-| `auxiliary/omniasr-ctc-1b` | align | Apache-2.0 | Confirm the language codes; needs fairseq2 |
+| `auxiliary/omniasr-ctc-1b` | align | Apache-2.0 | heb_Hebr, srp_Cyrl, hrv_Latn confirmed in its language list (2026-10-04); runs in the omni runtime (`align_reference`) |
 
 Excluded and never registered: `facebook/mms-lid-*`, `facebook/mms-1b-all`, torchaudio `MMS_FA` (CC-BY-NC-4.0) and
 community Hebrew wav2vec2 fine-tunes (licence or data unverified).
@@ -59,7 +59,7 @@ every member's text, the best candidate and the reason. They never reach trainin
 ## Place in the loop
 
 Data: language identification and pseudo-labels for untranscribed audio; alignment of reference texts for emission
-delay (stream L).
+delay ([align_reference](../steps/align-reference.md)).
 
 ## Fields and defaults
 

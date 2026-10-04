@@ -34,6 +34,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/eviction"
 	"github.com/usunrise88/cadence/control-plane/internal/experiments"
 	"github.com/usunrise88/cadence/control-plane/internal/exports"
+	"github.com/usunrise88/cadence/control-plane/internal/goldensets"
 	"github.com/usunrise88/cadence/control-plane/internal/help"
 	"github.com/usunrise88/cadence/control-plane/internal/jobs"
 	"github.com/usunrise88/cadence/control-plane/internal/langpacks"
@@ -220,6 +221,8 @@ func New(c Config) (*Server, error) {
 	s.runs.Install(c.StepHooks) // checkpoint and calibration outputs; the engine reports run status changes
 	s.evals = s.newEvalsService()
 	s.evals.Install(c.StepHooks) // scores outputs write eval records; the engine reports eval pipeline changes
+	// Alignment outputs: golden sets carry word timings of their references (phase 4 stream L).
+	goldensets.InstallAlignments(c.StepHooks)
 	s.media, s.mediaLinks = s.newMedia()
 	s.experiments = s.newExperimentsService()
 	s.experiments.Install() // a run that ends starts its sweep's next run

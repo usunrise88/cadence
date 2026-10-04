@@ -1,14 +1,30 @@
-"""``latency_score@2`` — latency to final at real-time pace (R54; docs/spec/03-pipelines-defaults.md "Scorers and
-metrics"; phase 3 stream R): the time from an utterance's end to the final that covers it, p50 and p95, from the
-partial events of the ``hypotheses`` artifact (R42) and the utterance ends of a ``vad`` artifact (a frame-VAD step).
+"""``latency_score@3`` — latency to final at real-time pace and emission delay (R54; docs/spec/03-pipelines-defaults.md
+"Scorers and metrics"; phase 3 stream R, phase 4 stream L): the time from an utterance's end to the final that covers
+it, p50 and p95, from the partial events of the ``hypotheses`` artifact (R42) and the utterance ends of a ``vad``
+artifact (a frame-VAD step); and the time from each reference word's aligned end to its first appearance in a
+partial, PR50 and PR90 (Yu et al., FastEmit, ICASSP 2021), from an ``alignment`` of the references
+(``align_reference``).
 
 Consumes ``hypotheses`` (a streaming decode with partial events: ``audioOffsetMs``, ``emitMs``, ``text``), the
-``dataset`` they decode and ``vad`` (JSON lines ``{audio, durationS, speech: [[start, end], …], speechEndS}``).
-Produces ``scores``, a ``metric_scores`` artifact (:mod:`cadence_worker.metric_scores`) with metric ``latency``:
+``dataset`` they decode and ``vad`` (JSON lines ``{audio, durationS, speech: [[start, end], …], speechEndS}``);
+optionally ``normalizer`` (the golden set's scoring normalizer) and ``alignment`` (word timings of the references,
+:mod:`cadence_worker.reference_alignment`), which emission delay needs. Produces ``scores``, a ``metric_scores``
+artifact (:mod:`cadence_worker.metric_scores`) with metric ``latency``:
 
     summary   pace, utteranceEnd: vad, vad: {kind, model, revision}, utterances, measured, p50Ms, p95Ms, meanMs, maxMs,
-              earlyFinals, noSpeech, emptyFinals, profile
-    rows      {index, audio, speechEndMs, finalPartial, finalAtMs, latencyMs}
+              earlyFinals, noSpeech, emptyFinals, profile,
+              emission: {available, reason?, aligner?, utterances, alignedUtterances, words, matchedWords,
+                         pr50Ms, pr90Ms, meanMs, earlyWords}
+    rows      {index, audio, speechEndMs, finalPartial, finalAtMs, latencyMs, emission?: {words, pr50Ms, pr90Ms}}
+
+Emission delay (version 3). Reference and hypothesis words are compared after the scoring normalizer, each reference
+word carrying the aligned end of the whitespace token it came from. A reference word the final hypothesis matches
+(an ``=`` of the word alignment, as in WER) is *emitted* by the first partial from which the final's word at that
+position stays in place to the end; its delay is that partial's emit time at real-time pace (as for latency to final)
+minus the word's aligned end. A word emitted before its aligned end has a negative delay, kept as is and counted in
+``earlyWords``; substituted, deleted and inserted words have no delay. PR50 and PR90 are the 50th and 90th
+percentiles over every matched word of the golden set. Without an alignment, a normalizer, or aligned references
+(the aligner does not cover the language), emission delay is unavailable with the reason — never estimated.
 
 Per utterance: the *final* is the first partial from which the text no longer changes (it equals the final text);
 latency = the time that partial is emitted - the speech end the VAD found. A final emitted before the VAD's end (the
@@ -35,17 +51,20 @@ from typing import Any, ClassVar
 from pydantic import BaseModel
 
 from cadence_worker import metric_scores
+from cadence_worker import reference_alignment as ra
+from cadence_worker.align import align
+from cadence_worker.normalize import Normalizer, NormalizerError
 from cadence_worker.protocol_gen import StepResources
 from cadence_worker.steps.base import StepInputError
 from cadence_worker.steps.context import StepContext
-from cadence_worker.steps.wer_score import read_hypotheses, read_references
+from cadence_worker.steps.wer_score import Reference, read_hypotheses, read_references
 
-SCORER = "latency_score@2"
+SCORER = "latency_score@3"
 METRIC = "latency"
 
 
 class LatencyScoreParams(BaseModel):
-    """No parameters: the partial events and the VAD carry everything."""
+    """No parameters: the partial events, the VAD and the alignment carry everything."""
 
 
 def read_vad(path: Path) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
@@ -216,9 +235,128 @@ def score(
     return summary, rows
 
 
+def reference_word_ends(text: str, row: Mapping[str, Any], norm: Normalizer) -> list[tuple[str, float | None]] | None:
+    """The normalized reference words with the aligned end (seconds) of the whitespace token each came from (None for
+    a token the aligner did not time); None when normalizing token by token does not give the words the whole text
+    gives (a normalizer mapping that spans tokens), since then no word can be tied to a token."""
+    times = ra.timed_words(row)
+    out: list[tuple[str, float | None]] = []
+    for i, token in enumerate(text.split()):
+        t = times.get(i)
+        out.extend((w, t[1] if t else None) for w in norm.words(token))
+    if [w for w, _ in out] != norm.words(text):
+        return None
+    return out
+
+
+def first_stable(partial_words: Sequence[Sequence[str]], j: int, word: str) -> int:
+    """The first partial from which word ``j`` is ``word`` and stays so to the last partial (the last one when no
+    partial keeps it: the final emits it)."""
+    k = len(partial_words)
+    while k > 0 and len(partial_words[k - 1]) > j and partial_words[k - 1][j] == word:
+        k -= 1
+    return min(k, len(partial_words) - 1)
+
+
+def emission(
+    refs: Sequence[Reference],
+    hyps: Mapping[str, Mapping[str, Any]],
+    norm: Normalizer | None,
+    alignment: tuple[dict[str, Any], dict[str, dict[str, Any]]] | None,
+) -> tuple[dict[str, Any], dict[int, dict[str, Any]]]:
+    """Emission delay over the golden set (the module docstring): the summary and, by dataset index, each measured
+    utterance's own numbers."""
+    out: dict[str, Any] = {"available": False, "utterances": len(refs), "alignedUtterances": 0, "words": 0}
+    if alignment is None:
+        out["reason"] = "the golden set has no aligned references (run align_reference on its dataset)"
+        return out, {}
+    if norm is None:
+        out["reason"] = "no scoring normalizer was wired to compare words"
+        return out, {}
+    header, rows = alignment
+    aligner = header.get("aligner")
+    if isinstance(aligner, dict):
+        out["aligner"] = aligner
+    delays: list[float] = []
+    per: dict[int, dict[str, Any]] = {}
+    matched = early = mismatched = unaligned = no_partials = 0
+    for i, r in enumerate(refs):
+        a = rows.get(r.audio)
+        if a is None or a.get("aligned") is not True:
+            unaligned += 1
+            continue
+        words = reference_word_ends(r.text, a, norm) if a.get("text") == r.text else None
+        if words is None:
+            mismatched += 1  # aligned for another reference text, or not tied to tokens by the normalizer
+            continue
+        out["alignedUtterances"] += 1
+        out["words"] += len(words)
+        h = hyps.get(r.audio)
+        partials = h.get("partials") if h else None
+        if h is None or not isinstance(partials, list) or not partials:
+            no_partials += 1
+            continue
+        raw = h.get("decoding")
+        realtime = isinstance(raw, dict) and raw.get("pace") == "realtime"
+        emits = paced_emits(partials, realtime, None if realtime else chunk_steps(h.get("steps"), partials))
+        final = norm.words(str(h.get("text") or ""))
+        pw = [norm.words(str(p.get("text") or "")) for p in partials]
+        mine: list[float] = []
+        ri = hj = 0
+        for op, _, _ in align([w for w, _ in words], final).ops:
+            end = words[ri][1] if op == "=" else None
+            if end is not None:
+                mine.append(emits[first_stable(pw, hj, final[hj])] - end * 1000)
+            if op in ("=", "S", "D"):
+                ri += 1
+            if op in ("=", "S", "I"):
+                hj += 1
+        matched += len(mine)
+        early += sum(1 for d in mine if d < 0)
+        delays.extend(mine)
+        if mine:
+            per[i] = {
+                "words": len(mine),
+                "pr50Ms": round(metric_scores.percentile(mine, 50) or 0.0, 1),
+                "pr90Ms": round(metric_scores.percentile(mine, 90) or 0.0, 1),
+            }
+
+    def r1(v: float | None) -> float | None:
+        return None if v is None else round(v, 1)
+
+    out.update(
+        {
+            "available": bool(delays),
+            "matchedWords": matched,
+            "pr50Ms": r1(metric_scores.percentile(delays, 50)),
+            "pr90Ms": r1(metric_scores.percentile(delays, 90)),
+            "meanMs": r1(sum(delays) / len(delays)) if delays else None,
+            "earlyWords": early,
+            "unalignedUtterances": unaligned,
+            "mismatchedUtterances": mismatched,
+        }
+    )
+    if not delays:
+        if out["alignedUtterances"] == 0:
+            why = sorted({str(a["reason"]) for a in rows.values() if a.get("aligned") is not True and a.get("reason")})
+            out["reason"] = "no reference of the golden set is aligned" + (f" ({'; '.join(why[:3])})" if why else "")
+        elif no_partials == out["alignedUtterances"]:
+            out["reason"] = "the hypotheses carry no partial events: emission delay needs a streaming decode"
+        else:
+            out["reason"] = "no aligned reference word was matched by the final hypothesis"
+    return out, per
+
+
 class LatencyScoreStep:
-    version: ClassVar[str] = "2"
-    consumes: ClassVar[Mapping[str, str]] = {"hypotheses": "hypotheses", "data": "dataset", "vad": "vad"}
+    version: ClassVar[str] = "3"
+    consumes: ClassVar[Mapping[str, str]] = {
+        "hypotheses": "hypotheses",
+        "data": "dataset",
+        "vad": "vad",
+        "normalizer": "normalizer",
+        "alignment": "alignment",
+    }
+    optional_inputs: ClassVar[frozenset[str]] = frozenset({"normalizer", "alignment"})
     produces: ClassVar[Mapping[str, str]] = {"scores": "metric_scores"}
     resources: ClassVar[StepResources] = {"gpu": False, "gpus": 0, "jobKind": "eval"}
     neutral: ClassVar[bool] = True
@@ -226,20 +364,40 @@ class LatencyScoreStep:
 
     def run(self, params: BaseModel, inputs: Mapping[str, Path], outputs: Mapping[str, Path], ctx: StepContext) -> None:
         for name in self.consumes:
-            if name not in inputs:
+            if name not in inputs and name not in self.optional_inputs:
                 raise StepInputError(f"latency_score needs its {name} input")
         refs = read_references(inputs["data"])
         hyps = read_hypotheses(inputs["hypotheses"])
         vad, header = read_vad(inputs["vad"])
+        norm = None
+        if "normalizer" in inputs:
+            try:
+                norm = Normalizer.from_file(inputs["normalizer"])
+            except NormalizerError as e:
+                raise StepInputError(str(e)) from e
+        alignment = ra.read(inputs["alignment"]) if "alignment" in inputs else None
         summary, rows = score(refs, hyps, vad)
         if header:
             summary["vad"] = header
+        em, per = emission(refs, hyps, norm, alignment)
+        summary["emission"] = em
+        by_index = {row["index"]: row for row in rows}
+        for i, numbers in per.items():
+            by_index.setdefault(i, {"index": i, "audio": refs[i].audio})["emission"] = numbers
+        rows = [by_index[i] for i in sorted(by_index)]
         metric_scores.write(outputs["scores"], summary, rows)
         for name, key in (("latency_to_final_p50_ms", "p50Ms"), ("latency_to_final_p95_ms", "p95Ms")):
             if summary[key] is not None:
                 ctx.final_metric(name, summary[key])
-        ctx.set_meta(
-            "scores",
-            {k: summary[k] for k in ("schema", "scorer", "metric", "available", "pace", "measured", "p50Ms", "p95Ms")},
+        for name, key in (("emission_delay_pr50_ms", "pr50Ms"), ("emission_delay_pr90_ms", "pr90Ms")):
+            if em.get(key) is not None:
+                ctx.final_metric(name, em[key])
+        meta = {
+            k: summary[k] for k in ("schema", "scorer", "metric", "available", "pace", "measured", "p50Ms", "p95Ms")
+        }
+        meta["emission"] = {k: em.get(k) for k in ("available", "pr50Ms", "pr90Ms", "matchedWords")}
+        ctx.set_meta("scores", meta)
+        em_text = f"PR50 {em['pr50Ms']} ms, PR90 {em['pr90Ms']} ms" if em["available"] else "n/a"
+        ctx.progress(
+            1.0, f"latency to final p50 {summary['p50Ms']} ms, p95 {summary['p95Ms']} ms; emission delay {em_text}"
         )
-        ctx.progress(1.0, f"latency to final p50 {summary['p50Ms']} ms, p95 {summary['p95Ms']} ms")

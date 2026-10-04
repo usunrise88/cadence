@@ -11,6 +11,7 @@ resolution-markers = [
 [manifest]
 members = [
     "cadence-nemo",
+    "cadence-omni",
     "cadence-services",
     "cadence-toy",
     "cadence-worker",
@@ -178,6 +179,21 @@ requires-dist = [
 ]
 
 [[package]]
+name = "cadence-omni"
+version = "0.1.0"
+source = { editable = "packs/omni" }
+dependencies = [
+    { name = "cadence-worker" },
+    { name = "numpy" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "cadence-worker", editable = "." },
+    { name = "numpy", specifier = ">=1.26" },
+]
+
+[[package]]
 name = "cadence-services"
 version = "0.1.0"
 source = { editable = "packs/services" }
@@ -231,6 +247,7 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "cadence-nemo" },
+    { name = "cadence-omni" },
     { name = "cadence-services" },
     { name = "cadence-toy" },
     { name = "grpcio-tools" },
@@ -256,6 +273,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "cadence-nemo", editable = "packs/nemo" },
+    { name = "cadence-omni", editable = "packs/omni" },
     { name = "cadence-services", editable = "packs/services" },
     { name = "cadence-toy", editable = "packs/toy" },
     { name = "grpcio-tools", specifier = ">=1.75,<2" },

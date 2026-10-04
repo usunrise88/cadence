@@ -905,7 +905,7 @@ var Operations = []Operation{
 	{
 		ID: "goldenSets.list", Entity: "goldenSets", Verb: "list", Method: "GET", Path: "/registry/golden-sets",
 		Summary:     "List golden set versions (frozen eval-only dataset versions tied to a scoring normalizer)",
-		Description: "List golden sets: frozen, held-out test sets per language and domain, each an eval-only dataset version tied to one scoring normalizer version. Runs never read them: a dataset version or mix sharing an utterance (by id or fingerprint) with any golden set is refused for training (golden-set-leakage). Adopt one into a project with projects.adopt.",
+		Description: "List golden sets: frozen, held-out test sets per language and domain, each an eval-only dataset version tied to one scoring normalizer version. Runs never read them: a dataset version or mix sharing an utterance (by id or fingerprint) with any golden set is refused for training (golden-set-leakage). Adopt one into a project with projects.adopt. alignment, when present, holds word timings of the references (the align_reference step on the golden set's dataset), which emission delay in evals needs.",
 		Params: []Param{
 			{Name: "collection", In: "query", Flag: "collection", Type: "string", Description: "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)"},
 			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated", "archived"}},

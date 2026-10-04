@@ -1,6 +1,86 @@
 [
  {
   "consumes": {
+   "data": "dataset"
+  },
+  "help": "steps.align-reference",
+  "name": "align_reference",
+  "params": {
+   "properties": {
+    "aligner": {
+     "default": "auxiliary/omniasr-ctc-1b",
+     "description": "The aligner auxiliary (auxiliary/<name>, ver_… or @alias): a CTC model the project adopted with the align role",
+     "title": "Aligner",
+     "type": "string",
+     "x-cadence": {
+      "default": "auxiliary/omniasr-ctc-1b",
+      "defaultRef": "packs.omni.align_auxiliary",
+      "description": "The aligner auxiliary (auxiliary/<name>, ver_… or @alias): a CTC model the project adopted with the align role",
+      "range": "any",
+      "registryRef": {
+       "kind": "auxiliary",
+       "role": "align"
+      },
+      "source": "docs/review/2026-10-03-phase-4-plan.md \"Auxiliary models and licences (R26)\" (Apache-2.0, checked 2026-10-03; MMS is CC-BY-NC and excluded)"
+     }
+    },
+    "dtype": {
+     "default": "bfloat16",
+     "description": "Precision of the aligner's forward pass (the log-softmax and the Viterbi run in float32 either way)",
+     "enum": [
+      "bfloat16",
+      "float32"
+     ],
+     "title": "Dtype",
+     "type": "string",
+     "x-cadence": {
+      "default": "bfloat16",
+      "defaultRef": "packs.omni.align_dtype",
+      "description": "Precision of the aligner's forward pass (the log-softmax and the Viterbi run in float32 either way)",
+      "range": {
+       "values": [
+        "bfloat16",
+        "float32"
+       ]
+      },
+      "source": "Cadence recommendation (OASIS serves the same models in bfloat16)"
+     }
+    },
+    "max_duration_s": {
+     "default": 60,
+     "description": "Longest utterance align_reference aligns in one pass; a longer one stays unaligned (self-attention memory grows with the square of its length)",
+     "title": "Max Duration S",
+     "type": "number",
+     "x-cadence": {
+      "default": 60,
+      "defaultRef": "packs.omni.align_max_duration_s",
+      "description": "Longest utterance align_reference aligns in one pass; a longer one stays unaligned (self-attention memory grows with the square of its length)",
+      "range": {
+       "max": 300,
+       "min": 1
+      },
+      "source": "Cadence recommendation (60 s of audio is 3 000 encoder frames, well under the 8 GB step cap for the 1B model in bfloat16)"
+     }
+    }
+   },
+   "title": "AlignReferenceParams",
+   "type": "object"
+  },
+  "produces": {
+   "alignment": "alignment"
+  },
+  "resources": {
+   "diskGb": 5,
+   "gpu": true,
+   "gpus": 1,
+   "jobKind": "data",
+   "memoryGb": 8
+  },
+  "runtime": "omni",
+  "version": "1"
+ },
+ {
+  "consumes": {
    "base": "base_model"
   },
   "help": "steps.checkpoint-from-base",

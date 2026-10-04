@@ -28,9 +28,12 @@ boost list of a language pack).
 - **Streaming** (follows the selected cell's golden set and the decoding shown): **WER against latency** — one line
   per model across the latency profiles, the primary profile marked ★ with a dashed line, and on the subject the
   baseline's WER plus the delta's 95 % interval; this is the chart to choose the primary profile from. **Latency to
-  final** (p50, p95 and max milliseconds after speech end, per profile and model) and **partial stability** (the
-  share of partial words that later changed, and partial edits per second). A cell without a latency measurement
-  says why (for example no VAD for the language).
+  final** (p50, p95 and max milliseconds after speech end, per profile and model), **emission delay** (PR50 and PR90:
+  milliseconds from each matched reference word's aligned end to the first partial that shows it for good; only for
+  golden sets whose references are aligned, see [align_reference](../steps/align-reference.md)) and **partial
+  stability** (the share of partial words that later changed, and partial edits per second). A cell without a latency
+  measurement says why (for example no VAD for the language), and one without emission delay says it is n/a and why
+  (no aligned references, or a language the aligner does not cover) — it is never estimated.
 - **Robustness**: WER degradation (percentage points, positive is worse) under each augmentation profile against
   the same cell without it, by golden set, augmentation, model and latency profile. Both sections start folded while
   they have nothing to show; the arrow opens them.

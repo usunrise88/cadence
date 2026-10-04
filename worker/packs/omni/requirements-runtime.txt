@@ -1,0 +1,9 @@
+# The omni runtime's framework stack (worker/Dockerfile.omni), pinned. fairseq2n 0.6 requires torch==2.8.0 exactly;
+# the PyPI torch 2.8.0 wheels for Linux are built for CUDA 12.8 (sm_120 included). torchaudio 2.8 still carries
+# functional.forced_align (deprecated there, removed in 2.9): align_reference uses it when importable and its own
+# Viterbi otherwise.
+torch==2.8.0
+torchaudio==2.8.0
+fairseq2==0.6
+fairseq2n==0.6
+huggingface-hub==0.36.2

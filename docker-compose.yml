@@ -195,6 +195,35 @@ services:
     depends_on: [control-plane]
     stop_grace_period: 90s
 
+  # The GPU omni worker, runtime omni: align_reference (reference word timings from omniASR CTC emissions) in its own
+  # small image, since fairseq2 0.6 needs PyTorch 2.8 and the NeMo image ships 2.12 (R45's one-off allowance; the model
+  # is loaded per job, about 2 GB on the card). `docker compose --profile omni up -d worker-omni`.
+  worker-omni:
+    image: cadence/worker-omni:${CADENCE_VERSION:-dev}
+    profiles: [omni]
+    build:
+      context: .
+      dockerfile: worker/Dockerfile.omni
+      args: *version
+    environment:
+      CADENCE_URL: http://control-plane:8080
+      CADENCE_WORKER_TOKEN_FILE: /worker-credential/token
+      CADENCE_WORKER_HOST: staging
+      CADENCE_CAS_DIR: /var/lib/cadence/cas
+      CADENCE_WORKER_SCRATCH: /var/lib/cadence/scratch
+    volumes:
+      - worker-credential:/worker-credential:ro
+      - artifacts:/var/lib/cadence
+    depends_on: [control-plane]
+    stop_grace_period: 90s
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
 networks:
   # No route out: the agent host reaches the control plane here and everything else through egress-proxy.
   agents:

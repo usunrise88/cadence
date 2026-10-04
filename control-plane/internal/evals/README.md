@@ -83,6 +83,10 @@ Phase 3 stream R (robustness and streaming scorers; `axes.go`, `metrics.go`, `li
   golden set × decoding hash × scorer × config (the ITN artifact hash; the VAD kind and version id) and shared like
   the records. A cell's plan (`eval_cells.metrics`) names the scorer, config and step, or why the metric is
   unavailable; cached records get metric steps from their stored hypotheses. `evals.get` answers `metrics`.
+  Phase 4 stream L: a latency scorer that consumes a `normalizer` gets the golden set's, and one that consumes an
+  `alignment` gets the newest reference alignment of the golden set's dataset artifact (`goldensets.LatestAlignment`)
+  for unaugmented cells only; the config then ends in `|alignment:<hash>`, so aligning a golden set later computes the
+  metric anew. Without one the optional input stays unwired and the scorer reports emission delay unavailable.
 - **Lineage** (`LineageSource`, wired in `cmd/cadence`): an eval is built from its subject, baseline, golden sets,
   noise banks and the records of its cells; a record from its golden set, normalizer and model (checkpoints and model
   versions with its weights hash, or the base model version). Test: `evals_robustness_integration_test.go`.

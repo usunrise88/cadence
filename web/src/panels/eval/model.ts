@@ -377,6 +377,64 @@ export function latencyBars(e: Eval, goldenSetVersionId: string, decoding = 0): 
   };
 }
 
+/**
+ * Emission delay per profile and model (PR50, PR90 in ms; R54, FastEmit): each matched reference word's aligned end to
+ * the first partial that shows it for good. Undefined when no cell has it (the golden set has no aligned references, or
+ * its scorer has not finished).
+ */
+export function emissionBars(e: Eval, goldenSetVersionId: string, decoding = 0): BarSpec | undefined {
+  const categories: string[] = [];
+  const pr50: (number | null)[] = [];
+  const pr90: (number | null)[] = [];
+  let early = 0;
+  let aligner = "";
+  for (const r of profileCells(e, goldenSetVersionId, decoding)) {
+    for (const role of ["subject", "baseline"] as const) {
+      const em = r[role]?.metrics?.latency?.emission;
+      if (!em?.available) continue;
+      categories.push(`${r.profile.name}${r.primary ? " ★" : ""} · ${role} (${em.matchedWords ?? 0} words)`);
+      pr50.push(em.pr50Ms ?? null);
+      pr90.push(em.pr90Ms ?? null);
+      early += em.earlyWords ?? 0;
+      const a = em.aligner?.["auxiliary"];
+      if (typeof a === "string") aligner = a;
+    }
+  }
+  if (!categories.length) return undefined;
+  const notes = [`Word ends from the aligned reference${aligner ? ` (${aligner})` : ""}; emit times at real-time pace.`];
+  if (early) notes.push(`${early} word(s) appeared before their aligned end (negative delays are kept).`);
+  return {
+    kind: "bar",
+    title: `Emission delay · ${gsName(e, goldenSetVersionId)}`,
+    xLabel: "Profile · model (matched words)",
+    yLabel: "ms after the word's aligned end",
+    unit: "ms",
+    format: (v: number) => String(Math.round(v)),
+    horizontal: true,
+    categories,
+    note: notes.join(" "),
+    series: [
+      { id: "pr50", label: "PR50", slot: 0, values: pr50 },
+      { id: "pr90", label: "PR90", slot: 1, values: pr90 },
+    ],
+  };
+}
+
+/** Why cells whose latency to final was measured have no emission delay ("the golden set has no aligned references"). */
+export function emissionReasons(e: Eval, cells: EvalCell[]): { reason: string; cells: string[] }[] {
+  const by = new Map<string, string[]>();
+  for (const c of cells) {
+    const em = c.metrics?.latency?.emission;
+    if (!em || em.available) continue;
+    const reason = em.reason ?? "not available";
+    const list = by.get(reason) ?? [];
+    const where = `${cellTitle(e, c)} · ${c.role}`;
+    if (!list.includes(where)) list.push(where);
+    by.set(reason, list);
+  }
+  return [...by].map(([reason, where]) => ({ reason, cells: where }));
+}
+
 /** Why cells have no value for a metric: one entry per reason with the cells it covers ("fleurs-he · 160ms · subject"). */
 export function unavailableReasons(e: Eval, metric: "latency" | "entities", cells: EvalCell[]): { reason: string; cells: string[] }[] {
   const by = new Map<string, string[]>();
