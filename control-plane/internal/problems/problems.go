@@ -110,6 +110,8 @@ var (
 	// Mounts and the local cache (phase 4 · stream M).
 	MountUnhealthy       = Type{"mount-unhealthy", http.StatusConflict, "Mount unhealthy"}
 	StorageQuotaExceeded = Type{"storage-quota-exceeded", http.StatusConflict, "Project storage quota exceeded"}
+	// Interoperability: dataset exports (phase 4 · stream I).
+	ExportNotAllowed = Type{"export-not-allowed", http.StatusUnprocessableEntity, "Export not allowed"}
 )
 
 // Types lists every registered type.
@@ -130,6 +132,7 @@ func Types() []Type {
 		TranscriptionLimit,
 		DatasetNotFrozen, SourceUnlicensed,
 		MountUnhealthy, StorageQuotaExceeded,
+		ExportNotAllowed,
 	}
 }
 

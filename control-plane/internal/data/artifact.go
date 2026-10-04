@@ -68,6 +68,16 @@ type Header struct {
 	Shards         []ShardFile     `json:"shards,omitempty"`
 	SourceInfo     json.RawMessage `json:"sourceInfo,omitempty"` // the corpus's SOURCE.yaml as the ingest read it
 	Steps          []string        `json:"steps,omitempty"`      // the step kinds the segments went through
+
+	// Mined is where a noise bank mined from recordings came from (noise_mine, phase 4 · stream I): the segments
+	// artifact, the roles and the clip rules. Such a header names only its source, which must be registered.
+	Mined json.RawMessage `json:"mined,omitempty"`
+}
+
+// namesSourceOnly reports whether the header names a registered source by name only: a freeze's cut, or a noise
+// bank mined from an ingest's recordings.
+func (h Header) namesSourceOnly() bool {
+	return h.DraftVersionID != "" || (h.Purpose == PurposeNoise && len(h.Mined) > 0)
 }
 
 // ShardFile is one shard of a cut dataset artifact: a cuts manifest (gzip JSON lines) inside the artifact.
@@ -165,7 +175,7 @@ func (h Header) check() error {
 	if h.Format != FormatV1 {
 		bad = append(bad, fmt.Sprintf("format %q is not %s", h.Format, FormatV1))
 	}
-	if h.DraftVersionID == "" {
+	if !h.namesSourceOnly() {
 		if err := (SourceInput{Name: h.Source.Name, Licence: h.Source.Licence, Kind: h.Source.Kind}).validate(); err != nil {
 			bad = append(bad, err.Error())
 		}

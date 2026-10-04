@@ -201,6 +201,9 @@ type Storage struct {
 	MountCheckTimeoutMinutes Param[int]     `yaml:"mount_check_timeout_minutes"`
 	MountCheckSampleMB       Param[int]     `yaml:"mount_check_sample_mb"`
 	MountScanMaxFiles        Param[int]     `yaml:"mount_scan_max_files"`
+	// Exports (phase 4 · stream I): the default target mount and the Hub repository's visibility.
+	ExportMount      Param[string] `yaml:"export_mount"`
+	ExportHubPrivate Param[bool]   `yaml:"export_hub_private"`
 }
 
 // Data holds the import defaults (the dataset_import step kind's defaultRefs, phase 2).
@@ -234,6 +237,16 @@ type Data struct {
 	QualityMaxClippedShare  Param[float64] `yaml:"quality_max_clipped_share"`
 	QualityOutlierZ         Param[float64] `yaml:"quality_outlier_z"`
 	QualityMaxOutlierShare  Param[float64] `yaml:"quality_max_outlier_share"`
+
+	// Interoperability (phase 4 · stream I): shar_export's shard size and noise_mine's clips (the worker reads them
+	// through defaultRef).
+	SharShardUtterances  Param[int]     `yaml:"shar_shard_utterances"`
+	NoiseMinClipS        Param[float64] `yaml:"noise_min_clip_s"`
+	NoiseMaxClipS        Param[float64] `yaml:"noise_max_clip_s"`
+	NoiseEdgeMarginMs    Param[int]     `yaml:"noise_edge_margin_ms"`
+	NoiseMinRMSDB        Param[float64] `yaml:"noise_min_rms_db"`
+	NoiseMaxRMSDB        Param[float64] `yaml:"noise_max_rms_db"`
+	NoiseMaxClipsPerFile Param[int]     `yaml:"noise_max_clips_per_file"`
 }
 
 // Operations holds instance-wide operational defaults.
@@ -256,6 +269,9 @@ type Backups struct {
 	RestoreTestAt      Param[string] `yaml:"restore_test_at"`
 	KeepNightly        Param[int]    `yaml:"keep_nightly"`
 	KeepWeekly         Param[int]    `yaml:"keep_weekly"`
+	// MirrorMount names a writable path mount the content-store mirror goes to (phase 4 · stream I); empty keeps it
+	// under CADENCE_BACKUP_DIR.
+	MirrorMount Param[string] `yaml:"mirror_mount"`
 }
 
 // Eval holds the evaluation defaults: the matrix, scoring and significance (phase 3).

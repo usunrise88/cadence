@@ -31,6 +31,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/events"
 	"github.com/usunrise88/cadence/control-plane/internal/eviction"
 	"github.com/usunrise88/cadence/control-plane/internal/experiments"
+	"github.com/usunrise88/cadence/control-plane/internal/exports"
 	"github.com/usunrise88/cadence/control-plane/internal/help"
 	"github.com/usunrise88/cadence/control-plane/internal/jobs"
 	"github.com/usunrise88/cadence/control-plane/internal/langpacks"
@@ -172,7 +173,8 @@ func New(c Config) (*Server, error) {
 	if c.StepHooks == nil {
 		c.StepHooks = &steps.Hooks{}
 	}
-	(&data.Importer{CAS: c.CAS}).Register(c.StepHooks) // dataset artifacts register dataset versions (R18)
+	(&data.Importer{CAS: c.CAS}).Register(c.StepHooks)  // dataset artifacts register dataset versions (R18)
+	(&exports.Hooker{CAS: c.CAS}).Register(c.StepHooks) // export artifacts complete exports and record mount copies
 	if c.Leases == nil && c.Workers != nil {
 		c.Leases = c.Workers
 	}

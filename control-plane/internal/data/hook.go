@@ -91,6 +91,14 @@ func (im *Importer) Import(ctx context.Context, tx pgx.Tx, out steps.Output) (re
 		return im.completeFreeze(ctx, tx, out, a, now)
 	}
 	h := a.Header
+	if h.Purpose == PurposeNoise && len(h.Mined) > 0 {
+		// Mined from an ingest's recordings: the source is the registered one the ingest read (no licence, no ingest).
+		src, err := IngestAllowed(ctx, tx, h.Source.Name)
+		if err != nil {
+			return registry.Version{}, nil, err
+		}
+		return importNoise(ctx, tx, a, src, out, actor, now)
+	}
 	src, _, drafts, err := Ensure(ctx, tx, SourceInput{Name: h.Source.Name, Licence: h.Source.Licence, Kind: h.Source.Kind,
 		Languages: languagesOf(a.Lines, h.Source.Languages), URL: h.Source.URL}, actor, now)
 	if err != nil {

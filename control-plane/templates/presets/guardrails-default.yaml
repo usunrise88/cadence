@@ -100,6 +100,17 @@ tools:
     operations: [mounts.new]
     reason: a mount is shared by every project and opens storage outside Cadence; the admin decides which locations Cadence reads and writes
 
+  # A dataset pushed to the Hugging Face Hub leaves the instance with its audio and transcripts: an approval the admin
+  # decides, for people too (spec 03 "Interoperability": exports follow the approval rules of a registry publication;
+  # phase-4 plan stream I). datasets.export names its body's format to the policy; exports to a mount or the content
+  # store stay drafts (the draft rule below).
+  - id: hub-export
+    class: gated
+    everyone: true
+    operations: [datasets.export]
+    params: { format: hf-hub }
+    reason: a dataset pushed to the Hugging Face Hub leaves the instance; the admin decides what is published
+
   # Registry-scope approvals: model registration and source edits — clearing a source for training (its
   # licence allows it and the data may be used) is a person's decision (R18).
   - id: registry-changes

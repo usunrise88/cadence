@@ -24,6 +24,13 @@ A set lives in `CADENCE_BACKUP_DIR/sets/<time>-<trigger>-<id>/`:
 
 Content-store blobs are immutable, so they are mirrored once into `CADENCE_BACKUP_DIR/cas/` and shared by every set.
 Blobs only training states hold are not mirrored: a state is read only to resume, and it is most of the store.
+
+**The mirror on a mount.** With `backups.mirror_mount` set to a writable path mount (`mounts.list`; the phase-4
+`exports` mount, say), the mirror goes to `<mount root>/cas/b3/…` instead, and every mirrored blob is recorded as a
+copy on that mount: the local cache may then evict dataset shards it holds and `datasets.materialize` copies them back
+from the mirror ([Imports and exports](interoperability.md)). A mount that is missing, read-only or not a path mount
+fails the backup (a failure notification) rather than falling back. The restore test re-hashes the mirror where it
+is; eviction of old eval artifacts waits for blobs the mirror does not hold yet.
 **The master key is not in any set**: back up `CADENCE_MASTER_KEY_FILE` separately and keep it apart from the sets —
 without it the secrets in a restored instance cannot be read, and with the sets alone nobody else can read them.
 

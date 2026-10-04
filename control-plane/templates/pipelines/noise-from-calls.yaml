@@ -1,0 +1,22 @@
+# written by Cadence — starter pipeline: a noise bank mined from the silences of the project's own call recordings
+# (docs/spec/03-pipelines-defaults.md "Augmentation", Background noise: own-call noise preferred for realism).
+#
+# sdp_ingest indexes the calls on a mount (stereo split per party, per-channel voice activity; nothing is copied), and
+# noise_mine cuts the stretches where no party speaks into clips — at a distance from any speech, without digital
+# silence (a TTS bot channel) or loud clips that are missed speech — into a frozen noise-bank version
+# noise-bank/<name> (tag mined). The source must be registered (sources.new; no licence, no ingest). Only departures
+# from defaults.yaml (data.noise_*) are written. Help: docs/help/steps/noise-mine.md.
+name: noise-from-calls
+description: Mine a noise bank from the silences of call recordings on a mount
+steps:
+  - id: index
+    kind: sdp_ingest@1
+    params:
+      source: calls-synth-sr                           # set me: a registered source
+      path: mount://corpora/calls-synth-sr/2026-10-03  # set me: <mount>/<source>/<revision>
+      language: sr-RS                                  # set me
+  - id: mine
+    kind: noise_mine@1
+    in: { segments: index.segments }
+    params:
+      name: calls-synth-sr                             # noise-bank/<name>
