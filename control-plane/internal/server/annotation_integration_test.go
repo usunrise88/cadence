@@ -323,6 +323,7 @@ func TestAnnotationBatchToGoldenSet(t *testing.T) {
 	expectProblem(t, e.do("GET", "/api/registry/datasets", "", rev()...), 403, "forbidden")
 	expectProblem(t, e.do("GET", "/api/batches/"+b.ID+"/batch-items?queue=all", "", rev()...), 403, "forbidden")
 	e.ok(e.do("GET", "/api/batches/"+b.ID, "", rev()...), 200, nil)
+	e.ok(e.do("GET", "/api/defaults", "", rev()...), 200, nil) // the audio view's settings
 
 	// The reviewer plays an item's window through a signed link (every channel; the call's caller and bot), with its
 	// peaks and tracks — narrowband, both parties' speech, the end-of-utterance gap.

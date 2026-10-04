@@ -65,6 +65,8 @@ func reviewerAllowed(method, path, batch string) bool {
 		return true
 	case (p == "/help" || strings.HasPrefix(p, "/help/")) && get:
 		return true
+	case p == "/defaults" && get:
+		return true // the audio view's settings (views.audio); configuration, no data
 	case p == "/batches/"+batch && get:
 		return true
 	case strings.HasPrefix(p, "/batches/"+batch+"/batch-items") && (get || post):

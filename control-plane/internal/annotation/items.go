@@ -291,6 +291,13 @@ type Viewer struct {
 // SeesAll reports whether v sees every annotation of an item.
 func (v Viewer) SeesAll() bool { return !v.Reviewer || v.Role == "adjudicator" }
 
+// Blind is v as an annotator sees their own queue: only their own annotations, whoever they are (the admin included),
+// so a second transcript is never written with the first in view.
+func (v Viewer) Blind() Viewer {
+	v.Reviewer, v.Role = true, "annotator"
+	return v
+}
+
 // view is it as v may see it with annotations list.
 func view(it Item, list []Annotation, v Viewer) Item {
 	it.Annotations = []Annotation{}
@@ -375,9 +382,9 @@ func (s *Service) ListItems(ctx context.Context, q storage.Querier, batchID, que
 			mine := slices.ContainsFunc(list, func(a Annotation) bool { return a.AnnotatorID == v.UserID })
 			switch {
 			case mine:
-				done = append(done, view(it, list, v))
+				done = append(done, view(it, list, v.Blind()))
 			case b.State == StateOpen && wants(it, list):
-				todo = append(todo, view(it, list, v))
+				todo = append(todo, view(it, list, v.Blind()))
 			}
 		}
 		// Each person meets the open items in their own order, so two annotators rarely take the same item at once.
@@ -551,7 +558,7 @@ func (s *Service) Annotate(ctx context.Context, tx pgx.Tx, in AnnotateInput) (It
 	it.Rev++
 	ev := batchEvent(b, "annotation_batch.item_annotated", map[string]any{"itemId": it.ID, "itemState": it.State, "status": in.Status})
 	ev.Entity = &events.EntityRef{Kind: ItemKind, ID: it.ID, Rev: it.Rev}
-	return view(it, list, v), []events.Draft{ev}, nil
+	return view(it, list, v.Blind()), []events.Draft{ev}, nil
 }
 
 // settle derives an item's state from its annotations: pending until it has the transcripts it needs (two for a double
