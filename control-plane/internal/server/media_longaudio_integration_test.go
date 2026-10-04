@@ -228,6 +228,25 @@ func TestMediaTilesBuiltOnDemand(t *testing.T) {
 	if n := e.count(`SELECT count(*) FROM artifacts WHERE type = 'spectrogram_tiles' AND meta->>'source' = 'media.spectrogram'`); n != 1 {
 		t.Fatalf("%d pyramids", n)
 	}
+	// A manifest request is a view: the retention (media.tiles_retention_days) counts from it. A pyramid the retention
+	// evicted is built again by the next view, and its retention starts again.
+	if _, err := e.pool.Exec(ctx, `UPDATE artifacts SET last_used_at = now() - interval '20 days' WHERE hash = $1`, m.Artifact); err != nil {
+		t.Fatal(err)
+	}
+	e.ok(e.do("GET", "/api/registry/utterances/"+id+"/spectrogram", ""), 200, nil)
+	if n := e.count(`SELECT count(*) FROM artifacts WHERE hash = '` + m.Artifact + `' AND last_used_at > now() - interval '1 minute'`); n != 1 {
+		t.Fatal("the view did not record its time")
+	}
+	if _, err := e.pool.Exec(ctx, `UPDATE artifacts SET evicted_at = now(), last_used_at = now() - interval '20 days' WHERE hash = $1`, m.Artifact); err != nil {
+		t.Fatal(err)
+	}
+	e.ok(e.do("GET", "/api/registry/utterances/"+id+"/spectrogram", ""), 202, &acc)
+	if j := e.endJob(acc.JobID); j.State != "done" {
+		t.Fatalf("rebuild after the retention: %s %s", j.State, j.Error)
+	}
+	if n := e.count(`SELECT count(*) FROM artifacts WHERE hash = '` + m.Artifact + `' AND evicted_at IS NULL AND last_used_at > now() - interval '1 minute'`); n != 1 {
+		t.Fatal("the rebuilt pyramid is not live with a fresh view")
+	}
 
 	// A failed build is reported until media.tiles_retry_s has passed; then a request builds again.
 	other, otherHash := mediaUtterance(t, e, "failed", media.EncodeWAV([][]float32{tone(8000, 8000, 300)}, 8000), 8000, 1, 1)

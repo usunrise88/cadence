@@ -246,6 +246,7 @@ func (s *Server) spectrogramGet(w http.ResponseWriter, r *http.Request, id api.U
 	if _, ok := doc["audio"]; !ok {
 		doc["audio"] = u.Hash
 	}
+	s.media.TouchTiles(ctx, t.Artifact) // a view: the pyramid's retention counts from now (media.tiles_retention_days)
 	w.Header().Set("Content-Type", "application/json")
 	return json.NewEncoder(w).Encode(doc)
 }

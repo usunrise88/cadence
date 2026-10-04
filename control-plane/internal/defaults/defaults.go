@@ -324,6 +324,7 @@ type Media struct {
 	PlayAuditWindowSeconds Param[int] `yaml:"play_audit_window_s"`
 	TilesMaxSeconds        Param[int] `yaml:"tiles_max_s"`
 	TilesRetrySeconds      Param[int] `yaml:"tiles_retry_s"`
+	TilesRetentionDays     Param[int] `yaml:"tiles_retention_days"`
 }
 
 // Annotation holds the annotation batch defaults (phase 4, stream A; docs/spec/04-blocks.md "Annotation workflow").

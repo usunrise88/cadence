@@ -34,6 +34,8 @@ type jobArgs struct {
 	ApprovalID string   `json:"approvalId,omitempty"`
 	// RetentionDays, instead of hashes, re-plans the age retention of eval artifacts (SweepEvalArtifacts).
 	RetentionDays int `json:"retentionDays,omitempty"`
+	// TilesRetentionDays, instead of hashes, re-plans the view retention of tile pyramids (SweepTiles).
+	TilesRetentionDays int `json:"tilesRetentionDays,omitempty"`
 }
 
 // Register adds the eviction job kind; call it before the job runner starts.
@@ -72,13 +74,16 @@ func (s *Service) run(ctx context.Context, r *jobs.Run) (any, error) {
 			return err
 		}
 		mine, err := markedBy(ctx, tx, r.Job.ID)
-		if err != nil || len(mine) > 0 || (len(args.Hashes) == 0 && args.RetentionDays == 0) {
+		if err != nil || len(mine) > 0 || (len(args.Hashes) == 0 && args.RetentionDays == 0 && args.TilesRetentionDays == 0) {
 			return err // a retry: the rows are marked already
 		}
 		var p Plan
-		if args.RetentionDays > 0 {
+		switch {
+		case args.RetentionDays > 0:
 			p, err = s.PlanEvalRetention(ctx, tx, args.RetentionDays, time.Now())
-		} else {
+		case args.TilesRetentionDays > 0:
+			p, err = s.PlanTilesRetention(ctx, tx, args.TilesRetentionDays, time.Now())
+		default:
 			p, err = s.Plan(ctx, tx, Filter{Hashes: args.Hashes})
 		}
 		if err != nil {
@@ -93,7 +98,8 @@ func (s *Service) run(ctx context.Context, r *jobs.Run) (any, error) {
 		return nil, err
 	}
 	s.hook("marked")
-	// Training states are never mirrored; eval artifacts are evicted only once the mirror holds them, when there is one.
+	// Training states are never mirrored; eval artifacts are evicted only once the mirror holds them, when there is one;
+	// tile pyramids are rebuilt from their audio, never restored.
 	p := Plan{Kept: []Kept{}, Permanent: args.RetentionDays == 0 || s.mirrorDir(ctx) == ""}
 	err = pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
 		if err := artifacts.LockExclusive(ctx, tx); err != nil {
@@ -141,7 +147,8 @@ func (s *Service) run(ctx context.Context, r *jobs.Run) (any, error) {
 		return audit.Write(ctx, tx, audit.Entry{
 			Operation: Operation, Actor: r.Job.Actor, Outcome: audit.OutcomeOK, Status: 200, ApprovalID: args.ApprovalID,
 			Detail: map[string]any{"jobId": r.Job.ID, "artifacts": p.Hashes(), "bytesFreed": p.BytesFreed,
-				"blobs": p.Blobs, "permanent": p.Permanent, "retentionDays": args.RetentionDays},
+				"blobs": p.Blobs, "permanent": p.Permanent, "retentionDays": args.RetentionDays,
+				"tilesRetentionDays": args.TilesRetentionDays},
 		})
 	})
 	if err != nil {
