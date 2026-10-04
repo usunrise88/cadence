@@ -1,4 +1,5 @@
 import { entities } from "@/shell/registries";
+import { datasetVersionEntity, sourceEntity } from "./data";
 import { experimentEntity } from "./experiment";
 import { evalEntity } from "./eval";
 import { mixEntity } from "./mix";
@@ -19,4 +20,7 @@ export function registerEntities(): void {
   entities.register(goldenSetEntity);
   entities.register(modelEntity);
   entities.register(languagePackEntity);
+  // Phase 4: data.
+  entities.register(datasetVersionEntity);
+  entities.register(sourceEntity);
 }

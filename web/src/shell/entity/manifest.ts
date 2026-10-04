@@ -14,7 +14,7 @@ export type LoopStep = (typeof LOOP_STEPS)[number];
 
 /** State templates. Every kind uses one of them; `container` covers projects (see 07 open questions). */
 export const STATE_TEMPLATES = {
-  registry: ["draft", "frozen", "deprecated"],
+  registry: ["draft", "frozen", "deprecated", "archived"],
   work: ["planned", "queued", "running", "paused", "done", "failed", "cancelled"],
   promotion: ["proposed", "approved", "denied", "applied", "rolled back"],
   container: ["bootstrapping", "active", "failed", "archived"],

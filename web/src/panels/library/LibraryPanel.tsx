@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Plus } from "iconoir-react";
-import { evalsListOptions, langpacksListOptions, mixesListOptions, projectsSearchOptions, registrySearchOptions, viewsListOptions } from "@/api/gen/@tanstack/react-query.gen";
+import { evalsListOptions, langpacksListOptions, mixesListOptions, projectsSearchOptions, registrySearchOptions, sourcesListOptions, viewsListOptions } from "@/api/gen/@tanstack/react-query.gen";
 import type { AgentReference, RegistryKind } from "@/api/gen/types.gen";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,6 +10,7 @@ import { AgentMenu, EmptyState, EntityList, explainThis, type ListRow } from "@/
 import {
   askAgent,
   chipLabel,
+  errorMessage,
   formatReference,
   kindNoun,
   openDocument,
@@ -51,8 +52,8 @@ function useDebounced<T>(v: T, ms: number): T {
 
 /** Rows of the project's work (document references); registry rows are `<kind>:<ver_…>`. */
 const WORK = /^(mix|eval|language_pack):/;
-/** Registry kinds whose versions open as a document (Golden set, Model). */
-const DOCUMENTED = /^(golden_set|model):/;
+/** Registry kinds whose versions open as a document (Golden set, Model, Dataset version) and sources (Source). */
+const DOCUMENTED = /^(golden_set|model|dataset_version|source):/;
 
 const pill = (on: boolean) =>
   cn("h-6 rounded-full border px-2", on ? "border-accent-line bg-accent-soft text-accent-text" : "text-muted-foreground hover:bg-hover");
@@ -97,6 +98,12 @@ export function LibraryPanel(_props: PanelProps) {
     void (searching ? search.refetch() : browse.refetch()),
   );
   useTopic(project ? ["entity.saved_search.*"] : null, () => void views.refetch());
+
+  // Sources (src_…) are registry data outside the versioned kinds: listed with the whole registry (scope All, no kind
+  // chip), they open as the Source document.
+  const sourcesEnabled = !searching && !kind && browseScope === "all";
+  const sources = useQuery({ ...sourcesListOptions(), enabled: sourcesEnabled });
+  useTopic(sourcesEnabled ? ["entity.source.*"] : null, () => void sources.refetch());
 
   // The project's work (mixes, evals and language packs; runs open from Metrics and links) lists before the registry
   // and opens as documents.
@@ -151,6 +158,15 @@ export function LibraryPanel(_props: PanelProps) {
       }))
     : [
         ...(kind ? [] : work),
+        ...(sourcesEnabled ? (sources.data?.items ?? []) : []).map((s) => ({
+          id: `source:${s.id}`,
+          name: s.name,
+          version: `source · ${s.kind}`,
+          state: s.archived ? "archived" : s.trainingCleared ? "cleared" : "eval-only",
+          tags: [s.licence, ...s.languages.map((l) => `locale:${l}`)],
+          actor: s.clearedBy ?? s.createdBy,
+          updatedAt: s.updatedAt,
+        })),
         ...(browse.data?.items ?? []).map((r) => ({
           id: `${r.kind}:${r.id}`,
           name: r.name,
@@ -358,34 +374,93 @@ function rowReference(r: ListRow): AgentReference | undefined {
   return ref && parseReference(ref) ? { ref, label: r.name } : undefined;
 }
 
+/** Registry kinds a project adopts (projects.adopt); golden sets and dataset versions show their document's card. */
+const ADOPTABLE = /^(base_model|model|golden_set|dataset_version|normalizer|noise_bank|auxiliary):(ver_[A-Za-z0-9-]+)$/;
+
 /**
- * What the highlighted registry row offers the open project: a model or base model becomes its @baseline
- * (aliases.set, an approval; the command reports the approval id), a golden set opens its adopt card.
+ * What the highlighted registry row offers the open project: Adopt (projects.adopt — a golden set or dataset version
+ * opens its document's adopt card, which dry-runs the leakage, licence and locale checks; other kinds are checked
+ * here first, then adopted), and for a model or base model Set as baseline (aliases.set, an approval; the command
+ * reports the approval id).
  */
 function RowActions({ row }: { row: ListRow | undefined }) {
   const project = useProject();
-  const m = row ? /^(base_model|model|golden_set):(ver_[A-Za-z0-9]+)$/.exec(row.id) : null;
+  const m = row ? ADOPTABLE.exec(row.id) : null;
   if (!row || !m || !project) return null;
+  const kind = m[1]!;
   const entity = { id: m[2]!, name: row.name, state: row.state };
-  if (m[1] === "golden_set") {
-    return (
-      <Button type="button" size="sm" variant="outline" className="shrink-0" onClick={() => void runCommand("projects.adopt", { entity })} data-command="projects.adopt">
-        Adopt…
-      </Button>
-    );
-  }
   return (
-    <Button
-      type="button"
-      size="sm"
-      variant="outline"
-      className="shrink-0"
-      title={`Point ${project}'s @baseline at ${row.name} (an approval)`}
-      onClick={() => void runCommand("aliases.set", { entity })}
-      data-command="aliases.set"
-    >
-      Set as baseline
-    </Button>
+    <>
+      {kind === "golden_set" || kind === "dataset_version" ? (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="shrink-0"
+          disabled={row.state !== "frozen"}
+          title={row.state !== "frozen" ? "Only frozen versions are adopted" : undefined}
+          onClick={() => void runCommand("projects.adopt", { entity, kind })}
+          data-command="projects.adopt"
+        >
+          Adopt…
+        </Button>
+      ) : (
+        <AdoptButton key={entity.id} project={project} version={entity.id} name={row.name} frozen={row.state === "frozen"} />
+      )}
+      {kind === "base_model" || kind === "model" ? (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="shrink-0"
+          title={`Point ${project}'s @baseline at ${row.name} (an approval)`}
+          onClick={() => void runCommand("aliases.set", { entity })}
+          data-command="aliases.set"
+        >
+          Set as baseline
+        </Button>
+      ) : null}
+    </>
+  );
+}
+
+/** Adopts a version straight from its row: the dry run checks (licence, locale), then the adoption; the outcome shows beside it. */
+function AdoptButton({ project, version, name, frozen }: { project: string; version: string; name: string; frozen: boolean }) {
+  const [busy, setBusy] = useState(false);
+  const [outcome, setOutcome] = useState<{ error: boolean; text: string } | null>(null);
+  const adopt = async () => {
+    setBusy(true);
+    setOutcome(null);
+    try {
+      await runCommand("projects.adopt", { project, version, dryRun: true });
+      await runCommand("projects.adopt", { project, version });
+      setOutcome({ error: false, text: "Adopted" });
+    } catch (err) {
+      setOutcome({ error: true, text: errorMessage(err) });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <>
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        className="shrink-0"
+        disabled={busy || !frozen}
+        title={frozen ? `Adopt ${name} into ${project}` : "Only frozen versions are adopted"}
+        onClick={() => void adopt()}
+        data-command="projects.adopt"
+      >
+        Adopt
+      </Button>
+      {outcome ? (
+        <span role={outcome.error ? "alert" : "status"} className={cn("max-w-40 truncate text-xs", outcome.error ? "text-destructive" : "text-muted-foreground")} title={outcome.text}>
+          {outcome.text}
+        </span>
+      ) : null}
+    </>
   );
 }
 
