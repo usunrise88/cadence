@@ -46,10 +46,10 @@ chain:
     accepts: [sources.get]
   - id: clear
     title: FLEURS is cleared for training
-    command: sources.edit
-    accepts: [sources.get]
+    command: sources.get
+    accepts: [sources.edit]
     when: { trainingCleared: true }
-    person: An admin approves sources.edit trainingCleared true in Approvals (CC-BY-4.0 allows training with attribution); until then the import is eval-only.
+    person: Only when sources.get shows trainingCleared false — the agent asks for sources.edit trainingCleared true and an admin approves it in Approvals (CC-BY-4.0 allows training with attribution); until then the import is eval-only. A source already cleared ticks this step from its read.
   - id: import
     title: Import the hours of FLEURS (dry run first)
     command: pipelines.run
@@ -117,7 +117,7 @@ prompt: |
 
   Work the plan one step at a time with Cadence tools. Steps marked "a person" wait for one: say what they must do, then wait for their reply.
   1. sources.get fleurs, or sources.new it (licence CC-BY-4.0, kind public, url https://huggingface.co/datasets/google/fleurs).
-  2. When it is not cleared for training, ask for sources.edit trainingCleared true — an approval the admin decides — and wait.
+  2. Read the answer of sources.get: when trainingCleared is already true the step is done — never edit it again. Only when it is false, ask for sources.edit trainingCleared true — an approval the admin decides — and wait.
   3. pipelines.run import with params for its step import: name fleurs-{{ .Inputs.fleurs }}-try, source_name fleurs, licence CC-BY-4.0, locale {{ .Inputs.language }}, hf_config {{ .Inputs.fleurs }}, max_hours {{ .Inputs.hours }} (and transliterate sr-Cyrl-Latn for Serbian) — dry run first, then the same call for real; pipelineRuns.wait until it is done.
   4. mixes.new with the imported version (datasets.list) and, when there is one, the replay corpus as a replay group at the share above.
   5. runs.calibrate, then runs.new with the mix, the base model and {{ .Inputs.steps }} steps — dry run first each time, then for real; follow the run (jobs.wait, runs.get) until it ends.

@@ -54,9 +54,19 @@ type hfEntry struct {
 	Type string `json:"type"`
 	Path string `json:"path"`
 	Size int64  `json:"size"`
+	OID  string `json:"oid"`
+	LFS  *struct {
+		OID string `json:"oid"`
+	} `json:"lfs,omitempty"`
 }
 
 func (r *hfReader) Walk(ctx context.Context, prefix string, fn func(string, int64) error) error {
+	return r.WalkStamped(ctx, prefix, func(rel string, size int64, _ string) error { return fn(rel, size) })
+}
+
+// WalkStamped implements StampedReader: a file's stamp is its content's id at the mount's revision (the LFS object's
+// sha256, else the git blob id), so an unpinned revision that moves changes the stamp of each file that changed.
+func (r *hfReader) WalkStamped(ctx context.Context, prefix string, fn func(string, int64, string) error) error {
 	t, repo := r.repoAPI()
 	u := r.base + "/api/" + t + "/" + repo + "/tree/" + url.PathEscape(r.revision)
 	if prefix != "" {
@@ -81,7 +91,11 @@ func (r *hfReader) Walk(ctx context.Context, prefix string, fn func(string, int6
 			if e.Type != "file" {
 				continue
 			}
-			if err := fn(e.Path, e.Size); err != nil {
+			stamp := e.OID
+			if e.LFS != nil && e.LFS.OID != "" {
+				stamp = e.LFS.OID
+			}
+			if err := fn(e.Path, e.Size, stamp); err != nil {
 				if errors.Is(err, ErrStop) {
 					return nil
 				}

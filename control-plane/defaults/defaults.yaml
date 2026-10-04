@@ -765,6 +765,16 @@ pseudolabel:
     value: true
     description: Whether a segment with a known language needs a language identification verdict to keep its pseudo-label (without one it is disputed as lid-unknown)
     source: docs/review/2026-10-03-phase-4-plan.md decision 6 ("and LID agrees with the source's language")
+  min_members:
+    value: 2
+    unit: members
+    description: Fewest members the ensemble runs with — wired hypotheses inputs, and members that wrote a hypothesis for a segment (fewer is disputed as too-few-members); a one-member ensemble agrees with itself, so the step refuses
+    source: "Owner decision 2026-10-04 (phase-4 gate: the default ensemble is Whisper + OASIS, so OASIS is required)"
+    range: { min: 2, max: 10 }
+  prefer_written_form:
+    value: true
+    description: Pick the text of an agreeing member in written form (capitals or sentence punctuation, as Whisper writes) over one in spoken form (OASIS writes lowercase without punctuation), so a pseudo-label keeps the training style; before a member that is itself a vote and before the lowest mean WER
+    source: "Owner decision 2026-10-04 (phase-4 gate: with Whisper + OASIS the label keeps Whisper's cased, punctuated text)"
 
 # Evaluation (phase 3; docs/review/2026-10-02-phase-3-plan.md): the matrix, scoring and significance.
 eval:
@@ -1308,7 +1318,7 @@ packs:
     live_stop_history_eou_ms:
       value: 800
       unit: ms
-      description: Trailing silence (in the decoder's emissions) after which NeMo's streaming pipeline closes a segment with an automatic end of utterance; live sessions and nemotron_transcribe@3 use the same value, so their words agree
+      description: Trailing silence (in the decoder's emissions) after which NeMo's streaming pipeline closes a segment with an automatic end of utterance; live sessions and nemotron_transcribe use the same value, so their words agree
       source: "docs/spikes/A5-live-transcription.md \"Result\" (800 ms: the automatic endpoint lands 1.5 s after the utterance at 160 ms, 2.0 s at 1120 ms)"
       range: { min: 80, max: 10000 }
     # frame_vad (utterance ends for latency to final, R54; phase 3 stream R).

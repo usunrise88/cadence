@@ -1,0 +1,26 @@
+# written by Cadence — starter pipeline: index stereo call recordings on a mount into a segments artifact, the frame
+# of an annotation batch (owner decision 2026-10-04; docs/spec/04-blocks.md "Annotation workflow").
+#
+# sdp_ingest splits each call into one track per party — the roles come from the call's <stem>.cadence.json sidecar
+# (roles, campaign, the bot's TTS script), else from channel_roles — finds speech per channel and cuts it into
+# segments; the bot's channel is labelled from its script. Nothing is copied and nothing is drafted: the callers'
+# segments have no text yet (data-ingest's filter would drop them and a draft refuses them), so the pipeline ends at
+# the segments artifact. Then: pipelineRuns.get shows the index step's output segments (b3:…), and batches.new takes
+# it as the frame ({"segments": "b3:…"}, dry run first) — the people annotating it write the text. A batch for a
+# golden set needs the freeze's leakage and eval-only rules (docs/help/guides/annotation.md); the callers' audio can
+# also be pseudo-labelled (pipelines/pseudo-label.yaml) instead.
+#
+# Before running, set the params marked "set me": the registered source (sources.new; no licence, no ingest), the
+# mount path and the language. Only departures from defaults.yaml (data.ingest_*) are written. Help:
+# docs/help/steps/sdp-ingest.md, docs/help/guides/annotation.md.
+name: calls-ingest
+description: Index stereo call recordings on a mount into a segments artifact, the frame of an annotation batch
+steps:
+  - id: index
+    kind: sdp_ingest@2
+    params:
+      source: my-calls                                 # set me: a registered source
+      path: mount://corpora/my-calls/set-me-revision   # set me: <mount>/<source>/<revision>
+      language: sr-RS                                  # set me
+      channels: split
+      channel_roles: [caller, bot]                     # set me: the channel order of a call without a sidecar

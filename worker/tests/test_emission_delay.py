@@ -124,3 +124,34 @@ def test_emission_delay_ignores_an_alignment_of_another_text(tmp_path: Path) -> 
     em = run(tmp_path, inputs_for(tmp_path, None, row))[0]["emission"]
     assert em["available"] is False
     assert em["mismatchedUtterances"] == 1
+
+
+def test_emission_delay_at_80ms_chunks_follows_word_completion() -> None:
+    """Synthetic 80 ms partials (the 2026-10-04 check of the 80 ms emission delay): words grow token by token, and
+    each word is emitted by the chunk that completes it, not by the final. Partials that split a word ("Dan iel")
+    put every later word one place off, so only the final emits them — nemotron_transcribe@3's bug, not the
+    scorer's."""
+    from cadence_worker.normalize import Normalizer
+    from cadence_worker.steps.latency_score import emission
+    from cadence_worker.steps.wer_score import Reference
+
+    norm = Normalizer.from_json(json.dumps(BASIC_NORM))
+    ref = Reference(audio="b3:a", text="Daniel Lantane je", duration=3.0, language="hr")
+    ends = [0.5, 1.1, 1.3]
+    timed = [word(i, w, e - 0.3, e) for i, (w, e) in enumerate(zip(ref.text.split(), ends, strict=True))]
+    alignment = ({"aligner": {"auxiliary": "a"}}, {"b3:a": {"text": ref.text, "aligned": True, "words": timed}})
+
+    def hyp(texts: list[str]) -> dict[str, Any]:
+        parts = [{"audioOffsetMs": 80 * (k + 5), "emitMs": 80 * (k + 5), "text": t} for k, t in enumerate(texts)]
+        parts.append({"audioOffsetMs": 3000, "emitMs": 3000, "text": "Daniel Lantane je", "final": True})
+        return {"text": "Daniel Lantane je", "partials": parts, "decoding": {"pace": "realtime"}}
+
+    # one partial per 80 ms chunk from 400 ms: Daniel complete at 560, Lantane at 880, je at 1440
+    good = ["Da", "Danie", "Daniel", "Daniel La", "Daniel Lan", "Daniel Lanta", "Daniel Lantane"]
+    good += ["Daniel Lantane"] * 6 + ["Daniel Lantane je"]
+    em, _ = emission([ref], {"b3:a": hyp(good)}, norm, alignment)
+    # 560 - 500 = 60, 880 - 1100 = -220 (early), 1440 - 1300 = 140
+    assert (em["matchedWords"], em["earlyWords"], em["pr50Ms"]) == (3, 1, 60.0)
+    split = [t.replace("Daniel", "Dan iel") if t.startswith("Daniel ") else t for t in good]
+    em, _ = emission([ref], {"b3:a": hyp(split)}, norm, alignment)
+    assert em["pr50Ms"] == 3000 - 1100, "every word after the split is emitted only by the final"

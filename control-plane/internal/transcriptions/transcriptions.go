@@ -38,6 +38,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/events"
 	"github.com/usunrise88/cadence/control-plane/internal/jobs"
 	"github.com/usunrise88/cadence/control-plane/internal/langpacks"
+	"github.com/usunrise88/cadence/control-plane/internal/langtag"
 	"github.com/usunrise88/cadence/control-plane/internal/media"
 	"github.com/usunrise88/cadence/control-plane/internal/pipelines"
 	"github.com/usunrise88/cadence/control-plane/internal/problems"
@@ -479,13 +480,8 @@ func (s *Service) resolveTarget(ctx context.Context, q storage.Querier, p projec
 	}
 }
 
-// language is a locale's primary language subtag, lower case.
-func language(locale string) string {
-	l, _, _ := strings.Cut(strings.ReplaceAll(locale, "_", "-"), "-")
-	return strings.ToLower(strings.TrimSpace(l))
-}
-
-// knowsLanguage reports whether a base model whose tags list locale:<code> (none: unknown, so yes) decodes lang.
+// knowsLanguage reports whether a base model whose tags list locale:<code> (none: unknown, so yes) decodes lang; a
+// member of a macrolanguage matches it (nb-NO decodes on a model tagged no, langtag).
 func knowsLanguage(tags []string, lang string) (bool, []string) {
 	var known []string
 	for _, t := range tags {
@@ -497,7 +493,7 @@ func knowsLanguage(tags []string, lang string) (bool, []string) {
 		return true, nil
 	}
 	for _, k := range known {
-		if language(k) == language(lang) {
+		if langtag.Same(k, lang) {
 			return true, known
 		}
 	}

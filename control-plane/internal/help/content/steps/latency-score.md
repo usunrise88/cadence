@@ -51,6 +51,9 @@ How:
   stays in place to the end; its delay is that partial's emit time at real-time pace (as above) minus the word's
   aligned end. A negative delay (a word shown before its aligned end) is kept and counted in `earlyWords`;
   substituted, deleted and inserted words have none. PR50 and PR90 are taken over every matched word of the cell.
+  Words are compared by position, so the partials must join a word split by an end of utterance as the final does:
+  `nemotron_transcribe@3` did not ("Dan iel …"), and its 80 ms emission delay was the length of the utterance
+  (`fleurs-sr-latn-test`: PR50 4.5 s, PR90 9.9 s); compare emission delay only between hypotheses of version 4 or later.
 - **Never an estimate.** Without an alignment input, a normalizer, or aligned references (the aligner does not cover
   the golden set's language, or the alignment was made for another text) emission delay is `available: false` with the
   reason, and no number is reported.

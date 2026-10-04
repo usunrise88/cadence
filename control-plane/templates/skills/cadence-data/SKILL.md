@@ -25,8 +25,10 @@ description: Cadence block "data" workflow: mounts, sources and licences, ingest
 ## 2. Sources and licences
 - `sources.list`, `sources.get` — every corpus Cadence knows, its licence, `trainingCleared` and its ingest history.
 - `sources.new` (`name`, `licence` as an SPDX id, `kind`, `languages`, `url`) before any ingest.
-- Training needs `trainingCleared: true`: ask for `sources.edit` with it (an approval) and wait. A dataset version
-  registered while its source is not cleared is eval-only for good — clear first, then ingest.
+- Training needs `trainingCleared: true`. Read `sources.get` first: when it already says true there is nothing to
+  do — never send `sources.edit` again (it only makes a needless approval). Only when it is false ask for
+  `sources.edit` with it (an approval) and wait. A dataset version registered while its source is not cleared is
+  eval-only for good — clear first, then ingest.
 
 ## 3. Ingest: transcribed audio (`data-ingest`)
 - `pipelines.list` — the project's pipelines. `pipelines/data-ingest.yaml`: `sdp_ingest` (index in place: segments with
@@ -41,22 +43,26 @@ description: Cadence block "data" workflow: mounts, sources and licences, ingest
   sets come from it; never point `path` at it. A draft that still holds a golden set's audio — even re-cut — is
   refused at freeze (golden-set-leakage).
 - `pipelineRuns.wait` until done; on failure `pipelineRuns.get` names the step, `jobLogs.list` its log.
+- Stereo calls without transcripts, for annotation: `pipelines/calls-ingest.yaml` is `sdp_ingest` alone
+  (`channels: split`, roles from each call's sidecar, else `channel_roles`) and ends at the `segments` artifact — no
+  draft, the callers have no text. Its index step's output (`pipelineRuns.get`: `segments`, `b3:…`) is the frame of
+  `batches.new` (`segments: b3:…`, dry run first).
 
 ## 4. Ingest: untranscribed audio (`pseudo-label`)
 - `pipelines/pseudo-label.yaml`: `sdp_ingest` → `segments_cut` (segments without text as a dataset) → members
-  `nemotron_transcribe` (the base model), `whisper_transcribe`, `oasis_transcribe` (optional) and `lid_classify` →
-  `pseudolabel_ensemble` (keeps a text when two members agree within `pseudolabel.max_pairwise_wer` and LID agrees;
-  the rest is `pseudo-label:disputed`) → normalise → filter (drops disputes) → split → draft.
-- Inputs: `model` (the base model's artifact, `baseModels.get`) and `normalizer` (the scoring normalizer,
-  `normalizers.get`).
+  `whisper_transcribe` and `oasis_transcribe`, and `lid_classify` → `pseudolabel_ensemble` (keeps a text when the two
+  agree within `pseudolabel.max_pairwise_wer` and LID agrees; the rest is `pseudo-label:disputed`) → normalise →
+  filter (drops disputes) → split → draft. The base model is not a member: it is the model being taught.
+- Input: `normalizer` (the scoring normalizer, `normalizers.get`).
 - The members name auxiliary models: `auxiliaries.list`; the project adopts each with `projects.adopt` (an approval
   the admin decides after the licence check, R26; `auxiliary-licence-refused` is final).
-- OASIS is a service Cadence never starts. `auxiliaries.get` of `auxiliary/oasis` says `reachable`. When false, ask
-  the person to start it on the host (`scripts/serve.sh ensemble no-300m` in the OASIS checkout) or to go on without
-  it: the step is optional, the dry run warns `auxiliary-unavailable` and the run uses two members.
-- Serbian: `transliterate: sr-Cyrl-Latn` on whisper, oasis and text_normalise (Whisper writes Cyrillic); the base
-  model has no Serbian prompt, so nemotron's `target_lang: hr-HR`. OASIS writes lowercase without punctuation and
-  wins when it agrees: look at the texts in the preview.
+- OASIS is a service Cadence never starts, and pseudo-label needs it (with two members it is half the vote).
+  `auxiliaries.get` of `auxiliary/oasis` says `reachable`. When false, ask the person to start it on the host
+  (`scripts/serve.sh ensemble no-300m` in the OASIS checkout; its token is the secret `oasis-token`) and wait: the
+  dry run refuses with `auxiliary-unavailable` until it answers. Never drop the oasis step to get past it.
+- Serbian: `transliterate: sr-Cyrl-Latn` on whisper, oasis and text_normalise (Whisper writes Cyrillic). OASIS writes
+  lowercase without punctuation; when the two agree the label is Whisper's cased, punctuated text
+  (`pseudolabel.prefer_written_form`). Still look at the texts in the preview.
 - `triage.list pipelineRun=<plr_…>` — the disputed segments; report how many and why (`reason`).
 
 ## 5. Preview and freeze

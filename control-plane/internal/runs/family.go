@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/usunrise88/cadence/control-plane/internal/langtag"
 	"github.com/usunrise88/cadence/control-plane/internal/pipelines"
 	"github.com/usunrise88/cadence/control-plane/internal/problems"
 	"github.com/usunrise88/cadence/control-plane/internal/registry"
@@ -165,11 +166,9 @@ func peakLRParam(k pipelines.Kind) (string, error) {
 // data's language".
 var localeParams = []string{"target_lang", "language", "lang", "locale"}
 
-// language is a locale's primary language subtag, lower case ("sr-Latn-RS" → "sr").
-func language(locale string) string {
-	l, _, _ := strings.Cut(strings.ReplaceAll(locale, "_", "-"), "-")
-	return strings.ToLower(strings.TrimSpace(l))
-}
+// language is a locale's primary language subtag, lower case and folded to its macrolanguage ("sr-Latn-RS" → "sr",
+// "nb-NO" → "no"), as the base model's locale tags are compared (langtag).
+func language(locale string) string { return langtag.Macro(locale) }
 
 // CheckLanguages refuses, before any GPU time, a stage whose language the base model does not know: the base model's
 // locale:<code> tags list the languages it was trained with (its prompts, its tokenizer's alphabet). The language is

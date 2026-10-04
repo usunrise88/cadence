@@ -57,7 +57,7 @@ func TestBundledPipelinesPlan(t *testing.T) {
 			}
 		}
 	}
-	for _, want := range []string{"data-ingest", "pseudo-label", "import", "train-stage", "eval-matrix"} {
+	for _, want := range []string{"data-ingest", "calls-ingest", "pseudo-label", "import", "train-stage", "eval-matrix"} {
 		if !seen[want] {
 			t.Errorf("no bundled pipeline %s", want)
 		}

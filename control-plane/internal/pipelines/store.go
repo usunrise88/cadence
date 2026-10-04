@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/usunrise88/cadence/control-plane/internal/auth"
+	"github.com/usunrise88/cadence/control-plane/internal/commands"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
 	"github.com/usunrise88/cadence/control-plane/internal/problems"
 	"github.com/usunrise88/cadence/control-plane/internal/steps"
@@ -151,17 +152,20 @@ type StepRow struct {
 	Auxiliaries     map[string]steps.RegistryRef `json:"-"`
 	EstimateSeconds *float64                     `json:"estimateSeconds,omitempty"`
 	InputHash       string                       `json:"inputHash,omitempty"`
-	ReusedFrom      string                       `json:"reusedFrom,omitempty"`
-	Attempts        int                          `json:"attempts"`
-	AttemptLog      []Attempt                    `json:"attemptLog"`
-	JobID           string                       `json:"jobId,omitempty"`
-	Error           *steps.StepError             `json:"error,omitempty"`
-	Metrics         map[string]float64           `json:"metrics,omitempty"`
-	Rev             int                          `json:"-"`
-	CreatedAt       time.Time                    `json:"-"`
-	UpdatedAt       time.Time                    `json:"-"`
-	StartedAt       *time.Time                   `json:"startedAt,omitempty"`
-	FinishedAt      *time.Time                   `json:"finishedAt,omitempty"`
+	// MountFingerprint is the fingerprint of the mount content the step reads, folded into InputHash
+	// (Engine.mountFingerprint); "" for a step that reads no mount.
+	MountFingerprint string             `json:"-"`
+	ReusedFrom       string             `json:"reusedFrom,omitempty"`
+	Attempts         int                `json:"attempts"`
+	AttemptLog       []Attempt          `json:"attemptLog"`
+	JobID            string             `json:"jobId,omitempty"`
+	Error            *steps.StepError   `json:"error,omitempty"`
+	Metrics          map[string]float64 `json:"metrics,omitempty"`
+	Rev              int                `json:"-"`
+	CreatedAt        time.Time          `json:"-"`
+	UpdatedAt        time.Time          `json:"-"`
+	StartedAt        *time.Time         `json:"startedAt,omitempty"`
+	FinishedAt       *time.Time         `json:"finishedAt,omitempty"`
 }
 
 // lastAttempt returns the current attempt's log entry (nil before the first).
@@ -210,11 +214,14 @@ func oneRun(rows pgx.Rows, err error, id string) (Run, error) {
 	return r, nil
 }
 
+// insertRun stores a new run; a run started by the replay of an approved command records that approval, which a
+// gpu-spend retry of the run may inherit (approvals.Inherit).
 func insertRun(ctx context.Context, tx pgx.Tx, r Run) (Run, error) {
 	rows, err := tx.Query(ctx, `INSERT INTO pipeline_runs (id, project_id, pipeline, source, ref, commit_sha, version, definition,
-		inputs, run_id, fresh, priority, actor) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULLIF($10, ''), $11, $12, $13)
+		inputs, run_id, fresh, priority, actor, approval_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULLIF($10, ''), $11, $12, $13, NULLIF($14, ''))
 		RETURNING `+runCols, r.ID, r.ProjectID, r.Pipeline, r.Source, r.Ref, r.Commit, r.Version, r.Definition, r.Inputs,
-		r.RunID, r.Fresh, r.Priority, r.Actor)
+		r.RunID, r.Fresh, r.Priority, r.Actor, commands.ReplayedApproval(ctx))
 	return oneRun(rows, err, r.ID)
 }
 
@@ -278,14 +285,14 @@ func ListRuns(ctx context.Context, q storage.Querier, f ListFilter) ([]Run, erro
 const stepCols = `id, pipeline_run_id, project_id, step, position, kind, kind_version, step_kind_version_id, state, params,
 	departures, wiring, inputs, produces, outputs, resources, secret_names, estimate_seconds, coalesce(input_hash, ''),
 	coalesce(reused_from, ''), attempts, attempt_log, coalesce(job_id, ''), error, metrics, rev, created_at, updated_at,
-	started_at, finished_at, auxiliaries`
+	started_at, finished_at, auxiliaries, coalesce(mount_fingerprint, '')`
 
 func scanStep(row pgx.CollectableRow) (StepRow, error) {
 	var s StepRow
 	err := row.Scan(&s.ID, &s.PipelineRunID, &s.ProjectID, &s.Step, &s.Position, &s.Kind, &s.KindVersion, &s.StepKindVersionID,
 		&s.State, &s.Params, &s.Departures, &s.Wiring, &s.Inputs, &s.Produces, &s.Outputs, &s.Resources, &s.SecretNames,
 		&s.EstimateSeconds, &s.InputHash, &s.ReusedFrom, &s.Attempts, &s.AttemptLog, &s.JobID, &s.Error, &s.Metrics, &s.Rev,
-		&s.CreatedAt, &s.UpdatedAt, &s.StartedAt, &s.FinishedAt, &s.Auxiliaries)
+		&s.CreatedAt, &s.UpdatedAt, &s.StartedAt, &s.FinishedAt, &s.Auxiliaries, &s.MountFingerprint)
 	if s.Params == nil {
 		s.Params = map[string]any{}
 	}
@@ -354,9 +361,10 @@ func insertStep(ctx context.Context, tx pgx.Tx, s StepRow) error {
 func saveStep(ctx context.Context, tx pgx.Tx, s StepRow) (StepRow, error) {
 	rows, err := tx.Query(ctx, `UPDATE pipeline_steps SET state = $2, inputs = $3, outputs = $4, input_hash = NULLIF($5, ''),
 		reused_from = NULLIF($6, ''), attempts = $7, attempt_log = $8, job_id = NULLIF($9, ''), error = $10, metrics = $11,
-		started_at = $12, finished_at = $13, rev = rev + 1, updated_at = now() WHERE id = $1 RETURNING `+stepCols,
+		started_at = $12, finished_at = $13, mount_fingerprint = NULLIF($14, ''), rev = rev + 1, updated_at = now()
+		WHERE id = $1 RETURNING `+stepCols,
 		s.ID, s.State, s.Inputs, s.Outputs, s.InputHash, s.ReusedFrom, s.Attempts, s.AttemptLog, s.JobID, s.Error, s.Metrics,
-		s.StartedAt, s.FinishedAt)
+		s.StartedAt, s.FinishedAt, s.MountFingerprint)
 	if err != nil {
 		return StepRow{}, fmt.Errorf("update pipeline step %s: %w", s.Step, err)
 	}

@@ -9,7 +9,7 @@ inputs: { model: checkpoint, data: dataset, normalizer: normalizer }
 steps:
   # target_lang "" prompts each clip with its own language from the dataset (he → he-IL); name a locale to force one.
   - id: transcribe
-    kind: nemotron_transcribe@3
+    kind: nemotron_transcribe@4
     in: { model: $inputs.model, data: $inputs.data }
     params: { profile: 80ms, target_lang: "" }
   - id: score

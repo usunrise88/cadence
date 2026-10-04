@@ -9588,6 +9588,7 @@ components:
         seq: { type: integer, description: "Per target, over partials and finals" }
         text: { type: string }
         audioEnd: { type: number, description: "Seconds of session audio the partial covers" }
+        space: { type: boolean, description: "As a final's: false when the partial continues the previous final's last word (an end of utterance inside a word) — join without a space; absent means true" }
     LiveFinal:
       type: object
       required: [type, target, segment, seq, text, words, endpoint, audioEnd, space]

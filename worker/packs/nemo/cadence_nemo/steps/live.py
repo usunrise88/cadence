@@ -4,7 +4,7 @@ interactive job.
 The control plane leases the job with up to three targets (lanes A, B, C), each a model input (``model.<n>``, a
 checkpoint, or ``base.<n>``, a base model fetched like ``checkpoint_from_base`` does), a latency profile, a language
 and an optional boost list (``boost.<n>``). The step loads every distinct model once — targets of one model share its
-weights, one pipeline per profile (:mod:`cadence_nemo.pipeline`, the decoder ``nemotron_transcribe@3`` evaluates
+weights, one pipeline per profile (:mod:`cadence_nemo.pipeline`, the decoder ``nemotron_transcribe@4`` evaluates
 with) — then dials the relay (``CADENCE_LIVE_URL`` with the lease's ``CADENCE_LIVE_TOKEN``) and speaks the live channel
 (:func:`cadence_worker.live.serve`) until the session ends. It writes nothing; the lease is released done. Help:
 docs/help/steps/nemotron-live.md.

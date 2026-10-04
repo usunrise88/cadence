@@ -199,6 +199,14 @@ Agents may do anything reversible on their own; anything that spends real GPU ti
 - ACP permission requests and Cadence approval requests share one Approvals panel and the same inline cards in Chat.
 - A policy engine answers requests the table already decides, so the user sees only real decisions.
 - Budgets per project and per session: GPU-hours per day, agent spend per day, turn count; hitting a limit pauses the session.
+- Retries inherit the run's approval (owner decision 2026-10-04): a `gpu-spend` command that continues a pipeline run
+  — `pipelineRuns.retry`, `jobs.resume`, `runs.resume` — and that the policy would send to a person runs under the
+  approval the run was started (or last continued) under, when that approval was decided the same UTC day and, if its
+  estimate was known, the GPU-hours the runs under it used on cards since plus the retry's estimate stay within the
+  approved GPU-hours (an unknown retry estimate against a known approval asks). An approval of an unknown estimate
+  covers every retry that day, a batch scale included. Any actor inherits, agents and people alike; the decision's
+  rule is `inherited-approval` and the audit row names the approval. Otherwise the retry asks as before, and an
+  approved retry becomes the run's approval (`pipeline_runs.approval_id`, migration 0044).
 - Secrets (Hugging Face, NGC) live in the control plane and are injected into jobs only; agent model credentials stay with each agent's own configuration in the agent-credentials volume — set from Settings → Agents they pass through the secret store's transit area to the agent host and are deleted there once written (2026-09-30).
 - The audit log records every command with actor and `causedBy`, so any production change traces back to a person's approval.
 - Approvals have a scope: project (runs over budget, deployments) or registry (mounts, golden-set freeze, model registration, secrets; from phase 4 auxiliary adoption, Hub export and annotation-batch freeze; `versions.archive` is the admin's own call, no approval). The Approvals panel shows both; registry ones are tagged, and only the admin decides them. A registry-scope approval (no project, or a rule marked `everyone`) is granted once: `grant: session` answers `validation-failed`, and a stored session grant never answers such a request (they share one path between requests of any body; audit F1, 2026-10-04).

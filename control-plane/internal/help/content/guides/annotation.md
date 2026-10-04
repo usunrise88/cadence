@@ -13,10 +13,13 @@ target the batch must meet before it freezes.
 
 1. **Guidelines** — `annotation/guidelines/default.md` is written into every project at bootstrap. Edit it (Recipe
    document) or add your own `annotation/guidelines/<name>.md`; a batch pins the commit it starts from (R27).
-2. **Ingest** — stereo calls on a mount through `pipelines/data-ingest` (`sdp_ingest`: each party its own channel, the
-   bot's channel labelled from its TTS script, voice activity per channel). For a golden set, ingest with
-   `eval_only: true` on the draft step, or freezing the golden set is refused for leakage.
-3. **Sample** — `batches.new` (Annotation batch panel, or an agent) with the draft dataset version as the frame: one
+2. **Ingest** — stereo calls on a mount through `pipelines/calls-ingest` (`sdp_ingest`: each party its own channel,
+   roles from the call's sidecar, the bot's channel labelled from its TTS script, voice activity per channel). It ends
+   at the `segments` artifact: the callers have no text yet, so a draft would refuse them. Calls that already have
+   transcripts can go through `pipelines/data-ingest` instead; for a golden set, ingest with `eval_only: true` on its
+   draft step, or freezing the golden set is refused for leakage.
+3. **Sample** — `batches.new` (Annotation batch panel, or an agent) with the frame: the calls-ingest run's segments
+   (`segments: b3:…`, the index step's output in `pipelineRuns.get`) or a draft dataset version (`dataset`). One
    role (the caller by default), stratified by campaign, month, duration and confidence, `doubleShare` of the items
    annotated twice. Dry run first.
 4. **Invite** (admin) — **Invite a reviewer** on the batch gives a link (shown once) that opens this batch only: its

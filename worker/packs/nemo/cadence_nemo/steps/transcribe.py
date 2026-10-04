@@ -9,7 +9,13 @@ together. The decoding config names the decoder (``"decoder": "nemo-pipeline-cac
 versions 1 and 2 (NeMo's cache-aware loop) never mix with these: their decoding hashes differ. Static phrase boosting
 (R24, capability ``boosting: nemo-phrase-boosting``) is the pipeline's per-stream boosting tree from the optional
 ``boost`` input (a ``boost_list`` artifact), with the list's weight or ``boost_weight``; the list's hash and weight
-enter the decoding config and so its hash. Help: docs/help/steps/nemotron-transcribe.md.
+enter the decoding config and so its hash.
+
+Version 4 (2026-10-04) writes the same words and finals; only the text of a partial that continues a word split by an
+end of utterance changes ("Daniel Lan", no longer "Dan iel Lan"). Version 3's partials put every later word one place
+off until the utterance's final, which made emission delay at 80 ms the length of the utterance (latency_score@3 on
+FLEURS sr: PR50 4.5 s); the new version changes the eval record key, so no version 3 record is reused.
+Help: docs/help/steps/nemotron-transcribe.md.
 """
 
 from __future__ import annotations
@@ -109,7 +115,7 @@ def read_clip(path: Path) -> np.ndarray[Any, np.dtype[np.float32]]:
 
 
 class TranscribeStep:
-    version: ClassVar[str] = "3"
+    version: ClassVar[str] = "4"
     consumes: ClassVar[Mapping[str, str]] = {"model": "checkpoint", "data": "dataset", "boost": "boost_list"}
     optional_inputs: ClassVar[frozenset[str]] = frozenset({"boost"})
     produces: ClassVar[Mapping[str, str]] = {"hypotheses": "hypotheses"}

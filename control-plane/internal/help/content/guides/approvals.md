@@ -47,6 +47,13 @@ nor a declared estimate) asks for approval: the budget fails closed. `pipelineRu
 too — a retry is weighed at the remaining GPU steps of its run, a resume at its step's estimate. Rules apply in order,
 first match wins; an agent command no rule matches is denied.
 
+A retry inherits the run's approval: `pipelineRuns.retry`, `jobs.resume` and `runs.resume` that would ask for a
+`gpu-spend` approval run without asking when the run was approved the same UTC day and — if the approved estimate was
+known — the GPU-hours used under that approval since plus the retry's estimate stay within it. An approval of an
+unknown estimate covers every retry of the run that day, a smaller batch scale included. The decision's rule is then
+`inherited-approval` and the audit entry names the approval. On another day, or past the approved hours, the retry
+asks again, and once approved it becomes the approval later retries inherit.
+
 An approval carries the stored request (method, path, query, headers without credentials or cookies, body), who
 sent it, the rule and reason, the estimate when there is one, and `expiresAt`: nobody deciding within **24 hours**
 denies it (R5; `decision.expired: true`).

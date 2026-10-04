@@ -57,6 +57,9 @@ queue and emission delay. Four places in chapter 14 stay `TBD` because only peop
 (media serves people only), the batch's inter-annotator WER and the comparison with the FLEURS references, and the
 calls' golden set with its eval. They fill in when batch `calls-synth-sr-1` is annotated.
 
+Chapter 14's emission-delay table was re-measured on 2026-10-04 with `nemotron_transcribe@4` (`evl_01a106de-8674…`)
+after the 80 ms decoder fix; the first measurement is kept as the chapter's "In the field" story.
+
 ## Part IV · Production (phase 5) — outline only until phase 5 ships
 
 | # | Chapter | Phase | Status |

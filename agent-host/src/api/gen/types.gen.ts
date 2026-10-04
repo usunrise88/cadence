@@ -7027,6 +7027,10 @@ export type LivePartial = {
      * Seconds of session audio the partial covers
      */
     audioEnd: number;
+    /**
+     * As a final's: false when the partial continues the previous final's last word (an end of utterance inside a word) — join without a space; absent means true
+     */
+    space?: boolean;
 };
 
 export type LiveFinal = {

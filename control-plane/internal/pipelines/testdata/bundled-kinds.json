@@ -81,32 +81,6 @@
  },
  {
   "consumes": {
-   "base": "base_model"
-  },
-  "help": "steps.checkpoint-from-base",
-  "name": "checkpoint_from_base",
-  "params": {
-   "description": "No parameters: the base model artifact pins repository, revision and file.",
-   "properties": {},
-   "title": "MaterializeParams",
-   "type": "object"
-  },
-  "produces": {
-   "checkpoint": "checkpoint"
-  },
-  "resources": {
-   "diskGb": 4,
-   "gpu": false,
-   "gpus": 0,
-   "jobKind": "eval",
-   "memoryGb": 1
-  },
-  "role": "materialize",
-  "runtime": "nemo-speech",
-  "version": "1"
- },
- {
-  "consumes": {
    "segments": "segments"
   },
   "help": "steps.dataset-freeze",
@@ -1613,13 +1587,13 @@
     },
     "stop_history_eou_ms": {
      "default": 800,
-     "description": "Trailing silence (in the decoder's emissions) after which NeMo's streaming pipeline closes a segment with an automatic end of utterance; live sessions and nemotron_transcribe@3 use the same value, so their words agree",
+     "description": "Trailing silence (in the decoder's emissions) after which NeMo's streaming pipeline closes a segment with an automatic end of utterance; live sessions and nemotron_transcribe use the same value, so their words agree",
      "title": "Stop History Eou Ms",
      "type": "integer",
      "x-cadence": {
       "default": 800,
       "defaultRef": "packs.nemo.live_stop_history_eou_ms",
-      "description": "Trailing silence (in the decoder's emissions) after which NeMo's streaming pipeline closes a segment with an automatic end of utterance; live sessions and nemotron_transcribe@3 use the same value, so their words agree",
+      "description": "Trailing silence (in the decoder's emissions) after which NeMo's streaming pipeline closes a segment with an automatic end of utterance; live sessions and nemotron_transcribe use the same value, so their words agree",
       "range": {
        "max": 10000,
        "min": 80
@@ -1656,7 +1630,7 @@
   },
   "role": "transcribe",
   "runtime": "nemo-speech",
-  "version": "3"
+  "version": "4"
  },
  {
   "consumes": {
@@ -2339,6 +2313,35 @@
       "source": "docs/review/2026-10-03-phase-4-plan.md decision 6 (at least two members)"
      }
     },
+    "min_members": {
+     "default": 2,
+     "description": "Fewest members the ensemble runs with — wired hypotheses inputs, and members that wrote a hypothesis for a segment (fewer is disputed as too-few-members); a one-member ensemble agrees with itself, so the step refuses",
+     "title": "Min Members",
+     "type": "integer",
+     "x-cadence": {
+      "default": 2,
+      "defaultRef": "pseudolabel.min_members",
+      "description": "Fewest members the ensemble runs with — wired hypotheses inputs, and members that wrote a hypothesis for a segment (fewer is disputed as too-few-members); a one-member ensemble agrees with itself, so the step refuses",
+      "range": {
+       "max": 10,
+       "min": 2
+      },
+      "source": "Owner decision 2026-10-04 (phase-4 gate: the default ensemble is Whisper + OASIS, so OASIS is required)"
+     }
+    },
+    "prefer_written_form": {
+     "default": true,
+     "description": "Pick the text of an agreeing member in written form (capitals or sentence punctuation, as Whisper writes) over one in spoken form (OASIS writes lowercase without punctuation), so a pseudo-label keeps the training style; before a member that is itself a vote and before the lowest mean WER",
+     "title": "Prefer Written Form",
+     "type": "boolean",
+     "x-cadence": {
+      "default": true,
+      "defaultRef": "pseudolabel.prefer_written_form",
+      "description": "Pick the text of an agreeing member in written form (capitals or sentence punctuation, as Whisper writes) over one in spoken form (OASIS writes lowercase without punctuation), so a pseudo-label keeps the training style; before a member that is itself a vote and before the lowest mean WER",
+      "range": "any",
+      "source": "Owner decision 2026-10-04 (phase-4 gate: with Whisper + OASIS the label keeps Whisper's cased, punctuated text)"
+     }
+    },
     "require_lid": {
      "default": true,
      "description": "Whether a segment with a known language needs a language identification verdict to keep its pseudo-label (without one it is disputed as lid-unknown)",
@@ -2366,7 +2369,7 @@
    "jobKind": "data",
    "memoryGb": 2
   },
-  "version": "1"
+  "version": "2"
  },
  {
   "consumes": {},

@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/usunrise88/cadence/control-plane/internal/problems"
@@ -23,6 +24,14 @@ type Reader interface {
 	Walk(ctx context.Context, prefix string, fn func(rel string, size int64) error) error
 	// Open opens one file.
 	Open(ctx context.Context, rel string) (io.ReadCloser, error)
+}
+
+// StampedReader is a Reader whose listing also answers a stamp per file that changes when the file does without
+// reading it: a path mount's modification time, an S3 object's ETag, a Hub file's blob id. Every reader Open returns
+// implements it; a step's mount fingerprint is built from it (Fingerprinter).
+type StampedReader interface {
+	Reader
+	WalkStamped(ctx context.Context, prefix string, fn func(rel string, size int64, stamp string) error) error
 }
 
 // ErrStop ends a walk early without an error (Walk returns nil).
@@ -86,6 +95,11 @@ func HubEndpoint() string {
 type pathReader struct{ root string }
 
 func (p pathReader) Walk(ctx context.Context, prefix string, fn func(string, int64) error) error {
+	return p.WalkStamped(ctx, prefix, func(rel string, size int64, _ string) error { return fn(rel, size) })
+}
+
+// WalkStamped implements StampedReader: a file's stamp is its modification time in nanoseconds.
+func (p pathReader) WalkStamped(ctx context.Context, prefix string, fn func(string, int64, string) error) error {
 	start := p.root
 	if prefix != "" {
 		if err := checkPath(prefix); err != nil {
@@ -114,7 +128,7 @@ func (p pathReader) Walk(ctx context.Context, prefix string, fn func(string, int
 		if err != nil {
 			return err
 		}
-		return fn(filepath.ToSlash(rel), info.Size())
+		return fn(filepath.ToSlash(rel), info.Size(), strconv.FormatInt(info.ModTime().UnixNano(), 10))
 	})
 	if errors.Is(err, ErrStop) {
 		return nil
