@@ -42,3 +42,13 @@ Crontab entry (`crontab -e`). The host runs in UTC. 04:30 is after the 03:00 bac
 
 Run it by hand with `scripts/nightly-gpu.sh`. To run the GPU tests only, set `NIGHTLY_SKIP_CONFORMANCE=1`; to leave
 out the omni image and its tests, `NIGHTLY_SKIP_OMNI=1`.
+
+## test-delivery.sh
+
+The shell test of the delivery script (phase 5, `make delivery-test`; needs Docker, no GPU). It writes a fixture
+promotion's bundle with a throwaway Ed25519 key (`go test ./internal/delivery`, `CADENCE_DELIVERY_BUNDLE_OUT`), runs
+shellcheck over the generated `deliver.sh`, then runs `control-plane/internal/delivery/testdata/deliver_test.sh`
+inside the staging server's image (`SERVER_IMAGE`, default the 26.07 Triton image; an identity-backend model loads on
+the CPU): no pin, another pin, an edited record, a replaced signature, changed or added model files and a failed smoke
+check must each stop the script without a receipt; then the delivery prints `CADENCE-RECEIPT` with the record's hash
+and manifest, and a second run finds the model installed. No key, pin or receipt from the stand is involved.

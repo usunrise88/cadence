@@ -129,6 +129,9 @@ var (
 	AnnotationAgreementLow = Type{"annotation-agreement-low", http.StatusConflict, "Inter-annotator agreement too low"}
 	BatchClosed            = Type{"batch-closed", http.StatusConflict, "Annotation batch closed"}
 	InvitationInvalid      = Type{"invitation-invalid", http.StatusUnauthorized, "Invitation invalid"}
+	// Promotion records and delivery (phase 5 · stream D3).
+	PromotionReceiptMismatch = Type{"promotion-receipt-mismatch", http.StatusUnprocessableEntity, "Promotion receipt mismatch"}
+	DeliveryLinkInvalid      = Type{"delivery-link-invalid", http.StatusForbidden, "Delivery bundle link invalid or expired"}
 )
 
 // Types lists every registered type.
@@ -153,6 +156,7 @@ func Types() []Type {
 		LicenceForbidsAdoption, LocaleMismatch, VersionInUse, StepKindDeprecated, NotAdopted,
 		ExportNotAllowed, BundleInvalid,
 		BatchIncomplete, AnnotationAgreementLow, BatchClosed, InvitationInvalid,
+		PromotionReceiptMismatch, DeliveryLinkInvalid,
 	}
 }
 

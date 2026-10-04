@@ -35,7 +35,7 @@ func (s *Server) authenticator() *auth.Authenticator {
 // screen links error types to their articles), a signed audio link (audio.get checks its signature) and a worker's live
 // dial with its lease's live token (workerLive.connect checks the token).
 func publicRequest(r *http.Request) bool {
-	if signedAudioRequest(r) || liveTokenRequest(r) {
+	if signedAudioRequest(r) || liveTokenRequest(r) || signedDeliveryRequest(r) {
 		return true
 	}
 	path := strings.TrimPrefix(r.URL.Path, APIPrefix)

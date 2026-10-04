@@ -1,4 +1,4 @@
-.PHONY: up down gen check-gen lint test test-integration ui-e2e evals conformance spikes-measure contrast e2e spikes web help-sync
+.PHONY: up down gen check-gen lint test test-integration ui-e2e evals conformance delivery-test spikes-measure contrast e2e spikes web help-sync
 
 up:            ## build all images with one version and start postgres, control plane, agent host
 	CADENCE_VERSION=$${CADENCE_VERSION:-$$(git describe --tags --always --dirty)} docker compose up -d --build
@@ -39,6 +39,9 @@ ui-e2e:        ## Playwright on sign-in and the shell against the real control p
 
 conformance:   ## framework-pack conformance suite for the CPU toy pack (R45); the NeMo pack runs it nightly in its image
 	cd worker && uv run python -m cadence_worker.conformance --runtime toy --report test-results/conformance-toy.json > /dev/null
+
+delivery-test: ## deliver.sh of a fixture promotion: shellcheck, then every refusal and the receipt against the staging server's image (Docker, CPU)
+	sh scripts/test-delivery.sh
 
 evals:         ## agent evals on fresh fixture projects (Postgres in Docker): scripted agent offline; CADENCE_LIVE_AGENTS=1 for real drivers
 	cd agent-host && npm run evals

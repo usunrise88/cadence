@@ -5,8 +5,23 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/usunrise88/cadence/control-plane/internal/auth"
 	"github.com/usunrise88/cadence/control-plane/internal/policy"
 )
+
+type approverKey struct{}
+
+// WithReplayApprover names the person deciding the approval a replay carries: the approve command's actor, before
+// approvals.Decide records it. Signed promotion records name their approver (02 "Promotion records").
+func WithReplayApprover(ctx context.Context, a auth.Actor) context.Context {
+	return context.WithValue(ctx, approverKey{}, a)
+}
+
+// ReplayApprover returns the approver set by WithReplayApprover.
+func ReplayApprover(ctx context.Context) (auth.Actor, bool) {
+	a, ok := ctx.Value(approverKey{}).(auth.Actor)
+	return a, ok
+}
 
 // HeaderToolCallID names the agent tool call behind a request; the MCP server sets it and the pipeline records it
 // as causedBy.toolCallId.

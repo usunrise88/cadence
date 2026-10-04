@@ -25,6 +25,7 @@ const minPasswordLen = 12
 const adminUsage = `usage: cadence admin reset-password [--user NAME] [--password PASSWORD] [--disable-totp]
        cadence admin host-token [--keep-others]
        cadence admin worker-token [--host NAME] [--keep-others]
+       cadence admin rotate-signing-key --reason TEXT
 
 Sets a user's password from the host shell and signs out all of that user's browser sessions. A lost admin
 password is reset this way, never by email (docs/spec/06-platform.md "Authentication and access").
@@ -39,7 +40,11 @@ CADENCE_HOST_TOKEN_FILE volume (another machine); every other host token is revo
 
 worker-token prints a new worker token (cwk_…) for the compute host --host (default staging), for a worker that does
 not share the control plane's CADENCE_WORKER_TOKEN_FILE volume; the host's other worker tokens are revoked unless
---keep-others.`
+--keep-others.
+
+rotate-signing-key replaces the instance's Ed25519 promotion key: every delivery target's chain gets a key-rotation
+record signed by the old key, and the new public key is printed. Production hosts refuse the new key's records until
+a person installs it as /etc/cadence/instance.pub. Run it in the control plane's container (it reads the master key).`
 
 // admin runs the hand-written admin subcommands (R34).
 func admin(ctx context.Context, args []string, getenv func(string) string, stdin io.Reader, stdout io.Writer) error {
@@ -49,9 +54,12 @@ func admin(ctx context.Context, args []string, getenv func(string) string, stdin
 	if len(args) > 0 && args[0] == "worker-token" {
 		return workerToken(ctx, args[1:], getenv, stdout)
 	}
+	if len(args) > 0 && args[0] == "rotate-signing-key" {
+		return rotateSigningKey(ctx, args[1:], getenv, stdout)
+	}
 	if len(args) == 0 || args[0] != "reset-password" {
 		_, _ = fmt.Fprintln(stdout, adminUsage)
-		return errors.New("unknown admin command; expected reset-password, host-token or worker-token")
+		return errors.New("unknown admin command; expected reset-password, host-token, worker-token or rotate-signing-key")
 	}
 	fs := flag.NewFlagSet("reset-password", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
