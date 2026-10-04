@@ -262,6 +262,29 @@ func TestAgentProfileNotesSyncAndBranches(t *testing.T) {
 	if !sync.UpToDate || sync.Branch != "" || len(sync.Changes) != 0 {
 		t.Fatalf("fresh sync %+v", sync)
 	}
+	// Annotation guidelines are the project's: a sync proposes the template's file only when the project lacks it
+	// (a project bootstrapped before phase 4), never over the project's own edit.
+	if _, err := e.repos.Repos().Commit(t.Context(), "demo", repos.Change{Message: "own guidelines",
+		Files: map[string][]byte{"annotation/guidelines/default.md": []byte("our rules\n")}}); err != nil {
+		t.Fatal(err)
+	}
+	e.ok(e.do("POST", "/api/projects/demo:sync?dryRun=true", "", "Idempotency-Key", e.key(), "If-Match", `"6"`), 200, &sync)
+	if !sync.UpToDate {
+		t.Fatalf("a sync rewrites the project's guidelines: %+v", sync)
+	}
+	if _, err := e.repos.Repos().Commit(t.Context(), "demo", repos.Change{Message: "no guidelines",
+		Delete: []string{"annotation/guidelines/default.md"}}); err != nil {
+		t.Fatal(err)
+	}
+	e.ok(e.do("POST", "/api/projects/demo:sync?dryRun=true", "", "Idempotency-Key", e.key(), "If-Match", `"6"`), 200, &sync)
+	if sync.UpToDate || len(sync.Changes) != 1 || sync.Changes[0].Path != "annotation/guidelines/default.md" || sync.Changes[0].Status != "added" {
+		t.Fatalf("a sync of a project without guidelines %+v", sync)
+	}
+	if _, err := e.repos.Repos().Commit(t.Context(), "demo", repos.Change{Message: "guidelines back",
+		Files: map[string][]byte{"annotation/guidelines/default.md": []byte("our rules\n")}}); err != nil {
+		t.Fatal(err)
+	}
+
 	// Someone edits a skill on main; a sync proposes restoring Cadence's version on a draft branch.
 	if _, err := e.repos.Repos().Commit(t.Context(), "demo", repos.Change{Message: "local skill edit",
 		Files: map[string][]byte{".claude/skills/cadence-data/SKILL.md": []byte("mine\n")}}); err != nil {

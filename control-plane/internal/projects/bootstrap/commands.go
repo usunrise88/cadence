@@ -480,6 +480,23 @@ func (s *Service) Sync(ctx context.Context, tx pgx.Tx, p projects.Project, actor
 	for path, b := range packs {
 		files[path] = b
 	}
+	// Annotation guidelines are the project's (a batch pins their commit): a sync adds the template's files a project
+	// bootstrapped before them lacks, and never rewrites one that exists.
+	if guides := rendered.Pick(layout.AnnotationDir + "/"); len(guides) > 0 {
+		_, tree, err := s.o.Repos.ListFiles(ctx, p.Slug, base, layout.AnnotationDir)
+		if err != nil {
+			return SyncResult{}, repoProblem(err)
+		}
+		have := map[string]bool{}
+		for _, f := range tree {
+			have[f.Path] = true
+		}
+		for path, b := range guides {
+			if !have[path] {
+				files[path] = b
+			}
+		}
+	}
 	changes, err := s.diffWith(ctx, p.Slug, base, files)
 	if err != nil {
 		return SyncResult{}, err
