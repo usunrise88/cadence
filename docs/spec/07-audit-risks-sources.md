@@ -815,15 +815,20 @@ owner may overrule):
       normalizer", but the code compares after a neutral fold. **Answered (audit F2):** the description follows the code
 - [ ] B · Try Cadence imports FLEURS from the HF Hub (`sdp_ingest` cannot read FLEURS `.tsv`); clearing a source must
       precede its ingest; export and parity steps of the playbook wait for phase 5
-- [ ] Gate (2026-10-04): a step that reads a mount is reused by its input hash even after the mount's files changed
+- [x] Gate (2026-10-04): a step that reads a mount is reused by its input hash even after the mount's files changed
       (the hash covers params and inputs, not mount content). **Now:** `fresh: true` re-runs it; should a mount
-      step's hash include the scan's inventory fingerprint, or should such steps never be reused?
-- [ ] Gate: every retry of a pipeline run whose GPU estimate is unknown asks for a new `gpu-spend` approval, even when
+      step's hash include the scan's inventory fingerprint, or should such steps never be reused? **Answered (owner,
+      2026-10-04):** a listing fingerprint of the files under each `mount://` URI in the step's params (path, size,
+      mtime / ETag / Hub blob id; exclude globs applied, the pattern not — sidecars are read too) is folded into the
+      input hash (02 "Storage and mounts"; migration 0044).
+- [x] Gate: every retry of a pipeline run whose GPU estimate is unknown asks for a new `gpu-spend` approval, even when
       the person just approved the run. **Now:** fail closed, one approval per retry; should a retry within the same
-      day inherit the run's approval?
-- [ ] Gate: replay golden sets in `nb-NO` need `languages: {"nb-NO": "no-NO"}` because the base model's tag is `no`.
+      day inherit the run's approval? **Answered (owner, 2026-10-04):** yes, on the same UTC day and within the
+      approved estimate when it was known (05 "Guardrails"; rule `inherited-approval`).
+- [x] Gate: replay golden sets in `nb-NO` need `languages: {"nb-NO": "no-NO"}` because the base model's tag is `no`.
       **Now:** set per eval; should `knowsLanguage` treat `nb`/`nn` as `no` (macrolanguage), or `gates.yaml` carry
-      the map?
+      the map? **Answered (owner, 2026-10-04):** every check against a base model's `locale:` tags folds macrolanguage
+      members (`internal/langtag`; 03 "Languages").
 - [x] Gate: `data-ingest` cannot draft untranscribed calls (the filter drops segments without text, the draft refuses
       them). **Now:** an annotation batch frames on the ingest's `segments` artifact; should a calls template stop at
       the segments? **Decided 2026-10-04 (owner):** yes — `pipelines/calls-ingest.yaml` (`sdp_ingest` alone, stereo

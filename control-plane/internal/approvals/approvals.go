@@ -197,11 +197,19 @@ type estimateRow struct {
 	RemainingGPUHours *float64 `json:"remainingGpuHours,omitempty"`
 }
 
+// storedEstimate is the estimate column: the view's fields and whether the estimate was unknown (a retry inherits an
+// approval of an unknown estimate differently from one of a known estimate, Inherit).
+type storedEstimate struct {
+	estimateRow
+	Unknown bool `json:"unknown,omitempty"`
+}
+
 func estimateJSON(e *policy.Estimate, remaining *float64) ([]byte, error) {
 	if e == nil {
 		return nil, nil
 	}
-	b, err := json.Marshal(estimateRow{GPUHours: e.GPUHours, RemainingGPUHours: remaining})
+	b, err := json.Marshal(storedEstimate{estimateRow: estimateRow{GPUHours: e.GPUHours, RemainingGPUHours: remaining},
+		Unknown: e.Unknown})
 	if err != nil {
 		return nil, fmt.Errorf("marshal estimate: %w", err)
 	}
@@ -228,11 +236,11 @@ func scan(row pgx.CollectableRow) (Approval, error) {
 		return Approval{}, err
 	}
 	if len(est) > 0 {
-		var e estimateRow
+		var e storedEstimate
 		if err := json.Unmarshal(est, &e); err != nil {
 			return Approval{}, fmt.Errorf("decode estimate: %w", err)
 		}
-		a.Estimate, a.Remaining = &policy.Estimate{GPUHours: e.GPUHours}, e.RemainingGPUHours
+		a.Estimate, a.Remaining = &policy.Estimate{GPUHours: e.GPUHours, Unknown: e.Unknown}, e.RemainingGPUHours
 	}
 	if status != nil {
 		a.Result = &Result{Status: *status, Body: body, CommandID: cmdID}

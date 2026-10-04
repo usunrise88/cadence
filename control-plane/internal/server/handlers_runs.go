@@ -266,6 +266,11 @@ func (s *Server) RunsResume(ctx context.Context, req api.RunsResumeRequestObject
 		return nil, err
 	}
 	ctx = commands.WithProject(ctx, projectID)
+	plr, err := runs.PipelineRunOf(ctx, s.Pool, req.Id)
+	if err != nil {
+		return nil, err
+	}
+	ctx = commands.WithContinuation(ctx, plr) // the run's approval may cover the resume (approvals.Inherit)
 	actor, _ := auth.FromContext(ctx)
 	weighed := true
 	if rp, err := s.runs.PlanResume(ctx, s.Pool, req.Id, actor.SessionID); err != nil {

@@ -272,11 +272,12 @@ func (s *Server) JobsPause(ctx context.Context, req api.JobsPauseRequestObject) 
 // JobsResume implements jobs.resume.
 func (s *Server) JobsResume(ctx context.Context, req api.JobsResumeRequestObject) (api.JobsResumeResponseObject, error) {
 	// Resuming puts the job back on a card: its GPU time is weighed against the budget like a new run's.
-	hours, unknown, err := workers.ResumeEstimate(ctx, s.Pool, req.Id)
+	hours, unknown, plr, err := workers.ResumeEstimate(ctx, s.Pool, req.Id)
 	if err != nil {
 		return nil, err
 	}
 	ctx = commands.WithEstimate(ctx, policy.Estimate{GPUHours: hours, Unknown: unknown})
+	ctx = commands.WithContinuation(ctx, plr) // the pipeline run's approval may cover the resume
 	return s.jobCommand(ctx, "jobs.resume", req.Id, req.Params.IfMatch, req.Params.IdempotencyKey, req.Params.DryRun,
 		func(ctx context.Context, tx pgx.Tx, rev int) (jobs.Job, []events.Draft, error) {
 			j, drafts, err := s.Workers.Resume(ctx, tx, req.Id, rev)

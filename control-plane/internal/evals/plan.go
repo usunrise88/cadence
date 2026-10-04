@@ -18,6 +18,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/defaults"
 	"github.com/usunrise88/cadence/control-plane/internal/goldensets"
 	"github.com/usunrise88/cadence/control-plane/internal/langpacks"
+	"github.com/usunrise88/cadence/control-plane/internal/langtag"
 	"github.com/usunrise88/cadence/control-plane/internal/pipelines"
 	"github.com/usunrise88/cadence/control-plane/internal/problems"
 	"github.com/usunrise88/cadence/control-plane/internal/projects"
@@ -562,7 +563,7 @@ func checkLanguages(sets []GoldenSet, models ...Model) error {
 		var list []string
 		for _, t := range m.base.Tags {
 			if code, ok := strings.CutPrefix(t, "locale:"); ok && code != "" {
-				if l := language(code); !known[l] {
+				if l := langtag.Macro(code); !known[l] {
 					known[l] = true
 					list = append(list, l)
 				}
@@ -574,7 +575,7 @@ func checkLanguages(sets []GoldenSet, models ...Model) error {
 		slices.Sort(list)
 		for _, gs := range sets {
 			l := gs.decodeLanguage()
-			if l == "" || known[language(l)] || seen[gs.VersionID+"|"+m.base.ID] {
+			if l == "" || known[langtag.Macro(l)] || seen[gs.VersionID+"|"+m.base.ID] {
 				continue
 			}
 			seen[gs.VersionID+"|"+m.base.ID] = true

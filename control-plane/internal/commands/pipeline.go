@@ -33,6 +33,10 @@ const (
 	HeaderPolicy = "Cadence-Policy"
 )
 
+// RuleInheritedApproval is the rule of a spending command that continues an approved pipeline run and inherits its
+// approval (approvals.Inherit); the audit row names that approval.
+const RuleInheritedApproval = "inherited-approval"
+
 // idempotencyLockClass is the first key of the two-key pg_advisory_xact_lock that serialises commands sharing an
 // actor and Idempotency-Key, so a concurrent repeat waits for the first and then replays it. Two-key advisory
 // locks do not collide with the single-key outbox and migration locks.
@@ -242,6 +246,12 @@ func (p *Pipeline) run(ctx context.Context, cmd Command, id string, fn Func, tr 
 	if err != nil {
 		return Response{}, outcomeOf(err), err
 	}
+	if rep != nil && !cmd.DryRun {
+		// An approved retry of a pipeline run: later retries inherit this approval.
+		if err := approvals.Continue(ctx, tx, ContinuationFromContext(ctx), rep.approvalID); err != nil {
+			return Response{}, problems.Internal.Slug, err
+		}
+	}
 	resp, err := render(res, id, cmd.DryRun)
 	if err != nil {
 		return Response{}, problems.Internal.Slug, err
@@ -277,8 +287,23 @@ func (p *Pipeline) decide(ctx context.Context, tx pgx.Tx, cmd Command, projectID
 		Actor: cmd.Actor, Scope: policy.ScopeFromContext(ctx), Operation: cmd.Operation, VerbClass: cmd.VerbClass,
 		ProjectID: projectID, Estimate: estimateFrom(ctx), PathParams: cmd.PathParams,
 	})
-	if err != nil || d.Outcome != policy.Approval || cmd.Actor.SessionID == "" {
+	if err != nil || d.Outcome != policy.Approval {
 		return d, "", err
+	}
+	// A spending command that continues an approved pipeline run (a retry, a resume) inherits the run's approval on
+	// the same UTC day while the spend stays within what the person approved (owner decision, 2026-10-04).
+	if run := ContinuationFromContext(ctx); run != "" && d.Class == policy.ClassSpend {
+		inh, ok, err := approvals.Inherit(ctx, tx, run, d.Rule, estimateFrom(ctx), time.Now())
+		if err != nil {
+			return policy.Decision{}, "", err
+		}
+		if ok {
+			return policy.Decision{Outcome: policy.Allow, Rule: RuleInheritedApproval, Class: d.Class, Preset: d.Preset,
+				Reason: inh.Reason, Estimate: d.Estimate, RemainingGPUHours: d.RemainingGPUHours}, inh.ApprovalID, nil
+		}
+	}
+	if cmd.Actor.SessionID == "" {
+		return d, "", nil
 	}
 	// A registry-scope approval (no project, or an `everyone` rule: mounts.new, an auxiliary adoption, a Hub push)
 	// is decided per request: an earlier session grant on the same path never answers it (audit M3).

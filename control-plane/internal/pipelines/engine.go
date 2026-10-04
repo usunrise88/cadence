@@ -73,6 +73,8 @@ type Options struct {
 	// nothing.
 	Prober auxiliary.Prober
 	Clock  func() time.Time // when step-kind deprecations close (deprecation.go); time.Now when nil
+	// Mounts fingerprints what a step reads from mounts into its input hash (SetMounts); nil leaves it out.
+	Mounts MountFingerprinter
 }
 
 // Engine runs pipelines.
@@ -149,6 +151,31 @@ func New(o Options) *Engine {
 
 // SetLeases replaces the worker protocol the step jobs wait on (main sets it once the worker protocol exists).
 func (e *Engine) SetLeases(l steps.Leases) { e.o.Leases = l }
+
+// MountFingerprinter answers the fingerprint of what a step with params reads from mounts ("" when it names none):
+// internal/mounts.Fingerprinter.
+type MountFingerprinter interface {
+	Fingerprint(ctx context.Context, q storage.Querier, params map[string]any) (string, error)
+}
+
+// SetMounts installs the mount fingerprinter (the server, once the mounts service exists); call it before the
+// engine runs pipelines. Without one, mount content is not in input hashes.
+func (e *Engine) SetMounts(f MountFingerprinter) { e.o.Mounts = f }
+
+// mountFingerprint is the fingerprint of the mount content step s reads, folded into its input hash. An export
+// step writes to its mount rather than reading it and is not fingerprinted. A listing that fails or exceeds the cap
+// answers a stamp unique to the step, so it is never reused (the step itself reports a mount it cannot read).
+func (e *Engine) mountFingerprint(ctx context.Context, q storage.Querier, s StepRow) string {
+	if e.o.Mounts == nil || s.Resources.JobKind == steps.JobExport {
+		return ""
+	}
+	fp, err := e.o.Mounts.Fingerprint(ctx, q, s.Params)
+	if err != nil {
+		e.o.Log.WarnContext(ctx, "pipeline step not fingerprinted: it will not be reused", "step", s.ID, "err", err)
+		return "unlisted:" + s.ID
+	}
+	return fp
+}
 
 // SetProber replaces the check of auxiliary services (tests); call it before the engine plans runs.
 func (e *Engine) SetProber(p auxiliary.Prober) { e.o.Prober = p }
@@ -514,6 +541,7 @@ func (e *Engine) advance(ctx context.Context, tx pgx.Tx, r *Run, sts []StepRow) 
 			if err != nil {
 				return nil, err
 			}
+			s.MountFingerprint = e.mountFingerprint(ctx, tx, *s)
 			if s.InputHash, err = InputHash(s.Kind, s.KindVersion, runtime, hashParams(*s), inputs); err != nil {
 				return nil, err
 			}

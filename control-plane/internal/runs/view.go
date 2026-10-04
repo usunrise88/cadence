@@ -173,6 +173,12 @@ func ProjectOf(ctx context.Context, q storage.Querier, id string) (string, error
 	return x.ProjectID, err
 }
 
+// PipelineRunOf returns the pipeline run of run id (the one runs.resume continues).
+func PipelineRunOf(ctx context.Context, q storage.Querier, id string) (string, error) {
+	x, err := getRow(ctx, q, id)
+	return x.PipelineRunID, err
+}
+
 // List returns runs of a project, newest first.
 func (s *Service) List(ctx context.Context, q storage.Querier, f ListFilter) ([]View, error) {
 	rows, err := listRows(ctx, q, f)

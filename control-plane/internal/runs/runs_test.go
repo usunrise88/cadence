@@ -227,6 +227,8 @@ func TestCheckLanguages(t *testing.T) {
 		{"an override the model does not know", tags, map[string]any{"target_lang": "sr-RS"}, []string{"sr-RS"}, "sr-RS is not a language base knows"},
 		{"a kind without a language parameter", tags, map[string]any{}, []string{"sr-RS"}, "set the train step's language parameter"},
 		{"a base model without locale tags", []string{"family:x"}, map[string]any{}, []string{"sr-RS"}, ""},
+		{"Bokmål data on a Norwegian model", []string{"locale:no"}, map[string]any{"target_lang": ""}, []string{"nb-NO"}, ""},
+		{"a Bokmål override on a Norwegian model", []string{"locale:no"}, map[string]any{"target_lang": "nb-NO"}, []string{"nb-NO"}, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
