@@ -163,6 +163,10 @@ def member_line(x: Mapping[str, Any]) -> dict[str, Any]:
         line["speaker"] = str(x["speaker"])
     if isinstance(x.get("confidence"), int | float):
         line["confidence"] = float(x["confidence"])
+    # An annotation batch's rows carry entity spans (names, addresses) entity_score reads from the reference.
+    ents = [e for e in x.get("entities") or [] if isinstance(e, Mapping) and isinstance(e.get("class"), str)]
+    if ents:
+        line["entities"] = [dict(e) for e in ents]
     return line
 
 

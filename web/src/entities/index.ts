@@ -7,6 +7,7 @@ import { projectEntity } from "./project";
 import { recipeEntity } from "./recipe";
 import { goldenSetEntity, languagePackEntity, modelEntity } from "./registry-eval";
 import { runEntity } from "./run";
+import { annotationBatchEntity } from "./annotation";
 
 // Entity manifests, one per kind that has operations. Kinds join as their phase implements them.
 export function registerEntities(): void {
@@ -23,4 +24,6 @@ export function registerEntities(): void {
   // Phase 4: data.
   entities.register(datasetVersionEntity);
   entities.register(sourceEntity);
+  // Phase 4: annotation.
+  entities.register(annotationBatchEntity);
 }

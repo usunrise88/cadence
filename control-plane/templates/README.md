@@ -27,6 +27,9 @@ The project wizard renders these into a new project repository (the `projects.bo
   (an unedited file is updated, an edited or deleted one is left alone, a missing pack is offered whole). Each pack
   registers as `template/langpack-<locale>` (lower case). `internal/langpacks` tests that every pack checks out and
   that `sr`'s scheme equals the worker's `sr-Cyrl-Latn`.
+- `annotation/guidelines/<name>.md` — annotation guidelines (R27, phase 4), copied verbatim to the project's
+  `annotation/guidelines/`; `batches.new` pins the commit of the file it names (`default` unless told), and the golden
+  set a batch freezes into cites it. Registers as `template/annotation-guidelines`.
 - `presets/<name>.yaml` — permission presets (R7), embedded in the binary and read by the policy engine
   (`internal/policy`) on every command: `guardrails-default` (the Guardrails table) and `read-only` ("Explain
   this" sessions).

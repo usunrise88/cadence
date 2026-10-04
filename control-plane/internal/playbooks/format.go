@@ -63,8 +63,8 @@ var Spending = map[string]bool{
 }
 
 // Pending are operations a chain may name before the contract carries them (a parallel stream builds them);
-// Validate accepts them as known. Phase 4: annotation batches (stream A) build alongside the playbooks.
-var Pending = []string{"batches.new"}
+// Validate accepts them as known. Empty while every named operation is in the contract.
+var Pending = []string{}
 
 // Known answers whether op is an implemented operation of the contract (the generated operation table, exempt tags
 // aside) or one of Pending.

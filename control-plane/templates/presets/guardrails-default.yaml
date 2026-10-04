@@ -75,6 +75,19 @@ tools:
     params: { kind: auxiliary }
     reason: an auxiliary model's outputs become training text; the admin checks its licence before any project uses it
 
+  # Annotation (phase 4 · stream A): a human transcript is a person's. Agents sample and watch batches (batches.new,
+  # batches.get) but never annotate, adjudicate, resolve a disputed pseudo-label or invite a reviewer; freezing a batch
+  # registers a golden set or training data, so it is an approval for everyone, like goldenSets.freeze.
+  - id: annotation-is-for-people
+    class: forbidden
+    operations: [annotations.new, batchItems.accept, triage.accept, triage.correct, triage.reject, "invitations.*"]
+    reason: transcripts written as human are a person's, and reviewers are invited by the admin
+  - id: annotation-batch-freeze
+    class: gated
+    everyone: true
+    operations: [batches.freeze]
+    reason: a frozen batch becomes a golden set every project's gate compares against, or training data; the admin decides
+
   # A golden set decides what every project's gate compares against: freezing one is a registry-scope approval the
   # admin decides, for people too (05 "Approvals have a scope"; phase-3 plan stream G).
   - id: golden-set-freeze

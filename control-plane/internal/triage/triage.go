@@ -23,6 +23,7 @@ import (
 
 	"github.com/usunrise88/cadence/control-plane/internal/cas"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
+	"github.com/usunrise88/cadence/control-plane/internal/problems"
 	"github.com/usunrise88/cadence/control-plane/internal/steps"
 	"github.com/usunrise88/cadence/control-plane/internal/storage"
 )
@@ -95,7 +96,9 @@ type Item struct {
 	LID           *LID        `json:"lid,omitempty"`
 	Confidence    float64     `json:"confidence"`
 	Rev           int         `json:"rev"`
-	CreatedAt     time.Time   `json:"createdAt"`
+	// Resolution is how a person resolved the item (triage.accept|correct|reject, phase 4 · stream A).
+	Resolution json.RawMessage `json:"resolution,omitempty"`
+	CreatedAt  time.Time       `json:"createdAt"`
 }
 
 // row is a disputed segments row as the ensemble writes it: the segment's fields plus its dispute.
@@ -229,29 +232,49 @@ type Filter struct {
 	Limit         int // 100 when zero
 }
 
+const itemCols = `id, project_id, state, reason, pipeline_run_id, step_id, segments_hash, segment, candidates, best, lid,
+	confidence, rev, created_at, resolution`
+
+func scanItem(r pgx.CollectableRow) (Item, error) {
+	var it Item
+	err := r.Scan(&it.ID, &it.ProjectID, &it.State, &it.Reason, &it.PipelineRunID, &it.StepID, &it.SegmentsHash,
+		&it.Segment, &it.Candidates, &it.Best, &it.LID, &it.Confidence, &it.Rev, &it.CreatedAt, &it.Resolution)
+	if it.Candidates == nil {
+		it.Candidates = []Candidate{}
+	}
+	return it, err
+}
+
 // List returns the project's triage items, newest first.
 func List(ctx context.Context, q storage.Querier, projectID string, f Filter) ([]Item, error) {
 	if f.Limit <= 0 {
 		f.Limit = 100
 	}
-	rows, err := q.Query(ctx, `SELECT id, project_id, state, reason, pipeline_run_id, step_id, segments_hash, segment,
-		candidates, best, lid, confidence, rev, created_at FROM triage_items
+	rows, err := q.Query(ctx, `SELECT `+itemCols+` FROM triage_items
 		WHERE project_id = $1 AND ($2 = '' OR state = $2) AND ($3 = '' OR reason = $3) AND ($4 = '' OR pipeline_run_id = $4)
 		ORDER BY created_at DESC, id DESC LIMIT $5`, projectID, f.State, f.Reason, f.PipelineRunID, f.Limit)
 	if err != nil {
 		return nil, fmt.Errorf("query triage items: %w", err)
 	}
-	out, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (Item, error) {
-		var it Item
-		err := r.Scan(&it.ID, &it.ProjectID, &it.State, &it.Reason, &it.PipelineRunID, &it.StepID, &it.SegmentsHash,
-			&it.Segment, &it.Candidates, &it.Best, &it.LID, &it.Confidence, &it.Rev, &it.CreatedAt)
-		if it.Candidates == nil {
-			it.Candidates = []Candidate{}
-		}
-		return it, err
-	})
+	out, err := pgx.CollectRows(rows, scanItem)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return nil, fmt.Errorf("read triage items: %w", err)
 	}
 	return out, nil
+}
+
+// Get returns triage item id (phase 4 · stream A: the resolutions).
+func Get(ctx context.Context, q storage.Querier, id string) (Item, error) {
+	rows, err := q.Query(ctx, `SELECT `+itemCols+` FROM triage_items WHERE id = $1`, id)
+	if err != nil {
+		return Item{}, fmt.Errorf("query triage item %s: %w", id, err)
+	}
+	it, err := pgx.CollectExactlyOneRow(rows, scanItem)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Item{}, problems.NotFound.New("no triage item %q", id)
+	}
+	if err != nil {
+		return Item{}, fmt.Errorf("read triage item %s: %w", id, err)
+	}
+	return it, nil
 }

@@ -16,16 +16,19 @@ import { decodeWav } from "./wav";
 
 const API = "/api";
 
-/** A short-lived signed link to the utterance's audio (audio.sign). Refetch it when the media element fails. */
-export function useAudioLink(utterance: string | undefined) {
+/**
+ * A short-lived signed link to the utterance's audio (audio.sign), every channel or one (a call's caller or bot).
+ * Refetch it when the media element fails.
+ */
+export function useAudioLink(utterance: string | undefined, channel?: number) {
   return useQuery<AudioLink>({
-    queryKey: ["media", "audio.sign", utterance],
+    queryKey: ["media", "audio.sign", utterance, channel ?? "all"],
     enabled: !!utterance,
     // The link lives media.signed_link_ttl_s; a new one is minted only when the element fails or the view reopens.
     staleTime: Infinity,
     gcTime: 0,
     retry: false,
-    queryFn: async () => (await audioSign({ path: { id: utterance! }, body: {}, throwOnError: true })).data,
+    queryFn: async () => (await audioSign({ path: { id: utterance! }, body: channel === undefined ? {} : { channel }, throwOnError: true })).data,
   });
 }
 

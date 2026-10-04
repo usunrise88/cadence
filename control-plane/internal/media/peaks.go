@@ -108,6 +108,20 @@ func quant(v float32) int8 {
 	return int8(math.Round(float64(max(-1, min(1, v))) * 127))
 }
 
+// Channel returns the peaks of one channel (c in range; clipped frames kept as they are).
+func (p Peaks) Channel(c int) Peaks {
+	if c < 0 || c >= p.Channels {
+		return p
+	}
+	n := p.Frames()
+	out := Peaks{Channels: 1, HopS: p.HopS, Data: make([]int8, 2*n), Clipped: p.Clipped}
+	for f := range n {
+		o := (f*p.Channels + c) * 2
+		out.Data[2*f], out.Data[2*f+1] = p.Data[o], p.Data[o+1]
+	}
+	return out
+}
+
 // Span returns the pairs from first to first+count (clamped), pooled by factor: each output pair is the min of the
 // mins and the max of the maxes of factor input pairs. Clipped frames are re-indexed to the output.
 func (p Peaks) Span(first, count, factor int) Peaks {

@@ -44,6 +44,7 @@ tags:
   - { name: evals, description: "The eval matrix against the baseline, eval records, the project's gate and model registration (R20–R24)" }
   - { name: media, description: "Audio for people: an utterance's audio, peaks, spectrogram tiles and words, live transcription (R25, R47); exempt from the vocabulary and never MCP tools; agents are refused" }
   - { name: storage, description: "Mounts (local, NFS/SMB, S3-compatible, Hub), the local cache with pinning, eviction and quotas, dataset materialisation" }
+  - { name: annotation, description: "Annotation batches (sampling, double annotation, adjudication, freeze), reviewer invitations and the triage queue's resolutions" }
   - { name: planned, description: Named now, implemented in a later phase (501 until then) }
 
 paths:
@@ -4338,6 +4339,320 @@ paths:
         "202": { $ref: "#/components/responses/ApprovalAccepted" }
         default: { $ref: "#/components/responses/Problem" }
 
+  # ---------------------------------------------------------------- annotation batches, triage, long audio (phase 4 · stream A) — add paths below this line
+  /projects/{p}/batches:
+    x-cadence: { entity: batches, kind: annotation_batch }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    get:
+      operationId: batches.list
+      summary: List the project's annotation batches, newest first, with progress and agreement
+      tags: [annotation]
+      parameters:
+        - { name: state, in: query, required: false, schema: { $ref: "#/components/schemas/BatchState" } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+      responses:
+        "200":
+          description: Batches, newest first
+          content: { application/json: { schema: { $ref: "#/components/schemas/BatchList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+    post:
+      operationId: batches.new
+      summary: Sample an annotation batch from a dataset version's segments (stratified, the caller's channel by default)
+      tags: [annotation]
+      x-cadence:
+        toolDescription: >
+          Open an annotation batch: a fixed sample of segments people transcribe by hand, to freeze as a golden set
+          (purpose golden-set: double annotation and adjudication) or as training data (purpose training: single
+          annotation). The frame is a dataset version (ver_… or dataset/<name>, usually a draft from
+          pipelines/data-ingest) or a segments artifact (b3:…); the sample takes segments of one role (caller by
+          default: the bot's channel labels itself), stratified by campaign, month, duration bucket and confidence
+          (proportional, at least one per stratum, reproducible with seed). guidelines names
+          annotation/guidelines/<name>.md in the project repository; the batch pins its commit. doubleShare of the
+          items (default 10 %) get a second, blind annotation; flagged items get one too. Always dryRun first: the
+          answer shows the strata and the sample without writing. People annotate in the Triage panel (Annotate
+          mode); the admin invites reviewers; watch batches.get; freeze with batches.freeze (approval).
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/BatchNew" } } }
+      responses:
+        "200":
+          description: Dry run — the batch as it would be (strata and sample); nothing was written
+          content: { application/json: { schema: { $ref: "#/components/schemas/Batch" } } }
+        "201":
+          description: The batch
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Batch" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /batches/{id}:
+    x-cadence: { entity: batches, kind: annotation_batch }
+    parameters: [{ $ref: "#/components/parameters/BatchId" }]
+    get:
+      operationId: batches.get
+      summary: Get an annotation batch — progress, inter-annotator agreement, the adjudication queue, reviewers and whether it can freeze
+      tags: [annotation]
+      x-cadence:
+        toolDescription: >
+          The state of an annotation batch: progress (pending, agreed, disputed, adjudicated, excluded items; double
+          annotations done), agreement (inter-annotator WER over the double-annotated items against
+          annotation.max_iaa_wer), the adjudication queue, the strata of the sample, the end-of-utterance gaps measured
+          from per-channel voice activity, reviewers, the guidelines commit, and canFreeze with the reasons it cannot
+          freeze yet. Annotated text is not returned here (batchItems.list has it).
+      responses:
+        "200":
+          description: The batch
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Batch" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /batches/{id}:freeze:
+    x-cadence: { entity: batches, kind: annotation_batch }
+    parameters: [{ $ref: "#/components/parameters/BatchId" }]
+    post:
+      operationId: batches.freeze
+      summary: Freeze a finished batch into a golden set (via goldenSets.freeze) or a training dataset version — an approval
+      tags: [annotation]
+      x-cadence:
+        toolDescription: >
+          Freeze a batch whose items are all resolved: the accepted items become a draft dataset version (human
+          transcripts, entity spans, the target channel cut from the mount) that is cut into the content store, then —
+          purpose golden-set — frozen as golden-set/<goldenSet> through goldenSets.freeze, its card citing the
+          guidelines commit and the inter-annotator WER. A golden-set batch needs its inter-annotator WER at or under
+          annotation.max_iaa_wer (annotation-agreement-low otherwise); every item must be agreed, adjudicated or
+          excluded (batch-incomplete). Always an approval the admin decides (202 approvalId). dryRun answers what
+          would freeze. Reviewers lose access when the batch freezes.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      responses:
+        "200":
+          description: Dry run — what would freeze; or the approved freeze, started (pipelineRunId)
+          content: { application/json: { schema: { $ref: "#/components/schemas/BatchFreeze" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /batches/{id}/batch-items:
+    x-cadence: { entity: batchItems, kind: annotation_item }
+    parameters: [{ $ref: "#/components/parameters/BatchId" }]
+    get:
+      operationId: batchItems.list
+      summary: The items of a batch — the caller's annotation queue (mine), the adjudication queue, or all
+      tags: [annotation]
+      description: >
+        queue=mine lists what the caller may annotate next (blind: another annotator's text is never shown), then what
+        the caller already annotated; queue=adjudication the disputed items (admin or an adjudicator); queue=all every
+        item (not for reviewers). A reviewer sees only their own annotations.
+      parameters:
+        - { name: queue, in: query, required: false, schema: { type: string, enum: [mine, adjudication, all], default: mine } }
+        - { name: state, in: query, required: false, schema: { $ref: "#/components/schemas/BatchItemState" } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 1000, default: 200 } }
+      responses:
+        "200":
+          description: Items in batch order
+          content: { application/json: { schema: { $ref: "#/components/schemas/BatchItemList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /batches/{id}/batch-items/{item}:
+    x-cadence: { entity: batchItems, kind: annotation_item }
+    parameters: [{ $ref: "#/components/parameters/BatchId" }, { $ref: "#/components/parameters/BatchItemId" }]
+    get:
+      operationId: batchItems.get
+      summary: One batch item — its segment, audio window, the bot's script around it, the prefill and the annotations the caller may see
+      tags: [annotation]
+      responses:
+        "200":
+          description: The item
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/BatchItem" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /batches/{id}/batch-items/{item}:accept:
+    x-cadence: { entity: batchItems, kind: annotation_item }
+    parameters: [{ $ref: "#/components/parameters/BatchId" }, { $ref: "#/components/parameters/BatchItemId" }]
+    post:
+      operationId: batchItems.accept
+      summary: Adjudicate an item — set its final transcript, tags and entity spans, or exclude it (admin or an adjudicator)
+      tags: [annotation]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/BatchItemAccept" } } }
+      responses:
+        "200":
+          description: The adjudicated item
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/BatchItem" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /batches/{id}/batch-items/{item}/annotations:
+    x-cadence: { entity: annotations, kind: annotation }
+    parameters: [{ $ref: "#/components/parameters/BatchId" }, { $ref: "#/components/parameters/BatchItemId" }]
+    post:
+      operationId: annotations.new
+      summary: Submit the caller's annotation of an item — done, skipped or flagged, with text, tags and entity spans
+      tags: [annotation]
+      description: >
+        A person's own annotation (agents and API keys are refused). Submitting again replaces the caller's annotation
+        until the item is adjudicated or the batch freezes. The second annotation of a double item comes from another
+        person.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/AnnotationNew" } } }
+      responses:
+        "200":
+          description: Dry run — the item as it would be
+          content: { application/json: { schema: { $ref: "#/components/schemas/BatchItem" } } }
+        "201":
+          description: The item with the caller's annotation
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/BatchItem" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /batches/{id}/invitations:
+    x-cadence: { entity: invitations, kind: invitation }
+    parameters: [{ $ref: "#/components/parameters/BatchId" }]
+    get:
+      operationId: invitations.list
+      summary: The reviewers invited to a batch (admin)
+      tags: [annotation]
+      responses:
+        "200":
+          description: Invitations, newest first (revoked and expired ones included)
+          content: { application/json: { schema: { $ref: "#/components/schemas/InvitationList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+    post:
+      operationId: invitations.new
+      summary: Invite a reviewer to a batch — a link that opens this batch's items only, play without download (admin)
+      tags: [annotation]
+      description: >
+        Creates the reviewer (a person with no password) when the name is new, and an invitation link (shown once).
+        The link signs the reviewer in to this batch only: its items and their audio through signed links (no
+        download), nothing else. It expires at expiresAt (at most annotation.invitation_max_days, never after the
+        batch's due date) and when the batch freezes. Revoke it with credentials.revoke.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/InvitationNew" } } }
+      responses:
+        "200":
+          description: Dry run — the invitation as it would be, without a link
+          content: { application/json: { schema: { $ref: "#/components/schemas/Invitation" } } }
+        "201":
+          description: The invitation with its link (shown once)
+          content: { application/json: { schema: { $ref: "#/components/schemas/InvitationCreated" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /auth:accept:
+    x-cadence: { entity: auth, singleton: true }
+    post:
+      operationId: auth.accept
+      summary: Open a reviewer invitation — sign in to the one batch the link names (no password)
+      tags: [auth]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/AuthAccept" } } }
+      responses:
+        "200":
+          description: Signed in as the reviewer; the session reaches only the invitation's batch
+          headers: { Set-Cookie: { $ref: "#/components/headers/SessionCookie" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/AuthStatus" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /triage/{id}:accept:
+    x-cadence: { entity: triage, kind: triage_item }
+    parameters: [{ $ref: "#/components/parameters/TriageItemId" }]
+    post:
+      operationId: triage.accept
+      summary: Resolve a triage item by accepting its best candidate as the segment's human transcript
+      tags: [annotation]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: false
+        content: { application/json: { schema: { $ref: "#/components/schemas/TriageAccept" } } }
+      responses:
+        "200":
+          description: The resolved item
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/TriageItem" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /triage/{id}:correct:
+    x-cadence: { entity: triage, kind: triage_item }
+    parameters: [{ $ref: "#/components/parameters/TriageItemId" }]
+    post:
+      operationId: triage.correct
+      summary: Resolve a triage item with a person's own transcript of the segment
+      tags: [annotation]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/TriageCorrect" } } }
+      responses:
+        "200":
+          description: The resolved item
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/TriageItem" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /triage/{id}:reject:
+    x-cadence: { entity: triage, kind: triage_item }
+    parameters: [{ $ref: "#/components/parameters/TriageItemId" }]
+    post:
+      operationId: triage.reject
+      summary: Resolve a triage item by dropping the segment (no transcript is written)
+      tags: [annotation]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: false
+        content: { application/json: { schema: { $ref: "#/components/schemas/TriageReject" } } }
+      responses:
+        "200":
+          description: The resolved item
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/TriageItem" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/utterances/{id}/tracks:
+    x-cadence: { entity: tracks, kind: utterance_tracks, singleton: true }
+    parameters: [{ $ref: "#/components/parameters/UtteranceRef" }]
+    get:
+      operationId: tracks.get
+      summary: Level, voice activity and estimated bandwidth per channel of an utterance's audio, for the audio view's tracks
+      tags: [media]
+      description: >
+        Level in dBFS per hop and channel, speech regions from an energy voice activity detector (the channel's noise
+        floor plus annotation.vad_margin_db), the estimated bandwidth (the highest frequency whose band keeps energy
+        within annotation.bandwidth_floor_db of the loudest band; audio of 8 kHz origin shows ≤ 4 kHz) and, when the
+        audio has a caller and a bot channel, the end-of-utterance gap (the caller's last speech end to the bot's next
+        speech start).
+      parameters:
+        - { name: hopMs, in: query, description: "Resolution: milliseconds per level value, a multiple of 10", schema: { type: integer, minimum: 10, maximum: 60000, default: 10 } }
+      responses:
+        "200":
+          description: The tracks
+          content: { application/json: { schema: { $ref: "#/components/schemas/AudioTracks" } } }
+        default: { $ref: "#/components/responses/Problem" }
   # ---------------------------------------------------------------- planned (later phases)
 
 components:
@@ -4411,7 +4726,25 @@ components:
       name: id
       in: path
       required: true
-      description: "Utterance id (utt_…) or the audio's content hash (b3:…)"
+      description: "Utterance id (utt_…) or the audio's content hash (b3:…); an annotation batch item (bit_…) or a triage item (tri_…) names its segment's window of the source file, every channel (phase 4)"
+      schema: { type: string, maxLength: 100 }
+    BatchId:
+      name: id
+      in: path
+      required: true
+      description: Annotation batch id (anb_…)
+      schema: { type: string, maxLength: 100 }
+    BatchItemId:
+      name: item
+      in: path
+      required: true
+      description: Batch item id (bit_…)
+      schema: { type: string, maxLength: 100 }
+    TriageItemId:
+      name: id
+      in: path
+      required: true
+      description: Triage item id (tri_…)
       schema: { type: string, maxLength: 100 }
     ArtifactHash:
       name: hash
@@ -4722,6 +5055,7 @@ components:
         setupRequired: { type: boolean, description: "First start: no admin password is set yet; auth.setup sets it" }
         actor: { $ref: "#/components/schemas/Actor" }
         totpEnabled: { type: boolean, description: The signed-in user signs in with a TOTP code }
+        reviewer: { $ref: "#/components/schemas/ReviewerScope" }
     Username:
       type: string
       pattern: "^[a-z][a-z0-9._-]{1,31}$"
@@ -4955,7 +5289,7 @@ components:
 
     TemplateKind:
       type: string
-      enum: [instructions, preset, skill, pipeline, agent-config, playbook, langpack]
+      enum: [instructions, preset, skill, pipeline, agent-config, playbook, langpack, annotation]
     TemplateFile:
       type: object
       required: [path, sha256, bytes]
@@ -5218,6 +5552,7 @@ components:
           additionalProperties: { $ref: "#/components/schemas/DefaultSection" }
         sweeps: { $ref: "#/components/schemas/DefaultSection", description: "Sweeps (phase 3): mode, run counts, the GPU-hour cap and the seed of a random draw" }
         transcriptions: { $ref: "#/components/schemas/DefaultSection", description: "Manual transcription tests and the live channel (phase 3): ticket, session and idle limits, frame size, file caps, the relay's queue and the interactive job's priority" }
+        annotation: { $ref: "#/components/schemas/DefaultSection", description: "Annotation batches (phase 4): sample size, double share, agreement target, invitations, strata and the audio tracks' detector" }
         pseudolabel: { $ref: "#/components/schemas/DefaultSection", description: "Pseudo-labels (phase 4): when the members of a pseudo-label ensemble agree on a segment's text (pairwise WER, agreeing members, language identification)" }
         playbooks: { $ref: "#/components/schemas/DefaultSection", description: "Playbooks (phase 4 · stream B): the values playbook inputs default to (Try Cadence's hours of FLEURS and training steps)" }
         estimates:
@@ -8192,6 +8527,17 @@ components:
         fingerprint: { type: string, description: The dataset version's content fingerprint }
         groups: { type: string, enum: [call, speaker, utterance], description: "The bootstrap's resampling unit (R54): whole calls, else speakers, else utterances" }
         approvalId: { type: string }
+        annotation:
+          type: object
+          description: "A golden set frozen from an annotation batch (batches.freeze, R27): the guidelines commit and the agreement it was annotated with"
+          required: [batchId, guidelines, items]
+          properties:
+            batchId: { type: string }
+            guidelines: { $ref: "#/components/schemas/BatchGuidelines" }
+            iaaWer: { type: number, description: Inter-annotator WER over the double-annotated items }
+            pairs: { type: integer }
+            items: { type: integer }
+            adjudicated: { type: integer }
     ModelPayload:
       type: object
       description: "A registered model version (models.register, R22): a checkpoint whose gate passed, published with its eval report and model card"
@@ -9975,7 +10321,7 @@ components:
     TriageState:
       type: string
       enum: [open, accepted, corrected, rejected]
-      description: "open until a person resolves it (the Triage panel and triage.accept/correct/reject arrive with annotation)"
+      description: "open until a person resolves it in the Triage panel: accepted (the best candidate becomes the human transcript), corrected (a person's own text), rejected (dropped)"
     TriageReason:
       type: string
       enum: [disagreement, lid-mismatch, lid-unknown, no-speech, too-few-members]
@@ -10018,6 +10364,7 @@ components:
         confidence: { type: number, minimum: 0, maximum: 1 }
         createdAt: { type: string, format: date-time }
         rev: { type: integer }
+        resolution: { $ref: "#/components/schemas/TriageResolution" }
     TriageItemList:
       type: object
       required: [items]
@@ -10057,3 +10404,409 @@ components:
         versionId: { type: string, description: The locked version (ver_…) }
         version: { type: string }
         collection: { type: string }
+
+    # ---------------------------------------------------------------- annotation batches, triage, long audio schemas (phase 4 · stream A) — add below
+    BatchState:
+      type: string
+      enum: [open, freezing, frozen, failed]
+      description: "open while people annotate; freezing once the approved freeze runs (cut, then the golden set); frozen when the dataset version (and golden set) is registered; failed when the freeze failed (freeze.error says why; batches.freeze again)"
+    BatchPurpose:
+      type: string
+      enum: [golden-set, training]
+      description: "golden-set: double annotation, adjudication and the agreement target, frozen through goldenSets.freeze; training: single annotation suffices, frozen as a dataset version"
+    BatchStratum:
+      type: string
+      enum: [campaign, month, duration, confidence]
+      description: "campaign: the segment's campaign key, else the source file's folder; month: its recorded month (YYYY-MM), else unknown; duration: annotation.duration_edges_s buckets; confidence: the transcript's confidence in annotation.confidence_edges buckets (none without one)"
+    AnnotationTag:
+      type: string
+      enum: [noise, crosstalk, foreign, unintelligible]
+      description: "noise and crosstalk are kept (real telephone audio); an item whose final tags hold foreign or unintelligible is excluded from the freeze"
+    AnnotationStatus:
+      type: string
+      enum: [done, skipped, flagged]
+      description: "done: the text is the annotator's transcript; skipped: someone else should take it (it does not count); flagged: a transcript the annotator is unsure of — the item gets a second annotation"
+    BatchItemState:
+      type: string
+      enum: [pending, agreed, disputed, adjudicated, excluded]
+      description: "pending until it has the annotations it needs (one; two for double or flagged items); agreed when they agree (WER ≤ annotation.adjudicate_wer); disputed when they do not (the adjudication queue); adjudicated by batchItems.accept; excluded by adjudication, by annotation.max_skips skips, or by a foreign or unintelligible tag"
+    EntitySpan:
+      type: object
+      required: [start, end, class]
+      additionalProperties: false
+      description: "A named span of the transcript (character offsets, end exclusive) that entity_score checks in the hypothesis"
+      properties:
+        start: { type: integer, minimum: 0 }
+        end: { type: integer, minimum: 1 }
+        class: { type: string, pattern: "^[a-z][a-z0-9_-]{0,31}$", description: "name, address, or a class of the language pack's itn.yaml (number, date, phone, amount, …)" }
+        text: { type: string, maxLength: 500, description: "The span's text (filled by the server from the transcript)" }
+    BatchNew:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name: { type: string, pattern: "^[a-z0-9][a-z0-9._-]{0,62}[a-z0-9]$", description: "The batch's name in the project" }
+        description: { type: string, maxLength: 2000 }
+        purpose: { $ref: "#/components/schemas/BatchPurpose" }
+        dataset: { type: string, maxLength: 200, description: "The frame: a dataset version (ver_… or dataset/<name>, its newest version) with the segments artifact it was ingested from" }
+        segments: { type: string, pattern: "^b3:[0-9a-f]{64}$", description: "The frame as a segments artifact (cadence.segments/1) instead of a dataset version" }
+        size: { type: integer, minimum: 1, maximum: 5000, description: "Items to sample (default annotation.batch_size)" }
+        role: { type: string, enum: [caller, bot, mono], description: "The target channel's role (default annotation.target_role: the caller)" }
+        stratify: { type: array, maxItems: 4, items: { $ref: "#/components/schemas/BatchStratum" }, description: "Strata of the sample (default all four)" }
+        doubleShare: { type: number, format: double, minimum: 0, maximum: 1, description: "Share of items annotated twice, blind (default annotation.double_share)" }
+        guidelines: { type: string, pattern: "^[a-z0-9][a-z0-9._-]{0,62}$", description: "annotation/guidelines/<name>.md in the project repository (default annotation.guidelines)" }
+        dueAt: { type: string, format: date-time, description: "When annotation should end (default annotation.due_days from now); invitations expire then at the latest" }
+        seed: { type: integer, minimum: 0, description: "Seed of the sample (default 0)" }
+        goldenSet: { type: string, pattern: "^[a-z0-9][a-z0-9._-]{0,62}[a-z0-9]$", description: "Name of the golden set (golden-set/<name>) or dataset version the freeze registers (default the batch's name)" }
+        contextS: { type: number, format: double, minimum: 0, maximum: 30, description: "Seconds of the source file played before and after the segment (default annotation.context_s)" }
+    BatchStratumCount:
+      type: object
+      required: [key, frame, sampled]
+      properties:
+        key: { type: object, additionalProperties: { type: string }, description: "The stratum's value per stratify dimension" }
+        frame: { type: integer, description: Segments of the frame in this stratum }
+        sampled: { type: integer, description: Items sampled from it }
+    BatchProgress:
+      type: object
+      required: [items, pending, agreed, disputed, adjudicated, excluded, annotations, doubleItems, doubleDone]
+      properties:
+        items: { type: integer }
+        pending: { type: integer }
+        agreed: { type: integer }
+        disputed: { type: integer }
+        adjudicated: { type: integer }
+        excluded: { type: integer }
+        annotations: { type: integer, description: Annotations submitted (skips included) }
+        doubleItems: { type: integer, description: "Items that need two annotations (the double share plus flagged items)" }
+        doubleDone: { type: integer, description: Of those, the ones that have both }
+    BatchAgreement:
+      type: object
+      required: [pairs, refWords, edits, target, meets]
+      properties:
+        pairs: { type: integer, description: "Double-annotated items with two transcripts" }
+        refWords: { type: integer, description: Words of the first transcripts }
+        edits: { type: integer, description: Word edits between the first and second transcripts (after the scoring normalizer) }
+        iaaWer: { type: number, description: "Inter-annotator WER = edits / refWords (absent without pairs)" }
+        target: { type: number, description: annotation.max_iaa_wer }
+        meets: { type: boolean, description: "iaaWer is at or under the target (false without pairs)" }
+    BatchEou:
+      type: object
+      required: [items]
+      description: "End of utterance from per-channel voice activity: the target's last speech end to the other party's next speech start"
+      properties:
+        items: { type: integer, description: Items with a measured gap }
+        p50GapS: { type: number }
+        p90GapS: { type: number }
+        overlaps: { type: integer, description: "Items where the other party started before the target stopped (negative gap)" }
+    BatchReviewer:
+      type: object
+      required: [id, name, role, annotations]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        role: { type: string, enum: [admin, annotator, adjudicator] }
+        annotations: { type: integer }
+        expiresAt: { type: string, format: date-time }
+    BatchGuidelines:
+      type: object
+      required: [name, path, commit]
+      properties:
+        name: { type: string }
+        path: { type: string, description: "annotation/guidelines/<name>.md" }
+        commit: { type: string, description: The commit the batch pins }
+    BatchFreezeState:
+      type: object
+      properties:
+        approvalId: { type: string }
+        pipelineRunId: { type: string }
+        datasetVersionId: { type: string }
+        goldenSetVersionId: { type: string }
+        iaaWer: { type: number }
+        items: { type: integer }
+        error: { type: string }
+        startedAt: { type: string, format: date-time }
+        frozenAt: { type: string, format: date-time }
+    Batch:
+      type: object
+      required: [id, projectId, name, purpose, state, rev, role, stratify, doubleShare, seed, contextS, guidelines, frame, strata, progress, agreement, adjudication, eou, reviewers, goldenSet, canFreeze, createdBy, createdAt, updatedAt]
+      properties:
+        id: { type: string, description: "anb_…" }
+        projectId: { type: string }
+        name: { type: string }
+        description: { type: string }
+        purpose: { $ref: "#/components/schemas/BatchPurpose" }
+        state: { $ref: "#/components/schemas/BatchState" }
+        rev: { type: integer }
+        role: { type: string }
+        stratify: { type: array, items: { $ref: "#/components/schemas/BatchStratum" } }
+        doubleShare: { type: number }
+        seed: { type: integer }
+        contextS: { type: number }
+        dueAt: { type: string, format: date-time }
+        guidelines: { $ref: "#/components/schemas/BatchGuidelines" }
+        frame:
+          type: object
+          required: [segmentsHash, source, segments]
+          properties:
+            datasetVersionId: { type: string }
+            segmentsHash: { type: string }
+            source: { type: string, description: The source the segments came from }
+            segments: { type: integer, description: "Segments of the target role in the frame" }
+        strata: { type: array, items: { $ref: "#/components/schemas/BatchStratumCount" } }
+        progress: { $ref: "#/components/schemas/BatchProgress" }
+        agreement: { $ref: "#/components/schemas/BatchAgreement" }
+        adjudication: { type: object, required: [queue], properties: { queue: { type: integer, description: Disputed items waiting } } }
+        eou: { $ref: "#/components/schemas/BatchEou" }
+        reviewers: { type: array, items: { $ref: "#/components/schemas/BatchReviewer" } }
+        goldenSet: { type: string, description: "The name the freeze registers (golden-set/<name>, or dataset/<name>-annotated)" }
+        freeze: { $ref: "#/components/schemas/BatchFreezeState" }
+        canFreeze:
+          type: object
+          required: [ok, reasons]
+          properties:
+            ok: { type: boolean }
+            reasons: { type: array, items: { type: string } }
+        sample: { type: array, items: { $ref: "#/components/schemas/BatchItem" }, description: "Dry run only: the items that would be sampled" }
+        createdBy: { $ref: "#/components/schemas/Actor" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    BatchList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Batch" } }
+    BatchSegment:
+      type: object
+      required: [hash, uri, start, end, duration, channel, role]
+      properties:
+        hash: { type: string, description: "b3 hash of the canonical 16 kHz PCM16 segment" }
+        uri: { type: string, description: "mount://<mount>/<path>#t=<start>,<end>&ch=<n>" }
+        file: { type: string, description: The source file's mount URI }
+        start: { type: number }
+        end: { type: number }
+        duration: { type: number }
+        channel: { type: integer }
+        role: { type: string }
+        language: { type: string }
+        speaker: { type: string }
+        sourceRate: { type: integer }
+        codec: { type: string }
+        crosstalk: { type: number }
+    ContextTurn:
+      type: object
+      required: [start, end, text]
+      properties:
+        start: { type: number, description: Seconds in the source file }
+        end: { type: number }
+        channel: { type: integer }
+        role: { type: string }
+        text: { type: string }
+    Annotation:
+      type: object
+      required: [id, itemId, annotator, status, text, tags, entities, createdAt, updatedAt]
+      properties:
+        id: { type: string, description: "ann_…" }
+        itemId: { type: string }
+        annotator: { $ref: "#/components/schemas/Actor" }
+        status: { $ref: "#/components/schemas/AnnotationStatus" }
+        text: { type: string }
+        tags: { type: array, items: { $ref: "#/components/schemas/AnnotationTag" } }
+        entities: { type: array, items: { $ref: "#/components/schemas/EntitySpan" } }
+        note: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    BatchItem:
+      type: object
+      required: [id, batchId, position, state, rev, segment, window, prefill, context, strata, double, required, annotations]
+      properties:
+        id: { type: string, description: "bit_… — also the media id of its audio window (audio.sign, peaks.get, tracks.get)" }
+        batchId: { type: string }
+        position: { type: integer }
+        state: { $ref: "#/components/schemas/BatchItemState" }
+        rev: { type: integer }
+        segment: { $ref: "#/components/schemas/BatchSegment" }
+        window:
+          type: object
+          required: [start, end, channels]
+          description: "The audio served under the item's id: the segment plus contextS each side, every channel of the source file"
+          properties:
+            start: { type: number, description: Seconds in the source file }
+            end: { type: number }
+            channels: { type: integer }
+            roles: { type: array, items: { type: string }, description: "Role per channel, when known" }
+        prefill:
+          type: object
+          required: [text, origin]
+          description: "The best hypothesis there is (pseudo-label, a member's text, the ingest's transcript); empty when none"
+          properties:
+            text: { type: string }
+            origin: { type: string }
+            confidence: { type: number }
+        context:
+          type: object
+          required: [turns]
+          properties:
+            turns: { type: array, items: { $ref: "#/components/schemas/ContextTurn" }, description: "The other channel's transcribed turns in the window (the bot's TTS script): crosstalk and overlap at a glance" }
+        strata: { type: object, additionalProperties: { type: string } }
+        double: { type: boolean, description: "Sampled for double annotation" }
+        required: { type: integer, description: "Transcripts the item needs (1, or 2 when double or flagged)" }
+        eou:
+          type: object
+          properties:
+            speechEnd: { type: number, description: "The target's last speech end (file seconds)" }
+            nextSpeech: { type: number, description: "The other channel's next speech start" }
+            gapS: { type: number }
+        annotations: { type: array, items: { $ref: "#/components/schemas/Annotation" }, description: "The annotations the caller may see: a reviewer only their own (blind); the admin and adjudicators every one" }
+        wer: { type: number, description: "WER between the two transcripts of a double item (not shown to annotators)" }
+        final:
+          type: object
+          description: The accepted transcript (agreed or adjudicated)
+          properties:
+            text: { type: string }
+            tags: { type: array, items: { $ref: "#/components/schemas/AnnotationTag" } }
+            entities: { type: array, items: { $ref: "#/components/schemas/EntitySpan" } }
+            by: { $ref: "#/components/schemas/Actor" }
+            at: { type: string, format: date-time }
+            from: { type: string, description: "The annotation it came from (ann_…), when taken as is" }
+    BatchItemList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/BatchItem" } }
+        next: { type: string, description: "queue=mine: the item to annotate next (bit_…), absent when nothing is left" }
+    AnnotationNew:
+      type: object
+      required: [status]
+      additionalProperties: false
+      properties:
+        status: { $ref: "#/components/schemas/AnnotationStatus" }
+        text: { type: string, maxLength: 5000, description: "The transcript (required unless skipped)" }
+        tags: { type: array, maxItems: 4, items: { $ref: "#/components/schemas/AnnotationTag" } }
+        entities: { type: array, maxItems: 100, items: { $ref: "#/components/schemas/EntitySpan" } }
+        note: { type: string, maxLength: 1000 }
+    BatchItemAccept:
+      type: object
+      additionalProperties: false
+      properties:
+        from: { type: string, description: "Take this annotation (ann_…) as the final transcript" }
+        text: { type: string, maxLength: 5000, description: "The final transcript (when not from an annotation)" }
+        tags: { type: array, maxItems: 4, items: { $ref: "#/components/schemas/AnnotationTag" } }
+        entities: { type: array, maxItems: 100, items: { $ref: "#/components/schemas/EntitySpan" } }
+        exclude: { type: boolean, description: "Leave the item out of the freeze" }
+    BatchFreeze:
+      type: object
+      required: [batch, items, excluded, hours]
+      properties:
+        batch: { $ref: "#/components/schemas/Batch" }
+        items: { type: integer, description: Items that freeze }
+        excluded: { type: integer }
+        hours: { type: number }
+        iaaWer: { type: number }
+        pipelineRunId: { type: string, description: "The cut's pipeline run (approved freeze)" }
+        datasetVersionId: { type: string, description: "The draft dataset version the cut freezes" }
+    Invitation:
+      type: object
+      required: [id, batchId, reviewer, role, expiresAt, createdAt]
+      properties:
+        id: { type: string, description: "The invitation credential (crd_…); credentials.revoke ends it" }
+        batchId: { type: string }
+        reviewer: { type: object, required: [id, name], properties: { id: { type: string }, name: { type: string } } }
+        role: { type: string, enum: [annotator, adjudicator] }
+        expiresAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+        lastUsedAt: { type: string, format: date-time }
+        revokedAt: { type: string, format: date-time }
+    InvitationCreated:
+      allOf:
+        - $ref: "#/components/schemas/Invitation"
+        - type: object
+          required: [token, url]
+          properties:
+            token: { type: string, description: "The invitation token (cri_…), shown once" }
+            url: { type: string, description: "The link to send: the web app opens it, signs the reviewer in and shows the batch" }
+    InvitationList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Invitation" } }
+    InvitationNew:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name: { $ref: "#/components/schemas/Username" }
+        role: { type: string, enum: [annotator, adjudicator], default: annotator }
+        expiresAt: { type: string, format: date-time }
+    AuthAccept:
+      type: object
+      required: [token]
+      additionalProperties: false
+      properties:
+        token: { type: string, minLength: 8, maxLength: 200 }
+    ReviewerScope:
+      type: object
+      required: [batchId, projectId, role]
+      description: "A reviewer's session: one batch, play without download, nothing else"
+      properties:
+        batchId: { type: string }
+        projectId: { type: string }
+        role: { type: string, enum: [annotator, adjudicator] }
+        expiresAt: { type: string, format: date-time }
+    TriageAccept:
+      type: object
+      additionalProperties: false
+      properties:
+        tags: { type: array, maxItems: 4, items: { $ref: "#/components/schemas/AnnotationTag" } }
+    TriageCorrect:
+      type: object
+      required: [text]
+      additionalProperties: false
+      properties:
+        text: { type: string, minLength: 1, maxLength: 5000 }
+        tags: { type: array, maxItems: 4, items: { $ref: "#/components/schemas/AnnotationTag" } }
+    TriageReject:
+      type: object
+      additionalProperties: false
+      properties:
+        reason: { type: string, maxLength: 500 }
+    TriageResolution:
+      type: object
+      required: [by, at]
+      properties:
+        text: { type: string, description: "The human transcript written (accept, correct)" }
+        tags: { type: array, items: { $ref: "#/components/schemas/AnnotationTag" } }
+        reason: { type: string, description: "Why the segment was dropped (reject)" }
+        utteranceId: { type: string }
+        transcriptId: { type: string }
+        by: { $ref: "#/components/schemas/Actor" }
+        at: { type: string, format: date-time }
+    AudioTrackChannel:
+      type: object
+      required: [channel, levelDb, speech, bandwidthHz, narrowband]
+      properties:
+        channel: { type: integer }
+        role: { type: string }
+        levelDb: { type: array, items: { type: number }, description: "Level per hop in dBFS (RMS), floored at -100" }
+        speech: { type: array, items: { type: array, minItems: 2, maxItems: 2, items: { type: number } }, description: "Speech regions [start, end] in seconds from the audio's start" }
+        noiseFloorDb: { type: number }
+        bandwidthHz: { type: number, description: "Estimated bandwidth" }
+        narrowband: { type: boolean, description: "8 kHz origin (bandwidth at or under 4 kHz): the spectrogram stops at 4 kHz" }
+    AudioTracks:
+      type: object
+      required: [utteranceId, hopS, durationS, sampleRate, channels, bandwidthHz, narrowband]
+      properties:
+        utteranceId: { type: string }
+        hopS: { type: number }
+        durationS: { type: number }
+        sampleRate: { type: integer, description: "The audio's own sample rate" }
+        start: { type: number, description: "Where the audio starts in its source file (an item's window), seconds" }
+        channels: { type: array, items: { $ref: "#/components/schemas/AudioTrackChannel" } }
+        bandwidthHz: { type: number, description: "The widest channel's estimated bandwidth" }
+        narrowband: { type: boolean }
+        eou:
+          type: object
+          description: "End of utterance (an item window with a target and another channel)"
+          properties:
+            speechEnd: { type: number }
+            nextSpeech: { type: number }
+            gapS: { type: number }

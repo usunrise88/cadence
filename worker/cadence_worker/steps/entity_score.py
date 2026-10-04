@@ -16,7 +16,8 @@ longest spoken form first) — the examples-based conversion the pack offers unt
 spoken numbers in general. Each class's ``pattern`` then finds its written forms; where matches of several classes
 overlap, the longest wins (then the class listed first). A reference entity is found when the hypothesis has the same
 class with the same text (whitespace ignored), counted as multisets per utterance. Names and addresses need annotated
-spans (phase 4). Reported, not gated. Help: docs/help/steps/entity-score.md.
+spans: a reference annotated in a batch (phase 4) carries them, and each is found when the hypothesis holds its text.
+Reported, not gated. Help: docs/help/steps/entity-score.md.
 """
 
 from __future__ import annotations
@@ -130,10 +131,16 @@ def score(
     with_entities = 0
     for i, r in enumerate(refs):
         ref_e = entities(convert(r.text, itn), itn)
-        hyp_e = entities(convert(str(hyps[r.audio]["text"]), itn), itn)
-        if not ref_e and not hyp_e:
+        hyp_text = str(hyps[r.audio]["text"])
+        hyp_e = entities(convert(hyp_text, itn), itn)
+        # Annotated spans (names, addresses — classes no pattern finds) are found when the hypothesis holds their
+        # text, case and spacing aside; a found one counts as a hypothesis entity too (precision is 1 for them).
+        spans = [
+            (c, t) for c, t in getattr(r, "entities", ()) if c not in names or (c, "".join(t.split())) not in ref_e
+        ]
+        if not ref_e and not hyp_e and not spans:
             continue
-        if ref_e:
+        if ref_e or spans:
             with_entities += 1
         pool = Counter(hyp_e)
         ref_rows = []
@@ -144,6 +151,17 @@ def score(
                 per[e[0]][2] += 1
             per[e[0]][0] += 1
             ref_rows.append({"class": e[0], "text": e[1], "found": ok})
+        folded_hyp = " ".join(hyp_text.casefold().split())
+        for cls, text in spans:
+            if cls not in per:
+                per[cls] = [0, 0, 0]
+                names.append(cls)
+            ok = " ".join(text.casefold().split()) in folded_hyp
+            per[cls][0] += 1
+            if ok:
+                per[cls][1] += 1
+                per[cls][2] += 1
+            ref_rows.append({"class": cls, "text": text, "found": ok, "annotated": True})
         for e in hyp_e:
             per[e[0]][1] += 1
         extra = [{"class": c, "text": t} for (c, t), n in pool.items() for _ in range(n)]

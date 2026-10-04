@@ -17,6 +17,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/usunrise88/cadence/control-plane/internal/agentcreds"
+	"github.com/usunrise88/cadence/control-plane/internal/annotation"
 	"github.com/usunrise88/cadence/control-plane/internal/api"
 	"github.com/usunrise88/cadence/control-plane/internal/auth"
 	"github.com/usunrise88/cadence/control-plane/internal/auxiliary"
@@ -159,6 +160,8 @@ type Server struct {
 	// mounts scan and health-check mounts; cache accounts, evicts and materialises the local cache (phase 4 · stream M).
 	mounts *mounts.Service
 	cache  *cache.Service
+	// annotation is annotation batches, their freeze and the triage queue's resolutions (phase 4 · stream A).
+	annotation *annotation.Service
 }
 
 var _ api.StrictServerInterface = (*Server)(nil)
@@ -222,6 +225,8 @@ func New(c Config) (*Server, error) {
 	s.experiments.Install() // a run that ends starts its sweep's next run
 	s.transcriptions = s.newTranscriptions()
 	s.mounts, s.cache = s.newMounts(), s.newCache()
+	s.annotation = s.newAnnotation()
+	s.annotation.Install(c.StepHooks) // after the dataset importer: a batch's cut becomes its golden set
 	window := time.Duration(s.defaultsDoc().Drafts.PresenceSeconds.Value) * time.Second
 	s.drafts = drafts.NewStore(time.Now, window)
 	s.mixes = mixes.NewService(s.drafts, s.defaultsDoc)
@@ -296,6 +301,7 @@ func (s *Server) apiRouter(authenticate bool) http.Handler {
 	if authenticate {
 		r.Use(s.authenticator().Middleware)
 		r.Use(s.workerOnly)
+		r.Use(s.reviewerOnly)
 		r.Use(policyScope)
 	}
 	r.Use(skipForUploads(commands.HashMiddleware(s.writeProblem)))
