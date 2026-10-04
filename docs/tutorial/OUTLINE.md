@@ -51,8 +51,11 @@ The running project throughout is **Serbian on Nemotron 3.5 ASR Streaming 0.6B w
 | 13 | Your own recordings: mounts and ingest | 4 | draft | register a mount, ingest recordings in place, pseudo-label untranscribed audio with an ensemble, freeze the draft and train on it |
 | 14 | Annotation and the telephone golden set | 4 | draft | sample an annotation batch, annotate with double annotation and adjudication, read inter-annotator WER, work the triage queue, freeze a golden set and align its words |
 
-Both chapters are drafts written against `7ab0067`: the prose and the steps are checked against the code; the
-numbers and the screenshots are marked `TBD gate` until the phase-4 gate run on the stand records them.
+Both chapters are drafts written against the phase-4 branch, with the gate run of 2026-10-04 on the stand: chapter 13
+has every number and its figures (13-1, 13-2); chapter 14 has the calls' ingest, the batch (Figure 14-2), the triage
+queue and emission delay. Four places in chapter 14 stay `TBD` because only people may annotate: the audio figure
+(media serves people only), the batch's inter-annotator WER and the comparison with the FLEURS references, and the
+calls' golden set with its eval. They fill in when batch `calls-synth-sr-1` is annotated.
 
 ## Part IV · Production (phase 5) — outline only until phase 5 ships
 
@@ -156,7 +159,7 @@ The chapters in this map are the plan; correct the map when a chapter is written
 
 | Item | Status |
 | --- | --- |
-| `docs/tutorial/chapters/` with front matter (§5.1) | planned |
+| `docs/tutorial/chapters/` with front matter (§5.1) | started: chapters 13 and 14 |
 | Help bundle section `tutorial` (`cmd/helpsync`, `internal/help`), contexts from front matter | planned |
 | Term-order check: no term before its chapter (a script over chapters + this map, in CI) | planned |
 | Tour and `annotated` block parser shared by the HTML build and the shell | planned |
