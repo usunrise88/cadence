@@ -115,8 +115,10 @@ class LidClassifyStep:
             def rank(batch: list[Utterance]) -> list[list[tuple[str, float]]]:
                 return _ecapa_rows(clf, [samples_16k(u.path) for u in batch], p.top_k)
 
-        for i in range(0, len(utts), p.batch_size):
-            batch = utts[i : i + p.batch_size]
+        # An OOM retry (or a manual one) runs at a smaller batch_scale: the batch shrinks with it.
+        size = max(1, int(p.batch_size * ctx.batch_scale))
+        for i in range(0, len(utts), size):
+            batch = utts[i : i + size]
             for u, top in zip(batch, rank(batch), strict=True):
                 rows.append(
                     {

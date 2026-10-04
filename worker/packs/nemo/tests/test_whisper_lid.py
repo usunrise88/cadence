@@ -43,8 +43,10 @@ class FakeWhisper:
     def __init__(self, repo: str, revision: str, device: str) -> None:
         self.loaded = (repo, revision, device)
         self.calls: list[tuple[int, str, int]] = []
+        self.detects: list[int] = []
 
     def detect(self, clips: Sequence[Any], top_k: int = 3) -> list[whisper.Detection]:
+        self.detects.append(len(clips))
         return [whisper.Detection("sr", 0.9, [("sr", 0.9), ("hr", 0.08), ("bs", 0.02)][:top_k]) for _ in clips]
 
     def transcribe(self, clips: Sequence[Any], language: str, num_beams: int) -> list[str]:
@@ -154,3 +156,20 @@ def test_lid_with_speechbrain_explains_the_missing_runtime(tmp_path: Path, monke
     ctx = StepContext(lambda e: None, work_dir=tmp_path, auxiliaries={"auxiliary": aux})
     with pytest.raises(StepInputError, match="no speechbrain"):
         lid_step.LidClassifyStep().run(lid_step.LidParams(), {"data": tmp_path / "data"}, {"lid": tmp_path / "l"}, ctx)
+
+
+def test_a_retry_at_a_smaller_batch_scale_shrinks_the_batches(tmp_path: Path, fake_model: list[FakeWhisper]) -> None:
+    # An OOM retry runs at batch_scale 0.75, a manual one at what the person asks: the members' batches follow it.
+    _dataset(tmp_path / "data")
+    aux = {"auxiliary": _aux("auxiliary/whisper-large-v3", "transformers-whisper")}
+    ctx = StepContext(lambda e: None, work_dir=tmp_path, auxiliaries=aux, batch_scale=0.5)
+    lid_step.LidClassifyStep().run(
+        lid_step.LidParams(batch_size=2), {"data": tmp_path / "data"}, {"lid": tmp_path / "lid.jsonl"}, ctx
+    )
+    assert fake_model[-1].detects == [1, 1, 1]
+    ctx = StepContext(lambda e: None, work_dir=tmp_path, auxiliaries=aux, batch_scale=0.5)
+    params = whisper_member.WhisperParams(batch_size=2, transliterate="")
+    whisper_member.WhisperTranscribeStep().run(
+        params, {"data": tmp_path / "data"}, {"hypotheses": tmp_path / "hyp"}, ctx
+    )
+    assert [n for n, _, _ in fake_model[-1].calls] == [1, 1, 1]

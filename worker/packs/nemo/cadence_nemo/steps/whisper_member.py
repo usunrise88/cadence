@@ -89,7 +89,8 @@ class WhisperTranscribeStep:
         }
         dhash = decoding_hash(decoding)
         rows: list[dict[str, Any]] = []
-        for idx in whisper.batches([u.duration for u in utts], p.batch_size):
+        # An OOM retry (or a manual one) runs at a smaller batch_scale: the batch shrinks with it.
+        for idx in whisper.batches([u.duration for u in utts], max(1, int(p.batch_size * ctx.batch_scale))):
             batch = [utts[i] for i in idx]
             clips = [samples_16k(u.path) for u in batch]
             langs = {whisper.whisper_language(p.target_lang or u.language, model.codes) for u in batch}
