@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/usunrise88/cadence/control-plane/internal/auth"
+	"github.com/usunrise88/cadence/control-plane/internal/commands"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
 	"github.com/usunrise88/cadence/control-plane/internal/problems"
 	"github.com/usunrise88/cadence/control-plane/internal/steps"
@@ -210,11 +211,14 @@ func oneRun(rows pgx.Rows, err error, id string) (Run, error) {
 	return r, nil
 }
 
+// insertRun stores a new run; a run started by the replay of an approved command records that approval, which a
+// gpu-spend retry of the run may inherit (approvals.Inherit).
 func insertRun(ctx context.Context, tx pgx.Tx, r Run) (Run, error) {
 	rows, err := tx.Query(ctx, `INSERT INTO pipeline_runs (id, project_id, pipeline, source, ref, commit_sha, version, definition,
-		inputs, run_id, fresh, priority, actor) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULLIF($10, ''), $11, $12, $13)
+		inputs, run_id, fresh, priority, actor, approval_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULLIF($10, ''), $11, $12, $13, NULLIF($14, ''))
 		RETURNING `+runCols, r.ID, r.ProjectID, r.Pipeline, r.Source, r.Ref, r.Commit, r.Version, r.Definition, r.Inputs,
-		r.RunID, r.Fresh, r.Priority, r.Actor)
+		r.RunID, r.Fresh, r.Priority, r.Actor, commands.ReplayedApproval(ctx))
 	return oneRun(rows, err, r.ID)
 }
 

@@ -313,6 +313,7 @@ func (s *Server) PipelineRunsRetry(ctx context.Context, req api.PipelineRunsRetr
 		return nil, err
 	}
 	ctx = commands.WithEstimate(ctx, policy.Estimate{GPUHours: hours, Unknown: unknown})
+	ctx = commands.WithContinuation(ctx, req.Id) // the run's approval may cover the retry (approvals.Inherit)
 	cmd := command(ctx, "pipelineRuns.retry", req.Params.IdempotencyKey, req.Params.DryRun)
 	return s.run(ctx, cmd, func(ctx context.Context, tx pgx.Tx) (commands.Result, []events.Draft, error) {
 		run, drafts, err := s.Pipelines.Retry(ctx, tx, req.Id, rev, in)

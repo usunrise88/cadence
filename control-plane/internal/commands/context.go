@@ -18,6 +18,8 @@ type (
 	toolCallKey struct{}
 	draftKey    struct{}
 	replayKey   struct{}
+
+	continuationKey struct{}
 )
 
 // WithProject names the project a command touches (its prj_ id), for the policy engine, the approval and the audit
@@ -42,6 +44,19 @@ func estimateFrom(ctx context.Context) *policy.Estimate {
 		return &e
 	}
 	return nil
+}
+
+// WithContinuation names the pipeline run a spending command continues (pipelineRuns.retry, jobs.resume,
+// runs.resume): when the policy asks for an approval, the command may inherit the one the run was approved under
+// (approvals.Inherit), and a replayed approval of the command becomes the run's approval (approvals.Continue).
+func WithContinuation(ctx context.Context, pipelineRunID string) context.Context {
+	return context.WithValue(ctx, continuationKey{}, pipelineRunID)
+}
+
+// ContinuationFromContext returns the pipeline run set by WithContinuation, or "".
+func ContinuationFromContext(ctx context.Context) string {
+	id, _ := ctx.Value(continuationKey{}).(string)
+	return id
 }
 
 // WithToolCall records the agent tool call a request comes from.
