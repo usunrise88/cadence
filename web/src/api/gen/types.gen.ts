@@ -17031,10 +17031,6 @@ export type VersionsArchiveResponses = {
      * The archived version (for a dry run, the version as it is; nothing changed)
      */
     200: RegistryVersion;
-    /**
-     * Gated; a person decides the approval on the approvals topic
-     */
-    202: ApprovalAccepted;
 };
 
 export type VersionsArchiveResponse = VersionsArchiveResponses[keyof VersionsArchiveResponses];

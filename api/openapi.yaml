@@ -4337,7 +4337,6 @@ paths:
         "200":
           description: The archived version (for a dry run, the version as it is; nothing changed)
           content: { application/json: { schema: { $ref: "#/components/schemas/RegistryVersion" } } }
-        "202": { $ref: "#/components/responses/ApprovalAccepted" }
         default: { $ref: "#/components/responses/Problem" }
 
   # ---------------------------------------------------------------- annotation batches, triage, long audio (phase 4 · stream A) — add paths below this line
