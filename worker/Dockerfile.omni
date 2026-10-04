@@ -1,8 +1,9 @@
-# Cadence omni worker — runtime `omni` (GPU): python:3.12-slim with PyTorch 2.8 (CUDA 12.8 wheels), torchaudio 2.8 and
-# fairseq2 0.6, the worker harness, the runtime-neutral core step kinds and the omni pack (align_reference: omniASR CTC
-# emissions aligned to reference texts; docs/help/steps/align-reference.md). fairseq2n 0.6 is built against torch 2.8
-# only, so it cannot live in the NeMo Speech image (torch 2.12): R45's one-off allowance, a second small runtime whose
-# model is loaded per job. Build context is the repository root:
+# Cadence omni worker — runtime `omni` (GPU): python:3.12-slim with PyTorch 2.8 (CUDA 12.8 wheels), torchaudio 2.8,
+# fairseq2 0.6 and speechbrain 1.1, the worker harness, the runtime-neutral core step kinds and the omni pack
+# (align_reference: omniASR CTC emissions aligned to reference texts, docs/help/steps/align-reference.md; lid_classify@2:
+# VoxLingua107 language identification, docs/help/steps/lid-classify.md). fairseq2n 0.6 is built against torch 2.8 only
+# and torchaudio has no build for torch 2.12, so neither can live in the NeMo Speech image: R45's one-off allowance, a
+# second small runtime whose models are loaded per job. Build context is the repository root:
 #   docker build -f worker/Dockerfile.omni -t cadence/worker-omni:dev .
 FROM python:3.12-slim@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4db6d462c84e51f
 

@@ -11,6 +11,8 @@ Verbs:
              --project PROJECT --if-match IF_MATCH [--dry-run]
   edit       Change a project's name, description, locales, domain, base model or budgets
              --project PROJECT --if-match IF_MATCH [--dry-run] --body JSON
+  export     Export the project as a Cadence project bundle (its repository at a commit, data.lock and every registry version it references, with their content) to a directory on a writable mount; 201 with the export
+             --project PROJECT --if-match IF_MATCH [--dry-run] --body JSON
   get        Get a project
              --project PROJECT
   list       List projects

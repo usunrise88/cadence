@@ -96,6 +96,16 @@ tools:
     operations: [goldenSets.freeze]
     reason: a golden set is frozen for every project; the admin decides what counts as held-out test data
 
+  # A project bundle (phase 4 tail) registers versions this instance lacks — golden sets, auxiliary models, sources
+  # cleared for training — for every project: importing one (bundles.adopt, or projects.new with bundle; the handlers
+  # name from=bundle to the engine) is a registry-scope approval the admin decides, for people too.
+  - id: bundle-import
+    class: gated
+    everyone: true
+    operations: [bundles.adopt, projects.new]
+    params: { from: bundle }
+    reason: a bundle registers golden sets, auxiliary models and sources for every project; the admin decides what this instance takes in
+
   # "Freeze a golden set, change a baseline or gate" → approval.
   - id: evaluation-gates
     class: gated

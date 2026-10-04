@@ -164,6 +164,9 @@ func StepKindOf(format string) string {
 // target must be the content store or a directory on a writable path mount. A Hub push names its repository and is
 // refused for production sources, sources without a usable licence and versions a golden set is built on.
 func PlanExport(ctx context.Context, q storage.Querier, d *defaults.Defaults, req Request) (Plan, error) {
+	if req.Format == FormatProject {
+		return Plan{}, problems.Validation([]problems.FieldError{{Path: "/format", Message: "a project bundle is written by projects.export, not datasets.export"}})
+	}
 	v, err := registry.GetVersion(ctx, q, registry.KindDataset, req.Version)
 	if err != nil {
 		return Plan{}, err
@@ -364,6 +367,10 @@ type Export struct {
 	CreatedAt     time.Time
 	FinishedAt    *time.Time
 	Rev           int
+	// A project bundle (projects.export, migration 0047): the job that writes it, the commit and how many versions.
+	JobID    string
+	Commit   string
+	Versions int
 }
 
 // File is a file an export wrote.
@@ -477,10 +484,11 @@ func RenderRecord(ctx context.Context, q storage.Querier, store *cas.Store, v re
 	return steps.ArtifactRef{Hash: h, Type: RecordType, Size: int64(len(b)), Meta: meta}, nil
 }
 
+// A project bundle's row keeps its own state and error (no pipeline run); the other formats read their run's.
 const exportSelect = `SELECT x.id, coalesce(x.version_id, ''), coalesce(c.name, ''), coalesce(v.version, ''), x.project_id,
-	x.format, x.target, coalesce(r.state, 'running'), coalesce(x.pipeline_run_id, ''), x.step_kind, coalesce(x.artifact, ''),
-	x.files, x.bytes, x.copies, x.sample, x.hub, coalesce(r.error, ''), x.created_by, coalesce(x.approval_id, ''),
-	x.created_at, coalesce(x.finished_at, r.finished_at), x.rev
+	x.format, x.target, coalesce(x.state, r.state, 'running'), coalesce(x.pipeline_run_id, ''), x.step_kind, coalesce(x.artifact, ''),
+	x.files, x.bytes, x.copies, x.sample, x.hub, coalesce(x.error, r.error, ''), x.created_by, coalesce(x.approval_id, ''),
+	x.created_at, coalesce(x.finished_at, r.finished_at), x.rev, coalesce(x.job_id, ''), coalesce(x.commit_sha, ''), x.versions
 	FROM dataset_exports x
 	LEFT JOIN registry_versions v ON v.id = x.version_id
 	LEFT JOIN registry_collections c ON c.id = v.collection_id
@@ -494,13 +502,13 @@ func scanExport(row pgx.CollectableRow) (Export, error) {
 	)
 	err := row.Scan(&x.ID, &x.VersionID, &x.Collection, &x.Version, &x.ProjectID, &x.Format, &x.Target, &x.State,
 		&x.PipelineRunID, &x.StepKind, &x.Artifact, &x.Files, &x.Bytes, &x.Copies, &sample, &hub, &x.Error, &x.CreatedBy,
-		&x.ApprovalID, &x.CreatedAt, &x.FinishedAt, &x.Rev)
+		&x.ApprovalID, &x.CreatedAt, &x.FinishedAt, &x.Rev, &x.JobID, &x.Commit, &x.Versions)
 	if err != nil {
 		return x, err
 	}
 	if x.Artifact != "" {
 		x.State, x.Error = "done", ""
-	} else if x.State == "done" {
+	} else if x.State == "done" && x.Format != FormatProject {
 		x.State = "running" // the run is done and the hook has not recorded the export yet: never seen in one transaction
 	}
 	if err := json.Unmarshal(sample, &x.Sample); err != nil {

@@ -121,6 +121,8 @@ var (
 	NotAdopted             = Type{"not-adopted", http.StatusUnprocessableEntity, "Not in the project's data.lock"}
 	// Interoperability: dataset exports (phase 4 · stream I).
 	ExportNotAllowed = Type{"export-not-allowed", http.StatusUnprocessableEntity, "Export not allowed"}
+	// Project bundles (phase 4 tail): projects.export, bundles.adopt, projects.new with bundle.
+	BundleInvalid = Type{"bundle-invalid", http.StatusUnprocessableEntity, "Project bundle invalid"}
 	// Annotation batches and reviewer invitations (phase 4 · stream A).
 	BatchIncomplete        = Type{"batch-incomplete", http.StatusConflict, "Annotation batch incomplete"}
 	AnnotationAgreementLow = Type{"annotation-agreement-low", http.StatusConflict, "Inter-annotator agreement too low"}
@@ -148,7 +150,7 @@ func Types() []Type {
 		MountUnhealthy, StorageQuotaExceeded,
 		AuxiliaryUnavailable, AuxiliaryLicenceRefused,
 		LicenceForbidsAdoption, LocaleMismatch, VersionInUse, StepKindDeprecated, NotAdopted,
-		ExportNotAllowed,
+		ExportNotAllowed, BundleInvalid,
 		BatchIncomplete, AnnotationAgreementLow, BatchClosed, InvitationInvalid,
 	}
 }

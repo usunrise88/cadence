@@ -1,5 +1,6 @@
-"""whisper_transcribe and lid_classify on a card (``pytest -m gpu`` inside the nemo-speech image): the pack's FLEURS
-Hebrew fixture decoded by Whisper large-v3 in fp16 under the 8 GB step cap, and its language identified. Needs
+"""whisper_transcribe on a card (``pytest -m gpu`` inside the nemo-speech image): the pack's FLEURS Hebrew fixture
+decoded by Whisper large-v3 in fp16 under the 8 GB step cap, with Whisper's own language detection beside the text
+(lid_classify@2 is the omni pack's, packs/omni/tests/test_lid_gpu.py). Needs
 ``openai/whisper-large-v3`` at the pinned revision in the Hugging Face cache (``HF_HOME`` or
 ``CADENCE_HF_READONLY_CACHES``) or network access for one download (about 3 GB)."""
 
@@ -11,7 +12,6 @@ from typing import Any
 
 import pytest
 
-from cadence_nemo.steps.lid import LidClassifyStep, LidParams
 from cadence_nemo.steps.whisper_member import WhisperParams, WhisperTranscribeStep
 from cadence_worker import scoring
 from cadence_worker.normalize import Normalizer
@@ -52,7 +52,7 @@ def _rows(path: Path) -> list[dict[str, Any]]:
     return [json.loads(x) for x in path.read_text(encoding="utf-8").splitlines()]
 
 
-def test_whisper_member_and_lid_on_the_card(tmp_path: Path) -> None:
+def test_whisper_member_on_the_card(tmp_path: Path) -> None:
     torch = pytest.importorskip("torch")
     pytest.importorskip("transformers")
     if not torch.cuda.is_available():
@@ -80,12 +80,6 @@ def test_whisper_member_and_lid_on_the_card(tmp_path: Path) -> None:
     wer = scoring.wer((norm(refs[r["audio"]]), norm(r["text"])) for r in rows)
     assert wer < 0.5, (wer, [r["text"] for r in rows])
 
-    lid = tmp_path / "lid.jsonl"
-    LidClassifyStep().run(LidParams(), {"data": data}, {"lid": lid}, ctx)
-    langs = _rows(lid)
-    assert [r["audio"] for r in langs] == [r["audio"] for r in rows]
-    assert {r["language"] for r in langs} == {"he"}, langs
-
     peak = torch.cuda.max_memory_allocated() / 2**20
     assert peak < CAP_MB, f"{peak:.0f} MiB allocated, over the {CAP_MB} MiB step cap"
-    print(json.dumps({"wer": round(wer, 4), "lid": [r["top"][0] for r in langs], "peakMiB": round(peak)}))
+    print(json.dumps({"wer": round(wer, 4), "peakMiB": round(peak)}))

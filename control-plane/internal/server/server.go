@@ -22,6 +22,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/auth"
 	"github.com/usunrise88/cadence/control-plane/internal/auxiliary"
 	"github.com/usunrise88/cadence/control-plane/internal/backups"
+	"github.com/usunrise88/cadence/control-plane/internal/bundles"
 	"github.com/usunrise88/cadence/control-plane/internal/cache"
 	"github.com/usunrise88/cadence/control-plane/internal/cas"
 	"github.com/usunrise88/cadence/control-plane/internal/commands"
@@ -168,6 +169,9 @@ type Server struct {
 	cache  *cache.Service
 	// annotation is annotation batches, their freeze and the triage queue's resolutions (phase 4 · stream A).
 	annotation *annotation.Service
+	// bundles imports project bundles; bundleWriter writes them (projects.export) (phase 4 tail).
+	bundles      *bundles.Service
+	bundleWriter *exports.ProjectWriter
 }
 
 var _ api.StrictServerInterface = (*Server)(nil)
@@ -233,6 +237,10 @@ func New(c Config) (*Server, error) {
 	s.experiments.Install() // a run that ends starts its sweep's next run
 	s.transcriptions = s.newTranscriptions()
 	s.mounts, s.cache = s.newMounts(), s.newCache()
+	s.bundles, s.bundleWriter = s.newBundles(), s.projectWriter()
+	if c.Projects != nil {
+		c.Projects.SetBundles(s.bundles) // projects.new with bundle: the bootstrap job imports it
+	}
 	c.Pipelines.SetMounts(s.mounts.Fingerprinter()) // what a step reads from mounts is in its input hash
 	s.annotation = s.newAnnotation()
 	s.annotation.Install(c.StepHooks) // after the dataset importer: a batch's cut becomes its golden set
@@ -282,6 +290,8 @@ func (s *Server) RegisterJobs(j *jobs.Service) {
 	s.transcriptions.Register(j) // live transcription sessions (phase 3 · stream T)
 	s.mounts.Register(j)         // mount scans, health checks and their periodic check (phase 4 · stream M)
 	s.cache.Register(j)          // dataset eviction, materialisation and the cache sweep
+	s.bundles.Register(j)        // bundles.adopt imports (phase 4 tail)
+	s.bundleWriter.Register(j)   // projects.export writes project bundles
 }
 
 // Handler is the whole HTTP surface: /api (the contract), /mcp (the same operations as MCP tools), /git (the

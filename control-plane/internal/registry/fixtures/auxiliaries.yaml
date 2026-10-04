@@ -80,7 +80,7 @@
     languages: ["*"]
     conditions:
       - Attribute VoxLingua107 (Valk and Alumäe, 2021) in dataset cards whose filters used it
-      - Needs speechbrain and torchaudio in the runtime; the nemo-speech image has neither (lid_classify then uses auxiliary/whisper-large-v3)
+      - Runs in the omni runtime (lid_classify@2, speechbrain over torchaudio); the nemo-speech image cannot hold torchaudio
     hfRepo: speechbrain/lang-id-voxlingua107-ecapa
     revision: 0253049ae131d6a4be1c4f0d8b0ff483a0f8c8e9
     engine: speechbrain-ecapa

@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 # Nightly GPU checks on the staging host (owner decision 2026-10-03, docs/spec/00-overview.md decision log): the NeMo
-# pack's GPU tests and its conformance suite, run from `main` in the nemo-speech worker image, reported to Telegram.
+# pack's GPU tests and its conformance suite, run from `main` in the nemo-speech worker image, and the omni pack's GPU
+# tests (align_reference, lid_classify) in the omni image built from the same commit, reported to Telegram.
 # It replaces the self-hosted GitHub runner the public repository cannot safely have: it checks out `main` only and
 # opens nothing to the outside.
 #
 #   scripts/nightly-gpu.sh            # what cron runs (see scripts/README.md for the crontab line)
 #   NIGHTLY_SKIP_CONFORMANCE=1 …      # the GPU tests only
+#   NIGHTLY_SKIP_OMNI=1 …             # without the omni image and its tests
 #
 # State lives in $NIGHTLY_HOME (default /cadence/nightly, the data volume: a conformance run writes checkpoints and
 # training states, several GB, which the root disk has no room for): repo/ (a clone of origin's main, never the working tree),
-# logs/ (30 days), work/ (the conformance scratch). Telegram is optional: $NIGHTLY_HOME/telegram.env (mode 600) with
+# logs/ (30 days), work/ (the conformance scratch), hf/ (the omni tests' own Hugging Face cache: a model the stand's
+# cache lacks is fetched there once). Telegram is optional: $NIGHTLY_HOME/telegram.env (mode 600) with
 # TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID; without it the summary only goes to the log.
 #
 # The card is shared (vLLM and other services, and the stand's own training jobs). The GPU tests need about 8 GB; the
@@ -24,8 +27,9 @@ CAP_MB="${NIGHTLY_CAP_MB:-22528}"
 NEED_TESTS_MB=8192
 NEED_CONFORMANCE_MB=$((CAP_MB + 1536))
 IMAGE=cadence/worker:nightly
+OMNI_IMAGE=cadence/worker-omni:nightly
 
-mkdir -p "$NIGHTLY_HOME"/{logs,work}
+mkdir -p "$NIGHTLY_HOME"/{logs,work,hf}
 exec 9>"$NIGHTLY_HOME/.lock"
 flock -n 9 || { echo "another nightly run holds $NIGHTLY_HOME/.lock"; exit 0; }
 
@@ -99,7 +103,32 @@ else
   else fail "GPU tests: no pytest summary (see the log)"; fi
 fi
 
-# 4. The conformance suite on the card (calibrate, train, stop, resume, average, materialize, transcribe at every
+# 4. The omni runtime (worker/Dockerfile.omni, its own torch 2.8): built from the same commit, its GPU tests are
+# align_reference on the NeMo pack's Hebrew fixture (omniASR CTC 1B) and lid_classify@2 (VoxLingua107), each under the
+# 8 GB step cap. The models come from the stand's cache (read-only); one it lacks is fetched once into $NIGHTLY_HOME/hf.
+if [ -n "${NIGHTLY_SKIP_OMNI:-}" ]; then
+  note "omni skipped (NIGHTLY_SKIP_OMNI)"
+elif ! docker build -q -f "$NIGHTLY_HOME/repo/worker/Dockerfile.omni" -t "$OMNI_IMAGE" "$NIGHTLY_HOME/repo" >/dev/null; then
+  fail "the omni image did not build"
+else
+  free=$(free_mb)
+  if [ "${free:-0}" -lt "$NEED_TESTS_MB" ]; then
+    fail "omni GPU tests skipped: ${free} MB free on the card, ${NEED_TESTS_MB} MB needed"
+  else
+    out=$(docker run --rm --init --gpus all --ipc=host --user "$(id -u):$(id -g)" --entrypoint sh \
+      -e HOME=/tmp -e HF_HOME=/nightly-hf -e CADENCE_HF_READONLY_CACHES=/stand/hf/hub -e FAIRSEQ2_CACHE_DIR=/tmp/fairseq2 \
+      -v "$HF_VOLUME":/stand:ro -v "$NIGHTLY_HOME/hf":/nightly-hf -v "$NIGHTLY_HOME/repo":/repo:ro -w /tmp "$OMNI_IMAGE" -c \
+      'pip install -q --user pytest >/dev/null 2>&1; cp -r /repo/worker /tmp/worker && cd /tmp/worker && \
+       python -m pytest -q -m gpu packs/omni/tests -p no:cacheprovider 2>&1 | tail -15')
+    echo "$out"
+    line=$(echo "$out" | grep -E '[0-9]+ (passed|failed|error)' | tail -1)
+    if echo "$line" | grep -qE 'failed|error'; then fail "omni GPU tests: ${line:-no summary}"
+    elif [ -n "$line" ]; then note "omni GPU tests: $line"
+    else fail "omni GPU tests: no pytest summary (see the log)"; fi
+  fi
+fi
+
+# 5. The conformance suite on the card (calibrate, train, stop, resume, average, materialize, transcribe at every
 # profile, score), as .github/workflows/nightly.yml describes it.
 if [ -n "${NIGHTLY_SKIP_CONFORMANCE:-}" ]; then
   note "conformance skipped (NIGHTLY_SKIP_CONFORMANCE)"

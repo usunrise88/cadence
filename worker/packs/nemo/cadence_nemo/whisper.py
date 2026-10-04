@@ -1,5 +1,6 @@
 """Whisper through Hugging Face transformers, loaded for one job (R45's one-off allowance; plan decision 1): the
-``whisper_transcribe`` pseudo-label member and the ``lid_classify`` fallback that reads Whisper's language token.
+``whisper_transcribe`` pseudo-label member, with Whisper's language token as its ``detectedLanguage`` (the ensemble's
+second opinion on the language; lid_classify@2 in the omni pack is the classifier).
 
 transformers (5.x), torch and huggingface_hub come from the nemo-speech image; nothing here is pinned. The weights are
 read from the Hugging Face cache at the auxiliary's pinned revision (``HF_HOME``, or a read-only cache in
@@ -21,9 +22,8 @@ from cadence_worker.steps.base import StepInputError
 
 SR = 16000
 WINDOW_S = 30.0  # Whisper's receptive field; longer audio decodes long-form (sequential windows with timestamps)
-# What a snapshot needs: config, tokenizer, preprocessor and the safetensors weights (never the .bin or Flax copies);
-# a SpeechBrain classifier's hyperparameters and checkpoints.
-ALLOW = ["*.json", "*.txt", "*.safetensors", "*.tiktoken", "*.model", "*.ckpt", "*.yaml"]
+# What a snapshot needs: config, tokenizer, preprocessor and the safetensors weights (never the .bin or Flax copies).
+ALLOW = ["*.json", "*.txt", "*.safetensors", "*.tiktoken", "*.model"]
 
 
 def language_code(token: str) -> str:

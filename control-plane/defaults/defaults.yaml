@@ -4,7 +4,7 @@
 # the control-plane binary and packaged with the worker. Every value carries a description, a source and, where it
 # applies, a safe range; a value without a published source is a "Cadence recommendation" re-checked after the spikes.
 # Keys are addressed as <section>.<key> (x-cadence.defaultRef: training.steps). Bump `version` on every change.
-version: 15
+version: 16
 
 # The project wizard's Recommended mode (docs/spec/02-domain-projects-registry.md "Project wizard").
 wizard:
@@ -1354,7 +1354,7 @@ packs:
       description: Shortest pause that splits two speech segments (shorter gaps are closed)
       source: Cadence recommendation
       range: { min: 0, max: 5000 }
-    # Auxiliary models loaded per job (phase 4 · stream X, R26): whisper_transcribe and lid_classify. The weights come
+    # Auxiliary models loaded per job (phase 4 · stream X, R26): whisper_transcribe. The weights come
     # from the auxiliary version the project adopted (its hfRepo and pinned revision), never from here.
     whisper_auxiliary:
       value: auxiliary/whisper-large-v3
@@ -1376,22 +1376,6 @@ packs:
       value: true
       description: Whether the Whisper member also records its own language identification beside the text (the ensemble's second opinion on LID)
       source: docs/review/2026-10-03-phase-4-plan.md decision 7
-    lid_auxiliary:
-      value: auxiliary/whisper-large-v3
-      description: The language classifier lid_classify uses (auxiliary/lid-voxlingua107 needs speechbrain and torchaudio, which this runtime lacks)
-      source: "docs/review/2026-10-03-phase-4-plan.md decision 7, with Whisper's language token as the fallback: torchaudio has no build for the nemo-speech image's torch 2.12 (checked 2026-10-03)"
-    lid_top_k:
-      value: 3
-      unit: languages
-      description: Most probable languages kept per utterance in the lid artifact
-      source: Cadence recommendation
-      range: { min: 1, max: 10 }
-    lid_batch_size:
-      value: 8
-      unit: utterances
-      description: Utterances per language identification batch (16 ran out of memory under the 8 GB data-job cap beside the other members on the stand, 2026-10-04)
-      source: Cadence recommendation
-      range: { min: 1, max: 128 }
   # The services pack (runtime `services`, CPU): step kinds that call a running service an auxiliary names. Cadence
   # never starts the service; docs/help/guides/auxiliary-models.md.
   services:
@@ -1439,3 +1423,21 @@ packs:
       description: Precision of the aligner's forward pass (the log-softmax and the Viterbi run in float32 either way)
       source: Cadence recommendation (OASIS serves the same models in bfloat16)
       range: { values: [bfloat16, float32] }
+    # Language identification (lid_classify@2): SpeechBrain's VoxLingua107 ECAPA-TDNN, loaded per job. It lives here,
+    # not in the NeMo pack, because speechbrain needs torchaudio, which has no build for the nemo-speech image's torch.
+    lid_auxiliary:
+      value: auxiliary/lid-voxlingua107
+      description: The language classifier lid_classify uses (role lid, engine speechbrain-ecapa); Whisper's own detection reaches the ensemble from the whisper member either way
+      source: docs/review/2026-10-03-phase-4-plan.md decision 7 (Apache-2.0; VoxLingua107 CC-BY-4.0, checked 2026-10-03)
+    lid_top_k:
+      value: 3
+      unit: languages
+      description: Most probable languages kept per utterance in the lid artifact
+      source: Cadence recommendation
+      range: { min: 1, max: 10 }
+    lid_batch_size:
+      value: 16
+      unit: utterances
+      description: Utterances per language identification batch (the 21 M-parameter classifier pads a batch to its longest clip)
+      source: Cadence recommendation (16 clips of up to 30 s stay far under the 4 GB step reservation)
+      range: { min: 1, max: 128 }

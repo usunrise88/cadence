@@ -673,16 +673,17 @@ R, I, A, L and B, folded into the spec by stream S on 2026-10-04; the gate is st
   tars; Shar is `shar_export@1`. `datasets.freeze` reruns the draft step in cut mode and checks the project quota.
   Ingest VAD is an energy VAD per channel in the core; ITN in `text_normalise@1` is a literal list. "No licence, no
   ingest" is enforced at planning and in the draft hook.
-- Auxiliary payloads carry `roles[]`, engine, conditions and `service.tokenSecret`; five seeds. LID uses Whisper's
-  language token (speechbrain/torchaudio conflict with the NeMo runtime's torch); OASIS writes lower case without
+- Auxiliary payloads carry `roles[]`, engine, conditions and `service.tokenSecret`; five seeds. LID is
+  `lid_classify@2` in runtime `omni` (VoxLingua107; phase-4 tail below); OASIS writes lower case without
   punctuation and wins the pick when it agrees (`vote`), so pseudo-labels can lose case and punctuation (07). Whisper
   writes Serbian in Cyrillic: the pipeline transliterates `sr-Cyrl-Latn`.
 - Registry: `versions.archive` (terminal, refused while in use); adoption checks licence and locale (unless
   `purpose: replay`); `data.lock` resolutions are reported (`PlanStep.locked`), not substituted; step-kind
   deprecation comes from the pack, with no `deprecate` verb.
 - Imports: `dataset_import@4` copies into the content store and freezes at import (Lhotse cuts/Shar, NeMo
-  offset/duration, the bundle, `mount://` on path mounts); only `sdp_ingest` indexes in place. The bundle is per
-  dataset version, not per project. Hub pushes need `hub-export`, private by default.
+  offset/duration, the bundle, `mount://` on path mounts); only `sdp_ingest` indexes in place. The dataset bundle is
+  per dataset version; the project bundle came in the phase-4 tail (below). Hub pushes need `hub-export`, private by
+  default.
 - Annotation: Triage is a tool panel (a queue). Annotators pull in their own hashed order; adjudication folds case and
   punctuation (not the project normalizer, `annotation.adjudicate_wer` 0); `foreign`/`unintelligible` items are
   excluded. Guidelines are pinned at HEAD; reviewers see the path and commit. Reviewers are invited by the admin
@@ -692,7 +693,7 @@ R, I, A, L and B, folded into the spec by stream S on 2026-10-04; the gate is st
   (`pipelines/align-reference.yaml`); `latency_score@3` reports emission delay or `n/a` with a reason; `srp_Latn` is
   not in omniASR's list.
 - Playbooks gain `person:`, `optional:`, `when:`; `weekly-flywheel` is available from phase 5; "Try Cadence" imports
-  FLEURS from the Hub; `cadence smoke --project SLUG` (`make e2e` needs `SMOKE_PROJECT`). `defaults.yaml` is version 15.
+  FLEURS from the Hub; `cadence smoke --project SLUG` (`make e2e` needs `SMOKE_PROJECT`). `defaults.yaml` is version 16.
 - Corpora: `scripts/corpora/` (`fleurs.sh`, `calls_synth.py`); `fleurs-sr` and `calls-synth-sr` (40 calls, G.711 μ-law
   stereo) on the stand; `sdp_ingest` on them gives 577 segments (315 caller, 262 bot), turn coverage ≈ 80 %.
 - Closed in the phase-4 tail (UI stream, 2026-10-04): reviewers read the guidelines text in the Annotate view
@@ -703,9 +704,8 @@ R, I, A, L and B, folded into the spec by stream S on 2026-10-04; the gate is st
   `needs-materialize` (version, bytes and mounts to copy back) instead of refusing — the real call is still refused —
   and `pipelineRuns.get` lists `needsMaterialize`, shown with **Materialize** in Mix, Run and Pipeline run.
 - Open: waveform peaks at ingest and freeze (computed on first view); the spectrogram tile-pyramid job (tiles per
-  request); the audio view's reference-word track; the project-level bundle; the VoxLingua107 LID image; end-of-utterance gaps are not in the dataset manifest; aligning
-  the replay golden sets on the stand; a nightly omni GPU run; Playwright
-  e2e for annotation; `recipes/` lacks `annotation/guidelines/`.
+  request); the audio view's reference-word track; end-of-utterance gaps are not in the dataset manifest; aligning
+  the replay golden sets on the stand.
 - Found and fixed running the gate on the stand (2026-10-04): every worker binds the mounts (core steps reached
   `worker-services`/`worker-omni`, which had no `/mnt/corpora`); the default preset allows `mounts.verify`; an
   optional step naming an auxiliary the project has not adopted is skipped with a warning; a retry leaves the plan's
@@ -724,6 +724,29 @@ R, I, A, L and B, folded into the spec by stream S on 2026-10-04; the gate is st
   segments (the frame of `batches.new`); a playbook's clearance step ticks from the `sources.get` that found the
   source already cleared; the pseudo-label template votes Whisper + OASIS (`pseudolabel_ensemble@2`, OASIS required,
   Whisper's written-form text kept when the two agree).
+- Phase-4 tail, stream infra (2026-10-04; help `guides.project-bundles`):
+  - Project bundles: `projects.export` writes a project to a writable path mount from a control-plane job (export
+    format `cadence-project-bundle`, migration 0047): `repository.bundle`, `data.lock`, one dataset bundle per dataset
+    version and noise bank, other payload blobs under `cas/`, `bundle.json` last. `bundles.adopt` (an existing
+    project) and `projects.new` with `bundle` (a new one from the bundle's history) import it behind `bundle-import`,
+    an approval for everyone. Versions the instance lacks register under the bundle's version strings; golden sets
+    are re-frozen through this instance's leakage checks; aliases are set where the project has none. Not carried:
+    alignments (re-align with `pipelines/align-reference.yaml`), mount URIs of indexed utterances, work (mixes, runs,
+    evals), a custom `AGENTS.md` of the bundle (re-rendered).
+  - LID is `lid_classify@2` in runtime `omni` (VoxLingua107, `auxiliary/lid-voxlingua107`, speechbrain 1.1.1 over
+    torch 2.8, image size unchanged). The NeMo pack's Whisper `lid_classify@1` is no longer published; Whisper's
+    detection stays the ensemble's second opinion through the member. Templates pin `@2`, so `pseudo-label` needs the
+    VoxLingua107 auxiliary adopted (an approval). On the FLEURS Hebrew fixture it names Slovenian for 2 of 10
+    three-second clips (confidence 0.72 and 0.81, above `pseudolabel.lid_min_confidence`); peak 549 MiB.
+  - `scripts/nightly-gpu.sh` also builds `worker/Dockerfile.omni` from `main` and runs the omni pack's GPU tests
+    (alignment, LID) when 8 GB are free, in the same Telegram summary (`NIGHTLY_SKIP_OMNI=1` turns it off).
+  - Annotation e2e: `web/e2e/annotation.spec.ts` with the stack's `seed-annotation` fixture
+    (`internal/e2etools/seedannotation`): a batch from the API, two items annotated in Triage Annotate mode, a reviewer
+    invitation that sees only its batch, blind double annotation, adjudication, the freeze blockers and the freeze
+    approval. Found: the floating Audio panel covers the Annotation batch document's lower sections; Annotate shows a
+    done item instead of "Nothing left to annotate" once a person's queue is empty.
+  - `recipes/projects/hebrew/annotation/guidelines/default.md`: the template adapted to he-IL (no niqqud, plene
+    spelling, prefixes attached, numbers in the pack's written forms).
 
 ---
 

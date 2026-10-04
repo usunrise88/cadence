@@ -40,6 +40,16 @@ type RegisterInput struct {
 	// whose content is defined apart from its descriptive payload (a dataset version is its utterances, splits and
 	// transcripts, R18) registers once however its payload's lineage differs.
 	Fingerprint string
+	// On, when set, is the date the version string carries instead of the registration date: an import from a
+	// project bundle (internal/bundles) keeps the version string the bundle's instance gave the same content.
+	On time.Time
+}
+
+func (in RegisterInput) on(now time.Time) time.Time {
+	if in.On.IsZero() {
+		return now
+	}
+	return in.On
 }
 
 // Register adds a version to a collection, creating the collection on first use. Content that the collection
@@ -79,7 +89,7 @@ func Register(ctx context.Context, tx pgx.Tx, in RegisterInput, now time.Time) (
 	}
 	tag, err := tx.Exec(ctx, `INSERT INTO registry_versions (id, collection_id, version, fingerprint, state, payload, created_by,
 		created_at, frozen_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (collection_id, fingerprint) DO NOTHING`,
-		id, collectionID, VersionString(now, fp), fp, state, canonical, in.Actor, now, frozenAt)
+		id, collectionID, VersionString(in.on(now), fp), fp, state, canonical, in.Actor, now, frozenAt)
 	if err != nil {
 		return Version{}, false, nil, fmt.Errorf("insert registry version: %w", err)
 	}

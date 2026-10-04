@@ -20,6 +20,7 @@ import (
 
 	"github.com/usunrise88/cadence/control-plane/internal/agentcreds"
 	"github.com/usunrise88/cadence/control-plane/internal/auth"
+	"github.com/usunrise88/cadence/control-plane/internal/bundles"
 	"github.com/usunrise88/cadence/control-plane/internal/defaults"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
 	"github.com/usunrise88/cadence/control-plane/internal/mcp"
@@ -54,6 +55,7 @@ type Service struct {
 	o         Options
 	render    layout.Renderer
 	templates map[string]string // unit path in the templates tree → registry collection name
+	bundles   *bundles.Service  // projects.new with bundle (SetBundles); nil refuses bundles
 }
 
 // New returns a service over the embedded presets and the MCP tool manifest (the permission rules render from it).

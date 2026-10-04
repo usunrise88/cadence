@@ -169,11 +169,10 @@ NeMo pack as built (phase 2, `worker/packs/nemo`, distribution `cadence-nemo`, h
   project adopted (02 "Auxiliary models") for the length of one job (R45's one-off allowance; ≤ 8 GB, job kind
   `data`): `whisper_transcribe@1` (a pseudo-label member through transformers in fp16; `auxiliary` default
   `packs.nemo.whisper_auxiliary` = `auxiliary/whisper-large-v3`, `batch_size` 8, `num_beams` 1, `detect_language`
-  true, `target_lang`, `transliterate`) and `lid_classify@1` (`lid` artifact; engine by the auxiliary's payload:
-  `transformers-whisper`, Whisper's language token, or `speechbrain-ecapa`; `auxiliary` default
-  `packs.nemo.lid_auxiliary` = `auxiliary/whisper-large-v3`, `top_k` 3, `batch_size` 16). SpeechBrain needs torchaudio,
-  which publishes no build for the image's torch 2.12, so the VoxLingua107 path fails with a message naming the Whisper
-  fallback (00 decision log). Whisper writes Serbian in Cyrillic: the members take `transliterate: sr-Cyrl-Latn`.
+  true, `target_lang`, `transliterate`). Whisper writes Serbian in Cyrillic: the members take `transliterate:
+  sr-Cyrl-Latn`. `lid_classify@1` (Whisper's language token) is no longer published (phase 4 tail): language
+  identification is `lid_classify@2` in runtime `omni` (VoxLingua107, below), and Whisper's own detection reaches the
+  ensemble as the member's `detectedLanguage` (its second opinion).
 
 Two small runtimes joined in phase 4 (R45's one-off allowance; 00 decision log), each one compose service with its own
 profile and descriptor in `worker/runtime/`:
@@ -385,7 +384,7 @@ with "set me" params and a help link in its header):
 | Template | Chain | Ends in |
 | --- | --- | --- |
 | `data-ingest` | `sdp_ingest@2` → `text_normalise@1` → `manifest_filter@2` → `speaker_disjoint_split@1` → `dataset_freeze@1` (draft) | A draft dataset version; `datasets.preview`, then `datasets.freeze` |
-| `pseudo-label` (input `normalizer`) | `sdp_ingest` → `segments_cut@1` → `whisper_transcribe@1` (`sr-Cyrl-Latn`) ‖ `oasis_transcribe@1` (required) ‖ `lid_classify@1` → `pseudolabel_ensemble@2` (members wired `hypotheses.0…1`) → `text_normalise` → `manifest_filter` → `speaker_disjoint_split` → `dataset_freeze` (draft, tag `pseudo-label`). The base model is not a member and OASIS is not optional (owner decision 2026-10-04): without its service the dry run refuses with `auxiliary-unavailable` | A draft of agreed pseudo-labels; disputes in the triage queue |
+| `pseudo-label` (input `normalizer`) | `sdp_ingest` → `segments_cut@1` → `whisper_transcribe@1` (`sr-Cyrl-Latn`) ‖ `oasis_transcribe@1` (required) ‖ `lid_classify@2` → `pseudolabel_ensemble@2` (members wired `hypotheses.0…1`) → `text_normalise` → `manifest_filter` → `speaker_disjoint_split` → `dataset_freeze` (draft, tag `pseudo-label`). The base model is not a member and OASIS is not optional (owner decision 2026-10-04): without its service the dry run refuses with `auxiliary-unavailable` | A draft of agreed pseudo-labels; disputes in the triage queue |
 | `calls-ingest` | `sdp_ingest@2` alone (`channels: split`, roles from each call's sidecar, else `channel_roles: [caller, bot]`) | The `segments` artifact: the frame of `batches.new` (`segments: b3:…`); no filter and no draft, the callers have no text (owner decision 2026-10-04) |
 | `align-reference` (input `data: dataset`) | `align_reference@1` | An `alignment` attached to the golden sets on that dataset; run by hand once per golden set |
 | `noise-from-calls` | `sdp_ingest` → `noise_mine@1` | A frozen `noise-bank/<name>` version tagged `mined` |
@@ -403,7 +402,8 @@ defaults and ranges are in each kind's help page `steps.<kind>`, values in `defa
 | `speaker_disjoint_split@1` | core | `segments` → `segments` | Groups by speaker, else by file (one call is one caller); a stable hash of the group's key picks the side (`data.validation_share` 0.02, `test_share` 0), topped up to `data.min_validation_utterances` 100 by whole groups |
 | `dataset_freeze@1` | core | `segments` → `dataset` | `mode: draft` writes `cadence.dataset-draft/1` (`dataset.json` with `quality`, `stats`, `card`; `manifest.jsonl` by `uri` and `hash`; `card.md`); `mode: cut` (what `datasets.freeze` runs with `draft_version`) cuts every member from its mount, checks its hash and writes the frozen `cadence.dataset/1` (below). Quality checks warn, never block (`data.quality_*`: silence share 0.5, clipped share 0.01, length outliers at z 3 over a 0.02 share) |
 | `segments_cut@1` | core | `segments` → `dataset` | Cuts the segments that need a label (`which: unlabelled`) into a scratch `dataset` of purpose `pseudo-label` the members read; never registered, never trained on; a repeated audio hash is cut once |
-| `whisper_transcribe@1`, `lid_classify@1` | `nemo-speech` (GPU ≤ 8 GB) | `dataset` → `hypotheses`, `lid` | NeMo pack above |
+| `whisper_transcribe@1` | `nemo-speech` (GPU ≤ 8 GB) | `dataset` → `hypotheses` | NeMo pack above |
+| `lid_classify@2` | `omni` (GPU, 4 GB reserved) | `dataset` → `lid` | VoxLingua107 ECAPA (`speechbrain-ecapa`, speechbrain 1.1.1 over torch 2.8) from the `auxiliary` (`packs.omni.lid_auxiliary` = `auxiliary/lid-voxlingua107`, `lid_top_k` 3, `lid_batch_size` 16), loaded per job from its pinned Hub snapshot; labels mapped to BCP 47 (`iw` → `he`, `jw` → `jv`). One kind name per pack: `@1` (Whisper's token, NeMo pack) is retired |
 | `oasis_transcribe@1` | `services` (CPU) | `dataset` → `hypotheses` | `GetModelInfo` within `health_timeout_s` (5) or `auxiliary-unavailable`; checks the service lists every utterance's language; one unary `Transcribe` per utterance, `concurrency` 2, `timeout_s` 60; secret `oasis-token`; rows carry `vote: true`. Text is lower case without punctuation |
 | `pseudolabel_ensemble@2` | core | `segments`, `hypotheses.<n>`, `normalizer`, `lid?` → `segments`, `hypotheses` | Refuses to run with fewer than `pseudolabel.min_members` (2) members wired, and disputes a segment fewer members answered (`too-few-members`). Keeps a text when at least `pseudolabel.min_agreeing_members` (2) members agree within `pseudolabel.max_pairwise_wer` (0.15; word edits over the longer text after the scoring normalizer) and LID agrees (the `lid` row at confidence ≥ 0.5, else the members' detected language; `pseudolabel.lid_equivalents` `[[sr, hr, bs]]` count as one; `require_lid` true → `lid-unknown`). The pick among the agreeing members: with `pseudolabel.prefer_written_form` (true) a text in written form first (a capital or sentence punctuation: Whisper's, so labels keep the training style), then a `vote: true` member (OASIS), then the lowest mean WER to the others (`@1`: the vote first, no `min_members`); confidence = agreeing share × (1 − the pick's mean WER). Others get `pseudo-label:disputed` with `dispute: {reason, candidates, lid}`; segments with text of their own pass through. Every row with language evidence gets `lid: {language, confidence?, agrees?, source}` (what `manifest_filter` reads); repeated audio hashes get one verdict and one `hypotheses` row; `with_step` appends it to `steps` and `files.jsonl` is kept |
 | `align_reference@1` | `omni` (GPU ≤ 8 GB) | `dataset` → `alignment` | CTC emissions of the `aligner` auxiliary (`packs.omni.align_auxiliary` = `auxiliary/omniasr-ctc-1b`, bfloat16, waveform layer-normalised) forced through the reference with torchaudio's `forced_align`, or a NumPy Viterbi where it is missing; utterances over `align_max_duration_s` (60), in a language the payload does not list (it lists `heb_Hebr`, `srp_Cyrl`, `hrv_Latn`, `bos_Latn`; not `srp_Latn`), or without text stay unaligned with the reason |
@@ -765,9 +765,25 @@ As built (phase 4, stream I; formats and layouts in "Data pipelines (phase 4)" a
   `export-not-allowed` refuses a Hub push of a version with a production source, a source without a usable licence or
   a golden set built on it. A Hub push needs an approval for everyone (preset rule `hub-export`, registry scope, the
   admin decides) and is private by default. Models leave with the deployment work (phase 5).
-- **Bundles** are per dataset version (`cadence.bundle/1`: the registry record with sources and licences, and every
-  blob as a content store), not per project: the project repository travels by git. A bundle re-imports byte for byte
-  with the same content fingerprint.
+- **Bundles.** A dataset bundle (`cadence.bundle/1`: the registry record with sources and licences, and every blob as
+  a content store) re-imports with the same content fingerprint. A **project bundle** (phase 4 tail;
+  `cadence.project-bundle/1`) is a whole project on a writable path mount: `projects.export` (`POST
+  /projects/{p}:export {ref?, target?}`, If-Match on the project; `200` the plan, `201` the export, format
+  `cadence-project-bundle`, written by a control-plane job `projects.export`, migration 0047) writes
+  `repository.bundle` (a git bundle, `main` at the commit), `data.lock`, one dataset bundle per dataset version and
+  noise bank under `datasets/<collection>/<version>/`, every other blob a payload names under `cas/`, and
+  `bundle.json` last (the project's facts and aliases and the record of every adopted version and every version an
+  adopted payload names; runtimes, step kinds and model families as references only). The default target is
+  `mount://<storage.export_mount>/projects/<slug>/<commit, 12 hex>`; evicted datasets must be materialised first.
+  The import side registers what an instance lacks — by collection and fingerprint, under the bundle's version
+  strings (`RegisterInput.On`), dataset versions through the dataset importer as `dataset_import` `cadence-bundle`
+  would, golden sets through `goldensets.Prepare` (this instance's leakage checks) — then adopts what the bundle's
+  project adopted: `bundles.adopt` (`POST /projects/{p}/bundles:adopt {bundle, aliases?}`) into an existing project
+  (aliases set where the project has none; never `production`; the repository untouched), or `projects.new {name,
+  bundle}` for a new project whose internal repository is the bundle's history and whose bootstrap job imports the
+  versions and commits `project.yaml`, `AGENTS.md`, `CLAUDE.md`, `data.lock` and the permission files rendered here.
+  Both imports are an approval for everyone (preset rule `bundle-import`, `from=bundle`, registry scope); a damaged
+  or foreign bundle answers `bundle-invalid` (help `guides.project-bundles`).
 - Mount copies: audio a `nemo-manifest` or bundle export writes to a mount is recorded as a copy of its blob, so the
   cache may evict the version (once each copy reads back with its blob's hash; 02 "The cache and materialisation")
   and `datasets.materialize` restores it; the backup mirror may target a writable mount

@@ -49,6 +49,7 @@ type Wizard struct {
 	GPUHoursPerDay          *float64
 	AgentTokensPerDay       *int64
 	QueuePriority           *int
+	Bundle                  string // mount://… of a project bundle the project is made from (bundle.go)
 }
 
 // Plan is a wizard with every default applied and every choice checked.
@@ -56,6 +57,7 @@ type Plan struct {
 	Project    projects.NewInput
 	Profile    projects.AgentProfile
 	Repository RepoArgs
+	Bundle     string
 }
 
 var slugRe = regexp.MustCompile(`^[a-z][a-z0-9-]{1,38}[a-z0-9]$`)
@@ -88,6 +90,11 @@ func SlugFrom(name string) string {
 // template, driver and model, repository and its secret.
 func (s *Service) PlanProject(ctx context.Context, q storage.Querier, w Wizard) (Plan, error) {
 	d := defaults.Get()
+	if w.Bundle != "" {
+		if err := s.planBundle(ctx, q, &w); err != nil {
+			return Plan{}, err
+		}
+	}
 	var fields []problems.FieldError
 	bad := func(path, format string, a ...any) {
 		fields = append(fields, problems.FieldError{Path: path, Message: fmt.Sprintf(format, a...)})
@@ -196,7 +203,7 @@ func (s *Service) PlanProject(ctx context.Context, q storage.Querier, w Wizard) 
 		Project: projects.NewInput{Slug: slug, Name: w.Name, Description: w.Description, Locales: locales, Domain: domain,
 			BaseModelVersionID: base.ID, RepoKind: repo.Kind, Remote: remote, Secret: repo.Secret, Budgets: budgets,
 			State: projects.StateBootstrapping},
-		Profile: profile, Repository: repo,
+		Profile: profile, Repository: repo, Bundle: w.Bundle,
 	}, nil
 }
 

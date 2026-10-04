@@ -506,6 +506,21 @@ var Operations = []Operation{
 		},
 	},
 	{
+		ID: "bundles.adopt", Entity: "bundles", Verb: "adopt", Method: "POST", Path: "/projects/{p}/bundles:adopt",
+		Summary:        "Import a Cadence project bundle's registry versions this instance lacks and adopt every version the bundle's project adopted into this project (approval for everyone); 201 with the import job",
+		Description:    "Read a Cadence project bundle (projects.export on this or another instance) from a directory on a mount (bundle: mount://<mount>/<dir>, the directory holding bundle.json) and adopt the versions its project adopted into this project. Versions this instance already holds (same collection and content) are reused; the rest are registered under their original version strings — their blobs copied into the content store and checked against their hashes, dataset versions and noise banks re-imported from their dataset bundles with their sources and licences (a source cleared for training there is cleared here), golden sets re-frozen through this instance's leakage checks. Adoption runs the licence checks (and the golden-set leakage check against what this project trained on); aliases the bundle sets are set where this project has no alias of that name (production never). The repository is not changed (projects.new with bundle makes a new project from it). Registering versions is a registry change for every project, so the call is an approval the admin decides, for people too (202 with an approvalId); the approved call answers 201 with the import job (follow job.{jobId}; its result lists what was registered, reused and adopted). dryRun=true answers the plan without asking. Needs If-Match with the project's revision.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "aliases", Type: "boolean", Description: "Set the bundle's aliases this project does not have yet (production never)"},
+			{Name: "bundle", Required: true, Type: "string", Description: "The bundle's directory on a mount: mount://<mount>/<dir> (the directory holding bundle.json)"},
+		}},
+	},
+	{
 		ID: "checkpoints.average", Entity: "checkpoints", Verb: "average", Method: "POST", Path: "/runs/{id}/checkpoints:average",
 		Summary:        "Average chosen checkpoints of a run with the family's average step; the result is a new checkpoint of the run",
 		Description:    "Average two or more checkpoints of one run (ids from checkpoints.list, typically the top k) with the model family's average step. Answers 201 with the pipeline run; when it finishes the averaged checkpoint appears in checkpoints.list (kind averaged, averagedFrom) with its own validation WER when the step measures one.",
@@ -631,7 +646,7 @@ var Operations = []Operation{
 			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
 		},
 		Body: &Body{Required: true, Properties: []BodyProperty{
-			{Name: "format", Required: true, Type: "string", Description: "lhotse-shar: Shar shards (cuts and recording tars); nemo-manifest: manifest.<split>.jsonl with the WAV files; cadence-bundle: the registry record, sources and blobs laid out as a content store, for another Cadence instance; hf-hub: an audiofolder dataset pushed to the Hugging Face Hub (approval)"},
+			{Name: "format", Required: true, Type: "string", Description: "lhotse-shar: Shar shards (cuts and recording tars); nemo-manifest: manifest.<split>.jsonl with the WAV files; cadence-bundle: the registry record, sources and blobs laid out as a content store, for another Cadence instance; hf-hub: an audiofolder dataset pushed to the Hugging Face Hub (approval); cadence-project-bundle: a whole project (projects.export only; datasets.export refuses it)"},
 			{Name: "hubPrivate", Type: "boolean", Description: "hf-hub: create the repository private (default storage.export_hub_private)"},
 			{Name: "hubRepo", Type: "string", Description: "hf-hub: the dataset repository <org>/<name>; created when missing"},
 			{Name: "project", Type: "string", Description: "Slug of the project the export's pipeline run runs in; default the project the version was ingested or imported in"},
@@ -1484,6 +1499,21 @@ var Operations = []Operation{
 		}},
 	},
 	{
+		ID: "projects.export", Entity: "projects", Verb: "export", Method: "POST", Path: "/projects/{p}:export",
+		Summary:        "Export the project as a Cadence project bundle (its repository at a commit, data.lock and every registry version it references, with their content) to a directory on a writable mount; 201 with the export",
+		Description:    "Write a self-contained Cadence project bundle to a directory on a writable path mount, for another Cadence instance (bundles.adopt, or projects.new with bundle) or for safekeeping: repository.bundle (a git bundle of the repository at ref, default main), data.lock at that commit, bundle.json (the project's facts, its aliases and the registry record of every version it adopted or that an adopted version names — dataset versions, golden sets, normalizers, noise banks, auxiliary models' payloads, models, base models, templates — with their sources and licences), one dataset bundle per dataset version and noise bank under datasets/<name>/<version>/ (the layout datasets.export cadence-bundle writes) and every other blob a payload names under cas/. Versions published by workers (runtimes, step kinds, model families) travel as references only. Every dataset version must be in the cache (datasets.materialize an evicted one first). target defaults to mount://<storage.export_mount>/projects/<slug>/<commit, 12 hex>; a directory that already holds a bundle is refused. dryRun=true answers the plan (commit, target, versions, blobs, bytes). The real call answers 201 with the export (exports.get; format cadence-project-bundle, follow job.{jobId}); the audio it writes is recorded as mount copies of its content-store blobs. Needs If-Match with the project's revision (projects.get): the bundle carries the adoptions and aliases of that revision.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "ref", Type: "string", Description: "The branch or commit to export (default main)"},
+			{Name: "target", Type: "string", Description: "A directory on a writable path mount (mount://exports/<path>) that holds no bundle yet; default mount://<storage.export_mount>/projects/<slug>/<commit, 12 hex>"},
+		}},
+	},
+	{
 		ID: "projects.get", Entity: "projects", Verb: "get", Method: "GET", Path: "/projects/{p}",
 		Summary: "Get a project",
 		Params: []Param{
@@ -1500,7 +1530,7 @@ var Operations = []Operation{
 	{
 		ID: "projects.new", Entity: "projects", Verb: "new", Method: "POST", Path: "/projects",
 		Summary:        "Create a project from the wizard's choices and bootstrap its repository (202 with the bootstrap job)",
-		Description:    "Create a project: a unit of work with its own repository, budgets and gates. Only name is required; every other wizard choice (slug, locales, domain, base model, agent driver and model, permission preset, instructions template, repository, budgets) defaults from defaults.yaml (defaults.get, section wizard). The project is created in state bootstrapping and the answer is 202 with the bootstrap job's id: follow job.{jobId} (jobs.wait) until the repository is written and the project is active. A dry run answers 200 with the project that would be created and queues nothing.",
+		Description:    "Create a project: a unit of work with its own repository, budgets and gates. Only name is required; every other wizard choice (slug, locales, domain, base model, agent driver and model, permission preset, instructions template, repository, budgets) defaults from defaults.yaml (defaults.get, section wizard). The project is created in state bootstrapping and the answer is 202 with the bootstrap job's id: follow job.{jobId} (jobs.wait) until the repository is written and the project is active. A dry run answers 200 with the project that would be created and queues nothing. With bundle (mount://<mount>/<dir>, a project bundle from projects.export) the project is made from the bundle: description, locales, domain and base model default to the bundle's, the internal repository is the bundle's history (main at the bundled commit), and the bootstrap job imports and adopts the bundle's registry versions as bundles.adopt does (the base model becomes the bundle's when it is one of them), then commits project.yaml, AGENTS.md and data.lock for this instance. Registering versions is a registry change, so a call with bundle is an approval the admin decides, for people too (202 with an approvalId instead of a jobId; the approved call answers 202 with the job).",
 		IdempotencyKey: true,
 		Params: []Param{
 			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
@@ -1509,6 +1539,7 @@ var Operations = []Operation{
 			{Name: "agent", Type: "object"},
 			{Name: "baseModel", Type: "string", Description: "A frozen base-model version id (ver_…) or collection name (its newest frozen version)"},
 			{Name: "budgets", Type: "object"},
+			{Name: "bundle", Type: "string", Description: "Make the project from a project bundle (projects.export): mount://<mount>/<dir>, the directory holding bundle.json. Choices sent here override the bundle's facts; the repository must be internal"},
 			{Name: "description", Type: "string"},
 			{Name: "domain", Type: "string"},
 			{Name: "instructionsTemplate", Type: "string", Description: "An instructions template (templates.list templateKind=instructions): default or minimal; custom once AGENTS.md was edited by hand"},

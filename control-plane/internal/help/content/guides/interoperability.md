@@ -73,6 +73,8 @@ An export record (`exports.get`): `state` (running, done, failed, cancelled — 
 - Move a version to another Cadence instance: `datasets.export {version, format: cadence-bundle}`, then on the other
   instance `dataset_import` with `format: cadence-bundle` and the bundle's path; the version keeps its fingerprint.
 - Share a public-corpus subset: `datasets.export {version, format: hf-hub, hubRepo: <org>/<name>}`; the admin approves.
+- Move a whole project (repository, `data.lock`, every version it references): `projects.export`, then
+  `projects.new {name, bundle}` or `bundles.adopt` on the other instance — [Project bundles](project-bundles.md).
 
 ## Sources
 

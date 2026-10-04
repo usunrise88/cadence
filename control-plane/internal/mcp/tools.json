@@ -2830,6 +2830,84 @@
       ]
     },
     {
+      "name": "bundles.adopt",
+      "title": "Import a Cadence project bundle's registry versions this instance lacks and adopt every version the bundle's project adopted into this project (approval for everyone); 201 with the import job",
+      "description": "Read a Cadence project bundle (projects.export on this or another instance) from a directory on a mount (bundle: mount://\u003cmount\u003e/\u003cdir\u003e, the directory holding bundle.json) and adopt the versions its project adopted into this project. Versions this instance already holds (same collection and content) are reused; the rest are registered under their original version strings — their blobs copied into the content store and checked against their hashes, dataset versions and noise banks re-imported from their dataset bundles with their sources and licences (a source cleared for training there is cleared here), golden sets re-frozen through this instance's leakage checks. Adoption runs the licence checks (and the golden-set leakage check against what this project trained on); aliases the bundle sets are set where this project has no alias of that name (production never). The repository is not changed (projects.new with bundle makes a new project from it). Registering versions is a registry change for every project, so the call is an approval the admin decides, for people too (202 with an approvalId); the approved call answers 201 with the import job (follow job.{jobId}; its result lists what was registered, reused and adopted). dryRun=true answers the plan without asking. Needs If-Match with the project's revision. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/projects/{p}/bundles:adopt",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "aliases": {
+                "default": true,
+                "description": "Set the bundle's aliases this project does not have yet (production never)",
+                "type": "boolean"
+              },
+              "bundle": {
+                "description": "The bundle's directory on a mount: mount://\u003cmount\u003e/\u003cdir\u003e (the directory holding bundle.json)",
+                "maxLength": 1000,
+                "type": "string"
+              }
+            },
+            "required": [
+              "bundle"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "ifMatch",
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
       "name": "checkpoints.average",
       "title": "Average chosen checkpoints of a run with the family's average step; the result is a new checkpoint of the run",
       "description": "Average two or more checkpoints of one run (ids from checkpoints.list, typically the top k) with the model family's average step. Answers 201 with the pipeline run; when it finishes the averaged checkpoint appears in checkpoints.list (kind averaged, averagedFrom) with its own validation WER when the step measures one. Pass dryRun=true to see what would happen without changing anything.",
@@ -3538,12 +3616,13 @@
             "additionalProperties": false,
             "properties": {
               "format": {
-                "description": "lhotse-shar: Shar shards (cuts and recording tars); nemo-manifest: manifest.\u003csplit\u003e.jsonl with the WAV files; cadence-bundle: the registry record, sources and blobs laid out as a content store, for another Cadence instance; hf-hub: an audiofolder dataset pushed to the Hugging Face Hub (approval)",
+                "description": "lhotse-shar: Shar shards (cuts and recording tars); nemo-manifest: manifest.\u003csplit\u003e.jsonl with the WAV files; cadence-bundle: the registry record, sources and blobs laid out as a content store, for another Cadence instance; hf-hub: an audiofolder dataset pushed to the Hugging Face Hub (approval); cadence-project-bundle: a whole project (projects.export only; datasets.export refuses it)",
                 "enum": [
                   "lhotse-shar",
                   "nemo-manifest",
                   "cadence-bundle",
-                  "hf-hub"
+                  "hf-hub",
+                  "cadence-project-bundle"
                 ],
                 "type": "string"
               },
@@ -8213,6 +8292,81 @@
       ]
     },
     {
+      "name": "projects.export",
+      "title": "Export the project as a Cadence project bundle (its repository at a commit, data.lock and every registry version it references, with their content) to a directory on a writable mount; 201 with the export",
+      "description": "Write a self-contained Cadence project bundle to a directory on a writable path mount, for another Cadence instance (bundles.adopt, or projects.new with bundle) or for safekeeping: repository.bundle (a git bundle of the repository at ref, default main), data.lock at that commit, bundle.json (the project's facts, its aliases and the registry record of every version it adopted or that an adopted version names — dataset versions, golden sets, normalizers, noise banks, auxiliary models' payloads, models, base models, templates — with their sources and licences), one dataset bundle per dataset version and noise bank under datasets/\u003cname\u003e/\u003cversion\u003e/ (the layout datasets.export cadence-bundle writes) and every other blob a payload names under cas/. Versions published by workers (runtimes, step kinds, model families) travel as references only. Every dataset version must be in the cache (datasets.materialize an evicted one first). target defaults to mount://\u003cstorage.export_mount\u003e/projects/\u003cslug\u003e/\u003ccommit, 12 hex\u003e; a directory that already holds a bundle is refused. dryRun=true answers the plan (commit, target, versions, blobs, bytes). The real call answers 201 with the export (exports.get; format cadence-project-bundle, follow job.{jobId}); the audio it writes is recorded as mount copies of its content-store blobs. Needs If-Match with the project's revision (projects.get): the bundle carries the adoptions and aliases of that revision. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/projects/{p}:export",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "ref": {
+                "description": "The branch or commit to export (default main)",
+                "maxLength": 200,
+                "type": "string"
+              },
+              "target": {
+                "description": "A directory on a writable path mount (mount://exports/\u003cpath\u003e) that holds no bundle yet; default mount://\u003cstorage.export_mount\u003e/projects/\u003cslug\u003e/\u003ccommit, 12 hex\u003e",
+                "maxLength": 1000,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "ifMatch",
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
       "name": "projects.get",
       "title": "Get a project",
       "description": "Get a project",
@@ -8278,7 +8432,7 @@
     {
       "name": "projects.new",
       "title": "Create a project from the wizard's choices and bootstrap its repository (202 with the bootstrap job)",
-      "description": "Create a project: a unit of work with its own repository, budgets and gates. Only name is required; every other wizard choice (slug, locales, domain, base model, agent driver and model, permission preset, instructions template, repository, budgets) defaults from defaults.yaml (defaults.get, section wizard). The project is created in state bootstrapping and the answer is 202 with the bootstrap job's id: follow job.{jobId} (jobs.wait) until the repository is written and the project is active. A dry run answers 200 with the project that would be created and queues nothing. Pass dryRun=true to see what would happen without changing anything.",
+      "description": "Create a project: a unit of work with its own repository, budgets and gates. Only name is required; every other wizard choice (slug, locales, domain, base model, agent driver and model, permission preset, instructions template, repository, budgets) defaults from defaults.yaml (defaults.get, section wizard). The project is created in state bootstrapping and the answer is 202 with the bootstrap job's id: follow job.{jobId} (jobs.wait) until the repository is written and the project is active. A dry run answers 200 with the project that would be created and queues nothing. With bundle (mount://\u003cmount\u003e/\u003cdir\u003e, a project bundle from projects.export) the project is made from the bundle: description, locales, domain and base model default to the bundle's, the internal repository is the bundle's history (main at the bundled commit), and the bootstrap job imports and adopts the bundle's registry versions as bundles.adopt does (the base model becomes the bundle's when it is one of them), then commits project.yaml, AGENTS.md and data.lock for this instance. Registering versions is a registry change, so a call with bundle is an approval the admin decides, for people too (202 with an approvalId instead of a jobId; the approved call answers 202 with the job). Pass dryRun=true to see what would happen without changing anything.",
       "method": "POST",
       "path": "/projects",
       "inputSchema": {
@@ -8338,6 +8492,11 @@
                   }
                 },
                 "type": "object"
+              },
+              "bundle": {
+                "description": "Make the project from a project bundle (projects.export): mount://\u003cmount\u003e/\u003cdir\u003e, the directory holding bundle.json. Choices sent here override the bundle's facts; the repository must be internal",
+                "maxLength": 1000,
+                "type": "string"
               },
               "description": {
                 "maxLength": 2000,

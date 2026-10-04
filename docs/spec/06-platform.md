@@ -212,7 +212,11 @@ Rules:
   `GetModelInfo` first (`auxiliary-unavailable`); Cadence never starts the service. `worker-omni` (profile `omni`,
   `worker/Dockerfile.omni`, runtime `omni`, GPU) is python 3.12 slim with PyTorch 2.8 (CUDA 12.8), torchaudio 2.8 and
   fairseq2 0.6 (≈ 11.6 GB) for `align_reference@1`, because fairseq2 needs torch 2.8 and the NeMo Speech image ships
-  2.12 (R45's one-off allowance; the model loads per job, about 2 GB on the card). Neither binds the corpora mount yet.
+  2.12 (R45's one-off allowance; the model loads per job, about 2 GB on the card). Since the phase-4 tail it also
+  serves `lid_classify@2` (VoxLingua107 through speechbrain 1.1.1, which installs over its torch 2.8 and torchaudio
+  2.8 without moving them; the image size is unchanged); models load per job from pinned Hub snapshots
+  (`CADENCE_HF_READONLY_CACHES` is honoured). The host's nightly GPU run (`scripts/nightly-gpu.sh`) builds this image
+  from `main` and runs the omni pack's GPU tests when 8 GB are free.
 
 ## Artifacts, metrics and logs
 

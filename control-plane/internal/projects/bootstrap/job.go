@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/usunrise88/cadence/control-plane/internal/auth"
+	"github.com/usunrise88/cadence/control-plane/internal/bundles"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
 	"github.com/usunrise88/cadence/control-plane/internal/jobs"
 	"github.com/usunrise88/cadence/control-plane/internal/projects"
@@ -35,6 +36,9 @@ type RepoArgs struct {
 type Args struct {
 	ProjectID  string   `json:"projectId"`
 	Repository RepoArgs `json:"repository"`
+	// Bundle makes the project from a project bundle (projects.new with bundle): the repository from its git bundle,
+	// the registry versions imported and adopted (bundle.go).
+	Bundle string `json:"bundle,omitempty"`
 }
 
 // Result is what a finished bootstrap job reports.
@@ -43,6 +47,8 @@ type Result struct {
 	Files      []string `json:"files"`
 	Repository string   `json:"repository"`
 	Workspaces []string `json:"workspaces"`
+	// Bundle is what the import of a project bundle did (projects.new with bundle).
+	Bundle *bundles.Result `json:"bundle,omitempty"`
 }
 
 // Register adds the bootstrap job kind and the daily merged-branch retention chore; call before jobs.Start.
@@ -86,6 +92,9 @@ func (s *Service) bootstrap(ctx context.Context, run *jobs.Run, args Args, actor
 	profile, err := projects.GetAgentProfile(ctx, s.o.Pool, p.ID)
 	if err != nil {
 		return Result{}, err
+	}
+	if args.Bundle != "" {
+		return s.bootstrapBundle(ctx, run, args, p, profile, actor)
 	}
 	if err := run.Progress(ctx, 0.1, "creating the repository"); err != nil {
 		return Result{}, err
