@@ -103,6 +103,28 @@ def primary(tag: str) -> str:
     return tag.split("-", 1)[0].split("_", 1)[0].strip().lower()
 
 
+# Individual languages folded to their macrolanguage before comparing with a model's or an auxiliary's languages: the
+# same table as the control plane's internal/langtag (BCP 47 / ISO 639-3 macrolanguage mappings), kept equal by hand.
+MACROLANGUAGES = {
+    "nb": "no",
+    "nn": "no",
+    "zsm": "ms",
+    "zlm": "ms",
+    "arb": "ar",
+    "cmn": "zh",
+    "pes": "fa",
+    "swh": "sw",
+    "ekk": "et",
+    "lvs": "lv",
+}
+
+
+def macro(tag: str) -> str:
+    """The primary subtag folded to its macrolanguage ("nb-NO" → "no"); a language that is no member is its own."""
+    p = primary(tag)
+    return MACROLANGUAGES.get(p, p)
+
+
 def same_language(a: str, b: str, equivalents: Iterable[Iterable[str]] = ()) -> bool:
     """Whether two tags name the same language: equal primary subtags, or both in one equivalence group."""
     pa, pb = primary(a), primary(b)
