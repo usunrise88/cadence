@@ -715,6 +715,10 @@ R, I, A, L and B, folded into the spec by stream S on 2026-10-04; the gate is st
   annotation batch on the ingest's segments artifact instead); the Try Cadence playbook asks to clear a source that
   is already cleared; a pseudo-label ensemble with the base model as a member keeps only what the weak member gets
   right (2 454 of 2 944 FLEURS segments disputed, kept labels no better than Whisper alone).
+- Closed by the owner's decisions of 2026-10-04 (00 decision log): `pipelines/calls-ingest.yaml` stops at the
+  segments (the frame of `batches.new`); a playbook's clearance step ticks from the `sources.get` that found the
+  source already cleared; the pseudo-label template votes Whisper + OASIS (`pseudolabel_ensemble@2`, OASIS required,
+  Whisper's written-form text kept when the two agree).
 
 ---
 

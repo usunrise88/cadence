@@ -824,13 +824,17 @@ owner may overrule):
 - [ ] Gate: replay golden sets in `nb-NO` need `languages: {"nb-NO": "no-NO"}` because the base model's tag is `no`.
       **Now:** set per eval; should `knowsLanguage` treat `nb`/`nn` as `no` (macrolanguage), or `gates.yaml` carry
       the map?
-- [ ] Gate: `data-ingest` cannot draft untranscribed calls (the filter drops segments without text, the draft refuses
+- [x] Gate: `data-ingest` cannot draft untranscribed calls (the filter drops segments without text, the draft refuses
       them). **Now:** an annotation batch frames on the ingest's `segments` artifact; should a calls template stop at
-      the segments?
-- [ ] Gate: with the base model as one of two members, the pseudo-label ensemble kept 490 of 2 944 FLEURS segments,
+      the segments? **Decided 2026-10-04 (owner):** yes — `pipelines/calls-ingest.yaml` (`sdp_ingest` alone, stereo
+      split, roles from the sidecar) ends at the segments, the frame of `batches.new` (00 decision log).
+- [x] Gate: with the base model as one of two members, the pseudo-label ensemble kept 490 of 2 944 FLEURS segments,
       no better than Whisper alone (WER 0.121 vs the references). **Now:** the template's members are unchanged and
       the book explains it; should the default ensemble leave the base model out, or weight members by a measured
-      WER?
+      WER? **Decided 2026-10-04 (owner):** leave it out — the template votes Whisper + OASIS, OASIS is required (the
+      dry run refuses without it), `pseudolabel_ensemble@2` refuses fewer than `pseudolabel.min_members` and keeps
+      Whisper's written-form text when the two agree (`pseudolabel.prefer_written_form`; 00 decision log). No
+      weighting by measured WER.
 - [ ] Gate (2026-10-04): emission delay on `golden-set/fleurs-sr-latn-test` is PR50 4.5 s / PR90 9.9 s at `80ms`
       but 0.42 s / 4.0 s at `160ms` (base model and fine-tune alike; latency to final at 80 ms p50 1.3 s): words in
       80 ms partials stay unstable until the final. **Now:** unexplained — the model at that look-ahead, or the

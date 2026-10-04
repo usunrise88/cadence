@@ -142,7 +142,8 @@ what is open: ROADMAP "Phase 4 notes". What exists:
   `manifest_filter`, `speaker_disjoint_split`, `dataset_freeze`, `segments_cut` (artifact `segments`).
 - **Auxiliary models and pseudo-labels** (`internal/auxiliary`, `internal/triage`): registry kind `auxiliary`
   (adoption gated, licence-checked), `whisper_transcribe@1` and `lid_classify@1` (NeMo pack), `oasis_transcribe@1`
-  (pack and runtime `services`), `pseudolabel_ensemble@1`, `pipelines/pseudo-label.yaml`, the triage queue.
+  (pack and runtime `services`), `pseudolabel_ensemble@2`, `pipelines/pseudo-label.yaml` (Whisper + OASIS, OASIS
+  required), `pipelines/calls-ingest.yaml` (segments for annotation), the triage queue.
 - **Registry in full**: adoption with licence and locale checks, `data.lock` resolution, `versions.archive`, step-kind
   deprecation from the pack.
 - **Interoperability** (`internal/exports`): `dataset_import@4` (Lhotse, NeMo, bundle), `datasets.export` +
