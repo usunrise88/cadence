@@ -695,10 +695,15 @@ R, I, A, L and B, folded into the spec by stream S on 2026-10-04; the gate is st
   FLEURS from the Hub; `cadence smoke --project SLUG` (`make e2e` needs `SMOKE_PROJECT`). `defaults.yaml` is version 15.
 - Corpora: `scripts/corpora/` (`fleurs.sh`, `calls_synth.py`); `fleurs-sr` and `calls-synth-sr` (40 calls, G.711 μ-law
   stereo) on the stand; `sdp_ingest` on them gives 577 segments (315 caller, 262 bot), turn coverage ≈ 80 %.
+- Closed in the phase-4 tail (UI stream, 2026-10-04): reviewers read the guidelines text in the Annotate view
+  (`guidelines.get`, the file at the batch's pinned commit; a reviewer's session reaches it for its own batch only);
+  the Dataset version document renders its card (`texts.get`: only a blob a registry version names as text to read,
+  256 KiB, sanitised Markdown via `@/shell/markdown`); an export UI there (Export card: plan, then export; Hub:
+  approval; the version's exports with state and files); dry runs of `runs.new|stage` and `pipelines.run` warn
+  `needs-materialize` (version, bytes and mounts to copy back) instead of refusing — the real call is still refused —
+  and `pipelineRuns.get` lists `needsMaterialize`, shown with **Materialize** in Mix, Run and Pipeline run.
 - Open: waveform peaks at ingest and freeze (computed on first view); the spectrogram tile-pyramid job (tiles per
-  request); guidelines text for reviewers (no operation serves it); dataset card rendering (no operation serves CAS
-  text); an export UI (API only); dry runs do not say "needs materialize"; the audio view's reference-word track; the
-  project-level bundle; the VoxLingua107 LID image; end-of-utterance gaps are not in the dataset manifest; aligning
+  request); the audio view's reference-word track; the project-level bundle; the VoxLingua107 LID image; end-of-utterance gaps are not in the dataset manifest; aligning
   the replay golden sets on the stand; a nightly omni GPU run; Playwright
   e2e for annotation; `recipes/` lacks `annotation/guidelines/`.
 - Found and fixed running the gate on the stand (2026-10-04): every worker binds the mounts (core steps reached

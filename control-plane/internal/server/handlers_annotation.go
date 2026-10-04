@@ -67,8 +67,8 @@ func reviewerAllowed(method, path, batch string) bool {
 		return true
 	case p == "/defaults" && get:
 		return true // the audio view's settings (views.audio); configuration, no data
-	case p == "/batches/"+batch && get:
-		return true
+	case p == "/batches/"+batch && get, p == "/batches/"+batch+"/guidelines" && get:
+		return true // the batch and the guidelines file it pinned (nothing else of the repository)
 	case strings.HasPrefix(p, "/batches/"+batch+"/batch-items") && (get || post):
 		return true
 	case strings.HasPrefix(p, "/registry/utterances/bit_") && (get || post):

@@ -35,6 +35,8 @@ type Warning struct {
 	Step    string `json:"step,omitempty"`
 	Kind    string `json:"kind,omitempty"`
 	Message string `json:"message"`
+	// Materialize: needs-materialize only.
+	Materialize *Materialize `json:"materialize,omitempty"`
 }
 
 // Warning codes: a deprecated step kind; a service an optional step's auxiliary names that does not answer.

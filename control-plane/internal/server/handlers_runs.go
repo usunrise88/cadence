@@ -139,8 +139,10 @@ func (s *Server) RunsNew(ctx context.Context, req api.RunsNewRequestObject) (api
 func (s *Server) startRun(ctx context.Context, op, key string, dryRun *bool, input func(context.Context, pgx.Tx) (runs.NewInput, error),
 	outside runs.NewInput) (commandResponse, error) {
 	weighed := true
-	if pr, err := s.runs.Prepare(ctx, s.Pool, outside); err != nil {
-		ctx, weighed = spending(ctx, 0), false // the command fails on the same plan; nothing to weigh
+	if pr, err := s.runs.Prepare(ctx, s.Pool, outside); err != nil || len(pr.Plan.Materialize) > 0 {
+		// The command fails on the same plan (or, needing a dataset materialized first, answers its dry run with the
+		// warning and refuses the real call): nothing to weigh.
+		ctx, weighed = spending(ctx, 0), false
 	} else {
 		ctx = spending(ctx, pr.Estimate.GPUHours.Value)
 	}
@@ -155,11 +157,18 @@ func (s *Server) startRun(ctx context.Context, op, key string, dryRun *bool, inp
 		if err != nil {
 			return commands.Result{}, nil, err
 		}
-		if !weighed {
+		if !cmd.DryRun {
+			if err := pr.Plan.MaterializeRefusal(ctx, tx); err != nil {
+				return commands.Result{}, nil, err
+			}
+		}
+		if !weighed && len(pr.Plan.Materialize) == 0 {
 			return commands.Result{}, nil, unweighed(op)
 		}
 		if cmd.DryRun {
-			return commands.Result{Status: http.StatusOK, Body: s.runs.EstimateJSON(pr.Estimate)}, nil, nil
+			est := s.runs.EstimateJSON(pr.Estimate)
+			est.Warnings = pr.Plan.Warnings // e.g. needs-materialize: the real call is refused until it is back
+			return commands.Result{Status: http.StatusOK, Body: est}, nil, nil
 		}
 		v, drafts, err := s.runs.Create(ctx, tx, pr)
 		if err != nil {

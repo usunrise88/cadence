@@ -1,7 +1,7 @@
 ---
 title: Pipeline run
 summary: Any pipeline run — steps with status and attempts, inputs and outputs with previews, departures from defaults, parameters from the step schema, each step's log; retry a step, cancel, open the pipeline file.
-contexts: [panel:pipeline-run]
+contexts: [panel:pipeline-run, command:pipelineRuns.get, command:datasets.materialize]
 ---
 
 ## What this is
@@ -14,6 +14,7 @@ training run:
 | Part | Meaning |
 | --- | --- |
 | Run | State, pipeline, source (repository or template), the commit it was read at, who started it, wall time, the run's inputs and why it failed |
+| Needs materialize | For a run that is not done: each dataset version a training step that has not finished would read whose shards the cache evicted (`pipelineRuns.get` `needsMaterialize`) — the version (opens its document), the bytes and shards `datasets.materialize` copies back and the mounts they come from. Training reads only what the cache holds, so a retry fails that step (`artifact-missing`) until **Materialize** has brought it back; the notice says so when the copy ends |
 | Steps | In execution order: `kind@version`, state (waiting, queued, running, done, reused, failed, skipped, cancelled), departures from defaults, ⚠ deprecated when its pack deprecates the pinned kind version (the tooltip names the cut-off day and the replacement; [step-kind-deprecated](../errors/step-kind-deprecated.md)), attempts, wall time |
 | Inputs and outputs | Artifacts by name, type, hash and size; select one for its preview (`artifacts.get`: metadata, a directory's files, or up to 4 000 characters of text) |
 | Departures | The parameters that differ from their defaults, with the default beside the value |
@@ -44,11 +45,16 @@ Run → Review. Follow an import, a calibration or a training stage step by step
 | Cancel run | `pipelineRuns.cancel` | Two clicks; waiting steps never start and running step jobs are cancelled |
 | Open pipeline file | — | Opens `pipelines/<name>.yaml` in the Recipe document (not for a bundled template) |
 | Open in Logs | — | Focuses the step's job in the Logs panel |
+| Materialize | `datasets.materialize` | In the needs-materialize notice: copies an evicted dataset version back into the cache (a job); then retry |
 
 ## Playbooks
 
 - **A step failed with an OOM twice.** Read its log, lower the batch in the pipeline file (the parameter's safe range
   is in "Why this default?"), and retry the step.
+- **A training step failed with artifact-missing.** The cache evicted a dataset version it reads (the run stopped,
+  so nothing pinned it). The needs-materialize notice names it: **Materialize**, wait for "Back in the cache", then
+  **Retry**. A dry run of `pipelines.run` or `runs.new` reports the same as a `needs-materialize` warning before
+  anything is queued.
 - **Why is this run's parameter different?** The Departures list shows every value that departs from defaults.yaml
   and its default; the same list is on the run for agents (`pipelineRuns.get`).
 

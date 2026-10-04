@@ -1,7 +1,7 @@
 ---
 title: Triage
 summary: The project's disputed pseudo-labels, resolved by a person (accept, correct, reject), and the Annotate mode of annotation batches — audio with a channel switch, a prefilled transcript, tags, keyboard-first.
-contexts: [panel:triage, command:triage.list, command:triage.accept, command:triage.correct, command:triage.reject, command:annotations.new]
+contexts: [panel:triage, command:triage.list, command:triage.accept, command:triage.correct, command:triage.reject, command:annotations.new, command:guidelines.get]
 ---
 
 ## What this is
@@ -25,7 +25,9 @@ The centre of the **Triage** workspace. Two modes:
   TTS script), and a transcript prefilled with the best machine hypothesis. Mark **tags** (noise, crosstalk, foreign,
   unintelligible) and **entity spans** (select words, choose the class, **Mark entity**), then **Done**, **Flag** or
   **Skip**. Your queue is your own: double items reach a second annotator **blind**, and you never see another
-  annotator's text.
+  annotator's text. **Guidelines** above the item opens the batch's annotation guidelines (`guidelines.get`): the
+  Markdown file at the commit the batch pinned, not the file on main today. A reviewer invited to the batch reads
+  them too — and nothing else of the project repository.
 
 Keys of the Annotate mode (no browser-reserved keys): `Ctrl+Enter` done, `Ctrl+Shift+Enter` flag, `Alt+S` skip,
 `Alt+P` play/pause, `Alt+R` replay the segment, `Alt+C` switch channel, `Alt+1`…`Alt+4` tags, `Alt+E` mark the

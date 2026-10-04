@@ -1,7 +1,7 @@
 ---
 title: Annotation batch
 summary: One annotation batch — its sample and strata, progress, inter-annotator agreement, reviewers and invitations, the adjudication queue and the freeze into a golden set or training data (approval).
-contexts: [panel:annotation-batch, entity:annotation_batch, command:batches.new, command:batches.get, command:batches.freeze, command:invitations.new, command:batchItems.accept]
+contexts: [panel:annotation-batch, entity:annotation_batch, command:batches.new, command:batches.get, command:batches.freeze, command:invitations.new, command:batchItems.accept, command:guidelines.get]
 ---
 
 ## What this is
@@ -12,7 +12,8 @@ A document for one **annotation batch** (`batches.get`): a fixed sample of segme
   `pipelines/data-ingest`, or a segments artifact) over one channel role (the **caller** by default: the bot's channel
   labels itself from its TTS script), stratified by campaign, month, duration bucket and confidence. The Details tab
   lists the strata: how many segments each holds in the frame and how many were sampled.
-- **Guidelines** — `annotation/guidelines/<name>.md` in the project repository at the commit the batch pinned (R27).
+- **Guidelines** — `annotation/guidelines/<name>.md` in the project repository at the commit the batch pinned (R27);
+  **Guidelines** under the details opens its text (`guidelines.get`, Markdown, sanitised), as an annotator reads it.
 - **Progress** — items by state: **pending** (an annotation missing; double and flagged items need two), **agreed**,
   **disputed** (two transcripts differ), **adjudicated**, **excluded** (skipped by `annotation.max_skips` people, tagged
   foreign or unintelligible, or excluded at adjudication).

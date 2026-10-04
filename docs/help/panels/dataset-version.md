@@ -1,7 +1,7 @@
 ---
 title: Dataset version
-summary: One dataset version — a draft indexed in place on a mount or a frozen selection in the content store — with its preview, freeze (leakage check first), quality checks, card, shards, statistics charts, the projects that use it and its utterances.
-contexts: [panel:dataset-version, command:datasets.get, command:datasets.preview, command:datasets.freeze, command:projects.adopt, command:versions.archive, command:utterances.search]
+summary: One dataset version — a draft indexed in place on a mount or a frozen selection in the content store — with its preview, freeze (leakage check first), quality checks, dataset card, shards, statistics charts, exports, the projects that use it and its utterances.
+contexts: [panel:dataset-version, command:datasets.get, command:datasets.preview, command:datasets.freeze, command:datasets.export, command:exports.list, command:texts.get, command:projects.adopt, command:versions.archive, command:utterances.search]
 ---
 
 ## What this is
@@ -29,9 +29,12 @@ Data: source → ingest (draft) → **preview → freeze** → adopt → mix →
 | Freeze card | `datasets.freeze` dry run first: the leakage check against every golden set (passed, and how many sets), or [golden-set-leakage](../errors/golden-set-leakage.md) with the overlaps. **Freeze** starts the cut (a CPU pipeline run); the version turns frozen when it ends |
 | Preview card | `datasets.preview`: kept utterances and hours per language and split after duration, characters-per-second, language and origin filters, and what each filter drops; the bounds show on the charts. Nothing is written |
 | What it holds | Size, languages, source(s) (open as Source documents), licence, split rule, recipe (pipeline and commit), and the splits table |
-| Quality checks | `dataset.quality`: silence share, clipped segments, length outliers with value and threshold (✓ pass, ⚠ warn; warnings never block a freeze); the dataset card's hash |
+| Quality checks | `dataset.quality`: silence share, clipped segments, length outliers with value and threshold (✓ pass, ⚠ warn; warnings never block a freeze) |
+| Dataset card | The card the freeze wrote (`dataset.card`), read with `texts.get` and rendered as Markdown — sanitised: raw HTML is dropped and links open in a new tab. Up to 256 KiB is shown; the hash and size are below it |
 | Statistics | R53 charts from `dataset.stats` through `@/shell/charts`: hours by language and split, duration histogram with p5/p50/p95 and the preview's bounds, characters per second, level, source sample rates, hours by transcript origin and channel role. Each chart has a table view and CSV copy |
 | Shards | `dataset.shards`: index, cuts manifest hash, utterances, hours, audio bytes, location now (`cas`; `mount` once evicted, while a mount copy can bring it back; `missing` when none can) and whether the cache pins the version now — read from the cache when the document loads, not from the frozen record |
+| Exports | The version's exports run in the open project (`exports.list`, live on `entity.export.*`): format, state with its pipeline run, target (a mount directory, the content store, or the Hub repository with a link), files, size, mount copies, who started it. **Export…** opens the export card (a frozen version only) |
+| Export card | Format (Lhotse Shar, NeMo manifest, Cadence bundle, Hugging Face Hub), the target — the default (`storage.export_mount` when registered and writable, else the content store), the content store, or a writable path mount with a directory (default `<collection>/<version>/<format>`) — or, for the Hub, the repository and its visibility (default `storage.export_hub_private`). **Plan** dry-runs `datasets.export`: the step kind, target, what it reads, the licence and sources, whether the audio becomes mount copies and whether an approval is needed. **Export** sends exactly the planned request (an edit makes the plan stale); a Hub push answers an approval the admin decides |
 | Used by | Projects that adopted it and their aliases; **Adopt into <project>…** opens the adopt card |
 | Utterances | `utterances.search` within the version: transcript text, language, origin, speaker, duration and split; **Play** opens a row in Audio |
 
@@ -42,6 +45,9 @@ The adopt card dry-runs `projects.adopt` first: the licence
 ## Commands
 
 - `datasets.freeze` (header **Freeze**, a draft only), `datasets.preview` (header **Preview**).
+- `datasets.export` (header **Export**, a frozen version only; the Hub needs an approval —
+  [export-not-allowed](../errors/export-not-allowed.md) for a source whose licence forbids it). See the
+  [interoperability guide](../guides/interoperability.md) for the formats.
 - `projects.adopt` (header **Adopt**, a frozen version only).
 - `versions.archive` (header **Archive**; the admin's, refused with [version-in-use](../errors/version-in-use.md) while
   anything uses it).

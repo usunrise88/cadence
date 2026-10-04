@@ -33,6 +33,8 @@ type EstimateView struct {
 	Source          string     `json:"source"`
 	MeasuredAt      *time.Time `json:"measuredAt,omitempty"`
 	Mix             *MixRef    `json:"mix,omitempty"`
+	// Warnings are the stage pipeline plan's (needs-materialize, deprecated kinds): the server sets them on a dry run.
+	Warnings []pipelines.Warning `json:"warnings,omitempty"`
 }
 
 // DataView is the data volume of an estimate.

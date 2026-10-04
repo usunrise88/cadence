@@ -56,7 +56,9 @@ func TestNoCodeNamesAFramework(t *testing.T) {
 			}
 			scanned++
 			for i, line := range strings.Split(string(b), "\n") {
-				if m := frameworkNames.FindString(line); m != "" {
+				// The contract's export format nemo-manifest (DatasetExportFormat) is an interchange format the
+				// export UI offers by its id, not a family or runtime anything branches on.
+				if m := frameworkNames.FindString(strings.ReplaceAll(line, `"nemo-manifest"`, "")); m != "" {
 					t.Errorf("%s:%d names %q; family and runtime names belong in worker packs, defaults and templates (R41)",
 						path, i+1, m)
 				}

@@ -283,7 +283,7 @@ All are registry base-model entries of kind `auxiliary`, pinned by revision, lic
 Markdown in the project repository (`annotation/guidelines/<name>.md`), versioned by commit SHA; a batch pins the
 SHA; the golden-set card cites it. Help articles stay product documentation.
 *As built (2026-10-04):* the batch pins the repository's HEAD commit at `batches.new`; reviewers see the path and
-commit, not the text (no operation serves it yet; 04 "Annotation workflow").
+commit, and from the phase-4 tail its text at that commit (`guidelines.get`; 04 "Annotation workflow").
 
 ---
 

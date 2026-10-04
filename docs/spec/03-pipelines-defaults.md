@@ -436,7 +436,15 @@ Pipeline engine changes in phase 4 (`internal/pipelines`):
   at dry run and at start: unreachable, a required step fails planning with `auxiliary-unavailable` (503); an optional
   step gets a plan warning instead.
 - **Plan warnings.** `PipelinePlan.warnings` lists what does not stop the run: `step-kind-deprecated`,
-  `auxiliary-unavailable` and `step-kind-unavailable`.
+  `auxiliary-unavailable` and `step-kind-unavailable` — and `needs-materialize`, which does not stop the dry run
+  but stops the real call. A training step that would read a dataset version the cache evicted (directly or through
+  a mix) gets one warning per version with `materialize` (`NeedsMaterialize`: the version, the input, the bytes and
+  shards `datasets.materialize` would copy back, the mounts, shards on no mount); the real call (`Engine.Start`, so
+  `pipelines.run`, `runs.new|stage|resume|calibrate`, evals) is refused with `artifact-missing` naming
+  `datasets.materialize`, and such a plan is not weighed against the GPU budget (no approval for a run that cannot
+  start). `runs.new` and `runs.stage` dry runs carry the warnings in `RunEstimate.warnings`; `pipelineRuns.get`
+  lists `needsMaterialize` for a run not done (an unfinished training step's resolved inputs, else its run inputs).
+  Other training refusals (eval-only, uncleared source, golden-set leakage) still refuse the dry run (phase 4 tail).
 - **Unavailable optional steps** (phase-4 audit, C3). An optional step whose kind no runtime publishes, that no
   registered worker publishes any more, or that only workers not seen within `pipelines.LiveWindow` (2 minutes: a
   waiting worker long-polls every 30 s) publish, is not refused and not queued: the plan warns

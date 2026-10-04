@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { AudioView, type AnalysisData, type AudioEngine } from "@/shell/audio";
 import { errorMessage, runCommand } from "@/shell/panel/commands";
+import { GuidelinesPane } from "./Guidelines";
 import { channelCycle, channelLabel, ENTITY_CLASSES, formOf, KEYS, keepSpans, seconds, segmentSpan, spanOf, TAGS, toggleTag, type AnnotationForm } from "./model";
 
 // The Annotate mode (docs/spec/04-blocks.md "Annotation workflow" step 3; docs/spec/11-ui-panels.md Triage queue): one
@@ -75,6 +76,7 @@ export function AnnotateView({ batchId, compact }: AnnotateViewProps) {
         </nav>
       ) : null}
       <div className="min-w-0 flex-1 overflow-auto">
+        <GuidelinesPane batchId={batchId} />
         {item ? (
           <ItemForm key={item.id} batchId={batchId} item={item} userId={userId} onDone={advance} />
         ) : (

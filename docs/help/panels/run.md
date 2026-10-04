@@ -1,7 +1,7 @@
 ---
 title: Run
 summary: One training run — status and stage timeline, config diff against the parent run, departures, final metrics, the best checkpoint and GPU-hours; pause, resume, stop, resume from checkpoint, new stage with an explicit peak LR.
-contexts: [panel:run, command:runs.stage, command:runs.resume]
+contexts: [panel:run, command:runs.stage, command:runs.resume, command:datasets.materialize]
 ---
 
 ## What this is
@@ -18,6 +18,7 @@ step), paused (its step job is paused), done, failed or cancelled.
 | Spend and checkpoints | GPU-hours the run's leases used against the start estimate (basis table or measured), the checkpoint count and the best kept checkpoint |
 | Against the parent run | For a stage: the parent run and the train-step parameters that differ from it (this run's value highlighted) |
 | Departures from defaults | Every parameter, per step, that differs from defaults.yaml, with its default |
+| Needs materialize | A run that is not done whose train step would read a dataset version the cache evicted (its pipeline run's `needsMaterialize`), and the stage form's estimate when the new stage would (`runs.stage` dry run, warning `needs-materialize`): the version, the bytes to copy back and from which mounts, and **Materialize** (`datasets.materialize`). Training reads only what the cache holds, so resuming or starting is refused (`artifact-missing`) until it is back |
 
 Details lists the run's fields (base model, family, mix revision and its hash, recipe commit, runtime digest, card);
 Lineage links the mix, the parent run and the pipeline run. Live on `run.{id}.status` and `run.{id}.checkpoints`.
@@ -54,6 +55,8 @@ An agent's run over the project's daily GPU budget answers an approval instead o
   Estimate, Start stage. The new run's "Against the parent run" shows exactly what changed.
 - **A run failed with an out-of-memory error twice.** The timeline shows the OOM retry at 0.75× batch; lower the batch
   in the recipe, then Resume from checkpoint.
+- **The estimate says "Needs materialize".** The cache evicted a dataset version of the mix. **Materialize** copies it
+  back from its mount (the notice names the bytes); when it is back the estimate is asked again and Start works.
 
 ## Sources
 

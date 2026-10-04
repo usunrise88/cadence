@@ -14,7 +14,7 @@ const manifest: PanelManifest = {
   defaultLocation: "centre",
   entity: "dataset_version",
   help: "panels.dataset-version",
-  commands: ["datasets.freeze", "datasets.preview", "projects.adopt", "versions.archive"],
+  commands: ["datasets.freeze", "datasets.preview", "datasets.export", "projects.adopt", "versions.archive"],
   empty: DatasetVersionEmpty,
   component: DatasetVersionPanel,
 };

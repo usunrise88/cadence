@@ -169,15 +169,31 @@ As built (phase 4, streams M, R, A; help `panels.storage`, `panels.source`, `pan
 - Source and Dataset version are documents of the Data workspace, opened from the Library (sources are listed with
   Adopt and the this-project / all filter), a Source's ingest history, a Mix and links. Charts and the utterance
   table come from `@/shell/data` (R53 charts over `dataset.stats`, `UtteranceSearch`), which panels use instead of
-  each other. The dataset card's Markdown is not rendered (only its hash and size: no operation serves CAS text), and
-  there is no export UI (`datasets.export` is API, CLI and MCP only).
+  each other. The dataset card renders as Markdown (phase 4 tail): `texts.get` (`GET /registry/texts/{hash}`) serves
+  a blob of the content store only when a registry version names it as text to read — today a dataset version's
+  `card.hash` — capped at 256 KiB, and `@/shell/markdown` renders it static and sanitised (raw HTML dropped, links in
+  a new tab without the opener). The Exports section lists the version's exports in the open project
+  (`exports.list`, live on `entity.export.*`: format, state with its pipeline run, target or Hub link, files, bytes,
+  mount copies) and **Export…** (header command `datasets.export`) opens a card: format, target (default
+  `storage.export_mount`, the content store, or a writable path mount with a directory) or the Hub repository and
+  visibility; **Plan** is the dry run, **Export** sends exactly the planned request, a Hub push answers an approval.
 - Triage is a tool, not a document: it follows the project, not an entity. Queue keys: `Enter` accept, `E` correct
   (`Ctrl+Enter` saves), `Backspace` reject, `↑`/`↓` move. Annotate keys (no browser-reserved keys): `Ctrl+Enter` done,
   `Ctrl+Shift+Enter` flag, `Alt+S` skip, `Alt+P` play/pause, `Alt+R` replay the segment, `Alt+C` switch channel,
   `Alt+1`…`Alt+4` tags, `Alt+E` mark the selected words as an entity. A reviewer's invitation opens the same view
   restricted to its batch; your queue is your own, and double items reach a second annotator blind.
 - Annotation batch is a document of the Eval workspace (opens from the Triage panel, links and `batches.new`).
-  Reviewers see the guidelines' path and pinned commit, not the text.
+  The Annotate view and the Annotation batch document show the guidelines' text (phase 4 tail): **Guidelines**, a
+  collapsed pane above the item, reads `guidelines.get` (`GET /batches/{id}/guidelines`) — the file at the commit the
+  batch pinned, not main — rendered by `@/shell/markdown`. A reviewer's session may call it for its own batch only;
+  nothing else of the repository is served to it.
+- Needs materialize (phase 4 tail): a dry run of `runs.new`, `runs.stage` or `pipelines.run` whose training step
+  would read a dataset version the cache evicted answers a `needs-materialize` plan warning (version, bytes and shards
+  to copy back, mounts) instead of refusing; the real call is refused (`artifact-missing`). `pipelineRuns.get` lists
+  the same (`needsMaterialize`) for a run not done. The notice (`@/shell/data` `NeedsMaterialize`) shows in the Mix's
+  launch card and the Run's stage form (from the estimate), on a Run not done and in the Pipeline run panel (from the
+  pipeline run), with **Materialize** (`datasets.materialize`); it says "Back in the cache" on the artifact's restore
+  event, and the estimate is asked again.
 - Getting started's "Attach the call recordings" step ticks once a mount exists; a playbook's person step (an admin approving
   `mounts.new`) shows in Chat's plan.
 - Not built: peaks computed at ingest or freeze (on first view), the tile pyramid as a job, the reference word track
@@ -235,7 +251,7 @@ Commands are the only way the UI changes anything: menus, buttons, shortcuts and
 | Run eval matrix | — | `evals.new` (`POST /projects/{p}/evals`, dry run first) — one command wherever an eval starts (Checkpoints, Experiment, Eval report) |
 | Set eval baseline | — | `aliases.set` on `baseline` (`PUT /projects/{p}/aliases/baseline`) — approval (R8, R23) |
 | New mix / Edit mix | — | `POST /projects/{p}/mixes` (`mixes.new`); `PATCH /mixes/{id}` (`mixes.edit`) — R13: a mix is saved as a revision, not a version |
-| Export dataset version | — | `datasets.export` (`POST /registry/datasets:export`; Lhotse Shar, NeMo manifest, Cadence bundle to a mount or the content store; the Hub needs an approval) — no UI yet |
+| Export dataset version | — | `datasets.export` (`POST /registry/datasets:export`; Lhotse Shar, NeMo manifest, Cadence bundle to a mount or the content store; the Hub needs an approval) — the Dataset version document's Export card (plan, then export) |
 | Accept / correct / reject triage item | Enter / E / Backspace in Triage | `triage.accept`, `triage.correct`, `triage.reject` (`POST /triage/{id}:accept`, `:correct`, `:reject`) — people only |
 | Export model to ONNX | — | `POST /models/{id}:export` |
 | Promote to shadow / canary / prod | — | `POST /`projects/{p}/deployments — approval; confirm modal for production |

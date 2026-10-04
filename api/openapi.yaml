@@ -4164,6 +4164,46 @@ paths:
           content: { application/json: { schema: { $ref: "#/components/schemas/DatasetExport" } } }
         default: { $ref: "#/components/responses/Problem" }
 
+  # ---------------------------------------------------------------- guidelines text, registry texts (phase 4 tail · stream U) — add paths below this line
+
+  /batches/{id}/guidelines:
+    x-cadence: { entity: guidelines, kind: annotation_guidelines, singleton: true }
+    parameters: [{ $ref: "#/components/parameters/BatchId" }]
+    get:
+      operationId: guidelines.get
+      summary: The annotation guidelines a batch pinned — the Markdown file at the batch's commit of the project repository
+      tags: [annotation]
+      x-cadence:
+        toolDescription: >
+          Read the annotation guidelines of an annotation batch as its annotators see them: the file
+          annotation/guidelines/<name>.md at the commit the batch pinned when it was created (R27), not the file on main
+          today. The text is Markdown, at most 256 KiB (truncated says when it was cut). A reviewer invited to the batch
+          reads it; nothing else of the repository is served this way (recipes.get reads the project's files).
+      responses:
+        "200":
+          description: The guidelines at the pinned commit
+          content: { application/json: { schema: { $ref: "#/components/schemas/GuidelinesText" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/texts/{hash}:
+    x-cadence: { entity: texts, kind: registry_text }
+    parameters: [{ $ref: "#/components/parameters/ArtifactHash" }]
+    get:
+      operationId: texts.get
+      summary: Read a text of the content store the registry names to be read — a dataset version's card (Markdown)
+      tags: [registry]
+      x-cadence:
+        toolDescription: >
+          Read a text file of the content store that a registry version names as text meant to be read: today the
+          dataset card (Markdown) of a dataset version, by the hash datasets.get gives as dataset.card.hash. Any other
+          hash answers not-found, whatever the blob holds — audio, manifests and shards are read by steps, not
+          served as text. Registry read; at most 256 KiB (truncated says when it was cut).
+      responses:
+        "200":
+          description: The text
+          content: { application/json: { schema: { $ref: "#/components/schemas/RegistryText" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
   # ---------------------------------------------------------------- ingest, draft datasets, freeze, sources, utterance search (phase 4 · stream D) — add paths below this line
 
   /registry/datasets:preview:
@@ -5679,6 +5719,7 @@ components:
             datasets: { type: array, items: { type: string }, description: Resolved dataset version ids }
             hours: { type: number, format: double }
             bytes: { type: integer, format: int64, description: What must be materialised on the worker's disk }
+        warnings: { type: array, items: { $ref: "#/components/schemas/PipelineWarning" }, description: "What the run's pipeline plan found that does not stop a dry run: a dataset version to materialize first (needs-materialize; the real call is refused until then), a deprecated step kind, an optional step skipped" }
         budget:
           type: object
           required: [gpuHoursPerProjectPerDay, withinDailyBudget]
@@ -7603,6 +7644,7 @@ components:
           required: [steps]
           properties:
             steps: { type: array, items: { $ref: "#/components/schemas/PipelineStep" } }
+            needsMaterialize: { type: array, items: { $ref: "#/components/schemas/NeedsMaterialize" }, description: "pipelineRuns.get only, for a run that is not done: dataset versions a training step that has not finished would read whose shards the cache evicted (a retry fails that step until datasets.materialize brings them back)" }
     PipelineRunList:
       type: object
       required: [items]
@@ -10094,6 +10136,48 @@ components:
       required: [items]
       properties:
         items: { type: array, items: { $ref: "#/components/schemas/DatasetExport" } }
+    # ---------------------------------------------------------------- guidelines text, registry texts, needs materialize schemas (phase 4 tail · stream U) — add below
+    GuidelinesText:
+      type: object
+      description: "An annotation batch's guidelines as pinned (R27): annotation/guidelines/<name>.md at the batch's commit"
+      required: [name, path, commit, text, bytes, truncated]
+      properties:
+        name: { type: string }
+        path: { type: string, example: annotation/guidelines/default.md }
+        commit: { type: string, description: The commit the batch pinned }
+        text: { type: string, description: Markdown }
+        bytes: { type: integer, format: int64, description: The file's size }
+        truncated: { type: boolean, description: "The file is larger than 256 KiB: text holds its start" }
+    RegistryText:
+      type: object
+      description: "A text of the content store a registry version names to be read"
+      required: [hash, kind, mediaType, text, bytes, truncated, versionId]
+      properties:
+        hash: { type: string, pattern: "^b3:[0-9a-f]{64}$" }
+        kind: { type: string, enum: [dataset-card], description: "dataset-card: a dataset version's card (dataset.card)" }
+        mediaType: { type: string, example: text/markdown }
+        text: { type: string }
+        bytes: { type: integer, format: int64, description: The blob's size }
+        truncated: { type: boolean, description: "The blob is larger than 256 KiB: text holds its start" }
+        versionId: { type: string, description: "The registry version that names it (ver_…; the oldest when several do)" }
+        collection: { type: string, example: dataset/fleurs-sr }
+        version: { type: string }
+    NeedsMaterialize:
+      type: object
+      description: "A dataset version a training step would read whose shards the cache evicted (they are on a mount): training reads only what the cache holds, so the run is refused when it is queued until datasets.materialize brings them back"
+      required: [versionId, artifact, bytes, copyBytes, shards, copyShards, from, missing]
+      properties:
+        versionId: { type: string, description: "ver_…: the body of datasets.materialize" }
+        collection: { type: string }
+        version: { type: string }
+        artifact: { type: string, description: The evicted dataset artifact (b3:…) }
+        input: { type: string, description: "The step input that reads it (a dataset or a mix)" }
+        bytes: { type: integer, format: int64, description: The version's size }
+        copyBytes: { type: integer, format: int64, description: "Bytes datasets.materialize would copy back from mounts" }
+        shards: { type: integer }
+        copyShards: { type: integer }
+        from: { type: array, items: { $ref: "#/components/schemas/DatasetCacheSource" }, description: The mounts the copies come from }
+        missing: { type: integer, description: "Shards on no mount and in no cache: materialize cannot bring them back" }
     # ---------------------------------------------------------------- ingest, draft datasets, freeze schemas (phase 4 · stream D) — add below
     SourceNew:
       type: object
@@ -10402,10 +10486,11 @@ components:
       description: Something a plan found that does not stop the run
       required: [code, message]
       properties:
-        code: { type: string, enum: [step-kind-deprecated, auxiliary-unavailable, step-kind-unavailable], description: "step-kind-deprecated: a step pins a kind its pack deprecates; auxiliary-unavailable: an optional step's service does not answer, so the run goes on without that step (phase 4 · stream B); step-kind-unavailable: an optional step's kind is not published or no worker that publishes it is alive, so the step is skipped at start" }
+        code: { type: string, enum: [step-kind-deprecated, auxiliary-unavailable, step-kind-unavailable, needs-materialize], description: "step-kind-deprecated: a step pins a kind its pack deprecates; auxiliary-unavailable: an optional step's service does not answer, so the run goes on without that step (phase 4 · stream B); step-kind-unavailable: an optional step's kind is not published or no worker that publishes it is alive, so the step is skipped at start; needs-materialize: a training step would read a dataset version the cache evicted — a dry run says so with what to materialize, the real call is refused (artifact-missing) until datasets.materialize brings it back (phase 4 tail)" }
         step: { type: string, description: The step id }
         kind: { type: string, description: The pinned kind@version }
         message: { type: string }
+        materialize: { $ref: "#/components/schemas/NeedsMaterialize" }
     LockedReference:
       type: object
       description: "A step parameter that names a registry version (x-cadence.registry), resolved through the project's data.lock at the pipeline's commit"

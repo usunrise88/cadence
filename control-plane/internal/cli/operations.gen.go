@@ -912,6 +912,14 @@ var Operations = []Operation{
 		},
 	},
 	{
+		ID: "guidelines.get", Entity: "guidelines", Verb: "get", Method: "GET", Path: "/batches/{id}/guidelines",
+		Summary:     "The annotation guidelines a batch pinned — the Markdown file at the batch's commit of the project repository",
+		Description: "Read the annotation guidelines of an annotation batch as its annotators see them: the file annotation/guidelines/<name>.md at the commit the batch pinned when it was created (R27), not the file on main today. The text is Markdown, at most 256 KiB (truncated says when it was cut). A reviewer invited to the batch reads it; nothing else of the repository is served this way (recipes.get reads the project's files).",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Annotation batch id (anb_…)"},
+		},
+	},
+	{
 		ID: "help.get", Entity: "help", Verb: "get", Method: "GET", Path: "/help/{id}",
 		Summary:     "Get a help article (markdown)",
 		Description: "Get a help article (markdown) by id <section>.<slug>. Every error a tool returns names its article (errors.<slug>): read it for what went wrong and how to fix it.",
@@ -1896,6 +1904,14 @@ var Operations = []Operation{
 			{Name: "collection", In: "query", Flag: "collection", Type: "string", Description: "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)"},
 			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated", "archived"}},
 			{Name: "templateKind", In: "query", Flag: "template-kind", Type: "string", Description: "Only templates of this kind", Enum: []string{"instructions", "preset", "skill", "pipeline", "agent-config", "playbook", "langpack", "annotation"}},
+		},
+	},
+	{
+		ID: "texts.get", Entity: "texts", Verb: "get", Method: "GET", Path: "/registry/texts/{hash}",
+		Summary:     "Read a text of the content store the registry names to be read — a dataset version's card (Markdown)",
+		Description: "Read a text file of the content store that a registry version names as text meant to be read: today the dataset card (Markdown) of a dataset version, by the hash datasets.get gives as dataset.card.hash. Any other hash answers not-found, whatever the blob holds — audio, manifests and shards are read by steps, not served as text. Registry read; at most 256 KiB (truncated says when it was cut).",
+		Params: []Param{
+			{Name: "hash", In: "path", Flag: "hash", Required: true, Type: "string", Description: "Artifact hash (b3:<64 hex>, BLAKE3-256 of the content)"},
 		},
 	},
 	{

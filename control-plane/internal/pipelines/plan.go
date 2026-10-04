@@ -49,6 +49,9 @@ type Plan struct {
 	// Skipped are the optional steps that cannot run (Warnings says why, code step-kind-unavailable): Start records
 	// them skipped, with the steps that read them.
 	Skipped []SkippedStep
+	// Materialize are the dataset versions a training step would read that the cache evicted (a needs-materialize
+	// warning each): Start refuses the run (artifact-missing) while there is one.
+	Materialize []Materialize
 }
 
 // SkippedStep is an optional step the plan skips: its kind is not published, or no worker that publishes it is alive.
