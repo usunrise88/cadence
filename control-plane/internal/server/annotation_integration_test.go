@@ -25,6 +25,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/credentials"
 	"github.com/usunrise88/cadence/control-plane/internal/data"
 	"github.com/usunrise88/cadence/control-plane/internal/pipelines/pipelinestest"
+	"github.com/usunrise88/cadence/control-plane/internal/repos"
 	"github.com/usunrise88/cadence/control-plane/internal/steps"
 )
 
@@ -324,6 +325,30 @@ func TestAnnotationBatchToGoldenSet(t *testing.T) {
 	expectProblem(t, e.do("GET", "/api/batches/"+b.ID+"/batch-items?queue=all", "", rev()...), 403, "forbidden")
 	e.ok(e.do("GET", "/api/batches/"+b.ID, "", rev()...), 200, nil)
 	e.ok(e.do("GET", "/api/defaults", "", rev()...), 200, nil) // the audio view's settings
+
+	// The reviewer reads the guidelines the batch pinned, at its commit, not main today; another batch's stay closed.
+	var gl struct {
+		Name, Path, Commit, Text string
+		Bytes                    int64
+		Truncated                bool
+	}
+	e.ok(e.do("GET", "/api/batches/"+b.ID+"/guidelines", "", rev()...), 200, &gl)
+	if gl.Path != "annotation/guidelines/default.md" || gl.Commit != b.Guidelines.Commit || strings.TrimSpace(gl.Text) == "" ||
+		gl.Bytes != int64(len(gl.Text)) || gl.Truncated {
+		t.Fatalf("guidelines %+v", gl)
+	}
+	pinned := gl.Text
+	if _, err := e.repos.Repos().Commit(ctx, "calls", repos.Change{Message: "rewrite the guidelines",
+		Author: repos.Signature{Name: "admin", Email: "usr_admin@cadence.local"},
+		Files:  map[string][]byte{"annotation/guidelines/default.md": []byte("# Newer guidelines\n")}}); err != nil {
+		t.Fatal(err)
+	}
+	e.ok(e.do("GET", "/api/batches/"+b.ID+"/guidelines", "", adm()...), 200, &gl)
+	if gl.Text != pinned || gl.Commit != b.Guidelines.Commit {
+		t.Errorf("guidelines after main moved on: %+v", gl)
+	}
+	expectProblem(t, e.do("GET", "/api/batches/anb_other/guidelines", "", rev()...), 403, "forbidden")
+	expectProblem(t, e.do("GET", "/api/projects/calls/recipes/annotation/guidelines/default.md", "", rev()...), 403, "forbidden")
 
 	// The reviewer plays an item's window through a signed link (every channel; the call's caller and bot), with its
 	// peaks and tracks — narrowband, both parties' speech, the end-of-utterance gap.

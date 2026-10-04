@@ -5101,6 +5101,39 @@
       ]
     },
     {
+      "name": "guidelines.get",
+      "title": "The annotation guidelines a batch pinned — the Markdown file at the batch's commit of the project repository",
+      "description": "Read the annotation guidelines of an annotation batch as its annotators see them: the file annotation/guidelines/\u003cname\u003e.md at the commit the batch pinned when it was created (R27), not the file on main today. The text is Markdown, at most 256 KiB (truncated says when it was cut). A reviewer invited to the batch reads it; nothing else of the repository is served this way (recipes.get reads the project's files).",
+      "method": "GET",
+      "path": "/batches/{id}/guidelines",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Annotation batch id (anb_…)",
+            "maxLength": 100,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        }
+      ]
+    },
+    {
       "name": "help.get",
       "title": "Get a help article (markdown)",
       "description": "Get a help article (markdown) by id \u003csection\u003e.\u003cslug\u003e. Every error a tool returns names its article (errors.\u003cslug\u003e): read it for what went wrong and how to fix it.",
@@ -10463,6 +10496,39 @@
           "property": "templateKind",
           "in": "query",
           "name": "templateKind"
+        }
+      ]
+    },
+    {
+      "name": "texts.get",
+      "title": "Read a text of the content store the registry names to be read — a dataset version's card (Markdown)",
+      "description": "Read a text file of the content store that a registry version names as text meant to be read: today the dataset card (Markdown) of a dataset version, by the hash datasets.get gives as dataset.card.hash. Any other hash answers not-found, whatever the blob holds — audio, manifests and shards are read by steps, not served as text. Registry read; at most 256 KiB (truncated says when it was cut).",
+      "method": "GET",
+      "path": "/registry/texts/{hash}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "hash": {
+            "description": "Artifact hash (b3:\u003c64 hex\u003e, BLAKE3-256 of the content)",
+            "pattern": "^b3:[0-9a-f]{64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "hash"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "hash",
+          "in": "path",
+          "name": "hash"
         }
       ]
     },

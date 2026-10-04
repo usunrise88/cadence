@@ -1110,6 +1110,10 @@ export type RunEstimate = {
          */
         bytes: number;
     };
+    /**
+     * What the run's pipeline plan found that does not stop a dry run: a dataset version to materialize first (needs-materialize; the real call is refused until then), a deprecated step kind, an optional step skipped
+     */
+    warnings?: Array<PipelineWarning>;
     budget: {
         /**
          * The project's daily GPU-hour budget
@@ -3898,6 +3902,10 @@ export type PipelineRunSummary = {
 
 export type PipelineRun = PipelineRunSummary & {
     steps: Array<PipelineStep>;
+    /**
+     * pipelineRuns.get only, for a run that is not done: dataset versions a training step that has not finished would read whose shards the cache evicted (a retry fails that step until datasets.materialize brings them back)
+     */
+    needsMaterialize?: Array<NeedsMaterialize>;
 };
 
 export type PipelineRunList = {
@@ -7909,6 +7917,95 @@ export type DatasetExportList = {
     items: Array<DatasetExport>;
 };
 
+/**
+ * An annotation batch's guidelines as pinned (R27): annotation/guidelines/<name>.md at the batch's commit
+ */
+export type GuidelinesText = {
+    name: string;
+    path: string;
+    /**
+     * The commit the batch pinned
+     */
+    commit: string;
+    /**
+     * Markdown
+     */
+    text: string;
+    /**
+     * The file's size
+     */
+    bytes: number;
+    /**
+     * The file is larger than 256 KiB: text holds its start
+     */
+    truncated: boolean;
+};
+
+/**
+ * A text of the content store a registry version names to be read
+ */
+export type RegistryText = {
+    hash: string;
+    /**
+     * dataset-card: a dataset version's card (dataset.card)
+     */
+    kind: 'dataset-card';
+    mediaType: string;
+    text: string;
+    /**
+     * The blob's size
+     */
+    bytes: number;
+    /**
+     * The blob is larger than 256 KiB: text holds its start
+     */
+    truncated: boolean;
+    /**
+     * The registry version that names it (ver_…; the oldest when several do)
+     */
+    versionId: string;
+    collection?: string;
+    version?: string;
+};
+
+/**
+ * A dataset version a training step would read whose shards the cache evicted (they are on a mount): training reads only what the cache holds, so the run is refused when it is queued until datasets.materialize brings them back
+ */
+export type NeedsMaterialize = {
+    /**
+     * ver_…: the body of datasets.materialize
+     */
+    versionId: string;
+    collection?: string;
+    version?: string;
+    /**
+     * The evicted dataset artifact (b3:…)
+     */
+    artifact: string;
+    /**
+     * The step input that reads it (a dataset or a mix)
+     */
+    input?: string;
+    /**
+     * The version's size
+     */
+    bytes: number;
+    /**
+     * Bytes datasets.materialize would copy back from mounts
+     */
+    copyBytes: number;
+    shards: number;
+    copyShards: number;
+    /**
+     * The mounts the copies come from
+     */
+    from: Array<DatasetCacheSource>;
+    /**
+     * Shards on no mount and in no cache: materialize cannot bring them back
+     */
+    missing: number;
+};
+
 export type SourceNew = {
     /**
      * Lowercase letters, digits, dots, dashes and underscores (parlaspeech-rs)
@@ -8365,9 +8462,9 @@ export type StepKindDeprecation = {
  */
 export type PipelineWarning = {
     /**
-     * step-kind-deprecated: a step pins a kind its pack deprecates; auxiliary-unavailable: an optional step's service does not answer, so the run goes on without that step (phase 4 · stream B); step-kind-unavailable: an optional step's kind is not published or no worker that publishes it is alive, so the step is skipped at start
+     * step-kind-deprecated: a step pins a kind its pack deprecates; auxiliary-unavailable: an optional step's service does not answer, so the run goes on without that step (phase 4 · stream B); step-kind-unavailable: an optional step's kind is not published or no worker that publishes it is alive, so the step is skipped at start; needs-materialize: a training step would read a dataset version the cache evicted — a dry run says so with what to materialize, the real call is refused (artifact-missing) until datasets.materialize brings it back (phase 4 tail)
      */
-    code: 'step-kind-deprecated' | 'auxiliary-unavailable' | 'step-kind-unavailable';
+    code: 'step-kind-deprecated' | 'auxiliary-unavailable' | 'step-kind-unavailable' | 'needs-materialize';
     /**
      * The step id
      */
@@ -8377,6 +8474,7 @@ export type PipelineWarning = {
      */
     kind?: string;
     message: string;
+    materialize?: NeedsMaterialize;
 };
 
 /**
@@ -16770,6 +16868,66 @@ export type ExportsGetResponses = {
 };
 
 export type ExportsGetResponse = ExportsGetResponses[keyof ExportsGetResponses];
+
+export type GuidelinesGetData = {
+    body?: never;
+    path: {
+        /**
+         * Annotation batch id (anb_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/batches/{id}/guidelines';
+};
+
+export type GuidelinesGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type GuidelinesGetError = GuidelinesGetErrors[keyof GuidelinesGetErrors];
+
+export type GuidelinesGetResponses = {
+    /**
+     * The guidelines at the pinned commit
+     */
+    200: GuidelinesText;
+};
+
+export type GuidelinesGetResponse = GuidelinesGetResponses[keyof GuidelinesGetResponses];
+
+export type TextsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Artifact hash (b3:<64 hex>, BLAKE3-256 of the content)
+         */
+        hash: string;
+    };
+    query?: never;
+    url: '/registry/texts/{hash}';
+};
+
+export type TextsGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type TextsGetError = TextsGetErrors[keyof TextsGetErrors];
+
+export type TextsGetResponses = {
+    /**
+     * The text
+     */
+    200: RegistryText;
+};
+
+export type TextsGetResponse = TextsGetResponses[keyof TextsGetResponses];
 
 export type DatasetsPreviewData = {
     body: DatasetPreviewRequest;

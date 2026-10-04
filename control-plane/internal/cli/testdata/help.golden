@@ -41,6 +41,7 @@ Entities:
   exports        get list
   gates          edit get
   goldenSets     freeze get list
+  guidelines     get
   help           get search
   invitations    list new
   jobLogs        list
@@ -71,6 +72,7 @@ Entities:
   sweeps         run
   telegramBot    set verify
   templates      get list
+  texts          get
   triage         accept correct list reject
   utterances     get list search
   versions       archive
