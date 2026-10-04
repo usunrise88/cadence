@@ -61,22 +61,31 @@ FLEURS Serbian audio, and forty synthetic phone calls we built for the next chap
 ```annotated id=storage-mounts
 image: screens/storage-mounts.png
 caption: "Figure 13-1. The Storage panel after the corpora mount was approved"
-alt: The Storage panel listing the corpora mount with its health, the cache use bar and the pinned dataset versions.
+alt: The Storage panel listing the corpora mount with its health, the cache use and the pinned dataset versions.
 regions:
-  - target: '[data-tour="storage-mounts"]'
+  - target: "[data-panel='storage'] >> text=read-only"
     label: Mounts
-    note: Every place Cadence may read audio from. A mount is never edited in place; a different root is a new mount.
-  - target: '[data-tour="storage-health"]'
+    note: >
+      Every place Cadence may read audio from. Adding one was an approval; a mount is never edited in place — a different root is a new mount.
+  - target: "[data-panel='storage'] >> text=Healthy"
     label: Health
-    note: A worker checks each mount — reachable, free space, a throughput sample. A job never starts on an
-      unhealthy mount.
-  - target: '[data-tour="storage-cache"]'
+    note: >
+      A worker checks the mount: reachable, free space, a throughput sample. A job never starts on an unhealthy mount, and Check health re-runs the test.
+  - target: "[data-panel='storage'] >> text=evicts above 85 %"
     label: Cache
-    note: The local copies jobs made. Above the high-water mark Cadence evicts the least recently used copies that
-      exist somewhere else, and never the only copy.
+    note: >
+      The local copies jobs made. Above 85 % Cadence evicts the least recently used copies that also exist on a mount, down to 70 %. 'evictable 0 B': nothing cached here exists anywhere else yet, so nothing may go.
+  - target: "[data-panel='storage'] >> text=200.0 GB"
+    label: Quota
+    note: >
+      What the project's frozen dataset versions occupy against its quota; a freeze that would pass it is refused before it starts.
+  - target: "[data-panel='storage'] >> text=Pinned by"
+    label: Pinned by
+    note: >
+      A dataset a golden set is built on, or that a queued run reads, is pinned: the sweep never evicts it.
 ```
 
-<!-- TBD capture: storage-mounts.png from the stand after the approval -->
+<!-- captured 2026-10-04 from the stand (capture/figures/storage-mounts.json) -->
 
 > **Under the hood** — A copy that a job made is kept on the worker's fast disk and *pinned* while a queued or
 > running job, or a promoted model, refers to it. When the cache passes 85 % it is trimmed back to 70 %, oldest use

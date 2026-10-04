@@ -1,0 +1,78 @@
+{
+  "id": "annotation-batch",
+  "caption": "Figure 14-2. The annotation batch of the synthetic calls, before anyone annotated",
+  "alt": "The Annotation batch document: progress, agreement, the strata of the sample and the end-of-utterance gaps.",
+  "width": 1440,
+  "height": 900,
+  "capturedAt": "2026-10-04T09:32:04.398Z",
+  "base": "http://127.0.0.1:36200",
+  "regions": [
+    {
+      "label": "Sample",
+      "target": "[data-panel='annotation-batch'] >> text=40 items",
+      "note": "Forty caller segments drawn from 315, stratified by campaign, month, duration and confidence, reproducible from the seed; a tenth go to a second person, blind.",
+      "box": [
+        165,
+        358,
+        1262,
+        22
+      ]
+    },
+    {
+      "label": "Guidelines",
+      "target": "[data-panel='annotation-batch'] >> text=annotation/guidelines/default.md",
+      "note": "The rules of a correct transcript, pinned at the commit the batch started from. The golden set's card will cite that commit.",
+      "box": [
+        165,
+        339,
+        1262,
+        23
+      ]
+    },
+    {
+      "label": "Agreement",
+      "target": "[data-panel='annotation-batch'] >> text=Inter-annotator WER —",
+      "note": "The WER between the two transcripts of the doubly annotated items. Above 5 %, the batch does not freeze.",
+      "box": [
+        13,
+        522,
+        1414,
+        22
+      ]
+    },
+    {
+      "label": "End of utterance",
+      "target": "[data-panel='annotation-batch'] >> text=End of utterance",
+      "note": "How long the bot waits after the caller stops, from per-channel voice activity: the number a voice bot's turn-taking is tuned on.",
+      "box": [
+        13,
+        544,
+        1414,
+        22
+      ]
+    },
+    {
+      "label": "Invite a reviewer",
+      "target": "[data-panel='annotation-batch'] >> text=Invite a reviewer",
+      "note": "A link that lets one person play this batch's audio and write transcripts — no download, no other data — until the batch freezes.",
+      "box": [
+        1302,
+        580,
+        125,
+        30
+      ]
+    },
+    {
+      "label": "Freeze",
+      "target": "[data-panel='annotation-batch'] >> text=Freeze (approval)",
+      "style": "warning",
+      "note": "Freezing creates a golden set, so it is an approval; Check lists what still blocks it.",
+      "box": [
+        1298,
+        712,
+        129,
+        30
+      ]
+    }
+  ]
+}

@@ -41,10 +41,9 @@ bot or the agent. It is the most useful accident in telephone ASR. Speaker separ
 labels itself from the script it read, and crosstalk — both parties speaking at once — can be measured instead of
 guessed.
 
-The ingest of Chapter 13 already split the calls. On the stand it found
-<!-- TBD gate: caller / bot segment counts of the calls-synth-sr draft; local probe found 315 caller and 262 bot
-     segments in 40 calls, 2026-10-04 --> segments: the bot's with their script text, the caller's with none. Only the
-caller's need people.
+The ingest of Chapter 13 already split the calls. On the stand it found 577 segments in the forty calls: 262 on the
+bot's channel, each with its script text, and 315 on the caller's, 31 minutes of speech with no text at all. Only the
+caller's need people. <!-- data-ingest plr_01a10639-c1d2…, index step, 2026-10-04 -->
 
 ```annotated id=audio-two-channels
 image: screens/audio-two-channels.png
@@ -65,7 +64,8 @@ regions:
       as high as the audio goes.
 ```
 
-<!-- TBD capture -->
+<!-- TBD capture: the Audio panel plays media, which serves people only (API keys are refused), so this figure is
+     captured from a person's session by the owner -->
 
 ## A batch, not a backlog
 
@@ -90,7 +90,42 @@ gets the new version, while the frozen set keeps the old one on record.
    sample, and writes nothing.
 3. Create it. The **Annotation batch** document opens with progress at 0 of 40.
 
-<!-- TBD gate: batch id, strata, items -->
+On the stand the batch `calls-synth-sr-1` drew 40 items from the 315 caller segments of the forty calls; four of
+them go to a second person. Before anyone typed a word it already knows how long the bot waits after a caller
+stops: a median of 2.3 seconds, and 6.1 seconds for the slowest tenth of the turns.
+<!-- anb_01a1063f-9408-7cdf-a261-e7cff28bc57a, 2026-10-04 -->
+
+```annotated id=annotation-batch
+image: screens/annotation-batch.png
+caption: "Figure 14-2. The annotation batch of the synthetic calls, before anyone annotated"
+alt: The Annotation batch document: progress, agreement, the strata of the sample and the end-of-utterance gaps.
+regions:
+  - target: "[data-panel='annotation-batch'] >> text=40 items"
+    label: Sample
+    note: >
+      Forty caller segments drawn from 315, stratified by campaign, month, duration and confidence, reproducible from the seed; a tenth go to a second person, blind.
+  - target: "[data-panel='annotation-batch'] >> text=annotation/guidelines/default.md"
+    label: Guidelines
+    note: >
+      The rules of a correct transcript, pinned at the commit the batch started from. The golden set's card will cite that commit.
+  - target: "[data-panel='annotation-batch'] >> text=Inter-annotator WER —"
+    label: Agreement
+    note: >
+      The WER between the two transcripts of the doubly annotated items. Above 5 %, the batch does not freeze.
+  - target: "[data-panel='annotation-batch'] >> text=End of utterance"
+    label: End of utterance
+    note: >
+      How long the bot waits after the caller stops, from per-channel voice activity: the number a voice bot's turn-taking is tuned on.
+  - target: "[data-panel='annotation-batch'] >> text=Invite a reviewer"
+    label: Invite a reviewer
+    note: >
+      A link that lets one person play this batch's audio and write transcripts — no download, no other data — until the batch freezes.
+  - target: "[data-panel='annotation-batch'] >> text=Freeze (approval)"
+    label: Freeze
+    note: >
+      Freezing creates a golden set, so it is an approval; Check lists what still blocks it.
+    style: warning
+```
 
 ## Two people, one truth
 

@@ -1,0 +1,46 @@
+{
+  "id": "storage-mounts",
+  "chapter": 13,
+  "caption": "Figure 13-1. The Storage panel after the corpora mount was approved",
+  "alt": "The Storage panel listing the corpora mount with its health, the cache use and the pinned dataset versions.",
+  "project": "test",
+  "workspace": "Ops",
+  "steps": [
+    {
+      "open": "storage",
+      "waitFor": "[data-panel='storage']",
+      "settleMs": 2500
+    },
+    {
+      "maximize": "storage",
+      "settleMs": 1500
+    }
+  ],
+  "regions": [
+    {
+      "label": "Mounts",
+      "target": "[data-panel='storage'] >> text=read-only",
+      "note": "Every place Cadence may read audio from. Adding one was an approval; a mount is never edited in place — a different root is a new mount."
+    },
+    {
+      "label": "Health",
+      "target": "[data-panel='storage'] >> text=Healthy",
+      "note": "A worker checks the mount: reachable, free space, a throughput sample. A job never starts on an unhealthy mount, and Check health re-runs the test."
+    },
+    {
+      "label": "Cache",
+      "target": "[data-panel='storage'] >> text=evicts above 85 %",
+      "note": "The local copies jobs made. Above 85 % Cadence evicts the least recently used copies that also exist on a mount, down to 70 %. 'evictable 0 B': nothing cached here exists anywhere else yet, so nothing may go."
+    },
+    {
+      "label": "Quota",
+      "target": "[data-panel='storage'] >> text=200.0 GB",
+      "note": "What the project's frozen dataset versions occupy against its quota; a freeze that would pass it is refused before it starts."
+    },
+    {
+      "label": "Pinned by",
+      "target": "[data-panel='storage'] >> text=Pinned by",
+      "note": "A dataset a golden set is built on, or that a queued run reads, is pinned: the sweep never evicts it."
+    }
+  ]
+}
