@@ -305,6 +305,12 @@ func noop(ctx context.Context, run *Run) (any, error) {
 	return map[string]any{"args": run.Args}, nil
 }
 
+// Registered reports whether kind has a handler (a component that queues optional work checks it first).
+func (s *Service) Registered(kind string) bool {
+	_, ok := s.kinds[kind]
+	return ok
+}
+
 // Register adds an in-process kind; call it before Start.
 func (s *Service) Register(kind string, h Handler, opts KindOptions) {
 	if opts.MaxAttempts <= 0 {
