@@ -34,8 +34,10 @@ tiles do not compress (the noise floor is incompressible), so they are stored ra
 
 Review. The audio view (Audio panel; later Diff, Triage, Transcription) shows a spectrogram for every utterance; for
 audio longer than `browser_stft_max_s` (10 minutes) it reads this pyramid instead of computing it. The control plane
-finds the newest `spectrogram_tiles` artifact whose `meta.audio` is the utterance's hash. Phase 3 golden sets hold
-short utterances, so nothing starts this step automatically yet; long calls arrive with production data in phase 4.
+finds the newest `spectrogram_tiles` artifact whose `meta.audio` is the utterance's hash. When there is none, the
+first view does not start this step: the control plane builds the same pyramid itself (job `media.spectrogram`, the
+same STFT, bins to 4 kHz for narrowband audio; it can read windows of files on a mount that have no artifact). Run
+the step in a pipeline to precompute pyramids of a dataset's audio.
 
 ## Fields and defaults
 

@@ -88,6 +88,7 @@ A segment:
 | `vad` | `{speech: [[a, b], …] seconds from the segment's start, ratio: speech share 0–1}` |
 | `level` | `{rmsDb, peakDb, clipping}` — clipping is the share of samples at full scale |
 | `crosstalk?` | Share of the segment during which another channel of the same file has speech (split files only) |
+| `eou?` | End of utterance (split files only), seconds from the segment's start: `{speechEnd, nextSpeech?, gapS?}` — its last speech end by the channel's VAD and the other channels' next speech start within 10 s; a barge-in gives a negative gap, nobody speaking next leaves `nextSpeech` and `gapS` out |
 | `sourceRate`, `codec?` | The file's native sample rate and codec |
 | `lid?`, `hypotheses?`, … | Added by later steps (language identification, pseudo-label members) |
 
