@@ -63,6 +63,21 @@ class Reference:
     language: str
     speaker: str = ""
     call: str = ""
+    # Annotated entity spans of the reference (phase 4 annotation batches): (class, text) pairs entity_score checks.
+    entities: tuple[tuple[str, str], ...] = ()
+
+
+def _entities(row: dict[str, Any]) -> tuple[tuple[str, str], ...]:
+    out: list[tuple[str, str]] = []
+    for e in row.get("entities") or []:
+        if (
+            isinstance(e, dict)
+            and isinstance(e.get("class"), str)
+            and isinstance(e.get("text"), str)
+            and e["text"].strip()
+        ):
+            out.append((e["class"], e["text"]))
+    return tuple(out)
 
 
 def read_references(root: Path) -> list[Reference]:
@@ -101,6 +116,7 @@ def read_references(root: Path) -> list[Reference]:
                 language=str(row.get("language") or ""),
                 speaker=str(row.get("speaker") or ""),
                 call=call,
+                entities=_entities(row),
             )
         )
     if not out:

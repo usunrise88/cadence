@@ -20,7 +20,7 @@ from cadence_worker.__main__ import registry
 from cadence_worker.cas import hash_bytes
 from cadence_worker.mounts import Mounts
 from cadence_worker.steps.base import StepInputError, missing_metadata
-from cadence_worker.steps.dataset_freeze import DatasetFreezeParams, DatasetFreezeStep
+from cadence_worker.steps.dataset_freeze import DatasetFreezeParams, DatasetFreezeStep, member_line
 from cadence_worker.steps.manifest_filter import ManifestFilterParams, ManifestFilterStep
 from cadence_worker.steps.sdp_ingest import SdpIngestParams, SdpIngestStep
 from cadence_worker.steps.speaker_disjoint_split import SpeakerDisjointSplitParams, SpeakerDisjointSplitStep
@@ -408,3 +408,19 @@ def test_freeze_refuses_unready_segments(tmp_path: Path) -> None:
     split, _ = prepared(tmp_path / "again")
     with pytest.raises(StepInputError, match="draft_version"):
         DatasetFreezeStep().run(DatasetFreezeParams(mode="cut"), {"segments": split}, {"dataset": tmp_path / "e"}, ctx)
+
+
+def test_member_line_keeps_annotated_entity_spans() -> None:
+    # An annotation batch's rows carry entity spans; the dataset's manifest keeps them for entity_score.
+    x: dict[str, Any] = {
+        "duration": 2.0,
+        "language": "sr-RS",
+        "text": "Zovem se Ana.",
+        "origin": "human",
+        "split": "test",
+        "uri": "mount://corpora/c.wav#t=0,2&ch=0",
+        "role": "caller",
+        "entities": [{"start": 9, "end": 12, "class": "name", "text": "Ana"}, "junk"],
+    }
+    assert member_line(x)["entities"] == [{"start": 9, "end": 12, "class": "name", "text": "Ana"}]
+    assert "entities" not in member_line({**x, "entities": []})

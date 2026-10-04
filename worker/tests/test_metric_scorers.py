@@ -98,6 +98,36 @@ def test_entity_accuracy_per_class(tmp_path: Path) -> None:
     assert rows[2]["extra"] == [{"class": "number", "text": "5"}]
 
 
+def test_entity_accuracy_counts_annotated_spans(tmp_path: Path) -> None:
+    # References annotated in a batch carry spans (names, addresses) no ITN pattern finds.
+    hashes = dataset(
+        tmp_path / "data",
+        [
+            {"text": "קוראים לי דנה כהן", "entities": [{"start": 10, "end": 17, "class": "name", "text": "דנה כהן"}]},
+            {
+                "text": "אני גר ברחוב הרצל",
+                "entities": [{"start": 6, "end": 17, "class": "address", "text": "ברחוב הרצל"}],
+            },
+        ],
+    )
+    hyps_file(tmp_path / "hyps.jsonl", hashes, [{"text": "קוראים לי  דנה   כהן"}, {"text": "אני גר ברחוב הרצליה"}])
+    (tmp_path / "itn.json").write_text(json.dumps(ITN), encoding="utf-8")
+    out = tmp_path / "scores"
+    EntityScoreStep().run(
+        EntityScoreParams(),
+        {"hypotheses": tmp_path / "hyps.jsonl", "data": tmp_path / "data", "itn": tmp_path / "itn.json"},
+        {"scores": out},
+        StepContext(lambda e: None, work_dir=tmp_path),
+    )
+    summary, rows = read(out)
+    by = {c["class"]: c for c in summary["classes"]}
+    assert (by["name"]["refEntities"], by["name"]["correct"]) == (1, 1)
+    # "ברחוב הרצל" is a substring of "ברחוב הרצליה": a containment check counts it found.
+    assert (by["address"]["refEntities"], by["address"]["correct"]) == (1, 1)
+    assert summary["utterancesWithEntities"] == 2
+    assert rows[0]["ref"] == [{"class": "name", "text": "דנה כהן", "found": True, "annotated": True}]
+
+
 def test_paced_emits_simulate_real_time() -> None:
     partials = [
         {"audioOffsetMs": 160, "emitMs": 10},
