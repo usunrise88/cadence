@@ -168,7 +168,7 @@ tools:
   - id: gpu-spend
     class: spend
     operations: [runs.new, runs.calibrate, runs.resume, runs.stage, checkpoints.average, evals.new, pipelines.run, sweeps.run,
-      pipelineRuns.retry, jobs.resume]
+      goldenSets.align, pipelineRuns.retry, jobs.resume]
     reason: the job spends GPU time
 
   # "Read any entity, log, metric or result" → allowed.
@@ -181,7 +181,7 @@ tools:
     class: draft
     verbs: [new, open, edit, preview, calibrate, run, pause, resume, cancel, retry, stage, freeze, materialize,
             evict, scan, export, parity, benchmark, average, gate, set, adopt, pin, accept, correct, reject, revert,
-            package, note, sync, verify]
+            package, note, sync, verify, align]
 
 files:
   worktree: true          # nothing outside the session worktree

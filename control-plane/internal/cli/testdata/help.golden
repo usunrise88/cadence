@@ -40,7 +40,7 @@ Entities:
   experiments    get list new
   exports        get list
   gates          edit get
-  goldenSets     freeze get list
+  goldenSets     align freeze get list
   guidelines     get
   help           get search
   invitations    list new

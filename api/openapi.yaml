@@ -4695,6 +4695,41 @@ paths:
           description: The tracks
           content: { application/json: { schema: { $ref: "#/components/schemas/AudioTracks" } } }
         default: { $ref: "#/components/responses/Problem" }
+  # ---------------------------------------------------------------- golden-set alignment in one run (phase 4 tail · stream measure) — add paths below this line
+  /projects/{p}/golden-sets:align:
+    x-cadence: { entity: goldenSets, kind: golden_set }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    post:
+      operationId: goldenSets.align
+      summary: Align the reference texts of several golden sets in one pipeline run (word timings for emission delay)
+      tags: [registry]
+      x-cadence:
+        toolDescription: >
+          Give golden sets word timings for their reference texts (emission delay in evals needs them) in one pipeline
+          run: one aligning step per golden set (its dataset artifact), so the whole batch is one GPU-spend decision.
+          goldenSets lists ver_… ids or collection names (golden-set/<name>, * patterns), default every golden set the
+          project adopted. Sets are skipped, with the reason, when already aligned (goldenSets.get → alignment), when
+          an aligning step on their dataset has not finished, or when the aligner the project adopted (role align)
+          does not cover their language. Call it with dryRun=true first: it answers the sets, the skips and the
+          estimate (golden-set audio hours × defaults.yaml eval.align_seconds_per_audio_hour), starting nothing. The
+          real call answers the plan with pipelineRun (plr_…; follow it with pipelineRuns.wait), the plan without one
+          when nothing is left to align, or 202 with an approvalId when the GPU spend needs a person. A step that
+          fails leaves its set unaligned and the others go on.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        content: { application/json: { schema: { $ref: "#/components/schemas/GoldenSetAlign" } } }
+      responses:
+        "200":
+          description: Dry run — the sets to align, the skips and the estimate; or a real call with nothing left to align
+          content: { application/json: { schema: { $ref: "#/components/schemas/GoldenSetAlignPlan" } } }
+        "201":
+          description: Started — the plan with the pipeline run (one aligning step per dataset artifact)
+          content: { application/json: { schema: { $ref: "#/components/schemas/GoldenSetAlignPlan" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
   # ---------------------------------------------------------------- planned (later phases)
 
 components:
@@ -10942,3 +10977,59 @@ components:
         earlyWords: { type: integer, description: Words shown before their aligned end (negative delays, kept) }
         unalignedUtterances: { type: integer }
         mismatchedUtterances: { type: integer, description: "Utterances whose alignment was made for another text, or whose words the normalizer does not tie to tokens" }
+    # ---------------------------------------------------------------- golden-set alignment in one run schemas (phase 4 tail · stream measure) — add below
+    GoldenSetAlign:
+      type: object
+      additionalProperties: false
+      properties:
+        goldenSets:
+          type: array
+          maxItems: 200
+          items: { type: string, minLength: 1, maxLength: 200 }
+          description: "ver_… ids, @aliases or collection names (golden-set/<name>, * patterns) of golden sets the project adopted; absent: every golden set the project adopted"
+        aligner: { type: string, maxLength: 200, description: "The aligner auxiliary (auxiliary/<name>, ver_… or @alias) the project adopted with the align role; absent: the aligning step kind's default" }
+        priority: { type: integer, minimum: -100, maximum: 100, default: 0 }
+    GoldenSetAlignSet:
+      type: object
+      required: [goldenSetVersionId, name, version, locale, utterances, hours, step]
+      properties:
+        goldenSetVersionId: { type: string }
+        name: { type: string, description: "golden-set/<name>" }
+        version: { type: string }
+        locale: { type: string }
+        utterances: { type: integer }
+        hours: { type: number, description: Audio hours of the golden set }
+        step: { type: string, description: "The aligning step's id in the run (golden sets on one dataset artifact share it)" }
+        estimateSeconds: { type: number }
+    GoldenSetAlignSkip:
+      type: object
+      required: [goldenSetVersionId, name, version, locale, reason, message]
+      properties:
+        goldenSetVersionId: { type: string }
+        name: { type: string }
+        version: { type: string }
+        locale: { type: string }
+        reason: { type: string, enum: [aligned, running, language], description: "aligned: its dataset artifact already has an alignment; running: an aligning step on it has not finished; language: the aligner does not cover the golden set's language" }
+        message: { type: string }
+        alignmentId: { type: string, description: "aln_… (reason aligned)" }
+        pipelineRunId: { type: string, description: "The run with the unfinished aligning step (reason running)" }
+    GoldenSetAlignPlan:
+      type: object
+      required: [kind, sets, skipped, estimate, secondsPerAudioHour, warnings]
+      properties:
+        kind: { type: string, description: "The aligning step kind (name@version): the newest published kind that turns one dataset into an alignment" }
+        aligner:
+          type: object
+          required: [name, version, versionId, languages]
+          description: The aligner auxiliary the steps resolve to for this project (absent when nothing is left to align)
+          properties:
+            name: { type: string }
+            version: { type: string }
+            versionId: { type: string }
+            languages: { type: array, items: { type: string }, description: "Primary language subtags it covers (* for any)" }
+        sets: { type: array, items: { $ref: "#/components/schemas/GoldenSetAlignSet" } }
+        skipped: { type: array, items: { $ref: "#/components/schemas/GoldenSetAlignSkip" } }
+        secondsPerAudioHour: { type: number, description: "defaults.yaml eval.align_seconds_per_audio_hour: wall seconds an aligning step spends per audio hour, on a card" }
+        estimate: { $ref: "#/components/schemas/PipelineEstimate" }
+        warnings: { type: array, items: { $ref: "#/components/schemas/PipelineWarning" } }
+        pipelineRun: { $ref: "#/components/schemas/PipelineRun" }

@@ -17,3 +17,12 @@ reasons), and announces `golden_set.aligned` on every golden set built on that d
 stays immutable: `Alignments`/`LatestAlignment` give the newest alignment of a dataset artifact, which
 `goldenSets.get|list` show as `alignment` and `internal/evals` feeds to the latency scorer (emission delay) for
 unaugmented cells, its artifact hash part of the metric's configuration.
+
+Aligning many golden sets in one run (phase 4 tail, `align.go`): `goldenSets.align` resolves the request's golden sets
+(else every one the project adopted), finds the aligning kind (the newest published kind with one `dataset` input and
+one `alignment` output — Go does not name it), skips sets already aligned, with an unfinished aligning step on their
+dataset (`pipeline_steps` of that kind in waiting/queued/running) or whose locale the resolved aligner auxiliary does
+not list, and plans one inline pipeline `align-golden-sets` with one optional step per dataset artifact. Each step's
+estimate is `eval.align_step_overhead_s` + the golden set's audio hours × `eval.align_seconds_per_audio_hour`, so the
+policy weighs a known GPU cost once for the batch (`gpu-spend`). A plan that would skip a step outright (aligner not
+adopted, no live worker) refuses the request instead.

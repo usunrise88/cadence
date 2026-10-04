@@ -880,6 +880,21 @@ var Operations = []Operation{
 		},
 	},
 	{
+		ID: "goldenSets.align", Entity: "goldenSets", Verb: "align", Method: "POST", Path: "/projects/{p}/golden-sets:align",
+		Summary:        "Align the reference texts of several golden sets in one pipeline run (word timings for emission delay)",
+		Description:    "Give golden sets word timings for their reference texts (emission delay in evals needs them) in one pipeline run: one aligning step per golden set (its dataset artifact), so the whole batch is one GPU-spend decision. goldenSets lists ver_… ids or collection names (golden-set/<name>, * patterns), default every golden set the project adopted. Sets are skipped, with the reason, when already aligned (goldenSets.get → alignment), when an aligning step on their dataset has not finished, or when the aligner the project adopted (role align) does not cover their language. Call it with dryRun=true first: it answers the sets, the skips and the estimate (golden-set audio hours × defaults.yaml eval.align_seconds_per_audio_hour), starting nothing. The real call answers the plan with pipelineRun (plr_…; follow it with pipelineRuns.wait), the plan without one when nothing is left to align, or 202 with an approvalId when the GPU spend needs a person. A step that fails leaves its set unaligned and the others go on.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: false, Properties: []BodyProperty{
+			{Name: "aligner", Type: "string", Description: "The aligner auxiliary (auxiliary/<name>, ver_… or @alias) the project adopted with the align role; absent: the aligning step kind's default"},
+			{Name: "goldenSets", Type: "array of string", Description: "ver_… ids, @aliases or collection names (golden-set/<name>, * patterns) of golden sets the project adopted; absent: every golden set the project adopted"},
+			{Name: "priority", Type: "integer"},
+		}},
+	},
+	{
 		ID: "goldenSets.freeze", Entity: "goldenSets", Verb: "freeze", Method: "POST", Path: "/registry/golden-sets:freeze",
 		Summary:        "Freeze an eval-only dataset version and a scoring normalizer into a golden set (always waits for the admin's approval)",
 		Description:    "Freeze a golden set from a frozen dataset version registered eval-only (datasets.get shows dataset.evalOnly: true) and a scoring normalizer version (normalizers.list; default defaults.yaml eval.normalizer). The dataset's utterances must not overlap any trainable dataset version by utterance or fingerprint, else golden-set-leakage lists the overlapping versions and counts. dryRun=true checks everything and answers the would-be golden set. A real call always answers 202 with an approvalId, for people too: freezing is a registry-scope approval only the admin decides; the approved request registers golden-set/<name> (default: the dataset collection's name). Freezing the same content again answers the version already frozen.",
