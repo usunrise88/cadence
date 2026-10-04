@@ -73,13 +73,25 @@ func goldenSetVersions(ctx context.Context, q storage.Querier, f registry.Filter
 	if err != nil {
 		return nil, err
 	}
+	hashes := make([]string, 0, len(payloads))
+	for _, p := range payloads {
+		hashes = append(hashes, p.DatasetHash)
+	}
+	aligned, err := goldensets.Alignments(ctx, q, hashes)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]api.GoldenSetVersion, 0, len(common))
 	for i, v := range common {
-		out = append(out, api.GoldenSetVersion{
+		gs := api.GoldenSetVersion{
 			Actor: v.Actor, CollectionId: v.CollectionId, CreatedAt: v.CreatedAt, Fingerprint: v.Fingerprint, Id: v.Id,
 			Kind: v.Kind, Licence: v.Licence, Name: v.Name, State: v.State, Tags: v.Tags, UpdatedAt: v.UpdatedAt,
 			Version: v.Version, GoldenSet: payloads[i], UsedBy: used[i],
-		})
+		}
+		if a, ok := aligned[payloads[i].DatasetHash]; ok {
+			gs.Alignment = goldenSetAlignment(a)
+		}
+		out = append(out, gs)
 	}
 	return out, nil
 }
@@ -157,4 +169,23 @@ func (s *Server) GoldenSetsFreeze(ctx context.Context, req api.GoldenSetsFreezeR
 		}
 		return commands.Result{Status: status, Body: out}, drafts, nil
 	})
+}
+
+// goldenSetAlignment is the contract form of a recorded reference alignment.
+func goldenSetAlignment(a goldensets.Alignment) *api.GoldenSetAlignment {
+	out := &api.GoldenSetAlignment{Id: a.ID, Artifact: a.Artifact, Aligner: a.Aligner, Utterances: a.Utterances, Aligned: a.Aligned,
+		Words: a.Words, CreatedAt: a.CreatedAt}
+	if a.AlignerVersionID != "" {
+		out.AlignerVersionId = &a.AlignerVersionID
+	}
+	if a.Method != "" {
+		out.Method = &a.Method
+	}
+	if len(a.Reasons) > 0 {
+		out.Reasons = &a.Reasons
+	}
+	if a.PipelineRunID != "" {
+		out.PipelineRunId = &a.PipelineRunID
+	}
+	return out
 }

@@ -1,0 +1,17 @@
+# written by Cadence — starter pipeline: word timings for a golden set's reference texts
+# (docs/review/2026-10-03-phase-4-plan.md decision 8; R51, R54).
+#
+# align_reference@1 (omni runtime: start its worker with `docker compose --profile omni up -d worker-omni`) aligns each
+# reference text to its audio with an omniASR CTC model (auxiliary/omniasr-ctc-1b, adopted by the project) and writes
+# an alignment artifact. The control plane keeps it against the dataset artifact, so the golden set built on that
+# dataset carries it (goldenSets.get → alignment) and every later eval reports emission delay PR50/PR90.
+# Run it with pipelines.run, inputs.data = {hash, type: dataset, size}: the golden set's datasetHash (goldenSets.get)
+# and its size (artifacts.get). Utterances in a language the aligner does not cover stay unaligned (emission delay
+# n/a), never guessed. Help: docs/help/steps/align-reference.md.
+name: align-reference
+description: Align a golden set's reference texts to its audio (word timings for emission delay)
+inputs: { data: dataset }
+steps:
+  - id: align
+    kind: align_reference@1
+    in: { data: $inputs.data }

@@ -199,7 +199,7 @@ func (s *Service) Prepare(ctx context.Context, q storage.Querier, in NewInput) (
 	}
 	b := &builder{s: s, q: q, plan: &pl, scorer: scorer, models: map[string]*modelSteps{}, units: map[string]*unit{},
 		perAudioHour: d.Eval.GPUHoursPerAudioHour.Value, cached: map[string]Record{}, slots: map[string]*metricSlot{},
-		itn: map[string]itnRender{}}
+		itn: map[string]itnRender{}, align: map[int]*goldensets.Alignment{}}
 	if len(pl.Augmentations) > 1 {
 		k, err := runs.RoleKind(ctx, q, AugmentKind)
 		if err != nil {
@@ -860,6 +860,9 @@ type builder struct {
 	slots     map[string]*metricSlot // metrics per record key
 	slotOrder []string
 	itn       map[string]itnRender // the rendered itn.yaml per golden-set locale
+	// align is the newest reference alignment of each golden set's dataset artifact (nil: none), by golden set index;
+	// the latency scorer reads it for emission delay.
+	align map[int]*goldensets.Alignment
 }
 
 // localeParams name the language a transcribe kind decodes in, first match wins (a naming convention of role kinds,
@@ -1092,6 +1095,13 @@ func (b *builder) planMetrics(ctx context.Context) error {
 			lp.Unavailable = "the cached eval record keeps no hypotheses to score"
 		default:
 			lp.Scorer, lp.Config = b.mk.latency.Ref(), b.mk.vad.Ref()+"#"+b.mk.vad.VersionID
+			a, err := b.alignment(ctx, sl.gs, sl.aug)
+			if err != nil {
+				return err
+			}
+			if a != nil { // emission delay: the alignment is part of the metric's configuration
+				lp.Config += "|alignment:" + a.Artifact
+			}
 		}
 		for metric, mp := range map[string]MetricPlan{MetricEntities: ep, MetricLatency: lp} {
 			if mp.Scorer != "" {
@@ -1418,6 +1428,29 @@ func (g *gen) metrics(ctx context.Context, ks string) error {
 				in[port] = data
 			case TypeITN:
 				in[port] = g.input(fmt.Sprintf("itn_g%d", sl.gs+1), TypeITN, *b.itn[b.plan.GoldenSets[sl.gs].Locale].ref)
+			case TypeNormalizer:
+				_, norm, err := g.golden(ctx, sl.gs)
+				if err != nil {
+					return err
+				}
+				in[port] = norm
+			case goldensets.TypeAlignment:
+				a, err := b.alignment(ctx, sl.gs, sl.aug)
+				if err != nil {
+					return err
+				}
+				if a == nil {
+					if slices.Contains(k.OptionalInputs, port) {
+						continue // no aligned references: the scorer reports emission delay unavailable
+					}
+					return problems.RecipeMismatch.New("the metric scorer %s needs aligned references, which golden set %s has none of",
+						k.Ref(), b.plan.GoldenSets[sl.gs].Name)
+				}
+				ref, err := b.s.sized(ctx, b.q, steps.ArtifactRef{Hash: a.Artifact, Type: goldensets.TypeAlignment})
+				if err != nil {
+					return err
+				}
+				in[port] = g.input(fmt.Sprintf("align_g%d", sl.gs+1), goldensets.TypeAlignment, ref)
 			case TypeVAD:
 				w, err := g.vadOf(ctx, sl.gs, sl.aug)
 				if err != nil {
@@ -1437,6 +1470,27 @@ func (g *gen) metrics(ctx context.Context, ks string) error {
 		sl.plans[metric] = mp
 	}
 	return nil
+}
+
+// alignment is the reference alignment latency to final's scorer reads for golden set gi under augmentation ai: the
+// newest alignment of the golden set's dataset artifact, for the unaugmented audio only (an augmentation may change
+// the timing), and only when the scorer consumes one. nil when there is none.
+func (b *builder) alignment(ctx context.Context, gi, ai int) (*goldensets.Alignment, error) {
+	if b.mk.latency == nil || !b.plan.Augmentations[ai].none() {
+		return nil, nil
+	}
+	if _, ok := consumesType(*b.mk.latency, goldensets.TypeAlignment); !ok {
+		return nil, nil
+	}
+	if a, ok := b.align[gi]; ok {
+		return a, nil
+	}
+	a, err := goldensets.LatestAlignment(ctx, b.q, b.plan.GoldenSets[gi].datasetHash)
+	if err != nil {
+		return nil, err
+	}
+	b.align[gi] = a
+	return a, nil
 }
 
 func round3(v float64) float64 { return math.Round(v*1000) / 1000 }
