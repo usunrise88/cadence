@@ -101,6 +101,10 @@ func (s *Server) ApprovalsApprove(ctx context.Context, req api.ApprovalsApproveR
 		if err := checkDecider(cmd.Actor, a); err != nil {
 			return commands.Result{}, nil, err
 		}
+		if grant == approvals.GrantSession && a.Kind == approvals.KindCommand && !s.sessionGrantable(a) {
+			return commands.Result{}, nil, problems.Validation([]problems.FieldError{{Path: "/grant",
+				Message: "a registry-scope approval (rule " + a.Rule + ") is granted once: the next request is decided on its own"}})
+		}
 		if cmd.DryRun { // nothing replays in a dry run: answer the approval as it stands
 			return approvalResult(a, nil)
 		}
@@ -175,6 +179,17 @@ func (s *Server) withApproval(ctx context.Context, id string) (context.Context, 
 
 // checkDecider refuses decisions by anyone but a person (the policy engine already denies agents; this holds even
 // for a preset that forgot the rule).
+// sessionGrantable reports whether approval a may be granted for its agent session: only project work. A
+// registry-scope approval (no project, or a rule marked `everyone`) shares its path with requests of any body
+// (mounts.new, an auxiliary adoption, a Hub push), so it is granted once (commands.Pipeline ignores such grants too).
+func (s *Server) sessionGrantable(a approvals.Approval) bool {
+	preset := a.Scope.Preset
+	if preset == "" {
+		preset = policy.DefaultPreset
+	}
+	return a.ProjectID != "" && !s.Pipeline.Policy().Everyone(preset, a.Rule)
+}
+
 func checkDecider(by auth.Actor, a approvals.Approval) error {
 	if by.Kind != auth.KindUser {
 		return problems.PolicyDenied.New("approvals are decided by a person, not by %s %s", by.Kind, by.ID)

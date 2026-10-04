@@ -35,7 +35,7 @@ actor; its events carry `causedBy.approvalId`, so the audit log traces the chang
 
 | Field | Default | Meaning |
 | --- | --- | --- |
-| Grant | once | **Approve for this session** also lets the same agent session repeat the same operation on the same path; only requests from an agent session offer it |
+| Grant | once | **Approve for this session** also lets the same agent session repeat the same operation on the same path; only project requests from an agent session offer it — a registry approval (mounts, auxiliary adoptions, Hub pushes, golden sets, a baseline: rules for everyone) is decided once, request by request |
 | Note | empty | Optional, up to 2000 characters, recorded with the decision |
 | Expiry | 24 h | `timeouts.approval_expiry_hours` in defaults.yaml (R5) |
 
