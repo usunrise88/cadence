@@ -40,6 +40,7 @@ SPLIT_RULES = ("speaker-disjoint", "source", "all-train", "all-validation", "all
 DURATION_EDGES = [0, 1, 2, 4, 6, 8, 10, 15, 20, 25, 30]
 CPS_EDGES = list(range(0, 32, 2))
 LEVEL_EDGES = [-60, -50, -40, -30, -20, -10]
+EOU_GAP_EDGES = [-2.0, -1.0, -0.5, 0.0, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 5.0]
 CLIPPED = 0.001  # a segment clips when more than this share of its samples is at full scale
 
 
@@ -169,6 +170,10 @@ def member_line(x: Mapping[str, Any]) -> dict[str, Any]:
     whole = x.get(seg.FILE_FINGERPRINT)
     if isinstance(whole, str) and valid_hash(whole):
         line["fingerprints"] = {seg.FILE_FINGERPRINT: whole}
+    # End of utterance from per-channel VAD at ingest (sdp_ingest, segments of multi-channel recordings).
+    eou = eou_of(x)
+    if eou is not None:
+        line["eou"] = eou
     # An annotation batch's rows carry entity spans (names, addresses) entity_score reads from the reference.
     ents = [e for e in x.get("entities") or [] if isinstance(e, Mapping) and isinstance(e.get("class"), str)]
     if ents:
@@ -230,6 +235,37 @@ def _groups(xs: Sequence[Mapping[str, Any]], key: str, default: str) -> list[dic
     return [{key: k, "utterances": len(v), "hours": round(sum(v) / 3600, 4)} for k, v in sorted(acc.items())]
 
 
+def eou_of(x: Mapping[str, Any]) -> dict[str, float] | None:
+    """A segment's end-of-utterance record (sdp_ingest's ``eou``), checked: speechEnd, and nextSpeech with gapS."""
+    e = x.get("eou")
+    if not isinstance(e, Mapping) or not isinstance(e.get("speechEnd"), int | float):
+        return None
+    out = {"speechEnd": float(e["speechEnd"])}
+    if isinstance(e.get("nextSpeech"), int | float) and isinstance(e.get("gapS"), int | float):
+        out["nextSpeech"], out["gapS"] = float(e["nextSpeech"]), float(e["gapS"])
+    return out
+
+
+def eou_stats(xs: Sequence[Mapping[str, Any]]) -> dict[str, Any] | None:
+    """The end-of-utterance gaps of the members (DatasetEouStats); None when no member has a record."""
+    records = [e for e in (eou_of(x) for x in xs) if e is not None]
+    if not records:
+        return None
+    gaps = [e["gapS"] for e in records if "gapS" in e]
+    out: dict[str, Any] = {
+        "utterances": len(records),
+        "withGap": len(gaps),
+        "overlapping": sum(1 for g in gaps if g < 0),
+    }
+    if gaps:
+        p50, p90 = np.percentile(np.array(gaps), [50, 90])
+        out["p50GapS"] = round(float(p50), 3)
+        out["p90GapS"] = round(float(p90), 3)
+        out["meanGapS"] = round(float(np.mean(gaps)), 3)
+        out["gapHistogram"] = histogram(gaps, EOU_GAP_EDGES)
+    return out
+
+
 def stats(xs: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     durations = [float(x["duration"]) for x in xs]
     levels = [float(x["level"]["rmsDb"]) for x in xs if isinstance(x.get("level"), Mapping) and "rmsDb" in x["level"]]
@@ -238,7 +274,7 @@ def stats(xs: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     for x in xs:
         r = int(x.get("sourceRate") or seg.RATE)
         rates[r] = rates.get(r, 0) + 1
-    return {
+    out: dict[str, Any] = {
         "durationHistogram": histogram(durations, DURATION_EDGES),
         "charsPerSecondHistogram": histogram([cps(x) for x in xs], CPS_EDGES),
         "levelHistogram": histogram(levels, LEVEL_EDGES),
@@ -252,6 +288,9 @@ def stats(xs: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         "sourceRates": [{"rate": r, "utterances": n} for r, n in sorted(rates.items())],
         "speakers": len({str(x["speaker"]) for x in xs if x.get("speaker")}),
     }
+    if (eou := eou_stats(xs)) is not None:
+        out["eou"] = eou
+    return out
 
 
 def card(
@@ -289,6 +328,14 @@ def card(
     out += ["", f"Duration percentiles: p5 {dp['p5']} s, p50 {dp['p50']} s, p95 {dp['p95']} s.", ""]
     origins = ", ".join(f"{o['origin']} {o['utterances']}" for o in st["origins"])
     out += [f"Transcript origins: {origins}.", ""]
+    eou = st.get("eou")
+    if eou and eou.get("withGap"):
+        out += [
+            f"End of utterance (per-channel VAD): the other party spoke next after {eou['withGap']} of"
+            f" {eou['utterances']} segments, gap p50 {eou['p50GapS']} s, p90 {eou['p90GapS']} s"
+            f" ({eou['overlapping']} overlapping).",
+            "",
+        ]
     steps = [str(s) for s in header.get("steps") or []]
     if steps:
         out += ["## Recipe", "", "Segments went through: " + " → ".join(f"`{s}`" for s in [*steps, KIND]) + ".", ""]
