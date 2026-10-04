@@ -3203,7 +3203,8 @@ paths:
           List golden sets: frozen, held-out test sets per language and domain, each an eval-only dataset version
           tied to one scoring normalizer version. Runs never read them: a dataset version or mix sharing an
           utterance (by id or fingerprint) with any golden set is refused for training (golden-set-leakage).
-          Adopt one into a project with projects.adopt.
+          Adopt one into a project with projects.adopt. alignment, when present, holds word timings of the references
+          (the align_reference step on the golden set's dataset), which emission delay in evals needs.
       parameters:
         - $ref: "#/components/parameters/RegistryCollectionFilter"
         - $ref: "#/components/parameters/RegistryStateFilter"
@@ -8162,6 +8163,7 @@ components:
           properties:
             goldenSet: { $ref: "#/components/schemas/GoldenSetPayload" }
             usedBy: { type: array, items: { $ref: "#/components/schemas/UsedBy" } }
+            alignment: { $ref: "#/components/schemas/GoldenSetAlignment" }
     GoldenSetVersionList:
       type: object
       required: [items]
@@ -8630,10 +8632,10 @@ components:
         classes: { type: array, items: { $ref: "#/components/schemas/EvalEntityClass" } }
     EvalLatencyScores:
       type: object
-      description: "Latency to final at real-time pace (R54, latency_score): speech end (frame VAD) to the partial whose text is final"
+      description: "Latency to final at real-time pace (R54, latency_score): speech end (frame VAD) to the partial whose text is final; from latency_score@3 also emission delay (emission)"
       required: [scorer, available, measured]
       properties:
-        scorer: { type: string, example: latency_score@1 }
+        scorer: { type: string, example: latency_score@3 }
         scores: { type: string, description: "The metric_scores artifact (b3:…)" }
         available: { type: boolean }
         reason: { type: string }
@@ -8650,6 +8652,7 @@ components:
         earlyFinals: { type: integer, description: Finals emitted before the VAD's speech end (counted as 0 ms) }
         noSpeech: { type: integer }
         emptyFinals: { type: integer }
+        emission: { $ref: "#/components/schemas/EvalEmissionDelay" }
     EvalCellMetrics:
       type: object
       description: Metrics beside WER, kept with the cell's eval record (absent while their steps run)
@@ -9895,3 +9898,39 @@ components:
         versionId: { type: string, description: The locked version (ver_…) }
         version: { type: string }
         collection: { type: string }
+
+    # ---------------------------------------------------------------- alignment and emission delay schemas (phase 4 · stream L) — add below
+    GoldenSetAlignment:
+      type: object
+      description: "Word timings of the golden set's reference texts (align_reference, R51/R54): the newest alignment artifact of its dataset artifact. Emission delay (latency_score) reads it; with no allowed aligner for the language the references stay unaligned and emission delay is n/a"
+      required: [id, artifact, aligner, utterances, aligned, words, createdAt]
+      properties:
+        id: { type: string, description: "aln_…" }
+        artifact: { type: string, description: "The alignment artifact (b3:…, cadence.alignment/1: one row per utterance with words [{index, word, start, end, score}] or a reason)" }
+        aligner: { type: string, description: "The aligner auxiliary, auxiliary/<name>" }
+        alignerVersionId: { type: string }
+        method: { type: string, description: "torchaudio.forced_align or ctc-viterbi; empty when nothing was aligned" }
+        utterances: { type: integer }
+        aligned: { type: integer, description: Utterances with word timings }
+        words: { type: integer, description: Timed words }
+        reasons: { type: array, items: { type: string }, description: "Why utterances stayed unaligned (distinct, at most five)" }
+        pipelineRunId: { type: string }
+        createdAt: { type: string, format: date-time }
+    EvalEmissionDelay:
+      type: object
+      description: "Emission delay (R54; Yu et al., FastEmit, ICASSP 2021): each matched reference word's aligned end to the first partial from which the final's word stays in place, at real-time pace; PR50 and PR90 over the cell's words. available false with the reason when the golden set has no aligned references — never an estimate"
+      required: [available]
+      properties:
+        available: { type: boolean }
+        reason: { type: string }
+        aligner: { type: object, additionalProperties: true, description: "{auxiliary, versionId, hfRepo, revision} of the alignment" }
+        utterances: { type: integer }
+        alignedUtterances: { type: integer }
+        words: { type: integer, description: Reference words of the aligned utterances }
+        matchedWords: { type: integer, description: Timed reference words the final matched (the delays measured) }
+        pr50Ms: { type: number, format: double }
+        pr90Ms: { type: number, format: double }
+        meanMs: { type: number, format: double }
+        earlyWords: { type: integer, description: Words shown before their aligned end (negative delays, kept) }
+        unalignedUtterances: { type: integer }
+        mismatchedUtterances: { type: integer, description: "Utterances whose alignment was made for another text, or whose words the normalizer does not tie to tokens" }
