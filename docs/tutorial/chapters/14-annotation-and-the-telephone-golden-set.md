@@ -170,7 +170,10 @@ working through that queue: accept one member's text, correct it, or reject the 
 becomes a human transcript, and the next freeze of that dataset includes it. Triage is how the disputed tail of a
 pseudo-labelled corpus becomes training data instead of waste.
 
-<!-- TBD gate: count of disputed items from the gate's pseudo-label run, by reason -->
+On the stand, Chapter 13's run left 2 454 items in the queue, all for one reason — the members disagreed — each
+listed once with both members' texts. That is most of the corpus, and Chapter 13 explains why: a weak member vetoes
+what a strong one got right. Triage is the expensive way out; changing the ensemble is the cheap one. Work the queue
+when the disputes are few and genuinely hard. <!-- triage_items, project test, 2026-10-04 -->
 
 ## Freezing the batch
 
