@@ -10,7 +10,7 @@ replaces the segment's previous partial, ``final`` never changes, every event st
 outputs and forces an end of utterance); the next audio opens a new pipeline stream at the same audio clock, with a
 fresh encoder cache — a segment boundary, not just a flush.
 
-``nemotron_live`` serves sessions with it and ``nemotron_transcribe@3`` decodes golden sets with it
+``nemotron_live`` serves sessions with it and ``nemotron_transcribe@4`` decodes golden sets with it
 (:func:`decode_batch`): a live session in 20 ms frames and a file decode give the same words (22/22 FLEURS he and ru
 clips at every profile, batch 1), and the same WER as the reference loop at every profile (this stream's GPU check:
 he 75.6 / 77.9 / 65.1 / 66.3 / 69.8 at 80 / 160 / 320 / 560 / 1120 ms, same empty clips). The words differ from the
@@ -618,7 +618,8 @@ class PipelineStream:
             ev.append(self._final(words, reason if last else "eou", end, text, space))
             if text or last:
                 self.new_word = last
-        partial = strip_tags(str(out.partial_transcript or "")) if not last else ""
+        raw_partial = str(out.partial_transcript or "") if not last else ""
+        partial = strip_tags(raw_partial)
         if partial and partial != self.last_partial:
             self.seq += 1
             self.last_partial = partial
@@ -630,6 +631,9 @@ class PipelineStream:
                     "seq": self.seq,
                     "text": partial,
                     "audioEnd": round(end / SR, 3),
+                    # As a final's: after an end of utterance inside a word (at 80 ms NeMo's endpointer closes a
+                    # segment right after its first token) the next segment's partials continue that word.
+                    "space": raw_partial[:1].isspace() or self.new_word,
                 }
             )
         if last:
@@ -691,7 +695,7 @@ class PipelineStream:
         return self._send(self._chunks(final=True), reason)
 
 
-# ---------------------------------------------------------------- file decoding (nemotron_transcribe@3)
+# ---------------------------------------------------------------- file decoding (nemotron_transcribe@4)
 
 
 @dataclass
@@ -733,7 +737,9 @@ def collect(
             words += e["words"]
             so_far = join_finals(finals)
         else:
-            so_far = join_finals([*finals, {"text": e["text"], "space": True}])
+            # A partial joins the finals as a final would: one continuing a split word (``space`` false) must not
+            # read as two words, or every later word sits one place off until the segment's final (emission delay)
+            so_far = join_finals([*finals, {"text": e["text"], "space": e.get("space", True)}])
         p: dict[str, Any] = {
             "audioOffsetMs": round(float(e["audioEnd"]) * 1000),
             "emitMs": round((at - t0) * 1000, 2),

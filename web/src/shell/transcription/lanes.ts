@@ -23,7 +23,8 @@ export type FinalSegment = {
 export type Lane = {
   target: LaneTarget;
   finals: FinalSegment[];
-  partial?: { segment: number; seq: number; text: string; audioEnd: number };
+  /** space false: the partial continues the last final's word (join without a space). */
+  partial?: { segment: number; seq: number; text: string; audioEnd: number; space: boolean };
   /** The highest seq seen (partials and finals share it). */
   seq: number;
 };
@@ -108,7 +109,7 @@ function onMessage(s: LiveState, m: LiveServerMessage, at: number, sentTime?: nu
       const l = lane(s, m.target);
       // A partial older than what the lane already shows (or than its last final) is dropped.
       if (m.seq <= l.seq) return s;
-      return { ...s, lanes: { ...s.lanes, [m.target]: { ...l, seq: m.seq, partial: { segment: m.segment, seq: m.seq, text: m.text, audioEnd: m.audioEnd } } } };
+      return { ...s, lanes: { ...s.lanes, [m.target]: { ...l, seq: m.seq, partial: { segment: m.segment, seq: m.seq, text: m.text, audioEnd: m.audioEnd, space: m.space ?? true } } } };
     }
     case "final": {
       const l = lane(s, m.target);
@@ -163,7 +164,8 @@ export function finalText(l: Lane | undefined): string {
 export function laneText(l: Lane | undefined): string {
   const fin = finalText(l);
   const p = l?.partial?.text ?? "";
-  return p ? (fin ? `${fin} ${p}` : p) : fin;
+  if (!p) return fin;
+  return fin ? (l?.partial?.space === false ? `${fin}${p}` : `${fin} ${p}`) : p;
 }
 
 /** Timed words of a lane's finals for a word track; a word split by an end of utterance is joined back. */

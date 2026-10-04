@@ -900,12 +900,12 @@ def test_materialize_writes_the_checkpoint_layout_of_a_trained_one(tmp_path: Pat
     assert FAMILY.descriptor["roles"]["materialize"] == "checkpoint_from_base"
 
 
-# ---------------------------------------------------------------- phrase boosting (nemotron_transcribe@3)
+# ---------------------------------------------------------------- phrase boosting (nemotron_transcribe@3, @4)
 
 
 def test_transcribe_takes_an_optional_boost_list() -> None:
     d = descriptor("nemotron_transcribe", TranscribeStep)
-    assert d["version"] == "3"
+    assert d["version"] == "4"
     assert d["consumes"]["boost"] == "boost_list"
     assert d.get("optionalInputs") == ["boost"]
     assert FAMILY.descriptor["capabilities"]["boosting"] == "nemo-phrase-boosting"
@@ -991,7 +991,8 @@ class _Out:
 def test_pipeline_stream_events_mark_a_split_word() -> None:
     s = pipeline.PipelineStream(target="A", pipeline=None, att=[56, 0], profile="80ms", language="ru-RU")
     (p,) = s.consume(_Out(partial="Ma"), 1280, False, "")
-    assert p == {"type": "partial", "target": "A", "segment": 0, "seq": 1, "text": "Ma", "audioEnd": 0.08}
+    want = {"type": "partial", "target": "A", "segment": 0, "seq": 1, "text": "Ma", "audioEnd": 0.08, "space": True}
+    assert p == want
     assert s.consume(_Out(partial="Ma"), 1280, False, "") == [], "an unchanged partial is not sent again"
     # At 80 ms the end-of-utterance detector fires right after the first token, inside a word (A5 finding 4).
     (f1,) = s.consume(_Out(final="Ma", segs=(_Seg("Ma", 0.0, 0.16, 0.8),)), 1280, False, "")
@@ -1011,6 +1012,31 @@ def test_pipeline_stream_events_mark_a_split_word() -> None:
     assert s.new_word
     assert pipeline.join_finals([f1, f2, f3, end]) == "Madagascar i"
     assert [e["seq"] for e in (p, f1, f2, f3, end)] == [1, 2, 3, 4, 5]
+
+
+def test_split_word_partials_keep_word_positions() -> None:
+    """At 80 ms NeMo's endpointer closes a segment right after the first token (" Dan"), and the next segment's
+    partials continue that word ("iel", no leading separator). They must read "Daniel …", not "Dan iel …": a split
+    partial put every later word one place off until the utterance's final, which latency_score@3 counted as an
+    emission delay of the whole utterance (PR50 4.5 s at 80 ms on FLEURS sr; 07 "Open questions", 2026-10-04)."""
+    from cadence_worker.steps.latency_score import first_stable
+
+    s = pipeline.PipelineStream(target="A", pipeline=None, att=[56, 0], profile="80ms", language="hr-HR")
+    events: list[dict[str, Any]] = []
+    events += s.consume(_Out(final=" Dan", segs=(_Seg(" Dan", 1.92, 2.0, 0.9),)), 1280, False, "")
+    for raw in ("iel", "iel Lan", "iel Lantane", "iel Lantane je"):
+        events += s.consume(_Out(partial=raw), 1280, False, "")
+    events += s.consume(_Out(final="iel Lantane je <hr-HR>"), 1280, True, "end")
+    assert [e["type"] for e in events] == ["final", "partial", "partial", "partial", "partial", "final"]
+    assert [e["space"] for e in events] == [True, False, False, False, False, False]
+    r = pipeline.collect(events, 0.0, [0.01 * k for k in range(len(events))])
+    texts = [p["text"] for p in r.partials]
+    assert texts == ["Dan", "Daniel", "Daniel Lan", "Daniel Lantane", "Daniel Lantane je", "Daniel Lantane je"]
+    final = r.text.split()
+    assert final == ["Daniel", "Lantane", "je"]
+    pw = [t.split() for t in texts]
+    # Each word stays in place from the partial that first shows it whole, not from the final.
+    assert [first_stable(pw, j, w) for j, w in enumerate(final)] == [1, 3, 4]
 
 
 def test_collect_builds_hypotheses_partials() -> None:

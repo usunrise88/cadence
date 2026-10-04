@@ -24,7 +24,7 @@ The job:
 3. serves the session (`cadence_worker.live.serve`) until it ends, then releases the lease `done` with no outputs.
 
 Decoding is NeMo's cache-aware streaming pipeline (`nemo.collections.asr.inference`) in fp32 with greedy RNN-T, the
-language prompt per stream and end-of-utterance endpointing — the same decoder [`nemotron_transcribe@3`](nemotron-transcribe.md)
+language prompt per stream and end-of-utterance endpointing — the same decoder [`nemotron_transcribe@4`](nemotron-transcribe.md)
 evaluates with, so a live session, a paced replay of a file and an eval give the same words. Two shims fix NeMo
 3.0.0 gaps: the per-stream language prompt is applied (as shipped the pipeline drops it and the model emits only
 blanks) and the trailing locale tag is stripped. A boost list becomes the stream's own phrase boosting tree (NeMo's
@@ -36,7 +36,8 @@ The relay forwards the browser's frames unchanged. Up (`LiveClientMessage`): `st
 capture rate and `getSettings()`, a file, or an utterance span), binary audio (PCM16 little-endian mono frames of at
 most 20 ms at the capture rate, or a file's bytes), `fileEnd`, `finalize`, `keepalive`, `end`. Down
 (`LiveServerMessage`): `started` (per target: profile, chunk, language, load time, decoder), `partial` (replaces the
-segment's previous one), `final` (words with start, end and confidence in session audio time, the endpoint `eou`,
+segment's previous one; `space: false` when it continues the previous final's last word, joined without a space as
+the final will be), `final` (words with start, end and confidence in session audio time, the endpoint `eou`,
 `finalize` or `end`, and `space: false` when an end of utterance fell inside a word and the final continues it),
 `stats` (real-time factor, audio decoded, about once a second), `pong`, `error` (a problem), `summary` (totals, step
 times, peak memory, load times) and close 1000.

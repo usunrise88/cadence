@@ -1587,13 +1587,13 @@
     },
     "stop_history_eou_ms": {
      "default": 800,
-     "description": "Trailing silence (in the decoder's emissions) after which NeMo's streaming pipeline closes a segment with an automatic end of utterance; live sessions and nemotron_transcribe@3 use the same value, so their words agree",
+     "description": "Trailing silence (in the decoder's emissions) after which NeMo's streaming pipeline closes a segment with an automatic end of utterance; live sessions and nemotron_transcribe use the same value, so their words agree",
      "title": "Stop History Eou Ms",
      "type": "integer",
      "x-cadence": {
       "default": 800,
       "defaultRef": "packs.nemo.live_stop_history_eou_ms",
-      "description": "Trailing silence (in the decoder's emissions) after which NeMo's streaming pipeline closes a segment with an automatic end of utterance; live sessions and nemotron_transcribe@3 use the same value, so their words agree",
+      "description": "Trailing silence (in the decoder's emissions) after which NeMo's streaming pipeline closes a segment with an automatic end of utterance; live sessions and nemotron_transcribe use the same value, so their words agree",
       "range": {
        "max": 10000,
        "min": 80
@@ -1630,7 +1630,7 @@
   },
   "role": "transcribe",
   "runtime": "nemo-speech",
-  "version": "3"
+  "version": "4"
  },
  {
   "consumes": {

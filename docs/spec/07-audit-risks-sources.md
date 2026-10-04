@@ -840,11 +840,37 @@ owner may overrule):
       dry run refuses without it), `pseudolabel_ensemble@2` refuses fewer than `pseudolabel.min_members` and keeps
       Whisper's written-form text when the two agree (`pseudolabel.prefer_written_form`; 00 decision log). No
       weighting by measured WER.
-- [ ] Gate (2026-10-04): emission delay on `golden-set/fleurs-sr-latn-test` is PR50 4.5 s / PR90 9.9 s at `80ms`
+- [x] Gate (2026-10-04): emission delay on `golden-set/fleurs-sr-latn-test` is PR50 4.5 s / PR90 9.9 s at `80ms`
       but 0.42 s / 4.0 s at `160ms` (base model and fine-tune alike; latency to final at 80 ms p50 1.3 s): words in
       80 ms partials stay unstable until the final. **Now:** unexplained — the model at that look-ahead, or the
       pipeline decoder's partials (its NeMo shims)? Check before phase 5 deploys the 80 ms primary profile
       (`evl_01a106b7-d42b…`).
+      **Answered 2026-10-04: a Cadence decoder bug, fixed in `nemotron_transcribe@4`** — neither the model nor the
+      scorer. At 80 ms NeMo's endpointer closes a segment right after an utterance's first token, inside a word
+      (A5 finding 4; " Dan" | "iel Lantane …"): 171 of 200 FLEURS sr test clips at 80 ms, 34 at 160 ms, 1 at 1120 ms.
+      The finals carried `space: false` and joined right, but `pipeline.collect` joined every *partial* of the next
+      segment to the finals with a space ("Dan iel Lantane …"), so each later word sat one place off until the
+      segment's final — at the utterance's end — and latency_score@3 (which compares words by position, correctly)
+      dated them all there. Partials now carry `space` like finals (`LivePartial.space`, the live lanes join them
+      too). Check on 24 clips, base model, partials paced at their audio offset and word ends from the decode's own
+      timestamps: PR50 / PR90 at 80 ms 4.04 s / 9.08 s before, −0.15 s / 0.01 s after — identical to NeMo's own
+      cache-aware loop (`conformer_stream_step` with hypotheses carried, append-only) at 80 ms; 160 ms unchanged
+      (−0.07 / 0.01 s); words and WER unchanged. On 200 clips after the fix no word at 80 or 160 ms is first in place
+      only in the final. The 160 ms PR90 of 4.0 s on the stand has the same cause (17 % of clips split). Latency to
+      final moves too: a split utterance's partials never equalled its final text, so @3 counted its final only at the
+      last event (24 clips at 80 ms: the final text now shows a median 0.51 s before the last event, 0 s with @3).
+      `nemotron_transcribe@4` changes the eval record key, so the stand re-decodes; the chapter 14 table needs a rerun
+      (decision log 2026-10-04).
+- [ ] Gate (2026-10-04, from the 80 ms check): NeMo's endpointer closes a segment after the utterance's first token
+      in 86 % of 80 ms decodes because the pipeline config's `endpointing.residue_tokens_at_end: 2` hides the newest
+      two frames from the end-of-utterance search, so the leading silence counts as trailing (with 0: no mid-word
+      end of utterance on 48 clips, but 18 of 48 transcripts change). Finals and partials now join right, yet a live
+      lane shows a one-token "final" at every utterance start. **Now:** unchanged (2); should Cadence set 0 (or
+      scale it by chunk) after a WER check?
+- [ ] Gate (2026-10-04, from the 80 ms check): NeMo warns that `att_context_size` [56,1] (`160ms`) "is not among the
+      supported look-aheads [[56,3],[56,0],[56,6],[56,13]]" of Nemotron 3.5 — the model was trained for 80, 320, 560
+      and 1120 ms only. **Now:** `160ms` stays a profile (it decodes, and its WER is in range); should it be marked
+      untrained, or dropped from the family's profiles?
 
 ## Sources
 

@@ -1318,7 +1318,7 @@ packs:
     live_stop_history_eou_ms:
       value: 800
       unit: ms
-      description: Trailing silence (in the decoder's emissions) after which NeMo's streaming pipeline closes a segment with an automatic end of utterance; live sessions and nemotron_transcribe@3 use the same value, so their words agree
+      description: Trailing silence (in the decoder's emissions) after which NeMo's streaming pipeline closes a segment with an automatic end of utterance; live sessions and nemotron_transcribe use the same value, so their words agree
       source: "docs/spikes/A5-live-transcription.md \"Result\" (800 ms: the automatic endpoint lands 1.5 s after the utterance at 160 ms, 2.0 s at 1120 ms)"
       range: { min: 80, max: 10000 }
     # frame_vad (utterance ends for latency to final, R54; phase 3 stream R).

@@ -6,7 +6,7 @@ contexts: [step:nemotron_transcribe, artifact:hypotheses, artifact:boost_list, f
 
 ## What this is
 
-`nemotron_transcribe@3` fills the `transcribe` role of the Nemotron 3.5 streaming family (runtime `nemo-speech`, a
+`nemotron_transcribe@4` fills the `transcribe` role of the Nemotron 3.5 streaming family (runtime `nemo-speech`, a
 card, job kind `eval`). It streams every utterance of a `dataset` (input `data`) through a `checkpoint` (input
 `model`) at the latency `profile` with **NeMo's cache-aware streaming pipeline** (`nemo.collections.asr.inference`) —
 the decoder a live session runs ([`nemotron_live`](nemotron-live.md)), so an eval, a paced replay and a live session
@@ -33,12 +33,21 @@ The `hypotheses` artifact (R42) has one JSON line per utterance: `audio` (the BL
 `words` (`word`, `start`, `end` in seconds and `confidence` from the pipeline's word segments: NeMo's entropy-based
 confidence, the minimum over the word's tokens), `decoding` and its `decodingHash`, `family`, `weightsHash`, and
 `partials`: one event per partial or final the stream emitted, with `audioOffsetMs` (the audio the event covers),
-`emitMs` (wall time since the batch's decode started) and the text so far; the last is `final`.
+`emitMs` (wall time since the batch's decode started) and the text so far; the last is `final`. A partial that
+continues a word split by an end of utterance joins it without a space, as the final will ("Daniel Lan", not
+"Dan iel Lan").
+
+**Version 4** (2026-10-04) fixes exactly that: version 3 joined such a partial with a space, so every later word of
+the partials sat one place off until the utterance's final. The words, finals and WER are the same; emission delay and
+latency to final ([latency_score](latency-score.md)) are not. At 80 ms NeMo's endpointer closes a segment right after an utterance's
+first token in most utterances (171 of 200 FLEURS sr clips; 34 at 160 ms, 1 at 1120 ms), so version 3's emission delay
+at 80 ms was about the length of the utterance (golden set `fleurs-sr-latn-test`: PR50 4.5 s, PR90 9.9 s). The new
+version changes the eval record key, so version 3's records are never reused.
 
 `decoding` names the decoder — `"decoder": "nemo-pipeline-cache-aware"` with `profile`, `attContextSize`,
 `targetLang`, `stopHistoryEouMs` — so records of versions 1 and 2 (NeMo's cache-aware loop, `"decoder":
 "rnnt-greedy-batch"`) never mix with these; an eval keys its records by the transcribe kind's version too. On the
-stand card (FLEURS: ten he fixtures, twelve ru clips, the base model) version 3 gives the same WER as version 2 at
+stand card (FLEURS: ten he fixtures, twelve ru clips, the base model) version 3 (and so 4) gives the same WER as version 2 at
 every profile — he 75.6 / 77.9 / 65.1 / 66.3 / 69.8 and ru 16.2 / 17.2 / 17.2 / 16.2 / 14.1 at 80 / 160 / 320 / 560 /
 1120 ms, the same two empty he clips — and its words differ only where version 2 drops an utterance's last tokens (a
 tail shorter than the subsampling, "כתבית." → "כתבי"). At batch 1 an utterance decodes to the same words as a live

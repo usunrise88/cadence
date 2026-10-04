@@ -61,7 +61,7 @@ export function LaneText({ lane, language }: { lane: Lane | undefined; language:
       ))}
       {lane?.partial?.text ? (
         <span className="text-muted-foreground" data-slot="transcription-partial">
-          {finals.length ? " " : null}
+          {finals.length && lane.partial.space ? " " : null}
           <bdi>{lane.partial.text}</bdi>
         </span>
       ) : null}

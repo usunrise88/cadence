@@ -51,6 +51,12 @@ describe("liveReducer", () => {
       msg({ type: "final", target: "A", segment: 1, seq: 2, text: "дагаскар это", words: [{ word: "дагаскар", start: 0.1, end: 0.5, confidence: 0.6 }, { word: "это", start: 0.5, end: 0.7 }], endpoint: "eou", audioEnd: 0.8, space: false }),
     ]);
     expect(finalText(s.lanes.A)).toBe("Мадагаскар это");
+    // Before the final: a partial with space false continues the word too (not "Ма дагаскар")
+    const p = run([
+      msg({ type: "final", target: "A", segment: 0, seq: 1, text: "Ма", words: [], endpoint: "eou", audioEnd: 0.1, space: true }),
+      msg({ type: "partial", target: "A", segment: 1, seq: 2, text: "дагаскар", audioEnd: 0.5, space: false }),
+    ]);
+    expect(laneText(p.lanes.A)).toBe("Мадагаскар");
     expect(laneWords(s.lanes.A, 1)).toEqual([
       { word: "Мадагаскар", start: 1, end: 1.5, confidence: 0.6 },
       { word: "это", start: 1.5, end: 1.7, confidence: undefined },

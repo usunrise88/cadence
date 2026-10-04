@@ -162,7 +162,9 @@ NeMo pack as built (phase 2, `worker/packs/nemo`, distribution `cadence-nemo`, h
   feature buffer of cache plus chunk). Its decoding config names the decoder (`"decoder": "nemo-pipeline-cache-aware"`
   with `stopHistoryEouMs`), so its records never mix with `@1`/`@2` records (NeMo's cache-aware loop). Utterances of a
   batch step together (`packs.nemo.transcribe_batch_size`, 8 for evals; batch 1 gives exactly a live session's words);
-  on the stand it matches version 2's WER at every profile (help `steps.nemotron-transcribe`).
+  on the stand it matches version 2's WER at every profile (help `steps.nemotron-transcribe`). Version 4 (2026-10-04)
+  joins a partial that continues a word split by an end of utterance without a space, as the final (`space` on live
+  partials too); @3's partials made emission delay at 80 ms the utterance's length (07 "Open questions").
 - Phase 4 (stream X): two auxiliary-model kinds in the same runtime, each loading its model from the auxiliary the
   project adopted (02 "Auxiliary models") for the length of one job (R45's one-off allowance; ≤ 8 GB, job kind
   `data`): `whisper_transcribe@1` (a pseudo-label member through transformers in fp16; `auxiliary` default
