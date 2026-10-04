@@ -806,7 +806,7 @@ function Utterances({ ev, cell, doc, selected }: { ev: Eval; cell: EvalCell; doc
                     onClick={(e) => {
                       e.stopPropagation();
                       select(doc, evalItem(cell.id, r.index));
-                      openAudio({ utterance: r.audio, cell: cell.id, hypotheses: cell.hypotheses, scores: cell.scores });
+                      openAudio({ utterance: r.audio, cell: cell.id, hypotheses: cell.hypotheses, scores: cell.scores, goldenSet: cell.goldenSetVersionId });
                     }}
                     onKeyDown={(e) => e.stopPropagation()}
                   >

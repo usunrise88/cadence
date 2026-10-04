@@ -9,4 +9,4 @@ export { toCtm, toTextGrid, toWebVtt, type ExportWord } from "./exports";
 export { COLORMAPS, type Colormap } from "./renderer";
 export { audioItem, parseAudioItem, spanFragment, spanReference, type AudioTarget } from "./selection";
 export { AUDIO_PANEL, openAudio, useAudioItem, useAudioTarget } from "./target";
-export type { TrackWord, WordTrackData } from "./words";
+export { referenceTrack, type TrackWord, type WordTrackData } from "./words";

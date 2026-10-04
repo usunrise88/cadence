@@ -7,7 +7,7 @@ import { resolveColor } from "@/shell/charts/tokens";
 import { formatTime, pyramidLevel, rulerStep, timeToX, xToTime, type AudioAxis } from "./axis";
 import { blurAudio, setFocusedAudio, type AudioController } from "./controller";
 import type { AnalysisData } from "./analysis";
-import type { PeakPyramid } from "./peaks";
+import type { PeakSource } from "./peaks";
 import { sharedRenderer, type Colormap, type Renderer, type TileQuad } from "./renderer";
 import { schedulerFor, type Frameable, type WindowScheduler } from "./scheduler";
 import { TILE, tileRange, tileSpan, type SpecSource } from "./tiles";
@@ -61,7 +61,7 @@ export class AudioEngine implements Frameable, AudioController {
   private selEl: HTMLDivElement;
   private summary: HTMLDivElement;
   private live: HTMLDivElement;
-  private peaks: PeakPyramid | null = null;
+  private peaks: PeakSource | null = null;
   private energyBox: HTMLDivElement;
   private energy: HTMLCanvasElement;
   private energyLabel: HTMLDivElement;
@@ -189,7 +189,7 @@ export class AudioEngine implements Frameable, AudioController {
 
   // ---------------------------------------------------------------- data
 
-  setPeaks(p: PeakPyramid | null): void {
+  setPeaks(p: PeakSource | null): void {
     this.peaks = p;
     this.invalidate();
   }

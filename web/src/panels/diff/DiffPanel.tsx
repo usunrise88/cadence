@@ -134,7 +134,16 @@ function UtteranceDiff({ row, ev, cell, locale }: { row: EvalUtterance; ev: Eval
         {row.speaker ? <Num label="Speaker" value={row.speaker} /> : null}
       </dl>
       <Alignment words={words} dir={dir} />
-      <AudioView key={row.audio} utterance={row.audio} compact title={`Audio of utterance #${row.index}`} hypotheses={cell.hypotheses} scores={cell.scores} lang={locale} />
+      <AudioView
+        key={row.audio}
+        utterance={row.audio}
+        compact
+        title={`Audio of utterance #${row.index}`}
+        hypotheses={cell.hypotheses}
+        scores={cell.scores}
+        goldenSet={cell.goldenSetVersionId}
+        lang={locale}
+      />
       <p className="flex flex-wrap gap-x-3 text-[11px] text-muted-foreground" data-slot="diff-legend">
         {(["S", "D", "I"] as const).map((op) => (
           <span key={op}>
@@ -150,7 +159,7 @@ function UtteranceDiff({ row, ev, cell, locale }: { row: EvalUtterance; ev: Eval
         <Button size="xs" variant="outline" aria-pressed={texts} onClick={() => setTexts((t) => !t)}>
           {texts ? "Hide texts" : "Show texts"}
         </Button>
-        <Button size="xs" variant="outline" onClick={() => openAudio({ utterance: row.audio, cell: cell.id, hypotheses: cell.hypotheses, scores: cell.scores })}>
+        <Button size="xs" variant="outline" onClick={() => openAudio({ utterance: row.audio, cell: cell.id, hypotheses: cell.hypotheses, scores: cell.scores, goldenSet: cell.goldenSetVersionId })}>
           <SoundHigh aria-hidden />
           Open in Audio
         </Button>

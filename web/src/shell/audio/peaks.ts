@@ -2,7 +2,19 @@
 // with coarser levels max-pooled in memory once, so drawing any zoom reads about one pair per pixel (S5).
 import type { AudioPeaks } from "@/api/gen/types.gen";
 
-export class PeakPyramid {
+/** What the waveform and minimap read: min/max over a time range at a level chosen for the drawn width. */
+export interface PeakSource {
+  readonly channels: number;
+  /** Seconds per pair of the clipped marks' grid. */
+  readonly hopS: number;
+  /** Start time of the clipped marks' grid. */
+  readonly start: number;
+  readonly clipped: number[];
+  range(ch: number, t0: number, t1: number, level: number): [number, number];
+  levelFor(span: number, widthPx: number): number;
+}
+
+export class PeakPyramid implements PeakSource {
   readonly channels: number;
   readonly hopS: number;
   /** Start time of the first pair. */
@@ -71,6 +83,71 @@ function fromBase64(s: string): Int8Array {
   const out = new Int8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = (bin.charCodeAt(i) << 24) >> 24;
   return out;
+}
+
+// Long audio (a call recording; phase 4 tail): the server stores peaks with coarser levels (×16 each, cadence.peaks/2),
+// so the view reads an overview of the whole audio at a coarse hop and 10 ms detail only for the span it shows when
+// zoomed in, instead of the 10 ms peaks of hours.
+
+/** Base hop of server peaks (10 ms) and the server's level factor. */
+export const PEAKS_BASE_MS = 10;
+export const PEAKS_LEVEL_FACTOR = 16;
+/** Pairs an overview may hold; audio whose 10 ms peaks hold more is long. */
+export const OVERVIEW_MAX_FRAMES = 32768;
+/** Detail windows are whole blocks of this many seconds, so panning reuses them. */
+export const DETAIL_BLOCK_S = 60;
+/** Offset of overview levels in LongPeaks' level numbers (below it: detail levels). */
+const OVERVIEW_LEVEL = 1000;
+
+/** The overview hop (ms) of audio this long: the finest stored level that keeps the overview within OVERVIEW_MAX_FRAMES. */
+export function overviewHopMs(durationS: number): number {
+  let hop = PEAKS_BASE_MS;
+  while ((durationS * 1000) / hop > OVERVIEW_MAX_FRAMES) hop *= PEAKS_LEVEL_FACTOR;
+  return hop;
+}
+
+/**
+ * The detail window to load for a visible range, or null when the overview has a pair per pixel already: from one
+ * span before to one span after the view, widened to whole DETAIL_BLOCK_S blocks and clamped to the audio.
+ */
+export function detailWindow(start: number, span: number, widthPx: number, overviewHopS: number, durationS: number): [number, number] | null {
+  if (overviewHopS <= PEAKS_BASE_MS / 1000 || span / Math.max(1, widthPx) >= overviewHopS) return null;
+  const a = Math.max(0, Math.floor((start - span) / DETAIL_BLOCK_S) * DETAIL_BLOCK_S);
+  const b = Math.min(durationS, Math.ceil((start + 2 * span) / DETAIL_BLOCK_S) * DETAIL_BLOCK_S);
+  return b > a ? [a, b] : null;
+}
+
+/** An overview of the whole audio and, when loaded, 10 ms detail for a window of it. */
+export class LongPeaks implements PeakSource {
+  readonly overview: PeakPyramid;
+  readonly detail: PeakPyramid | null;
+  private detailEnd: number;
+
+  constructor(overview: PeakPyramid, detail: PeakPyramid | null) {
+    this.overview = overview;
+    this.detail = detail;
+    this.detailEnd = detail ? detail.start + detail.frames * detail.hopS : 0;
+  }
+  get channels(): number {
+    return this.overview.channels;
+  }
+  get hopS(): number {
+    return this.overview.hopS;
+  }
+  get start(): number {
+    return this.overview.start;
+  }
+  get clipped(): number[] {
+    return this.overview.clipped;
+  }
+  levelFor(span: number, widthPx: number): number {
+    if (this.detail && span / Math.max(1, widthPx) < this.overview.hopS) return this.detail.levelFor(span, widthPx);
+    return OVERVIEW_LEVEL + this.overview.levelFor(span, widthPx);
+  }
+  range(ch: number, t0: number, t1: number, level: number): [number, number] {
+    if (level < OVERVIEW_LEVEL && this.detail && t0 >= this.detail.start && t1 <= this.detailEnd) return this.detail.range(ch, t0, t1, level);
+    return this.overview.range(ch, t0, t1, level >= OVERVIEW_LEVEL ? level - OVERVIEW_LEVEL : 0);
+  }
 }
 
 /** The pyramid of a peaks.get answer. */

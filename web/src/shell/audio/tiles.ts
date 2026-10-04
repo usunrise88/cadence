@@ -221,7 +221,8 @@ export class ServerSource implements SpecSource {
     this.binHz = m.binHz;
     this.levels = m.levels;
     this.peakDb = m.peakDb;
-    this.fmaxHz = Math.min(m.originSampleRate, m.sampleRate) / 2;
+    // Narrowband audio (8 kHz origin by its estimated bandwidth) stops at 4 kHz with a Nyquist line (R52).
+    this.fmaxHz = Math.min(m.originSampleRate, m.sampleRate, m.narrowband ? 8000 : Infinity) / 2;
     this.fetcher = fetcher;
     const top = `/l${m.levels.length - 1}/`;
     this.cache = new TileCache(maxBytes, (k) => k.includes(top));
