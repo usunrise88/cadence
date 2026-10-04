@@ -88,3 +88,7 @@ export { ADOPT_REQUEST, EVAL_FORM_REQUEST, GATE_REQUEST } from "@/shell/commands
 // Transcription (phase 3, R47–R50): the live channel's client, lanes, microphone capture and the page-side reference
 // check the Transcription panel composes (no audio or text is kept beyond the page).
 export * from "@/shell/transcription";
+// Annotation (phase 4): the Annotate view the Triage panel composes (the reviewer's page shows it alone), its helpers,
+// and the request only an open Annotation batch document completes (its invitation form).
+export { AnnotateView, channelLabel, seconds, TAGS, type AnnotateViewProps } from "@/shell/annotation";
+export { INVITE_REQUEST } from "@/shell/commands/annotation";

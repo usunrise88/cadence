@@ -3,7 +3,8 @@ import { Logo } from "@/components/brand/Logo";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { onUnauthenticated, ProblemError } from "@/api/client";
 import { authGetOptions } from "@/api/gen/@tanstack/react-query.gen";
-import { authLogin, authSetup } from "@/api/gen/sdk.gen";
+import { authAccept, authLogin, authSetup } from "@/api/gen/sdk.gen";
+import { invitationToken, ReviewerApp } from "@/shell/annotation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { markSignedIn, markSignedOut } from "./session";
@@ -16,8 +17,18 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
   const { data, error, isPending, refetch } = useQuery({ ...authGetOptions(), staleTime: Infinity, retry: 1 });
   useEffect(() => onUnauthenticated(() => markSignedOut(qc)), [qc]);
+  const invitation = useInvitation();
 
-  if (isPending) return <Screen title="Cadence" busy />;
+  if (isPending || invitation.pending) return <Screen title="Cadence" busy />;
+  if (invitation.error) {
+    return (
+      <Screen title="This invitation does not open a batch" subtitle="Ask the admin of the batch for a new link.">
+        <p role="alert" className="text-sm text-destructive">
+          {invitation.error}
+        </p>
+      </Screen>
+    );
+  }
   if (error || !data) {
     return (
       <Screen title="Cadence">
@@ -32,7 +43,34 @@ export function AuthGate({ children }: { children: ReactNode }) {
   }
   if (data.setupRequired) return <FirstStart />;
   if (!data.actor) return <SignIn />;
+  // A reviewer (an invitation to one annotation batch) sees that batch's Annotate view and nothing else.
+  if (data.reviewer) return <ReviewerApp scope={data.reviewer} name={data.actor.name} />;
   return children;
+}
+
+/**
+ * Opens a reviewer's invitation link (/#invitation=cri_…) once: the token becomes a session for its batch (auth.accept),
+ * and the fragment leaves the address bar.
+ */
+function useInvitation(): { pending: boolean; error?: string } {
+  const qc = useQueryClient();
+  const [state, setState] = useState<{ pending: boolean; error?: string }>(() => ({ pending: !!invitationToken(window.location.hash) }));
+  useEffect(() => {
+    const token = invitationToken(window.location.hash);
+    if (!token) return;
+    // The fragment goes first, so a second run of the effect (React's StrictMode) finds no token and redeems nothing.
+    window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    void (async () => {
+      try {
+        const { data } = await authAccept({ body: { token }, throwOnError: true });
+        markSignedIn(qc, data);
+        setState({ pending: false });
+      } catch (err) {
+        setState({ pending: false, error: problemText(err) });
+      }
+    })();
+  }, [qc]);
+  return state;
 }
 
 function Screen({ title, subtitle, busy, children }: { title: string; subtitle?: string; busy?: boolean; children?: ReactNode }) {

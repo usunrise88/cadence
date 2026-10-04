@@ -46,6 +46,14 @@
 .cadence-audio-compact .cadence-audio-wave {
   height: 32px;
 }
+.cadence-audio-energy {
+  display: block;
+  width: 100%;
+  height: 48px;
+}
+.cadence-audio-compact .cadence-audio-energy {
+  height: 24px;
+}
 .cadence-audio-spec-box {
   display: flex;
   flex-direction: column;
