@@ -285,7 +285,23 @@ start a short run, evaluate the best checkpoint against the base model and read 
 **Adapt a new language** strings every step of this chapter and of Chapters 6–9 together, and stops at each of the
 three approvals for a person.
 
-<!-- TBD gate: run id, best validation WER, eval id, verdict; compare with the FLEURS-transcript run of Chapter 7 -->
+On the stand we did exactly that: a mix of the 475 pseudo-labelled utterances with `dataset/replay-base` at the
+default replay share of 0.15, 1 000 steps under the `hr-HR` prompt. The run took five minutes; its best validation
+WER, 0.140 at step 500, is measured against pseudo-labels, so it says little. The gate says more:
+
+| Check | Base model | Fine-tuned | Verdict |
+| --- | --- | --- | --- |
+| Target: FLEURS Serbian test, 80 ms | 0.356 | 0.349 | inconclusive — the interval [−0.016, +0.002] includes zero |
+| Replay: 33 languages the model knew | | | 31 failed, 2 passed |
+
+<!-- run_01a10658-e06d…, ckp_01a1065b-adc3… (step 500), evl_01a1065d-870e…, gate 2026-10-04 -->
+
+Two lessons, both worth more than a pass would have been. First, 1.8 hours of labels — the ones the ensemble dared
+keep — are not enough to move a 0.6-billion-parameter model on a new language; Chapter 7's run trained on 824
+human-transcribed utterances, against 375 here, and gained nine points at 160 ms. Second, replay at 0.15 did not stop forgetting at this learning
+rate: German went from 0.125 to 0.314, Ukrainian from 0.175 to 0.545. Replay is a dose, not a switch. The next run
+raises the target data (a better ensemble keeps far more than 490 segments), raises the replay share and lowers the
+learning rate, and the gate decides again.
 
 ## What you learned
 

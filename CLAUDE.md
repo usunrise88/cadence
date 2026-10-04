@@ -29,7 +29,7 @@ docs/spec/      The specification (read before changing behaviour); docs/spikes/
                 control-plane/templates/skills/ and copied into project repos at bootstrap
 ```
 
-## Current state (phases 0–3 done; phase 4 built, gate pending)
+## Current state (phases 0–4 done; phase 5 next)
 
 Work follows `ROADMAP.md`: six phases (0 Shell → 1 Agent loop → 2 Training → 3 Evaluation → 4 Data → 5 Deploy and
 flywheel), each closed by a gate. Pick work from the current phase; tick items there as they merge; don't start an
@@ -128,9 +128,9 @@ have numbers. What exists:
   Experiment; language packs (he-IL, sr) in `templates/lang/`; experiments and sweeps.
 - **The book**: `docs/tutorial/` (method in GUIDELINES.md, skill `cadence-tutorial`).
 
-Phase 4 (data) is built on `feat/phase-4-data` (streams M, D, X, R, I, A, L, B; folded into the spec by stream S on
-2026-10-04); its gate (a mounted Serbian corpus ingested, pseudo-labelled, frozen and trained on by the "Adapt a new
-language" playbook) is still to run on the stand. Plan: `docs/review/2026-10-03-phase-4-plan.md`; what differs and
+Phase 4 (data) passed its gate on 2026-10-04: FLEURS Serbian on the `corpora` mount was indexed in place,
+pseudo-labelled by an ensemble, frozen with the leakage check and trained on through the phase-2 path; the model it
+produced failed its own gate (target inconclusive, forgetting despite replay 0.15; ROADMAP "Phase 4" gate paragraph). Plan: `docs/review/2026-10-03-phase-4-plan.md`; what differs and
 what is open: ROADMAP "Phase 4 notes". What exists:
 - **Mounts and storage** (`internal/mounts`, `internal/storage`, `internal/eviction`): `mounts.list|get|new|scan|verify`
   (local, NFS/SMB path, S3, HF; adding one is an approval), `mount://<mount>/<path>#t=…&ch=…` URIs on utterances,

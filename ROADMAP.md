@@ -594,6 +594,25 @@ telephone golden set is built from own calls.
 **Gate.** A dataset version ingested from a mount and frozen by the `data-ingest` pipeline (leakage check passed,
 dataset card generated) is trained on through the phase-2 path — ideally as the "Adapt a new language" playbook.
 
+**Gate run (2026-10-04, staging).** Passed as a data path; the model it produced failed its own gate, as the phase-3
+one did. Mount `corpora` (approved) → `pipelines/pseudo-label` (`plr_01a10639-2160…`): `sdp_ingest@2` indexed the
+2 944 FLEURS Serbian train files in place (10.7 h, `test/` excluded by default), Nemotron (`hr-HR`, 80 ms) and Whisper
+large-v3 transcribed them (OASIS skipped: not adopted), Whisper LID, and the ensemble kept 490 segments (1.9 h) and
+sent 2 454 to triage → draft `dataset/fleurs-sr-pseudo` → `datasets.freeze` (leakage passed against 35 golden sets,
+quality checks passed, card written): 475 utterances, 1.84 h → mix with `dataset/replay-base` at 0.15 → run
+`run_01a10658-e06d…` (1 000 steps, 5 min, best validation WER 0.140 at step 500, measured on pseudo-labels) → eval
+`evl_01a1065d-870e…` (72 cells, 77 audio hours) → `evals.gate`:
+- Verdict **failed**: target inconclusive — WER 0.356 → 0.349 at `80ms`, Δ −0.007 [−0.016, +0.002]; replay 31 of 33
+  sets regressed (German 0.125 → 0.314, Ukrainian 0.175 → 0.545) despite the 0.15 replay share at peak LR 2e-4.
+- Pseudo-label quality against the withheld FLEURS transcripts: Nemotron alone 0.336, Whisper alone 0.121, the kept
+  labels 0.121 — with the base model as a member, agreement keeps only what the weak member gets right.
+- Leakage demo: the `test/` folder ingested on purpose (`exclude: []`, `.txt` sidecars from `test.tsv`) drafts fine and
+  its freeze answers `golden-set-leakage`: 700 of 700 utterances shared with `golden-set/fleurs-sr-latn-test`.
+- Synthetic calls: `data-ingest` on `calls-synth-sr` indexed 577 segments (315 caller, 262 bot with script text); the
+  annotation batch `calls-synth-sr-1` (40 items, 4 double, end-of-utterance p50 2.3 s, p90 6.1 s) waits for people.
+- Seven product bugs found on the way were fixed in the branch (Phase 4 notes). The playbook ran in parts by hand
+  (CLI), not end to end as an agent session; the Try Cadence smoke stopped at its source-clearing step.
+
 Decide before starting:
 - [x] **decide** → *R45* The models phase 4 needs that are not NeMo models, while packs beyond NeMo are deferred: R26's
       pseudo-label members (the ivrit.ai Whisper fine-tune, the omnilingual model) and a CTC model to align Hebrew
