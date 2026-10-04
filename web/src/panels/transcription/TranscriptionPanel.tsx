@@ -86,6 +86,8 @@ function Transcription({ project }: { project: string }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [level, setLevel] = useState({ peak: 0, clipped: false });
+  // A microphone check before going live: the level meter runs, nothing is sent.
+  const [checking, setChecking] = useState(false);
   const [view, setView] = useState<ViewSource | null>(null);
   const [state, dispatch] = useReducer(liveReducer, initialLive);
   const [playing, setPlaying] = useState(false);
@@ -111,12 +113,17 @@ function Transcription({ project }: { project: string }) {
     if (!spanText && audioItem) setSpanText(`${audioItem.utterance}${audioItem.start !== undefined ? `#${spanFragment(audioItem.start, audioItem.end)}` : ""}`);
   }, [audioItem, spanText]);
 
-  const teardown = useCallback(() => {
+  const stopCapture = useCallback(() => {
     capture.current?.stop();
     capture.current = null;
+    setChecking(false);
+    setLevel({ peak: 0, clipped: false });
+  }, []);
+  const teardown = useCallback(() => {
+    stopCapture();
     client.current?.close();
     client.current = null;
-  }, []);
+  }, [stopCapture]);
   useEffect(
     () => () => {
       teardown();
@@ -181,7 +188,24 @@ function Transcription({ project }: { project: string }) {
     recorded.current.push(new Int16Array(f.pcm.slice(0)));
   }, []);
 
+  const check = async () => {
+    if (checking) {
+      stopCapture();
+      return;
+    }
+    setError(null);
+    try {
+      capture.current = await startCapture({ deviceId: deviceId || undefined, raw, frameMs: FRAME_MS, onFrame });
+      setChecking(true);
+      void audioInputs().then(setDevices);
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  };
+
   const start = async () => {
+    // A running check yields the microphone to the session (started again below, inside this click).
+    stopCapture();
     setError(null);
     setView(null);
     setSession(null);
@@ -225,8 +249,7 @@ function Transcription({ project }: { project: string }) {
         onMessage,
         onClose: (code, reason) => {
           dispatch({ type: "closed", code, reason });
-          capture.current?.stop();
-          capture.current = null;
+          stopCapture();
           client.current = null;
           // A session that closed without its summary (idle, cap, a lost worker) still shows what it heard.
           if (code !== 1000) void showView();
@@ -260,8 +283,7 @@ function Transcription({ project }: { project: string }) {
     dispatch({ type: "finalize", at: performance.now() });
   };
   const stop = () => {
-    capture.current?.stop();
-    capture.current = null;
+    stopCapture();
     client.current?.end();
   };
 
@@ -281,14 +303,20 @@ function Transcription({ project }: { project: string }) {
   return (
     <div className="flex h-full min-h-0 flex-col" data-slot="transcription-panel">
       <PanelToolbar className="flex-wrap gap-1.5">
-        <NativeSelect className="h-7 w-32" aria-label="Input" value={kind} disabled={running} onChange={(e) => setKind(e.target.value as InputKind)}>
+        <NativeSelect className="h-7 w-32" aria-label="Input" value={kind} disabled={running} onChange={(e) => {
+            stopCapture();
+            setKind(e.target.value as InputKind);
+          }}>
           <option value="microphone">Microphone</option>
           <option value="file">File</option>
           <option value="span">Utterance span</option>
         </NativeSelect>
         {kind === "microphone" ? (
           <>
-            <NativeSelect className="h-7 w-44" aria-label="Microphone" value={deviceId} disabled={running} onChange={(e) => setDeviceId(e.target.value)}>
+            <NativeSelect className="h-7 w-44" aria-label="Microphone" value={deviceId} disabled={running} onChange={(e) => {
+                stopCapture();
+                setDeviceId(e.target.value);
+              }}>
               <option value="">Default microphone</option>
               {devices.map((d) => (
                 <option key={d.deviceId} value={d.deviceId}>
@@ -297,10 +325,18 @@ function Transcription({ project }: { project: string }) {
               ))}
             </NativeSelect>
             <label className="flex items-center gap-1 text-xs" title="Echo cancellation, noise suppression and automatic gain off, as recognition wants; turn it off to hear what a call stack does">
-              <input type="checkbox" className="size-4 accent-primary" checked={raw} disabled={running} onChange={(e) => setRaw(e.target.checked)} />
+              <input type="checkbox" className="size-4 accent-primary" checked={raw} disabled={running} onChange={(e) => {
+                stopCapture();
+                setRaw(e.target.checked);
+              }} />
               Raw microphone
             </label>
             <LevelMeter peak={level.peak} clipped={level.clipped} />
+            {running ? null : (
+              <Button size="xs" variant={checking ? "secondary" : "ghost"} disabled={busy || !!micWhy} onClick={() => void check()} aria-pressed={checking} title="Listen to the microphone and show its level; nothing is sent">
+                {checking ? "Stop check" : "Check"}
+              </Button>
+            )}
           </>
         ) : kind === "file" ? (
           <label className="flex items-center gap-1 text-xs">

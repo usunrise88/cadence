@@ -119,6 +119,41 @@ func TestKnowsLanguage(t *testing.T) {
 	}
 }
 
+// A lane decodes in the language asked for, else the one its model was trained under (Serbian fine-tuned under the
+// hr-HR prompt), else the project's first locale.
+func TestLaneLanguage(t *testing.T) {
+	tests := []struct {
+		asked, trained string
+		locales        []string
+		want           string
+	}{
+		{"he-IL", "hr-HR", []string{"sr-RS"}, "he-IL"},
+		{" ", "hr-HR", []string{"sr-RS"}, "hr-HR"},
+		{"", "", []string{"sr-RS", "en-US"}, "sr-RS"},
+		{"", "", nil, ""},
+	}
+	for _, tt := range tests {
+		if got := laneLanguage(tt.asked, tt.trained, tt.locales); got != tt.want {
+			t.Errorf("laneLanguage(%q, %q, %v) = %q, want %q", tt.asked, tt.trained, tt.locales, got, tt.want)
+		}
+	}
+	params := []struct {
+		in   map[string]any
+		want string
+	}{
+		{map[string]any{"seed": 10, "steps": 100, "target_lang": "hr-HR"}, "hr-HR"},
+		{map[string]any{"language": " he-IL "}, "he-IL"},
+		{map[string]any{"target_lang": "", "locale": "en-US"}, "en-US"},
+		{map[string]any{"target_lang": 3}, ""},
+		{nil, ""},
+	}
+	for _, tt := range params {
+		if got := languageParam(tt.in); got != tt.want {
+			t.Errorf("languageParam(%v) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
 func TestHubPairsAWorkerThatDialledFirst(t *testing.T) {
 	var h hub
 	w1 := &workerConn{done: make(chan struct{})}

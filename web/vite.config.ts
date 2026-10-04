@@ -35,7 +35,11 @@ export default defineConfig({
         test: {
           name: "browser",
           include: ["src/**/*.browser.test.{ts,tsx}"],
-          browser: { enabled: true, provider: playwright(), headless: true, instances: [{ browser: "chromium" }] },
+          browser: { enabled: true, provider: playwright({
+              // The capture test: the fake microphone (a tone), the permission granted without a prompt, and an
+              // AudioContext that runs without the click the panel's Go live / Check gives it.
+              launchOptions: { args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream", "--autoplay-policy=no-user-gesture-required"] },
+            }), headless: true, instances: [{ browser: "chromium" }] },
         },
       },
     ],

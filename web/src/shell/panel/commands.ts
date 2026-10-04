@@ -28,10 +28,17 @@ export function problemOf(err: unknown): Problem | undefined {
   return err instanceof ProblemError ? err.problem : undefined;
 }
 
+/** The server's generic 422 detail: alone it says nothing, so errorMessage follows it with the field problems. */
+const GENERIC_VALIDATION = "the request does not match the operation's schema";
+
 /** A readable one-line message for any error. */
 export function errorMessage(err: unknown): string {
   const p = problemOf(err);
-  if (p) return p.detail ?? p.title;
+  if (p) {
+    const head = p.detail ?? p.title;
+    const fields = (p.errors ?? []).map((f) => (f.path ? `${f.path}: ${f.message}` : f.message));
+    return head === GENERIC_VALIDATION && fields.length ? `${head} — ${fields.join("; ")}` : head;
+  }
   return err instanceof Error ? err.message : String(err);
 }
 

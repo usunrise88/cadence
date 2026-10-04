@@ -6669,7 +6669,7 @@ export type TranscriptionTargetIn = {
      */
     profile?: string;
     /**
-     * BCP 47 language the model decodes in (default: the project's first locale)
+     * BCP 47 language the model decodes in (default: the language a checkpoint or model version was trained under, its run's target_lang, else the project's first locale)
      */
     language?: string;
     /**
