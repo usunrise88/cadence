@@ -22,7 +22,9 @@ import (
 // the content store, a mount copy of a segment, a window of a file on a mount — so what they store is what a first
 // view would have computed:
 //   - media.peaks stores the waveform peaks of a dataset version's members when the version is registered (a frozen
-//     version, an import, and a draft's segments whose files the control plane reads without a decoder);
+//     version, an import, and a draft's segments whose files the control plane reads without a decoder), and of the
+//     windows an annotation batch's items and the triage items show (when the batch is created, when the items are
+//     indexed), so a first view reads stored peaks; the first-view computation stays the fallback;
 //   - media.spectrogram builds the tile pyramid of one audio on the audio view's first request for it.
 //
 // media_jobs (migration 0045) names the newest job of each subject, so concurrent requests share one job.
@@ -92,20 +94,60 @@ func (s *Service) ensureJob(ctx context.Context, tx pgx.Tx, kind, subject string
 	return j, true, drafts, nil
 }
 
-// ---------------------------------------------------------------- peaks of a dataset version
+// ---------------------------------------------------------------- peaks of a dataset version, a batch, triage items
 
+// peaksArgs name what a media.peaks job stores the peaks of: a dataset version's members, an annotation batch's item
+// windows, or the windows of the triage items one segments artifact indexed in a project.
 type peaksArgs struct {
-	VersionID string `json:"versionId"`
+	VersionID string `json:"versionId,omitempty"`
+	BatchID   string `json:"batchId,omitempty"`
+	Segments  string `json:"segments,omitempty"` // with ProjectID: triage items indexed from this segments artifact
+	ProjectID string `json:"projectId,omitempty"`
 }
 
 // PeaksResult is what a media.peaks job reports.
 type PeaksResult struct {
-	VersionID  string `json:"versionId"`
-	Utterances int    `json:"utterances"`
-	Stored     int    `json:"stored"`  // computed and stored by this job
-	Present    int    `json:"present"` // stored before (a first view, another version with the same audio)
-	Skipped    int    `json:"skipped"` // not readable here (a codec only a worker decodes): computed on first view
+	VersionID  string `json:"versionId,omitempty"`
+	BatchID    string `json:"batchId,omitempty"`
+	Segments   string `json:"segments,omitempty"`
+	Utterances int    `json:"utterances"` // members, or item windows
+	Stored     int    `json:"stored"`     // computed and stored by this job
+	Present    int    `json:"present"`    // stored before (a first view, another version or item with the same audio)
+	Skipped    int    `json:"skipped"`    // not readable here (a codec only a worker decodes, a mount the control plane does not see): computed on first view
 	FirstError string `json:"firstError,omitempty"`
+}
+
+// peaksJobs reports whether this control plane runs media.peaks (nothing is precomputed otherwise).
+func (s *Service) peaksJobs() bool { return s.Jobs != nil && s.Jobs.Registered(JobPeaks) }
+
+// EnqueueBatchPeaks queues media.peaks for the windows of an annotation batch's items, in the transaction that creates
+// the batch, so an annotator's first view of an item reads stored peaks (phase 4 tail). Once per batch.
+func (s *Service) EnqueueBatchPeaks(ctx context.Context, tx pgx.Tx, batchID string) ([]events.Draft, error) {
+	if !s.peaksJobs() {
+		return nil, nil
+	}
+	_, _, drafts, err := s.ensureJob(ctx, tx, JobPeaks, batchID, peaksArgs{BatchID: batchID}, 0, false)
+	return drafts, err
+}
+
+// TriageHook is a second output hook of segments artifacts, run after the triage hook indexed the disputed rows: it
+// queues media.peaks for the windows of the triage items indexed from the artifact in its project (once per project
+// and artifact; a reused output queues nothing again).
+func (s *Service) TriageHook(ctx context.Context, tx pgx.Tx, out steps.Output) ([]events.Draft, error) {
+	if out.ProjectID == "" || !s.peaksJobs() {
+		return nil, nil
+	}
+	var found bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM triage_items WHERE project_id = $1 AND segments_hash = $2)`,
+		out.ProjectID, out.Artifact.Hash).Scan(&found); err != nil {
+		return nil, fmt.Errorf("triage items of %s: %w", out.Artifact.Hash, err)
+	}
+	if !found {
+		return nil, nil
+	}
+	_, _, drafts, err := s.ensureJob(ctx, tx, JobPeaks, "triage|"+out.ProjectID+"|"+out.Artifact.Hash,
+		peaksArgs{Segments: out.Artifact.Hash, ProjectID: out.ProjectID}, 0, false)
+	return drafts, err
 }
 
 // DatasetHook is a second output hook of dataset artifacts, run after the importer registered the version: it
@@ -154,23 +196,53 @@ func members(ctx context.Context, q storage.Querier, versionID string) ([]string
 	return ids, nil
 }
 
-// runPeaks stores the peaks of every member the store has none of. A member that cannot be read here (a draft's
-// segment of a compressed file, audio no longer anywhere) is skipped: its first view computes or reports it.
+// listIDs runs a query answering one id per row.
+func listIDs(ctx context.Context, q storage.Querier, what, sql string, args ...any) ([]string, error) {
+	rows, err := q.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", what, err)
+	}
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", what, err)
+	}
+	return ids, nil
+}
+
+// peaksSubjects lists what a media.peaks job reads, by the ids Lookup takes: a version's members (utt_…), a batch's
+// items (bit_…, their windows) or a segments artifact's triage items in a project (tri_…).
+func (s *Service) peaksSubjects(ctx context.Context, a peaksArgs) ([]string, error) {
+	switch {
+	case a.VersionID != "":
+		return members(ctx, s.Pool, a.VersionID)
+	case a.BatchID != "":
+		return listIDs(ctx, s.Pool, "items of "+a.BatchID,
+			`SELECT id FROM annotation_items WHERE batch_id = $1 ORDER BY position`, a.BatchID)
+	case a.Segments != "" && a.ProjectID != "":
+		return listIDs(ctx, s.Pool, "triage items of "+a.Segments,
+			`SELECT id FROM triage_items WHERE project_id = $1 AND segments_hash = $2 ORDER BY created_at, id`, a.ProjectID, a.Segments)
+	}
+	return nil, errors.New("names no version, batch or segments artifact")
+}
+
+// runPeaks stores the peaks of every member or item window the store has none of. One that cannot be read here (a
+// draft's segment of a compressed file, a window on a mount the control plane does not see, audio no longer anywhere)
+// is skipped: its first view computes or reports it.
 func (s *Service) runPeaks(ctx context.Context, run *jobs.Run) (any, error) {
 	var a peaksArgs
-	if err := json.Unmarshal(run.Args, &a); err != nil || a.VersionID == "" {
+	if err := json.Unmarshal(run.Args, &a); err != nil {
 		return nil, fmt.Errorf("media.peaks: bad args %s", run.Args)
 	}
-	ids, err := members(ctx, s.Pool, a.VersionID)
+	ids, err := s.peaksSubjects(ctx, a)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("media.peaks %s: %w", run.Args, err)
 	}
 	release, err := s.heavy(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer release()
-	res := PeaksResult{VersionID: a.VersionID, Utterances: len(ids)}
+	res := PeaksResult{VersionID: a.VersionID, BatchID: a.BatchID, Segments: a.Segments, Utterances: len(ids)}
 	for i, id := range ids {
 		if err := ctx.Err(); err != nil {
 			return res, err
