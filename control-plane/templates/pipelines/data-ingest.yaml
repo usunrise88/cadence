@@ -7,7 +7,7 @@
 #
 # Before running, set the params marked "set me": the registered source (sources.new; no licence, no ingest), the
 # mount path, the language and the collection name. Copy text_normalise's params from lang/<locale>/normalizer.yaml
-# (training) and itn.yaml. For untranscribed audio, the pseudo-label ensemble (pseudolabel_ensemble@1) goes between
+# (training) and itn.yaml. For untranscribed audio, the pseudo-label ensemble (pseudolabel_ensemble@2) goes between
 # index and normalise. Only departures from defaults.yaml (data.*) are written. Help: docs/help/steps/sdp-ingest.md.
 #
 # A corpus's test/ split is left out (sdp_ingest exclude): it is where golden sets come from, and the leakage check

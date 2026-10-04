@@ -276,7 +276,8 @@ All are registry base-model entries of kind `auxiliary`, pinned by revision, lic
   `lid-voxlingua107` and `omniasr-ctc-1b`; MMS and `mms-lid` are excluded (CC-BY-NC). LID falls back to Whisper's
   language token because speechbrain conflicts with the NeMo runtime's torch (00 decision log). The members are
   `nemotron_transcribe@3`, `whisper_transcribe@1` and `oasis_transcribe@1`, combined by `pseudolabel_ensemble@1`
-  (03; 02 "Auxiliary models").
+  (03; 02 "Auxiliary models"). Since the owner's decision of 2026-10-04 the template votes Whisper and OASIS only
+  (OASIS required) through `pseudolabel_ensemble@2` (00 decision log).
 
 **R27 · Annotation guidelines**
 Markdown in the project repository (`annotation/guidelines/<name>.md`), versioned by commit SHA; a batch pins the

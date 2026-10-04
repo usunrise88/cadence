@@ -1,4 +1,4 @@
-"""pseudolabel_ensemble@1 against the hand-written segments fixture (cadence.segments/1, the D -> X interface):
+"""pseudolabel_ensemble@2 against the hand-written segments fixture (cadence.segments/1, the D -> X interface):
 agreement after the scoring normalizer, the pick, LID, and the disputes the control plane queues for triage."""
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ from cadence_worker.steps.pseudolabel_ensemble import (
     PseudolabelEnsembleStep,
     decide,
     pairwise_wer,
+    written_form,
 )
 
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "segments-sr"
@@ -93,10 +94,10 @@ def test_the_fixture_reads_as_segments() -> None:
 
 def test_ensemble_labels_agreeing_segments_and_disputes_the_rest(tmp_path: Path) -> None:
     rows, ctx = _run(tmp_path, _members(tmp_path), require_lid=False)
-    # 1: Whisper and OASIS agree exactly after the normalizer (pomoc/pomoć puts the third member 0.2 away from both),
-    # and OASIS is a vote, so its text wins.
+    # 1: Whisper and OASIS agree exactly after the normalizer (pomoc/pomoć puts the third member 0.2 away from both);
+    # Whisper's text is in written form (capitals, punctuation), so it wins over OASIS's spoken form, a vote or not.
     assert rows[H[1]]["origin"] == ORIGIN_PSEUDO
-    assert rows[H[1]]["text"] == "dobar dan treba mi pomoć"
+    assert rows[H[1]]["text"] == "Dobar dan, treba mi pomoć."
     assert 0 < rows[H[1]]["confidence"] <= 1
     # 2: the bot channel's TTS script passes unchanged.
     assert rows[H[2]]["origin"] == "tts-script"
@@ -115,7 +116,7 @@ def test_ensemble_labels_agreeing_segments_and_disputes_the_rest(tmp_path: Path)
     assert ctx.final_metrics["disputed_share"] == pytest.approx(0.75)
     hyp = [json.loads(line) for line in (tmp_path / "out-hyp.jsonl").read_text(encoding="utf-8").splitlines()]
     assert {h["audio"] for h in hyp} == {H[1], H[3], H[4], H[5]}
-    assert next(h for h in hyp if h["audio"] == H[1])["pick"] == "oasis"
+    assert next(h for h in hyp if h["audio"] == H[1])["pick"] == "whisper-large-v3"
 
 
 def test_lid_input_decides_and_equivalent_languages_agree(tmp_path: Path) -> None:
@@ -131,7 +132,7 @@ def test_lid_input_decides_and_equivalent_languages_agree(tmp_path: Path) -> Non
     rows, _ = _run(tmp_path, inputs)
     assert rows[H[1]]["origin"] == ORIGIN_PSEUDO
     assert rows[H[4]]["origin"] == ORIGIN_PSEUDO
-    assert rows[H[4]]["text"] == "hvala doviđenja"
+    assert rows[H[4]]["text"] == "Hvala, doviđenja."
     # Every labelled row carries its LID verdict for manifest_filter, kept or disputed.
     assert rows[H[1]]["lid"] == {"language": "hr", "confidence": 0.8, "agrees": True, "source": "lid"}
     assert rows[H[3]]["lid"]["language"] == "sr"
@@ -161,7 +162,7 @@ def test_header_steps_files_and_repeated_segments(tmp_path: Path) -> None:
     out = {"segments": tmp_path / "out-segments", "hypotheses": tmp_path / "out-hyp.jsonl"}
     PseudolabelEnsembleStep().run(EnsembleParams(require_lid=False), inputs, out, ctx)
     header, rows = read_segments(out["segments"])
-    assert header["steps"][-1] == "pseudolabel_ensemble@1"
+    assert header["steps"][-1] == "pseudolabel_ensemble@2"
     assert header["counts"] == {"segments": 6}
     assert (out["segments"] / "files.jsonl").is_file(), "files.jsonl goes on (annotation samples by file)"
     twins = [r for r in rows if r["hash"] == H[1]]
@@ -202,7 +203,7 @@ def test_decide_prefers_the_lowest_mean_wer_without_a_voter() -> None:
 def test_two_members_are_required(tmp_path: Path) -> None:
     inputs = _members(tmp_path)
     del inputs["hypotheses.1"], inputs["hypotheses.2"]
-    with pytest.raises(StepInputError, match="at least two"):
+    with pytest.raises(StepInputError, match="at least 2 members"):
         _run(tmp_path, inputs)
 
 
@@ -227,3 +228,73 @@ def test_auxiliary_unavailable_is_a_retryable_step_error() -> None:
     assert err["type"] == "step"
     assert err.get("retryable") is True
     assert err["message"].startswith("auxiliary-unavailable: ")
+
+
+def _two_members(tmp: Path) -> dict[str, Path]:
+    """The default template's ensemble (owner decision 2026-10-04): Whisper and OASIS, no base model."""
+    inputs = _members(tmp)
+    del inputs["hypotheses.2"]
+    return inputs
+
+
+def test_written_form_is_capitals_or_sentence_punctuation() -> None:
+    assert written_form("Dobar dan, treba mi pomoć.")
+    assert written_form("dobar dan.")
+    assert written_form("Marko")
+    assert written_form("שלום, מה שלומך?")  # no case in Hebrew: punctuation decides
+    assert not written_form("dobar dan treba mi pomoć")
+    assert not written_form("don't e-mail me")  # apostrophes and hyphens sit inside spoken-form words too
+    assert not written_form("שלום מה שלומך")
+    assert not written_form("")
+
+
+def test_whisper_and_oasis_keep_whispers_written_text(tmp_path: Path) -> None:
+    rows, ctx = _run(tmp_path, _two_members(tmp_path), require_lid=False)
+    assert rows[H[1]]["origin"] == ORIGIN_PSEUDO
+    assert rows[H[1]]["text"] == "Dobar dan, treba mi pomoć."
+    assert rows[H[1]]["confidence"] == pytest.approx(1.0)
+    assert rows[H[3]]["dispute"]["reason"] == "disagreement"  # struju/vodu: 0.2 apart
+    assert rows[H[4]]["dispute"]["reason"] == "lid-mismatch"  # Whisper's own LID says Russian
+    assert rows[H[5]]["dispute"]["reason"] == "no-speech"
+    assert ctx.meta["segments"]["members"] == ["oasis", "whisper-large-v3"]
+    hyp = [json.loads(x) for x in (tmp_path / "out-hyp.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert next(h for h in hyp if h["audio"] == H[1])["pick"] == "whisper-large-v3"
+
+
+def test_without_the_written_form_rule_the_vote_wins(tmp_path: Path) -> None:
+    rows, _ = _run(tmp_path, _two_members(tmp_path), require_lid=False, prefer_written_form=False)
+    assert rows[H[1]]["text"] == "dobar dan treba mi pomoć"
+
+
+def test_two_members_with_lid_agree_on_both_languages(tmp_path: Path) -> None:
+    inputs = _two_members(tmp_path)
+    inputs["lid"] = _jsonl(
+        tmp_path / "lid.jsonl",
+        [{"audio": H[1], "language": "hr", "confidence": 0.8}, {"audio": H[4], "language": "sr", "confidence": 0.9}],
+    )
+    rows, _ = _run(tmp_path, inputs)
+    assert rows[H[1]]["origin"] == ORIGIN_PSEUDO
+    assert rows[H[1]]["lid"]["agrees"] is True
+    # The lid row decides over Whisper's "ru"; Whisper and OASIS agree, Whisper's text is kept.
+    assert rows[H[4]]["origin"] == ORIGIN_PSEUDO
+    assert rows[H[4]]["text"] == "Hvala, doviđenja."
+    # Segment 3 has no lid row: Whisper's own detection ("sr") is the evidence.
+    assert rows[H[3]]["lid"]["source"] == "members"
+
+
+def test_a_segment_one_member_skipped_is_disputed(tmp_path: Path) -> None:
+    inputs = _two_members(tmp_path)
+    oasis = [json.loads(x) for x in inputs["hypotheses.1"].read_text(encoding="utf-8").splitlines()]
+    _jsonl(inputs["hypotheses.1"], [r for r in oasis if r["audio"] != H[1]])
+    rows, _ = _run(tmp_path, inputs, require_lid=False)
+    assert rows[H[1]]["dispute"]["reason"] == "too-few-members"
+    assert rows[H[1]]["confidence"] == 0
+
+
+def test_min_members_refuses_a_smaller_ensemble(tmp_path: Path) -> None:
+    with pytest.raises(StepInputError, match="at least 3 members"):
+        _run(tmp_path, _two_members(tmp_path), min_members=3)
+    # Wired with three, a segment only two members answered is too few.
+    rows, _ = _run(tmp_path, _members(tmp_path), require_lid=False, min_members=3)
+    assert rows[H[5]]["dispute"]["reason"] == "too-few-members"
+    assert rows[H[1]]["origin"] == ORIGIN_PSEUDO

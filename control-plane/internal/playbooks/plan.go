@@ -206,6 +206,9 @@ func (st *State) Observe(o Observation) bool {
 	for k := cur; k < i; k++ { // optional items the chain went past
 		st.Plan[k].State, st.Plan[k].Note, st.Plan[k].At = ItemSkipped, "passed over (optional)", &at
 	}
+	if it.State == ItemDone {
+		st.alreadyMet(i, o, at)
+	}
 	if v := gateVerdict(o.Body); v != "" && it.State == ItemDone {
 		it.Note = it.EntityID + ": gate " + v
 		if v == "failed" && st.StopOn("gate", "failed", "the eval "+it.EntityID+" failed the gate (evals.get shows the checks)", at) {
@@ -214,6 +217,23 @@ func (st *State) Observe(o Observation) bool {
 	}
 	st.advance(at)
 	return true
+}
+
+// alreadyMet ticks the items right after i that wait on a condition the answer that ticked i already meets: a
+// sources.get that ticks "register the source" and shows trainingCleared true also ticks "the source is cleared",
+// so the agent never asks a person for what is already so (a needless approval). Only pending items with a when
+// condition that name o's operation tick; the first that does not stops it.
+func (st *State) alreadyMet(i int, o Observation, at time.Time) {
+	for k := i + 1; k < len(st.Plan); k++ {
+		nx := &st.Plan[k]
+		if nx.State != ItemPending || len(nx.When) == 0 || nx.Until != "" || !nx.matches(o.Operation) || !meets(o.Body, nx.When) {
+			return
+		}
+		nx.State, nx.At = ItemDone, &at
+		nx.EntityID = entityOf(o.Body)
+		nx.Note = "already " + whenText(nx.When) + " (" + o.Operation + ")"
+		nx.CommandID, nx.ToolCallID = o.CommandID, o.ToolCallID
+	}
 }
 
 // target is the item an operation ticks: the current one (cur) when it names op, else the first later one that does

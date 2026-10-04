@@ -502,3 +502,66 @@ func TestValidateWhen(t *testing.T) {
 		t.Fatalf("when on a terminal step: %v", err)
 	}
 }
+
+// A source that is already cleared for training ticks the "cleared" step from the read that found it (try-cadence,
+// adapt-new-language): the agent never asks for sources.edit trainingCleared true, a needless approval. A source that
+// is not cleared holds the step until the approved edit (or a later read) shows it.
+func TestBundledClearStepTicksWhenAlreadyCleared(t *testing.T) {
+	lib, err := Load(templates.FS, defaults.Get(), known(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"try-cadence", "adapt-new-language"} {
+		p, _ := lib.Get(name)
+		idx := map[string]int{}
+		for i, s := range p.Chain {
+			idx[s.ID] = i
+		}
+		src, clr := idx["source"], idx["clear"]
+		if clr != src+1 || p.Chain[clr].Command != "sources.get" || p.Chain[clr].When["trainingCleared"] != true {
+			t.Fatalf("%s: the clear step must follow the source step, read sources.get and wait for trainingCleared: %+v", name, p.Chain[clr])
+		}
+		start := func() (*State, func(string, map[string]any)) {
+			st := &State{Name: p.Name, Title: p.Title, State: StateRunning, Plan: NewPlan(p, Estimate{}), Stops: p.Stop}
+			for k := range src {
+				st.Plan[k].State = ItemDone // the steps before the source (adapt-new-language's mount)
+			}
+			return st, func(op string, body map[string]any) {
+				st.Observe(Observation{Operation: op, Status: 200, Body: body, At: time.Now()})
+			}
+		}
+
+		st, obs := start()
+		obs("sources.get", map[string]any{"id": "src_1", "trainingCleared": true})
+		if st.Plan[src].State != ItemDone || st.Plan[clr].State != ItemDone || !strings.Contains(st.Plan[clr].Note, "already trainingCleared is true") {
+			t.Fatalf("%s: an already cleared source: %s (%q)", name, states(*st), st.Plan[clr].Note)
+		}
+		if st.Current() != clr+1 {
+			t.Fatalf("%s: current item %d after the cleared source, want %d", name, st.Current(), clr+1)
+		}
+
+		st, obs = start()
+		obs("sources.get", map[string]any{"id": "src_1", "trainingCleared": false})
+		if st.Plan[src].State != ItemDone || st.Plan[clr].State != ItemPending {
+			t.Fatalf("%s: a source not cleared: %s", name, states(*st))
+		}
+		if n := st.NextItem(); !strings.Contains(n, "sources.get") || !strings.Contains(n, "a person does it") {
+			t.Fatalf("%s: next item: %s", name, n)
+		}
+		obs("sources.get", map[string]any{"id": "src_1", "trainingCleared": false})
+		if st.Plan[clr].State != ItemRunning {
+			t.Fatalf("%s: a read of the uncleared source: %+v", name, st.Plan[clr])
+		}
+		obs("sources.edit", map[string]any{"id": "src_1", "trainingCleared": true}) // the approved edit, replayed
+		if st.Plan[clr].State != ItemDone {
+			t.Fatalf("%s: the approved edit: %s", name, states(*st))
+		}
+
+		// sources.new is not an operation of the clear step: a new source leaves it to its own read.
+		st, obs = start()
+		obs("sources.new", map[string]any{"id": "src_1", "trainingCleared": true})
+		if st.Plan[src].State != ItemDone || st.Plan[clr].State != ItemPending {
+			t.Fatalf("%s: sources.new ticked the clear step: %s", name, states(*st))
+		}
+	}
+}
