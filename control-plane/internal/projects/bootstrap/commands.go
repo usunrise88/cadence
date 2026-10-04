@@ -573,24 +573,37 @@ func (s *Service) Merge(ctx context.Context, tx pgx.Tx, p projects.Project, bran
 	return m, drafts, nil
 }
 
-// adoptLocked adopts every registry version data.lock names at commit.
+// adoptLocked adopts the template versions data.lock names at commit (a template sync's branch moves them). The
+// resolved list is never adopted from the file: projects.adopt writes it after the licence, locale, leakage and
+// auxiliary checks and their approvals, so a hand-edited entry adopts nothing (and pipelines refuse a locked version
+// the project did not adopt; internal/pipelines/lock.go).
 func (s *Service) adoptLocked(ctx context.Context, tx pgx.Tx, p projects.Project, commit string, actor auth.Actor) error {
 	b, _, err := s.o.Repos.ReadFile(ctx, p.Slug, commit, layout.DataLock)
 	if err != nil {
 		return nil //nolint:nilerr // a repository without data.lock pins nothing
 	}
 	var lock struct {
-		Resolved  []struct{ ID string } `yaml:"resolved"`
 		Templates []struct{ ID string } `yaml:"templates"`
 	}
 	if err := yaml.Unmarshal(b, &lock); err != nil {
 		return nil //nolint:nilerr // a hand-broken data.lock is shown in the Recipe panel, not fatal to a merge
 	}
 	var ids []string
-	for _, l := range append(lock.Resolved, lock.Templates...) {
+	for _, l := range lock.Templates {
 		if strings.HasPrefix(l.ID, "ver_") {
 			ids = append(ids, l.ID)
 		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	templates, err := registry.ListVersions(ctx, tx, registry.Filter{IDs: ids, Kind: registry.KindTemplate})
+	if err != nil {
+		return err
+	}
+	ids = ids[:0]
+	for _, v := range templates {
+		ids = append(ids, v.ID)
 	}
 	_, err = registry.AdoptQuietly(ctx, tx, p.ID, ids, actor)
 	return err

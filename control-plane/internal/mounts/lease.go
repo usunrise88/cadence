@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/usunrise88/cadence/control-plane/internal/problems"
 	"github.com/usunrise88/cadence/control-plane/internal/steps"
 	"github.com/usunrise88/cadence/control-plane/internal/storage"
@@ -43,11 +45,14 @@ var namedRe = regexp.MustCompile(`mount://([a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?)
 
 // Named lists the mounts a step spec names: every mount://<name>/ in its params and its inputs' metadata, sorted.
 func Named(spec steps.Spec) []string {
-	var docs []string
-	docs = append(docs, string(spec.Params))
+	docs := []string{string(spec.Params)}
 	for _, in := range spec.Inputs {
 		docs = append(docs, string(in.Meta))
 	}
+	return namesIn(docs)
+}
+
+func namesIn(docs []string) []string {
 	var out []string
 	for _, d := range docs {
 		for _, m := range namedRe.FindAllStringSubmatch(d, -1) {
@@ -60,37 +65,70 @@ func Named(spec steps.Spec) []string {
 	return out
 }
 
-// readsMounts reports whether a step of this job kind may read any mount's credentials: data, eval and export
-// steps read audio where it lives (evaluation may read remotely; spec 02 "Materialisation"); training reads the
-// cache only.
-func readsMounts(jobKind string) bool {
-	return jobKind == steps.JobData || jobKind == steps.JobEval || jobKind == steps.JobExport
+// lineageSQL walks from artifact hashes ($1) back through the steps that produced them to every input those steps
+// read, and answers the params of each producing step and the metadata of each artifact on the way: where the audio
+// a segments, transcript or dataset artifact points at came from (sdp_ingest's mount://…, dataset_import's path).
+const lineageSQL = `WITH RECURSIVE walk(hash) AS (
+		SELECT h FROM unnest($1::text[]) AS h
+		UNION
+		SELECT i.value->>'hash' FROM walk w JOIN artifacts a ON a.hash = w.hash JOIN pipeline_steps s ON s.id = a.step_id
+		CROSS JOIN LATERAL jsonb_each(CASE WHEN jsonb_typeof(s.inputs) = 'object' THEN s.inputs ELSE '{}'::jsonb END) i
+		WHERE i.value->>'hash' IS NOT NULL)
+	SELECT coalesce(s.params::text, ''), a.meta::text FROM walk w JOIN artifacts a ON a.hash = w.hash
+	LEFT JOIN pipeline_steps s ON s.id = a.step_id`
+
+// Reads lists the mounts a step may read: those it names (Named) and those named by the steps that produced its
+// inputs, back through their own inputs — a step reading a segments artifact reads the mount the ingest named.
+func Reads(ctx context.Context, q storage.Querier, spec steps.Spec) ([]string, error) {
+	docs := []string{string(spec.Params)}
+	var hashes []string
+	for _, in := range spec.Inputs {
+		docs = append(docs, string(in.Meta))
+		if in.Hash != "" {
+			hashes = append(hashes, in.Hash)
+		}
+	}
+	if len(hashes) > 0 {
+		rows, err := q.Query(ctx, lineageSQL, hashes)
+		if err != nil {
+			return nil, fmt.Errorf("walk the inputs' lineage: %w", err)
+		}
+		var params, meta string
+		if _, err := pgx.ForEachRow(rows, []any{&params, &meta}, func() error {
+			docs = append(docs, params, meta)
+			return nil
+		}); err != nil {
+			return nil, fmt.Errorf("walk the inputs' lineage: %w", err)
+		}
+	}
+	return namesIn(docs), nil
 }
 
 // ForLease lists every mount for the lease of spec, and which secrets go into the lease environment (env variable →
-// secret name): a mount's credentials reach a step that names the mount, a data, eval or export step, and the
-// mount's own health check — never a training step that does not name it. Values are read by the worker protocol,
-// which already holds the secret store; this package never reads one.
+// secret name): a mount's credentials reach only a step that reads the mount (Reads: it names the mount, or a step
+// that produced one of its inputs did) and the mount's own health check — never every data step (audit M4). Values
+// are read by the worker protocol, which already holds the secret store; this package never reads one.
 func ForLease(ctx context.Context, q storage.Querier, spec steps.Spec) ([]LeaseMount, map[string]string, error) {
+	named, err := Reads(ctx, q, spec)
+	if err != nil {
+		return nil, nil, err
+	}
 	rows, err := q.Query(ctx, `SELECT name, kind, root, read_only, endpoint, region, revision, credentials FROM mounts ORDER BY name`)
 	if err != nil {
 		return nil, nil, fmt.Errorf("read mounts: %w", err)
 	}
 	defer rows.Close()
-	named := Named(spec)
 	out := []LeaseMount{}
 	env := map[string]string{}
 	for rows.Next() {
 		var (
-			m     LeaseMount
-			cred  string
-			check bool
+			m    LeaseMount
+			cred string
 		)
 		if err := rows.Scan(&m.Name, &m.Kind, &m.Root, &m.ReadOnly, &m.Endpoint, &m.Region, &m.Revision, &cred); err != nil {
 			return nil, nil, fmt.Errorf("read mounts: %w", err)
 		}
-		check = spec.Kind == CheckKind && slices.Contains(named, m.Name)
-		if cred != "" && (check || slices.Contains(named, m.Name) || readsMounts(spec.Resources.JobKind)) {
+		if cred != "" && slices.Contains(named, m.Name) {
 			m.CredentialsEnv = CredentialsEnv(m.Name)
 			env[m.CredentialsEnv] = cred
 		}

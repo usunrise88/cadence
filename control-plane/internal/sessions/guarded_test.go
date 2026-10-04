@@ -13,7 +13,8 @@ func TestGuardedFiles(t *testing.T) {
 		files []string
 		want  []string
 	}{
-		{"recipes only", []string{"pipelines/train.yaml", "NOTES.md", "AGENTS.md", "data.lock"}, nil},
+		{"recipes only", []string{"pipelines/train.yaml", "NOTES.md", "AGENTS.md"}, nil},
+		{"the lockfile", []string{"pipelines/train.yaml", "data.lock"}, []string{"data.lock"}},
 		{"the gate", []string{"pipelines/a.yaml", "gates.yaml"}, []string{"gates.yaml"}},
 		{"a language pack", []string{"lang/he/itn.yaml", "lang/he/normalizer.yaml"}, []string{"lang/he/itn.yaml", "lang/he/normalizer.yaml"}},
 		{"project settings", []string{"project.yaml"}, []string{"project.yaml"}},

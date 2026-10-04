@@ -1,7 +1,7 @@
 ---
 title: Export not allowed
-summary: A dataset version cannot be pushed to the Hugging Face Hub — it holds production audio, a source without a usable licence, or a golden set's held-out data.
-contexts: [error:export-not-allowed, command:datasets.export, step:hf_push]
+summary: A dataset version cannot be pushed to the Hugging Face Hub — it holds production audio, a source without a usable licence, or a golden set's held-out data — or a pipeline names an export step, which only datasets.export runs.
+contexts: [error:export-not-allowed, command:datasets.export, command:pipelines.run, step:hf_push, step:dataset_export, step:shar_export]
 ---
 
 ## What this is
@@ -15,7 +15,11 @@ licence check"). The detail lists every reason:
 | A source is `production` | Customers' calls never leave the instance |
 | A source has no usable licence (`unknown`, `none`, `NOASSERTION`, empty, …) | Nobody may publish audio whose licence is unknown |
 | The version names no source | Its licence cannot be checked |
-| A golden set is built on it | Held-out test audio made public is no longer held out |
+| A golden set is built on it, or it shares an utterance (or an acoustic fingerprint) with a golden set's data, in any split | Held-out test audio made public is no longer held out |
+
+The same type answers `pipelines.run` (and every facade that starts a pipeline) when a step's kind is an export kind
+(job kind `export`: `hf_push`, `dataset_export`, `shar_export`): exports run only through `datasets.export`, which
+makes these checks and asks the approvals; a pipeline would skip them.
 
 Nothing was started and no approval was asked. Exports that stay inside (`lhotse-shar`, `nemo-manifest`,
 `cadence-bundle` to a mount or the content store) are not checked this way.

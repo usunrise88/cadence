@@ -5,6 +5,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
 	"testing"
@@ -327,6 +328,31 @@ func TestSessionScopedApproval(t *testing.T) {
 	}
 	// Another path still asks.
 	e.gateArchive("other", e.key(), 2)
+}
+
+// A registry-scope approval is granted once: mounts.new (and every `everyone` rule) shares one path between requests
+// of any body, so a session grant would register the next mount unasked (audit M3).
+func TestSessionGrantNeverCoversRegistryScope(t *testing.T) {
+	e := start(t)
+	body := func(name string) string {
+		return fmt.Sprintf(`{"name":%q,"kind":"local","root":%q}`, name, t.TempDir())
+	}
+	var acc accepted
+	e.ok(e.agent("POST", "/api/mounts", body("first"), "Idempotency-Key", e.key()), 202, &acc)
+	p := expectProblem(t, e.do("POST", "/api/approvals/"+acc.ApprovalID+":approve", `{"grant":"session"}`, "Idempotency-Key", e.key(),
+		"If-Match", `"1"`), 422, "validation-failed")
+	if len(p.Errors) != 1 || p.Errors[0].Path != "/grant" {
+		t.Errorf("grant session on a registry-scope approval: %+v", p)
+	}
+	e.ok(e.do("POST", "/api/approvals/"+acc.ApprovalID+":approve", `{}`, "Idempotency-Key", e.key(), "If-Match", `"1"`), 200, nil)
+	// Even a session grant stored for the path does not answer the next request.
+	if _, err := e.pool.Exec(context.Background(), "UPDATE approvals SET grant_scope = 'session' WHERE id = $1", acc.ApprovalID); err != nil {
+		t.Fatal(err)
+	}
+	e.ok(e.agent("POST", "/api/mounts", body("second"), "Idempotency-Key", e.key()), 202, &acc)
+	if n := e.count("SELECT count(*) FROM mounts WHERE name = 'second'"); n != 0 {
+		t.Fatal("a session grant registered a second mount")
+	}
 }
 
 // enqueue starts a noop job as testAgent in project p, the way a command would.

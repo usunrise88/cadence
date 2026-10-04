@@ -28,6 +28,10 @@ no repository), it resolves to the newest version the project adopted. "Newest" 
 last, not the greatest name. The version must be adopted either way. `aliases.set` answers `not-adopted` too when it
 names a version the project has not adopted.
 
+Only what `data.lock` pins and the adoptions allow resolves: an entry the project never adopted (a hand edit, merged from a branch) is
+not resolved either, and merging such an edit adopts nothing — only `projects.adopt` adopts, after the licence,
+locale, leakage and auxiliary checks. An agent session's edit of `data.lock` waits for a person to accept it.
+
 `source` parameters (`sdp_ingest`) are not registry versions; "no licence, no ingest" covers them
 (`source-unlicensed`).
 

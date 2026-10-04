@@ -92,9 +92,6 @@ func TestNamedAndCredentialsEnv(t *testing.T) {
 	if got := CredentialsEnv("calls-nas"); got != "CADENCE_MOUNT_CALLS_NAS_CREDENTIALS" {
 		t.Errorf("CredentialsEnv = %q", got)
 	}
-	if !readsMounts(steps.JobData) || readsMounts(steps.JobTraining) {
-		t.Error("data steps read mounts, training steps do not")
-	}
 }
 
 func TestScanCountsEntriesAndFindsBlobCopies(t *testing.T) {
@@ -139,6 +136,46 @@ func TestScanCountsEntriesAndFindsBlobCopies(t *testing.T) {
 	}
 }
 
+// A symbolic link on a share never leads the control plane out of the mount's root (audit L3).
+func TestPathReaderStaysInRoot(t *testing.T) {
+	dir := t.TempDir()
+	root, outside := filepath.Join(dir, "share"), filepath.Join(dir, "data")
+	for _, d := range []string{filepath.Join(root, "in"), outside} {
+		if err := os.MkdirAll(d, 0o750); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for p, c := range map[string]string{filepath.Join(outside, "master.key"): "KEY", filepath.Join(root, "in", "a.wav"): "RIFF"} {
+		if err := os.WriteFile(p, []byte(c), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for link, target := range map[string]string{"key.wav": filepath.Join(outside, "master.key"), "out": outside,
+		"alias.wav": filepath.Join(root, "in", "a.wav")} {
+		if err := os.Symlink(target, filepath.Join(root, link)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r := pathReader{root: root}
+	for _, rel := range []string{"key.wav", "out/master.key"} {
+		if f, err := r.Open(t.Context(), rel); err == nil {
+			_ = f.Close()
+			t.Errorf("%s: opened a file outside the root", rel)
+		}
+	}
+	if _, _, err := Scan(t.Context(), r, "out", 0, nil); err == nil {
+		t.Error("scanned a linked directory outside the root")
+	}
+	f, err := r.Open(t.Context(), "alias.wav")
+	if err != nil {
+		t.Fatalf("a link inside the root: %v", err)
+	}
+	_ = f.Close()
+	if p, err := InRoot(root, "in/missing.wav"); err != nil || p != filepath.Join(root, "in", "missing.wav") {
+		t.Errorf("a missing file: %q %v", p, err)
+	}
+}
+
 func TestValidateRefusesBadShapes(t *testing.T) {
 	no := false
 	for _, in := range []NewInput{
@@ -151,10 +188,33 @@ func TestValidateRefusesBadShapes(t *testing.T) {
 		{Name: "c", Kind: KindHF, Root: "datasets/google/fleurs", Revision: "main"},
 		{Name: "c", Kind: KindHF, Root: "datasets/google/fleurs", Revision: strings.Repeat("a", 40), ReadOnly: &no},
 		{Name: "c", Kind: "ftp", Root: "/x"},
+		// Cadence's own directories and the system's are never a mount's root, inside or around (audit L3).
+		{Name: "c", Kind: KindLocal, Root: "/var/lib/cadence/cas"},
+		{Name: "c", Kind: KindLocal, Root: "/var"},
+		{Name: "c", Kind: KindLocal, Root: "/etc/ssl"},
+		{Name: "c", Kind: KindLocal, Root: "/srv/cadence/data", Reserved: []string{"/srv/cadence/data"}},
+		{Name: "c", Kind: KindLocal, Root: "/srv", Reserved: []string{"/srv/cadence/data/secrets"}},
+		// s3 speaks https; plain http only to a loopback host or with the development flag.
+		{Name: "c", Kind: KindS3, Root: "bucket", Endpoint: "http://host.docker.internal:9000", Credentials: "s3"},
+		{Name: "c", Kind: KindS3, Root: "bucket", Endpoint: "http://minio:9000", Credentials: "s3"},
+		{Name: "c", Kind: KindS3, Root: "bucket", Endpoint: "https://u:p@s3.example", Credentials: "s3"},
+		{Name: "c", Kind: KindS3, Root: "bucket", Endpoint: "ftp://s3.example", Credentials: "s3"},
 	} {
 		// Shape errors are found before any lookup, so no database is needed.
 		if _, err := Validate(t.Context(), failQuerier{}, in); err == nil || strings.Contains(err.Error(), "no database") {
 			t.Errorf("Validate(%+v) = %v, want a validation problem", in, err)
+		}
+	}
+	for _, in := range []NewInput{
+		{Name: "c", Kind: KindLocal, Root: "/mnt/corpora", Reserved: []string{"/var/lib/cadence", "/srv/cadence"}},
+		{Name: "c", Kind: KindLocal, Root: "/srv/cadence-corpora", Reserved: []string{"/srv/cadence"}},
+		{Name: "c", Kind: KindS3, Root: "bucket", Endpoint: "https://s3.example", Credentials: "s3"},
+		{Name: "c", Kind: KindS3, Root: "bucket", Endpoint: "http://127.0.0.1:9000", Credentials: "s3"},
+		{Name: "c", Kind: KindS3, Root: "bucket", Endpoint: "http://minio:9000", Credentials: "s3", AllowHTTP: true},
+	} {
+		// A good shape reaches the database (the secret's and the name's lookups).
+		if _, err := Validate(t.Context(), failQuerier{}, in); !errors.Is(err, errNoDB) {
+			t.Errorf("Validate(%+v) = %v, want the database lookup", in, err)
 		}
 	}
 }

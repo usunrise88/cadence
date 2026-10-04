@@ -67,7 +67,11 @@ var overlapQueries = map[string]string{
 	otherListed:    buildOverlap(otherListed, "", " AND m.split IN ('train', 'validation')"),
 	otherTrainable: buildOverlap(otherTrainable, "", " AND m.split IN ('train', 'validation')"),
 	otherGolden:    buildOverlap(otherGolden, trainedSplits, ""),
+	goldenAnySplit: buildOverlap(otherGolden, "", ""),
 }
+
+// goldenAnySplit keys the golden-set overlap over every split of the $1 side (GoldenShared: what leaves the instance).
+const goldenAnySplit = "golden, any split"
 
 func buildOverlap(other, asplit, msplit string) string {
 	return strings.NewReplacer("{other}", other, "{asplit}", asplit, "{msplit}", msplit).Replace(overlapSQL)
@@ -124,7 +128,17 @@ type GoldenOverlap struct {
 // GoldenOverlaps returns, for the dataset versions ids, every golden set they share an utterance with (by identity
 // or fingerprint). A dataset version two golden sets are frozen from yields a row for each.
 func GoldenOverlaps(ctx context.Context, q storage.Querier, ids []string) ([]GoldenOverlap, error) {
-	list, err := overlaps(ctx, q, ids, otherGolden)
+	return goldenOverlaps(ctx, q, ids, otherGolden)
+}
+
+// GoldenShared is GoldenOverlaps over every split of ids, test included: a version leaving the instance (a Hub push)
+// must share no utterance with any golden set, whichever split holds it.
+func GoldenShared(ctx context.Context, q storage.Querier, ids []string) ([]GoldenOverlap, error) {
+	return goldenOverlaps(ctx, q, ids, goldenAnySplit)
+}
+
+func goldenOverlaps(ctx context.Context, q storage.Querier, ids []string, other string) ([]GoldenOverlap, error) {
+	list, err := overlaps(ctx, q, ids, other)
 	if err != nil || len(list) == 0 {
 		return nil, err
 	}

@@ -59,7 +59,11 @@ export function ApprovalCard({ approval: a, hideContext, onDecided, className }:
   const projects = useQuery({ ...projectsListOptions(), enabled: !!a.projectId });
   const project = a.projectId ? projects.data?.items.find((p) => p.id === a.projectId) : undefined;
   const estimate = estimateLine(a);
-  const sessionReason = a.actor.sessionId ? true : "Only a request from an agent session can be approved for the session";
+  const sessionReason = !a.actor.sessionId
+    ? "Only a request from an agent session can be approved for the session"
+    : a.kind !== "agent_permission" && a.scope === "registry"
+      ? "A registry approval is decided once: the next request is asked again"
+      : true;
   // An agent's own permission request (ACP) reads as the agent asks it: Allow once / Allow for this session / Deny.
   const perm = a.kind === "agent_permission" ? a.permission : undefined;
   const verb = perm ? "Allow" : "Approve";

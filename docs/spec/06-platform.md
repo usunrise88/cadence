@@ -182,7 +182,8 @@ Rules:
   secret whose scope does not allow the step's project (a `project:<slug>` secret serves only that project's steps;
   `instance` serves all, including steps without a project). Values never
   appear in the spec, job rows, events, logs, artifacts or an agent context; the worker redacts them from forwarded
-  logs and removes its own token and URL from the step's environment.
+  logs (a mount's `<accessKeyId>:<secretAccessKey>` also half by half, audit F1) and removes its own token and URL
+  from the step's environment.
 - Tracing: one trace runs UI → API → job → step. A job keeps the traceparent of the request that enqueued it (River
   args) and each attempt runs in a `job <kind>` span continuing it (file traces, `traces.jsonl`); the step handler
   stores that span's traceparent on the step job (`step_jobs.traceparent`) and the lease hands it to the worker (a
@@ -196,7 +197,8 @@ Rules:
   `worker-toy` (profile `toy`, CPU), both on the `artifacts` volume at `/var/lib/cadence` with the control plane.
 - Mounts in the lease (phase 4, stream M): every lease carries the registered mounts (`lease.mounts`, schema
   `LeaseMount`: name, kind, root, readOnly and, for `s3` and `hf`, endpoint, region, revision and the env variable
-  holding the credentials when the step may read them). The harness resolves `mount://<mount>/<path>[#t=<start>,<end>]
+  holding the credentials when the step may read them: it names the mount, or a step that produced one of its
+  inputs did, back through their inputs — never every data step; audit F1). The harness resolves `mount://<mount>/<path>[#t=<start>,<end>]
   [&ch=<n>]` to a local path (`cadence_worker.mounts`; `CADENCE_MOUNTS` for helper processes): `local`, `nfs` and
   `smb` read in place under `root` (compose binds `${CADENCE_CORPORA_DIR}` → `/mnt/corpora`, read-only, and
   `${CADENCE_EXPORTS_DIR}` → `/mnt/exports` into the control plane and the `worker` and `worker-toy` services); `s3`
@@ -363,7 +365,9 @@ Audio serving as built (2026-10-02, stream A; `internal/media`, `internal/server
   deterrent).
 - Signed links: HMAC-SHA256 over utterance, channel, start, end, viewer and expiry with a key derived from the master
   key (links die with it); lifetime `media.signed_link_ttl_s` (300 s). A request carrying `sig` passes the session
-  check and is the viewer's play; any change to the query or an expiry gives `403 media-link-invalid`.
+  check and is the viewer's play; any change to the query or an expiry gives `403 media-link-invalid`, and so does a
+  link whose viewer is no user, or a reviewer whose invitation to the item's batch has ended (revoked, expired or the
+  batch froze: `credentials.ReviewerMayPlay`; audit F1) — revoking an invitation stops the links it minted at once.
 - Audit: `audio.sign` and every `audio.get` that starts a play write an audit row with the utterance, audio hash,
   span, channel, `via` (`session` or `link`) and the `range` asked; further ranges of the same play do not. As built
   2026-10-02 a play is the first request of a viewer, utterance, span and channel within `media.play_audit_window_s`

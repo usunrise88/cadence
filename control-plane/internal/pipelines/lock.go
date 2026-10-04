@@ -63,7 +63,23 @@ func (e *Engine) readLock(ctx context.Context, q storage.Querier, p projects.Pro
 			if err := yaml.Unmarshal(b, &doc); err != nil {
 				return nil, "", problems.PipelineInvalid.New("data.lock at %s does not parse (%v); it is written by Cadence (projects.adopt), never by hand", short(at), err)
 			}
-			return doc.Resolved, "data.lock at " + short(at), nil
+			// The lock pins, the adoptions allow: an entry the project never adopted (a hand edit of data.lock, which
+			// bypasses the adoption checks) resolves to nothing.
+			adopted, err := registry.ListAdoptions(ctx, q, p.ID, "")
+			if err != nil {
+				return nil, "", err
+			}
+			ids := make(map[string]bool, len(adopted))
+			for _, a := range adopted {
+				ids[a.Version.ID] = true
+			}
+			kept := doc.Resolved[:0]
+			for _, e := range doc.Resolved {
+				if ids[e.ID] {
+					kept = append(kept, e)
+				}
+			}
+			return kept, "data.lock at " + short(at), nil
 		}
 	}
 	adopted, err := registry.ListAdoptions(ctx, q, p.ID, "")

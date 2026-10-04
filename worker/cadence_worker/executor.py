@@ -112,7 +112,7 @@ class LeaseRunner:
         self.stop_reason: str | None = None
         self._lock = threading.Lock()
         self._threads: list[threading.Thread] = []
-        self._redactor = Redactor((lease.get("env") or {}).values())
+        self._redactor = Redactor.for_env(lease.get("env") or {})
         self._dropped_metrics: set[str] = set()
         self.last_progress: tuple[float, str] | None = None
         # Intermediate outputs (ctx.publish) are stored and sent in order on their own thread, so hashing a large

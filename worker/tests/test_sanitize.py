@@ -32,6 +32,14 @@ def test_secret_values_are_redacted_longest_first() -> None:
     assert r.text("x s3cret-and-more y s3cret z ab") == f"x {REDACTED} y {REDACTED} z ab"
 
 
+def test_mount_credentials_are_redacted_half_by_half() -> None:
+    # The S3 signer sends the access key id alone and signs with the secret alone: either half may reach a log.
+    env = {"CADENCE_MOUNT_CALLS_CREDENTIALS": "AKIAEXAMPLE1:wJalrXUtnFEMIexample", "HF_TOKEN": "a:b-token"}
+    r = Redactor.for_env(env)
+    got = r.text("Credential=AKIAEXAMPLE1/20261004 key wJalrXUtnFEMIexample; hf a:b-token; a b-token")
+    assert got == f"Credential={REDACTED}/20261004 key {REDACTED}; hf {REDACTED}; a b-token"
+
+
 def test_values_are_cleaned_recursively_and_stay_json() -> None:
     r = Redactor(["topsecret"])
     got = r.value(

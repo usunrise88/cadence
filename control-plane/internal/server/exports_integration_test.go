@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/events"
 	"github.com/usunrise88/cadence/control-plane/internal/exports"
 	"github.com/usunrise88/cadence/control-plane/internal/pipelines/pipelinestest"
+	"github.com/usunrise88/cadence/control-plane/internal/registry"
 	"github.com/usunrise88/cadence/control-plane/internal/steps"
 )
 
@@ -240,6 +242,43 @@ func TestDatasetExportsPlanStartAndRecordCopies(t *testing.T) {
 	e.ok(e.do("POST", "/api/registry/datasets:export", body("hf-hub", `,"project":"interop","hubRepo":"acme/fleurs-he"`), "Idempotency-Key", e.key()), 202, &acc)
 	if a := e.approval(acc.ApprovalID); a.Rule != "hub-export" || a.Scope != "registry" {
 		t.Fatalf("hub approval %+v", a)
+	}
+	// An export kind named in a project pipeline is refused: only datasets.export runs one, after its checks and
+	// approvals (audit H2) — a push to the Hub, or a copy to a mount.
+	for _, kind := range []string{"hf_push@1", "dataset_export@1"} {
+		e.commitPipeline("interop", "leak", "name: leak\ninputs: {dataset: dataset}\nsteps:\n  - {id: out, kind: "+kind+
+			", in: {dataset: $inputs.dataset}}\n")
+		in := fmt.Sprintf(`{"inputs":{"dataset":{"hash":%q,"type":"dataset"}}}`, ref.Hash)
+		for _, q := range []string{"?dryRun=true", ""} {
+			pr := expectProblem(t, e.do("POST", "/api/projects/interop/pipelines/leak:run"+q, in, "Idempotency-Key", e.key(), "If-Match", "*"),
+				422, "export-not-allowed")
+			if !strings.Contains(pr.Detail, "datasets.export") {
+				t.Errorf("%s: detail %q", kind, pr.Detail)
+			}
+		}
+	}
+	// A golden set frozen from another version that holds the same audio ("c") blocks the push too (audit L2).
+	if err := e.runHook(artifact(t, store, fleursHeader("golden-he"), []fixtureUtt{{"c", "תודה רבה.", "test", "he-IL", "spk3"}}), "plr_g", `{}`); err != nil {
+		t.Fatal(err)
+	}
+	goldenDS := e.datasetIn("dataset/golden-he")
+	if err := pgx.BeginFunc(ctx, e.pool, func(tx pgx.Tx) error {
+		gs, _, _, err := registry.Register(ctx, tx, registry.RegisterInput{Kind: registry.KindGoldenSet, Name: "golden-set/he",
+			Payload: []byte(`{"dataset":"` + goldenDS.ID + `"}`), Freeze: true, Actor: auth.Actor{Kind: auth.KindUser, ID: "usr_admin"}}, time.Now())
+		if err != nil {
+			return err
+		}
+		_, err = tx.Exec(ctx, `INSERT INTO golden_sets (version_id, dataset_version_id, normalizer_version_id)
+			SELECT $1, $2, v.id FROM registry_versions v JOIN registry_collections c ON c.id = v.collection_id
+			WHERE c.name = 'normalizer/basic' LIMIT 1`, gs.ID, goldenDS.ID)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	pr = expectProblem(t, e.do("POST", "/api/registry/datasets:export?dryRun=true", body("hf-hub", `,"project":"interop","hubRepo":"acme/fleurs-he"`),
+		"Idempotency-Key", e.key()), 422, "export-not-allowed")
+	if !strings.Contains(pr.Detail, "golden set") {
+		t.Errorf("golden overlap detail %q", pr.Detail)
 	}
 
 	// Production audio never goes to the Hub; a draft is never exported.

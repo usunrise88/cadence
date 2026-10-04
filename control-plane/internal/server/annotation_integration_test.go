@@ -441,8 +441,9 @@ func TestAnnotationBatchToGoldenSet(t *testing.T) {
 	if fz.PipelineRunID == "" || fz.DatasetVersionID == "" || fz.Batch.State != "freezing" {
 		t.Fatalf("freeze %+v", fz)
 	}
-	// The reviewer's session closed with the batch.
+	// The reviewer's session closed with the batch, and so did the links it signed (audit L1).
 	expectProblem(t, e.do("GET", "/api/batches/"+b.ID, "", rev()...), 401, "unauthenticated")
+	expectProblem(t, e.do("GET", link.URL, "", adm()...), 403, "media-link-invalid")
 	expectProblem(t, e.do("POST", "/api/batches/"+b.ID+"/batch-items/"+singles[0].ID+"/annotations", `{"status":"skipped"}`,
 		adm("Idempotency-Key", e.key())...), 409, "batch-closed")
 

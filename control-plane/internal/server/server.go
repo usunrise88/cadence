@@ -129,6 +129,11 @@ type Config struct {
 	// AllowedOrigins are the origins besides the server's own host that may open the live transcription socket
 	// (CADENCE_ALLOWED_ORIGINS; phase 3 · stream T).
 	AllowedOrigins []string
+	// ReservedPaths are the control plane's own directories (data, content store, backups, logs, secrets): a path
+	// mount's root may not be one, lie inside one or contain one (mounts.NewInput.Reserved).
+	ReservedPaths []string
+	// MountsAllowHTTP accepts plain-http s3 endpoints to any host (CADENCE_MOUNTS_ALLOW_HTTP; development only).
+	MountsAllowHTTP bool
 }
 
 // Server implements api.StrictServerInterface. Planned operations fall through to api.Planned (501).

@@ -69,6 +69,24 @@ def test_resolve_a_path_mount(tmp_path: Path) -> None:
     assert b"".join(mounts.stream("mount://corpora/src/rev/a.wav")) == b"RIFF"
 
 
+def test_a_link_out_of_the_root_is_refused(tmp_path: Path) -> None:
+    root, outside = tmp_path / "share", tmp_path / "secrets"
+    root.mkdir()
+    outside.mkdir()
+    (outside / "master.key").write_bytes(b"KEY")
+    (root / "in.wav").write_bytes(b"RIFF")
+    (root / "key.wav").symlink_to(outside / "master.key")
+    (root / "dir").symlink_to(outside)
+    (root / "alias.wav").symlink_to(root / "in.wav")  # a link that stays inside is fine
+    mounts = Mounts([{"name": "corpora", "kind": "local", "root": str(root), "readOnly": False}])
+    for uri in ("mount://corpora/key.wav", "mount://corpora/dir/master.key"):
+        with pytest.raises(MountError, match="leaves mount corpora"):
+            mounts.resolve(uri)
+    with pytest.raises(MountError, match="leaves mount corpora"):
+        mounts.writable_path("mount://corpora/dir/out.tar")
+    assert mounts.resolve("mount://corpora/alias.wav").read_bytes() == b"RIFF"
+
+
 def test_from_env_round_trips_the_lease(tmp_path: Path) -> None:
     m = Mount("exports", "nfs", str(tmp_path), read_only=False)
     env = {MOUNTS_ENV: json.dumps([m.to_lease()]), "CADENCE_MOUNT_CACHE": str(tmp_path / "cache")}

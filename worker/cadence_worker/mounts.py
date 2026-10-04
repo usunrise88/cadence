@@ -213,7 +213,12 @@ class Mounts:
         m = self.get(u.mount)
         if m.kind not in PATH_KINDS:
             raise MountError(f"mount {m.name} is {m.kind}: it has no local path; use resolve()")
-        return Path(m.root) / u.path
+        p = Path(m.root) / u.path
+        # A symbolic link on the share must not lead out of it (to the worker's data, its secrets or /etc).
+        root, real = Path(m.root).resolve(), p.resolve()
+        if real != root and root not in real.parents:
+            raise MountError(f"{u}: leaves mount {m.name} (a link out of its root)")
+        return p
 
     def writable_path(self, uri: str | MountURI) -> Path:
         """The local path to write a file to on a writable path-kind mount (exports)."""
@@ -229,7 +234,7 @@ class Mounts:
         u = parse_uri(uri) if isinstance(uri, str) else uri
         m = self.get(u.mount)
         if m.kind in PATH_KINDS:
-            p = Path(m.root) / u.path
+            p = self.local_path(u)
             if not p.is_file():
                 raise MountError(f"{u}: no file at {p} (is the mount bound into this worker?)")
             return p
@@ -280,8 +285,8 @@ class Mounts:
         if m.kind == "s3":
             if ":" not in cred:
                 raise MountError(
-                    f"mount {m.name}: no credentials in this lease (a step that names the mount, or a data, eval or "
-                    "export step, receives them)"
+                    f"mount {m.name}: no credentials in this lease (a step receives them when it names the mount or "
+                    "a step that produced its inputs did)"
                 )
             key, _, secret = cred.partition(":")
             bucket, _, prefix = m.root.partition("/")

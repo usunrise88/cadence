@@ -57,7 +57,9 @@ denies it (R5; `decision.expired: true`).
 - `approvals.get` — one approval with its stored request and, once approved, `result` (the replay's status and body).
 - `approvals.approve` — `If-Match` on the approval's revision; body `{"grant": "once" | "session", "note": …}`. The
   stored request runs right away as its original actor; its events carry `causedBy.approvalId`. With
-  `grant: "session"` the same agent session may repeat the same operation on the same path without asking again.
+  `grant: "session"` the same agent session may repeat the same operation on the same path without asking again —
+  project work only: a registry-scope approval or one of a rule marked `everyone` answers `validation-failed` for
+  `grant: "session"` (those requests share one path whatever their body, so each is decided on its own).
 - `approvals.deny` — `If-Match`; optional `note`. The request never runs.
 - `audit.list` — every command with its actor, outcome, rule and cause (command, tool call, approval).
 - `jobs.wait` — agents wait for long work (a `202 {jobId}`) instead of polling.

@@ -12,6 +12,7 @@ from typing import Any
 
 REDACTED = "[redacted]"
 MIN_SECRET_LEN = 4
+MOUNT_CREDENTIALS = re.compile(r"^CADENCE_MOUNT_[A-Z0-9_]+_CREDENTIALS$")
 
 # Credentials that may reach a step's output without being one of its injected secrets: Cadence tokens (cdk_ API key,
 # cst_ agent session, cwk_ worker, cah_ agent host, cep_ egress proxy), Hugging Face, GitHub and Anthropic/OpenAI
@@ -30,6 +31,16 @@ class Redactor:
 
     def __init__(self, secrets: Iterable[str] = ()) -> None:
         self._secrets = sorted({s for s in secrets if len(s) >= MIN_SECRET_LEN}, key=len, reverse=True)
+
+    @classmethod
+    def for_env(cls, env: Mapping[str, str]) -> Redactor:
+        """A redactor of a lease's secret environment. A mount's credentials (``CADENCE_MOUNT_<NAME>_CREDENTIALS``,
+        ``<accessKeyId>:<secretAccessKey>`` for s3) are also redacted half by half: the S3 signer uses each alone."""
+        values = list(env.values())
+        for k, v in env.items():
+            if MOUNT_CREDENTIALS.match(k) and ":" in v:
+                values.extend(v.split(":", 1))
+        return cls(values)
 
     def text(self, s: str) -> str:
         for v in self._secrets:
