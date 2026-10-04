@@ -1772,7 +1772,7 @@ var Operations = []Operation{
 	{
 		ID: "sources.edit", Entity: "sources", Verb: "edit", Method: "PATCH", Path: "/registry/sources/{id}",
 		Summary:        "Change a source's description or licence, or clear it for training (a person's decision)",
-		Description:    "Change a source's description or licence, or set trainingCleared. Clearing a source for training is a person's decision (the licence allows training and the data may be used): an agent's sources.edit waits for a person's approval (202 with approvalId). Sources are shared by every project. Send ifMatch with the etag (or rev) of your last sources.get. An archived source cannot be edited.",
+		Description:    "Change a source's description or licence, or set trainingCleared. Clearing a source for training is a person's decision (the licence allows training and the data may be used): an agent's sources.edit waits for a person's approval (202 with approvalId). A source licensed to forbid commercial use or derivative works (NC, ND, research only) is never cleared, nor is a cleared source moved to such a licence (validation-failed on /trainingCleared, R26). Sources are shared by every project. Send ifMatch with the etag (or rev) of your last sources.get. An archived source cannot be edited.",
 		IdempotencyKey: true,
 		Params: []Param{
 			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Source id (src_…) or name (fleurs)"},

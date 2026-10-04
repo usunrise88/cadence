@@ -3,10 +3,12 @@ package pipelines
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/google/jsonschema-go/jsonschema"
+	"github.com/jackc/pgx/v5"
 	"gopkg.in/yaml.v3"
 
 	"github.com/usunrise88/cadence/control-plane/internal/problems"
@@ -164,14 +166,51 @@ func resolveLocked(ctx context.Context, q storage.Querier, projectID, kind, ref 
 		return Locked{}, problems.NotAdopted.New("%s is not a %s the project adopted; adopt it first (projects.adopt), which writes it into data.lock", ref, registry.Noun(kind))
 	}
 	collection := registry.CollectionName(kind, ref)
-	var best *lockEntry
-	for i, e := range entries {
-		if e.Collection == collection && match(e) && (best == nil || e.Version > best.Version) {
-			best = &entries[i]
+	var listed []lockEntry
+	for _, e := range entries {
+		if e.Collection == collection && match(e) {
+			listed = append(listed, e)
 		}
 	}
-	if best == nil {
+	if len(listed) == 0 {
 		return Locked{}, problems.NotAdopted.New("the project adopted no version of %s; adopt one (registry.search, then projects.adopt), which writes it into data.lock", collection)
 	}
+	best, err := newestLocked(ctx, q, listed)
+	if err != nil {
+		return Locked{}, err
+	}
 	return Locked{Ref: ref, VersionID: best.ID, Version: best.Version, Collection: best.Collection}, nil
+}
+
+// newestLocked is the most recently created of the locked versions of one collection. Versions are ordered by when
+// the registry created them, not by their names: two versions of a day (2026-10-03.<sha>) differ only in a hash.
+// An entry the registry does not know (a hand-edited lock) loses to every known one.
+func newestLocked(ctx context.Context, q storage.Querier, listed []lockEntry) (lockEntry, error) {
+	if len(listed) == 1 || q == nil { // nothing to order, or no registry to ask (unit tests): the greatest name
+		best := listed[0]
+		for _, e := range listed[1:] {
+			if e.Version > best.Version {
+				best = e
+			}
+		}
+		return best, nil
+	}
+	ids := make([]string, 0, len(listed))
+	for _, e := range listed {
+		ids = append(ids, e.ID)
+	}
+	var id string
+	err := q.QueryRow(ctx, "SELECT id FROM registry_versions WHERE id = ANY($1) ORDER BY created_at DESC, id DESC LIMIT 1", ids).Scan(&id)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return listed[len(listed)-1], nil
+	case err != nil:
+		return lockEntry{}, fmt.Errorf("order locked versions: %w", err)
+	}
+	for _, e := range listed {
+		if e.ID == id {
+			return e, nil
+		}
+	}
+	return listed[len(listed)-1], nil
 }

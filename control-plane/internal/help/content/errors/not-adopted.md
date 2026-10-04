@@ -1,6 +1,6 @@
 ---
 title: Not in the project's data.lock
-summary: A pipeline step parameter names a registry version the project's data.lock does not list; adopt it first (projects.adopt).
+summary: A pipeline step parameter or an alias names a registry version the project has not adopted (its data.lock does not list it); adopt it first (projects.adopt).
 contexts: [error:not-adopted, command:pipelines.run]
 ---
 
@@ -20,6 +20,13 @@ projects without a repository, through the project's adoptions, which `data.lock
 A reference the lock does not cover is refused: the pipeline file names the collection, `data.lock` the version, and
 both are in the same commit, so a checkout of the repository says exactly which data a run used. The plan
 (`pipelines.run` dry run) shows each resolution in its step's `locked`.
+
+A parameter marked `x-cadence.registryRef: {kind: auxiliary, role}` (a pseudo-label member, a LID classifier, an
+aligner) resolves the same way when `data.lock` at that commit lists its collection: to the newest version the lock
+lists, even if the project adopted a newer one since. When the lock does not list the collection (or the project has
+no repository), it resolves to the newest version the project adopted. "Newest" is the version the registry created
+last, not the greatest name. The version must be adopted either way. `aliases.set` answers `not-adopted` too when it
+names a version the project has not adopted.
 
 `source` parameters (`sdp_ingest`) are not registry versions; "no licence, no ingest" covers them
 (`source-unlicensed`).

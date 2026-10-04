@@ -35,7 +35,7 @@ const (
 // starts.
 func (s *Service) Register(js *jobs.Service) {
 	s.Jobs = js
-	js.Register(JobEvict, s.runEvict, jobs.KindOptions{MaxAttempts: 3, Timeout: time.Hour})
+	js.Register(JobEvict, s.runEvict, jobs.KindOptions{MaxAttempts: 3, Timeout: 24 * time.Hour}) // it reads back every copy it relies on
 	js.Register(JobMaterialize, s.runMaterialize, jobs.KindOptions{MaxAttempts: 3, Timeout: 24 * time.Hour})
 	js.AddPeriodic(periodicSweep, time.Duration(s.defaults().Storage.CacheSweepMinutes.Value)*time.Minute, s.Sweep)
 }
@@ -71,12 +71,28 @@ type evictResult struct {
 	Skipped    map[string]string `json:"skipped"`
 	BytesFreed int64             `json:"bytesFreed"`
 	Blobs      int               `json:"blobs"`
+	// Kept are blobs left in the cache because no copy of them could be verified when they were to go.
+	Kept int `json:"kept,omitempty"`
+	// DroppedCopies are recorded mount copies that did not hold their blob (removed from blob_copies).
+	DroppedCopies int `json:"droppedCopies,omitempty"`
 }
 
-// runEvict evicts each version that is still evictable, in two halves like artifacts.evict (internal/eviction):
-// under the store's exclusive lock it re-plans and marks the artifact evicted (artifact.evicted), then, again under
-// the lock, deletes the blobs the marked artifacts alone list that have a copy on a mount. The manifest stays, so a
-// materialisation knows what to copy back. A retry finds its marked rows and deletes what is left.
+// evictBlobsSQL lists every file of an artifact eviction job $1 marked, that has a copy on a mount and that no live
+// artifact lists.
+const evictBlobsSQL = `SELECT DISTINCT f.file_hash FROM artifact_files f JOIN artifacts a ON a.hash = f.hash
+	WHERE a.eviction_job_id = $1 AND a.evicted_at IS NOT NULL
+	AND EXISTS (SELECT 1 FROM blob_copies b WHERE b.hash = f.file_hash)
+	AND NOT EXISTS (SELECT 1 FROM artifact_files g JOIN artifacts o ON o.hash = g.hash
+		WHERE g.file_hash = f.file_hash AND o.evicted_at IS NULL)
+	AND NOT EXISTS (SELECT 1 FROM artifacts o WHERE o.hash = f.file_hash AND o.evicted_at IS NULL)`
+
+// runEvict evicts each version that is still evictable, in three steps like artifacts.evict (internal/eviction) with
+// a check before any deletion. First, without the lock, every blob a version would free is verified: a copy on a
+// mount must read back and hash to the blob (verify.go); a recorded copy that does not is dropped. Then, under the
+// store's exclusive lock, it re-plans and marks the artifact evicted (artifact.evicted) unless a blob it frees has
+// no verified copy. Last, again under the lock, it deletes the blobs the marked artifacts alone list that have a
+// verified copy. The manifest stays, so a materialisation knows what to copy back. A retry finds its marked rows,
+// verifies and deletes what is left.
 func (s *Service) runEvict(ctx context.Context, r *jobs.Run) (any, error) {
 	var args evictArgs
 	if err := json.Unmarshal(r.Args, &args); err != nil {
@@ -86,6 +102,21 @@ func (s *Service) runEvict(ctx context.Context, r *jobs.Run) (any, error) {
 		return nil, errors.New("cache: no content store")
 	}
 	res := evictResult{Evicted: []string{}, Skipped: map[string]string{}}
+	ver := s.newVerifier()
+	for _, id := range args.VersionIDs {
+		p, err := s.PlanEvict(ctx, s.Pool, id)
+		if err != nil || len(p.Blocked) > 0 {
+			continue // the marking below reports it
+		}
+		for i, h := range p.free {
+			if _, err := ver.verify(ctx, h); err != nil {
+				return nil, err
+			}
+			if i%100 == 99 {
+				_ = r.Progress(ctx, 0, fmt.Sprintf("%s: %d of %d copies verified", id, i+1, len(p.free)))
+			}
+		}
+	}
 	err := pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
 		if err := artifacts.LockExclusive(ctx, tx); err != nil {
 			return err
@@ -102,6 +133,10 @@ func (s *Service) runEvict(ctx context.Context, r *jobs.Run) (any, error) {
 				if p.State != StateEvicted {
 					res.Skipped[id] = p.Blocked[0]
 				}
+				continue
+			}
+			if n := unverifiedOf(ver, p.free); n > 0 {
+				res.Skipped[id] = fmt.Sprintf("%d of its shards have no copy on a mount that reads back with the shard's hash (an unreachable mount, or a copy that is gone or changed); check the mount's health or scan it, then evict again", n)
 				continue
 			}
 			tag, err := tx.Exec(ctx, `UPDATE artifacts SET evicted_at = $2, evicted_by = $3, eviction_job_id = $4
@@ -123,17 +158,25 @@ func (s *Service) runEvict(ctx context.Context, r *jobs.Run) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	// A retry's marked artifacts were not planned above: verify what they free before the lock is taken.
+	rows, err := s.Pool.Query(ctx, evictBlobsSQL, r.Job.ID)
+	if err != nil {
+		return nil, fmt.Errorf("find blobs to delete: %w", err)
+	}
+	pending, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return nil, fmt.Errorf("find blobs to delete: %w", err)
+	}
+	for _, h := range pending {
+		if _, err := ver.verify(ctx, h); err != nil {
+			return nil, err
+		}
+	}
 	err = pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
 		if err := artifacts.LockExclusive(ctx, tx); err != nil {
 			return err
 		}
-		// Every file of an artifact this job marked, that has a copy on a mount and that no live artifact lists.
-		rows, err := tx.Query(ctx, `SELECT DISTINCT f.file_hash FROM artifact_files f JOIN artifacts a ON a.hash = f.hash
-			WHERE a.eviction_job_id = $1 AND a.evicted_at IS NOT NULL
-			AND EXISTS (SELECT 1 FROM blob_copies b WHERE b.hash = f.file_hash)
-			AND NOT EXISTS (SELECT 1 FROM artifact_files g JOIN artifacts o ON o.hash = g.hash
-				WHERE g.file_hash = f.file_hash AND o.evicted_at IS NULL)
-			AND NOT EXISTS (SELECT 1 FROM artifacts o WHERE o.hash = f.file_hash AND o.evicted_at IS NULL)`, r.Job.ID)
+		rows, err := tx.Query(ctx, evictBlobsSQL, r.Job.ID)
 		if err != nil {
 			return fmt.Errorf("find blobs to delete: %w", err)
 		}
@@ -142,6 +185,10 @@ func (s *Service) runEvict(ctx context.Context, r *jobs.Run) (any, error) {
 			return fmt.Errorf("find blobs to delete: %w", err)
 		}
 		for i, b := range blobs {
+			if !ver.done[b] {
+				res.Kept++ // no verified copy: the cache keeps it (a materialisation finds it in place)
+				continue
+			}
 			n, err := s.CAS.Delete(b)
 			if err != nil {
 				return err
@@ -154,16 +201,30 @@ func (s *Service) runEvict(ctx context.Context, r *jobs.Run) (any, error) {
 				_ = r.Progress(ctx, float64(i+1)/float64(len(blobs)), fmt.Sprintf("%d of %d shards deleted", i+1, len(blobs)))
 			}
 		}
+		res.DroppedCopies = ver.dropped
 		return audit.Write(ctx, tx, audit.Entry{Operation: JobEvict, Actor: r.Job.Actor, Outcome: audit.OutcomeOK, Status: 200,
 			Detail: map[string]any{"jobId": r.Job.ID, "datasetVersions": res.Evicted, "skipped": res.Skipped,
-				"bytesFreed": res.BytesFreed, "blobs": res.Blobs, "reason": args.Reason}})
+				"bytesFreed": res.BytesFreed, "blobs": res.Blobs, "kept": res.Kept, "droppedCopies": res.DroppedCopies,
+				"reason": args.Reason}})
 	})
 	if err != nil {
 		return nil, err
 	}
 	s.log().InfoContext(ctx, "evicted dataset shards", "jobId", r.Job.ID, "versions", len(res.Evicted),
-		"blobs", res.Blobs, "bytesFreed", res.BytesFreed, "reason", args.Reason)
+		"blobs", res.Blobs, "bytesFreed", res.BytesFreed, "kept", res.Kept, "droppedCopies", res.DroppedCopies, "reason", args.Reason)
 	return res, nil
+}
+
+// unverifiedOf counts the blobs of free without a verified copy (a blob already out of the cache counts as
+// verified).
+func unverifiedOf(v *verifier, free []string) int {
+	n := 0
+	for _, h := range free {
+		if !v.done[h] {
+			n++
+		}
+	}
+	return n
 }
 
 // materializeResult is what a materialisation reports.

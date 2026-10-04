@@ -7561,6 +7561,10 @@ export type MountInventory = {
      */
     blobs: number;
     blobBytes: number;
+    /**
+     * Files named like a blob whose size is not the blob's (truncated or rewritten): not counted as copies, and an earlier copy recorded on this mount is dropped
+     */
+    blobsMismatched?: number;
     jobId?: string;
 };
 
@@ -8024,11 +8028,11 @@ export type DatasetShard = {
     bytes: number;
     seconds: number;
     /**
-     * Where the shard lives: cas (the content store); mounts and exports come with the cache (stream M)
+     * Where the shard lives now: cas (the content store), mount (evicted; a copy on a mount brings it back with datasets.materialize) or missing (evicted and on no mount). datasets.get reads it from the cache; datasets.list returns what the version recorded when it froze (cas)
      */
     location: string;
     /**
-     * Kept from eviction (set by the cache; false until it pins the version)
+     * The cache keeps the version from eviction now (a queued or running job names it, a model holding an alias was trained on it, a golden set is built on it); live on datasets.get, false on datasets.list
      */
     pinned: boolean;
 };

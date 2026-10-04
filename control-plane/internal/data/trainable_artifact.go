@@ -35,7 +35,8 @@ const maxMixBytes = 4 << 20
 //
 //   - dataset: refused when its meta marks an augmented copy of a golden set (golden-set-leakage), when no dataset
 //     version registers it (eval-only-dataset: training reads registered versions only), or when a version that
-//     registers it is not Trainable (eval-only, uncleared source, golden-set leakage).
+//     registers it is not Trainable (eval-only, uncleared source, golden-set leakage); and when the cache evicted it
+//     (artifact-missing, naming datasets.materialize) — so a run's dry run and the queue refuse it, not the lease.
 //   - mix: its content must be a cadence.mix/1 rendering (what the worker reads); every dataset version it names
 //     and every dataset artifact it points at passes the checks above. The meta's datasets list is ignored.
 //
@@ -82,7 +83,33 @@ func trainableDataset(ctx context.Context, q storage.Querier, hash string, meta 
 		return problems.EvalOnlyDataset.New("dataset artifact %s is not a registered dataset version; training reads registered, trainable versions only (import it with pipelines/import, then mix the version)",
 			hash)
 	}
-	return trainableVersions(ctx, q, ids)
+	if err := trainableVersions(ctx, q, ids); err != nil {
+		return err
+	}
+	return cached(ctx, q, hash, ids[0])
+}
+
+// cached refuses (artifact-missing) a dataset artifact the cache evicted (datasets.evict, the high-water sweep):
+// its shards are on a mount, not in the content store, and a training step would fail mid-lease reading them. The
+// answer names datasets.materialize; the run is not materialised for the caller (a copy back can take hours and
+// counts against the project's quota, so it is a decision of its own).
+func cached(ctx context.Context, q storage.Querier, hash, versionID string) error {
+	var evicted bool
+	err := q.QueryRow(ctx, "SELECT evicted_at IS NOT NULL FROM artifacts WHERE hash = $1", hash).Scan(&evicted)
+	if errors.Is(err, pgx.ErrNoRows) || (err == nil && !evicted) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read the cache state of %s: %w", hash, err)
+	}
+	name := versionID
+	var collection, version string
+	if q.QueryRow(ctx, `SELECT c.name, v.version FROM registry_versions v JOIN registry_collections c ON c.id = v.collection_id
+		WHERE v.id = $1`, versionID).Scan(&collection, &version) == nil {
+		name = collection + " " + version + " (" + versionID + ")"
+	}
+	return problems.ArtifactMissing.New("dataset %s was evicted from the cache (artifact %s): its shards are on a mount, and training reads only what the cache holds. Bring it back with datasets.materialize (versionId %s), wait for the job, and run again",
+		name, hash, versionID)
 }
 
 // trainableVersions checks that every dataset version id exists and is Trainable.

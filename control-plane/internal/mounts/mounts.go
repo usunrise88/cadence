@@ -107,7 +107,9 @@ type Inventory struct {
 	Entries   []Entry   `json:"entries"`
 	Blobs     int64     `json:"blobs"`
 	BlobBytes int64     `json:"blobBytes"`
-	JobID     string    `json:"jobId,omitempty"`
+	// BlobsMismatched are files named like a blob whose size is not the blob's: not recorded as copies.
+	BlobsMismatched int64  `json:"blobsMismatched,omitempty"`
+	JobID           string `json:"jobId,omitempty"`
 }
 
 // Mount is one registered mount.

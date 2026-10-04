@@ -13,6 +13,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/api"
 	"github.com/usunrise88/cadence/control-plane/internal/auth"
 	"github.com/usunrise88/cadence/control-plane/internal/auxiliary"
+	"github.com/usunrise88/cadence/control-plane/internal/cache"
 	"github.com/usunrise88/cadence/control-plane/internal/commands"
 	"github.com/usunrise88/cadence/control-plane/internal/compute"
 	"github.com/usunrise88/cadence/control-plane/internal/defaults"
@@ -254,7 +255,27 @@ func (s *Server) DatasetsGet(ctx context.Context, req api.DatasetsGetRequestObje
 	if err != nil {
 		return nil, err
 	}
+	if err := overlayShards(ctx, s.Pool, &v); err != nil {
+		return nil, err
+	}
 	return api.DatasetsGet200JSONResponse(v), nil
+}
+
+// overlayShards replaces the shard location and pin the payload recorded when the version froze (cas, unpinned)
+// with the cache's state now (cache.LiveState): the payload is immutable, the cache is not.
+func overlayShards(ctx context.Context, q storage.Querier, v *api.DatasetVersion) error {
+	if v.Dataset.Shards == nil || len(*v.Dataset.Shards) == 0 {
+		return nil
+	}
+	live, ok, err := cache.LiveState(ctx, q, v.Id)
+	if err != nil || !ok {
+		return err
+	}
+	for i := range *v.Dataset.Shards {
+		sh := &(*v.Dataset.Shards)[i]
+		sh.Location, sh.Pinned = live.Location(sh.Hash), len(live.Pinned) > 0
+	}
+	return nil
 }
 
 func templateVersions(ctx context.Context, q storage.Querier, f registry.Filter) ([]api.TemplateVersion, error) {

@@ -2572,7 +2572,9 @@ paths:
         toolDescription: >
           Change a source's description or licence, or set trainingCleared. Clearing a source for training is a
           person's decision (the licence allows training and the data may be used): an agent's sources.edit waits
-          for a person's approval (202 with approvalId). Sources are shared by every project. Send ifMatch with the
+          for a person's approval (202 with approvalId). A source licensed to forbid commercial use or derivative
+          works (NC, ND, research only) is never cleared, nor is a cleared source moved to such a licence
+          (validation-failed on /trainingCleared, R26). Sources are shared by every project. Send ifMatch with the
           etag (or rev) of your last sources.get. An archived source cannot be edited.
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -9890,6 +9892,7 @@ components:
         entries: { type: array, items: { $ref: "#/components/schemas/MountEntry" } }
         blobs: { type: integer, format: int64, description: "Content-store blobs found under cas/b3/ (copies of cached blobs)" }
         blobBytes: { type: integer, format: int64 }
+        blobsMismatched: { type: integer, format: int64, description: "Files named like a blob whose size is not the blob's (truncated or rewritten): not counted as copies, and an earlier copy recorded on this mount is dropped" }
         jobId: { type: string }
     Mount:
       type: object
@@ -10191,8 +10194,8 @@ components:
         utterances: { type: integer }
         bytes: { type: integer, format: int64, description: Audio bytes of the shard's utterances }
         seconds: { type: number, format: double }
-        location: { type: string, description: "Where the shard lives: cas (the content store); mounts and exports come with the cache (stream M)" }
-        pinned: { type: boolean, description: "Kept from eviction (set by the cache; false until it pins the version)" }
+        location: { type: string, description: "Where the shard lives now: cas (the content store), mount (evicted; a copy on a mount brings it back with datasets.materialize) or missing (evicted and on no mount). datasets.get reads it from the cache; datasets.list returns what the version recorded when it froze (cas)" }
+        pinned: { type: boolean, description: "The cache keeps the version from eviction now (a queued or running job names it, a model holding an alias was trained on it, a golden set is built on it); live on datasets.get, false on datasets.list" }
     DatasetRecipe:
       type: object
       description: The project recipe a draft was ingested from
