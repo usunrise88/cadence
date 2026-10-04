@@ -35,9 +35,10 @@ bot's channel is self-labelled.
 
 ## Place in the loop
 
-Data — the first step of `pipelines/data-ingest.yaml`: ingest → (pseudo-label, `pseudolabel_ensemble`) → `text_normalise` →
-`manifest_filter` → `speaker_disjoint_split` → `dataset_freeze` (draft). `datasets.preview` and `datasets.freeze`
-follow.
+Data — the first step of `pipelines/data-ingest.yaml` (ingest → `text_normalise` → `manifest_filter` →
+`speaker_disjoint_split` → `dataset_freeze`, draft) and of `pipelines/pseudo-label.yaml` for audio without
+transcripts (then `segments_cut`, the members and `pseudolabel_ensemble` before `text_normalise`).
+`datasets.preview` and `datasets.freeze` follow; the "Adapt a new language" playbook runs either.
 
 ## The segments artifact
 

@@ -1494,8 +1494,8 @@
     },
     {
       "name": "auxiliaries.get",
-      "title": "Get an auxiliary model version with its payload and the projects that adopted it",
-      "description": "Get an auxiliary model version with its payload and the projects that adopted it",
+      "title": "Get an auxiliary model version with its payload, the projects that adopted it and whether its service answers",
+      "description": "Get an auxiliary model version with its payload, the projects that adopted it and whether its service answers",
       "method": "GET",
       "path": "/registry/auxiliaries/{id}",
       "inputSchema": {

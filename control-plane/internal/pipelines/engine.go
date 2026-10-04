@@ -153,6 +153,9 @@ func (e *Engine) SetLeases(l steps.Leases) { e.o.Leases = l }
 // SetProber replaces the check of auxiliary services (tests); call it before the engine plans runs.
 func (e *Engine) SetProber(p auxiliary.Prober) { e.o.Prober = p }
 
+// Prober is the prober plans check services with (nil: none).
+func (e *Engine) Prober() auxiliary.Prober { return e.o.Prober }
+
 // Hooks returns the output hooks the engine runs.
 func (e *Engine) Hooks() *steps.Hooks { return e.o.Hooks }
 
@@ -231,8 +234,14 @@ func (e *Engine) Prepare(ctx context.Context, q storage.Querier, in StartInput) 
 		if err != nil {
 			break
 		}
-		// A service an auxiliary names must answer before anything is queued: Cadence never starts one (R26).
+		// A service an auxiliary names must answer before anything is queued: Cadence never starts one (R26). An
+		// optional step's service only warns: the step will fail and the run goes on without it.
 		err = auxiliary.CheckServices(ctx, e.o.Prober, ps.Step, ps.Auxiliaries)
+		if err != nil && plan.optional(ps.Step) {
+			plan.Warnings = append(plan.Warnings, Warning{Code: WarningAuxiliaryUnavailable, Step: ps.Step,
+				Kind: ps.Kind.Ref(), Message: err.Error() + " (the step is optional: the run goes on without it)"})
+			err = nil
+		}
 	}
 	if err == nil && proj != nil {
 		err = e.lock(ctx, q, *proj, src.Commit, &plan)
@@ -523,6 +532,9 @@ func (e *Engine) inputsOf(r Run, s StepRow, sts []StepRow, byID map[string]int) 
 			continue
 		}
 		p := sts[byID[w.Step]]
+		if (p.State == StepFailed || p.State == StepSkipped) && Indexed(name) && r.optional(p.Step) {
+			continue // one of several artifacts, from an optional step that did not finish: run without it
+		}
 		if !finished(p.State) {
 			return nil, false, nil
 		}
@@ -974,7 +986,7 @@ func (e *Engine) fail(ctx context.Context, tx pgx.Tx, r *Run, sts []StepRow, i i
 		for changed := true; changed; {
 			changed = false
 			for j := range sts {
-				if sts[j].State != StepWaiting || !readsAny(sts[j], failed) {
+				if sts[j].State != StepWaiting || !r.needsAny(sts[j], failed) {
 					continue
 				}
 				sts[j].State, sts[j].FinishedAt = StepSkipped, &now

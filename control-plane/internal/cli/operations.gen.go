@@ -271,7 +271,7 @@ var Operations = []Operation{
 	},
 	{
 		ID: "auxiliaries.get", Entity: "auxiliaries", Verb: "get", Method: "GET", Path: "/registry/auxiliaries/{id}",
-		Summary: "Get an auxiliary model version with its payload and the projects that adopted it",
+		Summary: "Get an auxiliary model version with its payload, the projects that adopted it and whether its service answers",
 		Params: []Param{
 			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Registry version id (ver_…)"},
 		},

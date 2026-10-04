@@ -71,6 +71,12 @@ export function PlaybookPlan({ playbook }: { playbook: AgentPlaybook }) {
                 {it.title}
               </span>{" "}
               <code className="text-[11px] text-muted-foreground">{it.command}</code>
+              {it.optional ? <span className="text-[11px] text-muted-foreground"> · optional</span> : null}
+              {it.person && it.state !== "done" && it.state !== "skipped" ? (
+                <span className="block text-[11px] text-status-warning-foreground" data-slot="playbook-person">
+                  A person: {it.person}
+                </span>
+              ) : null}
               {it.note ? (
                 <span className={cn("block text-[11px] text-muted-foreground", it.state === "failed" && "text-status-failed-foreground")}>{it.note}</span>
               ) : null}

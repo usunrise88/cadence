@@ -69,7 +69,13 @@ export function setupSteps(f: SetupFacts): SetupStep[] {
       ...((f.mounts ?? 0) > 0 ? { state: "done" as const } : { state: "todo" as const, blocked: "Add one in the Storage panel (Add mount…); the admin approves it" }),
     },
     { id: "project", title: "Create a project", detail: "Three fields — name, language, recordings — everything else from defaults.", state: f.projects > 0 ? "done" : "todo", command: "projects.new" },
-    { id: "dataset", title: "Freeze the first dataset version", detail: "An immutable, fingerprinted selection the first mix trains on.", state: frozen ? "done" : "later", command: "datasets.freeze", phase: frozen ? undefined : 4 },
+    {
+      id: "dataset",
+      title: "Freeze the first dataset version",
+      detail: "An immutable, fingerprinted selection the first mix trains on. The playbook “Try Cadence” imports two hours of FLEURS and runs the whole loop; “Adapt a new language” ingests a corpus from a mount.",
+      command: "datasets.freeze",
+      ...(frozen ? { state: "done" as const } : { state: "todo" as const, blocked: "Run a playbook from the Project home: “Try Cadence” or “Adapt a new language”" }),
+    },
     { id: "run", title: "Finish the first training run", detail: "The playbook “Fine-tune from a dataset version” runs it: the estimate first, a dry run before every spending step.", command: "playbooks.run", ...runStep(f) },
     { id: "gate", title: "Pass the first gate", detail: "The eval matrix against the project's golden sets; this checklist retires when it passes.", command: "evals.gate", ...gateStep(f) },
   ];

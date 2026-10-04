@@ -37,8 +37,10 @@ punctuated text. `text_normalise` restores the base model's training style downs
 
 ## Place in the loop
 
-Data. In `data-ingest`, after the members transcribe an untranscribed corpus and before `text_normalise`,
-`manifest_filter` and the freeze.
+Data. In `pipelines/pseudo-label.yaml`: `sdp_ingest` → `segments_cut` (the untranscribed segments as a dataset) →
+the members and `lid_classify` → **`pseudolabel_ensemble`** → `text_normalise` → `manifest_filter` →
+`speaker_disjoint_split` → `dataset_freeze` (draft). A member wired as `hypotheses.<n>` from an optional step (the
+OASIS member) may fail: the ensemble then runs with the others.
 
 ## Fields and defaults
 

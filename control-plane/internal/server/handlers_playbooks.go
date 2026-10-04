@@ -121,6 +121,15 @@ func (s *Server) playbookView(ctx context.Context, p playbooks.Playbook, prj *pr
 		if st.Phase > 0 {
 			m["phase"] = st.Phase
 		}
+		if st.Person != "" {
+			m["person"] = st.Person
+		}
+		if st.Optional {
+			m["optional"] = true
+		}
+		if len(st.When) > 0 {
+			m["when"] = st.When
+		}
 		v.Chain = append(v.Chain, m)
 	}
 	return v, nil

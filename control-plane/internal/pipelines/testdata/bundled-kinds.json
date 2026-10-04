@@ -1,0 +1,3046 @@
+[
+ {
+  "consumes": {
+   "base": "base_model"
+  },
+  "help": "steps.checkpoint-from-base",
+  "name": "checkpoint_from_base",
+  "params": {
+   "description": "No parameters: the base model artifact pins repository, revision and file.",
+   "properties": {},
+   "title": "MaterializeParams",
+   "type": "object"
+  },
+  "produces": {
+   "checkpoint": "checkpoint"
+  },
+  "resources": {
+   "diskGb": 4,
+   "gpu": false,
+   "gpus": 0,
+   "jobKind": "eval",
+   "memoryGb": 1
+  },
+  "role": "materialize",
+  "runtime": "nemo-speech",
+  "version": "1"
+ },
+ {
+  "consumes": {
+   "segments": "segments"
+  },
+  "help": "steps.dataset-freeze",
+  "name": "dataset_freeze",
+  "neutral": true,
+  "params": {
+   "properties": {
+    "description": {
+     "default": "",
+     "description": "What the version is for, shown in the Library and the card",
+     "title": "Description",
+     "type": "string",
+     "x-cadence": {
+      "default": "",
+      "description": "What the version is for, shown in the Library and the card",
+      "range": {
+       "maxLength": 2000
+      },
+      "source": "Cadence recommendation"
+     }
+    },
+    "draft_version": {
+     "default": "",
+     "description": "The draft dataset version (ver_…) a cut freezes; set by datasets.freeze, required in cut mode",
+     "title": "Draft Version",
+     "type": "string",
+     "x-cadence": {
+      "default": "",
+      "description": "The draft dataset version (ver_…) a cut freezes; set by datasets.freeze, required in cut mode",
+      "range": {
+       "maxLength": 64
+      },
+      "source": "docs/review/2026-10-03-phase-4-plan.md decision 4"
+     }
+    },
+    "eval_only": {
+     "default": false,
+     "description": "Register the version for evaluation only (never mixed or trained on)",
+     "title": "Eval Only",
+     "type": "boolean",
+     "x-cadence": {
+      "default": false,
+      "description": "Register the version for evaluation only (never mixed or trained on)",
+      "range": {
+       "values": [
+        true,
+        false
+       ]
+      },
+      "source": "docs/spec/08-resolutions.md R18"
+     }
+    },
+    "mode": {
+     "default": "draft",
+     "description": "draft registers the would-be version without audio; cut (datasets.freeze) writes the frozen copy",
+     "enum": [
+      "draft",
+      "cut"
+     ],
+     "title": "Mode",
+     "type": "string",
+     "x-cadence": {
+      "default": "draft",
+      "description": "draft registers the would-be version without audio; cut (datasets.freeze) writes the frozen copy",
+      "range": {
+       "values": [
+        "draft",
+        "cut"
+       ]
+      },
+      "source": "docs/review/2026-10-03-phase-4-plan.md decisions 3 and 4"
+     }
+    },
+    "name": {
+     "default": "",
+     "description": "Registry collection of the dataset version, without dataset/; empty = the source name",
+     "title": "Name",
+     "type": "string",
+     "x-cadence": {
+      "default": "",
+      "description": "Registry collection of the dataset version, without dataset/; empty = the source name",
+      "range": {
+       "pattern": "^([a-z0-9][a-z0-9._-]{0,98}[a-z0-9])?$"
+      },
+      "source": "Cadence recommendation"
+     }
+    },
+    "quality_max_clipped_share": {
+     "default": 0.01,
+     "description": "A frozen version warns when more than this share of segments clip (more than 0.1 % of samples at full scale)",
+     "title": "Quality Max Clipped Share",
+     "type": "number",
+     "x-cadence": {
+      "default": 0.01,
+      "defaultRef": "data.quality_max_clipped_share",
+      "description": "A frozen version warns when more than this share of segments clip (more than 0.1 % of samples at full scale)",
+      "range": {
+       "max": 1,
+       "min": 0
+      },
+      "source": "Cadence recommendation"
+     }
+    },
+    "quality_max_outlier_share": {
+     "default": 0.02,
+     "description": "A frozen version warns when more than this share of segments are transcript-length outliers",
+     "title": "Quality Max Outlier Share",
+     "type": "number",
+     "x-cadence": {
+      "default": 0.02,
+      "defaultRef": "data.quality_max_outlier_share",
+      "description": "A frozen version warns when more than this share of segments are transcript-length outliers",
+      "range": {
+       "max": 1,
+       "min": 0
+      },
+      "source": "Cadence recommendation"
+     }
+    },
+    "quality_max_silence_share": {
+     "default": 0.5,
+     "description": "A frozen version warns when its segments are on average more silence than this (1 − voice-activity share)",
+     "title": "Quality Max Silence Share",
+     "type": "number",
+     "x-cadence": {
+      "default": 0.5,
+      "defaultRef": "data.quality_max_silence_share",
+      "description": "A frozen version warns when its segments are on average more silence than this (1 − voice-activity share)",
+      "range": {
+       "max": 1,
+       "min": 0
+      },
+      "source": "Cadence recommendation"
+     }
+    },
+    "quality_outlier_z": {
+     "default": 3.0,
+     "description": "Characters-per-second z-score beyond which a segment's transcript length is an outlier",
+     "title": "Quality Outlier Z",
+     "type": "number",
+     "x-cadence": {
+      "default": 3.0,
+      "defaultRef": "data.quality_outlier_z",
+      "description": "Characters-per-second z-score beyond which a segment's transcript length is an outlier",
+      "range": {
+       "max": 10,
+       "min": 1
+      },
+      "source": "Cadence recommendation (three standard deviations)"
+     }
+    },
+    "shard_utterances": {
+     "default": 2000,
+     "description": "Utterances per shard (a Lhotse cuts file) of a frozen dataset version: the unit of pinning, eviction and materialisation",
+     "title": "Shard Utterances",
+     "type": "integer",
+     "x-cadence": {
+      "default": 2000,
+      "defaultRef": "data.shard_utterances",
+      "description": "Utterances per shard (a Lhotse cuts file) of a frozen dataset version: the unit of pinning, eviction and materialisation",
+      "range": {
+       "max": 100000,
+       "min": 10
+      },
+      "source": "Cadence recommendation (Lhotse Shar's default shard size is 1000 cuts)"
+     }
+    },
+    "tags": {
+     "default": [],
+     "description": "Collection tags (domain:telephony, synthetic, …)",
+     "items": {
+      "type": "string"
+     },
+     "title": "Tags",
+     "type": "array",
+     "x-cadence": {
+      "default": [],
+      "description": "Collection tags (domain:telephony, synthetic, …)",
+      "range": {
+       "maxLength": 32
+      },
+      "source": "Cadence recommendation"
+     }
+    }
+   },
+   "title": "DatasetFreezeParams",
+   "type": "object"
+  },
+  "produces": {
+   "dataset": "dataset"
+  },
+  "resources": {
+   "gpu": false,
+   "gpus": 0,
+   "jobKind": "data"
+  },
+  "version": "1"
+ },
+ {
+  "consumes": {},
+  "help": "steps.dataset-import",
+  "name": "dataset_import",
+  "neutral": true,
+  "params": {
+   "properties": {
+    "eval_only": {
+     "default": false,
+     "description": "Register for evaluation only (golden and replay test sets): never mixed or trained on",
+     "title": "Eval Only",
+     "type": "boolean",
+     "x-cadence": {
+      "default": false,
+      "description": "Register for evaluation only (golden and replay test sets): never mixed or trained on",
+      "range": {
+       "values": [
+        true,
+        false
+       ]
+      },
+      "source": "docs/spec/08-resolutions.md R17, R18"
+     }
+    },
+    "format": {
+     "default": "hf-dataset",
+     "description": "Input format: a NeMo JSONL manifest, a Hugging Face dataset, a folder with metadata.csv, a Lhotse CutSet, a Lhotse Shar directory or a Cadence bundle",
+     "enum": [
+      "nemo-manifest",
+      "hf-dataset",
+      "folder-csv",
+      "lhotse-cuts",
+      "lhotse-shar",
+      "cadence-bundle"
+     ],
+     "title": "Format",
+     "type": "string",
+     "x-cadence": {
+      "default": "hf-dataset",
+      "description": "Input format: a NeMo JSONL manifest, a Hugging Face dataset, a folder with metadata.csv, a Lhotse CutSet, a Lhotse Shar directory or a Cadence bundle",
+      "range": {
+       "values": [
+        "nemo-manifest",
+        "hf-dataset",
+        "folder-csv",
+        "lhotse-cuts",
+        "lhotse-shar",
+        "cadence-bundle"
+       ]
+      },
+      "source": "docs/spec/03-pipelines-defaults.md Interoperability"
+     }
+    },
+    "hf_config": {
+     "default": "",
+     "description": "Dataset configuration (he_il for FLEURS Hebrew); ignored when hf_configs is set",
+     "title": "Hf Config",
+     "type": "string",
+     "x-cadence": {
+      "default": "",
+      "description": "Dataset configuration (he_il for FLEURS Hebrew); ignored when hf_configs is set",
+      "range": {
+       "maxLength": 100
+      },
+      "source": "https://huggingface.co/datasets/google/fleurs"
+     }
+    },
+    "hf_configs": {
+     "additionalProperties": {
+      "type": "string"
+     },
+     "default": {},
+     "description": "Several configurations imported into one dataset version, configuration → locale (de_de: de-DE)",
+     "title": "Hf Configs",
+     "type": "object",
+     "x-cadence": {
+      "default": {},
+      "description": "Several configurations imported into one dataset version, configuration → locale (de_de: de-DE)",
+      "range": "at most 100 entries",
+      "source": "docs/spec/08-resolutions.md R17 (one replay corpus across locales)"
+     }
+    },
+    "hf_repo": {
+     "default": "google/fleurs",
+     "description": "Hugging Face dataset repository",
+     "title": "Hf Repo",
+     "type": "string",
+     "x-cadence": {
+      "default": "google/fleurs",
+      "description": "Hugging Face dataset repository",
+      "range": {
+       "maxLength": 200
+      },
+      "source": "docs/spec/08-resolutions.md R17 (FLEURS for replay and replay golden sets)"
+     }
+    },
+    "hf_revision": {
+     "default": "",
+     "description": "Pinned revision (commit) of the Hugging Face dataset; empty reads the default branch",
+     "title": "Hf Revision",
+     "type": "string",
+     "x-cadence": {
+      "default": "",
+      "description": "Pinned revision (commit) of the Hugging Face dataset; empty reads the default branch",
+      "range": {
+       "maxLength": 100
+      },
+      "source": "Cadence recommendation (pin revisions for reproducible imports)"
+     }
+    },
+    "hf_split": {
+     "default": "train",
+     "description": "Split of the Hugging Face dataset to read (train, validation, test)",
+     "title": "Hf Split",
+     "type": "string",
+     "x-cadence": {
+      "default": "train",
+      "description": "Split of the Hugging Face dataset to read (train, validation, test)",
+      "range": {
+       "maxLength": 40
+      },
+      "source": "Cadence recommendation"
+     }
+    },
+    "licence": {
+     "default": "",
+     "description": "Licence of the corpus as its card states it (CC-BY-4.0); required (a bundle carries its own), recorded on the source",
+     "title": "Licence",
+     "type": "string",
+     "x-cadence": {
+      "default": "",
+      "description": "Licence of the corpus as its card states it (CC-BY-4.0); required (a bundle carries its own), recorded on the source",
+      "range": {
+       "maxLength": 200
+      },
+      "source": "docs/spec/08-resolutions.md R18"
+     }
+    },
+    "locale": {
+     "default": "",
+     "description": "Language of every utterance (he-IL) unless the input or hf_configs names one",
+     "title": "Locale",
+     "type": "string",
+     "x-cadence": {
+      "default": "",
+      "description": "Language of every utterance (he-IL) unless the input or hf_configs names one",
+      "range": {
+       "maxLength": 20
+      },
+      "source": "Cadence recommendation"
+     }
+    },
+    "max_hours": {
+     "default": 0,
+     "description": "Cap on audio hours per language, in source order; 0 takes everything",
+     "title": "Max Hours",
+     "type": "number",
+     "x-cadence": {
+      "default": 0,
+      "defaultRef": "data.max_hours",
+      "description": "Cap on audio hours per language, in source order; 0 takes everything",
+      "range": {
+       "max": 10000,
+       "min": 0
+      },
+      "source": "Cadence recommendation (R17 replay caps about 1 h per locale in phase 2)"
+     }
+    },
+    "max_utterances": {
+     "default": 0,
+     "description": "Cap on utterances per language, in source order; 0 takes everything",
+     "title": "Max Utterances",
+     "type": "integer",
+     "x-cadence": {
+      "default": 0,
+      "defaultRef": "data.max_utterances",
+      "description": "Cap on utterances per language, in source order; 0 takes everything",
+      "range": {
+       "max": 10000000,
+       "min": 0
+      },
+      "source": "Cadence recommendation (R17 replay golden sets of at most 300 utterances per locale)"
+     }
+    },
+    "min_validation_utterances": {
+     "default": 100,
+     "description": "Fewest validation utterances of a speaker-disjoint split: when the share yields fewer, more whole speakers (or transcripts) move to validation, never past half the import",
+     "title": "Min Validation Utterances",
+     "type": "integer",
+     "x-cadence": {
+      "default": 100,
+      "defaultRef": "data.min_validation_utterances",
+      "description": "Fewest validation utterances of a speaker-disjoint split: when the share yields fewer, more whole speakers (or transcripts) move to validation, never past half the import",
+      "range": {
+       "max": 100000,
+       "min": 0
+      },
+      "source": "docs/review/2026-10-01-phase-2-rehearsal.md (a 3 h FLEURS import at share 0.02 left 19 validation clips, so validation WER moved in steps of three words)"
+     }
+    },
+    "name": {
+     "default": "",
+     "description": "Registry collection of the dataset version, without dataset/ (fleurs-he); empty = source name",
+     "title": "Name",
+     "type": "string",
+     "x-cadence": {
+      "default": "",
+      "description": "Registry collection of the dataset version, without dataset/ (fleurs-he); empty = source name",
+      "range": {
+       "pattern": "^([a-z0-9][a-z0-9._-]{0,98}[a-z0-9])?$"
+      },
+      "source": "Cadence recommendation"
+     }
+    },
+    "path": {
+     "default": "",
+     "description": "nemo-manifest: the manifest file; folder-csv: the folder with metadata.csv; lhotse-cuts: the cuts file or its folder; lhotse-shar and cadence-bundle: the folder — on the worker host, or mount://<mount>/<path> on a path mount",
+     "title": "Path",
+     "type": "string",
+     "x-cadence": {
+      "default": "",
+      "description": "nemo-manifest: the manifest file; folder-csv: the folder with metadata.csv; lhotse-cuts: the cuts file or its folder; lhotse-shar and cadence-bundle: the folder — on the worker host, or mount://<mount>/<path> on a path mount",
+      "range": {
+       "maxLength": 1000
+      },
+      "source": "Cadence recommendation"
+     }
+    },
+    "purpose": {
+     "default": "speech",
+     "description": "speech: utterances with transcripts; noise: background noise clips (no transcripts, all train) registered as a noise bank for augmentation",
+     "enum": [
+      "speech",
+      "noise"
+     ],
+     "title": "Purpose",
+     "type": "string",
+     "x-cadence": {
+      "default": "speech",
+      "description": "speech: utterances with transcripts; noise: background noise clips (no transcripts, all train) registered as a noise bank for augmentation",
+      "range": {
+       "values": [
+        "speech",
+        "noise"
+       ]
+      },
+      "source": "docs/spec/02-domain-projects-registry.md, entity Noise bank"
+     }
+    },
+    "sample_rate": {
+     "default": 16000,
+     "description": "Sample rate the audio is stored at (16-bit PCM WAV, mono)",
+     "title": "Sample Rate",
+     "type": "integer",
+     "x-cadence": {
+      "default": 16000,
+      "defaultRef": "data.sample_rate",
+      "description": "Sample rate the audio is stored at (16-bit PCM WAV, mono)",
+      "range": {
+       "max": 48000,
+       "min": 8000
+      },
+      "source": "nvidia/nemotron-3.5-asr-streaming-0.6b model card (16 kHz mono input)"
+     }
+    },
+    "source_kind": {
+     "default": "public",
+     "description": "Kind of the source",
+     "enum": [
+      "public",
+      "production",
+      "synthetic"
+     ],
+     "title": "Source Kind",
+     "type": "string",
+     "x-cadence": {
+      "default": "public",
+      "description": "Kind of the source",
+      "range": {
+       "values": [
+        "public",
+        "production",
+        "synthetic"
+       ]
+      },
+      "source": "docs/spec/02-domain-projects-registry.md, entity Source"
+     }
+    },
+    "source_name": {
+     "default": "",
+     "description": "Registry source the utterances belong to (fleurs, common-voice-17); created on first import",
+     "title": "Source Name",
+     "type": "string",
+     "x-cadence": {
+      "default": "",
+      "description": "Registry source the utterances belong to (fleurs, common-voice-17); created on first import",
+      "range": {
+       "pattern": "^[a-z0-9][a-z0-9._-]{0,98}[a-z0-9]$"
+      },
+      "source": "docs/spec/08-resolutions.md R18"
+     }
+    },
+    "source_url": {
+     "default": "",
+     "description": "Where the corpus comes from; empty derives hf://datasets/<repo> for Hugging Face imports",
+     "title": "Source Url",
+     "type": "string",
+     "x-cadence": {
+      "default": "",
+      "description": "Where the corpus comes from; empty derives hf://datasets/<repo> for Hugging Face imports",
+      "range": {
+       "maxLength": 500
+      },
+      "source": "Cadence recommendation"
+     }
+    },
+    "split_rule": {
+     "default": "speaker-disjoint",
+     "description": "How utterances get splits: speaker-disjoint hold-out, the source's own split, or all in one",
+     "enum": [
+      "speaker-disjoint",
+      "source",
+      "all-train",
+      "all-validation",
+      "all-test"
+     ],
+     "title": "Split Rule",
+     "type": "string",
+     "x-cadence": {
+      "default": "speaker-disjoint",
+      "description": "How utterances get splits: speaker-disjoint hold-out, the source's own split, or all in one",
+      "range": {
+       "values": [
+        "speaker-disjoint",
+        "source",
+        "all-train",
+        "all-validation",
+        "all-test"
+       ]
+      },
+      "source": "docs/spec/03-pipelines-defaults.md starter pipeline (speaker_disjoint_split)"
+     }
+    },
+    "tags": {
+     "default": [],
+     "description": "Tags for the dataset collection (golden, replay); eval-only is added when the version is",
+     "items": {
+      "type": "string"
+     },
+     "title": "Tags",
+     "type": "array",
+     "x-cadence": {
+      "default": [],
+      "description": "Tags for the dataset collection (golden, replay); eval-only is added when the version is",
+      "range": "at most 20 tags, each ≤ 40 characters",
+      "source": "Cadence recommendation"
+     }
+    },
+    "text_field": {
+     "default": "",
+     "description": "Column holding the transcript; empty picks raw_transcription, sentence, text or transcription",
+     "title": "Text Field",
+     "type": "string",
+     "x-cadence": {
+      "default": "",
+      "description": "Column holding the transcript; empty picks raw_transcription, sentence, text or transcription",
+      "range": {
+       "maxLength": 100
+      },
+      "source": "Cadence recommendation"
+     }
+    },
+    "text_normalisation": {
+     "default": false,
+     "description": "Normalise transcripts (NFKC, case-folded, no punctuation); off keeps cased, punctuated text",
+     "title": "Text Normalisation",
+     "type": "boolean",
+     "x-cadence": {
+      "default": false,
+      "defaultRef": "data.text_normalisation",
+      "description": "Normalise transcripts (NFKC, case-folded, no punctuation); off keeps cased, punctuated text",
+      "range": "any",
+      "source": "nvidia/nemotron-3.5-asr-streaming-0.6b model card (punctuated, cased output); .claude/rules/worker.md"
+     }
+    },
+    "transliterate": {
+     "default": "",
+     "description": "Convert transcripts to another script before anything else (sr-Cyrl-Latn: Serbian Cyrillic to Gaj Latin, for base models whose tokenizer lacks the Cyrillic letters); empty keeps the text's script",
+     "enum": [
+      "",
+      "sr-Cyrl-Latn"
+     ],
+     "title": "Transliterate",
+     "type": "string",
+     "x-cadence": {
+      "default": "",
+      "description": "Convert transcripts to another script before anything else (sr-Cyrl-Latn: Serbian Cyrillic to Gaj Latin, for base models whose tokenizer lacks the Cyrillic letters); empty keeps the text's script",
+      "range": {
+       "values": [
+        "",
+        "sr-Cyrl-Latn"
+       ]
+      },
+      "source": "Cadence recommendation (the Serbian fine-tune on the test stand, 2026-10-01)"
+     }
+    },
+    "validation_share": {
+     "default": 0.02,
+     "description": "Share of speakers (or distinct transcripts without speakers) held out for validation",
+     "title": "Validation Share",
+     "type": "number",
+     "x-cadence": {
+      "default": 0.02,
+      "defaultRef": "data.validation_share",
+      "description": "Share of speakers (or distinct transcripts without speakers) held out for validation",
+      "range": {
+       "max": 0.5,
+       "min": 0
+      },
+      "source": "Cadence recommendation (docs/spec/03-pipelines-defaults.md starter pipeline, speaker_disjoint_split val_share 0.02)"
+     }
+    }
+   },
+   "title": "DatasetImportParams",
+   "type": "object"
+  },
+  "produces": {
+   "dataset": "dataset"
+  },
+  "resources": {
+   "gpu": false,
+   "jobKind": "data"
+  },
+  "version": "4"
+ },
+ {
+  "consumes": {
+   "text": "text"
+  },
+  "help": "steps.echo",
+  "name": "echo",
+  "neutral": true,
+  "params": {
+   "properties": {
+    "prefix": {
+     "default": "",
+     "description": "Text written before the copied input",
+     "title": "Prefix",
+     "type": "string",
+     "x-cadence": {
+      "default": "",
+      "description": "Text written before the copied input",
+      "range": {
+       "maxLength": 64
+      },
+      "source": "Cadence recommendation"
+     }
+    }
+   },
+   "title": "EchoParams",
+   "type": "object"
+  },
+  "produces": {
+   "text": "text"
+  },
+  "resources": {
+   "gpu": false,
+   "gpus": 0,
+   "jobKind": "data"
+  },
+  "version": "1"
+ },
+ {
+  "consumes": {
+   "data": "dataset"
+  },
+  "help": "steps.lid-classify",
+  "name": "lid_classify",
+  "params": {
+   "properties": {
+    "auxiliary": {
+     "default": "auxiliary/whisper-large-v3",
+     "description": "The language classifier (auxiliary/<name>, ver_… or @alias): an auxiliary with the lid role the project adopted",
+     "title": "Auxiliary",
+     "type": "string",
+     "x-cadence": {
+      "default": "auxiliary/whisper-large-v3",
+      "defaultRef": "packs.nemo.lid_auxiliary",
+      "description": "The language classifier (auxiliary/<name>, ver_… or @alias): an auxiliary with the lid role the project adopted",
+      "range": "any",
+      "registryRef": {
+       "kind": "auxiliary",
+       "role": "lid"
+      },
+      "source": "docs/review/2026-10-03-phase-4-plan.md decision 7, with Whisper's language token as the fallback: torchaudio has no build for the nemo-speech image's torch 2.12 (checked 2026-10-03)"
+     }
+    },
+    "batch_size": {
+     "default": 16,
+     "description": "Utterances per language identification batch",
+     "title": "Batch Size",
+     "type": "integer",
+     "x-cadence": {
+      "default": 16,
+      "defaultRef": "packs.nemo.lid_batch_size",
+      "description": "Utterances per language identification batch",
+      "range": {
+       "max": 128,
+       "min": 1
+      },
+      "source": "Cadence recommendation"
+     }
+    },
+    "cuda_context_reserve_mb": {
+     "default": 1024,
+     "description": "Card memory kept free for the CUDA context and library workspaces, which sit outside PyTorch's allocator; the allocator gets the lease's cap minus this",
+     "title": "Cuda Context Reserve Mb",
+     "type": "integer",
+     "x-cadence": {
+      "default": 1024,
+      "defaultRef": "packs.nemo.cuda_context_reserve_mb",
+      "description": "Card memory kept free for the CUDA context and library workspaces, which sit outside PyTorch's allocator; the allocator gets the lease's cap minus this",
+      "range": {
+       "max": 8192,
+       "min": 0
+      },
+      "source": "Spike A3 (a 20.5 GiB allocator cap showed 21.6 GB in nvidia-smi, about 0.65 GB outside the allocator); rounded up"
+     }
+    },
+    "top_k": {
+     "default": 3,
+     "description": "Most probable languages kept per utterance in the lid artifact",
+     "title": "Top K",
+     "type": "integer",
+     "x-cadence": {
+      "default": 3,
+      "defaultRef": "packs.nemo.lid_top_k",
+      "description": "Most probable languages kept per utterance in the lid artifact",
+      "range": {
+       "max": 10,
+       "min": 1
+      },
+      "source": "Cadence recommendation"
+     }
+    }
+   },
+   "title": "LidParams",
+   "type": "object"
+  },
+  "produces": {
+   "lid": "lid"
+  },
+  "resources": {
+   "diskGb": 4,
+   "gpu": true,
+   "gpus": 1,
+   "jobKind": "data",
+   "memoryGb": 8
+  },
+  "runtime": "nemo-speech",
+  "version": "1"
+ },
+ {
+  "consumes": {
+   "segments": "segments"
+  },
+  "help": "steps.manifest-filter",
+  "name": "manifest_filter",
+  "neutral": true,
+  "params": {
+   "properties": {
+    "drop_lid_mismatch": {
+     "default": true,
+     "description": "Drop segments whose language identification (lid.language) disagrees with their language",
+     "title": "Drop Lid Mismatch",
+     "type": "boolean",
+     "x-cadence": {
+      "default": true,
+      "description": "Drop segments whose language identification (lid.language) disagrees with their language",
+      "range": {
+       "values": [
+        true,
+        false
+       ]
+      },
+      "source": "docs/spec/04-blocks.md Block 1 (mismatched-language segments)"
+     }
+    },
+    "drop_origins": {
+     "default": [
+      "pseudo-label:disputed"
+     ],
+     "description": "Transcript origins dropped; disputed pseudo-labels go to triage, never to training",
+     "items": {
+      "type": "string"
+     },
+     "title": "Drop Origins",
+     "type": "array",
+     "x-cadence": {
+      "default": [
+       "pseudo-label:disputed"
+      ],
+      "description": "Transcript origins dropped; disputed pseudo-labels go to triage, never to training",
+      "range": {
+       "maxLength": 20
+      },
+      "source": "docs/review/2026-10-03-phase-4-plan.md decision 6"
+     }
+    },
+    "languages": {
+     "default": [],
+     "description": "Languages kept (sr matches sr-RS); empty keeps every language",
+     "items": {
+      "type": "string"
+     },
+     "title": "Languages",
+     "type": "array",
+     "x-cadence": {
+      "default": [],
+      "description": "Languages kept (sr matches sr-RS); empty keeps every language",
+      "range": {
+       "maxLength": 50
+      },
+      "source": "Cadence recommendation"
+     }
+    },
+    "max_chars_per_second": {
+     "default": 30,
+     "description": "manifest_filter drops transcribed segments with more characters per second (text of a longer clip, or audio cut short)",
+     "title": "Max Chars Per Second",
+     "type": "number",
+     "x-cadence": {
+      "default": 30,
+      "defaultRef": "data.filter_max_chars_per_second",
+      "description": "manifest_filter drops transcribed segments with more characters per second (text of a longer clip, or audio cut short)",
+      "range": {
+       "max": 100,
+       "min": 1
+      },
+      "source": "Cadence recommendation (NeMo Speech Data Processor char-rate filters)"
+     }
+    },
+    "max_crosstalk": {
+     "default": 0.5,
+     "description": "manifest_filter drops segments during which another channel speaks for more than this share",
+     "title": "Max Crosstalk",
+     "type": "number",
+     "x-cadence": {
+      "default": 0.5,
+      "defaultRef": "data.filter_max_crosstalk",
+      "description": "manifest_filter drops segments during which another channel speaks for more than this share",
+      "range": {
+       "max": 1,
+       "min": 0
+      },
+      "source": "Cadence recommendation"
+     }
+    },
+    "max_duration": {
+     "default": 30,
+     "description": "manifest_filter drops segments longer than this",
+     "title": "Max Duration",
+     "type": "number",
+     "x-cadence": {
+      "default": 30,
+      "defaultRef": "data.filter_max_duration_s",
+      "description": "manifest_filter drops segments longer than this",
+      "range": {
+       "max": 600,
+       "min": 1
+      },
+      "source": "Cadence recommendation (NeMo ASR fine-tuning recipes use max_duration 20–40 s)"
+     }
+    },
+    "min_chars_per_second": {
+     "default": 1,
+     "description": "manifest_filter drops transcribed segments with fewer characters per second (text missing words)",
+     "title": "Min Chars Per Second",
+     "type": "number",
+     "x-cadence": {
+      "default": 1,
+      "defaultRef": "data.filter_min_chars_per_second",
+      "description": "manifest_filter drops transcribed segments with fewer characters per second (text missing words)",
+      "range": {
+       "max": 50,
+       "min": 0
+      },
+      "source": "Cadence recommendation (NeMo Speech Data Processor char-rate filters)"
+     }
+    },
+    "min_duration": {
+     "default": 0.5,
+     "description": "manifest_filter drops segments shorter than this",
+     "title": "Min Duration",
+     "type": "number",
+     "x-cadence": {
+      "default": 0.5,
+      "defaultRef": "data.filter_min_duration_s",
+      "description": "manifest_filter drops segments shorter than this",
+      "range": {
+       "max": 60,
+       "min": 0
+      },
+      "source": "Cadence recommendation"
+     }
+    },
+    "min_speech_ratio": {
+     "default": 0.2,
+     "description": "manifest_filter drops segments whose voice-activity share is below this",
+     "title": "Min Speech Ratio",
+     "type": "number",
+     "x-cadence": {
+      "default": 0.2,
+      "defaultRef": "data.filter_min_speech_ratio",
+      "description": "manifest_filter drops segments whose voice-activity share is below this",
+      "range": {
+       "max": 1,
+       "min": 0
+      },
+      "source": "Cadence recommendation"
+     }
+    },
+    "require_text": {
+     "default": true,
+     "description": "Drop segments without a transcript (untranscribed audio goes through pseudo-labelling first)",
+     "title": "Require Text",
+     "type": "boolean",
+     "x-cadence": {
+      "default": true,
+      "description": "Drop segments without a transcript (untranscribed audio goes through pseudo-labelling first)",
+      "range": {
+       "values": [
+        true,
+        false
+       ]
+      },
+      "source": "Cadence recommendation"
+     }
+    },
+    "roles": {
+     "default": [
+      "caller",
+      "mono"
+     ],
+     "description": "Channel roles kept; the caller's channel is the target, the bot's is synthetic speech",
+     "items": {
+      "type": "string"
+     },
+     "title": "Roles",
+     "type": "array",
+     "x-cadence": {
+      "default": [
+       "caller",
+       "mono"
+      ],
+      "description": "Channel roles kept; the caller's channel is the target, the bot's is synthetic speech",
+      "range": {
+       "maxLength": 3
+      },
+      "source": "docs/review/2026-10-03-phase-4-plan.md (the caller's channel is the target)"
+     }
+    }
+   },
+   "title": "ManifestFilterParams",
+   "type": "object"
+  },
+  "produces": {
+   "segments": "segments"
+  },
+  "resources": {
+   "gpu": false,
+   "gpus": 0,
+   "jobKind": "data"
+  },
+  "version": "1"
+ },
+ {
+  "consumes": {
+   "base": "base_model",
+   "calibration": "calibration",
+   "data": "mix"
+  },
+  "help": "steps.nemotron-finetune",
+  "name": "nemotron_finetune",
+  "optionalOutputs": [
+   "state"
+  ],
+  "params": {
+   "properties": {
+    "augmentation": {
+     "additionalProperties": true,
+     "default": {
+      "gain": {
+       "max_db": 6,
+       "min_db": -6,
+       "p": 0.5
+      },
+      "profile": "telephony",
+      "speed": {
+       "max": 1.05,
+       "min": 0.95,
+       "p": 0.3
+      },
+      "telephone": {
+       "codec_p": 0.7,
+       "codecs": [
+        "ulaw",
+        "alaw",
+        "gsm"
+       ],
+       "p": 0.5,
+       "sample_rate": 8000
+      }
+     },
+     "description": "Augmentation profile applied on the fly while training — band-limit to 8 kHz with an optional G.711 or GSM codec, level jitter, speed perturbation; {profile clean} turns it off",
+     "title": "Augmentation",
+     "type": "object",
+     "x-cadence": {
+      "default": {
+       "gain": {
+        "max_db": 6,
+        "min_db": -6,
+        "p": 0.5
+       },
+       "profile": "telephony",
+       "speed": {
+        "max": 1.05,
+        "min": 0.95,
+        "p": 0.3
+       },
+       "telephone": {
+        "codec_p": 0.7,
+        "codecs": [
+         "ulaw",
+         "alaw",
+         "gsm"
+        ],
+        "p": 0.5,
+        "sample_rate": 8000
+       }
+      },
+      "defaultRef": "packs.nemo.augmentation",
+      "description": "Augmentation profile applied on the fly while training — band-limit to 8 kHz with an optional G.711 or GSM codec, level jitter, speed perturbation; {profile clean} turns it off",
+      "range": "any",
+      "source": "docs/spec/03-pipelines-defaults.md \"Augmentation\" (telephony profile); probabilities are a Cadence recommendation; speed kept within 0.95–1.05 so calibrated buckets stay valid"
+     }
+    },
+    "cuda_context_reserve_mb": {
+     "default": 1024,
+     "description": "Card memory kept free for the CUDA context and library workspaces, which sit outside PyTorch's allocator; the allocator gets the lease's cap minus this",
+     "title": "Cuda Context Reserve Mb",
+     "type": "integer",
+     "x-cadence": {
+      "default": 1024,
+      "defaultRef": "packs.nemo.cuda_context_reserve_mb",
+      "description": "Card memory kept free for the CUDA context and library workspaces, which sit outside PyTorch's allocator; the allocator gets the lease's cap minus this",
+      "range": {
+       "max": 8192,
+       "min": 0
+      },
+      "shared": true,
+      "source": "Spike A3 (a 20.5 GiB allocator cap showed 21.6 GB in nvidia-smi, about 0.65 GB outside the allocator); rounded up"
+     }
+    },
+    "grad_clip": {
+     "default": 5.0,
+     "description": "Gradient norm clipping threshold (0 turns clipping off)",
+     "title": "Grad Clip",
+     "type": "number",
+     "x-cadence": {
+      "default": 5.0,
+      "defaultRef": "packs.nemo.grad_clip",
+      "description": "Gradient norm clipping threshold (0 turns clipping off)",
+      "range": {
+       "max": 100,
+       "min": 0
+      },
+      "source": "docs/spec/03-pipelines-defaults.md \"Key defaults\" (grad clip 5); spike A3 ran 500 steps at 0.5 without trouble"
+     }
+    },
+    "log_every": {
+     "default": 10,
+     "description": "Optimiser steps between metric points (loss, lr, grad_norm, throughput, card memory)",
+     "title": "Log Every",
+     "type": "integer",
+     "x-cadence": {
+      "default": 10,
+      "defaultRef": "packs.nemo.log_every",
+      "description": "Optimiser steps between metric points (loss, lr, grad_norm, throughput, card memory)",
+      "range": {
+       "max": 1000,
+       "min": 1
+      },
+      "source": "Spike A3 (its metrics callback wrote every 10 steps)"
+     }
+    },
+    "max_duration": {
+     "default": 20,
+     "description": "Longest training clip; longer clips are left out of training",
+     "title": "Max Duration",
+     "type": "number",
+     "x-cadence": {
+      "default": 20,
+      "defaultRef": "packs.nemo.max_duration",
+      "description": "Longest training clip; longer clips are left out of training",
+      "range": {
+       "max": 40,
+       "min": 1
+      },
+      "source": "Spike A3 (the base model was trained with 20 s; under the shared-card cap one 20 s clip is the largest batch that fits); the Key defaults' 40 s needs a larger cap"
+     }
+    },
+    "min_duration": {
+     "default": 0.5,
+     "description": "Shortest training clip",
+     "title": "Min Duration",
+     "type": "number",
+     "x-cadence": {
+      "default": 0.5,
+      "defaultRef": "packs.nemo.min_duration",
+      "description": "Shortest training clip",
+      "range": {
+       "max": 10,
+       "min": 0.05
+      },
+      "shared": true,
+      "source": "docs/spec/03-pipelines-defaults.md \"Key defaults\" (data filters 0.5–40 s)"
+     }
+    },
+    "min_lr": {
+     "default": 1e-06,
+     "description": "Floor of the learning rate after warm-up",
+     "title": "Min Lr",
+     "type": "number",
+     "x-cadence": {
+      "default": 1e-06,
+      "defaultRef": "packs.nemo.min_lr",
+      "description": "Floor of the learning rate after warm-up",
+      "range": {
+       "max": 0.001,
+       "min": 0
+      },
+      "source": "The base model's own optimiser configuration (model_config.yaml, sched.min_lr)"
+     }
+    },
+    "num_workers": {
+     "default": 4,
+     "description": "Dataloader worker processes (audio loading and augmentation run there)",
+     "title": "Num Workers",
+     "type": "integer",
+     "x-cadence": {
+      "default": 4,
+      "defaultRef": "packs.nemo.num_workers",
+      "description": "Dataloader worker processes (audio loading and augmentation run there)",
+      "range": {
+       "max": 32,
+       "min": 0
+      },
+      "source": "Cadence recommendation (spike A3 used 8 on the staging host; 4 leaves CPU for the resident services)"
+     }
+    },
+    "peak_lr": {
+     "default": 0.0002,
+     "description": "Peak learning rate of a training stage, reached at the end of warm-up; the NoamAnnealing scale is derived from it and posted with the run",
+     "title": "Peak Lr",
+     "type": "number",
+     "x-cadence": {
+      "default": 0.0002,
+      "defaultRef": "packs.nemo.peak_lr",
+      "description": "Peak learning rate of a training stage, reached at the end of warm-up; the NoamAnnealing scale is derived from it and posted with the run",
+      "range": {
+       "max": 0.002,
+       "min": 1e-06
+      },
+      "source": "docs/spec/03-pipelines-defaults.md \"Key defaults\" (community fine-tune kit; North Sami fine-tune)"
+     }
+    },
+    "precision": {
+     "default": "bf16",
+     "description": "Training precision",
+     "title": "Precision",
+     "type": "string",
+     "x-cadence": {
+      "default": "bf16",
+      "defaultRef": "training.precision",
+      "description": "Training precision",
+      "range": {
+       "values": [
+        "bf16",
+        "fp16",
+        "fp32"
+       ]
+      },
+      "shared": true,
+      "source": "Community fine-tune kit (docs/spec/03 \"Key defaults\")"
+     }
+    },
+    "prompt_mode": {
+     "default": "unified",
+     "description": "How training picks the language prompt — unified (auto or the clip's language at random), langID (always the language) or auto (never)",
+     "title": "Prompt Mode",
+     "type": "string",
+     "x-cadence": {
+      "default": "unified",
+      "defaultRef": "packs.nemo.prompt_mode",
+      "description": "How training picks the language prompt — unified (auto or the clip's language at random), langID (always the language) or auto (never)",
+      "range": {
+       "values": [
+        "unified",
+        "langID",
+        "auto"
+       ]
+      },
+      "source": "The base model's release recipe (fastconformer_transducer_bpe_streaming_prompt.yaml); spike A3"
+     }
+    },
+    "seed": {
+     "default": 0,
+     "description": "Random seed of data order, augmentation draws and the prompt-mode coin (recorded on the run)",
+     "title": "Seed",
+     "type": "integer",
+     "x-cadence": {
+      "default": 0,
+      "defaultRef": "packs.nemo.seed",
+      "description": "Random seed of data order, augmentation draws and the prompt-mode coin (recorded on the run)",
+      "range": {
+       "max": 2147483647,
+       "min": 0
+      },
+      "source": "Cadence recommendation"
+     }
+    },
+    "state_every_minutes": {
+     "default": 20,
+     "description": "Minutes between training states written during a stage, so a stop can release a recent one even when a fresh save would not fit the stop grace",
+     "title": "State Every Minutes",
+     "type": "number",
+     "x-cadence": {
+      "default": 20,
+      "defaultRef": "packs.nemo.state_every_minutes",
+      "description": "Minutes between training states written during a stage, so a stop can release a recent one even when a fresh save would not fit the stop grace",
+      "range": {
+       "max": 240,
+       "min": 1
+      },
+      "source": "docs/spec/03-pipelines-defaults.md \"Key defaults\" (checkpoints and windows)"
+     }
+    },
+    "steps": {
+     "default": 3000,
+     "description": "Optimiser steps of one training stage",
+     "title": "Steps",
+     "type": "integer",
+     "x-cadence": {
+      "default": 3000,
+      "defaultRef": "training.steps",
+      "description": "Optimiser steps of one training stage",
+      "range": {
+       "max": 200000,
+       "min": 1
+      },
+      "source": "Community fine-tune kit; North Sami fine-tune (docs/spec/03 \"Key defaults\")"
+     }
+    },
+    "target_lang": {
+     "default": "",
+     "description": "Language prompt for every clip; empty takes each clip's language from its dataset (he-IL, or he matched to he-IL)",
+     "title": "Target Lang",
+     "type": "string",
+     "x-cadence": {
+      "default": "",
+      "defaultRef": "packs.nemo.target_lang",
+      "description": "Language prompt for every clip; empty takes each clip's language from its dataset (he-IL, or he matched to he-IL)",
+      "range": "any",
+      "shared": true,
+      "source": "Cadence recommendation"
+     }
+    },
+    "unified_auto_ratio": {
+     "default": 0.5,
+     "description": "Share of training clips that get the auto prompt in unified mode",
+     "title": "Unified Auto Ratio",
+     "type": "number",
+     "x-cadence": {
+      "default": 0.5,
+      "defaultRef": "packs.nemo.unified_auto_ratio",
+      "description": "Share of training clips that get the auto prompt in unified mode",
+      "range": {
+       "max": 1,
+       "min": 0
+      },
+      "source": "The base model's release recipe; spike A3"
+     }
+    },
+    "val_batch_size": {
+     "default": 8,
+     "description": "Clips per validation batch",
+     "title": "Val Batch Size",
+     "type": "integer",
+     "x-cadence": {
+      "default": 8,
+      "defaultRef": "packs.nemo.val_batch_size",
+      "description": "Clips per validation batch",
+      "range": {
+       "max": 64,
+       "min": 1
+      },
+      "source": "Spike A3"
+     }
+    },
+    "val_every": {
+     "default": 500,
+     "description": "Optimiser steps between validation passes; each pass posts val_wer and the best one becomes the stage's best checkpoint",
+     "title": "Val Every",
+     "type": "integer",
+     "x-cadence": {
+      "default": 500,
+      "defaultRef": "packs.nemo.val_every",
+      "description": "Optimiser steps between validation passes; each pass posts val_wer and the best one becomes the stage's best checkpoint",
+      "range": {
+       "max": 200000,
+       "min": 1
+      },
+      "source": "Cadence recommendation (spike A3 validated every 250 of 500 steps; a pass over 200 clips takes about 20 s)"
+     }
+    },
+    "val_max_utterances": {
+     "default": 200,
+     "description": "Validation clips per pass, taken from the mix's validation split in order",
+     "title": "Val Max Utterances",
+     "type": "integer",
+     "x-cadence": {
+      "default": 200,
+      "defaultRef": "packs.nemo.val_max_utterances",
+      "description": "Validation clips per pass, taken from the mix's validation split in order",
+      "range": {
+       "max": 5000,
+       "min": 1
+      },
+      "source": "Spike A3 (200 FLEURS dev clips)"
+     }
+    },
+    "warmup_steps": {
+     "default": 100,
+     "description": "Optimiser steps of learning-rate warm-up before the Noam decay",
+     "title": "Warmup Steps",
+     "type": "integer",
+     "x-cadence": {
+      "default": 100,
+      "defaultRef": "packs.nemo.warmup_steps",
+      "description": "Optimiser steps of learning-rate warm-up before the Noam decay",
+      "range": {
+       "max": 20000,
+       "min": 1
+      },
+      "source": "docs/spec/03-pipelines-defaults.md \"Key defaults\"; spike A3 (warm-up 100)"
+     }
+    },
+    "weight_decay": {
+     "default": 0.001,
+     "description": "AdamW weight decay",
+     "title": "Weight Decay",
+     "type": "number",
+     "x-cadence": {
+      "default": 0.001,
+      "defaultRef": "packs.nemo.weight_decay",
+      "description": "AdamW weight decay",
+      "range": {
+       "max": 0.1,
+       "min": 0
+      },
+      "source": "The base model's own optimiser configuration (model_config.yaml); spike A3"
+     }
+    }
+   },
+   "title": "FinetuneParams",
+   "type": "object"
+  },
+  "produces": {
+   "checkpoint": "checkpoint",
+   "checkpoint_best": "checkpoint",
+   "state": "training-state"
+  },
+  "resources": {
+   "diskGb": 40,
+   "gpu": true,
+   "gpus": 1,
+   "jobKind": "training"
+  },
+  "role": "train",
+  "runtime": "nemo-speech",
+  "version": "2"
+ },
+ {
+  "consumes": {
+   "boost": "boost_list",
+   "data": "dataset",
+   "model": "checkpoint"
+  },
+  "help": "steps.nemotron-transcribe",
+  "name": "nemotron_transcribe",
+  "optionalInputs": [
+   "boost"
+  ],
+  "params": {
+   "properties": {
+    "batch_size": {
+     "default": 8,
+     "description": "Utterances streamed together in an eval (each keeps its own encoder cache); 8 is about 4x faster than 1 at the same WER, while 1 decodes every utterance to exactly the words a live session of that audio gives (a batch changes a few words through the order of floating-point sums)",
+     "title": "Batch Size",
+     "type": "integer",
+     "x-cadence": {
+      "default": 8,
+      "defaultRef": "packs.nemo.transcribe_batch_size",
+      "description": "Utterances streamed together in an eval (each keeps its own encoder cache); 8 is about 4x faster than 1 at the same WER, while 1 decodes every utterance to exactly the words a live session of that audio gives (a batch changes a few words through the order of floating-point sums)",
+      "range": {
+       "max": 256,
+       "min": 1
+      },
+      "source": "Phase 3 stream T GPU check (pipeline decoder, FLEURS he and ru at 80, 160 and 1120 ms; batch 8 differed from batch 1 in 3 of 22 clips at 80 ms with equal WER, none at 160 ms; RTF 0.0165 at batch 8); spike A3 used 32 for the reference loop"
+     }
+    },
+    "boost_weight": {
+     "default": 0.5,
+     "description": "Weight of a boost list's phrase-boosting score in decoding (NeMo's boosting_tree_alpha) when the list names none; 0 turns boosting off. Above about 0.7 listed words start replacing others (over-boosting)",
+     "title": "Boost Weight",
+     "type": "number",
+     "x-cadence": {
+      "default": 0.5,
+      "defaultRef": "packs.nemo.boost_weight",
+      "description": "Weight of a boost list's phrase-boosting score in decoding (NeMo's boosting_tree_alpha) when the list names none; 0 turns boosting off. Above about 0.7 listed words start replacing others (over-boosting)",
+      "range": {
+       "max": 10,
+       "min": 0
+      },
+      "source": "Cadence recommendation: FLEURS he_il test, 120 utterances, base model at 160 ms, 40 missed words boosted — recall 0.11 → 0.29 / 0.36 / 0.50 / 0.52 / 0.54 and WER 0.466 → 0.462 / 0.460 / 0.461 / 0.490 / 0.623 at weight 0.3 / 0.5 / 0.7 / 1 / 2 (staging card, 2026-10-02)"
+     }
+    },
+    "cuda_context_reserve_mb": {
+     "default": 1024,
+     "description": "Card memory kept free for the CUDA context and library workspaces, which sit outside PyTorch's allocator; the allocator gets the lease's cap minus this",
+     "title": "Cuda Context Reserve Mb",
+     "type": "integer",
+     "x-cadence": {
+      "default": 1024,
+      "defaultRef": "packs.nemo.cuda_context_reserve_mb",
+      "description": "Card memory kept free for the CUDA context and library workspaces, which sit outside PyTorch's allocator; the allocator gets the lease's cap minus this",
+      "range": {
+       "max": 8192,
+       "min": 0
+      },
+      "source": "Spike A3 (a 20.5 GiB allocator cap showed 21.6 GB in nvidia-smi, about 0.65 GB outside the allocator); rounded up"
+     }
+    },
+    "profile": {
+     "default": "80ms",
+     "description": "Latency profile a transcription streams at — the primary cell",
+     "title": "Profile",
+     "type": "string",
+     "x-cadence": {
+      "default": "80ms",
+      "defaultRef": "packs.nemo.profile",
+      "description": "Latency profile a transcription streams at — the primary cell",
+      "range": {
+       "values": [
+        "80ms",
+        "160ms",
+        "320ms",
+        "560ms",
+        "1120ms"
+       ]
+      },
+      "source": "docs/spec/03-pipelines-defaults.md \"Key defaults\" (eval.primary_profile, 80 ms, owner decision 2026-10-03)"
+     }
+    },
+    "stop_history_eou_ms": {
+     "default": 800,
+     "description": "Trailing silence (in the decoder's emissions) after which NeMo's streaming pipeline closes a segment with an automatic end of utterance; live sessions and nemotron_transcribe@3 use the same value, so their words agree",
+     "title": "Stop History Eou Ms",
+     "type": "integer",
+     "x-cadence": {
+      "default": 800,
+      "defaultRef": "packs.nemo.live_stop_history_eou_ms",
+      "description": "Trailing silence (in the decoder's emissions) after which NeMo's streaming pipeline closes a segment with an automatic end of utterance; live sessions and nemotron_transcribe@3 use the same value, so their words agree",
+      "range": {
+       "max": 10000,
+       "min": 80
+      },
+      "source": "docs/spikes/A5-live-transcription.md \"Result\" (800 ms: the automatic endpoint lands 1.5 s after the utterance at 160 ms, 2.0 s at 1120 ms)"
+     }
+    },
+    "target_lang": {
+     "default": "",
+     "description": "Language prompt for every clip; empty takes each clip's language from its dataset (he-IL, or he matched to he-IL)",
+     "title": "Target Lang",
+     "type": "string",
+     "x-cadence": {
+      "default": "",
+      "defaultRef": "packs.nemo.target_lang",
+      "description": "Language prompt for every clip; empty takes each clip's language from its dataset (he-IL, or he matched to he-IL)",
+      "range": "any",
+      "source": "Cadence recommendation"
+     }
+    }
+   },
+   "title": "TranscribeParams",
+   "type": "object"
+  },
+  "produces": {
+   "hypotheses": "hypotheses"
+  },
+  "resources": {
+   "diskGb": 4,
+   "gpu": true,
+   "gpus": 1,
+   "jobKind": "eval",
+   "memoryGb": 8
+  },
+  "role": "transcribe",
+  "runtime": "nemo-speech",
+  "version": "3"
+ },
+ {
+  "consumes": {
+   "segments": "segments"
+  },
+  "help": "steps.noise-mine",
+  "name": "noise_mine",
+  "neutral": true,
+  "params": {
+   "properties": {
+    "edge_margin_ms": {
+     "default": 200,
+     "description": "Distance a noise clip keeps from speech on any channel of the file (breath, echo and crosstalk stay out)",
+     "title": "Edge Margin Ms",
+     "type": "integer",
+     "x-cadence": {
+      "default": 200,
+      "defaultRef": "data.noise_edge_margin_ms",
+      "description": "Distance a noise clip keeps from speech on any channel of the file (breath, echo and crosstalk stay out)",
+      "range": {
+       "max": 2000,
+       "min": 0
+      },
+      "source": "Cadence recommendation"
+     }
+    },
+    "max_clip_s": {
+     "default": 10.0,
+     "description": "Longest noise clip; a longer silence is cut into clips of at most this length",
+     "title": "Max Clip S",
+     "type": "number",
+     "x-cadence": {
+      "default": 10.0,
+      "defaultRef": "data.noise_max_clip_s",
+      "description": "Longest noise clip; a longer silence is cut into clips of at most this length",
+      "range": {
+       "max": 120,
+       "min": 1
+      },
+      "source": "Cadence recommendation (augmentation mixes clips of a few seconds; MUSAN noise clips are longer and are cropped at mix time)"
+     }
+    },
+    "max_clips_per_file": {
+     "default": 20,
+     "description": "Most noise clips taken from one recording, so a few long calls do not make up the whole bank",
+     "title": "Max Clips Per File",
+     "type": "integer",
+     "x-cadence": {
+      "default": 20,
+      "defaultRef": "data.noise_max_clips_per_file",
+      "description": "Most noise clips taken from one recording, so a few long calls do not make up the whole bank",
+      "range": {
+       "max": 1000,
+       "min": 1
+      },
+      "source": "Cadence recommendation"
+     }
+    },
+    "max_hours": {
+     "default": 0,
+     "description": "Stop after this many hours of noise clips; 0 takes everything",
+     "title": "Max Hours",
+     "type": "number",
+     "x-cadence": {
+      "default": 0,
+      "defaultRef": "data.max_hours",
+      "description": "Stop after this many hours of noise clips; 0 takes everything",
+      "range": {
+       "max": 10000,
+       "min": 0
+      },
+      "source": "Cadence recommendation (R17 replay caps about 1 h per locale in phase 2)"
+     }
+    },
+    "max_rms_db": {
+     "default": -25.0,
+     "description": "A clip louder than this is probably speech the voice-activity detector missed and is not kept",
+     "title": "Max Rms Db",
+     "type": "number",
+     "x-cadence": {
+      "default": -25.0,
+      "defaultRef": "data.noise_max_rms_db",
+      "description": "A clip louder than this is probably speech the voice-activity detector missed and is not kept",
+      "range": {
+       "max": 0,
+       "min": -60
+      },
+      "source": "Cadence recommendation"
+     }
+    },
+    "min_clip_s": {
+     "default": 1.0,
+     "description": "Shortest silence of a call track kept as a noise clip (after the margin to speech is cut off)",
+     "title": "Min Clip S",
+     "type": "number",
+     "x-cadence": {
+      "default": 1.0,
+      "defaultRef": "data.noise_min_clip_s",
+      "description": "Shortest silence of a call track kept as a noise clip (after the margin to speech is cut off)",
+      "range": {
+       "max": 30,
+       "min": 0.2
+      },
+      "source": "Cadence recommendation"
+     }
+    },
+    "min_rms_db": {
+     "default": -75.0,
+     "description": "A clip quieter than this is digital silence (a TTS bot channel, a muted line) and is not kept",
+     "title": "Min Rms Db",
+     "type": "number",
+     "x-cadence": {
+      "default": -75.0,
+      "defaultRef": "data.noise_min_rms_db",
+      "description": "A clip quieter than this is digital silence (a TTS bot channel, a muted line) and is not kept",
+      "range": {
+       "max": -30,
+       "min": -120
+      },
+      "source": "Cadence recommendation (16-bit dither sits near −90 dBFS; telephone line noise is usually −65 to −45)"
+     }
+    },
+    "name": {
+     "default": "",
+     "description": "Registry collection of the noise bank, without noise-bank/; empty = <source>-calls",
+     "title": "Name",
+     "type": "string",
+     "x-cadence": {
+      "default": "",
+      "description": "Registry collection of the noise bank, without noise-bank/; empty = <source>-calls",
+      "range": {
+       "pattern": "^([a-z0-9][a-z0-9._-]{0,98}[a-z0-9])?$"
+      },
+      "source": "Cadence recommendation"
+     }
+    },
+    "roles": {
+     "default": [
+      "caller",
+      "bot"
+     ],
+     "description": "Track roles whose silences are mined (caller, bot, mono); a bot track of synthetic speech is usually digital silence and drops out at min_rms_db",
+     "items": {
+      "type": "string"
+     },
+     "title": "Roles",
+     "type": "array",
+     "x-cadence": {
+      "default": [
+       "caller",
+       "bot"
+      ],
+      "description": "Track roles whose silences are mined (caller, bot, mono); a bot track of synthetic speech is usually digital silence and drops out at min_rms_db",
+      "range": {
+       "maxLength": 3
+      },
+      "source": "docs/review/2026-10-03-phase-4-plan.md stream I (per-channel VAD silences of caller and bot tracks)"
+     }
+    },
+    "tags": {
+     "default": [],
+     "description": "Collection tags (domain:telephony, synthetic, …); noise-bank and mined are added",
+     "items": {
+      "type": "string"
+     },
+     "title": "Tags",
+     "type": "array",
+     "x-cadence": {
+      "default": [],
+      "description": "Collection tags (domain:telephony, synthetic, …); noise-bank and mined are added",
+      "range": {
+       "maxLength": 20
+      },
+      "source": "Cadence recommendation"
+     }
+    }
+   },
+   "title": "NoiseMineParams",
+   "type": "object"
+  },
+  "produces": {
+   "noise": "dataset"
+  },
+  "resources": {
+   "gpu": false,
+   "gpus": 0,
+   "jobKind": "data"
+  },
+  "version": "1"
+ },
+ {
+  "consumes": {
+   "data": "dataset"
+  },
+  "help": "steps.oasis-transcribe",
+  "name": "oasis_transcribe",
+  "params": {
+   "properties": {
+    "auxiliary": {
+     "default": "auxiliary/oasis",
+     "description": "The OASIS service to call (auxiliary/<name>, ver_… or @alias): an auxiliary with the pseudolabel role and a service of protocol oasis.v1 the project adopted",
+     "title": "Auxiliary",
+     "type": "string",
+     "x-cadence": {
+      "default": "auxiliary/oasis",
+      "defaultRef": "packs.services.oasis_auxiliary",
+      "description": "The OASIS service to call (auxiliary/<name>, ver_… or @alias): an auxiliary with the pseudolabel role and a service of protocol oasis.v1 the project adopted",
+      "range": "any",
+      "registryRef": {
+       "kind": "auxiliary",
+       "role": "pseudolabel"
+      },
+      "source": "docs/review/2026-10-03-phase-4-plan.md \"Owner decisions\" 1"
+     }
+    },
+    "campaign_id": {
+     "default": "cadence-pseudolabel",
+     "description": "Campaign id sent with every Transcribe call (the service labels its metrics with it)",
+     "title": "Campaign Id",
+     "type": "string",
+     "x-cadence": {
+      "default": "cadence-pseudolabel",
+      "defaultRef": "packs.services.oasis_campaign_id",
+      "description": "Campaign id sent with every Transcribe call (the service labels its metrics with it)",
+      "range": "any",
+      "source": "Cadence recommendation"
+     }
+    },
+    "concurrency": {
+     "default": 2,
+     "description": "Transcribe calls in flight at once",
+     "title": "Concurrency",
+     "type": "integer",
+     "x-cadence": {
+      "default": 2,
+      "defaultRef": "packs.services.oasis_concurrency",
+      "description": "Transcribe calls in flight at once",
+      "range": {
+       "max": 16,
+       "min": 1
+      },
+      "source": "Cadence recommendation (the service batches internally; two keeps its card busy without queueing behind live calls)"
+     }
+    },
+    "health_timeout_s": {
+     "default": 5,
+     "description": "Deadline of the GetModelInfo call that checks the service answers before any segment is sent",
+     "title": "Health Timeout S",
+     "type": "number",
+     "x-cadence": {
+      "default": 5,
+      "defaultRef": "packs.services.oasis_health_timeout_s",
+      "description": "Deadline of the GetModelInfo call that checks the service answers before any segment is sent",
+      "range": {
+       "max": 60,
+       "min": 1
+      },
+      "source": "Cadence recommendation"
+     }
+    },
+    "target_lang": {
+     "default": "",
+     "description": "Send every utterance in this language (BCP-47) instead of each utterance's own; empty uses the utterance's language",
+     "title": "Target Lang",
+     "type": "string",
+     "x-cadence": {
+      "default": "",
+      "description": "Send every utterance in this language (BCP-47) instead of each utterance's own; empty uses the utterance's language",
+      "range": {
+       "maxLength": 35
+      },
+      "source": "Cadence recommendation"
+     }
+    },
+    "timeout_s": {
+     "default": 60,
+     "description": "Deadline of one Transcribe call (the ensemble decodes a 3B beam, a CTC model and a text judge)",
+     "title": "Timeout S",
+     "type": "number",
+     "x-cadence": {
+      "default": 60,
+      "defaultRef": "packs.services.oasis_timeout_s",
+      "description": "Deadline of one Transcribe call (the ensemble decodes a 3B beam, a CTC model and a text judge)",
+      "range": {
+       "max": 600,
+       "min": 1
+      },
+      "source": "Cadence recommendation"
+     }
+    },
+    "transliterate": {
+     "default": "",
+     "description": "Convert the text to another script (sr-Cyrl-Latn: Serbian Cyrillic to Gaj Latin, as dataset_import does); empty keeps the service's script",
+     "enum": [
+      "",
+      "sr-Cyrl-Latn"
+     ],
+     "title": "Transliterate",
+     "type": "string",
+     "x-cadence": {
+      "default": "",
+      "description": "Convert the text to another script (sr-Cyrl-Latn: Serbian Cyrillic to Gaj Latin, as dataset_import does); empty keeps the service's script",
+      "range": {
+       "values": [
+        "",
+        "sr-Cyrl-Latn"
+       ]
+      },
+      "source": "Cadence recommendation (the Serbian fine-tune on the test stand, 2026-10-01)"
+     }
+    }
+   },
+   "title": "OasisParams",
+   "type": "object"
+  },
+  "produces": {
+   "hypotheses": "hypotheses"
+  },
+  "resources": {
+   "diskGb": 2,
+   "gpu": false,
+   "jobKind": "data",
+   "memoryGb": 2
+  },
+  "runtime": "services",
+  "secrets": [
+   "oasis-token"
+  ],
+  "version": "1"
+ },
+ {
+  "consumes": {
+   "base": "base_model",
+   "data": "mix"
+  },
+  "help": "steps.oomptimizer-calibrate",
+  "name": "oomptimizer_calibrate",
+  "params": {
+   "properties": {
+    "bucket_bins": {
+     "default": [
+      4,
+      6,
+      8,
+      10,
+      12,
+      14,
+      16,
+      18,
+      20
+     ],
+     "description": "Upper bounds of the duration buckets OOMptimizer sizes; the largest caps the clip length",
+     "items": {
+      "type": "number"
+     },
+     "title": "Bucket Bins",
+     "type": "array",
+     "x-cadence": {
+      "default": [
+       4,
+       6,
+       8,
+       10,
+       12,
+       14,
+       16,
+       18,
+       20
+      ],
+      "defaultRef": "packs.nemo.bucket_bins",
+      "description": "Upper bounds of the duration buckets OOMptimizer sizes; the largest caps the clip length",
+      "range": "any",
+      "source": "Spike A3 (the invocation of step 1)"
+     }
+    },
+    "cuda_context_reserve_mb": {
+     "default": 1024,
+     "description": "Card memory kept free for the CUDA context and library workspaces, which sit outside PyTorch's allocator; the allocator gets the lease's cap minus this",
+     "title": "Cuda Context Reserve Mb",
+     "type": "integer",
+     "x-cadence": {
+      "default": 1024,
+      "defaultRef": "packs.nemo.cuda_context_reserve_mb",
+      "description": "Card memory kept free for the CUDA context and library workspaces, which sit outside PyTorch's allocator; the allocator gets the lease's cap minus this",
+      "range": {
+       "max": 8192,
+       "min": 0
+      },
+      "shared": true,
+      "source": "Spike A3 (a 20.5 GiB allocator cap showed 21.6 GB in nvidia-smi, about 0.65 GB outside the allocator); rounded up"
+     }
+    },
+    "grad_clip": {
+     "default": 5.0,
+     "description": "Gradient norm clipping threshold (0 turns clipping off)",
+     "title": "Grad Clip",
+     "type": "number",
+     "x-cadence": {
+      "default": 5.0,
+      "defaultRef": "packs.nemo.grad_clip",
+      "description": "Gradient norm clipping threshold (0 turns clipping off)",
+      "range": {
+       "max": 100,
+       "min": 0
+      },
+      "source": "docs/spec/03-pipelines-defaults.md \"Key defaults\" (grad clip 5); spike A3 ran 500 steps at 0.5 without trouble"
+     }
+    },
+    "min_duration": {
+     "default": 0.5,
+     "description": "Shortest training clip",
+     "title": "Min Duration",
+     "type": "number",
+     "x-cadence": {
+      "default": 0.5,
+      "defaultRef": "packs.nemo.min_duration",
+      "description": "Shortest training clip",
+      "range": {
+       "max": 10,
+       "min": 0.05
+      },
+      "shared": true,
+      "source": "docs/spec/03-pipelines-defaults.md \"Key defaults\" (data filters 0.5–40 s)"
+     }
+    },
+    "num_workers": {
+     "default": 4,
+     "description": "Dataloader worker processes (audio loading and augmentation run there)",
+     "title": "Num Workers",
+     "type": "integer",
+     "x-cadence": {
+      "default": 4,
+      "defaultRef": "packs.nemo.num_workers",
+      "description": "Dataloader worker processes (audio loading and augmentation run there)",
+      "range": {
+       "max": 32,
+       "min": 0
+      },
+      "source": "Cadence recommendation (spike A3 used 8 on the staging host; 4 leaves CPU for the resident services)"
+     }
+    },
+    "precision": {
+     "default": "bf16",
+     "description": "Training precision",
+     "title": "Precision",
+     "type": "string",
+     "x-cadence": {
+      "default": "bf16",
+      "defaultRef": "training.precision",
+      "description": "Training precision",
+      "range": {
+       "values": [
+        "bf16",
+        "fp16",
+        "fp32"
+       ]
+      },
+      "shared": true,
+      "source": "Community fine-tune kit (docs/spec/03 \"Key defaults\")"
+     }
+    },
+    "search_threshold": {
+     "default": 0.05,
+     "description": "OOMptimizer stops when the gap between the largest batch that fits and the smallest that does not is this share of the latter",
+     "title": "Search Threshold",
+     "type": "number",
+     "x-cadence": {
+      "default": 0.05,
+      "defaultRef": "packs.nemo.search_threshold",
+      "description": "OOMptimizer stops when the gap between the largest batch that fits and the smallest that does not is this share of the latter",
+      "range": {
+       "max": 0.5,
+       "min": 0.01
+      },
+      "source": "NeMo OOMptimizer default"
+     }
+    },
+    "seed": {
+     "default": 0,
+     "description": "Random seed of data order, augmentation draws and the prompt-mode coin (recorded on the run)",
+     "title": "Seed",
+     "type": "integer",
+     "x-cadence": {
+      "default": 0,
+      "defaultRef": "packs.nemo.seed",
+      "description": "Random seed of data order, augmentation draws and the prompt-mode coin (recorded on the run)",
+      "range": {
+       "max": 2147483647,
+       "min": 0
+      },
+      "source": "Cadence recommendation"
+     }
+    },
+    "start_batch_size": {
+     "default": 16,
+     "description": "Batch size the OOMptimizer search starts from in the longest bucket",
+     "title": "Start Batch Size",
+     "type": "integer",
+     "x-cadence": {
+      "default": 16,
+      "defaultRef": "packs.nemo.start_batch_size",
+      "description": "Batch size the OOMptimizer search starts from in the longest bucket",
+      "range": {
+       "max": 512,
+       "min": 1
+      },
+      "source": "Spike A3"
+     }
+    },
+    "target_lang": {
+     "default": "",
+     "description": "Language prompt for every clip; empty takes each clip's language from its dataset (he-IL, or he matched to he-IL)",
+     "title": "Target Lang",
+     "type": "string",
+     "x-cadence": {
+      "default": "",
+      "defaultRef": "packs.nemo.target_lang",
+      "description": "Language prompt for every clip; empty takes each clip's language from its dataset (he-IL, or he matched to he-IL)",
+      "range": "any",
+      "shared": true,
+      "source": "Cadence recommendation"
+     }
+    },
+    "timed_steps": {
+     "default": 20,
+     "description": "Real optimiser steps on the mix's data the calibration times after its warm-up (seconds per step and its spread)",
+     "title": "Timed Steps",
+     "type": "integer",
+     "x-cadence": {
+      "default": 20,
+      "defaultRef": "packs.nemo.calibrate_timed_steps",
+      "description": "Real optimiser steps on the mix's data the calibration times after its warm-up (seconds per step and its spread)",
+      "range": {
+       "max": 500,
+       "min": 1
+      },
+      "source": "Cadence recommendation"
+     }
+    },
+    "tokens_per_second": {
+     "default": 0,
+     "description": "Transcript tokens per audio second OOMptimizer sizes the targets with; 0 measures the 99th percentile on the mix",
+     "title": "Tokens Per Second",
+     "type": "number",
+     "x-cadence": {
+      "default": 0,
+      "defaultRef": "packs.nemo.tokens_per_second",
+      "description": "Transcript tokens per audio second OOMptimizer sizes the targets with; 0 measures the 99th percentile on the mix",
+      "range": {
+       "max": 60,
+       "min": 0
+      },
+      "source": "Spike A3 (upstream guesses 12; measured p99 16 on Hebrew with the language tag)"
+     }
+    },
+    "warmup_steps": {
+     "default": 3,
+     "description": "Untimed steps before the timed ones (kernel autotuning, allocator growth)",
+     "title": "Warmup Steps",
+     "type": "integer",
+     "x-cadence": {
+      "default": 3,
+      "defaultRef": "packs.nemo.calibrate_warmup_steps",
+      "description": "Untimed steps before the timed ones (kernel autotuning, allocator growth)",
+      "range": {
+       "max": 50,
+       "min": 0
+      },
+      "source": "Cadence recommendation"
+     }
+    }
+   },
+   "title": "CalibrateParams",
+   "type": "object"
+  },
+  "produces": {
+   "calibration": "calibration"
+  },
+  "resources": {
+   "diskGb": 10,
+   "gpu": true,
+   "gpus": 1,
+   "jobKind": "training"
+  },
+  "role": "calibrate",
+  "runtime": "nemo-speech",
+  "version": "1"
+ },
+ {
+  "consumes": {
+   "hypotheses": "hypotheses",
+   "lid": "lid",
+   "normalizer": "normalizer",
+   "segments": "segments"
+  },
+  "help": "steps.pseudolabel-ensemble",
+  "name": "pseudolabel_ensemble",
+  "neutral": true,
+  "optionalInputs": [
+   "lid"
+  ],
+  "params": {
+   "properties": {
+    "lid_equivalents": {
+     "default": [
+      [
+       "sr",
+       "hr",
+       "bs"
+      ]
+     ],
+     "description": "Groups of languages a classifier cannot tell apart reliably, counted as one when language identification is compared with the source's language",
+     "items": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array"
+     },
+     "title": "Lid Equivalents",
+     "type": "array",
+     "x-cadence": {
+      "default": [
+       [
+        "sr",
+        "hr",
+        "bs"
+       ]
+      ],
+      "defaultRef": "pseudolabel.lid_equivalents",
+      "description": "Groups of languages a classifier cannot tell apart reliably, counted as one when language identification is compared with the source's language",
+      "range": "any",
+      "source": "Cadence recommendation (Serbian, Croatian and Bosnian share one standard language base; VoxLingua107 and Whisper both confuse them, Valk and Alumäe 2021)"
+     }
+    },
+    "lid_min_confidence": {
+     "default": 0.5,
+     "description": "Confidence the language classifier (lid_classify) must reach to decide; below it the members' own detected languages decide",
+     "title": "Lid Min Confidence",
+     "type": "number",
+     "x-cadence": {
+      "default": 0.5,
+      "defaultRef": "pseudolabel.lid_min_confidence",
+      "description": "Confidence the language classifier (lid_classify) must reach to decide; below it the members' own detected languages decide",
+      "range": {
+       "max": 1,
+       "min": 0
+      },
+      "source": "Cadence recommendation (a majority probability; Whisper's language token is the second opinion, decision 7)"
+     }
+    },
+    "max_pairwise_wer": {
+     "default": 0.15,
+     "description": "Largest word error rate between two members' texts (after the scoring normalizer, edits over the longer text) at which they agree",
+     "title": "Max Pairwise Wer",
+     "type": "number",
+     "x-cadence": {
+      "default": 0.15,
+      "defaultRef": "pseudolabel.max_pairwise_wer",
+      "description": "Largest word error rate between two members' texts (after the scoring normalizer, edits over the longer text) at which they agree",
+      "range": {
+       "max": 1,
+       "min": 0
+      },
+      "source": "docs/review/2026-10-03-phase-4-plan.md decision 6 (the owner's agreement threshold, after NVIDIA Granary's multi-model agreement filter)"
+     }
+    },
+    "min_agreeing_members": {
+     "default": 2,
+     "description": "Fewest members that must each agree with another member for a segment to keep a pseudo-label",
+     "title": "Min Agreeing Members",
+     "type": "integer",
+     "x-cadence": {
+      "default": 2,
+      "defaultRef": "pseudolabel.min_agreeing_members",
+      "description": "Fewest members that must each agree with another member for a segment to keep a pseudo-label",
+      "range": {
+       "max": 10,
+       "min": 2
+      },
+      "source": "docs/review/2026-10-03-phase-4-plan.md decision 6 (at least two members)"
+     }
+    },
+    "require_lid": {
+     "default": true,
+     "description": "Whether a segment with a known language needs a language identification verdict to keep its pseudo-label (without one it is disputed as lid-unknown)",
+     "title": "Require Lid",
+     "type": "boolean",
+     "x-cadence": {
+      "default": true,
+      "defaultRef": "pseudolabel.require_lid",
+      "description": "Whether a segment with a known language needs a language identification verdict to keep its pseudo-label (without one it is disputed as lid-unknown)",
+      "range": "any",
+      "source": "docs/review/2026-10-03-phase-4-plan.md decision 6 (\"and LID agrees with the source's language\")"
+     }
+    }
+   },
+   "title": "EnsembleParams",
+   "type": "object"
+  },
+  "produces": {
+   "hypotheses": "hypotheses",
+   "segments": "segments"
+  },
+  "resources": {
+   "diskGb": 1,
+   "gpu": false,
+   "jobKind": "data",
+   "memoryGb": 2
+  },
+  "version": "1"
+ },
+ {
+  "consumes": {},
+  "help": "steps.sdp-ingest",
+  "name": "sdp_ingest",
+  "neutral": true,
+  "params": {
+   "properties": {
+    "channel_roles": {
+     "default": [],
+     "description": "Role of each channel (caller, bot, mono) when no sidecar names them, e.g. [caller, bot]",
+     "items": {
+      "type": "string"
+     },
+     "title": "Channel Roles",
+     "type": "array",
+     "x-cadence": {
+      "default": [],
+      "description": "Role of each channel (caller, bot, mono) when no sidecar names them, e.g. [caller, bot]",
+      "range": {
+       "maxLength": 8
+      },
+      "source": "Cadence recommendation"
+     }
+    },
+    "channels": {
+     "default": "auto",
+     "description": "auto splits a multi-channel file into one track per channel when its roles are known (sidecar or channel_roles) and mixes it down otherwise; mono always mixes down; split always splits",
+     "enum": [
+      "auto",
+      "mono",
+      "split"
+     ],
+     "title": "Channels",
+     "type": "string",
+     "x-cadence": {
+      "default": "auto",
+      "description": "auto splits a multi-channel file into one track per channel when its roles are known (sidecar or channel_roles) and mixes it down otherwise; mono always mixes down; split always splits",
+      "range": {
+       "values": [
+        "auto",
+        "mono",
+        "split"
+       ]
+      },
+      "source": "docs/spec/04-blocks.md Block 1 (one track per party)"
+     }
+    },
+    "language": {
+     "default": "",
+     "description": "Language of every segment (BCP 47, e.g. sr-RS) unless a file's sidecar names one",
+     "title": "Language",
+     "type": "string",
+     "x-cadence": {
+      "default": "",
+      "description": "Language of every segment (BCP 47, e.g. sr-RS) unless a file's sidecar names one",
+      "range": {
+       "maxLength": 35
+      },
+      "source": "Cadence recommendation"
+     }
+    },
+    "max_files": {
+     "default": 0,
+     "description": "Read at most this many files, in path order; 0 reads them all",
+     "title": "Max Files",
+     "type": "integer",
+     "x-cadence": {
+      "default": 0,
+      "description": "Read at most this many files, in path order; 0 reads them all",
+      "range": {
+       "max": 100000000,
+       "min": 0
+      },
+      "source": "Cadence recommendation"
+     }
+    },
+    "max_hours": {
+     "default": 0,
+     "description": "Stop after this many hours of segments; 0 takes everything",
+     "title": "Max Hours",
+     "type": "number",
+     "x-cadence": {
+      "default": 0,
+      "defaultRef": "data.max_hours",
+      "description": "Stop after this many hours of segments; 0 takes everything",
+      "range": {
+       "max": 10000,
+       "min": 0
+      },
+      "source": "Cadence recommendation (R17 replay caps about 1 h per locale in phase 2)"
+     }
+    },
+    "max_segment_s": {
+     "default": 20,
+     "description": "Longest segment ingest writes; longer speech is split at its quietest frame",
+     "title": "Max Segment S",
+     "type": "number",
+     "x-cadence": {
+      "default": 20,
+      "defaultRef": "data.ingest_max_segment_s",
+      "description": "Longest segment ingest writes; longer speech is split at its quietest frame",
+      "range": {
+       "max": 60,
+       "min": 1
+      },
+      "source": "Cadence recommendation (training batches by duration; FastConformer fine-tunes typically cap utterances at 20 s)"
+     }
+    },
+    "min_segment_s": {
+     "default": 0.3,
+     "description": "Shortest segment ingest writes",
+     "title": "Min Segment S",
+     "type": "number",
+     "x-cadence": {
+      "default": 0.3,
+      "defaultRef": "data.ingest_min_segment_s",
+      "description": "Shortest segment ingest writes",
+      "range": {
+       "max": 10,
+       "min": 0
+      },
+      "source": "Cadence recommendation"
+     }
+    },
+    "path": {
+     "default": "",
+     "description": "Mount URI of the directory (or one file) to ingest, e.g. mount://corpora/fleurs-sr/2024-01-01",
+     "title": "Path",
+     "type": "string",
+     "x-cadence": {
+      "default": "",
+      "description": "Mount URI of the directory (or one file) to ingest, e.g. mount://corpora/fleurs-sr/2024-01-01",
+      "range": {
+       "maxLength": 1000,
+       "minLength": 9
+      },
+      "source": "docs/review/2026-10-03-phase-4-plan.md (mount layout <source>/<revision>/)"
+     }
+    },
+    "pattern": {
+     "default": "**/*",
+     "description": "Glob of the files read under path (audio only: wav, flac, mp3, ogg, opus, m4a, aac, webm)",
+     "title": "Pattern",
+     "type": "string",
+     "x-cadence": {
+      "default": "**/*",
+      "description": "Glob of the files read under path (audio only: wav, flac, mp3, ogg, opus, m4a, aac, webm)",
+      "range": {
+       "maxLength": 200,
+       "minLength": 1
+      },
+      "source": "Cadence recommendation"
+     }
+    },
+    "segmentation": {
+     "default": "vad",
+     "description": "vad cuts each track at its pauses; file keeps each track whole (pre-segmented corpora)",
+     "enum": [
+      "vad",
+      "file"
+     ],
+     "title": "Segmentation",
+     "type": "string",
+     "x-cadence": {
+      "default": "vad",
+      "description": "vad cuts each track at its pauses; file keeps each track whole (pre-segmented corpora)",
+      "range": {
+       "values": [
+        "vad",
+        "file"
+       ]
+      },
+      "source": "Cadence recommendation"
+     }
+    },
+    "source": {
+     "default": "",
+     "description": "Registered source (sources.new) the audio belongs to; its licence must allow ingest",
+     "title": "Source",
+     "type": "string",
+     "x-cadence": {
+      "default": "",
+      "description": "Registered source (sources.new) the audio belongs to; its licence must allow ingest",
+      "range": {
+       "maxLength": 100,
+       "minLength": 2
+      },
+      "registry": "source",
+      "source": "docs/spec/04-blocks.md Block 1 (no licence, no ingest)"
+     }
+    },
+    "vad_floor_db": {
+     "default": -55,
+     "description": "Absolute level below which a frame is never speech, whatever the noise floor",
+     "title": "Vad Floor Db",
+     "type": "number",
+     "x-cadence": {
+      "default": -55,
+      "defaultRef": "data.ingest_vad_floor_db",
+      "description": "Absolute level below which a frame is never speech, whatever the noise floor",
+      "range": {
+       "max": -20,
+       "min": -90
+      },
+      "source": "Cadence recommendation (telephone line noise sits near -60 dBFS)"
+     }
+    },
+    "vad_frame_ms": {
+     "default": 20,
+     "description": "Frame length of sdp_ingest's energy voice activity detection (one level per frame, per channel)",
+     "title": "Vad Frame Ms",
+     "type": "integer",
+     "x-cadence": {
+      "default": 20,
+      "defaultRef": "data.ingest_vad_frame_ms",
+      "description": "Frame length of sdp_ingest's energy voice activity detection (one level per frame, per channel)",
+      "range": {
+       "max": 100,
+       "min": 10
+      },
+      "source": "Cadence recommendation (20 ms frames, the frame_vad model's resolution)"
+     }
+    },
+    "vad_margin_db": {
+     "default": 12,
+     "description": "How far above a channel's noise floor (its 10th-percentile frame level) a frame must be to count as speech",
+     "title": "Vad Margin Db",
+     "type": "number",
+     "x-cadence": {
+      "default": 12,
+      "defaultRef": "data.ingest_vad_margin_db",
+      "description": "How far above a channel's noise floor (its 10th-percentile frame level) a frame must be to count as speech",
+      "range": {
+       "max": 40,
+       "min": 3
+      },
+      "source": "Cadence recommendation"
+     }
+    },
+    "vad_min_silence_ms": {
+     "default": 300,
+     "description": "Pauses shorter than this do not end a segment",
+     "title": "Vad Min Silence Ms",
+     "type": "integer",
+     "x-cadence": {
+      "default": 300,
+      "defaultRef": "data.ingest_vad_min_silence_ms",
+      "description": "Pauses shorter than this do not end a segment",
+      "range": {
+       "max": 5000,
+       "min": 0
+      },
+      "source": "Cadence recommendation"
+     }
+    },
+    "vad_min_speech_ms": {
+     "default": 250,
+     "description": "Speech runs shorter than this are dropped (clicks, breaths)",
+     "title": "Vad Min Speech Ms",
+     "type": "integer",
+     "x-cadence": {
+      "default": 250,
+      "defaultRef": "data.ingest_vad_min_speech_ms",
+      "description": "Speech runs shorter than this are dropped (clicks, breaths)",
+      "range": {
+       "max": 5000,
+       "min": 0
+      },
+      "source": "Cadence recommendation"
+     }
+    },
+    "vad_pad_ms": {
+     "default": 100,
+     "description": "Audio kept before and after each speech run so word onsets and endings are not clipped",
+     "title": "Vad Pad Ms",
+     "type": "integer",
+     "x-cadence": {
+      "default": 100,
+      "defaultRef": "data.ingest_vad_pad_ms",
+      "description": "Audio kept before and after each speech run so word onsets and endings are not clipped",
+      "range": {
+       "max": 1000,
+       "min": 0
+      },
+      "source": "Cadence recommendation"
+     }
+    }
+   },
+   "title": "SdpIngestParams",
+   "type": "object"
+  },
+  "produces": {
+   "segments": "segments"
+  },
+  "resources": {
+   "gpu": false,
+   "gpus": 0,
+   "jobKind": "data"
+  },
+  "version": "1"
+ },
+ {
+  "consumes": {
+   "segments": "segments"
+  },
+  "help": "steps.segments-cut",
+  "name": "segments_cut",
+  "neutral": true,
+  "params": {
+   "properties": {
+    "which": {
+     "default": "unlabelled",
+     "description": "unlabelled cuts the segments a pseudo-label member labels (no text of their own, or an earlier pseudo-label); all cuts every segment (language identification over a whole corpus)",
+     "enum": [
+      "unlabelled",
+      "all"
+     ],
+     "title": "Which",
+     "type": "string",
+     "x-cadence": {
+      "default": "unlabelled",
+      "description": "unlabelled cuts the segments a pseudo-label member labels (no text of their own, or an earlier pseudo-label); all cuts every segment (language identification over a whole corpus)",
+      "range": {
+       "values": [
+        "unlabelled",
+        "all"
+       ]
+      },
+      "source": "docs/review/2026-10-03-phase-4-plan.md decision 6 (members label segments without text)"
+     }
+    }
+   },
+   "title": "SegmentsCutParams",
+   "type": "object"
+  },
+  "produces": {
+   "data": "dataset"
+  },
+  "resources": {
+   "gpu": false,
+   "gpus": 0,
+   "jobKind": "data",
+   "memoryGb": 2
+  },
+  "version": "1"
+ },
+ {
+  "consumes": {
+   "segments": "segments"
+  },
+  "help": "steps.speaker-disjoint-split",
+  "name": "speaker_disjoint_split",
+  "neutral": true,
+  "params": {
+   "properties": {
+    "group_by": {
+     "default": "speaker",
+     "description": "What is kept on one side: the speaker (else the source file), the source file, or the transcript",
+     "enum": [
+      "speaker",
+      "file",
+      "text"
+     ],
+     "title": "Group By",
+     "type": "string",
+     "x-cadence": {
+      "default": "speaker",
+      "description": "What is kept on one side: the speaker (else the source file), the source file, or the transcript",
+      "range": {
+       "values": [
+        "speaker",
+        "file",
+        "text"
+       ]
+      },
+      "source": "docs/spec/04-blocks.md Block 1 (split speaker- and source-disjoint)"
+     }
+    },
+    "min_validation_utterances": {
+     "default": 100,
+     "description": "Fewest validation utterances a speaker-disjoint import holds out; when validation_share yields fewer, more whole speakers (or transcripts) move to validation, never past half the import",
+     "title": "Min Validation Utterances",
+     "type": "integer",
+     "x-cadence": {
+      "default": 100,
+      "defaultRef": "data.min_validation_utterances",
+      "description": "Fewest validation utterances a speaker-disjoint import holds out; when validation_share yields fewer, more whole speakers (or transcripts) move to validation, never past half the import",
+      "range": {
+       "max": 100000,
+       "min": 0
+      },
+      "source": "docs/review/2026-10-01-phase-2-rehearsal.md (a 3 h FLEURS import at share 0.02 left 19 validation clips, so validation WER moved in steps of three words)"
+     }
+    },
+    "test_share": {
+     "default": 0.0,
+     "description": "Share of groups held out as the test split (golden sets come from annotation, so usually 0)",
+     "title": "Test Share",
+     "type": "number",
+     "x-cadence": {
+      "default": 0.0,
+      "description": "Share of groups held out as the test split (golden sets come from annotation, so usually 0)",
+      "range": {
+       "max": 0.5,
+       "min": 0
+      },
+      "source": "Cadence recommendation"
+     }
+    },
+    "validation_share": {
+     "default": 0.02,
+     "description": "Share of an import's speakers (or, without speakers, of its distinct transcripts) held out as the validation split by the speaker-disjoint split rule",
+     "title": "Validation Share",
+     "type": "number",
+     "x-cadence": {
+      "default": 0.02,
+      "defaultRef": "data.validation_share",
+      "description": "Share of an import's speakers (or, without speakers, of its distinct transcripts) held out as the validation split by the speaker-disjoint split rule",
+      "range": {
+       "max": 0.5,
+       "min": 0
+      },
+      "source": "Cadence recommendation (docs/spec/03-pipelines-defaults.md starter pipeline, speaker_disjoint_split val_share 0.02)"
+     }
+    }
+   },
+   "title": "SpeakerDisjointSplitParams",
+   "type": "object"
+  },
+  "produces": {
+   "segments": "segments"
+  },
+  "resources": {
+   "gpu": false,
+   "gpus": 0,
+   "jobKind": "data"
+  },
+  "version": "1"
+ },
+ {
+  "consumes": {
+   "segments": "segments"
+  },
+  "help": "steps.text-normalise",
+  "name": "text_normalise",
+  "neutral": true,
+  "params": {
+   "properties": {
+    "casefold": {
+     "default": false,
+     "description": "Fold case; off keeps the base model's cased style",
+     "title": "Casefold",
+     "type": "boolean",
+     "x-cadence": {
+      "default": false,
+      "description": "Fold case; off keeps the base model's cased style",
+      "range": {
+       "values": [
+        true,
+        false
+       ]
+      },
+      "source": "nvidia/nemotron-3.5-asr-streaming-0.6b model card (cased output); normalizer.yaml training.casefold"
+     }
+    },
+    "itn": {
+     "default": [],
+     "description": "Spoken → written rules, each {spoken, written}: whole words, case-insensitive, longest first",
+     "items": {
+      "additionalProperties": {
+       "type": "string"
+      },
+      "type": "object"
+     },
+     "title": "Itn",
+     "type": "array",
+     "x-cadence": {
+      "default": [],
+      "description": "Spoken → written rules, each {spoken, written}: whole words, case-insensitive, longest first",
+      "range": {
+       "maxLength": 10000
+      },
+      "source": "templates/lang/*/itn.yaml (classes and examples)"
+     }
+    },
+    "mappings": {
+     "default": [],
+     "description": "Literal replacements in order, each {from, to} over the whole text (normalizer.yaml mappings)",
+     "items": {
+      "additionalProperties": {
+       "type": "string"
+      },
+      "type": "object"
+     },
+     "title": "Mappings",
+     "type": "array",
+     "x-cadence": {
+      "default": [],
+      "description": "Literal replacements in order, each {from, to} over the whole text (normalizer.yaml mappings)",
+      "range": {
+       "maxLength": 1000
+      },
+      "source": "templates/lang/*/normalizer.yaml (training.mappings)"
+     }
+    },
+    "punctuation": {
+     "default": "keep",
+     "description": "keep the base model's punctuated style, or strip punctuation",
+     "enum": [
+      "keep",
+      "strip"
+     ],
+     "title": "Punctuation",
+     "type": "string",
+     "x-cadence": {
+      "default": "keep",
+      "description": "keep the base model's punctuated style, or strip punctuation",
+      "range": {
+       "values": [
+        "keep",
+        "strip"
+       ]
+      },
+      "source": "nvidia/nemotron-3.5-asr-streaming-0.6b model card (punctuated output); normalizer.yaml"
+     }
+    },
+    "remove_marks": {
+     "default": false,
+     "description": "Drop combining marks (Hebrew niqqud, Latin accents) — off where marks are letters (č ć ž š đ)",
+     "title": "Remove Marks",
+     "type": "boolean",
+     "x-cadence": {
+      "default": false,
+      "description": "Drop combining marks (Hebrew niqqud, Latin accents) — off where marks are letters (č ć ž š đ)",
+      "range": {
+       "values": [
+        true,
+        false
+       ]
+      },
+      "source": "templates/lang/*/normalizer.yaml (training.removeMarks)"
+     }
+    },
+    "transliterate": {
+     "default": "",
+     "description": "Script map applied first (translit.yaml), e.g. sr-Cyrl-Latn; empty keeps the script",
+     "title": "Transliterate",
+     "type": "string",
+     "x-cadence": {
+      "default": "",
+      "description": "Script map applied first (translit.yaml), e.g. sr-Cyrl-Latn; empty keeps the script",
+      "range": {
+       "values": [
+        "",
+        "sr-Cyrl-Latn"
+       ]
+      },
+      "source": "templates/lang/sr/normalizer.yaml (training.transliterate)"
+     }
+    },
+    "unicode": {
+     "default": "NFC",
+     "description": "Unicode normalisation form (normalizer.yaml training.unicode)",
+     "enum": [
+      "NFC",
+      "NFKC"
+     ],
+     "title": "Unicode",
+     "type": "string",
+     "x-cadence": {
+      "default": "NFC",
+      "description": "Unicode normalisation form (normalizer.yaml training.unicode)",
+      "range": {
+       "values": [
+        "NFC",
+        "NFKC"
+       ]
+      },
+      "source": "templates/lang/*/normalizer.yaml (training.unicode: NFC)"
+     }
+    }
+   },
+   "title": "TextNormaliseParams",
+   "type": "object"
+  },
+  "produces": {
+   "segments": "segments"
+  },
+  "resources": {
+   "gpu": false,
+   "gpus": 0,
+   "jobKind": "data"
+  },
+  "version": "1"
+ },
+ {
+  "consumes": {
+   "data": "dataset",
+   "hypotheses": "hypotheses",
+   "normalizer": "normalizer"
+  },
+  "help": "steps.wer-score",
+  "name": "wer_score",
+  "neutral": true,
+  "params": {
+   "properties": {
+    "duration_buckets_s": {
+     "default": [
+      0,
+      2,
+      5,
+      10,
+      20
+     ],
+     "description": "Lower bounds of the utterance-duration buckets WER is reported for, in seconds (ascending); the last bucket is open",
+     "items": {
+      "type": "number"
+     },
+     "title": "Duration Buckets S",
+     "type": "array",
+     "x-cadence": {
+      "default": [
+       0,
+       2,
+       5,
+       10,
+       20
+      ],
+      "defaultRef": "eval.duration_buckets_s",
+      "description": "Lower bounds of the utterance-duration buckets WER is reported for, in seconds (ascending); the last bucket is open",
+      "range": "any",
+      "source": "Cadence recommendation (docs/spec/04-blocks.md Block 3, duration buckets)"
+     }
+    }
+   },
+   "title": "WerScoreParams",
+   "type": "object"
+  },
+  "produces": {
+   "scores": "scores"
+  },
+  "resources": {
+   "gpu": false,
+   "gpus": 0,
+   "jobKind": "eval"
+  },
+  "version": "2"
+ },
+ {
+  "consumes": {
+   "data": "dataset"
+  },
+  "help": "steps.whisper-transcribe",
+  "name": "whisper_transcribe",
+  "params": {
+   "properties": {
+    "auxiliary": {
+     "default": "auxiliary/whisper-large-v3",
+     "description": "The auxiliary model to decode with (auxiliary/<name>, ver_… or @alias): a Whisper the project adopted, with the pseudolabel role",
+     "title": "Auxiliary",
+     "type": "string",
+     "x-cadence": {
+      "default": "auxiliary/whisper-large-v3",
+      "defaultRef": "packs.nemo.whisper_auxiliary",
+      "description": "The auxiliary model to decode with (auxiliary/<name>, ver_… or @alias): a Whisper the project adopted, with the pseudolabel role",
+      "range": "any",
+      "registryRef": {
+       "kind": "auxiliary",
+       "role": "pseudolabel"
+      },
+      "source": "docs/review/2026-10-03-phase-4-plan.md \"Auxiliary models and licences (R26)\" (Apache-2.0, checked 2026-10-03)"
+     }
+    },
+    "batch_size": {
+     "default": 8,
+     "description": "Utterances per Whisper generate call (audio over 30 s decodes alone, long-form)",
+     "title": "Batch Size",
+     "type": "integer",
+     "x-cadence": {
+      "default": 8,
+      "defaultRef": "packs.nemo.whisper_batch_size",
+      "description": "Utterances per Whisper generate call (audio over 30 s decodes alone, long-form)",
+      "range": {
+       "max": 64,
+       "min": 1
+      },
+      "source": "Cadence recommendation (large-v3 in fp16 at batch 8 stays under the 8 GB step cap)"
+     }
+    },
+    "cuda_context_reserve_mb": {
+     "default": 1024,
+     "description": "Card memory kept free for the CUDA context and library workspaces, which sit outside PyTorch's allocator; the allocator gets the lease's cap minus this",
+     "title": "Cuda Context Reserve Mb",
+     "type": "integer",
+     "x-cadence": {
+      "default": 1024,
+      "defaultRef": "packs.nemo.cuda_context_reserve_mb",
+      "description": "Card memory kept free for the CUDA context and library workspaces, which sit outside PyTorch's allocator; the allocator gets the lease's cap minus this",
+      "range": {
+       "max": 8192,
+       "min": 0
+      },
+      "source": "Spike A3 (a 20.5 GiB allocator cap showed 21.6 GB in nvidia-smi, about 0.65 GB outside the allocator); rounded up"
+     }
+    },
+    "detect_language": {
+     "default": true,
+     "description": "Whether the Whisper member also records its own language identification beside the text (the ensemble's second opinion on LID)",
+     "title": "Detect Language",
+     "type": "boolean",
+     "x-cadence": {
+      "default": true,
+      "defaultRef": "packs.nemo.whisper_detect_language",
+      "description": "Whether the Whisper member also records its own language identification beside the text (the ensemble's second opinion on LID)",
+      "range": "any",
+      "source": "docs/review/2026-10-03-phase-4-plan.md decision 7"
+     }
+    },
+    "num_beams": {
+     "default": 1,
+     "description": "Beam width of Whisper's decoding (1 is greedy)",
+     "title": "Num Beams",
+     "type": "integer",
+     "x-cadence": {
+      "default": 1,
+      "defaultRef": "packs.nemo.whisper_num_beams",
+      "description": "Beam width of Whisper's decoding (1 is greedy)",
+      "range": {
+       "max": 8,
+       "min": 1
+      },
+      "source": "Cadence recommendation (greedy; the ensemble's agreement, not one member's beam, buys accuracy)"
+     }
+    },
+    "target_lang": {
+     "default": "",
+     "description": "Decode every utterance in this language (BCP-47) instead of each utterance's own; empty uses the utterance's language",
+     "title": "Target Lang",
+     "type": "string",
+     "x-cadence": {
+      "default": "",
+      "description": "Decode every utterance in this language (BCP-47) instead of each utterance's own; empty uses the utterance's language",
+      "range": {
+       "maxLength": 35
+      },
+      "source": "Cadence recommendation"
+     }
+    },
+    "transliterate": {
+     "default": "",
+     "description": "Convert the text to another script (sr-Cyrl-Latn: Serbian Cyrillic to Gaj Latin, as dataset_import does); empty keeps Whisper's script",
+     "enum": [
+      "",
+      "sr-Cyrl-Latn"
+     ],
+     "title": "Transliterate",
+     "type": "string",
+     "x-cadence": {
+      "default": "",
+      "description": "Convert the text to another script (sr-Cyrl-Latn: Serbian Cyrillic to Gaj Latin, as dataset_import does); empty keeps Whisper's script",
+      "range": {
+       "values": [
+        "",
+        "sr-Cyrl-Latn"
+       ]
+      },
+      "source": "Cadence recommendation (the Serbian fine-tune on the test stand, 2026-10-01)"
+     }
+    }
+   },
+   "title": "WhisperParams",
+   "type": "object"
+  },
+  "produces": {
+   "hypotheses": "hypotheses"
+  },
+  "resources": {
+   "diskGb": 4,
+   "gpu": true,
+   "gpus": 1,
+   "jobKind": "data",
+   "memoryGb": 8
+  },
+  "runtime": "nemo-speech",
+  "version": "1"
+ }
+]

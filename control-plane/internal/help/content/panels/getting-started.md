@@ -14,7 +14,7 @@ Cadence already has; nothing is recorded separately:
 | Set up the admin account | You are signed in | first-start screen (`auth.setup`) |
 | Attach the call recordings | A mount exists (add one in the [Storage](storage.md) panel; the admin approves it) | `mounts.new` |
 | Create a project | A project exists | `projects.new` |
-| Freeze the first dataset version | A dataset version frozen by a person or an agent (bundled fixtures do not count) | `datasets.freeze` |
+| Freeze the first dataset version | A dataset version frozen by a person or an agent (bundled fixtures do not count); the playbooks [Try Cadence or Adapt a new language](../guides/playbooks.md) get you there | `datasets.freeze` |
 | Finish the first training run | A run of the open project is done (`runs.list`) | `playbooks.run` |
 | Pass the first gate | An eval of the open project passed its gate (`evals.list`) | `evals.gate` |
 
@@ -42,9 +42,16 @@ palette (Ctrl/Cmd+K) or an agent session once its phase lands.
 
 ## Playbooks
 
-After the project exists, the Project home offers the playbook this phase runs with its estimate; the step "Finish
-the first training run" runs "Fine-tune from a dataset version" (`playbooks.run`). "Adapt a new language" follows in
-phase 4.
+After the project exists, the Project home offers the playbooks this phase runs, each with its estimate
+(`playbooks.run`; [the guide](../guides/playbooks.md)):
+
+- **Try Cadence** — the first thing to run on a new instance: two hours of FLEURS through the whole loop (import,
+  mix, calibrate, a short run, eval, gate) in about one GPU-hour. It ticks "Freeze the first dataset version", "Finish
+  the first training run" and usually reaches the gate step.
+- **Adapt a new language** — a corpus on a mount (the recordings step) ingested, pseudo-labelled where it has no
+  transcripts, frozen and trained on; the admin approves the mount, the source's clearing and the auxiliary models
+  on the way.
+- **Fine-tune from a dataset version** — when a frozen version already exists.
 
 ## Sources
 

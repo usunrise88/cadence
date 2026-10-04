@@ -37,8 +37,11 @@ type Warning struct {
 	Message string `json:"message"`
 }
 
-// WarningStepKindDeprecated is the code of a deprecated step kind's warning.
-const WarningStepKindDeprecated = "step-kind-deprecated"
+// Warning codes: a deprecated step kind; a service an optional step's auxiliary names that does not answer.
+const (
+	WarningStepKindDeprecated   = "step-kind-deprecated"
+	WarningAuxiliaryUnavailable = "auxiliary-unavailable"
+)
 
 // Closed reports whether new pins of the deprecated kind are refused at now: from the day After (UTC) on. A
 // deprecation whose date does not parse is closed (the pack meant to retire it).

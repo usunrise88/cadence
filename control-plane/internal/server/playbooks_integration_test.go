@@ -63,7 +63,7 @@ func TestPlaybooks(t *testing.T) {
 	}
 	trainingProject(t, h.env, "hebrew")
 
-	// playbooks.list: five, the runnable one first, with project facts and the estimate.
+	// playbooks.list: six, the runnable ones first (by name), with project facts and the estimate.
 	var list struct {
 		Items []struct {
 			Name, Title, VersionID, Unavailable string
@@ -79,11 +79,17 @@ func TestPlaybooks(t *testing.T) {
 		}
 	}
 	h.ok(h.do("GET", "/api/playbooks?project=hebrew", ""), 200, &list)
-	if len(list.Items) != 5 || list.Items[0].Name != "finetune-from-dataset" || !list.Items[0].Runnable ||
-		list.Items[1].Runnable || list.Items[1].Unavailable == "" || !strings.HasPrefix(list.Items[0].VersionID, "ver_") {
+	if len(list.Items) != 6 || list.Items[1].Name != "finetune-from-dataset" || !list.Items[1].Runnable ||
+		list.Items[5].Name != "weekly-flywheel" || list.Items[5].Runnable || list.Items[5].Unavailable == "" ||
+		!strings.HasPrefix(list.Items[1].VersionID, "ver_") {
 		t.Fatalf("playbooks.list %+v", list.Items)
 	}
-	ft := list.Items[0]
+	// The phase-4 playbooks list the steps a person does.
+	adapt := list.Items[0]
+	if adapt.Name != "adapt-new-language" || !adapt.Runnable || adapt.Chain[0]["person"] == nil || adapt.Chain[4]["optional"] != true {
+		t.Fatalf("adapt-new-language %+v", adapt)
+	}
+	ft := list.Items[1]
 	// 3 000 steps × 1.0 s (table) + the calibration hint 0.1 GPU-hours + the eval hint 0.5; all ±50%.
 	if ft.Estimate == nil || ft.Estimate.Basis != "mixed" || ft.Estimate.GPUHours.Value != 1.217 || ft.Estimate.GPUHours.High != 1.633 {
 		t.Fatalf("estimate %+v", ft.Estimate)
@@ -120,7 +126,7 @@ func TestPlaybooks(t *testing.T) {
 	expectProblem(t, run(`{"inputs":{"steps":500}}`, true), 422, "validation-failed")
 	expectProblem(t, run(`{"inputs":{"dataset":"dataset/fleurs-he-smoke","steps":0}}`, true), 422, "validation-failed")
 	expectProblem(t, h.do("POST", "/api/projects/hebrew/playbooks/finetune-from-dataset:run", body, "Idempotency-Key", h.key(), "If-Match", `"old"`), 412, "precondition-failed")
-	expectProblem(t, h.do("POST", "/api/projects/hebrew/playbooks/adapt-new-language:run", `{"inputs":{"source":"x"}}`,
+	expectProblem(t, h.do("POST", "/api/projects/hebrew/playbooks/weekly-flywheel:run", `{"inputs":{"parent":"x"}}`,
 		"Idempotency-Key", h.key(), "If-Match", "*"), 409, "playbook-unavailable")
 
 	// Dry run: inputs, estimate, plan and prompt; no session.

@@ -179,7 +179,7 @@ make evals             # agent evals (agent-host/evals): fixture projects × bot
 make spikes-measure    # S1/S3/S4 measurements → web/test-results/spikes/*.json
 make up                # docker compose: postgres + control plane (SPA embedded) + agent host, one CADENCE_VERSION
 make web               # build the SPA into the control plane's embed directory
-make e2e               # smoke project on the staging card — phase 4
+make e2e               # smoke project: the "Try Cadence" playbook in SMOKE_PROJECT=<slug> (cadence smoke)
 ```
 
 Per package (single test in brackets):

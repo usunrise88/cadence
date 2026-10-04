@@ -22,6 +22,8 @@ chain:
   - { id: watch, title: …, command: runs.get, accepts: [jobs.wait], until: terminal }
   - { id: eval, title: …, command: evals.new, estimate: { gpuHours: 0.5, minutes: 30, plusMinus: 0.5 } }
   - { id: gate, title: …, command: evals.gate }       # a later-phase step would say phase: <n> and be skipped
+  - { id: clear, title: …, command: sources.edit, accepts: [sources.get], when: { trainingCleared: true },
+      person: An admin approves …, optional: false }  # a step a person does (phase 4)
 stop: [ { step: failed }, { approval: denied }, { budget: exceeded }, { gate: failed } ]
 next: { done: …, stopped: … }          # the next-step suggestion written when the chain ends
 prompt: |                              # Go text/template over .Inputs.<name> (text) and .Project.{Name,Slug,Locales}
@@ -30,7 +32,8 @@ prompt: |                              # Go text/template over .Inputs.<name> (t
 
 Validation (`Validate`, run on every bundled file by the tests and at server start): names; input types and sources
 (`defaultRef` resolves in defaults.yaml; `from: project` only for `base_model`; `from: adoption` needs a
-collection); unique step ids; every operation of a step that can run now is an implemented operation of the contract
+collection); unique step ids; `when` only on steps that tick from one answer (not `until: terminal`), with
+scalar values; every operation of a step that can run now is an implemented operation of the contract
 (`cli.Operations`) or in `Pending` (operations a parallel stream is building; empty now); steps of a later phase only need the `<entity>.<verb>` form (a test checks the verb
 against api/vocabulary.yaml); `with` names declared inputs; the prompt renders with every input.
 
@@ -50,15 +53,22 @@ step; later phases `skipped`), the estimate, `dryRuns`, `stop`, `summary`, `next
 estimate notice. The server ticks the plan, never the agent:
 
 - The command pipeline's session hook (`commands.SessionHook`): `Done` ticks from a command that succeeded, in its
-  transaction; `DryRun` records a dry run; `Admit` refuses a real spending command (`Spending`: runs.new|calibrate|
-  resume|stage, checkpoints.average, evals.new, sweeps.run) unless the session's last dry run of that operation since its last real one
+  transaction (an approved request is replayed as the session's actor, so a gated command ticks its step once a person
+  approves it); `DryRun` records a dry run; `Admit` refuses a real spending command (`Spending`: runs.new|calibrate|
+  resume|stage, checkpoints.average, evals.new, sweeps.run, pipelines.run) unless the session's last dry run of that operation since its last real one
   was the same request (`commands.HashRequest`: path, query, If-Match and canonical body, never the Idempotency-Key;
   `State.DryRunRequests`) (`playbook-dry-run-required`), and any spending command once the playbook ended (`playbook-stopped`).
 - Reads a chain names (`runs.get`, `jobs.wait`, `checkpoints.list`) are observed by the server's `observeReads` middleware.
-- Only the current item (the first pending or running one) ticks, from an operation it names. A terminal step
+- Only the current item (the first pending or running one) ticks, from an operation it names — or a later item
+  when every item before it is `optional`: those are skipped ("passed over (optional)").
+- Steps a person does (phase 4): `person` says what they do (the plan item carries it; Chat shows "A person: …");
+  `when` holds the step until an answer has those fields (dotted paths, compared as text): any other answer of its
+  operations marks it running ("waiting for a person: waiting until trainingCleared is true"). `NextItem` names the
+  person's part in the reminder. A terminal step
   (`until: terminal`) waits for what the nearest earlier step started: `runs.get` of that run with an ended status
   ticks it (`done`; `failed`/`cancelled` fail it and stop the playbook when the template stops on `step`); a job
-  (`jobs.wait`) ends it only when the earlier step started just that job, else it marks the step running.
+  (`jobs.wait`) ends it only when the earlier step started just that job, else it marks the step running; an entity
+  with a `state` (`pipelineRuns.wait`: the pipeline run `pipelines.run` started) ends it like a job.
 - `evals.gate` ticks its step done with the verdict in the note; a `failed` verdict (the answer's `gate.verdict`) stops
   the playbook when the template stops on `gate: failed`.
 - `sessions.PlaybookWatcher`: a denied approval stops the playbook (`approval: denied`); a pause on the agent budget

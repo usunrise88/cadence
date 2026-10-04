@@ -1,20 +1,43 @@
 # written by Cadence — playbook template (docs/spec/03-pipelines-defaults.md "Playbooks", R16; format:
-# control-plane/internal/playbooks/README.md). Listed from phase 2; runs once phase 4 ships ingest and freeze.
+# control-plane/internal/playbooks/README.md). The phase-4 data path in front of "Fine-tune from a dataset version":
+# a corpus on a mount → source → ingest (pseudo-labelled where untranscribed) → preview → freeze → mix → calibrate →
+# train → eval → gate. Steps marked `person` wait for a person (an approval, or a service started on the host).
 name: adapt-new-language
 title: Adapt a new language
-description: Ingest a source, freeze a dataset version, then fine-tune with replay and gate — "Fine-tune from a dataset version" prefixed with ingest and freeze.
+description: Index a corpus on a mount, pseudo-label it where it has no transcripts, freeze a dataset version, then fine-tune with replay and gate — "Fine-tune from a dataset version" prefixed with the data path.
 typicalCost: 4–8 GPU-hours
 availableFrom: 4
 
 inputs:
+  path:
+    type: string
+    required: true
+    description: The corpus on a mount, mount://<mount>/<source>/<revision> (the layout the corpus fetch scripts write)
   source:
     type: string
     required: true
-    description: The source to ingest (a mount path or a public corpus name)
+    description: The source to register for it (sources.new; usually the folder name, e.g. fleurs-sr)
+  licence:
+    type: string
+    required: true
+    description: The corpus's licence (SPDX id, from its SOURCE.yaml); no licence, no ingest
+  language:
+    type: string
+    required: true
+    description: The corpus's language (BCP 47, e.g. sr-RS)
+  pipeline:
+    type: string
+    required: true
+    description: data-ingest when the files have transcripts beside them (<stem>.txt), pseudo-label when they do not
   base:
     type: base_model
     from: project
     description: The project's default base model
+  replay:
+    type: dataset_version
+    from: adoption
+    collection: dataset/replay-base
+    description: The replay corpus (R17), when the project adopted it; it keeps the base model's other locales
   steps:
     type: integer
     defaultRef: training.steps
@@ -25,39 +48,86 @@ inputs:
     description: Share of the replay groups in the mix
 
 chain:
+  - id: mount
+    title: The corpus's mount exists (an admin approves a new one)
+    command: mounts.new
+    accepts: [mounts.get]
+    person: An admin approves the mounts.new request in Approvals (a mount is shared by every project). An existing mount ticks this step when the agent reads it.
+  - id: source
+    title: Register the source with its licence
+    command: sources.new
+    accepts: [sources.get]
+  - id: clear
+    title: The source is cleared for training
+    command: sources.edit
+    accepts: [sources.get]
+    when: { trainingCleared: true }
+    person: An admin reads the licence and approves sources.edit trainingCleared true in Approvals (until then a dataset from it is eval-only).
+  - id: adopt
+    title: The project adopts the pseudo-label auxiliaries (untranscribed audio only)
+    command: projects.adopt
+    accepts: [adoptions.list]
+    optional: true
+    person: An admin approves each projects.adopt of an auxiliary model in Approvals after checking its licence (R26).
+  - id: service
+    title: OASIS answers (optional third member)
+    command: auxiliaries.get
+    when: { reachable: true }
+    optional: true
+    person: Start OASIS on the host with scripts/serve.sh ensemble no-300m in the OASIS checkout (about 8.6 GB beside vLLM); Cadence never starts it. Without it the pseudo-label run goes on with two members.
   - id: ingest
-    title: Ingest the source
+    title: Ingest the corpus into a draft dataset version (dry run first)
     command: pipelines.run
-    phase: 4
+    estimate: { gpuHours: 0.5, minutes: 60, plusMinus: 1 }
+  - id: ingest-wait
+    title: Wait for the ingest to finish
+    command: pipelineRuns.wait
+    accepts: [pipelineRuns.get]
+    until: terminal
+  - id: preview
+    title: Preview the draft (hours per language and split, after filters)
+    command: datasets.preview
   - id: freeze
-    title: Freeze a dataset version
+    title: Freeze the draft (leakage check, then the cut into the content store)
     command: datasets.freeze
-    phase: 4
+  - id: freeze-wait
+    title: Wait for the cut to finish
+    command: jobs.wait
+    until: terminal
+    optional: true
   - id: mix
-    title: Mix with replay
+    title: Mix the frozen version with replay
     command: mixes.new
     accepts: [mixes.edit]
   - id: calibrate
-    title: Calibrate batch sizes
+    title: Calibrate batch sizes under the card's memory cap (dry run first)
     command: runs.calibrate
+    with: { baseModel: $inputs.base }
     estimate: { gpuHours: 0.1, minutes: 6, plusMinus: 0.5 }
   - id: train
-    title: Train (dry run first)
+    title: Start the training run (dry run first)
     command: runs.new
     with: { baseModel: $inputs.base, steps: $inputs.steps }
+    estimate: { gpuHours: 3, minutes: 180, plusMinus: 0.5 }
   - id: watch
     title: Wait for the run to finish
     command: runs.get
     accepts: [jobs.wait]
     until: terminal
+  - id: checkpoints
+    title: List the checkpoints the run registered (top-k by validation WER)
+    command: checkpoints.list
   - id: eval
-    title: Eval matrix
+    title: Eval the best checkpoint against the baseline on the gate's golden sets (dry run first)
     command: evals.new
-    phase: 3
+    estimate: { gpuHours: 0.5, minutes: 30, plusMinus: 0.5 }
+  - id: eval-wait
+    title: Wait for the eval to finish
+    command: evals.get
+    until: terminal
   - id: gate
     title: Gate against the baseline
     command: evals.gate
-    phase: 3
 
 stop:
   - gate: failed
@@ -66,10 +136,27 @@ stop:
   - approval: denied
 
 next:
-  done: Promote the gated checkpoint to shadow when phase 5 ships; meanwhile note what worked (projects.note).
-  stopped: Read why the step stopped, fix the cause, and start again from the failed step.
+  done: The checkpoint passed the gate. Ask a person to register it (models.register, an approval), and note what you learned (projects.note) — which pipeline, how many hours survived the filters, how many pseudo-labels were disputed.
+  stopped: Read why the step stopped (the pipeline run's failed step and its logs, the freeze's leakage overlaps, the eval's failing checks, or the approval's note), fix the cause, then start the playbook again or continue the remaining steps by hand.
 
 prompt: |
-  Run the playbook "Adapt a new language" in project {{ .Project.Name }} ({{ .Project.Slug }}, locales {{ .Project.Locales }}):
-  ingest {{ .Inputs.source }}, freeze a dataset version, mix it with replay at {{ .Inputs.replayShare }}, calibrate, train
-  {{ .Inputs.base }} for {{ .Inputs.steps }} steps (dry run first), evaluate and gate.
+  Run the playbook "Adapt a new language" in project {{ .Project.Name }} ({{ .Project.Slug }}, locales {{ .Project.Locales }}).
+
+  - Corpus: {{ .Inputs.path }} — source {{ .Inputs.source }}, licence {{ .Inputs.licence }}, language {{ .Inputs.language }}
+  - Ingest pipeline: {{ .Inputs.pipeline }}
+  - Base model: {{ .Inputs.base }}; replay corpus {{ .Inputs.replay }} at a replay share of {{ .Inputs.replayShare }}
+  - Training steps: {{ .Inputs.steps }}
+
+  Work the plan one step at a time with Cadence tools. Steps marked "a person" wait for one: say what they must do, then wait for their reply; never try to work around an approval.
+  1. mounts.get the mount the path names (mounts.list). When it does not exist, mounts.new it (kind local, read-only) — it answers an approval id; tell the person and wait.
+  2. sources.new for {{ .Inputs.source }} with the licence and language above (sources.get when it is already registered).
+  3. sources.get it: when trainingCleared is false, ask for sources.edit trainingCleared true — an approval the admin decides — and wait.
+  4. Only for pseudo-label: projects.adopt the auxiliaries the pipeline's members name (auxiliaries.list: the whisper member, the LID classifier, OASIS) — approvals the admin decides — and wait. auxiliaries.get the OASIS version: when reachable is false, ask the person to start OASIS on the host (scripts/serve.sh ensemble no-300m) or to say "go on without it".
+  5. pipelines.run {{ .Inputs.pipeline }} with params for its steps (index: source {{ .Inputs.source }}, path {{ .Inputs.path }}, language {{ .Inputs.language }}; draft: name {{ .Inputs.source }}; the language's normalizer style from langpacks.get) — dry run first, report its plan, departures and warnings, then the same call for real. pseudo-label also takes inputs model (the base model's artifact, baseModels.get) and normalizer (the scoring normalizer, normalizers.get).
+  6. pipelineRuns.wait on the run until it is done; on failure read its failed step (pipelineRuns.get, jobLogs.list) and stop.
+  7. datasets.list the draft the run registered (frozen false), then datasets.preview it — report hours per split, the disputed pseudo-labels (triage.list) and anything that looks wrong in the texts.
+  8. datasets.freeze the draft (a golden-set-leakage answer lists the overlaps: stop and report), then jobs.wait on its job.
+  9. mixes.new with the frozen version and, when there is one, the replay corpus as a replay group at the share above.
+  10. runs.calibrate, then runs.new with the mix, the base model and the steps — dry run first each time, report the estimate, then the same call for real. Follow the run (jobs.wait, runs.get) until it ends.
+  11. checkpoints.list, evals.new on the best checkpoint (dry run first; for a language the base model has no prompt for, pass languages, e.g. {"sr-RS": "hr-HR"}), evals.get until done, then evals.gate — report the verdict and every check.
+  Finish with a short summary and the next step.

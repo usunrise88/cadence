@@ -3,6 +3,7 @@ package playbooks
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -32,16 +33,16 @@ func TestBundledPlaybooksValidate(t *testing.T) {
 		t.Fatalf("bundled playbooks: %v", err)
 	}
 	list := lib.List()
-	if len(list) != 5 {
-		t.Fatalf("got %d playbooks, want the five v1 playbooks", len(list))
+	if len(list) != 6 {
+		t.Fatalf("got %d playbooks, want the five v1 playbooks and try-cadence", len(list))
 	}
-	if list[0].Name != "finetune-from-dataset" || !list[0].Runnable() {
-		t.Fatalf("the runnable fine-tune playbook comes first, got %s", list[0].Name)
+	var names []string
+	for _, p := range list {
+		names = append(names, fmt.Sprintf("%s:%v", p.Name, p.Runnable()))
 	}
-	for _, p := range list[1:] {
-		if p.Runnable() || p.AvailableFrom != 4 {
-			t.Errorf("%s: the other v1 playbooks run from phase 4, got %d", p.Name, p.AvailableFrom)
-		}
+	// Runnable first (phase 4 ships data), then by name; the flywheel waits for phase 5's schedules and signals.
+	if got := strings.Join(names, " "); got != "adapt-new-language:true finetune-from-dataset:true fix-names-terms:true improve-telephony:true try-cadence:true weekly-flywheel:false" {
+		t.Fatalf("playbooks = %s", got)
 	}
 	// Every operation a chain names uses a verb of the vocabulary, later phases included.
 	raw, err := os.ReadFile("../../../api/vocabulary.yaml")
@@ -94,7 +95,7 @@ func TestValidate(t *testing.T) {
 		{"bad defaultRef", strings.Replace(minimal, "training.steps", "training.nope", 1), "does not resolve"},
 		{"two sources", strings.Replace(minimal, "defaultRef: training.steps", "defaultRef: training.steps, required: true", 1), "exactly one of"},
 		{"unknown operation", strings.Replace(minimal, "command: runs.new", "command: runs.fly", 1), `unknown operation "runs.fly"`},
-		{"later phase needs only the form", strings.Replace(minimal, "command: runs.new }", "command: evals.gate, phase: 4 }", 1), ""},
+		{"later phase needs only the form", strings.Replace(minimal, "command: runs.new }", "command: evals.gate, phase: 5 }", 1), ""},
 		{"not an operation", strings.Replace(minimal, "command: runs.new", "command: Runs", 1), "is not an operation"},
 		{"prompt names a missing input", strings.Replace(minimal, ".Inputs.steps", ".Inputs.nope", 1), "prompt"},
 		{"bad stop", strings.Replace(minimal, "step: failed", "gate: passed", 1), "stop[0]"},
@@ -405,5 +406,99 @@ func TestEstimateNotice(t *testing.T) {
 		if !strings.Contains(n, want) {
 			t.Errorf("notice lacks %q:\n%s", want, n)
 		}
+	}
+}
+
+const people = `name: people
+title: People
+description: Steps a person does
+availableFrom: 2
+chain:
+  - { id: mount, title: Mount, command: mounts.new, accepts: [mounts.get], person: An admin approves the mount }
+  - { id: clear, title: Clear, command: sources.edit, accepts: [sources.get], person: An admin clears the source, when: { trainingCleared: true } }
+  - { id: service, title: Service, command: auxiliaries.get, person: Start the service, optional: true, when: { reachable: true } }
+  - { id: ingest, title: Ingest, command: pipelines.run }
+  - { id: wait, title: Wait, command: pipelineRuns.wait, accepts: [pipelineRuns.get], until: terminal }
+stop:
+  - step: failed
+prompt: "People"
+`
+
+// Steps a person does tick from the operation they name (the gated command's approved replay, or a read showing it
+// happened); a when condition holds them until the answer meets it; an optional step is passed over when a later one
+// ticks; a pipeline run's wait ends with the run's state.
+func TestObservePeopleOptionalAndWhen(t *testing.T) {
+	p, err := Parse("people", []byte(people))
+	if err == nil {
+		err = Validate(p, defaults.Get(), func(string) bool { return true })
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := State{Name: p.Name, Title: p.Title, State: StateRunning, Plan: NewPlan(p, Estimate{}), Stops: p.Stop, NextText: p.Next}
+	if st.Plan[0].Person == "" || !st.Plan[2].Optional || st.Plan[1].When["trainingCleared"] != true {
+		t.Fatalf("plan: %+v", st.Plan)
+	}
+	if n := st.NextItem(); !strings.Contains(n, "a person does it: An admin approves the mount") {
+		t.Fatalf("next item: %s", n)
+	}
+	obs := func(op string, body map[string]any) bool {
+		return st.Observe(Observation{Operation: op, Status: 200, Body: body, At: time.Now()})
+	}
+	obs("mounts.get", map[string]any{"id": "mnt_1"})
+	if st.Plan[0].State != ItemDone {
+		t.Fatalf("mount: %s", states(st))
+	}
+	// The source is read before it is cleared: running, waiting; then cleared: done.
+	obs("sources.get", map[string]any{"id": "src_1", "trainingCleared": false})
+	if st.Plan[1].State != ItemRunning || !strings.Contains(st.Plan[1].Note, "waiting for a person: waiting until trainingCleared is true") {
+		t.Fatalf("clear while not cleared: %+v", st.Plan[1])
+	}
+	if obs("sources.get", map[string]any{"id": "src_1", "trainingCleared": false}) {
+		t.Fatal("the same waiting answer changed the plan again")
+	}
+	obs("sources.edit", map[string]any{"id": "src_1", "trainingCleared": true})
+	if st.Plan[1].State != ItemDone {
+		t.Fatalf("clear: %s", states(st))
+	}
+	// The optional service step waits while the service is down, and is passed over when the ingest starts without it.
+	obs("auxiliaries.get", map[string]any{"id": "ver_oasis", "reachable": false})
+	if st.Plan[2].State != ItemRunning {
+		t.Fatalf("service while down: %+v", st.Plan[2])
+	}
+	obs("pipelines.run", map[string]any{"id": "plr_1", "state": "running"})
+	if st.Plan[2].State != ItemSkipped || st.Plan[3].State != ItemDone || st.Plan[3].EntityID != "plr_1" {
+		t.Fatalf("ingest: %s", states(st))
+	}
+	if obs("pipelineRuns.wait", map[string]any{"id": "plr_9", "state": "done"}) {
+		t.Fatal("another pipeline run ticked the wait")
+	}
+	obs("pipelineRuns.wait", map[string]any{"id": "plr_1", "state": "running"})
+	if st.Plan[4].State != ItemRunning {
+		t.Fatalf("wait while running: %+v", st.Plan[4])
+	}
+	obs("pipelineRuns.get", map[string]any{"id": "plr_1", "state": "done"})
+	if st.Plan[4].State != ItemDone || st.State != StateDone {
+		t.Fatalf("wait: %s / %s", states(st), st.State)
+	}
+
+	// A later step does not pass over a required one; a nested when path compares by value.
+	st = State{Name: p.Name, Title: p.Title, State: StateRunning, Plan: NewPlan(p, Estimate{}), Stops: p.Stop}
+	if obs("pipelines.run", map[string]any{"id": "plr_1"}) {
+		t.Fatal("pipelines.run passed over the required mount step")
+	}
+	if !meets(map[string]any{"a": map[string]any{"b": float64(2)}}, map[string]any{"a.b": 2}) || meets(map[string]any{}, map[string]any{"x": true}) {
+		t.Fatal("meets")
+	}
+}
+
+func TestValidateWhen(t *testing.T) {
+	bad := strings.Replace(people, "until: terminal }", "until: terminal, when: { state: done } }", 1)
+	p, err := Parse("people", []byte(bad))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Validate(p, defaults.Get(), func(string) bool { return true }); err == nil || !strings.Contains(err.Error(), "when is for steps") {
+		t.Fatalf("when on a terminal step: %v", err)
 	}
 }

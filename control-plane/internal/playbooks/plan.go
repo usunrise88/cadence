@@ -43,6 +43,10 @@ type Item struct {
 	JobID      string        `json:"jobId,omitempty"`
 	At         *time.Time    `json:"at,omitempty"`
 	Estimate   *StepEstimate `json:"estimate,omitempty"`
+	// Person, Optional and When are the template step's (Step).
+	Person   string         `json:"person,omitempty"`
+	Optional bool           `json:"optional,omitempty"`
+	When     map[string]any `json:"when,omitempty"`
 }
 
 func (it Item) matches(op string) bool { return it.Command == op || slices.Contains(it.Accepts, op) }
@@ -83,7 +87,7 @@ func NewPlan(p Playbook, e Estimate) []Item {
 	out := make([]Item, 0, len(p.Chain))
 	for i, s := range p.Chain {
 		it := Item{ID: s.ID, Title: s.Title, Command: s.Command, Accepts: s.Accepts, Until: s.Until, Phase: s.Phase,
-			Spending: Spending[s.Command], State: ItemPending}
+			Spending: Spending[s.Command], State: ItemPending, Person: s.Person, Optional: s.Optional, When: s.When}
 		if !s.Available() {
 			it.State, it.Note = ItemSkipped, phaseNote(s.Phase)
 		}
@@ -122,8 +126,10 @@ func (st *State) Current() int {
 // Observe applies o to the plan and reports whether anything changed. Only the current item ticks, only from an
 // operation it names: a spending command's dry run marks it running (and records the dry run), the real command marks
 // it done with the entity and job it answered; a terminal step ticks from the job it waits for once that job has
-// ended (failed or cancelled fails it). A successful real spending command uses up its dry run. Then the playbook
-// moves on: done when every item is done or skipped, stopped when an item failed and the playbook stops on it.
+// ended (failed or cancelled fails it); a step with a `when` condition ticks only from an answer that meets it (any
+// other answer marks it running). Optional items before the first item o ticks are passed over (skipped). A
+// successful real spending command uses up its dry run. Then the playbook moves on: done when every item is done or
+// skipped, stopped when an item failed and the playbook stops on it.
 func (st *State) Observe(o Observation) bool {
 	if st.State != StateRunning {
 		return false
@@ -154,8 +160,9 @@ func (st *State) Observe(o Observation) bool {
 			}
 		}
 	}
-	i := st.Current()
-	if i < 0 || !st.Plan[i].matches(o.Operation) {
+	cur := st.Current()
+	i := st.target(cur, o.Operation)
+	if i < 0 {
 		return changed
 	}
 	it := &st.Plan[i]
@@ -171,6 +178,15 @@ func (st *State) Observe(o Observation) bool {
 			return changed
 		}
 		it.At = &at
+	case len(it.When) > 0 && !meets(o.Body, it.When):
+		note := "waiting until " + whenText(it.When)
+		if it.Person != "" {
+			note = "waiting for a person: " + note
+		}
+		if it.State == ItemRunning && it.Note == note {
+			return changed
+		}
+		it.State, it.Note, it.At = ItemRunning, note, &at
 	default:
 		it.State, it.At = ItemDone, &at
 		it.EntityID, it.JobID = entityOf(o.Body), jobOf(o.Body)
@@ -187,6 +203,9 @@ func (st *State) Observe(o Observation) bool {
 	}
 	it.CommandID, it.ToolCallID = o.CommandID, o.ToolCallID
 	st.Nudges = 0
+	for k := cur; k < i; k++ { // optional items the chain went past
+		st.Plan[k].State, st.Plan[k].Note, st.Plan[k].At = ItemSkipped, "passed over (optional)", &at
+	}
 	if v := gateVerdict(o.Body); v != "" && it.State == ItemDone {
 		it.Note = it.EntityID + ": gate " + v
 		if v == "failed" && st.StopOn("gate", "failed", "the eval "+it.EntityID+" failed the gate (evals.get shows the checks)", at) {
@@ -195,6 +214,58 @@ func (st *State) Observe(o Observation) bool {
 	}
 	st.advance(at)
 	return true
+}
+
+// target is the item an operation ticks: the current one (cur) when it names op, else the first later one that does
+// when every item before it is optional; -1 for none.
+func (st *State) target(cur int, op string) int {
+	if cur < 0 {
+		return -1
+	}
+	for k := cur; k < len(st.Plan); k++ {
+		it := st.Plan[k]
+		if it.matches(op) {
+			return k
+		}
+		if !it.Optional { // an optional item still waiting (running) is passed over too
+			return -1
+		}
+	}
+	return -1
+}
+
+// meets reports whether body has every field of when (a dotted path) at its value; numbers compare by value.
+func meets(body map[string]any, when map[string]any) bool {
+	for key, want := range when {
+		var v any = body
+		for part := range strings.SplitSeq(key, ".") {
+			m, ok := v.(map[string]any)
+			if !ok {
+				return false
+			}
+			if v, ok = m[part]; !ok {
+				return false
+			}
+		}
+		if fmt.Sprint(v) != fmt.Sprint(want) {
+			return false
+		}
+	}
+	return true
+}
+
+// whenText is a condition as text: "reachable is true, trainingCleared is true".
+func whenText(when map[string]any) string {
+	keys := make([]string, 0, len(when))
+	for k := range when {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		parts = append(parts, fmt.Sprintf("%s is %v", k, when[k]))
+	}
+	return strings.Join(parts, ", ")
 }
 
 // gateVerdict is the verdict an evals.gate answered (its eval's gate.verdict), or "".
@@ -218,7 +289,8 @@ func (st *State) before(i int) *Item {
 // terminal applies the answer of a wait to a terminal item and reports whether it changed. A read of an entity with
 // a status (runs.get: the run the step before started) ticks it once the status has ended — done, or failed and
 // cancelled, which fail it. A job (jobs.wait) ends the item only when it is the job the step before started; any other
-// job of it (a run's pipeline has several steps) only marks the item running.
+// job of it (a run's pipeline has several steps) only marks the item running. An entity with a state instead of a
+// status (pipelineRuns.wait: the pipeline run the step before started) counts as that entity.
 func (st *State) terminal(i int, it *Item, o Observation) bool {
 	prev := st.before(i)
 	id := str(o.Body["id"])
@@ -230,6 +302,8 @@ func (st *State) terminal(i int, it *Item, o Observation) bool {
 	switch {
 	case prev == nil:
 		ours = true
+	case isJob && prev.EntityID != "" && id == prev.EntityID:
+		ours = true // the entity the step before started has a state, not a status (a pipeline run)
 	case isJob:
 		ours = prev.EntityID == "" && id == prev.JobID // the step before started a job, not an entity
 	default:
@@ -260,7 +334,7 @@ func (st *State) terminal(i int, it *Item, o Observation) bool {
 		}
 		it.State, it.Note = ItemRunning, note
 	}
-	if isJob {
+	if isJob && (prev == nil || prev.EntityID != id) {
 		it.JobID = id
 	}
 	return true
@@ -347,7 +421,14 @@ func (st *State) NextItem() string {
 	if it.Spending && !slices.Contains(st.DryRuns, it.Command) {
 		s += ", dry run first"
 	}
-	return s + ")"
+	if it.Optional {
+		s += ", optional"
+	}
+	s += ")"
+	if it.Person != "" {
+		s += "; a person does it: " + it.Person
+	}
+	return s
 }
 
 func str(v any) string {

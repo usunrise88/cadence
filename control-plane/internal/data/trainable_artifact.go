@@ -66,8 +66,8 @@ func TrainableArtifact(ctx context.Context, q storage.Querier, store *cas.Store,
 // trainableDataset checks a dataset artifact (hash, with the meta the index holds) a training step would read.
 func trainableDataset(ctx context.Context, q storage.Querier, hash string, meta json.RawMessage) error {
 	if Derived(meta) {
-		return problems.GoldenSetLeakage.New("dataset artifact %s is an augmented copy of a golden set (purpose %s) made for an eval; it can never be trained on",
-			hash, PurposeAugmented)
+		return problems.GoldenSetLeakage.New("dataset artifact %s is derived (an augmented copy of a golden set made for an eval, purpose %s, or untranscribed segments cut for the pseudo-label members, purpose %s); it can never be trained on",
+			hash, PurposeAugmented, PurposePseudoLabel)
 	}
 	rows, err := q.Query(ctx, `SELECT v.id FROM registry_versions v JOIN registry_collections c ON c.id = v.collection_id
 		WHERE c.kind = $1 AND (v.payload->'artifact'->>'hash' = $2 OR v.payload->>'artifact' = $2) ORDER BY v.id`, registry.KindDataset, hash)

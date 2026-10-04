@@ -49,8 +49,10 @@ spikes-measure: ## S1, S3, S4 and A4 measurements (weekly performance job); resu
 contrast:      ## contrast of every Theming pairing, light and dark
 	cd web && node scripts/contrast.mjs
 
-e2e:           ## smoke project on the staging card — arrives with the data block (phase 4, R34)
-	@echo "make e2e: the smoke project arrives in phase 4 (docs/spec/08-resolutions.md R34)"; exit 2
+e2e:           ## smoke project on the staging card: the "Try Cadence" playbook in SMOKE_PROJECT, followed to the end (R34)
+	@test -n "$(SMOKE_PROJECT)" || (echo "make e2e: set SMOKE_PROJECT=<slug> (and CADENCE_URL, CADENCE_TOKEN: an API key of that project that may run agent sessions)"; exit 2)
+	cd control-plane && go run ./cmd/cadence smoke --project $(SMOKE_PROJECT) --playbook try-cadence \
+	  --input fleurs=$${SMOKE_FLEURS:-sr_rs} --input language=$${SMOKE_LANGUAGE:-sr-RS} $(SMOKE_FLAGS)
 
 web:           ## build the SPA and copy it into the control plane's embed directory (replaces the placeholder page)
 	cd web && npm ci && npm run build

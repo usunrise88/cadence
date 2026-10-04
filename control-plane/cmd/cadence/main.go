@@ -4,6 +4,7 @@
 //	cadence [serve]                     run the server (default)
 //	cadence admin reset-password [...]  set a user's password from the host shell (see admin.go)
 //	cadence version                     print the version
+//	cadence smoke --project SLUG [...]  run a playbook (Try Cadence) and follow its session (see smoke.go)
 //	cadence <entity> <verb> [flags]     call one API operation on a running server (internal/cli, generated)
 //	cadence help [<entity> [<verb>]]    list the generated commands and their flags
 //
@@ -98,6 +99,17 @@ func main() {
 		}
 	case "version":
 		fmt.Println(version)
+	case "smoke":
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		done, err := smoke(ctx, os.Args[2:], os.Getenv, os.Stdout, os.Stderr, nil)
+		stop()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "cadence smoke:", err)
+			os.Exit(cli.ExitError)
+		}
+		if !done {
+			os.Exit(cli.ExitError)
+		}
 	case "egress-proxy":
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
@@ -107,7 +119,7 @@ func main() {
 		}
 	default:
 		if cmd != "help" && cmd != "--help" && cmd != "-h" && !cli.Known(cmd) {
-			fmt.Fprintf(os.Stderr, "usage: cadence [serve|admin|egress-proxy|version|help|<entity> <verb>]\nunknown command %q; `cadence help` lists the commands\n", cmd)
+			fmt.Fprintf(os.Stderr, "usage: cadence [serve|admin|egress-proxy|smoke|version|help|<entity> <verb>]\nunknown command %q; `cadence help` lists the commands\n", cmd)
 			os.Exit(cli.ExitUsage)
 		}
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

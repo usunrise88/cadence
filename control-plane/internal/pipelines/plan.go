@@ -48,6 +48,16 @@ type Plan struct {
 	Warnings []Warning // what does not stop the run (deprecated step kinds)
 }
 
+// optional reports whether the plan's step id is marked optional.
+func (p Plan) optional(id string) bool {
+	for _, s := range p.Pipeline.Steps {
+		if s.ID == id {
+			return s.Optional
+		}
+	}
+	return false
+}
+
 // PlanInput is what Plan checks a pipeline against besides the step registry.
 type PlanInput struct {
 	// Inputs are the artifacts the run starts from, by pipeline input; every declared input is required and its

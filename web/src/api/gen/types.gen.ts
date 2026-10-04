@@ -933,6 +933,10 @@ export type Defaults = {
      * Pseudo-labels (phase 4): when the members of a pseudo-label ensemble agree on a segment's text (pairwise WER, agreeing members, language identification)
      */
     pseudolabel?: DefaultSection;
+    /**
+     * Playbooks (phase 4 · stream B): the values playbook inputs default to (Try Cadence's hours of FLEURS and training steps)
+     */
+    playbooks?: DefaultSection;
     estimates: {
         bytes_per_audio_hour: DefaultValue;
         measured_plus_minus?: DefaultValue;
@@ -4935,6 +4939,20 @@ export type PlaybookStep = {
      * The step can run now (its phase has shipped)
      */
     available: boolean;
+    /**
+     * A step a person does (an admin approves a mount, a service is started on the host): what they do. It ticks from the operation it names, like any step (phase 4 · stream B)
+     */
+    person?: string;
+    /**
+     * Passed over (skipped) when a later step ticks first
+     */
+    optional?: boolean;
+    /**
+     * The step ticks only from an answer whose fields (dotted paths) equal these values; any other answer marks it running
+     */
+    when?: {
+        [key: string]: unknown;
+    };
 };
 
 export type PlaybookStop = {
@@ -5070,6 +5088,20 @@ export type PlaybookPlanItem = {
     jobId?: string;
     at?: string;
     estimate?: PlaybookStepEstimate;
+    /**
+     * A step a person does: what they do (phase 4 · stream B)
+     */
+    person?: string;
+    /**
+     * Passed over (skipped) when a later step ticks first
+     */
+    optional?: boolean;
+    /**
+     * The answer's fields that tick the step
+     */
+    when?: {
+        [key: string]: unknown;
+    };
 };
 
 export type PlaybookRunResult = {
@@ -8162,6 +8194,10 @@ export type AuxiliaryPayload = {
 export type AuxiliaryVersion = RegistryVersion & {
     auxiliary: AuxiliaryPayload;
     usedBy: Array<UsedBy>;
+    /**
+     * A service auxiliary only, in auxiliaries.get: whether its endpoint answers now, as a pipeline dry run would probe it (Cadence never starts a service; phase 4 · stream B)
+     */
+    reachable?: boolean;
 };
 
 export type AuxiliaryVersionList = {
@@ -8290,9 +8326,9 @@ export type StepKindDeprecation = {
  */
 export type PipelineWarning = {
     /**
-     * step-kind-deprecated: a step pins a kind its pack deprecates
+     * step-kind-deprecated: a step pins a kind its pack deprecates; auxiliary-unavailable: an optional step's service does not answer, so the run goes on without that step (phase 4 · stream B)
      */
-    code: 'step-kind-deprecated';
+    code: 'step-kind-deprecated' | 'auxiliary-unavailable';
     /**
      * The step id
      */

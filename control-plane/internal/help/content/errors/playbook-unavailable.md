@@ -7,9 +7,9 @@ contexts: [error:playbook-unavailable, guide:playbooks]
 ## What this is
 
 A `409 Conflict` problem of type `playbook-unavailable`, answered by `playbooks.run` when the playbook's
-`availableFrom` phase has not shipped. Cadence ships the five v1 playbooks from phase 2 so their chains and costs are
-visible, but "Adapt a new language", "Improve on telephony", "Fix names and terms" and the "Weekly flywheel" need
-steps of phase 4 and later (ingest and freeze, sources, boost lists, triage, schedules). Nothing was written.
+`availableFrom` phase has not shipped. Cadence lists every bundled playbook so its chain and cost are visible; in
+phase 4 only the "Weekly flywheel" waits (it needs phase 5's signals, triage verbs and schedules). Nothing was
+written.
 
 ## Place in the loop
 
@@ -26,7 +26,7 @@ Any. `playbooks.list` says for each playbook whether it is `runnable` and, if no
 ## Commands
 
 - `playbooks.list` — `runnable`, `availableFrom`, `unavailable`.
-- `playbooks.run` on `finetune-from-dataset` — the playbook phase 2 runs.
+- `playbooks.run` on `try-cadence`, `adapt-new-language` or `finetune-from-dataset` — playbooks this phase runs.
 
 ## Playbooks
 

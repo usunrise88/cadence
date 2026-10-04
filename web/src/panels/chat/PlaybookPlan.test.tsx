@@ -41,6 +41,20 @@ describe("Chat: the playbook plan checklist", () => {
     expect(screen.getByLabelText("Plan, 2 of 3 done")).toBeTruthy();
   });
 
+  it("a step a person does says what they do until it ticks; optional steps say so", () => {
+    const pb = playbook({
+      plan: [
+        { id: "mount", title: "An admin approves the mount", command: "mounts.new", state: "running", spending: false, person: "Approve mounts.new in Approvals" },
+        { id: "oasis", title: "Start OASIS", command: "auxiliaries.get", state: "pending", spending: false, person: "Run scripts/serve.sh", optional: true },
+        { id: "done", title: "Done already", command: "sources.edit", state: "done", spending: false, person: "Clear the source" },
+      ],
+    });
+    render(<PlaybookPlan playbook={pb} />);
+    const people = [...document.querySelectorAll('[data-slot="playbook-person"]')].map((n) => n.textContent);
+    expect(people).toEqual(["A person: Approve mounts.new in Approvals", "A person: Run scripts/serve.sh"]);
+    expect(document.querySelector('[data-item="oasis"]')?.textContent).toContain("optional");
+  });
+
   it("a stopped playbook shows the summary and the next step", () => {
     render(
       <PlaybookPlan

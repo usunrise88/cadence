@@ -7,6 +7,19 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/cas"
 )
 
+// A derived dataset (an eval's augmented golden copy, the segments cut for the pseudo-label members) is never
+// registered as a dataset version.
+func TestDerived(t *testing.T) {
+	for meta, want := range map[string]bool{
+		`{"purpose":"augmented"}`: true, `{"purpose":"pseudo-label","utterances":3}`: true, `{"purpose":"noise"}`: false,
+		`{}`: false, ``: false,
+	} {
+		if got := Derived([]byte(meta)); got != want {
+			t.Errorf("Derived(%s) = %v", meta, got)
+		}
+	}
+}
+
 func TestContentFingerprint(t *testing.T) {
 	a := []Line{{Hash: "b3:aa", Split: "train", Text: "one"}, {Hash: "b3:bb", Split: "test", Text: "two"}}
 	b := []Line{a[1], a[0]}
