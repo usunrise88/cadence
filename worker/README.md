@@ -162,4 +162,9 @@ with `ctx.auxiliary(param)` (`{versionId, name, version, payload}`). The NeMo pa
 client of the OASIS contract vendored under `packs/services/proto/` (source commit in `proto/SOURCE.yaml`; regenerate
 with `uv run python packs/services/scripts/gen_proto.py`). A service that does not answer raises
 `AuxiliaryUnavailable` (error type `step`, retryable, message `auxiliary-unavailable: …`). Guide:
-`docs/help/guides/auxiliary-models.md`.
+`docs/help/guides/auxiliary-models.md`. The omni pack (`packs/omni`, runtime `omni`, GPU, `Dockerfile.omni`, compose profile
+`omni`) holds `align_reference`: omniASR CTC emissions (fairseq2 0.6, which needs PyTorch 2.8, so not in the NeMo
+image) forced through reference texts with torchaudio's `forced_align` or the core NumPy Viterbi
+(`cadence_worker/ctc_align.py`), written as an `alignment` artifact (`cadence_worker/reference_alignment.py`) that
+`latency_score@3` reads for emission delay. Its framework pins are in `packs/omni/requirements-runtime.txt`; the GPU
+test (`packs/omni/tests/test_align_gpu.py`, `-m gpu`) runs in that image.

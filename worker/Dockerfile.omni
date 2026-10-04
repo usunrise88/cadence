@@ -1,0 +1,43 @@
+# Cadence omni worker — runtime `omni` (GPU): python:3.12-slim with PyTorch 2.8 (CUDA 12.8 wheels), torchaudio 2.8 and
+# fairseq2 0.6, the worker harness, the runtime-neutral core step kinds and the omni pack (align_reference: omniASR CTC
+# emissions aligned to reference texts; docs/help/steps/align-reference.md). fairseq2n 0.6 is built against torch 2.8
+# only, so it cannot live in the NeMo Speech image (torch 2.12): R45's one-off allowance, a second small runtime whose
+# model is loaded per job. Build context is the repository root:
+#   docker build -f worker/Dockerfile.omni -t cadence/worker-omni:dev .
+FROM python:3.12-slim@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4db6d462c84e51f
+
+ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1 PYTHONUNBUFFERED=1
+# fairseq2n links libsndfile.
+RUN apt-get update && apt-get install -y --no-install-recommends libsndfile1 && rm -rf /var/lib/apt/lists/*
+# The framework layer first (pinned; it changes only with the requirements file). The omnilingual-asr package is not
+# installed: the pack repeats the few architecture numbers it needs (cadence_omni/omniasr.py).
+COPY worker/packs/omni/requirements-runtime.txt /src/requirements-runtime.txt
+RUN pip install -r /src/requirements-runtime.txt
+COPY worker/pyproject.toml /src/worker/pyproject.toml
+COPY worker/cadence_worker /src/worker/cadence_worker
+COPY worker/packs/omni /src/worker/packs/omni
+RUN pip install /src/worker /src/worker/packs/omni && rm -rf /src/worker
+
+# defaults.yaml is the control plane's file (R11), packaged unchanged; the runtime descriptor names this image.
+COPY control-plane/defaults/defaults.yaml /opt/cadence/defaults.yaml
+COPY worker/runtime/omni.json /etc/cadence/runtime.json
+
+# Non-root with the control plane's uid, so blobs in the shared content store (mode 0440) are readable both ways.
+RUN groupadd --gid 65532 nonroot \
+ && useradd --uid 65532 --gid 65532 --no-create-home --home-dir /var/lib/cadence --shell /usr/sbin/nologin nonroot \
+ && mkdir -p /var/lib/cadence/cas /var/lib/cadence/scratch /worker-credential \
+ && chown -R 65532:65532 /var/lib/cadence /worker-credential
+
+ARG CADENCE_VERSION=dev
+ENV CADENCE_VERSION=${CADENCE_VERSION} \
+    CADENCE_DEFAULTS_FILE=/opt/cadence/defaults.yaml \
+    CADENCE_RUNTIME_FILE=/etc/cadence/runtime.json \
+    CADENCE_CAS_DIR=/var/lib/cadence/cas \
+    CADENCE_WORKER_SCRATCH=/var/lib/cadence/scratch \
+    HOME=/var/lib/cadence \
+    HF_HOME=/var/lib/cadence/hf \
+    FAIRSEQ2_CACHE_DIR=/var/lib/cadence/fairseq2
+USER 65532:65532
+WORKDIR /var/lib/cadence
+ENTRYPOINT ["python", "-m", "cadence_worker"]
+CMD ["serve"]

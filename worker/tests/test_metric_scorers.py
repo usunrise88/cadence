@@ -1,4 +1,4 @@
-"""entity_score@1 and latency_score@2: the metric_scores artifact (phase 3 stream R)."""
+"""entity_score@1 and latency_score@3: the metric_scores artifact (phase 3 stream R; emission delay: phase 4)."""
 
 from __future__ import annotations
 
@@ -45,7 +45,14 @@ def read(out: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
 def test_registered_as_neutral_metric_scorers() -> None:
     reg = registry()
     assert reg["entity_score"]["consumes"] == {"hypotheses": "hypotheses", "data": "dataset", "itn": "itn"}
-    assert reg["latency_score"]["consumes"] == {"hypotheses": "hypotheses", "data": "dataset", "vad": "vad"}
+    assert reg["latency_score"]["consumes"] == {
+        "hypotheses": "hypotheses",
+        "data": "dataset",
+        "vad": "vad",
+        "normalizer": "normalizer",
+        "alignment": "alignment",
+    }
+    assert reg["latency_score"]["optionalInputs"] == ["alignment", "normalizer"]
     for k in ("entity_score", "latency_score"):
         assert reg[k]["produces"] == {"scores": "metric_scores"}
         assert reg[k].get("neutral") is True
@@ -144,7 +151,7 @@ def test_latency_from_chunk_steps(tmp_path: Path) -> None:
     summary, rows = read(out)
     # Settles at partial 1, chunk 3: available at 640 ms, done 30 ms later; speech ended at 600 ms → 70 ms, not the
     # 1240 ms the batch's wall clock would say.
-    assert summary["scorer"] == "latency_score@2"
+    assert summary["scorer"] == "latency_score@3"
     assert summary["timing"] == "steps"
     assert rows[0]["finalAtMs"] == 670.0
     assert rows[0]["latencyMs"] == 70.0
