@@ -25,7 +25,8 @@ description: Cadence block "eval" workflow: golden sets, adoption, the baseline,
 - `adoptions.list kind=golden_set` — what the project already uses.
 - `projects.adopt` with `body.version` = the golden set's `ver_…` and `ifMatch` = the project's etag
   (`projects.get`); `dryRun: true` first. Adopting a golden set re-runs the leakage check against what the project
-  trained on and may refuse with `golden-set-leakage`.
+  trained on and may refuse with `golden-set-leakage`. A replay set (another language, kept to measure forgetting)
+  is adopted with `body.purpose: replay`; as a target it is refused with `locale-mismatch`.
 
 ## 3. The baseline
 - `aliases.get name=baseline` — what evals compare against. Unset: the project's default base model.

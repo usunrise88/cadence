@@ -179,6 +179,7 @@ function Blocks({ project, ready }: { project: Project; ready: boolean }) {
   const mixes = useQuery({ ...mixesListOptions(p), enabled: ready });
   const runs = useQuery({ ...runsListOptions({ ...p, query: { limit: 200 } }), enabled: ready });
   const golden = useQuery({ ...adoptionsListOptions({ ...p, query: { kind: "golden_set" } }), enabled: ready });
+  const datasets = useQuery({ ...adoptionsListOptions({ ...p, query: { kind: "dataset_version" } }), enabled: ready });
   const evals = useQuery({ ...evalsListOptions({ ...p, query: { limit: 200 } }), enabled: ready });
   const baseline = useQuery({ ...aliasesGetOptions({ path: { p: project.slug, name: "baseline" } }), enabled: ready, retry: false });
   useTopic(ready ? ["entity.mix.*", "entity.run.*", "entity.eval.*", `entity.project.${project.id}`] : null, () => {
@@ -186,12 +187,18 @@ function Blocks({ project, ready }: { project: Project; ready: boolean }) {
     void runs.refetch();
     void evals.refetch();
     void golden.refetch();
+    void datasets.refetch();
     void baseline.refetch();
   });
   const ev = evaluationSummary(golden.data?.items.length ?? 0, evals.data?.items ?? []);
   const b = baseline.data?.version;
   const blocks: Block[] = [
-    { name: "Data", what: "Sources, dataset versions, golden sets", phase: 4 },
+    {
+      name: "Data",
+      what: "Sources, dataset versions, golden sets",
+      count: datasets.data?.items.length ?? 0,
+      detail: `${datasets.data?.items.length ?? 0} adopted dataset versions (data.lock lists them) · ingest, preview and freeze in the Data workspace`,
+    },
     {
       name: "Training",
       what: "Mixes, runs, checkpoints",

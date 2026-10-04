@@ -58,8 +58,9 @@ type Adoption struct {
 	Aliases   []string
 }
 
-// Adopt makes a frozen version available to the project at revision rev; the project moves to rev+1.
-func Adopt(ctx context.Context, tx pgx.Tx, slug string, rev int, versionID string, actor auth.Actor) (Adoption, projects.Project, []events.Draft, error) {
+// Adopt makes a frozen version available to the project at revision rev; the project moves to rev+1. The version
+// must pass the licence check, and for a target adoption (purpose "" or target) the locale check (checks.go).
+func Adopt(ctx context.Context, tx pgx.Tx, slug string, rev int, versionID, purpose string, actor auth.Actor) (Adoption, projects.Project, []events.Draft, error) {
 	p, err := projects.Touch(ctx, tx, slug, rev)
 	if err != nil {
 		return Adoption{}, projects.Project{}, nil, err
@@ -76,6 +77,21 @@ func Adopt(ctx context.Context, tx pgx.Tx, slug string, rev int, versionID strin
 		return Adoption{}, projects.Project{}, nil, problems.Conflict.New("%s %s is a draft; only frozen versions can be adopted", v.Name, v.Version)
 	case StateDeprecated:
 		return Adoption{}, projects.Project{}, nil, problems.Conflict.New("%s %s is deprecated; adopt a newer version of %s", v.Name, v.Version, v.Name)
+	case StateArchived:
+		return Adoption{}, projects.Project{}, nil, problems.Conflict.New("%s %s is archived; adopt another version of %s", v.Name, v.Version, v.Name)
+	}
+	if Published(v.Kind) {
+		return Adoption{}, projects.Project{}, nil, problems.Conflict.New("%s %s is published by workers; pipelines pin %ss as name@version and nothing adopts them",
+			v.Name, v.Version, Noun(v.Kind))
+	}
+	if purpose != "" && purpose != PurposeTarget && purpose != PurposeReplay {
+		return Adoption{}, projects.Project{}, nil, problems.BadRequest.New("purpose %q is not target or replay", purpose)
+	}
+	if err := CheckLicence(v); err != nil {
+		return Adoption{}, projects.Project{}, nil, err
+	}
+	if err := CheckLocale(v, p.Locales, purpose); err != nil {
+		return Adoption{}, projects.Project{}, nil, err
 	}
 	a := Adoption{ProjectID: p.ID, Version: v, Actor: actor, Aliases: []string{}}
 	err = tx.QueryRow(ctx, `INSERT INTO adoptions (project_id, version_id, adopted_by) VALUES ($1, $2, $3)
@@ -87,7 +103,7 @@ func Adopt(ctx context.Context, tx pgx.Tx, slug string, rev int, versionID strin
 		return Adoption{}, projects.Project{}, nil, fmt.Errorf("insert adoption: %w", err)
 	}
 	return a, p, projects.Event(p, "project.adopted", map[string]any{
-		"adoption": map[string]any{"version": v.Summary(), "adoptedAt": a.AdoptedAt},
+		"adoption": map[string]any{"version": v.Summary(), "adoptedAt": a.AdoptedAt, "purpose": or(purpose, PurposeTarget)},
 	}), nil
 }
 
@@ -273,7 +289,8 @@ func SetAlias(ctx context.Context, tx pgx.Tx, projectID, name string, ifMatch *i
 }
 
 // Resolve finds the version a reference names for a project: ver_… (by id), @alias (the project's alias) or a
-// collection name (its newest frozen version). The version must be of kind.
+// collection name — the version of it the project adopted (what data.lock lists; the newest adopted when several),
+// else the collection's newest frozen version. The version must be of kind.
 func Resolve(ctx context.Context, q storage.Querier, projectID, kind, ref string) (Version, error) {
 	switch {
 	case strings.HasPrefix(ref, "@"):
@@ -288,8 +305,23 @@ func Resolve(ctx context.Context, q storage.Querier, projectID, kind, ref string
 	case strings.HasPrefix(ref, "ver_"):
 		return GetVersion(ctx, q, kind, ref)
 	default:
+		if projectID != "" {
+			if v, ok, err := Adopted(ctx, q, projectID, kind, ref); err != nil || ok {
+				return v, err
+			}
+		}
 		return Latest(ctx, q, kind, ref)
 	}
+}
+
+// Adopted returns the newest version of the collection (name or id) that the project adopted — the one its
+// data.lock pins — and false when it adopted none. Archived versions do not count.
+func Adopted(ctx context.Context, q storage.Querier, projectID, kind, collection string) (Version, bool, error) {
+	list, err := ListVersions(ctx, q, Filter{Kind: kind, Collection: collection, ProjectID: projectID, HideArchived: true, Limit: 1})
+	if err != nil || len(list) == 0 {
+		return Version{}, false, err
+	}
+	return list[0], true, nil
 }
 
 // AdoptQuietly records that the project uses these frozen versions, without a revision or an event of its own:
@@ -307,4 +339,11 @@ func AdoptQuietly(ctx context.Context, tx pgx.Tx, projectID string, versionIDs [
 		added += int(tag.RowsAffected())
 	}
 	return added, nil
+}
+
+func or(s, def string) string {
+	if s == "" {
+		return def
+	}
+	return s
 }

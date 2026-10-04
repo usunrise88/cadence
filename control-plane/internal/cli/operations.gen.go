@@ -282,7 +282,7 @@ var Operations = []Operation{
 		Description: "List auxiliary models (auxiliary/<name>): language classifiers, pseudo-label members and aligners Cadence uses to prepare data, never trains. Each carries its roles (lid, pseudolabel, align), the licence check (licence, outputsCommercialUse, conditions, sources) and either pinned weights (hfRepo, revision) or a running service (endpoint) that Cadence never starts. A project adopts one with projects.adopt — an approval the admin decides after reading the licence; step parameters then name it (whisper_transcribe, oasis_transcribe, lid_classify).",
 		Params: []Param{
 			{Name: "collection", In: "query", Flag: "collection", Type: "string", Description: "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)"},
-			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated"}},
+			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated", "archived"}},
 		},
 	},
 	{
@@ -329,7 +329,7 @@ var Operations = []Operation{
 		Summary: "List base model versions (Hugging Face repository at a pinned revision, licence, model family)",
 		Params: []Param{
 			{Name: "collection", In: "query", Flag: "collection", Type: "string", Description: "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)"},
-			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated"}},
+			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated", "archived"}},
 		},
 	},
 	{
@@ -539,7 +539,7 @@ var Operations = []Operation{
 		Summary: "List dataset versions (immutable, fingerprinted selections with splits and statistics)",
 		Params: []Param{
 			{Name: "collection", In: "query", Flag: "collection", Type: "string", Description: "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)"},
-			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated"}},
+			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated", "archived"}},
 		},
 	},
 	{
@@ -768,7 +768,7 @@ var Operations = []Operation{
 		Description: "List golden sets: frozen, held-out test sets per language and domain, each an eval-only dataset version tied to one scoring normalizer version. Runs never read them: a dataset version or mix sharing an utterance (by id or fingerprint) with any golden set is refused for training (golden-set-leakage). Adopt one into a project with projects.adopt.",
 		Params: []Param{
 			{Name: "collection", In: "query", Flag: "collection", Type: "string", Description: "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)"},
-			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated"}},
+			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated", "archived"}},
 		},
 	},
 	{
@@ -994,7 +994,7 @@ var Operations = []Operation{
 		Description: "List model families: what a runtime can train and decode — framework, architecture, capabilities, latency profiles (e.g. 160 ms) and the step kind that fills each role (calibrate, train, average, transcribe). Render options from the descriptor; never assume a family by name.",
 		Params: []Param{
 			{Name: "collection", In: "query", Flag: "collection", Type: "string", Description: "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)"},
-			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated"}},
+			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated", "archived"}},
 		},
 	},
 	{
@@ -1009,7 +1009,7 @@ var Operations = []Operation{
 		Summary: "List registered model versions (checkpoints whose gate passed) with their gate and lineage",
 		Params: []Param{
 			{Name: "collection", In: "query", Flag: "collection", Type: "string", Description: "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)"},
-			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated"}},
+			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated", "archived"}},
 		},
 	},
 	{
@@ -1099,7 +1099,7 @@ var Operations = []Operation{
 		Description: "List scoring normalizer versions (normalizer/basic, normalizer/he-il, …): the Unicode form, case folding, punctuation, combining-mark removal and literal mappings applied to reference and hypothesis before WER is computed. Every golden set is frozen with one normalizer version, so its scores stay comparable over time.",
 		Params: []Param{
 			{Name: "collection", In: "query", Flag: "collection", Type: "string", Description: "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)"},
-			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated"}},
+			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated", "archived"}},
 		},
 	},
 	{
@@ -1271,7 +1271,7 @@ var Operations = []Operation{
 	{
 		ID: "projects.adopt", Entity: "projects", Verb: "adopt", Method: "POST", Path: "/projects/{p}:adopt",
 		Summary:        "Adopt a registry version into the project by reference",
-		Description:    "Adopt a registry version (base model, dataset version, template) into this project by reference, so mixes, runs and aliases may use it. Only frozen versions are adoptable. Needs If-Match with the project's revision (projects.get); the project's revision goes up by one. Adopting an auxiliary model (LID, pseudo-label member, aligner; R26) is a registry-scope approval for everyone (202 with an approvalId) and is refused when its licence forbids commercial use of its outputs.",
+		Description:    "Adopt a registry version (base model, dataset version, golden set, normalizer, model, noise bank, auxiliary model, template) into this project by reference, so mixes, runs, gates, pipelines and aliases may use it; data.lock on main lists it from then on. Only frozen versions are adoptable (a draft dataset version is frozen first with datasets.freeze; deprecated and archived versions are refused). Adoption checks the licence (licence-forbids-adoption: no usable licence, or a non-commercial or no-derivatives licence on what a model is trained from or ships) and the locale (locale-mismatch: a dataset version, golden set or normalizer in none of the project's languages, unless purpose is replay: a golden set or dataset of another language kept to measure forgetting). Adopting an auxiliary model (LID, pseudo-label member, aligner; R26) is a registry-scope approval for everyone (202 with an approvalId) and is refused when its licence forbids commercial use of its outputs. Step kinds, runtimes and model families are published by workers and are never adopted. Needs If-Match with the project's revision (projects.get); the project's revision goes up by one.",
 		IdempotencyKey: true,
 		Params: []Param{
 			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
@@ -1279,6 +1279,7 @@ var Operations = []Operation{
 			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
 		},
 		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "purpose", Type: "string", Description: "target (default): the project's own languages, so a dataset version, golden set or normalizer must be in one of them (locale-mismatch otherwise); replay: data of other languages kept to measure and limit forgetting (replay golden sets, replay datasets), so the locale is not checked. The licence is checked either way"},
 			{Name: "version", Required: true, Type: "string", Description: "The registry version to adopt (ver_…)"},
 		}},
 	},
@@ -1575,7 +1576,7 @@ var Operations = []Operation{
 		Description: "List runtimes: the container images step kinds run in, each pinned by digest with its environment lock (CUDA, PyTorch, framework versions). Workers publish them at start; a new digest is a new version. Filter collection=runtime/<name>.",
 		Params: []Param{
 			{Name: "collection", In: "query", Flag: "collection", Type: "string", Description: "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)"},
-			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated"}},
+			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated", "archived"}},
 		},
 	},
 	{
@@ -1670,7 +1671,7 @@ var Operations = []Operation{
 		Description: "List step kinds a pipeline can pin as kind@version: the parameter schema (every parameter with its default, description, source and safe range), consumed and produced artifact types, resources and the runtime that runs it. Filter collection=step-kind/<name>.",
 		Params: []Param{
 			{Name: "collection", In: "query", Flag: "collection", Type: "string", Description: "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)"},
-			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated"}},
+			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated", "archived"}},
 		},
 	},
 	{
@@ -1731,7 +1732,7 @@ var Operations = []Operation{
 		Summary: "List template versions (instruction templates, permission presets, skills, pipeline templates, agent config)",
 		Params: []Param{
 			{Name: "collection", In: "query", Flag: "collection", Type: "string", Description: "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)"},
-			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated"}},
+			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated", "archived"}},
 			{Name: "templateKind", In: "query", Flag: "template-kind", Type: "string", Description: "Only templates of this kind", Enum: []string{"instructions", "preset", "skill", "pipeline", "agent-config", "playbook", "langpack"}},
 		},
 	},
@@ -1784,5 +1785,17 @@ var Operations = []Operation{
 			{Name: "after", In: "query", Flag: "after", Type: "string", Description: "Cursor: the `next` value of the previous page"},
 			{Name: "limit", In: "query", Flag: "limit", Type: "integer", Default: "100"},
 		},
+	},
+	{
+		ID: "versions.archive", Entity: "versions", Verb: "archive", Method: "POST", Path: "/registry/versions:archive",
+		Summary:        "Archive a registry version (soft delete, the admin's); refused while anything uses it",
+		Description:    "Archive a registry version of any kind people register (base model, dataset version, golden set, normalizer, model, noise bank, template): the soft delete of the registry, which never deletes. An archived version keeps its content and lineage but can no longer be adopted, aliased or found by registry.search without state:archived. A version that anything uses — adopted by a project, named by another version (a golden set's dataset), a run, a mix revision or a pipeline step — answers version-in-use listing the users. The admin's only; agents never archive. dryRun=true checks without archiving.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "version", Required: true, Type: "string", Description: "The registry version to archive (ver_…); versions have no revision, so the request names it instead of If-Match"},
+		}},
 	},
 }

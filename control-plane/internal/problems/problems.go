@@ -113,6 +113,12 @@ var (
 	// Auxiliary models and pseudo-labels (phase 4 · stream X, R26).
 	AuxiliaryUnavailable    = Type{"auxiliary-unavailable", http.StatusServiceUnavailable, "Auxiliary service unavailable"}
 	AuxiliaryLicenceRefused = Type{"auxiliary-licence-refused", http.StatusUnprocessableEntity, "Auxiliary licence refused"}
+	// Registry in full (phase 4 · stream R): adoption checks, soft delete, step-kind deprecation, data.lock.
+	LicenceForbidsAdoption = Type{"licence-forbids-adoption", http.StatusUnprocessableEntity, "Licence forbids adoption"}
+	LocaleMismatch         = Type{"locale-mismatch", http.StatusUnprocessableEntity, "Not in the project's languages"}
+	VersionInUse           = Type{"version-in-use", http.StatusConflict, "Registry version in use"}
+	StepKindDeprecated     = Type{"step-kind-deprecated", http.StatusUnprocessableEntity, "Step kind deprecated"}
+	NotAdopted             = Type{"not-adopted", http.StatusUnprocessableEntity, "Not in the project's data.lock"}
 )
 
 // Types lists every registered type.
@@ -134,6 +140,7 @@ func Types() []Type {
 		DatasetNotFrozen, SourceUnlicensed,
 		MountUnhealthy, StorageQuotaExceeded,
 		AuxiliaryUnavailable, AuxiliaryLicenceRefused,
+		LicenceForbidsAdoption, LocaleMismatch, VersionInUse, StepKindDeprecated, NotAdopted,
 	}
 }
 

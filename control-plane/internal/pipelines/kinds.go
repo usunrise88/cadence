@@ -33,6 +33,9 @@ type Kind struct {
 	// EstimateSeconds is an optional fixed wall-time estimate a kind may publish (a data step's typical time);
 	// facades pass better ones per run (StartInput.Estimates).
 	EstimateSeconds *float64 `json:"estimateSeconds,omitempty"`
+	// Deprecation is set when the kind's pack deprecates this version (StepKindDescriptor.deprecation): plans warn,
+	// and from After a pipeline file may not newly pin it (deprecation.go).
+	Deprecation *Deprecation `json:"deprecation,omitempty"`
 
 	VersionID string `json:"-"` // ver_ of the registry version
 }

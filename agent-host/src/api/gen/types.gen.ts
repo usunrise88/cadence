@@ -430,9 +430,9 @@ export type CredentialList = {
 export type RegistryKind = 'base_model' | 'dataset_version' | 'template' | 'runtime' | 'model_family' | 'step_kind' | 'noise_bank' | 'golden_set' | 'normalizer' | 'model' | 'auxiliary';
 
 /**
- * draft → frozen → deprecated; a frozen version never changes
+ * draft → frozen → deprecated; a frozen version never changes. archived (versions.archive, phase 4): the registry's soft delete, from any state; nothing uses it and nothing can adopt it
  */
-export type VersionState = 'draft' | 'frozen' | 'deprecated';
+export type VersionState = 'draft' | 'frozen' | 'deprecated' | 'archived';
 
 /**
  * A project that adopted the version, and its aliases pointing at it
@@ -649,6 +649,10 @@ export type AdoptionNew = {
      * The registry version to adopt (ver_…)
      */
     version: string;
+    /**
+     * target (default): the project's own languages, so a dataset version, golden set or normalizer must be in one of them (locale-mismatch otherwise); replay: data of other languages kept to measure and limit forgetting (replay golden sets, replay datasets), so the locale is not checked. The licence is checked either way
+     */
+    purpose?: 'target' | 'replay';
 };
 
 export type Adoption = {
@@ -3109,6 +3113,7 @@ export type StepKindDescriptor = {
      * Help slug (steps.<name>)
      */
     help: string;
+    deprecation?: StepKindDeprecation;
 };
 
 export type StepResources = {
@@ -3766,6 +3771,10 @@ export type PipelinePlan = {
     version: string;
     steps: Array<PipelinePlanStep>;
     estimate: PipelineEstimate;
+    /**
+     * What does not stop the run (deprecated step kinds)
+     */
+    warnings?: Array<PipelineWarning>;
 };
 
 export type PipelinePlanStep = {
@@ -3798,6 +3807,11 @@ export type PipelinePlanStep = {
      * Absent when unknown
      */
     estimateSeconds?: number;
+    deprecation?: StepKindDeprecation;
+    /**
+     * Parameters that name registry versions, as data.lock resolves them
+     */
+    locked?: Array<LockedReference>;
 };
 
 export type PipelineEstimate = {
@@ -8105,6 +8119,67 @@ export type TriageItem = {
 
 export type TriageItemList = {
     items: Array<TriageItem>;
+};
+
+export type VersionArchive = {
+    /**
+     * The registry version to archive (ver_…); versions have no revision, so the request names it instead of If-Match
+     */
+    version: string;
+};
+
+/**
+ * A step kind version its pack deprecates: plans warn; from `after` a pipeline file may not newly pin it
+ */
+export type StepKindDeprecation = {
+    /**
+     * From this day (UTC) a pipeline file that does not pin the kind yet is refused when it is saved
+     */
+    after: string;
+    /**
+     * The kind@version to pin instead
+     */
+    replacedBy?: string;
+    /**
+     * Why it is deprecated
+     */
+    note?: string;
+};
+
+/**
+ * Something a plan found that does not stop the run
+ */
+export type PipelineWarning = {
+    /**
+     * step-kind-deprecated: a step pins a kind its pack deprecates
+     */
+    code: 'step-kind-deprecated';
+    /**
+     * The step id
+     */
+    step?: string;
+    /**
+     * The pinned kind@version
+     */
+    kind?: string;
+    message: string;
+};
+
+/**
+ * A step parameter that names a registry version (x-cadence.registry), resolved through the project's data.lock at the pipeline's commit
+ */
+export type LockedReference = {
+    param: string;
+    /**
+     * The value in the pipeline file (a collection name, @alias or ver_…)
+     */
+    ref: string;
+    /**
+     * The locked version (ver_…)
+     */
+    versionId: string;
+    version: string;
+    collection: string;
 };
 
 export type SecretNewWritable = {
@@ -15926,3 +16001,43 @@ export type TriageListResponses = {
 };
 
 export type TriageListResponse = TriageListResponses[keyof TriageListResponses];
+
+export type VersionsArchiveData = {
+    body: VersionArchive;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/registry/versions:archive';
+};
+
+export type VersionsArchiveErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type VersionsArchiveError = VersionsArchiveErrors[keyof VersionsArchiveErrors];
+
+export type VersionsArchiveResponses = {
+    /**
+     * The archived version (for a dry run, the version as it is; nothing changed)
+     */
+    200: RegistryVersion;
+    /**
+     * Gated; a person decides the approval on the approvals topic
+     */
+    202: ApprovalAccepted;
+};
+
+export type VersionsArchiveResponse = VersionsArchiveResponses[keyof VersionsArchiveResponses];

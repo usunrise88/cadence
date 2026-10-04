@@ -12,6 +12,9 @@ A step kind is a class registered under the ``cadence.steps`` entry-point group.
   kind belongs to; None for neutral kinds), ``secrets`` (secret names it needs as environment variables),
   ``optional_inputs`` (inputs of ``consumes`` a pipeline may leave unwired: a transcribe step's boost list; published
   as ``optionalInputs``) and ``optional_outputs`` (outputs a successful step may leave unwritten);
+- optionally ``deprecated_after`` (``YYYY-MM-DD``), with ``replaced_by`` (the ``name@version`` to pin instead) and
+  ``deprecation_note``: the version is deprecated (published as ``deprecation``). It keeps running; plans that pin it
+  warn, and from that day the control plane refuses a pipeline file that newly pins it (``step-kind-deprecated``);
 - ``run(params, inputs, outputs, ctx)``: read the input paths, write each output path (a file, or a directory for a
   directory artifact) and report through the :class:`~cadence_worker.steps.context.StepContext`. Steps never touch
   the database or the API.
@@ -32,7 +35,7 @@ from pydantic_core import PydanticUndefined
 
 from cadence_worker.cas import ManifestFile, encode_manifest, hash_bytes, hash_file, valid_hash
 from cadence_worker.defaults import lookup
-from cadence_worker.protocol_gen import StepKindDescriptor, StepResources
+from cadence_worker.protocol_gen import StepKindDeprecation, StepKindDescriptor, StepResources
 
 if TYPE_CHECKING:
     from cadence_worker.steps.context import StepContext
@@ -211,6 +214,13 @@ def descriptor(name: str, kind: type[StepKind]) -> StepKindDescriptor:
         d["optionalOutputs"] = optional
     if optional_in := sorted(getattr(kind, "optional_inputs", ())):
         d["optionalInputs"] = optional_in
+    if after := getattr(kind, "deprecated_after", None):
+        dep = StepKindDeprecation(after=str(after))
+        if replaced := getattr(kind, "replaced_by", None):
+            dep["replacedBy"] = str(replaced)
+        if note := getattr(kind, "deprecation_note", None):
+            dep["note"] = str(note)
+        d["deprecation"] = dep
     return d
 
 

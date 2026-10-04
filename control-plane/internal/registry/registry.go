@@ -54,6 +54,9 @@ const (
 	StateDraft      = "draft"
 	StateFrozen     = "frozen"
 	StateDeprecated = "deprecated"
+	// StateArchived is the registry's soft delete (versions.archive): nothing uses the version and nothing can adopt
+	// it; its content and lineage stay.
+	StateArchived = "archived"
 )
 
 // kinds maps each kind to the prefix of its collection names and the noun used in messages.
@@ -73,6 +76,15 @@ var kinds = map[string]struct{ prefix, noun string }{
 
 // Known reports whether kind is a registry kind.
 func Known(kind string) bool { _, ok := kinds[kind]; return ok }
+
+// CollectionName completes a bare collection name with the kind's prefix (fleurs-he → dataset/fleurs-he); a name
+// that has a slash, or a kind without a prefix, is returned as it is.
+func CollectionName(kind, name string) string {
+	if k, ok := kinds[kind]; ok && !strings.Contains(name, "/") {
+		return k.prefix + name
+	}
+	return name
+}
 
 // Noun names a kind in messages ("base model").
 func Noun(kind string) string {
@@ -115,7 +127,7 @@ func (v Version) Summary() Summary {
 }
 
 const versionSelect = `SELECT v.id, v.collection_id, c.kind, c.name, v.version, v.fingerprint, v.state, c.tags, c.licence,
-	v.payload, v.created_by, v.created_at, coalesce(v.deprecated_at, v.frozen_at, v.created_at)
+	v.payload, v.created_by, v.created_at, coalesce(v.archived_at, v.deprecated_at, v.frozen_at, v.created_at)
 	FROM registry_versions v JOIN registry_collections c ON c.id = v.collection_id`
 
 func scanVersion(row pgx.CollectableRow) (Version, error) {
@@ -137,6 +149,7 @@ type Filter struct {
 	Text         []string // every term must match the collection's name or description
 	Tags         []string // every tag must be on the collection
 	Locales      []string // a locale:<x> tag must match each (he-IL matches locale:he and the other way round)
+	HideArchived bool     // leave out archived versions (registry.search unless state:archived is asked)
 	Limit        int
 }
 
@@ -155,6 +168,9 @@ func (f Filter) where() (string, []any) {
 	}
 	if f.State != "" {
 		conds = append(conds, "v.state = "+arg(f.State))
+	}
+	if f.HideArchived {
+		conds = append(conds, "v.state <> 'archived'")
 	}
 	if f.Fingerprint != "" {
 		conds = append(conds, "v.fingerprint = "+arg(f.Fingerprint))

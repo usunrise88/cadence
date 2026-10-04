@@ -600,11 +600,18 @@ paths:
       tags: [projects]
       x-cadence:
         toolDescription: >
-          Adopt a registry version (base model, dataset version, template) into this project by reference, so mixes,
-          runs and aliases may use it. Only frozen versions are adoptable. Needs If-Match with the project's revision
-          (projects.get); the project's revision goes up by one. Adopting an auxiliary model (LID, pseudo-label
-          member, aligner; R26) is a registry-scope approval for everyone (202 with an approvalId) and is refused when
-          its licence forbids commercial use of its outputs.
+          Adopt a registry version (base model, dataset version, golden set, normalizer, model, noise bank,
+          auxiliary model, template) into this project by reference, so mixes, runs, gates, pipelines and aliases may
+          use it; data.lock on main lists it from then on. Only frozen versions are adoptable (a draft dataset version
+          is frozen first with datasets.freeze; deprecated and archived versions are refused). Adoption checks the
+          licence (licence-forbids-adoption: no usable licence, or a non-commercial or no-derivatives licence on what a
+          model is trained from or ships) and the locale (locale-mismatch: a dataset version, golden set or normalizer
+          in none of the project's languages, unless purpose is replay: a golden set or dataset of another language
+          kept to measure forgetting). Adopting an auxiliary model (LID, pseudo-label member, aligner; R26) is a
+          registry-scope approval for everyone (202 with an approvalId) and is refused when its licence forbids
+          commercial use of its outputs. Step kinds, runtimes and model families are published by workers and are
+          never adopted. Needs If-Match with the project's revision (projects.get); the project's revision goes up by
+          one.
         # The handler names the version's kind to the policy engine (preset rule auxiliary-adoption: kind=auxiliary).
         gatedWhen: { param: kind, values: [auxiliary] }
       parameters:
@@ -4230,6 +4237,35 @@ paths:
         default: { $ref: "#/components/responses/Problem" }
 
 
+  # ---------------------------------------------------------------- registry in full, data panels (phase 4 · stream R) — add paths below this line
+
+  /registry/versions:archive:
+    x-cadence: { entity: versions, kind: registry_version }
+    post:
+      operationId: versions.archive
+      summary: Archive a registry version (soft delete, the admin's); refused while anything uses it
+      tags: [registry]
+      x-cadence:
+        toolDescription: >
+          Archive a registry version of any kind people register (base model, dataset version, golden set,
+          normalizer, model, noise bank, template): the soft delete of the registry, which never deletes. An archived
+          version keeps its content and lineage but can no longer be adopted, aliased or found by registry.search
+          without state:archived. A version that anything uses — adopted by a project, named by another version
+          (a golden set's dataset), a run, a mix revision or a pipeline step — answers version-in-use listing the
+          users. The admin's only; agents never archive. dryRun=true checks without archiving.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/VersionArchive" } } }
+      responses:
+        "200":
+          description: The archived version (for a dry run, the version as it is; nothing changed)
+          content: { application/json: { schema: { $ref: "#/components/schemas/RegistryVersion" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
   # ---------------------------------------------------------------- planned (later phases)
 
 components:
@@ -4721,8 +4757,8 @@ components:
       description: "The kinds registered so far; runtime, model_family and step_kind are published by workers (R40, R41, R45); noise_bank holds background noise for augmentation, registered by dataset_import with purpose noise; golden_set (goldenSets.freeze), normalizer (scoring normalizers, R21) and model (models.register, R22) arrive in phase 3; auxiliary (LID classifiers, pseudo-label members, aligners: AuxiliaryPayload, R26) in phase 4"
     VersionState:
       type: string
-      enum: [draft, frozen, deprecated]
-      description: "draft → frozen → deprecated; a frozen version never changes"
+      enum: [draft, frozen, deprecated, archived]
+      description: "draft → frozen → deprecated; a frozen version never changes. archived (versions.archive, phase 4): the registry's soft delete, from any state; nothing uses it and nothing can adopt it"
     UsedBy:
       type: object
       description: A project that adopted the version, and its aliases pointing at it
@@ -4883,6 +4919,11 @@ components:
       additionalProperties: false
       properties:
         version: { type: string, description: "The registry version to adopt (ver_…)" }
+        purpose:
+          type: string
+          enum: [target, replay]
+          default: target
+          description: "target (default): the project's own languages, so a dataset version, golden set or normalizer must be in one of them (locale-mismatch otherwise); replay: data of other languages kept to measure and limit forgetting (replay golden sets, replay datasets), so the locale is not checked. The licence is checked either way"
     Adoption:
       type: object
       required: [projectId, version, actor, adoptedAt, aliases]
@@ -6647,6 +6688,7 @@ components:
         neutral: { type: boolean, description: "Runtime-neutral core kind shipped in every runtime image" }
         secrets: { type: array, items: { type: string }, description: Secret names the step needs as environment variables }
         help: { type: string, description: "Help slug (steps.<name>)" }
+        deprecation: { $ref: "#/components/schemas/StepKindDeprecation" }
     StepResources:
       type: object
       properties:
@@ -7087,6 +7129,7 @@ components:
         version: { type: string }
         steps: { type: array, items: { $ref: "#/components/schemas/PipelinePlanStep" } }
         estimate: { $ref: "#/components/schemas/PipelineEstimate" }
+        warnings: { type: array, items: { $ref: "#/components/schemas/PipelineWarning" }, description: "What does not stop the run (deprecated step kinds)" }
     PipelinePlanStep:
       type: object
       required: [step, kind, kindVersion, params, departures, in, produces, resources]
@@ -7102,6 +7145,8 @@ components:
         produces: { type: object, additionalProperties: { type: string }, description: Output → artifact type }
         resources: { $ref: "#/components/schemas/StepResources" }
         estimateSeconds: { type: number, description: Absent when unknown }
+        deprecation: { $ref: "#/components/schemas/StepKindDeprecation" }
+        locked: { type: array, items: { $ref: "#/components/schemas/LockedReference" }, description: "Parameters that name registry versions, as data.lock resolves them" }
     PipelineEstimate:
       type: object
       required: [known, unknownSteps]
@@ -9816,3 +9861,37 @@ components:
       required: [items]
       properties:
         items: { type: array, items: { $ref: "#/components/schemas/TriageItem" } }
+    # ---------------------------------------------------------------- registry in full, data panels schemas (phase 4 · stream R) — add below
+    VersionArchive:
+      type: object
+      required: [version]
+      additionalProperties: false
+      properties:
+        version: { type: string, description: "The registry version to archive (ver_…); versions have no revision, so the request names it instead of If-Match" }
+    StepKindDeprecation:
+      type: object
+      description: "A step kind version its pack deprecates: plans warn; from `after` a pipeline file may not newly pin it"
+      required: [after]
+      properties:
+        after: { type: string, format: date, description: "From this day (UTC) a pipeline file that does not pin the kind yet is refused when it is saved" }
+        replacedBy: { type: string, maxLength: 80, description: "The kind@version to pin instead" }
+        note: { type: string, maxLength: 500, description: Why it is deprecated }
+    PipelineWarning:
+      type: object
+      description: Something a plan found that does not stop the run
+      required: [code, message]
+      properties:
+        code: { type: string, enum: [step-kind-deprecated], description: "step-kind-deprecated: a step pins a kind its pack deprecates" }
+        step: { type: string, description: The step id }
+        kind: { type: string, description: The pinned kind@version }
+        message: { type: string }
+    LockedReference:
+      type: object
+      description: "A step parameter that names a registry version (x-cadence.registry), resolved through the project's data.lock at the pipeline's commit"
+      required: [param, ref, versionId, version, collection]
+      properties:
+        param: { type: string }
+        ref: { type: string, description: "The value in the pipeline file (a collection name, @alias or ver_…)" }
+        versionId: { type: string, description: The locked version (ver_…) }
+        version: { type: string }
+        collection: { type: string }

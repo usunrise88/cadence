@@ -10,3 +10,11 @@ Projects adopt versions (`projects.adopt`, bumps the project's revision) and poi
 `normalizer/he-il`, the auxiliary models of the R26 licence table (`fixtures/auxiliaries.yaml`, kind `auxiliary`, phase 4;
 `internal/auxiliary` checks their payload and gates their adoption) and every unit of the templates tree at
 start, idempotently. `Resolve` turns `ver_…`, `@alias` or a collection name into a version.
+
+Phase 4 (stream R, migration 0036): `Adopt` takes a purpose (`target` | `replay`) and runs `CheckLicence` (unusable
+licence, `outputsCommercialUse: false`, non-commercial or no-derivatives on what is trained on or shipped:
+`licence-forbids-adoption`) and `CheckLocale` (dataset versions, golden sets, normalizers, auxiliary models in none of
+the project's languages, unless replay: `locale-mismatch`); worker-published kinds (`Published`) are never adopted.
+`Resolve` turns a collection name into the project's adopted version (what `data.lock` lists; `Adopted`) before the
+newest frozen one. `Archive` is the soft delete (state `archived`, terminal; `InUse` lists what blocks it:
+`version-in-use`); `Filter.HideArchived` keeps archived versions out of `registry.search`.

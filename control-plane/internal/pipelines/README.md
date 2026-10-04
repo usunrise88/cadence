@@ -18,3 +18,10 @@ The pipeline engine (docs/spec/03-pipelines-defaults.md "Pipelines and extension
 Go API for facades (runs, evals, playbooks): `Engine.Start(ctx, tx, StartInput{ProjectID, Name | Pipeline, Ref, Inputs, Params, Estimates, RunID, Actor, Priority, Fresh})` returns the run and its events; `Engine.Prepare` validates without writing (dry runs). `ListRuns(…, ListFilter{RunID})` finds a facade's pipeline runs.
 
 `pipelinestest` runs the engine without a worker: a fake `steps.Leases` that executes `echo@1` and `tally@1` in-process with scripted failures and hangs.
+
+- **data.lock** (`lock.go`, phase 4): a step parameter marked `x-cadence.registry: <registry kind>` (not `source`)
+  is resolved through `data.lock` at the pipeline's commit (templates and repository-less projects: the adoptions);
+  a reference the lock does not list is `not-adopted`; `PlanStep.Locked` reports the resolutions.
+- **Deprecation** (`deprecation.go`): a kind's `deprecation {after, replacedBy, note}` (published by its pack) puts a
+  `step-kind-deprecated` warning on every plan that pins it (`Plan.Warnings`); `Validate(…, previous)` refuses a
+  pipeline file that newly pins it from `after` on (`step-kind-deprecated`). `Options.Clock` sets the day.
