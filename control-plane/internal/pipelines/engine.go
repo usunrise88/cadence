@@ -68,6 +68,7 @@ type Options struct {
 	Repos     Repo                      // project repositories; nil: bundled templates only
 	Templates fs.FS                     // the bundled templates tree (pipelines/*.yaml); templates.FS when nil
 	Log       *slog.Logger
+	Clock     func() time.Time // when step-kind deprecations close (deprecation.go); time.Now when nil
 }
 
 // Engine runs pipelines.
@@ -184,7 +185,10 @@ type StartInput struct {
 // Prepare reads (or takes) the pipeline and validates it for a run without writing anything; a dry run answers
 // with its plan.
 func (e *Engine) Prepare(ctx context.Context, q storage.Querier, in StartInput) (Source, Plan, error) {
-	var src Source
+	var (
+		src  Source
+		proj *projects.Project // the project a repository or template pipeline is read for (data.lock)
+	)
 	if in.Pipeline != nil {
 		if err := in.Pipeline.Check(""); err != nil {
 			return Source{}, Plan{}, err
@@ -202,6 +206,7 @@ func (e *Engine) Prepare(ctx context.Context, q storage.Querier, in StartInput) 
 		if src, err = e.Load(ctx, p, in.Name, in.Ref); err != nil {
 			return Source{}, Plan{}, err
 		}
+		proj = &p
 	}
 	if in.Version != "" && in.Version != AnyVersion && in.Version != src.Version {
 		return Source{}, Plan{}, problems.PreconditionFailed.New("pipeline %s is at version %s, not %s; re-read it (pipelines.list) and retry",
@@ -213,6 +218,9 @@ func (e *Engine) Prepare(ctx context.Context, q storage.Querier, in StartInput) 
 	}
 	if err == nil {
 		err = licensed(ctx, q, plan)
+	}
+	if err == nil && proj != nil {
+		err = e.lock(ctx, q, *proj, src.Commit, &plan)
 	}
 	return src, plan, err
 }

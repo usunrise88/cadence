@@ -69,6 +69,7 @@ func (s *Server) RegistrySearch(ctx context.Context, req api.RegistrySearchReque
 		base.ProjectID = p.ID
 	}
 	f := registry.Search(base, deref(req.Params.Q))
+	f.HideArchived = f.State == "" // archived versions show only when state:archived is asked (versions.archive)
 	list, err := registry.ListVersions(ctx, s.Pool, f)
 	if err != nil {
 		return nil, err
@@ -359,7 +360,11 @@ func (s *Server) ProjectsAdopt(ctx context.Context, req api.ProjectsAdoptRequest
 	ctx = commands.WithProject(ctx, pr.ID) // project work: the policy engine, audit and approvals see the project
 	cmd := command(ctx, "projects.adopt", req.Params.IdempotencyKey, req.Params.DryRun)
 	return s.run(ctx, cmd, func(ctx context.Context, tx pgx.Tx) (commands.Result, []events.Draft, error) {
-		a, p, drafts, err := registry.Adopt(ctx, tx, req.P, rev, req.Body.Version, cmd.Actor)
+		var purpose string
+		if req.Body.Purpose != nil {
+			purpose = string(*req.Body.Purpose)
+		}
+		a, p, drafts, err := registry.Adopt(ctx, tx, req.P, rev, req.Body.Version, purpose, cmd.Actor)
 		if err != nil {
 			return commands.Result{}, nil, err
 		}

@@ -221,7 +221,7 @@ func planView(src pipelines.Source, plan pipelines.Plan) map[string]any {
 	}
 	return map[string]any{
 		"pipeline": src.Pipeline.Name, "source": src.Kind, "ref": optional(src.Ref), "commit": optional(src.Commit),
-		"version": src.Version, "steps": list, "estimate": plan.Estimate,
+		"version": src.Version, "steps": list, "estimate": plan.Estimate, "warnings": append([]pipelines.Warning{}, plan.Warnings...),
 	}
 }
 
