@@ -1684,7 +1684,8 @@
             "enum": [
               "draft",
               "frozen",
-              "deprecated"
+              "deprecated",
+              "archived"
             ],
             "type": "string"
           }
@@ -2813,7 +2814,8 @@
             "enum": [
               "draft",
               "frozen",
-              "deprecated"
+              "deprecated",
+              "archived"
             ],
             "type": "string"
           }
@@ -4044,7 +4046,8 @@
             "enum": [
               "draft",
               "frozen",
-              "deprecated"
+              "deprecated",
+              "archived"
             ],
             "type": "string"
           }
@@ -5351,7 +5354,8 @@
             "enum": [
               "draft",
               "frozen",
-              "deprecated"
+              "deprecated",
+              "archived"
             ],
             "type": "string"
           }
@@ -5426,7 +5430,8 @@
             "enum": [
               "draft",
               "frozen",
-              "deprecated"
+              "deprecated",
+              "archived"
             ],
             "type": "string"
           }
@@ -5575,7 +5580,8 @@
             "enum": [
               "draft",
               "frozen",
-              "deprecated"
+              "deprecated",
+              "archived"
             ],
             "type": "string"
           }
@@ -6512,7 +6518,7 @@
     {
       "name": "projects.adopt",
       "title": "Adopt a registry version into the project by reference",
-      "description": "Adopt a registry version (base model, dataset version, template) into this project by reference, so mixes, runs and aliases may use it. Only frozen versions are adoptable. Needs If-Match with the project's revision (projects.get); the project's revision goes up by one. Pass dryRun=true to see what would happen without changing anything.",
+      "description": "Adopt a registry version (base model, dataset version, golden set, normalizer, model, noise bank, template) into this project by reference, so mixes, runs, gates, pipelines and aliases may use it; data.lock on main lists it from then on. Only frozen versions are adoptable (a draft dataset version is frozen first with datasets.freeze; deprecated and archived versions are refused). Adoption checks the licence (licence-forbids-adoption: no usable licence, or a non-commercial or no-derivatives licence on what a model is trained from or ships) and the locale (locale-mismatch: a dataset version, golden set or normalizer in none of the project's languages, unless purpose is replay: a golden set or dataset of another language kept to measure forgetting). Step kinds, runtimes and model families are published by workers and are never adopted. Needs If-Match with the project's revision (projects.get); the project's revision goes up by one. Pass dryRun=true to see what would happen without changing anything.",
       "method": "POST",
       "path": "/projects/{p}:adopt",
       "inputSchema": {
@@ -6521,6 +6527,15 @@
           "body": {
             "additionalProperties": false,
             "properties": {
+              "purpose": {
+                "default": "target",
+                "description": "target (default): the project's own languages, so a dataset version, golden set or normalizer must be in one of them (locale-mismatch otherwise); replay: data of other languages kept to measure and limit forgetting (replay golden sets, replay datasets), so the locale is not checked. The licence is checked either way",
+                "enum": [
+                  "target",
+                  "replay"
+                ],
+                "type": "string"
+              },
               "version": {
                 "description": "The registry version to adopt (ver_…)",
                 "type": "string"
@@ -8180,7 +8195,8 @@
             "enum": [
               "draft",
               "frozen",
-              "deprecated"
+              "deprecated",
+              "archived"
             ],
             "type": "string"
           }
@@ -8651,7 +8667,8 @@
             "enum": [
               "draft",
               "frozen",
-              "deprecated"
+              "deprecated",
+              "archived"
             ],
             "type": "string"
           }
@@ -8972,7 +8989,8 @@
             "enum": [
               "draft",
               "frozen",
-              "deprecated"
+              "deprecated",
+              "archived"
             ],
             "type": "string"
           },
@@ -9256,6 +9274,57 @@
           "property": "limit",
           "in": "query",
           "name": "limit"
+        }
+      ]
+    },
+    {
+      "name": "versions.archive",
+      "title": "Archive a registry version (soft delete, the admin's); refused while anything uses it",
+      "description": "Archive a registry version of any kind people register (base model, dataset version, golden set, normalizer, model, noise bank, template): the soft delete of the registry, which never deletes. An archived version keeps its content and lineage but can no longer be adopted, aliased or found by registry.search without state:archived. A version that anything uses — adopted by a project, named by another version (a golden set's dataset), a run, a mix revision or a pipeline step — answers version-in-use listing the users. The admin's only; agents never archive. dryRun=true checks without archiving. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/registry/versions:archive",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "version": {
+                "description": "The registry version to archive (ver_…); versions have no revision, so the request names it instead of If-Match",
+                "type": "string"
+              }
+            },
+            "required": [
+              "version"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
         }
       ]
     }

@@ -314,6 +314,14 @@ class StepError(TypedDict):
     retryable: NotRequired[bool]
 
 
+class StepKindDeprecation(TypedDict):
+    """A step kind version its pack deprecates: plans warn; from `after` a pipeline file may not newly pin it"""
+
+    after: str
+    replacedBy: NotRequired[str]
+    note: NotRequired[str]
+
+
 class StepKindDescriptor(TypedDict):
     version: str
     params: dict[str, Any]
@@ -326,6 +334,7 @@ class StepKindDescriptor(TypedDict):
     neutral: NotRequired[bool]
     secrets: NotRequired[list[str]]
     help: str
+    deprecation: NotRequired[StepKindDeprecation]
 
 
 class StepOutcome(TypedDict):

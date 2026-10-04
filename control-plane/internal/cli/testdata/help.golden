@@ -64,6 +64,7 @@ Entities:
   telegramBot    set verify
   templates      get list
   utterances     get list search
+  versions       archive
 
 Global flags:
   --url URL               control plane (env CADENCE_URL, default http://127.0.0.1:8080; /api is appended)
