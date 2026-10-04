@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"maps"
+	"slices"
+	"strings"
 
 	"github.com/usunrise88/cadence/control-plane/internal/auxiliary"
 	"github.com/usunrise88/cadence/control-plane/internal/problems"
+	"github.com/usunrise88/cadence/control-plane/internal/registry"
 	"github.com/usunrise88/cadence/control-plane/internal/steps"
 	"github.com/usunrise88/cadence/control-plane/internal/storage"
 )
@@ -40,9 +43,9 @@ func RegistryRefs(k Kind) map[string]RefSpec {
 }
 
 // resolveRefs resolves each registry-reference parameter of a step (its resolved value names the version) for the
-// project. Problems (unknown collection, not adopted, wrong role, refused licence) are added to errs under prefix;
-// other errors are returned.
-func resolveRefs(ctx context.Context, q storage.Querier, k Kind, params map[string]any, projectID, prefix string, errs *Errors) (map[string]steps.RegistryRef, error) {
+// project, through its data.lock when lock reads one (resolveRef). Problems (unknown collection, not adopted, wrong
+// role, refused licence) are added to errs under prefix; other errors are returned.
+func resolveRefs(ctx context.Context, q storage.Querier, k Kind, params map[string]any, projectID string, lock *lockSet, prefix string, errs *Errors) (map[string]steps.RegistryRef, error) {
 	specs := RegistryRefs(k)
 	if len(specs) == 0 {
 		return nil, nil
@@ -59,7 +62,7 @@ func resolveRefs(ctx context.Context, q storage.Querier, k Kind, params map[stri
 			errs.Add(prefix+"."+name, "%s marks %s as a registry reference of kind %q; only %s references resolve", k.Ref(), name, spec.Kind, auxiliary.Kind)
 			continue
 		}
-		r, _, err := auxiliary.Resolve(ctx, q, projectID, spec.Role, ref)
+		r, err := resolveRef(ctx, q, projectID, spec.Role, ref, lock)
 		if pe, ok := problems.As(err); ok {
 			errs.Add(prefix+"."+name, "%s", pe.Detail)
 			continue
@@ -70,6 +73,50 @@ func resolveRefs(ctx context.Context, q storage.Querier, k Kind, params map[stri
 		out[name] = r
 	}
 	return out, nil
+}
+
+// lockSet is a project's data.lock at the commit a pipeline is read at (Engine.readLock), read at most once per plan
+// and only when a step names a registry version.
+type lockSet struct {
+	read    func(ctx context.Context, q storage.Querier) ([]lockEntry, string, error)
+	done    bool
+	entries []lockEntry
+	where   string
+	err     error
+}
+
+func (l *lockSet) get(ctx context.Context, q storage.Querier) ([]lockEntry, string, error) {
+	if !l.done {
+		l.entries, l.where, l.err = l.read(ctx, q)
+		l.done = true
+	}
+	return l.entries, l.where, l.err
+}
+
+// resolveRef resolves one registry reference of a step. A collection name the project's data.lock lists (at the
+// commit the pipeline is read at) resolves to the newest locked version of it, so a checkout of the repository says
+// which version ran (spec 02 "Lockfile"); a project without a repository or a lock, a collection the lock does not
+// list, ver_… and @alias resolve through the adoptions (auxiliary.Resolve). Either way the version must be adopted
+// (not-adopted), fill the role and allow commercial use of its outputs.
+func resolveRef(ctx context.Context, q storage.Querier, projectID, role, ref string, lock *lockSet) (steps.RegistryRef, error) {
+	if lock != nil && projectID != "" && !strings.HasPrefix(ref, "@") && !strings.HasPrefix(ref, "ver_") {
+		entries, where, err := lock.get(ctx, q)
+		if err != nil {
+			return steps.RegistryRef{}, err
+		}
+		collection := registry.CollectionName(auxiliary.Kind, ref)
+		if strings.HasPrefix(where, LockFile) && slices.ContainsFunc(entries, func(e lockEntry) bool {
+			return e.Kind == auxiliary.Kind && e.Collection == collection
+		}) {
+			l, err := resolveLocked(ctx, q, projectID, auxiliary.Kind, ref, entries)
+			if err != nil {
+				return steps.RegistryRef{}, err
+			}
+			ref = l.VersionID
+		}
+	}
+	r, _, err := auxiliary.Resolve(ctx, q, projectID, role, ref)
+	return r, err
 }
 
 // hashParams is what a step's input hash covers of its parameters: the resolved values and, for each registry

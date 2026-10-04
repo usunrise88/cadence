@@ -103,3 +103,20 @@ func TestCollectionName(t *testing.T) {
 		}
 	}
 }
+
+func TestTrainingForbidden(t *testing.T) {
+	for _, tc := range []struct{ licence, want string }{
+		{"CC-BY-4.0", ""},
+		{"Apache-2.0 AND CC-BY-4.0", ""},
+		{"CC-BY-NC-4.0", "forbids commercial use"},
+		{"CC-BY-NC-SA-4.0", "forbids commercial use"},
+		{"CC-BY-4.0 AND CC-BY-ND-4.0", "forbids derivative works"},
+		{"research only", "forbids commercial use"},
+		{"unknown", "names no licence"},
+		{"", "names no licence"},
+	} {
+		if got := TrainingForbidden(tc.licence); got != tc.want {
+			t.Errorf("TrainingForbidden(%q) = %q, want %q", tc.licence, got, tc.want)
+		}
+	}
+}

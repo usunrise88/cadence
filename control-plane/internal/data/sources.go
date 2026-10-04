@@ -20,6 +20,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/commands"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
 	"github.com/usunrise88/cadence/control-plane/internal/problems"
+	"github.com/usunrise88/cadence/control-plane/internal/registry"
 	"github.com/usunrise88/cadence/control-plane/internal/storage"
 )
 
@@ -173,6 +174,15 @@ func Edit(ctx context.Context, tx pgx.Tx, idOrName string, rev int, in EditInput
 	}
 	if in.Description != nil {
 		s.Description = *in.Description
+	}
+	// No clearance under a licence that forbids training (R26): neither clearing such a source nor moving a cleared
+	// source to such a licence. Unclearing is always allowed.
+	clearing := in.TrainingCleared != nil && *in.TrainingCleared && !s.TrainingCleared
+	if (clearing || (s.TrainingCleared && len(changes) > 0 && (in.TrainingCleared == nil || *in.TrainingCleared))) &&
+		registry.TrainingForbidden(s.Licence) != "" {
+		return Source{}, nil, problems.Validation([]problems.FieldError{{Path: "/trainingCleared",
+			Message: fmt.Sprintf("source %s is licensed %s, which %s: its audio may be evaluated on but never cleared for training (R26)",
+				s.Name, s.Licence, registry.TrainingForbidden(s.Licence))}})
 	}
 	if in.TrainingCleared != nil && *in.TrainingCleared != s.TrainingCleared {
 		s.TrainingCleared = *in.TrainingCleared

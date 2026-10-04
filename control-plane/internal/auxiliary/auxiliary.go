@@ -176,7 +176,7 @@ func adopted(ctx context.Context, q storage.Querier, projectID string, v registr
 		return fmt.Errorf("check adoption: %w", err)
 	}
 	if !ok {
-		return problems.Conflict.New("the project has not adopted %s %s; adopt it first (projects.adopt — an approval, R26)", v.Name, v.Version)
+		return problems.NotAdopted.New("the project has not adopted %s %s; adopt it first (projects.adopt — an approval, R26), which writes it into data.lock", v.Name, v.Version)
 	}
 	return nil
 }
@@ -197,8 +197,8 @@ func newestAdopted(ctx context.Context, q storage.Querier, projectID, name strin
 		if _, err := registry.Latest(ctx, q, Kind, name); err != nil {
 			return registry.Version{}, err
 		}
-		return registry.Version{}, problems.Conflict.New(
-			"the project has not adopted %s; adopt a version of it first (projects.adopt — an approval, R26)", name)
+		return registry.Version{}, problems.NotAdopted.New(
+			"the project has not adopted %s; adopt a version of it first (projects.adopt — an approval, R26), which writes it into data.lock", name)
 	}
 	return *best, nil
 }

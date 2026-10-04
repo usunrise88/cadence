@@ -251,7 +251,7 @@ func TestAdoptionAndAliases(t *testing.T) {
 		return e.do("PUT", "/api/projects/hebrew/aliases/"+name, `{"version":"`+ver+`"}`,
 			append([]string{"Idempotency-Key", e.key()}, hdr...)...)
 	}
-	expectProblem(t, put("train-current", ru), 409, "conflict")
+	expectProblem(t, put("train-current", ru), 422, "not-adopted") // not adopted (audit 2026-10-04 C5: one problem type everywhere)
 	var al alias
 	resp = e.ok(put("train-current", he), 200, &al)
 	if al.Rev != 1 || al.Reserved != "free" || al.Version.ID != he || resp.Header.Get("ETag") != `"1"` {

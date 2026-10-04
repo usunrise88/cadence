@@ -660,7 +660,7 @@ annotation:
   adjudicate_wer:
     value: 0.0
     unit: fraction
-    description: Two transcripts of an item farther apart than this (WER after the scoring normalizer) go to adjudication; 0 sends every word difference
+    description: Two transcripts of an item farther apart than this (word error rate after a neutral fold that lower-cases and drops punctuation and marks, not a scoring normalizer) go to adjudication; 0 sends every word difference
     source: Cadence recommendation (a golden set's reference is exact; differences are cheap to adjudicate)
     range: { min: 0, max: 0.5 }
   max_skips:

@@ -73,6 +73,9 @@ type PlanInput struct {
 	ProjectID string
 	// SkipInputs plans a pipeline file without artifacts (Validate: a file is saved before anyone has them).
 	SkipInputs bool
+	// lock reads the project's data.lock at the pipeline's commit (Prepare, for a repository or template pipeline):
+	// registry references resolve through it (resolveRef). Nil resolves them through the adoptions.
+	lock *lockSet
 }
 
 // Plan validates p for a run: every kind@version is published, every step input is wired to an artifact of the
@@ -196,7 +199,7 @@ func (e *Engine) Plan(ctx context.Context, q storage.Querier, p Pipeline, in Pla
 		if deps == nil {
 			deps = []Departure{}
 		}
-		refs, err := resolveRefs(ctx, q, *k, params, in.ProjectID, path+".params", &errs)
+		refs, err := resolveRefs(ctx, q, *k, params, in.ProjectID, in.lock, path+".params", &errs)
 		if err != nil {
 			return Plan{}, err
 		}

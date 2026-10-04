@@ -324,6 +324,37 @@ func Scan(ctx context.Context, r Reader, path string, maxFiles int, progress fun
 	return inv, blobs, nil
 }
 
+// knownSizes reads the size the artifact index records for each blob a scan found (a file of a directory artifact,
+// or a file artifact); blobs the index does not know are absent.
+func knownSizes(ctx context.Context, tx pgx.Tx, blobs map[string]BlobCopy) (map[string]int64, error) {
+	hashes := make([]string, 0, len(blobs))
+	for h := range blobs {
+		hashes = append(hashes, h)
+	}
+	out := make(map[string]int64, len(hashes))
+	const per = 5000
+	for start := 0; start < len(hashes); start += per {
+		part := hashes[start:min(start+per, len(hashes))]
+		rows, err := tx.Query(ctx, `SELECT DISTINCT ON (h) h, size FROM (
+				SELECT file_hash AS h, size FROM artifact_files WHERE file_hash = ANY($1)
+				UNION ALL SELECT hash, size FROM artifacts WHERE hash = ANY($1) AND NOT directory) k ORDER BY h`, part)
+		if err != nil {
+			return nil, fmt.Errorf("read blob sizes: %w", err)
+		}
+		var (
+			h    string
+			size int64
+		)
+		if _, err := pgx.ForEachRow(rows, []any{&h, &size}, func() error {
+			out[h] = size
+			return nil
+		}); err != nil {
+			return nil, fmt.Errorf("read blob sizes: %w", err)
+		}
+	}
+	return out, nil
+}
+
 // BlobCopy is a content-store blob a scan found on a mount: its path under the root and its size.
 type BlobCopy struct {
 	Path string
@@ -354,7 +385,23 @@ func (s *Service) runScan(ctx context.Context, r *jobs.Run) (any, error) {
 	}
 	inv.ScannedAt, inv.JobID = time.Now().UTC(), r.Job.ID
 	err = pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
+		sizes, err := knownSizes(ctx, tx, blobs)
+		if err != nil {
+			return err
+		}
 		for h, c := range blobs {
+			if want, known := sizes[h]; known && want != c.Size {
+				// A file named like the blob that is not it (truncated, rewritten): no copy, and any earlier record of
+				// one at this mount goes. The eviction reads a copy back before it relies on it; this keeps the
+				// accounts honest before that.
+				inv.BlobsMismatched++
+				if _, err := tx.Exec(ctx, "DELETE FROM blob_copies WHERE hash = $1 AND mount_id = $2", h, m.ID); err != nil {
+					return fmt.Errorf("drop a mismatched copy: %w", err)
+				}
+				s.log().WarnContext(ctx, "scan: a file named like a blob has another size", "mount", m.Name, "path", c.Path,
+					"size", c.Size, "want", want)
+				continue
+			}
 			if err := RecordCopy(ctx, tx, m.ID, h, c.Path, c.Size); err != nil {
 				return err
 			}

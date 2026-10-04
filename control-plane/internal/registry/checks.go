@@ -189,3 +189,23 @@ func CheckLocale(v Version, projectLocales []string, purpose string) error {
 	return problems.LocaleMismatch.New("%s %s is in %s, none of the project's languages (%s); adopt it with purpose replay if it is kept to measure forgetting",
 		v.Name, v.Version, strings.Join(have, ", "), strings.Join(projectLocales, ", "))
 }
+
+// TrainingForbidden says why a licence forbids training on what it covers, or "" when it allows it: the licence
+// names no licence, or one of its terms (split on " AND ") forbids commercial use or derivative works — a fine-tuned
+// model is a derivative work that a project ships (R26). Adoption checks a version's own licence (CheckLicence);
+// training checks the licence of every source a dataset version is built from too (data.Trainable), so a version
+// that was never adopted (a mix may name ver_… directly) or a source cleared before the rule cannot slip through.
+func TrainingForbidden(licence string) string {
+	for _, l := range strings.Split(licence, " AND ") {
+		l = strings.TrimSpace(l)
+		switch {
+		case unusableLicence(l):
+			return "names no licence"
+		case nonCommercial.MatchString(l):
+			return "forbids commercial use"
+		case noDerivatives.MatchString(l):
+			return "forbids derivative works"
+		}
+	}
+	return ""
+}

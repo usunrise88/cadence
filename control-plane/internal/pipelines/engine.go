@@ -222,8 +222,14 @@ func (e *Engine) Prepare(ctx context.Context, q storage.Querier, in StartInput) 
 		return Source{}, Plan{}, problems.PreconditionFailed.New("pipeline %s is at version %s, not %s; re-read it (pipelines.list) and retry",
 			src.Pipeline.Name, src.Version, in.Version)
 	}
-	plan, err := e.Plan(ctx, q, src.Pipeline, PlanInput{Inputs: in.Inputs, Params: in.Params, Estimates: in.Estimates,
-		ProjectID: in.ProjectID})
+	pin := PlanInput{Inputs: in.Inputs, Params: in.Params, Estimates: in.Estimates, ProjectID: in.ProjectID}
+	if proj != nil {
+		p := *proj
+		pin.lock = &lockSet{read: func(ctx context.Context, q storage.Querier) ([]lockEntry, string, error) {
+			return e.readLock(ctx, q, p, src.Commit)
+		}}
+	}
+	plan, err := e.Plan(ctx, q, src.Pipeline, pin)
 	if err == nil {
 		err = e.trainable(ctx, q, plan, in.Inputs)
 	}

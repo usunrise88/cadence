@@ -235,7 +235,7 @@ func SetAlias(ctx context.Context, tx pgx.Tx, projectID, name string, ifMatch *i
 		return Alias{}, nil, fmt.Errorf("check adoption: %w", err)
 	}
 	if !adopted {
-		return Alias{}, nil, problems.Conflict.New("the project has not adopted %s %s; adopt it first (projects.adopt)", v.Name, v.Version)
+		return Alias{}, nil, problems.NotAdopted.New("the project has not adopted %s %s; adopt it first (projects.adopt), which writes it into data.lock", v.Name, v.Version)
 	}
 
 	cur, err := aliases(ctx, tx, projectID, name, "FOR UPDATE")
