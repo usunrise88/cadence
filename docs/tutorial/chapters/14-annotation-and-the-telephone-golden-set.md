@@ -207,7 +207,23 @@ median (PR50) and the 90th percentile (PR90). Where a golden set is not aligned,
 3. Evaluate the Chapter 13 checkpoint on it. The Eval report's **Streaming** section now has an **Emission delay**
    chart per latency profile.
 
-<!-- TBD gate: emission delay PR50/PR90 per profile, eval id -->
+The calls' golden set waits for its annotators, so we aligned the FLEURS Serbian golden set instead: omniASR's CTC
+model placed all 13 763 words of its 700 utterances. Here is what the Chapter 13 checkpoint and the base model emit:
+
+| Profile | Fine-tuned PR50 / PR90 | Base model PR50 / PR90 | Latency to final, p50 (fine-tuned) |
+| --- | --- | --- | --- |
+| 80 ms | 4.5 s / 9.9 s | 4.4 s / 9.8 s | 1.3 s |
+| 160 ms | 0.42 s / 4.0 s | 0.45 s / 3.1 s | — |
+| 1 120 ms | 0.81 s / 1.3 s | 0.85 s / 1.3 s | — |
+
+<!-- align plr_01a106b6-3873…, eval evl_01a106b7-d42b…, 2026-10-04 -->
+
+Look at the first row. At 80 ms of look-ahead a word becomes stable four and a half seconds after it was said — later
+than the final transcript of a short utterance — while at 160 ms the median word is stable in under half a second.
+The 80 ms partials keep rewriting words until the utterance ends. Both models do it, so fine-tuning did not cause it.
+Whether it is the model's nature at that look-ahead or something in the streaming decoder is an open question on the
+stand as this is written; either way it is exactly the kind of fact a word-level metric exists to surface, and a
+reason to measure emission delay before you choose a deployment profile by its name.
 
 ## What you learned
 

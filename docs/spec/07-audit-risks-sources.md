@@ -831,6 +831,11 @@ owner may overrule):
       no better than Whisper alone (WER 0.121 vs the references). **Now:** the template's members are unchanged and
       the book explains it; should the default ensemble leave the base model out, or weight members by a measured
       WER?
+- [ ] Gate (2026-10-04): emission delay on `golden-set/fleurs-sr-latn-test` is PR50 4.5 s / PR90 9.9 s at `80ms`
+      but 0.42 s / 4.0 s at `160ms` (base model and fine-tune alike; latency to final at 80 ms p50 1.3 s): words in
+      80 ms partials stay unstable until the final. **Now:** unexplained — the model at that look-ahead, or the
+      pipeline decoder's partials (its NeMo shims)? Check before phase 5 deploys the 80 ms primary profile
+      (`evl_01a106b7-d42b…`).
 
 ## Sources
 
