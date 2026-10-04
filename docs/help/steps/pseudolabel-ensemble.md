@@ -25,9 +25,16 @@ A kept segment gets `origin: pseudo-label`, the picked text as the member wrote 
 members / members) × (1 − the pick's mean WER to the other agreeing members). A disputed segment gets
 `origin: pseudo-label:disputed`, the best candidate as its text and `dispute: {reason, candidates, lid}`. The control
 plane puts every disputed segment in the project's triage queue (`triage.list`); `manifest_filter` drops them by
-default, so they never reach training.
+default, so they never reach training. Every row with language evidence — kept, disputed, or a passed-through row the
+`lid` input covers — carries `lid: {language, confidence?, agrees?, source}` (`source`: `lid` or `members`), which
+`manifest_filter` compares with the segment's language (`lid_mismatch`). Rows that repeat an audio hash get the same
+verdict; `hypotheses` holds one row per audio.
 
-Outputs: `segments` (every input row, in order; header `segments.json` with the members and the normalizer) and
+The control plane indexes disputes from this step's output only (its meta counts them): the steps after it carry the
+disputed rows on under new segments hashes, and a segment never gets a second open triage item.
+
+Outputs: `segments` (every input row, in order; header `segments.json` with the members, the normalizer and the
+step appended to `steps`; `files.jsonl` kept) and
 `hypotheses` (one row per labelled segment: `{audio, text, origin, confidence, pick?, reason?, members: [{member,
 text, meanWer, …}]}`). Meta: counts of labelled, disputed and passed-through segments and the reasons; the final
 metric `disputed_share`.
@@ -40,7 +47,8 @@ punctuated text. `text_normalise` restores the base model's training style downs
 Data. In `pipelines/pseudo-label.yaml`: `sdp_ingest` → `segments_cut` (the untranscribed segments as a dataset) →
 the members and `lid_classify` → **`pseudolabel_ensemble`** → `text_normalise` → `manifest_filter` →
 `speaker_disjoint_split` → `dataset_freeze` (draft). A member wired as `hypotheses.<n>` from an optional step (the
-OASIS member) may fail: the ensemble then runs with the others.
+OASIS member) may fail, or be skipped at start when its kind is not published or no worker that publishes it is alive
+(the dry run warns `step-kind-unavailable`): the ensemble then runs with the others.
 
 ## Fields and defaults
 

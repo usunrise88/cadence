@@ -8,7 +8,8 @@ contexts: [error:golden-set-leakage, field:datasets, field:datasetVersionId]
 
 A `422 Unprocessable Entity` problem of type `golden-set-leakage`: golden-set audio would reach training, or training
 audio would be scored as held-out. Cadence compares utterances by identity (the content hash of the audio) and by every
-fingerprint the imports wrote (`utterance_fingerprints`: `audio-b3` today, an acoustic fingerprint in phase 4). It is
+fingerprint (`utterance_fingerprints`: `audio-b3` from every import, `file-b3` — the whole source file's canonical hash —
+from `sdp_ingest@2`; the two match each other, so a golden file re-cut from a mount is found). It is
 answered in three places:
 
 | Where | What overlaps | What it protects |

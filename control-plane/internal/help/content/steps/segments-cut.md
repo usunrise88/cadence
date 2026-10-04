@@ -10,7 +10,9 @@ contexts: [step:segments_cut, artifact:segments, artifact:dataset]
 (`sdp_ingest`) and writes a `dataset` artifact of format `cadence.dataset/1` with `purpose: pseudo-label`: one 16 kHz
 mono WAV per segment that needs a label — a segment without text of its own, or with a pseudo-label from an earlier
 pass — cut from its file on the mount exactly as `dataset_freeze` cuts it, and checked against the segment's hash.
-The bot's scripted turns and segments with a human transcript are left out (`which: all` cuts every segment).
+The bot's scripted turns and segments with a human transcript are left out (`which: all` cuts every segment). A
+segment whose audio repeats another's (the same hash: two copies of one file on the mount) is cut once; the ensemble
+gives every row with that audio the same verdict.
 
 The pseudo-label members (`nemotron_transcribe`, `whisper_transcribe`, `oasis_transcribe`) and `lid_classify` read
 it as any dataset and key their rows by the BLAKE3 hash of each clip, which is the segment's identity, so

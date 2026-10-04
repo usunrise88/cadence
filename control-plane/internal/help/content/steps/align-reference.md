@@ -26,8 +26,9 @@ NeMo CTC checkpoints, so it cannot use omniASR.
 
 **Nothing is invented.** An utterance stays unaligned, with its reason, when:
 
-- its language is not one the aligner's payload lists (`languages`; omniASR CTC 1B covers `heb_Hebr`, `srp_Cyrl` and
-  `hrv_Latn`, checked in its repository's language list on 2026-10-04) — no model is loaded for such a dataset;
+- its language is not one the aligner's payload lists (`languages`; omniASR CTC 1B covers `heb_Hebr`, `srp_Cyrl`,
+  `hrv_Latn` and `bos_Latn`, checked in its repository's language list on 2026-10-04; `srp_Latn` is not in it) — no
+  model is loaded for such a dataset;
 - it is longer than `max_duration_s`;
 - it has no text, or its audio has fewer frames than its text needs.
 

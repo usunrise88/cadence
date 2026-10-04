@@ -46,7 +46,8 @@ operation the step names, never from what the agent reports:
 | OASIS answers (optional) | Starts the service on the host: `scripts/serve.sh ensemble no-300m` in the OASIS checkout (about 8.6 GB beside vLLM). Cadence never starts it | `auxiliaries.get` answering `reachable: true` |
 
 An optional step is skipped when the next step ticks first: a pseudo-label run started without OASIS goes on with
-two members (the pipeline's `oasis` step is optional; its dry run warns `auxiliary-unavailable`). A read that does
+two members (the pipeline's `oasis` step is optional; its dry run warns `auxiliary-unavailable` when the service does
+not answer, and `step-kind-unavailable` when no live worker publishes its kind — the step is then skipped). A read that does
 not meet a step's `when` marks it running ("waiting for a person"). While a step waits, tell the agent in Chat when
 you have done your part; a denied approval stops the playbook.
 

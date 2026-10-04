@@ -135,7 +135,7 @@ The minimal data entities imports need; phase 4 completes them ("Data in full (p
 | Utterance (`utt_…`) | Identity = content hash, the BLAKE3 (`b3:…`) of its audio file in the content store; duration, language, speaker, sample rate, channels, bytes; owned by the first source that imported it. `utterances.list\|get` at `/registry/utterances` (filters source, dataset version and split, language; oldest first, `after` cursor; `get` by id or hash with fingerprints and memberships) |
 | Transcript (`trn_…`) | Text with origin `human \| pseudo-label \| model:<id>` and optional confidence; one row per (utterance, origin, text) |
 | Dataset membership | Which utterances a dataset version holds, the split (`train \| validation \| test`) and the transcript it uses; written once when the version is registered |
-| Utterance fingerprint | Kind → value per utterance for leakage checks: `audio-b3` from every import; steps may add others (an acoustic fingerprint in phase 4) |
+| Utterance fingerprint | Kind → value per utterance for leakage checks: `audio-b3` from every import; `file-b3` from `sdp_ingest@2` (the canonical hash of the whole track a segment was cut from — `audio-b3` and `file-b3` match each other); steps may add others |
 
 Rules:
 
@@ -377,7 +377,8 @@ Phase 4 additions:
   (`pipelines/align-reference.yaml`), not at freeze; a language with no allowed CTC aligner stays unaligned.
 
 **Leakage and training exclusion.** A golden set's utterances never reach training, checked by utterance fingerprint
-(`utterance_fingerprints`: `audio-b3` today, an acoustic fingerprint in phase 4):
+(`utterance_fingerprints`: `audio-b3` from every import and `file-b3` from `sdp_ingest@2`, which match each other, so a
+golden file re-cut from a mount is found; an acoustic fingerprint is not built):
 
 | Where | Check | Refusal |
 | --- | --- | --- |
