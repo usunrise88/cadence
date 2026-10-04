@@ -102,6 +102,9 @@ Two details matter for phone audio, and Chapter 14 depends on both:
   sidecar file carries that script, ingest takes the bot's segments from it with origin `model:tts-script`. Only
   the caller's speech needs labelling.
 
+A corpus that is already cut into sentences, like FLEURS, should not be cut again: set `segmentation: file`, and
+each file becomes one segment as published.
+
 Nothing is copied yet. Ingest writes a list of segments, each with a URI such as
 `mount://corpora/calls-synth-sr/2bb966076641/calls/call-0000.wav#t=6.2,15.42&ch=0` and the hash of the audio it
 names, decoded the same way every time: 16 kHz, mono, 16-bit. The hash is the utterance's identity, so the leakage
@@ -155,7 +158,9 @@ commercially, and pseudo-labels *are* its output.
    this data", which only a person can say.
 3. Adopt `auxiliary/whisper-large-v3` (and, if the service runs, `auxiliary/oasis`) into the project. Third
    approval.
-4. In the Recipe, open `pipelines/pseudo-label.yaml` and set the mount path and the source. Run **Check**: the plan
+4. In the Recipe, open `pipelines/pseudo-label.yaml` and set the mount path
+   (`mount://corpora/fleurs-sr/70bb2e84b976/train`), the source and `segmentation: file`. Ingest skips any `test/`
+   folder unless you ask for it: the test split is where golden sets come from. Run **Check**: the plan
    lists every step, warns if the OASIS service does not answer (the step is optional, so the pipeline still
    runs), and estimates the GPU time.
 5. Run it and watch the **Pipeline run** panel: ingest, cut, the members one by one, LID, the ensemble, text
@@ -178,9 +183,16 @@ adopt it into another project; Cadence answers `dataset-not-frozen` if you try.
 
 Freezing does three things, in order:
 
-1. **The leakage check.** Every utterance is compared by fingerprint with every golden set. If FLEURS test audio
-   had slipped into the folder you ingested, the freeze would stop here with `golden-set-leakage` and list the
-   overlap. <!-- TBD gate: run the deliberate leakage demo on the test split, record the refusal -->
+1. **The leakage check.** Every utterance is compared by fingerprint with every golden set. Two fingerprints
+   matter: the hash of the segment itself, and the hash of the whole file it was cut from. The second one catches
+   golden-set audio that ingest cut differently — trimmed by VAD, say — so its own hash no longer matches. If FLEURS
+   test audio had slipped into the folder you ingested, the freeze would stop here with `golden-set-leakage` and
+   list the overlap. <!-- TBD gate: run the deliberate leakage demo on the test split, record the refusal -->
+   > **In the field** — The first version of this check compared only the segments' own hashes. A review before
+   > the stand ran it noticed that ingest trims every FLEURS file with VAD, so a test file ingested from the mount
+   > would get a new hash and pass the check — and the model would train on its own exam. The fix was the second
+   > fingerprint, and a default that leaves `test/` folders out of ingest. A leakage check is only as good as its
+   > idea of "the same audio". <!-- phase-4 audit C1, fixed in sdp_ingest@2, 2026-10-04 -->
 2. **The cut.** The segments are decoded from the mount and written into Cadence's content store, one WAV per
    utterance. This is the first copy, and the project's storage quota is checked before it starts.
 3. **The card.** Quality checks (duration histogram, silence and clipping share, transcript-length outliers) and a
