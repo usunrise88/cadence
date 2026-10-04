@@ -425,7 +425,7 @@ export type CredentialList = {
 };
 
 /**
- * The kinds registered so far; runtime, model_family and step_kind are published by workers (R40, R41, R45); noise_bank holds background noise for augmentation, registered by dataset_import with purpose noise; golden_set (goldenSets.freeze), normalizer (scoring normalizers, R21) and model (models.register, R22) arrive in phase 3
+ * The kinds registered so far; runtime, model_family and step_kind are published by workers (R40, R41, R45); noise_bank holds background noise for augmentation, registered by dataset_import with purpose noise or mined from call silences by noise_mine; golden_set (goldenSets.freeze), normalizer (scoring normalizers, R21) and model (models.register, R22) arrive in phase 3
  */
 export type RegistryKind = 'base_model' | 'dataset_version' | 'template' | 'runtime' | 'model_family' | 'step_kind' | 'noise_bank' | 'golden_set' | 'normalizer' | 'model';
 
@@ -7674,6 +7674,145 @@ export type DatasetCachePlan = {
      * Why the command cannot proceed (empty when it can)
      */
     blocked: Array<string>;
+};
+
+/**
+ * lhotse-shar: Shar shards (cuts and recording tars); nemo-manifest: manifest.<split>.jsonl with the WAV files; cadence-bundle: the registry record, sources and blobs laid out as a content store, for another Cadence instance; hf-hub: an audiofolder dataset pushed to the Hugging Face Hub (approval)
+ */
+export type DatasetExportFormat = 'lhotse-shar' | 'nemo-manifest' | 'cadence-bundle' | 'hf-hub';
+
+export type DatasetExportRequest = {
+    /**
+     * The frozen dataset version (ver_…)
+     */
+    version: string;
+    format: DatasetExportFormat;
+    /**
+     * Slug of the project the export's pipeline run runs in; default the project the version was ingested or imported in
+     */
+    project?: string;
+    /**
+     * cas, or a directory on a writable path mount (mount://exports/<path>); default mount://<storage.export_mount>/<collection>/<version>/<format> when that mount is registered and writable, else cas. Not used by hf-hub
+     */
+    target?: string;
+    /**
+     * hf-hub: the dataset repository <org>/<name>; created when missing
+     */
+    hubRepo?: string;
+    /**
+     * hf-hub: create the repository private (default storage.export_hub_private)
+     */
+    hubPrivate?: boolean;
+};
+
+export type DatasetExportPlan = {
+    versionId: string;
+    collection: string;
+    version: string;
+    format: DatasetExportFormat;
+    projectId: string;
+    /**
+     * The project's slug
+     */
+    project: string;
+    /**
+     * cas, mount://… or hf://datasets/<repo>
+     */
+    target: string;
+    stepKind: string;
+    utterances: number;
+    hours: number;
+    /**
+     * The version's audio bytes (what the export reads)
+     */
+    bytes: number;
+    /**
+     * The version's licence
+     */
+    licence: string;
+    /**
+     * Names of the sources the version holds
+     */
+    sources: Array<string>;
+    /**
+     * True when the real call waits for an approval (hf-hub)
+     */
+    approval: boolean;
+    /**
+     * True when the audio lands unchanged on a mount and becomes copies of its content-store blobs (the cache may then evict the version)
+     */
+    copies: boolean;
+};
+
+/**
+ * The state of the export's pipeline run; done once the export artifact is recorded
+ */
+export type DatasetExportState = 'running' | 'done' | 'failed' | 'cancelled';
+
+export type DatasetExportFile = {
+    /**
+     * Relative to the target (a mount directory) or to files/ in the export artifact
+     */
+    path: string;
+    hash?: string;
+    bytes: number;
+};
+
+export type DatasetExportHub = {
+    repo: string;
+    commit?: string;
+    url?: string;
+    private?: boolean;
+};
+
+export type DatasetExport = {
+    /**
+     * dex_…
+     */
+    id: string;
+    /**
+     * Empty when an export step ran in a project pipeline on a dataset artifact no version names
+     */
+    versionId?: string;
+    collection?: string;
+    version?: string;
+    format: DatasetExportFormat;
+    projectId: string;
+    target: string;
+    state: DatasetExportState;
+    pipelineRunId?: string;
+    stepKind?: string;
+    /**
+     * The export artifact (b3:…): export.json and, with target cas, the files
+     */
+    artifact?: string;
+    /**
+     * Files the export wrote
+     */
+    files: number;
+    bytes: number;
+    /**
+     * Content-store blobs the export placed on a mount unchanged (recorded as mount copies)
+     */
+    copies: number;
+    /**
+     * The first files written (up to 20)
+     */
+    sample?: Array<DatasetExportFile>;
+    hub?: DatasetExportHub;
+    /**
+     * Why the export's pipeline run failed
+     */
+    error?: string;
+    createdBy: Actor;
+    approvalId?: string;
+    createdAt: string;
+    finishedAt?: string;
+    rev: number;
+};
+
+export type DatasetExportList = {
+    items: Array<DatasetExport>;
 };
 
 export type SourceNew = {
@@ -15497,6 +15636,116 @@ export type DatasetsEvictResponses = {
 };
 
 export type DatasetsEvictResponse = DatasetsEvictResponses[keyof DatasetsEvictResponses];
+
+export type DatasetsExportData = {
+    body: DatasetExportRequest;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/registry/datasets:export';
+};
+
+export type DatasetsExportErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type DatasetsExportError = DatasetsExportErrors[keyof DatasetsExportErrors];
+
+export type DatasetsExportResponses = {
+    /**
+     * Dry run — the export as it would run; nothing started
+     */
+    200: DatasetExportPlan;
+    /**
+     * The export, started: its pipeline run is queued (follow entity.export.{id} or pipeline_run.{pipelineRunId}); an identical earlier export reused by its input hash comes back done
+     */
+    201: DatasetExport;
+    /**
+     * Gated; a person decides the approval on the approvals topic
+     */
+    202: ApprovalAccepted;
+};
+
+export type DatasetsExportResponse = DatasetsExportResponses[keyof DatasetsExportResponses];
+
+export type ExportsListData = {
+    body?: never;
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        /**
+         * Only exports of this dataset version (ver_…)
+         */
+        version?: string;
+        limit?: number;
+    };
+    url: '/projects/{p}/exports';
+};
+
+export type ExportsListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type ExportsListError = ExportsListErrors[keyof ExportsListErrors];
+
+export type ExportsListResponses = {
+    /**
+     * Exports, newest first
+     */
+    200: DatasetExportList;
+};
+
+export type ExportsListResponse = ExportsListResponses[keyof ExportsListResponses];
+
+export type ExportsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Export id (dex_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/exports/{id}';
+};
+
+export type ExportsGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type ExportsGetError = ExportsGetErrors[keyof ExportsGetErrors];
+
+export type ExportsGetResponses = {
+    /**
+     * The export
+     */
+    200: DatasetExport;
+};
+
+export type ExportsGetResponse = ExportsGetResponses[keyof ExportsGetResponses];
 
 export type DatasetsPreviewData = {
     body: DatasetPreviewRequest;

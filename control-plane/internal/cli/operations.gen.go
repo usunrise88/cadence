@@ -500,6 +500,23 @@ var Operations = []Operation{
 		}},
 	},
 	{
+		ID: "datasets.export", Entity: "datasets", Verb: "export", Method: "POST", Path: "/registry/datasets:export",
+		Summary:        "Export a frozen dataset version as Lhotse Shar, a NeMo manifest or a Cadence bundle (to a writable mount or the content store), or to the Hugging Face Hub (approval); 202 with the job",
+		Description:    "Export a frozen dataset version (a draft is refused with dataset-not-frozen; freeze it first). Formats: lhotse-shar (Shar shards — cuts.NNNNNN.jsonl.gz and recording.NNNNNN.tar with the 16 kHz WAV audio — that Lhotse's Shar reader opens), nemo-manifest (manifest.<split>.jsonl with audio_filepath, duration, text and lang, the WAV files beside it), cadence-bundle (the version's registry record, its sources with their licences and every blob laid out as a content store, cas/b3/<ab>/<hash>, which another Cadence instance imports with dataset_import format cadence-bundle) and hf-hub (an audiofolder dataset with its card pushed to hubRepo; refused for production sources and sources without a usable licence, and always an approval the admin decides, for people too). target is cas (the export stays in the content store as an export artifact) or a directory on a writable path mount, mount://exports/<path>; the default is mount://<storage.export_mount>/<collection>/<version>/<format> when that mount is registered and writable, else cas. Audio an export writes unchanged onto a mount (nemo-manifest, cadence-bundle) is recorded as a copy of its content-store blob, so the cache may evict the version and datasets.materialize can bring it back. The export runs as a pipeline run in project (default: the project the version was ingested or imported in). dryRun=true answers the plan: step kind, target, utterances, bytes and whether an approval is needed. The real call answers 201 with the export (entity.export.{id}), or 202 with an approvalId for hf-hub.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "format", Required: true, Type: "string", Description: "lhotse-shar: Shar shards (cuts and recording tars); nemo-manifest: manifest.<split>.jsonl with the WAV files; cadence-bundle: the registry record, sources and blobs laid out as a content store, for another Cadence instance; hf-hub: an audiofolder dataset pushed to the Hugging Face Hub (approval)"},
+			{Name: "hubPrivate", Type: "boolean", Description: "hf-hub: create the repository private (default storage.export_hub_private)"},
+			{Name: "hubRepo", Type: "string", Description: "hf-hub: the dataset repository <org>/<name>; created when missing"},
+			{Name: "project", Type: "string", Description: "Slug of the project the export's pipeline run runs in; default the project the version was ingested or imported in"},
+			{Name: "target", Type: "string", Description: "cas, or a directory on a writable path mount (mount://exports/<path>); default mount://<storage.export_mount>/<collection>/<version>/<format> when that mount is registered and writable, else cas. Not used by hf-hub"},
+			{Name: "version", Required: true, Type: "string", Description: "The frozen dataset version (ver_…)"},
+		}},
+	},
+	{
 		ID: "datasets.freeze", Entity: "datasets", Verb: "freeze", Method: "POST", Path: "/registry/datasets:freeze",
 		Summary:        "Freeze a draft dataset version — leakage check, then cut its segments into the content store (202 with the pipeline run)",
 		Description:    "Freeze a draft dataset version (state draft, dataset.frozen false — what pipelines/data-ingest ends in). First the leakage check: the draft's train and validation utterances must share nothing (by canonical hash or fingerprint) with any golden set, else golden-set-leakage lists the overlaps and nothing starts. Then a CPU pipeline run in the draft's project cuts every segment from its mount into the content store (dataset_freeze, mode cut), verifies each hash, writes the shards, quality checks and the dataset card, and sets frozen: true. Only frozen versions can be mixed, trained on, exported or adopted. dryRun=true runs the leakage check only. Answers 202 with the jobId of the cut step (datasets.get shows dataset.freeze with the pipeline run); a version already frozen, or a cut reused from an earlier identical freeze, answers 200. A draft is frozen once: a second call answers the frozen version, or the freeze already running.",
@@ -698,6 +715,22 @@ var Operations = []Operation{
 			{Name: "question", Required: true, Type: "string", Description: "The question the experiment's runs answer"},
 			{Name: "tag", Type: "string", Description: "A short tag for filters and search (default derived from the name)"},
 		}},
+	},
+	{
+		ID: "exports.get", Entity: "exports", Verb: "get", Method: "GET", Path: "/exports/{id}",
+		Summary: "Get a dataset export with its state, target, files, bytes, mount copies and Hub commit",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Export id (dex_…)"},
+		},
+	},
+	{
+		ID: "exports.list", Entity: "exports", Verb: "list", Method: "GET", Path: "/projects/{p}/exports",
+		Summary: "Dataset exports run in a project, newest first",
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "version", In: "query", Flag: "version", Type: "string", Description: "Only exports of this dataset version (ver_…)"},
+			{Name: "limit", In: "query", Flag: "limit", Type: "integer", Default: "100"},
+		},
 	},
 	{
 		ID: "gates.edit", Entity: "gates", Verb: "edit", Method: "PATCH", Path: "/projects/{p}/gates",

@@ -28,12 +28,13 @@ Entities:
   collections    get list
   compute        edit get list
   credentials    list new revoke
-  datasets       evict freeze get list materialize preview
+  datasets       evict export freeze get list materialize preview
   defaults       get
   drafts         accept get list revert
   evals          gate get list new
   events         list
   experiments    get list new
+  exports        get list
   gates          edit get
   goldenSets     freeze get list
   help           get search
