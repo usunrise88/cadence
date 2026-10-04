@@ -443,6 +443,15 @@ func (e *Engine) Start(ctx context.Context, tx pgx.Tx, in StartInput) (Run, []ev
 			return Run{}, nil, err
 		}
 		drafts = append(drafts, skipped...)
+		// The plan's own skips are marked, so a retry of another step leaves them skipped (they were never planned).
+		for j := range sts {
+			if sts[j].State == StepSkipped && set[sts[j].Step] {
+				sts[j].Error = &steps.StepError{Type: SkipPlanned, Message: "skipped when the run started: " + planSkipReason(plan, sts[j].Step)}
+				if sts[j], err = saveStep(ctx, tx, sts[j]); err != nil {
+					return Run{}, nil, err
+				}
+			}
+		}
 	}
 	more, err := e.advance(ctx, tx, &r, sts)
 	if err != nil {
@@ -1302,6 +1311,9 @@ func (e *Engine) Retry(ctx context.Context, tx pgx.Tx, id string, rev int, in Re
 		if isTarget[i] || (s.State != StepSkipped && s.State != StepCancelled) {
 			continue
 		}
+		if s.State == StepSkipped && s.Error != nil && s.Error.Type == SkipPlanned {
+			continue // skipped by the plan (its kind, worker or auxiliary was unavailable), not by a failure upstream
+		}
 		s.State, s.Error, s.FinishedAt = StepWaiting, nil, nil
 		if *s, err = saveStep(ctx, tx, *s); err != nil {
 			return Run{}, nil, err
@@ -1367,4 +1379,18 @@ func (e *Engine) Sweep(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// SkipPlanned is the error type of a step the plan skipped when the run started (an optional step whose kind, worker
+// or auxiliary was unavailable): Retry leaves it skipped.
+const SkipPlanned = "skipped"
+
+// planSkipReason is why the plan skipped step: its warning's message, or a generic one.
+func planSkipReason(plan Plan, step string) string {
+	for _, w := range plan.Warnings {
+		if w.Step == step && (w.Code == WarningStepKindUnavailable || w.Code == WarningAuxiliaryUnavailable) {
+			return w.Message
+		}
+	}
+	return "an optional step that could not run"
 }

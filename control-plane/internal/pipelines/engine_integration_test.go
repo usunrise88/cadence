@@ -942,3 +942,29 @@ func TestOptionalStepWithoutAWorkerIsSkipped(t *testing.T) {
 		t.Fatalf("a required echo@1 step without a live worker: %v", err)
 	}
 }
+
+// A retry of a failed step leaves the plan's skip alone: the member stays skipped instead of being queued unplanned.
+func TestRetryKeepsThePlansSkips(t *testing.T) {
+	r := newRig(t, nil)
+	r.leases.Script("main", pipelinestest.Action{Fail: &steps.StepError{Type: steps.ErrStep, Message: "boom"}})
+	in := r.input("retry-me")
+	in.Pipeline = &pipelines.Pipeline{Name: "members", Inputs: map[string]string{"text": "text"}, Steps: []pipelines.Step{
+		{ID: "main", Kind: "echo@1", In: map[string]string{"text": "$inputs.text"}},
+		{ID: "oasis", Kind: "oasis_transcribe@1", In: map[string]string{"text": "$inputs.text"}, Optional: true},
+		{ID: "ensemble", Kind: "tally@1", In: map[string]string{"text.0": "main.text", "text.2": "oasis.text"}},
+	}}
+	failed := r.wait(r.start(in).ID, pipelines.RunFailed)
+	if err := r.tx(func(ctx context.Context, tx pgx.Tx) ([]events.Draft, error) {
+		_, drafts, err := r.eng.Retry(ctx, tx, failed.ID, failed.Rev, pipelines.RetryInput{Step: "main"})
+		return drafts, err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	retried := r.wait(failed.ID, pipelines.RunDone)
+	if s := stepOf(t, retried, "oasis"); s.State != pipelines.StepSkipped || s.Error == nil || s.Error.Type != pipelines.SkipPlanned {
+		t.Fatalf("oasis after a retry %+v", s)
+	}
+	if s := stepOf(t, retried, "ensemble"); s.State != pipelines.StepDone || len(s.Inputs) != 1 {
+		t.Fatalf("ensemble after a retry %+v", s)
+	}
+}
