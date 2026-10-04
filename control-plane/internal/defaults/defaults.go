@@ -300,6 +300,10 @@ type Eval struct {
 	// ArtifactRetentionDays keeps an eval record's per-utterance artifacts this long after the record's last use
 	// (internal/eviction's daily sweep; owner decision 2026-10-03).
 	ArtifactRetentionDays Param[int] `yaml:"artifact_retention_days"`
+	// AlignSecondsPerAudioHour and AlignStepOverheadS price goldenSets.align for the policy (phase 4 tail): each
+	// aligning step is overhead + its golden set's audio hours × seconds per audio hour, on a card.
+	AlignSecondsPerAudioHour Param[float64] `yaml:"align_seconds_per_audio_hour"`
+	AlignStepOverheadS       Param[float64] `yaml:"align_step_overhead_s"`
 }
 
 // Gate holds the default gate a project's gates.yaml departs from (phase 3).

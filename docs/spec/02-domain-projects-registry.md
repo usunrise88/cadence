@@ -389,8 +389,16 @@ Phase 4 additions:
 - **Reference alignments** (R51, R54; migration 0039, `reference_alignments`): `align_reference@1` writes an
   `alignment` artifact (`cadence.alignment/1`, word timings of the reference text) for a golden set's dataset; the
   output hook attaches it by dataset hash (the newest wins) and emits `golden_set.aligned`. Evals feed it to
-  `latency_score@3` for emission delay (03 "Scorers and metrics"). Aligning is run by hand once per golden set
-  (`pipelines/align-reference.yaml`), not at freeze; a language with no allowed CTC aligner stays unaligned.
+  `latency_score@3` for emission delay (03 "Scorers and metrics"). Aligning is run on request, not at freeze:
+  `goldenSets.align` (phase 4 tail) aligns several golden sets in one pipeline run — the project's adopted golden sets
+  by default, or named ones (ver_…, collection names, `*` patterns) — with one optional step of the aligning kind (the
+  newest published kind that turns one `dataset` into an `alignment`) per dataset artifact, so the batch is one
+  GPU-spend decision (rule `gpu-spend`) with a known estimate (03 "Key defaults": `eval.align_step_overhead_s` + audio
+  hours × `eval.align_seconds_per_audio_hour` per step). It skips, with the reason, golden sets already aligned
+  (`aligned`), with an unfinished aligning step on their dataset (`running`) and those whose locale the resolved
+  aligner does not list (`language`); an aligner the project has not adopted, or no live worker of the kind, refuses
+  the request. One golden set can still be aligned by hand (`pipelines/align-reference.yaml`); a language with no
+  allowed CTC aligner stays unaligned.
 
 **Leakage and training exclusion.** A golden set's utterances never reach training, checked by utterance fingerprint
 (`utterance_fingerprints`: `audio-b3` from every import and `file-b3` from `sdp_ingest@2`, which match each other, so a

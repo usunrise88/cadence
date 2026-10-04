@@ -15,6 +15,7 @@ export type VerbSpec = {
 export const verbs = {
   accept: { class: "mutate", reversible: null, confirm: "none", icon: "Check" },
   adopt: { class: "mutate", reversible: true, confirm: "none", icon: "Import" },
+  align: { class: "mutate", reversible: null, confirm: "none", icon: "ClosedCaptionsTag" },
   approve: { class: "mutate", reversible: false, confirm: "none", icon: "CheckCircle" },
   archive: { class: "mutate", reversible: true, confirm: "inline", icon: "Archive" },
   average: { class: "mutate", reversible: null, confirm: "none", icon: "Combine" },
@@ -170,6 +171,7 @@ export const operations = {
   "exports.list": { id: "exports.list", entity: "exports", verb: "list", kind: "export", method: "GET", path: "/projects/{p}/exports", summary: "Dataset exports run in a project, newest first", planned: 0, mcp: true },
   "gates.edit": { id: "gates.edit", entity: "gates", verb: "edit", kind: "gate", method: "PATCH", path: "/projects/{p}/gates", summary: "Commit a new gates.yaml to main (approval for agents); dryRun validates", planned: 0, mcp: true },
   "gates.get": { id: "gates.get", entity: "gates", verb: "get", kind: "gate", method: "GET", path: "/projects/{p}/gates", summary: "Get the project's gate (gates.yaml at main, with the defaults it departs from)", planned: 0, mcp: true },
+  "goldenSets.align": { id: "goldenSets.align", entity: "goldenSets", verb: "align", kind: "golden_set", method: "POST", path: "/projects/{p}/golden-sets:align", summary: "Align the reference texts of several golden sets in one pipeline run (word timings for emission delay)", planned: 0, mcp: true },
   "goldenSets.freeze": { id: "goldenSets.freeze", entity: "goldenSets", verb: "freeze", kind: "golden_set", method: "POST", path: "/registry/golden-sets:freeze", summary: "Freeze an eval-only dataset version and a scoring normalizer into a golden set (always waits for the admin's approval)", planned: 0, mcp: true },
   "goldenSets.get": { id: "goldenSets.get", entity: "goldenSets", verb: "get", kind: "golden_set", method: "GET", path: "/registry/golden-sets/{id}", summary: "Get a golden set version with its dataset, normalizer, size and the projects that use it", planned: 0, mcp: true },
   "goldenSets.list": { id: "goldenSets.list", entity: "goldenSets", verb: "list", kind: "golden_set", method: "GET", path: "/registry/golden-sets", summary: "List golden set versions (frozen eval-only dataset versions tied to a scoring normalizer)", planned: 0, mcp: true },

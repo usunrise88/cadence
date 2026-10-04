@@ -9434,6 +9434,86 @@ export type DatasetEouStats = {
     gapHistogram?: DatasetHistogram;
 };
 
+export type GoldenSetAlign = {
+    /**
+     * ver_… ids, @aliases or collection names (golden-set/<name>, * patterns) of golden sets the project adopted; absent: every golden set the project adopted
+     */
+    goldenSets?: Array<string>;
+    /**
+     * The aligner auxiliary (auxiliary/<name>, ver_… or @alias) the project adopted with the align role; absent: the aligning step kind's default
+     */
+    aligner?: string;
+    priority?: number;
+};
+
+export type GoldenSetAlignSet = {
+    goldenSetVersionId: string;
+    /**
+     * golden-set/<name>
+     */
+    name: string;
+    version: string;
+    locale: string;
+    utterances: number;
+    /**
+     * Audio hours of the golden set
+     */
+    hours: number;
+    /**
+     * The aligning step's id in the run (golden sets on one dataset artifact share it)
+     */
+    step: string;
+    estimateSeconds?: number;
+};
+
+export type GoldenSetAlignSkip = {
+    goldenSetVersionId: string;
+    name: string;
+    version: string;
+    locale: string;
+    /**
+     * aligned: its dataset artifact already has an alignment; running: an aligning step on it has not finished; language: the aligner does not cover the golden set's language
+     */
+    reason: 'aligned' | 'running' | 'language';
+    message: string;
+    /**
+     * aln_… (reason aligned)
+     */
+    alignmentId?: string;
+    /**
+     * The run with the unfinished aligning step (reason running)
+     */
+    pipelineRunId?: string;
+};
+
+export type GoldenSetAlignPlan = {
+    /**
+     * The aligning step kind (name@version): the newest published kind that turns one dataset into an alignment
+     */
+    kind: string;
+    /**
+     * The aligner auxiliary the steps resolve to for this project (absent when nothing is left to align)
+     */
+    aligner?: {
+        name: string;
+        version: string;
+        versionId: string;
+        /**
+         * Primary language subtags it covers (* for any)
+         */
+        languages: Array<string>;
+    };
+    sets: Array<GoldenSetAlignSet>;
+    skipped: Array<GoldenSetAlignSkip>;
+    /**
+     * defaults.yaml eval.align_seconds_per_audio_hour: wall seconds an aligning step spends per audio hour, on a card
+     */
+    secondsPerAudioHour: number;
+    estimate: PipelineEstimate;
+    warnings: Array<PipelineWarning>;
+    pipelineRun?: PipelineRun;
+};
+
 export type SecretNewWritable = {
     name: SecretName;
     kind: SecretKind;
@@ -18181,3 +18261,52 @@ export type TracksGetResponses = {
 };
 
 export type TracksGetResponse = TracksGetResponses[keyof TracksGetResponses];
+
+export type GoldenSetsAlignData = {
+    body?: GoldenSetAlign;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/projects/{p}/golden-sets:align';
+};
+
+export type GoldenSetsAlignErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type GoldenSetsAlignError = GoldenSetsAlignErrors[keyof GoldenSetsAlignErrors];
+
+export type GoldenSetsAlignResponses = {
+    /**
+     * Dry run — the sets to align, the skips and the estimate; or a real call with nothing left to align
+     */
+    200: GoldenSetAlignPlan;
+    /**
+     * Started — the plan with the pipeline run (one aligning step per dataset artifact)
+     */
+    201: GoldenSetAlignPlan;
+    /**
+     * Gated; a person decides the approval on the approvals topic
+     */
+    202: ApprovalAccepted;
+};
+
+export type GoldenSetsAlignResponse = GoldenSetsAlignResponses[keyof GoldenSetsAlignResponses];

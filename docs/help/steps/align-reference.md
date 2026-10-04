@@ -1,7 +1,7 @@
 ---
 title: align_reference (step kind)
 summary: Word timings of a dataset's reference texts from an omniASR CTC model's emissions (omni runtime, GPU ≤ 8 GB); the golden set carries them and emission delay reads them.
-contexts: [step:align_reference, artifact:alignment, artifact:dataset, registry:auxiliary, registry:golden_set]
+contexts: [step:align_reference, artifact:alignment, artifact:dataset, registry:auxiliary, registry:golden_set, command:goldenSets.align]
 ---
 
 ## What this is
@@ -43,9 +43,20 @@ with `docker compose --profile omni up -d worker-omni`.
 
 ## Place in the loop
 
-Evaluate, once per golden set: run the bundled pipeline `align-reference` on the golden set's dataset artifact
+Evaluate, once per golden set. **Several golden sets at once:** `goldenSets.align` (default: every golden set the
+project adopted; or `goldenSets: [ver_…, golden-set/<name>, golden-set/replay-*]`) plans one pipeline run with one
+step of this kind per dataset artifact, so the batch is **one** GPU-spend decision with a known estimate: per step
+`eval.align_step_overhead_s` + the golden set's audio hours × `eval.align_seconds_per_audio_hour` (defaults.yaml). It
+skips, with the reason, a golden set already aligned (`aligned`, with the `aln_…`), one with an aligning step that has
+not finished (`running`) and one whose locale the aligner does not list (`language`: no model would load for it).
+The steps are optional: one that fails leaves its golden set unaligned while the others finish. An aligner the
+project has not adopted, or no live omni worker, refuses the request. Dry run first (`dryRun=true`): the sets, the
+skips and the estimate, nothing started.
+
+**One golden set by hand:** run the bundled pipeline `align-reference` on the golden set's dataset artifact
 (`pipelines.run` with `inputs.data` = `{hash, type: dataset, size}`: the golden set's `datasetHash` from
-`goldenSets.get` and its size from `artifacts.get`). The output hook records the alignment against that dataset
+`goldenSets.get` and its size from `artifacts.get`); its cost is unknown to the policy, so it asks for an approval.
+The output hook records the alignment against that dataset
 artifact, and the golden set shows it (`goldenSets.get` → `alignment`: aligned utterances, words, the aligner, the
 reasons). From then on every eval of that golden set feeds the alignment to
 `latency_score`, which reports emission delay PR50/PR90 beside latency to final in the Eval report. The golden set
@@ -61,11 +72,13 @@ version itself does not change; a newer alignment (another aligner version) repl
 
 ## Commands
 
-`pipelines.run` (pipeline `align-reference`), `goldenSets.get`, `evals.new`, `evals.get`.
+`goldenSets.align` (several golden sets, one run), `pipelines.run` (pipeline `align-reference`), `goldenSets.get`,
+`evals.new`, `evals.get`.
 
 ## Playbooks
 
-None runs it yet: align a golden set once after freezing it, before the evals whose emission delay you want.
+None runs it yet: align golden sets once after freezing them (`goldenSets.align`), before the evals whose emission
+delay you want.
 
 ## Sources
 

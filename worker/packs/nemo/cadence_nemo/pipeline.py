@@ -127,6 +127,10 @@ def pipeline_cfg(
                 "aggregation": "min",
                 "method_cfg": {"name": "entropy", "entropy_type": "tsallis", "alpha": 0.5, "entropy_norm": "exp"},
             },
+            # 2, not 0 or 1: NeMo's label buffer is stop_history + residue frames and its test needs more blanks than
+            # stop_history, so 0 or 1 never ends an utterance (700 FLEURS sr clips: no segment closed before the stream
+            # ended, latency to final +385 ms at 80 ms, WER unchanged). 2 leaves the newest frame unread, which closes a
+            # one-token segment at an utterance's start (docs/spec/07 "Open questions", the 80 ms check).
             "endpointing": {"stop_history_eou": stop_history_eou_ms, "residue_tokens_at_end": 2},
             "streaming": {
                 "sample_rate": SR,
