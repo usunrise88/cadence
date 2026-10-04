@@ -15,6 +15,8 @@
 # Cadence never starts OASIS: a person runs scripts/serve.sh ensemble no-300m in the OASIS checkout, and the admin
 # keeps its token in the secret oasis-token. OASIS writes lowercase without punctuation; when the two agree the
 # ensemble keeps Whisper's cased, punctuated text (pseudolabel.prefer_written_form), the training style.
+# Language identification is lid_classify@2: SpeechBrain's VoxLingua107 classifier (auxiliary/lid-voxlingua107) in the
+# omni runtime (worker-omni); Whisper's own detected language is the ensemble's second opinion.
 #
 # Inputs: normalizer — the scoring normalizer the ensemble compares texts after (normalizers.get). Before running,
 # the project adopts the auxiliaries the members name (projects.adopt: an approval the admin decides) and the params
@@ -45,7 +47,7 @@ steps:
     params:
       transliterate: sr-Cyrl-Latn                      # set me: "" outside Serbian
   - id: lid
-    kind: lid_classify@1
+    kind: lid_classify@2
     in: { data: audio.data }
   - id: ensemble
     kind: pseudolabel_ensemble@2

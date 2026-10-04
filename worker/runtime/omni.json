@@ -2,5 +2,5 @@
   "name": "omni",
   "version": "1",
   "image": "cadence/worker-omni",
-  "environmentPackages": ["torch", "torchaudio", "fairseq2", "numpy", "pydantic", "cadence-worker", "cadence-omni"]
+  "environmentPackages": ["torch", "torchaudio", "fairseq2", "speechbrain", "numpy", "pydantic", "cadence-worker", "cadence-omni"]
 }

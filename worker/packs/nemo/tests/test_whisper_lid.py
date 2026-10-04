@@ -1,5 +1,6 @@
-"""whisper_transcribe@1 and lid_classify@1 without transformers: the pure parts of cadence_nemo.whisper, and the
-steps' glue with the model replaced by a fake (the real decode is the GPU test in test_whisper_gpu.py)."""
+"""whisper_transcribe@1 without transformers: the pure parts of cadence_nemo.whisper, and the step's glue with the
+model replaced by a fake (the real decode is the GPU test in test_whisper_gpu.py). Language identification on its own
+is lid_classify@2 in the omni pack (VoxLingua107); Whisper's own detection is the member's ``detectedLanguage``."""
 
 from __future__ import annotations
 
@@ -12,7 +13,6 @@ import numpy as np
 import pytest
 
 from cadence_nemo import whisper
-from cadence_nemo.steps import lid as lid_step
 from cadence_nemo.steps import whisper_member
 from cadence_worker import audio as audio_io
 from cadence_worker.cas import hash_file
@@ -94,9 +94,8 @@ def fake_model(monkeypatch: pytest.MonkeyPatch) -> list[FakeWhisper]:
         return made[-1]
 
     monkeypatch.setattr(whisper, "Whisper", make)
-    for mod in (whisper_member, lid_step):
-        monkeypatch.setattr(mod, "card", lambda ctx, reserve, allow_cpu=False: {"device": "cpu"})
-        monkeypatch.setattr(mod, "device", lambda: "cpu")
+    monkeypatch.setattr(whisper_member, "card", lambda ctx, reserve, allow_cpu=False: {"device": "cpu"})
+    monkeypatch.setattr(whisper_member, "device", lambda: "cpu")
     return made
 
 
@@ -130,46 +129,14 @@ def test_whisper_member_needs_weights(tmp_path: Path, fake_model: list[FakeWhisp
         )
 
 
-def test_lid_with_whisper_writes_the_lid_artifact(tmp_path: Path, fake_model: list[FakeWhisper]) -> None:
-    hashes = _dataset(tmp_path / "data")
-    ctx = StepContext(
-        lambda e: None,
-        work_dir=tmp_path,
-        auxiliaries={"auxiliary": _aux("auxiliary/whisper-large-v3", "transformers-whisper")},
-    )
-    out = tmp_path / "lid.jsonl"
-    lid_step.LidClassifyStep().run(lid_step.LidParams(top_k=2), {"data": tmp_path / "data"}, {"lid": out}, ctx)
-    rows = [json.loads(line) for line in out.read_text(encoding="utf-8").splitlines()]
-    assert [r["audio"] for r in rows] == hashes
-    assert rows[0]["language"] == "sr"
-    assert rows[0]["top"] == [["sr", 0.9], ["hr", 0.08]]
-    assert rows[0]["expected"] == "sr-RS"
-    assert ctx.meta["lid"]["engine"] == "transformers-whisper"
-
-
-def test_lid_with_speechbrain_explains_the_missing_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    _dataset(tmp_path / "data")
-    monkeypatch.setattr(lid_step, "card", lambda ctx, reserve, allow_cpu=False: {"device": "cpu"})
-    monkeypatch.setattr(lid_step, "device", lambda: "cpu")
-    monkeypatch.setattr(whisper, "snapshot", lambda repo, revision: tmp_path)
-    aux = _aux("auxiliary/lid-voxlingua107", "speechbrain-ecapa")
-    ctx = StepContext(lambda e: None, work_dir=tmp_path, auxiliaries={"auxiliary": aux})
-    with pytest.raises(StepInputError, match="no speechbrain"):
-        lid_step.LidClassifyStep().run(lid_step.LidParams(), {"data": tmp_path / "data"}, {"lid": tmp_path / "l"}, ctx)
-
-
 def test_a_retry_at_a_smaller_batch_scale_shrinks_the_batches(tmp_path: Path, fake_model: list[FakeWhisper]) -> None:
     # An OOM retry runs at batch_scale 0.75, a manual one at what the person asks: the members' batches follow it.
     _dataset(tmp_path / "data")
     aux = {"auxiliary": _aux("auxiliary/whisper-large-v3", "transformers-whisper")}
-    ctx = StepContext(lambda e: None, work_dir=tmp_path, auxiliaries=aux, batch_scale=0.5)
-    lid_step.LidClassifyStep().run(
-        lid_step.LidParams(batch_size=2), {"data": tmp_path / "data"}, {"lid": tmp_path / "lid.jsonl"}, ctx
-    )
-    assert fake_model[-1].detects == [1, 1, 1]
     ctx = StepContext(lambda e: None, work_dir=tmp_path, auxiliaries=aux, batch_scale=0.5)
     params = whisper_member.WhisperParams(batch_size=2, transliterate="")
     whisper_member.WhisperTranscribeStep().run(
         params, {"data": tmp_path / "data"}, {"hypotheses": tmp_path / "hyp"}, ctx
     )
     assert [n for n, _, _ in fake_model[-1].calls] == [1, 1, 1]
+    assert fake_model[-1].detects == [1, 1, 1]

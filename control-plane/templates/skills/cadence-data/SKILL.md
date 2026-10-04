@@ -50,9 +50,9 @@ description: Cadence block "data" workflow: mounts, sources and licences, ingest
 
 ## 4. Ingest: untranscribed audio (`pseudo-label`)
 - `pipelines/pseudo-label.yaml`: `sdp_ingest` → `segments_cut` (segments without text as a dataset) → members
-  `whisper_transcribe` and `oasis_transcribe`, and `lid_classify` → `pseudolabel_ensemble` (keeps a text when the two
-  agree within `pseudolabel.max_pairwise_wer` and LID agrees; the rest is `pseudo-label:disputed`) → normalise →
-  filter (drops disputes) → split → draft. The base model is not a member: it is the model being taught.
+  `whisper_transcribe` and `oasis_transcribe`, and `lid_classify` (VoxLingua107) → `pseudolabel_ensemble` (keeps a
+  text when the two agree within `pseudolabel.max_pairwise_wer` and LID agrees; the rest is
+  `pseudo-label:disputed`) → normalise → filter (drops disputes) → split → draft. The base model is not a member: it is the model being taught.
 - Input: `normalizer` (the scoring normalizer, `normalizers.get`).
 - The members name auxiliary models: `auxiliaries.list`; the project adopts each with `projects.adopt` (an approval
   the admin decides after the licence check, R26; `auxiliary-licence-refused` is final).

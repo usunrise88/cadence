@@ -7,3 +7,7 @@ torchaudio==2.8.0
 fairseq2==0.6
 fairseq2n==0.6
 huggingface-hub==0.36.2
+# lid_classify@2 (auxiliary/lid-voxlingua107): SpeechBrain's ECAPA-TDNN needs torchaudio, which the nemo-speech image
+# cannot hold. speechbrain 1.1 installs over torch 2.8 / torchaudio 2.8 without moving them (checked 2026-10-04) and
+# adds hyperpyyaml, sentencepiece and joblib.
+speechbrain==1.1.1
