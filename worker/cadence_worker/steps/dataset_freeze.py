@@ -28,6 +28,7 @@ from pydantic import BaseModel
 
 from cadence_worker import ingest_mounts as mounts
 from cadence_worker import segments as seg
+from cadence_worker.cas import valid_hash
 from cadence_worker.protocol_gen import StepResources
 from cadence_worker.steps.base import StepInputError, cadence_field
 
@@ -163,6 +164,11 @@ def member_line(x: Mapping[str, Any]) -> dict[str, Any]:
         line["speaker"] = str(x["speaker"])
     if isinstance(x.get("confidence"), int | float):
         line["confidence"] = float(x["confidence"])
+    # The whole source track's canonical hash: the leakage check matches it against every golden utterance's audio, so
+    # a golden set's file re-cut by VAD on a mount is still found (sdp_ingest@2).
+    whole = x.get(seg.FILE_FINGERPRINT)
+    if isinstance(whole, str) and valid_hash(whole):
+        line["fingerprints"] = {seg.FILE_FINGERPRINT: whole}
     # An annotation batch's rows carry entity spans (names, addresses) entity_score reads from the reference.
     ents = [e for e in x.get("entities") or [] if isinstance(e, Mapping) and isinstance(e.get("class"), str)]
     if ents:

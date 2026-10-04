@@ -36,6 +36,10 @@ description: Cadence block "data" workflow: mounts, sources and licences, ingest
   language}`, `normalise:` the training style of `langpacks.get` (`normalizer.yaml` training: `transliterate`,
   `casefold`, `punctuation`, `mappings`; `itn.yaml`), `draft: {name}`. Dry run first: report the plan, its departures
   from defaults and its warnings. Transcripts are `<stem>.txt` beside each file; calls carry a `<stem>.cadence.json`.
+- A pre-segmented corpus (one utterance per file, as FLEURS) takes `index: {segmentation: file}`: each file stays one
+  segment instead of being cut at its pauses. The index step leaves a corpus's `test/` split out (`exclude`): golden
+  sets come from it; never point `path` at it. A draft that still holds a golden set's audio — even re-cut — is
+  refused at freeze (golden-set-leakage).
 - `pipelineRuns.wait` until done; on failure `pipelineRuns.get` names the step, `jobLogs.list` its log.
 
 ## 4. Ingest: untranscribed audio (`pseudo-label`)

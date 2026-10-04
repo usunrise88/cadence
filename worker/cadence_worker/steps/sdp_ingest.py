@@ -1,4 +1,4 @@
-"""``sdp_ingest@1`` — index audio on a mount in place (docs/review/2026-10-03-phase-4-plan.md, decision 3).
+"""``sdp_ingest@2`` — index audio on a mount in place (docs/review/2026-10-03-phase-4-plan.md, decision 3).
 
 Walks a mount path, decodes every audio file (WAV in pure Python; μ-law, FLAC, MP3, OGG/Opus, M4A through ffmpeg),
 splits stereo recordings into one track per party (roles from a ``<stem>.cadence.json`` sidecar or the
@@ -7,12 +7,18 @@ cuts it into segments. The bot's channel is self-labelled from the TTS script in
 ``model:tts-script``); a ``<stem>.txt`` sidecar is the whole file's human transcript.
 
 It writes only a ``segments`` artifact (``cadence.segments/1``, :mod:`cadence_worker.segments`): ``mount://`` URIs
-with time ranges and channels, and each segment's canonical hash (BLAKE3 of its 16 kHz 16-bit mono WAV) — no audio is
-copied. ``dataset_freeze`` cuts the same bytes later. Help: docs/help/steps/sdp-ingest.md.
+with time ranges and channels, each segment's canonical hash (BLAKE3 of its 16 kHz 16-bit mono WAV) and ``file-b3``,
+the canonical hash of the whole track it was cut from (what an import of the file hashes, so the leakage check finds a
+golden set's audio re-cut from a mount) — no audio is copied. ``dataset_freeze`` cuts the same bytes later.
+
+Version 2 adds ``exclude`` (a corpus's ``test/`` split is left out by default: it is where golden sets come from) and
+``file-b3``. A pre-segmented corpus (one utterance per file, FLEURS) takes ``segmentation: file``: each file stays one
+segment whose hash is the import's. Help: docs/help/steps/sdp-ingest.md.
 """
 
 from __future__ import annotations
 
+import fnmatch
 import json
 import tempfile
 from collections.abc import Mapping
@@ -27,7 +33,7 @@ from cadence_worker import segments as seg
 from cadence_worker.protocol_gen import StepResources
 from cadence_worker.steps.base import StepInputError, cadence_field
 
-KIND = "sdp_ingest@1"
+KIND = "sdp_ingest@2"
 SIDECAR = ".cadence.json"
 SCRIPT_ORIGIN = "model:tts-script"
 
@@ -42,7 +48,7 @@ class SdpIngestParams(BaseModel):
     )
     path: str = cadence_field(
         "",
-        description="Mount URI of the directory (or one file) to ingest, e.g. mount://corpora/fleurs-sr/2024-01-01",
+        description="Mount URI of the directory (or one file) to ingest, e.g. mount://corpora/fleurs-sr/70bb2e84b976",
         source="docs/review/2026-10-03-phase-4-plan.md (mount layout <source>/<revision>/)",
         range={"minLength": 9, "maxLength": 1000},
     )
@@ -51,6 +57,15 @@ class SdpIngestParams(BaseModel):
         description="Glob of the files read under path (audio only: wav, flac, mp3, ogg, opus, m4a, aac, webm)",
         source="Cadence recommendation",
         range={"minLength": 1, "maxLength": 200},
+    )
+    exclude: list[str] = cadence_field(
+        ["test/*", "*/test/*"],
+        description=(
+            "Globs of files left out, matched against the path under path (fnmatch: * crosses /); the default leaves"
+            " out a corpus's test split, where golden sets come from — [] reads everything"
+        ),
+        source="docs/spec/04-blocks.md Block 3 (golden-set audio never reaches training)",
+        range={"maxLength": 50},
     )
     language: str = cadence_field(
         "",
@@ -75,7 +90,10 @@ class SdpIngestParams(BaseModel):
     )
     segmentation: Literal["vad", "file"] = cadence_field(
         "vad",
-        description="vad cuts each track at its pauses; file keeps each track whole (pre-segmented corpora)",
+        description=(
+            "vad cuts each track at its pauses; file keeps each track whole — for pre-segmented corpora (one utterance"
+            " per file, e.g. FLEURS), whose segments then hash as an import of the same files"
+        ),
         source="Cadence recommendation",
         range={"values": ["vad", "file"]},
     )
@@ -99,7 +117,7 @@ class SdpIngestParams(BaseModel):
 
 
 class SdpIngestStep:
-    version: ClassVar[str] = "1"
+    version: ClassVar[str] = "2"
     consumes: ClassVar[Mapping[str, str]] = {}
     produces: ClassVar[Mapping[str, str]] = {"segments": "segments"}
     resources: ClassVar[StepResources] = {"gpu": False, "gpus": 0, "jobKind": "data"}
@@ -142,12 +160,38 @@ def _log(ctx: Any, message: str, level: str = "info") -> None:
         fn(message, level)
 
 
-def audio_files(root: Path, pattern: str) -> list[Path]:
+def audio_files(root: Path, pattern: str, exclude: list[str] | None = None) -> list[Path]:
+    """The audio files under root matching pattern and none of exclude (globs on the path relative to root)."""
     if root.is_file():
         return [root]
     if not root.is_dir():
         raise StepInputError(f"{root} is neither a file nor a directory on the mount")
-    return sorted(f for f in root.glob(pattern) if f.is_file() and f.suffix.lower() in seg.AUDIO_SUFFIXES)
+    skip = exclude or []
+    return sorted(
+        f
+        for f in root.glob(pattern)
+        if f.is_file()
+        and f.suffix.lower() in seg.AUDIO_SUFFIXES
+        and not any(fnmatch.fnmatchcase(f.relative_to(root).as_posix(), g) for g in skip)
+    )
+
+
+def missing(path: str, root: Path, mount_root: Path) -> StepInputError:
+    """The error for a path that is not on the mount: what the nearest existing directory above it holds (a template's
+    placeholder revision, a revision fetched under another name)."""
+    up = root  # inside mount_root (mounts.resolve checked it), so the walk ends at mount_root at the latest
+    while up != mount_root and not up.is_dir():
+        up = up.parent
+    where = up.relative_to(mount_root).as_posix() if up != mount_root else ""
+    try:
+        names = sorted(e.name for e in up.iterdir() if not e.name.startswith("."))
+    except OSError:
+        names = []
+    shown = ", ".join(names[:12]) + (f", … ({len(names)} entries)" if len(names) > 12 else "")
+    return StepInputError(
+        f"{path} is not on the mount; {where or 'its root'} holds: {shown or 'nothing'}. Set the index step's path"
+        " to mount://<mount>/<source>/<revision> (the layout the corpus scripts write)"
+    )
 
 
 def source_info(root: Path) -> dict[str, str]:
@@ -202,11 +246,13 @@ def ingest(p: SdpIngestParams, out: Path, ctx: Any = None) -> dict[str, Any]:
     ms = mounts.mounts_of(ctx)
     ref = mounts.parse(p.path)
     root = mounts.resolve(p.path, ms)
-    files = audio_files(root, p.pattern)
+    if not root.exists():
+        raise missing(p.path, root, mounts.resolve(mounts.format_uri(ref.name, ""), ms))
+    files = audio_files(root, p.pattern, p.exclude)
     if p.max_files:
         files = files[: p.max_files]
     if not files:
-        raise StepInputError(f"no audio files under {p.path} matching {p.pattern!r}")
+        raise StepInputError(f"no audio files under {p.path} matching {p.pattern!r} (excluding {p.exclude})")
     vp = vad_params(p)
     lines: list[dict[str, Any]] = []
     file_rows: list[dict[str, Any]] = []
@@ -237,6 +283,7 @@ def ingest(p: SdpIngestParams, out: Path, ctx: Any = None) -> dict[str, Any]:
             for c, role in tr:
                 x16 = signals[c]
                 dur16 = x16.size / seg.RATE
+                whole = seg.hash_of(seg.wav_of(x16, 0, x16.size))  # file-b3: the track as an import hashes it
                 others = sorted(r for oc, rs in runs.items() if oc != c for r in rs)
                 turns = [t for t in script if int(t.get("channel", -2)) == c]
                 spans: list[tuple[float, float, str | None, str | None]] = []
@@ -258,6 +305,7 @@ def ingest(p: SdpIngestParams, out: Path, ctx: Any = None) -> dict[str, Any]:
                     line: dict[str, Any] = {
                         "uri": mounts.format_uri(ref.name, rel, a, b, None if c == seg.MIXED else c),
                         "file": file_uri,
+                        seg.FILE_FINGERPRINT: whole,
                         "hash": seg.hash_of(wav),
                         "bytes": len(wav),
                         "start": a,
