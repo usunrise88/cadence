@@ -704,7 +704,9 @@ R, I, A, L and B, folded into the spec by stream S on 2026-10-04; the gate is st
   approval; the version's exports with state and files); dry runs of `runs.new|stage` and `pipelines.run` warn
   `needs-materialize` (version, bytes and mounts to copy back) instead of refusing — the real call is still refused —
   and `pipelineRuns.get` lists `needsMaterialize`, shown with **Materialize** in Mix, Run and Pipeline run.
-- Open: aligning the replay golden sets on the stand (now one `goldenSets.align` call); `web/e2e/training-panels.spec.ts` (not in `make ui-e2e`) is stale: its scripted worker publishes
+- Done on the stand (2026-10-05): the replay golden sets are aligned — one `goldenSets.align` run (32 sets, 9 599 of
+  9 600 utterances; `plr_01a107dc…`) plus `nb-no` once alignment folded macrolanguages.
+- Open: `web/e2e/training-panels.spec.ts` (not in `make ui-e2e`) is stale: its scripted worker publishes
   `dataset_import@1` while the bundled import pipeline pins `@4`.
 - Closed in the phase 4 tail (2026-10-04, migration 0045; 06 "Media", 00 decision log):
   - Waveform peaks are stored when a dataset version is registered: a second `dataset` output hook queues the
