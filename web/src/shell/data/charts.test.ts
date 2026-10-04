@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { DatasetPayload } from "@/api/gen/types.gen";
-import { datasetCharts, durationChart, groupChart, histogramBins } from "./charts";
+import { analyticsTable, summarizeAnalytics } from "@/shell/charts/analytics";
+import { toCsv } from "@/shell/charts/table";
+import { datasetCharts, durationChart, eouChart, groupChart, histogramBins } from "./charts";
 import { searchQuery } from "./UtteranceSearch";
 
 const payload = (extra: Partial<DatasetPayload> = {}): DatasetPayload => ({
@@ -73,5 +75,40 @@ describe("searchQuery", () => {
   });
   it("ignores the split outside a dataset version", () => {
     expect(searchQuery({ ...empty, split: "test" }, { source: "src_1" }, 5).split).toBeUndefined();
+  });
+});
+
+describe("end-of-utterance gaps (stats.eou)", () => {
+  const eou = {
+    utterances: 577,
+    withGap: 420,
+    overlapping: 31,
+    p50GapS: 0.62,
+    p90GapS: 1.84,
+    meanGapS: 0.81,
+    gapHistogram: { edges: [-1, 0, 0.5, 1, 2], counts: [31, 120, 150, 90, 29] },
+  };
+
+  it("charts the gap histogram with p50/p90 marks and says what it covers", () => {
+    const spec = eouChart(payload({ stats: { eou } }))!;
+    expect(spec.title).toBe("End-of-utterance gap");
+    expect(spec.series[0]!.bins).toHaveLength(5);
+    expect(spec.marks).toEqual([
+      { label: "p50", value: 0.62 },
+      { label: "p90", value: 1.84 },
+    ]);
+    expect(spec.note).toContain("420 of 577 segments");
+    expect(spec.note).toContain("31 overlapping");
+    // R53: a table view with the same numbers, copied as CSV, and a text summary.
+    const t = analyticsTable(spec);
+    expect(t.rows).toHaveLength(5);
+    expect(toCsv(t).split("\r\n")[1]).toBe("-1,0,31");
+    expect(summarizeAnalytics(spec)).toContain("gap p50 0.62 s, p90 1.84 s");
+  });
+
+  it("is left out when the version has no gaps measured", () => {
+    expect(eouChart(payload())).toBeUndefined();
+    expect(eouChart(payload({ stats: { eou: { utterances: 12, withGap: 0 } } }))).toBeUndefined();
+    expect(datasetCharts(payload({ stats: { eou } })).map((c) => c.title)).toContain("End-of-utterance gap");
   });
 });
