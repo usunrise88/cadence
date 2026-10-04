@@ -162,7 +162,9 @@ NeMo pack as built (phase 2, `worker/packs/nemo`, distribution `cadence-nemo`, h
   feature buffer of cache plus chunk). Its decoding config names the decoder (`"decoder": "nemo-pipeline-cache-aware"`
   with `stopHistoryEouMs`), so its records never mix with `@1`/`@2` records (NeMo's cache-aware loop). Utterances of a
   batch step together (`packs.nemo.transcribe_batch_size`, 8 for evals; batch 1 gives exactly a live session's words);
-  on the stand it matches version 2's WER at every profile (help `steps.nemotron-transcribe`).
+  on the stand it matches version 2's WER at every profile (help `steps.nemotron-transcribe`). Version 4 (2026-10-04)
+  joins a partial that continues a word split by an end of utterance without a space, as the final (`space` on live
+  partials too); @3's partials made emission delay at 80 ms the utterance's length (07 "Open questions").
 - Phase 4 (stream X): two auxiliary-model kinds in the same runtime, each loading its model from the auxiliary the
   project adopted (02 "Auxiliary models") for the length of one job (R45's one-off allowance; ≤ 8 GB, job kind
   `data`): `whisper_transcribe@1` (a pseudo-label member through transformers in fp16; `auxiliary` default
@@ -378,7 +380,7 @@ with "set me" params and a help link in its header):
 | Template | Chain | Ends in |
 | --- | --- | --- |
 | `data-ingest` | `sdp_ingest@2` → `text_normalise@1` → `manifest_filter@2` → `speaker_disjoint_split@1` → `dataset_freeze@1` (draft) | A draft dataset version; `datasets.preview`, then `datasets.freeze` |
-| `pseudo-label` (inputs `model: base_model`, `normalizer`) | `sdp_ingest` → `segments_cut@1` → `checkpoint_from_base@1` → `nemotron_transcribe@3` (`target_lang` `hr-HR` for Serbian) ‖ `whisper_transcribe@1` (`sr-Cyrl-Latn`) ‖ `oasis_transcribe@1` (optional) ‖ `lid_classify@1` → `pseudolabel_ensemble@1` (members wired `hypotheses.0…2`) → `text_normalise` → `manifest_filter` → `speaker_disjoint_split` → `dataset_freeze` (draft, tag `pseudo-label`) | A draft of agreed pseudo-labels; disputes in the triage queue |
+| `pseudo-label` (inputs `model: base_model`, `normalizer`) | `sdp_ingest` → `segments_cut@1` → `checkpoint_from_base@1` → `nemotron_transcribe@4` (`target_lang` `hr-HR` for Serbian) ‖ `whisper_transcribe@1` (`sr-Cyrl-Latn`) ‖ `oasis_transcribe@1` (optional) ‖ `lid_classify@1` → `pseudolabel_ensemble@1` (members wired `hypotheses.0…2`) → `text_normalise` → `manifest_filter` → `speaker_disjoint_split` → `dataset_freeze` (draft, tag `pseudo-label`) | A draft of agreed pseudo-labels; disputes in the triage queue |
 | `align-reference` (input `data: dataset`) | `align_reference@1` | An `alignment` attached to the golden sets on that dataset; run by hand once per golden set |
 | `noise-from-calls` | `sdp_ingest` → `noise_mine@1` | A frozen `noise-bank/<name>` version tagged `mined` |
 | `noise-bank` | `dataset_import@4` (`folder-csv`, `purpose: noise`, e.g. MUSAN from the `corpora` mount) | A frozen noise bank |

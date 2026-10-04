@@ -34,7 +34,7 @@ steps:
     kind: checkpoint_from_base@1
     in: { base: $inputs.model }
   - id: nemotron
-    kind: nemotron_transcribe@3
+    kind: nemotron_transcribe@4
     in: { model: weights.checkpoint, data: audio.data }
     params:
       target_lang: hr-HR                               # set me: the base model's prompt for the language

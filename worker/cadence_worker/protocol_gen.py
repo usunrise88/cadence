@@ -164,6 +164,7 @@ class LivePartial(TypedDict):
     seq: int
     text: str
     audioEnd: float
+    space: NotRequired[bool]
 
 
 class LivePing(TypedDict):
