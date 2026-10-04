@@ -233,6 +233,7 @@ func New(c Config) (*Server, error) {
 	s.experiments.Install() // a run that ends starts its sweep's next run
 	s.transcriptions = s.newTranscriptions()
 	s.mounts, s.cache = s.newMounts(), s.newCache()
+	c.Pipelines.SetMounts(s.mounts.Fingerprinter()) // what a step reads from mounts is in its input hash
 	s.annotation = s.newAnnotation()
 	s.annotation.Install(c.StepHooks) // after the dataset importer: a batch's cut becomes its golden set
 	window := time.Duration(s.defaultsDoc().Drafts.PresenceSeconds.Value) * time.Second

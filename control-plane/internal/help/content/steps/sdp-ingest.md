@@ -134,6 +134,9 @@ Files beside an audio file `<stem>.<ext>` (written by the corpus fetch scripts, 
   revision fetched under another name); set it to one the message lists.
 - Stereo calls: write `<stem>.cadence.json` with `roles` (and the bot's `script`), or set `channel_roles`.
 - A file changed on the mount after ingest no longer matches its hashes: `datasets.freeze` fails on it; ingest again.
+  Running the pipeline again is enough: the control plane lists the files under `path` (path, size, modification
+  time; the `exclude` globs applied) into the step's input hash, so a changed, added or removed file runs the ingest
+  again, and an unchanged mount reuses the last one (no `fresh: true` needed).
 
 ## Sources
 

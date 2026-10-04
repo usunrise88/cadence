@@ -44,12 +44,18 @@ type listResult struct {
 	Contents []struct {
 		Key  string `xml:"Key"`
 		Size int64  `xml:"Size"`
+		ETag string `xml:"ETag"`
 	} `xml:"Contents"`
 	IsTruncated           bool   `xml:"IsTruncated"`
 	NextContinuationToken string `xml:"NextContinuationToken"`
 }
 
 func (r *s3Reader) Walk(ctx context.Context, prefix string, fn func(string, int64) error) error {
+	return r.WalkStamped(ctx, prefix, func(rel string, size int64, _ string) error { return fn(rel, size) })
+}
+
+// WalkStamped implements StampedReader: an object's stamp is its ETag from the listing.
+func (r *s3Reader) WalkStamped(ctx context.Context, prefix string, fn func(string, int64, string) error) error {
 	if prefix != "" {
 		if err := checkPath(prefix); err != nil {
 			return err
@@ -86,7 +92,7 @@ func (r *s3Reader) Walk(ctx context.Context, prefix string, fn func(string, int6
 			if r.prefix != "" {
 				rel = strings.TrimPrefix(c.Key, r.prefix+"/")
 			}
-			if err := fn(rel, c.Size); err != nil {
+			if err := fn(rel, c.Size, strings.Trim(c.ETag, `"`)); err != nil {
 				if errors.Is(err, ErrStop) {
 					return nil
 				}

@@ -1,7 +1,8 @@
 // Package langtag compares the language of a locale with the languages a base model knows (its locale:<code> tags).
 //
-// A model card names a macrolanguage where data names one of its members: Nemotron's tag is `no` (Norwegian) while
-// FLEURS and most corpora write `nb-NO` (Bokmål) or `nn-NO` (Nynorsk). Model checks fold each primary subtag to its
+// A model card names a macrolanguage where data names one of its members: the stand's base model is tagged `no`
+// (Norwegian) while FLEURS and most corpora write `nb-NO` (Bokmål) or `nn-NO` (Nynorsk). Model checks fold each
+// primary subtag to its
 // macrolanguage (BCP 47 / ISO 639-3 macrolanguage mappings) before comparing, so `nb-NO` data meets a `no` model
 // without an explicit languages map (owner decision of 2026-10-04 on the phase-4 gate). The table is deliberately
 // small: the members Cadence has met or that corpora commonly tag apart from their macrolanguage.

@@ -121,16 +121,22 @@ func resolveRef(ctx context.Context, q storage.Querier, projectID, role, ref str
 
 // hashParams is what a step's input hash covers of its parameters: the resolved values and, for each registry
 // reference, the version it resolved to — a new version of the same collection (another revision, another endpoint)
-// runs the step again. Steps without references hash their parameters as before.
+// runs the step again — and, for a step that reads a mount, the fingerprint of the files it would read (changed files
+// run it again). Steps without either hash their parameters as before.
 func hashParams(s StepRow) map[string]any {
-	if len(s.Auxiliaries) == 0 {
+	if len(s.Auxiliaries) == 0 && s.MountFingerprint == "" {
 		return s.Params
 	}
 	out := maps.Clone(s.Params)
-	refs := map[string]string{}
-	for name, r := range s.Auxiliaries {
-		refs[name] = r.VersionID
+	if len(s.Auxiliaries) > 0 {
+		refs := map[string]string{}
+		for name, r := range s.Auxiliaries {
+			refs[name] = r.VersionID
+		}
+		out["$registryRefs"] = refs
 	}
-	out["$registryRefs"] = refs
+	if s.MountFingerprint != "" { // what the step reads from mounts (Engine.mountFingerprint)
+		out["$mounts"] = s.MountFingerprint
+	}
 	return out
 }
