@@ -30,12 +30,12 @@ beforeEach(() => {
 });
 afterEach(() => cleanup());
 
-function wrap() {
+function wrap(v: GoldenSetVersion = g) {
   return render(
     <QueryClientProvider client={qc}>
       <TooltipProvider>
         <PanelContext.Provider value={{ instanceId: "golden-set:golden_set:ver_g", panelId: "golden-set", visible: false }}>
-          <GoldenSetPanel panelId="golden-set" instanceId="golden-set:golden_set:ver_g" doc="golden_set:ver_g" entity={goldenSetToEntity(g)} />
+          <GoldenSetPanel panelId="golden-set" instanceId="golden-set:golden_set:ver_g" doc="golden_set:ver_g" entity={goldenSetToEntity(v)} />
         </PanelContext.Provider>
       </TooltipProvider>
     </QueryClientProvider>,
@@ -70,5 +70,24 @@ describe("Golden set: adopt", () => {
     await waitFor(() => expect(document.querySelector('[data-slot="adopt-problem"]')?.getAttribute("data-leakage")).toBe("true"));
     expect(screen.getByText(/holds 3 of its utterances/)).toBeTruthy();
     expect((screen.getByRole("button", { name: "Adopt" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
+describe("Golden set: word timings", () => {
+  it("says emission delay is n/a until the references are aligned", () => {
+    wrap();
+    expect(document.querySelector('[data-slot="gs-alignment"]')?.textContent).toMatch(/Not aligned: emission delay is n\/a/);
+  });
+
+  it("shows the alignment the golden set carries, with why utterances stayed unaligned", () => {
+    const aligned = {
+      ...g,
+      alignment: { id: "aln_1", artifact: "b3:a", aligner: "auxiliary/omniasr-ctc-1b", utterances: 10, aligned: 9, words: 120, reasons: ["longer than 60 s"], createdAt: "2026-10-04T00:00:00Z" },
+    } as GoldenSetVersion;
+    wrap(aligned);
+    const text = document.querySelector('[data-slot="gs-alignment"]')?.textContent ?? "";
+    expect(text).toContain("9 of 10 utterances · 120 words");
+    expect(text).toContain("auxiliary/omniasr-ctc-1b");
+    expect(text).toContain("Unaligned: longer than 60 s");
   });
 });

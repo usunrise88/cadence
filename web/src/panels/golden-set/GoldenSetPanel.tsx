@@ -49,6 +49,24 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
+/** The reference alignment the golden set carries (align_reference; emission delay needs it), or why there is none. */
+function AlignmentSummary({ a, utterances }: { a?: GoldenSetVersion["alignment"]; utterances: number }) {
+  if (!a) {
+    return (
+      <span className="text-muted-foreground" data-slot="gs-alignment">
+        Not aligned: emission delay is n/a. Run the align-reference pipeline on the dataset hash.
+      </span>
+    );
+  }
+  return (
+    <span data-slot="gs-alignment">
+      {a.aligned.toLocaleString()} of {(a.utterances || utterances).toLocaleString()} utterances · {a.words.toLocaleString()} words ·{" "}
+      <code className="text-[11px]">{a.aligner}</code>
+      {a.reasons?.length ? <span className="block text-muted-foreground">Unaligned: {a.reasons.join("; ")}</span> : null}
+    </span>
+  );
+}
+
 function Overview({ g, doc }: { g: GoldenSetVersion; doc?: string }) {
   const p = g.goldenSet;
   const [freezeOpen, setFreezeOpen] = useState(false);
@@ -92,6 +110,9 @@ function Overview({ g, doc }: { g: GoldenSetVersion; doc?: string }) {
             <span className="text-muted-foreground">Checked at freeze: none of its utterances is in a training dataset version, and mixes refuse them from now on.</span>
           </Row>
           {p.approvalId ? <Row label="Approved by">{p.approvalId}</Row> : null}
+          <Row label="Word timings">
+            <AlignmentSummary a={g.alignment} utterances={p.utterances} />
+          </Row>
         </dl>
         {!freezeOpen ? (
           <Button size="xs" variant="outline" className="w-fit" onClick={() => setFreezeOpen(true)} data-command="goldenSets.freeze">

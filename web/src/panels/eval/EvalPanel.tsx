@@ -51,6 +51,8 @@ import {
   deltaForest,
   deltaHeatmap,
   ECDF_ROWS,
+  emissionBars,
+  emissionReasons,
   entityBars,
   latencyBars,
   profileCells,
@@ -72,7 +74,8 @@ import {
 // subject's WER, the baseline's, and the delta with its 95 % interval, toned by glyph and colour; the primary cell
 // (the one the gate reads) is starred. Charts: delta heatmap, forest plot, S/D/I bars, WER by duration, the
 // per-utterance WER ECDF and entity accuracy of the selected cell; under "Streaming" WER against latency, latency to
-// final and partial stability of the selected cell's golden set; under "Robustness" the augmentation matrix. The gate
+// final, emission delay (aligned golden sets) and partial stability of the selected cell's golden set; under
+// "Robustness" the augmentation matrix. The gate
 // (evals.gate) and model registration (models.register, inline confirm) act here; Run eval… and Re-run missing cells
 // open the shared Run eval form (evals.new, filled from this eval's axes for the re-run); Edit gates.yaml opens the
 // Project home's gate editor. A cell selects into the selection
@@ -290,8 +293,11 @@ function Streaming({ ev, goldenSet, decoding }: { ev: Eval; goldenSet: string; d
   const rows = profileCells(ev, goldenSet, decoding);
   const wl = werLatency(ev, goldenSet, decoding);
   const lat = latencyBars(ev, goldenSet, decoding);
+  const em = emissionBars(ev, goldenSet, decoding);
   const stab = stabilityBars(ev, goldenSet, decoding);
-  const reasons = unavailableReasons(ev, "latency", rows.flatMap((r) => [r.subject, r.baseline].filter((c): c is EvalCell => !!c)));
+  const cells = rows.flatMap((r) => [r.subject, r.baseline].filter((c): c is EvalCell => !!c));
+  const reasons = unavailableReasons(ev, "latency", cells);
+  const emReasons = emissionReasons(ev, cells);
   const hasWl = wl.series.some((s) => s.points.length > 0);
   const empty = !hasWl && !lat && !stab && !reasons.length;
   const gs = ev.goldenSets.find((g) => g.versionId === goldenSet);
@@ -322,6 +328,16 @@ function Streaming({ ev, goldenSet, decoding }: { ev: Eval; goldenSet: string; d
           ) : null}
           <Reasons items={reasons} label="Why latency to final is unavailable" />
         </Section>
+        {em || emReasons.length ? (
+          <Section id={`eval-emission-${ev.id}`} title="Emission delay">
+            {em ? (
+              <div className="h-56">
+                <AnalyticsChart spec={em} hideTitle />
+              </div>
+            ) : null}
+            <Reasons items={emReasons} label="Why emission delay is n/a" />
+          </Section>
+        ) : null}
         <Section id={`eval-stability-${ev.id}`} title="Partial stability">
           {stab ? (
             <div className="flex flex-col gap-3">
