@@ -33,6 +33,10 @@ manifest_filter = "cadence_worker.steps.manifest_filter:ManifestFilterStep"
 speaker_disjoint_split = "cadence_worker.steps.speaker_disjoint_split:SpeakerDisjointSplitStep"
 dataset_freeze = "cadence_worker.steps.dataset_freeze:DatasetFreezeStep"
 mount_check = "cadence_worker.steps.mount_check:MountCheckStep"
+shar_export = "cadence_worker.steps.shar_export:SharExportStep"
+dataset_export = "cadence_worker.steps.dataset_export:DatasetExportStep"
+hf_push = "cadence_worker.steps.hf_push:HfPushStep"
+noise_mine = "cadence_worker.steps.noise_mine:NoiseMineStep"
 
 [dependency-groups]
 dev = [
