@@ -57,16 +57,8 @@ queue and emission delay. Four places in chapter 14 stay `TBD` because only peop
 (media serves people only), the batch's inter-annotator WER and the comparison with the FLEURS references, and the
 calls' golden set with its eval. They fill in when batch `calls-synth-sr-1` is annotated.
 
-Note for the author (2026-10-04): chapter 14's emission-delay table (`evl_01a106b7-d42b…`) was measured with
-`nemotron_transcribe@3`, whose partials split a word after NeMo's end of utterance inside it ("Dan iel …") — a decoder
-bug, not the model (07 "Open questions", decision log 2026-10-04). Re-run the same eval after `nemotron_transcribe@4`
-is on the stand (it re-decodes: the new version changes the record key) and replace all three rows: the 80 ms row
-will drop from 4.5 s / 9.9 s to about the 160 ms row or below (on 24 clips, paced at audio offset: −0.15 s / 0.01 s at
-both 80 and 160 ms), and the 160 ms PR90 (4.0 s / 3.1 s) falls too, since 17 % of 160 ms utterances were split; the
-1 120 ms row barely moves. Rewrite the paragraph after the table: the lesson becomes "a word-level metric caught a
-decoder bug the WER could not see" instead of an open question. Take latency to final (1.3 s) from the rerun too: a
-split utterance's partials never equalled its final text, so its final counted only at the last event; now the median
-80 ms utterance reaches its final text 0.51 s before that (24 clips; 0 s with @3).
+Chapter 14's emission-delay table was re-measured on 2026-10-04 with `nemotron_transcribe@4` (`evl_01a106de-8674…`)
+after the 80 ms decoder fix; the first measurement is kept as the chapter's "In the field" story.
 
 ## Part IV · Production (phase 5) — outline only until phase 5 ships
 

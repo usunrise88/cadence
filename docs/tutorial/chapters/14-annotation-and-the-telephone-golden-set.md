@@ -212,18 +212,23 @@ model placed all 13 763 words of its 700 utterances. Here is what the Chapter 13
 
 | Profile | Fine-tuned PR50 / PR90 | Base model PR50 / PR90 | Latency to final, p50 (fine-tuned) |
 | --- | --- | --- | --- |
-| 80 ms | 4.5 s / 9.9 s | 4.4 s / 9.8 s | 1.3 s |
-| 160 ms | 0.42 s / 4.0 s | 0.45 s / 3.1 s | — |
-| 1 120 ms | 0.81 s / 1.3 s | 0.85 s / 1.3 s | — |
+| 80 ms | 0.38 s / 0.49 s | 0.42 s / 0.53 s | 0.45 s |
+| 160 ms | 0.40 s / 0.52 s | 0.44 s / 0.56 s | 0.44 s |
+| 1 120 ms | 0.81 s / 1.25 s | 0.85 s / 1.30 s | 0.82 s |
 
-<!-- align plr_01a106b6-3873…, eval evl_01a106b7-d42b…, 2026-10-04 -->
+<!-- align plr_01a106b6-3873…; eval evl_01a106de-8674… with nemotron_transcribe@4, 2026-10-04 -->
 
-Look at the first row. At 80 ms of look-ahead a word becomes stable four and a half seconds after it was said — later
-than the final transcript of a short utterance — while at 160 ms the median word is stable in under half a second.
-The 80 ms partials keep rewriting words until the utterance ends. Both models do it, so fine-tuning did not cause it.
-Whether it is the model's nature at that look-ahead or something in the streaming decoder is an open question on the
-stand as this is written; either way it is exactly the kind of fact a word-level metric exists to surface, and a
-reason to measure emission delay before you choose a deployment profile by its name.
+Less look-ahead, earlier words: at 80 ms the median word is stable 0.38 seconds after it was said, and nine words in
+ten within half a second. The fine-tune is a little faster than the base model at every profile.
+
+> **In the field** — The first time we measured this table, the 80 ms row read 4.5 s / 9.9 s: words seemed to stay
+> unstable until the end of the utterance, at the very profile chosen for deployment. Word error rate was fine, so
+> nothing else had noticed. The cause was in Cadence's streaming decoder, not the model: at 80 ms the model's
+> endpointer often closes a segment in the middle of the first word ("Dan" | "iel Lantane…"), and the decoder joined
+> the next segment's partials with a space, so every later word sat one place off until the final put it right. The
+> fix joins a partial the way the final is joined (`nemotron_transcribe@4`); the decoder now matches NeMo's own
+> streaming loop word for word. A word-level metric caught a bug that WER could not see.
+> <!-- evl_01a106b7-d42b… (before) vs evl_01a106de-8674… (after); fix/p4f-emission-80ms, 2026-10-04 -->
 
 ## What you learned
 
