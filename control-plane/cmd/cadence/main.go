@@ -249,7 +249,15 @@ func serve(ctx context.Context, getenv func(string) string) error {
 	}}
 	backupSvc.Register(jobSvc)
 	jobSvc.AddPeriodic("backups.schedule", time.Minute, backupSvc.Tick)
-	evictSvc := &eviction.Service{Pool: pool, CAS: blobs, Log: log, MirrorDir: filepath.Join(backupDir, "cas")}
+	evictSvc := &eviction.Service{Pool: pool, CAS: blobs, Log: log, MirrorDir: filepath.Join(backupDir, "cas"),
+		// The mirror may live on a mount (backups.mirror_mount); a misconfigured mount keeps the default directory, so
+		// eviction waits for blobs it cannot find rather than deleting them as unmirrored.
+		Mirror: func(ctx context.Context) string {
+			if mr, err := backupSvc.MirrorOf(ctx); err == nil {
+				return mr.Dir
+			}
+			return filepath.Join(backupDir, "cas")
+		}}
 	evictSvc.Register(jobSvc)
 	storeWatch := &eviction.Watcher{Service: evictSvc, Defaults: defaults.Get}
 	jobSvc.AddPeriodic("storage.watch", 10*time.Minute, storeWatch.Tick)

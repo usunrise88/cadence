@@ -4088,6 +4088,78 @@ paths:
         "202": { $ref: "#/components/responses/JobAccepted" }
         default: { $ref: "#/components/responses/Problem" }
 
+  # ---------------------------------------------------------------- interoperability: imports, exports, noise bank (phase 4 · stream I) — add paths below this line
+
+  /registry/datasets:export:
+    x-cadence: { entity: datasets, kind: dataset_version }
+    post:
+      operationId: datasets.export
+      summary: Export a frozen dataset version as Lhotse Shar, a NeMo manifest or a Cadence bundle (to a writable mount or the content store), or to the Hugging Face Hub (approval); 202 with the job
+      tags: [registry]
+      x-cadence:
+        toolDescription: >
+          Export a frozen dataset version (a draft is refused with dataset-not-frozen; freeze it first). Formats:
+          lhotse-shar (Shar shards — cuts.NNNNNN.jsonl.gz and recording.NNNNNN.tar with the 16 kHz WAV audio — that
+          Lhotse's Shar reader opens), nemo-manifest (manifest.<split>.jsonl with audio_filepath, duration, text and
+          lang, the WAV files beside it), cadence-bundle (the version's registry record, its sources with their licences
+          and every blob laid out as a content store, cas/b3/<ab>/<hash>, which another Cadence instance imports with
+          dataset_import format cadence-bundle) and hf-hub (an audiofolder dataset with its card pushed to hubRepo; refused
+          for production sources and sources without a usable licence, and always an approval the admin decides, for
+          people too). target is cas (the export stays in the content store as an export artifact) or a directory on a
+          writable path mount, mount://exports/<path>; the default is mount://<storage.export_mount>/<collection>/<version>/<format>
+          when that mount is registered and writable, else cas. Audio an export writes unchanged onto a mount
+          (nemo-manifest, cadence-bundle) is recorded as a copy of its content-store blob, so the cache may evict the
+          version and datasets.materialize can bring it back. The export runs as a pipeline run in project (default: the
+          project the version was ingested or imported in). dryRun=true answers the plan: step kind, target, utterances,
+          bytes and whether an approval is needed. The real call answers 201 with the export (entity.export.{id}), or
+          202 with an approvalId for hf-hub.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/DatasetExportRequest" } } }
+      responses:
+        "200":
+          description: Dry run — the export as it would run; nothing started
+          content: { application/json: { schema: { $ref: "#/components/schemas/DatasetExportPlan" } } }
+        "201":
+          description: "The export, started: its pipeline run is queued (follow entity.export.{id} or pipeline_run.{pipelineRunId}); an identical earlier export reused by its input hash comes back done"
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/DatasetExport" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /projects/{p}/exports:
+    x-cadence: { entity: exports, kind: export }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    get:
+      operationId: exports.list
+      summary: Dataset exports run in a project, newest first
+      tags: [storage]
+      parameters:
+        - { name: version, in: query, description: "Only exports of this dataset version (ver_…)", schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+      responses:
+        "200":
+          description: Exports, newest first
+          content: { application/json: { schema: { $ref: "#/components/schemas/DatasetExportList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /exports/{id}:
+    x-cadence: { entity: exports, kind: export }
+    parameters: [{ name: id, in: path, required: true, description: "Export id (dex_…)", schema: { type: string } }]
+    get:
+      operationId: exports.get
+      summary: Get a dataset export with its state, target, files, bytes, mount copies and Hub commit
+      tags: [storage]
+      responses:
+        "200":
+          description: The export
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/DatasetExport" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
   # ---------------------------------------------------------------- ingest, draft datasets, freeze, sources, utterance search (phase 4 · stream D) — add paths below this line
 
   /registry/datasets:preview:
@@ -4754,7 +4826,7 @@ components:
     RegistryKind:
       type: string
       enum: [base_model, dataset_version, template, runtime, model_family, step_kind, noise_bank, golden_set, normalizer, model, auxiliary]
-      description: "The kinds registered so far; runtime, model_family and step_kind are published by workers (R40, R41, R45); noise_bank holds background noise for augmentation, registered by dataset_import with purpose noise; golden_set (goldenSets.freeze), normalizer (scoring normalizers, R21) and model (models.register, R22) arrive in phase 3; auxiliary (LID classifiers, pseudo-label members, aligners: AuxiliaryPayload, R26) in phase 4"
+      description: "The kinds registered so far; runtime, model_family and step_kind are published by workers (R40, R41, R45); noise_bank holds background noise for augmentation, registered by dataset_import with purpose noise or mined from call silences by noise_mine; golden_set (goldenSets.freeze), normalizer (scoring normalizers, R21) and model (models.register, R22) arrive in phase 3; auxiliary (LID classifiers, pseudo-label members, aligners: AuxiliaryPayload, R26) in phase 4"
     VersionState:
       type: string
       enum: [draft, frozen, deprecated, archived]
@@ -9575,6 +9647,88 @@ components:
         freeBytes: { type: integer, format: int64 }
         pinned: { type: array, items: { type: string }, description: What pins the version }
         blocked: { type: array, items: { type: string }, description: "Why the command cannot proceed (empty when it can)" }
+    # ---------------------------------------------------------------- interoperability: imports, exports, noise bank schemas (phase 4 · stream I) — add below
+    DatasetExportFormat:
+      type: string
+      enum: [lhotse-shar, nemo-manifest, cadence-bundle, hf-hub]
+      description: "lhotse-shar: Shar shards (cuts and recording tars); nemo-manifest: manifest.<split>.jsonl with the WAV files; cadence-bundle: the registry record, sources and blobs laid out as a content store, for another Cadence instance; hf-hub: an audiofolder dataset pushed to the Hugging Face Hub (approval)"
+    DatasetExportRequest:
+      type: object
+      required: [version, format]
+      additionalProperties: false
+      properties:
+        version: { type: string, description: "The frozen dataset version (ver_…)" }
+        format: { $ref: "#/components/schemas/DatasetExportFormat" }
+        project: { type: string, maxLength: 63, description: "Slug of the project the export's pipeline run runs in; default the project the version was ingested or imported in" }
+        target: { type: string, maxLength: 1000, description: "cas, or a directory on a writable path mount (mount://exports/<path>); default mount://<storage.export_mount>/<collection>/<version>/<format> when that mount is registered and writable, else cas. Not used by hf-hub" }
+        hubRepo: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,95}/[A-Za-z0-9][A-Za-z0-9._-]{0,95}$", description: "hf-hub: the dataset repository <org>/<name>; created when missing" }
+        hubPrivate: { type: boolean, description: "hf-hub: create the repository private (default storage.export_hub_private)" }
+    DatasetExportPlan:
+      type: object
+      required: [versionId, collection, version, format, projectId, project, target, stepKind, utterances, hours, bytes, licence, sources, approval, copies]
+      properties:
+        versionId: { type: string }
+        collection: { type: string, example: dataset/fleurs-sr }
+        version: { type: string }
+        format: { $ref: "#/components/schemas/DatasetExportFormat" }
+        projectId: { type: string }
+        project: { type: string, description: The project's slug }
+        target: { type: string, description: "cas, mount://… or hf://datasets/<repo>" }
+        stepKind: { type: string, example: shar_export@1 }
+        utterances: { type: integer }
+        hours: { type: number, format: double }
+        bytes: { type: integer, format: int64, description: The version's audio bytes (what the export reads) }
+        licence: { type: string, description: The version's licence }
+        sources: { type: array, items: { type: string }, description: Names of the sources the version holds }
+        approval: { type: boolean, description: "True when the real call waits for an approval (hf-hub)" }
+        copies: { type: boolean, description: "True when the audio lands unchanged on a mount and becomes copies of its content-store blobs (the cache may then evict the version)" }
+    DatasetExportState: { type: string, enum: [running, done, failed, cancelled], description: "The state of the export's pipeline run; done once the export artifact is recorded" }
+    DatasetExportFile:
+      type: object
+      required: [path, bytes]
+      properties:
+        path: { type: string, description: "Relative to the target (a mount directory) or to files/ in the export artifact" }
+        hash: { type: string, pattern: "^b3:[0-9a-f]{64}$" }
+        bytes: { type: integer, format: int64 }
+    DatasetExportHub:
+      type: object
+      required: [repo]
+      properties:
+        repo: { type: string }
+        commit: { type: string }
+        url: { type: string }
+        private: { type: boolean }
+    DatasetExport:
+      type: object
+      required: [id, format, projectId, target, state, files, bytes, copies, createdBy, createdAt, rev]
+      properties:
+        id: { type: string, description: "dex_…" }
+        versionId: { type: string, description: Empty when an export step ran in a project pipeline on a dataset artifact no version names }
+        collection: { type: string }
+        version: { type: string }
+        format: { $ref: "#/components/schemas/DatasetExportFormat" }
+        projectId: { type: string }
+        target: { type: string }
+        state: { $ref: "#/components/schemas/DatasetExportState" }
+        pipelineRunId: { type: string }
+        stepKind: { type: string }
+        artifact: { type: string, description: "The export artifact (b3:…): export.json and, with target cas, the files" }
+        files: { type: integer, description: Files the export wrote }
+        bytes: { type: integer, format: int64 }
+        copies: { type: integer, description: "Content-store blobs the export placed on a mount unchanged (recorded as mount copies)" }
+        sample: { type: array, items: { $ref: "#/components/schemas/DatasetExportFile" }, description: The first files written (up to 20) }
+        hub: { $ref: "#/components/schemas/DatasetExportHub" }
+        error: { type: string, description: Why the export's pipeline run failed }
+        createdBy: { $ref: "#/components/schemas/Actor" }
+        approvalId: { type: string }
+        createdAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time }
+        rev: { type: integer }
+    DatasetExportList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/DatasetExport" } }
     # ---------------------------------------------------------------- ingest, draft datasets, freeze schemas (phase 4 · stream D) — add below
     SourceNew:
       type: object

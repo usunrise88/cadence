@@ -292,6 +292,14 @@ storage:
     description: Files one mount scan walks before it stops and marks its inventory truncated
     source: Cadence recommendation
     range: { min: 1000, max: 100000000 }
+  export_mount:
+    value: exports
+    description: The writable mount datasets.export writes to when the request names no target (mount://<this>/<collection>/<version>/<format>); when no writable path mount has this name the export stays in the content store
+    source: docs/review/2026-10-03-phase-4-plan.md decision 1 (the exports mount)
+  export_hub_private:
+    value: true
+    description: Whether a dataset pushed to the Hugging Face Hub (datasets.export format hf-hub) creates its repository private when the request does not say
+    source: Cadence recommendation (publishing is a person's later decision on the Hub)
 
 # Instance operations (docs/spec/06-platform.md "Operations"): the clock quiet hours, the digest and backups follow.
 operations:
@@ -346,6 +354,10 @@ backups:
     description: Weekly backup sets kept beside the nightly ones
     source: Cadence recommendation (a month of weekly restore points)
     range: { min: 1, max: 52 }
+  mirror_mount:
+    value: ""
+    description: A writable path mount (mounts.list) the content-store mirror goes to (<root>/cas/b3/…) instead of CADENCE_BACKUP_DIR/cas; every mirrored blob is then recorded as a copy on the mount, so the cache may evict it and datasets.materialize copies it back. Empty keeps the mirror beside the backup sets
+    source: docs/review/2026-10-03-phase-4-plan.md decision 1 (the exports mount is the backup mirror's mount option)
 
 # The recommended augmentation profile (docs/spec/03-pipelines-defaults.md "Augmentation"): a project's
 # augment/<name>.yaml starts from these values and the Recipe form's "Reset to recommended" writes them back. Each
@@ -579,6 +591,50 @@ data:
     description: A frozen version warns when more than this share of segments are transcript-length outliers
     source: Cadence recommendation
     range: { min: 0, max: 1 }
+  # Interoperability (phase 4 · stream I): Shar exports and the noise bank mined from calls (shar_export,
+  # noise_mine read them through defaultRef).
+  shar_shard_utterances:
+    value: 1000
+    unit: utterances
+    description: Cuts per shard of a Lhotse Shar export (one cuts.NNNNNN.jsonl.gz and one recording.NNNNNN.tar each)
+    source: Lhotse SharWriter's default shard_size (1000)
+    range: { min: 10, max: 100000 }
+  noise_min_clip_s:
+    value: 1.0
+    unit: s
+    description: Shortest silence of a call track kept as a noise clip (after the margin to speech is cut off)
+    source: Cadence recommendation
+    range: { min: 0.2, max: 30 }
+  noise_max_clip_s:
+    value: 10.0
+    unit: s
+    description: Longest noise clip; a longer silence is cut into clips of at most this length
+    source: Cadence recommendation (augmentation mixes clips of a few seconds; MUSAN noise clips are longer and are cropped at mix time)
+    range: { min: 1, max: 120 }
+  noise_edge_margin_ms:
+    value: 200
+    unit: ms
+    description: Distance a noise clip keeps from speech on any channel of the file (breath, echo and crosstalk stay out)
+    source: Cadence recommendation
+    range: { min: 0, max: 2000 }
+  noise_min_rms_db:
+    value: -75.0
+    unit: dBFS
+    description: A clip quieter than this is digital silence (a TTS bot channel, a muted line) and is not kept
+    source: Cadence recommendation (16-bit dither sits near −90 dBFS; telephone line noise is usually −65 to −45)
+    range: { min: -120, max: -30 }
+  noise_max_rms_db:
+    value: -25.0
+    unit: dBFS
+    description: A clip louder than this is probably speech the voice-activity detector missed and is not kept
+    source: Cadence recommendation
+    range: { min: -60, max: 0 }
+  noise_max_clips_per_file:
+    value: 20
+    unit: clips
+    description: Most noise clips taken from one recording, so a few long calls do not make up the whole bank
+    source: Cadence recommendation
+    range: { min: 1, max: 1000 }
 
 # Pseudo-labels (phase 4 · stream X; docs/review/2026-10-03-phase-4-plan.md "Decisions taken for phase 4" 6–7, R26):
 # when the members of a pseudolabel_ensemble agree on a segment's text. The control plane reads none of these.

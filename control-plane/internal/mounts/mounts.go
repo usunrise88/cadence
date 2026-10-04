@@ -418,3 +418,33 @@ func RecordCopy(ctx context.Context, tx pgx.Tx, mountID, hash, rel string, size 
 	}
 	return nil
 }
+
+// Copy is one blob copy on a mount (RecordCopies).
+type Copy struct {
+	Hash string
+	Path string // relative to the mount's root
+	Size int64
+}
+
+// Batcher sends a batch: a transaction or the pool.
+type Batcher interface {
+	SendBatch(ctx context.Context, b *pgx.Batch) pgx.BatchResults
+}
+
+// RecordCopies is RecordCopy for many blobs on one mount, in batches of a thousand (an export's audio, the backup
+// mirror on a mount).
+func RecordCopies(ctx context.Context, q Batcher, mountID string, copies []Copy) error {
+	const per = 1000
+	for start := 0; start < len(copies); start += per {
+		b := &pgx.Batch{}
+		for _, c := range copies[start:min(len(copies), start+per)] {
+			b.Queue(`INSERT INTO blob_copies (hash, mount_id, path, size, seen_at) VALUES ($1, $2, $3, $4, now())
+				ON CONFLICT (hash, mount_id) DO UPDATE SET path = excluded.path, size = excluded.size, seen_at = excluded.seen_at`,
+				c.Hash, mountID, c.Path, c.Size)
+		}
+		if err := q.SendBatch(ctx, b).Close(); err != nil {
+			return fmt.Errorf("record blob copies: %w", err)
+		}
+	}
+	return nil
+}

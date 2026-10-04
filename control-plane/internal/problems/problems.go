@@ -119,6 +119,8 @@ var (
 	VersionInUse           = Type{"version-in-use", http.StatusConflict, "Registry version in use"}
 	StepKindDeprecated     = Type{"step-kind-deprecated", http.StatusUnprocessableEntity, "Step kind deprecated"}
 	NotAdopted             = Type{"not-adopted", http.StatusUnprocessableEntity, "Not in the project's data.lock"}
+	// Interoperability: dataset exports (phase 4 · stream I).
+	ExportNotAllowed = Type{"export-not-allowed", http.StatusUnprocessableEntity, "Export not allowed"}
 )
 
 // Types lists every registered type.
@@ -141,6 +143,7 @@ func Types() []Type {
 		MountUnhealthy, StorageQuotaExceeded,
 		AuxiliaryUnavailable, AuxiliaryLicenceRefused,
 		LicenceForbidsAdoption, LocaleMismatch, VersionInUse, StepKindDeprecated, NotAdopted,
+		ExportNotAllowed,
 	}
 }
 

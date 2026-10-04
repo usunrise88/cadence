@@ -2842,6 +2842,87 @@
       ]
     },
     {
+      "name": "datasets.export",
+      "title": "Export a frozen dataset version as Lhotse Shar, a NeMo manifest or a Cadence bundle (to a writable mount or the content store), or to the Hugging Face Hub (approval); 202 with the job",
+      "description": "Export a frozen dataset version (a draft is refused with dataset-not-frozen; freeze it first). Formats: lhotse-shar (Shar shards — cuts.NNNNNN.jsonl.gz and recording.NNNNNN.tar with the 16 kHz WAV audio — that Lhotse's Shar reader opens), nemo-manifest (manifest.\u003csplit\u003e.jsonl with audio_filepath, duration, text and lang, the WAV files beside it), cadence-bundle (the version's registry record, its sources with their licences and every blob laid out as a content store, cas/b3/\u003cab\u003e/\u003chash\u003e, which another Cadence instance imports with dataset_import format cadence-bundle) and hf-hub (an audiofolder dataset with its card pushed to hubRepo; refused for production sources and sources without a usable licence, and always an approval the admin decides, for people too). target is cas (the export stays in the content store as an export artifact) or a directory on a writable path mount, mount://exports/\u003cpath\u003e; the default is mount://\u003cstorage.export_mount\u003e/\u003ccollection\u003e/\u003cversion\u003e/\u003cformat\u003e when that mount is registered and writable, else cas. Audio an export writes unchanged onto a mount (nemo-manifest, cadence-bundle) is recorded as a copy of its content-store blob, so the cache may evict the version and datasets.materialize can bring it back. The export runs as a pipeline run in project (default: the project the version was ingested or imported in). dryRun=true answers the plan: step kind, target, utterances, bytes and whether an approval is needed. The real call answers 201 with the export (entity.export.{id}), or 202 with an approvalId for hf-hub. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/registry/datasets:export",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "format": {
+                "description": "lhotse-shar: Shar shards (cuts and recording tars); nemo-manifest: manifest.\u003csplit\u003e.jsonl with the WAV files; cadence-bundle: the registry record, sources and blobs laid out as a content store, for another Cadence instance; hf-hub: an audiofolder dataset pushed to the Hugging Face Hub (approval)",
+                "enum": [
+                  "lhotse-shar",
+                  "nemo-manifest",
+                  "cadence-bundle",
+                  "hf-hub"
+                ],
+                "type": "string"
+              },
+              "hubPrivate": {
+                "description": "hf-hub: create the repository private (default storage.export_hub_private)",
+                "type": "boolean"
+              },
+              "hubRepo": {
+                "description": "hf-hub: the dataset repository \u003corg\u003e/\u003cname\u003e; created when missing",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,95}/[A-Za-z0-9][A-Za-z0-9._-]{0,95}$",
+                "type": "string"
+              },
+              "project": {
+                "description": "Slug of the project the export's pipeline run runs in; default the project the version was ingested or imported in",
+                "maxLength": 63,
+                "type": "string"
+              },
+              "target": {
+                "description": "cas, or a directory on a writable path mount (mount://exports/\u003cpath\u003e); default mount://\u003cstorage.export_mount\u003e/\u003ccollection\u003e/\u003cversion\u003e/\u003cformat\u003e when that mount is registered and writable, else cas. Not used by hf-hub",
+                "maxLength": 1000,
+                "type": "string"
+              },
+              "version": {
+                "description": "The frozen dataset version (ver_…)",
+                "type": "string"
+              }
+            },
+            "required": [
+              "version",
+              "format"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
       "name": "datasets.freeze",
       "title": "Freeze a draft dataset version — leakage check, then cut its segments into the content store (202 with the pipeline run)",
       "description": "Freeze a draft dataset version (state draft, dataset.frozen false — what pipelines/data-ingest ends in). First the leakage check: the draft's train and validation utterances must share nothing (by canonical hash or fingerprint) with any golden set, else golden-set-leakage lists the overlaps and nothing starts. Then a CPU pipeline run in the draft's project cuts every segment from its mount into the content store (dataset_freeze, mode cut), verifies each hash, writes the shards, quality checks and the dataset card, and sets frozen: true. Only frozen versions can be mixed, trained on, exported or adopted. dryRun=true runs the leakage check only. Answers 202 with the jobId of the cut step (datasets.get shows dataset.freeze with the pipeline run); a version already frozen, or a cut reused from an earlier identical freeze, answers 200. A draft is frozen once: a second call answers the frozen version, or the freeze already running. Pass dryRun=true to see what would happen without changing anything.",
@@ -3915,6 +3996,91 @@
           "property": "body",
           "in": "body",
           "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "exports.get",
+      "title": "Get a dataset export with its state, target, files, bytes, mount copies and Hub commit",
+      "description": "Get a dataset export with its state, target, files, bytes, mount copies and Hub commit",
+      "method": "GET",
+      "path": "/exports/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Export id (dex_…)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        }
+      ]
+    },
+    {
+      "name": "exports.list",
+      "title": "Dataset exports run in a project, newest first",
+      "description": "Dataset exports run in a project, newest first",
+      "method": "GET",
+      "path": "/projects/{p}/exports",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "default": 100,
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          },
+          "version": {
+            "description": "Only exports of this dataset version (ver_…)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "version",
+          "in": "query",
+          "name": "version"
+        },
+        {
+          "property": "limit",
+          "in": "query",
+          "name": "limit"
         }
       ]
     },
@@ -8024,7 +8190,7 @@
         "additionalProperties": false,
         "properties": {
           "kind": {
-            "description": "The kinds registered so far; runtime, model_family and step_kind are published by workers (R40, R41, R45); noise_bank holds background noise for augmentation, registered by dataset_import with purpose noise; golden_set (goldenSets.freeze), normalizer (scoring normalizers, R21) and model (models.register, R22) arrive in phase 3; auxiliary (LID classifiers, pseudo-label members, aligners: AuxiliaryPayload, R26) in phase 4",
+            "description": "The kinds registered so far; runtime, model_family and step_kind are published by workers (R40, R41, R45); noise_bank holds background noise for augmentation, registered by dataset_import with purpose noise or mined from call silences by noise_mine; golden_set (goldenSets.freeze), normalizer (scoring normalizers, R21) and model (models.register, R22) arrive in phase 3; auxiliary (LID classifiers, pseudo-label members, aligners: AuxiliaryPayload, R26) in phase 4",
             "enum": [
               "base_model",
               "dataset_version",
