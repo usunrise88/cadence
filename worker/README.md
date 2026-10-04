@@ -152,7 +152,9 @@ S/D/I, duration buckets, partial stability; the normalizer interpreter is `caden
 alignment `cadence_worker/align.py`; help `docs/help/steps/wer-score.md`) and `pseudolabel_ensemble` (members'
 hypotheses + `segments` + scoring normalizer + optional `lid` → `segments` with pseudo-labels or disputes and
 `hypotheses`; `cadence_worker/segments.py` reads and writes `cadence.segments/1`, `cadence_worker/members.py` holds what
-the members share; help `docs/help/steps/pseudolabel-ensemble.md`). Help slugs use dashes (`steps.dataset-import`).
+the members share; help `docs/help/steps/pseudolabel-ensemble.md`) and `segments_cut` (the segments that need a label,
+cut from their mount into the `dataset` the members read, `purpose: pseudo-label`; help
+`docs/help/steps/segments-cut.md`). Help slugs use dashes (`steps.dataset-import`).
 
 Auxiliary models (phase 4, R26): a parameter built with `cadence_field(registry_ref={"kind": "auxiliary", "role": …})`
 names an auxiliary version; the control plane resolves it to the version the project adopted and the step reads it

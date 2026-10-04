@@ -38,6 +38,7 @@ shar_export = "cadence_worker.steps.shar_export:SharExportStep"
 dataset_export = "cadence_worker.steps.dataset_export:DatasetExportStep"
 hf_push = "cadence_worker.steps.hf_push:HfPushStep"
 noise_mine = "cadence_worker.steps.noise_mine:NoiseMineStep"
+segments_cut = "cadence_worker.steps.segments_cut:SegmentsCutStep"
 
 [dependency-groups]
 dev = [

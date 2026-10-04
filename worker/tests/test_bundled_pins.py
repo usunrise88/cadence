@@ -5,12 +5,15 @@ yet are allowed only when listed below with the phase that brings them."""
 
 from __future__ import annotations
 
+import json
+import os
 import re
 from pathlib import Path
 
 import yaml
 
-from cadence_worker.registry import registry
+from cadence_worker.registry import load_kinds, registry
+from cadence_worker.steps.base import runtime_of
 
 ROOT = Path(__file__).resolve().parents[2]
 PIPELINE_DIRS = [
@@ -18,12 +21,16 @@ PIPELINE_DIRS = [
     *sorted((ROOT / "recipes" / "projects").glob("*/pipelines")),
 ]
 
-# The pseudo-label ensemble arrives with phase 4 · stream X; no worker publishes it yet.
-PLANNED = {
-    "pseudolabel_ensemble",
-}
+# Kinds a bundled pipeline may pin before a pack publishes them, with the phase that brings them (none now).
+PLANNED: set[str] = set()
 
 PIN = re.compile(r"^([a-z][a-z0-9_]*)@([0-9]+)$")
+
+# The descriptors of every kind a bundled pipeline pins, as the workers publish them: the control plane's integration
+# test (internal/pipelines, TestBundledPipelinesPlan) plans every bundled pipeline against them, so a template that
+# miswires a step or sets a parameter out of range fails in CI. Regenerate with
+# CADENCE_UPDATE_BUNDLED_KINDS=1 uv run pytest tests/test_bundled_pins.py.
+BUNDLED_KINDS = ROOT / "control-plane" / "internal" / "pipelines" / "testdata" / "bundled-kinds.json"
 
 
 def pins() -> list[tuple[str, str, str]]:
@@ -50,3 +57,27 @@ def test_bundled_pipelines_pin_published_versions() -> None:
     unknown = [f"{where}: {name}@{ver}" for where, name, ver in found if name not in published and name not in PLANNED]
     assert not stale, f"bundled pipelines pin versions no pack publishes now: {stale}"
     assert not unknown, f"bundled pipelines pin kinds no pack carries (add them to PLANNED with their phase): {unknown}"
+
+
+def bundled_kinds() -> list[dict[str, object]]:
+    entries = load_kinds()
+    published = registry()
+    out: list[dict[str, object]] = []
+    for name in sorted({name for _, name, _ in pins() if name in published}):
+        d: dict[str, object] = {"name": name, **published[name]}
+        if rt := runtime_of(entries[name].cls):
+            d["runtime"] = rt
+        out.append(d)
+    return out
+
+
+def test_bundled_kinds_fixture_is_current() -> None:
+    text = json.dumps(bundled_kinds(), indent=1, sort_keys=True, ensure_ascii=False) + "\n"
+    if os.environ.get("CADENCE_UPDATE_BUNDLED_KINDS"):
+        BUNDLED_KINDS.parent.mkdir(parents=True, exist_ok=True)
+        BUNDLED_KINDS.write_text(text, encoding="utf-8")
+    assert BUNDLED_KINDS.is_file(), f"{BUNDLED_KINDS.relative_to(ROOT)} is missing"
+    assert BUNDLED_KINDS.read_text(encoding="utf-8") == text, (
+        f"{BUNDLED_KINDS.relative_to(ROOT)} is stale: CADENCE_UPDATE_BUNDLED_KINDS=1 uv run pytest "
+        "tests/test_bundled_pins.py"
+    )
