@@ -797,7 +797,7 @@ owner may overrule):
 - [ ] A · A golden set from calls needs the ingest draft registered eval-only; the batch's training-side dataset is
       `dataset/<goldenSet>-annotated`
 - [ ] A · Guidelines are pinned at the repository's HEAD commit when the batch is created; reviewers see the path and
-      commit, not the text (no operation serves it yet)
+      commit, and the text at that commit through `guidelines.get` (phase 4 tail)
 - [ ] A · Media windows: a triage item plays its segment ± 2 s, a batch item ± `context_s`; only local/NFS/SMB mounts
       and WAV (PCM, float, G.711) play in place, others are converted
 - [ ] A · Triage is a tool panel (a queue), not a document

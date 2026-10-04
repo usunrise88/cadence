@@ -80,7 +80,8 @@ One admin account, invitation links for reviewers, and opaque scoped tokens for 
   (token `cri_`, shown once, its subject the batch) that expires at the batch's due date, after
   `annotation.invitation_max_days` (14) at most, and when the batch freezes. `auth.accept` (`POST /auth:accept`, tag
   `auth`) redeems the token for a browser session that never slides and ends with the invitation. A reviewer's
-  session reaches only `/auth`, help, `/defaults` (the audio view's settings), its batch's document, items and
+  session reaches only `/auth`, help, `/defaults` (the audio view's settings), its batch's document, guidelines
+  (`guidelines.get`: the file the batch pinned, never anything else of the repository), items and
   annotations, and the media of that batch's items (`bit_…` ids); everything else answers `403 forbidden`. Audio
   plays through the signed links below, with no download link.
 

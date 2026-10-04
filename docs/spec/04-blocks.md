@@ -240,8 +240,9 @@ As built (phase 4, stream A; `internal/annotation`, migration 0038; R27; help `g
 - Entities: batches `anb_` (`annotation_batches`), items `bit_` (`annotation_items`), annotations `ann_` (one per
   person and item). Guidelines are not a help article but Markdown in the project repository,
   `annotation/guidelines/<name>.md` (`annotation.guidelines`, default `default`); a batch pins the repository's head
-  commit at creation and the golden-set card cites path and commit. Reviewers see the path and commit, not the text
-  (not served yet).
+  commit at creation and the golden-set card cites path and commit. Reviewers read the text at that commit
+  (`guidelines.get`, `GET /batches/{id}/guidelines`: the file at the pinned commit, Markdown up to 256 KiB; a
+  reviewer's session reaches it for its own batch only, and nothing else of the repository).
 - `batches.new` (`POST /projects/{p}/batches`, dry run first) samples from a frame — a dataset version's segments
   (usually the draft `pipelines/data-ingest` ended in) or a `segments` artifact — over one role
   (`annotation.target_role`, `caller`), stratified by campaign, month, duration (`annotation.duration_edges_s`) and
@@ -306,10 +307,12 @@ Every step now has a window, a palette command, an API operation, an agent tool 
 | Freeze | Dataset version | Freeze dataset version | `POST /registry/datasets:freeze` (`datasets.freeze`, body `{version}`; 202 with the cut job) | `datasets.freeze` | `entity.dataset_version.{id}` (`dataset_version.frozen`), `pipeline_run.{id}` |
 | Search utterances | Dataset version, Source, Palette | — | `GET /registry/utterances:search` (`utterances.search`) | `utterances.search` | — |
 | Materialise, evict | Dataset version, Storage | Materialise; Evict | `POST /registry/datasets:materialize`, `:evict` (body `{versionId}`) | `datasets.materialize`, `datasets.evict` | `job.{id}`, `entity.artifact.{hash}` |
-| Export | Dataset version | — (no export UI yet) | `POST /registry/datasets:export` (`datasets.export`; Hub: 202 approval); `GET /projects/{p}/exports`, `GET /exports/{id}` | `datasets.export`, `exports.list`, `exports.get` | `entity.export.{id}` (`export.started|done`), `job.{id}` |
+| Export | Dataset version | Export… (plan, then export; Hub: approval) | `POST /registry/datasets:export` (`datasets.export`; Hub: 202 approval); `GET /projects/{p}/exports`, `GET /exports/{id}` | `datasets.export`, `exports.list`, `exports.get` | `entity.export.{id}` (`export.started|done`), `job.{id}` |
+| Read a dataset card | Dataset version | — | `GET /registry/texts/{hash}` (`texts.get`; only a blob a registry version names as text to read, capped at 256 KiB) | `texts.get` | — |
 | Archive a registry version | Library, Dataset version | Archive version | `POST /registry/versions:archive` (`versions.archive`, admin) | — (agents never archive, `no-deletes`) | `entity.<kind>.{id}` |
 | Annotation batch | Annotation batch, Triage (Annotate) | New batch (dry run first); Freeze batch (approval) | `POST /projects/{p}/batches` (`batches.new`), `GET /projects/{p}/batches`, `GET /batches/{id}`, `POST /batches/{id}:freeze` | `batches.new`, `batches.list`, `batches.get`, `batches.freeze` (approval) | `entity.annotation_batch.{id}`, `approvals` |
 | Annotate, adjudicate | Triage (Annotate), Audio | Done / skip / flag; Adjudicate | `GET /batches/{id}/batch-items[/{item}]`; `POST …/batch-items/{item}/annotations` (`annotations.new`); `POST …/batch-items/{item}:accept` (`batchItems.accept`) | `batchItems.list`, `batchItems.get` (annotating is a person's) | `entity.annotation_batch.{id}` |
+| Read the guidelines | Triage (Annotate), Annotation batch | — | `GET /batches/{id}/guidelines` (`guidelines.get`; the file at the batch's pinned commit; a reviewer of that batch only) | `guidelines.get` | — |
 | Invite a reviewer | Annotation batch | Invite reviewer | `POST /batches/{id}/invitations` (`invitations.new`, admin), `GET …/invitations`; `POST /auth:accept` (tag `auth`) | — (admin only) | `entity.annotation_batch.{id}` (`annotation_batch.reviewer_invited`) |
 | Audio tracks | Audio, Triage | — | `GET /registry/utterances/{id}/tracks` (`tracks.get`, tag `media`) | — (agents read no raw audio) | — |
 | Compose mix | Mix | Save mix as version | `POST /projects/{p}/mixes` | `mixes.``new`, `mixes.preview` | `entity.mix.{id}` |
