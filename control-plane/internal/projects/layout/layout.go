@@ -36,6 +36,8 @@ const (
 	PipelinesDir   = "pipelines"
 	PlaybooksDir   = "playbooks"
 	LangDir        = langpacks.Dir // lang/<locale>/: the language packs
+	// AnnotationDir holds annotation/guidelines/<name>.md, the guidelines annotation batches pin (R27, phase 4).
+	AnnotationDir = "annotation"
 )
 
 // CustomInstructions is the instructions template of a project whose AGENTS.md was edited by hand: it is never
@@ -186,6 +188,11 @@ func (r Renderer) Render(f Facts) (Files, error) {
 	}
 	if _, err := fs.Stat(r.Tree, "playbooks"); err == nil {
 		if err := r.copyDir("playbooks", PlaybooksDir, out); err != nil {
+			return nil, err
+		}
+	}
+	if _, err := fs.Stat(r.Tree, AnnotationDir); err == nil {
+		if err := r.copyDir(AnnotationDir, AnnotationDir, out); err != nil {
 			return nil, err
 		}
 	}

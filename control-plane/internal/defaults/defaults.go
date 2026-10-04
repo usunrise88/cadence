@@ -99,6 +99,8 @@ type Defaults struct {
 	Pseudolabel map[string]any `yaml:"pseudolabel"`
 	// Manual transcription tests and the live channel (phase 3, stream T).
 	Transcriptions Transcriptions `yaml:"transcriptions"`
+	// Annotation batches, reviewer invitations and the audio tracks' detector (phase 4, stream A).
+	Annotation Annotation `yaml:"annotation"`
 
 	document map[string]any
 }
@@ -299,6 +301,26 @@ type Media struct {
 	MaxConversions         Param[int] `yaml:"max_conversions"`
 	SpanCacheMB            Param[int] `yaml:"span_cache_mb"`
 	PlayAuditWindowSeconds Param[int] `yaml:"play_audit_window_s"`
+}
+
+// Annotation holds the annotation batch defaults (phase 4, stream A; docs/spec/04-blocks.md "Annotation workflow").
+type Annotation struct {
+	BatchSize         Param[int]       `yaml:"batch_size"`
+	DoubleShare       Param[float64]   `yaml:"double_share"`
+	MaxIAAWER         Param[float64]   `yaml:"max_iaa_wer"`
+	AdjudicateWER     Param[float64]   `yaml:"adjudicate_wer"`
+	MaxSkips          Param[int]       `yaml:"max_skips"`
+	TargetRole        Param[string]    `yaml:"target_role"`
+	Guidelines        Param[string]    `yaml:"guidelines"`
+	DueDays           Param[int]       `yaml:"due_days"`
+	InvitationMaxDays Param[int]       `yaml:"invitation_max_days"`
+	ContextSeconds    Param[float64]   `yaml:"context_s"`
+	DurationEdges     Param[[]float64] `yaml:"duration_edges_s"`
+	ConfidenceEdges   Param[[]float64] `yaml:"confidence_edges"`
+	VADMarginDB       Param[float64]   `yaml:"vad_margin_db"`
+	VADFloorDB        Param[float64]   `yaml:"vad_floor_db"`
+	VADMinSilenceMs   Param[int]       `yaml:"vad_min_silence_ms"`
+	BandwidthFloorDB  Param[float64]   `yaml:"bandwidth_floor_db"`
 }
 
 // Sweeps holds the sweep defaults (phase 3, stream X): the mode, how many runs a grid or a random draw makes, the

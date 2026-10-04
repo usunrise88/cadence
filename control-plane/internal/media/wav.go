@@ -12,7 +12,15 @@ import (
 const (
 	formatPCM        = 1
 	formatFloat      = 3
+	formatALaw       = 6
+	formatMuLaw      = 7
 	formatExtensible = 0xFFFE
+)
+
+// G.711 companding laws of 8-bit telephone audio (phase 4: calls on a mount are served in place).
+const (
+	LawALaw  = "alaw"
+	LawMuLaw = "mulaw"
 )
 
 // ErrNotWAV is returned for audio that is not a RIFF/WAVE file Cadence can decode (PCM 8/16/24/32-bit or IEEE float
@@ -25,6 +33,12 @@ type Info struct {
 	Channels   int
 	Bits       int
 	Float      bool
+	Law        string // G.711 companding of 8-bit samples (alaw, mulaw); empty for linear PCM
+	// Windowed marks a span of a longer file (Window): never served as the stored file itself.
+	Windowed bool
+	// Only is the channel of a multi-channel window that is the utterance's own audio (a segment indexed in place with
+	// &ch=n): requests without a channel get that one.
+	Only       *int
 	DataOffset int64 // byte offset of the first sample
 	DataBytes  int64
 }
@@ -39,7 +53,22 @@ func (i Info) Frames() int64 { return i.DataBytes / int64(i.BlockAlign()) }
 func (i Info) Duration() float64 { return float64(i.Frames()) / float64(i.SampleRate) }
 
 // Canonical reports whether the file is what audio.get serves as is: 16 kHz 16-bit PCM.
-func (i Info) Canonical() bool { return i.SampleRate == ServeRate && i.Bits == 16 && !i.Float }
+func (i Info) Canonical() bool {
+	return i.SampleRate == ServeRate && i.Bits == 16 && !i.Float && i.Law == ""
+}
+
+// Window is the part [start, end) seconds of the audio as its own Info (the frames of a segment of a longer file);
+// the bounds are clamped to the file.
+func (i Info) Window(start, end float64) Info {
+	rate := float64(i.SampleRate)
+	a := min(max(0, int64(math.Round(start*rate))), i.Frames())
+	b := min(max(a, int64(math.Round(end*rate))), i.Frames())
+	w := i
+	w.Windowed = true
+	w.DataOffset = i.DataOffset + a*int64(i.BlockAlign())
+	w.DataBytes = (b - a) * int64(i.BlockAlign())
+	return w
+}
 
 // ReadInfo parses the RIFF chunks of a WAV file of size bytes.
 func ReadInfo(r io.ReaderAt, size int64) (Info, error) {
@@ -90,6 +119,10 @@ func ReadInfo(r io.ReaderAt, size int64) (Info, error) {
 			case tag == formatPCM && (info.Bits == 8 || info.Bits == 16 || info.Bits == 24 || info.Bits == 32):
 			case tag == formatFloat && info.Bits == 32:
 				info.Float = true
+			case tag == formatMuLaw && info.Bits == 8:
+				info.Law = LawMuLaw
+			case tag == formatALaw && info.Bits == 8:
+				info.Law = LawALaw
 			default:
 				return Info{}, fmt.Errorf("%w: format %d with %d bits", ErrNotWAV, tag, info.Bits)
 			}
@@ -121,10 +154,50 @@ func ReadFrames(r io.ReaderAt, info Info, start, count int64) ([][]float32, erro
 	for f := int64(0); f < count; f++ {
 		for c := range info.Channels {
 			b := buf[f*ba+int64(c*width):]
-			out[c][f] = sample(b, info.Bits, info.Float)
+			switch info.Law {
+			case LawMuLaw:
+				out[c][f] = muLaw[b[0]]
+			case LawALaw:
+				out[c][f] = aLaw[b[0]]
+			default:
+				out[c][f] = sample(b, info.Bits, info.Float)
+			}
 		}
 	}
 	return out, nil
+}
+
+// muLaw and aLaw decode G.711 bytes to samples in [-1, 1] (ITU-T G.711; the tables of every telephony stack).
+var muLaw, aLaw = g711Tables()
+
+func g711Tables() (mu, a [256]float32) {
+	for i := range 256 {
+		u := ^byte(i)
+		t := (int(u&0x0F) << 3) + 0x84
+		t <<= (u & 0x70) >> 4
+		v := t - 0x84
+		if u&0x80 != 0 {
+			v = -v
+		}
+		mu[i] = float32(v) / 32768
+
+		x := byte(i) ^ 0x55
+		seg := (x & 0x70) >> 4
+		m := int(x&0x0F) << 4
+		switch seg {
+		case 0:
+			m += 8
+		case 1:
+			m += 0x108
+		default:
+			m = (m + 0x108) << (seg - 1)
+		}
+		if x&0x80 == 0 {
+			m = -m
+		}
+		a[i] = float32(m) / 32768
+	}
+	return mu, a
 }
 
 //nolint:gosec // two's complement reading of sample bits

@@ -53,6 +53,23 @@ type Payload struct {
 	Fingerprint         string  `json:"fingerprint"`
 	Groups              string  `json:"groups"`
 	ApprovalID          string  `json:"approvalId,omitempty"`
+	// Annotation is set on a golden set frozen from an annotation batch (batches.freeze, phase 4 · stream A, R27).
+	Annotation *Annotation `json:"annotation,omitempty"`
+}
+
+// Annotation is the card of a golden set an annotation batch froze: the batch, the guidelines commit it was annotated
+// under and the inter-annotator agreement (the contract's GoldenSetPayload.annotation).
+type Annotation struct {
+	BatchID    string `json:"batchId"`
+	Guidelines struct {
+		Name   string `json:"name"`
+		Path   string `json:"path"`
+		Commit string `json:"commit"`
+	} `json:"guidelines"`
+	IAAWER      *float64 `json:"iaaWer,omitempty"`
+	Pairs       int      `json:"pairs"`
+	Items       int      `json:"items"`
+	Adjudicated int      `json:"adjudicated"`
 }
 
 // FreezeInput is a goldenSets.freeze request.
@@ -64,6 +81,8 @@ type FreezeInput struct {
 	Groups     string // call | speaker | utterance; empty: speaker when every utterance names one, else utterance
 	Actor      auth.Actor
 	ApprovalID string // the approval the request was replayed under
+	// Annotation is the card of a batch-made golden set (batches.freeze); nil for goldenSets.freeze.
+	Annotation *Annotation
 }
 
 // Plan is what a freeze registers, checked.
@@ -222,7 +241,7 @@ func Prepare(ctx context.Context, q storage.Querier, in FreezeInput, d *defaults
 	p := Payload{
 		DatasetVersionID: ds.ID, DatasetHash: dp.Artifact.Hash, NormalizerVersionID: nl.ID, Locale: locale, Domain: domain,
 		Utterances: st.utterances, Hours: math.Round(st.hours*1e4) / 1e4, Fingerprint: ds.Fingerprint, Groups: groups,
-		ApprovalID: in.ApprovalID,
+		ApprovalID: in.ApprovalID, Annotation: in.Annotation,
 	}
 	body, err := json.Marshal(p)
 	if err != nil {
@@ -232,10 +251,18 @@ func Prepare(ctx context.Context, q storage.Querier, in FreezeInput, d *defaults
 	if domain != "" {
 		tags = append(tags, "domain:"+domain)
 	}
+	desc := fmt.Sprintf("Golden set frozen from %s %s, scored with %s %s", ds.Name, ds.Version, nl.Name, nl.Version)
+	if a := in.Annotation; a != nil {
+		tags = append(tags, "annotated")
+		desc += fmt.Sprintf("; annotated in batch %s under %s at %.12s", a.BatchID, a.Guidelines.Path, a.Guidelines.Commit)
+		if a.IAAWER != nil {
+			desc += fmt.Sprintf(", inter-annotator WER %.2f %%", *a.IAAWER*100)
+		}
+	}
 	slices.Sort(tags)
 	return Plan{Dataset: ds, Normalizer: nl, Payload: p, Register: registry.RegisterInput{
 		Kind: registry.KindGoldenSet, Name: name, Tags: tags, Licence: ds.Licence, Payload: body, Actor: in.Actor, Freeze: true,
-		Description: fmt.Sprintf("Golden set frozen from %s %s, scored with %s %s", ds.Name, ds.Version, nl.Name, nl.Version),
+		Description: desc,
 		Fingerprint: identity(p),
 	}}, nil
 }

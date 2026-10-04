@@ -48,7 +48,15 @@ type Scope struct {
 	Preset string `json:"preset,omitempty"`
 	// AgentSessions lets an API key of one project run agent sessions there (opt-in; automation such as the evals).
 	AgentSessions bool `json:"agentSessions,omitempty"`
+	// Batch is the one annotation batch a reviewer's invitation and session reach (anb_…, phase 4): its items and
+	// their audio, nothing else (docs/spec/06-platform.md "Authentication and access").
+	Batch string `json:"batch,omitempty"`
+	// BatchRole is the reviewer's role in Batch: annotator or adjudicator.
+	BatchRole string `json:"batchRole,omitempty"`
 }
+
+// Reviewer reports whether s is a reviewer's: one annotation batch and nothing else.
+func (s Scope) Reviewer() bool { return s.Batch != "" && !s.All }
 
 // FullScope is the scope of the admin's sessions and of the fixed actor.
 func FullScope() Scope { return Scope{All: true, RegistryRead: true} }

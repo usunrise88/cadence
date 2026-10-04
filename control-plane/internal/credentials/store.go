@@ -92,12 +92,13 @@ func (s *Store) Resolve(ctx context.Context, token string, via auth.Via) (auth.P
 	}
 	refresh := false
 	if c.LastUsedAt == nil || dbNow.Sub(*c.LastUsedAt) >= TouchInterval {
+		// A reviewer's session ends with its invitation (the batch's due date at the latest): it never slides.
 		if _, err := s.pool.Exec(ctx, `UPDATE credentials SET last_used_at = now(),
-				expires_at = CASE WHEN kind = 'session' THEN now() + $2::interval ELSE expires_at END
+				expires_at = CASE WHEN kind = 'session' AND NOT scope ? 'batch' THEN now() + $2::interval ELSE expires_at END
 			WHERE id = $1`, c.ID, fmt.Sprintf("%d seconds", int(auth.SessionLifetime/time.Second))); err != nil {
 			return auth.Principal{}, false, fmt.Errorf("touch credential %s: %w", c.ID, err)
 		}
-		refresh = c.Kind == KindSession
+		refresh = c.Kind == KindSession && !c.Scope.Reviewer()
 	}
 	return principal(c, userName), refresh, nil
 }

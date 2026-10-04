@@ -139,7 +139,7 @@ func (s *Server) audioGet(w http.ResponseWriter, r *http.Request, id api.Utteran
 		}
 		actor, via = auth.Actor{Kind: auth.KindUser, ID: l.Viewer}, "link"
 	} else {
-		p, err := mediaViewer(ctx)
+		p, err := s.mediaFor(ctx, u)
 		if err != nil {
 			return err
 		}
@@ -179,11 +179,11 @@ func (m mediaRoutes) SpectrogramGet(w http.ResponseWriter, r *http.Request, id a
 
 func (s *Server) spectrogramGet(w http.ResponseWriter, r *http.Request, id api.UtteranceRef, params api.SpectrogramGetParams) error {
 	ctx := r.Context()
-	if _, err := mediaViewer(ctx); err != nil {
-		return err
-	}
 	u, err := media.Lookup(ctx, s.Pool, id)
 	if err != nil {
+		return err
+	}
+	if _, err := s.mediaFor(ctx, u); err != nil {
 		return err
 	}
 	t, err := s.media.FindTiles(ctx, u)
@@ -229,11 +229,11 @@ func (s *Server) SpectrogramGet(context.Context, api.SpectrogramGetRequestObject
 
 // AudioSign implements audio.sign: a short-lived link for the signed-in viewer, audited.
 func (s *Server) AudioSign(ctx context.Context, req api.AudioSignRequestObject) (api.AudioSignResponseObject, error) {
-	p, err := mediaViewer(ctx)
+	u, err := media.Lookup(ctx, s.Pool, req.Id)
 	if err != nil {
 		return nil, err
 	}
-	u, err := media.Lookup(ctx, s.Pool, req.Id)
+	p, err := s.mediaFor(ctx, u)
 	if err != nil {
 		return nil, err
 	}
@@ -284,11 +284,11 @@ func (s *Server) AudioSign(ctx context.Context, req api.AudioSignRequestObject) 
 
 // PeaksGet implements peaks.get: the 10 ms peaks (cached as a peaks artifact) pooled to hopMs over the span.
 func (s *Server) PeaksGet(ctx context.Context, req api.PeaksGetRequestObject) (api.PeaksGetResponseObject, error) {
-	if _, err := mediaViewer(ctx); err != nil {
-		return nil, err
-	}
 	u, err := media.Lookup(ctx, s.Pool, req.Id)
 	if err != nil {
+		return nil, err
+	}
+	if _, err := s.mediaFor(ctx, u); err != nil {
 		return nil, err
 	}
 	hopMs := 10
