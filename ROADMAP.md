@@ -682,6 +682,20 @@ R, I, A, L and B, folded into the spec by stream S on 2026-10-04; the gate is st
   project-level bundle; the VoxLingua107 LID image; end-of-utterance gaps are not in the dataset manifest; aligning
   the replay golden sets on the stand; a nightly omni GPU run; Playwright
   e2e for annotation; `recipes/` lacks `annotation/guidelines/`.
+- Found and fixed running the gate on the stand (2026-10-04): every worker binds the mounts (core steps reached
+  `worker-services`/`worker-omni`, which had no `/mnt/corpora`); the default preset allows `mounts.verify`; an
+  optional step naming an auxiliary the project has not adopted is skipped with a warning; a retry leaves the plan's
+  skips skipped; `projects.sync` adds annotation guidelines a project lacks (never over its own); Whisper LID and the
+  Whisper member follow the retry's batch scale and LID batches 8 by default; corpora files must be world-readable
+  (workers run as uid 65532). Telegram became quieter on the owner's request (silent outcomes and digest, one loud
+  message per failed run, approvals batched for 120 s).
+- Open, from the gate: a step that reads a mount is reused by its input hash even when the mount's files changed (the
+  hash does not cover mount content; `fresh: true` works around it); every retry of an approved pipeline run asks
+  for a new GPU-spend approval while the estimate is unknown; replay golden sets in `nb-NO` need `languages:
+  {"nb-NO": "no-NO"}` (the base model's tag is `no`); `data-ingest` cannot draft untranscribed calls (frame the
+  annotation batch on the ingest's segments artifact instead); the Try Cadence playbook asks to clear a source that
+  is already cleared; a pseudo-label ensemble with the base model as a member keeps only what the weak member gets
+  right (2 454 of 2 944 FLEURS segments disputed, kept labels no better than Whisper alone).
 
 ---
 

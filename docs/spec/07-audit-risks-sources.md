@@ -805,16 +805,32 @@ owner may overrule):
       in omniASR's language list (Serbian Latin references stay unaligned unless transliterated); the `omnilingual-asr`
       package is not installed (the pack repeats the architecture numbers) and the weights come from
       `facebook/omniASR-CTC-1B` v1
-- [ ] S4 · found while folding: `versions.archive` may answer `202` (approval) in the contract, but no preset rule
-      gates it — the handler only requires the admin. Should archiving be an approval (registry scope)? **Now:** the
-      admin's own call, no approval
-- [ ] S4 · found while folding: `worker-services` and `worker-omni` do not bind `/mnt/corpora` or `/mnt/exports`
-      (only the control plane, `worker` and `worker-toy` do), so their steps read only content-store inputs. **Now:**
-      enough for `oasis_transcribe@1` and `align_reference@1`; bind them if a member must read a mount in place
-- [ ] S4 · found while folding: `defaults.yaml`'s description of `annotation.adjudicate_wer` says "after the scoring
-      normalizer", but the code compares after a neutral fold (case and punctuation); the spec follows the code
+- [x] S4 · found while folding: `versions.archive` may answer `202` (approval) in the contract, but no preset rule
+      gates it — the handler only requires the admin. **Answered (audit F1):** the `202` response is removed; archiving
+      is the admin's own call, no approval
+- [x] S4 · found while folding: `worker-services` and `worker-omni` did not bind `/mnt/corpora` or `/mnt/exports`.
+      **Answered at the gate (2026-10-04):** core steps such as `sdp_ingest` are leased to any worker, so every worker
+      binds both
+- [x] S4 · found while folding: `defaults.yaml`'s description of `annotation.adjudicate_wer` said "after the scoring
+      normalizer", but the code compares after a neutral fold. **Answered (audit F2):** the description follows the code
 - [ ] B · Try Cadence imports FLEURS from the HF Hub (`sdp_ingest` cannot read FLEURS `.tsv`); clearing a source must
       precede its ingest; export and parity steps of the playbook wait for phase 5
+- [ ] Gate (2026-10-04): a step that reads a mount is reused by its input hash even after the mount's files changed
+      (the hash covers params and inputs, not mount content). **Now:** `fresh: true` re-runs it; should a mount
+      step's hash include the scan's inventory fingerprint, or should such steps never be reused?
+- [ ] Gate: every retry of a pipeline run whose GPU estimate is unknown asks for a new `gpu-spend` approval, even when
+      the person just approved the run. **Now:** fail closed, one approval per retry; should a retry within the same
+      day inherit the run's approval?
+- [ ] Gate: replay golden sets in `nb-NO` need `languages: {"nb-NO": "no-NO"}` because the base model's tag is `no`.
+      **Now:** set per eval; should `knowsLanguage` treat `nb`/`nn` as `no` (macrolanguage), or `gates.yaml` carry
+      the map?
+- [ ] Gate: `data-ingest` cannot draft untranscribed calls (the filter drops segments without text, the draft refuses
+      them). **Now:** an annotation batch frames on the ingest's `segments` artifact; should a calls template stop at
+      the segments?
+- [ ] Gate: with the base model as one of two members, the pseudo-label ensemble kept 490 of 2 944 FLEURS segments,
+      no better than Whisper alone (WER 0.121 vs the references). **Now:** the template's members are unchanged and
+      the book explains it; should the default ensemble leave the base model out, or weight members by a measured
+      WER?
 
 ## Sources
 
