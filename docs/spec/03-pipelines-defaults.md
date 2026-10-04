@@ -366,6 +366,11 @@ As built (phase-3 audit fixes, eval correctness):
   `primaryProfile` against the eval's columns by name, else by the milliseconds its name states, as planning does.
 - **Languages.** `evals.new` refuses (422, path `/languages/<locale>`) a golden set whose decode language a compared
   model's base model lacks among its `locale:` tags, naming `languages` as the fix (as `runs.new` does for training).
+  Members of a macrolanguage match it (owner decision 2026-10-04, `internal/langtag`): an `nb-NO` or `nn-NO` set
+  decodes on a model tagged `no` without `languages`. The same folding applies to `runs.new`'s language check, the
+  live transcription check and the adoption locale check; the table is small and documented (no: nb, nn; ms: zsm,
+  zlm; ar: arb; zh: cmn; fa: pes; sw: swh; et: ekk; lv: lvs), and spoken varieties a model may not know (arz, yue)
+  are not folded.
 - **CER where it is gated.** The model card and the robustness matrix (`EvalRobustnessRow.unit: char`) report CER for
   the golden sets of `eval.character_error_languages`.
 

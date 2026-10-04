@@ -541,8 +541,18 @@ authority of every URI on it (`mount://<name>/<path>[#t=<start>,<end>][&ch=<n>]`
   with root **`/mnt/corpora`**, the container path. `exports` (`local`, writable) binds `${CADENCE_EXPORTS_DIR:-exports}`
   to `/mnt/exports`: the target of exports (`storage.export_mount`) and the backup mirror's mount option
   (`backups.mirror_mount`).
-- The control plane reads a mount only to scan it and to copy blobs back from it (materialisation); workers read it
-  for ingest and freeze.
+- The control plane reads a mount only to scan it, to copy blobs back from it (materialisation) and to list what a
+  step will read (below); workers read it for ingest and freeze.
+- **Mount content in step hashes** (owner decision 2026-10-04, `mounts.Fingerprinter`, migration 0044). A step whose
+  parameters name `mount://` URIs (`sdp_ingest`'s and `dataset_import`'s `path`) gets a fingerprint folded into its
+  input hash when it becomes ready: SHA-256 over each URI's mount (name, kind, root, revision) and the sorted list of
+  (relative path, size, stamp) of the files under it — the stamp is a path mount's modification time, an S3 object's
+  ETag, a Hub file's LFS sha256 or blob id. Files the step's `exclude` globs (fnmatch) leave out are not listed; the
+  `pattern` is not applied, since a step also reads sidecars beside the files it matches (a superset never reuses a
+  step whose input changed). It is a listing, never the bytes, capped at `storage.mount_scan_max_files`; a listing
+  that fails or exceeds the cap gives the step a stamp of its own, so it is not reused. Export steps (job kind
+  `export`) write to their mount and are not fingerprinted. The fingerprint is kept on the step
+  (`pipeline_steps.mount_fingerprint`); `fresh: true` still re-runs everything.
 
 ### The cache and materialisation (phase 4)
 

@@ -235,7 +235,9 @@ read any of them (R15).
   store.
 - The next step reads an artifact through its lease (`cas://` URI). A step whose `kind@version`, runtime version, resolved parameters
   and input hashes equal a finished step's in the same project reuses that step's outputs instead of running (unless
-  the run asks for `fresh`); output hooks run for reused outputs too, so they are idempotent per artifact hash.
+  the run asks for `fresh`); output hooks run for reused outputs too, so they are idempotent per artifact hash. A step
+  whose parameters name `mount://` URIs also hashes a fingerprint of the files it would read there (02 "Storage and
+  mounts", decision 2026-10-04), so it is reused only while they are unchanged.
 - Tiers: before mounts exist the store is the only tier; mounts (phase 4) become further tiers behind the same hash. As built (phase 4, stream M; `internal/cache`, `internal/mounts`, migration 0033): a blob copy on a mount is a `blob_copies` row; the store is the local cache tier, accounted by `storage.get`, and only dataset shards with a mount copy are evicted (02 "Storage and mounts").
   A worker without the shared volume uploads by hash (`workerArtifacts.set`, verified: `artifact-hash-mismatch`); a
   download path for remote workers comes with them. Only `artifacts.evict` deletes blobs (Retention below); the backup mirror copies each new blob once.

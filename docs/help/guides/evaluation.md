@@ -81,6 +81,11 @@ Serbian golden sets with the Croatian prompt for both the subject and the baseli
 map when the subject's run used `target_lang`. The map is part of the decoding hash, so these cells never mix with
 cells decoded in the set's own language.
 
+A member of a macrolanguage needs no map: a Bokmål (`nb-NO`) or Nynorsk (`nn-NO`) golden set decodes on a base model
+tagged `no` (Norwegian), as Standard Malay (`zsm`) does on `ms` — Cadence folds a small table of BCP 47
+macrolanguage members before comparing a set's language with the model's `locale:` tags (Cadence recommendation;
+spoken varieties such as Egyptian Arabic or Cantonese are not folded).
+
 ## Place in the loop
 
 Train → **evaluate** → register → (phase 5) deploy. Every playbook that trains ends with an eval and a gate
