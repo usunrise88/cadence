@@ -718,6 +718,75 @@ var Operations = []Operation{
 		Description: "The defaults every parameter, form, budget and estimate starts from (defaults.yaml): each value with its description, source and safe range. A value written anywhere else that differs is a departure from default.",
 	},
 	{
+		ID: "deploymentTargets.archive", Entity: "deploymentTargets", Verb: "archive", Method: "POST", Path: "/deployment-targets/{id}:archive",
+		Summary:        "Archive a deployment target (soft, the admin's); it takes no new deployments or promotions, its chain stays",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Target id (dtg_…) or name"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+	},
+	{
+		ID: "deploymentTargets.edit", Entity: "deploymentTargets", Verb: "edit", Method: "PATCH", Path: "/deployment-targets/{id}",
+		Summary:        "Change a deployment target (registry approval for everyone; a delivery target's chain gets a target-changed record)",
+		Description:    "Ask to change a deployment target: what it serves, its server, endpoint (staging), repositoryPath and slots (delivery), concurrency, card class, boost limits or description. Its name and kind never change. The real call answers 202 with an approvalId, for people too; the approved change bumps the revision and, on a delivery target, appends a signed target-changed record naming the new configuration. Send If-Match.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Target id (dtg_…) or name"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "boost", Type: "object"},
+			{Name: "cardClass", Type: "string", Description: "The production card class; benchmarks on another class are shown as such"},
+			{Name: "concurrency", Type: "integer", Description: "Streams the latency budget must hold at (absent: deploy.target_concurrency)"},
+			{Name: "description", Type: "string"},
+			{Name: "endpoint", Type: "string", Description: "Staging only: the server's HTTP endpoint Cadence reaches; a delivery target never has one"},
+			{Name: "repositoryPath", Type: "string", Description: "Delivery: the absolute path on the production host where the delivery script installs model directories"},
+			{Name: "server", Type: "object"},
+			{Name: "serves", Type: "array of object"},
+			{Name: "slots", Type: "array of string", Description: "The model names the production pipeline calls, one per locale or use"},
+		}},
+	},
+	{
+		ID: "deploymentTargets.get", Entity: "deploymentTargets", Verb: "get", Method: "GET", Path: "/deployment-targets/{id}",
+		Summary: "Get a deployment target with what it serves and its chain head",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Target id (dtg_…) or name"},
+		},
+	},
+	{
+		ID: "deploymentTargets.list", Entity: "deploymentTargets", Verb: "list", Method: "GET", Path: "/deployment-targets",
+		Summary:     "Deployment targets (staging and delivery) with what they serve, their chain head and the instance signing key",
+		Description: "List where models are served. kind staging is the server Cadence reaches (shadow, parity, benchmark run through it); kind delivery is a production server only a person's delivery script reaches (it has no endpoint). Each target lists what it serves (model family, deployable formats, latency profiles: the first is the primary one), its server kind and version, the slots (model names the production pipeline calls), its concurrency and card class, and for a delivery target the head of its promotion record chain. The answer also carries the instance's public signing keys (the current one and retired ones).",
+		Params: []Param{
+			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "active (default) or all (archived targets too)", Default: "active", Enum: []string{"active", "all"}},
+		},
+	},
+	{
+		ID: "deploymentTargets.new", Entity: "deploymentTargets", Verb: "new", Method: "POST", Path: "/deployment-targets",
+		Summary:        "Ask for a new deployment target (registry approval for everyone, the admin decides)",
+		Description:    "Ask for a new deployment target. A target names production, so the real call always answers 202 with an approvalId, for people too; the admin decides it, and the approved request creates the target. A delivery target gets the first record of its promotion chain (genesis, signed with the instance key); it never has an endpoint and needs repositoryPath and at least one slot. A staging target needs an endpoint. dryRun=true validates and answers the target as it would be created.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "boost", Type: "object"},
+			{Name: "cardClass", Type: "string", Description: "The production card class; benchmarks on another class are shown as such"},
+			{Name: "concurrency", Type: "integer", Description: "Streams the latency budget must hold at (absent: deploy.target_concurrency)"},
+			{Name: "description", Type: "string"},
+			{Name: "endpoint", Type: "string", Description: "Staging only: the server's HTTP endpoint Cadence reaches; a delivery target never has one"},
+			{Name: "kind", Required: true, Type: "string", Description: "staging: Cadence reaches it; delivery: only a person's delivery script does"},
+			{Name: "name", Required: true, Type: "string", Description: "Lower-case letters, digits and dashes; never changes"},
+			{Name: "repositoryPath", Type: "string", Description: "Delivery: the absolute path on the production host where the delivery script installs model directories"},
+			{Name: "server", Required: true, Type: "object"},
+			{Name: "serves", Type: "array of object"},
+			{Name: "slots", Type: "array of string", Description: "The model names the production pipeline calls, one per locale or use"},
+		}},
+	},
+	{
 		ID: "drafts.accept", Entity: "drafts", Verb: "accept", Method: "POST", Path: "/drafts/{id}:accept",
 		Summary:        "Apply a draft as a new revision of its entity, attributed to the person who accepts it",
 		Description:    "Accept a draft: its content becomes a new revision of the entity, attributed to the caller, with causedBy naming the draft. Send ifMatch with the draft's etag (rev). A draft whose entity moved on since it was made fails with draft-stale and the entity's current revision. Agents may not accept drafts: a person decides.",
@@ -1600,6 +1669,38 @@ var Operations = []Operation{
 		},
 	},
 	{
+		ID: "promotions.get", Entity: "promotions", Verb: "get", Method: "GET", Path: "/promotions/{id}",
+		Summary:     "A promotion record with its signature, key, state, delivery script and (for people) a signed bundle link",
+		Description: "One promotion record: its canonical body, hash, signature and key id, whether it verifies, its state (a promotion or rollback is pending until a person confirms its receipt, then confirmed, or withdrawn after deploy.delivery_pending_days), and its delivery bundle (state, content-store hash, the text of deliver.sh, the smoke check's size). People also get a short-lived signed link that downloads the bundle; agents never do — delivery is for people.",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Promotion record id (prm_…)"},
+		},
+	},
+	{
+		ID: "promotions.list", Entity: "promotions", Verb: "list", Method: "GET", Path: "/deployment-targets/{id}/promotions",
+		Summary:     "A delivery target's promotion record chain, oldest first, every record re-verified on read",
+		Description: "The target's promotion records, oldest first: genesis, promotions, rollbacks, confirmations, withdrawals, target changes and key rotations. Each record is JSON in canonical form (RFC 8785) whose SHA-256 is its hash, signed with the instance's Ed25519 key and chained by prevHash. Every record is verified again on read (verified, with the reasons when not), and intact says whether the whole chain holds. Filter by project (slug or id) and slot; a filtered answer still verifies the whole chain.",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Delivery target id (dtg_…) or name"},
+			{Name: "project", In: "query", Flag: "project", Type: "string", Description: "Only records of this project (slug or prj_…)"},
+			{Name: "slot", In: "query", Flag: "slot", Type: "string", Description: "Only records of this slot"},
+		},
+	},
+	{
+		ID: "promotions.verify", Entity: "promotions", Verb: "verify", Method: "POST", Path: "/promotions/{id}:verify",
+		Summary:        "Confirm a delivery with the receipt line deliver.sh printed (people only); appends a signed confirmation record",
+		Description:    "People only (rule delivery-is-for-people): an agent never confirms a delivery. The person who ran the bundle's deliver.sh on the production host pastes the line it printed, CADENCE-RECEIPT 1 <recordHash> <servedSha256> <ok>/<total> <host> <UTC time>. Cadence accepts it when the record is the slot's pending one, the record hash matches, the served files hash to the record's manifestSha256 and the smoke check passed; it then appends a signed confirmation record naming the person and moves the deployment to its stage. Anything else answers promotion-receipt-mismatch and changes nothing. Send If-Match with the record's ETag.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Promotion record id (prm_…) of a promotion or rollback"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "receipt", Required: true, Type: "string", Description: "The CADENCE-RECEIPT line deliver.sh printed (surrounding text is ignored)"},
+		}},
+	},
+	{
 		ID: "queueEntries.list", Entity: "queueEntries", Verb: "list", Method: "GET", Path: "/queue-entries",
 		Summary:     "The step queue across projects — waiting, paused and running step jobs with their card and lease",
 		Description: "The GPU queue: step jobs waiting, paused or running on a worker, in start order (the project's queue priority, then the job's priority, then first come), with the card and worker holding each running one. Reorder with jobs.edit (a job's priority) or projects.edit (budgets.queuePriority), pause with jobs.pause. A project-scoped credential sees its own project's entries only.",
@@ -1808,7 +1909,7 @@ var Operations = []Operation{
 			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
 		},
 		Body: &Body{Required: true, Properties: []BodyProperty{
-			{Name: "kind", Required: true, Type: "string"},
+			{Name: "kind", Required: true, Type: "string", Description: "signing: the instance's Ed25519 promotion key (generated by Cadence, never stored through secrets.new)"},
 			{Name: "name", Required: true, Type: "string"},
 			{Name: "scope", Type: "string", Description: "instance, or project:<slug> when only that project's jobs and bootstrap may read it"},
 			{Name: "value", Required: true, Type: "string", Description: "Write-only; stored encrypted outside the database"},

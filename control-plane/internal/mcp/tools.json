@@ -3982,6 +3982,485 @@
       "params": null
     },
     {
+      "name": "deploymentTargets.archive",
+      "title": "Archive a deployment target (soft, the admin's); it takes no new deployments or promotions, its chain stays",
+      "description": "Archive a deployment target (soft, the admin's); it takes no new deployments or promotions, its chain stays. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/deployment-targets/{id}:archive",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Target id (dtg_…) or name",
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        }
+      ]
+    },
+    {
+      "name": "deploymentTargets.edit",
+      "title": "Change a deployment target (registry approval for everyone; a delivery target's chain gets a target-changed record)",
+      "description": "Ask to change a deployment target: what it serves, its server, endpoint (staging), repositoryPath and slots (delivery), concurrency, card class, boost limits or description. Its name and kind never change. The real call answers 202 with an approvalId, for people too; the approved change bumps the revision and, on a delivery target, appends a signed target-changed record naming the new configuration. Send If-Match. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "PATCH",
+      "path": "/deployment-targets/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "description": "The fields to change (absent: unchanged); serves, server, repositoryPath and slots are named by promotion records",
+            "properties": {
+              "boost": {
+                "additionalProperties": false,
+                "properties": {
+                  "dynamic": {
+                    "description": "The production pipeline sends a per-call boost field (R32 · confirm)",
+                    "type": "boolean"
+                  },
+                  "maxTermsPerCall": {
+                    "maximum": 10000,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "static": {
+                    "description": "Static boost lists ship as decoding configuration",
+                    "type": "boolean"
+                  }
+                },
+                "type": "object"
+              },
+              "cardClass": {
+                "description": "The production card class; benchmarks on another class are shown as such",
+                "maxLength": 100,
+                "type": "string"
+              },
+              "concurrency": {
+                "description": "Streams the latency budget must hold at (absent: deploy.target_concurrency)",
+                "maximum": 512,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "description": {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              "endpoint": {
+                "description": "Staging only: the server's HTTP endpoint Cadence reaches; a delivery target never has one",
+                "maxLength": 500,
+                "type": "string"
+              },
+              "repositoryPath": {
+                "description": "Delivery: the absolute path on the production host where the delivery script installs model directories",
+                "maxLength": 500,
+                "type": "string"
+              },
+              "server": {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "description": "The inference server kind; the delivery script's server functions are chosen by it (templates/delivery/servers/\u003ckind\u003e.sh)",
+                    "pattern": "^[a-z][a-z0-9-]{0,39}$",
+                    "type": "string"
+                  },
+                  "version": {
+                    "maxLength": 50,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "version"
+                ],
+                "type": "object"
+              },
+              "serves": {
+                "items": {
+                  "additionalProperties": false,
+                  "description": "One model family the target serves, in which deployable formats and latency profiles (R46); compared as data",
+                  "properties": {
+                    "family": {
+                      "description": "A model-family collection name",
+                      "maxLength": 200,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "formats": {
+                      "description": "Deployable formats the family's export role writes",
+                      "items": {
+                        "maxLength": 100,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "maxItems": 20,
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "profiles": {
+                      "description": "Latency profiles; the first is the primary profile the latency budget is checked at",
+                      "items": {
+                        "maxLength": 50,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "maxItems": 20,
+                      "minItems": 1,
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "family",
+                    "formats",
+                    "profiles"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 50,
+                "type": "array"
+              },
+              "slots": {
+                "description": "The model names the production pipeline calls, one per locale or use",
+                "items": {
+                  "pattern": "^[a-z0-9][a-z0-9._-]{0,99}$",
+                  "type": "string"
+                },
+                "maxItems": 100,
+                "type": "array"
+              }
+            },
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Target id (dtg_…) or name",
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "deploymentTargets.get",
+      "title": "Get a deployment target with what it serves and its chain head",
+      "description": "Get a deployment target with what it serves and its chain head",
+      "method": "GET",
+      "path": "/deployment-targets/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Target id (dtg_…) or name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        }
+      ]
+    },
+    {
+      "name": "deploymentTargets.list",
+      "title": "Deployment targets (staging and delivery) with what they serve, their chain head and the instance signing key",
+      "description": "List where models are served. kind staging is the server Cadence reaches (shadow, parity, benchmark run through it); kind delivery is a production server only a person's delivery script reaches (it has no endpoint). Each target lists what it serves (model family, deployable formats, latency profiles: the first is the primary one), its server kind and version, the slots (model names the production pipeline calls), its concurrency and card class, and for a delivery target the head of its promotion record chain. The answer also carries the instance's public signing keys (the current one and retired ones).",
+      "method": "GET",
+      "path": "/deployment-targets",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "state": {
+            "default": "active",
+            "description": "active (default) or all (archived targets too)",
+            "enum": [
+              "active",
+              "all"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "state",
+          "in": "query",
+          "name": "state"
+        }
+      ]
+    },
+    {
+      "name": "deploymentTargets.new",
+      "title": "Ask for a new deployment target (registry approval for everyone, the admin decides)",
+      "description": "Ask for a new deployment target. A target names production, so the real call always answers 202 with an approvalId, for people too; the admin decides it, and the approved request creates the target. A delivery target gets the first record of its promotion chain (genesis, signed with the instance key); it never has an endpoint and needs repositoryPath and at least one slot. A staging target needs an endpoint. dryRun=true validates and answers the target as it would be created. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/deployment-targets",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "boost": {
+                "additionalProperties": false,
+                "properties": {
+                  "dynamic": {
+                    "description": "The production pipeline sends a per-call boost field (R32 · confirm)",
+                    "type": "boolean"
+                  },
+                  "maxTermsPerCall": {
+                    "maximum": 10000,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "static": {
+                    "description": "Static boost lists ship as decoding configuration",
+                    "type": "boolean"
+                  }
+                },
+                "type": "object"
+              },
+              "cardClass": {
+                "description": "The production card class; benchmarks on another class are shown as such",
+                "maxLength": 100,
+                "type": "string"
+              },
+              "concurrency": {
+                "description": "Streams the latency budget must hold at (absent: deploy.target_concurrency)",
+                "maximum": 512,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "description": {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              "endpoint": {
+                "description": "Staging only: the server's HTTP endpoint Cadence reaches; a delivery target never has one",
+                "maxLength": 500,
+                "type": "string"
+              },
+              "kind": {
+                "description": "staging: Cadence reaches it; delivery: only a person's delivery script does",
+                "enum": [
+                  "staging",
+                  "delivery"
+                ],
+                "type": "string"
+              },
+              "name": {
+                "description": "Lower-case letters, digits and dashes; never changes",
+                "pattern": "^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$",
+                "type": "string"
+              },
+              "repositoryPath": {
+                "description": "Delivery: the absolute path on the production host where the delivery script installs model directories",
+                "maxLength": 500,
+                "type": "string"
+              },
+              "server": {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "description": "The inference server kind; the delivery script's server functions are chosen by it (templates/delivery/servers/\u003ckind\u003e.sh)",
+                    "pattern": "^[a-z][a-z0-9-]{0,39}$",
+                    "type": "string"
+                  },
+                  "version": {
+                    "maxLength": 50,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "version"
+                ],
+                "type": "object"
+              },
+              "serves": {
+                "items": {
+                  "additionalProperties": false,
+                  "description": "One model family the target serves, in which deployable formats and latency profiles (R46); compared as data",
+                  "properties": {
+                    "family": {
+                      "description": "A model-family collection name",
+                      "maxLength": 200,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "formats": {
+                      "description": "Deployable formats the family's export role writes",
+                      "items": {
+                        "maxLength": 100,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "maxItems": 20,
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "profiles": {
+                      "description": "Latency profiles; the first is the primary profile the latency budget is checked at",
+                      "items": {
+                        "maxLength": 50,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "maxItems": 20,
+                      "minItems": 1,
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "family",
+                    "formats",
+                    "profiles"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 50,
+                "type": "array"
+              },
+              "slots": {
+                "description": "The model names the production pipeline calls, one per locale or use",
+                "items": {
+                  "pattern": "^[a-z0-9][a-z0-9._-]{0,99}$",
+                  "type": "string"
+                },
+                "maxItems": 100,
+                "type": "array"
+              }
+            },
+            "required": [
+              "name",
+              "kind",
+              "server"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
       "name": "drafts.accept",
       "title": "Apply a draft as a new revision of its entity, attributed to the person who accepts it",
       "description": "Accept a draft: its content becomes a new revision of the entity, attributed to the caller, with causedBy naming the draft. Send ifMatch with the draft's etag (rev). A draft whose entity moved on since it was made fails with draft-stale and the entity's current revision. Agents may not accept drafts: a person decides. Pass dryRun=true to see what would happen without changing anything.",
@@ -8865,6 +9344,163 @@
       ]
     },
     {
+      "name": "promotions.get",
+      "title": "A promotion record with its signature, key, state, delivery script and (for people) a signed bundle link",
+      "description": "One promotion record: its canonical body, hash, signature and key id, whether it verifies, its state (a promotion or rollback is pending until a person confirms its receipt, then confirmed, or withdrawn after deploy.delivery_pending_days), and its delivery bundle (state, content-store hash, the text of deliver.sh, the smoke check's size). People also get a short-lived signed link that downloads the bundle; agents never do — delivery is for people.",
+      "method": "GET",
+      "path": "/promotions/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Promotion record id (prm_…)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        }
+      ]
+    },
+    {
+      "name": "promotions.list",
+      "title": "A delivery target's promotion record chain, oldest first, every record re-verified on read",
+      "description": "The target's promotion records, oldest first: genesis, promotions, rollbacks, confirmations, withdrawals, target changes and key rotations. Each record is JSON in canonical form (RFC 8785) whose SHA-256 is its hash, signed with the instance's Ed25519 key and chained by prevHash. Every record is verified again on read (verified, with the reasons when not), and intact says whether the whole chain holds. Filter by project (slug or id) and slot; a filtered answer still verifies the whole chain.",
+      "method": "GET",
+      "path": "/deployment-targets/{id}/promotions",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Delivery target id (dtg_…) or name",
+            "type": "string"
+          },
+          "project": {
+            "description": "Only records of this project (slug or prj_…)",
+            "maxLength": 100,
+            "type": "string"
+          },
+          "slot": {
+            "description": "Only records of this slot",
+            "maxLength": 100,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "project",
+          "in": "query",
+          "name": "project"
+        },
+        {
+          "property": "slot",
+          "in": "query",
+          "name": "slot"
+        }
+      ]
+    },
+    {
+      "name": "promotions.verify",
+      "title": "Confirm a delivery with the receipt line deliver.sh printed (people only); appends a signed confirmation record",
+      "description": "People only (rule delivery-is-for-people): an agent never confirms a delivery. The person who ran the bundle's deliver.sh on the production host pastes the line it printed, CADENCE-RECEIPT 1 \u003crecordHash\u003e \u003cservedSha256\u003e \u003cok\u003e/\u003ctotal\u003e \u003chost\u003e \u003cUTC time\u003e. Cadence accepts it when the record is the slot's pending one, the record hash matches, the served files hash to the record's manifestSha256 and the smoke check passed; it then appends a signed confirmation record naming the person and moves the deployment to its stage. Anything else answers promotion-receipt-mismatch and changes nothing. Send If-Match with the record's ETag. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/promotions/{id}:verify",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "receipt": {
+                "description": "The CADENCE-RECEIPT line deliver.sh printed (surrounding text is ignored)",
+                "maxLength": 2000,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "receipt"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Promotion record id (prm_…) of a promotion or rollback",
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
       "name": "queueEntries.list",
       "title": "The step queue across projects — waiting, paused and running step jobs with their card and lease",
       "description": "The GPU queue: step jobs waiting, paused or running on a worker, in start order (the project's queue priority, then the job's priority, then first come), with the card and worker holding each running one. Reorder with jobs.edit (a job's priority) or projects.edit (budgets.queuePriority), pause with jobs.pause. A project-scoped credential sees its own project's entries only.",
@@ -9933,6 +10569,7 @@
             "additionalProperties": false,
             "properties": {
               "kind": {
+                "description": "signing: the instance's Ed25519 promotion key (generated by Cadence, never stored through secrets.new)",
                 "enum": [
                   "huggingface",
                   "ngc",
@@ -9940,6 +10577,7 @@
                   "s3",
                   "judge-api",
                   "telegram",
+                  "signing",
                   "other"
                 ],
                 "type": "string"
