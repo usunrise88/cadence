@@ -233,8 +233,11 @@ directory on a writable path mount (default `mount://<storage.export_mount>/<col
 approval for the Hub (preset rule `hub-export`; repositories private by default). Each export is a `dex_` row
 (`dataset_exports`, migration 0037; `exports.list|get`) over a pipeline run in a project, reused by its input hash;
 audio placed unchanged on a mount is recorded as mount copies of its blobs, so the cache may evict them.
-`export-not-allowed` refuses production or unlicensed sources and golden-set data. The Cadence bundle is per dataset
-version, not per project. Step kinds and formats: 03 "Interoperability".
+`export-not-allowed` refuses production or unlicensed sources and golden-set data (a version a golden set is built on,
+or one sharing any utterance or fingerprint, in any split, with a golden set's data: `data.GoldenShared`). The export
+step kinds (job kind `export`: `shar_export`, `dataset_export`, `hf_push`) run only through `datasets.export`: a
+pipeline naming one is refused (`export-not-allowed`). The Cadence bundle is per dataset version, not per project.
+Step kinds and formats: 03 "Interoperability".
 
 **Annotation batches** (`anb_`, project work, migration 0038) sample a dataset version's segments for people to
 transcribe and freeze into a golden set or a training dataset version; the entity, its items, reviewers and freeze are
@@ -288,7 +291,10 @@ What phase 4 added to the rules above (`internal/registry`, migration 0036).
   (`resolved: [{kind, collection, version, id}]`). A step parameter marked `x-cadence.registry: <kind>` (any kind but
   `source`) names a collection, `@alias` or `ver_…`; the engine resolves it through `data.lock` at the commit the
   pipeline is read at — through the project's adoptions for bundled templates and projects without a repository — and
-  refuses a version the lock does not list (`not-adopted`). The plan reports each resolution in `PlanStep.locked`
+  refuses a version the lock does not list (`not-adopted`) and an entry the project never adopted (data.lock pins, the
+  adoptions allow). Merging a branch adopts only the template versions its `data.lock` names (a template sync), never
+  a `resolved` entry: an edited lockfile skips the licence, locale, leakage and auxiliary checks, so it adopts nothing,
+  and an agent session's edit of `data.lock` waits for a person (05 "guarded paths"). The plan reports each resolution in `PlanStep.locked`
   (`LockedReference`); params are not rewritten, and input-hash reuse ignores the resolved version.
 - **Step-kind deprecation.** A worker pack marks a kind `deprecated_after` (a date), `replaced_by` and a note when it
   publishes it (`StepKindDeprecation`). Plans warn (`PipelineWarning` `step-kind-deprecated`); after the date a
@@ -508,9 +514,16 @@ authority of every URI on it (`mount://<name>/<path>[#t=<start>,<end>][&ch=<n>]`
   also every `storage.mount_check_hours`). Events on `mount.{id}`: `mount.created`, `mount.health`, `mount.scanned`.
 - **Config is immutable** (revision stays 1): a new location is a new mount. A step job that names a mount whose last
   health check failed fails at once (`mount-unhealthy`); health is per mount, not per host.
+- **What a mount may reach** (audit F1). A path mount's root is never one of Cadence's own directories (data, content
+  store, backups, logs, secrets; `/var/lib/cadence`) or the system's (`/proc`, `/sys`, `/dev`, `/etc`, `/boot`,
+  `/root`, `/run`), nor inside or around one. Readers follow no link out of the root: the control plane resolves links
+  before opening (`mounts.InRoot`: scans, materialisation, the audio of a window) and the worker refuses a URI whose
+  file resolves outside the root. An `s3` endpoint is `https://host[:port]`; plain http only to a loopback host, or
+  anywhere with `CADENCE_MOUNTS_ALLOW_HTTP=1` (development).
 - **Leases** carry the mounts a step reads (`lease.mounts: [{name, kind, root, readOnly, endpoint?, region?,
-  revision?, credentialsEnv?}]`); credentials, when a step may read them, arrive in `CADENCE_MOUNT_<NAME>_CREDENTIALS`
-  (06 "Worker protocol").
+  revision?, credentialsEnv?}]`); a mount's credentials arrive in `CADENCE_MOUNT_<NAME>_CREDENTIALS` only for a step
+  that reads the mount — its params or inputs' metadata name it, or a step that produced one of its inputs (back
+  through their inputs) named it — and for the mount's own health check (06 "Worker protocol").
 - **The stand's mounts.** `corpora` (`local`, read-only) holds the corpora the fetch scripts write once
   (`<source>/<revision>/…`, `scripts/corpora/`); compose binds `${CADENCE_CORPORA_DIR:-corpora}` (on the stand
   `/cadence/corpora`) to `/mnt/corpora` read-only in the control plane and every worker, so the mount is registered
