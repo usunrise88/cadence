@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -106,6 +107,29 @@ func (RegistryKinds) Published(ctx context.Context, q storage.Querier, k Kind) (
 		return false, nil, fmt.Errorf("read what workers publish of %s: %w", ref, err)
 	}
 	return k.Runtime == "" || workers == 0 || publishing > 0, versions, nil
+}
+
+// LiveWindow is how recently a worker must have been seen to count as alive: a waiting worker long-polls its claim
+// (refreshing last_seen_at) at least every 30 s, and a working one heartbeats its lease.
+const LiveWindow = 2 * time.Minute
+
+// Liveness is implemented by Kinds that know whether a worker that publishes a kind is alive now (RegistryKinds).
+// Plan skips an optional step whose kind no live worker publishes, instead of queueing a step nobody leases.
+type Liveness interface {
+	// Live reports whether a worker of k's runtime that publishes k was seen within LiveWindow. A runtime with no
+	// registered worker is not judged (true), as in Published.
+	Live(ctx context.Context, q storage.Querier, k Kind) (bool, error)
+}
+
+// Live implements Liveness from the workers table.
+func (RegistryKinds) Live(ctx context.Context, q storage.Querier, k Kind) (bool, error) {
+	var workers, alive int
+	err := q.QueryRow(ctx, `SELECT count(*), count(*) FILTER (WHERE $2 = ANY(step_kinds) AND last_seen_at > now() - $3::interval)
+		FROM workers WHERE runtime_name = $1`, k.Runtime, k.Ref(), LiveWindow).Scan(&workers, &alive)
+	if err != nil {
+		return false, fmt.Errorf("read the live workers of %s: %w", k.Ref(), err)
+	}
+	return k.Runtime == "" || workers == 0 || alive > 0, nil
 }
 
 // runtimeOf returns the runtime version id (runtimeVersionId) of the pinned step kind registry version, part of a

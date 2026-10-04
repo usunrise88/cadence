@@ -41,6 +41,9 @@ type Warning struct {
 const (
 	WarningStepKindDeprecated   = "step-kind-deprecated"
 	WarningAuxiliaryUnavailable = "auxiliary-unavailable"
+	// WarningStepKindUnavailable: an optional step's kind is not published, or no worker that publishes it is alive;
+	// the step is skipped (Plan.Skipped).
+	WarningStepKindUnavailable = "step-kind-unavailable"
 )
 
 // Closed reports whether new pins of the deprecated kind are refused at now: from the day After (UTC) on. A

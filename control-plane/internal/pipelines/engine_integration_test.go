@@ -877,3 +877,68 @@ func TestOptionalStepFailureLeavesTheRunDone(t *testing.T) {
 		t.Fatalf("a required step reading an optional one: %v", err)
 	}
 }
+
+// TestOptionalStepWithoutAWorkerIsSkipped (the phase-4 audit's C3): an optional pseudo-label member whose kind no
+// runtime publishes, or whose kind only a worker not seen for a while publishes, never blocks the run: the plan warns
+// (step-kind-unavailable), Start records the step skipped, and the ensemble runs without its artifact.
+func TestOptionalStepWithoutAWorkerIsSkipped(t *testing.T) {
+	r := newRig(t, nil)
+	ctx := context.Background()
+	members := func(kind string) *pipelines.Pipeline {
+		return &pipelines.Pipeline{Name: "members", Inputs: map[string]string{"text": "text"}, Steps: []pipelines.Step{
+			{ID: "main", Kind: "echo@1", In: map[string]string{"text": "$inputs.text"}},
+			{ID: "oasis", Kind: kind, In: map[string]string{"text": "$inputs.text"}, Optional: true},
+			{ID: "after", Kind: "tally@1", In: map[string]string{"text": "oasis.text"}, Optional: true},
+			{ID: "ensemble", Kind: "tally@1", In: map[string]string{"text.0": "main.text", "text.2": "oasis.text"}},
+		}}
+	}
+	check := func(text, kind, why string) {
+		t.Helper()
+		in := r.input(text)
+		in.Pipeline = members(kind)
+		plan, err := r.eng.Plan(ctx, r.pool, *in.Pipeline, pipelines.PlanInput{Inputs: in.Inputs})
+		if err != nil {
+			t.Fatalf("plan with an unavailable optional member (%s): %v", kind, err)
+		}
+		if len(plan.Warnings) != 1 || plan.Warnings[0].Code != pipelines.WarningStepKindUnavailable ||
+			plan.Warnings[0].Step != "oasis" || !strings.Contains(plan.Warnings[0].Message, why) {
+			t.Fatalf("warnings %+v", plan.Warnings)
+		}
+		run := r.wait(r.start(in).ID, pipelines.RunDone)
+		for _, id := range []string{"oasis", "after"} {
+			if s := stepOf(t, run, id); s.State != pipelines.StepSkipped {
+				t.Fatalf("%s %+v", id, s)
+			}
+		}
+		ens := stepOf(t, run, "ensemble")
+		if ens.State != pipelines.StepDone || len(ens.Inputs) != 1 {
+			t.Fatalf("ensemble %+v", ens)
+		}
+	}
+	// No runtime publishes the member's kind at all (its worker never registered).
+	check("abc", "oasis_transcribe@1", "no runtime publishes step kind oasis_transcribe@1")
+
+	// The member's kind is published, but only by a worker last seen an hour ago; the live worker does not publish it.
+	var verID string
+	if err := r.pool.QueryRow(ctx, `SELECT v.id FROM registry_versions v JOIN registry_collections c ON c.id = v.collection_id
+		WHERE c.name = 'step-kind/echo' LIMIT 1`).Scan(&verID); err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{
+		`INSERT INTO compute_hosts (id, name, cards) VALUES ('cmp_live', 'live-host', '[]'), ('cmp_gone', 'gone-host', '[]')`,
+		`INSERT INTO workers (id, host_id, runtime_name, runtime_version_id, runtime, step_kinds, last_seen_at) VALUES
+			('wrk_live', 'cmp_live', 'test', '` + verID + `', '{}', ARRAY['tally@1'], now()),
+			('wrk_gone', 'cmp_gone', 'test', '` + verID + `', '{}', ARRAY['echo@1', 'tally@1'], now() - interval '1 hour')`,
+	} {
+		if _, err := r.pool.Exec(ctx, q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	check("abcd", "echo@1", "no test worker that publishes step kind echo@1 has been seen")
+
+	// A required step is never judged by liveness: it waits for a worker like any other.
+	in := r.input("abcde")
+	if _, err := r.eng.Plan(ctx, r.pool, *in.Pipeline, pipelines.PlanInput{Inputs: in.Inputs}); err != nil {
+		t.Fatalf("a required echo@1 step without a live worker: %v", err)
+	}
+}

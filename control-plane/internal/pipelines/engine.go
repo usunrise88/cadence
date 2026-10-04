@@ -388,10 +388,35 @@ func (e *Engine) Start(ctx context.Context, tx pgx.Tx, in StartInput) (Run, []ev
 			return Run{}, nil, err
 		}
 	}
+	for _, sk := range plan.Skipped {
+		row := StepRow{
+			ID: "pls_" + uuid.Must(uuid.NewV7()).String(), PipelineRunID: r.ID, ProjectID: r.ProjectID, Step: sk.Step,
+			Position: sk.Position, Kind: sk.Name, KindVersion: sk.Version, Params: map[string]any{}, Departures: []Departure{},
+			Wiring: sk.In, Produces: map[string]string{},
+		}
+		if row.Wiring == nil {
+			row.Wiring = map[string]string{}
+		}
+		if err := insertStep(ctx, tx, row); err != nil {
+			return Run{}, nil, err
+		}
+	}
 	drafts := []events.Draft{runDraft(r, EventStarted)}
 	sts, err := stepsOf(ctx, tx, r.ID, true)
 	if err != nil {
 		return Run{}, nil, err
+	}
+	if len(plan.Skipped) > 0 {
+		// The optional steps no live worker can run are skipped now, with the steps that read them (optional too).
+		set := map[string]bool{}
+		for _, sk := range plan.Skipped {
+			set[sk.Step] = true
+		}
+		skipped, err := skipSteps(ctx, tx, r, sts, set)
+		if err != nil {
+			return Run{}, nil, err
+		}
+		drafts = append(drafts, skipped...)
 	}
 	more, err := e.advance(ctx, tx, &r, sts)
 	if err != nil {
@@ -982,21 +1007,11 @@ func (e *Engine) fail(ctx context.Context, tx pgx.Tx, r *Run, sts []StepRow, i i
 	if r.optional(s.Step) {
 		// An optional step's failure skips the steps that read it, at any depth (optional too, Check), and the run
 		// goes on: it ends done once the rest has.
-		failed := map[string]bool{s.Step: true}
-		for changed := true; changed; {
-			changed = false
-			for j := range sts {
-				if sts[j].State != StepWaiting || !r.needsAny(sts[j], failed) {
-					continue
-				}
-				sts[j].State, sts[j].FinishedAt = StepSkipped, &now
-				if sts[j], err = saveStep(ctx, tx, sts[j]); err != nil {
-					return nil, err
-				}
-				failed[sts[j].Step], changed = true, true
-				drafts = append(drafts, stepDraft(*r, sts[j]))
-			}
+		skipped, err := skipSteps(ctx, tx, *r, sts, map[string]bool{s.Step: true})
+		if err != nil {
+			return nil, err
 		}
+		drafts = append(drafts, skipped...)
 		more, err := e.advance(ctx, tx, r, sts)
 		if err != nil {
 			return nil, err
@@ -1018,6 +1033,31 @@ func (e *Engine) fail(ctx context.Context, tx pgx.Tx, r *Run, sts []StepRow, i i
 		return nil, err
 	}
 	return append(drafts, runDraft(*r, EventStateChanged)), nil
+}
+
+// skipSteps marks skipped every waiting step of set and every waiting step that reads one of them through an input
+// it cannot run without, at any depth (needsAny: an indexed input from an optional step is dropped instead). set
+// grows with the steps skipped; sts are updated in place.
+func skipSteps(ctx context.Context, tx pgx.Tx, r Run, sts []StepRow, set map[string]bool) ([]events.Draft, error) {
+	now := time.Now()
+	var drafts []events.Draft
+	for changed := true; changed; {
+		changed = false
+		for j := range sts {
+			if sts[j].State != StepWaiting || (!set[sts[j].Step] && !r.needsAny(sts[j], set)) {
+				continue
+			}
+			sts[j].State, sts[j].FinishedAt = StepSkipped, &now
+			saved, err := saveStep(ctx, tx, sts[j])
+			if err != nil {
+				return nil, err
+			}
+			sts[j] = saved
+			set[sts[j].Step], changed = true, true
+			drafts = append(drafts, stepDraft(r, sts[j]))
+		}
+	}
+	return drafts, nil
 }
 
 // cancelRun cancels the run: waiting steps are cancelled, queued and running step jobs are cancelled.

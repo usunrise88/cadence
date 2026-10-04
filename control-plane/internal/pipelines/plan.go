@@ -46,6 +46,17 @@ type Plan struct {
 	Steps    []PlanStep
 	Estimate Estimate
 	Warnings []Warning // what does not stop the run (deprecated step kinds)
+	// Skipped are the optional steps that cannot run (Warnings says why, code step-kind-unavailable): Start records
+	// them skipped, with the steps that read them.
+	Skipped []SkippedStep
+}
+
+// SkippedStep is an optional step the plan skips: its kind is not published, or no worker that publishes it is alive.
+type SkippedStep struct {
+	Step          string
+	Position      int
+	Name, Version string
+	In            map[string]string
 }
 
 // optional reports whether the plan's step id is marked optional.
@@ -113,6 +124,9 @@ func (e *Engine) Plan(ctx context.Context, q storage.Querier, p Pipeline, in Pla
 	}
 
 	kinds := make([]*Kind, len(p.Steps))
+	// unavailable holds why an optional step cannot run (its kind is unknown, no longer published, or no worker that
+	// publishes it is alive): it is skipped at start with a warning instead of refusing the plan or waiting for ever.
+	unavailable := map[int]string{}
 	for i, s := range p.Steps {
 		name, version, _ := s.KindRef()
 		k, found, err := e.o.Kinds.Lookup(ctx, q, name, version)
@@ -120,6 +134,10 @@ func (e *Engine) Plan(ctx context.Context, q storage.Querier, p Pipeline, in Pla
 			return Plan{}, err
 		}
 		if !found {
+			if s.Optional {
+				unavailable[i] = fmt.Sprintf("no runtime publishes step kind %s", s.Kind)
+				continue
+			}
 			errs.Add(fmt.Sprintf("steps[%d].kind", i), "no runtime publishes step kind %s: check stepKinds.list for the kinds and versions workers offer", s.Kind)
 			continue
 		}
@@ -128,9 +146,25 @@ func (e *Engine) Plan(ctx context.Context, q storage.Querier, p Pipeline, in Pla
 			if err != nil {
 				return Plan{}, err
 			}
+			if !current && s.Optional {
+				unavailable[i] = fmt.Sprintf("no registered %s worker publishes step kind %s any more (they publish %s)",
+					k.Runtime, s.Kind, listOr(versions, "no version of "+name))
+				continue
+			}
 			if !current {
 				errs.Add(fmt.Sprintf("steps[%d].kind", i), "no registered %s worker publishes step kind %s any more (they publish %s), so its step would wait for ever; pin a published version in the pipeline file (projects.sync brings the bundled pipelines up to date)",
 					k.Runtime, s.Kind, listOr(versions, "no version of "+name))
+				continue
+			}
+		}
+		if lv, ok := e.o.Kinds.(Liveness); ok && s.Optional && !in.SkipInputs {
+			live, err := lv.Live(ctx, q, k)
+			if err != nil {
+				return Plan{}, err
+			}
+			if !live {
+				unavailable[i] = fmt.Sprintf("no %s worker that publishes step kind %s has been seen for %s, so its step would wait in the queue",
+					k.Runtime, s.Kind, LiveWindow)
 				continue
 			}
 		}
@@ -142,6 +176,13 @@ func (e *Engine) Plan(ctx context.Context, q storage.Querier, p Pipeline, in Pla
 	var seconds, gpuHours float64
 	for pos, i := range order {
 		s, k := p.Steps[i], kinds[i]
+		if why, ok := unavailable[i]; ok {
+			name, version, _ := s.KindRef()
+			plan.Skipped = append(plan.Skipped, SkippedStep{Step: s.ID, Position: pos, Name: name, Version: version, In: s.In})
+			plan.Warnings = append(plan.Warnings, Warning{Code: WarningStepKindUnavailable, Step: s.ID, Kind: s.Kind,
+				Message: why + " (the step is optional: it is skipped and the run goes on without it)"})
+			continue
+		}
 		if k == nil {
 			continue
 		}
