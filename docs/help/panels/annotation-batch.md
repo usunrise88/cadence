@@ -23,6 +23,8 @@ A document for one **annotation batch** (`batches.get`): a fixed sample of segme
 - **Reviewers** — who annotated, and **Invite a reviewer** (admin): a name and a role (annotator, or adjudicator who
   may also decide disputed items) give a link, shown once, that opens this batch only — its items and their audio,
   played through short-lived links with no download — until the due date (14 days at most) or the freeze.
+- **Audio** — creating the batch queues the waveform peaks of every item's window (`media.peaks`), so annotators'
+  first views read them instead of computing them.
 - **Adjudication** — each disputed item with its audio and both transcripts side by side: take one, write the final
   text, or exclude the item (`batchItems.accept`).
 - **Freeze** — **Check** answers what would freeze; **Freeze (approval)** asks the admin. The approved freeze writes

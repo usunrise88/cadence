@@ -8,7 +8,9 @@ contexts: [panel:audio, command:view.audioPlay]
 
 A floating tool panel with the audio view (`@/shell/audio`, R51). It shows the utterance last opened from an Eval
 report's utterance table (the speaker button of a row), from Diff (**Open in Audio**) or from a span reference. Diff
-carries the same view, compact, under its alignment.
+carries the same view, compact, under its alignment. A workspace does not open it on its own: the Eval, Data and
+Triage workspaces keep a floating slot for it, and it appears there the first time you open audio, so no empty window
+covers the documents (dock it like any panel if you prefer it at an edge).
 
 Tracks, top to bottom, on one time axis that runs left to right in every locale:
 
@@ -69,6 +71,7 @@ a word swallowed at a cut. Phase 4's Triage and Annotate use the same view.
 | `media.max_conversions`, `media.span_cache_mb` | 2, 2048 MB | Conversions at once (one more waits: `media-busy`); converted spans kept for the next plays |
 | `media.play_audit_window_s` | 600 s | A play is written to the audit log once per viewer, span and channel within it |
 | `media.tiles_max_s`, `media.tiles_retry_s` | 14 400 s, 600 s | Longest audio the server builds a tile pyramid for; how long a failed build is reported ([media-tiles-failed](../errors/media-tiles-failed.md)) before a view builds again |
+| `media.tiles_retention_days` | 14 days | A server tile pyramid not viewed for this long leaves the content store (a daily sweep, no approval); the next view builds it again |
 
 The toolbar changes colormap, axis, range and gain for this view without touching the defaults.
 
