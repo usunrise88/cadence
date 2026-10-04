@@ -212,8 +212,8 @@ The toy pack's family `toy-ctc` (runtime `toy`) has the profiles `offline` and `
   `mount://<mount>/<path>[#t=<start>,<end>][&ch=<n>]` to a local path or a ranged read (`cadence_worker.mounts`; 02
   "Storage and mounts"). Three new `x-cadence` marks: `registry: source` (the parameter names a registered source; "no
   licence, no ingest" below), `registry: <kind>` (a registry version resolved through `data.lock`) and `registryRef:
-  {kind: auxiliary, role}` (an auxiliary the control plane resolves to the project's adopted version and passes in
-  the step spec's `auxiliaries`). A kind may declare `deprecated_after` (`YYYY-MM-DD`), `replaced_by` and
+  {kind: auxiliary, role}` (an auxiliary the control plane resolves through `data.lock`, else the project's adopted
+  version, and passes in the step spec's `auxiliaries`). A kind may declare `deprecated_after` (`YYYY-MM-DD`), `replaced_by` and
   `deprecation_note`; the worker publishes them as `StepKindDescriptor.deprecation`.
 
 ### Seams for later training modes
@@ -420,7 +420,9 @@ Pipeline engine changes in phase 4 (`internal/pipelines`):
   parameter names a source that is missing, archived or has no usable licence; the `dataset` hook checks again when
   the draft registers.
 - **Auxiliary references.** A parameter with `x-cadence.registryRef: {kind: auxiliary, role}` resolves to the newest
-  version of the named collection the project adopted (`not-adopted` otherwise); the resolution is stored with the
+  version of the named collection that `data.lock` lists at the commit the pipeline is read at, or, when the lock does
+  not list the collection (or the project has no repository), the newest the project adopted — newest by creation,
+  not by name (`not-adopted` otherwise; audit 2026-10-04 C5); the resolution is stored with the
   step (`pipeline_steps.auxiliaries`) and passed in the step spec, and the step's input hash covers the resolved
   version, so a new auxiliary version runs the step again. A service an auxiliary names (`service.endpoint`) is probed
   at dry run and at start: unreachable, a required step fails planning with `auxiliary-unavailable` (503); an optional
@@ -737,5 +739,6 @@ As built (phase 4, stream I; formats and layouts in "Data pipelines (phase 4)" a
   blob as a content store), not per project: the project repository travels by git. A bundle re-imports byte for byte
   with the same content fingerprint.
 - Mount copies: audio a `nemo-manifest` or bundle export writes to a mount is recorded as a copy of its blob, so the
-  cache may evict the version and `datasets.materialize` restores it; the backup mirror may target a writable mount
+  cache may evict the version (once each copy reads back with its blob's hash; 02 "The cache and materialisation")
+  and `datasets.materialize` restores it; the backup mirror may target a writable mount
   (`backups.mirror_mount`) with the same effect. No web UI for exports yet (agents and the CLI only).

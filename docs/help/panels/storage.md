@@ -27,13 +27,18 @@ Live topics: `mount.{id}` (`mount.created`, `mount.health`, `mount.scanned`) and
   alias (promoted) was trained on it, or a golden set is built on it. A pinned version is never evicted.
 - **Evictable**: not pinned, and every shard either has a copy on a mount (found by a scan under `…/b3/<ab>/<hash>`,
   the layout of the content store and of its backup mirror, or recorded by an export) or is also listed by another
-  cached artifact. A shard that exists on no mount — imported audio — is never evicted.
+  cached artifact. A shard that exists on no mount — imported audio — is never evicted. A scan counts a file named
+  like a blob as its copy only when the sizes match (the inventory's `blobsMismatched` counts the rest), and an
+  eviction reads every copy it relies on back and checks its hash before it deletes the cached blob: a copy that is
+  gone or changed is dropped, and a version whose copy cannot be read now (an unreachable mount) stays cached — the
+  eviction job's result says which and why. Reading the copies back costs about what a materialisation would.
 - **Evicted**: the shards are gone from the cache (the manifest stays). `datasets.materialize` copies them back from
   their mount copies, verifying each by hash, shard by shard; a retry skips what is back already.
 
 Above the high-water mark, the cache sweep (every `storage.cache_sweep_minutes`, 15) evicts evictable versions —
 over-quota projects first, then least recently used — down to the low-water mark, as the system and without an
-approval: everything it removes can be brought back.
+approval: everything it removes can be brought back. A run on an evicted version is refused before it is queued
+(`artifact-missing`): materialise it first.
 
 ## Place in the loop
 

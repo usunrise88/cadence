@@ -140,7 +140,8 @@ The minimal data entities imports need; phase 4 completes them ("Data in full (p
 Rules:
 
 - Clearing a source for training is a person's decision: an agent's `sources.edit` is gated (preset rule `registry-changes`, approval); `sources.archive` is the admin's (agents: `no-deletes`). An archived source takes no new imports and cannot be edited; its utterances and versions stay.
-- A dataset version is **eval-only** when it was registered `evalOnly` (golden and replay test sets) or any of its sources is not cleared *at the time of asking*. Mixes (`mixes.new|edit|preview`, draft accept) and `runs.new` refuse eval-only versions with `eval-only-dataset` (422); clearing a source makes its versions trainable without a re-import. Collections of versions eval-only at registration carry the tag `eval-only`.
+- A dataset version is **eval-only** when it was registered `evalOnly` (golden and replay test sets), when its licence or any of its sources' forbids commercial use or derivative works (NC, ND, research only, or no usable licence on a source; `registry.TrainingForbidden`, R26 — read at the time of asking, so neither an earlier clearance nor a mix naming an unadopted `ver_…` gets past it; audit 2026-10-04 M2), or when any of its sources is not cleared *at the time of asking*. Mixes (`mixes.new|edit|preview`, draft accept) and `runs.new` refuse eval-only versions with `eval-only-dataset` (422); clearing a source makes its versions trainable without a re-import. Collections of versions eval-only at registration carry the tag `eval-only`.
+- A dataset artifact a training step would read that the cache evicted is refused with `artifact-missing` (409) at the run's dry run and when the step is queued, naming `datasets.materialize`; Cadence does not materialise it for the caller (a copy back can take hours and counts against the project's quota; audit 2026-10-04 C6).
 - The pipeline engine's training guard (`data.TrainableArtifact`, audit 2026-10-02) trusts nothing the caller says about an input a training step (`jobKind: training`) reads: its type and meta come from the artifact index (a different type is `validation-failed`); a `dataset` artifact must be registered by a dataset version (else `eval-only-dataset`), must not be an augmented golden copy (meta `purpose: augmented` → `golden-set-leakage`) and every version registering it must be trainable; a `mix` counts by its content (the `cadence.mix/1` rendering: every `input_cfg` dataset version and artifact), never its meta. The same check runs on a training step's resolved inputs when the engine queues it, so a non-training step cannot pass a golden set through to training (the run fails with the reason).
 - A re-import must carry the source's registry licence and kind, else the import step fails.
 
@@ -169,6 +170,8 @@ Plan: `docs/review/2026-10-03-phase-4-plan.md` (decisions 3, 4); the pipeline an
 (`public | production | synthetic`), languages and URL, eval-only until cleared. `sources.get` adds `clearances[]`
 (the clearing history: created, licence changed, cleared, uncleared, by whom and when) and `ingests[]` (each dataset
 version an import or ingest registered from it: pipeline run, project, step kind, draft or frozen, utterances, hours).
+`sources.edit` refuses (`validation-failed` on `/trainingCleared`) to clear a source whose licence forbids commercial
+use or derivative works, or to move a cleared source to such a licence; unclearing is always allowed.
 **No licence, no ingest:** the pipeline engine's plan refuses a step parameter marked `x-cadence.registry: source`
 whose source is missing, archived or has no usable licence (`unknown`, `none`, `NOASSERTION`; problem
 `source-unlicensed`), and the draft hook checks again when the step's output lands.
@@ -219,7 +222,9 @@ mount://<mount>/<path>[#t=<start>,<end>][&ch=<n>]
 **The cut.** Not Lhotse Shar tars: `cadence.dataset/1` as in "The dataset artifact" above — one WAV per utterance at
 `audio/<hex[:2]>/<hex>.wav` (byte-identical on every host, its blob hash the utterance's identity) — plus the members
 grouped into shards, a Lhotse `MonoCut` manifest each at `shards/cuts.NNNNNN.jsonl.gz` (`data.shard_utterances`,
-2 000). A shard is the unit of pinning, eviction and materialisation; its `location` is `cas`. Real Shar tars are an
+2 000). A shard is the unit of pinning, eviction and materialisation. The payload records `location: cas` and `pinned:
+false` at freeze; `datasets.get` overlays the cache's state now — `cas`, `mount` (evicted, a mount copy brings it back)
+or `missing`, and `pinned` while anything pins the version (`datasets.list` returns the recorded values). Real Shar tars are an
 export (`shar_export@1`, 03 "Interoperability").
 
 **Utterance search.** `utterances.search` (`GET /registry/utterances:search`) filters by transcript text
@@ -257,8 +262,11 @@ projects that adopted it and, for a service, whether its endpoint answers now). 
   unverified).
 - **Adoption** is an approval for everyone (preset rule `auxiliary-adoption`, registry scope, the admin decides);
   `outputsCommercialUse: false` is refused outright (`auxiliary-licence-refused`).
-- **Use.** A step-kind parameter marked `x-cadence.registryRef: {kind: auxiliary, role}` resolves to the newest
-  version the project adopted with that role; the resolution is stored in `pipeline_steps.auxiliaries`, passed in the
+- **Use.** A step-kind parameter marked `x-cadence.registryRef: {kind: auxiliary, role}` resolves, for a collection
+  name the project's `data.lock` lists at the commit the pipeline is read at, to the newest version the lock lists;
+  otherwise (no repository or lock, a collection the lock does not list, `ver_…`, `@alias`) to the version the project
+  adopted (newest by creation). Either way the version must be adopted (`not-adopted`, 422), fill the role and allow
+  commercial use of its outputs; the resolution is stored in `pipeline_steps.auxiliaries`, passed in the
   step spec (`StepSpec.auxiliaries`) and covered by the input hash. A service's endpoint is probed at dry run and at
   start (`auxiliary-unavailable`, 503; for an optional step a plan warning, 03).
 - **Seams.** Go never names a framework or a service: the payload is data, and the worker pack that serves the role
@@ -288,7 +296,9 @@ What phase 4 added to the rules above (`internal/registry`, migration 0036).
   (`resolved: [{kind, collection, version, id}]`). A step parameter marked `x-cadence.registry: <kind>` (any kind but
   `source`) names a collection, `@alias` or `ver_…`; the engine resolves it through `data.lock` at the commit the
   pipeline is read at — through the project's adoptions for bundled templates and projects without a repository — and
-  refuses a version the lock does not list (`not-adopted`). The plan reports each resolution in `PlanStep.locked`
+  refuses a version the lock does not list (`not-adopted`). A collection name resolves to the newest listed version by
+  when the registry created it, not by its name (two versions of a day differ only in a hash). `aliases.set` on a
+  version the project has not adopted is `not-adopted` too. The plan reports each resolution in `PlanStep.locked`
   (`LockedReference`); params are not rewritten, and input-hash reuse ignores the resolved version.
 - **Step-kind deprecation.** A worker pack marks a kind `deprecated_after` (a date), `replaced_by` and a note when it
   publishes it (`StepKindDeprecation`). Plans warn (`PipelineWarning` `step-kind-deprecated`); after the date a
@@ -533,7 +543,11 @@ scan, written by an export or by the backup mirror), and eviction frees only wha
    froze.
 3. **Pinning.** A dataset version is pinned while a waiting or running step job or a running pipeline names it, while
    a model version that holds an alias was trained on it, or while a golden set is built on it.
-4. **Eviction.** A version is evictable when nothing pins it and every shard blob has a mount copy or is listed by
+4. **Eviction.** A scan records a file named like a blob (`…/b3/<ab>/<hash>`) as its copy only when its size is the
+   blob's (`inventory.blobsMismatched` counts the others, and an earlier record of them goes). Before an eviction
+   deletes a blob it reads a copy back from a mount and checks its hash; a copy that is gone or holds other bytes is
+   dropped from `blob_copies`, and a version with a blob no copy verifies (an unreachable mount) stays cached (the job
+   result says why). A version is evictable when nothing pins it and every shard blob has a mount copy or is listed by
    another live artifact; blobs on no mount (imported audio) are never evicted, and re-derivable shards without a mount
    copy are not evictable yet. Every `storage.cache_sweep_minutes` (15), above `storage.cache_high_water_pct` (85 %),
    the sweep evicts — over-quota projects first, then least recently used — down to `storage.cache_low_water_pct`
@@ -542,7 +556,7 @@ scan, written by an export or by the backup mirror), and eviction frees only wha
    and manifest, so lineage resolves; events `artifact.evicted`, `artifact.restored` on `entity.artifact.{hash}`.
 5. **Materialisation.** `datasets.materialize` (`POST /registry/datasets:materialize`, body `{versionId}`) copies
    evicted shards back from their mount copies, verifying each by hash, resumable by shard (202; the dry run says how
-   much and from which mounts, and what is missing). Dry runs of training do not yet report "needs materialize".
+   much and from which mounts, and what is missing). A run on an evicted version is refused before it is queued (`artifact-missing`, naming `datasets.materialize`).
 6. **`storage.get`** answers the cache: use against the water marks, cached and evictable bytes, per-project quotas,
    and every cached dataset version with its state (`cached | evicted`), pins, mount copies and last use.
 
