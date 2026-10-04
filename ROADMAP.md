@@ -802,15 +802,20 @@ calls), and a canary promotion is approved in the UI (confirm modal) with its si
 Decide before starting:
 - [ ] **decide** → *R28 · confirm* Retention vs immutability: what happens to frozen versions containing expired production audio (B6)
 - [ ] **decide** → *R28, R29 · confirm* Confirm the proposed defaults: 90-day retention, PII masking rules (00 decision log)
+      — options and recommendations for the owner, with R31's concurrency and R32:
+      `docs/review/2026-10-05-phase-5-decisions.md`; the plan: `docs/review/2026-10-05-phase-5-plan.md`
 
 Write before starting:
-- [ ] **spec** → *R30* Staging serving: how Triton runs on the staging card for shadow replay and benchmarks, beside training
+- [x] **spec** → *R30* Staging serving: how Triton runs on the staging card for shadow replay and benchmarks, beside training
+      — 06 "Staging serving" (2026-10-05); the served model's memory and throughput **TBD spike E1**
 - [ ] **spec** → *R29* PII redaction step: NER model for Hebrew, span alignment to cut audio, what "redacted" guarantees
+      — needs the owner first (decisions brief, R29)
 - [ ] **spec** → *R32 · confirm* The Эра interfaces: samples push payload, operator corrections, dialogue context for the judge,
-      the per-call boost-list field and its cap
-- [ ] **spec** → *R33* What makes a Promotion record "signed"
-- [ ] **spec** → *R31 · confirm* Parity tolerance and the latency budget per chunk size — the gate uses both, the defaults table has
-      neither (04 says only "beyond tolerance"); A3 records the first numbers
+      the per-call boost-list field and its cap — needs Эра first (decisions brief, R32)
+- [x] **spec** → *R33* What makes a Promotion record "signed" — 02 "Promotion records" (2026-10-05)
+- [x] **spec** → *R31 · confirm* Parity tolerance and the latency budget per chunk size — the gate uses both, the defaults table has
+      neither (04 says only "beyond tolerance"); A3 records the first numbers — 03 "Export, parity and benchmark" and
+      `deploy.*` (2026-10-05); the target concurrency (32) stays a placeholder until the owner answers
 
 Deployment
 - [ ] `models.export` (ONNX cache-aware

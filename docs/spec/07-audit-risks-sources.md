@@ -899,6 +899,27 @@ owner may overrule):
       0.318 / 0.322, 1120 ms 0.304 / 0.311; emission PR50 0.38, 0.40, 0.45, 0.54, 0.81 s. `160ms` lies on the curve
       between its trained neighbours in both WER and delay — no sign of an untrained look-ahead. **Recommendation:**
       keep it, labelled "not a trained look-ahead" in the family descriptor; the owner decides.
+- [ ] P5 spec (2026-10-05, deployment): R31's "WER difference ≤ 0.1 absolute" is read as 0.1 WER **points**
+      (`deploy.parity_max_wer_delta` 0.001), as in A3's acceptance ("within 0.1 point"); 0.1 as a fraction would let
+      a 10-point gap pass.
+- [ ] P5 spec: the canary's default traffic share (5 %, `deploy.canary_share`) and the absence of a minimum canary
+      period are Cadence recommendations; the spec only says flywheel signals decide whether the share grows.
+      Production needs a confirmed canary of the same model version on the slot, nothing more.
+- [ ] P5 spec: benchmarks run on the staging card; Эра's production card class may differ. A benchmark records the
+      card class and the promotion modal shows a mismatch, but does not refuse it. Likewise a staging Triton version
+      different from the delivery target's is shown, not refused, and both versions go into the record.
+- [ ] P5 spec: the parity sample comes from the project's first target golden set, and up to 20 of its utterances
+      travel in every delivery bundle as the smoke check. For a golden set cut from Эра's calls that is Эра's own audio
+      going back to Эра's host; it must still be redacted when R29 lands if bundles are kept outside the production host.
+- [ ] P5 spec: shadow replay compares the candidate with the slot's production version, or with the project's
+      baseline before any production exists, both decoded on the staging server. Shadow hours count each replayed
+      call once by its duration. The calls mount itself (Эра's recordings, read-only) does not exist yet.
+- [ ] P5 spec: the stand's card numbers (cap 29 GB, serving reserve 7 GB, training 22 GB) assume ≈ 30 GB free beside
+      vLLM on the 98 GB card. `defaults.yaml` `compute` still describes the 48 GB card of phase 2; the stand overrides it
+      with `compute.edit`, and stream D2 adds `servingReserveGb` (default 0).
+- [ ] P5 spec: the instance signing key is created with the first delivery target. A lost key means a new chain
+      (a `key-rotation` record needs the old key) and re-pinning on the production host; a leaked key is revoked by
+      re-pinning. Neither case is automated.
 
 ## Sources
 

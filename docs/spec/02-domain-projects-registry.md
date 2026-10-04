@@ -4,7 +4,7 @@ _Part of the Cadence specification v0.2 (2026-09-29). Source of truth: the Claud
 
 ## Domain model
 
-Forty-nine entities across the five blocks, the project layer and the registry (three added by R15, R40–R41; Auxiliary model and Dataset export in phase 4); everything a model was built from is reachable from the model by lineage links, and nothing referenced by a promoted model can be deleted.
+Fifty entities across the five blocks, the project layer and the registry (three added by R15, R40–R41; Auxiliary model and Dataset export in phase 4; Deployment target in phase 5, R46); everything a model was built from is reachable from the model by lineage links, and nothing referenced by a promoted model can be deleted.
 
 | Entity | Block | What it is | Links to |
 | --- | --- | --- | --- |
@@ -23,9 +23,10 @@ Forty-nine entities across the five blocks, the project layer and the registry (
 | Eval | Eval (project) | One evaluation (`evl_`): models (checkpoints, model versions, base model versions) × golden sets × latency profiles × decoding configs, plus the baseline's cells; one cell (`evc_`) per combination, each linked to an Eval record; progress on `eval.{id}.progress` | Checkpoints, Model versions, Golden sets, Eval records, Pipeline run |
 | Eval result | Eval | A cell's `scores` artifact: WER, CER, substitutions, deletions, insertions, `werNoPunct`, duration buckets, partial stability, per-utterance rows with alignment (03 "Scorers and metrics") | Eval record |
 | Gate | Eval (project) | The project's `gates.yaml` in its repository: primary profile, target and replay golden sets, allowed regression, the deletions/insertions check, significance (04 "Block 3"); an eval's verdict records the file's SHA | Golden sets, Evals |
-| Model version | Eval, Deploy (registry) | A checkpoint published by `models.register` once its eval passed the gate (registry kind `model`, collection `model/<name>`, R22): weights hash, family, base model, gate verdict with the gates SHA, lineage, model card; exports (ONNX, Triton repository) join in phase 5 | Checkpoint, Eval, Base model |
-| Deployment | Deploy | A model version on a target at a stage: shadow, canary with traffic share, production | Model version |
-| Promotion | Deploy | Signed record of who moved what to which stage, and why | Deployment, Approval |
+| Model version | Eval, Deploy (registry) | A checkpoint published by `models.register` once its eval passed the gate (registry kind `model`, collection `model/<name>`, R22): weights hash, family, base model, gate verdict with the gates SHA, lineage, model card; exports (a `deployable` per latency profile with its parity and benchmark reports) attach in phase 5 ("Deployment entities" below) | Checkpoint, Eval, Base model |
+| Deployment | Deploy (project) | A model version's export on a target's slot at a stage: shadow (staging target, nightly replay), canary with traffic share, production (`dep_`, phase 5) | Model version, Model export, Deployment target |
+| Deployment target | Deploy (registry) | Where models are served (`dtg_`, R46): `staging` (the compose Triton Cadence reaches) or `delivery` (a production server reached only by a person running a delivery script); the families, formats and latency profiles it serves, server version, target concurrency, card class, boost support | Deployments, Promotion records |
+| Promotion | Deploy | An append-only, hash-chained record signed with the instance's Ed25519 key of who moved which model version's artifacts to which stage of a delivery target, why, and the receipt that confirmed the delivery script ran (`prm_`, R33) | Deployment, Approval, Deployment target |
 | Production sample | Flywheel | An utterance captured from calls, PII-redacted, with the production hypothesis; published monthly into a registry Source | Deployment |
 | Signal | Flywheel | Why a sample matters: model disagreement, low confidence, judge flag, operator correction | Production sample |
 | Triage item | Data, Flywheel (project) | A segment in the review queue with candidate transcripts and consensus: from phase 4 a pseudo-label the ensemble could not settle (`tri_`), from phase 5 also production samples | Segments artifact, Signal |
@@ -103,7 +104,7 @@ This is the pattern of [W&B Registry](https://docs.wandb.ai/models/registry): or
 
 | Registry — shared, versioned, immutable | Project — the work |
 | --- | --- |
-| Source, Utterance, Dataset version, Golden set, Normalizer, Base model, Model version, Eval record, Auxiliary model, Noise bank, Mount, Step kind, Runtime, Model family, Pipeline template, Playbook, Instruction template, Permission preset, Skill; artifacts in the content store | Mix, Run, Checkpoint, Eval and its cells, Gate (`gates.yaml`), Annotation batch, Dataset export, Deployment, Promotion, Production sample, Signal, Triage item, Correction batch (until packaged), Agent profile, Agent session, Schedule, Approval, workspace layouts |
+| Source, Utterance, Dataset version, Golden set, Normalizer, Base model, Model version, Eval record, Auxiliary model, Noise bank, Mount, Deployment target, Step kind, Runtime, Model family, Pipeline template, Playbook, Instruction template, Permission preset, Skill; artifacts in the content store | Mix, Run, Checkpoint, Eval and its cells, Gate (`gates.yaml`), Annotation batch, Dataset export, Deployment, Promotion, Production sample, Signal, Triage item, Correction batch (until packaged), Agent profile, Agent session, Schedule, Approval, workspace layouts |
 
 Rules:
 
@@ -492,6 +493,168 @@ version, the field path being the relation (`datasetVersionId`, `lineage.runId`)
 `lineage.Source` to the server's graph. Evals have one (stream R): an eval is built from its subject, baseline,
 golden sets, noise banks and its cells' records; a record from its golden set, normalizer and model (a checkpoint or
 model version by weights hash, or the base model version).
+
+### Deployment entities (phase 5)
+
+_Specified 2026-10-05, before phase 5 starts (R30, R31, R33, R46; plan `docs/review/2026-10-05-phase-5-plan.md`).
+Numbers marked **TBD spike E1** come from the ONNX export, parity and Triton spike (`docs/spikes/E1-*.md`) and
+replace A3's first numbers. The shapes below are the working contract: each wave-1 stream adds its operations and
+schemas to `api/openapi.yaml` under its marker, then runs `make gen`._
+
+A model version never changes. What phase 5 adds attaches to it, as reference alignments attach to a golden set:
+exports, their parity and benchmark reports, and the deployments and promotions built on them. IDs: model exports
+`mex_`, deployment targets `dtg_`, deployments `dep_`, promotion records `prm_`. Events: `entity.model.{id}`
+(`model.exported`, `model.parity_checked`, `model.benchmarked`), `entity.deployment_target.{id}`, `deploy.{id}`
+(`deployment.created`, `deployment.stage_changed`, `promotion.pending`, `promotion.confirmed`,
+`promotion.withdrawn`), `shadow.{deployment}` (`shadow.replayed` with divergence samples), `approvals`.
+
+**Model exports.** One row per (model version, latency profile, deployable format), table `model_exports`:
+
+| Field | Value |
+| --- | --- |
+| `modelVersionId`, `profile`, `format` | The key; `format` comes from the family's `export` role (03 "Export, parity and benchmark"), e.g. `triton-onnx-cache-aware` |
+| `deployableHash` | The `deployable` artifact (`cadence.deployable/1`); the same weights and export kind give the same hash, so asking again returns the row |
+| `state` | `exporting`, `exported`, `failed` (with the pipeline run's error) |
+| `parity` | `{state: pending|passed|failed, reportHash, werDelta, identicalShare, compared: tokens|text, sample: {goldenSetVersionId, utterances, selection}, servedBy: {targetId, serverVersion}}` |
+| `benchmarks[]` | `{reportHash, targetId, serverVersion, cardClass, streams, p95TimeToFinalMs, budgetMs, maxStreamsWithinBudget, contended, verdict: passed|failed|inconclusive}`, newest first (`inconclusive`: a contended level at the target concurrency, 06 "Staging serving") |
+
+`models.get` returns a model version with its `exports[]`; the Model document draws them.
+
+| Operation | Path | What it does |
+| --- | --- | --- |
+| `models.export` | `POST /projects/{p}/models:export` `{version, profiles?, format?}` | Runs the export pipeline for each profile (default `deploy.export_profiles`: the primary profile) in the family's runtime; `dryRun` answers the plan and estimate; `202` with the pipeline run. Job kind `export` |
+| `models.parity` | `POST /projects/{p}/models:parity` `{version, profile?, goldenSet?}` | Decodes the fixed parity sample with the family's reference decoder and through the staging target's server, then compares (R31); `202` with the pipeline run. Job kind `eval`. Needs an `exported` export of the profile and a staging target that is up (`serving-unavailable`) |
+| `models.benchmark` | `POST /projects/{p}/models:benchmark` `{version, profile?, target?, streams?}` | Streams audio at real-time pace through the staging server at each concurrency level and reports latency and throughput; the verdict is taken at the concurrency and primary profile of `target` (a delivery target; default `deploy.target_concurrency` and the export's profile); `202` with the pipeline run. Job kind `benchmark`, which takes the card alone (06 "Staging serving") |
+
+The paths follow `models.register` and `goldenSets.align`: a project-level collection action whose body names the
+version (R1 sketched `/registry/models/{id}:export`), because the project carries the GPU budget, the queue priority
+and the approval scope. All three are `gpu-spend` commands under the usual policy; none needs a person within
+budget. Refusals: `export-missing` (parity or benchmark before an export), `serving-unavailable`, `target-does-not-serve`.
+
+**Deployment targets (R46).** Instance-wide like mounts and compute (`/deployment-targets`, registry scope, no
+project). The payload:
+
+```yaml
+name: era-production
+kind: delivery                       # staging: Cadence reaches it; delivery: only a person's delivery script does
+serves:                              # what promotion checks (R46)
+  - family: nemo.fastconformer-rnnt.cache-aware   # a model-family collection name, compared as data
+    formats: [triton-onnx-cache-aware]
+    profiles: [80ms]                 # the first is the primary profile the latency budget is checked at
+server: { kind: triton, version: "26.07" }
+endpoint: http://triton:8000         # staging only; a delivery target never has one
+repositoryPath: /opt/era/triton/models   # delivery: where the script installs model directories
+slots: [asr-he-il]                   # the model names the production pipeline calls, one per locale or use
+concurrency: 32                      # streams the latency budget holds at (R31; Эра's peak, placeholder)
+cardClass: blackwell-96gb            # benchmarks on another card class are shown as such, not refused
+boost: { static: true, dynamic: true, maxTermsPerCall: 100 }   # R32 · confirm
+```
+
+- `deploymentTargets.list|get|new|edit|archive`. `new` and `edit` are the admin's and an approval for everyone at
+  registry scope (preset rule `deployment-targets`, as `mount-registration`), because a target names production.
+  Config that a promotion record names (`serves`, `server`, `repositoryPath`, `slots`) changes only by `edit`, which
+  appends a `target-changed` record to the target's chain.
+- The staging target `staging` is seeded at first start from `defaults.yaml` `serving.staging_target` (kind
+  `staging`, the compose service's endpoint); delivery targets are created by the admin.
+- A model version can be promoted only to a target whose `serves` lists its family, the export's format and the
+  profile (`target-does-not-serve`, 422). Families another target serves can still be registered, evaluated and used
+  as oracle or pseudo-labeller (R46).
+
+**Deployments.** Project work (`/projects/{p}/deployments`, `/deployments/{id}`):
+
+| Field | Value |
+| --- | --- |
+| `modelVersionId`, `exportId`, `profile` | What is deployed |
+| `targetId`, `slot` | Where: the staging target for `shadow`; a delivery target's slot for `canary` and `production` |
+| `stage` | `shadow`, `canary`, `production`, `retired` |
+| `state` | `active`, `pending-delivery` (a promotion waits for its receipt), `rolled-back`, `retired` |
+| `trafficShare` | Canary only (`deploy.canary_share`, 0.05) |
+| `decoding` | `{boostLists: [{locale, domain, hash, weight}]}`: static lists ship as decoding configuration; a list change is a config-only promotion, not a new model version (03 "Hot words") |
+| `shadow` | `{hours, utterances, nights, divergence: {wer, ci}, against: <model version or base model>, lastReplayAt}` |
+| `promotions[]` | The records that moved it |
+
+| Operation | Path | What it does |
+| --- | --- | --- |
+| `deployments.new` | `POST /projects/{p}/deployments` `{version, profile?, replay: {mount, path?}}` | A shadow deployment on the staging target. Allowed for agents (Guardrails); nightly replays start at `deploy.shadow_replay_at` (06 "Staging serving") |
+| `deployments.list`, `deployments.get` | `GET /projects/{p}/deployments`, `GET /deployments/{id}` | With shadow progress, stage history and records |
+| `deployments.promote` | `POST /deployments/{id}:promote` `{stage: canary|production, target, slot, trafficShare?, decoding?, reason}` | Checks (below), then an approval (an agent's call answers the approval id; a person's call is decided by the confirm modal), then a signed promotion record and its delivery bundle; the deployment waits in `pending-delivery` until `promotions.verify` |
+| `deployments.rollback` | `POST /deployments/{id}:rollback` `{reason}` | Same path: approval, a signed rollback record and a small script that routes the slot back to the previous version, which stayed loaded |
+| `promotions.list` | `GET /deployment-targets/{id}/promotions` (`project`, `slot` filters) | The target's chain, oldest first, each record re-verified on read (`verified`) |
+| `promotions.get` | `GET /promotions/{id}` | The record, its signature and key id, the script's text and, for people only, a signed download link to the bundle (as media links, R25) |
+| `promotions.verify` | `POST /promotions/{id}:verify` `{receipt}` | A person pastes the receipt line the script printed; Cadence checks it and appends a confirmation record. People only (rule `delivery-is-for-people`) |
+
+Checks before an approval is even asked (each a 422 with its help page):
+
+| Stage | Requires |
+| --- | --- |
+| `canary` | The target serves the family, format and profile (`target-does-not-serve`); the export's parity passed (`parity-failed`); a benchmark of the export passed at the target's concurrency and profile (`latency-budget-exceeded`, or `benchmark-missing`); the deployment's shadow reached `deploy.shadow_min_hours` (20 h; `shadow-volume-short`); no other canary or pending promotion on the slot (`conflict`) |
+| `production` | The same model version is the slot's confirmed canary (`canary-required`) |
+| rollback | The slot has a confirmed earlier production version still loaded (`rollback-unavailable`) |
+
+**Promotion records (R33).** A record is JSON in canonical form (RFC 8785, JCS); its hash is the SHA-256 of that
+form (hex); its signature is Ed25519 over the 32 hash bytes. Records are append-only (`promotion_records`; a trigger
+refuses UPDATE and DELETE) and chained per delivery target: `seq` from 1, `prevHash` = the previous record's hash.
+
+```yaml
+schema: cadence.promotion/1
+kind: promotion            # genesis | promotion | rollback | confirmation | withdrawal | target-changed | key-rotation
+id: prm_…
+target: { id: dtg_…, name: era-production, seq: 7, prevHash: "…" }
+slot: asr-he-il
+stage: canary              # canary | production (promotion); the stage restored (rollback)
+trafficShare: 0.05
+project: { id: prj_…, slug: hebrew }
+model: { versionId: ver_…, version: "model/hebrew@2026-11-02.ab12cd", weightsHash: "b3:…", family: "…" }
+deployable: { hash: "b3:…", format: triton-onnx-cache-aware, profile: 80ms, modelName: asr-he-il-2026-11-02-ab12cd,
+              manifestSha256: "…", files: [{ path, sha256, bytes }] }
+decoding: { boostLists: [{ locale, domain, sha256, weight }] }
+previous: { versionId: ver_…, modelName: … }   # what stays loaded for an instant rollback
+evidence: { gate: { evalId, verdict, gatesSha }, parity: { reportHash, werDelta, identicalShare },
+            benchmark: { reportHash, streams, p95TimeToFinalMs, budgetMs, cardClass }, shadow: { hours, divergence } }
+requestedBy: { actor: agent|user, id, sessionId? }
+approval: { id: apr_…, approver: { id: usr_…, name }, decidedAt }
+reason: "…"
+createdAt: "2026-11-03T09:12:44Z"
+key: { id: "ed25519:3f9a…", alg: Ed25519 }
+# stored beside the canonical body: hash, signature (base64)
+```
+
+- **Instance key.** An Ed25519 key pair generated when the first delivery target is created. The private key is a
+  secret of kind `signing` (`instance-signing-key`), sealed with the master key and backed up like every sealed
+  secret; it never appears in an API answer, a job, a log or an agent context. The public key and its id (the first
+  16 bytes of its SHA-256) are in every record, in `promotions.get` and in Settings → Deployment targets.
+  `cadence admin rotate-signing-key` appends a `key-rotation` record, signed by the old key, that names the new one.
+- **Genesis.** Creating a delivery target appends `genesis` (the target's payload and the public key).
+- **Pending and withdrawal.** A promotion or rollback record leaves its deployment `pending-delivery`. Without a
+  receipt within `deploy.delivery_pending_days` (7) the system appends `withdrawal` and the deployment returns to its
+  stage before; promoting again makes a new record and bundle.
+- **Delivery bundle.** A `delivery` artifact (`cadence.delivery/1`, a directory) per promotion: `deliver.sh`
+  (POSIX sh; needs `sha256sum`, OpenSSL ≥ 3.0 and `curl` to the Triton on localhost), `record.json` (the canonical
+  body), `record.sig`, `instance.pub`, `models/<modelName>/…` (the deployable's model directory under its versioned
+  name; absent for a rollback or a config-only change), `decoding/` (boost lists as JSON) and `smoke/` (≤ 20
+  utterances of the parity sample as 16 kHz WAV with the text the staging server wrote for them). The person copies it
+  to the production host; Cadence never reaches that host (non-negotiable 8).
+- **What the script does, in order, stopping at the first failure without printing a receipt.**
+  1. The record's key must equal the pin `/etc/cadence/instance.pub`, installed once by a person from Settings →
+     Deployment targets; with no pin the script stops and says how to install one.
+  2. It checks `record.sig` over the SHA-256 of `record.json`, then every file against the record's `files`.
+  3. It copies `models/<modelName>` under `repositoryPath`, loads it through Triton's model-control API and leaves
+     the previous version loaded.
+  4. It streams the smoke utterances through the new model; at least `deploy.parity_min_identical_share` of them must
+     match the staging text, or it unloads the new model and exits non-zero.
+  5. It routes the slot's traffic (the canary share, or all of it) through Эра's routing mechanism (R32 · confirm).
+  6. It prints one line, `CADENCE-RECEIPT 1 <recordHash> <servedSha256> <smoke ok/total> <hostname> <UTC time>`.
+     `servedSha256` is the SHA-256 of the sorted `(path, sha256)` list of the model directory as installed.
+- **Confirmation.** `promotions.verify` accepts the receipt when its record is the slot's pending one, the record
+  hash matches, `servedSha256` equals the record's `manifestSha256` and the smoke passed. It then appends a signed
+  `confirmation` record (the receipt verbatim and the confirming person) and moves the deployment to its stage.
+  Anything else answers `promotion-receipt-mismatch` and changes nothing.
+- **What "signed" guarantees, and what it does not.** The production host runs only records the pinned instance key
+  signed; the files it installed are the ones the approver saw; the person who pasted the receipt had the script of
+  that record and it ran to the end. The chain makes a removed or edited record visible. A receipt does not prove
+  which host ran the script: that rests on the person, who is named in the confirmation.
+- A config-only promotion (a changed boost list, same model version) is a `promotion` record with the same
+  `deployable.hash`, no `models/` in the bundle and the new `decoding`.
 
 ## Storage and mounts
 

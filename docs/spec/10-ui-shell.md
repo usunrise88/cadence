@@ -240,7 +240,7 @@ One word per action, everywhere: in menus, the palette, API operation ids and MC
 | note, sync | Projects (learnings; template and skill sync) | Yes | None |
 | archive | Projects, sources, registry versions (`versions.archive`, phase 4: terminal for a version) | Yes | Inline confirm |
 | revoke | Credentials, tokens (R1) | No | Inline confirm |
-| verify | Agent credentials: a tiny real request through the agent, the result recorded (2026-09-30); mounts: the health check a worker runs (`mounts.verify`, phase 4) | — | None |
+| verify | Agent credentials: a tiny real request through the agent, the result recorded (2026-09-30); mounts: the health check a worker runs (`mounts.verify`, phase 4); promotions: a person pastes the delivery script's receipt and Cadence checks it against the signed record (`promotions.verify`, phase 5) | — | None |
 | align | Golden sets: word timings of their reference texts, several sets in one pipeline run (`goldenSets.align`, phase 4 tail) | — | None (GPU spend follows the policy) |
 
 This table is the whole vocabulary: every MCP tool, API operation id and command id is <entity>.<verb> with a verb from it (the system tab lists the tools). Each verb has one Iconoir icon and one default key, defined once in the command registry; a panel that needs a new verb adds it here first.
@@ -318,6 +318,12 @@ Three state templates cover every kind: registry assets `draft → frozen → de
 | Auxiliary model | A registry model a step uses beside the trained one: a LID classifier, pseudo-label member or aligner; adopted with the admin's approval after a licence check (R26) | Base model (what is fine-tuned) |
 | Alignment | Word timings of a golden set's reference text against its audio, from a CTC aligner (`align_reference@1`); the reference track of the audio view and the basis of emission delay (R51, R54) | Diff alignment (reference vs hypothesis words) |
 | Emission delay | How long after a reference word ends (by the alignment) a streaming model first shows it in a partial that stays, PR50/PR90 in milliseconds (`latency_score@3`); `n/a` with a reason when the reference is unaligned (R54) | Latency to final (time to a final result) |
+| Deployment target | Where models are served: `staging` (the compose Triton Cadence reaches) or `delivery` (a production server only a person's delivery script reaches), with the families, formats and latency profiles it serves (R46, phase 5) | Compute (the host Cadence trains on) |
+| Export | A model version turned into a `deployable` for one latency profile, with its parity and benchmark reports (`models.export`, phase 5) | Dataset export (`datasets.export`) |
+| Parity | The check that an export decodes the same words as the model it came from: WER difference and identical token sequences on a fixed sample (R31) | Eval (a model against references) |
+| Promotion record | An append-only, hash-chained record signed with the instance's key: which model version's files went to which stage of a delivery target, approved by whom; confirmed by the receipt the delivery script prints (R33, phase 5) | Approval (the decision it names) |
+| Delivery script | The `deliver.sh` of a promotion's bundle, run by a person on the production host: it checks the signature and files, loads the model, runs a smoke check and prints the receipt | Pipeline |
+| Shadow | A deployment on the staging target that replays the night's calls beside the production model and records how far they diverge; no effect on calls | Replay (training samples from other locales); Canary |
 
 ## Window states
 

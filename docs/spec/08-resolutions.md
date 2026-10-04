@@ -289,6 +289,12 @@ commit, and from the phase-4 tail its text at that commit (`guidelines.get`; 04 
 
 ## Deploy and flywheel (phase 5)
 
+_R30, R31 (concurrency still to confirm) and R33 were specified on 2026-10-05 before phase 5, with the contract shapes
+for exports, deployment targets, deployments and promotions: 02 "Deployment entities", 03 "Export, parity and
+benchmark (phase 5)", 04 "Block 4", 05 (tools and presets), 06 "Staging serving"; plan
+`docs/review/2026-10-05-phase-5-plan.md`. R28, R29, R31's concurrency and R32 wait for the owner: the questions and
+options are in `docs/review/2026-10-05-phase-5-decisions.md`._
+
 **R28 · Retention vs immutability** (B6) — **confirm** (legal)
 Two retention classes. *Captured samples* (unreviewed flywheel audio): 90 days, then the blob is deleted.
 *Curated items* (annotated golden-set members, accepted corrections): redacted audio kept under a longer term
@@ -307,11 +313,19 @@ gets text with typed placeholders only.
 Triton runs as a compose profile on the staging card under its own memory cap; shadow replay and benchmarks are
 queue jobs of kinds `shadow` and `benchmark`. Benchmarks require the card exclusively (latency numbers taken beside
 a training job are meaningless); shadow replay is throughput work and can share.
+*Specified 2026-10-05 (06 "Staging serving"): Triton 26.07 in the compose profile `serving` with explicit model
+control; job kind `benchmark` new (`shadow` and `export` existed); a waiting benchmark drains its card for up to 30
+minutes and never preempts training; a per-card serving reserve (7 GB of the stand's 29 GB cap) that training's
+whole-cap reservation leaves to shadow replay, served models and live sessions.*
 
 **R31 · Parity and latency thresholds** (spec gap)
 Parity: ONNX vs NeMo WER difference ≤ 0.1 absolute on the fixed 200-utterance sample (A3 acceptance) *and* ≥ 99.5 %
 identical token sequences. Latency: p95 time-to-final at the primary chunk size ≤ chunk + 100 ms at the target
 concurrent streams. **confirm**: target concurrency comes from Эра's peak; placeholder 32.
+*Specified 2026-10-05 (03 "Export, parity and benchmark (phase 5)", `deploy.*`): "0.1 absolute" is 0.1 WER points
+(0.001 as a fraction, A3's acceptance); identical sequences compare token ids, else the NFC text; the sample is the
+first 200 utterances by hash of the first target golden set; time to final runs from an utterance's last chunk sent at
+real-time pace to its final; a deployment target may name its own concurrency.*
 
 **R32 · Эра interfaces** (spec gap) — **confirm** with Эра
 Defined in `api/openapi.yaml`: `samples.new` (call id, channel, span, audio or reference, production hypothesis,
@@ -322,6 +336,11 @@ in the inference contract a `boost` field (phrases with weights, cap 100 per cal
 A Promotion record holds the model version, artifact hashes, approver and time, hash-chained to the previous record
 and signed with the instance's Ed25519 key. The generated delivery script prints the record hash at the end; the
 person pastes it into Cadence to confirm, which proves the script that ran is the one approved.
+*Specified 2026-10-05 (02 "Promotion records"): JCS-canonical JSON, SHA-256, Ed25519 over the hash; one chain per
+delivery target from a genesis record; the production host pins the instance public key; the script prints a receipt
+(record hash, the SHA-256 of the installed model files, the smoke result) and `promotions.verify` appends a signed
+confirmation. The receipt shows that the approved script ran to the end with the approved files; which host ran it
+rests on the named person.*
 
 ---
 
