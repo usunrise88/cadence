@@ -34,6 +34,13 @@ The project wizard renders these into a new project repository (the `projects.bo
   (`internal/policy`) on every command: `guardrails-default` (the Guardrails table) and `read-only` ("Explain
   this" sessions).
 
+- `delivery/deliver.sh.tmpl` and `delivery/servers/<server kind>.sh` — the delivery script of a promotion's bundle
+  (phase 5, `internal/delivery`; docs/spec/02 "Promotion records"). The template is Go `text/template` over
+  `delivery.Values` (record id and hash, key id, target, slot, stage, traffic share, model name, manifest SHA-256,
+  repository path, whether the model ships, smoke counts, decoding files) with the target's server functions
+  (`server_load`, `server_ready`, `server_unload`) inlined; every value is checked shell-safe before rendering. A
+  delivery target's `server.kind` must have a file here. Not registry versions and not copied into projects.
+
 Cadence also writes `project.yaml` (the wizard's facts), `data.lock` (every registry version the project depends on,
 including the template versions its files came from) and the first `NOTES.md`; those are generated in Go, not from
 templates here.

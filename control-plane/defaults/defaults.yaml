@@ -4,7 +4,7 @@
 # the control-plane binary and packaged with the worker. Every value carries a description, a source and, where it
 # applies, a safe range; a value without a published source is a "Cadence recommendation" re-checked after the spikes.
 # Keys are addressed as <section>.<key> (x-cadence.defaultRef: training.steps). Bump `version` on every change.
-version: 19
+version: 20
 
 # The project wizard's Recommended mode (docs/spec/02-domain-projects-registry.md "Project wizard").
 wizard:
@@ -1121,6 +1121,29 @@ sweeps:
     description: Seed of a random sweep's draw, so the same request draws the same points
     source: Cadence recommendation
     range: { min: 0, max: 2147483647 }
+
+# Deployment (phase 5; docs/spec/03-pipelines-defaults.md "Export, parity and benchmark (phase 5)"). Stream D3 adds
+# what promotion records and delivery read; stream D1 adds the rest of the block.
+deploy:
+  parity_min_identical_share:
+    value: 0.995
+    unit: fraction
+    description: Share of sample utterances whose token sequences (else NFC text) must be identical; also the delivery script's smoke check (of 20 smoke utterances, all must match)
+    source: "R31; A3 measured 199/200"
+    range: { min: 0.9, max: 1 }
+  delivery_pending_days:
+    value: 7
+    unit: days
+    description: A promotion or rollback without a confirmed receipt is withdrawn after this long (promotions.verify); promoting again makes a new record and bundle
+    source: Cadence recommendation
+    range: { min: 1, max: 60 }
+
+# Staging serving (phase 5; docs/spec/06-platform.md "Staging serving", R30). Stream D2 adds the rest of the block.
+serving:
+  staging_target:
+    value: { name: staging, endpoint: "http://triton:8000", server: { kind: triton, version: "26.07" } }
+    description: The staging deployment target seeded at first start (kind staging, the compose service's endpoint); the server kind and version are data the delivery script and the serve steps read
+    source: R30
 
 # Playbooks (phase 4 · stream B): what a playbook input takes when the person names nothing (its defaultRef).
 playbooks:

@@ -119,6 +119,21 @@ tools:
     operations: [agentProfile.edit]
     reason: the agent profile decides what agents may do and what they are told
 
+  # A deployment target names production (R46, phase 5): creating or changing one is a registry-scope approval the
+  # admin decides, for people too, as mounts. Archiving one is the admin's (agents meet no-deletes below).
+  - id: deployment-targets
+    class: gated
+    everyone: true
+    operations: [deploymentTargets.new, deploymentTargets.edit]
+    reason: a deployment target names production; the admin decides where models are delivered and what each target serves
+
+  # A delivery is confirmed with the receipt the delivery script printed on a production host no agent reaches
+  # (R33, phase 5): agents never confirm one, whatever the receipt says.
+  - id: delivery-is-for-people
+    class: forbidden
+    operations: [promotions.verify]
+    reason: a delivery is confirmed by the person who ran its script on the production host
+
   # "Canary, production, rollback" → approval (shadow is decided by the promotion's own stage check, phase 5).
   - id: deployments
     class: gated

@@ -34,7 +34,7 @@ import (
 const Kind = "secret"
 
 // Kinds are the credential kinds (the contract's SecretKind).
-var Kinds = []string{"huggingface", "ngc", "github", "s3", "judge-api", "telegram", "other"}
+var Kinds = []string{"huggingface", "ngc", "github", "s3", "judge-api", "telegram", "signing", "other"}
 
 // ScopeInstance is the scope of a secret every server-side consumer may read.
 const ScopeInstance = "instance"

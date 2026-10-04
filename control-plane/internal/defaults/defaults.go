@@ -104,8 +104,34 @@ type Defaults struct {
 	Transcriptions Transcriptions `yaml:"transcriptions"`
 	// Annotation batches, reviewer invitations and the audio tracks' detector (phase 4, stream A).
 	Annotation Annotation `yaml:"annotation"`
+	// Deployment (phase 5): stream D3 reads the smoke share and the receipt wait; stream D1 adds the rest of 03's
+	// deploy block.
+	Deploy Deploy `yaml:"deploy"`
+	// Staging serving (phase 5): the staging target seeded at first start; stream D2 adds the rest of 03's block.
+	Serving Serving `yaml:"serving"`
 
 	document map[string]any
+}
+
+// Deploy holds the deployment defaults (docs/spec/03-pipelines-defaults.md "Export, parity and benchmark").
+type Deploy struct {
+	ParityMinIdenticalShare Param[float64] `yaml:"parity_min_identical_share"`
+	DeliveryPendingDays     Param[int]     `yaml:"delivery_pending_days"`
+}
+
+// Serving holds the staging serving defaults.
+type Serving struct {
+	StagingTarget Param[StagingTarget] `yaml:"staging_target"`
+}
+
+// StagingTarget is the staging deployment target seeded at first start (internal/targets.Seed).
+type StagingTarget struct {
+	Name     string `yaml:"name" json:"name"`
+	Endpoint string `yaml:"endpoint" json:"endpoint"`
+	Server   struct {
+		Kind    string `yaml:"kind" json:"kind"`
+		Version string `yaml:"version" json:"version"`
+	} `yaml:"server" json:"server"`
 }
 
 // ModelFor returns the default model of an agent driver.
