@@ -3,6 +3,8 @@
 Host scripts that put source files on the staging host's corpora mount (`/cadence/corpora`, read-only to Cadence;
 phase-4 plan, decision 1). Cadence indexes them in place through `sdp_ingest`; these scripts never touch Cadence.
 Layout: `/cadence/corpora/<source>/<revision>/…` with a `SOURCE.yaml` (name, licence, kind, url, revision, languages).
+Files must be world-readable: Cadence's workers read the mount as their own user (uid 65532), so a tar that extracts
+with mode 640 makes ingest fail with "Permission denied" (`chmod -R a+rX /cadence/corpora`).
 
 | Script | Source | Licence | Notes |
 | --- | --- | --- | --- |

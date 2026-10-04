@@ -19,6 +19,7 @@ for s in "${SPLITS[@]}"; do
   curl -fsSL -m 3600 -o "$DIR/$s.tsv" "$base/$s.tsv"
   mkdir -p "$DIR/$s"
   curl -fsSL -m 7200 "$base/audio/$s.tar.gz" | tar -xz -C "$DIR/$s" --strip-components=1
+  chmod -R a+rX "$DIR/$s" "$DIR/$s.tsv"   # workers read the mount as their own user (uid 65532), not the owner
   touch "$DIR/$s/.done"
 done
 cat > "$DIR/SOURCE.yaml" <<YAML
