@@ -261,14 +261,13 @@ func (dg *Digester) Tick(ctx context.Context) (bool, error) {
 			return fmt.Errorf("mark digested events: %w", err)
 		}
 		if decision := Decide(rule, env.Settings, env.BotReady, now, env.Location); decision.State != "" {
-			state := decision.State
-			if state == StateDigest {
-				state = StateQueued
+			if decision.State == StateDigest {
+				decision.State = StateQueued
 			}
-			if err := InsertDelivery(ctx, tx, nil, Notice{Class: ClassDigest, Title: d.Title(), Body: d.Text()}, state); err != nil {
+			if err := InsertDelivery(ctx, tx, nil, Notice{Class: ClassDigest, Title: d.Title(), Body: d.Text()}, decision, nil); err != nil {
 				return err
 			}
-			queued = state == StateQueued
+			queued = decision.State == StateQueued
 		}
 		sent = true
 		if !rule.InApp {

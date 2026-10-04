@@ -153,7 +153,8 @@ func (rt *Router) step(ctx context.Context) (n, queued int, err error) {
 
 // Decision is what the routing table says about one notice on Telegram.
 type Decision struct {
-	State string // queued | suppressed | digest; "" = not sent to Telegram
+	State  string // queued | suppressed | digest; "" = not sent to Telegram
+	Silent bool   // sent without sound (the rule's silent flag)
 }
 
 // Decide applies rule, quiet hours and whether the bot is usable to a notice of rule's class at now.
@@ -163,12 +164,12 @@ func Decide(rule Rule, s Settings, botReady bool, now time.Time, loc *time.Locat
 	}
 	switch rule.Timing {
 	case TimingDigest:
-		return Decision{State: StateDigest}
+		return Decision{State: StateDigest, Silent: rule.Silent}
 	case TimingImmediate, TimingDaily:
 		if InQuietHours(s.QuietHours, now, loc) && !rule.BypassQuietHours {
-			return Decision{State: StateSuppressed}
+			return Decision{State: StateSuppressed, Silent: rule.Silent}
 		}
-		return Decision{State: StateQueued}
+		return Decision{State: StateQueued, Silent: rule.Silent}
 	}
 	return Decision{}
 }
@@ -238,12 +239,21 @@ func (rt *Router) route(ctx context.Context, tx pgx.Tx, batch []events.Record) (
 		if !ok {
 			continue
 		}
-		d := Decide(rule, env.Settings, env.BotReady, rt.now(), env.Location)
+		now := rt.now()
+		d := Decide(rule, env.Settings, env.BotReady, now, env.Location)
 		if d.State == "" {
 			continue
 		}
+		var at *time.Time
+		if d.State == StateQueued && notice.ApprovalID != "" {
+			t, err := ApprovalSendAt(ctx, tx, now, time.Duration(rt.Defaults().Notifications.ApprovalBatchS.Value)*time.Second)
+			if err != nil {
+				return 0, err
+			}
+			at = &t
+		}
 		seq := r.Seq
-		if err := InsertDelivery(ctx, tx, &seq, notice, d.State); err != nil {
+		if err := InsertDelivery(ctx, tx, &seq, notice, d, at); err != nil {
 			return 0, err
 		}
 		if d.State == StateQueued {
@@ -253,12 +263,33 @@ func (rt *Router) route(ctx context.Context, tx pgx.Tx, batch []events.Record) (
 	return queued, nil
 }
 
-// InsertDelivery writes one Telegram delivery; an event already routed is skipped.
-func InsertDelivery(ctx context.Context, q storage.Querier, seq *int64, n Notice, state string) error {
+// ApprovalSendAt is when an approval request routed at now goes to Telegram: approvals are gathered for window and
+// sent as one message when the window the first of them opened closes (docs/spec/06-platform.md "Quieter
+// Telegram"). A request joins the open window — a queued approval message not tried yet and not due — or opens one.
+// window 0 sends at once.
+func ApprovalSendAt(ctx context.Context, q storage.Querier, now time.Time, window time.Duration) (time.Time, error) {
+	if window <= 0 {
+		return now, nil
+	}
+	var open *time.Time
+	if err := q.QueryRow(ctx, `SELECT max(next_at) FROM notification_deliveries WHERE state = 'queued' AND attempts = 0
+		AND approval_id IS NOT NULL AND next_at > $1`, now).Scan(&open); err != nil {
+		return time.Time{}, fmt.Errorf("find the open approval batch: %w", err)
+	}
+	if open != nil {
+		return *open, nil
+	}
+	return now.Add(window), nil
+}
+
+// InsertDelivery writes one Telegram delivery as d decided, due at at (nil: now); an event already routed, or a
+// notice whose Key was already delivered, is skipped.
+func InsertDelivery(ctx context.Context, q storage.Querier, seq *int64, n Notice, d Decision, at *time.Time) error {
 	id := "ntf_" + uuid.Must(uuid.NewV7()).String()
 	if _, err := q.Exec(ctx, `INSERT INTO notification_deliveries (id, event_seq, event_class, channel, state, title, body,
-		approval_id) VALUES ($1, $2, $3, $4, $5, $6, $7, NULLIF($8, '')) ON CONFLICT (event_seq, channel) DO NOTHING`,
-		id, seq, n.Class, ChannelTelegram, state, n.Title, n.Body, n.ApprovalID); err != nil {
+		approval_id, silent, dedupe_key, next_at) VALUES ($1, $2, $3, $4, $5, $6, $7, NULLIF($8, ''), $9, NULLIF($10, ''),
+		coalesce($11::timestamptz, now())) ON CONFLICT DO NOTHING`,
+		id, seq, n.Class, ChannelTelegram, d.State, n.Title, n.Body, n.ApprovalID, d.Silent, n.Key, at); err != nil {
 		return fmt.Errorf("store notification delivery: %w", err)
 	}
 	return nil

@@ -7017,8 +7017,8 @@
     },
     {
       "name": "notificationRules.edit",
-      "title": "Change which channels an event class reaches and when (admin only)",
-      "description": "Change which channels an event class reaches and when (admin only). Pass dryRun=true to see what would happen without changing anything.",
+      "title": "Change which channels an event class reaches, when, and whether Telegram rings (admin only)",
+      "description": "Change which channels an event class reaches, when, and whether Telegram rings (admin only). Pass dryRun=true to see what would happen without changing anything.",
       "method": "PATCH",
       "path": "/notification-rules/{id}",
       "inputSchema": {
@@ -7038,6 +7038,10 @@
                   }
                 },
                 "type": "object"
+              },
+              "silent": {
+                "description": "Send this class's Telegram messages without sound",
+                "type": "boolean"
               },
               "timing": {
                 "description": "immediate: sent as it happens; digest: held for the next daily digest; daily: the digest itself (its rule only); none: never sent",

@@ -17,6 +17,9 @@ type Notice struct {
 	Title      string
 	Body       string
 	ApprovalID string // an approval request: the Telegram message carries Approve / Deny buttons
+	// Key, when set, makes the notice once-only: a later event with the same key is not sent again (an end that
+	// several events repeat, such as an agent session's).
+	Key string
 }
 
 // classTable names the event types of each class that need no look at the payload. Other streams add their event
@@ -57,10 +60,11 @@ func EventTypes(class string) []string {
 	case ClassApproval:
 		out = append(out, "approval.requested")
 	case ClassFailure:
-		out = append(out, "job.state_changed (failed)", "pipeline_run.step_changed (failed)", "compute.health (unreachable)",
-			"eval.status_changed (failed)")
+		out = append(out, "job.state_changed (failed)", "pipeline_run.state_changed (failed, not an eval's)",
+			"eval.status_changed (failed)", "agent_session.changed (failed)", "compute.health (unreachable)")
 	case ClassProgress:
-		out = append(out, "job.state_changed (done)", "pipeline_run.step_changed (done, not an eval's)", "eval.status_changed (done)")
+		out = append(out, "job.state_changed (done)", "pipeline_run.step_changed (done or failed, not an eval's)",
+			"eval.status_changed (done)")
 	case ClassDigest:
 		out = append(out, "notification.digest")
 	}
@@ -144,6 +148,30 @@ type stepPayload struct {
 	} `json:"step"`
 }
 
+type pipelineRunPayload struct {
+	PipelineRun *struct {
+		ID        string `json:"id"`
+		ProjectID string `json:"projectId"`
+		Pipeline  string `json:"pipeline"`
+		State     string `json:"state"`
+		RunID     string `json:"runId"`
+		Error     string `json:"error"`
+	} `json:"pipelineRun"`
+}
+
+// sessionListTopic is sessions.TopicList: an agent session's change is read there once (its own topic repeats it).
+const sessionListTopic = "agent.sessions"
+
+type sessionPayload struct {
+	Session *struct {
+		ID      string `json:"id"`
+		Number  int    `json:"number"`
+		Project string `json:"project"`
+		State   string `json:"state"`
+		Error   string `json:"error"`
+	} `json:"session"`
+}
+
 type evalPayload struct {
 	Eval *struct {
 		ID        string `json:"id"`
@@ -215,9 +243,13 @@ type genericPayload struct {
 // Classify says which class an event belongs to and what it tells a person; ok is false for events no one is
 // notified about. Approval events go out twice (the approvals topic and the entity topic): only the approvals topic
 // counts, and a job's state change counts on its job topic only — except a step job's, which its pipeline step
-// tells (pipeline_run.step_changed on pipeline_run.{id}: done is progress, failed — no retry left — a failure). A
-// host turning unreachable (compute.health on compute.{id}) is a failure. The steps of an eval's pipeline run tell
-// nothing when done; the eval tells its end (eval.status_changed: failed a failure, done progress) and evals.gate its
+// tells (pipeline_run.step_changed on pipeline_run.{id}). A failure is told by what it ends, once: a step's failure
+// is progress whatever follows (an optional step's lets the run go on; an OOM or a lost lease is retried without a
+// failed step event at all; any other ends the pipeline run, whose pipeline_run.state_changed failed is the one
+// failure notice). An agent session that ends failed (agent_session.changed on agent.sessions) is a failure, once
+// per session (Notice.Key). A host turning unreachable (compute.health on compute.{id}) is a failure. The steps of
+// an eval's pipeline run, and the run itself, tell nothing; the eval tells its end (eval.status_changed: failed a
+// failure, done progress) and evals.gate its
 // verdict (eval.gated, an outcome), sweeps their end (sweep.ended) and golden sets their freeze (golden_set.frozen),
 // all on their entity topics, which only these announce on. The other classified types count on any
 // topic but an entity topic (entity.{kind}.{id} repeats what a domain topic already carried).
@@ -302,7 +334,7 @@ func Classify(r events.Record) (Notice, bool) {
 			return Notice{}, false
 		}
 		s := p.Step
-		if s.State == "done" && strings.HasPrefix(p.RunID, evalRunPrefix) {
+		if strings.HasPrefix(p.RunID, evalRunPrefix) {
 			return Notice{}, false // an eval's steps: its end is told once (eval.status_changed)
 		}
 		name := s.Step
@@ -315,11 +347,38 @@ func Classify(r events.Record) (Notice, bool) {
 			if s.Error != nil {
 				msg = s.Error.Type + ": " + s.Error.Message
 			}
-			return Notice{Class: ClassFailure, Title: "Step failed: " + name, Body: join(msg, "Pipeline run: "+p.PipelineRunID)}, true
+			// Progress, not a failure: a failure that stops the run is told by the run's end (pipeline_run.state_changed).
+			return Notice{Class: ClassProgress, Title: "Step failed: " + name, Body: join(msg, "Pipeline run: "+p.PipelineRunID)}, true
 		case "done":
 			return Notice{Class: ClassProgress, Title: "Step done: " + name, Body: "Pipeline run: " + p.PipelineRunID}, true
 		}
 		return Notice{}, false
+	case "pipeline_run.state_changed":
+		if !strings.HasPrefix(r.Topic, "pipeline_run.") {
+			return Notice{}, false
+		}
+		var p pipelineRunPayload
+		if json.Unmarshal(r.Payload, &p) != nil || p.PipelineRun == nil || p.PipelineRun.State != "failed" ||
+			strings.HasPrefix(p.PipelineRun.RunID, evalRunPrefix) {
+			return Notice{}, false
+		}
+		pr := p.PipelineRun
+		title := "Pipeline run failed: " + pr.Pipeline
+		if pr.RunID != "" {
+			title = "Run failed: " + pr.RunID
+		}
+		return Notice{Class: ClassFailure, Title: title, Body: join(pr.Error, "Pipeline run: "+pr.ID, project(pr.ProjectID))}, true
+	case "agent_session.changed":
+		if r.Topic != sessionListTopic {
+			return Notice{}, false // the session's own topic repeats it
+		}
+		var p sessionPayload
+		if json.Unmarshal(r.Payload, &p) != nil || p.Session == nil || p.Session.State != "failed" {
+			return Notice{}, false
+		}
+		ss := p.Session
+		return Notice{Class: ClassFailure, Title: fmt.Sprintf("Agent session %d failed (%s)", ss.Number, ss.Project),
+			Body: join(ss.Error, "Session: "+ss.ID), Key: "agent_session.failed:" + ss.ID}, true
 	case "eval.status_changed", "eval.gated":
 		// Evals announce on their entity topic only (entity.eval.{id}), so it counts here.
 		var p evalPayload
@@ -401,6 +460,14 @@ func humanize(typ string) string {
 		return s
 	}
 	return strings.ToUpper(s[:1]) + s[1:]
+}
+
+// project is "Project: id", or nothing without one.
+func project(id string) string {
+	if id == "" {
+		return ""
+	}
+	return "Project: " + id
 }
 
 func join(parts ...string) string {

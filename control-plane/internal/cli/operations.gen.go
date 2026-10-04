@@ -1265,7 +1265,7 @@ var Operations = []Operation{
 	},
 	{
 		ID: "notificationRules.edit", Entity: "notificationRules", Verb: "edit", Method: "PATCH", Path: "/notification-rules/{id}",
-		Summary:        "Change which channels an event class reaches and when (admin only)",
+		Summary:        "Change which channels an event class reaches, when, and whether Telegram rings (admin only)",
 		IdempotencyKey: true,
 		Params: []Param{
 			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string"},
@@ -1274,6 +1274,7 @@ var Operations = []Operation{
 		},
 		Body: &Body{Required: true, Properties: []BodyProperty{
 			{Name: "channels", Type: "object"},
+			{Name: "silent", Type: "boolean", Description: "Send this class's Telegram messages without sound"},
 			{Name: "timing", Type: "string", Description: "immediate: sent as it happens; digest: held for the next daily digest; daily: the digest itself (its rule only); none: never sent"},
 		}},
 	},

@@ -1050,7 +1050,7 @@ export const utterancesGet = <ThrowOnError extends boolean = false>(options: Opt
 export const notificationRulesList = <ThrowOnError extends boolean = false>(options?: Options<NotificationRulesListData, ThrowOnError>): RequestResult<NotificationRulesListResponses, NotificationRulesListErrors, ThrowOnError> => (options?.client ?? client).get<NotificationRulesListResponses, NotificationRulesListErrors, ThrowOnError>({ url: '/notification-rules', ...options });
 
 /**
- * Change which channels an event class reaches and when (admin only)
+ * Change which channels an event class reaches, when, and whether Telegram rings (admin only)
  */
 export const notificationRulesEdit = <ThrowOnError extends boolean = false>(options: Options<NotificationRulesEditData, ThrowOnError>): RequestResult<NotificationRulesEditResponses, NotificationRulesEditErrors, ThrowOnError> => (options.client ?? client).patch<NotificationRulesEditResponses, NotificationRulesEditErrors, ThrowOnError>({
     url: '/notification-rules/{id}',

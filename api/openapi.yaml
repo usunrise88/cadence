@@ -2668,7 +2668,7 @@ paths:
     parameters: [{ $ref: "#/components/parameters/Id" }]
     patch:
       operationId: notificationRules.edit
-      summary: Change which channels an event class reaches and when (admin only)
+      summary: Change which channels an event class reaches, when, and whether Telegram rings (admin only)
       tags: [notifications]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -7785,7 +7785,7 @@ components:
         telegram: { type: boolean, description: The Telegram bot (allow-listed chats only) }
     NotificationRule:
       type: object
-      required: [id, eventClass, label, events, channels, timing, bypassQuietHours, rev, updatedAt, departures]
+      required: [id, eventClass, label, events, channels, timing, silent, bypassQuietHours, rev, updatedAt, departures]
       properties:
         id: { type: string, description: "ntr_<class>" }
         eventClass: { $ref: "#/components/schemas/NotificationClass" }
@@ -7793,6 +7793,11 @@ components:
         events: { type: array, items: { type: string }, description: The event types the class covers }
         channels: { $ref: "#/components/schemas/NotificationChannels" }
         timing: { $ref: "#/components/schemas/NotificationTiming" }
+        silent:
+          type: boolean
+          description: >
+            Telegram messages of this class arrive without sound (disable_notification); seeded true for outcome and
+            the digest, false for approvals and failures
         bypassQuietHours: { type: boolean, description: "Failures reach Telegram even in quiet hours; fixed per class" }
         rev: { type: integer }
         updatedAt: { type: string, format: date-time }
@@ -7813,6 +7818,7 @@ components:
             inApp: { type: boolean }
             telegram: { type: boolean }
         timing: { $ref: "#/components/schemas/NotificationTiming" }
+        silent: { type: boolean, description: "Send this class's Telegram messages without sound" }
     ClockTime:
       type: string
       pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$"

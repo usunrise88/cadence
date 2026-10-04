@@ -15,7 +15,7 @@ import { WriteOnlyField } from "./SecretsSection";
 import { Chip, Field, SectionHeading, Table, Td, when } from "./ui";
 
 // Notifications (docs/spec/06-platform.md "Notifications"; docs/spec/11-ui-panels.md "Settings"): the routing table
-// (one row per event class: channels and timing), quiet hours and the digest time, and the Telegram bot — its
+// (one row per event class: channels, timing and whether Telegram rings), quiet hours and the digest time, and the Telegram bot — its
 // write-only token, the allow-listed chats, chats that wrote without being allowed, and a test message.
 
 const TOKEN = /^[0-9]+:[A-Za-z0-9_-]{20,}$/;
@@ -23,6 +23,11 @@ const TOKEN = /^[0-9]+:[A-Za-z0-9_-]{20,}$/;
 /** The timings a rule may take: the digest row is daily or off; the others are immediate, held for the digest, or off. */
 export function timingsFor(rule: NotificationRule): NotificationTiming[] {
   return rule.eventClass === "digest" ? ["daily", "none"] : ["immediate", "digest", "none"];
+}
+
+/** Whether a rule's silent flag means anything: it sends Telegram messages of its own (progress reaches the phone only inside the digest). */
+export function silentApplies(rule: NotificationRule): boolean {
+  return rule.channels.telegram && rule.timing !== "none" && rule.eventClass !== "progress";
 }
 
 export const TIMING_LABEL: Record<NotificationTiming, string> = {
@@ -60,7 +65,7 @@ export function NotificationsSection() {
       <SectionHeading
         id="settings-notifications"
         title="Notifications"
-        hint="Which events reach you where: the in-app history and a Telegram bot. Quiet hours hold Telegram back except for failures; approvals can be decided from the phone."
+        hint="Which events reach you where: the in-app history and a Telegram bot. Silent rows arrive without sound; approvals that come close together share one message; quiet hours hold Telegram back except for failures; approvals can be decided from the phone."
       />
       {rules.data ? <RulesTable rules={rules.data.items} /> : <p className="text-xs text-muted-foreground">Loading…</p>}
       {settings.data ? (
@@ -94,7 +99,7 @@ function RulesTable({ rules }: { rules: NotificationRule[] }) {
   };
   return (
     <div className="flex flex-col gap-1.5">
-      <Table label="Routing rules" head={["Event class", "In-app", "Telegram", "Telegram timing", ""]}>
+      <Table label="Routing rules" head={["Event class", "In-app", "Telegram", "Telegram timing", "Silent", ""]}>
         {rules.map((r) => (
           <tr key={r.id} data-rule={r.eventClass}>
             <Td title={r.events.join(", ")}>
@@ -135,6 +140,17 @@ function RulesTable({ rules }: { rules: NotificationRule[] }) {
                   </option>
                 ))}
               </NativeSelect>
+            </Td>
+            <Td>
+              <input
+                type="checkbox"
+                className="size-3.5 accent-primary"
+                aria-label={`Silent: ${r.label}`}
+                title="Telegram delivers these messages without sound"
+                checked={r.silent}
+                disabled={busy === r.id || !silentApplies(r)}
+                onChange={(e) => void edit(r, { silent: e.target.checked })}
+              />
             </Td>
             <Td>{r.departures.length > 0 ? <Chip tone="accent" title={r.departures.join(", ")}>changed</Chip> : null}</Td>
           </tr>

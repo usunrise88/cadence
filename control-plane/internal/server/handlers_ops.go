@@ -78,6 +78,7 @@ func (s *Server) NotificationRulesEdit(ctx context.Context, req api.Notification
 		v := string(*t)
 		in.Timing = &v
 	}
+	in.Silent = req.Body.Silent
 	return s.run(ctx, command(ctx, "notificationRules.edit", req.Params.IdempotencyKey, req.Params.DryRun),
 		func(ctx context.Context, tx pgx.Tx) (commands.Result, []events.Draft, error) {
 			r, drafts, err := notify.EditRule(ctx, tx, req.Id, rev, in)

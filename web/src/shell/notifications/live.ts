@@ -10,7 +10,8 @@ import { playNoticeSound, unlockSoundOnInteraction } from "./sound";
 import { notify, type Notice } from "./store";
 
 // In-app notification history from live events (docs/spec/06-platform.md "Notifications"): approval requested and
-// decided, job failed or done (a step job through its pipeline step: step failed or done), a compute host turning
+// decided, job failed or done (a step job through its pipeline step: step failed or done — a warning, since the
+// pipeline run's own failure is the error), a pipeline run or agent session that failed, a compute host turning
 // unreachable, backup and restore-test outcomes, the daily digest, credential revoked. Each notice
 // also reaches the polite live region (WCAG 4.1.3). The routing table (Settings → Notifications) decides which
 // classes the history shows; Telegram is routed on the server by the same table.
@@ -19,6 +20,7 @@ export const NOTICE_TOPICS = [
   "approvals",
   "job.*",
   "pipeline_run.*",
+  "agent.sessions",
   "compute.*",
   "entity.credential.*",
   "entity.eval.*",
@@ -73,9 +75,20 @@ export function noticeFor(e: CadenceEvent): NoticeInput | undefined {
     const sp = e.payload as { pipelineRunId?: string; runId?: string; step?: { step?: string; kind?: string; state?: string; error?: { type?: string; message?: string } } } | undefined;
     const s = sp?.step;
     const name = `${s?.step ?? "step"}${s?.kind ? ` (${s.kind})` : ""}`;
-    if (s?.state === "failed") return { level: "error", title: `Step failed: ${name}`, detail: s.error ? `${s.error.type}: ${s.error.message}` : sp?.pipelineRunId, seq: e.seq };
-    if (s?.state === "done" && !sp?.runId?.startsWith(EVAL_RUN_PREFIX)) return { level: "success", title: `Step done: ${name}`, detail: sp?.pipelineRunId, seq: e.seq };
+    if (sp?.runId?.startsWith(EVAL_RUN_PREFIX)) return undefined; // the eval tells its end once
+    if (s?.state === "failed") return { level: "warning", title: `Step failed: ${name}`, detail: s.error ? `${s.error.type}: ${s.error.message}` : sp?.pipelineRunId, seq: e.seq };
+    if (s?.state === "done") return { level: "success", title: `Step done: ${name}`, detail: sp?.pipelineRunId, seq: e.seq };
     return undefined;
+  }
+  if (e.type === "pipeline_run.state_changed" && e.topic.startsWith("pipeline_run.")) {
+    const r = (e.payload as { pipelineRun?: { id?: string; pipeline?: string; runId?: string; state?: string; error?: string } } | undefined)?.pipelineRun;
+    if (r?.state !== "failed" || r.runId?.startsWith(EVAL_RUN_PREFIX)) return undefined;
+    return { level: "error", title: r.runId ? `Run failed: ${r.runId}` : `Pipeline run failed: ${r.pipeline ?? r.id ?? ""}`, detail: r.error ?? r.id, seq: e.seq };
+  }
+  if (e.type === "agent_session.changed" && e.topic === "agent.sessions") {
+    const ss = (e.payload as { session?: { id?: string; number?: number; project?: string; state?: string; error?: string } } | undefined)?.session;
+    if (ss?.state !== "failed") return undefined;
+    return { level: "error", title: `Agent session ${ss.number ?? ""} failed (${ss.project ?? ""})`, detail: ss.error ?? ss.id, seq: e.seq };
   }
   if (e.type === "eval.status_changed" || e.type === "eval.gated") {
     const ev = (e.payload as { eval?: { id?: string; status?: string; error?: string; subject?: { id?: string; label?: string }; gate?: { verdict?: string } } } | undefined)?.eval;

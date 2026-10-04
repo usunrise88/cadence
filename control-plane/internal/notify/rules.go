@@ -50,13 +50,13 @@ const (
 	TimingNone      = "none"
 )
 
-// seeded is the spec's table (migration 0015), the baseline departures are measured against.
+// seeded is the spec's table (migrations 0015 and 0043), the baseline departures are measured against.
 var seeded = map[string]Rule{
 	ClassApproval: {InApp: true, Telegram: true, Timing: TimingImmediate},
 	ClassFailure:  {InApp: true, Telegram: true, Timing: TimingImmediate},
-	ClassOutcome:  {InApp: true, Telegram: true, Timing: TimingImmediate},
+	ClassOutcome:  {InApp: true, Telegram: true, Timing: TimingImmediate, Silent: true},
 	ClassProgress: {InApp: true, Telegram: false, Timing: TimingNone},
-	ClassDigest:   {InApp: true, Telegram: true, Timing: TimingDaily},
+	ClassDigest:   {InApp: true, Telegram: true, Timing: TimingDaily, Silent: true},
 }
 
 // Rule is one row of the routing table. Its JSON form is the contract's NotificationRule.
@@ -68,6 +68,7 @@ type Rule struct {
 	InApp            bool      `json:"-"`
 	Telegram         bool      `json:"-"`
 	Timing           string    `json:"timing"`
+	Silent           bool      `json:"silent"` // Telegram messages arrive without sound (disable_notification)
 	BypassQuietHours bool      `json:"bypassQuietHours"`
 	Rev              int       `json:"rev"`
 	UpdatedAt        time.Time `json:"updatedAt"`
@@ -102,16 +103,19 @@ func (r Rule) JSON() View {
 		if r.Timing != base.Timing {
 			v.Departures = append(v.Departures, "timing")
 		}
+		if r.Silent != base.Silent {
+			v.Departures = append(v.Departures, "silent")
+		}
 	}
 	return v
 }
 
-const ruleCols = "id, event_class, label, in_app, telegram, timing, bypass_quiet_hours, rev, updated_at"
+const ruleCols = "id, event_class, label, in_app, telegram, timing, silent, bypass_quiet_hours, rev, updated_at"
 
 func scanRule(row pgx.CollectableRow) (Rule, error) {
 	var r Rule
-	err := row.Scan(&r.ID, &r.EventClass, &r.Label, &r.InApp, &r.Telegram, &r.Timing, &r.BypassQuietHours, &r.Rev,
-		&r.UpdatedAt)
+	err := row.Scan(&r.ID, &r.EventClass, &r.Label, &r.InApp, &r.Telegram, &r.Timing, &r.Silent, &r.BypassQuietHours,
+		&r.Rev, &r.UpdatedAt)
 	r.Events = EventTypes(r.EventClass)
 	return r, err
 }
@@ -150,6 +154,7 @@ type RuleEdit struct {
 	InApp    *bool
 	Telegram *bool
 	Timing   *string
+	Silent   *bool
 }
 
 // EditRule changes the rule id at revision rev. The digest rule's timing is always daily and no other rule may
@@ -178,6 +183,9 @@ func EditRule(ctx context.Context, tx pgx.Tx, id string, rev int, in RuleEdit) (
 	if in.Timing != nil {
 		r.Timing = *in.Timing
 	}
+	if in.Silent != nil {
+		r.Silent = *in.Silent
+	}
 	var fields []problems.FieldError
 	switch {
 	case !slices.Contains([]string{TimingImmediate, TimingDigest, TimingDaily, TimingNone}, r.Timing):
@@ -192,8 +200,8 @@ func EditRule(ctx context.Context, tx pgx.Tx, id string, rev int, in RuleEdit) (
 	if len(fields) > 0 {
 		return Rule{}, nil, problems.Validation(fields)
 	}
-	rows, err = tx.Query(ctx, `UPDATE notification_rules SET in_app = $2, telegram = $3, timing = $4, rev = rev + 1,
-		updated_at = now() WHERE id = $1 RETURNING `+ruleCols, id, r.InApp, r.Telegram, r.Timing)
+	rows, err = tx.Query(ctx, `UPDATE notification_rules SET in_app = $2, telegram = $3, timing = $4, silent = $5,
+		rev = rev + 1, updated_at = now() WHERE id = $1 RETURNING `+ruleCols, id, r.InApp, r.Telegram, r.Timing, r.Silent)
 	if err != nil {
 		return Rule{}, nil, fmt.Errorf("update notification rule: %w", err)
 	}
