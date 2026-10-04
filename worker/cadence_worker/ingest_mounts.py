@@ -8,17 +8,14 @@ gives), with times rounded to microseconds so the same cut always prints the sam
 
 from __future__ import annotations
 
-import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Any
 
-from cadence_worker.mounts import Mounts, MountURI
+from cadence_worker.mounts import NAME, Mounts, MountURI, parse_uri
+from cadence_worker.mounts import SCHEME as SCHEME
 from cadence_worker.steps.base import StepInputError
-
-SCHEME = "mount://"
-NAME = re.compile(r"^[a-z0-9][a-z0-9._-]{0,62}$")
 
 
 @dataclass(frozen=True)
@@ -43,28 +40,21 @@ def format_uri(
 
 
 def parse(uri: str) -> MountRef:
+    """A mount URI as ingest reads it: ``mounts.parse_uri`` (the one parser of the URI form), and also the mount's root
+    (``mount://<name>`` or ``mount://<name>/``) or a directory with a trailing ``/``."""
     if not uri.startswith(SCHEME):
         raise StepInputError(f"{uri!r} is not a mount URI (mount://<name>/<path>)")
-    rest, _, frag = uri[len(SCHEME) :].partition("#")
+    rest, sep, frag = uri[len(SCHEME) :].partition("#")
     name, _, path = rest.partition("/")
-    if not NAME.match(name):
-        raise StepInputError(f"{uri!r}: mount name {name!r} is not a mount name")
-    parts = PurePosixPath(path).parts if path else ()
-    if any(p in ("..", ".") for p in parts) or path.startswith("/"):
-        raise StepInputError(f"{uri!r}: the path must stay inside the mount")
-    start = end = None
-    channel = None
-    for item in filter(None, frag.split("&")):
-        key, _, val = item.partition("=")
-        try:
-            if key == "t":
-                a, _, b = val.partition(",")
-                start, end = float(a), float(b)
-            elif key == "ch":
-                channel = int(val)
-        except ValueError as e:
-            raise StepInputError(f"{uri!r}: bad fragment {item!r}") from e
-    return MountRef(name=name, path="/".join(parts), start=start, end=end, channel=channel)
+    path = path.rstrip("/")
+    if not path:
+        if not NAME.match(name):
+            raise StepInputError(f"{uri!r}: mount name {name!r} is not a mount name")
+        if sep:
+            raise StepInputError(f"{uri!r}: the mount's root takes no fragment")
+        return MountRef(name=name, path="")
+    u = parse_uri(f"{SCHEME}{name}/{path}{sep}{frag}")
+    return MountRef(name=u.mount, path=u.path, start=u.start, end=u.end, channel=u.channel)
 
 
 def mounts_of(ctx: Any = None) -> list[Mapping[str, Any]]:

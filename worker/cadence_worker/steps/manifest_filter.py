@@ -1,9 +1,11 @@
-"""``manifest_filter@1`` — drop segments that would hurt training: wrong length, a transcript that does not fit its
+"""``manifest_filter@2`` — drop segments that would hurt training: wrong length, a transcript that does not fit its
 audio (characters per second), no text, the wrong channel role, a disputed pseudo-label, a language the dataset does
 not want or one that language identification disagrees with, too little speech, or another party talking over it.
 
 Each dropped segment is counted under its first failing reason in the header's ``filtered`` (added to counts an
-earlier filter left). Help: docs/help/steps/manifest-filter.md.
+earlier filter left). Language identification is the segment's ``lid.language`` (``pseudolabel_ensemble`` writes it
+on every row it has evidence for), compared with the segment's language by primary subtag or within one of
+``lid_equivalents`` (version 2; version 1 compared primary subtags only). Help: docs/help/steps/manifest-filter.md.
 """
 
 from __future__ import annotations
@@ -15,10 +17,11 @@ from typing import Any, ClassVar
 from pydantic import BaseModel
 
 from cadence_worker import segments as seg
+from cadence_worker.members import same_language
 from cadence_worker.protocol_gen import StepResources
 from cadence_worker.steps.base import cadence_field
 
-KIND = "manifest_filter@1"
+KIND = "manifest_filter@2"
 
 
 class ManifestFilterParams(BaseModel):
@@ -56,6 +59,7 @@ class ManifestFilterParams(BaseModel):
         source="docs/spec/04-blocks.md Block 1 (mismatched-language segments)",
         range={"values": [True, False]},
     )
+    lid_equivalents: list[list[str]] = cadence_field(default_ref="pseudolabel.lid_equivalents")
     min_speech_ratio: float = cadence_field(default_ref="data.filter_min_speech_ratio")
     max_crosstalk: float = cadence_field(default_ref="data.filter_max_crosstalk")
 
@@ -88,7 +92,7 @@ def reason(p: ManifestFilterParams, x: Mapping[str, Any]) -> str | None:
         return "language"
     lid = x.get("lid")
     lid_lang = str(lid.get("language") or "") if isinstance(lid, Mapping) else ""
-    if p.drop_lid_mismatch and lid_lang and lang and primary(lid_lang) != primary(lang):
+    if p.drop_lid_mismatch and lid_lang and lang and not same_language(lid_lang, lang, p.lid_equivalents):
         return "lid_mismatch"
     vad = x.get("vad")
     if isinstance(vad, Mapping) and float(vad.get("ratio", 1.0)) < p.min_speech_ratio:
@@ -99,7 +103,7 @@ def reason(p: ManifestFilterParams, x: Mapping[str, Any]) -> str | None:
 
 
 class ManifestFilterStep:
-    version: ClassVar[str] = "1"
+    version: ClassVar[str] = "2"
     consumes: ClassVar[Mapping[str, str]] = {"segments": "segments"}
     produces: ClassVar[Mapping[str, str]] = {"segments": "segments"}
     resources: ClassVar[StepResources] = {"gpu": False, "gpus": 0, "jobKind": "data"}

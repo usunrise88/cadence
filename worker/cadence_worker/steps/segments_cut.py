@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import json
 import tempfile
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any, ClassVar, Literal
 
@@ -26,6 +26,7 @@ from pydantic import BaseModel
 from cadence_worker import ingest_mounts as mounts
 from cadence_worker import segments as seg
 from cadence_worker.protocol_gen import StepResources
+from cadence_worker.segments import needs_label
 from cadence_worker.steps.base import StepInputError, cadence_field
 
 KIND = "segments_cut@1"
@@ -41,12 +42,6 @@ class SegmentsCutParams(BaseModel):
         source="docs/review/2026-10-03-phase-4-plan.md decision 6 (members label segments without text)",
         range={"values": ["unlabelled", "all"]},
     )
-
-
-def needs_label(row: Mapping[str, Any]) -> bool:
-    """The rule of ``pseudolabel_ensemble``: no text of its own, or a pseudo-label from an earlier pass."""
-    text = row.get("text")
-    return not (isinstance(text, str) and text.strip()) or str(row.get("origin") or "").startswith(seg.ORIGIN_PSEUDO)
 
 
 class SegmentsCutStep:
@@ -65,9 +60,8 @@ class SegmentsCutStep:
         ctx: Any = None,
     ) -> None:
         p = SegmentsCutParams.model_validate(params.model_dump())
-        header = seg.read_header(inputs["segments"])
-        rows = seg.read_segments(inputs["segments"])
-        xs = [dict(r) for r in rows if p.which == "all" or needs_label(r)]
+        header, rows = seg.read_segments(inputs["segments"])
+        xs = unique(r for r in rows if p.which == "all" or needs_label(r))
         if not xs:
             raise StepInputError(
                 "no segment needs a label: every segment has its own text (run data-ingest instead of pseudo-label)"
@@ -95,6 +89,18 @@ class SegmentsCutStep:
         report = getattr(ctx, "progress", None)
         if callable(report):
             report(1.0, f"{len(lines)} of {len(rows)} segments cut ({doc['hours']:.3f} h)")
+
+
+def unique(rows: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """The rows with a hash not seen before, in order: segments with the same audio are cut (and labelled) once; the
+    ensemble gives every one of them the verdict on that audio."""
+    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
+    for r in rows:
+        if r["hash"] not in seen:
+            seen.add(r["hash"])
+            out.append(dict(r))
+    return out
 
 
 def cut(xs: Sequence[dict[str, Any]], out: Path, language: str, ctx: Any = None) -> list[dict[str, Any]]:

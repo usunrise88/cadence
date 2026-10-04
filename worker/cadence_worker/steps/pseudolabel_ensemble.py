@@ -24,7 +24,9 @@ such as the bot channel's TTS script, passes unchanged):
    Confidence = (agreeing members / members) x (1 - the pick's mean WER to the other agreeing members).
 
 A kept segment gets origin ``pseudo-label``; a disputed one ``pseudo-label:disputed`` with the best candidate as its
-text and ``dispute: {reason, candidates, lid}``. The control plane puts disputed segments in the triage queue
+text and ``dispute: {reason, candidates, lid}``. Every row with language evidence gets ``lid: {language, confidence?,
+agrees?, source}`` (``manifest_filter`` drops a mismatch). A segment whose audio repeats (the same hash twice) gets the
+verdict on that audio on every row. The control plane puts disputed segments in the triage queue
 (``triage.list``); ``manifest_filter`` drops them by default, so they never reach training. Help:
 docs/help/steps/pseudolabel-ensemble.md.
 """
@@ -39,12 +41,13 @@ from typing import Any, ClassVar
 
 from pydantic import BaseModel
 
+from cadence_worker import segments as seg
 from cadence_worker.cas import hash_file
 from cadence_worker.members import read_jsonl_by_audio, same_language, write_jsonl
 from cadence_worker.normalize import Normalizer, NormalizerError
 from cadence_worker.protocol_gen import StepResources
 from cadence_worker.scoring import edit_distance
-from cadence_worker.segments import ORIGIN_DISPUTED, ORIGIN_PSEUDO, read_header, read_segments, write_segments
+from cadence_worker.segments import ORIGIN_DISPUTED, ORIGIN_PSEUDO, needs_label, read_segments
 from cadence_worker.steps.base import StepInputError, cadence_field
 from cadence_worker.steps.context import StepContext
 
@@ -153,19 +156,32 @@ def decide(cands: list[Candidate], expected: str, lid_row: Mapping[str, Any] | N
     )
 
 
-def needs_label(row: Mapping[str, Any]) -> bool:
-    """A segment the ensemble labels: no text of its own, or a pseudo-label from an earlier pass."""
-    text = row.get("text")
-    origin = str(row.get("origin") or "")
-    return not (isinstance(text, str) and text.strip()) or origin.startswith(ORIGIN_PSEUDO)
-
-
 def candidate_json(c: Candidate) -> dict[str, Any]:
     out: dict[str, Any] = {"member": c.member, "text": c.text, "meanWer": round(c.mean_wer, 4)}
     if c.confidence is not None:
         out["confidence"] = c.confidence
     if c.language:
         out["language"] = c.language
+    return out
+
+
+def row_lid(lid: Mapping[str, Any]) -> dict[str, Any]:
+    """The ``lid`` a segments row carries: the verdict's language, confidence, agreement and evidence."""
+    return {k: lid[k] for k in ("language", "confidence", "agrees", "source") if k in lid and lid[k] is not None}
+
+
+def labelled(row: Mapping[str, Any], v: Verdict) -> dict[str, Any]:
+    """The segments row with the verdict v: text, origin, confidence, lid (when there is evidence), dispute."""
+    out = {**row, "text": v.text, "origin": v.origin, "confidence": v.confidence}
+    out.pop("dispute", None)
+    out.pop("lid", None)
+    if v.lid.get("language"):
+        out["lid"] = row_lid(v.lid)
+    if v.origin == ORIGIN_DISPUTED:
+        dispute: dict[str, Any] = {"reason": v.reason, "candidates": [candidate_json(c) for c in v.candidates]}
+        if v.lid:
+            dispute["lid"] = {k: v.lid[k] for k in ("language", "confidence", "agrees") if k in v.lid}
+        out["dispute"] = dispute
     return out
 
 
@@ -189,8 +205,7 @@ class PseudolabelEnsembleStep:
             norm = Normalizer.from_file(inputs["normalizer"])
         except NormalizerError as e:
             raise StepInputError(str(e)) from e
-        rows = read_segments(inputs["segments"])
-        header = read_header(inputs["segments"])
+        header, rows = read_segments(inputs["segments"])
         names = sorted((k for k in inputs if MEMBER_INPUT.match(k)), key=lambda k: (len(k), k))
         if len(names) < 2:
             raise StepInputError(f"wire at least two members' hypotheses (hypotheses.0, hypotheses.1, …); got {names}")
@@ -203,48 +218,57 @@ class PseudolabelEnsembleStep:
         counts = {"labelled": 0, "disputed": 0, "passed": 0}
         reasons: dict[str, int] = {}
         labels: set[str] = set()
-        for i, seg in enumerate(rows):
-            if not needs_label(seg):
-                out_rows.append(seg)
+        verdicts: dict[str, Verdict] = {}  # by audio hash: a repeated segment gets the same verdict, one hypotheses row
+        for i, row_in in enumerate(rows):
+            if not needs_label(row_in):
+                passed = dict(row_in)
+                lid_row = lid.get(row_in["hash"])
+                if lid_row is not None and float(lid_row.get("confidence") or 0.0) >= p.lid_min_confidence:
+                    expected = str(row_in.get("language") or default_language)
+                    passed["lid"] = row_lid(lid_verdict(expected, lid_row, [], p))
+                out_rows.append(passed)
                 counts["passed"] += 1
+                continue
+            h = row_in["hash"]
+            if h in verdicts:
+                v = verdicts[h]
+                out_rows.append(labelled(row_in, v))
+                counts["disputed" if v.origin == ORIGIN_DISPUTED else "labelled"] += 1
+                if v.origin == ORIGIN_DISPUTED:
+                    reasons[v.reason] = reasons.get(v.reason, 0) + 1
                 continue
             cands: list[Candidate] = []
             for k, m in zip(names, members, strict=True):
-                h = m.get(seg["hash"])
-                if h is None or not isinstance(h.get("text"), str):
+                hy = m.get(h)
+                if hy is None or not isinstance(hy.get("text"), str):
                     continue
-                label = str(h.get("member") or k)
+                label = str(hy.get("member") or k)
                 labels.add(label)
                 cands.append(
                     Candidate(
                         member=label,
-                        text=h["text"],
-                        words=norm.words(h["text"]),
-                        vote=bool(h.get("vote")),
-                        confidence=float(h["confidence"]) if isinstance(h.get("confidence"), int | float) else None,
-                        language=str(h.get("detectedLanguage") or ""),
+                        text=hy["text"],
+                        words=norm.words(hy["text"]),
+                        vote=bool(hy.get("vote")),
+                        confidence=float(hy["confidence"]) if isinstance(hy.get("confidence"), int | float) else None,
+                        language=str(hy.get("detectedLanguage") or ""),
                         language_confidence=(
-                            float(h["languageConfidence"])
-                            if isinstance(h.get("languageConfidence"), int | float)
+                            float(hy["languageConfidence"])
+                            if isinstance(hy.get("languageConfidence"), int | float)
                             else None
                         ),
                     )
                 )
-            v = decide(cands, str(seg.get("language") or default_language), lid.get(seg["hash"]), p)
-            row = {**seg, "text": v.text, "origin": v.origin, "confidence": v.confidence}
-            row.pop("dispute", None)
+            v = decide(cands, str(row_in.get("language") or default_language), lid.get(h), p)
+            verdicts[h] = v
             if v.origin == ORIGIN_DISPUTED:
                 counts["disputed"] += 1
                 reasons[v.reason] = reasons.get(v.reason, 0) + 1
-                dispute: dict[str, Any] = {"reason": v.reason, "candidates": [candidate_json(c) for c in v.candidates]}
-                if v.lid:
-                    dispute["lid"] = {k: v.lid[k] for k in ("language", "confidence", "agrees") if k in v.lid}
-                row["dispute"] = dispute
             else:
                 counts["labelled"] += 1
-            out_rows.append(row)
+            out_rows.append(labelled(row_in, v))
             hyp: dict[str, Any] = {
-                "audio": seg["hash"],
+                "audio": h,
                 "text": v.text,
                 "origin": v.origin,
                 "confidence": v.confidence,
@@ -259,13 +283,13 @@ class PseudolabelEnsembleStep:
                 ctx.progress(i / max(len(rows), 1), f"{i}/{len(rows)} segments")
 
         out_header = {
-            **{k: v for k, v in header.items() if k != "format"},
+            **seg.with_step(header, KIND),
             "producer": KIND,
             "members": sorted(labels),
             "normalizer": hash_file(inputs["normalizer"]),
             "maxPairwiseWer": p.max_pairwise_wer,
         }
-        write_segments(outputs["segments"], out_rows, out_header)
+        seg.write(outputs["segments"], out_header, out_rows, files_from=inputs["segments"])
         write_jsonl(outputs["hypotheses"], hyp_rows)
         considered = counts["labelled"] + counts["disputed"]
         meta = {

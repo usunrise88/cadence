@@ -931,6 +931,37 @@
       "source": "Cadence recommendation"
      }
     },
+    "lid_equivalents": {
+     "default": [
+      [
+       "sr",
+       "hr",
+       "bs"
+      ]
+     ],
+     "description": "Groups of languages a classifier cannot tell apart reliably, counted as one when language identification is compared with the source's language",
+     "items": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array"
+     },
+     "title": "Lid Equivalents",
+     "type": "array",
+     "x-cadence": {
+      "default": [
+       [
+        "sr",
+        "hr",
+        "bs"
+       ]
+      ],
+      "defaultRef": "pseudolabel.lid_equivalents",
+      "description": "Groups of languages a classifier cannot tell apart reliably, counted as one when language identification is compared with the source's language",
+      "range": "any",
+      "source": "Cadence recommendation (Serbian, Croatian and Bosnian share one standard language base; VoxLingua107 and Whisper both confuse them, Valk and Alumäe 2021)"
+     }
+    },
     "max_chars_per_second": {
      "default": 30,
      "description": "manifest_filter drops transcribed segments with more characters per second (text of a longer clip, or audio cut short)",
@@ -1079,7 +1110,7 @@
    "gpus": 0,
    "jobKind": "data"
   },
-  "version": "1"
+  "version": "2"
  },
  {
   "consumes": {
@@ -2384,6 +2415,29 @@
       "source": "docs/spec/04-blocks.md Block 1 (one track per party)"
      }
     },
+    "exclude": {
+     "default": [
+      "test/*",
+      "*/test/*"
+     ],
+     "description": "Globs of files left out, matched against the path under path (fnmatch: * crosses /); the default leaves out a corpus's test split, where golden sets come from — [] reads everything",
+     "items": {
+      "type": "string"
+     },
+     "title": "Exclude",
+     "type": "array",
+     "x-cadence": {
+      "default": [
+       "test/*",
+       "*/test/*"
+      ],
+      "description": "Globs of files left out, matched against the path under path (fnmatch: * crosses /); the default leaves out a corpus's test split, where golden sets come from — [] reads everything",
+      "range": {
+       "maxLength": 50
+      },
+      "source": "docs/spec/04-blocks.md Block 3 (golden-set audio never reaches training)"
+     }
+    },
     "language": {
      "default": "",
      "description": "Language of every segment (BCP 47, e.g. sr-RS) unless a file's sidecar names one",
@@ -2463,12 +2517,12 @@
     },
     "path": {
      "default": "",
-     "description": "Mount URI of the directory (or one file) to ingest, e.g. mount://corpora/fleurs-sr/2024-01-01",
+     "description": "Mount URI of the directory (or one file) to ingest, e.g. mount://corpora/fleurs-sr/70bb2e84b976",
      "title": "Path",
      "type": "string",
      "x-cadence": {
       "default": "",
-      "description": "Mount URI of the directory (or one file) to ingest, e.g. mount://corpora/fleurs-sr/2024-01-01",
+      "description": "Mount URI of the directory (or one file) to ingest, e.g. mount://corpora/fleurs-sr/70bb2e84b976",
       "range": {
        "maxLength": 1000,
        "minLength": 9
@@ -2493,7 +2547,7 @@
     },
     "segmentation": {
      "default": "vad",
-     "description": "vad cuts each track at its pauses; file keeps each track whole (pre-segmented corpora)",
+     "description": "vad cuts each track at its pauses; file keeps each track whole — for pre-segmented corpora (one utterance per file, e.g. FLEURS), whose segments then hash as an import of the same files",
      "enum": [
       "vad",
       "file"
@@ -2502,7 +2556,7 @@
      "type": "string",
      "x-cadence": {
       "default": "vad",
-      "description": "vad cuts each track at its pauses; file keeps each track whole (pre-segmented corpora)",
+      "description": "vad cuts each track at its pauses; file keeps each track whole — for pre-segmented corpora (one utterance per file, e.g. FLEURS), whose segments then hash as an import of the same files",
       "range": {
        "values": [
         "vad",
@@ -2636,7 +2690,7 @@
    "gpus": 0,
    "jobKind": "data"
   },
-  "version": "1"
+  "version": "2"
  },
  {
   "consumes": {

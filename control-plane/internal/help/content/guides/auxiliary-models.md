@@ -31,7 +31,7 @@ role reads the rest. No control-plane code names a model or a service.
 | `auxiliary/whisper-he-ivrit` | pseudolabel | Apache-2.0; data CC-BY-4.0 | Attribution; never for voice cloning; Hebrew only |
 | `auxiliary/oasis` | pseudolabel | omniASR Apache-2.0, Qwen3 Apache-2.0 | A running service; start it before the pipeline |
 | `auxiliary/lid-voxlingua107` | lid | Apache-2.0; VoxLingua107 CC-BY-4.0 | Attribution; needs speechbrain + torchaudio (not in nemo-speech) |
-| `auxiliary/omniasr-ctc-1b` | align | Apache-2.0 | heb_Hebr, srp_Cyrl, hrv_Latn confirmed in its language list (2026-10-04); runs in the omni runtime (`align_reference`) |
+| `auxiliary/omniasr-ctc-1b` | align | Apache-2.0 | heb_Hebr, srp_Cyrl, hrv_Latn and bos_Latn confirmed in its language list (2026-10-04; srp_Latn is not in it); runs in the omni runtime (`align_reference`) |
 
 Excluded and never registered: `facebook/mms-lid-*`, `facebook/mms-1b-all`, torchaudio `MMS_FA` (CC-BY-NC-4.0) and
 community Hebrew wav2vec2 fine-tunes (licence or data unverified).
@@ -46,6 +46,8 @@ the newest version of that collection the project adopted, checks the role and t
 its payload in the step spec (`auxiliaries`); the step reads it with `ctx.auxiliary(param)`. A new version of the
 collection runs the step again (its input hash covers the version). A version the project has not adopted is a plan
 problem (`pipeline-invalid`). A service's endpoint must answer before anything is queued (`auxiliary-unavailable`).
+An optional step whose kind no runtime publishes, or whose only publishing worker has not been seen for two minutes,
+is skipped at start with the dry-run warning `step-kind-unavailable`, instead of waiting in the queue.
 
 **The services pack.** Members that are services run in the CPU worker `worker-services` (runtime `services`,
 `docker compose --profile services up -d worker-services`): today `oasis_transcribe`. The others load weights per job

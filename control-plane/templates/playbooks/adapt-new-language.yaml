@@ -12,7 +12,7 @@ inputs:
   path:
     type: string
     required: true
-    description: The corpus on a mount, mount://<mount>/<source>/<revision> (the layout the corpus fetch scripts write)
+    description: The corpus on a mount, mount://<mount>/<source>/<revision> (the layout the corpus fetch scripts write); its test/ split is left out of the ingest, never point at it
   source:
     type: string
     required: true
@@ -152,7 +152,7 @@ prompt: |
   2. sources.new for {{ .Inputs.source }} with the licence and language above (sources.get when it is already registered).
   3. sources.get it: when trainingCleared is false, ask for sources.edit trainingCleared true — an approval the admin decides — and wait.
   4. Only for pseudo-label: projects.adopt the auxiliaries the pipeline's members name (auxiliaries.list: the whisper member, the LID classifier, OASIS) — approvals the admin decides — and wait. auxiliaries.get the OASIS version: when reachable is false, ask the person to start OASIS on the host (scripts/serve.sh ensemble no-300m) or to say "go on without it".
-  5. pipelines.run {{ .Inputs.pipeline }} with params for its steps (index: source {{ .Inputs.source }}, path {{ .Inputs.path }}, language {{ .Inputs.language }}; draft: name {{ .Inputs.source }}; the language's normalizer style from langpacks.get) — dry run first, report its plan, departures and warnings, then the same call for real. pseudo-label also takes inputs model (the base model's artifact, baseModels.get) and normalizer (the scoring normalizer, normalizers.get).
+  5. pipelines.run {{ .Inputs.pipeline }} with params for its steps (index: source {{ .Inputs.source }}, path {{ .Inputs.path }}, language {{ .Inputs.language }}, and segmentation: file when the corpus is pre-segmented — one utterance per file, as FLEURS; draft: name {{ .Inputs.source }}; the language's normalizer style from langpacks.get). The index step leaves the corpus's test/ split out (golden sets come from it); never point path at it — dry run first, report its plan, departures and warnings, then the same call for real. pseudo-label also takes inputs model (the base model's artifact, baseModels.get) and normalizer (the scoring normalizer, normalizers.get).
   6. pipelineRuns.wait on the run until it is done; on failure read its failed step (pipelineRuns.get, jobLogs.list) and stop.
   7. datasets.list the draft the run registered (frozen false), then datasets.preview it — report hours per split, the disputed pseudo-labels (triage.list) and anything that looks wrong in the texts.
   8. datasets.freeze the draft (a golden-set-leakage answer lists the overlaps: stop and report), then jobs.wait on its job.

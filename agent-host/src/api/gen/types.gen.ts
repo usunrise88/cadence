@@ -8352,9 +8352,9 @@ export type StepKindDeprecation = {
  */
 export type PipelineWarning = {
     /**
-     * step-kind-deprecated: a step pins a kind its pack deprecates; auxiliary-unavailable: an optional step's service does not answer, so the run goes on without that step (phase 4 · stream B)
+     * step-kind-deprecated: a step pins a kind its pack deprecates; auxiliary-unavailable: an optional step's service does not answer, so the run goes on without that step (phase 4 · stream B); step-kind-unavailable: an optional step's kind is not published or no worker that publishes it is alive, so the step is skipped at start
      */
-    code: 'step-kind-deprecated' | 'auxiliary-unavailable';
+    code: 'step-kind-deprecated' | 'auxiliary-unavailable' | 'step-kind-unavailable';
     /**
      * The step id
      */

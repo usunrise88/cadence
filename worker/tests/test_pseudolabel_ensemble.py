@@ -4,6 +4,7 @@ agreement after the scoring normalizer, the pick, LID, and the disputes the cont
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -72,7 +73,7 @@ def _run(tmp: Path, inputs: dict[str, Path], **params: Any) -> tuple[dict[str, d
     ctx = StepContext(lambda e: None, work_dir=tmp)
     out = {"segments": tmp / "out-segments", "hypotheses": tmp / "out-hyp.jsonl"}
     PseudolabelEnsembleStep().run(EnsembleParams(**params), inputs, out, ctx)
-    rows = {r["hash"]: r for r in read_segments(out["segments"])}
+    rows = {r["hash"]: r for r in read_segments(out["segments"])[1]}
     return rows, ctx
 
 
@@ -85,7 +86,7 @@ def test_pairwise_wer_is_symmetric_over_the_longer_text() -> None:
 
 
 def test_the_fixture_reads_as_segments() -> None:
-    rows = read_segments(FIXTURE)
+    _, rows = read_segments(FIXTURE)
     assert [r["role"] for r in rows] == ["caller", "bot", "caller", "caller", "caller"]
     assert rows[0]["uri"].startswith("mount://corpora/")
 
@@ -131,6 +132,45 @@ def test_lid_input_decides_and_equivalent_languages_agree(tmp_path: Path) -> Non
     assert rows[H[1]]["origin"] == ORIGIN_PSEUDO
     assert rows[H[4]]["origin"] == ORIGIN_PSEUDO
     assert rows[H[4]]["text"] == "hvala doviđenja"
+    # Every labelled row carries its LID verdict for manifest_filter, kept or disputed.
+    assert rows[H[1]]["lid"] == {"language": "hr", "confidence": 0.8, "agrees": True, "source": "lid"}
+    assert rows[H[3]]["lid"]["language"] == "sr"
+    assert "lid" not in rows[H[2]], "a passed-through row without LID evidence gets none"
+
+
+def test_lid_reaches_manifest_filter(tmp_path: Path) -> None:
+    from cadence_worker.steps.manifest_filter import ManifestFilterParams, reason
+
+    rows, _ = _run(tmp_path, _members(tmp_path), require_lid=False)
+    # Whisper heard Russian in segment 4: disputed, and its row says so where manifest_filter reads it.
+    assert rows[H[4]]["lid"] == {"language": "ru", "confidence": 0.7, "agrees": False, "source": "members"}
+    p = ManifestFilterParams(drop_origins=[])  # past the origin rule, the LID rule must still drop it
+    assert reason(p, {**rows[H[4]], "duration": 2.4}) == "lid_mismatch"
+    assert rows[H[1]]["lid"]["language"] == "sr"
+    assert reason(p, {**rows[H[1]], "duration": 2.7}) is None
+
+
+def test_header_steps_files_and_repeated_segments(tmp_path: Path) -> None:
+    segs = tmp_path / "segments"
+    shutil.copytree(FIXTURE, segs)
+    lines = (segs / "segments.jsonl").read_text(encoding="utf-8").splitlines()
+    (segs / "segments.jsonl").write_text("\n".join([*lines, lines[0]]) + "\n", encoding="utf-8")
+    (segs / "files.jsonl").write_text('{"uri":"mount://corpora/calls-synth-sr/r1/call-0001.wav"}\n', encoding="utf-8")
+    inputs = {**_members(tmp_path), "segments": segs}
+    ctx = StepContext(lambda e: None, work_dir=tmp_path)
+    out = {"segments": tmp_path / "out-segments", "hypotheses": tmp_path / "out-hyp.jsonl"}
+    PseudolabelEnsembleStep().run(EnsembleParams(require_lid=False), inputs, out, ctx)
+    header, rows = read_segments(out["segments"])
+    assert header["steps"][-1] == "pseudolabel_ensemble@1"
+    assert header["counts"] == {"segments": 6}
+    assert (out["segments"] / "files.jsonl").is_file(), "files.jsonl goes on (annotation samples by file)"
+    twins = [r for r in rows if r["hash"] == H[1]]
+    assert len(twins) == 2
+    assert twins[0]["text"] == twins[1]["text"]
+    assert twins[0]["origin"] == twins[1]["origin"] == ORIGIN_PSEUDO
+    assert ctx.meta["segments"]["pseudoLabelled"] == 2
+    hyp = [json.loads(x)["audio"] for x in out["hypotheses"].read_text(encoding="utf-8").splitlines()]
+    assert len(hyp) == len(set(hyp)), "one hypotheses row per audio"
 
 
 def test_require_lid_disputes_segments_without_evidence(tmp_path: Path) -> None:

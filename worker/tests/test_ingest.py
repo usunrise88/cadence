@@ -124,8 +124,9 @@ def step(kind: Any, params: Any, src: Path, dst: Path, ctx: Any = None, out: str
 
 def test_kinds_publish_complete_metadata() -> None:
     reg = registry()
+    versions = {"sdp_ingest": "2", "manifest_filter": "2"}
     for name, cls in KINDS.items():
-        assert reg[name]["version"] == "1"
+        assert reg[name]["version"] == versions.get(name, "1")
         assert cls.neutral is True
         assert missing_metadata(cast(Any, cls)) == [], name
     props = reg["sdp_ingest"]["params"]["properties"]
@@ -195,7 +196,7 @@ def test_ingest_writes_segments(tmp_path: Path) -> None:
     assert header["format"] == "cadence.segments/1"
     assert header["source"] == {"name": "toy"}
     assert header["sourceInfo"] == {"licence": "CC-BY-4.0", "url": "https://example.org", "revision": "r1"}
-    assert header["steps"] == ["sdp_ingest@1"]
+    assert header["steps"] == ["sdp_ingest@2"]
     assert header["files"] == 4
     assert header["counts"]["segments"] == len(lines)
     by_file: dict[str, list[dict[str, Any]]] = {}
@@ -276,7 +277,7 @@ def test_normalise_filter_split(tmp_path: Path) -> None:
     assert header["filtered"]["role"] == 1  # the bot's turn
     assert header["filtered"]["empty_text"] >= 3  # untranscribed VAD segments
     assert all(x.get("text") for x in kept)
-    assert header["steps"] == ["sdp_ingest@1", "text_normalise@1", "manifest_filter@1"]
+    assert header["steps"] == ["sdp_ingest@2", "text_normalise@1", "manifest_filter@2"]
 
     split = step(
         SpeakerDisjointSplitStep,
@@ -308,6 +309,9 @@ def test_filter_reasons() -> None:
     ]
     for x, why in cases:
         assert reason(p, x) == why
+    # Serbian heard as Croatian is one language (pseudolabel.lid_equivalents), Hebrew is not.
+    assert reason(p, {**ok, "lid": {"language": "hr"}}) is None
+    assert reason(ManifestFilterParams(lid_equivalents=[]), {**ok, "lid": {"language": "hr"}}) == "lid_mismatch"
     assert reason(ManifestFilterParams(languages=["he"]), ok) == "language"
     assert reason(ManifestFilterParams(languages=["sr"]), ok) is None
 

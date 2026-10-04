@@ -92,15 +92,15 @@
 - name: auxiliary/omniasr-ctc-1b
   description: omniASR CTC 1B — CTC emissions for aligning reference texts (align_reference with torchaudio's forced_align)
   licence: Apache-2.0
-  tags: [align, "locale:he", "locale:sr", "locale:hr"]
+  tags: [align, "locale:he", "locale:sr", "locale:hr", "locale:bs"]
   payload:
     roles: [align]
     licence: Apache-2.0 (weights); training corpus CC-BY-4.0
     outputsCommercialUse: true
-    languages: [he, sr, hr]
+    languages: [he, sr, hr, bs]
     conditions:
-      - Confirm heb_Hebr, srp_Cyrl and hrv_Latn in the repository's language list before aligning
-      - Needs fairseq2; stream L decides whether it runs in the nemo-speech runtime or its own image
+      - Its language list has heb_Hebr, srp_Cyrl, hrv_Latn and bos_Latn (checked 2026-10-04); srp_Latn is not in it, so Serbian references in Latin script align in a script the model was not trained on for Serbian
+      - Runs in the omni runtime (worker/packs/omni, its own image with fairseq2), never in nemo-speech
     hfRepo: facebook/omniASR-CTC-1B
     revision: 8c22e3ffdaa4aab6431b128b84b991a7d9c2515c
     engine: fairseq2-ctc

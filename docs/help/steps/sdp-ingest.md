@@ -6,7 +6,7 @@ contexts: [step:sdp_ingest, artifact:segments]
 
 ## What this is
 
-`sdp_ingest@1` is a runtime-neutral core step kind (every runtime image, CPU, job kind `data`). It walks a path on a
+`sdp_ingest@2` is a runtime-neutral core step kind (every runtime image, CPU, job kind `data`). It walks a path on a
 mount, decodes every audio file (WAV in pure Python; μ-law WAV, FLAC, MP3, OGG/Opus, M4A through ffmpeg), splits a
 stereo call into one track per party, resamples each track to 16 kHz, finds speech per channel with an energy voice
 activity detector and cuts it into segments. It writes a **`segments`** artifact: where each segment lives on the
@@ -17,6 +17,21 @@ A segment's canonical hash is the BLAKE3 of its canonical WAV: 16 kHz, mono, 16-
 from the whole channel resampled once (SciPy's polyphase filter), samples `[round(start·16000), round(end·16000))`. It
 equals the content hash of the WAV `dataset_freeze` cuts later, so an utterance has its identity, its leakage check and
 its fingerprint before anything is copied.
+
+**The source file's fingerprint.** Every segment also carries `file-b3`: the canonical hash of the whole track it was
+cut from (the file's channel, or the file mixed down) — exactly what `dataset_import` hashes when it imports that file
+as one utterance (its `audio-b3`). `dataset_freeze` writes it into the draft's fingerprints, and the leakage check
+matches `file-b3` against `audio-b3`: a golden set imported from the Hub (FLEURS test) is found in a draft that re-cut
+the same files from a mount by voice activity, though no segment's own hash equals an imported one.
+
+**The test split stays out.** `exclude` leaves out every file under a `test/` directory below `path` by default (globs
+on the path relative to `path`, fnmatch: `*` crosses `/`): a corpus's test split is where golden sets come from. Pass
+`exclude: []` to read everything; pointing `path` at a `test/` directory itself excludes nothing below it — the freeze's
+leakage check still refuses golden-set audio.
+
+**Pre-segmented corpora.** A corpus of one utterance per file (FLEURS, Common Voice) takes `segmentation: file`: each
+file stays one segment, whose hash is the hash an import of the same file gets. Version 1 cut such files at their
+pauses.
 
 **No licence, no ingest.** `source` names a registered source (`sources.new`); the pipeline engine refuses the run when
 the source is missing, archived or has no usable licence (the parameter is marked `x-cadence.registry: source`).
@@ -57,6 +72,7 @@ A segment:
 | --- | --- |
 | `uri` | `mount://<mount>/<path>#t=<start>,<end>&ch=<n>` (no `ch` for a mixed-down track) |
 | `file` | The source file's mount URI without fragment |
+| `file-b3` | `b3:<hex>` of the canonical WAV of the whole track the segment was cut from (version 2) |
 | `hash`, `bytes` | `b3:<hex>` of the canonical WAV, and its size in bytes |
 | `start`, `end`, `duration` | Seconds in the source file, on the 16 kHz sample grid |
 | `channel` | The channel index; `-1` = every channel mixed down |
@@ -88,6 +104,7 @@ Files beside an audio file `<stem>.<ext>` (written by the corpus fetch scripts, 
 | `source` | required | spec 04 Block 1 (no licence, no ingest) | a registered source |
 | `path` | required | phase-4 plan (mount layout `<source>/<revision>/`) | `mount://<mount>/<path>` (a directory or one file) |
 | `pattern` | `**/*` | Cadence recommendation | a glob; audio suffixes only |
+| `exclude` | `[test/*, */test/*]` | spec 04 Block 3 (golden-set audio never reaches training) | globs on the path under `path`; `[]` reads everything |
 | `language` | `""` | Cadence recommendation | BCP 47; the sidecar's wins |
 | `channels` | `auto` | spec 04 Block 1 (one track per party) | `auto`, `mono`, `split` |
 | `channel_roles` | `[]` | Cadence recommendation | `caller`, `bot`, `mono` per channel |
@@ -111,7 +128,10 @@ Files beside an audio file `<stem>.<ext>` (written by the corpus fetch scripts, 
 
 ## Playbooks
 
-- A pre-segmented corpus with one transcript per file: `segmentation: file`, a `.txt` beside every file.
+- A pre-segmented corpus (one utterance per file, FLEURS): `segmentation: file`; with a transcript per file, a `.txt`
+  beside every file.
+- "is not on the mount; … holds: …": `path` names a revision that is not there (a template's `set-me-revision`, or a
+  revision fetched under another name); set it to one the message lists.
 - Stereo calls: write `<stem>.cadence.json` with `roles` (and the bot's `script`), or set `channel_roles`.
 - A file changed on the mount after ingest no longer matches its hashes: `datasets.freeze` fails on it; ingest again.
 

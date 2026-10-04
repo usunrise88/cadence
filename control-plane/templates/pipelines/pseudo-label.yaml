@@ -22,10 +22,10 @@ description: Pseudo-label untranscribed audio on a mount (model ensemble + LID) 
 inputs: { model: base_model, normalizer: normalizer }
 steps:
   - id: index
-    kind: sdp_ingest@1
+    kind: sdp_ingest@2
     params:
       source: my-corpus                                # set me: a registered source
-      path: mount://corpora/my-corpus/2026-10-01       # set me: <mount>/<source>/<revision>
+      path: mount://corpora/my-corpus/set-me-revision  # set me: <mount>/<source>/<revision>
       language: sr-RS                                  # set me
   - id: audio
     kind: segments_cut@1
@@ -67,7 +67,7 @@ steps:
     params:
       transliterate: sr-Cyrl-Latn                      # set me: lang/<locale>/normalizer.yaml training
   - id: filter
-    kind: manifest_filter@1
+    kind: manifest_filter@2
     in: { segments: normalise.segments }
   - id: split
     kind: speaker_disjoint_split@1

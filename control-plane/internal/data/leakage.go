@@ -25,7 +25,9 @@ type Overlap struct {
 }
 
 // The overlap query: utterances of the versions in $1, matched to the memberships of the versions the condition
-// selects, by identity and by any shared fingerprint. Only the training side's train and validation splits count
+// selects, by identity and by any shared fingerprint. The two content-hash kinds match each other: a segment's
+// file-b3 (the canonical hash of the whole track sdp_ingest cut it from) finds the utterance an import made of that
+// file (its audio-b3), so a golden set's audio re-cut from a mount is found (FileFingerprint). Only the training side's train and validation splits count
 // ({asplit} or {msplit}): training reads those two (validation for checkpoint selection) and never a dataset's test
 // split, so a FLEURS import holding its test split beside train can still have that split frozen as a golden set. It starts from the $1 side and reaches the other side only
 // through index lookups (dataset_utterances by version, then by utterance; utterance_fingerprints by utterance, then
@@ -38,7 +40,8 @@ const overlapSQL = `WITH a AS (SELECT version_id, utterance_id FROM dataset_utte
 		UNION ALL
 		SELECT a.version_id, m.version_id, a.utterance_id, true
 		FROM a JOIN utterance_fingerprints fa ON fa.utterance_id = a.utterance_id
-		JOIN utterance_fingerprints fb ON fb.kind = fa.kind AND fb.value = fa.value AND fb.utterance_id <> fa.utterance_id
+		JOIN utterance_fingerprints fb ON fb.kind = ANY(CASE WHEN fa.kind IN ('audio-b3', 'file-b3')
+			THEN ARRAY['audio-b3', 'file-b3'] ELSE ARRAY[fa.kind] END) AND fb.value = fa.value AND fb.utterance_id <> fa.utterance_id
 		JOIN dataset_utterances m ON m.utterance_id = fb.utterance_id
 		WHERE m.version_id <> a.version_id AND {other}{msplit})
 	SELECT a_id, b_id, count(DISTINCT utterance_id)::int,

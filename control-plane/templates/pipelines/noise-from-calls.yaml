@@ -10,10 +10,10 @@ name: noise-from-calls
 description: Mine a noise bank from the silences of call recordings on a mount
 steps:
   - id: index
-    kind: sdp_ingest@1
+    kind: sdp_ingest@2
     params:
       source: calls-synth-sr                           # set me: a registered source
-      path: mount://corpora/calls-synth-sr/2026-10-03  # set me: <mount>/<source>/<revision>
+      path: mount://corpora/calls-synth-sr/set-me-revision  # set me: <mount>/<source>/<revision>
       language: sr-RS                                  # set me
   - id: mine
     kind: noise_mine@1
