@@ -22,6 +22,19 @@ Agent tools: `sources.``new`, `pipelines``.run`, `datasets.preview` (hours per l
 
 Gates: no licence, no ingest; freezing requires the leakage check to pass; only frozen versions can be exported or trained on.
 
+As built (phase 4, 2026-10-03/04; plan `docs/review/2026-10-03-phase-4-plan.md`, entities in 02 "Storage and mounts" and "Registry", step kinds in 03; departures in `ROADMAP.md` "Phase 4 notes"):
+
+1. Source and mount. `sources.new` (`POST /registry/sources`) registers the corpus eval-only; clearing it for training is `sources.edit` (registry approval for agents, `registry-changes`), and `sources.get` lists the clearing history and every ingest. The audio lives on a mount — `mounts.new` is a registry approval the admin decides (`mount-registration`, for people too); the stand's first is `corpora` (`local`, root `/mnt/corpora`, read-only), with `exports` (`/mnt/exports`, writable) beside it.
+2. Ingest. `pipelines/data-ingest.yaml` runs `sdp_ingest` (walk, decode, stereo split with roles, the bot's channel labelled from the TTS script with origin `model:tts-script`, 16 kHz, energy VAD per channel, segments with `mount://` URIs and canonical hashes; no audio copied) → `text_normalise` → `manifest_filter` → `speaker_disjoint_split` → `dataset_freeze` in mode draft, which registers a draft dataset version (`frozen: false`) and records each utterance's mount URI. The engine refuses a step whose `x-cadence.registry: source` parameter names a missing, archived or unlicensed source (`source-unlicensed`), and the draft hook checks again.
+3. Pseudo-label where there is no human text: `pipelines/pseudo-label.yaml` cuts the segments (`segments_cut`), runs the members (`nemotron_transcribe@3`, `whisper_transcribe@1`, the optional `oasis_transcribe@1` service), `lid_classify@1` (Whisper's language token; the VoxLingua107 path is not usable in the NeMo runtime), and `pseudolabel_ensemble@1` (kept when ≥ 2 members agree within `pseudolabel.max_pairwise_wer` 0.15 and LID agrees). Every member is an adopted `auxiliary` version (approval `auxiliary-adoption`).
+4. Triage. Disagreements get origin `pseudo-label:disputed`, never reach training (`manifest_filter` drops them) and are indexed as triage items (`triage.list`, event `triage.item_added` on `triage.new`); a person resolves each in the Triage panel with `triage.accept|correct|reject` (agents never do).
+5. Preview and freeze. `datasets.preview` answers utterances and hours per language and split after filters from the registry alone; `datasets.freeze` runs the leakage check against every golden set (`golden-set-leakage`; dry run: the check only), checks the project quota, then reruns the draft's `dataset_freeze` in mode cut — one 16 kHz WAV per utterance in the content store plus Lhotse `MonoCut` manifests in shards of 2 000, quality checks, the dataset card — and sets `frozen: true` (event `dataset_version.frozen`).
+6. Synthetic calls stand in for real calls: `calls-synth-sr` on `corpora` (40 stereo G.711 μ-law calls, Serbian caller, OmniVoice bot, kind `synthetic`) exercises the stereo split, bot self-labelling, per-channel VAD and the annotation workflow; the real-call golden set waits for real calls.
+7. Noise bank: `noise_mine@1` reads an ingest's `segments` and cuts clips where no track of the file has speech (a margin from any speech, digital silence and loud clips dropped) into a frozen `noise_bank` version tagged `mined`.
+8. Export and import: `datasets.export` (Shar, NeMo manifest, Cadence bundle to the `exports` mount or the content store; the Hugging Face Hub behind the `hub-export` approval) and `dataset_import@4` (Lhotse cuts and Shar, Cadence bundles, NeMo manifests; 03 "Interoperability").
+
+Agent tools as built: `sources.new|list|get` (`sources.edit` waits for approval), `mounts.list|get|scan|verify` (`mounts.new` waits for approval), `storage.get`, `pipelines.run`, `datasets.preview`, `datasets.freeze`, `datasets.materialize`, `datasets.evict`, `datasets.export` (Hub: approval), `exports.list|get`, `utterances.search`, `auxiliaries.list|get`, `triage.list` (05 "What the agent can do").
+
 ## Block 2 — Training
 
 A run is one optimisation stage from a pinned base or checkpoint, on a frozen mix, from a committed recipe, with a step budget — reproducible from those four references.
@@ -148,6 +161,12 @@ Agent tools (R1 names): `goldenSets.list`, `goldenSets.get`, `goldenSets.freeze`
 
 Gates: freezing a golden set and changing the baseline need a person; a new normalizer version forces a new baseline; runs cannot reference golden sets and no training input may overlap one by fingerprint (`golden-set-leakage`), so checkpoint selection can only use validation splits — the leakage the Kenyan Nemotron study reported is impossible by construction.
 
+Emission delay (phase 4, stream L; R51, R54): `align_reference@1` (runtime `omni`, the adopted `auxiliary/omniasr-ctc-1b`)
+gives a golden set word timings for its reference once, by hand (`pipelines/align-reference.yaml`); the newest
+`alignment` artifact of the golden set's dataset is attached to it (`golden_set.aligned`). Evals then feed it to
+`latency_score@3`, which reports emission delay PR50 and PR90 beside latency to final — or `n/a` with the reason
+(no alignment, a language the aligner does not cover) and never an invented number. Reported, not gated.
+
 ## Block 4 — Export and deployment
 
 A gated checkpoint becomes a model version with verified artifacts, then climbs shadow → canary → production, each step reversible and the last two signed by a person.
@@ -215,6 +234,45 @@ A telephone golden set is built from the project's own calls in batches with dou
 
 Windows: Annotation batch (document: progress, agreement, adjudication queue), Triage in Annotate mode, Golden set. Agent tools: `batches.new`, `batches.get`, `batches.freeze` (approval). Entities: Annotation batch, Guidelines (a help article version).
 
+As built (phase 4, stream A; `internal/annotation`, migration 0038; R27; help `guides/annotation`):
+
+- Entities: batches `anb_` (`annotation_batches`), items `bit_` (`annotation_items`), annotations `ann_` (one per
+  person and item). Guidelines are not a help article but Markdown in the project repository,
+  `annotation/guidelines/<name>.md` (`annotation.guidelines`, default `default`); a batch pins the repository's head
+  commit at creation and the golden-set card cites path and commit. Reviewers see the path and commit, not the text
+  (not served yet).
+- `batches.new` (`POST /projects/{p}/batches`, dry run first) samples from a frame — a dataset version's segments
+  (usually the draft `pipelines/data-ingest` ended in) or a `segments` artifact — over one role
+  (`annotation.target_role`, `caller`), stratified by campaign, month, duration (`annotation.duration_edges_s`) and
+  confidence (`annotation.confidence_edges`) with largest-remainder shares, at least one per stratum, reproducible
+  with `seed`; `annotation.batch_size` (200), `due_days` (14). Purpose `golden-set` (double annotation and
+  adjudication) or `training` (single annotation). Each item keeps its window (segment ± `annotation.context_s`, 2 s,
+  every channel), the other party's turns, a prefill (the best hypothesis the frame has) and the end-of-utterance gap
+  from per-channel voice activity (the caller's last speech end to the bot's next speech start).
+- Annotate (`annotations.new`, people only): done, skipped or flagged, with text, tags (noise, crosstalk, foreign,
+  unintelligible) and entity spans (character offsets, for `entity_score`). Annotators pull work in their own hashed
+  order; `annotation.double_share` (10 %) of the items plus every flagged item get a second annotator, blind — an
+  annotator cannot revise once another transcript is in. After `annotation.max_skips` (2) skips without a transcript
+  an item is excluded; agreed items tagged foreign or unintelligible are excluded too.
+- Agreement: two transcripts are compared after a neutral fold (case-folded, punctuation stripped; not the project's
+  scoring normalizer); a WER above `annotation.adjudicate_wer` (0: any word difference) makes the item `disputed`.
+  Item states `pending → agreed | disputed → adjudicated | excluded`; `batchItems.accept` (admin or an invited
+  adjudicator) sets the final transcript, tags and spans or excludes it. The batch's inter-annotator WER (first two
+  transcripts of double items) must be ≤ `annotation.max_iaa_wer` (0.05) for a golden-set batch to freeze
+  (`annotation-agreement-low`); every item must be resolved (`batch-incomplete`).
+- `batches.freeze` is an approval the admin decides for everyone (preset rule `annotation-batch-freeze`): the accepted
+  items become a draft dataset version (human transcripts, spans, the target channel cut from the mount) which is cut
+  into the content store; a golden-set batch's version (`dataset/<goldenSet>-annotated`) is then frozen as
+  `golden-set/<goldenSet>` through the phase-3 `goldenSets.freeze` path, its card carrying the guidelines commit and
+  the inter-annotator WER. The ingest draft must be eval-only for a golden set from calls. Freezing revokes the
+  batch's reviewers. Events `annotation_batch.created|item_annotated|item_adjudicated|reviewer_invited|freezing|
+  frozen|failed` on `entity.annotation_batch.{id}`.
+- Reviewers (06 "Authentication and access"): `invitations.new|list` (admin) mint a `cri_` link; `auth.accept`
+  redeems it for a session that reaches that batch's document, items and their audio windows only.
+- The same Triage panel resolves disputed pseudo-labels (`triage.accept|correct|reject`) into human transcripts.
+- Not built: peaks at ingest and freeze (computed on first view), the tile pyramid job, end-of-utterance in the
+  dataset manifest, serving the guidelines text, a Playwright journey (`ROADMAP.md` "Phase 4 notes").
+
 ## Experiments and sweeps
 
 An experiment groups the runs that answer one question; a sweep generates those runs from a parameter grid under a budget; the Experiment document compares them in one table and names the best by the validation metric.
@@ -237,12 +295,22 @@ Every step now has a window, a palette command, an API operation, an agent tool 
 
 | Step | Window | Command | API | Agent tool | Event |
 | --- | --- | --- | --- | --- | --- |
-| Register source | Source | New source | `POST /projects/{p}/sources` | `sources.``new` | `entity.source.{id}` |
-| Add or scan a mount | Storage | Add mount (approval); Rescan | `POST /mounts`; `POST /mounts/{id}:scan` | `mounts.list`, `mounts.scan` | `mount.{id}` |
-| Ingest, pseudo-label | Pipeline run, Recipe, Logs | Run pipeline | `POST /projects/{p}/pipelines/{name}:run` | `pipelines``.run` | `pipeline_run.{id}` |
-| Preview filters and split | Dataset version (draft) | Preview dataset | `POST /projects/{p}/datasets:preview` | `datasets.preview` | — |
-| Freeze | Dataset version | Freeze dataset version | `POST /projects/{p}/datasets/{id}:freeze` | `datasets.freeze` | `entity.dataset_version.{id}` |
-| Materialise, export | Dataset version, Storage | Materialise; Export to Shar | `…:materialize`, `…:export` | `datasets.materialize`, `datasets.export` | `job.{id}` |
+| Register source | Source, Library | New source; Edit source (clear for training) | `POST /registry/sources` (`sources.new`); `sources.list|get|edit|archive` under `/registry/sources` | `sources.new`, `sources.list`, `sources.get`, `sources.edit` (approval) | `entity.source.{id}` |
+| Add, scan, check a mount | Storage | Add mount (approval); Rescan; Check health | `POST /mounts` (`mounts.new`, 202 approval for everyone); `GET /mounts`, `GET /mounts/{id}`; `POST /mounts/{id}:scan`, `:verify` | `mounts.list`, `mounts.get`, `mounts.scan`, `mounts.verify` (`mounts.new` waits for the admin) | `mount.{id}` (`mount.created|scanned|health`), `job.{id}` |
+| Cache and quotas | Storage | — | `GET /storage` (`storage.get`) | `storage.get` | `entity.artifact.{hash}` (`artifact.evicted|restored`) |
+| Ingest, pseudo-label | Pipeline run, Recipe, Logs | Run pipeline | `POST /projects/{p}/pipelines/{name}:run` (`data-ingest`, `pseudo-label`) | `pipelines.run` | `pipeline_run.{id}` |
+| Auxiliary models | Library, Inspector | Adopt into project (approval) | `auxiliaries.list|get` under `/registry/auxiliaries`; `projects.adopt` | `auxiliaries.list`, `auxiliaries.get`, `projects.adopt` (approval) | `entity.project.{id}`, `approvals` |
+| Resolve a disputed pseudo-label | Triage, Audio | Accept / correct / reject | `GET /projects/{p}/triage` (`triage.list`); `POST /triage/{id}:accept`, `:correct`, `:reject` | `triage.list` (resolving is a person's) | `triage.new` (`triage.item_added`), `entity.triage_item.{id}` |
+| Preview filters and split | Dataset version (draft) | Preview dataset | `POST /registry/datasets:preview` (`datasets.preview`, body names the version) | `datasets.preview` | — |
+| Freeze | Dataset version | Freeze dataset version | `POST /registry/datasets:freeze` (`datasets.freeze`, body `{version}`; 202 with the cut job) | `datasets.freeze` | `entity.dataset_version.{id}` (`dataset_version.frozen`), `pipeline_run.{id}` |
+| Search utterances | Dataset version, Source, Palette | — | `GET /registry/utterances:search` (`utterances.search`) | `utterances.search` | — |
+| Materialise, evict | Dataset version, Storage | Materialise; Evict | `POST /registry/datasets:materialize`, `:evict` (body `{versionId}`) | `datasets.materialize`, `datasets.evict` | `job.{id}`, `entity.artifact.{hash}` |
+| Export | Dataset version | — (no export UI yet) | `POST /registry/datasets:export` (`datasets.export`; Hub: 202 approval); `GET /projects/{p}/exports`, `GET /exports/{id}` | `datasets.export`, `exports.list`, `exports.get` | `entity.export.{id}` (`export.started|done`), `job.{id}` |
+| Archive a registry version | Library, Dataset version | Archive version | `POST /registry/versions:archive` (`versions.archive`, admin) | — (agents never archive, `no-deletes`) | `entity.<kind>.{id}` |
+| Annotation batch | Annotation batch, Triage (Annotate) | New batch (dry run first); Freeze batch (approval) | `POST /projects/{p}/batches` (`batches.new`), `GET /projects/{p}/batches`, `GET /batches/{id}`, `POST /batches/{id}:freeze` | `batches.new`, `batches.list`, `batches.get`, `batches.freeze` (approval) | `entity.annotation_batch.{id}`, `approvals` |
+| Annotate, adjudicate | Triage (Annotate), Audio | Done / skip / flag; Adjudicate | `GET /batches/{id}/batch-items[/{item}]`; `POST …/batch-items/{item}/annotations` (`annotations.new`); `POST …/batch-items/{item}:accept` (`batchItems.accept`) | `batchItems.list`, `batchItems.get` (annotating is a person's) | `entity.annotation_batch.{id}` |
+| Invite a reviewer | Annotation batch | Invite reviewer | `POST /batches/{id}/invitations` (`invitations.new`, admin), `GET …/invitations`; `POST /auth:accept` (tag `auth`) | — (admin only) | `entity.annotation_batch.{id}` (`annotation_batch.reviewer_invited`) |
+| Audio tracks | Audio, Triage | — | `GET /registry/utterances/{id}/tracks` (`tracks.get`, tag `media`) | — (agents read no raw audio) | — |
 | Compose mix | Mix | Save mix as version | `POST /projects/{p}/mixes` | `mixes.``new`, `mixes.preview` | `entity.mix.{id}` |
 | Calibrate batch | Run, Queue & GPU | Calibrate run | `POST /projects/{p}/runs:calibrate` | `runs.calibrate` | `pipeline_run.{id}`, `job.{id}` |
 | Launch run | Run, Queue & GPU | New run from mix | `POST /projects/{p}/runs` with `dryRun` | `runs.new` | `run.{id}.status` |
@@ -265,7 +333,7 @@ Every step now has a window, a palette command, an API operation, an agent tool 
 | Export, parity, benchmark | Model, Queue & GPU | Export; Parity check; Benchmark | `POST /models/{id}:export`, `:parity`, `:benchmark` | `models.*` | `job.{id}` |
 | Shadow, canary, production, rollback | Model, Shadow, Approvals | Promote; Roll back | `POST /projects/{p}/deployments`; `…:rollback` | `deployments.``promo``te`, `deployments.rollback` | `deploy.{id}`, `shadow.{deployment}`, `approvals` |
 | Capture and signals | Shadow, Triage queue | — | `GET /projects/{p}/samples`, `/signals` | `samples.query`, `signals.list` | `triage.new` |
-| Triage | Triage queue, Diff, Audio | Accept / correct / reject | `PATCH /triage/{id}` | `triage.next`, `triage.``accept, triage.correct, triage.reject` | `entity.triage_item.{id}` |
+| Triage (flywheel, phase 5) | Triage queue, Diff, Audio | Accept / correct / reject | `POST /triage/{id}:accept`, `:correct`, `:reject` (built in phase 4 for pseudo-labels) | `triage.next`, `triage.``accept, triage.correct, triage.reject` | `entity.triage_item.{id}` |
 | Package corrections | Triage queue, Dataset version | Package correction batch | `POST /projects/{p}/corrections:package` | `corrections.package` | `entity.source.{id}` |
 | Schedule the loop | Agent sessions | New schedule (approval) | `POST /projects/{p}/schedules` | `schedules.``new` | `agent.sessions` |
 | Create project | Project wizard, Project, Agent settings | New project | `POST /projects`; `POST /projects/{p}:bootstrap`; `PATCH /projects/{p}/agent-profile` | `projects.get` (creation is a human action) | `entity.project.{id}`, `job.{id}` |
@@ -294,3 +362,8 @@ Gaps found and closed:
 15. Adopting a golden set after training could leak — adoption now re-runs the leakage check.
 16. Copied templates and skills would drift from Cadence's — projects.syncTemplates added.
 17. Approvals had no scope for registry-level actions — scope added; cache eviction had no cross-project fairness — quotas added; agents had nowhere to record learnings — projects.note added; a project could only pin one base model — several may be adopted.
+18. Phase 4 as built (2026-10-04): the data rows follow the contract — registry-level paths for sources and dataset
+    actions (`/registry/sources`, `/registry/datasets:<verb>` with the version in the body), `mounts.verify` for the
+    planned `mounts.health` (`health` is not a vocabulary verb), and new rows for the cache, auxiliary models,
+    pseudo-label triage, annotation batches, reviewer invitations, archive and the audio tracks. Export has an API and a
+    tool but no window yet (`ROADMAP.md` "Phase 4 notes").

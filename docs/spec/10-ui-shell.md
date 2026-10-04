@@ -219,19 +219,19 @@ One word per action, everywhere: in menus, the palette, API operation ids and MC
 | preview, calibrate | Anything that spends: mixes, datasets, runs | — | None |
 | run, pause, resume, cancel, retry, wait | Jobs, pipelines, runs, evals; `wait` is agent-only and a read (a `GET` action that returns when the job ends or its timeout passes) | cancel is not | cancel: inline confirm |
 | stage | Runs: a new stage from a checkpoint | — | None |
-| freeze | Dataset versions, golden sets | No | Inline confirm; golden sets need approval |
+| freeze | Dataset versions, golden sets, annotation batches | No | Inline confirm; golden sets and batches need approval |
 | materialize, evict, scan, export | Dataset versions, mounts, models | evict yes | None |
 | register, parity, benchmark | Model versions | No | register: inline confirm |
 | average | Checkpoints | — | None |
 | gate, set | Evals (gate verdict); baselines and aliases (`set`) | set yes | baseline: approval |
 | adopt, pin | Registry versions | Yes | None |
 | promote, rollback | Deployments | rollback yes | Modal for production |
-| accept, correct, reject | Triage items | No | None |
+| accept, correct, reject | Triage items; `accept` also adjudicates a batch item (`batchItems.accept`) | No | None |
 | accept, revert | Agent drafts | Yes | None |
 | approve, deny | Approvals | No | None (the card is the confirm) |
 | package | Correction batches | No | None |
 | note, sync | Projects (learnings; template and skill sync) | Yes | None |
-| archive | Projects, sources | Yes | Inline confirm |
+| archive | Projects, sources, registry versions (`versions.archive`, phase 4: terminal for a version) | Yes | Inline confirm |
 | revoke | Credentials, tokens (R1) | No | Inline confirm |
 | verify | Agent credentials: a tiny real request through the agent, the result recorded (2026-09-30); mounts: the health check a worker runs (`mounts.verify`, phase 4) | — | None |
 
@@ -269,12 +269,13 @@ Three state templates cover every kind: registry assets `draft → frozen → de
 | --- | --- | --- |
 | Version | An immutable registry snapshot, `YYYY-MM-DD.<sha>` | Revision |
 | Revision | The edit counter of a mutable entity, used for `If-Match` | Version |
-| Freeze | Turn a draft into a version | Register, Promote |
+| Freeze | Turn a draft into a version. A dataset version's freeze (`datasets.freeze`) checks leakage and the project's quota, then cuts its segments from the mount into the content store; a golden set's (`goldenSets.freeze`) and an annotation batch's (`batches.freeze`) need the admin's approval | Register, Promote |
 | Register | Publish a checkpoint as a model version | Promote |
 | Promote | Move a model version to a deployment stage | Register |
 | Adopt | Reference a registry version from a project | Import |
 | Alias | A project pointer to a version | Tag |
-| Draft | An unaccepted change, usually by an agent | Revision |
+| Draft | An unaccepted change, usually by an agent | Revision; Draft dataset version |
+| Draft dataset version | A dataset version an ingest ended in (`frozen: false`): segments indexed in place on a mount, previewable, leakage-checked, never trained on until frozen (phase 4) | Draft (an agent's change) |
 | Pin | Keep a version materialised or a panel on an entity | Alias |
 | Note | A dated learning attached to an entity and committed to the project | Comment |
 | Registry | The Cadence-wide store of immutable, versioned assets that projects adopt | Library (the panel that browses it) |
@@ -301,6 +302,14 @@ Three state templates cover every kind: registry assets `draft → frozen → de
 | Step kind | A versioned worker plugin a pipeline pins as `kind@version`: parameter schema, artifact types consumed and produced, resources (R40) | Job (one execution of a step) |
 | Replay | Training samples from the base model's other locales, mixed in to stop forgetting (R17) | Shadow (replayed production calls) |
 | Track | One lane of the audio view on the shared time axis: waveform, spectrogram, words, timeline (R51) | Channel (one side of a stereo recording) |
+| Mount | A named storage location Cadence reads audio from or writes exports to — a local path, NFS or SMB share, S3-compatible bucket or Hub repository; URIs `mount://<name>/<path>` (phase 4) | Content store (the cache, addressed by hash) |
+| Pseudo-label | A transcript the machine wrote for untranscribed audio, kept when ensemble members agree (origin `pseudo-label`); a disagreement becomes `pseudo-label:disputed` and goes to triage, never to training (R26) | Transcription; human transcript |
+| Triage | Resolving disputed pseudo-labels one by one — accept the best candidate, correct it, or reject the segment; the Triage panel's queue (phase 4; production samples in phase 5) | Annotation (transcribing a sampled batch) |
+| Annotation batch | A fixed, stratified sample of segments people transcribe by hand under pinned guidelines, double-annotated in part and adjudicated; frozen into a golden set or a training dataset version (04 "Annotation workflow") | Triage item; Correction batch |
+| Reviewer invitation | A link the admin gives a person outside Cadence: it signs them in as a reviewer of one batch only — its items and their audio, played without download — until the due date or the freeze | API key; Agent session token |
+| Auxiliary model | A registry model a step uses beside the trained one: a LID classifier, pseudo-label member or aligner; adopted with the admin's approval after a licence check (R26) | Base model (what is fine-tuned) |
+| Alignment | Word timings of a golden set's reference text against its audio, from a CTC aligner (`align_reference@1`); the reference track of the audio view and the basis of emission delay (R51, R54) | Diff alignment (reference vs hypothesis words) |
+| Emission delay | How long after a reference word ends (by the alignment) a streaming model first shows it in a partial that stays, PR50/PR90 in milliseconds (`latency_score@3`); `n/a` with a reason when the reference is unaligned (R54) | Latency to final (time to a final result) |
 
 ## Window states
 

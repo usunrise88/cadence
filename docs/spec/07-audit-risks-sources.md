@@ -722,6 +722,100 @@ range-proof audit and hardened ffmpeg input; eval artifacts are protected from e
       the replay sets or keep it as a documented always-empty set (default: keep, it cannot regress)
       **Answered 2026-10-03:** Thai leaves the replay corpus and golden sets (owner)
 
+Phase 4 (stream S, 2026-10-04). The owner-delegated decisions of `docs/review/2026-10-03-phase-4-plan.md` "Decisions
+taken for phase 4" are answered as built (decision-log rows in `00-overview.md`; folded into 02, 03, 04, 05, 06, 10
+and 11):
+
+- [x] S4 · answered (decision 1): the first mount is `corpora` (`local`, read-only, registered with root
+      `/mnt/corpora`, the path every container sees; the host directory is `/cadence/corpora`); `exports`
+      (`/mnt/exports`, writable) takes exports and the backup mirror
+- [x] S4 · answered (decision 2): the cache is the content store; pins, LRU eviction at 85 → 70 %, project quotas of
+      200 GB over the versions a project froze
+- [x] S4 · answered (decision 3): index in place; the canonical hash is the BLAKE3 of the 16 kHz PCM16 mono WAV of the
+      segment (header included), the utterance identity imports already use
+- [x] S4 · answered (decision 4): ingest ends in a draft version; `datasets.preview` and `datasets.freeze`; only frozen
+      versions are trained on, exported or adopted
+- [x] S4 · answered (decisions 5–8): registry kind `auxiliary`, the ensemble, LID and alignment as built (deviations
+      below)
+- [x] S4 · answered (decision 9): synthetic calls stand in for real calls; the real-call telephone golden set waits
+
+Phase 4 streams, product decisions Claude made while building (owner-delegated: answered by default as built; the
+owner may overrule):
+
+- [ ] D · Is the frozen cut Lhotse Shar? **Now:** no — `cadence.dataset/1` with one canonical WAV per utterance
+      (`audio/<b3[:2]>/<b3>.wav`) and Lhotse MonoCut manifests in shards of `data.shard_utterances` (2000) cuts;
+      real Shar tars are an export (`shar_export@1`)
+- [ ] D · Which VAD does ingest use? **Now:** an energy VAD per channel in the core step (CPU, runtime-neutral);
+      `frame_vad` stays a GPU-pack kind used by evals
+- [ ] D · How much ITN does `text_normalise@1` do? **Now:** a literal `{spoken, written}` list from params, no number
+      grammars; the pack's training style is mirrored in pipeline params, not read from the pack
+- [ ] D · Is the bot channel's TTS script training text? **Now:** it is kept with origin `model:tts-script`, but
+      `manifest_filter@1` keeps roles `[caller, mono]` by default, so bot speech does not train unless asked
+- [ ] D · Where is "no licence, no ingest" enforced? **Now:** at planning (a step param marked
+      `x-cadence.registry: source` whose source is missing, archived or not cleared is refused,
+      `source-unlicensed`) and again in the draft hook
+- [ ] M · Who may add a mount? **Now:** an approval for everyone (preset rule `mount-registration`, registry scope, the
+      admin decides); a mount's config is immutable (revision stays 1); S3 credentials are one secret
+      `<accessKeyId>:<secretAccessKey>`; scans run in the control plane
+- [ ] M · What is evictable? **Now:** only blobs with a recorded copy on a mount (`blob_copies`); re-derivable shards
+      without a mount copy are not; pins = dataset versions of queued or running jobs, the lineage datasets of aliased
+      model versions and golden-set datasets; the sweep runs as the system actor without an approval
+- [ ] M · Is mount health per host? **Now:** per mount, checked from the control plane (`mounts.verify`), not per worker
+- [ ] X · Which LID? **Now:** Whisper's language token (speechbrain's VoxLingua107 needs torchaudio, which conflicts
+      with the NeMo runtime's torch 2.12); the VoxLingua107 path fails naming the fallback. sr/hr/bs count as one
+      language (`lid_equivalents`), `lid_min_confidence` 0.5, `require_lid` → reason `lid-unknown`
+- [ ] X · How is agreement measured? **Now:** pairwise WER over the longer text after the scoring normalizer,
+      ≤ `pseudolabel.max_pairwise_wer` (0.15) for ≥ 2 members; segments that already carry non-pseudo text pass
+      through. Known issue: when OASIS is in the agreeing pair its text wins (`vote`), so a pseudo-label can lose case
+      and punctuation (OASIS writes lower case without punctuation) — prefer a cased member's text?
+- [ ] X · Who may adopt an auxiliary? **Now:** an approval for everyone (`auxiliary-adoption`, registry scope);
+      `outputsCommercialUse: false` is refused outright (`auxiliary-licence-refused`); a service member is probed at
+      dry run and start (`auxiliary-unavailable`, 503)
+- [ ] X · Whisper writes Serbian in Cyrillic: the pseudo-label pipeline transliterates (`sr-Cyrl-Latn`) its output
+- [ ] R · What does adoption check? **Now:** licence (`licence-forbids-adoption`: no usable licence, outputs not for
+      commercial use, NC/ND on base models, models, noise banks, auxiliaries and non-eval-only datasets; NC/ND allowed
+      for golden sets and eval-only datasets) and locale (`locale-mismatch`) unless `purpose: replay`; runtimes,
+      families and step kinds are never adopted
+- [ ] R · How does `data.lock` act? **Now:** a step param marked `x-cadence.registry: <kind>` resolves through the
+      lock at the pipeline's commit (`not-adopted` otherwise); the resolution is reported (`PlanStep.locked`), not
+      substituted into params, and input-hash reuse ignores the resolved version
+- [ ] R · Step-kind deprecation comes from the worker pack (`deprecated_after`, `replaced_by`, `deprecation_note`); plans
+      warn, new pins are refused after the date (`step-kind-deprecated`); there is no `deprecate` verb
+- [ ] R · Archive is terminal (`versions.archive`, state `archived`), refused while the version is in use
+      (`version-in-use`); nothing is ever deleted
+- [ ] I · Do imports index in place? **Now:** `dataset_import@4` copies into the content store and freezes at import
+      (Lhotse cuts/Shar, the Cadence bundle, NeMo manifests with offset/duration, `mount://` on path mounts); only
+      `sdp_ingest` indexes in place. Lhotse imports read file sources and path mounts only
+- [ ] I · Is the Cadence bundle per project (R27's "project-level bundle")? **Now:** per dataset version
+- [ ] I · What may go to the HF Hub? **Now:** an approval (`hub-export`, registry scope), private by default;
+      `export-not-allowed` refuses sources not cleared or marked production and golden-set data
+- [ ] I · Noise from calls: silences on every track ≥ 200 ms from speech; mined banks are tagged `mined`
+- [ ] A · How do annotators get work? **Now:** each pulls items in their own hashed order; a revision is refused once
+      another transcript is in; double annotation 10 % plus flagged, blind; adjudication when the two disagree above
+      `annotation.adjudicate_wer` (0) after casefold and punctuation strip (not the project normalizer); items tagged
+      `foreign` or `unintelligible` are excluded from the frozen set
+- [ ] A · A golden set from calls needs the ingest draft registered eval-only; the batch's training-side dataset is
+      `dataset/<goldenSet>-annotated`
+- [ ] A · Guidelines are pinned at the repository's HEAD commit when the batch is created; reviewers see the path and
+      commit, not the text (no operation serves it yet)
+- [ ] A · Media windows: a triage item plays its segment ± 2 s, a batch item ± `context_s`; only local/NFS/SMB mounts
+      and WAV (PCM, float, G.711) play in place, others are converted
+- [ ] A · Triage is a tool panel (a queue), not a document
+- [ ] L · Alignment runs by hand once per golden set (`pipelines/align-reference.yaml`), not at freeze; `srp_Latn` is not
+      in omniASR's language list (Serbian Latin references stay unaligned unless transliterated); the `omnilingual-asr`
+      package is not installed (the pack repeats the architecture numbers) and the weights come from
+      `facebook/omniASR-CTC-1B` v1
+- [ ] S4 · found while folding: `versions.archive` may answer `202` (approval) in the contract, but no preset rule
+      gates it — the handler only requires the admin. Should archiving be an approval (registry scope)? **Now:** the
+      admin's own call, no approval
+- [ ] S4 · found while folding: `worker-services` and `worker-omni` do not bind `/mnt/corpora` or `/mnt/exports`
+      (only the control plane, `worker` and `worker-toy` do), so their steps read only content-store inputs. **Now:**
+      enough for `oasis_transcribe@1` and `align_reference@1`; bind them if a member must read a mount in place
+- [ ] S4 · found while folding: `defaults.yaml`'s description of `annotation.adjudicate_wer` says "after the scoring
+      normalizer", but the code compares after a neutral fold (case and punctuation); the spec follows the code
+- [ ] B · Try Cadence imports FLEURS from the HF Hub (`sdp_ingest` cannot read FLEURS `.tsv`); clearing a source must
+      precede its ingest; export and parity steps of the playbook wait for phase 5
+
 ## Sources
 
 - [Nemotron 3.5 ASR model card](https://huggingface.co/nvidia/nemotron-3.5-asr-streaming-0.6b) — release date, languages, latency settings, licence

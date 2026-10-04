@@ -262,6 +262,8 @@ deterrent, not a guarantee: anyone who can hear audio can record it; the audit l
 
 ## Data (phase 4)
 
+_Folded into the spec files on 2026-10-04 with the phase-4 plan (`docs/review/2026-10-03-phase-4-plan.md`): 02 "Storage and mounts", the dataset entities and the registry (auxiliary kind, adoption checks, archive, `data.lock`, deprecation), 03 (ingest and pseudo-label pipelines, step kinds, artifact formats, interoperability), 04 "Block 1" and "Annotation workflow", 05 (presets), 06 "Media" (tracks, reviewers), 10 "Glossary", 11 "Panel catalogue"; departures in `ROADMAP.md` "Phase 4 notes"._
+
 **R26 · LID and pseudo-label models** (C10) — **confirm licences**
 All are registry base-model entries of kind `auxiliary`, pinned by revision, licence checked at adoption.
 - LID: a VoxLingua107-trained classifier (covers Hebrew), confirmed by the base model's own output language.
@@ -269,10 +271,18 @@ All are registry base-model entries of kind `auxiliary`, pinned by revision, lic
   Whisper fine-tune), and a massively multilingual model (the "omnilingual-3b" of the starter pipeline).
   Agreement filter: pairwise WER ≤ 0.15 after the scoring normalizer; disagreements go to triage, not to training.
 - The one hard rule: no model whose licence forbids commercial use of its outputs.
+- *As built (2026-10-04, owner's licence table of 2026-10-03):* a registry kind `auxiliary` of its own, not a base
+  model; seeds `whisper-large-v3`, `whisper-he-ivrit`, `oasis` (the owner's gRPC ensemble, called, never started),
+  `lid-voxlingua107` and `omniasr-ctc-1b`; MMS and `mms-lid` are excluded (CC-BY-NC). LID falls back to Whisper's
+  language token because speechbrain conflicts with the NeMo runtime's torch (00 decision log). The members are
+  `nemotron_transcribe@3`, `whisper_transcribe@1` and `oasis_transcribe@1`, combined by `pseudolabel_ensemble@1`
+  (03; 02 "Auxiliary models").
 
 **R27 · Annotation guidelines**
 Markdown in the project repository (`annotation/guidelines/<name>.md`), versioned by commit SHA; a batch pins the
 SHA; the golden-set card cites it. Help articles stay product documentation.
+*As built (2026-10-04):* the batch pins the repository's HEAD commit at `batches.new`; reviewers see the path and
+commit, not the text (no operation serves it yet; 04 "Annotation workflow").
 
 ---
 
@@ -451,6 +461,9 @@ none of them.
     exactly, so it would be a pack, never a dependency of the NeMo runtime.
 - R26's pseudo-label members that are not NeMo models are decided when phase 4 starts: they run in the NeMo runtime
   if its libraries serve them, or the ensemble starts with NeMo models only.
+  *Decided (owner, 2026-10-03; built 2026-10-04):* Whisper loads per job in the NeMo runtime; OASIS is a running
+  service called from a CPU pack `services`; the omniASR aligner needs fairseq2 on torch 2.8, so it runs in a second
+  one-step runtime `omni` (00 decision log; 03 "Runtimes, model families and latency profiles").
 
 **R46 · Deployment targets and external baselines**
 - A deployment target declares the families and formats it serves:
@@ -589,8 +602,8 @@ none of them.
   | Emissions | CTC posteriors or RNNT per-frame emissions (top tokens and blank) | `analysis` artifact | 3 |
   | Hypothesis words | One lane per target; word confidence shades each word (NeMo's entropy-based confidence); S, D and I against the reference by glyph as well as colour | `hypotheses` | 3 |
   | Streaming timeline | Each word from its first partial to its final, against audio time; revisions highlighted | `hypotheses` partial events | 3 |
-  | Reference words | The reference transcript at aligned times; unaligned references show as text | Alignment step (NeMo Forced Aligner with a CTC model for the locale) | 4 |
-  | Energy, VAD | Level in dBFS, speech regions, endpoints, estimated bandwidth | Worker step; the worklet when live | 4 (live: 3) |
+  | Reference words | The reference transcript at aligned times; unaligned references show as text | Alignment step (NeMo Forced Aligner with a CTC model for the locale; *as built: `align_reference@1`, omniASR CTC emissions + torchaudio's aligner, NFA cannot read omniASR*) | 4 (*the alignment is built; the track is not drawn yet*) |
+  | Energy, VAD | Level in dBFS, speech regions, endpoints, estimated bandwidth | Worker step; the worklet when live (*as built: `tracks.get`, computed on request; bandwidth too*) | 4 (live: 3) |
   | Redactions, boosted terms | PII spans replaced by tone; hits of boost-list terms | `pii_redact`; decode | 5; 3 |
 
 - Playback goes through an HTMLMediaElement (Media Source Extensions for signed segments, R25).
@@ -648,7 +661,8 @@ none of them.
     - Canvas 2D is the fallback.
   - Server, for long audio:
     - a uint8 dB tile pyramid: a 10 ms base level, with coarser levels max-pooled over time;
-    - computed by a worker step on demand and cached in the artifact store by content hash and settings;
+    - computed by a worker step on demand and cached in the artifact store by content hash and settings (*not built
+      in phase 4: tiles are still computed per request, `ROADMAP.md` "Phase 4 notes"*);
     - one hour at 10 ms × 257 bins is ≈ 93 MB, too much for a tab to compute or hold.
   - Live microphone:
     - AudioWorklet frames are posted to a worker as transferable buffers and drawn by the same FFT and renderer as a
@@ -678,7 +692,7 @@ none of them.
   | --- | --- |
   | Metrics | Loss, validation WER, LR, gradient norm, throughput (audio seconds per second), GPU memory; x by step, epoch, wall time or GPU-hours; checkpoint marks; pinned runs overlaid |
   | Run | Sample predictions of a fixed validation subset at each validation step: the text as it evolves |
-  | Dataset version | Hours by language, source and speaker; duration histogram with the filter bounds and percentiles (as Lhotse's `describe`); characters per second with outliers; level, SNR and estimated bandwidth; sample rates and codecs; transcript length against duration; two versions overlaid |
+  | Dataset version | Hours by language, source and speaker; duration histogram with the filter bounds and percentiles (as Lhotse's `describe`); characters per second with outliers; level, SNR and estimated bandwidth; sample rates and codecs; transcript length against duration; two versions overlaid (*as built, phase 4: duration and characters-per-second histograms with the filter bounds, level, hours by language, split, origin and role, source sample rates — from `datasets.get` stats; speaker, SNR, bandwidth and the overlay are not drawn yet*) |
   | Eval report | Matrix heatmap; forest plot of WER deltas with 95 % intervals; S/D/I stacked bars; WER by duration, SNR, bandwidth and speaker; per-utterance WER ECDF; top confusion pairs; entity accuracy; CDFs of latency to final and emission delay per profile; WER against latency across profiles and models; robustness matrix; an utterance table (as in NeMo's Speech Data Explorer) whose rows open in Diff and Audio |
   | Experiment | Parameter against metric scatter; parallel coordinates for sweeps |
   | Model, Queue & GPU | Benchmark p50/p95 against concurrent streams, real-time factor; GPU memory and utilisation |
@@ -703,7 +717,8 @@ none of them.
   reported at p50 and p95. Pipecat's "time to final segment" is the same measure. Utterance end comes from
   per-channel VAD or the aligned reference.
 - Emission delay: the time from a word's aligned end to its first appearance in a partial, reported as percentiles
-  PR50 and PR90 (Yu et al., FastEmit, ICASSP 2021).
+  PR50 and PR90 (Yu et al., FastEmit, ICASSP 2021). *As built (2026-10-04): `latency_score@3` against the golden
+  set's reference alignment; `n/a` with a reason when the set is unaligned (03 "Scorers and metrics").*
 - Partial stability: the unstable partial word ratio (Shangguan et al., Interspeech 2020), with edits per second
   beside it.
 - All three come from the partial events of the `hypotheses` artifact (R42). Live tests, paced replays and eval runs
@@ -717,6 +732,6 @@ none of them.
 | # | Question | Default built meanwhile |
 | --- | --- | --- |
 | R28 | Legal basis and term for keeping curated call audio | 90 days captured, 24 months curated |
-| R26 | Licences of the auxiliary models | Adopt only what passes the check |
+| R26 | Licences of the auxiliary models | *Answered 2026-10-03: Claude checks before adoption, the owner's table in the phase-4 plan; nothing whose outputs are not for commercial use* |
 | R31 | Peak concurrent streams per card at Эра | 32 |
 | R32 | Эра's side of the samples and boost contracts | Contract drafted in OpenAPI |
