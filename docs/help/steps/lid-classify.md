@@ -33,7 +33,7 @@ Data. Before `pseudolabel_ensemble` (its optional `lid` input) and `manifest_fil
 | --- | --- | --- | --- |
 | `auxiliary` | `packs.nemo.lid_auxiliary` (`auxiliary/whisper-large-v3`) | decision 7, with the fallback above | an adopted auxiliary with role `lid` |
 | `top_k` | `packs.nemo.lid_top_k` (3) | Cadence recommendation | 1 – 10 |
-| `batch_size` | `packs.nemo.lid_batch_size` (16) | Cadence recommendation | 1 – 128 |
+| `batch_size` | `packs.nemo.lid_batch_size` (8) | Cadence recommendation | 1 – 128 |
 | `cuda_context_reserve_mb` | `packs.nemo.cuda_context_reserve_mb` (1024) | spike A3 | 0 – 8192 |
 
 Language codes are the classifier's own (`sr`, `hr`, `he`, …). The ensemble compares them with the segment's language

@@ -803,14 +803,14 @@
      }
     },
     "batch_size": {
-     "default": 16,
-     "description": "Utterances per language identification batch",
+     "default": 8,
+     "description": "Utterances per language identification batch (16 ran out of memory under the 8 GB data-job cap beside the other members on the stand, 2026-10-04)",
      "title": "Batch Size",
      "type": "integer",
      "x-cadence": {
-      "default": 16,
+      "default": 8,
       "defaultRef": "packs.nemo.lid_batch_size",
-      "description": "Utterances per language identification batch",
+      "description": "Utterances per language identification batch (16 ran out of memory under the 8 GB data-job cap beside the other members on the stand, 2026-10-04)",
       "range": {
        "max": 128,
        "min": 1

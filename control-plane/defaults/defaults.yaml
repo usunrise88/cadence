@@ -1371,9 +1371,9 @@ packs:
       source: Cadence recommendation
       range: { min: 1, max: 10 }
     lid_batch_size:
-      value: 16
+      value: 8
       unit: utterances
-      description: Utterances per language identification batch
+      description: Utterances per language identification batch (16 ran out of memory under the 8 GB data-job cap beside the other members on the stand, 2026-10-04)
       source: Cadence recommendation
       range: { min: 1, max: 128 }
   # The services pack (runtime `services`, CPU): step kinds that call a running service an auxiliary names. Cadence
