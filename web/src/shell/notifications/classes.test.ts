@@ -12,6 +12,7 @@ const rule = (eventClass: NotificationRule["eventClass"], inApp: boolean): Notif
   events: [],
   channels: { inApp, telegram: false },
   timing: "none",
+  silent: false,
   bypassQuietHours: false,
   rev: 1,
   updatedAt: "",
@@ -28,14 +29,25 @@ describe("event classes", () => {
     expect(classOf(ev({ topic: "job.j", type: "job.state_changed", payload: { job: { state: "failed", kind: "step" } } }))).toBeUndefined();
     const step = (state: string) => ev({ topic: "pipeline_run.plr_1", type: "pipeline_run.step_changed", payload: { pipelineRunId: "plr_1", step: { state } } });
     expect(classOf(step("done"))).toBe("progress");
-    expect(classOf(step("failed"))).toBe("failure");
+    expect(classOf(step("failed"))).toBe("progress"); // the pipeline run's end tells what the failure cost
+    const run = (state: string, runId?: string) => ev({ topic: "pipeline_run.plr_1", type: "pipeline_run.state_changed", payload: { pipelineRun: { id: "plr_1", pipeline: "ingest", state, runId, error: "step x failed" } } });
+    expect(classOf(run("failed"))).toBe("failure");
+    expect(noticeFor(run("failed"))).toMatchObject({ level: "error", title: "Pipeline run failed: ingest" });
+    expect(classOf(run("done"))).toBeUndefined();
+    expect(classOf(run("failed", "evl_1"))).toBeUndefined();
+    const session = (topic: string, state: string) => ev({ topic, type: "agent_session.changed", payload: { session: { id: "ses_1", number: 4, project: "hebrew", state } } });
+    expect(classOf(session("agent.sessions", "failed"))).toBe("failure");
+    expect(classOf(session("agent.session.ses_1", "failed"))).toBeUndefined();
+    expect(classOf(session("agent.sessions", "running"))).toBeUndefined();
+    expect(noticeFor(session("agent.sessions", "failed"))).toMatchObject({ level: "error", title: "Agent session 4 failed (hebrew)" });
     expect(classOf(step("running"))).toBeUndefined();
     const health = (state: string) => ev({ topic: "compute.cmp_1", type: "compute.health", payload: { hostId: "cmp_1", health: { state } } });
     expect(classOf(health("unreachable"))).toBe("failure");
     expect(classOf(health("healthy"))).toBeUndefined();
     const evalStep = (state: string) => ev({ topic: "pipeline_run.plr_2", type: "pipeline_run.step_changed", payload: { pipelineRunId: "plr_2", runId: "evl_1", step: { state } } });
     expect(classOf(evalStep("done"))).toBeUndefined(); // the eval tells its end once
-    expect(classOf(evalStep("failed"))).toBe("failure");
+    expect(classOf(evalStep("failed"))).toBeUndefined();
+    expect(noticeFor(evalStep("failed"))).toBeUndefined();
     expect(noticeFor(evalStep("done"))).toBeUndefined();
     const evalStatus = (status: string) => ev({ topic: "entity.eval.evl_1", type: "eval.status_changed", payload: { eval: { id: "evl_1", status, subject: { id: "ckp_1", label: "run 7" } } } });
     expect(classOf(evalStatus("failed"))).toBe("failure");

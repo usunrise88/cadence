@@ -74,6 +74,15 @@ One admin account, invitation links for reviewers, and opaque scoped tokens for 
 - TLS terminates at a reverse proxy in the compose file (Caddy with an internal certificate); the control plane listens on localhost only.
 - Login attempts are rate-limited; a lost admin password is reset from the host shell (`cadence admin reset-password`), never by email.
 - Passkeys (WebAuthn) are the v2 upgrade; nothing in v1 prevents adding them.
+- Reviewers as built (phase 4, stream A; `internal/credentials/invitations.go`, migration 0038): `users.role` is
+  `admin` or `reviewer`. `invitations.new` (admin; `POST /batches/{id}/invitations`, role `annotator` or
+  `adjudicator`) creates the reviewer by name when needed (no password) and issues a credential of kind `invitation`
+  (token `cri_`, shown once, its subject the batch) that expires at the batch's due date, after
+  `annotation.invitation_max_days` (14) at most, and when the batch freezes. `auth.accept` (`POST /auth:accept`, tag
+  `auth`) redeems the token for a browser session that never slides and ends with the invitation. A reviewer's
+  session reaches only `/auth`, help, `/defaults` (the audio view's settings), its batch's document, items and
+  annotations, and the media of that batch's items (`bit_…` ids); everything else answers `403 forbidden`. Audio
+  plays through the signed links below, with no download link.
 
 ## Worker protocol
 
@@ -173,7 +182,8 @@ Rules:
   secret whose scope does not allow the step's project (a `project:<slug>` secret serves only that project's steps;
   `instance` serves all, including steps without a project). Values never
   appear in the spec, job rows, events, logs, artifacts or an agent context; the worker redacts them from forwarded
-  logs and removes its own token and URL from the step's environment.
+  logs (a mount's `<accessKeyId>:<secretAccessKey>` also half by half, audit F1) and removes its own token and URL
+  from the step's environment.
 - Tracing: one trace runs UI → API → job → step. A job keeps the traceparent of the request that enqueued it (River
   args) and each attempt runs in a `job <kind>` span continuing it (file traces, `traces.jsonl`); the step handler
   stores that span's traceparent on the step job (`step_jobs.traceparent`) and the lease hands it to the worker (a
@@ -185,6 +195,23 @@ Rules:
   `CADENCE_RUNTIME_FILE` (the runtime descriptor baked into the image), `CADENCE_WORKER_GPU`, `CADENCE_CLAIM_WAIT_SECONDS`
   (20). Compose runs one service per runtime: `worker` (profile `gpu`, runtime `nemo-speech`, the NVIDIA device) and
   `worker-toy` (profile `toy`, CPU), both on the `artifacts` volume at `/var/lib/cadence` with the control plane.
+- Mounts in the lease (phase 4, stream M): every lease carries the registered mounts (`lease.mounts`, schema
+  `LeaseMount`: name, kind, root, readOnly and, for `s3` and `hf`, endpoint, region, revision and the env variable
+  holding the credentials when the step may read them: it names the mount, or a step that produced one of its
+  inputs did, back through their inputs — never every data step; audit F1). The harness resolves `mount://<mount>/<path>[#t=<start>,<end>]
+  [&ch=<n>]` to a local path (`cadence_worker.mounts`; `CADENCE_MOUNTS` for helper processes): `local`, `nfs` and
+  `smb` read in place under `root` (compose binds `${CADENCE_CORPORA_DIR}` → `/mnt/corpora`, read-only, and
+  `${CADENCE_EXPORTS_DIR}` → `/mnt/exports` into the control plane and the `worker` and `worker-toy` services); `s3`
+  and `hf` download once into the mount cache. Mount health is the core step `mount_check@1` (reachable, free space,
+  a `storage.mount_check_sample_mb` throughput sample), run by `mounts.verify`, at registration and every
+  `storage.mount_check_hours` (6); health is per mount, not per host.
+- Further runtimes (phase 4; decision log in 00): `worker-services` (profile `services`, `worker/Dockerfile.services`,
+  runtime `services`, CPU, no model) runs step kinds that call a running service an auxiliary names —
+  `oasis_transcribe@1` dials `host.docker.internal:50051` through `extra_hosts: host-gateway` and checks
+  `GetModelInfo` first (`auxiliary-unavailable`); Cadence never starts the service. `worker-omni` (profile `omni`,
+  `worker/Dockerfile.omni`, runtime `omni`, GPU) is python 3.12 slim with PyTorch 2.8 (CUDA 12.8), torchaudio 2.8 and
+  fairseq2 0.6 (≈ 11.6 GB) for `align_reference@1`, because fairseq2 needs torch 2.8 and the NeMo Speech image ships
+  2.12 (R45's one-off allowance; the model loads per job, about 2 GB on the card). Neither binds the corpora mount yet.
 
 ## Artifacts, metrics and logs
 
@@ -209,7 +236,7 @@ read any of them (R15).
 - The next step reads an artifact through its lease (`cas://` URI). A step whose `kind@version`, runtime version, resolved parameters
   and input hashes equal a finished step's in the same project reuses that step's outputs instead of running (unless
   the run asks for `fresh`); output hooks run for reused outputs too, so they are idempotent per artifact hash.
-- Tiers: before mounts exist the store is the only tier; mounts (phase 4) become further tiers behind the same hash.
+- Tiers: before mounts exist the store is the only tier; mounts (phase 4) become further tiers behind the same hash. As built (phase 4, stream M; `internal/cache`, `internal/mounts`, migration 0033): a blob copy on a mount is a `blob_copies` row; the store is the local cache tier, accounted by `storage.get`, and only dataset shards with a mount copy are evicted (02 "Storage and mounts").
   A worker without the shared volume uploads by hash (`workerArtifacts.set`, verified: `artifact-hash-mismatch`); a
   download path for remote workers comes with them. Only `artifacts.evict` deletes blobs (Retention below); the backup mirror copies each new blob once.
 - Retention (design 2026-10-01, built 2026-10-01 by stream E — "as built" at the end of this list): training states are large (7.66 GB for the 0.6B model, one per pause,
@@ -338,7 +365,9 @@ Audio serving as built (2026-10-02, stream A; `internal/media`, `internal/server
   deterrent).
 - Signed links: HMAC-SHA256 over utterance, channel, start, end, viewer and expiry with a key derived from the master
   key (links die with it); lifetime `media.signed_link_ttl_s` (300 s). A request carrying `sig` passes the session
-  check and is the viewer's play; any change to the query or an expiry gives `403 media-link-invalid`.
+  check and is the viewer's play; any change to the query or an expiry gives `403 media-link-invalid`, and so does a
+  link whose viewer is no user, or a reviewer whose invitation to the item's batch has ended (revoked, expired or the
+  batch froze: `credentials.ReviewerMayPlay`; audit F1) — revoking an invitation stops the links it minted at once.
 - Audit: `audio.sign` and every `audio.get` that starts a play write an audit row with the utterance, audio hash,
   span, channel, `via` (`session` or `link`) and the `range` asked; further ranges of the same play do not. As built
   2026-10-02 a play is the first request of a viewer, utterance, span and channel within `media.play_audit_window_s`
@@ -347,7 +376,7 @@ Audio serving as built (2026-10-02, stream A; `internal/media`, `internal/server
   written before the first byte is sent.
 - Peaks are computed on the first `peaks.get` from the stored audio at 10 ms (int8 min/max, clipping frames) and
   recorded as a registry `peaks` artifact (`meta.audio`, `meta.format` `cadence.peaks/1`); later reads pool it. Phase 4
-  computes them at ingest instead.
+  meant to compute them at ingest; as built they are still computed on first view (`ROADMAP.md` "Phase 4 notes").
 - The server tile pyramid is the worker step `spectrogram_tiles@1` (manifest `cadence.spectrogram-tiles/1`, uint8 dB
   `-120 + 0.5 × v`, 512-frame tiles, bins up to the origin's Nyquist, levels max-pooled by two); `spectrogram.get`
   serves the newest such artifact whose `meta.audio` is the utterance's hash. Nothing starts the step automatically
@@ -494,6 +523,21 @@ the Transcription panel):
   (`nemotron_finetune@2`).
 - Not built: `analysis: [features, emissions]`; a conformance stage for the live role; the Triton target (phase 5).
 
+Audio indexed in place and the tracks (phase 4, stream A; `internal/media` `window.go`, `tracks.go`):
+
+- Media ids beyond `utt_` and `b3:`: a triage item (`tri_…`) plays its segment ± 2 s of the source file, an
+  annotation item (`bit_…`) its window (segment ± `annotation.context_s`, every channel); a draft dataset version's
+  utterances play from their mount URI. The control plane reads local, NFS and SMB mounts at the workers' paths and
+  serves PCM, float and G.711 (μ-law, A-law) WAV in place — the telephone calls play without a copy; other codecs
+  play once the version is frozen. Peaks of a window are cached under its `mount://…#t=` key.
+- `tracks.get` (`GET /registry/utterances/{id}/tracks?hopMs=`, tag `media`, people only): per channel the level in
+  dBFS per hop, speech regions from an energy VAD (the channel's 10th-percentile floor plus `annotation.vad_margin_db`
+  12, never under `annotation.vad_floor_db` −55, pauses under `annotation.vad_min_silence_ms` 300 joined), the
+  estimated bandwidth (the highest band within `annotation.bandwidth_floor_db` 50 of the loudest; 8 kHz audio shows
+  ≤ 4 kHz), and with a caller and a bot channel the end-of-utterance gap. Computed on request, not stored. The audio
+  view draws them as the energy, VAD and channel tracks.
+- Not built: the tile pyramid on demand for long audio, peaks at ingest, a reference-alignment track in the audio view.
+
 ## Operations
 
 Cadence upgrades itself the way it upgrades models: versioned, forward-only, with a nightly backup that is restored on a schedule to prove it works.
@@ -504,11 +548,11 @@ Cadence upgrades itself the way it upgrades models: versioned, forward-only, wit
 | Install | `docker compose up`; the first start creates the admin account and the default mounts |
 | Migrations | Embedded in the binary, forward-only, expand-and-contract, run at start under an advisory lock; data migrations run as jobs with progress events |
 | Upgrade | Pull the release, `compose up`; a failed migration stops the start and leaves the previous image runnable; rollback is the previous image plus, if data changed, the last backup |
-| Backups | Nightly `pg_dump` and a content-store mirror into `CADENCE_BACKUP_DIR` (the `cadence-backups` volume; a mount from phase 4); a weekly automated restore into a scratch database with a report; targets: 24 h RPO, 1 h RTO (as built below) |
-| Failures | River retries with backoff; a worker heartbeat every 10 s, leases reaped after three missed beats (step error `lost`, one retry); an OOM gets one automatic retry at 0.75× batch; a host whose workers went quiet turns `unreachable` (`compute.health`); a full cache pauses freezes (phase 4); an unhealthy card closes its slot (not built: card health is per host today) — every case is an event, so it notifies |
+| Backups | Nightly `pg_dump` and a content-store mirror into `CADENCE_BACKUP_DIR` (the `cadence-backups` volume), or since phase 4 the mirror onto a writable path mount (`backups.mirror_mount`); a weekly automated restore into a scratch database with a report; targets: 24 h RPO, 1 h RTO (as built below) |
+| Failures | River retries with backoff; a worker heartbeat every 10 s, leases reaped after three missed beats (step error `lost`, one retry); an OOM gets one automatic retry at 0.75× batch; a host whose workers went quiet turns `unreachable` (`compute.health`); a project over its cache quota cannot freeze (`storage-quota-exceeded`, phase 4); an unhealthy card closes its slot (not built: card health is per host today) — every case is an event, so it notifies |
 | Availability windows | Each compute card has windows per job kind (training, eval, shadow, export, data; none means always open, the default): each window is a set of weekdays, an opening and a closing time `HH:MM` (an end at or before the start closes the next day, `24:00` is midnight; a window past midnight belongs to the day it opens) and an IANA time zone per window (default: the instance time zone, `policies.timezone`, resolved when the queue checks the window — so a policy change moves windows that name none), edited with `compute.edit`. The queue starts a job only if its estimate fits before the window closes; a job without an estimate, or one resuming from a training state, starts in any open window. Training saves a checkpoint and its training state every 20 minutes (the training step's duty; the NeMo pack's); at a close the heartbeat answers `stop: window-closed` to training steps only (other kinds finish), the step saves and releases, and the job waits in its place for the next window and resumes from the last training state (`resumeFrom`). The same path makes long runs preemption-safe on the shared staging card (R19) |
-| Health | `/healthz` on the control plane, worker heartbeat, mount checks; a status card in Settings; a Prometheus endpoint |
-| Retention | Job log files are deleted 14 days after their last line (a daily chore); metric points live as long as their run; content-store blobs are kept until a person approves `artifacts.evict` (superseded training states only; Settings → Content store, and a `storage.low_space` failure notification below `cache.store_low_free` free), except eval records' per-utterance artifacts, evicted `eval.artifact_retention_days` (30) after the record's last use by a daily sweep (owner decision 2026-10-03); the audit log is kept one year; production audio follows the retention policy |
+| Health | `/healthz` on the control plane, worker heartbeat, mount checks (`mount_check@1`, every `storage.mount_check_hours`; each emits `mount.health`; a step that reads a mount whose last check failed does not start, `mount-unhealthy`); a status card in Settings; a Prometheus endpoint |
+| Retention | Job log files are deleted 14 days after their last line (a daily chore); metric points live as long as their run; content-store blobs are kept until a person approves `artifacts.evict` (superseded training states only; Settings → Content store, and a `storage.low_space` failure notification below `cache.store_low_free` free), except eval records' per-utterance artifacts, evicted `eval.artifact_retention_days` (30) after the record's last use by a daily sweep (owner decision 2026-10-03); dataset shards with a copy on a mount are evicted by the cache sweep (phase 4, below); the audit log is kept one year; production audio follows the retention policy |
 
 Phase 2 as built (2026-09-30, stream O):
 
@@ -532,17 +576,30 @@ Phase 2 as built (2026-09-30, stream O):
 - **Upgrade**: `docs/help/guides/upgrading.md` (pull, compose up, migrations under the advisory lock, rollback = the
   previous image plus the last backup, the release matrix); restoring by hand is in `docs/help/guides/backups.md`.
 
+Phase 4 as built (2026-10-04, streams M and I):
+
+- **Cache sweep** (`internal/cache`): a periodic job every `storage.cache_sweep_minutes` (15) evicts unpinned dataset
+  shards that have a mount copy, least recently used and projects over `storage.project_quota_gb` first, once the
+  store passes `storage.cache_high_water_pct` (85) and down to `cache_low_water_pct` (70). It runs as the system actor
+  without an approval (the owner set the policy, like the eval-artifact retention); evicted rows keep their manifest
+  and `datasets.materialize` copies the shards back, verifying each hash. Pinned: dataset versions a queued or running
+  job names, the lineage datasets of aliased model versions and golden sets' datasets.
+- **Backups to a mount** (stream I): with `backups.mirror_mount` naming a writable path mount, the content-store mirror
+  goes to `<root>/cas/b3/…` instead of `CADENCE_BACKUP_DIR/cas`, and every mirrored blob is recorded in
+  `blob_copies` (`eviction.Service.Mirror`), so the cache may evict it and `datasets.materialize` brings it back.
+  Compose keeps `/mnt/exports` writable in the control plane for that.
+
 ## Notifications
 
 Two channels — the in-app history and a Telegram bot — one routing table by event class, and approvals that can be decided from the phone with the same audit trail as from the UI.
 
 | Event class | In-app | Telegram | Timing |
 | --- | --- | --- | --- |
-| Approval requested (agent, automation, registry) | Yes | Message with inline Approve / Deny buttons and the estimate | Immediate |
-| Job or pipeline step failed, compute host unreachable, mount unhealthy, card closed (not built), backup failed | Yes | Yes | Immediate |
-| Gate verdict, promotion, schedule finished, batch closed | Yes | Yes | Immediate |
+| Approval requested (agent, automation, registry) | Yes | Message with inline Approve / Deny buttons and the estimate; requests within 2 minutes share one message | Immediate (batched) |
+| A job, pipeline run, eval or agent session that ended failed; compute host unreachable, mount unhealthy, card closed (not built), backup failed | Yes | Yes | Immediate |
+| Gate verdict, promotion, schedule finished, batch closed | Yes | Yes, silent | Immediate |
 | Progress (step done, checkpoint saved, triage item added) | Yes | No | — |
-| Daily digest: runs, evals, spend against budgets, open approvals | Yes | Yes | 09:00 local |
+| Daily digest: runs, evals, spend against budgets, open approvals | Yes | Yes, silent | 09:00 local |
 
 - The bot talks only to allow-listed chat ids; every inline action carries a single-use signed token, and an approval from Telegram is recorded with actor and channel like any other.
 - Quiet hours suppress Telegram except failures; reviewers get batch-assigned and batch-closing messages only.
@@ -582,7 +639,8 @@ Phase 2 as built (2026-09-30, stream O):
 - Classification (`internal/notify/classify.go`, mirrored by `web/src/shell/notifications/classes.ts`; a test keeps
   the two tables equal): approvals on `approvals`; a job's `job.state_changed` on its job topic (`failed` → failure,
   `done` → progress) except step jobs, whose pipeline step tells them — `pipeline_run.step_changed` on
-  `pipeline_run.{id}` (step `done` → progress, `failed` with no retry left → failure); a host turning `unreachable`
+  `pipeline_run.{id}` (step `done` → progress, `failed` with no retry left → failure; since 2026-10-04 both progress, the
+  run's end is the failure — "Quieter Telegram" below); a host turning `unreachable`
   (`compute.health` on `compute.{id}`) → failure; backups by type. The table also names types no stream emits yet —
   `mount.unhealthy`, `deployment.promoted`, `schedule.finished`, `batch.closed`, `checkpoint.saved`,
   `triage.item_added` arrive with their phases; `compute.card_closed` joins when per-card health closes a card's slot
@@ -593,10 +651,41 @@ Phase 2 as built (2026-09-30, stream O):
   outcome; `golden_set.frozen` → progress. They announce on entity topics only (`entity.eval.{id}`,
   `entity.experiment.{id}`, `entity.golden_set.{id}`), which the router reads for these types and the web history
   subscribes to. The steps of an eval's pipeline run (its `pipeline_run.step_changed` carries `runId: evl_…`) tell
-  nothing when done — an eval of a few hundred cells would send as many notices; a failed step still does. The daily
+  nothing when done — an eval of a few hundred cells would send as many notices; a failed step still did until
+  2026-10-04 (now nothing: the eval's failure tells it). The daily
   digest lists the gate verdicts of its window ("project: subject — verdict", at most 20).
 - The control plane reaches `api.telegram.org` over the compose `default` network (not internal); nothing else is
   needed. Reviewer messages (batch assigned/closing) arrive with batches in phase 4.
+
+Quieter Telegram (2026-10-04, owner feedback: in one day the stand rang 21 times — 12 approvals, 7 of them within a
+minute; 5 step failures, one of them an optional step the run went on without; 3 branches waiting; the digest):
+
+- **Silent rows**: `notification_rules.silent` (migration 0043; contract `NotificationRule.silent`, edited by
+  `notificationRules.edit` and the Settings checkbox). Seeded: approvals and failures ring; outcome and digest are
+  silent; progress has no Telegram message of its own. The router copies the flag onto each delivery
+  (`notification_deliveries.silent`) and the sender sends silent rows with `disable_notification: true`. A changed
+  flag is a departure (`silent`).
+- **Failures by consequence**: a failure notice says what ended, once. `pipeline_run.step_changed` with `failed` is
+  progress (an optional step's failure lets the run go on; an OOM or lost-lease retry re-queues the step without a
+  failed event; any other failure ends the pipeline run); the run's end, `pipeline_run.state_changed` with `failed`
+  on `pipeline_run.{id}`, is the failure ("Run failed: run_…" for a training run's pipeline, else "Pipeline run failed:
+  <pipeline>", the run's error naming the step). Before, a failed required step told the failure and the run's end
+  told nothing, and an eval's failed step told it as well as the eval. An eval's pipeline run and its steps tell
+  nothing; the eval tells its end. An agent session that ends `failed` (`agent_session.changed` on `agent.sessions`)
+  is a failure, once per session: a delivery may carry a `dedupe_key` (unique per channel), here
+  `agent_session.failed:<id>`, so a repeated end is not sent again. Quiet hours still let failures through.
+- **Approvals batched**: an approval request opens a window of `notifications.approval_batch_s` (defaults.yaml, 120 s,
+  0–900; 0 = send each at once); requests routed until it closes join it (their delivery's `next_at` is the window's
+  end), and when it closes the sender sends them as one message, in request order, at most ten per message:
+  `N approvals requested`, then `[i] Approval requested: <operation>` with its body, and one keyboard row per approval
+  (`Approve i` / `Deny i`, each with its own single-use signed tokens). A press decides only its own approval; the
+  message is edited to append `[i] Approved|Denied from Telegram by @user.` and keeps the rows still open. A lone
+  approval keeps the old single message (`Approve` / `Deny`). We hold all requests for the window rather than sending
+  the first at once and batching the rest: a burst then rings once instead of twice, at the cost of up to two minutes
+  before a lone approval reaches the phone (approvals wait up to 24 h; the in-app history shows them at once). An
+  approval decided before its window closes is left out of the message.
+- The digest stays daily; quiet hours keep their behaviour (a suppressed approval is not batched later; it is in the
+  next digest's open approvals).
 
 ## Testing strategy
 

@@ -15,12 +15,12 @@ every target's words on one time axis.
 
 | Input | What happens |
 | --- | --- |
-| Microphone | Captured in your browser at the device's own rate (no resampling on the page), channel 0 only, 16-bit PCM frames of 20 ms. **Raw microphone** (default) asks the browser for echo cancellation, noise suppression and automatic gain off, as recognition wants; turn it off to hear what a call stack's processing does to the words. Pick the device; the level meter shows the input and **CLIP** lights when it reaches full scale. |
+| Microphone | Captured in your browser at the device's own rate (no resampling on the page), channel 0 only, 16-bit PCM frames of 20 ms. **Raw microphone** (default) asks the browser for echo cancellation, noise suppression and automatic gain off, as recognition wants; turn it off to hear what a call stack's processing does to the words. Pick the device; **Check** listens before you go live (nothing is sent), the level meter shows the input and **CLIP** lights when it reaches full scale. |
 | File | Its bytes go to the worker running the session (≤ 15 minutes of audio), are decoded there with ffmpeg and the training resampler, played at real time or as fast as the card allows, and deleted when the session closes. |
 | Utterance span | `utt_…#t=1.2,3.4` (the span open in the Audio panel fills it in). The worker reads the stored audio. |
 
 **Targets.** Each lane runs a checkpoint of the project, a registered model version or a base model, at a latency
-profile (default: the primary profile), in a language (default: the project's first locale), with or without a boost
+profile (default: the primary profile), in a language (default: the language a checkpoint or model version was trained under — Serbian fine-tuned under the `hr-HR` prompt decodes in `hr-HR` — else the project's first locale; the list also offers the languages the model knows), with or without a boost
 list of the project's language pack. The same model at `1120ms` beside its deployment profile shows the gap to the
 high-latency reference; two targets that differ only in their boost list test a phrase with and without boosting (the Language pack's own
 "test a phrase" box is **not built yet**; set up the two lanes here by hand).

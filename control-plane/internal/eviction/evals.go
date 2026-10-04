@@ -173,10 +173,11 @@ func (s *Service) PlanEvalRetention(ctx context.Context, tx pgx.Tx, days int, no
 		}
 	}
 	evict, kept := classifyEval(arts, time.Duration(days)*24*time.Hour, now)
-	p := Plan{Kept: kept, Permanent: s.MirrorDir == ""}
+	mirror := s.mirrorDir(ctx)
+	p := Plan{Kept: kept, Permanent: mirror == ""}
 	for _, c := range evict {
 		if !p.Permanent {
-			missing, err := s.unmirrored(ctx, tx, c)
+			missing, err := s.unmirrored(ctx, tx, c, mirror)
 			if err != nil {
 				return Plan{}, err
 			}
@@ -201,7 +202,7 @@ func (s *Service) PlanEvalRetention(ctx context.Context, tx pgx.Tx, days int, no
 }
 
 // unmirrored names the first blob of c that the backup mirror lacks (absent, or of another size), or "".
-func (s *Service) unmirrored(ctx context.Context, tx pgx.Tx, c Candidate) (string, error) {
+func (s *Service) unmirrored(ctx context.Context, tx pgx.Tx, c Candidate, mirror string) (string, error) {
 	blobs, err := blobsOf(ctx, tx, c.Hash, c.directory)
 	if err != nil {
 		return "", err
@@ -215,7 +216,7 @@ func (s *Service) unmirrored(ctx context.Context, tx pgx.Tx, c Candidate) (strin
 			continue // already gone from the store: nothing to lose
 		}
 		hx := strings.TrimPrefix(b, cas.Prefix)
-		fi, err := os.Stat(filepath.Join(s.MirrorDir, "b3", hx[:2], hx))
+		fi, err := os.Stat(filepath.Join(mirror, "b3", hx[:2], hx))
 		if err != nil || fi.Size() != size {
 			return b, nil
 		}

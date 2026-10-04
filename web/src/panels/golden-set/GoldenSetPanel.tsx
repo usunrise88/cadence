@@ -49,6 +49,24 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
+/** The reference alignment the golden set carries (align_reference; emission delay needs it), or why there is none. */
+function AlignmentSummary({ a, utterances }: { a?: GoldenSetVersion["alignment"]; utterances: number }) {
+  if (!a) {
+    return (
+      <span className="text-muted-foreground" data-slot="gs-alignment">
+        Not aligned: emission delay is n/a. Run the align-reference pipeline on the dataset hash.
+      </span>
+    );
+  }
+  return (
+    <span data-slot="gs-alignment">
+      {a.aligned.toLocaleString()} of {(a.utterances || utterances).toLocaleString()} utterances · {a.words.toLocaleString()} words ·{" "}
+      <code className="text-[11px]">{a.aligner}</code>
+      {a.reasons?.length ? <span className="block text-muted-foreground">Unaligned: {a.reasons.join("; ")}</span> : null}
+    </span>
+  );
+}
+
 function Overview({ g, doc }: { g: GoldenSetVersion; doc?: string }) {
   const p = g.goldenSet;
   const [freezeOpen, setFreezeOpen] = useState(false);
@@ -92,6 +110,9 @@ function Overview({ g, doc }: { g: GoldenSetVersion; doc?: string }) {
             <span className="text-muted-foreground">Checked at freeze: none of its utterances is in a training dataset version, and mixes refuse them from now on.</span>
           </Row>
           {p.approvalId ? <Row label="Approved by">{p.approvalId}</Row> : null}
+          <Row label="Word timings">
+            <AlignmentSummary a={g.alignment} utterances={p.utterances} />
+          </Row>
         </dl>
         {!freezeOpen ? (
           <Button size="xs" variant="outline" className="w-fit" onClick={() => setFreezeOpen(true)} data-command="goldenSets.freeze">
@@ -143,7 +164,8 @@ function Overview({ g, doc }: { g: GoldenSetVersion; doc?: string }) {
 /**
  * projects.adopt (R21, the leakage check): the dry run asks first whether the project may adopt the golden set — a
  * project whose training data already holds some of its utterances is refused (golden-set-leakage, with the
- * overlapping dataset versions) — then Adopt does it.
+ * overlapping dataset versions) — then Adopt does it. A golden set in none of the project's languages is refused as a
+ * target (locale-mismatch, phase 4); a replay set is checked and adopted with purpose replay.
  */
 function AdoptCard({ g, project, adopted, onClose }: { g: GoldenSetVersion; project: string; adopted: boolean; onClose: () => void }) {
   const qc = useQueryClient();
@@ -151,11 +173,13 @@ function AdoptCard({ g, project, adopted, onClose }: { g: GoldenSetVersion; proj
   const [checked, setChecked] = useState(false);
   const [done, setDone] = useState(false);
   const [problem, setProblem] = useState<{ text: string; problem?: Problem } | null>(null);
-  const act = async (dryRun: boolean) => {
+  const [purpose, setPurpose] = useState<"target" | "replay">("target");
+  const act = async (dryRun: boolean, as: "target" | "replay" = purpose) => {
     setBusy(true);
     setProblem(null);
     try {
-      await runCommand("projects.adopt", { project, version: g.id, dryRun });
+      await runCommand("projects.adopt", { project, version: g.id, dryRun, ...(as === "replay" ? { purpose: as } : {}) });
+      setPurpose(as);
       if (dryRun) setChecked(true);
       else {
         setDone(true);
@@ -174,6 +198,7 @@ function AdoptCard({ g, project, adopted, onClose }: { g: GoldenSetVersion; proj
     void act(true);
   });
   const leakage = problem?.problem?.type.endsWith("/golden-set-leakage");
+  const locale = problem?.problem?.type.endsWith("/locale-mismatch");
   return (
     <div className="flex flex-col gap-1.5 rounded-md border bg-tool p-2" role="group" aria-label="Adopt into project" data-slot="adopt-card">
       <p>
@@ -181,7 +206,9 @@ function AdoptCard({ g, project, adopted, onClose }: { g: GoldenSetVersion; proj
         utterances can never enter the project's training mixes.
       </p>
       {adopted && !done ? <p className="text-muted-foreground">{project} already adopted it.</p> : null}
-      {checked && !done && !problem ? <p role="status">Checked: no training data of the project overlaps it.</p> : null}
+      {checked && !done && !problem ? (
+        <p role="status">Checked{purpose === "replay" ? " as a replay set" : ""}: no training data of the project overlaps it.</p>
+      ) : null}
       {done ? (
         <p role="status" className="text-status-done-foreground">
           Adopted. Name it in gates.yaml (Project home → Gate) to make it a target or replay set.
@@ -204,6 +231,11 @@ function AdoptCard({ g, project, adopted, onClose }: { g: GoldenSetVersion; proj
         <Button size="xs" disabled={busy || adopted || done || !!problem || !checked} onClick={() => void act(false)} data-command="projects.adopt">
           Adopt
         </Button>
+        {locale && !done ? (
+          <Button size="xs" variant="outline" disabled={busy} onClick={() => void act(true, "replay")}>
+            Check as replay
+          </Button>
+        ) : null}
         <Button size="xs" variant="ghost" onClick={onClose}>
           {done ? "Close" : "Cancel"}
         </Button>

@@ -65,6 +65,29 @@ tools:
     operations: [artifacts.evict]
     reason: eviction deletes blobs from the content store; only the backup mirror can bring them back
 
+  # R26: an auxiliary model (LID, pseudo-label member, aligner) writes text that reaches datasets, so adopting one is
+  # a registry-scope approval the admin decides after reading its licence, for people too. The handler names the
+  # version's kind to the engine (projects.adopt of an auxiliary version: kind=auxiliary).
+  - id: auxiliary-adoption
+    class: gated
+    everyone: true
+    operations: [projects.adopt]
+    params: { kind: auxiliary }
+    reason: an auxiliary model's outputs become training text; the admin checks its licence before any project uses it
+
+  # Annotation (phase 4 · stream A): a human transcript is a person's. Agents sample and watch batches (batches.new,
+  # batches.get) but never annotate, adjudicate, resolve a disputed pseudo-label or invite a reviewer; freezing a batch
+  # registers a golden set or training data, so it is an approval for everyone, like goldenSets.freeze.
+  - id: annotation-is-for-people
+    class: forbidden
+    operations: [annotations.new, batchItems.accept, triage.accept, triage.correct, triage.reject, "invitations.*"]
+    reason: transcripts written as human are a person's, and reviewers are invited by the admin
+  - id: annotation-batch-freeze
+    class: gated
+    everyone: true
+    operations: [batches.freeze]
+    reason: a frozen batch becomes a golden set every project's gate compares against, or training data; the admin decides
+
   # A golden set decides what every project's gate compares against: freezing one is a registry-scope approval the
   # admin decides, for people too (05 "Approvals have a scope"; phase-3 plan stream G).
   - id: golden-set-freeze
@@ -92,11 +115,30 @@ tools:
     operations: [deployments.promote, deployments.rollback]
     reason: deployments reach real traffic
 
-  # Registry-scope approvals: mounts, model registration, and source edits — clearing a source for training (its
+  # A mount is shared by every project and reaches storage outside Cadence: registering one is a registry-scope
+  # approval the admin decides, for people too (phase-4 plan stream M).
+  - id: mount-registration
+    class: gated
+    everyone: true
+    operations: [mounts.new]
+    reason: a mount is shared by every project and opens storage outside Cadence; the admin decides which locations Cadence reads and writes
+
+  # A dataset pushed to the Hugging Face Hub leaves the instance with its audio and transcripts: an approval the admin
+  # decides, for people too (spec 03 "Interoperability": exports follow the approval rules of a registry publication;
+  # phase-4 plan stream I). datasets.export names its body's format to the policy; exports to a mount or the content
+  # store stay drafts (the draft rule below).
+  - id: hub-export
+    class: gated
+    everyone: true
+    operations: [datasets.export]
+    params: { format: hf-hub }
+    reason: a dataset pushed to the Hugging Face Hub leaves the instance; the admin decides what is published
+
+  # Registry-scope approvals: model registration and source edits — clearing a source for training (its
   # licence allows it and the data may be used) is a person's decision (R18).
   - id: registry-changes
     class: gated
-    operations: [mounts.new, models.register, sources.edit]
+    operations: [models.register, sources.edit]
     reason: registry changes are shared by every project; clearing a source for training is a person's decision
 
   # Phase-1 fixture for the approval loop until real gated commands arrive: archiving a project is a soft delete.
@@ -139,7 +181,7 @@ tools:
     class: draft
     verbs: [new, open, edit, preview, calibrate, run, pause, resume, cancel, retry, stage, freeze, materialize,
             evict, scan, export, parity, benchmark, average, gate, set, adopt, pin, accept, correct, reject, revert,
-            package, note, sync]
+            package, note, sync, verify]
 
 files:
   worktree: true          # nothing outside the session worktree

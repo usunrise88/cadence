@@ -29,6 +29,15 @@ const JobKind = "step"
 // queued in step_jobs and leased by a worker, but no pipeline run owns it.
 const LiveJobKind = "live"
 
+// MountCheckJobKind is the River job kind of a mount health check (internal/mounts): queued in step_jobs and leased
+// by a worker like a step job (core step kind mount_check@1), but no pipeline run owns it.
+const MountCheckJobKind = "mounts.verify"
+
+// WorkerJob reports whether River job kind runs on a worker through step_jobs (Leases.Await accepts it).
+func WorkerJob(kind string) bool {
+	return kind == JobKind || kind == LiveJobKind || kind == MountCheckJobKind
+}
+
 // Job kinds of compute cards (compute.allowed_job_kinds) a step can need.
 const (
 	JobTraining = "training"
@@ -107,6 +116,18 @@ type Spec struct {
 	Overrides       Overrides              `json:"overrides"`
 	SecretNames     []string               `json:"secretNames,omitempty"`
 	Attempt         int                    `json:"attempt"`
+	// Auxiliaries are the registry versions the step's parameters name (x-cadence.registryRef), by parameter.
+	Auxiliaries map[string]RegistryRef `json:"auxiliaries,omitempty"`
+}
+
+// RegistryRef is a registry version a step parameter names, resolved for the project when the run was planned (the
+// contract's StepRegistryRef): the worker reads the payload; the control plane never interprets it beyond the checks
+// of its kind.
+type RegistryRef struct {
+	VersionID string          `json:"versionId"`
+	Name      string          `json:"name"`
+	Version   string          `json:"version"`
+	Payload   json.RawMessage `json:"payload"`
 }
 
 // KindRef is the pinned "kind@version" of the spec.

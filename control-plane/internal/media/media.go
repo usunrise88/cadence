@@ -40,17 +40,39 @@ const (
 // Utterance is what serving needs of an utterance.
 type Utterance struct {
 	ID         string
-	Hash       string // the audio blob in the content store (b3:…)
+	Hash       string // the audio blob in the content store (b3:…); for a window, the key its peaks are cached under
 	Duration   float64
 	SampleRate int
 	Channels   int
+	// Window, when set, is where the audio lives instead of the content store: a span of a file on a mount (an
+	// annotation item's or triage item's window, every channel; phase 4).
+	Window *Window
+	// URI is a mount copy of the utterance's own audio (utterance_uris), read when the blob is not in the content
+	// store (a draft dataset version's segments, indexed in place).
+	URI string
+	// BatchID and ProjectID say who may hear a window: the reviewers of the item's batch and the project's people.
+	BatchID   string
+	ProjectID string
+	// Target is the channel of the item's segment in its window (the annotation target), -1 when unknown.
+	Target int
+	// Roles are the window's channel roles when known.
+	Roles []string
 }
 
-// Lookup finds an utterance by id (utt_…) or by its audio's content hash (b3:…).
+// Lookup finds an utterance by id (utt_…) or by its audio's content hash (b3:…); an annotation batch item (bit_…) or a
+// triage item (tri_…) by its id, as the window of its segment in the source file.
 func Lookup(ctx context.Context, q storage.Querier, ref string) (Utterance, error) {
-	var u Utterance
-	err := q.QueryRow(ctx, `SELECT id, content_hash, duration_s, sample_rate, channels FROM utterances
-		WHERE id = $1 OR content_hash = $1 LIMIT 1`, ref).Scan(&u.ID, &u.Hash, &u.Duration, &u.SampleRate, &u.Channels)
+	switch {
+	case strings.HasPrefix(ref, "bit_"):
+		return lookupItem(ctx, q, ref)
+	case strings.HasPrefix(ref, "tri_"):
+		return lookupTriage(ctx, q, ref)
+	}
+	u := Utterance{Target: -1}
+	err := q.QueryRow(ctx, `SELECT u.id, u.content_hash, u.duration_s, u.sample_rate, u.channels,
+			coalesce((SELECT min(uri) FROM utterance_uris x WHERE x.utterance_id = u.id), '')
+		FROM utterances u WHERE u.id = $1 OR u.content_hash = $1 LIMIT 1`, ref).
+		Scan(&u.ID, &u.Hash, &u.Duration, &u.SampleRate, &u.Channels, &u.URI)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Utterance{}, problems.NotFound.New("no utterance %q in the registry", ref)
 	}
@@ -113,10 +135,20 @@ func (s *Served) Close() error {
 }
 
 func (s *Service) open(u Utterance) (*os.File, Info, error) {
+	if u.Window != nil {
+		return s.openWindow(u, *u.Window)
+	}
 	if s.CAS == nil {
 		return nil, Info{}, problems.NotImplemented.New("this control plane has no content store")
 	}
 	f, err := s.CAS.Open(u.Hash)
+	if errors.Is(err, cas.ErrNotFound) && u.URI != "" {
+		w, werr := s.segmentWindow(u.URI)
+		if werr != nil {
+			return nil, Info{}, werr
+		}
+		return s.openWindow(u, w)
+	}
 	if errors.Is(err, cas.ErrNotFound) {
 		return nil, Info{}, problems.NotFound.New("the audio of %s (%s) is not in the content store", u.ID, u.Hash)
 	}
@@ -169,13 +201,16 @@ func (s *Service) Audio(u Utterance, sp Span) (*Served, error) {
 	if err != nil {
 		return nil, err
 	}
+	if sp.Channel == nil && info.Only != nil {
+		sp.Channel = info.Only
+	}
 	start, end, channel, err := resolve(sp, info)
 	if err != nil {
 		_ = f.Close()
 		return nil, err
 	}
 	whole := sp.Start == nil && sp.End == nil && (sp.Channel == nil || info.Channels == 1)
-	if whole && info.Canonical() && info.DataOffset == WAVHeaderSize {
+	if whole && info.Canonical() && info.DataOffset == WAVHeaderSize && !info.Windowed {
 		st, err := f.Stat()
 		if err != nil {
 			_ = f.Close()
@@ -290,6 +325,9 @@ func (s *Service) Peaks(ctx context.Context, u Utterance) (Peaks, string, int, e
 	p, err := ComputePeaks(f, info)
 	if err != nil {
 		return Peaks{}, "", 0, err
+	}
+	if info.Only != nil {
+		p = p.Channel(*info.Only)
 	}
 	b := p.Bytes()
 	hash, err := s.CAS.PutBytes(b)

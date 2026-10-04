@@ -14,7 +14,7 @@ training run:
 | Part | Meaning |
 | --- | --- |
 | Run | State, pipeline, source (repository or template), the commit it was read at, who started it, wall time, the run's inputs and why it failed |
-| Steps | In execution order: `kind@version`, state (waiting, queued, running, done, reused, failed, skipped, cancelled), departures from defaults, attempts, wall time |
+| Steps | In execution order: `kind@version`, state (waiting, queued, running, done, reused, failed, skipped, cancelled), departures from defaults, ⚠ deprecated when its pack deprecates the pinned kind version (the tooltip names the cut-off day and the replacement; [step-kind-deprecated](../errors/step-kind-deprecated.md)), attempts, wall time |
 | Inputs and outputs | Artifacts by name, type, hash and size; select one for its preview (`artifacts.get`: metadata, a directory's files, or up to 4 000 characters of text) |
 | Departures | The parameters that differ from their defaults, with the default beside the value |
 | Parameters | The resolved parameters as a read-only form rendered from the step kind's schema (`stepKinds.get`): each with "Why this default?" (description, default, source, safe range) and a "departs from default" chip |

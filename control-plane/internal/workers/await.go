@@ -60,8 +60,8 @@ func (s *Service) enqueue(ctx context.Context, jobID string) error {
 		if has {
 			return nil
 		}
-		if kind != steps.JobKind && kind != steps.LiveJobKind {
-			return fmt.Errorf("await %s: a %s job, not a %s or %s job", jobID, kind, steps.JobKind, steps.LiveJobKind)
+		if !steps.WorkerJob(kind) {
+			return fmt.Errorf("await %s: a %s job, not one that runs on a worker (%s, %s, %s)", jobID, kind, steps.JobKind, steps.LiveJobKind, steps.MountCheckJobKind)
 		}
 		var spec steps.Spec
 		if err := json.Unmarshal(args, &spec); err != nil {

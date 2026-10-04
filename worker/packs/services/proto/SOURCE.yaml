@@ -1,0 +1,9 @@
+# The vendored OASIS contract (wire package oasis.v1). Copied unchanged; the generated module
+# cadence_services/oasis_gen/asr_pb2.py(i) comes from this copy (scripts/gen_proto.py). A new copy is a new commit here
+# with these fields updated; a contract break on the OASIS side is a new package version (oasis.v2), never an edit.
+repository: https://github.com/usunrise88/oasis.git
+path: proto/oasis_contract/v1/asr.proto
+commit: 23811461cbbd29e86a9e49b7c442060f8cd5a5b0          # HEAD of /home/era/oasis when vendored
+lastChangedIn: 94f74382054c1f76a7003258202c3d76257bc9fe   # the last commit that touched the file
+sha256: a1cae1e1d3a5a8783a110bac426f31ce22e5be93b6597e3cbfa8c74305faf0b0
+vendoredAt: "2026-10-03"

@@ -104,6 +104,28 @@ var (
 	TranscriptionTicketInvalid      = Type{"transcription-ticket-invalid", http.StatusForbidden, "Transcription ticket invalid"}
 	TranscriptionInputInvalid       = Type{"transcription-input-invalid", http.StatusUnprocessableEntity, "Transcription input invalid"}
 	TranscriptionLimit              = Type{"transcription-limit", http.StatusConflict, "Transcription session limit reached"}
+	// Ingest, draft dataset versions and freezing (phase 4 · stream D).
+	DatasetNotFrozen = Type{"dataset-not-frozen", http.StatusUnprocessableEntity, "Dataset version not frozen"}
+	SourceUnlicensed = Type{"source-unlicensed", http.StatusUnprocessableEntity, "Source without a usable licence"}
+	// Mounts and the local cache (phase 4 · stream M).
+	MountUnhealthy       = Type{"mount-unhealthy", http.StatusConflict, "Mount unhealthy"}
+	StorageQuotaExceeded = Type{"storage-quota-exceeded", http.StatusConflict, "Project storage quota exceeded"}
+	// Auxiliary models and pseudo-labels (phase 4 · stream X, R26).
+	AuxiliaryUnavailable    = Type{"auxiliary-unavailable", http.StatusServiceUnavailable, "Auxiliary service unavailable"}
+	AuxiliaryLicenceRefused = Type{"auxiliary-licence-refused", http.StatusUnprocessableEntity, "Auxiliary licence refused"}
+	// Registry in full (phase 4 · stream R): adoption checks, soft delete, step-kind deprecation, data.lock.
+	LicenceForbidsAdoption = Type{"licence-forbids-adoption", http.StatusUnprocessableEntity, "Licence forbids adoption"}
+	LocaleMismatch         = Type{"locale-mismatch", http.StatusUnprocessableEntity, "Not in the project's languages"}
+	VersionInUse           = Type{"version-in-use", http.StatusConflict, "Registry version in use"}
+	StepKindDeprecated     = Type{"step-kind-deprecated", http.StatusUnprocessableEntity, "Step kind deprecated"}
+	NotAdopted             = Type{"not-adopted", http.StatusUnprocessableEntity, "Not in the project's data.lock"}
+	// Interoperability: dataset exports (phase 4 · stream I).
+	ExportNotAllowed = Type{"export-not-allowed", http.StatusUnprocessableEntity, "Export not allowed"}
+	// Annotation batches and reviewer invitations (phase 4 · stream A).
+	BatchIncomplete        = Type{"batch-incomplete", http.StatusConflict, "Annotation batch incomplete"}
+	AnnotationAgreementLow = Type{"annotation-agreement-low", http.StatusConflict, "Inter-annotator agreement too low"}
+	BatchClosed            = Type{"batch-closed", http.StatusConflict, "Annotation batch closed"}
+	InvitationInvalid      = Type{"invitation-invalid", http.StatusUnauthorized, "Invitation invalid"}
 )
 
 // Types lists every registered type.
@@ -122,6 +144,12 @@ func Types() []Type {
 		SweepOverCap,
 		TranscriptionInProgress, TranscriptionAllowanceExhausted, TranscriptionTicketInvalid, TranscriptionInputInvalid,
 		TranscriptionLimit,
+		DatasetNotFrozen, SourceUnlicensed,
+		MountUnhealthy, StorageQuotaExceeded,
+		AuxiliaryUnavailable, AuxiliaryLicenceRefused,
+		LicenceForbidsAdoption, LocaleMismatch, VersionInUse, StepKindDeprecated, NotAdopted,
+		ExportNotAllowed,
+		BatchIncomplete, AnnotationAgreementLow, BatchClosed, InvitationInvalid,
 	}
 }
 

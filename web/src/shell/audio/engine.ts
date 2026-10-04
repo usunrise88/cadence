@@ -6,6 +6,7 @@
 import { resolveColor } from "@/shell/charts/tokens";
 import { formatTime, pyramidLevel, rulerStep, timeToX, xToTime, type AudioAxis } from "./axis";
 import { blurAudio, setFocusedAudio, type AudioController } from "./controller";
+import type { AnalysisData } from "./analysis";
 import type { PeakPyramid } from "./peaks";
 import { sharedRenderer, type Colormap, type Renderer, type TileQuad } from "./renderer";
 import { schedulerFor, type Frameable, type WindowScheduler } from "./scheduler";
@@ -34,7 +35,7 @@ export type EngineOptions = {
 const HOP0 = 0.01;
 const SUMMARY_MS = 500;
 
-type Colors = { text: string; muted: string; grid: string; wave: string; clip: string; viewport: string };
+type Colors = { text: string; muted: string; grid: string; wave: string; clip: string; viewport: string; speech: string };
 
 export class AudioEngine implements Frameable, AudioController {
   readonly doc: Document;
@@ -61,10 +62,15 @@ export class AudioEngine implements Frameable, AudioController {
   private summary: HTMLDivElement;
   private live: HTMLDivElement;
   private peaks: PeakPyramid | null = null;
+  private energyBox: HTMLDivElement;
+  private energy: HTMLCanvasElement;
+  private energyLabel: HTMLDivElement;
+  private analysis: AnalysisData | null = null;
+  private activeChannel: number | null = null;
   private spec: SpecSource | null = null;
   private media: HTMLAudioElement | null = null;
   private settings: SpecSettings;
-  private colors: Colors = { text: "", muted: "", grid: "", wave: "", clip: "", viewport: "" };
+  private colors: Colors = { text: "", muted: "", grid: "", wave: "", clip: "", viewport: "", speech: "" };
   private cleanup: (() => void)[] = [];
   private specCleanup: (() => void) | null = null;
   private dirty = true;
@@ -103,6 +109,11 @@ export class AudioEngine implements Frameable, AudioController {
     this.ruler = el("canvas", "cadence-audio-ruler");
     this.waveBox = el("div", "cadence-audio-lane cadence-audio-wave-box");
     this.wave = el("canvas", "cadence-audio-wave", this.waveBox);
+    // Level and voice activity per channel (R51 "Energy, VAD"), shown once tracks arrive.
+    this.energyBox = el("div", "cadence-audio-lane cadence-audio-energy-box");
+    this.energy = el("canvas", "cadence-audio-energy", this.energyBox);
+    this.energyLabel = el("div", "cadence-audio-track-label", this.energyBox);
+    this.energyBox.hidden = true;
     this.specBox = el("div", "cadence-audio-lane cadence-audio-spec-box");
     this.specNote = el("div", "cadence-audio-note", this.specBox);
     this.wordsBox = el("div", "cadence-audio-words-box");
@@ -146,7 +157,7 @@ export class AudioEngine implements Frameable, AudioController {
         this.zoomBy(0.5);
       }
     });
-    for (const lane of [this.waveBox, this.specBox]) {
+    for (const lane of [this.waveBox, this.energyBox, this.specBox]) {
       on(lane, "pointerdown", (e) => this.pointerDown(e, lane));
       on(lane, "pointermove", (e) => this.pointerMove(e));
       on(lane, "pointerup", (e) => this.pointerUp(e));
@@ -219,6 +230,25 @@ export class AudioEngine implements Frameable, AudioController {
       return t;
     });
     this.wordsBox.hidden = tracks.length === 0;
+    this.invalidate();
+  }
+
+  /** The level, voice activity and bandwidth of each channel (tracks.get), or null to hide the lane. */
+  setAnalysis(a: AnalysisData | null): void {
+    this.analysis = a;
+    this.energyBox.hidden = !a || a.channels.length === 0;
+    const label = a
+      ? a.channels
+          .map((c) => `${this.o.channelLabels?.[c.channel] ?? c.role ?? `ch ${c.channel}`}: ${(c.bandwidthHz / 1000).toFixed(1)} kHz${c.narrowband ? " (8 kHz origin)" : ""}`)
+          .join(" · ")
+      : "";
+    this.energyLabel.textContent = label;
+    this.measure(true);
+  }
+
+  /** The channel being listened to: the waveform dims the others (null: every channel alike). */
+  setActiveChannel(ch: number | null): void {
+    this.activeChannel = ch;
     this.invalidate();
   }
 
@@ -430,6 +460,7 @@ export class AudioEngine implements Frameable, AudioController {
       wave: get("--cadence-chart-6", "rgb(62,99,221)"),
       clip: get("--cadence-status-failed", "rgb(229,72,77)"),
       viewport: get("--cadence-accent-line", "rgb(62,99,221)"),
+      speech: get("--cadence-accent-soft", "rgb(230,236,252)"),
     };
     this.invalidate();
   }
@@ -440,7 +471,7 @@ export class AudioEngine implements Frameable, AudioController {
     if (!force && w === this.width && dpr === this.dpr) return;
     this.width = w;
     this.dpr = dpr;
-    for (const c of [this.ruler, this.wave, this.minimap, ...this.specs]) {
+    for (const c of [this.ruler, this.wave, this.energy, this.minimap, ...this.specs]) {
       c.width = Math.max(1, Math.round(w * dpr));
       c.height = Math.max(1, Math.round((c.clientHeight || 1) * dpr));
     }
@@ -484,6 +515,7 @@ export class AudioEngine implements Frameable, AudioController {
     const s = this.axis.get();
     this.drawRuler();
     this.drawWave();
+    this.drawEnergy();
     this.drawMinimap();
     let ok = true;
     if (this.spec && !this.renderer.unsupported) {
@@ -584,6 +616,7 @@ export class AudioEngine implements Frameable, AudioController {
     ctx.fillStyle = this.colors.wave;
     for (let ch = 0; ch < p.channels; ch++) {
       const mid = lane * ch + lane / 2;
+      ctx.globalAlpha = this.activeChannel !== null && p.channels > 1 && ch !== this.activeChannel ? 0.35 : 1;
       ctx.beginPath();
       for (let x = 0; x < w; x++) {
         const [lo, hi] = p.range(ch, s.start + (x / w) * s.span, s.start + ((x + 1) / w) * s.span, level);
@@ -591,6 +624,7 @@ export class AudioEngine implements Frameable, AudioController {
       }
       ctx.fill();
     }
+    ctx.globalAlpha = 1;
     if (p.clipped.length) {
       ctx.fillStyle = this.colors.clip;
       for (const f of p.clipped) {
@@ -599,6 +633,49 @@ export class AudioEngine implements Frameable, AudioController {
         ctx.fillRect(Math.round(timeToX(t, s.start, s.span, w)), 0, Math.max(1, this.dpr), 3 * this.dpr);
       }
     }
+  }
+
+  /** Per channel lane: speech regions shaded, the level curve (−80 to 0 dBFS) over them. */
+  private drawEnergy(): void {
+    const a = this.analysis;
+    const c = this.energy;
+    if (!a || this.energyBox.hidden) return;
+    const ctx = c.getContext("2d");
+    if (!ctx) return;
+    const { width: w, height: h } = c;
+    ctx.clearRect(0, 0, w, h);
+    const s = this.axis.get();
+    const n = a.channels.length;
+    const lane = h / Math.max(1, n);
+    a.channels.forEach((chn, i) => {
+      const top = lane * i;
+      ctx.globalAlpha = this.activeChannel !== null && n > 1 && chn.channel !== this.activeChannel ? 0.4 : 1;
+      ctx.fillStyle = this.colors.speech;
+      for (const [t0, t1] of chn.speech) {
+        if (t1 < s.start || t0 > s.start + s.span) continue;
+        const x0 = timeToX(t0, s.start, s.span, w);
+        ctx.fillRect(x0, top, Math.max(1, timeToX(t1, s.start, s.span, w) - x0), lane);
+      }
+      ctx.strokeStyle = this.colors.wave;
+      ctx.lineWidth = Math.max(1, this.dpr);
+      ctx.beginPath();
+      const first = Math.max(0, Math.floor((s.start - a.offset) / a.hopS));
+      const last = Math.min(chn.levelDb.length - 1, Math.ceil((s.start + s.span - a.offset) / a.hopS));
+      const step = Math.max(1, Math.floor((last - first) / Math.max(1, w)));
+      for (let k = first; k <= last; k += step) {
+        const x = timeToX(a.offset + k * a.hopS, s.start, s.span, w);
+        const v = Math.max(-80, Math.min(0, chn.levelDb[k] ?? -100));
+        const y = top + lane - ((v + 80) / 80) * lane;
+        if (k === first) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+      if (i > 0) {
+        ctx.fillStyle = this.colors.grid;
+        ctx.fillRect(0, top, w, Math.max(1, this.dpr));
+      }
+    });
+    ctx.globalAlpha = 1;
   }
 
   private drawMinimap(): void {

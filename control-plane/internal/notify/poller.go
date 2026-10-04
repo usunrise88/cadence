@@ -123,14 +123,18 @@ func (p *Poller) Handle(ctx context.Context, c *telegram.Client, u telegram.Upda
 		if !settings.Allowed(q.Message.Chat.ID) {
 			return p.seen(ctx, q.Message.Chat)
 		}
-		toast, text := p.press(ctx, q)
+		toast, note := p.press(ctx, q)
 		if err := c.AnswerCallbackQuery(ctx, q.ID, toast); err != nil {
 			return err
 		}
-		if text != "" {
-			return c.EditMessageText(ctx, q.Message.Chat.ID, q.Message.MessageID, text)
+		if note == "" {
+			return nil
 		}
-		return nil
+		label, rest := pressedRow(q.Message.ReplyMarkup, q.Data)
+		if label != "" {
+			note = "[" + label + "] " + note
+		}
+		return c.EditMessage(ctx, q.Message.Chat.ID, q.Message.MessageID, q.Message.Text+"\n\n"+note, rest)
 	case u.Message != nil:
 		if !settings.Allowed(u.Message.Chat.ID) {
 			return p.seen(ctx, u.Message.Chat)
@@ -147,9 +151,34 @@ func (p *Poller) seen(ctx context.Context, chat telegram.Chat) error {
 	return RecordSeen(ctx, p.Pool, Chat{ID: chat.ID, Title: chat.Label(), SeenAt: &now})
 }
 
+// pressedRow finds the keyboard row of the pressed button (data) and returns its number in a batched approval
+// message ("2" of "Approve 2"; "" for a message of one approval) and the keyboard without that row: the approvals
+// not decided yet keep their buttons.
+func pressedRow(kb *telegram.Keyboard, data string) (label string, rest *telegram.Keyboard) {
+	rest = &telegram.Keyboard{InlineKeyboard: [][]telegram.Button{}}
+	if kb == nil {
+		return "", rest
+	}
+	for _, row := range kb.InlineKeyboard {
+		pressed := false
+		for _, b := range row {
+			if b.CallbackData == data {
+				pressed = true
+				if _, n, ok := strings.Cut(b.Text, " "); ok {
+					label = n
+				}
+			}
+		}
+		if !pressed {
+			rest.InlineKeyboard = append(rest.InlineKeyboard, row)
+		}
+	}
+	return label, rest
+}
+
 // press verifies and spends a button's token and decides its approval. It returns the toast for the presser and,
-// when the approval was decided (now or before), the message text without buttons.
-func (p *Poller) press(ctx context.Context, q *telegram.CallbackQuery) (toast, text string) {
+// when the approval was decided (now or before), the line the message gains as that approval's buttons go.
+func (p *Poller) press(ctx context.Context, q *telegram.CallbackQuery) (toast, note string) {
 	id, action, err := p.Signer.Parse(q.Data)
 	if err != nil {
 		p.Log.WarnContext(ctx, "telegram: button with a bad signature", "chat", q.Message.Chat.ID)
@@ -163,9 +192,9 @@ func (p *Poller) press(ctx context.Context, q *telegram.CallbackQuery) (toast, t
 	})
 	switch {
 	case errors.Is(err, ErrTokenSpent):
-		return "Already decided.", q.Message.Text + "\n\nAlready decided."
+		return "Already decided.", "Already decided."
 	case errors.Is(err, ErrTokenExpired):
-		return "The approval expired.", q.Message.Text + "\n\nExpired — nobody decided in time."
+		return "The approval expired.", "Expired — nobody decided in time."
 	case err != nil:
 		return "This button is not valid.", ""
 	}
@@ -176,7 +205,7 @@ func (p *Poller) press(ctx context.Context, q *telegram.CallbackQuery) (toast, t
 	}
 	switch {
 	case errors.Is(err, ErrAlreadyDecided):
-		return "Already decided in Cadence.", q.Message.Text + fmt.Sprintf("\n\nAlready %s in Cadence.", state)
+		return "Already decided in Cadence.", fmt.Sprintf("Already %s in Cadence.", state)
 	case err != nil:
 		// Nothing was decided: the buttons work again, and the approval can still be decided in Cadence.
 		_, _ = p.Pool.Exec(context.WithoutCancel(ctx), `UPDATE notification_tokens SET used_at = NULL, used_by = NULL
@@ -184,8 +213,8 @@ func (p *Poller) press(ctx context.Context, q *telegram.CallbackQuery) (toast, t
 		p.Log.WarnContext(ctx, "telegram: deciding an approval failed", "approval", approvalID, "err", err)
 		return "Cadence could not record the decision; try again or decide in Cadence.", ""
 	case action == ActionApprove:
-		return "Approved.", q.Message.Text + "\n\nApproved from Telegram" + who + "."
+		return "Approved.", "Approved from Telegram" + who + "."
 	default:
-		return "Denied.", q.Message.Text + "\n\nDenied from Telegram" + who + "."
+		return "Denied.", "Denied from Telegram" + who + "."
 	}
 }

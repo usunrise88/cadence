@@ -32,7 +32,10 @@ import { registerAudioCommands } from "./audio";
 import { registerApiCommands } from "./api";
 import { registerExperimentCommands } from "./experiments";
 import { registerEvaluationCommands } from "./evaluation";
+import { registerDataCommands } from "./data";
 import { registerTranscriptionCommands } from "./transcriptions";
+import { registerStorageCommands } from "./storage";
+import { registerAnnotationCommands } from "./annotation";
 import { registerTrainingCommands } from "./training";
 import { registerProjectCommands } from "./projects";
 import type { Command } from "./registry";
@@ -241,6 +244,9 @@ export function registerBuiltinCommands(): void {
   registerAudioCommands();
   registerEvaluationCommands();
   registerTranscriptionCommands();
+  registerStorageCommands();
+  registerDataCommands();
+  registerAnnotationCommands();
 
   // One "Open <panel>" command per registered tool panel.
   for (const m of panels.all()) {

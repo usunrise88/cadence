@@ -6,7 +6,7 @@ from __future__ import annotations
 from pydantic import ValidationError
 
 from cadence_worker.protocol_gen import StepError
-from cadence_worker.steps.base import StepInputError
+from cadence_worker.steps.base import AuxiliaryUnavailable, StepInputError
 
 OOM_MARKERS = ("CUDA out of memory", "CUDA error: out of memory", "CUBLAS_STATUS_ALLOC_FAILED")
 
@@ -30,6 +30,8 @@ def classify(exc: BaseException) -> StepError:
     msg = f"{type(exc).__name__}: {exc}"[:4000]
     if is_oom(exc):
         return {"type": "oom", "message": msg, "retryable": True}
+    if isinstance(exc, AuxiliaryUnavailable):
+        return {"type": "step", "message": f"auxiliary-unavailable: {exc}"[:4000], "retryable": True}
     if isinstance(exc, StepInputError | ValidationError):
         return {"type": "input", "message": msg, "retryable": False}
     return {"type": "step", "message": msg, "retryable": False}

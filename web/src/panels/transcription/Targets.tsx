@@ -58,11 +58,18 @@ function useModelOptions(project: string) {
     const f = all.find((v) => v.modelFamily.name === family) ?? (family ? undefined : all[0]);
     return f?.modelFamily.latencyProfiles ?? [];
   };
-  return { options, profiles };
+  /** The locale: tags of the family's base models (every base model's when none matches), sorted. */
+  const modelLocales = (family: string | undefined): string[] => {
+    const all = bases.data?.items ?? [];
+    const mine = all.filter((b) => b.baseModel.familyId === family);
+    const tags = (mine.length ? mine : all).flatMap((b) => (b.tags ?? []).filter((t) => t.startsWith("locale:")).map((t) => t.slice("locale:".length)));
+    return [...new Set(tags.filter((t) => t !== ""))].sort();
+  };
+  return { options, profiles, modelLocales };
 }
 
 export function TargetsForm({ project, targets, onChange, disabled }: { project: string; targets: TargetForm[]; onChange: (t: TargetForm[]) => void; disabled?: boolean }) {
-  const { options, profiles } = useModelOptions(project);
+  const { options, profiles, modelLocales } = useModelOptions(project);
   const proj = useQuery({ ...projectsGetOptions({ path: { p: project } }), enabled: !!project });
   const packs = useQuery({ ...langpacksListOptions({ path: { p: project } }), enabled: !!project });
   const locales = proj.data?.locales ?? [];
@@ -75,7 +82,11 @@ export function TargetsForm({ project, targets, onChange, disabled }: { project:
         const family = opts.find((o) => o.id === t.id)?.family;
         const profs = profiles(family);
         const lang = t.language || locales[0] || "";
-        const pack = (packs.data?.items ?? []).find((p) => p.locale === lang);
+        // A neighbour's decode language (hr-HR for Serbian) still boosts with the project's own pack.
+        const pack = (packs.data?.items ?? []).find((p) => p.locale === lang) ?? (packs.data?.items ?? []).find((p) => p.locale === locales[0]);
+        // The languages the target's base models know (their locale: tags), so a model fine-tuned under a
+        // neighbour's prompt can be heard in it; Default is the server's (the training language, else the project's).
+        const known = modelLocales(family).filter((l) => !locales.includes(l));
         const lane = "ABC"[i] ?? "?";
         return (
           <div key={i} className="flex flex-wrap items-center gap-1.5 text-xs" data-slot="transcription-target">
@@ -111,13 +122,22 @@ export function TargetsForm({ project, targets, onChange, disabled }: { project:
                   </option>
                 ))}
             </NativeSelect>
-            <NativeSelect className="h-7 w-24" aria-label={`Target ${i + 1}: language`} value={t.language} disabled={disabled} onChange={(e) => set(i, { language: e.target.value, boost: "none" })}>
-              <option value="">{locales[0] ? `${locales[0]} (project)` : "Project's"}</option>
+            <NativeSelect className="h-7 w-24" aria-label={`Target ${i + 1}: language`} value={t.language} disabled={disabled} onChange={(e) => set(i, { language: e.target.value })}>
+              <option value="">Default</option>
               {locales.map((l) => (
                 <option key={l} value={l}>
                   {l}
                 </option>
               ))}
+              {known.length ? (
+                <optgroup label="The model knows">
+                  {known.map((l) => (
+                    <option key={l} value={l}>
+                      {l}
+                    </option>
+                  ))}
+                </optgroup>
+              ) : null}
             </NativeSelect>
             <NativeSelect className="h-7 w-36" aria-label={`Target ${i + 1}: boost list`} value={t.boost} disabled={disabled} onChange={(e) => set(i, { boost: e.target.value })}>
               <option value="none">No boosting</option>

@@ -216,10 +216,16 @@ func (l *Leases) run(spec steps.Spec) (steps.Outcome, error) {
 	if o, ok, err := l.runRobustness(spec); ok {
 		return o, err
 	}
+	if o, ok, err := l.runAlignment(spec); ok {
+		return o, err
+	}
 	if spec.Kind == KindRelay {
 		return steps.Outcome{State: steps.StateDone, Outputs: map[string]steps.ArtifactRef{"data": spec.Inputs["data"]}}, nil
 	}
 	in, ok := spec.Inputs["text"]
+	for i := 0; !ok && i < 4; i++ { // text.<n>: one of several artifacts; the fixture reads the first it was given
+		in, ok = spec.Inputs[fmt.Sprintf("text.%d", i)]
+	}
 	if !ok {
 		return steps.Outcome{State: steps.StateFailed, Error: &steps.StepError{Type: steps.ErrInput, Message: "no text input"}}, nil
 	}

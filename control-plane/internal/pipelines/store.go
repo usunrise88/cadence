@@ -79,10 +79,11 @@ func (r Run) optional(step string) bool {
 	return false
 }
 
-// readsAny reports whether s reads an output of one of the steps.
-func readsAny(s StepRow, set map[string]bool) bool {
-	for _, v := range s.Wiring {
-		if w, ok := ParseWire(v); ok && w.Step != "" && set[w.Step] {
+// needsAny reports whether s reads a step in set through an input it cannot run without: an indexed input
+// (hypotheses.2, one of several artifacts) from an optional step is dropped instead (Step.Optional).
+func (r Run) needsAny(s StepRow, set map[string]bool) bool {
+	for name, v := range s.Wiring {
+		if w, ok := ParseWire(v); ok && w.Step != "" && set[w.Step] && !(Indexed(name) && r.optional(w.Step)) {
 			return true
 		}
 	}
@@ -145,19 +146,22 @@ type StepRow struct {
 	Outputs           map[string]steps.ArtifactRef `json:"outputs,omitempty"`
 	Resources         steps.Resources              `json:"resources"`
 	SecretNames       []string                     `json:"-"`
-	EstimateSeconds   *float64                     `json:"estimateSeconds,omitempty"`
-	InputHash         string                       `json:"inputHash,omitempty"`
-	ReusedFrom        string                       `json:"reusedFrom,omitempty"`
-	Attempts          int                          `json:"attempts"`
-	AttemptLog        []Attempt                    `json:"attemptLog"`
-	JobID             string                       `json:"jobId,omitempty"`
-	Error             *steps.StepError             `json:"error,omitempty"`
-	Metrics           map[string]float64           `json:"metrics,omitempty"`
-	Rev               int                          `json:"-"`
-	CreatedAt         time.Time                    `json:"-"`
-	UpdatedAt         time.Time                    `json:"-"`
-	StartedAt         *time.Time                   `json:"startedAt,omitempty"`
-	FinishedAt        *time.Time                   `json:"finishedAt,omitempty"`
+	// Auxiliaries are the registry versions the step's parameters name (x-cadence.registryRef), resolved when the run
+	// was planned; the step spec carries them to the worker.
+	Auxiliaries     map[string]steps.RegistryRef `json:"-"`
+	EstimateSeconds *float64                     `json:"estimateSeconds,omitempty"`
+	InputHash       string                       `json:"inputHash,omitempty"`
+	ReusedFrom      string                       `json:"reusedFrom,omitempty"`
+	Attempts        int                          `json:"attempts"`
+	AttemptLog      []Attempt                    `json:"attemptLog"`
+	JobID           string                       `json:"jobId,omitempty"`
+	Error           *steps.StepError             `json:"error,omitempty"`
+	Metrics         map[string]float64           `json:"metrics,omitempty"`
+	Rev             int                          `json:"-"`
+	CreatedAt       time.Time                    `json:"-"`
+	UpdatedAt       time.Time                    `json:"-"`
+	StartedAt       *time.Time                   `json:"startedAt,omitempty"`
+	FinishedAt      *time.Time                   `json:"finishedAt,omitempty"`
 }
 
 // lastAttempt returns the current attempt's log entry (nil before the first).
@@ -274,14 +278,14 @@ func ListRuns(ctx context.Context, q storage.Querier, f ListFilter) ([]Run, erro
 const stepCols = `id, pipeline_run_id, project_id, step, position, kind, kind_version, step_kind_version_id, state, params,
 	departures, wiring, inputs, produces, outputs, resources, secret_names, estimate_seconds, coalesce(input_hash, ''),
 	coalesce(reused_from, ''), attempts, attempt_log, coalesce(job_id, ''), error, metrics, rev, created_at, updated_at,
-	started_at, finished_at`
+	started_at, finished_at, auxiliaries`
 
 func scanStep(row pgx.CollectableRow) (StepRow, error) {
 	var s StepRow
 	err := row.Scan(&s.ID, &s.PipelineRunID, &s.ProjectID, &s.Step, &s.Position, &s.Kind, &s.KindVersion, &s.StepKindVersionID,
 		&s.State, &s.Params, &s.Departures, &s.Wiring, &s.Inputs, &s.Produces, &s.Outputs, &s.Resources, &s.SecretNames,
 		&s.EstimateSeconds, &s.InputHash, &s.ReusedFrom, &s.Attempts, &s.AttemptLog, &s.JobID, &s.Error, &s.Metrics, &s.Rev,
-		&s.CreatedAt, &s.UpdatedAt, &s.StartedAt, &s.FinishedAt)
+		&s.CreatedAt, &s.UpdatedAt, &s.StartedAt, &s.FinishedAt, &s.Auxiliaries)
 	if s.Params == nil {
 		s.Params = map[string]any{}
 	}
@@ -333,11 +337,14 @@ func insertStep(ctx context.Context, tx pgx.Tx, s StepRow) error {
 	if s.SecretNames == nil {
 		s.SecretNames = []string{}
 	}
+	if s.Auxiliaries == nil {
+		s.Auxiliaries = map[string]steps.RegistryRef{}
+	}
 	if _, err := tx.Exec(ctx, `INSERT INTO pipeline_steps (id, pipeline_run_id, project_id, step, position, kind, kind_version,
-		step_kind_version_id, params, departures, wiring, produces, resources, secret_names, estimate_seconds)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+		step_kind_version_id, params, departures, wiring, produces, resources, secret_names, estimate_seconds, auxiliaries)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
 		s.ID, s.PipelineRunID, s.ProjectID, s.Step, s.Position, s.Kind, s.KindVersion, s.StepKindVersionID, s.Params,
-		s.Departures, s.Wiring, s.Produces, s.Resources, s.SecretNames, s.EstimateSeconds); err != nil {
+		s.Departures, s.Wiring, s.Produces, s.Resources, s.SecretNames, s.EstimateSeconds, s.Auxiliaries); err != nil {
 		return fmt.Errorf("insert pipeline step %s: %w", s.Step, err)
 	}
 	return nil

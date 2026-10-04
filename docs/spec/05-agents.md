@@ -52,13 +52,22 @@ Cadence launches Claude Code or opencode inside a project worktree, hands it the
 | Block | Tools (`<entity>.<verb>`) |
 | --- | --- |
 | Project and registry | `projects.get`, `projects.note`, `projects.sync`, `projects.adopt`, `aliases.set`, `registry.search`, `registry.lineage`, `search.query`, `help.get`, `playbooks.run`, `experiments.new`, `experiments.get`, `experiments.list`, `sweeps.run` |
-| Data | `sources.new`, `mounts.list`, `mounts.scan`, `pipelines.run`, `datasets.preview`, `datasets.freeze`, `datasets.materialize`, `datasets.evict`, `datasets.export`, `utterances.search`, `langpacks.get`, `langpacks.edit`, `boost.edit`, `augment.preview` |
+| Data | `sources.new`, `sources.list`, `sources.get`, `sources.edit` (approval: clearing for training), `mounts.list`, `mounts.get`, `mounts.scan`, `mounts.verify`, `mounts.new` (approval, the admin decides), `storage.get`, `pipelines.run`, `datasets.list`, `datasets.get`, `datasets.preview`, `datasets.freeze`, `datasets.materialize`, `datasets.evict`, `datasets.export` (Hub: approval), `exports.list`, `exports.get`, `utterances.search`, `auxiliaries.list`, `auxiliaries.get` (adoption: approval), `triage.list`, `langpacks.get`, `langpacks.edit`, `boost.edit`, `augment.preview` (phase 5) |
 | Training | `mixes.new`, `mixes.get`, `mixes.list`, `mixes.edit`, `mixes.preview`, `drafts.list`, `drafts.get`, `drafts.revert`, `runs.calibrate`, `runs.new`, `runs.resume`, `runs.stage`, `jobs.pause`, `jobs.resume`, `jobs.cancel`, `jobs.wait`, `metrics.get`, `checkpoints.list`, `checkpoints.average` |
-| Evaluation | `goldenSets.list`, `goldenSets.get`, `goldenSets.freeze` (approval), `normalizers.list`, `normalizers.get`, `evals.new`, `evals.get`, `evals.list`, `evals.gate`, `gates.get`, `gates.edit` (approval), `models.register` (approval; needs a passed gate), `models.list`, `models.get`, `langpacks.list`, `langpacks.get`, `langpacks.edit`, `boost.edit` (drafts on a `langpack/<locale>-<date>` branch under the draft policy `language_pack`), `registry.lineage`, `aliases.set` (`baseline`, approval); boosting and robustness are `evals.new` axes (R1, R24); phase 4: `batches.new`, `batches.get`, `batches.freeze` |
+| Evaluation | `goldenSets.list`, `goldenSets.get`, `goldenSets.freeze` (approval), `normalizers.list`, `normalizers.get`, `evals.new`, `evals.get`, `evals.list`, `evals.gate`, `gates.get`, `gates.edit` (approval), `models.register` (approval; needs a passed gate), `models.list`, `models.get`, `langpacks.list`, `langpacks.get`, `langpacks.edit`, `boost.edit` (drafts on a `langpack/<locale>-<date>` branch under the draft policy `language_pack`), `registry.lineage`, `aliases.set` (`baseline`, approval); boosting and robustness are `evals.new` axes (R1, R24); phase 4: `batches.new`, `batches.list`, `batches.get`, `batches.freeze` (approval), `batchItems.list`, `batchItems.get` |
 | Deployment | `models.export`, `models.parity`, `models.benchmark`, `deployments.promote`, `deployments.rollback` |
 | Flywheel | `samples.query`, `signals.list`, `triage.next`, `triage.accept`, `triage.correct`, `triage.reject`, `corrections.package`, `schedules.new` |
 
-Every mutating tool accepts `dryRun`; the verbs come from the vocabulary in the UI shell tab; the same names are the API operation ids and the UI commands. Operations tagged `media` (utterance audio and peaks, `transcriptions.new` and its socket) are never tools: agents read no raw audio and test models through evals (R47, R48).
+Every mutating tool accepts `dryRun`; the verbs come from the vocabulary in the UI shell tab; the same names are the API operation ids and the UI commands. Operations tagged `media` (utterance audio, peaks, spectrogram, words and, from phase 4, `tracks.get`; `transcriptions.new` and its socket) are never tools: agents read no raw audio and test models through evals (R47, R48).
+
+Phase 4 as built (2026-10-04; `control-plane/templates/presets/guardrails-default.yaml`): the new tools above are generated
+from the contract like every other. Some exist as tools but the preset keeps agents out of them, because a human
+transcript must be a person's and reviewers are the admin's: `annotations.new`, `batchItems.accept`,
+`triage.accept|correct|reject` and `invitations.*` (rule `annotation-is-for-people`, forbidden; `invitations.*` is
+also admin-only in the handler). `versions.archive` falls under `no-deletes`, and `auth.accept` (tag `auth`) is not a
+tool. An agent opens and watches batches, runs ingest and pseudo-label pipelines, previews, freezes, materialises,
+evicts and exports to a mount on its own (class `draft`, reversible); what leaves the instance or is shared by every
+project waits for the admin (Guardrails below).
 
 ### Context bridge
 
@@ -94,7 +103,7 @@ Every tool call starts collapsed; the attribution badge's jump opens the one it 
 - Entity changes go through MCP and land directly, or as drafts with Accept and Revert on draftable kinds (mix, gate, note, language pack) when the project's policy says so. Accepting is a person's decision: `drafts.accept` is forbidden to agents; an agent may revert its own draft (phase 1: mixes; the policy per kind is the project's agent profile `draftPolicy`, set in Agent settings and filled by the wizard from `defaults.yaml` `agent.draft_policy`; a project without a profile falls back to `defaults.yaml` `drafts.*`).
 - File changes commit on the session branch; the Recipe document lists open session branches and their diffs against `main`.
 - On session end the branch is merged fast-forward when it applies cleanly and the permission preset allows auto-merge; otherwise it stays as "Session changes" with a three-way diff for the user to accept or discard. Branches are kept 30 days after merge.
-- As built (audit 2026-10-02): a branch whose diff touches `gates.yaml`, `lang/`, `project.yaml`, `.claude/` or `opencode.json` is never auto-merged, whatever the profile's `autoMerge` (`sessions.GuardedPaths`): it stays `pending` with a `branch.waiting` reason naming the files, until a person accepts it — the guardrail "an agent's edit of `gates.yaml` reaches `main` only when a person accepts the session changes" (Guardrails table), extended to the language packs and the project and agent settings.
+- As built (audit 2026-10-02): a branch whose diff touches `gates.yaml`, `lang/`, `project.yaml`, `data.lock` (audit F1, 2026-10-04), `.claude/` or `opencode.json` is never auto-merged, whatever the profile's `autoMerge` (`sessions.GuardedPaths`): it stays `pending` with a `branch.waiting` reason naming the files, until a person accepts it — the guardrail "an agent's edit of `gates.yaml` reaches `main` only when a person accepts the session changes" (Guardrails table), extended to the language packs and the project and agent settings.
 - Parallel sessions never share a worktree; their conflicts appear only at merge, never at runtime.
 
 ### Playbooks and schedules as sessions
@@ -176,6 +185,10 @@ Agents may do anything reversible on their own; anything that spends real GPU ti
 | GPU job within the session budget, staging card | Allowed, notified | — |
 | GPU job over budget | Approval request | User |
 | Freeze a golden set, change a baseline or gate | Approval request; an agent's edit of `gates.yaml` in its worktree reaches `main` only when a person accepts the session changes | User (golden-set freeze: the admin, registry scope, and a person's freeze waits for the same approval — preset rule `golden-set-freeze`, `everyone: true`; phase 3) |
+| Register a mount | Approval request, for people too (rule `mount-registration`, `everyone: true`; phase 4) | Admin (registry scope) |
+| Adopt an auxiliary model (LID, pseudo-label member, aligner) | Approval request, for people too (rule `auxiliary-adoption`: `projects.adopt` of kind `auxiliary`); a version whose outputs forbid commercial use is refused before any approval (`auxiliary-licence-refused`) | Admin (registry scope), after reading its licence |
+| Push a dataset to the Hugging Face Hub | Approval request, for people too (rule `hub-export`: `datasets.export` with `format: hf-hub`; private by default); production sources, unlicensed sources and golden-set data are refused (`export-not-allowed`); exports to a mount or the content store are allowed | Admin (registry scope) |
+| Freeze an annotation batch | Approval request, for people too (rule `annotation-batch-freeze`); annotating, adjudicating, resolving triage and inviting reviewers are not allowed (`annotation-is-for-people`) | Admin (registry scope) |
 | Shadow deployment | Allowed | — |
 | Canary, production, rollback | Approval request | User, through a confirm modal |
 | Delete anything | Not allowed | User only, soft delete |
@@ -188,8 +201,8 @@ Agents may do anything reversible on their own; anything that spends real GPU ti
 - Budgets per project and per session: GPU-hours per day, agent spend per day, turn count; hitting a limit pauses the session.
 - Secrets (Hugging Face, NGC) live in the control plane and are injected into jobs only; agent model credentials stay with each agent's own configuration in the agent-credentials volume — set from Settings → Agents they pass through the secret store's transit area to the agent host and are deleted there once written (2026-09-30).
 - The audit log records every command with actor and `causedBy`, so any production change traces back to a person's approval.
-- Approvals have a scope: project (runs over budget, deployments) or registry (mounts, golden-set freeze, model registration, secrets). The Approvals panel shows both; registry ones are tagged, and only the admin decides them.
-- Cache fairness: each project has a cache quota on local NVMe; eviction is least-recently-used within the quota first, then across projects, never touching pinned versions.
+- Approvals have a scope: project (runs over budget, deployments) or registry (mounts, golden-set freeze, model registration, secrets; from phase 4 auxiliary adoption, Hub export and annotation-batch freeze; `versions.archive` is the admin's own call, no approval). The Approvals panel shows both; registry ones are tagged, and only the admin decides them. A registry-scope approval (no project, or a rule marked `everyone`) is granted once: `grant: session` answers `validation-failed`, and a stored session grant never answers such a request (they share one path between requests of any body; audit F1, 2026-10-04).
+- Cache fairness: each project has a cache quota on local NVMe; eviction is least-recently-used within the quota first, then across projects, never touching pinned versions. As built (phase 4): `storage.project_quota_gb` (200) counts the cached bytes of the dataset versions a project froze (`datasets.freeze` refuses past it, `storage-quota-exceeded`); the periodic sweep (`storage.cache_sweep_minutes`) evicts unpinned shards that also live on a mount, least recently used and over-quota projects first, from `storage.cache_high_water_pct` (85) down to `cache_low_water_pct` (70), as the system actor without an approval (the owner set the policy); a blob on no mount is never evicted.
 
 ## Security
 

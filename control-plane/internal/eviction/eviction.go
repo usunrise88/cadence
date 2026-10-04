@@ -66,9 +66,20 @@ type Service struct {
 	// <MirrorDir>/b3/<2 hex>/<64 hex>. Training states are never mirrored (internal/backups), so their eviction is permanent;
 	// the mirror restores other artifacts (Backfill).
 	MirrorDir string
+	// Mirror, when set, resolves the mirror's directory at each use instead (phase 4 · stream I: the mirror may live
+	// on a mount, backups.mirror_mount); it answers MirrorDir's form.
+	Mirror func(ctx context.Context) string
 	// testHook, when set, runs at the job's phases ("marked": the rows are marked and the lock is released;
 	// "deleting": the lock is held and the blobs are about to go), so a test can interleave a Record.
 	testHook func(phase string)
+}
+
+// mirrorDir is the backup mirror's directory now ("" when there is none).
+func (s *Service) mirrorDir(ctx context.Context) string {
+	if s.Mirror != nil {
+		return s.Mirror(ctx)
+	}
+	return s.MirrorDir
 }
 
 func (s *Service) hook(phase string) {

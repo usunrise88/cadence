@@ -27,7 +27,8 @@ func TestEmbeddedDefaultsParse(t *testing.T) {
 		{"training.gpus", d.Training.GPUs.Value, 1},
 		{"training.init", d.Training.Init.Value, "base"},
 		{"wizard.base_model", d.Wizard.BaseModel.Value, "base-model/nemotron-3.5-asr-streaming-0.6b"},
-		{"cache.high_water_mark", d.Cache.HighWaterMark.Value, 0.8},
+		{"storage.cache_high_water_pct", d.Storage.CacheHighWaterPct.Value, 85.0},
+		{"storage.project_quota_gb", d.Storage.ProjectQuotaGB.Value, 200.0},
 	}
 	for _, c := range checks {
 		if c.got != c.want {

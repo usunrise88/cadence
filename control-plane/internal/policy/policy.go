@@ -151,6 +151,21 @@ func (e *Engine) Preset(name string) (*Preset, bool) {
 	return p, ok
 }
 
+// Everyone reports whether rule of preset is marked `everyone`: an approval it asks is decided for every project (a
+// mount, an auxiliary adoption, a Hub push, a golden set), so it is granted once, never for an agent session.
+func (e *Engine) Everyone(preset, rule string) bool {
+	p, ok := e.presets[preset]
+	if !ok {
+		return false
+	}
+	for _, r := range p.Tools {
+		if r.ID == rule {
+			return r.Everyone
+		}
+	}
+	return false
+}
+
 // Decide answers one command. Errors come only from the budget source.
 func (e *Engine) Decide(ctx context.Context, in Input) (Decision, error) {
 	if in.Scope.ProjectID != "" && in.ProjectID != "" && in.ProjectID != in.Scope.ProjectID {

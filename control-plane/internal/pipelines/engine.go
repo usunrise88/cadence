@@ -12,6 +12,7 @@
 package pipelines
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -25,12 +26,14 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/usunrise88/cadence/control-plane/internal/artifacts"
 	"github.com/usunrise88/cadence/control-plane/internal/auth"
+	"github.com/usunrise88/cadence/control-plane/internal/auxiliary"
 	"github.com/usunrise88/cadence/control-plane/internal/cas"
 	"github.com/usunrise88/cadence/control-plane/internal/commands"
 	"github.com/usunrise88/cadence/control-plane/internal/data"
@@ -66,6 +69,10 @@ type Options struct {
 	Repos     Repo                      // project repositories; nil: bundled templates only
 	Templates fs.FS                     // the bundled templates tree (pipelines/*.yaml); templates.FS when nil
 	Log       *slog.Logger
+	// Prober checks the services auxiliary references name before a run starts (dry runs included); nil checks
+	// nothing.
+	Prober auxiliary.Prober
+	Clock  func() time.Time // when step-kind deprecations close (deprecation.go); time.Now when nil
 }
 
 // Engine runs pipelines.
@@ -143,6 +150,12 @@ func New(o Options) *Engine {
 // SetLeases replaces the worker protocol the step jobs wait on (main sets it once the worker protocol exists).
 func (e *Engine) SetLeases(l steps.Leases) { e.o.Leases = l }
 
+// SetProber replaces the check of auxiliary services (tests); call it before the engine plans runs.
+func (e *Engine) SetProber(p auxiliary.Prober) { e.o.Prober = p }
+
+// Prober is the prober plans check services with (nil: none).
+func (e *Engine) Prober() auxiliary.Prober { return e.o.Prober }
+
 // Hooks returns the output hooks the engine runs.
 func (e *Engine) Hooks() *steps.Hooks { return e.o.Hooks }
 
@@ -177,12 +190,19 @@ type StartInput struct {
 	Actor     auth.Actor
 	Priority  int
 	Fresh     bool
+	// Export is set by datasets.export (internal/exports) only: a step of job kind export (dataset_export, hf_push,
+	// shar_export) runs nowhere else, so the export's licence check, golden-set check and approval cannot be skipped
+	// by naming the kind in a project pipeline.
+	Export bool
 }
 
 // Prepare reads (or takes) the pipeline and validates it for a run without writing anything; a dry run answers
 // with its plan.
 func (e *Engine) Prepare(ctx context.Context, q storage.Querier, in StartInput) (Source, Plan, error) {
-	var src Source
+	var (
+		src  Source
+		proj *projects.Project // the project a repository or template pipeline is read for (data.lock)
+	)
 	if in.Pipeline != nil {
 		if err := in.Pipeline.Check(""); err != nil {
 			return Source{}, Plan{}, err
@@ -200,16 +220,91 @@ func (e *Engine) Prepare(ctx context.Context, q storage.Querier, in StartInput) 
 		if src, err = e.Load(ctx, p, in.Name, in.Ref); err != nil {
 			return Source{}, Plan{}, err
 		}
+		proj = &p
 	}
 	if in.Version != "" && in.Version != AnyVersion && in.Version != src.Version {
 		return Source{}, Plan{}, problems.PreconditionFailed.New("pipeline %s is at version %s, not %s; re-read it (pipelines.list) and retry",
 			src.Pipeline.Name, src.Version, in.Version)
 	}
-	plan, err := e.Plan(ctx, q, src.Pipeline, PlanInput{Inputs: in.Inputs, Params: in.Params, Estimates: in.Estimates})
+	pin := PlanInput{Inputs: in.Inputs, Params: in.Params, Estimates: in.Estimates, ProjectID: in.ProjectID}
+	if proj != nil {
+		p := *proj
+		pin.lock = &lockSet{read: func(ctx context.Context, q storage.Querier) ([]lockEntry, string, error) {
+			return e.readLock(ctx, q, p, src.Commit)
+		}}
+	}
+	plan, err := e.Plan(ctx, q, src.Pipeline, pin)
+	if err == nil && !in.Export {
+		err = exportsOnly(plan)
+	}
 	if err == nil {
 		err = e.trainable(ctx, q, plan, in.Inputs)
 	}
+	if err == nil {
+		err = licensed(ctx, q, plan)
+	}
+	for _, ps := range plan.Steps {
+		if err != nil {
+			break
+		}
+		// A service an auxiliary names must answer before anything is queued: Cadence never starts one (R26). An
+		// optional step's service only warns: the step will fail and the run goes on without it.
+		err = auxiliary.CheckServices(ctx, e.o.Prober, ps.Step, ps.Auxiliaries)
+		if err != nil && plan.optional(ps.Step) {
+			plan.Warnings = append(plan.Warnings, Warning{Code: WarningAuxiliaryUnavailable, Step: ps.Step,
+				Kind: ps.Kind.Ref(), Message: err.Error() + " (the step is optional: the run goes on without it)"})
+			err = nil
+		}
+	}
+	if err == nil && proj != nil {
+		err = e.lock(ctx, q, *proj, src.Commit, &plan)
+	}
 	return src, plan, err
+}
+
+// exportsOnly refuses (export-not-allowed) a step of job kind export outside datasets.export: an export kind takes
+// the data out of Cadence (a mount, the Hub with the hf-token secret), and only datasets.export runs the licence and
+// golden-set checks and asks the approval the hub-export rule names.
+func exportsOnly(plan Plan) error {
+	for _, ps := range plan.Steps {
+		if ps.Kind.Resources.JobKind == steps.JobExport {
+			return problems.ExportNotAllowed.New("step %s (%s) is an export step: exports run through datasets.export, which checks the "+
+				"licence and asks the approvals, never from a pipeline", ps.Step, ps.Kind.Ref())
+		}
+	}
+	return nil
+}
+
+// RegistrySource is the x-cadence.registry value of a step parameter that names a registry source (sdp_ingest's
+// source): the engine applies "no licence, no ingest" to it.
+const RegistrySource = "source"
+
+// licensed refuses a step whose parameters name a registry source (x-cadence.registry: source) that is missing,
+// archived or without a usable licence (data.IngestAllowed: source-unlicensed) — docs/spec/04-blocks.md Block 1,
+// "no licence, no ingest". The dataset hook checks the source again when the draft registers.
+func licensed(ctx context.Context, q storage.Querier, plan Plan) error {
+	for _, ps := range plan.Steps {
+		if len(bytes.TrimSpace(ps.Kind.Params)) == 0 || string(ps.Kind.Params) == "null" {
+			continue
+		}
+		var schema jsonschema.Schema
+		if err := json.Unmarshal(ps.Kind.Params, &schema); err != nil {
+			continue // Plan has reported it
+		}
+		for _, name := range sortedKeys(schema.Properties) {
+			if reg, _ := xCadence(schema.Properties[name])["registry"].(string); reg != RegistrySource {
+				continue
+			}
+			v, _ := ps.Params[name].(string)
+			if _, err := data.IngestAllowed(ctx, q, v); err != nil {
+				if pe, ok := problems.As(err); ok {
+					pe.Detail = fmt.Sprintf("step %s (%s), parameter %s: %s", ps.Step, ps.Kind.Ref(), name, pe.Detail)
+				}
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // trainable refuses a run input that a training step reads directly unless all it trains on is registered and
@@ -310,9 +405,23 @@ func (e *Engine) Start(ctx context.Context, tx pgx.Tx, in StartInput) (Run, []ev
 			Position: ps.Position, Kind: ps.Kind.Name, KindVersion: ps.Kind.Version, StepKindVersionID: ps.Kind.VersionID,
 			Params: ps.Params, Departures: ps.Departures, Wiring: ps.In, Produces: ps.Kind.Produces,
 			Resources: ps.Kind.Resources, SecretNames: ps.Kind.Secrets, EstimateSeconds: ps.EstimateSeconds,
+			Auxiliaries: ps.Auxiliaries,
 		}
 		if row.Produces == nil {
 			row.Produces = map[string]string{}
+		}
+		if err := insertStep(ctx, tx, row); err != nil {
+			return Run{}, nil, err
+		}
+	}
+	for _, sk := range plan.Skipped {
+		row := StepRow{
+			ID: "pls_" + uuid.Must(uuid.NewV7()).String(), PipelineRunID: r.ID, ProjectID: r.ProjectID, Step: sk.Step,
+			Position: sk.Position, Kind: sk.Name, KindVersion: sk.Version, Params: map[string]any{}, Departures: []Departure{},
+			Wiring: sk.In, Produces: map[string]string{},
+		}
+		if row.Wiring == nil {
+			row.Wiring = map[string]string{}
 		}
 		if err := insertStep(ctx, tx, row); err != nil {
 			return Run{}, nil, err
@@ -322,6 +431,27 @@ func (e *Engine) Start(ctx context.Context, tx pgx.Tx, in StartInput) (Run, []ev
 	sts, err := stepsOf(ctx, tx, r.ID, true)
 	if err != nil {
 		return Run{}, nil, err
+	}
+	if len(plan.Skipped) > 0 {
+		// The optional steps no live worker can run are skipped now, with the steps that read them (optional too).
+		set := map[string]bool{}
+		for _, sk := range plan.Skipped {
+			set[sk.Step] = true
+		}
+		skipped, err := skipSteps(ctx, tx, r, sts, set)
+		if err != nil {
+			return Run{}, nil, err
+		}
+		drafts = append(drafts, skipped...)
+		// The plan's own skips are marked, so a retry of another step leaves them skipped (they were never planned).
+		for j := range sts {
+			if sts[j].State == StepSkipped && set[sts[j].Step] {
+				sts[j].Error = &steps.StepError{Type: SkipPlanned, Message: "skipped when the run started: " + planSkipReason(plan, sts[j].Step)}
+				if sts[j], err = saveStep(ctx, tx, sts[j]); err != nil {
+					return Run{}, nil, err
+				}
+			}
+		}
 	}
 	more, err := e.advance(ctx, tx, &r, sts)
 	if err != nil {
@@ -384,7 +514,7 @@ func (e *Engine) advance(ctx context.Context, tx pgx.Tx, r *Run, sts []StepRow) 
 			if err != nil {
 				return nil, err
 			}
-			if s.InputHash, err = InputHash(s.Kind, s.KindVersion, runtime, s.Params, inputs); err != nil {
+			if s.InputHash, err = InputHash(s.Kind, s.KindVersion, runtime, hashParams(*s), inputs); err != nil {
 				return nil, err
 			}
 			ev, reused, err := e.reuse(ctx, tx, r, s)
@@ -462,6 +592,9 @@ func (e *Engine) inputsOf(r Run, s StepRow, sts []StepRow, byID map[string]int) 
 			continue
 		}
 		p := sts[byID[w.Step]]
+		if (p.State == StepFailed || p.State == StepSkipped) && Indexed(name) && r.optional(p.Step) {
+			continue // one of several artifacts, from an optional step that did not finish: run without it
+		}
 		if !finished(p.State) {
 			return nil, false, nil
 		}
@@ -546,7 +679,10 @@ func (e *Engine) enqueue(ctx context.Context, tx pgx.Tx, r Run, s *StepRow, reas
 		StepID: s.ID, PipelineRunID: r.ID, ProjectID: r.ProjectID, RunID: r.RunID, Kind: s.Kind, KindVersion: s.KindVersion,
 		Params: mustJSON(s.Params), Inputs: s.Inputs, Outputs: s.Produces, Resources: s.Resources, Priority: r.Priority,
 		EstimateSeconds: s.EstimateSeconds, Overrides: ov, SecretNames: s.SecretNames,
-		Attempt: s.Attempts + 1,
+		Attempt: s.Attempts + 1, Auxiliaries: s.Auxiliaries,
+	}
+	if len(spec.Auxiliaries) == 0 {
+		spec.Auxiliaries = nil
 	}
 	if spec.Inputs == nil {
 		spec.Inputs = map[string]steps.ArtifactRef{}
@@ -906,21 +1042,11 @@ func (e *Engine) fail(ctx context.Context, tx pgx.Tx, r *Run, sts []StepRow, i i
 	if r.optional(s.Step) {
 		// An optional step's failure skips the steps that read it, at any depth (optional too, Check), and the run
 		// goes on: it ends done once the rest has.
-		failed := map[string]bool{s.Step: true}
-		for changed := true; changed; {
-			changed = false
-			for j := range sts {
-				if sts[j].State != StepWaiting || !readsAny(sts[j], failed) {
-					continue
-				}
-				sts[j].State, sts[j].FinishedAt = StepSkipped, &now
-				if sts[j], err = saveStep(ctx, tx, sts[j]); err != nil {
-					return nil, err
-				}
-				failed[sts[j].Step], changed = true, true
-				drafts = append(drafts, stepDraft(*r, sts[j]))
-			}
+		skipped, err := skipSteps(ctx, tx, *r, sts, map[string]bool{s.Step: true})
+		if err != nil {
+			return nil, err
 		}
+		drafts = append(drafts, skipped...)
 		more, err := e.advance(ctx, tx, r, sts)
 		if err != nil {
 			return nil, err
@@ -942,6 +1068,31 @@ func (e *Engine) fail(ctx context.Context, tx pgx.Tx, r *Run, sts []StepRow, i i
 		return nil, err
 	}
 	return append(drafts, runDraft(*r, EventStateChanged)), nil
+}
+
+// skipSteps marks skipped every waiting step of set and every waiting step that reads one of them through an input
+// it cannot run without, at any depth (needsAny: an indexed input from an optional step is dropped instead). set
+// grows with the steps skipped; sts are updated in place.
+func skipSteps(ctx context.Context, tx pgx.Tx, r Run, sts []StepRow, set map[string]bool) ([]events.Draft, error) {
+	now := time.Now()
+	var drafts []events.Draft
+	for changed := true; changed; {
+		changed = false
+		for j := range sts {
+			if sts[j].State != StepWaiting || (!set[sts[j].Step] && !r.needsAny(sts[j], set)) {
+				continue
+			}
+			sts[j].State, sts[j].FinishedAt = StepSkipped, &now
+			saved, err := saveStep(ctx, tx, sts[j])
+			if err != nil {
+				return nil, err
+			}
+			sts[j] = saved
+			set[sts[j].Step], changed = true, true
+			drafts = append(drafts, stepDraft(r, sts[j]))
+		}
+	}
+	return drafts, nil
 }
 
 // cancelRun cancels the run: waiting steps are cancelled, queued and running step jobs are cancelled.
@@ -1160,6 +1311,9 @@ func (e *Engine) Retry(ctx context.Context, tx pgx.Tx, id string, rev int, in Re
 		if isTarget[i] || (s.State != StepSkipped && s.State != StepCancelled) {
 			continue
 		}
+		if s.State == StepSkipped && s.Error != nil && s.Error.Type == SkipPlanned {
+			continue // skipped by the plan (its kind, worker or auxiliary was unavailable), not by a failure upstream
+		}
 		s.State, s.Error, s.FinishedAt = StepWaiting, nil, nil
 		if *s, err = saveStep(ctx, tx, *s); err != nil {
 			return Run{}, nil, err
@@ -1225,4 +1379,18 @@ func (e *Engine) Sweep(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// SkipPlanned is the error type of a step the plan skipped when the run started (an optional step whose kind, worker
+// or auxiliary was unavailable): Retry leaves it skipped.
+const SkipPlanned = "skipped"
+
+// planSkipReason is why the plan skipped step: its warning's message, or a generic one.
+func planSkipReason(plan Plan, step string) string {
+	for _, w := range plan.Warnings {
+		if w.Step == step && (w.Code == WarningStepKindUnavailable || w.Code == WarningAuxiliaryUnavailable) {
+			return w.Message
+		}
+	}
+	return "an optional step that could not run"
 }

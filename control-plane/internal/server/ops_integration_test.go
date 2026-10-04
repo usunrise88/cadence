@@ -176,6 +176,7 @@ func TestNotificationRulesAndSettings(t *testing.T) {
 		Items []struct {
 			ID, EventClass, Timing string
 			Channels               struct{ InApp, Telegram bool }
+			Silent                 bool
 			BypassQuietHours       bool
 			Rev                    int
 			Departures             []string
@@ -184,9 +185,9 @@ func TestNotificationRulesAndSettings(t *testing.T) {
 	e.ok(e.do("GET", "/api/notification-rules", ""), 200, &rules)
 	got := []string{}
 	for _, r := range rules.Items {
-		got = append(got, r.EventClass+":"+r.Timing+":"+strconv.FormatBool(r.Channels.Telegram))
+		got = append(got, r.EventClass+":"+r.Timing+":"+strconv.FormatBool(r.Channels.Telegram)+":"+strconv.FormatBool(r.Silent))
 	}
-	if strings.Join(got, " ") != "approval_requested:immediate:true failure:immediate:true outcome:immediate:true progress:none:false digest:daily:true" ||
+	if strings.Join(got, " ") != "approval_requested:immediate:true:false failure:immediate:true:false outcome:immediate:true:true progress:none:false:false digest:daily:true:true" ||
 		!rules.Items[1].BypassQuietHours || rules.Items[0].BypassQuietHours {
 		t.Fatalf("seeded table %v", got)
 	}
@@ -203,10 +204,19 @@ func TestNotificationRulesAndSettings(t *testing.T) {
 		t.Fatalf("edited rule %+v", r)
 	}
 	expectProblem(t, e.do("PATCH", "/api/notification-rules/ntr_outcome", `{"timing":"immediate"}`, "Idempotency-Key", e.key(), "If-Match", rev(1)), 412, "precondition-failed")
-	expectProblem(t, e.do("PATCH", "/api/notification-rules/ntr_failure", `{"timing":"daily"}`, "Idempotency-Key", e.key(), "If-Match", rev(1)), 422, "validation-failed")
+	// A failure may be made silent; it then departs from the seeded table.
+	var f struct {
+		Silent     bool
+		Departures []string
+	}
+	e.ok(e.do("PATCH", "/api/notification-rules/ntr_failure", `{"silent":true}`, "Idempotency-Key", e.key(), "If-Match", rev(1)), 200, &f)
+	if !f.Silent || strings.Join(f.Departures, ",") != "silent" {
+		t.Fatalf("silent failure rule %+v", f)
+	}
+	expectProblem(t, e.do("PATCH", "/api/notification-rules/ntr_failure", `{"timing":"daily"}`, "Idempotency-Key", e.key(), "If-Match", rev(2)), 422, "validation-failed")
 	expectProblem(t, e.do("PATCH", "/api/notification-rules/ntr_progress", `{"channels":{"telegram":true},"timing":"immediate"}`, "Idempotency-Key", e.key(), "If-Match", rev(1)), 422, "validation-failed")
 	// An agent session never changes routing or takes backups (the preset's admin-only rule).
-	expectProblem(t, e.agent("PATCH", "/api/notification-rules/ntr_failure", `{"channels":{"telegram":false}}`, "Idempotency-Key", e.key(), "If-Match", rev(1)), 403, "policy-denied")
+	expectProblem(t, e.agent("PATCH", "/api/notification-rules/ntr_failure", `{"channels":{"telegram":false}}`, "Idempotency-Key", e.key(), "If-Match", rev(2)), 403, "policy-denied")
 	expectProblem(t, e.agent("POST", "/api/backups", "", "Idempotency-Key", e.key()), 403, "policy-denied")
 
 	s := e.settings()
@@ -277,12 +287,14 @@ func TestTelegramBotAndApprovalFromThePhone(t *testing.T) {
 	}
 	fake.take("getMe")
 
-	// An agent's gated command: the router queues the approval, the sender sends it with Approve / Deny.
+	// An agent's gated command: the router queues the approval, the sender sends it with Approve / Deny once the
+	// batching window (notifications.approval_batch_s) has closed.
 	e.newProject("demo")
 	id := e.gateArchive("demo", e.key(), 2)
 	if _, err := loops.router.CatchUp(ctx); err != nil {
 		t.Fatal(err)
 	}
+	loops.sender.Now = func() time.Time { return time.Now().Add(3 * time.Minute) }
 	if _, err := loops.sender.Flush(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -458,6 +470,130 @@ func TestQuietHoursAndDigest(t *testing.T) {
 		t.Fatalf("digest message %+v", msgs)
 	}
 	_ = id
+}
+
+// TestQuieterTelegram: approvals close together share one message whose rows decide each approval on its own;
+// outcomes arrive silently; a pipeline step's failure is not a failure notice (its run's end is, once), and an agent
+// session's failure is told once however often its end is repeated.
+func TestQuieterTelegram(t *testing.T) {
+	fake := newFakeTelegram(t)
+	e := startWith(t, func(c *Config) { c.Telegram = notify.Bot{BaseURL: fake.URL} })
+	loops := e.notifyLoops(fake)
+	ctx := context.Background()
+	e.setUpBot()
+	t0 := time.Now()
+	loops.router.Now = func() time.Time { return t0 }
+	loops.sender.Now = func() time.Time { return t0 }
+
+	ids := []string{}
+	for _, slug := range []string{"one", "two", "three"} {
+		e.newProject(slug)
+		ids = append(ids, e.gateArchive(slug, e.key(), 2))
+	}
+	if _, err := loops.router.CatchUp(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if n := e.count(`SELECT count(DISTINCT next_at) FROM notification_deliveries WHERE event_class = 'approval_requested' AND state = 'queued'`); n != 1 {
+		t.Fatalf("the approvals are due at %d different times, want one window", n)
+	}
+	// Held for the window: nothing rings yet.
+	if _, err := loops.sender.Flush(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if msgs := fake.take("sendMessage"); len(msgs) != 0 {
+		t.Fatalf("sent inside the window: %+v", msgs)
+	}
+	loops.sender.Now = func() time.Time { return t0.Add(121 * time.Second) }
+	if _, err := loops.sender.Flush(ctx); err != nil {
+		t.Fatal(err)
+	}
+	msgs := fake.take("sendMessage")
+	if len(msgs) != 1 {
+		t.Fatalf("approval messages %d, want 1", len(msgs))
+	}
+	text := msgs[0].Body["text"].(string)
+	if !strings.HasPrefix(text, "3 approvals requested") || !strings.Contains(text, "[3] Approval requested: projects.archive") ||
+		msgs[0].Body["disable_notification"] != nil {
+		t.Fatalf("batched message %q %+v", text, msgs[0].Body)
+	}
+	var kb telegram.Keyboard
+	raw, _ := json.Marshal(msgs[0].Body["reply_markup"])
+	_ = json.Unmarshal(raw, &kb)
+	if len(kb.InlineKeyboard) != 3 || kb.InlineKeyboard[1][1].Text != "Deny 2" {
+		t.Fatalf("keyboard %+v", kb)
+	}
+
+	// Deny the second: only that approval is decided, and the message keeps the other two rows.
+	up := press(1001, 101, text, kb.InlineKeyboard[1][1].CallbackData)
+	up.CallbackQuery.Message.ReplyMarkup = &kb
+	fake.push(up)
+	if err := loops.poller.Poll(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if a := e.approval(ids[1]); a.State != "denied" {
+		t.Fatalf("second approval %+v", a)
+	}
+	if a, b := e.approval(ids[0]), e.approval(ids[2]); a.State != "pending" || b.State != "pending" {
+		t.Fatalf("the other approvals were decided: %s %s", a.State, b.State)
+	}
+	edits := fake.take("editMessageText")
+	if len(edits) != 1 || !strings.HasSuffix(edits[0].Body["text"].(string), "[2] Denied from Telegram by @anton.") {
+		t.Fatalf("edits %+v", edits)
+	}
+	raw, _ = json.Marshal(edits[0].Body["reply_markup"])
+	var rest telegram.Keyboard
+	_ = json.Unmarshal(raw, &rest)
+	if len(rest.InlineKeyboard) != 2 || rest.InlineKeyboard[0][0].Text != "Approve 1" || rest.InlineKeyboard[1][0].Text != "Approve 3" {
+		t.Fatalf("keyboard after the press %+v", rest)
+	}
+	fake.take("answerCallbackQuery")
+
+	// An outcome, a failed optional step whose run goes on, a failed run, and an agent session's end told twice.
+	later := t0.Add(5 * time.Minute)
+	loops.router.Now = func() time.Time { return later }
+	loops.sender.Now = func() time.Time { return later }
+	session := map[string]any{"session": map[string]any{"id": "ses_x", "number": 9, "project": "one", "state": "failed", "error": "the agent exited"}}
+	drafts := []events.Draft{
+		{Topic: "branches", Type: "branch.waiting", Payload: map[string]any{"project": "one", "branch": "sync/x", "files": 2, "reason": "a sync"}},
+		{Topic: "pipeline_run.plr_x", Type: "pipeline_run.step_changed", Payload: map[string]any{"pipelineRunId": "plr_x", "runState": "running",
+			"step": map[string]any{"id": "pls_x", "step": "oasis", "kind": "sdp_ingest", "state": "failed", "error": map[string]any{"type": "step", "message": "no manifest"}}}},
+		{Topic: "pipeline_run.plr_y", Type: "pipeline_run.step_changed", Payload: map[string]any{"pipelineRunId": "plr_y", "runState": "running",
+			"step": map[string]any{"id": "pls_y", "step": "train", "kind": "toy_train", "state": "failed"}}},
+		{Topic: "pipeline_run.plr_y", Type: "pipeline_run.state_changed", Payload: map[string]any{"pipelineRun": map[string]any{"id": "plr_y",
+			"pipeline": "train", "runId": "run_y", "state": "failed", "error": "step train failed (step): boom"}}},
+		{Topic: "agent.sessions", Type: "agent_session.changed", Payload: session},
+		{Topic: "agent.session.ses_x", Type: "agent_session.changed", Payload: session},
+		{Topic: "agent.sessions", Type: "agent_session.changed", Payload: session},
+	}
+	if err := pgx.BeginFunc(ctx, e.pool, func(tx pgx.Tx) error {
+		return events.Append(ctx, tx, backups.System, nil, drafts)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loops.router.CatchUp(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loops.sender.Flush(ctx); err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{} // title → silent
+	for _, m := range fake.take("sendMessage") {
+		title, _, _ := strings.Cut(m.Body["text"].(string), "\n")
+		got[title] = m.Body["disable_notification"] == true
+	}
+	want := map[string]bool{
+		"Branch waiting for review: sync/x (one)": true,
+		"Run failed: run_y":                       false,
+		"Agent session 9 failed (one)":            false,
+	}
+	if len(got) != len(want) {
+		t.Fatalf("messages %v, want %v", got, want)
+	}
+	for title, silent := range want {
+		if s, ok := got[title]; !ok || s != silent {
+			t.Fatalf("messages %v, want %v", got, want)
+		}
+	}
 }
 
 func TestBackupsAPI(t *testing.T) {

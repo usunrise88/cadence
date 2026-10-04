@@ -13,6 +13,9 @@ across checkpoints, projects and time (R21). It shows:
 - **What it pins**: the dataset version and its content hash, the normalizer version, locale and domain, utterances
   and hours, the fingerprint, and the bootstrap's resampling unit (**call**, **speaker** or **utterance**: confidence
   intervals resample whole groups, so correlated utterances do not narrow them).
+- **Word timings**: whether its references are aligned (the `align-reference` pipeline, step
+  [align_reference](../steps/align-reference.md)): aligned utterances and words, the aligner, and why the rest stayed
+  unaligned. Emission delay in evals needs them; without them it is n/a.
 - **Scoring normalizer**: its rules — Unicode form, case folding, punctuation, combining marks (niqqud), literal
   mappings — applied to both reference and hypothesis before scoring.
 - **Used by**: the projects that adopted it and their aliases. Evals score on adopted golden sets; `gates.yaml` names

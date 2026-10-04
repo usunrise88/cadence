@@ -43,7 +43,7 @@ func publicRequest(r *http.Request) bool {
 	case http.MethodGet:
 		return path == "/auth" || path == "/help" || strings.HasPrefix(path, "/help/")
 	case http.MethodPost:
-		return path == "/auth:setup" || path == "/auth:login" || path == "/auth:logout"
+		return path == "/auth:setup" || path == "/auth:login" || path == "/auth:logout" || path == "/auth:accept"
 	}
 	return false
 }
@@ -60,6 +60,7 @@ func (s *Server) AuthGet(ctx context.Context, _ api.AuthGetRequestObject) (api.A
 	if p, ok := auth.PrincipalFromContext(ctx); ok {
 		a := apiActor(p.Actor)
 		st.Actor = &a
+		st.Reviewer = s.reviewerStatus(ctx, p)
 		if p.Actor.Kind == auth.KindUser && p.UserID != "" {
 			u, err := credentials.GetUser(ctx, s.Pool, p.UserID)
 			if err != nil {

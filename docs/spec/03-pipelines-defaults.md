@@ -16,8 +16,8 @@ Every block's process is a pipeline of typed steps declared in the recipes repos
   file (`template-<sha256 prefix>` for a bundled template). A project without its own file of a name runs the bundled
   template (`control-plane/templates/pipelines`): `echo` (worker check), `import` and `replay-base` (02 "The dataset
   artifact"), `train-stage`, `eval-matrix` (rewritten in phase 3 to the eval pipeline's shape, "The eval pipeline"
-  below; `evals.new` generates its own pipeline per eval) and `data-ingest`, which names step kinds of phase 4 and
-  fails validation until those are published.
+  below; `evals.new` generates its own pipeline per eval) and, in phase 4, `data-ingest`, `pseudo-label`,
+  `align-reference`, `noise-from-calls` and `noise-bank` ("Data pipelines (phase 4)" below).
 - Step kind: a Python entry point in the worker (`cadence.steps` group, the same idea as SDP processors) declaring a
   JSON Schema for parameters (`x-cadence` on each, `defaultRef` into `defaults.yaml`), the artifact types it consumes
   and produces, resources (`gpu`, `gpus`, `memoryGb`, `diskGb`, `jobKind`), the family role it fills or `neutral`, the
@@ -91,8 +91,13 @@ Framework code stops at the role steps of a model family; everything after them 
 
 | Type | Holds |
 | --- | --- |
-| `dataset` | A directory artifact: `dataset.json` (header `cadence.dataset/1` with source, split rule, counts, hours), `manifest.jsonl` (one line per utterance: `audio` as a path inside the artifact, duration, sample rate, language, speaker, text, origin, split) and the audio files (02 "The dataset artifact"); the `dataset` hook registers a dataset version from it (R18) |
-| `shar` | Lhotse Shar shards: audio and text only, never features (mel bins, frame rate and normalisation belong to a family) |
+| `dataset` | A directory artifact: `dataset.json` (header `cadence.dataset/1` with source, split rule, counts, hours), `manifest.jsonl` (one line per utterance: `audio` as a path inside the artifact, duration, sample rate, language, speaker, text, origin, split) and the audio files (02 "The dataset artifact"); the `dataset` hook registers a dataset version from it (R18). Phase 4 adds the draft format `cadence.dataset-draft/1` (no audio: members by `uri` and `hash`) and the frozen cut (below "Data pipelines (phase 4)") |
+| `segments` | `cadence.segments/1` (phase 4): `segments.json` (header), `segments.jsonl` (one segment per line: `uri`, `hash`, `start`, `end`, `channel`, `role`, `language?`, `text?`, `origin?`, `speaker?`, `split?`, `vad`, `level`, `crosstalk?`) and `files.jsonl` (each source file with its tracks' roles and speech runs); written by `sdp_ingest`, rewritten by the data steps (unknown keys kept); no audio. The `segments` hook puts disputed pseudo-labels in the triage queue |
+| `lid` | JSON lines per utterance: `{audio, language, confidence, top, expected, model}` from `lid_classify` (phase 4) |
+| `alignment` | `cadence.alignment/1` (phase 4): a header, then per utterance `{audio, text, language, aligned, words: [{index, word, start, end, score}], skipped}` or `{aligned: false, reason}`; the `alignment` hook attaches it to the golden sets built on the dataset artifact (newest wins), and `latency_score@3` reads it |
+| `export` | `cadence.export/1` (phase 4): `export.json` (`exportFormat`, `target`, `version`, `utterances`, `files: [{path, hash, bytes}]`, `hub?`) and, for target `cas`, the files under `files/`; the `export` hook records mount copies (`blob_copies`) and the export's state |
+| `registry_record` | `cadence.registry-record/1`: a registry version's record with its sources and licences, rendered by the control plane as the `record` input of a `cadence-bundle` export (phase 4) |
+| `shar` | Lhotse Shar shards: audio and text only, never features (mel bins, frame rate and normalisation belong to a family). As built (phase 4) Shar is an export layout written by `shar_export@1` inside an `export` artifact, not a type of its own: the frozen dataset cut keeps one WAV per utterance with Lhotse cuts manifests |
 | `mix` | A rendered mix revision: the resolved `input_cfg` and its content hash |
 | `base_model` | An upstream checkpoint at its pinned revision, with its family |
 | `calibration` | Measured bucket batch sizes and seconds per step for (base model, card class, cap, precision, bucket config); the `calibration` hook caches them for estimates |
@@ -113,7 +118,7 @@ Also: `text` (the `echo` check), manifest, waveform peaks, correction batch. A d
 
 ### Runtimes, model families and latency profiles
 
-- A runtime is a registry version: a container image pinned by digest, its environment lock (CUDA, PyTorch, the framework, Lhotse) and the worker plugin version. A worker process lives in one runtime and advertises it with its cards; card slots belong to the control plane per host and card. A framework gets its own image even when its wheels would fit another's. v1 ships one, NeMo Speech 26.07 (`nvcr.io/nvidia/nemo-speech:26.07`, runtime `nemo-speech`, `worker/Dockerfile`), plus the CPU runtime `toy` for CI and trying the seams (`worker/Dockerfile.toy`); the descriptors are baked into the images (`worker/runtime/*.json`), and compose runs one worker service per runtime (`worker`, profile `gpu`; `worker-toy`, profile `toy`). Adding a runtime is `runtimes.new` with approval, deferred with the packs beyond NeMo (R40).
+- A runtime is a registry version: a container image pinned by digest, its environment lock (CUDA, PyTorch, the framework, Lhotse) and the worker plugin version. A worker process lives in one runtime and advertises it with its cards; card slots belong to the control plane per host and card. A framework gets its own image even when its wheels would fit another's. v1 ships one, NeMo Speech 26.07 (`nvcr.io/nvidia/nemo-speech:26.07`, runtime `nemo-speech`, `worker/Dockerfile`), plus the CPU runtime `toy` for CI and trying the seams (`worker/Dockerfile.toy`); the descriptors are baked into the images (`worker/runtime/*.json`), and compose runs one worker service per runtime (`worker`, profile `gpu`; `worker-toy`, profile `toy`; phase 4 adds `omni` and `services`, below). Adding a runtime is `runtimes.new` with approval, deferred with the packs beyond NeMo (R40).
 - A model family is a versioned descriptor the runtime publishes beside its step kinds (R41): framework and architecture; checkpoint and export formats and what loading needs; input (sample rate, channels) and features; tokenizer kind; capabilities (streaming, word timestamps, confidence, boosting method, language prompting, train modes `finetune | adapter | scratch`); latency profiles; the step kind for each role (calibrate, train, average, transcribe, materialize, export, parity reference; `materialize` turns a `base_model` artifact into a `checkpoint`, so an eval always transcribes a checkpoint, decision 6 of the phase-3 plan); its `defaults.yaml` section; help and skill slugs. Base models, checkpoints and model versions carry a family reference; the UI and MCP render family options from the descriptor's schemas.
 - No control-plane or web code branches on a family or runtime name; the Nemotron family is named only in the worker's NeMo pack, `defaults.yaml` data, templates and docs, and a test greps for it.
 - A latency profile has a name, the algorithmic latency, chunk and left context in milliseconds, the family parameters that realise it and a label. A family without streaming has one profile, `offline`. Eval matrices, the primary cell and eval records name profiles; families line up by milliseconds, not by parameter spelling (R43).
@@ -158,6 +163,28 @@ NeMo pack as built (phase 2, `worker/packs/nemo`, distribution `cadence-nemo`, h
   with `stopHistoryEouMs`), so its records never mix with `@1`/`@2` records (NeMo's cache-aware loop). Utterances of a
   batch step together (`packs.nemo.transcribe_batch_size`, 8 for evals; batch 1 gives exactly a live session's words);
   on the stand it matches version 2's WER at every profile (help `steps.nemotron-transcribe`).
+- Phase 4 (stream X): two auxiliary-model kinds in the same runtime, each loading its model from the auxiliary the
+  project adopted (02 "Auxiliary models") for the length of one job (R45's one-off allowance; ≤ 8 GB, job kind
+  `data`): `whisper_transcribe@1` (a pseudo-label member through transformers in fp16; `auxiliary` default
+  `packs.nemo.whisper_auxiliary` = `auxiliary/whisper-large-v3`, `batch_size` 8, `num_beams` 1, `detect_language`
+  true, `target_lang`, `transliterate`) and `lid_classify@1` (`lid` artifact; engine by the auxiliary's payload:
+  `transformers-whisper`, Whisper's language token, or `speechbrain-ecapa`; `auxiliary` default
+  `packs.nemo.lid_auxiliary` = `auxiliary/whisper-large-v3`, `top_k` 3, `batch_size` 16). SpeechBrain needs torchaudio,
+  which publishes no build for the image's torch 2.12, so the VoxLingua107 path fails with a message naming the Whisper
+  fallback (00 decision log). Whisper writes Serbian in Cyrillic: the members take `transliterate: sr-Cyrl-Latn`.
+
+Two small runtimes joined in phase 4 (R45's one-off allowance; 00 decision log), each one compose service with its own
+profile and descriptor in `worker/runtime/`:
+
+- `omni` (`worker/Dockerfile.omni`, image `cadence/worker-omni`, compose `worker-omni`, profile `omni`, GPU): Python
+  3.12 slim, torch 2.8 (CUDA 12.8), torchaudio 2.8 and fairseq2 0.6, because fairseq2's native library needs torch 2.8
+  exactly and the NeMo image ships torch 2.12 without torchaudio; about 11.6 GB. One kind, `align_reference@1` ("Data
+  pipelines (phase 4)"); defaults under `packs.omni`. The omnilingual-asr package is not installed: the pack repeats
+  the CTC model's architecture and loads `facebook/omniASR-CTC-1B` from the Hugging Face cache.
+- `services` (`worker/Dockerfile.services`, image `cadence/worker-services`, compose `worker-services`, profile
+  `services`, CPU): clients of running services an auxiliary names. One kind, `oasis_transcribe@1`, with a gRPC client
+  generated from the OASIS contract vendored under `worker/packs/services/proto/` (`SOURCE.yaml` pins the commit);
+  defaults under `packs.services`. The endpoint `host.docker.internal:50051` is reached through `extra_hosts`.
 
 The toy pack's family `toy-ctc` (runtime `toy`) has the profiles `offline` and `320ms` and the kinds `toy_calibrate`, `toy_train`, `toy_average`, `toy_transcribe` and, in phase 3, `toy_checkpoint_from_base@1` (materialize; a framework kind's name belongs to one runtime, so it is not `checkpoint_from_base`), with its defaults under `packs.toy`.
 
@@ -181,6 +208,13 @@ The toy pack's family `toy-ctc` (runtime `toy`) has the profiles `offline` and `
   suite requires the `materialize` role beside calibrate, train, average and transcribe, reads the base model from
   the family descriptor's `conformance.base_model`, and reports the materialized base model's WER after the trained
   model's.
+- Phase 4: a lease carries every mount (`lease.mounts: [{name, kind, root, readOnly}]`) and the harness resolves
+  `mount://<mount>/<path>[#t=<start>,<end>][&ch=<n>]` to a local path or a ranged read (`cadence_worker.mounts`; 02
+  "Storage and mounts"). Three new `x-cadence` marks: `registry: source` (the parameter names a registered source; "no
+  licence, no ingest" below), `registry: <kind>` (a registry version resolved through `data.lock`) and `registryRef:
+  {kind: auxiliary, role}` (an auxiliary the control plane resolves through `data.lock`, else the project's adopted
+  version, and passes in the step spec's `auxiliaries`). A kind may declare `deprecated_after` (`YYYY-MM-DD`), `replaced_by` and
+  `deprecation_note`; the worker publishes them as `StepKindDescriptor.deprecation`.
 
 ### Seams for later training modes
 
@@ -255,7 +289,7 @@ Scorers are neutral core step kinds (CPU, every runtime): they read `hypotheses`
 | Partial stability | Unstable partial word ratio: the share of words shown in partials that the final changed or dropped (Shangguan et al., Interspeech 2020), with edits per second beside it; from the `hypotheses` partial events (R54) | `wer_score@2`, 3 |
 | Latency to final | Time from utterance end to the final that covers it, audio fed at real-time pace, p50 and p95; utterance ends from a frame-VAD model until per-channel VAD (phase 4), else the aligned reference's end, reported unavailable without either (R54, R26) | Wave 2 (plan stream R), 3 |
 | Entity accuracy | Number classes (numbers, dates, phone numbers, amounts) compared after the pack's ITN; names and addresses need annotated spans (phase 4) | `entity_score@1`, wave 2 (plan stream R), 3 |
-| Emission delay | Time from a word's aligned end to its first appearance in a partial, PR50 and PR90 (Yu et al., FastEmit, ICASSP 2021) | Needs aligned references, 4 |
+| Emission delay | Time from a word's aligned end to its first appearance in a partial, PR50 and PR90 (Yu et al., FastEmit, ICASSP 2021) | `latency_score@3` with an `alignment` of the golden set, 4 ("Data pipelines (phase 4)") |
 | End-of-utterance, RTF, streams per card | 04 "Task and streaming metrics" | 4 (VAD); 5 (benchmark) |
 
 Live tests, paced replays and eval runs compute the streaming metrics from the same partial events, so they agree
@@ -335,6 +369,90 @@ As built (phase-3 audit fixes, eval correctness):
 - **CER where it is gated.** The model card and the robustness matrix (`EvalRobustnessRow.unit: char`) report CER for
   the golden sets of `eval.character_error_languages`.
 
+### Data pipelines (phase 4)
+
+Data enters as an index of a mount, becomes a draft dataset version, and is copied once, when it is frozen (02
+"Storage and mounts", "Data entities"; 04 "Block 1"). Bundled templates (`control-plane/templates/pipelines`, each
+with "set me" params and a help link in its header):
+
+| Template | Chain | Ends in |
+| --- | --- | --- |
+| `data-ingest` | `sdp_ingest@2` → `text_normalise@1` → `manifest_filter@2` → `speaker_disjoint_split@1` → `dataset_freeze@1` (draft) | A draft dataset version; `datasets.preview`, then `datasets.freeze` |
+| `pseudo-label` (inputs `model: base_model`, `normalizer`) | `sdp_ingest` → `segments_cut@1` → `checkpoint_from_base@1` → `nemotron_transcribe@3` (`target_lang` `hr-HR` for Serbian) ‖ `whisper_transcribe@1` (`sr-Cyrl-Latn`) ‖ `oasis_transcribe@1` (optional) ‖ `lid_classify@1` → `pseudolabel_ensemble@1` (members wired `hypotheses.0…2`) → `text_normalise` → `manifest_filter` → `speaker_disjoint_split` → `dataset_freeze` (draft, tag `pseudo-label`) | A draft of agreed pseudo-labels; disputes in the triage queue |
+| `align-reference` (input `data: dataset`) | `align_reference@1` | An `alignment` attached to the golden sets on that dataset; run by hand once per golden set |
+| `noise-from-calls` | `sdp_ingest` → `noise_mine@1` | A frozen `noise-bank/<name>` version tagged `mined` |
+| `noise-bank` | `dataset_import@4` (`folder-csv`, `purpose: noise`, e.g. MUSAN from the `corpora` mount) | A frozen noise bank |
+
+Step kinds of phase 4 (core kinds are CPU, job kind `data` unless named, and ship in every runtime image; parameters,
+defaults and ranges are in each kind's help page `steps.<kind>`, values in `defaults.yaml`):
+
+| Kind | Runtime | Reads → writes | What it does; main defaults |
+| --- | --- | --- | --- |
+| `mount_check@1` | core | — | The mount health check (reachable, free space, a `storage.mount_check_sample_mb` 64 MB throughput sample, a probe write on a writable mount); queued by the control plane as `mounts.verify`, never in pipelines |
+| `sdp_ingest@2` | core | — → `segments` | Walks `path` (`mount://…`) for `source` (marked `registry: source`); decodes any format (WAV in Python, the rest through ffmpeg), splits a stereo file per channel when its roles are known (`<stem>.cadence.json` sidecar or `channel_roles`, else mixed down, `channel: -1`), resamples once to 16 kHz with the polyphase filter, finds speech per channel with an energy VAD (`data.ingest_vad_*`: 20 ms frames, 12 dB over the noise floor, floor −55 dBFS, 250 ms speech, 300 ms silence, 100 ms pad) and cuts segments of `data.ingest_min_segment_s` 0.3 – `data.ingest_max_segment_s` 20 s. A `<stem>.txt` makes the file one human-transcribed segment; a bot channel's TTS `script` gives its segments and text (origin `model:tts-script`). No audio is copied. Every segment carries `file-b3`, the canonical hash of the whole track it was cut from (what an import of the file hashes; the leakage check matches it against `audio-b3`); `exclude` (default `[test/*, */test/*]`) leaves a corpus's test split out; `segmentation: file` keeps a pre-segmented corpus's files whole (their hashes then equal an import's). `@1` had neither `file-b3` nor `exclude` |
+| `text_normalise@1` | core | `segments` → `segments` | The language pack's training style: `transliterate`, Unicode form (NFC), literal `mappings`, mark removal, case folding (off), punctuation (`keep`), then `itn` as a literal `{spoken, written}` list (no number grammar); the original kept as `textOriginal`. Params are copied from `normalizer.yaml`/`itn.yaml` into the pipeline, not read from the pack |
+| `manifest_filter@2` | core | `segments` → `segments` | Drops by the first failing reason, counted in `filtered`: duration (`data.filter_min_duration_s` 0.5 – `data.filter_max_duration_s` 30), role (keeps `[caller, mono]`), origin (`pseudo-label:disputed`), empty text, characters per second (1–30), language, LID mismatch, speech share (< 0.2), crosstalk (> 0.5). LID mismatch compares `lid.language` with the segment's language by primary subtag or within `pseudolabel.lid_equivalents` (`@2`; `@1` by primary subtag only) |
+| `speaker_disjoint_split@1` | core | `segments` → `segments` | Groups by speaker, else by file (one call is one caller); a stable hash of the group's key picks the side (`data.validation_share` 0.02, `test_share` 0), topped up to `data.min_validation_utterances` 100 by whole groups |
+| `dataset_freeze@1` | core | `segments` → `dataset` | `mode: draft` writes `cadence.dataset-draft/1` (`dataset.json` with `quality`, `stats`, `card`; `manifest.jsonl` by `uri` and `hash`; `card.md`); `mode: cut` (what `datasets.freeze` runs with `draft_version`) cuts every member from its mount, checks its hash and writes the frozen `cadence.dataset/1` (below). Quality checks warn, never block (`data.quality_*`: silence share 0.5, clipped share 0.01, length outliers at z 3 over a 0.02 share) |
+| `segments_cut@1` | core | `segments` → `dataset` | Cuts the segments that need a label (`which: unlabelled`) into a scratch `dataset` of purpose `pseudo-label` the members read; never registered, never trained on; a repeated audio hash is cut once |
+| `whisper_transcribe@1`, `lid_classify@1` | `nemo-speech` (GPU ≤ 8 GB) | `dataset` → `hypotheses`, `lid` | NeMo pack above |
+| `oasis_transcribe@1` | `services` (CPU) | `dataset` → `hypotheses` | `GetModelInfo` within `health_timeout_s` (5) or `auxiliary-unavailable`; checks the service lists every utterance's language; one unary `Transcribe` per utterance, `concurrency` 2, `timeout_s` 60; secret `oasis-token`; rows carry `vote: true`. Text is lower case without punctuation |
+| `pseudolabel_ensemble@1` | core | `segments`, `hypotheses.<n>`, `normalizer`, `lid?` → `segments`, `hypotheses` | Keeps a text when at least `pseudolabel.min_agreeing_members` (2) members agree within `pseudolabel.max_pairwise_wer` (0.15; word edits over the longer text after the scoring normalizer) and LID agrees (the `lid` row at confidence ≥ 0.5, else the members' detected language; `pseudolabel.lid_equivalents` `[[sr, hr, bs]]` count as one; `require_lid` true → `lid-unknown`). The pick is a `vote: true` member (OASIS) in the agreement, else the lowest mean WER to the others; confidence = agreeing share × (1 − the pick's mean WER). Others get `pseudo-label:disputed` with `dispute: {reason, candidates, lid}`; segments with text of their own pass through. Every row with language evidence gets `lid: {language, confidence?, agrees?, source}` (what `manifest_filter` reads); repeated audio hashes get one verdict and one `hypotheses` row; `with_step` appends it to `steps` and `files.jsonl` is kept |
+| `align_reference@1` | `omni` (GPU ≤ 8 GB) | `dataset` → `alignment` | CTC emissions of the `aligner` auxiliary (`packs.omni.align_auxiliary` = `auxiliary/omniasr-ctc-1b`, bfloat16, waveform layer-normalised) forced through the reference with torchaudio's `forced_align`, or a NumPy Viterbi where it is missing; utterances over `align_max_duration_s` (60), in a language the payload does not list (it lists `heb_Hebr`, `srp_Cyrl`, `hrv_Latn`, `bos_Latn`; not `srp_Latn`), or without text stay unaligned with the reason |
+| `latency_score@3` | core (job kind `eval`) | `hypotheses`, `vad`, `normalizer?`, `alignment?` → `metric_scores` | `@2` plus emission delay: each matched reference word's first stable partial at real-time pace minus its aligned end, PR50/PR90 over the cell (`emission: {available, reason?, pr50Ms, pr90Ms, …}`), `available: false` with the reason when anything is missing, never an estimate. `@2` stays as it was; `wer_score` is not bumped |
+| `dataset_import@4` | core | — → `dataset` | `@3` plus `lhotse-cuts`, `lhotse-shar` and `cadence-bundle` formats, NeMo manifest lines with `offset`/`duration`, and `mount://` paths on path mounts; it copies into the content store and registers a frozen version at import (only `sdp_ingest` indexes in place) |
+| `shar_export@1` | core (job kind `export`) | `dataset` → `export` | Lhotse Shar per split (`cuts.NNNNNN.jsonl.gz` + `recording.NNNNNN.tar`, `data.shar_shard_utterances` 1000), byte-identical on every host; re-imports with `dataset_import` `lhotse-shar` to the same fingerprint |
+| `dataset_export@1` | core (job kind `export`) | `dataset`, `record?` → `export` | `nemo-manifest` (`manifest.<split>.jsonl` + WAVs) or `cadence-bundle` (`bundle.json` `cadence.bundle/1` + `cas/b3/…`); with a mount target the audio files become recorded copies, so the cache may evict the version |
+| `hf_push@1` | core (job kind `export`) | `dataset` → `export` | An audiofolder dataset with the card and the Hub licence header, one commit, private by default (`storage.export_hub_private`); secret `hf-token`; runs only after the `hub-export` approval |
+| `noise_mine@1` | core | `segments` → `dataset` (purpose `noise`) | Clips of silences ≥ `data.noise_edge_margin_ms` 200 ms from speech on every track, 1–10 s, between −75 and −25 dBFS, ≤ 20 per file; the `dataset` hook registers a frozen `noise_bank` version tagged `mined` |
+
+The frozen cut (`dataset_freeze` mode `cut`): `cadence.dataset/1` with one canonical WAV per utterance at
+`audio/<b3[:2]>/<b3>.wav` and `shards/cuts.NNNNNN.jsonl.gz`, Lhotse `MonoCut` manifests of `data.shard_utterances`
+(2000) members whose recordings point at those WAVs — the unit of pinning, eviction and materialisation (02
+"Materialisation"). It is not Lhotse Shar tars (that is `shar_export@1`). An utterance's canonical hash is the BLAKE3
+of its canonical WAV (44-byte header, PCM16 mono 16 kHz, cut from the whole channel resampled once), computed while
+indexing, so it equals the utterance identity before and after the cut and the output is byte-identical on every
+host. A file changed on the mount since ingest fails the cut.
+
+Pipeline engine changes in phase 4 (`internal/pipelines`):
+
+- **No licence, no ingest.** Planning refuses (`source-unlicensed`) a step whose `x-cadence.registry: source`
+  parameter names a source that is missing, archived or has no usable licence; the `dataset` hook checks again when
+  the draft registers.
+- **Auxiliary references.** A parameter with `x-cadence.registryRef: {kind: auxiliary, role}` resolves to the newest
+  version of the named collection that `data.lock` lists at the commit the pipeline is read at, or, when the lock does
+  not list the collection (or the project has no repository), the newest the project adopted — newest by creation,
+  not by name (`not-adopted` otherwise; audit 2026-10-04 C5); the resolution is stored with the
+  step (`pipeline_steps.auxiliaries`) and passed in the step spec, and the step's input hash covers the resolved
+  version, so a new auxiliary version runs the step again. A service an auxiliary names (`service.endpoint`) is probed
+  at dry run and at start: unreachable, a required step fails planning with `auxiliary-unavailable` (503); an optional
+  step gets a plan warning instead.
+- **Plan warnings.** `PipelinePlan.warnings` lists what does not stop the run: `step-kind-deprecated`,
+  `auxiliary-unavailable` and `step-kind-unavailable`.
+- **Unavailable optional steps** (phase-4 audit, C3). An optional step whose kind no runtime publishes, that no
+  registered worker publishes any more, or that only workers not seen within `pipelines.LiveWindow` (2 minutes: a
+  waiting worker long-polls every 30 s) publish, is not refused and not queued: the plan warns
+  `step-kind-unavailable` and the run starts with the step `skipped`, together with the waiting steps that need it
+  (an indexed reader such as the ensemble runs without its artifact). Required steps are never judged by liveness —
+  they wait for a worker like any other.
+- **Triage indexing** (phase-4 audit, C2). The `segments` hook indexes disputes only from an output whose meta counts
+  them (`disputed`, the ensemble's); `text_normalise` and later steps carry the disputed rows on under new segments
+  hashes and are not indexed again, and a segment gets no second item while one is open in the project or from the
+  same pipeline run.
+- **Optional members.** A required step may read an optional step through an indexed wire (`hypotheses.2:
+  oasis.hypotheses`); when the optional step fails or is skipped, the reader runs without that artifact
+  (`pipelines.Check` still requires an optional reader for a plain wire).
+- **`data.lock`.** A parameter marked `x-cadence.registry: <kind>` (any kind but `source`) names a registry version
+  (collection, `@alias` or `ver_…`) resolved through `data.lock` at the pipeline's commit (the bundled templates and
+  projects without a repository through the adoptions); a version the lock does not list is refused (`not-adopted`).
+  The resolutions are reported in the plan (`PipelinePlanStep.locked`), not substituted into the parameters, and input-hash
+  reuse ignores them.
+- **Step-kind deprecation.** A deprecated kind version keeps running; every plan that pins it warns, and from
+  `deprecatedAfter` a pipeline file that did not pin it yet is refused when saved (`step-kind-deprecated`). There is no
+  deprecate verb: a pack deprecates its own kinds.
+- **Mount health.** A step job whose parameters name an unhealthy mount (`mount://<name>/`) fails at once with
+  `mount-unhealthy`.
+
 ### What derives from the schema
 
 | Surface | How it appears |
@@ -355,7 +473,8 @@ As built (phase-3 audit fixes, eval correctness):
 | A flywheel signal | A signal provider in the same registry, producing Signal rows | Triage reads signals generically |
 | A scorer | A versioned neutral step kind reading `hypotheses`, `dataset` and `normalizer`, writing `scores` | Eval records key on the scorer's `kind@version` |
 | A scoring normalizer | A new registry version of kind `normalizer` (R21) | Golden sets pin the version; eval records key on it |
-| A storage backend | A mount driver (see Storage and mounts) | Utterances carry URIs, not paths |
+| A storage backend | A mount driver (02 "Storage and mounts": `local`, `nfs`, `smb`, `s3`, `hf` in phase 4) | Utterances carry `mount://` URIs, not paths |
+| An auxiliary model or service | A registry version of kind `auxiliary` (02) and the step kind in the pack that serves its role | Go never names the model or service: the payload is data the pack reads; adoption checks the licence |
 | An agent | A driver in the agent host implementing the ACP-shaped interface | Chat and events are driver-agnostic |
 | A window | A panel manifest | The registry and workspaces are data-driven |
 | A command | A registry entry bound to an API operation | Palette, menus and MCP pick it up |
@@ -385,7 +504,10 @@ Rules:
 | Batch | Bucket sizes from the family's calibrate step (OOMptimizer for Nemotron) under the card's memory cap; 22 GB on the shared staging card, an RTX PRO 5000 Blackwell 48 GB with vLLM resident (23.8 GB): a PyTorch allocator of ≈ 20.5 GiB keeps the process under 22 GB | NeMo Lhotse docs; docs/spikes/A3-nemotron-finetune.md |
 | Replay | 15% of samples from the base model's other locales, drawn from `dataset/replay-base` (see Replay below); phase 2 caps it at ≈ 1 h per locale | NVIDIA guide recommends replay; share and caps are a Cadence recommendation |
 | Checkpoints and windows | A checkpoint and training state every 20 minutes, so a window close or a preemption loses at most 20 minutes; compute is always available unless windows are set (R19) | Cadence recommendation |
-| Data filters | 0.5–40 s, ≤ 30 characters per second, language-ID match, speaker-disjoint 2% validation | Cadence recommendation |
+| Data filters | 0.5–30 s (`data.filter_*_duration_s`; training reads clips ≤ 40 s), 1–30 characters per second, language-ID match, speech share ≥ 0.2, crosstalk ≤ 0.5, the caller's and mono channels only, disputed pseudo-labels dropped; speaker-disjoint 2% validation (≥ 100 utterances) | Cadence recommendation; character-rate bounds after NeMo SDP |
+| Ingest | Energy VAD per channel: 20 ms frames, 12 dB over the channel's noise floor, floor −55 dBFS, speech ≥ 250 ms, pauses < 300 ms joined, 100 ms padding; segments 0.3–20 s (`data.ingest_*`); frozen cuts in shards of 2 000 utterances (`data.shard_utterances`), Shar exports of 1 000 (`data.shar_shard_utterances`) | Cadence recommendation; Lhotse SharWriter (1 000 cuts per shard) |
+| Pseudo-labels | Keep a text when ≥ 2 members agree within pairwise WER 0.15 and LID agrees at confidence ≥ 0.5, sr/hr/bs one language (`pseudolabel.*`); everything else is disputed and goes to triage | Phase-4 plan decision 6, after NVIDIA Granary (Koluguri et al., 2025); the LID values are a Cadence recommendation |
+| Annotation | Batches of 200 items, 10% annotated twice blind, every word difference adjudicated (`annotation.adjudicate_wer` 0), inter-annotator WER ≤ 0.05 to freeze a golden set, 2 skips exclude an item, the caller's channel sampled, ±2 s of context, due in 14 days, invitations ≤ 14 days (`annotation.*`) | Cadence recommendation |
 | Text style | Punctuated, cased, spoken-form numbers; per-locale normalizer (ivrit.ai normalizer for he-IL) | NVIDIA guide; ivrit.ai leaderboard |
 | Golden set | ≥ 2 h stratified telephone sample from own calls plus the locale's FLEURS split | Cadence recommendation |
 | Gate | Target golden sets must beat the baseline at the primary cell (`gate.target_rule` `beat-baseline`); replay golden sets may regress ≤ 0.5 absolute points (`gate.replay_max_regression` 0.005); deletions may not fall while insertions rise (`gate.deletions_insertions`); a project departs from these in `gates.yaml` (04 "Block 3") | Cadence recommendation |
@@ -395,7 +517,7 @@ Rules:
 | Budgets | 8 GPU-hours per project per day; 200 turns per agent session; 3 min inactivity timeout | Cadence recommendation |
 | Manual tests | Nothing stored; one session per user, 15 min, 5 min idle; files up to 15 min of audio; 1 GPU-hour per project per day (R47–R49) | Owner (nothing stored); the limits are a Cadence recommendation |
 | Audio views | 25 ms Hann window, 10 ms hop, mel scale to 8 kHz (4 kHz for 8 kHz audio), 80 dB range, magma colormap (R52) | Kaldi, Lhotse and NeMo feature framing; librosa `top_db`; perceptually uniform colormaps |
-| Cache | High-water mark 80% of local NVMe; 40% quota per project | Cadence recommendation |
+| Cache and storage | The content store is the cache: sweep every 15 min, evict unpinned shards that also live on a mount above 85% in use down to 70% (`storage.cache_high_water_pct`, `storage.cache_low_water_pct`), least recently used first; 200 GB of frozen dataset versions per project (`storage.project_quota_gb`); mount health every 6 h (`storage.mount_check_hours`); exports to the mount `exports` (`storage.export_mount`), Hub pushes private (`storage.export_hub_private`); the backup mirror beside the backups unless `backups.mirror_mount` names a writable mount | Phase-4 plan decisions 1–2 (Cadence recommendation) |
 | Significance | 1 000-sample paired bootstrap 95% confidence interval on every WER delta (`eval.bootstrap_samples`, `eval.confidence`, seed `eval.bootstrap_seed` = 1), resampling whole calls, else speakers, else utterances (the golden set's `groups`, R54); a gate counts a gain or a regression only when the interval excludes zero | Bisani & Ney, ICASSP 2004; Liu & Peng, arXiv:1912.09508 (blockwise bootstrap) |
 | Cards | Every dataset version gets a generated dataset card and every registered model a model card: composition, licences, lineage, eval records, departures from defaults | Datasheets for Datasets (Gebru et al., CACM 2021); Model Cards (Mitchell et al., FAT* 2019) |
 
@@ -410,11 +532,11 @@ Replay exists to stop catastrophic forgetting in the base model's other 39 local
 
 ### Playbooks
 
-A playbook is a pipeline chain with defaults filled in, a prefilled agent prompt, and an estimate; it appears as a button on the Project home and as an MCP tool (`playbooks.list|get|run`), and runs as a playbook session (05). Version 1 ships five:
+A playbook is a pipeline chain with defaults filled in, a prefilled agent prompt, and an estimate; it appears as a button on the Project home and as an MCP tool (`playbooks.list|get|run`), and runs as a playbook session (05). Version 1 ships five, and phase 4 adds "Try Cadence" (Smoke project below):
 
 | Playbook | Chain | Typical cost |
 | --- | --- | --- |
-| Adapt a new language | Ingest → freeze → mix with replay → calibrate → train → eval matrix → gate | 4–8 GPU-hours |
+| Adapt a new language | Mount → source → clearance → (adopt auxiliaries → OASIS answers, both optional) → ingest or pseudo-label → preview → freeze → mix with replay → calibrate → train → eval matrix → gate | 4–8 GPU-hours |
 | Improve on telephony | Attach call recordings → telephony augmentation → continuation stage → eval on the phone golden set | 2–4 GPU-hours |
 | Fix names and terms | Boost list from the project glossary → correction batch → short continuation | 1–2 GPU-hours |
 | Weekly flywheel | Schedule: replay → signals → triage → correction batch → continuation → eval → shadow | 2–3 GPU-hours per week |
@@ -461,10 +583,35 @@ prompt: |                                  # Go text/template over .Inputs.<name
   approval for agents). `eval-matrix.yaml` is one cell by hand (transcribe → `wer_score`); `evals.new` generates the
   matrix itself. The build still reports roadmap phase 2 to playbooks (`playbooks.CurrentPhase`), so the four
   `availableFrom: 4` playbooks stay listed only, as they should.
+- Phase 4 (stream B): `playbooks.CurrentPhase` is 4, so "Adapt a new language" (rewritten), "Improve on telephony",
+  "Fix names and terms" and the new "Try Cadence" run; "Weekly flywheel" moved to `availableFrom: 5`, and steps of a
+  later phase (`phase: 5`: improve-telephony's `augment.preview`, try-cadence's export and parity) are listed and
+  skipped. Format additions (`control-plane/internal/playbooks/README.md`):
+  - `person:` marks a step a person does (an admin approves a mount, clears a source, adopts an auxiliary; someone
+    starts OASIS on the host). The plan item carries the text, Chat shows "A person: …" and the reminder names it; the
+    step still ticks only from an operation it names. A gated command an agent sent ticks its step when the approved
+    request is replayed as the session's actor.
+  - `optional: true` steps are passed over (skipped) when a later step ticks first.
+  - `when: {field: value}` holds a step until an answer of its operations has those fields (dotted paths, compared as
+    text, e.g. `sources.get` with `trainingCleared: true`, `auxiliaries.get` with `reachable: true`); other answers
+    mark it running. Not allowed on terminal steps.
+  - `pipelineRuns.wait` (with `pipelineRuns.get`) ends a terminal step on the pipeline run `pipelines.run` started,
+    as `jobs.wait` does for a job; `pipelines.run` joined the spending commands (dry run first).
+- "Adapt a new language" (inputs `path` on a mount, `source`, `licence`, `language`, `pipeline` — `data-ingest` when
+  the files have `<stem>.txt` transcripts, `pseudo-label` when not —, base model, replay, steps) ingests, previews, freezes (`datasets.freeze`, its cut job optional to wait for), then runs the fine-tune chain
+  to the gate. Clearing the source must come before the ingest, or the dataset is eval-only.
 
 ### Smoke project
 
 The wizard offers "Try Cadence": a smoke project on a 2-hour FLEURS subset that runs the full loop — ingest, freeze, 300 training steps, eval, gate, export, parity — in about one GPU-hour. It validates the install and shows the workflow before any real data is attached.
+
+As built (phase 4, stream B): the playbook `try-cadence` (inputs `fleurs` — the FLEURS config, e.g. `sr_rs` —,
+`language`, `hours` `playbooks.try_hours` 2, `steps` `playbooks.try_steps` 300, the project's base model and adopted
+replay) registers FLEURS as a source (CC-BY-4.0), waits for an admin to clear it, imports the hours from the Hugging
+Face Hub with `dataset_import` (frozen at import: `sdp_ingest` cannot read FLEURS' `.tsv` transcripts), then mixes,
+calibrates, trains, evals and gates; export and parity are `phase: 5` steps. `cadence smoke --project <slug>` (a
+hand-written CLI command beside the generated ones, R34) starts it and follows it to the end; `make e2e` runs it
+with `SMOKE_PROJECT` (and `SMOKE_FLEURS`, `SMOKE_LANGUAGE`) set.
 
 ## Language packs and hot words
 
@@ -582,3 +729,26 @@ Data arrives in three formats and models may need to leave; both directions go t
 | Export | NeMo manifest; Lhotse Shar; a dataset pushed to the Hugging Face Hub with its generated card after a licence check; a model to the Hub as `.nemo` plus ONNX with its model card, and in the transformers format where supported; a Cadence bundle (project repository, `data.lock`, the referenced registry versions) for moving a project between instances |
 
 Imports index in place when the source is on a mount and register a Source with the licence the format carries; exports are jobs with the same approval rules as any registry publication.
+
+As built (phase 4, stream I; formats and layouts in "Data pipelines (phase 4)" and the kinds' help pages):
+
+- **Imports.** `sdp_ingest` indexes audio on a mount in place (any ffmpeg format, stereo calls split per channel,
+  folders with `<stem>.txt`). `dataset_import@4` reads NeMo manifests (with `offset`/`duration` segments), Hugging Face
+  datasets (FLEURS, a capped stream), folder + CSV, Lhotse cuts (file sources only), Lhotse Shar and Cadence bundles,
+  from the worker host or a path mount (`local`, `nfs`, `smb`); it copies into the content store and freezes at import.
+  Common Voice and ivrit.ai through SDP are not built.
+- **Exports.** `datasets.export` (`POST /registry/datasets:export` `{version, format, project?, target?, hubRepo?,
+  hubPrivate?}`; `200` the plan on a dry run, `201` the export, `202` an approval for the Hub) runs a one-step pipeline
+  of `shar_export@1` (`lhotse-shar`), `dataset_export@1` (`nemo-manifest`, `cadence-bundle`) or `hf_push@1`
+  (`hf-hub`); `exports.list|get` (`dex_`, migration 0037) follow it. The target is a writable path mount (default
+  `mount://<storage.export_mount>/<collection>/<version>/<format>`) or the content store. Only frozen versions export;
+  `export-not-allowed` refuses a Hub push of a version with a production source, a source without a usable licence or
+  a golden set built on it. A Hub push needs an approval for everyone (preset rule `hub-export`, registry scope, the
+  admin decides) and is private by default. Models leave with the deployment work (phase 5).
+- **Bundles** are per dataset version (`cadence.bundle/1`: the registry record with sources and licences, and every
+  blob as a content store), not per project: the project repository travels by git. A bundle re-imports byte for byte
+  with the same content fingerprint.
+- Mount copies: audio a `nemo-manifest` or bundle export writes to a mount is recorded as a copy of its blob, so the
+  cache may evict the version (once each copy reads back with its blob's hash; 02 "The cache and materialisation")
+  and `datasets.materialize` restores it; the backup mirror may target a writable mount
+  (`backups.mirror_mount`) with the same effect. No web UI for exports yet (agents and the CLI only).

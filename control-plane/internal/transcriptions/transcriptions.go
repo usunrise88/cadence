@@ -327,6 +327,55 @@ type target struct {
 	family          family
 	artifact        steps.ArtifactRef
 	base            registry.Version
+	// trainedLang is the language a checkpoint (or the checkpoint a model version was registered from) was trained
+	// under, from its run's language parameter: the default the lane decodes in, so a model fine-tuned under a
+	// neighbour's prompt (Serbian under hr-HR) is heard as it was trained.
+	trainedLang string
+}
+
+// trainParamsLang names the train-step parameters that carry the training language (runs.CheckLanguages reads the
+// same names).
+var trainParamsLang = []string{"target_lang", "language", "lang", "locale"}
+
+// trainedLanguage is the language checkpoint ckp's run was trained under, or "" when the run set none.
+func trainedLanguage(ctx context.Context, q storage.Querier, ckp string) (string, error) {
+	if ckp == "" {
+		return "", nil
+	}
+	var params map[string]any
+	err := q.QueryRow(ctx, "SELECT r.params FROM checkpoints c JOIN runs r ON r.id = c.run_id WHERE c.id = $1", ckp).Scan(&params)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("read the training language of checkpoint %s: %w", ckp, err)
+	}
+	return languageParam(params), nil
+}
+
+// languageParam is the training language a run's params set, or "".
+func languageParam(params map[string]any) string {
+	for _, n := range trainParamsLang {
+		if v, _ := params[n].(string); strings.TrimSpace(v) != "" {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
+}
+
+// laneLanguage is the language a lane decodes in: the one asked for, else the one the model was trained under, else
+// the project's first locale ("" when there is none).
+func laneLanguage(asked, trained string, locales []string) string {
+	if l := strings.TrimSpace(asked); l != "" {
+		return l
+	}
+	if trained != "" {
+		return trained
+	}
+	if len(locales) > 0 {
+		return locales[0]
+	}
+	return ""
 }
 
 func (s *Service) resolveTarget(ctx context.Context, q storage.Querier, p projects.Project, i int, t TargetIn) (target, error) {
@@ -371,7 +420,11 @@ func (s *Service) resolveTarget(ctx context.Context, q storage.Querier, p projec
 		if key == "" {
 			key = c.Artifact
 		}
-		return target{kind: "checkpoint", id: c.ID, label: label, weightsKey: key, family: f, base: base,
+		lang, err := trainedLanguage(ctx, q, c.ID)
+		if err != nil {
+			return target{}, err
+		}
+		return target{kind: "checkpoint", id: c.ID, label: label, weightsKey: key, family: f, base: base, trainedLang: lang,
 			artifact: steps.ArtifactRef{Hash: c.Artifact, Type: typeCheckpoint, Meta: c.Meta}}, nil
 	case t.ModelVersionID != "":
 		v, err := registry.Resolve(ctx, q, p.ID, registry.KindModel, strings.TrimSpace(t.ModelVersionID))
@@ -382,6 +435,7 @@ func (s *Service) resolveTarget(ctx context.Context, q storage.Querier, p projec
 			WeightsHash        string `json:"weightsHash"`
 			CheckpointHash     string `json:"checkpointHash"`
 			BaseModelVersionID string `json:"baseModelVersionId"`
+			CheckpointID       string `json:"checkpointId"`
 		}
 		if err := json.Unmarshal(v.Payload, &mp); err != nil {
 			return target{}, fmt.Errorf("decode model %s: %w", v.ID, err)
@@ -398,7 +452,11 @@ func (s *Service) resolveTarget(ctx context.Context, q storage.Querier, p projec
 		if key == "" {
 			key = mp.CheckpointHash
 		}
-		return target{kind: "model", id: v.ID, label: v.Name + " " + v.Version, weightsKey: key, family: f, base: base,
+		lang, err := trainedLanguage(ctx, q, mp.CheckpointID)
+		if err != nil {
+			return target{}, err
+		}
+		return target{kind: "model", id: v.ID, label: v.Name + " " + v.Version, weightsKey: key, family: f, base: base, trainedLang: lang,
 			artifact: steps.ArtifactRef{Hash: mp.CheckpointHash, Type: typeCheckpoint}}, nil
 	default:
 		v, err := registry.Resolve(ctx, q, p.ID, registry.KindBaseModel, strings.TrimSpace(t.BaseModelVersionID))
@@ -693,10 +751,7 @@ func (s *Service) targets(ctx context.Context, q storage.Querier, p projects.Pro
 				ln.ChunkMs = &ch
 			}
 		}
-		lang := strings.TrimSpace(in[i].Language)
-		if lang == "" && len(p.Locales) > 0 {
-			lang = p.Locales[0]
-		}
+		lang := laneLanguage(in[i].Language, r.trainedLang, p.Locales)
 		switch {
 		case lang == "":
 			fields = append(fields, problems.FieldError{Path: at + "/language", Message: "name the language to decode in (the project has no locale)"})
@@ -704,7 +759,7 @@ func (s *Service) targets(ctx context.Context, q storage.Querier, p projects.Pro
 			fields = append(fields, problems.FieldError{Path: at + "/language", Message: fmt.Sprintf("%q is not a BCP 47 language tag", lang)})
 		default:
 			if ok, known := knowsLanguage(r.base.Tags, lang); !ok {
-				fields = append(fields, problems.FieldError{Path: at + "/language", Message: fmt.Sprintf("%s is not a language %s knows (it knows %s)",
+				fields = append(fields, problems.FieldError{Path: at + "/language", Message: fmt.Sprintf("%s is not a language %s knows (it knows %s); pick a close one it knows",
 					lang, r.base.Name, strings.Join(known, ", "))})
 			}
 		}

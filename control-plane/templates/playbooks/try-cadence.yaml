@@ -1,0 +1,125 @@
+# written by Cadence — playbook template (docs/spec/03-pipelines-defaults.md "Playbooks", R16; format:
+# control-plane/internal/playbooks/README.md). The smoke project (ROADMAP phase 4, docs/spec/06-platform.md "Test
+# layers"): two hours of FLEURS through the whole loop in about one GPU-hour — source, import, mix, calibrate, a short
+# run, eval and gate; model export and the parity check complete once phase 5 ships them. `make e2e` runs it.
+name: try-cadence
+title: Try Cadence
+description: The whole loop on two hours of FLEURS in about one GPU-hour — import, mix with replay, calibrate, a short training run, eval and gate; export and parity arrive with phase 5.
+typicalCost: about 1 GPU-hour
+availableFrom: 4
+
+inputs:
+  fleurs:
+    type: string
+    required: true
+    description: The FLEURS configuration of the language (he_il, sr_rs, hr_hr, … — the google/fleurs dataset card)
+  language:
+    type: string
+    required: true
+    description: Its locale (BCP 47, e.g. sr-RS); the project's golden sets for it decide the gate
+  hours:
+    type: number
+    defaultRef: playbooks.try_hours
+    description: Hours of the FLEURS train split to import
+  base:
+    type: base_model
+    from: project
+    description: The project's default base model
+  replay:
+    type: dataset_version
+    from: adoption
+    collection: dataset/replay-base
+    description: The replay corpus (R17), when the project adopted it
+  steps:
+    type: integer
+    defaultRef: playbooks.try_steps
+    description: Optimiser steps of the training run
+  replayShare:
+    type: number
+    defaultRef: mix.replay_share
+    description: Share of the replay groups in the mix
+
+chain:
+  - id: source
+    title: Register FLEURS as a source (CC-BY-4.0)
+    command: sources.new
+    accepts: [sources.get]
+  - id: clear
+    title: FLEURS is cleared for training
+    command: sources.edit
+    accepts: [sources.get]
+    when: { trainingCleared: true }
+    person: An admin approves sources.edit trainingCleared true in Approvals (CC-BY-4.0 allows training with attribution); until then the import is eval-only.
+  - id: import
+    title: Import the hours of FLEURS (dry run first)
+    command: pipelines.run
+  - id: import-wait
+    title: Wait for the import (a frozen dataset version)
+    command: pipelineRuns.wait
+    accepts: [pipelineRuns.get]
+    until: terminal
+  - id: mix
+    title: Mix it with replay
+    command: mixes.new
+    accepts: [mixes.edit]
+  - id: calibrate
+    title: Calibrate batch sizes under the card's memory cap (dry run first)
+    command: runs.calibrate
+    with: { baseModel: $inputs.base }
+    estimate: { gpuHours: 0.1, minutes: 6, plusMinus: 0.5 }
+  - id: train
+    title: A short training run (dry run first)
+    command: runs.new
+    with: { baseModel: $inputs.base, steps: $inputs.steps }
+    estimate: { gpuHours: 0.4, minutes: 25, plusMinus: 0.5 }
+  - id: watch
+    title: Wait for the run to finish
+    command: runs.get
+    accepts: [jobs.wait]
+    until: terminal
+  - id: checkpoints
+    title: List the checkpoints the run registered
+    command: checkpoints.list
+  - id: eval
+    title: Eval the best checkpoint against the baseline (dry run first)
+    command: evals.new
+    estimate: { gpuHours: 0.4, minutes: 25, plusMinus: 0.5 }
+  - id: eval-wait
+    title: Wait for the eval to finish
+    command: evals.get
+    until: terminal
+  - id: gate
+    title: Gate against the baseline
+    command: evals.gate
+  - id: export
+    title: Export the checkpoint for serving
+    command: models.export
+    phase: 5
+  - id: parity
+    title: Check the export decodes like the checkpoint
+    command: models.parity
+    phase: 5
+
+stop:
+  - budget: exceeded
+  - step: failed
+  - approval: denied
+
+next:
+  done: The loop works on this instance. A short run on two hours rarely passes the gate — that is expected; "Adapt a new language" is the real thing. Note the timings (projects.note).
+  stopped: Read why the step stopped (the pipeline run's failed step and its logs, the run's logs, or the approval's note), fix the cause, then start the playbook again; finished steps are reused.
+
+prompt: |
+  Run the playbook "Try Cadence" in project {{ .Project.Name }} ({{ .Project.Slug }}, locales {{ .Project.Locales }}): the whole loop on {{ .Inputs.hours }} hours of FLEURS {{ .Inputs.fleurs }} ({{ .Inputs.language }}).
+
+  - Base model: {{ .Inputs.base }}; replay corpus {{ .Inputs.replay }} at a replay share of {{ .Inputs.replayShare }}
+  - Training steps: {{ .Inputs.steps }}
+
+  Work the plan one step at a time with Cadence tools. Steps marked "a person" wait for one: say what they must do, then wait for their reply.
+  1. sources.get fleurs, or sources.new it (licence CC-BY-4.0, kind public, url https://huggingface.co/datasets/google/fleurs).
+  2. When it is not cleared for training, ask for sources.edit trainingCleared true — an approval the admin decides — and wait.
+  3. pipelines.run import with params for its step import: name fleurs-{{ .Inputs.fleurs }}-try, source_name fleurs, licence CC-BY-4.0, locale {{ .Inputs.language }}, hf_config {{ .Inputs.fleurs }}, max_hours {{ .Inputs.hours }} (and transliterate sr-Cyrl-Latn for Serbian) — dry run first, then the same call for real; pipelineRuns.wait until it is done.
+  4. mixes.new with the imported version (datasets.list) and, when there is one, the replay corpus as a replay group at the share above.
+  5. runs.calibrate, then runs.new with the mix, the base model and {{ .Inputs.steps }} steps — dry run first each time, then for real; follow the run (jobs.wait, runs.get) until it ends.
+  6. checkpoints.list, evals.new on the best checkpoint (dry run first; for a language the base model has no prompt for, pass languages, e.g. {"sr-RS": "hr-HR"}), evals.get until done, then evals.gate — report the verdict and every check.
+  Export and parity arrive with phase 5 and are skipped. Finish with the timings of each step and the next step.

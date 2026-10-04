@@ -44,12 +44,18 @@ The running project throughout is **Serbian on Nemotron 3.5 ASR Streaming 0.6B w
 | 11 | Trying models by hand | 3 | planned | run a live transcription with two targets, blind compare, type a reference |
 | 12 | Experiments, registration and lineage | 3 | planned | sweep a parameter under a cap, compare runs, register the best model, trace its lineage |
 
-## Part III · Data at scale (phase 4) — outline only until phase 4 ships
+## Part III · Data at scale (phase 4)
 
-| # | Chapter | Phase | Status |
-| --- | --- | --- | --- |
-| 13 | Your own recordings: mounts and ingest | 4 | planned |
-| 14 | Annotation and the telephone golden set | 4 | planned |
+| # | Chapter | Phase | Status | The reader can… |
+| --- | --- | --- | --- | --- |
+| 13 | Your own recordings: mounts and ingest | 4 | draft | register a mount, ingest recordings in place, pseudo-label untranscribed audio with an ensemble, freeze the draft and train on it |
+| 14 | Annotation and the telephone golden set | 4 | draft | sample an annotation batch, annotate with double annotation and adjudication, read inter-annotator WER, work the triage queue, freeze a golden set and align its words |
+
+Both chapters are drafts written against the phase-4 branch, with the gate run of 2026-10-04 on the stand: chapter 13
+has every number and its figures (13-1, 13-2); chapter 14 has the calls' ingest, the batch (Figure 14-2), the triage
+queue and emission delay. Four places in chapter 14 stay `TBD` because only people may annotate: the audio figure
+(media serves people only), the batch's inter-annotator WER and the comparison with the FLEURS references, and the
+calls' golden set with its eval. They fill in when batch `calls-synth-sr-1` is annotated.
 
 ## Part IV · Production (phase 5) — outline only until phase 5 ships
 
@@ -132,12 +138,28 @@ The chapters in this map are the plan; correct the map when a chapter is written
 | experiment, sweep | 12 | Runs that answer one question; runs generated from a parameter grid under a cap |
 | model version, register | 12 | A checkpoint published to the registry with its eval; publishing it |
 | lineage | 12 | What an entity was made from and what uses it |
+| mount | 13 | A named place Cadence reads audio from without copying it (a directory, a share, a bucket) |
+| segment | 13 | A stretch of a recording (start, end, channel) that becomes an utterance |
+| voice activity detection (VAD) | 13 | Finding where speech is, frame by frame, from its energy |
+| draft (of a dataset version) | 13 | A dataset version you can inspect but not train on until it is frozen |
+| pseudo-label | 13 | A transcript a model wrote, not a person |
+| ensemble agreement | 13 | Keeping only the segments several different models transcribe alike |
+| language identification (LID) | 13 | Naming a segment's language from its sound |
+| auxiliary model | 13 | A model Cadence uses to prepare data (label, identify, align) but never trains or ships |
+| two-channel call | 14 | A call recording with each party on its own channel |
+| annotation batch | 14 | A fixed, stratified sample of segments people transcribe, with its guidelines and people |
+| annotation guidelines | 14 | The written rules of what a correct transcript is, versioned in the repository |
+| double annotation | 14 | Two people transcribing the same item independently |
+| adjudication | 14 | A third person deciding where two transcripts disagree |
+| inter-annotator WER | 14 | The WER between two people's transcripts of the same items; the batch's quality number |
+| triage | 14 | Working through the segments the pseudo-label ensemble could not agree on |
+| forced alignment | 14 | Finding when each word of a known text was spoken in the audio |
 
 ## Building the book (engineering work, not writing)
 
 | Item | Status |
 | --- | --- |
-| `docs/tutorial/chapters/` with front matter (§5.1) | planned |
+| `docs/tutorial/chapters/` with front matter (§5.1) | started: chapters 13 and 14 |
 | Help bundle section `tutorial` (`cmd/helpsync`, `internal/help`), contexts from front matter | planned |
 | Term-order check: no term before its chapter (a script over chapters + this map, in CI) | planned |
 | Tour and `annotated` block parser shared by the HTML build and the shell | planned |

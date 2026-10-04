@@ -29,7 +29,7 @@ docs/spec/      The specification (read before changing behaviour); docs/spikes/
                 control-plane/templates/skills/ and copied into project repos at bootstrap
 ```
 
-## Current state (phases 0–3 done; phase 4 next)
+## Current state (phases 0–4 done; phase 5 next)
 
 Work follows `ROADMAP.md`: six phases (0 Shell → 1 Agent loop → 2 Training → 3 Evaluation → 4 Data → 5 Deploy and
 flywheel), each closed by a gate. Pick work from the current phase; tick items there as they merge; don't start an
@@ -128,6 +128,35 @@ have numbers. What exists:
   Experiment; language packs (he-IL, sr) in `templates/lang/`; experiments and sweeps.
 - **The book**: `docs/tutorial/` (method in GUIDELINES.md, skill `cadence-tutorial`).
 
+Phase 4 (data) passed its gate on 2026-10-04: FLEURS Serbian on the `corpora` mount was indexed in place,
+pseudo-labelled by an ensemble, frozen with the leakage check and trained on through the phase-2 path; the model it
+produced failed its own gate (target inconclusive, forgetting despite replay 0.15; ROADMAP "Phase 4" gate paragraph). Plan: `docs/review/2026-10-03-phase-4-plan.md`; what differs and
+what is open: ROADMAP "Phase 4 notes". What exists:
+- **Mounts and storage** (`internal/mounts`, `internal/storage`, `internal/eviction`): `mounts.list|get|new|scan|verify`
+  (local, NFS/SMB path, S3, HF; adding one is an approval), `mount://<mount>/<path>#t=…&ch=…` URIs on utterances,
+  `storage.get`, the content store as the cache (pins, LRU 85 → 70 %, project quotas), `datasets.materialize|evict`,
+  backups to a mount (`backups.mirror_mount`).
+- **Ingest and freeze** (`internal/data`): `sources.new` with clearing and ingest history ("no licence, no ingest"),
+  draft dataset versions from `pipelines/data-ingest.yaml`, `datasets.preview|freeze` (leakage, quality, card,
+  `cadence.dataset/1` cut with Lhotse shards), `utterances.search`; core kinds `sdp_ingest`, `text_normalise`,
+  `manifest_filter`, `speaker_disjoint_split`, `dataset_freeze`, `segments_cut` (artifact `segments`).
+- **Auxiliary models and pseudo-labels** (`internal/auxiliary`, `internal/triage`): registry kind `auxiliary`
+  (adoption gated, licence-checked), `whisper_transcribe@1` and `lid_classify@1` (NeMo pack), `oasis_transcribe@1`
+  (pack and runtime `services`), `pseudolabel_ensemble@1`, `pipelines/pseudo-label.yaml`, the triage queue.
+- **Registry in full**: adoption with licence and locale checks, `data.lock` resolution, `versions.archive`, step-kind
+  deprecation from the pack.
+- **Interoperability** (`internal/exports`): `dataset_import@4` (Lhotse, NeMo, bundle), `datasets.export` +
+  `exports.list|get` (`shar_export`, `dataset_export`, `hf_push` behind `hub-export`), `noise_mine@1`.
+- **Annotation** (`internal/annotation`): `batches.new|get|list|freeze` (freeze gated → golden set or dataset),
+  `batchItems.*`, `annotations.new`, `triage.accept|correct|reject`, reviewer invitations (`invitations.new|list`,
+  `auth.accept`, role `reviewer`), `tracks.get` (energy/VAD/bandwidth tracks, media tag).
+- **Alignment**: `align_reference@1` in runtime `omni` (omniASR CTC + torchaudio), golden-set reference alignments,
+  emission delay in `latency_score@3`.
+- **Playbooks and corpora**: "Adapt a new language" and "Try Cadence" (`person:`, `optional:`, `when:`),
+  `cadence smoke`, `scripts/corpora/` (FLEURS sr, synthetic G.711 calls `calls-synth-sr`).
+- **Web**: Storage, Source, Dataset version (`@/shell/data` charts, utterance search), Triage (a tool panel with
+  Annotate mode), Annotation batch; Library gains Adopt and the this-project / all filter.
+
 Known spec conflicts and gaps: `docs/review/2026-09-29-spec-kickoff-review.md` (statuses updated); assumptions made
 while building are in `docs/spec/07-audit-risks-sources.md` "Open questions".
 
@@ -163,6 +192,18 @@ Gotchas:
   golangci-lint run ./...` in `control-plane` when the binary is not installed.
 - A golden set's locale the model has no prompt for (Serbian) needs `evals.new.languages` (`{"sr-RS": "hr-HR"}`);
   the base model has no usable Thai. Evals transcribe at batch 8; batch 1 matches a live session word for word.
+- The `corpora` mount is registered with root `/mnt/corpora`, the path inside the containers (compose binds the host's
+  `CADENCE_CORPORA_DIR`, on the stand `/cadence/corpora`, there read-only); `exports` is `/mnt/exports`. A mount root
+  is a container path, never the host's.
+- A bundled pipeline that pins a new or bumped step kind needs the fixture
+  `control-plane/internal/pipelines/testdata/bundled-kinds.json` regenerated: in `worker`,
+  `CADENCE_UPDATE_BUNDLED_KINDS=1 uv run pytest tests/test_bundled_pins.py` (the integration test plans every
+  bundled pipeline against it).
+- OASIS returns lower case without punctuation, and Whisper writes Serbian in Cyrillic (the pseudo-label pipeline
+  transliterates `sr-Cyrl-Latn`); OASIS is the owner's service, never started by Cadence (`scripts/serve.sh` on the
+  host).
+- The `omni` runtime image (`worker/Dockerfile.omni`, torch 2.8 + fairseq2) is ≈ 11.6 GB and runs only under compose
+  profile `omni`; `services` (`worker/Dockerfile.services`) under profile `services`.
 - For live agent runs keep prompts tiny; Claude sessions use `sonnet` (`haiku` delegates to subagents and loops),
   opencode `minimax/MiniMax-M3` on the stand (the free `opencode/big-pickle` elsewhere).
 
@@ -179,7 +220,7 @@ make evals             # agent evals (agent-host/evals): fixture projects × bot
 make spikes-measure    # S1/S3/S4 measurements → web/test-results/spikes/*.json
 make up                # docker compose: postgres + control plane (SPA embedded) + agent host, one CADENCE_VERSION
 make web               # build the SPA into the control plane's embed directory
-make e2e               # smoke project on the staging card — phase 4
+make e2e               # smoke project: the "Try Cadence" playbook in SMOKE_PROJECT=<slug> (cadence smoke)
 ```
 
 Per package (single test in brackets):

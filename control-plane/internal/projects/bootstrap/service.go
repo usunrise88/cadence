@@ -257,7 +257,7 @@ func (s *Service) templateCollections(p projects.Project, a projects.AgentProfil
 	for path, name := range s.templates {
 		dir, rest, _ := strings.Cut(path, "/")
 		switch {
-		case dir == "skills", dir == "pipelines", dir == "playbooks", dir == "agent-config":
+		case dir == "skills", dir == "pipelines", dir == "playbooks", dir == "agent-config", dir == layout.AnnotationDir:
 		case dir == layout.LangDir && packs[rest]:
 		case dir == "presets" && strings.TrimSuffix(rest, ".yaml") == a.PermissionPreset:
 		case dir == "instructions" && rest == a.InstructionsTemplate:

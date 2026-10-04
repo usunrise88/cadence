@@ -68,7 +68,7 @@ func TestBundledInputsMatchContract(t *testing.T) {
 	}
 	schemas := map[string]string{
 		KindBaseModel: "BaseModelPayload", KindDataset: "DatasetPayload", KindTemplate: "TemplatePayload",
-		KindNormalizer: "NormalizerPayload",
+		KindNormalizer: "NormalizerPayload", KindAuxiliary: "AuxiliaryPayload",
 	}
 	inputs, err := BundledInputs(templates.FS)
 	if err != nil {
@@ -90,14 +90,18 @@ func TestBundledInputsMatchContract(t *testing.T) {
 		if err := json.Unmarshal(in.Payload, &doc); err != nil {
 			t.Fatal(err)
 		}
-		if err := spec.Components.Schemas[schemas[in.Kind]].Value.VisitJSON(doc); err != nil {
+		sch := spec.Components.Schemas[schemas[in.Kind]]
+		if sch == nil {
+			t.Fatalf("%s: no contract schema %q for kind %s", in.Name, schemas[in.Kind], in.Kind)
+		}
+		if err := sch.Value.VisitJSON(doc); err != nil {
 			t.Errorf("%s does not match %s: %v", in.Name, schemas[in.Kind], err)
 		}
 	}
 	for _, want := range []string{
 		"base-model/nemotron-3.5-asr-streaming-0.6b", "dataset/fleurs-he-smoke", "template/instructions-default",
 		"template/skill-cadence-train", "template/pipeline-train-stage", "template/agent-config-claude-settings",
-		"normalizer/basic", "normalizer/he-il",
+		"normalizer/basic", "normalizer/he-il", "auxiliary/whisper-large-v3", "auxiliary/oasis", "auxiliary/lid-voxlingua107",
 	} {
 		if !names[want] {
 			t.Errorf("bundled inputs lack %s", want)

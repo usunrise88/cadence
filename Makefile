@@ -23,7 +23,7 @@ lint:          ## golangci-lint, eslint (panel, Dockview and Base UI rules), tsc
 	cd control-plane && golangci-lint run ./...
 	cd web && npx tsc -b && npx eslint . --max-warnings 0
 	cd agent-host && npm run typecheck
-	cd worker && uv run ruff check . && uv run ruff format --check . && uv run mypy --strict cadence_worker tests scripts packs/toy/cadence_toy packs/toy/tests packs/nemo/cadence_nemo packs/nemo/tests packs/nemo/scripts
+	cd worker && uv run ruff check . && uv run ruff format --check . && uv run mypy --strict cadence_worker tests scripts packs/toy/cadence_toy packs/toy/tests packs/nemo/cadence_nemo packs/nemo/tests packs/nemo/scripts packs/services/cadence_services packs/services/tests packs/services/scripts packs/omni/cadence_omni packs/omni/tests
 
 test:          ## unit + contract (no Docker): Go, Vitest (jsdom + headless Chromium), pytest, agent host
 	cd control-plane && go test ./...
@@ -49,8 +49,10 @@ spikes-measure: ## S1, S3, S4 and A4 measurements (weekly performance job); resu
 contrast:      ## contrast of every Theming pairing, light and dark
 	cd web && node scripts/contrast.mjs
 
-e2e:           ## smoke project on the staging card — arrives with the data block (phase 4, R34)
-	@echo "make e2e: the smoke project arrives in phase 4 (docs/spec/08-resolutions.md R34)"; exit 2
+e2e:           ## smoke project on the staging card: the "Try Cadence" playbook in SMOKE_PROJECT, followed to the end (R34)
+	@test -n "$(SMOKE_PROJECT)" || (echo "make e2e: set SMOKE_PROJECT=<slug> (and CADENCE_URL, CADENCE_TOKEN: an API key of that project that may run agent sessions)"; exit 2)
+	cd control-plane && go run ./cmd/cadence smoke --project $(SMOKE_PROJECT) --playbook try-cadence \
+	  --input fleurs=$${SMOKE_FLEURS:-sr_rs} --input language=$${SMOKE_LANGUAGE:-sr-RS} $(SMOKE_FLAGS)
 
 web:           ## build the SPA and copy it into the control plane's embed directory (replaces the placeholder page)
 	cd web && npm ci && npm run build

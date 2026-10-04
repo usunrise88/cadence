@@ -50,10 +50,23 @@ export type EvalNewArgs = { project: string; body: EvalNew; dryRun?: boolean };
 export type EvalFormArgs = { entity?: EntityData };
 /**
  * projects.adopt: `version` (ver_…) is adopted into the project (If-Match the project's revision, read when not
- * given). From a golden set's header (only `entity`) the Golden set document shows its adopt card, which dry-runs
- * first so a leakage refusal shows before anything changes.
+ * given). From a golden set's or dataset version's header (only `entity`) its document shows its adopt card, which
+ * dry-runs first so a leakage, licence or locale refusal shows before anything changes. `purpose` replay adopts data
+ * of another language kept to measure forgetting (the locale is not checked).
  */
-export type ProjectAdoptArgs = { project?: string; version?: string; rev?: number; dryRun?: boolean; entity?: EntityData };
+export type ProjectAdoptArgs = {
+  project?: string;
+  version?: string;
+  rev?: number;
+  dryRun?: boolean;
+  purpose?: "target" | "replay";
+  entity?: EntityData;
+  /** The registry kind of `entity` (golden_set, dataset_version) when it is not the active document. */
+  kind?: string;
+};
+
+/** Registry kinds whose documents show an adopt card. */
+const ADOPT_DOCS = ["golden_set", "dataset_version"];
 /**
  * aliases.set: points `name` (default baseline) at `version`, or at the open model / the header's entity. baseline is
  * gated, so the answer is an approval id. The alias's current revision is read for the If-Match.
@@ -148,15 +161,19 @@ export function registerEvaluationCommands(): void {
       run: async (ctx, args) => {
         const a = (args ?? {}) as ProjectAdoptArgs;
         if (!a.version) {
-          const id = a.entity?.id ?? activeOf(ctx, "golden_set");
-          if (!id) throw new Error("Adopt into project: open a golden set first");
-          return requestForm("golden_set", id, ADOPT_REQUEST);
+          // The document of the header's entity (or of the active document) shows the adopt card.
+          const active = ctx.activeDoc ? parseDocRef(ctx.activeDoc) : undefined;
+          const activeKind = active && ADOPT_DOCS.includes(active.kind) && (!a.entity || active.id === a.entity.id) ? active.kind : undefined;
+          const kind = a.kind ?? activeKind ?? "golden_set";
+          const id = a.entity?.id ?? (active?.kind === kind ? active.id : undefined);
+          if (!id) throw new Error("Adopt into project: open a golden set or dataset version first");
+          return requestForm(kind, id, ADOPT_REQUEST);
         }
         const project = projectOf(ctx, a, "Adopt into project");
         const rev = a.rev ?? (await projectsGet({ path: { p: project }, throwOnError: true })).data.rev;
         const { data } = await projectsAdopt({
           path: { p: project },
-          body: { version: a.version },
+          body: { version: a.version, ...(a.purpose ? { purpose: a.purpose } : {}) },
           query: a.dryRun ? { dryRun: true } : undefined,
           headers: commandHeaders(rev),
           throwOnError: true,

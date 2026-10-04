@@ -12,6 +12,8 @@ import (
 
 	"github.com/usunrise88/cadence/control-plane/internal/api"
 	"github.com/usunrise88/cadence/control-plane/internal/auth"
+	"github.com/usunrise88/cadence/control-plane/internal/auxiliary"
+	"github.com/usunrise88/cadence/control-plane/internal/cache"
 	"github.com/usunrise88/cadence/control-plane/internal/commands"
 	"github.com/usunrise88/cadence/control-plane/internal/compute"
 	"github.com/usunrise88/cadence/control-plane/internal/defaults"
@@ -69,6 +71,7 @@ func (s *Server) RegistrySearch(ctx context.Context, req api.RegistrySearchReque
 		base.ProjectID = p.ID
 	}
 	f := registry.Search(base, deref(req.Params.Q))
+	f.HideArchived = f.State == "" // archived versions show only when state:archived is asked (versions.archive)
 	list, err := registry.ListVersions(ctx, s.Pool, f)
 	if err != nil {
 		return nil, err
@@ -252,7 +255,27 @@ func (s *Server) DatasetsGet(ctx context.Context, req api.DatasetsGetRequestObje
 	if err != nil {
 		return nil, err
 	}
+	if err := overlayShards(ctx, s.Pool, &v); err != nil {
+		return nil, err
+	}
 	return api.DatasetsGet200JSONResponse(v), nil
+}
+
+// overlayShards replaces the shard location and pin the payload recorded when the version froze (cas, unpinned)
+// with the cache's state now (cache.LiveState): the payload is immutable, the cache is not.
+func overlayShards(ctx context.Context, q storage.Querier, v *api.DatasetVersion) error {
+	if v.Dataset.Shards == nil || len(*v.Dataset.Shards) == 0 {
+		return nil
+	}
+	live, ok, err := cache.LiveState(ctx, q, v.Id)
+	if err != nil || !ok {
+		return err
+	}
+	for i := range *v.Dataset.Shards {
+		sh := &(*v.Dataset.Shards)[i]
+		sh.Location, sh.Pinned = live.Location(sh.Hash), len(live.Pinned) > 0
+	}
+	return nil
 }
 
 func templateVersions(ctx context.Context, q storage.Querier, f registry.Filter) ([]api.TemplateVersion, error) {
@@ -356,11 +379,35 @@ func (s *Server) ProjectsAdopt(ctx context.Context, req api.ProjectsAdoptRequest
 	if err := auth.CheckProject(ctx, pr.ID); err != nil {
 		return nil, err
 	}
-	ctx = commands.WithProject(ctx, pr.ID) // project work: the policy engine, audit and approvals see the project
+	// An auxiliary model (R26) is adopted by a registry-scope approval the admin decides, for everyone: the policy
+	// engine sees the version's kind (preset rule auxiliary-adoption) and no project, and a licence that forbids
+	// commercial use of the outputs is refused before anyone is asked.
+	v, err := registry.GetVersion(ctx, s.Pool, "", req.Body.Version)
+	auxiliaryAdoption := err == nil && v.Kind == registry.KindAuxiliary
+	if auxiliaryAdoption {
+		if err := auxiliary.CheckAdoption(v); err != nil {
+			return nil, err
+		}
+	} else {
+		ctx = commands.WithProject(ctx, pr.ID) // project work: the policy engine, audit and approvals see the project
+	}
 	cmd := command(ctx, "projects.adopt", req.Params.IdempotencyKey, req.Params.DryRun)
+	if auxiliaryAdoption {
+		if cmd.PathParams == nil {
+			cmd.PathParams = map[string]string{}
+		}
+		cmd.PathParams["kind"] = registry.KindAuxiliary
+	}
 	return s.run(ctx, cmd, func(ctx context.Context, tx pgx.Tx) (commands.Result, []events.Draft, error) {
-		a, p, drafts, err := registry.Adopt(ctx, tx, req.P, rev, req.Body.Version, cmd.Actor)
+		var purpose string
+		if req.Body.Purpose != nil {
+			purpose = string(*req.Body.Purpose)
+		}
+		a, p, drafts, err := registry.Adopt(ctx, tx, req.P, rev, req.Body.Version, purpose, cmd.Actor)
 		if err != nil {
+			return commands.Result{}, nil, err
+		}
+		if err := auxiliary.CheckAdoption(a.Version); err != nil {
 			return commands.Result{}, nil, err
 		}
 		// Adopting a golden set re-runs the leakage check against what the project trained on (spec 02).

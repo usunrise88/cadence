@@ -64,6 +64,7 @@ type Defaults struct {
 	Mix       Mix       `yaml:"mix"`
 	Drafts    Drafts    `yaml:"drafts"`
 	Cache     Cache     `yaml:"cache"`
+	Storage   Storage   `yaml:"storage"`
 	Compute   Compute   `yaml:"compute"`
 	Data      Data      `yaml:"data"`
 
@@ -93,8 +94,16 @@ type Defaults struct {
 	Views map[string]map[string]any `yaml:"views"`
 	// Sweeps over recipe parameters (phase 3, stream X).
 	Sweeps Sweeps `yaml:"sweeps"`
+	// Pseudolabel holds the pseudo-label ensemble's agreement rules (phase 4, stream X); read by the worker's
+	// pseudolabel_ensemble through its defaultRefs, never by the control plane.
+	Pseudolabel map[string]any `yaml:"pseudolabel"`
+	// Playbooks holds what playbook inputs default to (phase 4, stream B); read through Lookup by the inputs'
+	// defaultRefs (internal/playbooks).
+	Playbooks map[string]any `yaml:"playbooks"`
 	// Manual transcription tests and the live channel (phase 3, stream T).
 	Transcriptions Transcriptions `yaml:"transcriptions"`
+	// Annotation batches, reviewer invitations and the audio tracks' detector (phase 4, stream A).
+	Annotation Annotation `yaml:"annotation"`
 
 	document map[string]any
 }
@@ -185,11 +194,24 @@ type Drafts struct {
 	PresenceSeconds Param[int]    `yaml:"presence_seconds"`
 }
 
-// Cache holds the local cache limits.
+// Cache holds the content store's low-space warning (its eviction limits are Storage's, phase 4).
 type Cache struct {
-	HighWaterMark Param[float64] `yaml:"high_water_mark"`
-	ProjectQuota  Param[float64] `yaml:"project_quota"`
-	StoreLowFree  Param[float64] `yaml:"store_low_free"`
+	StoreLowFree Param[float64] `yaml:"store_low_free"`
+}
+
+// Storage holds the mounts' and the local cache tier's defaults (phase 4 · stream M).
+type Storage struct {
+	CacheHighWaterPct        Param[float64] `yaml:"cache_high_water_pct"`
+	CacheLowWaterPct         Param[float64] `yaml:"cache_low_water_pct"`
+	ProjectQuotaGB           Param[float64] `yaml:"project_quota_gb"`
+	CacheSweepMinutes        Param[int]     `yaml:"cache_sweep_minutes"`
+	MountCheckHours          Param[int]     `yaml:"mount_check_hours"`
+	MountCheckTimeoutMinutes Param[int]     `yaml:"mount_check_timeout_minutes"`
+	MountCheckSampleMB       Param[int]     `yaml:"mount_check_sample_mb"`
+	MountScanMaxFiles        Param[int]     `yaml:"mount_scan_max_files"`
+	// Exports (phase 4 · stream I): the default target mount and the Hub repository's visibility.
+	ExportMount      Param[string] `yaml:"export_mount"`
+	ExportHubPrivate Param[bool]   `yaml:"export_hub_private"`
 }
 
 // Data holds the import defaults (the dataset_import step kind's defaultRefs, phase 2).
@@ -201,6 +223,38 @@ type Data struct {
 	MaxUtterances           Param[int]     `yaml:"max_utterances"`
 	SampleRate              Param[int]     `yaml:"sample_rate"`
 	TextNormalisation       Param[bool]    `yaml:"text_normalisation"`
+
+	// Ingest, filter, freeze and quality checks (phase 4 · stream D; the worker's sdp_ingest, manifest_filter and
+	// dataset_freeze read them through defaultRef).
+	IngestVADFrameMs        Param[int]     `yaml:"ingest_vad_frame_ms"`
+	IngestVADMarginDB       Param[float64] `yaml:"ingest_vad_margin_db"`
+	IngestVADFloorDB        Param[float64] `yaml:"ingest_vad_floor_db"`
+	IngestVADMinSpeechMs    Param[int]     `yaml:"ingest_vad_min_speech_ms"`
+	IngestVADMinSilenceMs   Param[int]     `yaml:"ingest_vad_min_silence_ms"`
+	IngestVADPadMs          Param[int]     `yaml:"ingest_vad_pad_ms"`
+	IngestMaxSegmentS       Param[float64] `yaml:"ingest_max_segment_s"`
+	IngestMinSegmentS       Param[float64] `yaml:"ingest_min_segment_s"`
+	FilterMinDurationS      Param[float64] `yaml:"filter_min_duration_s"`
+	FilterMaxDurationS      Param[float64] `yaml:"filter_max_duration_s"`
+	FilterMinCharsPerSecond Param[float64] `yaml:"filter_min_chars_per_second"`
+	FilterMaxCharsPerSecond Param[float64] `yaml:"filter_max_chars_per_second"`
+	FilterMinSpeechRatio    Param[float64] `yaml:"filter_min_speech_ratio"`
+	FilterMaxCrosstalk      Param[float64] `yaml:"filter_max_crosstalk"`
+	ShardUtterances         Param[int]     `yaml:"shard_utterances"`
+	QualityMaxSilenceShare  Param[float64] `yaml:"quality_max_silence_share"`
+	QualityMaxClippedShare  Param[float64] `yaml:"quality_max_clipped_share"`
+	QualityOutlierZ         Param[float64] `yaml:"quality_outlier_z"`
+	QualityMaxOutlierShare  Param[float64] `yaml:"quality_max_outlier_share"`
+
+	// Interoperability (phase 4 · stream I): shar_export's shard size and noise_mine's clips (the worker reads them
+	// through defaultRef).
+	SharShardUtterances  Param[int]     `yaml:"shar_shard_utterances"`
+	NoiseMinClipS        Param[float64] `yaml:"noise_min_clip_s"`
+	NoiseMaxClipS        Param[float64] `yaml:"noise_max_clip_s"`
+	NoiseEdgeMarginMs    Param[int]     `yaml:"noise_edge_margin_ms"`
+	NoiseMinRMSDB        Param[float64] `yaml:"noise_min_rms_db"`
+	NoiseMaxRMSDB        Param[float64] `yaml:"noise_max_rms_db"`
+	NoiseMaxClipsPerFile Param[int]     `yaml:"noise_max_clips_per_file"`
 }
 
 // Operations holds instance-wide operational defaults.
@@ -214,6 +268,8 @@ type Notifications struct {
 	QuietHoursEnabled Param[bool]   `yaml:"quiet_hours_enabled"`
 	QuietHoursStart   Param[string] `yaml:"quiet_hours_start"`
 	QuietHoursEnd     Param[string] `yaml:"quiet_hours_end"`
+	// ApprovalBatchS is the window approval requests are gathered in before one Telegram message lists them.
+	ApprovalBatchS Param[int] `yaml:"approval_batch_s"`
 }
 
 // Backups holds the backup schedule and retention.
@@ -223,6 +279,9 @@ type Backups struct {
 	RestoreTestAt      Param[string] `yaml:"restore_test_at"`
 	KeepNightly        Param[int]    `yaml:"keep_nightly"`
 	KeepWeekly         Param[int]    `yaml:"keep_weekly"`
+	// MirrorMount names a writable path mount the content-store mirror goes to (phase 4 · stream I); empty keeps it
+	// under CADENCE_BACKUP_DIR.
+	MirrorMount Param[string] `yaml:"mirror_mount"`
 }
 
 // Eval holds the evaluation defaults: the matrix, scoring and significance (phase 3).
@@ -263,6 +322,26 @@ type Media struct {
 	MaxConversions         Param[int] `yaml:"max_conversions"`
 	SpanCacheMB            Param[int] `yaml:"span_cache_mb"`
 	PlayAuditWindowSeconds Param[int] `yaml:"play_audit_window_s"`
+}
+
+// Annotation holds the annotation batch defaults (phase 4, stream A; docs/spec/04-blocks.md "Annotation workflow").
+type Annotation struct {
+	BatchSize         Param[int]       `yaml:"batch_size"`
+	DoubleShare       Param[float64]   `yaml:"double_share"`
+	MaxIAAWER         Param[float64]   `yaml:"max_iaa_wer"`
+	AdjudicateWER     Param[float64]   `yaml:"adjudicate_wer"`
+	MaxSkips          Param[int]       `yaml:"max_skips"`
+	TargetRole        Param[string]    `yaml:"target_role"`
+	Guidelines        Param[string]    `yaml:"guidelines"`
+	DueDays           Param[int]       `yaml:"due_days"`
+	InvitationMaxDays Param[int]       `yaml:"invitation_max_days"`
+	ContextSeconds    Param[float64]   `yaml:"context_s"`
+	DurationEdges     Param[[]float64] `yaml:"duration_edges_s"`
+	ConfidenceEdges   Param[[]float64] `yaml:"confidence_edges"`
+	VADMarginDB       Param[float64]   `yaml:"vad_margin_db"`
+	VADFloorDB        Param[float64]   `yaml:"vad_floor_db"`
+	VADMinSilenceMs   Param[int]       `yaml:"vad_min_silence_ms"`
+	BandwidthFloorDB  Param[float64]   `yaml:"bandwidth_floor_db"`
 }
 
 // Sweeps holds the sweep defaults (phase 3, stream X): the mode, how many runs a grid or a random draw makes, the

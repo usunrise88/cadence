@@ -7,7 +7,7 @@ import type { Backup, BackupList, Defaults, NotificationRule, NotificationSettin
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { PanelContext } from "@/shell/panel/context";
 import { BackupsSection, canRestore, formatBytes } from "./BackupsSection";
-import { NotificationsSection, parseChatId, timingsFor } from "./NotificationsSection";
+import { NotificationsSection, parseChatId, silentApplies, timingsFor } from "./NotificationsSection";
 
 const runCommand = vi.fn();
 vi.mock("@/shell/panel/commands", async (orig) => ({ ...(await orig<object>()), runCommand: (...a: unknown[]) => runCommand(...a) }));
@@ -30,6 +30,7 @@ const rule = (eventClass: NotificationRule["eventClass"], over: Partial<Notifica
   events: [],
   channels: { inApp: true, telegram: true },
   timing: eventClass === "digest" ? "daily" : "immediate",
+  silent: eventClass === "outcome" || eventClass === "digest",
   bypassQuietHours: eventClass === "failure",
   rev: 1,
   updatedAt: "2026-09-30T00:00:00Z",
@@ -60,6 +61,10 @@ describe("notifications: helpers", () => {
     expect(parseChatId(" -1001234 ")).toBe(-1001234);
     expect(parseChatId("0")).toBeUndefined();
     expect(parseChatId("12a")).toBeUndefined();
+    expect(silentApplies(rule("outcome"))).toBe(true);
+    expect(silentApplies(rule("outcome", { timing: "none" }))).toBe(false);
+    expect(silentApplies(rule("failure", { channels: { inApp: true, telegram: false } }))).toBe(false);
+    expect(silentApplies(rule("progress", { timing: "digest" }))).toBe(false);
   });
 });
 
@@ -74,6 +79,17 @@ describe("notifications: the routing table", () => {
     fireEvent.click(screen.getByLabelText("Telegram: outcome label"));
     await waitFor(() => expect(runCommand).toHaveBeenCalledWith("notificationRules.edit", { rule: outcome, body: { channels: { telegram: false } } }));
     await waitFor(() => expect(screen.getByText("changed")).toBeTruthy());
+  });
+
+  it("makes a class ring or arrive silently", async () => {
+    const failure = rule("failure");
+    qc.setQueryData(notificationRulesListQueryKey(), { items: [failure, rule("outcome")] });
+    runCommand.mockResolvedValue({ ...failure, rev: 2, silent: true, departures: ["silent"] });
+    wrap(<NotificationsSection />);
+    expect((screen.getByLabelText("Silent: outcome label") as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(screen.getByLabelText("Silent: failure label"));
+    await waitFor(() => expect(runCommand).toHaveBeenCalledWith("notificationRules.edit", { rule: failure, body: { silent: true } }));
+    await waitFor(() => expect((screen.getByLabelText("Silent: failure label") as HTMLInputElement).checked).toBe(true));
   });
 
   it("switching progress onto Telegram holds it for the digest", async () => {

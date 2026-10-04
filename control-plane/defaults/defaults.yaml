@@ -4,7 +4,7 @@
 # the control-plane binary and packaged with the worker. Every value carries a description, a source and, where it
 # applies, a safe range; a value without a published source is a "Cadence recommendation" re-checked after the spikes.
 # Keys are addressed as <section>.<key> (x-cadence.defaultRef: training.steps). Bump `version` on every change.
-version: 12
+version: 15
 
 # The project wizard's Recommended mode (docs/spec/02-domain-projects-registry.md "Project wizard").
 wizard:
@@ -233,18 +233,6 @@ drafts:
 
 # Local NVMe cache (docs/spec/02 "Materialisation").
 cache:
-  high_water_mark:
-    value: 0.8
-    unit: fraction
-    description: Share of the local cache above which unpinned shards are evicted, least recently used first
-    source: Cadence recommendation (docs/spec/03 "Key defaults")
-    range: { min: 0.5, max: 0.95 }
-  project_quota:
-    value: 0.4
-    unit: fraction
-    description: Share of the local cache one project's frozen shards may occupy
-    source: Cadence recommendation (docs/spec/03 "Key defaults")
-    range: { min: 0.05, max: 1 }
   store_low_free:
     value: 0.15
     unit: fraction
@@ -252,6 +240,66 @@ cache:
       most once a day) and names the training states artifacts.evict could reclaim
     source: Cadence recommendation (the test stand filled 93 % of its disk in one day of fine-tunes, 2026-10-01)
     range: { min: 0.02, max: 0.5 }
+
+# Mounts and the local cache tier (phase 4 · stream M; docs/review/2026-10-03-phase-4-plan.md decision 2: the cache is
+# the content store). Eviction only ever removes dataset shards that also live on a mount.
+storage:
+  cache_high_water_pct:
+    value: 85
+    unit: "%"
+    description: Share of the content store's filesystem in use above which the cache sweep evicts unpinned dataset shards that also live on a mount, least recently used first (projects over their quota first)
+    source: docs/review/2026-10-03-phase-4-plan.md decision 2 (Cadence recommendation)
+    range: { min: 50, max: 98 }
+  cache_low_water_pct:
+    value: 70
+    unit: "%"
+    description: Share in use the cache sweep evicts down to once it started; below the high-water mark
+    source: docs/review/2026-10-03-phase-4-plan.md decision 2 (Cadence recommendation)
+    range: { min: 20, max: 95 }
+  project_quota_gb:
+    value: 200
+    unit: GB
+    description: Bytes of cached dataset versions one project may have frozen; a freeze past it is refused (storage-quota-exceeded) and the sweep evicts over-quota projects' shards first
+    source: docs/review/2026-10-03-phase-4-plan.md decision 2 (Cadence recommendation)
+    range: { min: 1, max: 100000 }
+  cache_sweep_minutes:
+    value: 15
+    unit: min
+    description: How often the cache sweep compares the store's use with the high-water mark
+    source: Cadence recommendation
+    range: { min: 1, max: 1440 }
+  mount_check_hours:
+    value: 6
+    unit: h
+    description: How often every mount's health is checked on a worker (reachable, free space, a throughput sample); also checked at registration and by every scan
+    source: Cadence recommendation
+    range: { min: 1, max: 168 }
+  mount_check_timeout_minutes:
+    value: 10
+    unit: min
+    description: How long a health check waits for a worker before it gives up and says so in the mount's health
+    source: Cadence recommendation
+    range: { min: 1, max: 120 }
+  mount_check_sample_mb:
+    value: 64
+    unit: MB
+    description: How much of a mount's files the health check reads to sample its throughput
+    source: Cadence recommendation
+    range: { min: 1, max: 4096 }
+  mount_scan_max_files:
+    value: 2000000
+    unit: files
+    description: Files one mount scan walks before it stops and marks its inventory truncated
+    source: Cadence recommendation
+    range: { min: 1000, max: 100000000 }
+  export_mount:
+    value: exports
+    description: The writable mount datasets.export writes to when the request names no target (mount://<this>/<collection>/<version>/<format>); when no writable path mount has this name the export stays in the content store
+    source: docs/review/2026-10-03-phase-4-plan.md decision 1 (the exports mount)
+  export_hub_private:
+    value: true
+    description: Whether a dataset pushed to the Hugging Face Hub (datasets.export format hf-hub) creates its repository private when the request does not say
+    source: Cadence recommendation (publishing is a person's later decision on the Hub)
 
 # Instance operations (docs/spec/06-platform.md "Operations"): the clock quiet hours, the digest and backups follow.
 operations:
@@ -278,6 +326,12 @@ notifications:
     value: "08:00"
     description: Local time quiet hours end (before the digest, so the digest is never held back)
     source: Cadence recommendation
+  approval_batch_s:
+    value: 120
+    unit: s
+    description: Approval requests within this window go to Telegram as one message (each with its own Approve / Deny buttons), sent when the window that the first one opened closes; 0 sends each at once
+    source: Cadence recommendation (owner feedback 2026-10-04 — seven approvals in a minute rang seven times)
+    range: { min: 0, max: 900 }
 
 # Backups (docs/spec/06-platform.md "Operations": 24 h RPO, 1 h RTO).
 backups:
@@ -306,6 +360,10 @@ backups:
     description: Weekly backup sets kept beside the nightly ones
     source: Cadence recommendation (a month of weekly restore points)
     range: { min: 1, max: 52 }
+  mirror_mount:
+    value: ""
+    description: A writable path mount (mounts.list) the content-store mirror goes to (<root>/cas/b3/…) instead of CADENCE_BACKUP_DIR/cas; every mirrored blob is then recorded as a copy on the mount, so the cache may evict it and datasets.materialize copies it back. Empty keeps the mirror beside the backup sets
+    source: docs/review/2026-10-03-phase-4-plan.md decision 1 (the exports mount is the backup mirror's mount option)
 
 # The recommended augmentation profile (docs/spec/03-pipelines-defaults.md "Augmentation"): a project's
 # augment/<name>.yaml starts from these values and the Recipe form's "Reset to recommended" writes them back. Each
@@ -425,6 +483,288 @@ data:
     value: false
     description: Whether an import normalises transcripts; off keeps the source's cased, punctuated text, the style the base model is trained on
     source: nvidia/nemotron-3.5-asr-streaming-0.6b model card (punctuated, cased output); .claude/rules/worker.md
+  # Ingest from a mount, filter, split and freeze (phase 4 · stream D; docs/help/steps/sdp-ingest.md).
+  ingest_vad_frame_ms:
+    value: 20
+    unit: ms
+    description: Frame length of sdp_ingest's energy voice activity detection (one level per frame, per channel)
+    source: Cadence recommendation (20 ms frames, the frame_vad model's resolution)
+    range: { min: 10, max: 100 }
+  ingest_vad_margin_db:
+    value: 12
+    unit: dB
+    description: How far above a channel's noise floor (its 10th-percentile frame level) a frame must be to count as speech
+    source: Cadence recommendation
+    range: { min: 3, max: 40 }
+  ingest_vad_floor_db:
+    value: -55
+    unit: dBFS
+    description: Absolute level below which a frame is never speech, whatever the noise floor
+    source: Cadence recommendation (telephone line noise sits near -60 dBFS)
+    range: { min: -90, max: -20 }
+  ingest_vad_min_speech_ms:
+    value: 250
+    unit: ms
+    description: Speech runs shorter than this are dropped (clicks, breaths)
+    source: Cadence recommendation
+    range: { min: 0, max: 5000 }
+  ingest_vad_min_silence_ms:
+    value: 300
+    unit: ms
+    description: Pauses shorter than this do not end a segment
+    source: Cadence recommendation
+    range: { min: 0, max: 5000 }
+  ingest_vad_pad_ms:
+    value: 100
+    unit: ms
+    description: Audio kept before and after each speech run so word onsets and endings are not clipped
+    source: Cadence recommendation
+    range: { min: 0, max: 1000 }
+  ingest_max_segment_s:
+    value: 20
+    unit: s
+    description: Longest segment ingest writes; longer speech is split at its quietest frame
+    source: Cadence recommendation (training batches by duration; FastConformer fine-tunes typically cap utterances at 20 s)
+    range: { min: 1, max: 60 }
+  ingest_min_segment_s:
+    value: 0.3
+    unit: s
+    description: Shortest segment ingest writes
+    source: Cadence recommendation
+    range: { min: 0, max: 10 }
+  filter_min_duration_s:
+    value: 0.5
+    unit: s
+    description: manifest_filter drops segments shorter than this
+    source: Cadence recommendation
+    range: { min: 0, max: 60 }
+  filter_max_duration_s:
+    value: 30
+    unit: s
+    description: manifest_filter drops segments longer than this
+    source: Cadence recommendation (NeMo ASR fine-tuning recipes use max_duration 20–40 s)
+    range: { min: 1, max: 600 }
+  filter_min_chars_per_second:
+    value: 1
+    unit: chars/s
+    description: manifest_filter drops transcribed segments with fewer characters per second (text missing words)
+    source: Cadence recommendation (NeMo Speech Data Processor char-rate filters)
+    range: { min: 0, max: 50 }
+  filter_max_chars_per_second:
+    value: 30
+    unit: chars/s
+    description: manifest_filter drops transcribed segments with more characters per second (text of a longer clip, or audio cut short)
+    source: Cadence recommendation (NeMo Speech Data Processor char-rate filters)
+    range: { min: 1, max: 100 }
+  filter_min_speech_ratio:
+    value: 0.2
+    unit: fraction
+    description: manifest_filter drops segments whose voice-activity share is below this
+    source: Cadence recommendation
+    range: { min: 0, max: 1 }
+  filter_max_crosstalk:
+    value: 0.5
+    unit: fraction
+    description: manifest_filter drops segments during which another channel speaks for more than this share
+    source: Cadence recommendation
+    range: { min: 0, max: 1 }
+  shard_utterances:
+    value: 2000
+    unit: utterances
+    description: "Utterances per shard (a Lhotse cuts file) of a frozen dataset version: the unit of pinning, eviction and materialisation"
+    source: Cadence recommendation (Lhotse Shar's default shard size is 1000 cuts)
+    range: { min: 10, max: 100000 }
+  quality_max_silence_share:
+    value: 0.5
+    unit: fraction
+    description: A frozen version warns when its segments are on average more silence than this (1 − voice-activity share)
+    source: Cadence recommendation
+    range: { min: 0, max: 1 }
+  quality_max_clipped_share:
+    value: 0.01
+    unit: fraction
+    description: A frozen version warns when more than this share of segments clip (more than 0.1 % of samples at full scale)
+    source: Cadence recommendation
+    range: { min: 0, max: 1 }
+  quality_outlier_z:
+    value: 3.0
+    description: Characters-per-second z-score beyond which a segment's transcript length is an outlier
+    source: Cadence recommendation (three standard deviations)
+    range: { min: 1, max: 10 }
+  quality_max_outlier_share:
+    value: 0.02
+    unit: fraction
+    description: A frozen version warns when more than this share of segments are transcript-length outliers
+    source: Cadence recommendation
+    range: { min: 0, max: 1 }
+  # Interoperability (phase 4 · stream I): Shar exports and the noise bank mined from calls (shar_export,
+  # noise_mine read them through defaultRef).
+  shar_shard_utterances:
+    value: 1000
+    unit: utterances
+    description: Cuts per shard of a Lhotse Shar export (one cuts.NNNNNN.jsonl.gz and one recording.NNNNNN.tar each)
+    source: Lhotse SharWriter's default shard_size (1000)
+    range: { min: 10, max: 100000 }
+  noise_min_clip_s:
+    value: 1.0
+    unit: s
+    description: Shortest silence of a call track kept as a noise clip (after the margin to speech is cut off)
+    source: Cadence recommendation
+    range: { min: 0.2, max: 30 }
+  noise_max_clip_s:
+    value: 10.0
+    unit: s
+    description: Longest noise clip; a longer silence is cut into clips of at most this length
+    source: Cadence recommendation (augmentation mixes clips of a few seconds; MUSAN noise clips are longer and are cropped at mix time)
+    range: { min: 1, max: 120 }
+  noise_edge_margin_ms:
+    value: 200
+    unit: ms
+    description: Distance a noise clip keeps from speech on any channel of the file (breath, echo and crosstalk stay out)
+    source: Cadence recommendation
+    range: { min: 0, max: 2000 }
+  noise_min_rms_db:
+    value: -75.0
+    unit: dBFS
+    description: A clip quieter than this is digital silence (a TTS bot channel, a muted line) and is not kept
+    source: Cadence recommendation (16-bit dither sits near −90 dBFS; telephone line noise is usually −65 to −45)
+    range: { min: -120, max: -30 }
+  noise_max_rms_db:
+    value: -25.0
+    unit: dBFS
+    description: A clip louder than this is probably speech the voice-activity detector missed and is not kept
+    source: Cadence recommendation
+    range: { min: -60, max: 0 }
+  noise_max_clips_per_file:
+    value: 20
+    unit: clips
+    description: Most noise clips taken from one recording, so a few long calls do not make up the whole bank
+    source: Cadence recommendation
+    range: { min: 1, max: 1000 }
+
+# Annotation batches (phase 4, stream A; docs/spec/04-blocks.md "Annotation workflow", R27): the sample, double
+# annotation, adjudication, the agreement target, reviewer invitations and the audio tracks' detector (tracks.get).
+annotation:
+  batch_size:
+    value: 200
+    unit: items
+    description: Items a new batch samples
+    source: Cadence recommendation (a day of one annotator's work on 5–20 s telephone turns)
+    range: { min: 1, max: 5000 }
+  double_share:
+    value: 0.10
+    unit: fraction
+    description: Share of a batch's items a second annotator transcribes blind
+    source: docs/spec/04-blocks.md "Annotation workflow" (10 % of every batch plus all flagged items)
+    range: { min: 0, max: 1 }
+  max_iaa_wer:
+    value: 0.05
+    unit: fraction
+    description: Largest inter-annotator WER (edits between first and second transcripts over the first's words) at which a golden-set batch may freeze
+    source: docs/spec/04-blocks.md "Annotation workflow" (target ≤ 5 %)
+    range: { min: 0, max: 0.5 }
+  adjudicate_wer:
+    value: 0.0
+    unit: fraction
+    description: Two transcripts of an item farther apart than this (word error rate after a neutral fold that lower-cases and drops punctuation and marks, not a scoring normalizer) go to adjudication; 0 sends every word difference
+    source: Cadence recommendation (a golden set's reference is exact; differences are cheap to adjudicate)
+    range: { min: 0, max: 0.5 }
+  max_skips:
+    value: 2
+    unit: skips
+    description: Skips after which an item without a transcript is excluded
+    source: Cadence recommendation
+    range: { min: 1, max: 10 }
+  target_role:
+    value: caller
+    description: The channel role a batch samples by default (the bot's channel labels itself from its TTS script)
+    source: docs/spec/04-blocks.md "Annotation workflow" (the caller's channel is the annotation target)
+    range: { values: [caller, bot, mono] }
+  guidelines:
+    value: default
+    description: The guidelines a batch pins when none is named (annotation/guidelines/<name>.md in the project repository)
+    source: docs/spec/08-resolutions.md R27
+  due_days:
+    value: 14
+    unit: days
+    description: Days from a batch's creation to its due date when none is given
+    source: docs/spec/06-platform.md "Authentication and access" (an invitation lasts 14 days at most)
+    range: { min: 1, max: 90 }
+  invitation_max_days:
+    value: 14
+    unit: days
+    description: Longest a reviewer invitation lasts (it also ends at the batch's due date and when the batch freezes)
+    source: docs/spec/06-platform.md "Authentication and access"
+    range: { min: 1, max: 14 }
+  context_s:
+    value: 2.0
+    unit: seconds
+    description: Source audio played before and after an item's segment, every channel (the bot's turn around a caller's)
+    source: Cadence recommendation
+    range: { min: 0, max: 30 }
+  duration_edges_s:
+    value: [2, 5, 10, 20]
+    unit: seconds
+    description: Upper edges of the duration strata of a batch's sample (the last stratum is open)
+    source: Cadence recommendation (short answers, phrases, sentences, long turns)
+  confidence_edges:
+    value: [0.6, 0.85]
+    unit: probability
+    description: Upper edges of the confidence strata (a transcript's confidence; none is its own stratum)
+    source: Cadence recommendation
+  vad_margin_db:
+    value: 12
+    unit: dB
+    description: Level above a channel's noise floor (its 10th percentile) that tracks.get counts as speech
+    source: Cadence recommendation (the same margin as data.ingest_vad_margin_db)
+    range: { min: 3, max: 40 }
+  vad_floor_db:
+    value: -55
+    unit: dBFS
+    description: Level under which tracks.get never counts speech
+    source: Cadence recommendation (data.ingest_vad_floor_db)
+    range: { min: -90, max: -20 }
+  vad_min_silence_ms:
+    value: 300
+    unit: ms
+    description: Pauses shorter than this join two speech regions in tracks.get
+    source: Cadence recommendation (data.ingest_vad_min_silence_ms)
+    range: { min: 0, max: 5000 }
+  bandwidth_floor_db:
+    value: 50
+    unit: dB
+    description: A frequency band counts toward the estimated bandwidth while its mean power is within this many dB of the loudest band
+    source: Cadence recommendation (a G.711 call upsampled to 16 kHz keeps under −60 dB above 4 kHz)
+    range: { min: 20, max: 90 }
+# Pseudo-labels (phase 4 · stream X; docs/review/2026-10-03-phase-4-plan.md "Decisions taken for phase 4" 6–7, R26):
+# when the members of a pseudolabel_ensemble agree on a segment's text. The control plane reads none of these.
+pseudolabel:
+  max_pairwise_wer:
+    value: 0.15
+    unit: fraction
+    description: Largest word error rate between two members' texts (after the scoring normalizer, edits over the longer text) at which they agree
+    source: "docs/review/2026-10-03-phase-4-plan.md decision 6 (the owner's agreement threshold, after NVIDIA Granary's multi-model agreement filter)"
+    range: { min: 0, max: 1 }
+  min_agreeing_members:
+    value: 2
+    unit: members
+    description: Fewest members that must each agree with another member for a segment to keep a pseudo-label
+    source: docs/review/2026-10-03-phase-4-plan.md decision 6 (at least two members)
+    range: { min: 2, max: 10 }
+  lid_min_confidence:
+    value: 0.5
+    unit: probability
+    description: Confidence the language classifier (lid_classify) must reach to decide; below it the members' own detected languages decide
+    source: Cadence recommendation (a majority probability; Whisper's language token is the second opinion, decision 7)
+    range: { min: 0, max: 1 }
+  lid_equivalents:
+    value: [[sr, hr, bs]]
+    description: Groups of languages a classifier cannot tell apart reliably, counted as one when language identification is compared with the source's language
+    source: Cadence recommendation (Serbian, Croatian and Bosnian share one standard language base; VoxLingua107 and Whisper both confuse them, Valk and Alumäe 2021)
+  require_lid:
+    value: true
+    description: Whether a segment with a known language needs a language identification verdict to keep its pseudo-label (without one it is disputed as lid-unknown)
+    source: docs/review/2026-10-03-phase-4-plan.md decision 6 ("and LID agrees with the source's language")
 
 # Evaluation (phase 3; docs/review/2026-10-02-phase-3-plan.md): the matrix, scoring and significance.
 eval:
@@ -742,6 +1082,21 @@ sweeps:
     source: Cadence recommendation
     range: { min: 0, max: 2147483647 }
 
+# Playbooks (phase 4 · stream B): what a playbook input takes when the person names nothing (its defaultRef).
+playbooks:
+  try_hours:
+    value: 2
+    unit: h
+    description: Hours of FLEURS the "Try Cadence" playbook imports (the train split, read up to this cap)
+    source: ROADMAP.md phase 4 ("Try Cadence" — 2 h FLEURS, the full loop in about 1 GPU-hour)
+    range: { min: 0.1, max: 20 }
+  try_steps:
+    value: 300
+    unit: steps
+    description: Optimiser steps of the "Try Cadence" training run
+    source: docs/spec/06-platform.md "Test layers" (the smoke project — ingest, freeze, 300 steps, eval, gate)
+    range: { min: 10, max: 5000 }
+
 # Framework packs (R45): one section per pack, read by its step kinds through x-cadence defaultRef packs.<pack>.<key>.
 packs:
   # The CPU toy pack (runtime `toy`, family `toy-ctc`): a tiny CTC model trained in seconds that exists only to keep the
@@ -989,3 +1344,88 @@ packs:
       description: Shortest pause that splits two speech segments (shorter gaps are closed)
       source: Cadence recommendation
       range: { min: 0, max: 5000 }
+    # Auxiliary models loaded per job (phase 4 · stream X, R26): whisper_transcribe and lid_classify. The weights come
+    # from the auxiliary version the project adopted (its hfRepo and pinned revision), never from here.
+    whisper_auxiliary:
+      value: auxiliary/whisper-large-v3
+      description: The Whisper auxiliary a whisper_transcribe member decodes with (auxiliary/whisper-he-ivrit for Hebrew only)
+      source: docs/review/2026-10-03-phase-4-plan.md "Auxiliary models and licences (R26)" (Apache-2.0, checked 2026-10-03)
+    whisper_batch_size:
+      value: 8
+      unit: utterances
+      description: Utterances per Whisper generate call (audio over 30 s decodes alone, long-form)
+      source: Cadence recommendation (large-v3 in fp16 at batch 8 stays under the 8 GB step cap)
+      range: { min: 1, max: 64 }
+    whisper_num_beams:
+      value: 1
+      unit: beams
+      description: Beam width of Whisper's decoding (1 is greedy)
+      source: Cadence recommendation (greedy; the ensemble's agreement, not one member's beam, buys accuracy)
+      range: { min: 1, max: 8 }
+    whisper_detect_language:
+      value: true
+      description: Whether the Whisper member also records its own language identification beside the text (the ensemble's second opinion on LID)
+      source: docs/review/2026-10-03-phase-4-plan.md decision 7
+    lid_auxiliary:
+      value: auxiliary/whisper-large-v3
+      description: The language classifier lid_classify uses (auxiliary/lid-voxlingua107 needs speechbrain and torchaudio, which this runtime lacks)
+      source: "docs/review/2026-10-03-phase-4-plan.md decision 7, with Whisper's language token as the fallback: torchaudio has no build for the nemo-speech image's torch 2.12 (checked 2026-10-03)"
+    lid_top_k:
+      value: 3
+      unit: languages
+      description: Most probable languages kept per utterance in the lid artifact
+      source: Cadence recommendation
+      range: { min: 1, max: 10 }
+    lid_batch_size:
+      value: 8
+      unit: utterances
+      description: Utterances per language identification batch (16 ran out of memory under the 8 GB data-job cap beside the other members on the stand, 2026-10-04)
+      source: Cadence recommendation
+      range: { min: 1, max: 128 }
+  # The services pack (runtime `services`, CPU): step kinds that call a running service an auxiliary names. Cadence
+  # never starts the service; docs/help/guides/auxiliary-models.md.
+  services:
+    oasis_auxiliary:
+      value: auxiliary/oasis
+      description: The OASIS auxiliary oasis_transcribe calls (its payload names the endpoint and the token secret)
+      source: docs/review/2026-10-03-phase-4-plan.md "Owner decisions" 1
+    oasis_timeout_s:
+      value: 60
+      unit: s
+      description: Deadline of one Transcribe call (the ensemble decodes a 3B beam, a CTC model and a text judge)
+      source: Cadence recommendation
+      range: { min: 1, max: 600 }
+    oasis_health_timeout_s:
+      value: 5
+      unit: s
+      description: Deadline of the GetModelInfo call that checks the service answers before any segment is sent
+      source: Cadence recommendation
+      range: { min: 1, max: 60 }
+    oasis_concurrency:
+      value: 2
+      unit: requests
+      description: Transcribe calls in flight at once
+      source: Cadence recommendation (the service batches internally; two keeps its card busy without queueing behind live calls)
+      range: { min: 1, max: 16 }
+    oasis_campaign_id:
+      value: cadence-pseudolabel
+      description: Campaign id sent with every Transcribe call (the service labels its metrics with it)
+      source: Cadence recommendation
+  # The omni pack (runtime `omni`, GPU, its own image worker/Dockerfile.omni): align_reference aligns reference texts
+  # to audio with an omniASR CTC model (docs/review/2026-10-03-phase-4-plan.md decision 8; R51, R54).
+  omni:
+    align_auxiliary:
+      value: auxiliary/omniasr-ctc-1b
+      description: The aligner auxiliary align_reference reads CTC emissions from (role align); utterances in a language it does not list stay unaligned
+      source: docs/review/2026-10-03-phase-4-plan.md "Auxiliary models and licences (R26)" (Apache-2.0, checked 2026-10-03; MMS is CC-BY-NC and excluded)
+    align_max_duration_s:
+      value: 60
+      unit: s
+      description: Longest utterance align_reference aligns in one pass; a longer one stays unaligned (self-attention memory grows with the square of its length)
+      source: Cadence recommendation (60 s of audio is 3 000 encoder frames, well under the 8 GB step cap for the 1B model in bfloat16)
+      range: { min: 1, max: 300 }
+    align_dtype:
+      value: bfloat16
+      description: Precision of the aligner's forward pass (the log-softmax and the Viterbi run in float32 either way)
+      source: Cadence recommendation (OASIS serves the same models in bfloat16)
+      range: { values: [bfloat16, float32] }

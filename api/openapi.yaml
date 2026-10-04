@@ -43,6 +43,8 @@ tags:
   - { name: runs, description: "Training runs (one optimisation stage each), calibration, checkpoints and metric series (R12, R13, R44)" }
   - { name: evals, description: "The eval matrix against the baseline, eval records, the project's gate and model registration (R20–R24)" }
   - { name: media, description: "Audio for people: an utterance's audio, peaks, spectrogram tiles and words, live transcription (R25, R47); exempt from the vocabulary and never MCP tools; agents are refused" }
+  - { name: storage, description: "Mounts (local, NFS/SMB, S3-compatible, Hub), the local cache with pinning, eviction and quotas, dataset materialisation" }
+  - { name: annotation, description: "Annotation batches (sampling, double annotation, adjudication, freeze), reviewer invitations and the triage queue's resolutions" }
   - { name: planned, description: Named now, implemented in a later phase (501 until then) }
 
 paths:
@@ -599,9 +601,20 @@ paths:
       tags: [projects]
       x-cadence:
         toolDescription: >
-          Adopt a registry version (base model, dataset version, template) into this project by reference, so mixes,
-          runs and aliases may use it. Only frozen versions are adoptable. Needs If-Match with the project's revision
-          (projects.get); the project's revision goes up by one.
+          Adopt a registry version (base model, dataset version, golden set, normalizer, model, noise bank,
+          auxiliary model, template) into this project by reference, so mixes, runs, gates, pipelines and aliases may
+          use it; data.lock on main lists it from then on. Only frozen versions are adoptable (a draft dataset version
+          is frozen first with datasets.freeze; deprecated and archived versions are refused). Adoption checks the
+          licence (licence-forbids-adoption: no usable licence, or a non-commercial or no-derivatives licence on what a
+          model is trained from or ships) and the locale (locale-mismatch: a dataset version, golden set or normalizer
+          in none of the project's languages, unless purpose is replay: a golden set or dataset of another language
+          kept to measure forgetting). Adopting an auxiliary model (LID, pseudo-label member, aligner; R26) is a
+          registry-scope approval for everyone (202 with an approvalId) and is refused when its licence forbids
+          commercial use of its outputs. Step kinds, runtimes and model families are published by workers and are
+          never adopted. Needs If-Match with the project's revision (projects.get); the project's revision goes up by
+          one.
+        # The handler names the version's kind to the policy engine (preset rule auxiliary-adoption: kind=auxiliary).
+        gatedWhen: { param: kind, values: [auxiliary] }
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
         - $ref: "#/components/parameters/IfMatch"
@@ -614,6 +627,7 @@ paths:
           description: Adopted (or, for a dry run, what would be adopted); ETag is the project's new revision
           headers: { ETag: { $ref: "#/components/headers/ETag" } }
           content: { application/json: { schema: { $ref: "#/components/schemas/Adoption" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
         default: { $ref: "#/components/responses/Problem" }
 
   /projects/{p}/adoptions:
@@ -2510,6 +2524,32 @@ paths:
           description: Sources by name
           content: { application/json: { schema: { $ref: "#/components/schemas/SourceList" } } }
         default: { $ref: "#/components/responses/Problem" }
+    post:
+      operationId: sources.new
+      summary: Register a source (a corpus with its licence, kind and languages) before ingesting it; it starts eval-only
+      tags: [registry]
+      x-cadence:
+        toolDescription: >
+          Register a corpus as a source before pipelines/data-ingest reads it from a mount: name, licence (the
+          corpus card's, an SPDX id where one exists), kind (public, production, synthetic), languages, url. No
+          licence, no ingest: the pipeline engine refuses an ingest step whose source is missing, archived or has no
+          usable licence (unknown, none, NOASSERTION). A new source is eval-only (trainingCleared false) until a
+          person clears it with sources.edit.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/SourceNew" } } }
+      responses:
+        "200":
+          description: Dry run — the source that would be registered; nothing was written
+          content: { application/json: { schema: { $ref: "#/components/schemas/Source" } } }
+        "201":
+          description: Registered
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Source" } } }
+        default: { $ref: "#/components/responses/Problem" }
 
   /registry/sources/{id}:
     x-cadence: { entity: sources }
@@ -2532,7 +2572,9 @@ paths:
         toolDescription: >
           Change a source's description or licence, or set trainingCleared. Clearing a source for training is a
           person's decision (the licence allows training and the data may be used): an agent's sources.edit waits
-          for a person's approval (202 with approvalId). Sources are shared by every project. Send ifMatch with the
+          for a person's approval (202 with approvalId). A source licensed to forbid commercial use or derivative
+          works (NC, ND, research only) is never cleared, nor is a cleared source moved to such a licence
+          (validation-failed on /trainingCleared, R26). Sources are shared by every project. Send ifMatch with the
           etag (or rev) of your last sources.get. An archived source cannot be edited.
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -2626,7 +2668,7 @@ paths:
     parameters: [{ $ref: "#/components/parameters/Id" }]
     patch:
       operationId: notificationRules.edit
-      summary: Change which channels an event class reaches and when (admin only)
+      summary: Change which channels an event class reaches, when, and whether Telegram rings (admin only)
       tags: [notifications]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -3164,7 +3206,8 @@ paths:
           List golden sets: frozen, held-out test sets per language and domain, each an eval-only dataset version
           tied to one scoring normalizer version. Runs never read them: a dataset version or mix sharing an
           utterance (by id or fingerprint) with any golden set is refused for training (golden-set-leakage).
-          Adopt one into a project with projects.adopt.
+          Adopt one into a project with projects.adopt. alignment, when present, holds word timings of the references
+          (the align_reference step on the golden set's dataset), which emission delay in evals needs.
       parameters:
         - $ref: "#/components/parameters/RegistryCollectionFilter"
         - $ref: "#/components/parameters/RegistryStateFilter"
@@ -3860,21 +3903,759 @@ paths:
         "101": { description: "Switching Protocols: the session's messages (LiveClientMessage and audio down to the worker, LiveServerMessage up)" }
         default: { $ref: "#/components/responses/Problem" }
 
-  # ---------------------------------------------------------------- planned (later phases)
+  # ---------------------------------------------------------------- mounts, cache, storage (phase 4 · stream M) — add paths below this line (move /mounts from planned)
+
   /mounts:
-    x-cadence: { entity: mounts, planned: 4 }
+    x-cadence: { entity: mounts }
     get:
       operationId: mounts.list
-      summary: Registered mounts and their health
-      tags: [planned]
-      responses: { "200": { $ref: "#/components/responses/PlannedEntity" }, default: { $ref: "#/components/responses/Problem" } }
+      summary: Registered mounts with their health and last scan
+      tags: [storage]
+      x-cadence:
+        toolDescription: >
+          List the storage mounts Cadence reads audio from and writes exports to: a local path, an NFS or SMB share the
+          OS mounted at a path, an S3-compatible bucket or a Hugging Face Hub repository pinned to a revision. Each
+          mount has a name (utterances name their audio as mount://<name>/<path>[#t=<start>,<end>][&ch=<n>]), a
+          read-only flag, its last health check (reachable, free space, a throughput sample, run by a worker) and its
+          last scan (files, bytes, top-level entries, content-store blob copies found). A job never starts on an
+          unhealthy mount.
+      responses:
+        "200":
+          description: Mounts by name
+          content: { application/json: { schema: { $ref: "#/components/schemas/MountList" } } }
+        default: { $ref: "#/components/responses/Problem" }
     post:
       operationId: mounts.new
-      summary: Register a local path, NFS/SMB path, S3-compatible bucket or Hub source (approval)
-      tags: [planned]
-      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }, { $ref: "#/components/parameters/DryRun" }]
-      requestBody: { $ref: "#/components/requestBodies/PlannedBody" }
-      responses: { "202": { $ref: "#/components/responses/ApprovalAccepted" }, default: { $ref: "#/components/responses/Problem" } }
+      summary: Register a local path, NFS/SMB path, S3-compatible bucket or Hub repository (registry approval, the admin decides)
+      tags: [storage]
+      x-cadence:
+        toolDescription: >
+          Ask for a new mount. Mounts are shared by every project, so the real call always answers 202 with an
+          approvalId, for people too; the admin decides it, and the approved request registers the mount and queues
+          its first health check on a worker. kind local, nfs and smb take root = the absolute path where workers and
+          the control plane see the share; s3 takes root = bucket[/prefix], endpoint and credentials (the name of a
+          secret holding <accessKeyId>:<secretAccessKey>); hf takes root = datasets/<org>/<name> (or <org>/<model>)
+          and revision = a commit SHA. Mounts are read-only unless readOnly is false. dryRun=true validates.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/MountNew" } } }
+      responses:
+        "200":
+          description: Dry run — the mount as it would be registered; nothing changed
+          content: { application/json: { schema: { $ref: "#/components/schemas/Mount" } } }
+        "201":
+          description: The registered mount (the approved request)
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Mount" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /mounts/{id}:
+    x-cadence: { entity: mounts }
+    parameters:
+      - { name: id, in: path, required: true, description: "Mount id (mnt_…) or name", schema: { type: string } }
+    get:
+      operationId: mounts.get
+      summary: Get a mount with its health, last scan, utterance URIs and content-store copies
+      tags: [storage]
+      responses:
+        "200":
+          description: The mount
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Mount" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /mounts/{id}:scan:
+    x-cadence: { entity: mounts }
+    parameters:
+      - { name: id, in: path, required: true, description: "Mount id (mnt_…) or name", schema: { type: string } }
+    post:
+      operationId: mounts.scan
+      summary: Rescan a mount — files, bytes, top-level entries and content-store blob copies — and check its health (202 with the job)
+      tags: [storage]
+      x-cadence:
+        toolDescription: >
+          Walk a mount (or one path under it) and record what is there: files, bytes and the top-level entries
+          (source/revision directories on a corpora mount), plus blobs laid out as a content store (cas/b3/<ab>/<hash>,
+          e.g. an export or a backup mirror) — those become copies that let datasets.evict free cache space. The scan
+          also queues a health check on a worker. Answers 202 with the job; the mount's inventory and health change
+          when it ends (mount.{id}). Nothing on the mount is changed.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: false
+        content: { application/json: { schema: { $ref: "#/components/schemas/MountScan" } } }
+      responses:
+        "200":
+          description: Dry run — the mount as it is now; nothing queued
+          content: { application/json: { schema: { $ref: "#/components/schemas/Mount" } } }
+        "202": { $ref: "#/components/responses/JobAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /mounts/{id}:verify:
+    x-cadence: { entity: mounts }
+    parameters:
+      - { name: id, in: path, required: true, description: "Mount id (mnt_…) or name", schema: { type: string } }
+    post:
+      operationId: mounts.verify
+      summary: Check a mount's health on a worker now — reachable, free space, a throughput sample (202 with the job)
+      tags: [storage]
+      x-cadence:
+        toolDescription: >
+          Run the mount health check (step kind mount_check@1) on a worker: is the mount reachable from the worker
+          host, how much space is free, and how fast a sample of its files reads. The result lands in the mount's
+          health (mounts.get; event mount.health on mount.{id}). Health is also checked when a mount is registered,
+          by every scan and every storage.mount_check_hours. A job that names an unhealthy mount fails at once
+          (mount-unhealthy).
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      responses:
+        "200":
+          description: Dry run — the mount as it is now; nothing queued
+          content: { application/json: { schema: { $ref: "#/components/schemas/Mount" } } }
+        "202": { $ref: "#/components/responses/JobAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /storage:
+    x-cadence: { entity: storage, singleton: true }
+    get:
+      operationId: storage.get
+      summary: Cache use, water marks, per-project quotas, pinned and evictable dataset versions
+      tags: [storage]
+      x-cadence:
+        toolDescription: >
+          The local cache (the content store) as Cadence accounts it: the filesystem's size and free space, the high
+          and low water marks (above the high mark unpinned dataset shards that also live on a mount are evicted,
+          least recently used first, down to the low mark), each project's frozen dataset bytes against its quota,
+          the dataset versions pinned (a queued or running job or a promoted model needs them) and those that are
+          evictable or already evicted (datasets.materialize brings them back).
+      responses:
+        "200":
+          description: The cache now
+          content: { application/json: { schema: { $ref: "#/components/schemas/StorageUse" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/datasets:materialize:
+    x-cadence: { entity: datasets }
+    post:
+      operationId: datasets.materialize
+      summary: Copy a dataset version's evicted shards back into the local cache from their mount copies (resumable job)
+      tags: [storage]
+      x-cadence:
+        toolDescription: >
+          Bring a dataset version's shards back onto the local cache (the content store) from the mounts that hold
+          copies of them, verifying each by hash. Training reads only cached shards. dryRun=true answers how many
+          shards and bytes must be copied and from which mounts (and which shards have no copy anywhere). The real
+          call answers 202 with a job that copies shard by shard with progress; a retry skips what is already back.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/DatasetCacheRequest" } } }
+      responses:
+        "200":
+          description: Dry run — what would be copied and from where; nothing changed
+          content: { application/json: { schema: { $ref: "#/components/schemas/DatasetCachePlan" } } }
+        "202": { $ref: "#/components/responses/JobAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/datasets:evict:
+    x-cadence: { entity: datasets }
+    post:
+      operationId: datasets.evict
+      summary: Free a dataset version's shards from the local cache when every shard also lives on a mount (202 with the job)
+      tags: [storage]
+      x-cadence:
+        toolDescription: >
+          Remove a dataset version's shards from the local cache. Only shards with a copy on a mount go (a shard that
+          exists on no mount — imported audio — is never evicted), and a pinned version (a queued or running job or a
+          promoted model needs it) is refused with artifact-not-evictable. Reversible: datasets.materialize copies the
+          shards back. dryRun=true answers the bytes freed and what keeps it pinned.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/DatasetCacheRequest" } } }
+      responses:
+        "200":
+          description: Dry run — what would be freed and what blocks it; nothing changed
+          content: { application/json: { schema: { $ref: "#/components/schemas/DatasetCachePlan" } } }
+        "202": { $ref: "#/components/responses/JobAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  # ---------------------------------------------------------------- interoperability: imports, exports, noise bank (phase 4 · stream I) — add paths below this line
+
+  /registry/datasets:export:
+    x-cadence: { entity: datasets, kind: dataset_version }
+    post:
+      operationId: datasets.export
+      summary: Export a frozen dataset version as Lhotse Shar, a NeMo manifest or a Cadence bundle (to a writable mount or the content store), or to the Hugging Face Hub (approval); 202 with the job
+      tags: [registry]
+      x-cadence:
+        toolDescription: >
+          Export a frozen dataset version (a draft is refused with dataset-not-frozen; freeze it first). Formats:
+          lhotse-shar (Shar shards — cuts.NNNNNN.jsonl.gz and recording.NNNNNN.tar with the 16 kHz WAV audio — that
+          Lhotse's Shar reader opens), nemo-manifest (manifest.<split>.jsonl with audio_filepath, duration, text and
+          lang, the WAV files beside it), cadence-bundle (the version's registry record, its sources with their licences
+          and every blob laid out as a content store, cas/b3/<ab>/<hash>, which another Cadence instance imports with
+          dataset_import format cadence-bundle) and hf-hub (an audiofolder dataset with its card pushed to hubRepo; refused
+          for production sources and sources without a usable licence, and always an approval the admin decides, for
+          people too). target is cas (the export stays in the content store as an export artifact) or a directory on a
+          writable path mount, mount://exports/<path>; the default is mount://<storage.export_mount>/<collection>/<version>/<format>
+          when that mount is registered and writable, else cas. Audio an export writes unchanged onto a mount
+          (nemo-manifest, cadence-bundle) is recorded as a copy of its content-store blob, so the cache may evict the
+          version and datasets.materialize can bring it back. The export runs as a pipeline run in project (default: the
+          project the version was ingested or imported in). dryRun=true answers the plan: step kind, target, utterances,
+          bytes and whether an approval is needed. The real call answers 201 with the export (entity.export.{id}), or
+          202 with an approvalId for hf-hub.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/DatasetExportRequest" } } }
+      responses:
+        "200":
+          description: Dry run — the export as it would run; nothing started
+          content: { application/json: { schema: { $ref: "#/components/schemas/DatasetExportPlan" } } }
+        "201":
+          description: "The export, started: its pipeline run is queued (follow entity.export.{id} or pipeline_run.{pipelineRunId}); an identical earlier export reused by its input hash comes back done"
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/DatasetExport" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /projects/{p}/exports:
+    x-cadence: { entity: exports, kind: export }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    get:
+      operationId: exports.list
+      summary: Dataset exports run in a project, newest first
+      tags: [storage]
+      parameters:
+        - { name: version, in: query, description: "Only exports of this dataset version (ver_…)", schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+      responses:
+        "200":
+          description: Exports, newest first
+          content: { application/json: { schema: { $ref: "#/components/schemas/DatasetExportList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /exports/{id}:
+    x-cadence: { entity: exports, kind: export }
+    parameters: [{ name: id, in: path, required: true, description: "Export id (dex_…)", schema: { type: string } }]
+    get:
+      operationId: exports.get
+      summary: Get a dataset export with its state, target, files, bytes, mount copies and Hub commit
+      tags: [storage]
+      responses:
+        "200":
+          description: The export
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/DatasetExport" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  # ---------------------------------------------------------------- ingest, draft datasets, freeze, sources, utterance search (phase 4 · stream D) — add paths below this line
+
+  /registry/datasets:preview:
+    x-cadence: { entity: datasets, kind: dataset_version }
+    post:
+      operationId: datasets.preview
+      summary: Hours per language and split of a dataset version after filters (metadata only; nothing is written)
+      tags: [registry]
+      x-cadence:
+        toolDescription: >
+          Preview a dataset version (a draft from pipelines/data-ingest, or a frozen one) under filters before you
+          freeze or mix it: utterances and hours per language and split, and how many each filter would drop
+          (duration, characters per second, origin, language, split). Reads the registry only; no audio is read and
+          nothing is written. A body with only version previews the version as it is.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/DatasetPreviewRequest" } } }
+      responses:
+        "200":
+          description: The preview
+          content: { application/json: { schema: { $ref: "#/components/schemas/DatasetPreview" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/datasets:freeze:
+    x-cadence: { entity: datasets, kind: dataset_version }
+    post:
+      operationId: datasets.freeze
+      summary: Freeze a draft dataset version — leakage check, then cut its segments into the content store (202 with the pipeline run)
+      tags: [registry]
+      x-cadence:
+        toolDescription: >
+          Freeze a draft dataset version (state draft, dataset.frozen false — what pipelines/data-ingest ends in).
+          First the leakage check: the draft's train and validation utterances must share nothing (by canonical hash
+          or fingerprint) with any golden set, else golden-set-leakage lists the overlaps and nothing starts. Then a
+          CPU pipeline run in the draft's project cuts every segment from its mount into the content store
+          (dataset_freeze, mode cut), verifies each hash, writes the shards, quality checks and the dataset card, and
+          sets frozen: true. Only frozen versions can be mixed, trained on, exported or adopted. dryRun=true runs the
+          leakage check only. Answers 202 with the jobId of the cut step (datasets.get shows dataset.freeze with the
+          pipeline run); a version already frozen, or a cut reused from an earlier identical freeze, answers 200.
+          A draft is frozen once: a second call answers the frozen version, or the freeze already running.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/DatasetFreezeRequest" } } }
+      responses:
+        "200":
+          description: Dry run (the leakage check passed; nothing started), or the version is already frozen
+          content: { application/json: { schema: { $ref: "#/components/schemas/DatasetFreeze" } } }
+        "202": { $ref: "#/components/responses/JobAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/utterances:search:
+    x-cadence: { entity: utterances }
+    get:
+      operationId: utterances.search
+      summary: Search utterances by transcript text, source, language, speaker, duration, origin and split
+      tags: [registry]
+      x-cadence:
+        toolDescription: >
+          Search utterances, oldest first, a page at a time. q matches transcript text (case-insensitive substring);
+          source (id or name), language (he or he-IL), speaker, origin (human, pseudo-label, model:<id>),
+          minDuration/maxDuration in seconds, and dataset (ver_…) with split narrow it. Each result carries its
+          transcripts and, within a dataset, its split. Pass next as after for the next page.
+      parameters:
+        - { name: q, in: query, description: Text the transcript contains (case-insensitive), schema: { type: string, maxLength: 200 } }
+        - { name: source, in: query, description: Source id (src_…) or name, schema: { type: string } }
+        - { name: language, in: query, description: "Language (he or he-IL; either matches the other)", schema: { type: string } }
+        - { name: speaker, in: query, description: Speaker id within the source, schema: { type: string } }
+        - { name: origin, in: query, description: "Transcript origin (human, pseudo-label, model:<id>)", schema: { type: string } }
+        - { name: minDuration, in: query, description: Shortest duration in seconds, schema: { type: number, format: double, minimum: 0 } }
+        - { name: maxDuration, in: query, description: Longest duration in seconds, schema: { type: number, format: double, minimum: 0 } }
+        - { name: dataset, in: query, description: Dataset version id (ver_…), schema: { type: string } }
+        - { name: split, in: query, description: Split within the dataset version (needs dataset), schema: { $ref: "#/components/schemas/DatasetSplitName" } }
+        - { name: after, in: query, description: "Cursor: the `next` value of the previous page", schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+      responses:
+        "200":
+          description: A page of matching utterances, oldest first
+          content: { application/json: { schema: { $ref: "#/components/schemas/UtteranceList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  # ---------------------------------------------------------------- auxiliary models, pseudo-labels, triage queue (phase 4 · stream X) — add paths below this line
+  /registry/auxiliaries:
+    x-cadence: { entity: auxiliaries, kind: auxiliary }
+    get:
+      operationId: auxiliaries.list
+      summary: List auxiliary model versions (LID classifiers, pseudo-label members, aligners) with their licence check
+      tags: [registry]
+      x-cadence:
+        toolDescription: >
+          List auxiliary models (auxiliary/<name>): language classifiers, pseudo-label members and aligners Cadence
+          uses to prepare data, never trains. Each carries its roles (lid, pseudolabel, align), the licence check
+          (licence, outputsCommercialUse, conditions, sources) and either pinned weights (hfRepo, revision) or a
+          running service (endpoint) that Cadence never starts. A project adopts one with projects.adopt — an approval
+          the admin decides after reading the licence; step parameters then name it (whisper_transcribe,
+          oasis_transcribe, lid_classify).
+      parameters:
+        - $ref: "#/components/parameters/RegistryCollectionFilter"
+        - $ref: "#/components/parameters/RegistryStateFilter"
+      responses:
+        "200":
+          description: Auxiliary versions, newest first
+          content: { application/json: { schema: { $ref: "#/components/schemas/AuxiliaryVersionList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/auxiliaries/{id}:
+    x-cadence: { entity: auxiliaries, kind: auxiliary }
+    parameters: [{ $ref: "#/components/parameters/VersionId" }]
+    get:
+      operationId: auxiliaries.get
+      summary: Get an auxiliary model version with its payload, the projects that adopted it and whether its service answers
+      tags: [registry]
+      responses:
+        "200":
+          description: The version
+          content: { application/json: { schema: { $ref: "#/components/schemas/AuxiliaryVersion" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /projects/{p}/triage:
+    x-cadence: { entity: triage, kind: triage_item }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    get:
+      operationId: triage.list
+      summary: The project's triage queue — segments whose pseudo-label members disagreed, newest first
+      tags: [projects]
+      x-cadence:
+        toolDescription: >
+          List the project's triage items, newest first. A pseudo-label ensemble (pseudolabel_ensemble) puts a segment
+          here when its members' texts disagree (pairwise WER above pseudolabel.max_pairwise_wer for every pair), when
+          language identification disagrees with the source's language, or when no member heard speech. Each item has
+          the segment (mount:// URI, b3 hash, start/end, channel), every member's text, the best candidate and why it
+          is disputed. Disputed segments never reach training; a person resolves them in the Triage panel.
+      parameters:
+        - { name: state, in: query, required: false, schema: { $ref: "#/components/schemas/TriageState" } }
+        - { name: reason, in: query, required: false, schema: { $ref: "#/components/schemas/TriageReason" } }
+        - { name: pipelineRun, in: query, required: false, description: "Only items from this pipeline run (plr_…)", schema: { type: string, maxLength: 100 } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+      responses:
+        "200":
+          description: Triage items, newest first
+          content: { application/json: { schema: { $ref: "#/components/schemas/TriageItemList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+
+  # ---------------------------------------------------------------- registry in full, data panels (phase 4 · stream R) — add paths below this line
+
+  /registry/versions:archive:
+    x-cadence: { entity: versions, kind: registry_version }
+    post:
+      operationId: versions.archive
+      summary: Archive a registry version (soft delete, the admin's); refused while anything uses it
+      tags: [registry]
+      x-cadence:
+        toolDescription: >
+          Archive a registry version of any kind people register (base model, dataset version, golden set,
+          normalizer, model, noise bank, template): the soft delete of the registry, which never deletes. An archived
+          version keeps its content and lineage but can no longer be adopted, aliased or found by registry.search
+          without state:archived. A version that anything uses — adopted by a project, named by another version
+          (a golden set's dataset), a run, a mix revision or a pipeline step — answers version-in-use listing the
+          users. The admin's only; agents never archive. dryRun=true checks without archiving.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/VersionArchive" } } }
+      responses:
+        "200":
+          description: The archived version (for a dry run, the version as it is; nothing changed)
+          content: { application/json: { schema: { $ref: "#/components/schemas/RegistryVersion" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  # ---------------------------------------------------------------- annotation batches, triage, long audio (phase 4 · stream A) — add paths below this line
+  /projects/{p}/batches:
+    x-cadence: { entity: batches, kind: annotation_batch }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    get:
+      operationId: batches.list
+      summary: List the project's annotation batches, newest first, with progress and agreement
+      tags: [annotation]
+      parameters:
+        - { name: state, in: query, required: false, schema: { $ref: "#/components/schemas/BatchState" } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+      responses:
+        "200":
+          description: Batches, newest first
+          content: { application/json: { schema: { $ref: "#/components/schemas/BatchList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+    post:
+      operationId: batches.new
+      summary: Sample an annotation batch from a dataset version's segments (stratified, the caller's channel by default)
+      tags: [annotation]
+      x-cadence:
+        toolDescription: >
+          Open an annotation batch: a fixed sample of segments people transcribe by hand, to freeze as a golden set
+          (purpose golden-set: double annotation and adjudication) or as training data (purpose training: single
+          annotation). The frame is a dataset version (ver_… or dataset/<name>, usually a draft from
+          pipelines/data-ingest) or a segments artifact (b3:…); the sample takes segments of one role (caller by
+          default: the bot's channel labels itself), stratified by campaign, month, duration bucket and confidence
+          (proportional, at least one per stratum, reproducible with seed). guidelines names
+          annotation/guidelines/<name>.md in the project repository; the batch pins its commit. doubleShare of the
+          items (default 10 %) get a second, blind annotation; flagged items get one too. Always dryRun first: the
+          answer shows the strata and the sample without writing. People annotate in the Triage panel (Annotate
+          mode); the admin invites reviewers; watch batches.get; freeze with batches.freeze (approval).
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/BatchNew" } } }
+      responses:
+        "200":
+          description: Dry run — the batch as it would be (strata and sample); nothing was written
+          content: { application/json: { schema: { $ref: "#/components/schemas/Batch" } } }
+        "201":
+          description: The batch
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Batch" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /batches/{id}:
+    x-cadence: { entity: batches, kind: annotation_batch }
+    parameters: [{ $ref: "#/components/parameters/BatchId" }]
+    get:
+      operationId: batches.get
+      summary: Get an annotation batch — progress, inter-annotator agreement, the adjudication queue, reviewers and whether it can freeze
+      tags: [annotation]
+      x-cadence:
+        toolDescription: >
+          The state of an annotation batch: progress (pending, agreed, disputed, adjudicated, excluded items; double
+          annotations done), agreement (inter-annotator WER over the double-annotated items against
+          annotation.max_iaa_wer), the adjudication queue, the strata of the sample, the end-of-utterance gaps measured
+          from per-channel voice activity, reviewers, the guidelines commit, and canFreeze with the reasons it cannot
+          freeze yet. Annotated text is not returned here (batchItems.list has it).
+      responses:
+        "200":
+          description: The batch
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Batch" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /batches/{id}:freeze:
+    x-cadence: { entity: batches, kind: annotation_batch }
+    parameters: [{ $ref: "#/components/parameters/BatchId" }]
+    post:
+      operationId: batches.freeze
+      summary: Freeze a finished batch into a golden set (via goldenSets.freeze) or a training dataset version — an approval
+      tags: [annotation]
+      x-cadence:
+        toolDescription: >
+          Freeze a batch whose items are all resolved: the accepted items become a draft dataset version (human
+          transcripts, entity spans, the target channel cut from the mount) that is cut into the content store, then —
+          purpose golden-set — frozen as golden-set/<goldenSet> through goldenSets.freeze, its card citing the
+          guidelines commit and the inter-annotator WER. A golden-set batch needs its inter-annotator WER at or under
+          annotation.max_iaa_wer (annotation-agreement-low otherwise); every item must be agreed, adjudicated or
+          excluded (batch-incomplete). Always an approval the admin decides (202 approvalId). dryRun answers what
+          would freeze. Reviewers lose access when the batch freezes.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      responses:
+        "200":
+          description: Dry run — what would freeze; or the approved freeze, started (pipelineRunId)
+          content: { application/json: { schema: { $ref: "#/components/schemas/BatchFreeze" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /batches/{id}/batch-items:
+    x-cadence: { entity: batchItems, kind: annotation_item }
+    parameters: [{ $ref: "#/components/parameters/BatchId" }]
+    get:
+      operationId: batchItems.list
+      summary: The items of a batch — the caller's annotation queue (mine), the adjudication queue, or all
+      tags: [annotation]
+      description: >
+        queue=mine lists what the caller may annotate next (blind: another annotator's text is never shown), then what
+        the caller already annotated; queue=adjudication the disputed items (admin or an adjudicator); queue=all every
+        item (not for reviewers). A reviewer sees only their own annotations.
+      parameters:
+        - { name: queue, in: query, required: false, schema: { type: string, enum: [mine, adjudication, all], default: mine } }
+        - { name: state, in: query, required: false, schema: { $ref: "#/components/schemas/BatchItemState" } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 1000, default: 200 } }
+      responses:
+        "200":
+          description: Items in batch order
+          content: { application/json: { schema: { $ref: "#/components/schemas/BatchItemList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /batches/{id}/batch-items/{item}:
+    x-cadence: { entity: batchItems, kind: annotation_item }
+    parameters: [{ $ref: "#/components/parameters/BatchId" }, { $ref: "#/components/parameters/BatchItemId" }]
+    get:
+      operationId: batchItems.get
+      summary: One batch item — its segment, audio window, the bot's script around it, the prefill and the annotations the caller may see
+      tags: [annotation]
+      responses:
+        "200":
+          description: The item
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/BatchItem" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /batches/{id}/batch-items/{item}:accept:
+    x-cadence: { entity: batchItems, kind: annotation_item }
+    parameters: [{ $ref: "#/components/parameters/BatchId" }, { $ref: "#/components/parameters/BatchItemId" }]
+    post:
+      operationId: batchItems.accept
+      summary: Adjudicate an item — set its final transcript, tags and entity spans, or exclude it (admin or an adjudicator)
+      tags: [annotation]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/BatchItemAccept" } } }
+      responses:
+        "200":
+          description: The adjudicated item
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/BatchItem" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /batches/{id}/batch-items/{item}/annotations:
+    x-cadence: { entity: annotations, kind: annotation }
+    parameters: [{ $ref: "#/components/parameters/BatchId" }, { $ref: "#/components/parameters/BatchItemId" }]
+    post:
+      operationId: annotations.new
+      summary: Submit the caller's annotation of an item — done, skipped or flagged, with text, tags and entity spans
+      tags: [annotation]
+      description: >
+        A person's own annotation (agents and API keys are refused). Submitting again replaces the caller's annotation
+        until the item is adjudicated or the batch freezes. The second annotation of a double item comes from another
+        person.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/AnnotationNew" } } }
+      responses:
+        "200":
+          description: Dry run — the item as it would be
+          content: { application/json: { schema: { $ref: "#/components/schemas/BatchItem" } } }
+        "201":
+          description: The item with the caller's annotation
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/BatchItem" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /batches/{id}/invitations:
+    x-cadence: { entity: invitations, kind: invitation }
+    parameters: [{ $ref: "#/components/parameters/BatchId" }]
+    get:
+      operationId: invitations.list
+      summary: The reviewers invited to a batch (admin)
+      tags: [annotation]
+      responses:
+        "200":
+          description: Invitations, newest first (revoked and expired ones included)
+          content: { application/json: { schema: { $ref: "#/components/schemas/InvitationList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+    post:
+      operationId: invitations.new
+      summary: Invite a reviewer to a batch — a link that opens this batch's items only, play without download (admin)
+      tags: [annotation]
+      description: >
+        Creates the reviewer (a person with no password) when the name is new, and an invitation link (shown once).
+        The link signs the reviewer in to this batch only: its items and their audio through signed links (no
+        download), nothing else. It expires at expiresAt (at most annotation.invitation_max_days, never after the
+        batch's due date) and when the batch freezes. Revoke it with credentials.revoke.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/InvitationNew" } } }
+      responses:
+        "200":
+          description: Dry run — the invitation as it would be, without a link
+          content: { application/json: { schema: { $ref: "#/components/schemas/Invitation" } } }
+        "201":
+          description: The invitation with its link (shown once)
+          content: { application/json: { schema: { $ref: "#/components/schemas/InvitationCreated" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /auth:accept:
+    x-cadence: { entity: auth, singleton: true }
+    post:
+      operationId: auth.accept
+      summary: Open a reviewer invitation — sign in to the one batch the link names (no password)
+      tags: [auth]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/AuthAccept" } } }
+      responses:
+        "200":
+          description: Signed in as the reviewer; the session reaches only the invitation's batch
+          headers: { Set-Cookie: { $ref: "#/components/headers/SessionCookie" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/AuthStatus" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /triage/{id}:accept:
+    x-cadence: { entity: triage, kind: triage_item }
+    parameters: [{ $ref: "#/components/parameters/TriageItemId" }]
+    post:
+      operationId: triage.accept
+      summary: Resolve a triage item by accepting its best candidate as the segment's human transcript
+      tags: [annotation]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: false
+        content: { application/json: { schema: { $ref: "#/components/schemas/TriageAccept" } } }
+      responses:
+        "200":
+          description: The resolved item
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/TriageItem" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /triage/{id}:correct:
+    x-cadence: { entity: triage, kind: triage_item }
+    parameters: [{ $ref: "#/components/parameters/TriageItemId" }]
+    post:
+      operationId: triage.correct
+      summary: Resolve a triage item with a person's own transcript of the segment
+      tags: [annotation]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/TriageCorrect" } } }
+      responses:
+        "200":
+          description: The resolved item
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/TriageItem" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /triage/{id}:reject:
+    x-cadence: { entity: triage, kind: triage_item }
+    parameters: [{ $ref: "#/components/parameters/TriageItemId" }]
+    post:
+      operationId: triage.reject
+      summary: Resolve a triage item by dropping the segment (no transcript is written)
+      tags: [annotation]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: false
+        content: { application/json: { schema: { $ref: "#/components/schemas/TriageReject" } } }
+      responses:
+        "200":
+          description: The resolved item
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/TriageItem" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/utterances/{id}/tracks:
+    x-cadence: { entity: tracks, kind: utterance_tracks, singleton: true }
+    parameters: [{ $ref: "#/components/parameters/UtteranceRef" }]
+    get:
+      operationId: tracks.get
+      summary: Level, voice activity and estimated bandwidth per channel of an utterance's audio, for the audio view's tracks
+      tags: [media]
+      description: >
+        Level in dBFS per hop and channel, speech regions from an energy voice activity detector (the channel's noise
+        floor plus annotation.vad_margin_db), the estimated bandwidth (the highest frequency whose band keeps energy
+        within annotation.bandwidth_floor_db of the loudest band; audio of 8 kHz origin shows ≤ 4 kHz) and, when the
+        audio has a caller and a bot channel, the end-of-utterance gap (the caller's last speech end to the bot's next
+        speech start).
+      parameters:
+        - { name: hopMs, in: query, description: "Resolution: milliseconds per level value, a multiple of 10", schema: { type: integer, minimum: 10, maximum: 60000, default: 10 } }
+      responses:
+        "200":
+          description: The tracks
+          content: { application/json: { schema: { $ref: "#/components/schemas/AudioTracks" } } }
+        default: { $ref: "#/components/responses/Problem" }
+  # ---------------------------------------------------------------- planned (later phases)
 
 components:
   parameters:
@@ -3947,7 +4728,25 @@ components:
       name: id
       in: path
       required: true
-      description: "Utterance id (utt_…) or the audio's content hash (b3:…)"
+      description: "Utterance id (utt_…) or the audio's content hash (b3:…); an annotation batch item (bit_…) or a triage item (tri_…) names its segment's window of the source file, every channel (phase 4)"
+      schema: { type: string, maxLength: 100 }
+    BatchId:
+      name: id
+      in: path
+      required: true
+      description: Annotation batch id (anb_…)
+      schema: { type: string, maxLength: 100 }
+    BatchItemId:
+      name: item
+      in: path
+      required: true
+      description: Batch item id (bit_…)
+      schema: { type: string, maxLength: 100 }
+    TriageItemId:
+      name: id
+      in: path
+      required: true
+      description: Triage item id (tri_…)
       schema: { type: string, maxLength: 100 }
     ArtifactHash:
       name: hash
@@ -4258,6 +5057,7 @@ components:
         setupRequired: { type: boolean, description: "First start: no admin password is set yet; auth.setup sets it" }
         actor: { $ref: "#/components/schemas/Actor" }
         totpEnabled: { type: boolean, description: The signed-in user signs in with a TOTP code }
+        reviewer: { $ref: "#/components/schemas/ReviewerScope" }
     Username:
       type: string
       pattern: "^[a-z][a-z0-9._-]{1,31}$"
@@ -4361,12 +5161,12 @@ components:
     #
     RegistryKind:
       type: string
-      enum: [base_model, dataset_version, template, runtime, model_family, step_kind, noise_bank, golden_set, normalizer, model]
-      description: "The kinds registered so far; runtime, model_family and step_kind are published by workers (R40, R41, R45); noise_bank holds background noise for augmentation, registered by dataset_import with purpose noise; golden_set (goldenSets.freeze), normalizer (scoring normalizers, R21) and model (models.register, R22) arrive in phase 3"
+      enum: [base_model, dataset_version, template, runtime, model_family, step_kind, noise_bank, golden_set, normalizer, model, auxiliary]
+      description: "The kinds registered so far; runtime, model_family and step_kind are published by workers (R40, R41, R45); noise_bank holds background noise for augmentation, registered by dataset_import with purpose noise or mined from call silences by noise_mine; golden_set (goldenSets.freeze), normalizer (scoring normalizers, R21) and model (models.register, R22) arrive in phase 3; auxiliary (LID classifiers, pseudo-label members, aligners: AuxiliaryPayload, R26) in phase 4"
     VersionState:
       type: string
-      enum: [draft, frozen, deprecated]
-      description: "draft → frozen → deprecated; a frozen version never changes"
+      enum: [draft, frozen, deprecated, archived]
+      description: "draft → frozen → deprecated; a frozen version never changes. archived (versions.archive, phase 4): the registry's soft delete, from any state; nothing uses it and nothing can adopt it"
     UsedBy:
       type: object
       description: A project that adopted the version, and its aliases pointing at it
@@ -4466,6 +5266,15 @@ components:
         speakers: { type: integer }
         tags: { type: array, items: { type: string }, description: "Tags given at import (golden, replay, eval-only, …)" }
         lineage: { $ref: "#/components/schemas/DatasetLineage" }
+        frozen: { type: boolean, description: "false for a draft (pipelines/data-ingest: segments indexed in place on a mount, no audio copied); datasets.freeze cuts it into the content store and sets true. Absent on phase-2 imports, which are frozen at import" }
+        quality: { $ref: "#/components/schemas/DatasetQuality" }
+        card: { $ref: "#/components/schemas/DatasetCard" }
+        stats: { $ref: "#/components/schemas/DatasetStats" }
+        shards: { type: array, items: { $ref: "#/components/schemas/DatasetShard" }, description: "The frozen audio in shards of the content store (empty for a draft)" }
+        segments: { $ref: "#/components/schemas/ArtifactRef" }
+        recipe: { $ref: "#/components/schemas/DatasetRecipe" }
+        contentFingerprint: { type: string, description: "sha256 of the sorted [audio hash, split, text] tuples; with the recipe commit it makes the version's fingerprint" }
+        freeze: { $ref: "#/components/schemas/DatasetFreezeState" }
     DatasetVersion:
       allOf:
         - $ref: "#/components/schemas/RegistryVersion"
@@ -4482,7 +5291,7 @@ components:
 
     TemplateKind:
       type: string
-      enum: [instructions, preset, skill, pipeline, agent-config, playbook, langpack]
+      enum: [instructions, preset, skill, pipeline, agent-config, playbook, langpack, annotation]
     TemplateFile:
       type: object
       required: [path, sha256, bytes]
@@ -4518,6 +5327,11 @@ components:
       additionalProperties: false
       properties:
         version: { type: string, description: "The registry version to adopt (ver_…)" }
+        purpose:
+          type: string
+          enum: [target, replay]
+          default: target
+          description: "target (default): the project's own languages, so a dataset version, golden set or normalizer must be in one of them (locale-mismatch otherwise); replay: data of other languages kept to measure and limit forgetting (replay golden sets, replay datasets), so the locale is not checked. The licence is checked either way"
     Adoption:
       type: object
       required: [projectId, version, actor, adoptedAt, aliases]
@@ -4724,6 +5538,7 @@ components:
         mix: { $ref: "#/components/schemas/DefaultSection" }
         drafts: { $ref: "#/components/schemas/DefaultSection" }
         cache: { $ref: "#/components/schemas/DefaultSection" }
+        storage: { $ref: "#/components/schemas/DefaultSection", description: "Mounts and the local cache (phase 4): water marks, project quota, sweep and health-check cadence, scan limit" }
         data: { $ref: "#/components/schemas/DefaultSection" }
         operations: { $ref: "#/components/schemas/DefaultSection" }
         notifications: { $ref: "#/components/schemas/DefaultSection" }
@@ -4739,6 +5554,9 @@ components:
           additionalProperties: { $ref: "#/components/schemas/DefaultSection" }
         sweeps: { $ref: "#/components/schemas/DefaultSection", description: "Sweeps (phase 3): mode, run counts, the GPU-hour cap and the seed of a random draw" }
         transcriptions: { $ref: "#/components/schemas/DefaultSection", description: "Manual transcription tests and the live channel (phase 3): ticket, session and idle limits, frame size, file caps, the relay's queue and the interactive job's priority" }
+        annotation: { $ref: "#/components/schemas/DefaultSection", description: "Annotation batches (phase 4): sample size, double share, agreement target, invitations, strata and the audio tracks' detector" }
+        pseudolabel: { $ref: "#/components/schemas/DefaultSection", description: "Pseudo-labels (phase 4): when the members of a pseudo-label ensemble agree on a segment's text (pairwise WER, agreeing members, language identification)" }
+        playbooks: { $ref: "#/components/schemas/DefaultSection", description: "Playbooks (phase 4 · stream B): the values playbook inputs default to (Try Cadence's hours of FLEURS and training steps)" }
         estimates:
           type: object
           required: [bytes_per_audio_hour, training]
@@ -6280,6 +7098,7 @@ components:
         neutral: { type: boolean, description: "Runtime-neutral core kind shipped in every runtime image" }
         secrets: { type: array, items: { type: string }, description: Secret names the step needs as environment variables }
         help: { type: string, description: "Help slug (steps.<name>)" }
+        deprecation: { $ref: "#/components/schemas/StepKindDeprecation" }
     StepResources:
       type: object
       properties:
@@ -6389,6 +7208,10 @@ components:
         env: { type: object, additionalProperties: { type: string }, description: "Secret environment for the step subprocess only; never logged" }
         traceparent: { type: string, description: W3C trace context of the job }
         heartbeatSeconds: { type: integer }
+        mounts:
+          type: array
+          description: "Every registered mount, so the step can resolve mount://<name>/<path>[#t=<start>,<end>][&ch=<n>] URIs (cadence_worker.mounts); credentials only for steps that may read them"
+          items: { $ref: "#/components/schemas/LeaseMount" }
     StepSpec:
       type: object
       required: [stepId, pipelineRunId, kind, kindVersion, params, inputs, outputs, resources, attempt]
@@ -6411,6 +7234,10 @@ components:
             batchScale: { type: number, exclusiveMinimum: 0, maximum: 1, description: "0.75 on the automatic OOM retry" }
             resumeFrom: { type: string, description: "b3 hash of a training-state artifact to resume from" }
         attempt: { type: integer, minimum: 1 }
+        auxiliaries:
+          type: object
+          description: "Parameter name → the registry version it names (x-cadence.registryRef), resolved and adopted for the project (phase 4 · stream X)"
+          additionalProperties: { $ref: "#/components/schemas/StepRegistryRef" }
     ArtifactRef:
       type: object
       required: [hash, type]
@@ -6712,6 +7539,7 @@ components:
         version: { type: string }
         steps: { type: array, items: { $ref: "#/components/schemas/PipelinePlanStep" } }
         estimate: { $ref: "#/components/schemas/PipelineEstimate" }
+        warnings: { type: array, items: { $ref: "#/components/schemas/PipelineWarning" }, description: "What does not stop the run (deprecated step kinds)" }
     PipelinePlanStep:
       type: object
       required: [step, kind, kindVersion, params, departures, in, produces, resources]
@@ -6727,6 +7555,8 @@ components:
         produces: { type: object, additionalProperties: { type: string }, description: Output → artifact type }
         resources: { $ref: "#/components/schemas/StepResources" }
         estimateSeconds: { type: number, description: Absent when unknown }
+        deprecation: { $ref: "#/components/schemas/StepKindDeprecation" }
+        locked: { type: array, items: { $ref: "#/components/schemas/LockedReference" }, description: "Parameters that name registry versions, as data.lock resolves them" }
     PipelineEstimate:
       type: object
       required: [known, unknownSteps]
@@ -6850,6 +7680,8 @@ components:
         utterances: { type: integer, description: Utterances this source owns }
         hours: { type: number, format: double, description: Their total duration in hours }
         datasets: { type: array, items: { type: string }, description: "Dataset version ids built from this source (sources.get only; empty in lists)" }
+        clearances: { type: array, items: { $ref: "#/components/schemas/SourceClearance" }, description: "Licence and training-clearance history, oldest first (sources.get only)" }
+        ingests: { type: array, items: { $ref: "#/components/schemas/SourceIngest" }, description: "Imports and ingests that registered dataset versions from this source, newest first (sources.get only; at most 100)" }
         createdBy: { $ref: "#/components/schemas/Actor" }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
@@ -6908,6 +7740,7 @@ components:
         split: { $ref: "#/components/schemas/DatasetSplitName" }
         fingerprints: { type: object, additionalProperties: { type: string }, description: "Kind → value (audio-b3, …); utterances.get only" }
         datasets: { type: array, items: { $ref: "#/components/schemas/UtteranceMembership" }, description: "utterances.get only" }
+        uris: { type: array, items: { type: string }, description: "Where the audio also lives: mount://<name>/<path>[#t=<start>,<end>][&ch=<n>] (utterances.get only)" }
         createdAt: { type: string, format: date-time }
     UtteranceList:
       type: object
@@ -6952,7 +7785,7 @@ components:
         telegram: { type: boolean, description: The Telegram bot (allow-listed chats only) }
     NotificationRule:
       type: object
-      required: [id, eventClass, label, events, channels, timing, bypassQuietHours, rev, updatedAt, departures]
+      required: [id, eventClass, label, events, channels, timing, silent, bypassQuietHours, rev, updatedAt, departures]
       properties:
         id: { type: string, description: "ntr_<class>" }
         eventClass: { $ref: "#/components/schemas/NotificationClass" }
@@ -6960,6 +7793,11 @@ components:
         events: { type: array, items: { type: string }, description: The event types the class covers }
         channels: { $ref: "#/components/schemas/NotificationChannels" }
         timing: { $ref: "#/components/schemas/NotificationTiming" }
+        silent:
+          type: boolean
+          description: >
+            Telegram messages of this class arrive without sound (disable_notification); seeded true for outcome and
+            the digest, false for approvals and failures
         bypassQuietHours: { type: boolean, description: "Failures reach Telegram even in quiet hours; fixed per class" }
         rev: { type: integer }
         updatedAt: { type: string, format: date-time }
@@ -6980,6 +7818,7 @@ components:
             inApp: { type: boolean }
             telegram: { type: boolean }
         timing: { $ref: "#/components/schemas/NotificationTiming" }
+        silent: { type: boolean, description: "Send this class's Telegram messages without sound" }
     ClockTime:
       type: string
       pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$"
@@ -7448,6 +8287,9 @@ components:
         phase: { type: integer, description: The roadmap phase that ships the step; a later phase than the running one lists it as skipped }
         spending: { type: boolean, description: "A GPU-spending command: in a playbook session it needs a successful dry run of the same operation first" }
         available: { type: boolean, description: "The step can run now (its phase has shipped)" }
+        person: { type: string, description: "A step a person does (an admin approves a mount, a service is started on the host): what they do. It ticks from the operation it names, like any step (phase 4 · stream B)" }
+        optional: { type: boolean, description: "Passed over (skipped) when a later step ticks first" }
+        when: { type: object, additionalProperties: true, description: "The step ticks only from an answer whose fields (dotted paths) equal these values; any other answer marks it running" }
     PlaybookStop:
       type: object
       required: [on, when]
@@ -7534,6 +8376,9 @@ components:
         jobId: { type: string, description: The job the command started (a later terminal step waits for it) }
         at: { type: string, format: date-time }
         estimate: { $ref: "#/components/schemas/PlaybookStepEstimate" }
+        person: { type: string, description: "A step a person does: what they do (phase 4 · stream B)" }
+        optional: { type: boolean, description: "Passed over (skipped) when a later step ticks first" }
+        when: { type: object, additionalProperties: true, description: "The answer's fields that tick the step" }
     PlaybookRunResult:
       type: object
       required: [playbook, inputs, estimate, plan, prompt]
@@ -7690,6 +8535,17 @@ components:
         fingerprint: { type: string, description: The dataset version's content fingerprint }
         groups: { type: string, enum: [call, speaker, utterance], description: "The bootstrap's resampling unit (R54): whole calls, else speakers, else utterances" }
         approvalId: { type: string }
+        annotation:
+          type: object
+          description: "A golden set frozen from an annotation batch (batches.freeze, R27): the guidelines commit and the agreement it was annotated with"
+          required: [batchId, guidelines, items]
+          properties:
+            batchId: { type: string }
+            guidelines: { $ref: "#/components/schemas/BatchGuidelines" }
+            iaaWer: { type: number, description: Inter-annotator WER over the double-annotated items }
+            pairs: { type: integer }
+            items: { type: integer }
+            adjudicated: { type: integer }
     ModelPayload:
       type: object
       description: "A registered model version (models.register, R22): a checkpoint whose gate passed, published with its eval report and model card"
@@ -7739,6 +8595,7 @@ components:
           properties:
             goldenSet: { $ref: "#/components/schemas/GoldenSetPayload" }
             usedBy: { type: array, items: { $ref: "#/components/schemas/UsedBy" } }
+            alignment: { $ref: "#/components/schemas/GoldenSetAlignment" }
     GoldenSetVersionList:
       type: object
       required: [items]
@@ -8207,10 +9064,10 @@ components:
         classes: { type: array, items: { $ref: "#/components/schemas/EvalEntityClass" } }
     EvalLatencyScores:
       type: object
-      description: "Latency to final at real-time pace (R54, latency_score): speech end (frame VAD) to the partial whose text is final"
+      description: "Latency to final at real-time pace (R54, latency_score): speech end (frame VAD) to the partial whose text is final; from latency_score@3 also emission delay (emission)"
       required: [scorer, available, measured]
       properties:
-        scorer: { type: string, example: latency_score@1 }
+        scorer: { type: string, example: latency_score@3 }
         scores: { type: string, description: "The metric_scores artifact (b3:…)" }
         available: { type: boolean }
         reason: { type: string }
@@ -8227,6 +9084,7 @@ components:
         earlyFinals: { type: integer, description: Finals emitted before the VAD's speech end (counted as 0 ms) }
         noSpeech: { type: integer }
         emptyFinals: { type: integer }
+        emission: { $ref: "#/components/schemas/EvalEmissionDelay" }
     EvalCellMetrics:
       type: object
       description: Metrics beside WER, kept with the cell's eval record (absent while their steps run)
@@ -8508,7 +9366,7 @@ components:
         modelVersionId: { type: string, maxLength: 200, description: "A model version (ver_…, model/<name>, or @alias)" }
         baseModelVersionId: { type: string, maxLength: 200, description: "A base model version (ver_…, base-model/<name>, or @alias)" }
         profile: { type: string, maxLength: 40, description: "Latency profile (default: eval.primary_profile when the family declares it, else its first streaming profile)" }
-        language: { type: string, maxLength: 35, description: "BCP 47 language the model decodes in (default: the project's first locale)" }
+        language: { type: string, maxLength: 35, description: "BCP 47 language the model decodes in (default: the language a checkpoint or model version was trained under, its run's target_lang, else the project's first locale)" }
         boost: { type: string, maxLength: 300, description: "none (default), or a boost list of the project's language pack: lang/<locale>/boost/<file>.txt, optionally @<commit> (default main)" }
         boostWeight: { type: number, format: double, minimum: 0, maximum: 100, description: "Overrides the list's '# weight:' header" }
     TelephonySimulation:
@@ -8976,3 +9834,1025 @@ components:
           properties:
             remainingGpuHours: { type: number, format: double, description: "The project's daily budget minus today's use and committed work" }
             withinDailyBudget: { type: boolean, description: "The whole estimate fits today's remaining budget (over it, an agent's sweep waits for an approval)" }
+    # ---------------------------------------------------------------- mounts, cache, storage schemas (phase 4 · stream M) — add below
+    MountKind:
+      type: string
+      enum: [local, nfs, smb, s3, hf]
+      description: "local, nfs and smb: a path the OS mounted (one driver); s3: an S3-compatible bucket; hf: a Hugging Face Hub repository at a pinned revision"
+    MountNew:
+      type: object
+      required: [name, kind, root]
+      properties:
+        name: { type: string, pattern: "^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$", description: "The name URIs use: mount://<name>/<path>" }
+        kind: { $ref: "#/components/schemas/MountKind" }
+        root:
+          type: string
+          minLength: 1
+          maxLength: 1000
+          description: "local/nfs/smb: the absolute path where workers and the control plane see it (/mnt/corpora); s3: bucket[/prefix]; hf: datasets/<org>/<name> or <org>/<model>"
+        endpoint: { type: string, maxLength: 500, description: "s3 only: the endpoint URL (https://minio.example:9000)" }
+        region: { type: string, maxLength: 64, description: "s3 only: the signing region (default us-east-1)" }
+        revision: { type: string, pattern: "^[0-9a-f]{40}$", description: "hf only (required): the commit SHA every read is pinned to" }
+        credentials: { type: string, maxLength: 100, description: "The name of a secret: s3 <accessKeyId>:<secretAccessKey> (required); hf a token (optional, gated repositories)" }
+        readOnly: { type: boolean, default: true, description: "Cadence never writes to a read-only mount; writable mounts take exports" }
+        licenceHint: { type: string, maxLength: 200, description: "The licence sources ingested from this mount usually carry (a hint; each source records its own)" }
+        description: { type: string, maxLength: 1000 }
+    MountScan:
+      type: object
+      properties:
+        path: { type: string, maxLength: 1000, description: "Scan only this path under the root (default: the whole mount)" }
+    MountHealth:
+      type: object
+      required: [state]
+      description: The last health check a worker ran (mount_check@1)
+      properties:
+        state: { type: string, enum: [unknown, checking, healthy, unhealthy] }
+        checkedAt: { type: string, format: date-time }
+        host: { type: string, description: The compute host whose worker checked }
+        reachable: { type: boolean }
+        writable: { type: boolean, description: "A writable mount accepted a probe file (removed again)" }
+        freeBytes: { type: integer, format: int64 }
+        totalBytes: { type: integer, format: int64 }
+        throughputMBps: { type: number, format: double, description: "MB/s reading a sample of the mount's files" }
+        sampledBytes: { type: integer, format: int64 }
+        detail: { type: string, description: Why the mount is unhealthy, or what the check saw }
+        jobId: { type: string }
+    MountEntry:
+      type: object
+      required: [path, files, bytes]
+      properties:
+        path: { type: string, description: "A top-level entry (or one level deeper: <source>/<revision>)" }
+        files: { type: integer, format: int64 }
+        bytes: { type: integer, format: int64 }
+    MountInventory:
+      type: object
+      required: [scannedAt, files, bytes, entries, blobs, blobBytes]
+      description: The last scan
+      properties:
+        scannedAt: { type: string, format: date-time }
+        path: { type: string, description: The path scanned under the root (empty for all of it) }
+        files: { type: integer, format: int64 }
+        bytes: { type: integer, format: int64 }
+        truncated: { type: boolean, description: "The scan stopped at storage.mount_scan_max_files" }
+        entries: { type: array, items: { $ref: "#/components/schemas/MountEntry" } }
+        blobs: { type: integer, format: int64, description: "Content-store blobs found under cas/b3/ (copies of cached blobs)" }
+        blobBytes: { type: integer, format: int64 }
+        blobsMismatched: { type: integer, format: int64, description: "Files named like a blob whose size is not the blob's (truncated or rewritten): not counted as copies, and an earlier copy recorded on this mount is dropped" }
+        jobId: { type: string }
+    Mount:
+      type: object
+      required: [id, name, kind, root, readOnly, licenceHint, description, health, utterances, copies, copyBytes, rev, createdBy, createdAt, updatedAt]
+      properties:
+        id: { type: string, description: "mnt_…" }
+        name: { type: string }
+        kind: { $ref: "#/components/schemas/MountKind" }
+        root: { type: string }
+        endpoint: { type: string }
+        region: { type: string }
+        revision: { type: string }
+        credentials: { type: string, description: The secret's name (its value is never shown) }
+        readOnly: { type: boolean }
+        licenceHint: { type: string }
+        description: { type: string }
+        uri: { type: string, description: "mount://<name>/ — the prefix of every URI on this mount" }
+        health: { $ref: "#/components/schemas/MountHealth" }
+        inventory: { $ref: "#/components/schemas/MountInventory" }
+        utterances: { type: integer, format: int64, description: Utterances with a URI on this mount }
+        copies: { type: integer, format: int64, description: Content-store blobs with a copy on this mount }
+        copyBytes: { type: integer, format: int64 }
+        rev: { type: integer }
+        createdBy: { $ref: "#/components/schemas/Actor" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    MountList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Mount" } }
+    LeaseMount:
+      type: object
+      required: [name, kind, root, readOnly]
+      description: "A mount as a worker resolves mount://<name>/<path> URIs (cadence_worker.mounts)"
+      properties:
+        name: { type: string }
+        kind: { $ref: "#/components/schemas/MountKind" }
+        root: { type: string }
+        readOnly: { type: boolean }
+        endpoint: { type: string }
+        region: { type: string }
+        revision: { type: string }
+        credentialsEnv: { type: string, description: "The lease env variable holding the mount's credentials, when the step may read them" }
+    StorageProject:
+      type: object
+      required: [projectId, slug, datasetBytes, quotaBytes, over]
+      properties:
+        projectId: { type: string }
+        slug: { type: string }
+        datasetBytes: { type: integer, format: int64, description: Cached bytes of the dataset versions this project froze }
+        quotaBytes: { type: integer, format: int64, description: "storage.project_quota_gb" }
+        over: { type: boolean }
+    StorageDataset:
+      type: object
+      required: [versionId, name, version, artifact, bytes, state, pinned, copies]
+      properties:
+        versionId: { type: string }
+        name: { type: string }
+        version: { type: string }
+        artifact: { type: string, description: The dataset's directory artifact (b3) }
+        projectId: { type: string, description: The project that froze it, when one did }
+        bytes: { type: integer, format: int64 }
+        state: { type: string, enum: [cached, evicted], description: "evicted: datasets.materialize brings it back" }
+        pinned: { type: array, items: { type: string }, description: "Why it stays (empty when nothing pins it)" }
+        copies: { type: integer, description: "Shards with a copy on a mount, of shards" }
+        shards: { type: integer }
+        evictable: { type: boolean, description: "Every shard also lives on a mount (or in another cached artifact) and nothing pins it" }
+        lastUsedAt: { type: string, format: date-time }
+    StorageUse:
+      type: object
+      required: [totalBytes, freeBytes, usedPct, highWaterPct, lowWaterPct, artifactBytes, datasetBytes, projects, datasets]
+      properties:
+        totalBytes: { type: integer, format: int64, description: The content store's filesystem }
+        freeBytes: { type: integer, format: int64 }
+        usedPct: { type: number, format: double }
+        highWaterPct: { type: number, format: double, description: "storage.cache_high_water_pct" }
+        lowWaterPct: { type: number, format: double, description: "storage.cache_low_water_pct" }
+        artifactBytes: { type: integer, format: int64, description: Bytes of every live artifact in the store }
+        datasetBytes: { type: integer, format: int64, description: Bytes of cached dataset versions }
+        evictableBytes: { type: integer, format: int64, description: What an eviction down to the low mark could free }
+        lastSweepAt: { type: string, format: date-time }
+        projects: { type: array, items: { $ref: "#/components/schemas/StorageProject" } }
+        datasets: { type: array, items: { $ref: "#/components/schemas/StorageDataset" }, description: "Dataset versions with a content-store artifact, least recently used first" }
+    DatasetCacheRequest:
+      type: object
+      required: [versionId]
+      properties:
+        versionId: { type: string, description: "Dataset version id (ver_…)" }
+    DatasetCacheSource:
+      type: object
+      required: [mount, shards, bytes]
+      properties:
+        mount: { type: string }
+        shards: { type: integer }
+        bytes: { type: integer, format: int64 }
+    DatasetCachePlan:
+      type: object
+      required: [versionId, artifact, state, shards, bytes, copyShards, copyBytes, from, missing, freeShards, freeBytes, pinned, blocked]
+      properties:
+        versionId: { type: string }
+        artifact: { type: string }
+        state: { type: string, enum: [cached, evicted] }
+        shards: { type: integer }
+        bytes: { type: integer, format: int64 }
+        copyShards: { type: integer, description: "materialize: shards not in the cache" }
+        copyBytes: { type: integer, format: int64 }
+        from: { type: array, items: { $ref: "#/components/schemas/DatasetCacheSource" }, description: "materialize: where the copies come from" }
+        missing: { type: integer, description: "materialize: shards in no cache and on no mount" }
+        freeShards: { type: integer, description: "evict: shards deleted from the cache" }
+        freeBytes: { type: integer, format: int64 }
+        pinned: { type: array, items: { type: string }, description: What pins the version }
+        blocked: { type: array, items: { type: string }, description: "Why the command cannot proceed (empty when it can)" }
+    # ---------------------------------------------------------------- interoperability: imports, exports, noise bank schemas (phase 4 · stream I) — add below
+    DatasetExportFormat:
+      type: string
+      enum: [lhotse-shar, nemo-manifest, cadence-bundle, hf-hub]
+      description: "lhotse-shar: Shar shards (cuts and recording tars); nemo-manifest: manifest.<split>.jsonl with the WAV files; cadence-bundle: the registry record, sources and blobs laid out as a content store, for another Cadence instance; hf-hub: an audiofolder dataset pushed to the Hugging Face Hub (approval)"
+    DatasetExportRequest:
+      type: object
+      required: [version, format]
+      additionalProperties: false
+      properties:
+        version: { type: string, description: "The frozen dataset version (ver_…)" }
+        format: { $ref: "#/components/schemas/DatasetExportFormat" }
+        project: { type: string, maxLength: 63, description: "Slug of the project the export's pipeline run runs in; default the project the version was ingested or imported in" }
+        target: { type: string, maxLength: 1000, description: "cas, or a directory on a writable path mount (mount://exports/<path>); default mount://<storage.export_mount>/<collection>/<version>/<format> when that mount is registered and writable, else cas. Not used by hf-hub" }
+        hubRepo: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,95}/[A-Za-z0-9][A-Za-z0-9._-]{0,95}$", description: "hf-hub: the dataset repository <org>/<name>; created when missing" }
+        hubPrivate: { type: boolean, description: "hf-hub: create the repository private (default storage.export_hub_private)" }
+    DatasetExportPlan:
+      type: object
+      required: [versionId, collection, version, format, projectId, project, target, stepKind, utterances, hours, bytes, licence, sources, approval, copies]
+      properties:
+        versionId: { type: string }
+        collection: { type: string, example: dataset/fleurs-sr }
+        version: { type: string }
+        format: { $ref: "#/components/schemas/DatasetExportFormat" }
+        projectId: { type: string }
+        project: { type: string, description: The project's slug }
+        target: { type: string, description: "cas, mount://… or hf://datasets/<repo>" }
+        stepKind: { type: string, example: shar_export@1 }
+        utterances: { type: integer }
+        hours: { type: number, format: double }
+        bytes: { type: integer, format: int64, description: The version's audio bytes (what the export reads) }
+        licence: { type: string, description: The version's licence }
+        sources: { type: array, items: { type: string }, description: Names of the sources the version holds }
+        approval: { type: boolean, description: "True when the real call waits for an approval (hf-hub)" }
+        copies: { type: boolean, description: "True when the audio lands unchanged on a mount and becomes copies of its content-store blobs (the cache may then evict the version)" }
+    DatasetExportState: { type: string, enum: [running, done, failed, cancelled], description: "The state of the export's pipeline run; done once the export artifact is recorded" }
+    DatasetExportFile:
+      type: object
+      required: [path, bytes]
+      properties:
+        path: { type: string, description: "Relative to the target (a mount directory) or to files/ in the export artifact" }
+        hash: { type: string, pattern: "^b3:[0-9a-f]{64}$" }
+        bytes: { type: integer, format: int64 }
+    DatasetExportHub:
+      type: object
+      required: [repo]
+      properties:
+        repo: { type: string }
+        commit: { type: string }
+        url: { type: string }
+        private: { type: boolean }
+    DatasetExport:
+      type: object
+      required: [id, format, projectId, target, state, files, bytes, copies, createdBy, createdAt, rev]
+      properties:
+        id: { type: string, description: "dex_…" }
+        versionId: { type: string, description: Empty when an export step ran in a project pipeline on a dataset artifact no version names }
+        collection: { type: string }
+        version: { type: string }
+        format: { $ref: "#/components/schemas/DatasetExportFormat" }
+        projectId: { type: string }
+        target: { type: string }
+        state: { $ref: "#/components/schemas/DatasetExportState" }
+        pipelineRunId: { type: string }
+        stepKind: { type: string }
+        artifact: { type: string, description: "The export artifact (b3:…): export.json and, with target cas, the files" }
+        files: { type: integer, description: Files the export wrote }
+        bytes: { type: integer, format: int64 }
+        copies: { type: integer, description: "Content-store blobs the export placed on a mount unchanged (recorded as mount copies)" }
+        sample: { type: array, items: { $ref: "#/components/schemas/DatasetExportFile" }, description: The first files written (up to 20) }
+        hub: { $ref: "#/components/schemas/DatasetExportHub" }
+        error: { type: string, description: Why the export's pipeline run failed }
+        createdBy: { $ref: "#/components/schemas/Actor" }
+        approvalId: { type: string }
+        createdAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time }
+        rev: { type: integer }
+    DatasetExportList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/DatasetExport" } }
+    # ---------------------------------------------------------------- ingest, draft datasets, freeze schemas (phase 4 · stream D) — add below
+    SourceNew:
+      type: object
+      required: [name, licence, kind]
+      additionalProperties: false
+      properties:
+        name: { type: string, pattern: "^[a-z0-9][a-z0-9._-]{0,98}[a-z0-9]$", description: "Lowercase letters, digits, dots, dashes and underscores (parlaspeech-rs)" }
+        licence: { type: string, minLength: 1, maxLength: 200, description: "The corpus's licence, an SPDX id where one exists (CC-BY-4.0); unknown, none and NOASSERTION are refused for ingest" }
+        kind: { $ref: "#/components/schemas/SourceKind" }
+        languages: { type: array, maxItems: 50, items: { type: string, minLength: 2, maxLength: 35 } }
+        url: { type: string, maxLength: 500, description: "Where the corpus comes from (a homepage, hf://datasets/…, mount://corpora/…)" }
+        description: { type: string, maxLength: 2000 }
+    SourceClearance:
+      type: object
+      description: One change of a source's licence or training clearance
+      required: [licence, trainingCleared, actor, at]
+      properties:
+        licence: { type: string }
+        trainingCleared: { type: boolean }
+        actor: { $ref: "#/components/schemas/Actor" }
+        at: { type: string, format: date-time }
+        change: { type: string, enum: [created, licence, cleared, uncleared], description: What changed }
+    SourceIngest:
+      type: object
+      description: A dataset version registered from the source by an import or an ingest
+      required: [datasetVersionId, utterances, hours, at]
+      properties:
+        datasetVersionId: { type: string }
+        pipelineRunId: { type: string }
+        projectId: { type: string }
+        stepKind: { type: string, example: sdp_ingest@1 }
+        frozen: { type: boolean }
+        utterances: { type: integer }
+        hours: { type: number, format: double }
+        at: { type: string, format: date-time }
+    DatasetQualityCheck:
+      type: object
+      required: [name, status, value, threshold]
+      properties:
+        name: { type: string, enum: [silence_share, clipping_share, length_outliers], description: "silence_share: mean non-speech share; clipping_share: share of segments with clipped samples; length_outliers: share of segments whose characters per second lie past the z threshold" }
+        status: { type: string, enum: [pass, warn] }
+        value: { type: number, format: double }
+        threshold: { type: number, format: double }
+        message: { type: string }
+    DatasetQuality:
+      type: object
+      description: Data-quality checks of the version (warnings never block a freeze; they are in the card)
+      required: [passed, checks]
+      properties:
+        passed: { type: boolean }
+        checks: { type: array, items: { $ref: "#/components/schemas/DatasetQualityCheck" } }
+    DatasetCard:
+      type: object
+      description: The dataset card (Markdown) in the content store
+      required: [hash]
+      properties:
+        hash: { type: string, pattern: "^b3:[0-9a-f]{64}$" }
+        bytes: { type: integer, format: int64 }
+    DatasetHistogram:
+      type: object
+      description: Binned counts; edges are lower bounds and the last bucket is open
+      required: [edges, counts]
+      properties:
+        edges: { type: array, items: { type: number, format: double } }
+        counts: { type: array, items: { type: integer } }
+    DatasetStatsGroup:
+      type: object
+      required: [utterances, hours]
+      properties:
+        origin: { type: string }
+        role: { type: string, description: "caller, bot or mono" }
+        utterances: { type: integer }
+        hours: { type: number, format: double }
+    DatasetStats:
+      type: object
+      description: Statistics the Dataset version panel charts (R53), binned by the step that computed them
+      properties:
+        durationHistogram: { $ref: "#/components/schemas/DatasetHistogram" }
+        charsPerSecondHistogram: { $ref: "#/components/schemas/DatasetHistogram" }
+        levelHistogram: { $ref: "#/components/schemas/DatasetHistogram" }
+        durationPercentiles:
+          type: object
+          properties:
+            p5: { type: number, format: double }
+            p50: { type: number, format: double }
+            p95: { type: number, format: double }
+        origins: { type: array, items: { $ref: "#/components/schemas/DatasetStatsGroup" } }
+        roles: { type: array, items: { $ref: "#/components/schemas/DatasetStatsGroup" } }
+        sourceRates:
+          type: array
+          items:
+            type: object
+            required: [rate, utterances]
+            properties: { rate: { type: integer }, utterances: { type: integer } }
+        speakers: { type: integer }
+    DatasetShard:
+      type: object
+      description: "One shard of a frozen version: a Lhotse cuts manifest over the version's audio in the content store"
+      required: [index, hash, utterances, bytes, seconds, location, pinned]
+      properties:
+        index: { type: integer }
+        hash: { type: string, description: "b3 hash of the shard's cuts manifest (shards/cuts.NNNNNN.jsonl.gz)" }
+        path: { type: string, description: Path of the cuts manifest inside the dataset artifact }
+        utterances: { type: integer }
+        bytes: { type: integer, format: int64, description: Audio bytes of the shard's utterances }
+        seconds: { type: number, format: double }
+        location: { type: string, description: "Where the shard lives now: cas (the content store), mount (evicted; a copy on a mount brings it back with datasets.materialize) or missing (evicted and on no mount). datasets.get reads it from the cache; datasets.list returns what the version recorded when it froze (cas)" }
+        pinned: { type: boolean, description: "The cache keeps the version from eviction now (a queued or running job names it, a model holding an alias was trained on it, a golden set is built on it); live on datasets.get, false on datasets.list" }
+    DatasetRecipe:
+      type: object
+      description: The project recipe a draft was ingested from
+      properties:
+        projectId: { type: string }
+        pipeline: { type: string, example: data-ingest }
+        commit: { type: string, description: The commit of the project repository the pipeline was read at }
+        stepKind: { type: string, example: dataset_freeze@1 }
+        params: { type: object, additionalProperties: true, description: The draft step's parameters }
+    DatasetFreezeState:
+      type: object
+      description: The freeze of a draft
+      properties:
+        pipelineRunId: { type: string }
+        startedAt: { type: string, format: date-time }
+        frozenAt: { type: string, format: date-time }
+        actor: { $ref: "#/components/schemas/Actor" }
+    DatasetLeakage:
+      type: object
+      required: [passed, goldenSets]
+      properties:
+        passed: { type: boolean }
+        goldenSets: { type: integer, description: Golden sets checked }
+    DatasetFreeze:
+      type: object
+      required: [version, leakage]
+      properties:
+        version: { $ref: "#/components/schemas/DatasetVersion" }
+        leakage: { $ref: "#/components/schemas/DatasetLeakage" }
+        pipelineRunId: { type: string, description: "The freeze pipeline run, when one was started" }
+    DatasetFreezeRequest:
+      type: object
+      required: [version]
+      additionalProperties: false
+      properties:
+        version: { type: string, description: "The draft dataset version (ver_…)" }
+    DatasetPreviewRequest:
+      type: object
+      required: [version]
+      additionalProperties: false
+      properties:
+        version: { type: string, description: "The dataset version to preview (ver_…)" }
+        minDuration: { type: number, format: double, minimum: 0, description: Drop utterances shorter than this (seconds) }
+        maxDuration: { type: number, format: double, minimum: 0, description: Drop utterances longer than this (seconds) }
+        minCharsPerSecond: { type: number, format: double, minimum: 0 }
+        maxCharsPerSecond: { type: number, format: double, minimum: 0 }
+        languages: { type: array, maxItems: 50, items: { type: string }, description: "Keep only these languages (he matches he-IL)" }
+        origins: { type: array, maxItems: 20, items: { type: string }, description: Keep only transcripts of these origins }
+        splits: { type: array, items: { $ref: "#/components/schemas/DatasetSplitName" }, description: Keep only these splits }
+    DatasetPreviewCell:
+      type: object
+      required: [language, split, utterances, hours]
+      properties:
+        language: { type: string }
+        split: { $ref: "#/components/schemas/DatasetSplitName" }
+        utterances: { type: integer }
+        hours: { type: number, format: double }
+        speakers: { type: integer }
+    DatasetPreview:
+      type: object
+      required: [versionId, frozen, utterances, hours, cells, dropped]
+      properties:
+        versionId: { type: string }
+        frozen: { type: boolean }
+        utterances: { type: integer, description: Kept after the filters }
+        hours: { type: number, format: double }
+        cells: { type: array, items: { $ref: "#/components/schemas/DatasetPreviewCell" }, description: Kept utterances and hours per language and split }
+        dropped:
+          type: object
+          description: Utterances each filter drops (the first filter that drops one counts it)
+          additionalProperties: { type: integer }
+    # ---------------------------------------------------------------- auxiliary models, pseudo-labels schemas (phase 4 · stream X) — add below
+    AuxiliaryRole:
+      type: string
+      enum: [lid, pseudolabel, align]
+      description: "lid: language identification; pseudolabel: a member of the pseudo-label ensemble; align: a CTC aligner for reference texts"
+    AuxiliaryService:
+      type: object
+      additionalProperties: false
+      required: [kind, endpoint, protocol]
+      properties:
+        kind: { type: string, maxLength: 50, description: "The service's interface, e.g. grpc-asr (unary Transcribe and GetModelInfo)" }
+        endpoint: { type: string, maxLength: 300, description: "host:port as the control plane and the worker reach it (e.g. host.docker.internal:50051)" }
+        protocol: { type: string, maxLength: 50, description: "The wire contract the worker pack that serves the role speaks (its proto package and version)" }
+        tokenSecret: { type: string, maxLength: 100, description: "The secret (secrets.new) the step sends as a bearer token, when the service asks for one" }
+    AuxiliaryPayload:
+      type: object
+      additionalProperties: false
+      description: >
+        The payload of an auxiliary version (auxiliary/<name>): a model a step loads per job ({hfRepo, revision}) or a
+        running service ({service}), never both. Cadence never starts a service. Adoption (projects.adopt) is an
+        approval for everyone and refuses outputsCommercialUse false (R26).
+      required: [roles, licence, outputsCommercialUse, languages]
+      properties:
+        roles: { type: array, minItems: 1, uniqueItems: true, items: { $ref: "#/components/schemas/AuxiliaryRole" } }
+        licence: { type: string, maxLength: 300, description: "The licence of the weights and, where it differs, of their training data (SPDX ids where they exist)" }
+        outputsCommercialUse: { type: boolean, description: "Whether the licence allows commercial use of what the model outputs (transcripts, labels); false is never adopted" }
+        conditions: { type: array, items: { type: string, maxLength: 300 }, description: "Conditions of use the licence check found (attribution, forbidden uses, languages it is fit for)" }
+        languages: { type: array, minItems: 1, items: { type: string, maxLength: 20 }, description: "BCP-47 primary tags the model is fit for, or [\"*\"]" }
+        hfRepo: { type: string, maxLength: 200, description: "A Hugging Face repository the step loads (offline, from the worker's HF cache)" }
+        revision: { type: string, maxLength: 100, description: "The pinned revision (commit) of hfRepo" }
+        service: { $ref: "#/components/schemas/AuxiliaryService" }
+        engine: { type: string, maxLength: 100, description: "What the worker pack loads the weights with (the pack reads it; the control plane does not)" }
+        sources: { type: array, items: { type: string, maxLength: 300 }, description: "Where the licence check read the licence (model card, licence page)" }
+        checkedAt: { type: string, format: date, description: "When the licence was checked" }
+    AuxiliaryVersion:
+      allOf:
+        - $ref: "#/components/schemas/RegistryVersion"
+        - type: object
+          required: [auxiliary, usedBy]
+          properties:
+            auxiliary: { $ref: "#/components/schemas/AuxiliaryPayload" }
+            usedBy: { type: array, items: { $ref: "#/components/schemas/UsedBy" } }
+            reachable: { type: boolean, description: "A service auxiliary only, in auxiliaries.get: whether its endpoint answers now, as a pipeline dry run would probe it (Cadence never starts a service; phase 4 · stream B)" }
+    AuxiliaryVersionList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/AuxiliaryVersion" } }
+    StepRegistryRef:
+      type: object
+      required: [versionId, name, version, payload]
+      description: "A registry version a step parameter names (x-cadence.registryRef), resolved for the project when the run was planned; in v1 only auxiliary versions resolve, so payload is an AuxiliaryPayload"
+      properties:
+        versionId: { type: string }
+        name: { type: string }
+        version: { type: string }
+        payload: { $ref: "#/components/schemas/AuxiliaryPayload" }
+    TriageState:
+      type: string
+      enum: [open, accepted, corrected, rejected]
+      description: "open until a person resolves it in the Triage panel: accepted (the best candidate becomes the human transcript), corrected (a person's own text), rejected (dropped)"
+    TriageReason:
+      type: string
+      enum: [disagreement, lid-mismatch, lid-unknown, no-speech, too-few-members]
+      description: "disagreement: no two members within pseudolabel.max_pairwise_wer; lid-mismatch: language identification disagrees with the source's language; lid-unknown: no language identification reached its confidence floor while the step requires one; no-speech: every member returned empty text; too-few-members: fewer than two members produced a hypothesis"
+    TriageCandidate:
+      type: object
+      required: [member, text]
+      properties:
+        member: { type: string, description: "The member's label (its auxiliary or model family, from its hypotheses)" }
+        text: { type: string }
+        meanWer: { type: number, description: "Mean pairwise WER of this text to the other members' texts, after the scoring normalizer" }
+        confidence: { type: number, description: "The member's own confidence, when it reports one" }
+        language: { type: string, description: "The language the member detected, when it reports one" }
+    TriageItem:
+      type: object
+      required: [id, projectId, state, reason, pipelineRunId, stepId, segmentsHash, segment, candidates, best, confidence, createdAt, rev]
+      properties:
+        id: { type: string, description: "tri_…" }
+        projectId: { type: string }
+        state: { $ref: "#/components/schemas/TriageState" }
+        reason: { $ref: "#/components/schemas/TriageReason" }
+        pipelineRunId: { type: string }
+        stepId: { type: string }
+        segmentsHash: { type: string, description: "The segments artifact the item came from (b3:…)" }
+        segment:
+          type: object
+          required: [hash]
+          properties:
+            hash: { type: string, description: "b3 hash of the canonical 16 kHz PCM16 segment (the utterance identity)" }
+            uri: { type: string, description: "mount://<mount>/<path>#t=<start>,<end>&ch=<n>" }
+            start: { type: number }
+            end: { type: number }
+            channel: { type: integer }
+            role: { type: string, description: "caller | bot | mono" }
+            language: { type: string }
+            speaker: { type: string }
+        candidates: { type: array, items: { $ref: "#/components/schemas/TriageCandidate" } }
+        best: { type: string, description: "The prefilled best candidate (lowest mean WER to the others)" }
+        lid: { type: object, properties: { language: { type: string }, confidence: { type: number }, agrees: { type: boolean } } }
+        confidence: { type: number, minimum: 0, maximum: 1 }
+        createdAt: { type: string, format: date-time }
+        rev: { type: integer }
+        resolution: { $ref: "#/components/schemas/TriageResolution" }
+    TriageItemList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/TriageItem" } }
+    # ---------------------------------------------------------------- registry in full, data panels schemas (phase 4 · stream R) — add below
+    VersionArchive:
+      type: object
+      required: [version]
+      additionalProperties: false
+      properties:
+        version: { type: string, description: "The registry version to archive (ver_…); versions have no revision, so the request names it instead of If-Match" }
+    StepKindDeprecation:
+      type: object
+      description: "A step kind version its pack deprecates: plans warn; from `after` a pipeline file may not newly pin it"
+      required: [after]
+      properties:
+        after: { type: string, format: date, description: "From this day (UTC) a pipeline file that does not pin the kind yet is refused when it is saved" }
+        replacedBy: { type: string, maxLength: 80, description: "The kind@version to pin instead" }
+        note: { type: string, maxLength: 500, description: Why it is deprecated }
+    PipelineWarning:
+      type: object
+      description: Something a plan found that does not stop the run
+      required: [code, message]
+      properties:
+        code: { type: string, enum: [step-kind-deprecated, auxiliary-unavailable, step-kind-unavailable], description: "step-kind-deprecated: a step pins a kind its pack deprecates; auxiliary-unavailable: an optional step's service does not answer, so the run goes on without that step (phase 4 · stream B); step-kind-unavailable: an optional step's kind is not published or no worker that publishes it is alive, so the step is skipped at start" }
+        step: { type: string, description: The step id }
+        kind: { type: string, description: The pinned kind@version }
+        message: { type: string }
+    LockedReference:
+      type: object
+      description: "A step parameter that names a registry version (x-cadence.registry), resolved through the project's data.lock at the pipeline's commit"
+      required: [param, ref, versionId, version, collection]
+      properties:
+        param: { type: string }
+        ref: { type: string, description: "The value in the pipeline file (a collection name, @alias or ver_…)" }
+        versionId: { type: string, description: The locked version (ver_…) }
+        version: { type: string }
+        collection: { type: string }
+
+    # ---------------------------------------------------------------- annotation batches, triage, long audio schemas (phase 4 · stream A) — add below
+    BatchState:
+      type: string
+      enum: [open, freezing, frozen, failed]
+      description: "open while people annotate; freezing once the approved freeze runs (cut, then the golden set); frozen when the dataset version (and golden set) is registered; failed when the freeze failed (freeze.error says why; batches.freeze again)"
+    BatchPurpose:
+      type: string
+      enum: [golden-set, training]
+      description: "golden-set: double annotation, adjudication and the agreement target, frozen through goldenSets.freeze; training: single annotation suffices, frozen as a dataset version"
+    BatchStratum:
+      type: string
+      enum: [campaign, month, duration, confidence]
+      description: "campaign: the segment's campaign key, else the source file's folder; month: its recorded month (YYYY-MM), else unknown; duration: annotation.duration_edges_s buckets; confidence: the transcript's confidence in annotation.confidence_edges buckets (none without one)"
+    AnnotationTag:
+      type: string
+      enum: [noise, crosstalk, foreign, unintelligible]
+      description: "noise and crosstalk are kept (real telephone audio); an item whose final tags hold foreign or unintelligible is excluded from the freeze"
+    AnnotationStatus:
+      type: string
+      enum: [done, skipped, flagged]
+      description: "done: the text is the annotator's transcript; skipped: someone else should take it (it does not count); flagged: a transcript the annotator is unsure of — the item gets a second annotation"
+    BatchItemState:
+      type: string
+      enum: [pending, agreed, disputed, adjudicated, excluded]
+      description: "pending until it has the annotations it needs (one; two for double or flagged items); agreed when they agree (WER ≤ annotation.adjudicate_wer); disputed when they do not (the adjudication queue); adjudicated by batchItems.accept; excluded by adjudication, by annotation.max_skips skips, or by a foreign or unintelligible tag"
+    EntitySpan:
+      type: object
+      required: [start, end, class]
+      additionalProperties: false
+      description: "A named span of the transcript (character offsets, end exclusive) that entity_score checks in the hypothesis"
+      properties:
+        start: { type: integer, minimum: 0 }
+        end: { type: integer, minimum: 1 }
+        class: { type: string, pattern: "^[a-z][a-z0-9_-]{0,31}$", description: "name, address, or a class of the language pack's itn.yaml (number, date, phone, amount, …)" }
+        text: { type: string, maxLength: 500, description: "The span's text (filled by the server from the transcript)" }
+    BatchNew:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name: { type: string, pattern: "^[a-z0-9][a-z0-9._-]{0,62}[a-z0-9]$", description: "The batch's name in the project" }
+        description: { type: string, maxLength: 2000 }
+        purpose: { $ref: "#/components/schemas/BatchPurpose" }
+        dataset: { type: string, maxLength: 200, description: "The frame: a dataset version (ver_… or dataset/<name>, its newest version) with the segments artifact it was ingested from" }
+        segments: { type: string, pattern: "^b3:[0-9a-f]{64}$", description: "The frame as a segments artifact (cadence.segments/1) instead of a dataset version" }
+        size: { type: integer, minimum: 1, maximum: 5000, description: "Items to sample (default annotation.batch_size)" }
+        role: { type: string, enum: [caller, bot, mono], description: "The target channel's role (default annotation.target_role: the caller)" }
+        stratify: { type: array, maxItems: 4, items: { $ref: "#/components/schemas/BatchStratum" }, description: "Strata of the sample (default all four)" }
+        doubleShare: { type: number, format: double, minimum: 0, maximum: 1, description: "Share of items annotated twice, blind (default annotation.double_share)" }
+        guidelines: { type: string, pattern: "^[a-z0-9][a-z0-9._-]{0,62}$", description: "annotation/guidelines/<name>.md in the project repository (default annotation.guidelines)" }
+        dueAt: { type: string, format: date-time, description: "When annotation should end (default annotation.due_days from now); invitations expire then at the latest" }
+        seed: { type: integer, minimum: 0, description: "Seed of the sample (default 0)" }
+        goldenSet: { type: string, pattern: "^[a-z0-9][a-z0-9._-]{0,62}[a-z0-9]$", description: "Name of the golden set (golden-set/<name>) or dataset version the freeze registers (default the batch's name)" }
+        contextS: { type: number, format: double, minimum: 0, maximum: 30, description: "Seconds of the source file played before and after the segment (default annotation.context_s)" }
+    BatchStratumCount:
+      type: object
+      required: [key, frame, sampled]
+      properties:
+        key: { type: object, additionalProperties: { type: string }, description: "The stratum's value per stratify dimension" }
+        frame: { type: integer, description: Segments of the frame in this stratum }
+        sampled: { type: integer, description: Items sampled from it }
+    BatchProgress:
+      type: object
+      required: [items, pending, agreed, disputed, adjudicated, excluded, annotations, doubleItems, doubleDone]
+      properties:
+        items: { type: integer }
+        pending: { type: integer }
+        agreed: { type: integer }
+        disputed: { type: integer }
+        adjudicated: { type: integer }
+        excluded: { type: integer }
+        annotations: { type: integer, description: Annotations submitted (skips included) }
+        doubleItems: { type: integer, description: "Items that need two annotations (the double share plus flagged items)" }
+        doubleDone: { type: integer, description: Of those, the ones that have both }
+    BatchAgreement:
+      type: object
+      required: [pairs, refWords, edits, target, meets]
+      properties:
+        pairs: { type: integer, description: "Double-annotated items with two transcripts" }
+        refWords: { type: integer, description: Words of the first transcripts }
+        edits: { type: integer, description: Word edits between the first and second transcripts (after the scoring normalizer) }
+        iaaWer: { type: number, description: "Inter-annotator WER = edits / refWords (absent without pairs)" }
+        target: { type: number, description: annotation.max_iaa_wer }
+        meets: { type: boolean, description: "iaaWer is at or under the target (false without pairs)" }
+    BatchEou:
+      type: object
+      required: [items]
+      description: "End of utterance from per-channel voice activity: the target's last speech end to the other party's next speech start"
+      properties:
+        items: { type: integer, description: Items with a measured gap }
+        p50GapS: { type: number }
+        p90GapS: { type: number }
+        overlaps: { type: integer, description: "Items where the other party started before the target stopped (negative gap)" }
+    BatchReviewer:
+      type: object
+      required: [id, name, role, annotations]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        role: { type: string, enum: [admin, annotator, adjudicator] }
+        annotations: { type: integer }
+        expiresAt: { type: string, format: date-time }
+    BatchGuidelines:
+      type: object
+      required: [name, path, commit]
+      properties:
+        name: { type: string }
+        path: { type: string, description: "annotation/guidelines/<name>.md" }
+        commit: { type: string, description: The commit the batch pins }
+    BatchFreezeState:
+      type: object
+      properties:
+        approvalId: { type: string }
+        pipelineRunId: { type: string }
+        datasetVersionId: { type: string }
+        goldenSetVersionId: { type: string }
+        iaaWer: { type: number }
+        items: { type: integer }
+        error: { type: string }
+        startedAt: { type: string, format: date-time }
+        frozenAt: { type: string, format: date-time }
+    Batch:
+      type: object
+      required: [id, projectId, name, purpose, state, rev, role, stratify, doubleShare, seed, contextS, guidelines, frame, strata, progress, agreement, adjudication, eou, reviewers, goldenSet, canFreeze, createdBy, createdAt, updatedAt]
+      properties:
+        id: { type: string, description: "anb_…" }
+        projectId: { type: string }
+        name: { type: string }
+        description: { type: string }
+        purpose: { $ref: "#/components/schemas/BatchPurpose" }
+        state: { $ref: "#/components/schemas/BatchState" }
+        rev: { type: integer }
+        role: { type: string }
+        stratify: { type: array, items: { $ref: "#/components/schemas/BatchStratum" } }
+        doubleShare: { type: number }
+        seed: { type: integer }
+        contextS: { type: number }
+        dueAt: { type: string, format: date-time }
+        guidelines: { $ref: "#/components/schemas/BatchGuidelines" }
+        frame:
+          type: object
+          required: [segmentsHash, source, segments]
+          properties:
+            datasetVersionId: { type: string }
+            segmentsHash: { type: string }
+            source: { type: string, description: The source the segments came from }
+            segments: { type: integer, description: "Segments of the target role in the frame" }
+        strata: { type: array, items: { $ref: "#/components/schemas/BatchStratumCount" } }
+        progress: { $ref: "#/components/schemas/BatchProgress" }
+        agreement: { $ref: "#/components/schemas/BatchAgreement" }
+        adjudication: { type: object, required: [queue], properties: { queue: { type: integer, description: Disputed items waiting } } }
+        eou: { $ref: "#/components/schemas/BatchEou" }
+        reviewers: { type: array, items: { $ref: "#/components/schemas/BatchReviewer" } }
+        goldenSet: { type: string, description: "The name the freeze registers (golden-set/<name>, or dataset/<name>-annotated)" }
+        freeze: { $ref: "#/components/schemas/BatchFreezeState" }
+        canFreeze:
+          type: object
+          required: [ok, reasons]
+          properties:
+            ok: { type: boolean }
+            reasons: { type: array, items: { type: string } }
+        sample: { type: array, items: { $ref: "#/components/schemas/BatchItem" }, description: "Dry run only: the items that would be sampled" }
+        createdBy: { $ref: "#/components/schemas/Actor" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    BatchList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Batch" } }
+    BatchSegment:
+      type: object
+      required: [hash, uri, start, end, duration, channel, role]
+      properties:
+        hash: { type: string, description: "b3 hash of the canonical 16 kHz PCM16 segment" }
+        uri: { type: string, description: "mount://<mount>/<path>#t=<start>,<end>&ch=<n>" }
+        file: { type: string, description: The source file's mount URI }
+        start: { type: number }
+        end: { type: number }
+        duration: { type: number }
+        channel: { type: integer }
+        role: { type: string }
+        language: { type: string }
+        speaker: { type: string }
+        sourceRate: { type: integer }
+        codec: { type: string }
+        crosstalk: { type: number }
+    ContextTurn:
+      type: object
+      required: [start, end, text]
+      properties:
+        start: { type: number, description: Seconds in the source file }
+        end: { type: number }
+        channel: { type: integer }
+        role: { type: string }
+        text: { type: string }
+    Annotation:
+      type: object
+      required: [id, itemId, annotator, status, text, tags, entities, createdAt, updatedAt]
+      properties:
+        id: { type: string, description: "ann_…" }
+        itemId: { type: string }
+        annotator: { $ref: "#/components/schemas/Actor" }
+        status: { $ref: "#/components/schemas/AnnotationStatus" }
+        text: { type: string }
+        tags: { type: array, items: { $ref: "#/components/schemas/AnnotationTag" } }
+        entities: { type: array, items: { $ref: "#/components/schemas/EntitySpan" } }
+        note: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    BatchItem:
+      type: object
+      required: [id, batchId, position, state, rev, segment, window, prefill, context, strata, double, required, annotations]
+      properties:
+        id: { type: string, description: "bit_… — also the media id of its audio window (audio.sign, peaks.get, tracks.get)" }
+        batchId: { type: string }
+        position: { type: integer }
+        state: { $ref: "#/components/schemas/BatchItemState" }
+        rev: { type: integer }
+        segment: { $ref: "#/components/schemas/BatchSegment" }
+        window:
+          type: object
+          required: [start, end, channels]
+          description: "The audio served under the item's id: the segment plus contextS each side, every channel of the source file"
+          properties:
+            start: { type: number, description: Seconds in the source file }
+            end: { type: number }
+            channels: { type: integer }
+            roles: { type: array, items: { type: string }, description: "Role per channel, when known" }
+        prefill:
+          type: object
+          required: [text, origin]
+          description: "The best hypothesis there is (pseudo-label, a member's text, the ingest's transcript); empty when none"
+          properties:
+            text: { type: string }
+            origin: { type: string }
+            confidence: { type: number }
+        context:
+          type: object
+          required: [turns]
+          properties:
+            turns: { type: array, items: { $ref: "#/components/schemas/ContextTurn" }, description: "The other channel's transcribed turns in the window (the bot's TTS script): crosstalk and overlap at a glance" }
+        strata: { type: object, additionalProperties: { type: string } }
+        double: { type: boolean, description: "Sampled for double annotation" }
+        required: { type: integer, description: "Transcripts the item needs (1, or 2 when double or flagged)" }
+        eou:
+          type: object
+          properties:
+            speechEnd: { type: number, description: "The target's last speech end (file seconds)" }
+            nextSpeech: { type: number, description: "The other channel's next speech start" }
+            gapS: { type: number }
+        annotations: { type: array, items: { $ref: "#/components/schemas/Annotation" }, description: "The annotations the caller may see: a reviewer only their own (blind); the admin and adjudicators every one" }
+        wer: { type: number, description: "WER between the two transcripts of a double item (not shown to annotators)" }
+        final:
+          type: object
+          description: The accepted transcript (agreed or adjudicated)
+          properties:
+            text: { type: string }
+            tags: { type: array, items: { $ref: "#/components/schemas/AnnotationTag" } }
+            entities: { type: array, items: { $ref: "#/components/schemas/EntitySpan" } }
+            by: { $ref: "#/components/schemas/Actor" }
+            at: { type: string, format: date-time }
+            from: { type: string, description: "The annotation it came from (ann_…), when taken as is" }
+    BatchItemList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/BatchItem" } }
+        next: { type: string, description: "queue=mine: the item to annotate next (bit_…), absent when nothing is left" }
+    AnnotationNew:
+      type: object
+      required: [status]
+      additionalProperties: false
+      properties:
+        status: { $ref: "#/components/schemas/AnnotationStatus" }
+        text: { type: string, maxLength: 5000, description: "The transcript (required unless skipped)" }
+        tags: { type: array, maxItems: 4, items: { $ref: "#/components/schemas/AnnotationTag" } }
+        entities: { type: array, maxItems: 100, items: { $ref: "#/components/schemas/EntitySpan" } }
+        note: { type: string, maxLength: 1000 }
+    BatchItemAccept:
+      type: object
+      additionalProperties: false
+      properties:
+        from: { type: string, description: "Take this annotation (ann_…) as the final transcript" }
+        text: { type: string, maxLength: 5000, description: "The final transcript (when not from an annotation)" }
+        tags: { type: array, maxItems: 4, items: { $ref: "#/components/schemas/AnnotationTag" } }
+        entities: { type: array, maxItems: 100, items: { $ref: "#/components/schemas/EntitySpan" } }
+        exclude: { type: boolean, description: "Leave the item out of the freeze" }
+    BatchFreeze:
+      type: object
+      required: [batch, items, excluded, hours]
+      properties:
+        batch: { $ref: "#/components/schemas/Batch" }
+        items: { type: integer, description: Items that freeze }
+        excluded: { type: integer }
+        hours: { type: number }
+        iaaWer: { type: number }
+        pipelineRunId: { type: string, description: "The cut's pipeline run (approved freeze)" }
+        datasetVersionId: { type: string, description: "The draft dataset version the cut freezes" }
+    Invitation:
+      type: object
+      required: [id, batchId, reviewer, role, expiresAt, createdAt]
+      properties:
+        id: { type: string, description: "The invitation credential (crd_…); credentials.revoke ends it" }
+        batchId: { type: string }
+        reviewer: { type: object, required: [id, name], properties: { id: { type: string }, name: { type: string } } }
+        role: { type: string, enum: [annotator, adjudicator] }
+        expiresAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+        lastUsedAt: { type: string, format: date-time }
+        revokedAt: { type: string, format: date-time }
+    InvitationCreated:
+      allOf:
+        - $ref: "#/components/schemas/Invitation"
+        - type: object
+          required: [token, url]
+          properties:
+            token: { type: string, description: "The invitation token (cri_…), shown once" }
+            url: { type: string, description: "The link to send: the web app opens it, signs the reviewer in and shows the batch" }
+    InvitationList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Invitation" } }
+    InvitationNew:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name: { $ref: "#/components/schemas/Username" }
+        role: { type: string, enum: [annotator, adjudicator], default: annotator }
+        expiresAt: { type: string, format: date-time }
+    AuthAccept:
+      type: object
+      required: [token]
+      additionalProperties: false
+      properties:
+        token: { type: string, minLength: 8, maxLength: 200 }
+    ReviewerScope:
+      type: object
+      required: [batchId, projectId, role]
+      description: "A reviewer's session: one batch, play without download, nothing else"
+      properties:
+        batchId: { type: string }
+        projectId: { type: string }
+        role: { type: string, enum: [annotator, adjudicator] }
+        expiresAt: { type: string, format: date-time }
+    TriageAccept:
+      type: object
+      additionalProperties: false
+      properties:
+        tags: { type: array, maxItems: 4, items: { $ref: "#/components/schemas/AnnotationTag" } }
+    TriageCorrect:
+      type: object
+      required: [text]
+      additionalProperties: false
+      properties:
+        text: { type: string, minLength: 1, maxLength: 5000 }
+        tags: { type: array, maxItems: 4, items: { $ref: "#/components/schemas/AnnotationTag" } }
+    TriageReject:
+      type: object
+      additionalProperties: false
+      properties:
+        reason: { type: string, maxLength: 500 }
+    TriageResolution:
+      type: object
+      required: [by, at]
+      properties:
+        text: { type: string, description: "The human transcript written (accept, correct)" }
+        tags: { type: array, items: { $ref: "#/components/schemas/AnnotationTag" } }
+        reason: { type: string, description: "Why the segment was dropped (reject)" }
+        utteranceId: { type: string }
+        transcriptId: { type: string }
+        by: { $ref: "#/components/schemas/Actor" }
+        at: { type: string, format: date-time }
+    AudioTrackChannel:
+      type: object
+      required: [channel, levelDb, speech, bandwidthHz, narrowband]
+      properties:
+        channel: { type: integer }
+        role: { type: string }
+        levelDb: { type: array, items: { type: number }, description: "Level per hop in dBFS (RMS), floored at -100" }
+        speech: { type: array, items: { type: array, minItems: 2, maxItems: 2, items: { type: number } }, description: "Speech regions [start, end] in seconds from the audio's start" }
+        noiseFloorDb: { type: number }
+        bandwidthHz: { type: number, description: "Estimated bandwidth" }
+        narrowband: { type: boolean, description: "8 kHz origin (bandwidth at or under 4 kHz): the spectrogram stops at 4 kHz" }
+    AudioTracks:
+      type: object
+      required: [utteranceId, hopS, durationS, sampleRate, channels, bandwidthHz, narrowband]
+      properties:
+        utteranceId: { type: string }
+        hopS: { type: number }
+        durationS: { type: number }
+        sampleRate: { type: integer, description: "The audio's own sample rate" }
+        start: { type: number, description: "Where the audio starts in its source file (an item's window), seconds" }
+        channels: { type: array, items: { $ref: "#/components/schemas/AudioTrackChannel" } }
+        bandwidthHz: { type: number, description: "The widest channel's estimated bandwidth" }
+        narrowband: { type: boolean }
+        eou:
+          type: object
+          description: "End of utterance (an item window with a target and another channel)"
+          properties:
+            speechEnd: { type: number }
+            nextSpeech: { type: number }
+            gapS: { type: number }
+    # ---------------------------------------------------------------- alignment and emission delay schemas (phase 4 · stream L) — add below
+    GoldenSetAlignment:
+      type: object
+      description: "Word timings of the golden set's reference texts (align_reference, R51/R54): the newest alignment artifact of its dataset artifact. Emission delay (latency_score) reads it; with no allowed aligner for the language the references stay unaligned and emission delay is n/a"
+      required: [id, artifact, aligner, utterances, aligned, words, createdAt]
+      properties:
+        id: { type: string, description: "aln_…" }
+        artifact: { type: string, description: "The alignment artifact (b3:…, cadence.alignment/1: one row per utterance with words [{index, word, start, end, score}] or a reason)" }
+        aligner: { type: string, description: "The aligner auxiliary, auxiliary/<name>" }
+        alignerVersionId: { type: string }
+        method: { type: string, description: "torchaudio.forced_align or ctc-viterbi; empty when nothing was aligned" }
+        utterances: { type: integer }
+        aligned: { type: integer, description: Utterances with word timings }
+        words: { type: integer, description: Timed words }
+        reasons: { type: array, items: { type: string }, description: "Why utterances stayed unaligned (distinct, at most five)" }
+        pipelineRunId: { type: string }
+        createdAt: { type: string, format: date-time }
+    EvalEmissionDelay:
+      type: object
+      description: "Emission delay (R54; Yu et al., FastEmit, ICASSP 2021): each matched reference word's aligned end to the first partial from which the final's word stays in place, at real-time pace; PR50 and PR90 over the cell's words. available false with the reason when the golden set has no aligned references — never an estimate"
+      required: [available]
+      properties:
+        available: { type: boolean }
+        reason: { type: string }
+        aligner: { type: object, additionalProperties: true, description: "{auxiliary, versionId, hfRepo, revision} of the alignment" }
+        utterances: { type: integer }
+        alignedUtterances: { type: integer }
+        words: { type: integer, description: Reference words of the aligned utterances }
+        matchedWords: { type: integer, description: Timed reference words the final matched (the delays measured) }
+        pr50Ms: { type: number, format: double }
+        pr90Ms: { type: number, format: double }
+        meanMs: { type: number, format: double }
+        earlyWords: { type: integer, description: Words shown before their aligned end (negative delays, kept) }
+        unalignedUtterances: { type: integer }
+        mismatchedUtterances: { type: integer, description: "Utterances whose alignment was made for another text, or whose words the normalizer does not tie to tokens" }

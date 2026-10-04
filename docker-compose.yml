@@ -48,8 +48,16 @@ services:
       - cadence-backups:/backups
       - worker-credential:/worker-credential
       - artifacts:/var/lib/cadence
+      # Mounts (phase 4): the control plane reads local mounts to scan them and to copy evicted shards back. Bind a
+      # host directory with CADENCE_CORPORA_DIR / CADENCE_EXPORTS_DIR (unset: an empty named volume, no host bind);
+      # register them as mounts corpora (/mnt/corpora) and exports (/mnt/exports) — the same paths in every worker.
+      # exports is writable: the backup mirror may live on it (defaults backups.mirror_mount, phase 4 · stream I).
+      - ${CADENCE_CORPORA_DIR:-corpora}:/mnt/corpora:ro
+      - ${CADENCE_EXPORTS_DIR:-exports}:/mnt/exports
     ports: ["127.0.0.1:${CADENCE_PORT:-8080}:8080"] # localhost only; TLS ends at the host's Caddy (R39)
     networks: [default, agents]
+    # A pipeline's dry run checks that a service an auxiliary model names answers (auxiliary/oasis on the host).
+    extra_hosts: ["host.docker.internal:host-gateway"]
     depends_on:
       postgres: { condition: service_healthy }
 
@@ -125,6 +133,8 @@ services:
     volumes:
       - worker-credential:/worker-credential:ro
       - artifacts:/var/lib/cadence
+      - ${CADENCE_CORPORA_DIR:-corpora}:/mnt/corpora:ro # mount corpora, read in place (unset: no host bind)
+      - ${CADENCE_EXPORTS_DIR:-exports}:/mnt/exports # mount exports, the writable target of exports
     ipc: host # NeMo's data loaders need more shared memory than the 64 MB default
     depends_on: [control-plane]
     # On SIGTERM a training step writes its training state and the lease is released as cancelled with it: at least
@@ -155,10 +165,69 @@ services:
     volumes:
       - worker-credential:/worker-credential:ro
       - artifacts:/var/lib/cadence
+      - ${CADENCE_CORPORA_DIR:-corpora}:/mnt/corpora:ro # mount corpora, read in place (unset: no host bind)
+      - ${CADENCE_EXPORTS_DIR:-exports}:/mnt/exports # mount exports, the writable target of exports
     depends_on: [control-plane]
     # The step stop grace (CADENCE_STOP_GRACE_SECONDS, 60 s) plus the release, as for the GPU worker
     # (worker/tests/test_compose.py ties the numbers).
     stop_grace_period: 90s
+
+  # The CPU services worker, runtime services: step kinds that call a running service an auxiliary model names
+  # (oasis_transcribe → auxiliary/oasis on the host at host.docker.internal:50051). Cadence never starts the service.
+  # `docker compose --profile services up -d worker-services`; create the secret oasis-token first (secrets.new).
+  worker-services:
+    image: cadence/worker-services:${CADENCE_VERSION:-dev}
+    profiles: [services]
+    build:
+      context: .
+      dockerfile: worker/Dockerfile.services
+      args: *version
+    environment:
+      CADENCE_URL: http://control-plane:8080
+      CADENCE_WORKER_TOKEN_FILE: /worker-credential/token
+      CADENCE_WORKER_HOST: staging
+      CADENCE_CAS_DIR: /var/lib/cadence/cas
+      CADENCE_WORKER_SCRATCH: /var/lib/cadence/scratch
+    volumes:
+      - worker-credential:/worker-credential:ro
+      - artifacts:/var/lib/cadence
+      # Every worker binds the mounts: any core step (sdp_ingest, segments_cut, exports) may be leased to any worker.
+      - ${CADENCE_CORPORA_DIR:-corpora}:/mnt/corpora:ro
+      - ${CADENCE_EXPORTS_DIR:-exports}:/mnt/exports
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    depends_on: [control-plane]
+    stop_grace_period: 90s
+
+  # The GPU omni worker, runtime omni: align_reference (reference word timings from omniASR CTC emissions) in its own
+  # small image, since fairseq2 0.6 needs PyTorch 2.8 and the NeMo image ships 2.12 (R45's one-off allowance; the model
+  # is loaded per job, about 2 GB on the card). `docker compose --profile omni up -d worker-omni`.
+  worker-omni:
+    image: cadence/worker-omni:${CADENCE_VERSION:-dev}
+    profiles: [omni]
+    build:
+      context: .
+      dockerfile: worker/Dockerfile.omni
+      args: *version
+    environment:
+      CADENCE_URL: http://control-plane:8080
+      CADENCE_WORKER_TOKEN_FILE: /worker-credential/token
+      CADENCE_WORKER_HOST: staging
+      CADENCE_CAS_DIR: /var/lib/cadence/cas
+      CADENCE_WORKER_SCRATCH: /var/lib/cadence/scratch
+    volumes:
+      - worker-credential:/worker-credential:ro
+      - artifacts:/var/lib/cadence
+      - ${CADENCE_CORPORA_DIR:-corpora}:/mnt/corpora:ro # every worker binds the mounts (core steps go to any worker)
+      - ${CADENCE_EXPORTS_DIR:-exports}:/mnt/exports
+    depends_on: [control-plane]
+    stop_grace_period: 90s
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
 
 networks:
   # No route out: the agent host reaches the control plane here and everything else through egress-proxy.
@@ -175,3 +244,5 @@ volumes:
   agent-sessions:
   worker-credential:
   artifacts: # the content store and the workers' scratch (one file system: hard links)
+  corpora: # stands in for CADENCE_CORPORA_DIR when it is unset (empty: no corpora mounted)
+  exports: # stands in for CADENCE_EXPORTS_DIR when it is unset

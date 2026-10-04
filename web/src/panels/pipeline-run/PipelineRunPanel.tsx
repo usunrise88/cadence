@@ -215,6 +215,7 @@ function StepRow({ run, step, open, onToggle }: { run: PipelineRun; step: Pipeli
             {step.departures.length} departure{step.departures.length === 1 ? "" : "s"}
           </span>
         ) : null}
+        {step.stepKindVersionId ? <Deprecated id={step.stepKindVersionId} /> : null}
         {step.attempts > 1 ? <span className="text-muted-foreground">attempt {step.attempts}</span> : null}
         <span className="ml-auto text-muted-foreground tabular-nums">{DURATION(elapsedSeconds(step.startedAt, step.finishedAt))}</span>
         {retryable(step) ? (
@@ -236,6 +237,19 @@ function StepRow({ run, step, open, onToggle }: { run: PipelineRun; step: Pipeli
       ) : null}
       {open ? <StepDetails id={panelId} run={run} step={step} /> : null}
     </li>
+  );
+}
+
+/** A step pinned to a kind version its pack deprecates (stepKinds.get deprecation): the warning, with what to pin instead. */
+function Deprecated({ id }: { id: string }) {
+  const kind = useQuery({ ...stepKindsGetOptions({ path: { id } }), staleTime: Infinity });
+  const d = kind.data?.stepKind.deprecation;
+  if (!d) return null;
+  const text = `Deprecated: new pins are refused from ${d.after}${d.replacedBy ? `; pin ${d.replacedBy} instead` : ""}${d.note ? ` (${d.note})` : ""}`;
+  return (
+    <span className="rounded-full border px-1.5 text-[11px] text-status-warning-foreground" title={text} data-slot="deprecated">
+      <span aria-hidden>⚠ </span>deprecated<span className="sr-only">. {text}</span>
+    </span>
   );
 }
 

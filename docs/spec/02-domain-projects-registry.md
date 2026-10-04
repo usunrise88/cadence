@@ -4,15 +4,15 @@ _Part of the Cadence specification v0.2 (2026-09-29). Source of truth: the Claud
 
 ## Domain model
 
-Forty-seven entities across the five blocks, the project layer and the registry (three added by R15, R40–R41); everything a model was built from is reachable from the model by lineage links, and nothing referenced by a promoted model can be deleted.
+Forty-nine entities across the five blocks, the project layer and the registry (three added by R15, R40–R41; Auxiliary model and Dataset export in phase 4); everything a model was built from is reachable from the model by lineage links, and nothing referenced by a promoted model can be deleted.
 
 | Entity | Block | What it is | Links to |
 | --- | --- | --- | --- |
 | Source | Data | A corpus with licence, languages, kind (public, production, synthetic) | Utterances |
-| Utterance | Data | One audio segment in the content store, identified by the BLAKE3 hash of its audio file: duration, language, speaker, sample rate, channels | Source, Transcripts |
+| Utterance | Data | One audio segment, identified by the BLAKE3 hash of its canonical 16 kHz PCM16 WAV (the file in the content store, or the segment of a longer file it was indexed from on a mount): duration, language, speaker, sample rate, channels, `mount://` URIs | Source, Transcripts, Mounts |
 | Transcript | Data | Text for an utterance with origin (human, pseudo-label, model id) and confidence | Utterance |
 | Recipe | Data, Training, Eval | A versioned file in the recipes repository: SDP config, mix, training YAML, eval-set definition | Commit SHA |
-| Dataset version | Data | Immutable, fingerprinted selection with splits, statistics and lineage | Utterances, Recipe |
+| Dataset version | Data | Fingerprinted selection with splits, statistics and lineage: a **draft** indexed in place on a mount, then **frozen** (cut into the content store) and immutable; quality checks, card and shards (phase 4) | Utterances, Recipe, Sources |
 | Base model | Training | Upstream checkpoint: Hugging Face repo, revision, licence, model family; its registry version is also the first baseline model version ("Evaluation entities" below) | Model family |
 | Mix | Training | Groups, weights, temperature and replay share over dataset versions | Dataset versions, Recipe |
 | Run | Training | One optimisation stage (`run_…`): `init` (`base` or `checkpoint`, R44), model family, mix revision with the content hash of its rendered `input_cfg`, recipe (pipeline at a commit), card, step budget, seed, runtime version (image digest), status mirrored from its pipeline run, parent run for a stage | Base model or Checkpoint, Mix, Recipe, Pipeline run, parent Run |
@@ -28,12 +28,14 @@ Forty-seven entities across the five blocks, the project layer and the registry 
 | Promotion | Deploy | Signed record of who moved what to which stage, and why | Deployment, Approval |
 | Production sample | Flywheel | An utterance captured from calls, PII-redacted, with the production hypothesis; published monthly into a registry Source | Deployment |
 | Signal | Flywheel | Why a sample matters: model disagreement, low confidence, judge flag, operator correction | Production sample |
-| Triage item | Flywheel | A sample in the review queue with candidate transcripts and consensus | Signal |
+| Triage item | Data, Flywheel (project) | A segment in the review queue with candidate transcripts and consensus: from phase 4 a pseudo-label the ensemble could not settle (`tri_`), from phase 5 also production samples | Segments artifact, Signal |
 | Correction batch | Flywheel | Accepted triage items packaged as a source for the next dataset version | Triage items, Source |
 | Agent session | Cross-cutting | One agent conversation: driver, model, worktree, status, spend, transcript | Commands it issued |
 | Approval | Cross-cutting | A pending or decided request for a gated action, scoped to a project or to the registry | Command, actor |
 | Project | Cross-cutting | Unit of work: locales, default base model, repository, adoptions and aliases, budgets, gates, agent profile, workspaces | Every project-scoped entity |
-| Mount | Data | A storage location: kind, root, credentials reference, read-only flag, health | Utterance URIs, exports |
+| Mount | Data (registry) | A storage location (`mnt_`): kind (`local`, `nfs`, `smb`, `s3`, `hf`), root, credentials (a secret's name), read-only flag, licence hint, health, last scan | Utterance URIs, blob copies, exports |
+| Auxiliary model | Data, Eval (registry) | A model a step uses beside the trained one — LID classifier, pseudo-label member, aligner (registry kind `auxiliary`, collection `auxiliary/<name>`): roles, licence, whether its outputs may be used commercially, languages, Hub weights or a running service (phase 4) | Step kinds that read it, Projects that adopted it |
+| Dataset export | Data (project) | One export of a frozen dataset version (`dex_`): format (Lhotse Shar, NeMo manifest, Cadence bundle, Hugging Face Hub), target, files, mount copies, Hub commit (phase 4) | Dataset version, Pipeline run, Mount |
 | Pipeline run | All | Execution of a pipeline version: per-step status, inputs, outputs, logs | Recipe (pipeline SHA), Jobs, artifacts |
 | Schedule | Flywheel | A recurring automation: trigger, pipeline or agent task, driver, budget, last and next run | Agent sessions it starts |
 | Agent profile | Cross-cutting | A project's agent configuration: driver, model, permission preset, references to the committed config files and instructions template | Project, Agent sessions |
@@ -47,7 +49,7 @@ Forty-seven entities across the five blocks, the project layer and the registry 
 | Template | Cross-cutting (registry) | Bundled, versioned configuration the bootstrap copies into a project: pipeline templates, instruction templates, permission presets, skills; projects.sync diffs a project against the current versions | Projects |
 | Credential | Cross-cutting | A session, invitation, agent token, API key, or a service token (agent host `cah_`, egress proxy `cep_`, worker `cwk_`, one per host): kind, scope, hash, expiry, last use | Project or registry scope; Agent session; Annotation batch; Compute host |
 | Language pack | Data, Eval, Deploy (project) | A locale's directory in the project repository: the scoring normalizer reference and the training text style, inverse normalisation, transliteration, LID config, boost lists, golden-set recipe (03 "Language packs and hot words") | Commit SHA; Evals and Runs pin it; the Normalizer version it references |
-| Annotation batch | Eval, Flywheel (project) | Items to annotate or triage, guidelines version, annotators, double-annotation sample, agreement, adjudication state | Utterances, Credential (invitation), Golden set it freezes |
+| Annotation batch | Eval, Flywheel (project) | Items sampled from a dataset version's segments (`anb_`), guidelines at a commit, reviewers, double-annotation sample, agreement, adjudication state (04 "Annotation workflow") | Segments, Credential (invitation), Golden set or dataset version it freezes |
 | Experiment | Training (project) | A question, a fixed mix and base, the runs that answer it, an optional sweep definition with a GPU-hour cap, the best run | Runs, Mix, Base model |
 | Augmentation profile | Training, Eval (project) | A versioned file of transforms with probabilities and ranges; telephony by default | Commit SHA; Runs, Eval runs; Noise bank |
 | Noise bank | Data (registry) | Non-speech segments mined from own recordings plus licensed public noise sets, versioned like a dataset: registry kind `noise_bank` (collection `noise-bank/<name>`), registered by `dataset_import` with `purpose: noise` (clips, hours, licence, source, artifact; no utterances); public sets from phase 2 (`pipelines/noise-bank`, MUSAN noise), own-call noise in phase 4 | Sources, Augmentation profiles |
@@ -101,31 +103,31 @@ This is the pattern of [W&B Registry](https://docs.wandb.ai/models/registry): or
 
 | Registry — shared, versioned, immutable | Project — the work |
 | --- | --- |
-| Source, Utterance, Dataset version, Golden set, Normalizer, Base model, Model version, Eval record, Mount, Step kind, Runtime, Model family, Pipeline template, Playbook, Instruction template, Permission preset, Skill; artifacts in the content store | Mix, Run, Checkpoint, Eval and its cells, Gate (`gates.yaml`), Deployment, Promotion, Production sample, Signal, Triage item, Correction batch (until packaged), Agent profile, Agent session, Schedule, Approval, workspace layouts |
+| Source, Utterance, Dataset version, Golden set, Normalizer, Base model, Model version, Eval record, Auxiliary model, Noise bank, Mount, Step kind, Runtime, Model family, Pipeline template, Playbook, Instruction template, Permission preset, Skill; artifacts in the content store | Mix, Run, Checkpoint, Eval and its cells, Gate (`gates.yaml`), Annotation batch, Dataset export, Deployment, Promotion, Production sample, Signal, Triage item, Correction batch (until packaged), Agent profile, Agent session, Schedule, Approval, workspace layouts |
 
 Rules:
 
 - Collections and versions: a registry entry is a collection (`dataset/hebrew-calls`) of immutable versions named `YYYY-MM-DD.<sha>`; tags carry language, domain and licence. Versions never change; only aliases move.
 - Aliases per project: `@train-current`, `@baseline`, `@production` point a project at a version; a pipeline references an alias, a run records the resolved version.
-- Adoption: a project adopts a dataset version, golden set or base model by reference. Adoption checks licence and locale; the Mix editor lists only adopted or adoptable datasets.
-- Lockfile: Cadence writes `data.lock` in the project repository listing every registry version the project depends on, so a checkout of the repository says exactly which data a run used.
+- Adoption: a project adopts a dataset version, golden set, normalizer, noise bank, auxiliary model, base model or model version by reference. Adoption checks licence and locale ("Registry in full" below); the Mix editor lists only adopted or adoptable datasets.
+- Lockfile: Cadence writes `data.lock` in the project repository listing every registry version the project depends on, so a checkout of the repository says exactly which data a run used; pipelines resolve registry parameters through it (phase 4, "Registry in full").
 - Publishing: registering a model version publishes it to the registry with its gating eval report; another project can adopt it as base model. Packaging a correction batch creates a registry Source with licence `internal`.
 - Lineage both ways: a model version links to dataset versions, mix SHA, recipe SHA and base model; a dataset version links to its sources and pipeline run; every registry entry answers "used by".
 - Storage: registry assets live in the content store and on mounts; a project repository holds recipes and the lockfile, never data.
-- Deletion: a registry version referenced by anything cannot be deleted; otherwise admin-only soft delete.
+- Deletion: nothing is deleted. A registry version referenced by anything cannot be archived (`version-in-use`); otherwise the admin archives it (`versions.archive`, soft delete).
 - Events: work events carry `projectId`; registry events carry none, and a client shows them by reference ("used by this project").
 - Adoption re-runs the leakage check: adopting a golden set is blocked (`golden-set-leakage`) if any dataset version the project has trained on overlaps it by fingerprint, until those datasets are re-frozen without the overlap.
 - Production samples, once PII-redacted, are published as a registry Source per deployment target and month; any project adopts them like any other source, and retention applies to the source.
 - Eval results are cached as registry Eval records keyed by model key, golden set version, normalizer version, decoding hash and scorer version ("Evaluation entities" below); two projects evaluating the same model on the same set never compute it twice.
 - Templates and skills: bootstrap copies them into the project; projects.sync later diffs the project against Cadence's current templates and skills and offers the update as a draft commit.
 - Runtimes, step kinds and model families are published by workers at start (06 "Worker protocol") and stored as registry versions named by their published JSON; no person registers them, and a runtime beyond the bundled ones needs `runtimes.new` with approval (deferred with the packs beyond NeMo).
-- Step kinds: a version can be deprecated but not removed while any pipeline template or project pipeline pins it; deprecation shows as a warning on the Pipeline run and in the Recipe document.
+- Step kinds: a version can be deprecated but not removed while any pipeline template or project pipeline pins it; deprecation shows as a warning on the Pipeline run and in the Recipe document. As built (phase 4) the worker pack deprecates a kind ("Registry in full").
 
 Windows: Library gains a this-project / all filter and an Adopt action; registry documents (Source, Dataset version, Golden set, Model) show "Used by projects"; a Lineage tool draws the graph around the selection. API (phase 1, R1 names): versions per kind at `/registry/base-models`, `/registry/datasets`, `/registry/templates` (`<kind>.list|get`, each version with "used by"), collections at `/registry/collections` (`collections.list|get`), `registry.search`, `POST /projects/{p}:adopt`, `GET /projects/{p}/adoptions`, `GET|PUT /projects/{p}/aliases/{name}`. Agent tools: `registry.search`, `projects.adopt`, `aliases.set` and the list/get reads.
 
 ### Data entities as built (phase 2, R18)
 
-The minimal data entities imports need; the full ingest path (mounts, pseudo-labels, triage) arrives in phase 4. All are registry data (no `projectId`; events on `entity.source.{id}`), in `internal/data`, migration `0014_data.sql`.
+The minimal data entities imports need; phase 4 completes them ("Data in full (phase 4)" below: sources registered first, utterance URIs, drafts and freeze, search, exports). All are registry data (no `projectId`; events on `entity.source.{id}`), in `internal/data`, migration `0014_data.sql`.
 
 | Entity | As built |
 | --- | --- |
@@ -133,12 +135,13 @@ The minimal data entities imports need; the full ingest path (mounts, pseudo-lab
 | Utterance (`utt_…`) | Identity = content hash, the BLAKE3 (`b3:…`) of its audio file in the content store; duration, language, speaker, sample rate, channels, bytes; owned by the first source that imported it. `utterances.list\|get` at `/registry/utterances` (filters source, dataset version and split, language; oldest first, `after` cursor; `get` by id or hash with fingerprints and memberships) |
 | Transcript (`trn_…`) | Text with origin `human \| pseudo-label \| model:<id>` and optional confidence; one row per (utterance, origin, text) |
 | Dataset membership | Which utterances a dataset version holds, the split (`train \| validation \| test`) and the transcript it uses; written once when the version is registered |
-| Utterance fingerprint | Kind → value per utterance for leakage checks: `audio-b3` from every import; steps may add others (an acoustic fingerprint in phase 4) |
+| Utterance fingerprint | Kind → value per utterance for leakage checks: `audio-b3` from every import; `file-b3` from `sdp_ingest@2` (the canonical hash of the whole track a segment was cut from — `audio-b3` and `file-b3` match each other); steps may add others |
 
 Rules:
 
 - Clearing a source for training is a person's decision: an agent's `sources.edit` is gated (preset rule `registry-changes`, approval); `sources.archive` is the admin's (agents: `no-deletes`). An archived source takes no new imports and cannot be edited; its utterances and versions stay.
-- A dataset version is **eval-only** when it was registered `evalOnly` (golden and replay test sets) or any of its sources is not cleared *at the time of asking*. Mixes (`mixes.new|edit|preview`, draft accept) and `runs.new` refuse eval-only versions with `eval-only-dataset` (422); clearing a source makes its versions trainable without a re-import. Collections of versions eval-only at registration carry the tag `eval-only`.
+- A dataset version is **eval-only** when it was registered `evalOnly` (golden and replay test sets), when its licence or any of its sources' forbids commercial use or derivative works (NC, ND, research only, or no usable licence on a source; `registry.TrainingForbidden`, R26 — read at the time of asking, so neither an earlier clearance nor a mix naming an unadopted `ver_…` gets past it; audit 2026-10-04 M2), or when any of its sources is not cleared *at the time of asking*. Mixes (`mixes.new|edit|preview`, draft accept) and `runs.new` refuse eval-only versions with `eval-only-dataset` (422); clearing a source makes its versions trainable without a re-import. Collections of versions eval-only at registration carry the tag `eval-only`.
+- A dataset artifact a training step would read that the cache evicted is refused with `artifact-missing` (409) at the run's dry run and when the step is queued, naming `datasets.materialize`; Cadence does not materialise it for the caller (a copy back can take hours and counts against the project's quota; audit 2026-10-04 C6).
 - The pipeline engine's training guard (`data.TrainableArtifact`, audit 2026-10-02) trusts nothing the caller says about an input a training step (`jobKind: training`) reads: its type and meta come from the artifact index (a different type is `validation-failed`); a `dataset` artifact must be registered by a dataset version (else `eval-only-dataset`), must not be an augmented golden copy (meta `purpose: augmented` → `golden-set-leakage`) and every version registering it must be trainable; a `mix` counts by its content (the `cadence.mix/1` rendering: every `input_cfg` dataset version and artifact), never its meta. The same check runs on a training step's resolved inputs when the engine queues it, so a non-training step cannot pass a golden set through to training (the run fails with the reason).
 - A re-import must carry the source's registry licence and kind, else the import step fails.
 
@@ -155,6 +158,160 @@ What an import step produces and the `dataset` output hook reads (artifact type 
 The hook runs in the transaction that marks the step done: it reads the artifact strictly (unknown fields, missing audio, an audio twice, or counts and hours that disagree with the lines fail the step), ensures the source, upserts utterances by content hash and transcripts with origin, writes fingerprints, and registers a **frozen** `dataset_version` in `dataset/<step param name | header name | source name>`. Its fingerprint is the sha256 of the sorted `[audio hash, split, transcript text]` tuples, so the same content re-imported (in any order, from any pipeline run) returns the version already there. Its payload is the `DatasetPayload` with `sourceIds`, `licence`, hours and counts per split and language, `artifact` (the hash training steps read), `evalOnly`, `splitRule`, `tags` and `lineage` (pipeline run, step, step kind).
 
 Starter pipelines: `pipelines/import.yaml` (one corpus, FLEURS Hebrew as shipped) and `pipelines/replay-base.yaml` (R17: `dataset/replay-base`, ≈ 1 h per locale of FLEURS train across the base model's 34 FLEURS-covered other locales, and one `dataset/replay-golden-<locale>` per locale, FLEURS test ≤ 300 utterances, `evalOnly`, tags `golden`, `replay`).
+
+### Data in full (phase 4)
+
+Phase 4 completes the data entities above: sources are registered before anything is ingested, utterances are
+indexed in place on a mount, and an ingest ends in a **draft** dataset version that a person previews and freezes.
+Plan: `docs/review/2026-10-03-phase-4-plan.md` (decisions 3, 4); the pipeline and its step kinds are in
+03 "Ingest and pseudo-label pipelines"; Block 1 in 04. Migration `0034_ingest.sql` (`internal/data`).
+
+**Sources in full.** `sources.new` (`POST /registry/sources`) registers a corpus with its licence, kind
+(`public | production | synthetic`), languages and URL, eval-only until cleared. `sources.get` adds `clearances[]`
+(the clearing history: created, licence changed, cleared, uncleared, by whom and when) and `ingests[]` (each dataset
+version an import or ingest registered from it: pipeline run, project, step kind, draft or frozen, utterances, hours).
+`sources.edit` refuses (`validation-failed` on `/trainingCleared`) to clear a source whose licence forbids commercial
+use or derivative works, or to move a cleared source to such a licence; unclearing is always allowed.
+**No licence, no ingest:** the pipeline engine's plan refuses a step parameter marked `x-cadence.registry: source`
+whose source is missing, archived or has no usable licence (`unknown`, `none`, `NOASSERTION`; problem
+`source-unlicensed`), and the draft hook checks again when the step's output lands.
+
+**Utterance URIs.** An utterance keeps its `b3:` identity and gains where its bytes also live, one row per URI in
+`utterance_uris` (migration 0033):
+
+```
+mount://<mount>/<path>[#t=<start>,<end>][&ch=<n>]
+```
+
+- A whole file, or a segment of one channel of a longer file (seconds, W3C Media Fragments style).
+- The identity is the BLAKE3 of the **canonical** segment — a 44-byte WAV header and PCM16 mono 16 kHz samples —
+  computed while indexing, so it equals the hash of the WAV the freeze cuts later, and leakage checks and fingerprints
+  work before anything is copied.
+- The worker resolves a URI to a local path through its lease's mount roots (`cadence_worker.mounts`, 06 "Worker
+  protocol"); the draft hook records each member's URI.
+
+**Draft dataset versions and freeze.**
+
+| State | What it holds | How it gets there |
+| --- | --- | --- |
+| Draft (`frozen: false`) | A `dataset` artifact of format `cadence.dataset-draft/1`: the header and one line per segment with its mount URI, canonical hash, text, origin and split, the quality checks, statistics and card — no audio | `dataset_freeze@1` in `mode: draft`, the end of `pipelines/data-ingest.yaml`; the hook registers utterances by canonical hash, transcripts, fingerprints and memberships |
+| Frozen (`frozen: true`) | The cut: a `cadence.dataset/1` artifact the phase-2 training path reads | `datasets.freeze`, or `dataset_import` (frozen at import, phase-2 behaviour) |
+| Archived | Nothing changes but the state | `versions.archive` ("Registry in full" below) |
+
+- `datasets.preview` (`POST /registry/datasets:preview`, body `{version, minDuration?, maxDuration?,
+  minCharsPerSecond?, maxCharsPerSecond?, languages?, origins?, splits?}`) answers kept utterances, hours and speakers
+  per language and split after the filters, and what each filter drops. Metadata only; nothing is written.
+- `datasets.freeze` (`POST /registry/datasets:freeze`, body `{version}`: registry versions have no revision, so the
+  body names the version instead of `If-Match`) runs the leakage check against every golden set first
+  (`golden-set-leakage`), checks the freezing project's quota against the cut's bytes (`storage-quota-exceeded`; dry
+  run too), then reruns the draft step's kind@version in `mode: cut` as a CPU pipeline run and answers `202` with it.
+  When the cut lands, the hook checks that it holds exactly the draft's members (same canonical hashes, splits and
+  texts) and that no golden set overlaps meanwhile, and sets `frozen: true` on the draft itself (the version keeps its
+  id).
+- Only frozen versions are mixed, trained on (`dataset-not-frozen`, `data.Trainable`), exported or adopted.
+- A draft's fingerprint is the sha256 over its members and the recipe commit it was ingested from; a frozen import's
+  stays the phase-2 one.
+- `DatasetPayload` gains `frozen`, `quality` (`passed`; checks `silence_share`, `clipping_share`, `length_outliers`,
+  each `pass | warn` with value and threshold — warnings never block a freeze), `card` (`{hash, bytes}` of the Markdown
+  dataset card in the content store), `stats` (R53 series: duration, characters-per-second and level histograms,
+  duration percentiles, hours by origin and by channel role, source sample rates, speakers), `shards[]`, `segments`
+  (the segments artifact it was ingested from), `recipe` (project, pipeline, commit, step kind, params),
+  `contentFingerprint` and `freeze` (pipeline run, started, frozen, actor). The Dataset version panel reads only these
+  (11).
+
+**The cut.** Not Lhotse Shar tars: `cadence.dataset/1` as in "The dataset artifact" above — one WAV per utterance at
+`audio/<hex[:2]>/<hex>.wav` (byte-identical on every host, its blob hash the utterance's identity) — plus the members
+grouped into shards, a Lhotse `MonoCut` manifest each at `shards/cuts.NNNNNN.jsonl.gz` (`data.shard_utterances`,
+2 000). A shard is the unit of pinning, eviction and materialisation. The payload records `location: cas` and `pinned:
+false` at freeze; `datasets.get` overlays the cache's state now — `cas`, `mount` (evicted, a mount copy brings it back)
+or `missing`, and `pinned` while anything pins the version (`datasets.list` returns the recorded values). Real Shar tars are an
+export (`shar_export@1`, 03 "Interoperability").
+
+**Utterance search.** `utterances.search` (`GET /registry/utterances:search`) filters by transcript text
+(case-insensitive), source, language (`he` matches `he-IL`), speaker, origin, duration bounds, dataset version and
+split; oldest first with an `after` cursor. The Source and Dataset version panels and agents use it.
+
+**Exports.** `datasets.export` (`POST /registry/datasets:export`, body `{version, format, project?, target?, hubRepo?,
+hubPrivate?}`) exports a frozen version as `lhotse-shar`, `nemo-manifest`, `cadence-bundle` or `hf-hub`: to a
+directory on a writable path mount (default `mount://<storage.export_mount>/<collection>/<version>/<format>`, mount
+`exports`) or the content store. It answers `200` with the plan on a dry run, `201` with the export, `202` with the
+approval for the Hub (preset rule `hub-export`; repositories private by default). Each export is a `dex_` row
+(`dataset_exports`, migration 0037; `exports.list|get`) over a pipeline run in a project, reused by its input hash;
+audio placed unchanged on a mount is recorded as mount copies of its blobs, so the cache may evict them.
+`export-not-allowed` refuses production or unlicensed sources and golden-set data (a version a golden set is built on,
+or one sharing any utterance or fingerprint, in any split, with a golden set's data: `data.GoldenShared`). The export
+step kinds (job kind `export`: `shar_export`, `dataset_export`, `hf_push`) run only through `datasets.export`: a
+pipeline naming one is refused (`export-not-allowed`). The Cadence bundle is per dataset version, not per project.
+Step kinds and formats: 03 "Interoperability".
+
+**Annotation batches** (`anb_`, project work, migration 0038) sample a dataset version's segments for people to
+transcribe and freeze into a golden set or a training dataset version; the entity, its items, reviewers and freeze are
+in 04 "Annotation workflow".
+
+### Auxiliary models (phase 4, R26)
+
+Models a step uses beside the trained one: LID classifiers, pseudo-label members and aligners. Registry kind
+`auxiliary`, collection `auxiliary/<name>`, read by `auxiliaries.list|get` (`/registry/auxiliaries`; `get` adds the
+projects that adopted it and, for a service, whether its endpoint answers now). `internal/auxiliary`, migration 0035.
+
+- **Payload** (`AuxiliaryPayload`): `roles[]` (`lid | pseudolabel | align`), `licence` (of the weights and, where it
+  differs, of their training data), `outputsCommercialUse`, `conditions[]` (attribution, forbidden uses, the languages
+  it is fit for), `languages` (primary tags or `*`), either `{hfRepo, revision}` (weights a step loads per job, offline
+  from the worker's HF cache) or `service: {kind, endpoint, protocol, tokenSecret?}` (a running service Cadence never
+  starts), `engine` (what the pack loads the weights with), and `sources[]` and `checkedAt` of the licence check.
+- **Seeds** (the plan's licence table; only rows that passed): `whisper-large-v3`, `whisper-he-ivrit` (Hebrew only,
+  attribution, never for voice cloning), `oasis` (the owner's gRPC service, protocol `oasis.v1`), `lid-voxlingua107`,
+  `omniasr-ctc-1b` (the aligner). MMS models and unlicensed community fine-tunes are not seeded (CC-BY-NC or
+  unverified).
+- **Adoption** is an approval for everyone (preset rule `auxiliary-adoption`, registry scope, the admin decides);
+  `outputsCommercialUse: false` is refused outright (`auxiliary-licence-refused`).
+- **Use.** A step-kind parameter marked `x-cadence.registryRef: {kind: auxiliary, role}` resolves, for a collection
+  name the project's `data.lock` lists at the commit the pipeline is read at, to the newest version the lock lists;
+  otherwise (no repository or lock, a collection the lock does not list, `ver_…`, `@alias`) to the version the project
+  adopted (newest by creation). Either way the version must be adopted (`not-adopted`, 422), fill the role and allow
+  commercial use of its outputs; the resolution is stored in `pipeline_steps.auxiliaries`, passed in the
+  step spec (`StepSpec.auxiliaries`) and covered by the input hash. A service's endpoint is probed at dry run and at
+  start (`auxiliary-unavailable`, 503; for an optional step a plan warning, 03).
+- **Seams.** Go never names a framework or a service: the payload is data, and the worker pack that serves the role
+  reads it.
+
+### Registry in full (phase 4)
+
+What phase 4 added to the rules above (`internal/registry`, migration 0036).
+
+- **Adoption checks.** `projects.adopt` refuses, dry run included:
+  - `licence-forbids-adoption` — no usable licence, `outputsCommercialUse: false`, or a non-commercial or
+    no-derivatives licence (NC, ND) on what is trained on or shipped: base models, model versions, noise banks,
+    auxiliary models and trainable dataset versions. NC/ND are allowed for golden sets and eval-only dataset versions;
+    kinds that hold no outside data or weights pass;
+  - `locale-mismatch` — a dataset version, golden set, normalizer or auxiliary model that declares languages (its
+    collection's `locale:` tags and the payload's languages; `he` matches `he-IL`), none of them the project's, unless
+    the adoption has `purpose: replay`.
+
+  An auxiliary adoption answers `202` with its approval. Runtimes, model families and step kinds are never adopted.
+  Resolving a collection name prefers the version the project adopted.
+- **Archive.** `versions.archive` (`POST /registry/versions:archive`, body `{version}`) is the admin's soft delete:
+  state `archived` is terminal and the version stays readable with its lineage. A version anything uses is refused
+  with `version-in-use`, each user a field error: projects that adopted it or default to it, other versions whose
+  payload names it, runs, experiments, mix revisions, eval records and pipeline steps pinned to it. Versions workers
+  publish (runtimes, step kinds, families) are not archived.
+- **`data.lock`.** `projects.adopt` writes the adopted version into the project repository's `data.lock`
+  (`resolved: [{kind, collection, version, id}]`). A step parameter marked `x-cadence.registry: <kind>` (any kind but
+  `source`) names a collection, `@alias` or `ver_…`; the engine resolves it through `data.lock` at the commit the
+  pipeline is read at — through the project's adoptions for bundled templates and projects without a repository — and
+  refuses a version the lock does not list (`not-adopted`) and an entry the project never adopted (data.lock pins, the
+  adoptions allow). A collection name resolves to the newest listed version by when the registry created it, not by
+  its name (two versions of a day differ only in a hash). `aliases.set` on a version the project has not adopted is
+  `not-adopted` too. Merging a branch adopts only the template versions its `data.lock` names (a template sync), never
+  a `resolved` entry: an edited lockfile skips the licence, locale, leakage and auxiliary checks, so it adopts nothing,
+  and an agent session's edit of `data.lock` waits for a person (05 "guarded paths"). The plan reports each resolution
+  in `PlanStep.locked` (`LockedReference`); params are not rewritten, and input-hash reuse ignores the resolved version.
+- **Step-kind deprecation.** A worker pack marks a kind `deprecated_after` (a date), `replaced_by` and a note when it
+  publishes it (`StepKindDeprecation`). Plans warn (`PipelineWarning` `step-kind-deprecated`); after the date a
+  pipeline file that does not pin the kind yet is refused when it is saved (`step-kind-deprecated`), while files that
+  already pin it keep running. There is no deprecate verb.
+- **Library.** Sources are listed with an Adopt action and the this-project / all filter; Source and Dataset version
+  are documents (11).
 
 ### Evaluation entities (phase 3)
 
@@ -222,8 +379,22 @@ As built (phase 3, stream G; `internal/goldensets`, migration 0023 `golden_sets`
   <other>", both versions named), so a person can re-freeze without them. `golden-set-leakage` is in the error lists
   of `mixes.*`, `runs.*` and `pipelines.run`.
 
+Phase 4 additions:
+
+- A golden set can come from an annotation batch: `batches.freeze` writes the accepted items as a draft dataset
+  version, freezes it and calls this path with the batch's guidelines commit and inter-annotator WER in the card (04
+  "Annotation workflow"). The ingest draft behind a golden-set batch must be eval-only, or the freeze is refused for
+  leakage.
+- `datasets.freeze` runs the same leakage check before it cuts a draft, against every golden set.
+- **Reference alignments** (R51, R54; migration 0039, `reference_alignments`): `align_reference@1` writes an
+  `alignment` artifact (`cadence.alignment/1`, word timings of the reference text) for a golden set's dataset; the
+  output hook attaches it by dataset hash (the newest wins) and emits `golden_set.aligned`. Evals feed it to
+  `latency_score@3` for emission delay (03 "Scorers and metrics"). Aligning is run by hand once per golden set
+  (`pipelines/align-reference.yaml`), not at freeze; a language with no allowed CTC aligner stays unaligned.
+
 **Leakage and training exclusion.** A golden set's utterances never reach training, checked by utterance fingerprint
-(`utterance_fingerprints`: `audio-b3` today, an acoustic fingerprint in phase 4):
+(`utterance_fingerprints`: `audio-b3` from every import and `file-b3` from `sdp_ingest@2`, which match each other, so a
+golden file re-cut from a mount is found; an acoustic fingerprint is not built):
 
 | Where | Check | Refusal |
 | --- | --- | --- |
@@ -325,35 +496,86 @@ Audio lives where it already is — local disk, a network share or object storag
   (06 "Artifacts, metrics and logs").
 - Before mounts exist (phases 2–3) the store on the staging host's NVMe (`CADENCE_CAS_DIR`) is the only tier, shared by
   volume with the worker; imports, shards, checkpoints and reports all land there. From phase 4 a mount is a further
-  tier behind the same hash, and an utterance's URI names where its bytes also live.
+  tier behind the same hash, and an utterance's URI names where its bytes also live; the store stays the only cache.
 - The `artifacts` table is the index (hash, type, size, metadata, producing step); lineage and "used by" follow the
   hashes. Metrics are rows in Postgres (`metric_points`) and job logs NDJSON files under `$CADENCE_DATA_DIR/job-logs/`
-  kept 14 days — neither lives in the store. v1 deletes no blob; backups mirror the store once per blob.
+  kept 14 days — neither lives in the store. Backups mirror the store once per blob. Eviction is narrow: eval artifacts
+  by age, training states, and from phase 4 dataset shards with a mount copy ("The cache and materialisation" below).
 - Compose puts the store on the `artifacts` volume (`/var/lib/cadence/cas`), mounted by the control plane and every
   worker service; per-lease scratch (`/var/lib/cadence/scratch`) sits on the same file system so inputs are hard
   links, not copies.
 
-### Mounts
+### Mounts (phase 4)
 
-| Mount kind | Examples | Access |
+A mount (`mnt_`, registry data, `internal/mounts`, migration 0033) is a named storage location; its name is the
+authority of every URI on it (`mount://<name>/<path>[#t=<start>,<end>][&ch=<n>]`, "Data in full" above).
+
+| Kind | What it is | Access |
 | --- | --- | --- |
-| Local path | NVMe on the control-plane or worker host | Read-write; the default cache lives here |
-| Network share | NFS, SMB mounted by the OS at a path | Read-only by default; writable for exports if configured |
-| Object storage | S3-compatible, including self-hosted MinIO | Read through a URI driver; writable for exports and archives |
-| Hub | Hugging Face datasets and models | Read-only, pulled by revision |
+| `local` | A path on the host, bound into the control plane and every worker service at the same path | Read-only by default; writable when registered so |
+| `nfs`, `smb` | A share the OS mounted at a path — the same driver as `local` | As `local` |
+| `s3` | An S3-compatible bucket (MinIO included): endpoint, region, `bucket[/prefix]`, a secret holding `<accessKeyId>:<secretAccessKey>`; read with SigV4, path-style (ListObjectsV2, GetObject) | Read |
+| `hf` | A Hugging Face Hub repository (`datasets/<org>/<name>` or `<org>/<model>`) pinned to a commit SHA, an optional token secret for gated repositories | Read |
 
-- A mount is an entity: kind, root, credentials reference, read-only flag, default licence hint, and a health check the worker runs (reachable, free space, throughput sample).
-- A utterance stores a URI (`mount://calls-nas/2026/09/…`) plus its content hash; the hash is the identity, so the same file on two mounts is one blob.
-- Mounts must be reachable from the worker host; the control plane only needs them for indexing and previews.
+- **Operations.** `mounts.list|get`; `mounts.new` (`POST /mounts`) registers one — an approval for everyone (preset
+  rule `mount-registration`, registry scope, the admin decides); `mounts.scan` (202, a job in the control plane:
+  files, bytes, top-level entries such as `<source>/<revision>`, content-store blobs found under `…/b3/<ab>/<hash>`,
+  stopping at `storage.mount_scan_max_files`); `mounts.verify` (202, the health check: `mount_check@1` runs on a worker
+  — reachable, free space, a write probe on a writable mount, a throughput sample of `storage.mount_check_sample_mb`;
+  also every `storage.mount_check_hours`). Events on `mount.{id}`: `mount.created`, `mount.health`, `mount.scanned`.
+- **Config is immutable** (revision stays 1): a new location is a new mount. A step job that names a mount whose last
+  health check failed fails at once (`mount-unhealthy`); health is per mount, not per host.
+- **What a mount may reach** (audit F1). A path mount's root is never one of Cadence's own directories (data, content
+  store, backups, logs, secrets; `/var/lib/cadence`) or the system's (`/proc`, `/sys`, `/dev`, `/etc`, `/boot`,
+  `/root`, `/run`), nor inside or around one. Readers follow no link out of the root: the control plane resolves links
+  before opening (`mounts.InRoot`: scans, materialisation, the audio of a window) and the worker refuses a URI whose
+  file resolves outside the root. An `s3` endpoint is `https://host[:port]`; plain http only to a loopback host, or
+  anywhere with `CADENCE_MOUNTS_ALLOW_HTTP=1` (development).
+- **Leases** carry the mounts a step reads (`lease.mounts: [{name, kind, root, readOnly, endpoint?, region?,
+  revision?, credentialsEnv?}]`); a mount's credentials arrive in `CADENCE_MOUNT_<NAME>_CREDENTIALS` only for a step
+  that reads the mount — its params or inputs' metadata name it, or a step that produced one of its inputs (back
+  through their inputs) named it — and for the mount's own health check (06 "Worker protocol").
+- **The stand's mounts.** `corpora` (`local`, read-only) holds the corpora the fetch scripts write once
+  (`<source>/<revision>/…`, `scripts/corpora/`); compose binds `${CADENCE_CORPORA_DIR:-corpora}` (on the stand
+  `/cadence/corpora`) to `/mnt/corpora` read-only in the control plane and every worker, so the mount is registered
+  with root **`/mnt/corpora`**, the container path. `exports` (`local`, writable) binds `${CADENCE_EXPORTS_DIR:-exports}`
+  to `/mnt/exports`: the target of exports (`storage.export_mount`) and the backup mirror's mount option
+  (`backups.mirror_mount`).
+- The control plane reads a mount only to scan it and to copy blobs back from it (materialisation); workers read it
+  for ingest and freeze.
 
-### Materialisation
+### The cache and materialisation (phase 4)
 
-1. Ingest indexes in place: hashes, durations and metadata are computed by streaming the file, nothing is copied.
-2. Freezing a dataset version writes Shar shards to the local cache — registry-owned, accounted to the freezing project's quota — or to a writable object-storage mount when the cache is the constraint.
-3. A training job requires its shards to be `materialised` on the worker's local disk; `dryRun` reports how much must be copied and from where. Eval and preview jobs may read remotely.
-4. Pinning: a dataset version referenced by a running job or a promoted model is pinned; unpinned shards are evicted least-recently-used when the cache passes its high-water mark.
-5. Re-materialisation is a job (`datasets.materialize`) with progress events, resumable by shard.
+The cache **is** the content store (`internal/cache`): no second tier on the worker. A freeze writes its shards there
+(the first copy, accounted to the freezing project), a mount copy of a blob is recorded in `blob_copies` (found by a
+scan, written by an export or by the backup mirror), and eviction frees only what can be brought back.
 
-Windows: Storage (tool: mounts, health, cache use, pinned versions); Dataset version shows where each shard lives. Agent tools: `mounts.list`, `mounts.scan`, `datasets.materialize`, `datasets.evict`. Gates: adding a mount or storing credentials needs a person; a job never starts on an unhealthy mount.
+1. **Index in place.** Ingest streams files from the mount and writes only the segment manifest; nothing is copied
+   ("Data in full" above).
+2. **Freeze** cuts the segments into the content store; `datasets.freeze` refuses a project past
+   `storage.project_quota_gb` (200; `storage-quota-exceeded`), counting the cached bytes of the dataset versions it
+   froze.
+3. **Pinning.** A dataset version is pinned while a waiting or running step job or a running pipeline names it, while
+   a model version that holds an alias was trained on it, or while a golden set is built on it.
+4. **Eviction.** A scan records a file named like a blob (`…/b3/<ab>/<hash>`) as its copy only when its size is the
+   blob's (`inventory.blobsMismatched` counts the others, and an earlier record of them goes). Before an eviction
+   deletes a blob it reads a copy back from a mount and checks its hash; a copy that is gone or holds other bytes is
+   dropped from `blob_copies`, and a version with a blob no copy verifies (an unreachable mount) stays cached (the job
+   result says why). A version is evictable when nothing pins it and every shard blob has a mount copy or is listed by
+   another live artifact; blobs on no mount (imported audio) are never evicted, and re-derivable shards without a mount
+   copy are not evictable yet. Every `storage.cache_sweep_minutes` (15), above `storage.cache_high_water_pct` (85 %),
+   the sweep evicts — over-quota projects first, then least recently used — down to `storage.cache_low_water_pct`
+   (70 %), as the system actor and without an approval. `datasets.evict` (`POST /registry/datasets:evict`, body
+   `{versionId}`) does it for one version (202; the dry run lists what blocks it). The evicted artifact keeps its row
+   and manifest, so lineage resolves; events `artifact.evicted`, `artifact.restored` on `entity.artifact.{hash}`.
+5. **Materialisation.** `datasets.materialize` (`POST /registry/datasets:materialize`, body `{versionId}`) copies
+   evicted shards back from their mount copies, verifying each by hash, resumable by shard (202; the dry run says how
+   much and from which mounts, and what is missing). A run on an evicted version is refused before it is queued (`artifact-missing`, naming `datasets.materialize`).
+6. **`storage.get`** answers the cache: use against the water marks, cached and evictable bytes, per-project quotas,
+   and every cached dataset version with its state (`cached | evicted`), pins, mount copies and last use.
+
+Windows: Storage (tool, Ops workspace: mounts, health, cache use, quotas, pinned and evictable versions); Dataset
+version shows where each shard lives. Agent tools: `mounts.list|get|scan|verify`, `storage.get`,
+`datasets.materialize`, `datasets.evict`; `mounts.new` waits for the admin. Help: `docs/help/panels/storage.md`.
 
 NeMo's Lhotse dataloader already reads tarred data from AIStore-style object stores, and Lhotse recordings accept URL sources, so remote reads for evaluation need no custom loader; training stays on local disk for throughput.

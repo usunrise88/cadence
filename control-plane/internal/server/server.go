@@ -17,9 +17,12 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/usunrise88/cadence/control-plane/internal/agentcreds"
+	"github.com/usunrise88/cadence/control-plane/internal/annotation"
 	"github.com/usunrise88/cadence/control-plane/internal/api"
 	"github.com/usunrise88/cadence/control-plane/internal/auth"
+	"github.com/usunrise88/cadence/control-plane/internal/auxiliary"
 	"github.com/usunrise88/cadence/control-plane/internal/backups"
+	"github.com/usunrise88/cadence/control-plane/internal/cache"
 	"github.com/usunrise88/cadence/control-plane/internal/cas"
 	"github.com/usunrise88/cadence/control-plane/internal/commands"
 	"github.com/usunrise88/cadence/control-plane/internal/credentials"
@@ -30,6 +33,8 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/events"
 	"github.com/usunrise88/cadence/control-plane/internal/eviction"
 	"github.com/usunrise88/cadence/control-plane/internal/experiments"
+	"github.com/usunrise88/cadence/control-plane/internal/exports"
+	"github.com/usunrise88/cadence/control-plane/internal/goldensets"
 	"github.com/usunrise88/cadence/control-plane/internal/help"
 	"github.com/usunrise88/cadence/control-plane/internal/jobs"
 	"github.com/usunrise88/cadence/control-plane/internal/langpacks"
@@ -37,6 +42,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/mcp"
 	"github.com/usunrise88/cadence/control-plane/internal/media"
 	"github.com/usunrise88/cadence/control-plane/internal/mixes"
+	"github.com/usunrise88/cadence/control-plane/internal/mounts"
 	"github.com/usunrise88/cadence/control-plane/internal/notify"
 	"github.com/usunrise88/cadence/control-plane/internal/obs"
 	"github.com/usunrise88/cadence/control-plane/internal/pipelines"
@@ -50,6 +56,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/sessions"
 	"github.com/usunrise88/cadence/control-plane/internal/steps"
 	"github.com/usunrise88/cadence/control-plane/internal/transcriptions"
+	"github.com/usunrise88/cadence/control-plane/internal/triage"
 	"github.com/usunrise88/cadence/control-plane/internal/webui"
 	"github.com/usunrise88/cadence/control-plane/internal/workers"
 	"github.com/usunrise88/cadence/control-plane/templates"
@@ -92,6 +99,9 @@ type Config struct {
 	// StepHooks react to step outputs by artifact type (phase 2: dataset, checkpoint, calibration); New creates an
 	// empty registry when nil.
 	StepHooks *steps.Hooks
+	// AuxiliaryProber checks that a service an auxiliary model names answers before a pipeline that uses it starts
+	// (phase 4 · stream X); New dials TCP when it is nil.
+	AuxiliaryProber auxiliary.Prober
 	// Leases is the worker protocol as the pipeline engine sees it; Workers when nil and set, else steps.NoLeases.
 	Leases steps.Leases
 	// Pipelines is the pipeline engine; New builds one from the fields above when nil (register its step job
@@ -119,6 +129,11 @@ type Config struct {
 	// AllowedOrigins are the origins besides the server's own host that may open the live transcription socket
 	// (CADENCE_ALLOWED_ORIGINS; phase 3 · stream T).
 	AllowedOrigins []string
+	// ReservedPaths are the control plane's own directories (data, content store, backups, logs, secrets): a path
+	// mount's root may not be one, lie inside one or contain one (mounts.NewInput.Reserved).
+	ReservedPaths []string
+	// MountsAllowHTTP accepts plain-http s3 endpoints to any host (CADENCE_MOUNTS_ALLOW_HTTP; development only).
+	MountsAllowHTTP bool
 }
 
 // Server implements api.StrictServerInterface. Planned operations fall through to api.Planned (501).
@@ -148,6 +163,11 @@ type Server struct {
 	experiments *experiments.Service
 	// transcriptions are manual tests and the live channel's relay (phase 3 · stream T).
 	transcriptions *transcriptions.Service
+	// mounts scan and health-check mounts; cache accounts, evicts and materialises the local cache (phase 4 · stream M).
+	mounts *mounts.Service
+	cache  *cache.Service
+	// annotation is annotation batches, their freeze and the triage queue's resolutions (phase 4 · stream A).
+	annotation *annotation.Service
 }
 
 var _ api.StrictServerInterface = (*Server)(nil)
@@ -168,6 +188,11 @@ func New(c Config) (*Server, error) {
 		c.StepHooks = &steps.Hooks{}
 	}
 	(&data.Importer{CAS: c.CAS}).Register(c.StepHooks) // dataset artifacts register dataset versions (R18)
+	(&triage.Hook{CAS: c.CAS}).Register(c.StepHooks)   // disputed pseudo-labels join the triage queue (R26)
+	if c.AuxiliaryProber == nil {
+		c.AuxiliaryProber = auxiliary.DialProber{}
+	}
+	(&exports.Hooker{CAS: c.CAS}).Register(c.StepHooks) // export artifacts complete exports and record mount copies
 	if c.Leases == nil && c.Workers != nil {
 		c.Leases = c.Workers
 	}
@@ -181,6 +206,7 @@ func New(c Config) (*Server, error) {
 		}
 		c.Pipelines = pipelines.New(pipelines.Options{
 			Pool: c.Pool, Jobs: c.Jobs, CAS: c.CAS, Hooks: c.StepHooks, Leases: c.Leases, Repos: repo, Log: c.Log,
+			Prober: c.AuxiliaryProber,
 			Defaults: func() *defaults.Defaults {
 				if c.Defaults != nil {
 					return c.Defaults
@@ -200,10 +226,15 @@ func New(c Config) (*Server, error) {
 	s.runs.Install(c.StepHooks) // checkpoint and calibration outputs; the engine reports run status changes
 	s.evals = s.newEvalsService()
 	s.evals.Install(c.StepHooks) // scores outputs write eval records; the engine reports eval pipeline changes
+	// Alignment outputs: golden sets carry word timings of their references (phase 4 stream L).
+	goldensets.InstallAlignments(c.StepHooks)
 	s.media, s.mediaLinks = s.newMedia()
 	s.experiments = s.newExperimentsService()
 	s.experiments.Install() // a run that ends starts its sweep's next run
 	s.transcriptions = s.newTranscriptions()
+	s.mounts, s.cache = s.newMounts(), s.newCache()
+	s.annotation = s.newAnnotation()
+	s.annotation.Install(c.StepHooks) // after the dataset importer: a batch's cut becomes its golden set
 	window := time.Duration(s.defaultsDoc().Drafts.PresenceSeconds.Value) * time.Second
 	s.drafts = drafts.NewStore(time.Now, window)
 	s.mixes = mixes.NewService(s.drafts, s.defaultsDoc)
@@ -248,6 +279,8 @@ func New(c Config) (*Server, error) {
 func (s *Server) RegisterJobs(j *jobs.Service) {
 	s.Pipelines.Register(j)
 	s.transcriptions.Register(j) // live transcription sessions (phase 3 · stream T)
+	s.mounts.Register(j)         // mount scans, health checks and their periodic check (phase 4 · stream M)
+	s.cache.Register(j)          // dataset eviction, materialisation and the cache sweep
 }
 
 // Handler is the whole HTTP surface: /api (the contract), /mcp (the same operations as MCP tools), /git (the
@@ -276,6 +309,7 @@ func (s *Server) apiRouter(authenticate bool) http.Handler {
 	if authenticate {
 		r.Use(s.authenticator().Middleware)
 		r.Use(s.workerOnly)
+		r.Use(s.reviewerOnly)
 		r.Use(policyScope)
 	}
 	r.Use(skipForUploads(commands.HashMiddleware(s.writeProblem)))

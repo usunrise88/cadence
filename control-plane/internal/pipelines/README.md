@@ -9,7 +9,14 @@ The pipeline engine (docs/spec/03-pipelines-defaults.md "Pipelines and extension
 - **The step job**: the handler waits on `steps.Leases.Await(ctx, jobID)` and applies the outcome in one transaction: outputs must match the kind's `produces` and exist in the store (`artifacts.Record`); output hooks (`steps.Hooks`) run in a savepoint — a hook error fails the step and rolls its writes back; then dependents advance. `oom` → one automatic attempt at `steps.OOMBatchScale` × the failed attempt's scale (`OOMRetryScale`, `overrides.batchScale`); `lost` → one retry; anything else fails the step and the run and skips the steps that never started. `Leased(ctx, tx, jobID)` marks a step running — the worker protocol calls it when it grants the lease. `Sweep` (every minute) treats steps whose job ended without an outcome (the control plane stopped while it waited) as lost.
 - **Commands**: `Cancel` (waiting steps cancelled, queued/running step jobs cancelled via `jobs.Cancel`), `Retry` (a failed or cancelled step, or every failed step, as a new attempt; the run reopens), `Wait`.
 
+- **Registry references** (`registryrefs.go`, phase 4): a parameter whose `x-cadence.registryRef` is `{kind: auxiliary, role}` names an auxiliary version; `Plan` resolves it for the project (`PlanInput.ProjectID`; the newest version of the collection the project adopted, the role and the licence checked by `internal/auxiliary`; without a project the newest frozen version), problems join `pipeline-invalid`. The step row keeps the resolved versions (`pipeline_steps.auxiliaries`), the spec carries them (`auxiliaries`) and the input hash covers their version ids. `Prepare` (dry runs and starts) probes every service a resolved payload names with `Options.Prober` (`SetProber`): `auxiliary-unavailable` when one does not listen.
 - **Several artifacts per input**: a step's `in` may name `<consumed>.<n>` (`checkpoints.0`, `checkpoints.1`), all fed to the consumed input `<consumed>`; the spec passes the names as they are (the step contract).
+- **Optional steps** (`optional: true`): a failure does not fail the run; the steps that read the step are skipped
+  (they must be optional too) — except a step that reads it as one of several artifacts of an input (`hypotheses.2`, a
+  pseudo-label member, phase 4 · stream B), which need not be optional and runs without that artifact. `Prepare`
+  turns an optional step's unanswering service into a plan warning (`auxiliary-unavailable`) instead of a problem.
+- **Bundled pipelines** are planned in CI (`bundled_integration_test.go`) against the step kinds the worker packs
+  publish (`testdata/bundled-kinds.json`, kept current by the worker's `tests/test_bundled_pins.py`).
 - **Accepted types** (`Accepts`): an input that declares `base_model` also takes a `checkpoint` (R44: a new stage starts from a checkpoint the way a stage starts from a base model; the step reads its input's type). Everything else must match exactly.
 - **Run observers** (`SetObserver`, `SetNamedObserver`): facades are told about every change of a pipeline run that has a `RunID` — after `Start`, after a step outcome is applied (`complete`, the sweep included), in `Leased`, after `Cancel` and `Retry` — inside the same transaction; their events join it. One observer per name, called in name order, each recognising its own runs: `internal/runs` mirrors run status (RunID `run_…`), `internal/evals` eval status (RunID `evl_…`).
 - **Resume** (`RetryInput.ResumeFrom`): a retry of one step with `overrides.resumeFrom` (attempt reason `resume`, recorded in the attempt log); automatic OOM and lost retries keep the attempt's `resumeFrom`. `AnyRev` skips the revision check for a facade that checked its own entity.
@@ -17,3 +24,10 @@ The pipeline engine (docs/spec/03-pipelines-defaults.md "Pipelines and extension
 Go API for facades (runs, evals, playbooks): `Engine.Start(ctx, tx, StartInput{ProjectID, Name | Pipeline, Ref, Inputs, Params, Estimates, RunID, Actor, Priority, Fresh})` returns the run and its events; `Engine.Prepare` validates without writing (dry runs). `ListRuns(…, ListFilter{RunID})` finds a facade's pipeline runs.
 
 `pipelinestest` runs the engine without a worker: a fake `steps.Leases` that executes `echo@1` and `tally@1` in-process with scripted failures and hangs.
+
+- **data.lock** (`lock.go`, phase 4): a step parameter marked `x-cadence.registry: <registry kind>` (not `source`)
+  is resolved through `data.lock` at the pipeline's commit (templates and repository-less projects: the adoptions);
+  a reference the lock does not list is `not-adopted`; `PlanStep.Locked` reports the resolutions.
+- **Deprecation** (`deprecation.go`): a kind's `deprecation {after, replacedBy, note}` (published by its pack) puts a
+  `step-kind-deprecated` warning on every plan that pins it (`Plan.Warnings`); `Validate(…, previous)` refuses a
+  pipeline file that newly pins it from `after` on (`step-kind-deprecated`). `Options.Clock` sets the day.

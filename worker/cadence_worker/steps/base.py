@@ -12,6 +12,9 @@ A step kind is a class registered under the ``cadence.steps`` entry-point group.
   kind belongs to; None for neutral kinds), ``secrets`` (secret names it needs as environment variables),
   ``optional_inputs`` (inputs of ``consumes`` a pipeline may leave unwired: a transcribe step's boost list; published
   as ``optionalInputs``) and ``optional_outputs`` (outputs a successful step may leave unwritten);
+- optionally ``deprecated_after`` (``YYYY-MM-DD``), with ``replaced_by`` (the ``name@version`` to pin instead) and
+  ``deprecation_note``: the version is deprecated (published as ``deprecation``). It keeps running; plans that pin it
+  warn, and from that day the control plane refuses a pipeline file that newly pins it (``step-kind-deprecated``);
 - ``run(params, inputs, outputs, ctx)``: read the input paths, write each output path (a file, or a directory for a
   directory artifact) and report through the :class:`~cadence_worker.steps.context.StepContext`. Steps never touch
   the database or the API.
@@ -32,7 +35,7 @@ from pydantic_core import PydanticUndefined
 
 from cadence_worker.cas import ManifestFile, encode_manifest, hash_bytes, hash_file, valid_hash
 from cadence_worker.defaults import lookup
-from cadence_worker.protocol_gen import StepKindDescriptor, StepResources
+from cadence_worker.protocol_gen import StepKindDeprecation, StepKindDescriptor, StepResources
 
 if TYPE_CHECKING:
     from cadence_worker.steps.context import StepContext
@@ -45,6 +48,11 @@ class StepInputError(Exception):
     """The inputs or parameters are wrong (reported as error type ``input``; retrying does not help)."""
 
 
+class AuxiliaryUnavailable(Exception):  # noqa: N818 (named after its help article, errors/auxiliary-unavailable)
+    """A service an auxiliary model names does not answer (its health call failed). Reported as error type ``step``,
+    retryable, with the message prefixed ``auxiliary-unavailable:`` (the help article); Cadence never starts it."""
+
+
 def cadence_field(
     default: Any = PydanticUndefined,
     *,
@@ -53,6 +61,8 @@ def cadence_field(
     range: Mapping[str, Any] | str | None = None,
     default_ref: str | None = None,
     shared: bool = False,
+    registry: str | None = None,
+    registry_ref: Mapping[str, str] | None = None,
 ) -> Any:
     """A pydantic field with the ``x-cadence`` metadata the UI, help and MCP tool descriptions render from.
 
@@ -61,6 +71,15 @@ def cadence_field(
 
     ``shared`` marks a parameter that a run-level override (``runs.new`` params) sets on every step of the stage that
     declares it, not only on the train step — the data's language, say, means the same to a calibration.
+
+    ``registry`` names the registry entity the value refers to (``source``: a registered source's name). The control
+    plane checks it when it plans a pipeline: an ingest from a source that is missing, archived or has no licence is
+    refused ("no licence, no ingest").
+
+    ``registry_ref`` (``{"kind": "auxiliary", "role": "pseudolabel"}``) marks a string parameter whose value names a
+    registry version (a collection name, ``ver_…`` or ``@alias``): the control plane resolves it to the version the
+    project adopted when it plans the run and passes the version with its payload in the step spec, which the step
+    reads with :meth:`StepContext.auxiliary` (phase 4 · stream X).
     """
     if default_ref:
         if default is not PydanticUndefined or source is not None or range is not None:
@@ -82,6 +101,10 @@ def cadence_field(
         meta["defaultRef"] = default_ref
     if shared:
         meta["shared"] = True
+    if registry:
+        meta["registry"] = registry
+    if registry_ref:
+        meta["registryRef"] = dict(registry_ref)
     return Field(default=default, description=description, json_schema_extra={"x-cadence": meta})
 
 
@@ -191,6 +214,13 @@ def descriptor(name: str, kind: type[StepKind]) -> StepKindDescriptor:
         d["optionalOutputs"] = optional
     if optional_in := sorted(getattr(kind, "optional_inputs", ())):
         d["optionalInputs"] = optional_in
+    if after := getattr(kind, "deprecated_after", None):
+        dep = StepKindDeprecation(after=str(after))
+        if replaced := getattr(kind, "replaced_by", None):
+            dep["replacedBy"] = str(replaced)
+        if note := getattr(kind, "deprecation_note", None):
+            dep["note"] = str(note)
+        d["deprecation"] = dep
     return d
 
 

@@ -66,6 +66,7 @@ func BundledInputs(templates fs.FS) ([]RegisterInput, error) {
 		{"fixtures/base-models.yaml", KindBaseModel},
 		{"fixtures/datasets.yaml", KindDataset},
 		{"fixtures/normalizers.yaml", KindNormalizer},
+		{"fixtures/auxiliaries.yaml", KindAuxiliary},
 	} {
 		ins, err := fixtureInputs(f.file, f.kind)
 		if err != nil {
@@ -119,7 +120,8 @@ var templateDirs = map[string]string{
 	"pipelines":    "pipeline",
 	"agent-config": "agent-config",
 	"playbooks":    "playbook",
-	"lang":         "langpack", // lang/<locale>/: starter language packs (template/langpack-he-il)
+	"lang":         "langpack",   // lang/<locale>/: starter language packs (template/langpack-he-il)
+	"annotation":   "annotation", // annotation/guidelines/: the annotation guidelines (template/annotation-guidelines, R27)
 }
 
 // TemplateFile is one file of a template version.

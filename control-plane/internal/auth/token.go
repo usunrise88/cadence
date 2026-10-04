@@ -18,6 +18,9 @@ const (
 	PrefixHost    = "cah_" // agent host token, Bearer: claims sessions and reports transcripts, nothing else
 	PrefixEgress  = "cep_" // egress proxy token, Bearer: reads the egress allowlist, nothing else
 	PrefixSession = "cws_" // browser session, in the cadence_session cookie
+	// PrefixInvitation is a reviewer invitation (phase 4): redeemed once per browser by auth.accept for a session that
+	// reaches one annotation batch; it is never a Bearer token.
+	PrefixInvitation = "cri_"
 )
 
 var tokenEncoding = base32.StdEncoding.WithPadding(base32.NoPadding)

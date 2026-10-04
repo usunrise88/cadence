@@ -24,6 +24,11 @@ import (
 // AudioFingerprint is the fingerprint kind every import writes: the audio's content hash.
 const AudioFingerprint = "audio-b3"
 
+// FileFingerprint is the fingerprint kind sdp_ingest@2 gives a segment: the content hash of the canonical WAV of the
+// whole track it was cut from — what an import of that file as one utterance hashes. The leakage check matches it
+// against audio-b3 (and file-b3) of other utterances, so a golden set's file re-cut by VAD is still found.
+const FileFingerprint = "file-b3"
+
 // TagEvalOnly marks dataset collections registered for evaluation only, or from a source not cleared for training
 // at registration.
 const TagEvalOnly = "eval-only"
@@ -58,12 +63,17 @@ func (im *Importer) Hook(ctx context.Context, tx pgx.Tx, out steps.Output) ([]ev
 // input, never registered as a dataset version, its utterances not utterances of the registry.
 const PurposeAugmented = "augmented"
 
-// Derived reports whether a dataset output's meta marks it as derived for an eval (purpose augmented).
+// PurposePseudoLabel marks the dataset segments_cut cuts from untranscribed segments for the pseudo-label members
+// (phase 4 · stream B): an input of the members, never a dataset version and never trained on.
+const PurposePseudoLabel = "pseudo-label"
+
+// Derived reports whether a dataset output's meta marks it as derived for an eval or for the pseudo-label members
+// (purpose augmented or pseudo-label): never registered, never trained on.
 func Derived(meta json.RawMessage) bool {
 	var m struct {
 		Purpose string `json:"purpose"`
 	}
-	return len(meta) > 0 && json.Unmarshal(meta, &m) == nil && m.Purpose == PurposeAugmented
+	return len(meta) > 0 && json.Unmarshal(meta, &m) == nil && (m.Purpose == PurposeAugmented || m.Purpose == PurposePseudoLabel)
 }
 
 // Import is Hook that also returns the registered (or existing) version.
@@ -72,15 +82,33 @@ func (im *Importer) Import(ctx context.Context, tx pgx.Tx, out steps.Output) (re
 	if im.Now != nil {
 		now = im.Now().UTC()
 	}
-	a, err := ReadArtifact(im.CAS, out.Artifact.Hash)
-	if err != nil {
-		return registry.Version{}, nil, err
-	}
 	actor := auth.Actor{Kind: auth.KindAutomation, ID: out.PipelineRunID, Name: "pipeline run " + out.PipelineRunID}
 	if out.PipelineRunID == "" {
 		actor = registry.Bundled()
 	}
+	format, err := artifactFormat(im.CAS, out.Artifact.Hash)
+	if err != nil {
+		return registry.Version{}, nil, err
+	}
+	if format == FormatDraft {
+		return im.importDraft(ctx, tx, out, actor, now)
+	}
+	a, err := ReadArtifact(im.CAS, out.Artifact.Hash)
+	if err != nil {
+		return registry.Version{}, nil, err
+	}
+	if a.Header.DraftVersionID != "" {
+		return im.completeFreeze(ctx, tx, out, a, now)
+	}
 	h := a.Header
+	if h.Purpose == PurposeNoise && len(h.Mined) > 0 {
+		// Mined from an ingest's recordings: the source is the registered one the ingest read (no licence, no ingest).
+		src, err := IngestAllowed(ctx, tx, h.Source.Name)
+		if err != nil {
+			return registry.Version{}, nil, err
+		}
+		return importNoise(ctx, tx, a, src, out, actor, now)
+	}
 	src, _, drafts, err := Ensure(ctx, tx, SourceInput{Name: h.Source.Name, Licence: h.Source.Licence, Kind: h.Source.Kind,
 		Languages: languagesOf(a.Lines, h.Source.Languages), URL: h.Source.URL}, actor, now)
 	if err != nil {
@@ -101,6 +129,8 @@ func (im *Importer) Import(ctx context.Context, tx pgx.Tx, out steps.Output) (re
 
 	name := collectionName(out, h)
 	payload := buildPayload(a, src, out)
+	frozen := true
+	payload.Frozen = &frozen
 	evalOnly := h.EvalOnly || !src.TrainingCleared
 	tags := collectionTags(a, src, evalOnly)
 	body, err := json.Marshal(payload)
@@ -121,6 +151,9 @@ func (im *Importer) Import(ctx context.Context, tx pgx.Tx, out steps.Output) (re
 	drafts = append(drafts, regDrafts...)
 	if created {
 		if err := insertMembership(ctx, tx, v.ID, uttIDs, trnIDs, a.Lines); err != nil {
+			return registry.Version{}, nil, err
+		}
+		if err := recordIngest(ctx, tx, v.ID, payload.Lineage, now); err != nil {
 			return registry.Version{}, nil, err
 		}
 	}
@@ -241,6 +274,48 @@ type payload struct {
 	Speakers       int               `json:"speakers"`
 	Tags           []string          `json:"tags"`
 	Lineage        lineage           `json:"lineage"`
+
+	// Phase 4 (drafts and freezing; the contract's DatasetPayload).
+	Frozen             *bool              `json:"frozen,omitempty"`
+	Quality            json.RawMessage    `json:"quality,omitempty"`
+	Card               *cardRef           `json:"card,omitempty"`
+	Stats              json.RawMessage    `json:"stats,omitempty"`
+	Shards             []shard            `json:"shards,omitempty"`
+	Segments           *steps.ArtifactRef `json:"segments,omitempty"`
+	Recipe             *recipe            `json:"recipe,omitempty"`
+	ContentFingerprint string             `json:"contentFingerprint,omitempty"`
+	Freeze             *freezeState       `json:"freeze,omitempty"`
+}
+
+type cardRef struct {
+	Hash  string `json:"hash"`
+	Bytes int64  `json:"bytes,omitempty"`
+}
+
+type shard struct {
+	Index      int     `json:"index"`
+	Hash       string  `json:"hash"`
+	Path       string  `json:"path,omitempty"`
+	Utterances int     `json:"utterances"`
+	Bytes      int64   `json:"bytes"`
+	Seconds    float64 `json:"seconds"`
+	Location   string  `json:"location"`
+	Pinned     bool    `json:"pinned"`
+}
+
+type recipe struct {
+	ProjectID string          `json:"projectId,omitempty"`
+	Pipeline  string          `json:"pipeline,omitempty"`
+	Commit    string          `json:"commit,omitempty"`
+	StepKind  string          `json:"stepKind,omitempty"`
+	Params    json.RawMessage `json:"params,omitempty"`
+}
+
+type freezeState struct {
+	PipelineRunID string      `json:"pipelineRunId,omitempty"`
+	StartedAt     *time.Time  `json:"startedAt,omitempty"`
+	FrozenAt      *time.Time  `json:"frozenAt,omitempty"`
+	Actor         *auth.Actor `json:"actor,omitempty"`
 }
 
 type splitStats struct {

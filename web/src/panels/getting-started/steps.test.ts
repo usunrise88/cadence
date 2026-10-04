@@ -7,10 +7,13 @@ const step = (steps: ReturnType<typeof setupSteps>, id: string) => steps.find((s
 const gate = (verdict: "passed" | "failed") => ({ verdict, gatesSha: "", checks: [], at: "" }) as unknown as EvalGate;
 
 describe("setupSteps", () => {
-  it("starts with only sign-in done and later phases marked", () => {
+  it("starts with only sign-in done", () => {
     const steps = setupSteps({ signedIn: true, projects: 0, datasets: [] });
-    expect(state(steps)).toEqual({ admin: "done", mount: "later", project: "todo", dataset: "later", run: "todo", gate: "todo" });
+    expect(state(steps)).toEqual({ admin: "done", mount: "todo", project: "todo", dataset: "todo", run: "todo", gate: "todo" });
+    expect(step(steps, "dataset").blocked).toMatch(/Try Cadence/);
     expect(step(steps, "run")).toMatchObject({ command: "playbooks.run", blocked: "Open a project first" });
+    expect(step(steps, "mount").blocked).toMatch(/Storage panel/);
+    expect(state(setupSteps({ signedIn: true, projects: 0, datasets: [], mounts: 1 })).mount).toBe("done");
     expect(steps.every((s) => /^[a-z][a-zA-Z]*\.[a-z]+$/.test(s.command))).toBe(true);
   });
 
@@ -37,7 +40,7 @@ describe("setupSteps", () => {
 
   it("ticks the project and a dataset someone froze — bundled fixtures do not count", () => {
     const bundled = { state: "frozen" as const, actor: { kind: "automation" as const, id: "cadence" } };
-    expect(state(setupSteps({ signedIn: true, projects: 1, datasets: [bundled] }))).toMatchObject({ project: "done", dataset: "later" });
+    expect(state(setupSteps({ signedIn: true, projects: 1, datasets: [bundled] }))).toMatchObject({ project: "done", dataset: "todo" });
     const mine = { state: "frozen" as const, actor: { kind: "agent" as const, id: "crd_1" } };
     expect(state(setupSteps({ signedIn: true, projects: 1, datasets: [bundled, mine] }))).toMatchObject({ dataset: "done" });
   });

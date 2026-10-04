@@ -5,6 +5,7 @@ import type { AudioLink, UtteranceWords } from "@/api/gen/types.gen";
 import { usePortalContainer } from "@/lib/portal";
 import { useDefaults } from "@/shell/entity/defaults";
 import { errorMessage } from "@/shell/panel/commands";
+import { narrowbandCap, useTracks, type AnalysisData } from "./analysis";
 import { useAudioAxis, type AudioAxis } from "./axis";
 import { useAudioLink, usePeaks, useSpectrogram } from "./data";
 import { AudioEngine, type SpecSettings } from "./engine";
@@ -17,8 +18,16 @@ import "./audio.css";
 // rebuilds it when the panel moves to another window (popout), so views always draw in their own window's frame loop.
 
 export type AudioViewProps = {
-  /** Utterance id (utt_…) or the audio's content hash (b3:…). */
+  /**
+   * Utterance id (utt_…) or the audio's content hash (b3:…); an annotation item (bit_…) or a triage item (tri_…) plays
+   * its segment's window of the source file, every channel.
+   */
   utterance: string;
+  /** The channel to play (a call's caller or bot); the waveform dims the others. Default: every channel. */
+  channel?: number;
+  /** Show the level and voice activity lane (tracks.get); narrowband audio caps the spectrogram at 4 kHz. */
+  analysis?: boolean;
+  onAnalysis?: (a: AnalysisData | undefined) => void;
   /** A shared axis (Compare, Diff rows); default: the view's own. */
   axis?: AudioAxis;
   title?: string;
@@ -76,7 +85,8 @@ export function AudioView(props: AudioViewProps) {
   const box = useRef<HTMLDivElement>(null);
   const [engine, setEngine] = useState<AudioEngine | null>(null);
   const [doc, setDoc] = useState<Document | null>(null);
-  const link = useAudioLink(props.utterance);
+  const link = useAudioLink(props.utterance, props.channel);
+  const tracks = useTracks(props.utterance, !!props.analysis);
   const peaks = usePeaks(props.utterance);
   const showSpec = props.showSpectrogram ?? true;
   const spec = useSpectrogram(props.utterance, link.data, d, showSpec);
@@ -95,10 +105,13 @@ export function AudioView(props: AudioViewProps) {
     if (el) setDoc((cur) => (cur === el.ownerDocument ? cur : el.ownerDocument));
   }, [portal]);
 
-  const settings: SpecSettings | undefined = useMemo(
-    () => (d ? { gainDb: d.gainDb, rangeDb: d.rangeDb, colormap: d.colormap, axis: d.axis, fmaxHz: d.fmaxHz, ...props.settings } : undefined),
-    [d, props.settings],
-  );
+  const cap = narrowbandCap(tracks.data);
+  const settings: SpecSettings | undefined = useMemo(() => {
+    if (!d) return undefined;
+    const s = { gainDb: d.gainDb, rangeDb: d.rangeDb, colormap: d.colormap, axis: d.axis, fmaxHz: d.fmaxHz, ...props.settings };
+    // R52: audio of 8 kHz origin stops at 4 kHz (the bins above hold nothing but the resampler's floor).
+    return cap ? { ...s, fmaxHz: Math.min(s.fmaxHz, cap) } : s;
+  }, [d, props.settings, cap]);
   const title = props.title ?? `Audio of ${props.utterance}`;
 
   useLayoutEffect(() => {
@@ -150,6 +163,13 @@ export function AudioView(props: AudioViewProps) {
     axis.setPlayhead(a);
   }, [engine, duration, spanStart, spanEnd, axis]);
   useEffect(() => engine?.setPeaks(peaks.data ?? null), [engine, peaks.data]);
+  const { onAnalysis } = props;
+  useEffect(() => {
+    engine?.setAnalysis(props.analysis ? (tracks.data ?? null) : null);
+    onAnalysis?.(tracks.data);
+  }, [engine, tracks.data, props.analysis, onAnalysis]);
+  const channel = props.channel;
+  useEffect(() => engine?.setActiveChannel(channel ?? null), [engine, channel]);
   useEffect(() => {
     if (!engine) return;
     const note = !showSpec ? "" : spec.loading ? "Computing the spectrogram…" : spec.note;

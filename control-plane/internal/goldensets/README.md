@@ -9,3 +9,11 @@ on); `Freeze` registers it and the `golden_sets` row in the approved command's t
 `CheckAdoption` re-runs the leakage check when a project adopts a golden set, against `TrainedDatasets` (its runs' mix
 revisions and its pipelines' training-step inputs). The policy preset gates the freeze for everyone (rule
 `golden-set-freeze`): an approval at registry scope that only the admin decides.
+
+Reference alignments (phase 4 · stream L, `alignments.go`, migration 0039): an aligning step (`align_reference`, omni
+runtime) writes an artifact of type `alignment` (`cadence.alignment/1`); `AlignmentHook` records it in
+`reference_alignments` against the step's one dataset input, from the output meta only (format, aligner, counts,
+reasons), and announces `golden_set.aligned` on every golden set built on that dataset artifact. A golden set version
+stays immutable: `Alignments`/`LatestAlignment` give the newest alignment of a dataset artifact, which
+`goldenSets.get|list` show as `alignment` and `internal/evals` feeds to the latency scorer (emission delay) for
+unaugmented cells, its artifact hash part of the metric's configuration.

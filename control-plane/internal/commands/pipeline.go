@@ -280,6 +280,11 @@ func (p *Pipeline) decide(ctx context.Context, tx pgx.Tx, cmd Command, projectID
 	if err != nil || d.Outcome != policy.Approval || cmd.Actor.SessionID == "" {
 		return d, "", err
 	}
+	// A registry-scope approval (no project, or an `everyone` rule: mounts.new, an auxiliary adoption, a Hub push)
+	// is decided per request: an earlier session grant on the same path never answers it (audit M3).
+	if projectID == "" || p.policy.Everyone(d.Preset, d.Rule) {
+		return d, "", nil
+	}
 	req, ok := RequestFromContext(ctx)
 	if !ok {
 		return d, "", nil

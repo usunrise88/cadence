@@ -22,7 +22,8 @@
               "noise_bank",
               "golden_set",
               "normalizer",
-              "model"
+              "model",
+              "auxiliary"
             ],
             "type": "string"
           },
@@ -1071,6 +1072,141 @@
       ]
     },
     {
+      "name": "annotations.new",
+      "title": "Submit the caller's annotation of an item — done, skipped or flagged, with text, tags and entity spans",
+      "description": "Submit the caller's annotation of an item — done, skipped or flagged, with text, tags and entity spans. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/batches/{id}/batch-items/{item}/annotations",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "entities": {
+                "items": {
+                  "additionalProperties": false,
+                  "description": "A named span of the transcript (character offsets, end exclusive) that entity_score checks in the hypothesis",
+                  "properties": {
+                    "class": {
+                      "description": "name, address, or a class of the language pack's itn.yaml (number, date, phone, amount, …)",
+                      "pattern": "^[a-z][a-z0-9_-]{0,31}$",
+                      "type": "string"
+                    },
+                    "end": {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "start": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "text": {
+                      "description": "The span's text (filled by the server from the transcript)",
+                      "maxLength": 500,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "start",
+                    "end",
+                    "class"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 100,
+                "type": "array"
+              },
+              "note": {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              "status": {
+                "description": "done: the text is the annotator's transcript; skipped: someone else should take it (it does not count); flagged: a transcript the annotator is unsure of — the item gets a second annotation",
+                "enum": [
+                  "done",
+                  "skipped",
+                  "flagged"
+                ],
+                "type": "string"
+              },
+              "tags": {
+                "items": {
+                  "description": "noise and crosstalk are kept (real telephone audio); an item whose final tags hold foreign or unintelligible is excluded from the freeze",
+                  "enum": [
+                    "noise",
+                    "crosstalk",
+                    "foreign",
+                    "unintelligible"
+                  ],
+                  "type": "string"
+                },
+                "maxItems": 4,
+                "type": "array"
+              },
+              "text": {
+                "description": "The transcript (required unless skipped)",
+                "maxLength": 5000,
+                "type": "string"
+              }
+            },
+            "required": [
+              "status"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Annotation batch id (anb_…)",
+            "maxLength": 100,
+            "type": "string"
+          },
+          "item": {
+            "description": "Batch item id (bit_…)",
+            "maxLength": 100,
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "id",
+          "item"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "item",
+          "in": "path",
+          "name": "item"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
       "name": "approvals.approve",
       "title": "Approve a pending request; the stored request runs as its original actor",
       "description": "Approve a pending request; the stored request runs as its original actor. Pass dryRun=true to see what would happen without changing anything.",
@@ -1492,6 +1628,82 @@
       ]
     },
     {
+      "name": "auxiliaries.get",
+      "title": "Get an auxiliary model version with its payload, the projects that adopted it and whether its service answers",
+      "description": "Get an auxiliary model version with its payload, the projects that adopted it and whether its service answers",
+      "method": "GET",
+      "path": "/registry/auxiliaries/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Registry version id (ver_…)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        }
+      ]
+    },
+    {
+      "name": "auxiliaries.list",
+      "title": "List auxiliary model versions (LID classifiers, pseudo-label members, aligners) with their licence check",
+      "description": "List auxiliary models (auxiliary/\u003cname\u003e): language classifiers, pseudo-label members and aligners Cadence uses to prepare data, never trains. Each carries its roles (lid, pseudolabel, align), the licence check (licence, outputsCommercialUse, conditions, sources) and either pinned weights (hfRepo, revision) or a running service (endpoint) that Cadence never starts. A project adopts one with projects.adopt — an approval the admin decides after reading the licence; step parameters then name it (whisper_transcribe, oasis_transcribe, lid_classify).",
+      "method": "GET",
+      "path": "/registry/auxiliaries",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "collection": {
+            "description": "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)",
+            "type": "string"
+          },
+          "state": {
+            "description": "Only versions in this state",
+            "enum": [
+              "draft",
+              "frozen",
+              "deprecated",
+              "archived"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "collection",
+          "in": "query",
+          "name": "collection"
+        },
+        {
+          "property": "state",
+          "in": "query",
+          "name": "state"
+        }
+      ]
+    },
+    {
       "name": "backups.get",
       "title": "Get a backup set with its manifest and last restore test report",
       "description": "Get a backup set with its manifest and last restore test report",
@@ -1684,7 +1896,8 @@
             "enum": [
               "draft",
               "frozen",
-              "deprecated"
+              "deprecated",
+              "archived"
             ],
             "type": "string"
           }
@@ -1706,6 +1919,555 @@
           "property": "state",
           "in": "query",
           "name": "state"
+        }
+      ]
+    },
+    {
+      "name": "batchItems.accept",
+      "title": "Adjudicate an item — set its final transcript, tags and entity spans, or exclude it (admin or an adjudicator)",
+      "description": "Adjudicate an item — set its final transcript, tags and entity spans, or exclude it (admin or an adjudicator). Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/batches/{id}/batch-items/{item}:accept",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "entities": {
+                "items": {
+                  "additionalProperties": false,
+                  "description": "A named span of the transcript (character offsets, end exclusive) that entity_score checks in the hypothesis",
+                  "properties": {
+                    "class": {
+                      "description": "name, address, or a class of the language pack's itn.yaml (number, date, phone, amount, …)",
+                      "pattern": "^[a-z][a-z0-9_-]{0,31}$",
+                      "type": "string"
+                    },
+                    "end": {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "start": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "text": {
+                      "description": "The span's text (filled by the server from the transcript)",
+                      "maxLength": 500,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "start",
+                    "end",
+                    "class"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 100,
+                "type": "array"
+              },
+              "exclude": {
+                "description": "Leave the item out of the freeze",
+                "type": "boolean"
+              },
+              "from": {
+                "description": "Take this annotation (ann_…) as the final transcript",
+                "type": "string"
+              },
+              "tags": {
+                "items": {
+                  "description": "noise and crosstalk are kept (real telephone audio); an item whose final tags hold foreign or unintelligible is excluded from the freeze",
+                  "enum": [
+                    "noise",
+                    "crosstalk",
+                    "foreign",
+                    "unintelligible"
+                  ],
+                  "type": "string"
+                },
+                "maxItems": 4,
+                "type": "array"
+              },
+              "text": {
+                "description": "The final transcript (when not from an annotation)",
+                "maxLength": 5000,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Annotation batch id (anb_…)",
+            "maxLength": 100,
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          },
+          "item": {
+            "description": "Batch item id (bit_…)",
+            "maxLength": 100,
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "id",
+          "ifMatch",
+          "item"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "item",
+          "in": "path",
+          "name": "item"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "batchItems.get",
+      "title": "One batch item — its segment, audio window, the bot's script around it, the prefill and the annotations the caller may see",
+      "description": "One batch item — its segment, audio window, the bot's script around it, the prefill and the annotations the caller may see",
+      "method": "GET",
+      "path": "/batches/{id}/batch-items/{item}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Annotation batch id (anb_…)",
+            "maxLength": 100,
+            "type": "string"
+          },
+          "item": {
+            "description": "Batch item id (bit_…)",
+            "maxLength": 100,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "item"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "item",
+          "in": "path",
+          "name": "item"
+        }
+      ]
+    },
+    {
+      "name": "batchItems.list",
+      "title": "The items of a batch — the caller's annotation queue (mine), the adjudication queue, or all",
+      "description": "The items of a batch — the caller's annotation queue (mine), the adjudication queue, or all",
+      "method": "GET",
+      "path": "/batches/{id}/batch-items",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Annotation batch id (anb_…)",
+            "maxLength": 100,
+            "type": "string"
+          },
+          "limit": {
+            "default": 200,
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "queue": {
+            "default": "mine",
+            "enum": [
+              "mine",
+              "adjudication",
+              "all"
+            ],
+            "type": "string"
+          },
+          "state": {
+            "description": "pending until it has the annotations it needs (one; two for double or flagged items); agreed when they agree (WER ≤ annotation.adjudicate_wer); disputed when they do not (the adjudication queue); adjudicated by batchItems.accept; excluded by adjudication, by annotation.max_skips skips, or by a foreign or unintelligible tag",
+            "enum": [
+              "pending",
+              "agreed",
+              "disputed",
+              "adjudicated",
+              "excluded"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "queue",
+          "in": "query",
+          "name": "queue"
+        },
+        {
+          "property": "state",
+          "in": "query",
+          "name": "state"
+        },
+        {
+          "property": "limit",
+          "in": "query",
+          "name": "limit"
+        }
+      ]
+    },
+    {
+      "name": "batches.freeze",
+      "title": "Freeze a finished batch into a golden set (via goldenSets.freeze) or a training dataset version — an approval",
+      "description": "Freeze a batch whose items are all resolved: the accepted items become a draft dataset version (human transcripts, entity spans, the target channel cut from the mount) that is cut into the content store, then — purpose golden-set — frozen as golden-set/\u003cgoldenSet\u003e through goldenSets.freeze, its card citing the guidelines commit and the inter-annotator WER. A golden-set batch needs its inter-annotator WER at or under annotation.max_iaa_wer (annotation-agreement-low otherwise); every item must be agreed, adjudicated or excluded (batch-incomplete). Always an approval the admin decides (202 approvalId). dryRun answers what would freeze. Reviewers lose access when the batch freezes. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/batches/{id}:freeze",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Annotation batch id (anb_…)",
+            "maxLength": 100,
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        }
+      ]
+    },
+    {
+      "name": "batches.get",
+      "title": "Get an annotation batch — progress, inter-annotator agreement, the adjudication queue, reviewers and whether it can freeze",
+      "description": "The state of an annotation batch: progress (pending, agreed, disputed, adjudicated, excluded items; double annotations done), agreement (inter-annotator WER over the double-annotated items against annotation.max_iaa_wer), the adjudication queue, the strata of the sample, the end-of-utterance gaps measured from per-channel voice activity, reviewers, the guidelines commit, and canFreeze with the reasons it cannot freeze yet. Annotated text is not returned here (batchItems.list has it).",
+      "method": "GET",
+      "path": "/batches/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Annotation batch id (anb_…)",
+            "maxLength": 100,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        }
+      ]
+    },
+    {
+      "name": "batches.list",
+      "title": "List the project's annotation batches, newest first, with progress and agreement",
+      "description": "List the project's annotation batches, newest first, with progress and agreement",
+      "method": "GET",
+      "path": "/projects/{p}/batches",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "default": 50,
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          },
+          "state": {
+            "description": "open while people annotate; freezing once the approved freeze runs (cut, then the golden set); frozen when the dataset version (and golden set) is registered; failed when the freeze failed (freeze.error says why; batches.freeze again)",
+            "enum": [
+              "open",
+              "freezing",
+              "frozen",
+              "failed"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "state",
+          "in": "query",
+          "name": "state"
+        },
+        {
+          "property": "limit",
+          "in": "query",
+          "name": "limit"
+        }
+      ]
+    },
+    {
+      "name": "batches.new",
+      "title": "Sample an annotation batch from a dataset version's segments (stratified, the caller's channel by default)",
+      "description": "Open an annotation batch: a fixed sample of segments people transcribe by hand, to freeze as a golden set (purpose golden-set: double annotation and adjudication) or as training data (purpose training: single annotation). The frame is a dataset version (ver_… or dataset/\u003cname\u003e, usually a draft from pipelines/data-ingest) or a segments artifact (b3:…); the sample takes segments of one role (caller by default: the bot's channel labels itself), stratified by campaign, month, duration bucket and confidence (proportional, at least one per stratum, reproducible with seed). guidelines names annotation/guidelines/\u003cname\u003e.md in the project repository; the batch pins its commit. doubleShare of the items (default 10 %) get a second, blind annotation; flagged items get one too. Always dryRun first: the answer shows the strata and the sample without writing. People annotate in the Triage panel (Annotate mode); the admin invites reviewers; watch batches.get; freeze with batches.freeze (approval). Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/projects/{p}/batches",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "contextS": {
+                "description": "Seconds of the source file played before and after the segment (default annotation.context_s)",
+                "format": "double",
+                "maximum": 30,
+                "minimum": 0,
+                "type": "number"
+              },
+              "dataset": {
+                "description": "The frame: a dataset version (ver_… or dataset/\u003cname\u003e, its newest version) with the segments artifact it was ingested from",
+                "maxLength": 200,
+                "type": "string"
+              },
+              "description": {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              "doubleShare": {
+                "description": "Share of items annotated twice, blind (default annotation.double_share)",
+                "format": "double",
+                "maximum": 1,
+                "minimum": 0,
+                "type": "number"
+              },
+              "dueAt": {
+                "description": "When annotation should end (default annotation.due_days from now); invitations expire then at the latest",
+                "format": "date-time",
+                "type": "string"
+              },
+              "goldenSet": {
+                "description": "Name of the golden set (golden-set/\u003cname\u003e) or dataset version the freeze registers (default the batch's name)",
+                "pattern": "^[a-z0-9][a-z0-9._-]{0,62}[a-z0-9]$",
+                "type": "string"
+              },
+              "guidelines": {
+                "description": "annotation/guidelines/\u003cname\u003e.md in the project repository (default annotation.guidelines)",
+                "pattern": "^[a-z0-9][a-z0-9._-]{0,62}$",
+                "type": "string"
+              },
+              "name": {
+                "description": "The batch's name in the project",
+                "pattern": "^[a-z0-9][a-z0-9._-]{0,62}[a-z0-9]$",
+                "type": "string"
+              },
+              "purpose": {
+                "description": "golden-set: double annotation, adjudication and the agreement target, frozen through goldenSets.freeze; training: single annotation suffices, frozen as a dataset version",
+                "enum": [
+                  "golden-set",
+                  "training"
+                ],
+                "type": "string"
+              },
+              "role": {
+                "description": "The target channel's role (default annotation.target_role: the caller)",
+                "enum": [
+                  "caller",
+                  "bot",
+                  "mono"
+                ],
+                "type": "string"
+              },
+              "seed": {
+                "description": "Seed of the sample (default 0)",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "segments": {
+                "description": "The frame as a segments artifact (cadence.segments/1) instead of a dataset version",
+                "pattern": "^b3:[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "size": {
+                "description": "Items to sample (default annotation.batch_size)",
+                "maximum": 5000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "stratify": {
+                "description": "Strata of the sample (default all four)",
+                "items": {
+                  "description": "campaign: the segment's campaign key, else the source file's folder; month: its recorded month (YYYY-MM), else unknown; duration: annotation.duration_edges_s buckets; confidence: the transcript's confidence in annotation.confidence_edges buckets (none without one)",
+                  "enum": [
+                    "campaign",
+                    "month",
+                    "duration",
+                    "confidence"
+                  ],
+                  "type": "string"
+                },
+                "maxItems": 4,
+                "type": "array"
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
         }
       ]
     },
@@ -2284,7 +3046,8 @@
               "noise_bank",
               "golden_set",
               "normalizer",
-              "model"
+              "model",
+              "auxiliary"
             ],
             "type": "string"
           },
@@ -2713,6 +3476,188 @@
       ]
     },
     {
+      "name": "datasets.evict",
+      "title": "Free a dataset version's shards from the local cache when every shard also lives on a mount (202 with the job)",
+      "description": "Remove a dataset version's shards from the local cache. Only shards with a copy on a mount go (a shard that exists on no mount — imported audio — is never evicted), and a pinned version (a queued or running job or a promoted model needs it) is refused with artifact-not-evictable. Reversible: datasets.materialize copies the shards back. dryRun=true answers the bytes freed and what keeps it pinned. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/registry/datasets:evict",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "properties": {
+              "versionId": {
+                "description": "Dataset version id (ver_…)",
+                "type": "string"
+              }
+            },
+            "required": [
+              "versionId"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "datasets.export",
+      "title": "Export a frozen dataset version as Lhotse Shar, a NeMo manifest or a Cadence bundle (to a writable mount or the content store), or to the Hugging Face Hub (approval); 202 with the job",
+      "description": "Export a frozen dataset version (a draft is refused with dataset-not-frozen; freeze it first). Formats: lhotse-shar (Shar shards — cuts.NNNNNN.jsonl.gz and recording.NNNNNN.tar with the 16 kHz WAV audio — that Lhotse's Shar reader opens), nemo-manifest (manifest.\u003csplit\u003e.jsonl with audio_filepath, duration, text and lang, the WAV files beside it), cadence-bundle (the version's registry record, its sources with their licences and every blob laid out as a content store, cas/b3/\u003cab\u003e/\u003chash\u003e, which another Cadence instance imports with dataset_import format cadence-bundle) and hf-hub (an audiofolder dataset with its card pushed to hubRepo; refused for production sources and sources without a usable licence, and always an approval the admin decides, for people too). target is cas (the export stays in the content store as an export artifact) or a directory on a writable path mount, mount://exports/\u003cpath\u003e; the default is mount://\u003cstorage.export_mount\u003e/\u003ccollection\u003e/\u003cversion\u003e/\u003cformat\u003e when that mount is registered and writable, else cas. Audio an export writes unchanged onto a mount (nemo-manifest, cadence-bundle) is recorded as a copy of its content-store blob, so the cache may evict the version and datasets.materialize can bring it back. The export runs as a pipeline run in project (default: the project the version was ingested or imported in). dryRun=true answers the plan: step kind, target, utterances, bytes and whether an approval is needed. The real call answers 201 with the export (entity.export.{id}), or 202 with an approvalId for hf-hub. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/registry/datasets:export",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "format": {
+                "description": "lhotse-shar: Shar shards (cuts and recording tars); nemo-manifest: manifest.\u003csplit\u003e.jsonl with the WAV files; cadence-bundle: the registry record, sources and blobs laid out as a content store, for another Cadence instance; hf-hub: an audiofolder dataset pushed to the Hugging Face Hub (approval)",
+                "enum": [
+                  "lhotse-shar",
+                  "nemo-manifest",
+                  "cadence-bundle",
+                  "hf-hub"
+                ],
+                "type": "string"
+              },
+              "hubPrivate": {
+                "description": "hf-hub: create the repository private (default storage.export_hub_private)",
+                "type": "boolean"
+              },
+              "hubRepo": {
+                "description": "hf-hub: the dataset repository \u003corg\u003e/\u003cname\u003e; created when missing",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,95}/[A-Za-z0-9][A-Za-z0-9._-]{0,95}$",
+                "type": "string"
+              },
+              "project": {
+                "description": "Slug of the project the export's pipeline run runs in; default the project the version was ingested or imported in",
+                "maxLength": 63,
+                "type": "string"
+              },
+              "target": {
+                "description": "cas, or a directory on a writable path mount (mount://exports/\u003cpath\u003e); default mount://\u003cstorage.export_mount\u003e/\u003ccollection\u003e/\u003cversion\u003e/\u003cformat\u003e when that mount is registered and writable, else cas. Not used by hf-hub",
+                "maxLength": 1000,
+                "type": "string"
+              },
+              "version": {
+                "description": "The frozen dataset version (ver_…)",
+                "type": "string"
+              }
+            },
+            "required": [
+              "version",
+              "format"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "datasets.freeze",
+      "title": "Freeze a draft dataset version — leakage check, then cut its segments into the content store (202 with the pipeline run)",
+      "description": "Freeze a draft dataset version (state draft, dataset.frozen false — what pipelines/data-ingest ends in). First the leakage check: the draft's train and validation utterances must share nothing (by canonical hash or fingerprint) with any golden set, else golden-set-leakage lists the overlaps and nothing starts. Then a CPU pipeline run in the draft's project cuts every segment from its mount into the content store (dataset_freeze, mode cut), verifies each hash, writes the shards, quality checks and the dataset card, and sets frozen: true. Only frozen versions can be mixed, trained on, exported or adopted. dryRun=true runs the leakage check only. Answers 202 with the jobId of the cut step (datasets.get shows dataset.freeze with the pipeline run); a version already frozen, or a cut reused from an earlier identical freeze, answers 200. A draft is frozen once: a second call answers the frozen version, or the freeze already running. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/registry/datasets:freeze",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "version": {
+                "description": "The draft dataset version (ver_…)",
+                "type": "string"
+              }
+            },
+            "required": [
+              "version"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
       "name": "datasets.get",
       "title": "Get a dataset version with its splits, statistics and the projects that use it",
       "description": "Get a dataset version with its splits, statistics and the projects that use it",
@@ -2762,7 +3707,8 @@
             "enum": [
               "draft",
               "frozen",
-              "deprecated"
+              "deprecated",
+              "archived"
             ],
             "type": "string"
           }
@@ -2784,6 +3730,157 @@
           "property": "state",
           "in": "query",
           "name": "state"
+        }
+      ]
+    },
+    {
+      "name": "datasets.materialize",
+      "title": "Copy a dataset version's evicted shards back into the local cache from their mount copies (resumable job)",
+      "description": "Bring a dataset version's shards back onto the local cache (the content store) from the mounts that hold copies of them, verifying each by hash. Training reads only cached shards. dryRun=true answers how many shards and bytes must be copied and from which mounts (and which shards have no copy anywhere). The real call answers 202 with a job that copies shard by shard with progress; a retry skips what is already back. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/registry/datasets:materialize",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "properties": {
+              "versionId": {
+                "description": "Dataset version id (ver_…)",
+                "type": "string"
+              }
+            },
+            "required": [
+              "versionId"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "datasets.preview",
+      "title": "Hours per language and split of a dataset version after filters (metadata only; nothing is written)",
+      "description": "Preview a dataset version (a draft from pipelines/data-ingest, or a frozen one) under filters before you freeze or mix it: utterances and hours per language and split, and how many each filter would drop (duration, characters per second, origin, language, split). Reads the registry only; no audio is read and nothing is written. A body with only version previews the version as it is. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/registry/datasets:preview",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "languages": {
+                "description": "Keep only these languages (he matches he-IL)",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 50,
+                "type": "array"
+              },
+              "maxCharsPerSecond": {
+                "format": "double",
+                "minimum": 0,
+                "type": "number"
+              },
+              "maxDuration": {
+                "description": "Drop utterances longer than this (seconds)",
+                "format": "double",
+                "minimum": 0,
+                "type": "number"
+              },
+              "minCharsPerSecond": {
+                "format": "double",
+                "minimum": 0,
+                "type": "number"
+              },
+              "minDuration": {
+                "description": "Drop utterances shorter than this (seconds)",
+                "format": "double",
+                "minimum": 0,
+                "type": "number"
+              },
+              "origins": {
+                "description": "Keep only transcripts of these origins",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "type": "array"
+              },
+              "splits": {
+                "description": "Keep only these splits",
+                "items": {
+                  "enum": [
+                    "train",
+                    "validation",
+                    "test"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "version": {
+                "description": "The dataset version to preview (ver_…)",
+                "type": "string"
+              }
+            },
+            "required": [
+              "version"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
         }
       ]
     },
@@ -3587,6 +4684,91 @@
       ]
     },
     {
+      "name": "exports.get",
+      "title": "Get a dataset export with its state, target, files, bytes, mount copies and Hub commit",
+      "description": "Get a dataset export with its state, target, files, bytes, mount copies and Hub commit",
+      "method": "GET",
+      "path": "/exports/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Export id (dex_…)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        }
+      ]
+    },
+    {
+      "name": "exports.list",
+      "title": "Dataset exports run in a project, newest first",
+      "description": "Dataset exports run in a project, newest first",
+      "method": "GET",
+      "path": "/projects/{p}/exports",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "default": 100,
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          },
+          "version": {
+            "description": "Only exports of this dataset version (ver_…)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "version",
+          "in": "query",
+          "name": "version"
+        },
+        {
+          "property": "limit",
+          "in": "query",
+          "name": "limit"
+        }
+      ]
+    },
+    {
       "name": "gates.edit",
       "title": "Commit a new gates.yaml to main (approval for agents); dryRun validates",
       "description": "Change the project's gate: send content (the YAML) or config (the same as an object) with If-Match = the ETag of gates.get. The file is validated first (gate-config-invalid lists every problem); dryRun validates and commits nothing. For agents this waits for a person's approval (gates decide what counts as better). Pass dryRun=true to see what would happen without changing anything.",
@@ -3877,7 +5059,7 @@
     {
       "name": "goldenSets.list",
       "title": "List golden set versions (frozen eval-only dataset versions tied to a scoring normalizer)",
-      "description": "List golden sets: frozen, held-out test sets per language and domain, each an eval-only dataset version tied to one scoring normalizer version. Runs never read them: a dataset version or mix sharing an utterance (by id or fingerprint) with any golden set is refused for training (golden-set-leakage). Adopt one into a project with projects.adopt.",
+      "description": "List golden sets: frozen, held-out test sets per language and domain, each an eval-only dataset version tied to one scoring normalizer version. Runs never read them: a dataset version or mix sharing an utterance (by id or fingerprint) with any golden set is refused for training (golden-set-leakage). Adopt one into a project with projects.adopt. alignment, when present, holds word timings of the references (the align_reference step on the golden set's dataset), which emission delay in evals needs.",
       "method": "GET",
       "path": "/registry/golden-sets",
       "inputSchema": {
@@ -3892,7 +5074,8 @@
             "enum": [
               "draft",
               "frozen",
-              "deprecated"
+              "deprecated",
+              "archived"
             ],
             "type": "string"
           }
@@ -3996,6 +5179,114 @@
           "property": "limit",
           "in": "query",
           "name": "limit"
+        }
+      ]
+    },
+    {
+      "name": "invitations.list",
+      "title": "The reviewers invited to a batch (admin)",
+      "description": "The reviewers invited to a batch (admin)",
+      "method": "GET",
+      "path": "/batches/{id}/invitations",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Annotation batch id (anb_…)",
+            "maxLength": 100,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        }
+      ]
+    },
+    {
+      "name": "invitations.new",
+      "title": "Invite a reviewer to a batch — a link that opens this batch's items only, play without download (admin)",
+      "description": "Invite a reviewer to a batch — a link that opens this batch's items only, play without download (admin). Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/batches/{id}/invitations",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "expiresAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "name": {
+                "description": "Lowercase letters, digits, dots, dashes and underscores; 2–32 characters",
+                "pattern": "^[a-z][a-z0-9._-]{1,31}$",
+                "type": "string"
+              },
+              "role": {
+                "default": "annotator",
+                "enum": [
+                  "annotator",
+                  "adjudicator"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Annotation batch id (anb_…)",
+            "maxLength": 100,
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
         }
       ]
     },
@@ -5199,7 +6490,8 @@
             "enum": [
               "draft",
               "frozen",
-              "deprecated"
+              "deprecated",
+              "archived"
             ],
             "type": "string"
           }
@@ -5274,7 +6566,8 @@
             "enum": [
               "draft",
               "frozen",
-              "deprecated"
+              "deprecated",
+              "archived"
             ],
             "type": "string"
           }
@@ -5374,6 +6667,279 @@
       ]
     },
     {
+      "name": "mounts.get",
+      "title": "Get a mount with its health, last scan, utterance URIs and content-store copies",
+      "description": "Get a mount with its health, last scan, utterance URIs and content-store copies",
+      "method": "GET",
+      "path": "/mounts/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Mount id (mnt_…) or name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        }
+      ]
+    },
+    {
+      "name": "mounts.list",
+      "title": "Registered mounts with their health and last scan",
+      "description": "List the storage mounts Cadence reads audio from and writes exports to: a local path, an NFS or SMB share the OS mounted at a path, an S3-compatible bucket or a Hugging Face Hub repository pinned to a revision. Each mount has a name (utterances name their audio as mount://\u003cname\u003e/\u003cpath\u003e[#t=\u003cstart\u003e,\u003cend\u003e][\u0026ch=\u003cn\u003e]), a read-only flag, its last health check (reachable, free space, a throughput sample, run by a worker) and its last scan (files, bytes, top-level entries, content-store blob copies found). A job never starts on an unhealthy mount.",
+      "method": "GET",
+      "path": "/mounts",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": null
+    },
+    {
+      "name": "mounts.new",
+      "title": "Register a local path, NFS/SMB path, S3-compatible bucket or Hub repository (registry approval, the admin decides)",
+      "description": "Ask for a new mount. Mounts are shared by every project, so the real call always answers 202 with an approvalId, for people too; the admin decides it, and the approved request registers the mount and queues its first health check on a worker. kind local, nfs and smb take root = the absolute path where workers and the control plane see the share; s3 takes root = bucket[/prefix], endpoint and credentials (the name of a secret holding \u003caccessKeyId\u003e:\u003csecretAccessKey\u003e); hf takes root = datasets/\u003corg\u003e/\u003cname\u003e (or \u003corg\u003e/\u003cmodel\u003e) and revision = a commit SHA. Mounts are read-only unless readOnly is false. dryRun=true validates. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/mounts",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "properties": {
+              "credentials": {
+                "description": "The name of a secret: s3 \u003caccessKeyId\u003e:\u003csecretAccessKey\u003e (required); hf a token (optional, gated repositories)",
+                "maxLength": 100,
+                "type": "string"
+              },
+              "description": {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              "endpoint": {
+                "description": "s3 only: the endpoint URL (https://minio.example:9000)",
+                "maxLength": 500,
+                "type": "string"
+              },
+              "kind": {
+                "description": "local, nfs and smb: a path the OS mounted (one driver); s3: an S3-compatible bucket; hf: a Hugging Face Hub repository at a pinned revision",
+                "enum": [
+                  "local",
+                  "nfs",
+                  "smb",
+                  "s3",
+                  "hf"
+                ],
+                "type": "string"
+              },
+              "licenceHint": {
+                "description": "The licence sources ingested from this mount usually carry (a hint; each source records its own)",
+                "maxLength": 200,
+                "type": "string"
+              },
+              "name": {
+                "description": "The name URIs use: mount://\u003cname\u003e/\u003cpath\u003e",
+                "pattern": "^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$",
+                "type": "string"
+              },
+              "readOnly": {
+                "default": true,
+                "description": "Cadence never writes to a read-only mount; writable mounts take exports",
+                "type": "boolean"
+              },
+              "region": {
+                "description": "s3 only: the signing region (default us-east-1)",
+                "maxLength": 64,
+                "type": "string"
+              },
+              "revision": {
+                "description": "hf only (required): the commit SHA every read is pinned to",
+                "pattern": "^[0-9a-f]{40}$",
+                "type": "string"
+              },
+              "root": {
+                "description": "local/nfs/smb: the absolute path where workers and the control plane see it (/mnt/corpora); s3: bucket[/prefix]; hf: datasets/\u003corg\u003e/\u003cname\u003e or \u003corg\u003e/\u003cmodel\u003e",
+                "maxLength": 1000,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "kind",
+              "root"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "mounts.scan",
+      "title": "Rescan a mount — files, bytes, top-level entries and content-store blob copies — and check its health (202 with the job)",
+      "description": "Walk a mount (or one path under it) and record what is there: files, bytes and the top-level entries (source/revision directories on a corpora mount), plus blobs laid out as a content store (cas/b3/\u003cab\u003e/\u003chash\u003e, e.g. an export or a backup mirror) — those become copies that let datasets.evict free cache space. The scan also queues a health check on a worker. Answers 202 with the job; the mount's inventory and health change when it ends (mount.{id}). Nothing on the mount is changed. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/mounts/{id}:scan",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "properties": {
+              "path": {
+                "description": "Scan only this path under the root (default: the whole mount)",
+                "maxLength": 1000,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Mount id (mnt_…) or name",
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "mounts.verify",
+      "title": "Check a mount's health on a worker now — reachable, free space, a throughput sample (202 with the job)",
+      "description": "Run the mount health check (step kind mount_check@1) on a worker: is the mount reachable from the worker host, how much space is free, and how fast a sample of its files reads. The result lands in the mount's health (mounts.get; event mount.health on mount.{id}). Health is also checked when a mount is registered, by every scan and every storage.mount_check_hours. A job that names an unhealthy mount fails at once (mount-unhealthy). Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/mounts/{id}:verify",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Mount id (mnt_…) or name",
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        }
+      ]
+    },
+    {
       "name": "normalizers.get",
       "title": "Get a scoring normalizer version with its rules and the projects that use it",
       "description": "Get a scoring normalizer version with its rules and the projects that use it",
@@ -5423,7 +6989,8 @@
             "enum": [
               "draft",
               "frozen",
-              "deprecated"
+              "deprecated",
+              "archived"
             ],
             "type": "string"
           }
@@ -5450,8 +7017,8 @@
     },
     {
       "name": "notificationRules.edit",
-      "title": "Change which channels an event class reaches and when (admin only)",
-      "description": "Change which channels an event class reaches and when (admin only). Pass dryRun=true to see what would happen without changing anything.",
+      "title": "Change which channels an event class reaches, when, and whether Telegram rings (admin only)",
+      "description": "Change which channels an event class reaches, when, and whether Telegram rings (admin only). Pass dryRun=true to see what would happen without changing anything.",
       "method": "PATCH",
       "path": "/notification-rules/{id}",
       "inputSchema": {
@@ -5471,6 +7038,10 @@
                   }
                 },
                 "type": "object"
+              },
+              "silent": {
+                "description": "Send this class's Telegram messages without sound",
+                "type": "boolean"
               },
               "timing": {
                 "description": "immediate: sent as it happens; digest: held for the next daily digest; daily: the digest itself (its rule only); none: never sent",
@@ -6360,7 +7931,7 @@
     {
       "name": "projects.adopt",
       "title": "Adopt a registry version into the project by reference",
-      "description": "Adopt a registry version (base model, dataset version, template) into this project by reference, so mixes, runs and aliases may use it. Only frozen versions are adoptable. Needs If-Match with the project's revision (projects.get); the project's revision goes up by one. Pass dryRun=true to see what would happen without changing anything.",
+      "description": "Adopt a registry version (base model, dataset version, golden set, normalizer, model, noise bank, auxiliary model, template) into this project by reference, so mixes, runs, gates, pipelines and aliases may use it; data.lock on main lists it from then on. Only frozen versions are adoptable (a draft dataset version is frozen first with datasets.freeze; deprecated and archived versions are refused). Adoption checks the licence (licence-forbids-adoption: no usable licence, or a non-commercial or no-derivatives licence on what a model is trained from or ships) and the locale (locale-mismatch: a dataset version, golden set or normalizer in none of the project's languages, unless purpose is replay: a golden set or dataset of another language kept to measure forgetting). Adopting an auxiliary model (LID, pseudo-label member, aligner; R26) is a registry-scope approval for everyone (202 with an approvalId) and is refused when its licence forbids commercial use of its outputs. Step kinds, runtimes and model families are published by workers and are never adopted. Needs If-Match with the project's revision (projects.get); the project's revision goes up by one. Pass dryRun=true to see what would happen without changing anything.",
       "method": "POST",
       "path": "/projects/{p}:adopt",
       "inputSchema": {
@@ -6369,6 +7940,15 @@
           "body": {
             "additionalProperties": false,
             "properties": {
+              "purpose": {
+                "default": "target",
+                "description": "target (default): the project's own languages, so a dataset version, golden set or normalizer must be in one of them (locale-mismatch otherwise); replay: data of other languages kept to measure and limit forgetting (replay golden sets, replay datasets), so the locale is not checked. The licence is checked either way",
+                "enum": [
+                  "target",
+                  "replay"
+                ],
+                "type": "string"
+              },
               "version": {
                 "description": "The registry version to adopt (ver_…)",
                 "type": "string"
@@ -7406,7 +8986,7 @@
         "additionalProperties": false,
         "properties": {
           "kind": {
-            "description": "The kinds registered so far; runtime, model_family and step_kind are published by workers (R40, R41, R45); noise_bank holds background noise for augmentation, registered by dataset_import with purpose noise; golden_set (goldenSets.freeze), normalizer (scoring normalizers, R21) and model (models.register, R22) arrive in phase 3",
+            "description": "The kinds registered so far; runtime, model_family and step_kind are published by workers (R40, R41, R45); noise_bank holds background noise for augmentation, registered by dataset_import with purpose noise or mined from call silences by noise_mine; golden_set (goldenSets.freeze), normalizer (scoring normalizers, R21) and model (models.register, R22) arrive in phase 3; auxiliary (LID classifiers, pseudo-label members, aligners: AuxiliaryPayload, R26) in phase 4",
             "enum": [
               "base_model",
               "dataset_version",
@@ -7417,7 +8997,8 @@
               "noise_bank",
               "golden_set",
               "normalizer",
-              "model"
+              "model",
+              "auxiliary"
             ],
             "type": "string"
           },
@@ -8028,7 +9609,8 @@
             "enum": [
               "draft",
               "frozen",
-              "deprecated"
+              "deprecated",
+              "archived"
             ],
             "type": "string"
           }
@@ -8203,7 +9785,7 @@
     {
       "name": "sources.edit",
       "title": "Change a source's description or licence, or clear it for training (a person's decision)",
-      "description": "Change a source's description or licence, or set trainingCleared. Clearing a source for training is a person's decision (the licence allows training and the data may be used): an agent's sources.edit waits for a person's approval (202 with approvalId). Sources are shared by every project. Send ifMatch with the etag (or rev) of your last sources.get. An archived source cannot be edited. Pass dryRun=true to see what would happen without changing anything.",
+      "description": "Change a source's description or licence, or set trainingCleared. Clearing a source for training is a person's decision (the licence allows training and the data may be used): an agent's sources.edit waits for a person's approval (202 with approvalId). A source licensed to forbid commercial use or derivative works (NC, ND, research only) is never cleared, nor is a cleared source moved to such a licence (validation-failed on /trainingCleared, R26). Sources are shared by every project. Send ifMatch with the etag (or rev) of your last sources.get. An archived source cannot be edited. Pass dryRun=true to see what would happen without changing anything.",
       "method": "PATCH",
       "path": "/registry/sources/{id}",
       "inputSchema": {
@@ -8364,6 +9946,92 @@
       ]
     },
     {
+      "name": "sources.new",
+      "title": "Register a source (a corpus with its licence, kind and languages) before ingesting it; it starts eval-only",
+      "description": "Register a corpus as a source before pipelines/data-ingest reads it from a mount: name, licence (the corpus card's, an SPDX id where one exists), kind (public, production, synthetic), languages, url. No licence, no ingest: the pipeline engine refuses an ingest step whose source is missing, archived or has no usable licence (unknown, none, NOASSERTION). A new source is eval-only (trainingCleared false) until a person clears it with sources.edit. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/registry/sources",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "description": {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "public",
+                  "production",
+                  "synthetic"
+                ],
+                "type": "string"
+              },
+              "languages": {
+                "items": {
+                  "maxLength": 35,
+                  "minLength": 2,
+                  "type": "string"
+                },
+                "maxItems": 50,
+                "type": "array"
+              },
+              "licence": {
+                "description": "The corpus's licence, an SPDX id where one exists (CC-BY-4.0); unknown, none and NOASSERTION are refused for ingest",
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "name": {
+                "description": "Lowercase letters, digits, dots, dashes and underscores (parlaspeech-rs)",
+                "pattern": "^[a-z0-9][a-z0-9._-]{0,98}[a-z0-9]$",
+                "type": "string"
+              },
+              "url": {
+                "description": "Where the corpus comes from (a homepage, hf://datasets/…, mount://corpora/…)",
+                "maxLength": 500,
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "licence",
+              "kind"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
       "name": "stepKinds.get",
       "title": "Get a step kind version",
       "description": "Get a step kind version",
@@ -8413,7 +10081,8 @@
             "enum": [
               "draft",
               "frozen",
-              "deprecated"
+              "deprecated",
+              "archived"
             ],
             "type": "string"
           }
@@ -8437,6 +10106,24 @@
           "name": "state"
         }
       ]
+    },
+    {
+      "name": "storage.get",
+      "title": "Cache use, water marks, per-project quotas, pinned and evictable dataset versions",
+      "description": "The local cache (the content store) as Cadence accounts it: the filesystem's size and free space, the high and low water marks (above the high mark unpinned dataset shards that also live on a mount are evicted, least recently used first, down to the low mark), each project's frozen dataset bytes against its quota, the dataset versions pinned (a queued or running job or a promoted model needs them) and those that are evictable or already evicted (datasets.materialize brings them back).",
+      "method": "GET",
+      "path": "/storage",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": null
     },
     {
       "name": "sweeps.run",
@@ -8734,7 +10421,8 @@
             "enum": [
               "draft",
               "frozen",
-              "deprecated"
+              "deprecated",
+              "archived"
             ],
             "type": "string"
           },
@@ -8747,7 +10435,8 @@
               "pipeline",
               "agent-config",
               "playbook",
-              "langpack"
+              "langpack",
+              "annotation"
             ],
             "type": "string"
           }
@@ -8774,6 +10463,324 @@
           "property": "templateKind",
           "in": "query",
           "name": "templateKind"
+        }
+      ]
+    },
+    {
+      "name": "triage.accept",
+      "title": "Resolve a triage item by accepting its best candidate as the segment's human transcript",
+      "description": "Resolve a triage item by accepting its best candidate as the segment's human transcript. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/triage/{id}:accept",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "tags": {
+                "items": {
+                  "description": "noise and crosstalk are kept (real telephone audio); an item whose final tags hold foreign or unintelligible is excluded from the freeze",
+                  "enum": [
+                    "noise",
+                    "crosstalk",
+                    "foreign",
+                    "unintelligible"
+                  ],
+                  "type": "string"
+                },
+                "maxItems": 4,
+                "type": "array"
+              }
+            },
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Triage item id (tri_…)",
+            "maxLength": 100,
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "triage.correct",
+      "title": "Resolve a triage item with a person's own transcript of the segment",
+      "description": "Resolve a triage item with a person's own transcript of the segment. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/triage/{id}:correct",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "tags": {
+                "items": {
+                  "description": "noise and crosstalk are kept (real telephone audio); an item whose final tags hold foreign or unintelligible is excluded from the freeze",
+                  "enum": [
+                    "noise",
+                    "crosstalk",
+                    "foreign",
+                    "unintelligible"
+                  ],
+                  "type": "string"
+                },
+                "maxItems": 4,
+                "type": "array"
+              },
+              "text": {
+                "maxLength": 5000,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "text"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Triage item id (tri_…)",
+            "maxLength": 100,
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "triage.list",
+      "title": "The project's triage queue — segments whose pseudo-label members disagreed, newest first",
+      "description": "List the project's triage items, newest first. A pseudo-label ensemble (pseudolabel_ensemble) puts a segment here when its members' texts disagree (pairwise WER above pseudolabel.max_pairwise_wer for every pair), when language identification disagrees with the source's language, or when no member heard speech. Each item has the segment (mount:// URI, b3 hash, start/end, channel), every member's text, the best candidate and why it is disputed. Disputed segments never reach training; a person resolves them in the Triage panel.",
+      "method": "GET",
+      "path": "/projects/{p}/triage",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "default": 100,
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          },
+          "pipelineRun": {
+            "description": "Only items from this pipeline run (plr_…)",
+            "maxLength": 100,
+            "type": "string"
+          },
+          "reason": {
+            "description": "disagreement: no two members within pseudolabel.max_pairwise_wer; lid-mismatch: language identification disagrees with the source's language; lid-unknown: no language identification reached its confidence floor while the step requires one; no-speech: every member returned empty text; too-few-members: fewer than two members produced a hypothesis",
+            "enum": [
+              "disagreement",
+              "lid-mismatch",
+              "lid-unknown",
+              "no-speech",
+              "too-few-members"
+            ],
+            "type": "string"
+          },
+          "state": {
+            "description": "open until a person resolves it in the Triage panel: accepted (the best candidate becomes the human transcript), corrected (a person's own text), rejected (dropped)",
+            "enum": [
+              "open",
+              "accepted",
+              "corrected",
+              "rejected"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "state",
+          "in": "query",
+          "name": "state"
+        },
+        {
+          "property": "reason",
+          "in": "query",
+          "name": "reason"
+        },
+        {
+          "property": "pipelineRun",
+          "in": "query",
+          "name": "pipelineRun"
+        },
+        {
+          "property": "limit",
+          "in": "query",
+          "name": "limit"
+        }
+      ]
+    },
+    {
+      "name": "triage.reject",
+      "title": "Resolve a triage item by dropping the segment (no transcript is written)",
+      "description": "Resolve a triage item by dropping the segment (no transcript is written). Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/triage/{id}:reject",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "reason": {
+                "maxLength": 500,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Triage item id (tri_…)",
+            "maxLength": 100,
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
         }
       ]
     },
@@ -8887,6 +10894,188 @@
           "property": "limit",
           "in": "query",
           "name": "limit"
+        }
+      ]
+    },
+    {
+      "name": "utterances.search",
+      "title": "Search utterances by transcript text, source, language, speaker, duration, origin and split",
+      "description": "Search utterances, oldest first, a page at a time. q matches transcript text (case-insensitive substring); source (id or name), language (he or he-IL), speaker, origin (human, pseudo-label, model:\u003cid\u003e), minDuration/maxDuration in seconds, and dataset (ver_…) with split narrow it. Each result carries its transcripts and, within a dataset, its split. Pass next as after for the next page.",
+      "method": "GET",
+      "path": "/registry/utterances:search",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "after": {
+            "description": "Cursor: the `next` value of the previous page",
+            "type": "string"
+          },
+          "dataset": {
+            "description": "Dataset version id (ver_…)",
+            "type": "string"
+          },
+          "language": {
+            "description": "Language (he or he-IL; either matches the other)",
+            "type": "string"
+          },
+          "limit": {
+            "default": 100,
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "maxDuration": {
+            "description": "Longest duration in seconds",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "minDuration": {
+            "description": "Shortest duration in seconds",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "origin": {
+            "description": "Transcript origin (human, pseudo-label, model:\u003cid\u003e)",
+            "type": "string"
+          },
+          "q": {
+            "description": "Text the transcript contains (case-insensitive)",
+            "maxLength": 200,
+            "type": "string"
+          },
+          "source": {
+            "description": "Source id (src_…) or name",
+            "type": "string"
+          },
+          "speaker": {
+            "description": "Speaker id within the source",
+            "type": "string"
+          },
+          "split": {
+            "description": "Split within the dataset version (needs dataset)",
+            "enum": [
+              "train",
+              "validation",
+              "test"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "q",
+          "in": "query",
+          "name": "q"
+        },
+        {
+          "property": "source",
+          "in": "query",
+          "name": "source"
+        },
+        {
+          "property": "language",
+          "in": "query",
+          "name": "language"
+        },
+        {
+          "property": "speaker",
+          "in": "query",
+          "name": "speaker"
+        },
+        {
+          "property": "origin",
+          "in": "query",
+          "name": "origin"
+        },
+        {
+          "property": "minDuration",
+          "in": "query",
+          "name": "minDuration"
+        },
+        {
+          "property": "maxDuration",
+          "in": "query",
+          "name": "maxDuration"
+        },
+        {
+          "property": "dataset",
+          "in": "query",
+          "name": "dataset"
+        },
+        {
+          "property": "split",
+          "in": "query",
+          "name": "split"
+        },
+        {
+          "property": "after",
+          "in": "query",
+          "name": "after"
+        },
+        {
+          "property": "limit",
+          "in": "query",
+          "name": "limit"
+        }
+      ]
+    },
+    {
+      "name": "versions.archive",
+      "title": "Archive a registry version (soft delete, the admin's); refused while anything uses it",
+      "description": "Archive a registry version of any kind people register (base model, dataset version, golden set, normalizer, model, noise bank, template): the soft delete of the registry, which never deletes. An archived version keeps its content and lineage but can no longer be adopted, aliased or found by registry.search without state:archived. A version that anything uses — adopted by a project, named by another version (a golden set's dataset), a run, a mix revision or a pipeline step — answers version-in-use listing the users. The admin's only; agents never archive. dryRun=true checks without archiving. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/registry/versions:archive",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "version": {
+                "description": "The registry version to archive (ver_…); versions have no revision, so the request names it instead of If-Match",
+                "type": "string"
+              }
+            },
+            "required": [
+              "version"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
         }
       ]
     }

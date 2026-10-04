@@ -29,7 +29,7 @@ import (
 
 // CurrentPhase is the roadmap phase this build ships: a playbook available from a later phase is listed and not run,
 // and a step of a later phase is in the plan as skipped.
-const CurrentPhase = 3
+const CurrentPhase = 4
 
 // Dir is the playbooks directory of the templates tree.
 const Dir = "playbooks"
@@ -58,10 +58,12 @@ const UntilTerminal = "terminal"
 var Spending = map[string]bool{
 	"runs.new": true, "runs.calibrate": true, "runs.resume": true, "runs.stage": true, "checkpoints.average": true,
 	"evals.new": true, "sweeps.run": true,
+	// A pipeline may decode on the card (pseudo-label members); its dry run is the plan the agent reports.
+	"pipelines.run": true,
 }
 
 // Pending are operations a chain may name before the contract carries them (a parallel stream builds them);
-// Validate accepts them as known. Empty since stream R's runs, checkpoints and metrics merged.
+// Validate accepts them as known. Empty while every named operation is in the contract.
 var Pending = []string{}
 
 // Known answers whether op is an implemented operation of the contract (the generated operation table, exempt tags
@@ -106,6 +108,15 @@ type Step struct {
 	Phase    int            `yaml:"phase"`
 	With     map[string]any `yaml:"with"`
 	Estimate *Hint          `yaml:"estimate"`
+	// Person marks a step a person does (an admin approves, a service is started on the host): what they do, shown
+	// in the plan. The step still ticks only from an operation it names (the agent's gated command once approved,
+	// or a read that shows it happened).
+	Person string `yaml:"person"`
+	// Optional steps are passed over (skipped) when a later step ticks first.
+	Optional bool `yaml:"optional"`
+	// When is a condition on the answer: the step ticks only when every field (a dotted path into the answer) equals
+	// the value; before that the answer marks it running. Not for terminal steps.
+	When map[string]any `yaml:"when"`
 }
 
 // Available reports whether the step's phase has shipped.
@@ -312,6 +323,16 @@ func Validate(p Playbook, d *defaults.Defaults, known func(op string) bool) erro
 		if s.Until != "" && s.Until != UntilTerminal {
 			fail("%s: until must be terminal", at)
 		}
+		if len(s.When) > 0 && s.Until != "" {
+			fail("%s: when is for steps that tick from one answer, not terminal ones", at)
+		}
+		for _, key := range sortedKeys(s.When) {
+			switch s.When[key].(type) {
+			case string, bool, int, float64:
+			default:
+				fail("%s: when.%s must be a string, number or boolean", at, key)
+			}
+		}
 		if s.Estimate != nil && (s.Estimate.GPUHours < 0 || s.Estimate.Minutes < 0 || s.Estimate.PlusMinus < 0 || s.Estimate.PlusMinus > 1) {
 			fail("%s: the estimate hint must be non-negative (plusMinus at most 1)", at)
 		}
@@ -355,6 +376,15 @@ func withRefs(v any) []string {
 		return out
 	}
 	return nil
+}
+
+func sortedKeys(m map[string]any) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func sampleInputs(p Playbook) map[string]string {

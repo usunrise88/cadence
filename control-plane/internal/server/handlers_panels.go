@@ -24,7 +24,7 @@ func (c commandResponse) VisitRecipesEditResponse(w http.ResponseWriter) error {
 
 // RecipesNew implements recipes.new.
 func (s *Server) RecipesNew(ctx context.Context, req api.RecipesNewRequestObject) (api.RecipesNewResponseObject, error) {
-	if err := s.validateRecipe(ctx, req.Body.Path, []byte(req.Body.Content)); err != nil {
+	if err := s.validateRecipe(ctx, req.P, req.Body.Path, []byte(req.Body.Content)); err != nil {
 		return nil, err
 	}
 	return s.writeRecipe(ctx, req.P, "recipes.new", req.Params.IdempotencyKey, req.Params.DryRun, http.StatusCreated,
@@ -37,7 +37,7 @@ func (s *Server) RecipesEdit(ctx context.Context, req api.RecipesEditRequestObje
 	if err != nil {
 		return nil, err
 	}
-	if err := s.validateRecipe(ctx, req.Path, []byte(req.Body.Content)); err != nil {
+	if err := s.validateRecipe(ctx, req.P, req.Path, []byte(req.Body.Content)); err != nil {
 		return nil, err
 	}
 	return s.writeRecipe(ctx, req.P, "recipes.edit", req.Params.IdempotencyKey, req.Params.DryRun, http.StatusOK,
@@ -45,14 +45,21 @@ func (s *Server) RecipesEdit(ctx context.Context, req api.RecipesEditRequestObje
 }
 
 // validateRecipe refuses a pipeline file (pipelines/<name>.yaml) that would not plan, before anything is committed
-// to main: the Recipe document's editor saves through here, and a broken pipeline on main stops every run of it.
-func (s *Server) validateRecipe(ctx context.Context, path string, content []byte) error {
+// to main: the Recipe document's editor saves through here, and a broken pipeline on main stops every run of it. A
+// pin of a step kind whose deprecation has closed is refused unless the file on main already pins it.
+func (s *Server) validateRecipe(ctx context.Context, slug, path string, content []byte) error {
 	dir, file := filepath.Split(path)
 	ext := filepath.Ext(file)
 	if s.Pipelines == nil || dir != "pipelines/" || (ext != ".yaml" && ext != ".yml") {
 		return nil
 	}
-	return s.Pipelines.Validate(ctx, s.Pool, content, strings.TrimSuffix(file, ext))
+	var previous []byte
+	if s.Projects != nil {
+		if b, _, err := s.Projects.Repos().ReadFile(ctx, slug, repos.Main, path); err == nil {
+			previous = b // a new file (or no repository) has nothing pinned yet
+		}
+	}
+	return s.Pipelines.Validate(ctx, s.Pool, content, strings.TrimSuffix(file, ext), previous)
 }
 
 func (s *Server) writeRecipe(ctx context.Context, slug, op, key string, dry *bool, status int, w bootstrap.FileWrite) (commandResponse, error) {

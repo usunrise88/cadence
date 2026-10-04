@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import IO, Any, Protocol, cast
 
 from cadence_worker.cas import CasError, Store, parse_uri
+from cadence_worker.mounts import MOUNTS_ENV
 from cadence_worker.protocol_gen import (
     ArtifactRef,
     Lease,
@@ -111,7 +112,7 @@ class LeaseRunner:
         self.stop_reason: str | None = None
         self._lock = threading.Lock()
         self._threads: list[threading.Thread] = []
-        self._redactor = Redactor((lease.get("env") or {}).values())
+        self._redactor = Redactor.for_env(lease.get("env") or {})
         self._dropped_metrics: set[str] = set()
         self.last_progress: tuple[float, str] | None = None
         # Intermediate outputs (ctx.publish) are stored and sent in order on their own thread, so hashing a large
@@ -187,6 +188,9 @@ class LeaseRunner:
             "resumeFrom": resume_path,
             "casDir": str(self.store.root),
             "attempt": spec.get("attempt", 1),
+            # mount:// URIs resolve against these (cadence_worker.mounts); credentials come in the lease env.
+            "mounts": list(self.lease.get("mounts") or []),
+            "auxiliaries": spec.get("auxiliaries") or {},
         }
         (self.dir / "step.json").write_text(json.dumps(job, indent=2), encoding="utf-8")
         return None
@@ -204,6 +208,7 @@ class LeaseRunner:
             env[MEMORY_CAP_ENV] = str(card["memoryCapMb"])
         else:
             env["CUDA_VISIBLE_DEVICES"] = ""  # CPU steps stay off the card
+        env[MOUNTS_ENV] = json.dumps(list(self.lease.get("mounts") or []))  # Mounts.from_env() in helper processes
         env["TRACEPARENT"] = self.span.traceparent  # the step span, a child of the lease's (the job span)
         return env
 

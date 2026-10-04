@@ -594,44 +594,127 @@ telephone golden set is built from own calls.
 **Gate.** A dataset version ingested from a mount and frozen by the `data-ingest` pipeline (leakage check passed,
 dataset card generated) is trained on through the phase-2 path — ideally as the "Adapt a new language" playbook.
 
+**Gate run (2026-10-04, staging).** Passed as a data path; the model it produced failed its own gate, as the phase-3
+one did. Mount `corpora` (approved) → `pipelines/pseudo-label` (`plr_01a10639-2160…`): `sdp_ingest@2` indexed the
+2 944 FLEURS Serbian train files in place (10.7 h, `test/` excluded by default), Nemotron (`hr-HR`, 80 ms) and Whisper
+large-v3 transcribed them (OASIS skipped: not adopted), Whisper LID, and the ensemble kept 490 segments (1.9 h) and
+sent 2 454 to triage → draft `dataset/fleurs-sr-pseudo` → `datasets.freeze` (leakage passed against 35 golden sets,
+quality checks passed, card written): 475 utterances, 1.84 h → mix with `dataset/replay-base` at 0.15 → run
+`run_01a10658-e06d…` (1 000 steps, 5 min, best validation WER 0.140 at step 500, measured on pseudo-labels) → eval
+`evl_01a1065d-870e…` (72 cells, 77 audio hours) → `evals.gate`:
+- Verdict **failed**: target inconclusive — WER 0.356 → 0.349 at `80ms`, Δ −0.007 [−0.016, +0.002]; replay 31 of 33
+  sets regressed (German 0.125 → 0.314, Ukrainian 0.175 → 0.545) despite the 0.15 replay share at peak LR 2e-4.
+- Pseudo-label quality against the withheld FLEURS transcripts: Nemotron alone 0.336, Whisper alone 0.121, the kept
+  labels 0.121 — with the base model as a member, agreement keeps only what the weak member gets right.
+- Leakage demo: the `test/` folder ingested on purpose (`exclude: []`, `.txt` sidecars from `test.tsv`) drafts fine and
+  its freeze answers `golden-set-leakage`: 700 of 700 utterances shared with `golden-set/fleurs-sr-latn-test`.
+- Synthetic calls: `data-ingest` on `calls-synth-sr` indexed 577 segments (315 caller, 262 bot with script text); the
+  annotation batch `calls-synth-sr-1` (40 items, 4 double, end-of-utterance p50 2.3 s, p90 6.1 s) waits for people.
+- Seven product bugs found on the way were fixed in the branch (Phase 4 notes). The playbook ran in parts by hand
+  (CLI), not end to end as an agent session; the Try Cadence smoke stopped at its source-clearing step.
+
 Decide before starting:
-- [ ] **decide** → *R45* The models phase 4 needs that are not NeMo models, while packs beyond NeMo are deferred: R26's
+- [x] **decide** → *R45* The models phase 4 needs that are not NeMo models, while packs beyond NeMo are deferred: R26's
       pseudo-label members (the ivrit.ai Whisper fine-tune, the omnilingual model) and a CTC model to align Hebrew
       references for NeMo Forced Aligner (R51) — run them in the NeMo runtime where its libraries serve them;
       otherwise the ensemble starts with NeMo models only and references stay unaligned
+      **Owner (2026-10-03):** Whisper loads per job in the NeMo runtime; the owner's OASIS service is called from a CPU
+      pack `services`; the omniASR CTC aligner runs in a one-step runtime `omni` (fairseq2 needs torch 2.8; 00 decision log)
 
 Write before starting:
-- [ ] **spec** → *R26 · confirm* The language-ID model and the pseudo-label ensemble members as registry references (the starter
-      pipeline names `nemotron-3.5-base` and `omnilingual-3b`, neither is a registry entry) (C10)
-- [ ] **spec** → *R27* Where annotation guidelines live: 04 calls them "a help article version", but help articles ship
-      inside the binary (11) — project-authored guidelines need a versioned home
+- [x] **spec** → *R26 · confirm* The language-ID model and the pseudo-label ensemble members as registry references (the starter
+      pipeline names `nemotron-3.5-base` and `omnilingual-3b`, neither is a registry entry) (C10) — registry kind
+      `auxiliary`, licence table in the phase-4 plan (02 "Auxiliary models")
+- [x] **spec** → *R27* Where annotation guidelines live: 04 calls them "a help article version", but help articles ship
+      inside the binary (11) — project-authored guidelines need a versioned home — `annotation/guidelines/<name>.md`,
+      the batch pins the commit (04 "Annotation workflow")
 
-- [ ] Mounts: local, NFS/SMB path, S3-compatible, HF Hub; health checks; adding a mount needs approval
-- [ ] Content-hash index (`mount://…` URIs), NVMe cache with pinning, LRU eviction, per-project quotas, `materialize`/`evict`
-- [ ] Sources in full: licence clearing for training, ingest history, "no licence, no ingest"; `utterances.search`
-- [ ] Step kinds: `sdp_ingest` (stereo split per party, bot track self-labelled, resample, VAD, segment),
+- [x] Mounts: local, NFS/SMB path, S3-compatible, HF Hub; health checks; adding a mount needs approval
+- [x] Content-hash index (`mount://…` URIs), NVMe cache with pinning, LRU eviction, per-project quotas, `materialize`/`evict`
+- [x] Sources in full: licence clearing for training, ingest history, "no licence, no ingest"; `utterances.search`
+- [x] Step kinds: `sdp_ingest` (stereo split per party, bot track self-labelled, resample, VAD, segment),
       `pseudolabel_ensemble` + LID + agreement, `text_normalise`, `manifest_filter`, `speaker_disjoint_split`,
       `dataset_freeze` (fingerprint, quality checks, dataset card), `shar_export`
-- [ ] Registry in full: all kinds, adoptions with licence/locale checks, `data.lock`, soft-delete rules, step-kind deprecation; Library gains Adopt and the this-project / all filter
-- [ ] Noise bank mined from own calls (per-channel VAD) + licensed public sets
-- [ ] Interoperability: import NeMo manifests, Lhotse cuts/Shar, HF datasets, folder + CSV; export Shar/manifest/Hub
+- [x] Registry in full: all kinds, adoptions with licence/locale checks, `data.lock`, soft-delete rules, step-kind deprecation; Library gains Adopt and the this-project / all filter
+- [x] Noise bank mined from own calls (per-channel VAD) + licensed public sets
+- [x] Interoperability: import NeMo manifests, Lhotse cuts/Shar, HF datasets, folder + CSV; export Shar/manifest/Hub
       (approval), Cadence bundle
-- [ ] Backups and exports can target a mount
-- [ ] Annotation workflow (needs call recordings, stereo split and VAD from this phase): sampling policy, reviewer
+- [x] Backups and exports can target a mount
+- [x] Annotation workflow (needs call recordings, stereo split and VAD from this phase): sampling policy, reviewer
       invitations per batch (play, no download), Annotation batch, double annotation 10 %, adjudication,
-      inter-annotator WER ≤ 5 %, freeze as the telephone golden set; entity spans for names and addresses;
-      end-of-utterance metric from per-channel VAD
+      inter-annotator WER ≤ 5 %, freeze as the telephone golden set (built on synthetic calls:
+      `golden-set/calls-synth-sr`); entity spans for names and addresses; end-of-utterance metric from per-channel VAD
 - [ ] For long audio (call recordings): waveform peaks at ingest and freeze, the spectrogram tile pyramid on demand,
       an estimated bandwidth per utterance so 8 kHz-origin audio is shown to 4 kHz (R51, R52); energy/VAD and channel
-      tracks
-- [ ] A reference alignment step (NeMo Forced Aligner, per the **decide** above) so golden sets carry word timings for
-      the reference track; emission delay PR50/PR90 joins the scorers (R54)
-- [ ] Dataset version statistics charts (R53); the numbers come from `datasets.get`, as the agent sees them
-- [ ] Playbooks: "Adapt a new language"; smoke project ("Try Cadence": 2 h FLEURS, full loop ≈ 1 GPU-hour —
+      tracks — partial: bandwidth, energy/VAD and channel tracks are built (`tracks.get`, computed on request); peaks
+      at ingest and freeze and the tile-pyramid job are open (notes below)
+- [x] A reference alignment step (NeMo Forced Aligner, per the **decide** above) so golden sets carry word timings for
+      the reference track; emission delay PR50/PR90 joins the scorers (R54) — `align_reference@1` uses omniASR CTC
+      emissions with torchaudio's aligner (NFA reads only NeMo checkpoints); `latency_score@3`
+- [x] Dataset version statistics charts (R53); the numbers come from `datasets.get`, as the agent sees them
+- [x] Playbooks: "Adapt a new language"; smoke project ("Try Cadence": 2 h FLEURS, full loop ≈ 1 GPU-hour —
       its export and parity steps complete once phase 5 lands)
 
 Panels: Source, Dataset version (leakage result, shard locations), Recipe (full editing), Storage, Pipeline run,
 Annotation batch, Triage (Annotate mode); Data workspace.
+
+Phase 4 notes (what differs from the plan above and from `docs/review/2026-10-03-phase-4-plan.md`; streams M, D, X,
+R, I, A, L and B, folded into the spec by stream S on 2026-10-04; the gate is still to run on the stand):
+- Mounts: `mounts.list|get|new|scan|verify` (`verify`, not `health`, which is not a vocabulary verb); adding one is
+  an approval for everyone (`mount-registration`); config is immutable; scans and health checks run in the control
+  plane, per mount, not per host. The `corpora` mount is registered with root `/mnt/corpora` (the container path);
+  compose binds `${CADENCE_CORPORA_DIR}` there read-only and `${CADENCE_EXPORTS_DIR}` at `/mnt/exports`. S3
+  credentials are one secret `<accessKeyId>:<secretAccessKey>`.
+- Cache: the content store is the cache. `storage.get`; `datasets.materialize|evict|export` are collection actions
+  with the version in the body. Defaults `storage.cache_high_water_pct` 85, `cache_low_water_pct` 70,
+  `project_quota_gb` 200; only blobs with a mount copy (`blob_copies`) are evictable, so shards that could be
+  re-derived are not; the sweep runs as the system actor.
+- The frozen cut is `cadence.dataset/1` (one canonical WAV per utterance + Lhotse MonoCut shards of 2 000), not Shar
+  tars; Shar is `shar_export@1`. `datasets.freeze` reruns the draft step in cut mode and checks the project quota.
+  Ingest VAD is an energy VAD per channel in the core; ITN in `text_normalise@1` is a literal list. "No licence, no
+  ingest" is enforced at planning and in the draft hook.
+- Auxiliary payloads carry `roles[]`, engine, conditions and `service.tokenSecret`; five seeds. LID uses Whisper's
+  language token (speechbrain/torchaudio conflict with the NeMo runtime's torch); OASIS writes lower case without
+  punctuation and wins the pick when it agrees (`vote`), so pseudo-labels can lose case and punctuation (07). Whisper
+  writes Serbian in Cyrillic: the pipeline transliterates `sr-Cyrl-Latn`.
+- Registry: `versions.archive` (terminal, refused while in use); adoption checks licence and locale (unless
+  `purpose: replay`); `data.lock` resolutions are reported (`PlanStep.locked`), not substituted; step-kind
+  deprecation comes from the pack, with no `deprecate` verb.
+- Imports: `dataset_import@4` copies into the content store and freezes at import (Lhotse cuts/Shar, NeMo
+  offset/duration, the bundle, `mount://` on path mounts); only `sdp_ingest` indexes in place. The bundle is per
+  dataset version, not per project. Hub pushes need `hub-export`, private by default.
+- Annotation: Triage is a tool panel (a queue). Annotators pull in their own hashed order; adjudication folds case and
+  punctuation (not the project normalizer, `annotation.adjudicate_wer` 0); `foreign`/`unintelligible` items are
+  excluded. Guidelines are pinned at HEAD; reviewers see the path and commit. Reviewers are invited by the admin
+  (`invitations.new`, `auth.accept` redeems a `cri_` token). The golden set built is `golden-set/calls-synth-sr`
+  (synthetic calls), not the telephone golden set, which waits for real calls.
+- Alignment runs in runtime `omni` (≈ 11.6 GB image, torch 2.8, fairseq2 0.6) and by hand once per golden set
+  (`pipelines/align-reference.yaml`); `latency_score@3` reports emission delay or `n/a` with a reason; `srp_Latn` is
+  not in omniASR's list.
+- Playbooks gain `person:`, `optional:`, `when:`; `weekly-flywheel` is available from phase 5; "Try Cadence" imports
+  FLEURS from the Hub; `cadence smoke --project SLUG` (`make e2e` needs `SMOKE_PROJECT`). `defaults.yaml` is version 15.
+- Corpora: `scripts/corpora/` (`fleurs.sh`, `calls_synth.py`); `fleurs-sr` and `calls-synth-sr` (40 calls, G.711 μ-law
+  stereo) on the stand; `sdp_ingest` on them gives 577 segments (315 caller, 262 bot), turn coverage ≈ 80 %.
+- Open: waveform peaks at ingest and freeze (computed on first view); the spectrogram tile-pyramid job (tiles per
+  request); guidelines text for reviewers (no operation serves it); dataset card rendering (no operation serves CAS
+  text); an export UI (API only); dry runs do not say "needs materialize"; the audio view's reference-word track; the
+  project-level bundle; the VoxLingua107 LID image; end-of-utterance gaps are not in the dataset manifest; aligning
+  the replay golden sets on the stand; a nightly omni GPU run; Playwright
+  e2e for annotation; `recipes/` lacks `annotation/guidelines/`.
+- Found and fixed running the gate on the stand (2026-10-04): every worker binds the mounts (core steps reached
+  `worker-services`/`worker-omni`, which had no `/mnt/corpora`); the default preset allows `mounts.verify`; an
+  optional step naming an auxiliary the project has not adopted is skipped with a warning; a retry leaves the plan's
+  skips skipped; `projects.sync` adds annotation guidelines a project lacks (never over its own); Whisper LID and the
+  Whisper member follow the retry's batch scale and LID batches 8 by default; corpora files must be world-readable
+  (workers run as uid 65532). Telegram became quieter on the owner's request (silent outcomes and digest, one loud
+  message per failed run, approvals batched for 120 s).
+- Open, from the gate: a step that reads a mount is reused by its input hash even when the mount's files changed (the
+  hash does not cover mount content; `fresh: true` works around it); every retry of an approved pipeline run asks
+  for a new GPU-spend approval while the estimate is unknown; replay golden sets in `nb-NO` need `languages:
+  {"nb-NO": "no-NO"}` (the base model's tag is `no`); `data-ingest` cannot draft untranscribed calls (frame the
+  annotation batch on the ingest's segments artifact instead); the Try Cadence playbook asks to clear a source that
+  is already cleared; a pseudo-label ensemble with the base model as a member keeps only what the weak member gets
+  right (2 454 of 2 944 FLEURS segments disputed, kept labels no better than Whisper alone).
 
 ---
 

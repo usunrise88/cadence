@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/usunrise88/cadence/control-plane/internal/events"
+	"github.com/usunrise88/cadence/control-plane/internal/notify/telegram"
 )
 
 func TestInQuietHours(t *testing.T) {
@@ -113,6 +114,32 @@ func TestDecide(t *testing.T) {
 			}
 		})
 	}
+	outcome := Rule{EventClass: ClassOutcome, Telegram: true, Timing: TimingImmediate, Silent: true}
+	if d := Decide(outcome, quiet, true, noon, time.UTC); d.State != StateQueued || !d.Silent {
+		t.Fatalf("a silent rule's decision %+v", d)
+	}
+	if d := Decide(failure, quiet, true, night, time.UTC); d.Silent {
+		t.Fatalf("a failure rings: %+v", d)
+	}
+}
+
+func TestPressedRow(t *testing.T) {
+	kb := &telegram.Keyboard{InlineKeyboard: [][]telegram.Button{
+		{{Text: "Approve 1", CallbackData: "a.1"}, {Text: "Deny 1", CallbackData: "d.1"}},
+		{{Text: "Approve 2", CallbackData: "a.2"}, {Text: "Deny 2", CallbackData: "d.2"}},
+		{{Text: "Approve 3", CallbackData: "a.3"}, {Text: "Deny 3", CallbackData: "d.3"}},
+	}}
+	label, rest := pressedRow(kb, "d.2")
+	if label != "2" || len(rest.InlineKeyboard) != 2 || rest.InlineKeyboard[1][0].CallbackData != "a.3" {
+		t.Fatalf("batched press: %q %+v", label, rest)
+	}
+	single := &telegram.Keyboard{InlineKeyboard: [][]telegram.Button{{{Text: "Approve", CallbackData: "a.x"}, {Text: "Deny", CallbackData: "d.x"}}}}
+	if label, rest := pressedRow(single, "a.x"); label != "" || len(rest.InlineKeyboard) != 0 {
+		t.Fatalf("single press: %q %+v", label, rest)
+	}
+	if label, rest := pressedRow(nil, "a.x"); label != "" || rest == nil || rest.InlineKeyboard == nil {
+		t.Fatalf("no keyboard: %q %+v", label, rest)
+	}
 }
 
 func record(topic, typ string, payload any) events.Record {
@@ -150,9 +177,21 @@ func TestClassify(t *testing.T) {
 			"", "", "", ""},
 		{"step done is progress", record("pipeline_run.plr_1", "pipeline_run.step_changed", map[string]any{"pipelineRunId": "plr_1", "runState": "running",
 			"step": map[string]any{"id": "pls_1", "step": "train", "kind": "toy_train", "state": "done"}}), ClassProgress, "Step done: train (toy_train)", "plr_1", ""},
-		{"step failed is a failure", record("pipeline_run.plr_1", "pipeline_run.step_changed", map[string]any{"pipelineRunId": "plr_1", "runState": "failed",
-			"step": map[string]any{"id": "pls_1", "step": "train", "kind": "toy_train", "state": "failed", "error": map[string]any{"type": "oom", "message": "CUDA out of memory"}}}),
-			ClassFailure, "Step failed: train (toy_train)", "oom: CUDA out of memory", ""},
+		{"step failed is progress: the run's end tells what it costs", record("pipeline_run.plr_1", "pipeline_run.step_changed", map[string]any{"pipelineRunId": "plr_1", "runState": "running",
+			"step": map[string]any{"id": "pls_1", "step": "oasis", "kind": "sdp_ingest", "state": "failed", "error": map[string]any{"type": "step", "message": "no manifest"}}}),
+			ClassProgress, "Step failed: oasis (sdp_ingest)", "step: no manifest", ""},
+		{"pipeline run failed is the one failure", record("pipeline_run.plr_1", "pipeline_run.state_changed", map[string]any{"pipelineRun": map[string]any{"id": "plr_1",
+			"projectId": "prj_1", "pipeline": "ingest", "state": "failed", "error": "step train failed (step): boom"}}),
+			ClassFailure, "Pipeline run failed: ingest", "step train failed (step): boom", ""},
+		{"a training run's pipeline run failed names the run", record("pipeline_run.plr_3", "pipeline_run.state_changed", map[string]any{"pipelineRun": map[string]any{"id": "plr_3",
+			"pipeline": "train", "runId": "run_7", "state": "failed", "error": "x"}}), ClassFailure, "Run failed: run_7", "plr_3", ""},
+		{"pipeline run done is nothing", record("pipeline_run.plr_1", "pipeline_run.state_changed", map[string]any{"pipelineRun": map[string]any{"id": "plr_1", "state": "done"}}), "", "", "", ""},
+		{"an eval's pipeline run failed is left to the eval", record("pipeline_run.plr_2", "pipeline_run.state_changed", map[string]any{"pipelineRun": map[string]any{"id": "plr_2",
+			"runId": "evl_1", "state": "failed"}}), "", "", "", ""},
+		{"agent session failed is a failure", record("agent.sessions", "agent_session.changed", map[string]any{"session": map[string]any{"id": "ses_1", "number": 4,
+			"project": "hebrew", "state": "failed", "error": "the agent exited"}}), ClassFailure, "Agent session 4 failed (hebrew)", "the agent exited", ""},
+		{"agent session failed on its own topic is a repeat", record("agent.session.ses_1", "agent_session.changed", map[string]any{"session": map[string]any{"id": "ses_1", "state": "failed"}}), "", "", "", ""},
+		{"agent session running is nothing", record("agent.sessions", "agent_session.changed", map[string]any{"session": map[string]any{"id": "ses_1", "state": "running"}}), "", "", "", ""},
 		{"step running is nothing", record("pipeline_run.plr_1", "pipeline_run.step_changed", map[string]any{"step": map[string]any{"state": "running"}}), "", "", "", ""},
 		{"step event on its entity topic is a repeat", record("entity.pipeline_step.pls_1", "pipeline_run.step_changed", map[string]any{"step": map[string]any{"state": "done"}}), "", "", "", ""},
 		{"host unreachable is a failure", record("compute.cmp_1", "compute.health", map[string]any{"hostId": "cmp_1", "health": map[string]any{"state": "unreachable", "detail": "no worker on this host has reported for a minute"}}),
@@ -160,9 +199,9 @@ func TestClassify(t *testing.T) {
 		{"host healthy again is nothing", record("compute.cmp_1", "compute.health", map[string]any{"hostId": "cmp_1", "health": map[string]any{"state": "healthy"}}), "", "", "", ""},
 		{"an eval's step done is left to the eval", record("pipeline_run.plr_2", "pipeline_run.step_changed", map[string]any{"pipelineRunId": "plr_2", "runId": "evl_1",
 			"step": map[string]any{"id": "pls_2", "step": "score-c1", "kind": "wer_score", "state": "done"}}), "", "", "", ""},
-		{"an eval's step failed is still a failure", record("pipeline_run.plr_2", "pipeline_run.step_changed", map[string]any{"pipelineRunId": "plr_2", "runId": "evl_1",
+		{"an eval's step failed is left to the eval", record("pipeline_run.plr_2", "pipeline_run.step_changed", map[string]any{"pipelineRunId": "plr_2", "runId": "evl_1",
 			"step": map[string]any{"id": "pls_2", "step": "score-c1", "kind": "wer_score", "state": "failed", "error": map[string]any{"type": "step", "message": "boom"}}}),
-			ClassFailure, "Step failed: score-c1 (wer_score)", "boom", ""},
+			"", "", "", ""},
 		{"a training run's step done is progress", record("pipeline_run.plr_3", "pipeline_run.step_changed", map[string]any{"pipelineRunId": "plr_3", "runId": "run_1",
 			"step": map[string]any{"id": "pls_3", "step": "train", "kind": "toy_train", "state": "done"}}), ClassProgress, "Step done: train (toy_train)", "plr_3", ""},
 		{"eval failed is a failure", record("entity.eval.evl_1", "eval.status_changed", map[string]any{"eval": map[string]any{"id": "evl_1", "status": "failed",
@@ -219,7 +258,8 @@ func TestClassTableMatchesWeb(t *testing.T) {
 	if !maps.Equal(web, want) {
 		t.Fatalf("classes.ts TABLE = %v\nclassify.go classTable (+ approval, digest) = %v", web, want)
 	}
-	for _, typ := range []string{"job.state_changed", "pipeline_run.step_changed", "compute.health", "eval.status_changed", "evl_"} {
+	for _, typ := range []string{"job.state_changed", "pipeline_run.step_changed", "pipeline_run.state_changed", "agent_session.changed",
+		"agent.sessions", "compute.health", "eval.status_changed", "evl_"} {
 		if !strings.Contains(body, `"`+typ+`"`) {
 			t.Errorf("classes.ts classOf does not handle %s", typ)
 		}
@@ -279,12 +319,20 @@ func TestDigestText(t *testing.T) {
 }
 
 func TestRuleDepartures(t *testing.T) {
-	r := Rule{EventClass: ClassOutcome, InApp: true, Telegram: false, Timing: TimingDigest}
+	r := Rule{EventClass: ClassOutcome, InApp: true, Telegram: false, Timing: TimingDigest, Silent: true}
 	v := r.JSON()
 	if strings.Join(v.Departures, ",") != "channels.telegram,timing" || v.Channels.Telegram {
 		t.Fatalf("departures %v channels %+v", v.Departures, v.Channels)
 	}
 	if len(v.Events) == 0 || v.Events[0] != "batch.closed" {
 		t.Fatalf("events %v", v.Events)
+	}
+	// Outcomes are seeded silent: an outcome that rings is a departure, and so is a failure that does not.
+	r.Silent = false
+	if d := r.JSON().Departures; !strings.Contains(strings.Join(d, ","), "silent") {
+		t.Fatalf("departures of a ringing outcome %v", d)
+	}
+	if d := (Rule{EventClass: ClassFailure, InApp: true, Telegram: true, Timing: TimingImmediate, Silent: true}).JSON().Departures; strings.Join(d, ",") != "silent" {
+		t.Fatalf("departures of a silent failure %v", d)
 	}
 }

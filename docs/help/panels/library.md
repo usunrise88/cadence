@@ -32,9 +32,19 @@ Prepare: pick what a mix, a run or an eval will use. Any step: keep the lists yo
 Keys in the list: arrows move, Enter opens, Space previews in Inspector. **Save view** stores the current filter
 under a name (`views.set`, per user per project); saving under an existing name replaces its query.
 
-With a registry row highlighted the toolbar offers what the open project can do with it: **Set as baseline** on a
-model or base model (`aliases.set`; moving `@baseline` always waits for an approval, and a notice gives its id) and
-**Adopt…** on a golden set (opens its adopt card, which checks for leakage first). Compare arrives later.
+With a registry row highlighted the toolbar offers what the open project can do with it:
+
+- **Adopt…** on a golden set or dataset version opens its document's adopt card, which dry-runs the checks first —
+  the leakage check for a golden set, the licence ([licence-forbids-adoption](../errors/licence-forbids-adoption.md))
+  and the locale ([locale-mismatch](../errors/locale-mismatch.md); **Check as replay** adopts another language kept to
+  measure forgetting). **Adopt** on a model, base model, normalizer or noise bank checks and adopts at once and says
+  the outcome beside the button. Only frozen versions are adopted; `data.lock` on main lists every adoption.
+- **Set as baseline** on a model or base model (`aliases.set`; moving `@baseline` always waits for an approval, and a
+  notice gives its id).
+
+Sources (scope All, no kind chip) list beside the versions with their kind and whether they are cleared for training;
+they open as the Source document, and dataset versions as the Dataset version document. Archived versions
+(`versions.archive`) are hidden unless the filter asks `state:archived`. Compare arrives later.
 
 The AI menu (the sparks icon next to New mix) asks the agent about the highlighted row, asks it to find what the
 filter describes in plain words, or explains the Library in a read-only session.

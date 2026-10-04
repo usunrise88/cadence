@@ -1,6 +1,6 @@
 ---
 title: Eval-only dataset
-summary: The dataset version may be evaluated but never trained on — a golden or replay test set, or built from a source not cleared for training.
+summary: The dataset version may be evaluated but never trained on — a golden or replay test set, licensed NC or ND, or built from a source not cleared for training.
 contexts: [error:eval-only-dataset, field:datasets]
 ---
 
@@ -15,11 +15,12 @@ check runs again when a training step is queued with inputs other steps produced
 through fails the run with this reason). A training step reads only **registered** dataset versions: a `dataset`
 artifact that no dataset version registers is refused too, and a `mix` input counts by its content (the
 `cadence.mix/1` rendering `runs.new` writes: every dataset version and dataset artifact it names), never by what the
-caller says in `meta`. A dataset version is eval-only when either holds:
+caller says in `meta`. A dataset version is eval-only when any of these holds:
 
 | Why | How to tell | What changes it |
 | --- | --- | --- |
 | It was registered for evaluation only | `datasets.get` shows `dataset.evalOnly: true`; the collection is tagged `eval-only` (golden and replay test sets, e.g. `dataset/replay-golden-de-de`) | Nothing: such a version is never trained on. Import the training split instead |
+| Its licence, or a source's, forbids commercial use or derivative works (NC, ND, "research only"; a source with no usable licence) | `datasets.get` `licence`; `sources.get` `licence` for each of `dataset.sourceIds` | Nothing: a fine-tuned model is a derivative work a project ships (R26). The rule is read when the mix or run is checked, so a clearance given earlier does not count, and `sources.edit` refuses to clear such a source |
 | One of its sources is not cleared for training | `dataset.sourceIds` names a source whose `trainingCleared` is `false` (`sources.get`) | A person clears the source: `sources.edit` with `trainingCleared: true` |
 
 Imported sources start eval-only. Clearance is read when the mix or run is checked, so clearing a source makes every

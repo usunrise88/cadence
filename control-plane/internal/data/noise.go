@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -38,7 +39,12 @@ type noisePayload struct {
 	Tags         []string          `json:"tags,omitempty"`
 	Artifact     steps.ArtifactRef `json:"artifact"`
 	Lineage      lineage           `json:"lineage"`
+	// Mined says where a bank mined from recordings came from (noise_mine: the segments, roles and clip rules).
+	Mined json.RawMessage `json:"mined,omitempty"`
 }
+
+// TagMined marks noise banks mined from the silences of recordings (noise_mine) rather than imported clips.
+const TagMined = "mined"
 
 // importNoise registers a noise-bank version (collection noise-bank/<name>) from a dataset artifact whose purpose is
 // noise: the source with its licence, then a frozen version fingerprinted like a dataset's content. Re-importing the
@@ -47,7 +53,7 @@ func importNoise(ctx context.Context, tx pgx.Tx, a Artifact, src Source, out ste
 	h := a.Header
 	p := noisePayload{Source: h.Source.URL, SourceIDs: []string{src.ID}, Licence: src.Licence, Tags: append([]string{}, h.Tags...),
 		Artifact: steps.ArtifactRef{Hash: a.Hash, Type: ArtifactType, Size: out.Artifact.Size},
-		Lineage:  lineage{PipelineRunID: out.PipelineRunID, StepID: out.StepID, ProjectID: out.ProjectID}}
+		Lineage:  lineage{PipelineRunID: out.PipelineRunID, StepID: out.StepID, ProjectID: out.ProjectID}, Mined: h.Mined}
 	if p.Source == "" {
 		p.Source = "source:" + src.Name
 	}
@@ -70,8 +76,11 @@ func importNoise(ctx context.Context, tx pgx.Tx, a Artifact, src Source, out ste
 		return registry.Version{}, nil, fmt.Errorf("encode noise bank payload: %w", err)
 	}
 	tags := []string{"source:" + src.Name, TagNoiseBank}
+	if len(h.Mined) > 0 {
+		tags = append(tags, TagMined)
+	}
 	for _, t := range h.Tags {
-		if t != TagNoiseBank && t != "source:"+src.Name {
+		if !slices.Contains(tags, t) {
 			tags = append(tags, t)
 		}
 	}

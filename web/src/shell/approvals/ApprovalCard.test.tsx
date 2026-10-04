@@ -91,6 +91,11 @@ describe("ApprovalCard", () => {
     await waitFor(() => expect(runCommand).toHaveBeenCalledWith("approvals.approve", expect.objectContaining({ grant: "session" })));
   });
 
+  it("a registry approval is decided once, even from an agent session", () => {
+    renderCard(approval({ scope: "registry", projectId: undefined, actor: { kind: "agent", id: "crd_a", sessionId: "ses_1" } }));
+    expect((screen.getByRole("button", { name: "Approve for this session" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it("an expired request cannot be decided", () => {
     renderCard(approval({ expiresAt: "2026-09-30T11:00:00Z" }));
     expect(card().textContent).toContain("Expired");

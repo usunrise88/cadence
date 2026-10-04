@@ -295,6 +295,7 @@ export type AuthStatus = {
      * The signed-in user signs in with a TOTP code
      */
     totpEnabled?: boolean;
+    reviewer?: ReviewerScope;
 };
 
 /**
@@ -425,14 +426,14 @@ export type CredentialList = {
 };
 
 /**
- * The kinds registered so far; runtime, model_family and step_kind are published by workers (R40, R41, R45); noise_bank holds background noise for augmentation, registered by dataset_import with purpose noise; golden_set (goldenSets.freeze), normalizer (scoring normalizers, R21) and model (models.register, R22) arrive in phase 3
+ * The kinds registered so far; runtime, model_family and step_kind are published by workers (R40, R41, R45); noise_bank holds background noise for augmentation, registered by dataset_import with purpose noise or mined from call silences by noise_mine; golden_set (goldenSets.freeze), normalizer (scoring normalizers, R21) and model (models.register, R22) arrive in phase 3; auxiliary (LID classifiers, pseudo-label members, aligners: AuxiliaryPayload, R26) in phase 4
  */
-export type RegistryKind = 'base_model' | 'dataset_version' | 'template' | 'runtime' | 'model_family' | 'step_kind' | 'noise_bank' | 'golden_set' | 'normalizer' | 'model';
+export type RegistryKind = 'base_model' | 'dataset_version' | 'template' | 'runtime' | 'model_family' | 'step_kind' | 'noise_bank' | 'golden_set' | 'normalizer' | 'model' | 'auxiliary';
 
 /**
- * draft → frozen → deprecated; a frozen version never changes
+ * draft → frozen → deprecated; a frozen version never changes. archived (versions.archive, phase 4): the registry's soft delete, from any state; nothing uses it and nothing can adopt it
  */
-export type VersionState = 'draft' | 'frozen' | 'deprecated';
+export type VersionState = 'draft' | 'frozen' | 'deprecated' | 'archived';
 
 /**
  * A project that adopted the version, and its aliases pointing at it
@@ -583,6 +584,24 @@ export type DatasetPayload = {
      */
     tags?: Array<string>;
     lineage?: DatasetLineage;
+    /**
+     * false for a draft (pipelines/data-ingest: segments indexed in place on a mount, no audio copied); datasets.freeze cuts it into the content store and sets true. Absent on phase-2 imports, which are frozen at import
+     */
+    frozen?: boolean;
+    quality?: DatasetQuality;
+    card?: DatasetCard;
+    stats?: DatasetStats;
+    /**
+     * The frozen audio in shards of the content store (empty for a draft)
+     */
+    shards?: Array<DatasetShard>;
+    segments?: ArtifactRef;
+    recipe?: DatasetRecipe;
+    /**
+     * sha256 of the sorted [audio hash, split, text] tuples; with the recipe commit it makes the version's fingerprint
+     */
+    contentFingerprint?: string;
+    freeze?: DatasetFreezeState;
 };
 
 export type DatasetVersion = RegistryVersion & {
@@ -594,7 +613,7 @@ export type DatasetVersionList = {
     items: Array<DatasetVersion>;
 };
 
-export type TemplateKind = 'instructions' | 'preset' | 'skill' | 'pipeline' | 'agent-config' | 'playbook' | 'langpack';
+export type TemplateKind = 'instructions' | 'preset' | 'skill' | 'pipeline' | 'agent-config' | 'playbook' | 'langpack' | 'annotation';
 
 export type TemplateFile = {
     /**
@@ -631,6 +650,10 @@ export type AdoptionNew = {
      * The registry version to adopt (ver_…)
      */
     version: string;
+    /**
+     * target (default): the project's own languages, so a dataset version, golden set or normalizer must be in one of them (locale-mismatch otherwise); replay: data of other languages kept to measure and limit forgetting (replay golden sets, replay datasets), so the locale is not checked. The licence is checked either way
+     */
+    purpose?: 'target' | 'replay';
 };
 
 export type Adoption = {
@@ -865,6 +888,10 @@ export type Defaults = {
     mix: DefaultSection;
     drafts: DefaultSection;
     cache: DefaultSection;
+    /**
+     * Mounts and the local cache (phase 4): water marks, project quota, sweep and health-check cadence, scan limit
+     */
+    storage?: DefaultSection;
     data?: DefaultSection;
     operations?: DefaultSection;
     notifications?: DefaultSection;
@@ -903,6 +930,18 @@ export type Defaults = {
      * Manual transcription tests and the live channel (phase 3): ticket, session and idle limits, frame size, file caps, the relay's queue and the interactive job's priority
      */
     transcriptions?: DefaultSection;
+    /**
+     * Annotation batches (phase 4): sample size, double share, agreement target, invitations, strata and the audio tracks' detector
+     */
+    annotation?: DefaultSection;
+    /**
+     * Pseudo-labels (phase 4): when the members of a pseudo-label ensemble agree on a segment's text (pairwise WER, agreeing members, language identification)
+     */
+    pseudolabel?: DefaultSection;
+    /**
+     * Playbooks (phase 4 · stream B): the values playbook inputs default to (Try Cadence's hours of FLEURS and training steps)
+     */
+    playbooks?: DefaultSection;
     estimates: {
         bytes_per_audio_hour: DefaultValue;
         measured_plus_minus?: DefaultValue;
@@ -3083,6 +3122,7 @@ export type StepKindDescriptor = {
      * Help slug (steps.<name>)
      */
     help: string;
+    deprecation?: StepKindDeprecation;
 };
 
 export type StepResources = {
@@ -3266,6 +3306,10 @@ export type Lease = {
      */
     traceparent?: string;
     heartbeatSeconds: number;
+    /**
+     * Every registered mount, so the step can resolve mount://<name>/<path>[#t=<start>,<end>][&ch=<n>] URIs (cadence_worker.mounts); credentials only for steps that may read them
+     */
+    mounts?: Array<LeaseMount>;
 };
 
 export type StepSpec = {
@@ -3310,6 +3354,12 @@ export type StepSpec = {
         resumeFrom?: string;
     };
     attempt: number;
+    /**
+     * Parameter name → the registry version it names (x-cadence.registryRef), resolved and adopted for the project (phase 4 · stream X)
+     */
+    auxiliaries?: {
+        [key: string]: StepRegistryRef;
+    };
 };
 
 export type ArtifactRef = {
@@ -3730,6 +3780,10 @@ export type PipelinePlan = {
     version: string;
     steps: Array<PipelinePlanStep>;
     estimate: PipelineEstimate;
+    /**
+     * What does not stop the run (deprecated step kinds)
+     */
+    warnings?: Array<PipelineWarning>;
 };
 
 export type PipelinePlanStep = {
@@ -3762,6 +3816,11 @@ export type PipelinePlanStep = {
      * Absent when unknown
      */
     estimateSeconds?: number;
+    deprecation?: StepKindDeprecation;
+    /**
+     * Parameters that name registry versions, as data.lock resolves them
+     */
+    locked?: Array<LockedReference>;
 };
 
 export type PipelineEstimate = {
@@ -3979,6 +4038,14 @@ export type Source = {
      * Dataset version ids built from this source (sources.get only; empty in lists)
      */
     datasets: Array<string>;
+    /**
+     * Licence and training-clearance history, oldest first (sources.get only)
+     */
+    clearances?: Array<SourceClearance>;
+    /**
+     * Imports and ingests that registered dataset versions from this source, newest first (sources.get only; at most 100)
+     */
+    ingests?: Array<SourceIngest>;
     createdBy: Actor;
     createdAt: string;
     updatedAt: string;
@@ -4062,6 +4129,10 @@ export type Utterance = {
      * utterances.get only
      */
     datasets?: Array<UtteranceMembership>;
+    /**
+     * Where the audio also lives: mount://<name>/<path>[#t=<start>,<end>][&ch=<n>] (utterances.get only)
+     */
+    uris?: Array<string>;
     createdAt: string;
 };
 
@@ -4128,6 +4199,11 @@ export type NotificationRule = {
     channels: NotificationChannels;
     timing: NotificationTiming;
     /**
+     * Telegram messages of this class arrive without sound (disable_notification); seeded true for outcome and the digest, false for approvals and failures
+     *
+     */
+    silent: boolean;
+    /**
      * Failures reach Telegram even in quiet hours; fixed per class
      */
     bypassQuietHours: boolean;
@@ -4149,6 +4225,10 @@ export type NotificationRuleEdit = {
         telegram?: boolean;
     };
     timing?: NotificationTiming;
+    /**
+     * Send this class's Telegram messages without sound
+     */
+    silent?: boolean;
 };
 
 /**
@@ -4873,6 +4953,20 @@ export type PlaybookStep = {
      * The step can run now (its phase has shipped)
      */
     available: boolean;
+    /**
+     * A step a person does (an admin approves a mount, a service is started on the host): what they do. It ticks from the operation it names, like any step (phase 4 · stream B)
+     */
+    person?: string;
+    /**
+     * Passed over (skipped) when a later step ticks first
+     */
+    optional?: boolean;
+    /**
+     * The step ticks only from an answer whose fields (dotted paths) equal these values; any other answer marks it running
+     */
+    when?: {
+        [key: string]: unknown;
+    };
 };
 
 export type PlaybookStop = {
@@ -5008,6 +5102,20 @@ export type PlaybookPlanItem = {
     jobId?: string;
     at?: string;
     estimate?: PlaybookStepEstimate;
+    /**
+     * A step a person does: what they do (phase 4 · stream B)
+     */
+    person?: string;
+    /**
+     * Passed over (skipped) when a later step ticks first
+     */
+    optional?: boolean;
+    /**
+     * The answer's fields that tick the step
+     */
+    when?: {
+        [key: string]: unknown;
+    };
 };
 
 export type PlaybookRunResult = {
@@ -5248,6 +5356,20 @@ export type GoldenSetPayload = {
      */
     groups: 'call' | 'speaker' | 'utterance';
     approvalId?: string;
+    /**
+     * A golden set frozen from an annotation batch (batches.freeze, R27): the guidelines commit and the agreement it was annotated with
+     */
+    annotation?: {
+        batchId: string;
+        guidelines: BatchGuidelines;
+        /**
+         * Inter-annotator WER over the double-annotated items
+         */
+        iaaWer?: number;
+        pairs?: number;
+        items: number;
+        adjudicated?: number;
+    };
 };
 
 /**
@@ -5295,6 +5417,7 @@ export type NormalizerVersionList = {
 export type GoldenSetVersion = RegistryVersion & {
     goldenSet: GoldenSetPayload;
     usedBy: Array<UsedBy>;
+    alignment?: GoldenSetAlignment;
 };
 
 export type GoldenSetVersionList = {
@@ -6022,7 +6145,7 @@ export type EvalEntityScores = {
 };
 
 /**
- * Latency to final at real-time pace (R54, latency_score): speech end (frame VAD) to the partial whose text is final
+ * Latency to final at real-time pace (R54, latency_score): speech end (frame VAD) to the partial whose text is final; from latency_score@3 also emission delay (emission)
  */
 export type EvalLatencyScores = {
     scorer: string;
@@ -6062,6 +6185,7 @@ export type EvalLatencyScores = {
     earlyFinals?: number;
     noSpeech?: number;
     emptyFinals?: number;
+    emission?: EvalEmissionDelay;
 };
 
 /**
@@ -6554,7 +6678,7 @@ export type TranscriptionTargetIn = {
      */
     profile?: string;
     /**
-     * BCP 47 language the model decodes in (default: the project's first locale)
+     * BCP 47 language the model decodes in (default: the language a checkpoint or model version was trained under, its run's target_lang, else the project's first locale)
      */
     language?: string;
     /**
@@ -7338,6 +7462,1611 @@ export type SweepPlan = {
     };
 };
 
+/**
+ * local, nfs and smb: a path the OS mounted (one driver); s3: an S3-compatible bucket; hf: a Hugging Face Hub repository at a pinned revision
+ */
+export type MountKind = 'local' | 'nfs' | 'smb' | 's3' | 'hf';
+
+export type MountNew = {
+    /**
+     * The name URIs use: mount://<name>/<path>
+     */
+    name: string;
+    kind: MountKind;
+    /**
+     * local/nfs/smb: the absolute path where workers and the control plane see it (/mnt/corpora); s3: bucket[/prefix]; hf: datasets/<org>/<name> or <org>/<model>
+     */
+    root: string;
+    /**
+     * s3 only: the endpoint URL (https://minio.example:9000)
+     */
+    endpoint?: string;
+    /**
+     * s3 only: the signing region (default us-east-1)
+     */
+    region?: string;
+    /**
+     * hf only (required): the commit SHA every read is pinned to
+     */
+    revision?: string;
+    /**
+     * The name of a secret: s3 <accessKeyId>:<secretAccessKey> (required); hf a token (optional, gated repositories)
+     */
+    credentials?: string;
+    /**
+     * Cadence never writes to a read-only mount; writable mounts take exports
+     */
+    readOnly?: boolean;
+    /**
+     * The licence sources ingested from this mount usually carry (a hint; each source records its own)
+     */
+    licenceHint?: string;
+    description?: string;
+};
+
+export type MountScan = {
+    /**
+     * Scan only this path under the root (default: the whole mount)
+     */
+    path?: string;
+};
+
+/**
+ * The last health check a worker ran (mount_check@1)
+ */
+export type MountHealth = {
+    state: 'unknown' | 'checking' | 'healthy' | 'unhealthy';
+    checkedAt?: string;
+    /**
+     * The compute host whose worker checked
+     */
+    host?: string;
+    reachable?: boolean;
+    /**
+     * A writable mount accepted a probe file (removed again)
+     */
+    writable?: boolean;
+    freeBytes?: number;
+    totalBytes?: number;
+    /**
+     * MB/s reading a sample of the mount's files
+     */
+    throughputMBps?: number;
+    sampledBytes?: number;
+    /**
+     * Why the mount is unhealthy
+     */
+    detail?: string;
+    jobId?: string;
+};
+
+export type MountEntry = {
+    /**
+     * A top-level entry (or one level deeper: <source>/<revision>)
+     */
+    path: string;
+    files: number;
+    bytes: number;
+};
+
+/**
+ * The last scan
+ */
+export type MountInventory = {
+    scannedAt: string;
+    /**
+     * The path scanned under the root (empty for all of it)
+     */
+    path?: string;
+    files: number;
+    bytes: number;
+    /**
+     * The scan stopped at storage.mount_scan_max_files
+     */
+    truncated?: boolean;
+    entries: Array<MountEntry>;
+    /**
+     * Content-store blobs found under cas/b3/ (copies of cached blobs)
+     */
+    blobs: number;
+    blobBytes: number;
+    /**
+     * Files named like a blob whose size is not the blob's (truncated or rewritten): not counted as copies, and an earlier copy recorded on this mount is dropped
+     */
+    blobsMismatched?: number;
+    jobId?: string;
+};
+
+export type Mount = {
+    /**
+     * mnt_…
+     */
+    id: string;
+    name: string;
+    kind: MountKind;
+    root: string;
+    endpoint?: string;
+    region?: string;
+    revision?: string;
+    /**
+     * The secret's name (its value is never shown)
+     */
+    credentials?: string;
+    readOnly: boolean;
+    licenceHint: string;
+    description: string;
+    /**
+     * mount://<name>/ — the prefix of every URI on this mount
+     */
+    uri?: string;
+    health: MountHealth;
+    inventory?: MountInventory;
+    /**
+     * Utterances with a URI on this mount
+     */
+    utterances: number;
+    /**
+     * Content-store blobs with a copy on this mount
+     */
+    copies: number;
+    copyBytes: number;
+    rev: number;
+    createdBy: Actor;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type MountList = {
+    items: Array<Mount>;
+};
+
+/**
+ * A mount as a worker resolves mount://<name>/<path> URIs (cadence_worker.mounts)
+ */
+export type LeaseMount = {
+    name: string;
+    kind: MountKind;
+    root: string;
+    readOnly: boolean;
+    endpoint?: string;
+    region?: string;
+    revision?: string;
+    /**
+     * The lease env variable holding the mount's credentials, when the step may read them
+     */
+    credentialsEnv?: string;
+};
+
+export type StorageProject = {
+    projectId: string;
+    slug: string;
+    /**
+     * Cached bytes of the dataset versions this project froze
+     */
+    datasetBytes: number;
+    /**
+     * storage.project_quota_gb
+     */
+    quotaBytes: number;
+    over: boolean;
+};
+
+export type StorageDataset = {
+    versionId: string;
+    name: string;
+    version: string;
+    /**
+     * The dataset's directory artifact (b3)
+     */
+    artifact: string;
+    /**
+     * The project that froze it
+     */
+    projectId?: string;
+    bytes: number;
+    /**
+     * evicted: datasets.materialize brings it back
+     */
+    state: 'cached' | 'evicted';
+    /**
+     * Why it stays (empty when nothing pins it)
+     */
+    pinned: Array<string>;
+    /**
+     * Shards with a copy on a mount, of shards
+     */
+    copies: number;
+    shards?: number;
+    /**
+     * Every shard also lives on a mount (or in another cached artifact) and nothing pins it
+     */
+    evictable?: boolean;
+    lastUsedAt?: string;
+};
+
+export type StorageUse = {
+    /**
+     * The content store's filesystem
+     */
+    totalBytes: number;
+    freeBytes: number;
+    usedPct: number;
+    /**
+     * storage.cache_high_water_pct
+     */
+    highWaterPct: number;
+    /**
+     * storage.cache_low_water_pct
+     */
+    lowWaterPct: number;
+    /**
+     * Bytes of every live artifact in the store
+     */
+    artifactBytes: number;
+    /**
+     * Bytes of cached dataset versions
+     */
+    datasetBytes: number;
+    /**
+     * What an eviction down to the low mark could free
+     */
+    evictableBytes?: number;
+    lastSweepAt?: string;
+    projects: Array<StorageProject>;
+    /**
+     * Dataset versions with a content-store artifact, least recently used first
+     */
+    datasets: Array<StorageDataset>;
+};
+
+export type DatasetCacheRequest = {
+    /**
+     * Dataset version id (ver_…)
+     */
+    versionId: string;
+};
+
+export type DatasetCacheSource = {
+    mount: string;
+    shards: number;
+    bytes: number;
+};
+
+export type DatasetCachePlan = {
+    versionId: string;
+    artifact: string;
+    state: 'cached' | 'evicted';
+    shards: number;
+    bytes: number;
+    /**
+     * materialize: shards not in the cache
+     */
+    copyShards: number;
+    copyBytes: number;
+    /**
+     * materialize: where the copies come from
+     */
+    from: Array<DatasetCacheSource>;
+    /**
+     * materialize: shards in no cache and on no mount
+     */
+    missing: number;
+    /**
+     * evict: shards deleted from the cache
+     */
+    freeShards: number;
+    freeBytes: number;
+    /**
+     * What pins the version
+     */
+    pinned: Array<string>;
+    /**
+     * Why the command cannot proceed (empty when it can)
+     */
+    blocked: Array<string>;
+};
+
+/**
+ * lhotse-shar: Shar shards (cuts and recording tars); nemo-manifest: manifest.<split>.jsonl with the WAV files; cadence-bundle: the registry record, sources and blobs laid out as a content store, for another Cadence instance; hf-hub: an audiofolder dataset pushed to the Hugging Face Hub (approval)
+ */
+export type DatasetExportFormat = 'lhotse-shar' | 'nemo-manifest' | 'cadence-bundle' | 'hf-hub';
+
+export type DatasetExportRequest = {
+    /**
+     * The frozen dataset version (ver_…)
+     */
+    version: string;
+    format: DatasetExportFormat;
+    /**
+     * Slug of the project the export's pipeline run runs in; default the project the version was ingested or imported in
+     */
+    project?: string;
+    /**
+     * cas, or a directory on a writable path mount (mount://exports/<path>); default mount://<storage.export_mount>/<collection>/<version>/<format> when that mount is registered and writable, else cas. Not used by hf-hub
+     */
+    target?: string;
+    /**
+     * hf-hub: the dataset repository <org>/<name>; created when missing
+     */
+    hubRepo?: string;
+    /**
+     * hf-hub: create the repository private (default storage.export_hub_private)
+     */
+    hubPrivate?: boolean;
+};
+
+export type DatasetExportPlan = {
+    versionId: string;
+    collection: string;
+    version: string;
+    format: DatasetExportFormat;
+    projectId: string;
+    /**
+     * The project's slug
+     */
+    project: string;
+    /**
+     * cas, mount://… or hf://datasets/<repo>
+     */
+    target: string;
+    stepKind: string;
+    utterances: number;
+    hours: number;
+    /**
+     * The version's audio bytes (what the export reads)
+     */
+    bytes: number;
+    /**
+     * The version's licence
+     */
+    licence: string;
+    /**
+     * Names of the sources the version holds
+     */
+    sources: Array<string>;
+    /**
+     * True when the real call waits for an approval (hf-hub)
+     */
+    approval: boolean;
+    /**
+     * True when the audio lands unchanged on a mount and becomes copies of its content-store blobs (the cache may then evict the version)
+     */
+    copies: boolean;
+};
+
+/**
+ * The state of the export's pipeline run; done once the export artifact is recorded
+ */
+export type DatasetExportState = 'running' | 'done' | 'failed' | 'cancelled';
+
+export type DatasetExportFile = {
+    /**
+     * Relative to the target (a mount directory) or to files/ in the export artifact
+     */
+    path: string;
+    hash?: string;
+    bytes: number;
+};
+
+export type DatasetExportHub = {
+    repo: string;
+    commit?: string;
+    url?: string;
+    private?: boolean;
+};
+
+export type DatasetExport = {
+    /**
+     * dex_…
+     */
+    id: string;
+    /**
+     * Empty when an export step ran in a project pipeline on a dataset artifact no version names
+     */
+    versionId?: string;
+    collection?: string;
+    version?: string;
+    format: DatasetExportFormat;
+    projectId: string;
+    target: string;
+    state: DatasetExportState;
+    pipelineRunId?: string;
+    stepKind?: string;
+    /**
+     * The export artifact (b3:…): export.json and, with target cas, the files
+     */
+    artifact?: string;
+    /**
+     * Files the export wrote
+     */
+    files: number;
+    bytes: number;
+    /**
+     * Content-store blobs the export placed on a mount unchanged (recorded as mount copies)
+     */
+    copies: number;
+    /**
+     * The first files written (up to 20)
+     */
+    sample?: Array<DatasetExportFile>;
+    hub?: DatasetExportHub;
+    /**
+     * Why the export's pipeline run failed
+     */
+    error?: string;
+    createdBy: Actor;
+    approvalId?: string;
+    createdAt: string;
+    finishedAt?: string;
+    rev: number;
+};
+
+export type DatasetExportList = {
+    items: Array<DatasetExport>;
+};
+
+export type SourceNew = {
+    /**
+     * Lowercase letters, digits, dots, dashes and underscores (parlaspeech-rs)
+     */
+    name: string;
+    /**
+     * The corpus's licence, an SPDX id where one exists (CC-BY-4.0); unknown, none and NOASSERTION are refused for ingest
+     */
+    licence: string;
+    kind: SourceKind;
+    languages?: Array<string>;
+    /**
+     * Where the corpus comes from (a homepage, hf://datasets/…, mount://corpora/…)
+     */
+    url?: string;
+    description?: string;
+};
+
+/**
+ * One change of a source's licence or training clearance
+ */
+export type SourceClearance = {
+    licence: string;
+    trainingCleared: boolean;
+    actor: Actor;
+    at: string;
+    /**
+     * What changed
+     */
+    change?: 'created' | 'licence' | 'cleared' | 'uncleared';
+};
+
+/**
+ * A dataset version registered from the source by an import or an ingest
+ */
+export type SourceIngest = {
+    datasetVersionId: string;
+    pipelineRunId?: string;
+    projectId?: string;
+    stepKind?: string;
+    frozen?: boolean;
+    utterances: number;
+    hours: number;
+    at: string;
+};
+
+export type DatasetQualityCheck = {
+    /**
+     * silence_share: mean non-speech share; clipping_share: share of segments with clipped samples; length_outliers: share of segments whose characters per second lie past the z threshold
+     */
+    name: 'silence_share' | 'clipping_share' | 'length_outliers';
+    status: 'pass' | 'warn';
+    value: number;
+    threshold: number;
+    message?: string;
+};
+
+/**
+ * Data-quality checks of the version (warnings never block a freeze; they are in the card)
+ */
+export type DatasetQuality = {
+    passed: boolean;
+    checks: Array<DatasetQualityCheck>;
+};
+
+/**
+ * The dataset card (Markdown) in the content store
+ */
+export type DatasetCard = {
+    hash: string;
+    bytes?: number;
+};
+
+/**
+ * Binned counts; edges are lower bounds and the last bucket is open
+ */
+export type DatasetHistogram = {
+    edges: Array<number>;
+    counts: Array<number>;
+};
+
+export type DatasetStatsGroup = {
+    origin?: string;
+    /**
+     * caller, bot or mono
+     */
+    role?: string;
+    utterances: number;
+    hours: number;
+};
+
+/**
+ * Statistics the Dataset version panel charts (R53), binned by the step that computed them
+ */
+export type DatasetStats = {
+    durationHistogram?: DatasetHistogram;
+    charsPerSecondHistogram?: DatasetHistogram;
+    levelHistogram?: DatasetHistogram;
+    durationPercentiles?: {
+        p5?: number;
+        p50?: number;
+        p95?: number;
+    };
+    origins?: Array<DatasetStatsGroup>;
+    roles?: Array<DatasetStatsGroup>;
+    sourceRates?: Array<{
+        rate: number;
+        utterances: number;
+    }>;
+    speakers?: number;
+};
+
+/**
+ * One shard of a frozen version: a Lhotse cuts manifest over the version's audio in the content store
+ */
+export type DatasetShard = {
+    index: number;
+    /**
+     * b3 hash of the shard's cuts manifest (shards/cuts.NNNNNN.jsonl.gz)
+     */
+    hash: string;
+    /**
+     * Path of the cuts manifest inside the dataset artifact
+     */
+    path?: string;
+    utterances: number;
+    /**
+     * Audio bytes of the shard's utterances
+     */
+    bytes: number;
+    seconds: number;
+    /**
+     * Where the shard lives now: cas (the content store), mount (evicted; a copy on a mount brings it back with datasets.materialize) or missing (evicted and on no mount). datasets.get reads it from the cache; datasets.list returns what the version recorded when it froze (cas)
+     */
+    location: string;
+    /**
+     * The cache keeps the version from eviction now (a queued or running job names it, a model holding an alias was trained on it, a golden set is built on it); live on datasets.get, false on datasets.list
+     */
+    pinned: boolean;
+};
+
+/**
+ * The project recipe a draft was ingested from
+ */
+export type DatasetRecipe = {
+    projectId?: string;
+    pipeline?: string;
+    /**
+     * The commit of the project repository the pipeline was read at
+     */
+    commit?: string;
+    stepKind?: string;
+    /**
+     * The draft step's parameters
+     */
+    params?: {
+        [key: string]: unknown;
+    };
+};
+
+/**
+ * The freeze of a draft
+ */
+export type DatasetFreezeState = {
+    pipelineRunId?: string;
+    startedAt?: string;
+    frozenAt?: string;
+    actor?: Actor;
+};
+
+export type DatasetLeakage = {
+    passed: boolean;
+    /**
+     * Golden sets checked
+     */
+    goldenSets: number;
+};
+
+export type DatasetFreeze = {
+    version: DatasetVersion;
+    leakage: DatasetLeakage;
+    /**
+     * The freeze pipeline run, when one was started
+     */
+    pipelineRunId?: string;
+};
+
+export type DatasetFreezeRequest = {
+    /**
+     * The draft dataset version (ver_…)
+     */
+    version: string;
+};
+
+export type DatasetPreviewRequest = {
+    /**
+     * The dataset version to preview (ver_…)
+     */
+    version: string;
+    /**
+     * Drop utterances shorter than this (seconds)
+     */
+    minDuration?: number;
+    /**
+     * Drop utterances longer than this (seconds)
+     */
+    maxDuration?: number;
+    minCharsPerSecond?: number;
+    maxCharsPerSecond?: number;
+    /**
+     * Keep only these languages (he matches he-IL)
+     */
+    languages?: Array<string>;
+    /**
+     * Keep only transcripts of these origins
+     */
+    origins?: Array<string>;
+    /**
+     * Keep only these splits
+     */
+    splits?: Array<DatasetSplitName>;
+};
+
+export type DatasetPreviewCell = {
+    language: string;
+    split: DatasetSplitName;
+    utterances: number;
+    hours: number;
+    speakers?: number;
+};
+
+export type DatasetPreview = {
+    versionId: string;
+    frozen: boolean;
+    /**
+     * Kept after the filters
+     */
+    utterances: number;
+    hours: number;
+    /**
+     * Kept utterances and hours per language and split
+     */
+    cells: Array<DatasetPreviewCell>;
+    /**
+     * Utterances each filter drops (the first filter that drops one counts it)
+     */
+    dropped: {
+        [key: string]: number;
+    };
+};
+
+/**
+ * lid: language identification; pseudolabel: a member of the pseudo-label ensemble; align: a CTC aligner for reference texts
+ */
+export type AuxiliaryRole = 'lid' | 'pseudolabel' | 'align';
+
+export type AuxiliaryService = {
+    /**
+     * The service's interface, e.g. grpc-asr (unary Transcribe and GetModelInfo)
+     */
+    kind: string;
+    /**
+     * host:port as the control plane and the worker reach it (e.g. host.docker.internal:50051)
+     */
+    endpoint: string;
+    /**
+     * The wire contract the worker pack that serves the role speaks (its proto package and version)
+     */
+    protocol: string;
+    /**
+     * The secret (secrets.new) the step sends as a bearer token, when the service asks for one
+     */
+    tokenSecret?: string;
+};
+
+/**
+ * The payload of an auxiliary version (auxiliary/<name>): a model a step loads per job ({hfRepo, revision}) or a running service ({service}), never both. Cadence never starts a service. Adoption (projects.adopt) is an approval for everyone and refuses outputsCommercialUse false (R26).
+ *
+ */
+export type AuxiliaryPayload = {
+    roles: Array<AuxiliaryRole>;
+    /**
+     * The licence of the weights and, where it differs, of their training data (SPDX ids where they exist)
+     */
+    licence: string;
+    /**
+     * Whether the licence allows commercial use of what the model outputs (transcripts, labels); false is never adopted
+     */
+    outputsCommercialUse: boolean;
+    /**
+     * Conditions of use the licence check found (attribution, forbidden uses, languages it is fit for)
+     */
+    conditions?: Array<string>;
+    /**
+     * BCP-47 primary tags the model is fit for, or ["*"]
+     */
+    languages: Array<string>;
+    /**
+     * A Hugging Face repository the step loads (offline, from the worker's HF cache)
+     */
+    hfRepo?: string;
+    /**
+     * The pinned revision (commit) of hfRepo
+     */
+    revision?: string;
+    service?: AuxiliaryService;
+    /**
+     * What the worker pack loads the weights with (the pack reads it; the control plane does not)
+     */
+    engine?: string;
+    /**
+     * Where the licence check read the licence (model card, licence page)
+     */
+    sources?: Array<string>;
+    /**
+     * When the licence was checked
+     */
+    checkedAt?: string;
+};
+
+export type AuxiliaryVersion = RegistryVersion & {
+    auxiliary: AuxiliaryPayload;
+    usedBy: Array<UsedBy>;
+    /**
+     * A service auxiliary only, in auxiliaries.get: whether its endpoint answers now, as a pipeline dry run would probe it (Cadence never starts a service; phase 4 · stream B)
+     */
+    reachable?: boolean;
+};
+
+export type AuxiliaryVersionList = {
+    items: Array<AuxiliaryVersion>;
+};
+
+/**
+ * A registry version a step parameter names (x-cadence.registryRef), resolved for the project when the run was planned; in v1 only auxiliary versions resolve, so payload is an AuxiliaryPayload
+ */
+export type StepRegistryRef = {
+    versionId: string;
+    name: string;
+    version: string;
+    payload: AuxiliaryPayload;
+};
+
+/**
+ * open until a person resolves it in the Triage panel: accepted (the best candidate becomes the human transcript), corrected (a person's own text), rejected (dropped)
+ */
+export type TriageState = 'open' | 'accepted' | 'corrected' | 'rejected';
+
+/**
+ * disagreement: no two members within pseudolabel.max_pairwise_wer; lid-mismatch: language identification disagrees with the source's language; lid-unknown: no language identification reached its confidence floor while the step requires one; no-speech: every member returned empty text; too-few-members: fewer than two members produced a hypothesis
+ */
+export type TriageReason = 'disagreement' | 'lid-mismatch' | 'lid-unknown' | 'no-speech' | 'too-few-members';
+
+export type TriageCandidate = {
+    /**
+     * The member's label (its auxiliary or model family, from its hypotheses)
+     */
+    member: string;
+    text: string;
+    /**
+     * Mean pairwise WER of this text to the other members' texts, after the scoring normalizer
+     */
+    meanWer?: number;
+    /**
+     * The member's own confidence, when it reports one
+     */
+    confidence?: number;
+    /**
+     * The language the member detected, when it reports one
+     */
+    language?: string;
+};
+
+export type TriageItem = {
+    /**
+     * tri_…
+     */
+    id: string;
+    projectId: string;
+    state: TriageState;
+    reason: TriageReason;
+    pipelineRunId: string;
+    stepId: string;
+    /**
+     * The segments artifact the item came from (b3:…)
+     */
+    segmentsHash: string;
+    segment: {
+        /**
+         * b3 hash of the canonical 16 kHz PCM16 segment (the utterance identity)
+         */
+        hash: string;
+        /**
+         * mount://<mount>/<path>#t=<start>,<end>&ch=<n>
+         */
+        uri?: string;
+        start?: number;
+        end?: number;
+        channel?: number;
+        /**
+         * caller | bot | mono
+         */
+        role?: string;
+        language?: string;
+        speaker?: string;
+    };
+    candidates: Array<TriageCandidate>;
+    /**
+     * The prefilled best candidate (lowest mean WER to the others)
+     */
+    best: string;
+    lid?: {
+        language?: string;
+        confidence?: number;
+        agrees?: boolean;
+    };
+    confidence: number;
+    createdAt: string;
+    rev: number;
+    resolution?: TriageResolution;
+};
+
+export type TriageItemList = {
+    items: Array<TriageItem>;
+};
+
+export type VersionArchive = {
+    /**
+     * The registry version to archive (ver_…); versions have no revision, so the request names it instead of If-Match
+     */
+    version: string;
+};
+
+/**
+ * A step kind version its pack deprecates: plans warn; from `after` a pipeline file may not newly pin it
+ */
+export type StepKindDeprecation = {
+    /**
+     * From this day (UTC) a pipeline file that does not pin the kind yet is refused when it is saved
+     */
+    after: string;
+    /**
+     * The kind@version to pin instead
+     */
+    replacedBy?: string;
+    /**
+     * Why it is deprecated
+     */
+    note?: string;
+};
+
+/**
+ * Something a plan found that does not stop the run
+ */
+export type PipelineWarning = {
+    /**
+     * step-kind-deprecated: a step pins a kind its pack deprecates; auxiliary-unavailable: an optional step's service does not answer, so the run goes on without that step (phase 4 · stream B); step-kind-unavailable: an optional step's kind is not published or no worker that publishes it is alive, so the step is skipped at start
+     */
+    code: 'step-kind-deprecated' | 'auxiliary-unavailable' | 'step-kind-unavailable';
+    /**
+     * The step id
+     */
+    step?: string;
+    /**
+     * The pinned kind@version
+     */
+    kind?: string;
+    message: string;
+};
+
+/**
+ * A step parameter that names a registry version (x-cadence.registry), resolved through the project's data.lock at the pipeline's commit
+ */
+export type LockedReference = {
+    param: string;
+    /**
+     * The value in the pipeline file (a collection name, @alias or ver_…)
+     */
+    ref: string;
+    /**
+     * The locked version (ver_…)
+     */
+    versionId: string;
+    version: string;
+    collection: string;
+};
+
+/**
+ * open while people annotate; freezing once the approved freeze runs (cut, then the golden set); frozen when the dataset version (and golden set) is registered; failed when the freeze failed (freeze.error says why; batches.freeze again)
+ */
+export type BatchState = 'open' | 'freezing' | 'frozen' | 'failed';
+
+/**
+ * golden-set: double annotation, adjudication and the agreement target, frozen through goldenSets.freeze; training: single annotation suffices, frozen as a dataset version
+ */
+export type BatchPurpose = 'golden-set' | 'training';
+
+/**
+ * campaign: the segment's campaign key, else the source file's folder; month: its recorded month (YYYY-MM), else unknown; duration: annotation.duration_edges_s buckets; confidence: the transcript's confidence in annotation.confidence_edges buckets (none without one)
+ */
+export type BatchStratum = 'campaign' | 'month' | 'duration' | 'confidence';
+
+/**
+ * noise and crosstalk are kept (real telephone audio); an item whose final tags hold foreign or unintelligible is excluded from the freeze
+ */
+export type AnnotationTag = 'noise' | 'crosstalk' | 'foreign' | 'unintelligible';
+
+/**
+ * done: the text is the annotator's transcript; skipped: someone else should take it (it does not count); flagged: a transcript the annotator is unsure of — the item gets a second annotation
+ */
+export type AnnotationStatus = 'done' | 'skipped' | 'flagged';
+
+/**
+ * pending until it has the annotations it needs (one; two for double or flagged items); agreed when they agree (WER ≤ annotation.adjudicate_wer); disputed when they do not (the adjudication queue); adjudicated by batchItems.accept; excluded by adjudication, by annotation.max_skips skips, or by a foreign or unintelligible tag
+ */
+export type BatchItemState = 'pending' | 'agreed' | 'disputed' | 'adjudicated' | 'excluded';
+
+/**
+ * A named span of the transcript (character offsets, end exclusive) that entity_score checks in the hypothesis
+ */
+export type EntitySpan = {
+    start: number;
+    end: number;
+    /**
+     * name, address, or a class of the language pack's itn.yaml (number, date, phone, amount, …)
+     */
+    class: string;
+    /**
+     * The span's text (filled by the server from the transcript)
+     */
+    text?: string;
+};
+
+export type BatchNew = {
+    /**
+     * The batch's name in the project
+     */
+    name: string;
+    description?: string;
+    purpose?: BatchPurpose;
+    /**
+     * The frame: a dataset version (ver_… or dataset/<name>, its newest version) with the segments artifact it was ingested from
+     */
+    dataset?: string;
+    /**
+     * The frame as a segments artifact (cadence.segments/1) instead of a dataset version
+     */
+    segments?: string;
+    /**
+     * Items to sample (default annotation.batch_size)
+     */
+    size?: number;
+    /**
+     * The target channel's role (default annotation.target_role: the caller)
+     */
+    role?: 'caller' | 'bot' | 'mono';
+    /**
+     * Strata of the sample (default all four)
+     */
+    stratify?: Array<BatchStratum>;
+    /**
+     * Share of items annotated twice, blind (default annotation.double_share)
+     */
+    doubleShare?: number;
+    /**
+     * annotation/guidelines/<name>.md in the project repository (default annotation.guidelines)
+     */
+    guidelines?: string;
+    /**
+     * When annotation should end (default annotation.due_days from now); invitations expire then at the latest
+     */
+    dueAt?: string;
+    /**
+     * Seed of the sample (default 0)
+     */
+    seed?: number;
+    /**
+     * Name of the golden set (golden-set/<name>) or dataset version the freeze registers (default the batch's name)
+     */
+    goldenSet?: string;
+    /**
+     * Seconds of the source file played before and after the segment (default annotation.context_s)
+     */
+    contextS?: number;
+};
+
+export type BatchStratumCount = {
+    /**
+     * The stratum's value per stratify dimension
+     */
+    key: {
+        [key: string]: string;
+    };
+    /**
+     * Segments of the frame in this stratum
+     */
+    frame: number;
+    /**
+     * Items sampled from it
+     */
+    sampled: number;
+};
+
+export type BatchProgress = {
+    items: number;
+    pending: number;
+    agreed: number;
+    disputed: number;
+    adjudicated: number;
+    excluded: number;
+    /**
+     * Annotations submitted (skips included)
+     */
+    annotations: number;
+    /**
+     * Items that need two annotations (the double share plus flagged items)
+     */
+    doubleItems: number;
+    /**
+     * Of those
+     */
+    doubleDone: number;
+};
+
+export type BatchAgreement = {
+    /**
+     * Double-annotated items with two transcripts
+     */
+    pairs: number;
+    /**
+     * Words of the first transcripts
+     */
+    refWords: number;
+    /**
+     * Word edits between the first and second transcripts (after the scoring normalizer)
+     */
+    edits: number;
+    /**
+     * Inter-annotator WER = edits / refWords (absent without pairs)
+     */
+    iaaWer?: number;
+    /**
+     * annotation.max_iaa_wer
+     */
+    target: number;
+    /**
+     * iaaWer is at or under the target (false without pairs)
+     */
+    meets: boolean;
+};
+
+/**
+ * End of utterance from per-channel voice activity: the target's last speech end to the other party's next speech start
+ */
+export type BatchEou = {
+    /**
+     * Items with a measured gap
+     */
+    items: number;
+    p50GapS?: number;
+    p90GapS?: number;
+    /**
+     * Items where the other party started before the target stopped (negative gap)
+     */
+    overlaps?: number;
+};
+
+export type BatchReviewer = {
+    id: string;
+    name: string;
+    role: 'admin' | 'annotator' | 'adjudicator';
+    annotations: number;
+    expiresAt?: string;
+};
+
+export type BatchGuidelines = {
+    name: string;
+    /**
+     * annotation/guidelines/<name>.md
+     */
+    path: string;
+    /**
+     * The commit the batch pins
+     */
+    commit: string;
+};
+
+export type BatchFreezeState = {
+    approvalId?: string;
+    pipelineRunId?: string;
+    datasetVersionId?: string;
+    goldenSetVersionId?: string;
+    iaaWer?: number;
+    items?: number;
+    error?: string;
+    startedAt?: string;
+    frozenAt?: string;
+};
+
+export type Batch = {
+    /**
+     * anb_…
+     */
+    id: string;
+    projectId: string;
+    name: string;
+    description?: string;
+    purpose: BatchPurpose;
+    state: BatchState;
+    rev: number;
+    role: string;
+    stratify: Array<BatchStratum>;
+    doubleShare: number;
+    seed: number;
+    contextS: number;
+    dueAt?: string;
+    guidelines: BatchGuidelines;
+    frame: {
+        datasetVersionId?: string;
+        segmentsHash: string;
+        /**
+         * The source the segments came from
+         */
+        source: string;
+        /**
+         * Segments of the target role in the frame
+         */
+        segments: number;
+    };
+    strata: Array<BatchStratumCount>;
+    progress: BatchProgress;
+    agreement: BatchAgreement;
+    adjudication: {
+        /**
+         * Disputed items waiting
+         */
+        queue: number;
+    };
+    eou: BatchEou;
+    reviewers: Array<BatchReviewer>;
+    /**
+     * The name the freeze registers (golden-set/<name>, or dataset/<name>-annotated)
+     */
+    goldenSet: string;
+    freeze?: BatchFreezeState;
+    canFreeze: {
+        ok: boolean;
+        reasons: Array<string>;
+    };
+    /**
+     * Dry run only: the items that would be sampled
+     */
+    sample?: Array<BatchItem>;
+    createdBy: Actor;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type BatchList = {
+    items: Array<Batch>;
+};
+
+export type BatchSegment = {
+    /**
+     * b3 hash of the canonical 16 kHz PCM16 segment
+     */
+    hash: string;
+    /**
+     * mount://<mount>/<path>#t=<start>,<end>&ch=<n>
+     */
+    uri: string;
+    /**
+     * The source file's mount URI
+     */
+    file?: string;
+    start: number;
+    end: number;
+    duration: number;
+    channel: number;
+    role: string;
+    language?: string;
+    speaker?: string;
+    sourceRate?: number;
+    codec?: string;
+    crosstalk?: number;
+};
+
+export type ContextTurn = {
+    /**
+     * Seconds in the source file
+     */
+    start: number;
+    end: number;
+    channel?: number;
+    role?: string;
+    text: string;
+};
+
+export type Annotation = {
+    /**
+     * ann_…
+     */
+    id: string;
+    itemId: string;
+    annotator: Actor;
+    status: AnnotationStatus;
+    text: string;
+    tags: Array<AnnotationTag>;
+    entities: Array<EntitySpan>;
+    note?: string;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type BatchItem = {
+    /**
+     * bit_… — also the media id of its audio window (audio.sign, peaks.get, tracks.get)
+     */
+    id: string;
+    batchId: string;
+    position: number;
+    state: BatchItemState;
+    rev: number;
+    segment: BatchSegment;
+    /**
+     * The audio served under the item's id: the segment plus contextS each side, every channel of the source file
+     */
+    window: {
+        /**
+         * Seconds in the source file
+         */
+        start: number;
+        end: number;
+        channels: number;
+        /**
+         * Role per channel, when known
+         */
+        roles?: Array<string>;
+    };
+    /**
+     * The best hypothesis there is (pseudo-label, a member's text, the ingest's transcript); empty when none
+     */
+    prefill: {
+        text: string;
+        origin: string;
+        confidence?: number;
+    };
+    context: {
+        /**
+         * The other channel's transcribed turns in the window (the bot's TTS script): crosstalk and overlap at a glance
+         */
+        turns: Array<ContextTurn>;
+    };
+    strata: {
+        [key: string]: string;
+    };
+    /**
+     * Sampled for double annotation
+     */
+    double: boolean;
+    /**
+     * Transcripts the item needs (1, or 2 when double or flagged)
+     */
+    required: number;
+    eou?: {
+        /**
+         * The target's last speech end (file seconds)
+         */
+        speechEnd?: number;
+        /**
+         * The other channel's next speech start
+         */
+        nextSpeech?: number;
+        gapS?: number;
+    };
+    /**
+     * The annotations the caller may see: a reviewer only their own (blind); the admin and adjudicators every one
+     */
+    annotations: Array<Annotation>;
+    /**
+     * WER between the two transcripts of a double item (not shown to annotators)
+     */
+    wer?: number;
+    /**
+     * The accepted transcript (agreed or adjudicated)
+     */
+    final?: {
+        text?: string;
+        tags?: Array<AnnotationTag>;
+        entities?: Array<EntitySpan>;
+        by?: Actor;
+        at?: string;
+        /**
+         * The annotation it came from (ann_…), when taken as is
+         */
+        from?: string;
+    };
+};
+
+export type BatchItemList = {
+    items: Array<BatchItem>;
+    /**
+     * queue=mine: the item to annotate next (bit_…), absent when nothing is left
+     */
+    next?: string;
+};
+
+export type AnnotationNew = {
+    status: AnnotationStatus;
+    /**
+     * The transcript (required unless skipped)
+     */
+    text?: string;
+    tags?: Array<AnnotationTag>;
+    entities?: Array<EntitySpan>;
+    note?: string;
+};
+
+export type BatchItemAccept = {
+    /**
+     * Take this annotation (ann_…) as the final transcript
+     */
+    from?: string;
+    /**
+     * The final transcript (when not from an annotation)
+     */
+    text?: string;
+    tags?: Array<AnnotationTag>;
+    entities?: Array<EntitySpan>;
+    /**
+     * Leave the item out of the freeze
+     */
+    exclude?: boolean;
+};
+
+export type BatchFreeze = {
+    batch: Batch;
+    /**
+     * Items that freeze
+     */
+    items: number;
+    excluded: number;
+    hours: number;
+    iaaWer?: number;
+    /**
+     * The cut's pipeline run (approved freeze)
+     */
+    pipelineRunId?: string;
+    /**
+     * The draft dataset version the cut freezes
+     */
+    datasetVersionId?: string;
+};
+
+export type Invitation = {
+    /**
+     * The invitation credential (crd_…); credentials.revoke ends it
+     */
+    id: string;
+    batchId: string;
+    reviewer: {
+        id: string;
+        name: string;
+    };
+    role: 'annotator' | 'adjudicator';
+    expiresAt: string;
+    createdAt: string;
+    lastUsedAt?: string;
+    revokedAt?: string;
+};
+
+export type InvitationCreated = Invitation & {
+    /**
+     * The invitation token (cri_…), shown once
+     */
+    token: string;
+    /**
+     * The link to send: the web app opens it, signs the reviewer in and shows the batch
+     */
+    url: string;
+};
+
+export type InvitationList = {
+    items: Array<Invitation>;
+};
+
+export type InvitationNew = {
+    name: Username;
+    role?: 'annotator' | 'adjudicator';
+    expiresAt?: string;
+};
+
+export type AuthAccept = {
+    token: string;
+};
+
+/**
+ * A reviewer's session: one batch, play without download, nothing else
+ */
+export type ReviewerScope = {
+    batchId: string;
+    projectId: string;
+    role: 'annotator' | 'adjudicator';
+    expiresAt?: string;
+};
+
+export type TriageAccept = {
+    tags?: Array<AnnotationTag>;
+};
+
+export type TriageCorrect = {
+    text: string;
+    tags?: Array<AnnotationTag>;
+};
+
+export type TriageReject = {
+    reason?: string;
+};
+
+export type TriageResolution = {
+    /**
+     * The human transcript written (accept, correct)
+     */
+    text?: string;
+    tags?: Array<AnnotationTag>;
+    /**
+     * Why the segment was dropped (reject)
+     */
+    reason?: string;
+    utteranceId?: string;
+    transcriptId?: string;
+    by: Actor;
+    at: string;
+};
+
+export type AudioTrackChannel = {
+    channel: number;
+    role?: string;
+    /**
+     * Level per hop in dBFS (RMS), floored at -100
+     */
+    levelDb: Array<number>;
+    /**
+     * Speech regions [start, end] in seconds from the audio's start
+     */
+    speech: Array<[
+        number,
+        number
+    ]>;
+    noiseFloorDb?: number;
+    /**
+     * Estimated bandwidth
+     */
+    bandwidthHz: number;
+    /**
+     * 8 kHz origin (bandwidth at or under 4 kHz): the spectrogram stops at 4 kHz
+     */
+    narrowband: boolean;
+};
+
+export type AudioTracks = {
+    utteranceId: string;
+    hopS: number;
+    durationS: number;
+    /**
+     * The audio's own sample rate
+     */
+    sampleRate: number;
+    /**
+     * Where the audio starts in its source file (an item's window), seconds
+     */
+    start?: number;
+    channels: Array<AudioTrackChannel>;
+    /**
+     * The widest channel's estimated bandwidth
+     */
+    bandwidthHz: number;
+    narrowband: boolean;
+    /**
+     * End of utterance (an item window with a target and another channel)
+     */
+    eou?: {
+        speechEnd?: number;
+        nextSpeech?: number;
+        gapS?: number;
+    };
+};
+
+/**
+ * Word timings of the golden set's reference texts (align_reference, R51/R54): the newest alignment artifact of its dataset artifact. Emission delay (latency_score) reads it; with no allowed aligner for the language the references stay unaligned and emission delay is n/a
+ */
+export type GoldenSetAlignment = {
+    /**
+     * aln_…
+     */
+    id: string;
+    /**
+     * The alignment artifact (b3:…, cadence.alignment/1: one row per utterance with words [{index, word, start, end, score}] or a reason)
+     */
+    artifact: string;
+    /**
+     * The aligner auxiliary, auxiliary/<name>
+     */
+    aligner: string;
+    alignerVersionId?: string;
+    /**
+     * torchaudio.forced_align or ctc-viterbi; empty when nothing was aligned
+     */
+    method?: string;
+    utterances: number;
+    /**
+     * Utterances with word timings
+     */
+    aligned: number;
+    /**
+     * Timed words
+     */
+    words: number;
+    /**
+     * Why utterances stayed unaligned (distinct, at most five)
+     */
+    reasons?: Array<string>;
+    pipelineRunId?: string;
+    createdAt: string;
+};
+
+/**
+ * Emission delay (R54; Yu et al., FastEmit, ICASSP 2021): each matched reference word's aligned end to the first partial from which the final's word stays in place, at real-time pace; PR50 and PR90 over the cell's words. available false with the reason when the golden set has no aligned references — never an estimate
+ */
+export type EvalEmissionDelay = {
+    available: boolean;
+    reason?: string;
+    /**
+     * {auxiliary, versionId, hfRepo, revision} of the alignment
+     */
+    aligner?: {
+        [key: string]: unknown;
+    };
+    utterances?: number;
+    alignedUtterances?: number;
+    /**
+     * Reference words of the aligned utterances
+     */
+    words?: number;
+    /**
+     * Timed reference words the final matched (the delays measured)
+     */
+    matchedWords?: number;
+    pr50Ms?: number;
+    pr90Ms?: number;
+    meanMs?: number;
+    /**
+     * Words shown before their aligned end (negative delays
+     */
+    earlyWords?: number;
+    unalignedUtterances?: number;
+    /**
+     * Utterances whose alignment was made for another text, or whose words the normalizer does not tie to tokens
+     */
+    mismatchedUtterances?: number;
+};
+
 export type SecretNewWritable = {
     name: SecretName;
     kind: SecretKind;
@@ -7424,9 +9153,24 @@ export type MixId = string;
 export type LeaseId = string;
 
 /**
- * Utterance id (utt_…) or the audio's content hash (b3:…)
+ * Utterance id (utt_…) or the audio's content hash (b3:…); an annotation batch item (bit_…) or a triage item (tri_…) names its segment's window of the source file, every channel (phase 4)
  */
 export type UtteranceRef = string;
+
+/**
+ * Annotation batch id (anb_…)
+ */
+export type BatchId = string;
+
+/**
+ * Batch item id (bit_…)
+ */
+export type BatchItemId = string;
+
+/**
+ * Triage item id (tri_…)
+ */
+export type TriageItemId = string;
 
 /**
  * Artifact hash (b3:<64 hex>, BLAKE3-256 of the content)
@@ -8539,6 +10283,10 @@ export type ProjectsAdoptResponses = {
      * Adopted (or, for a dry run, what would be adopted); ETag is the project's new revision
      */
     200: Adoption;
+    /**
+     * Gated; a person decides the approval on the approvals topic
+     */
+    202: ApprovalAccepted;
 };
 
 export type ProjectsAdoptResponse = ProjectsAdoptResponses[keyof ProjectsAdoptResponses];
@@ -12180,6 +13928,46 @@ export type SourcesListResponses = {
 
 export type SourcesListResponse = SourcesListResponses[keyof SourcesListResponses];
 
+export type SourcesNewData = {
+    body: SourceNew;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/registry/sources';
+};
+
+export type SourcesNewErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type SourcesNewError = SourcesNewErrors[keyof SourcesNewErrors];
+
+export type SourcesNewResponses = {
+    /**
+     * Dry run — the source that would be registered; nothing was written
+     */
+    200: Source;
+    /**
+     * Registered
+     */
+    201: Source;
+};
+
+export type SourcesNewResponse = SourcesNewResponses[keyof SourcesNewResponses];
+
 export type SourcesGetData = {
     body?: never;
     path: {
@@ -14249,7 +16037,7 @@ export type AudioGetData = {
     };
     path: {
         /**
-         * Utterance id (utt_…) or the audio's content hash (b3:…)
+         * Utterance id (utt_…) or the audio's content hash (b3:…); an annotation batch item (bit_…) or a triage item (tri_…) names its segment's window of the source file, every channel (phase 4)
          */
         id: string;
     };
@@ -14308,7 +16096,7 @@ export type AudioSignData = {
     body?: AudioSignRequest;
     path: {
         /**
-         * Utterance id (utt_…) or the audio's content hash (b3:…)
+         * Utterance id (utt_…) or the audio's content hash (b3:…); an annotation batch item (bit_…) or a triage item (tri_…) names its segment's window of the source file, every channel (phase 4)
          */
         id: string;
     };
@@ -14338,7 +16126,7 @@ export type PeaksGetData = {
     body?: never;
     path: {
         /**
-         * Utterance id (utt_…) or the audio's content hash (b3:…)
+         * Utterance id (utt_…) or the audio's content hash (b3:…); an annotation batch item (bit_…) or a triage item (tri_…) names its segment's window of the source file, every channel (phase 4)
          */
         id: string;
     };
@@ -14381,7 +16169,7 @@ export type SpectrogramGetData = {
     body?: never;
     path: {
         /**
-         * Utterance id (utt_…) or the audio's content hash (b3:…)
+         * Utterance id (utt_…) or the audio's content hash (b3:…); an annotation batch item (bit_…) or a triage item (tri_…) names its segment's window of the source file, every channel (phase 4)
          */
         id: string;
     };
@@ -14416,7 +16204,7 @@ export type WordsGetData = {
     body?: never;
     path: {
         /**
-         * Utterance id (utt_…) or the audio's content hash (b3:…)
+         * Utterance id (utt_…) or the audio's content hash (b3:…); an annotation batch item (bit_…) or a triage item (tri_…) names its segment's window of the source file, every channel (phase 4)
          */
         id: string;
     };
@@ -14585,17 +16373,15 @@ export type MountsListError = MountsListErrors[keyof MountsListErrors];
 
 export type MountsListResponses = {
     /**
-     * Shape defined when the operation's phase implements it
+     * Mounts by name
      */
-    200: {
-        [key: string]: unknown;
-    };
+    200: MountList;
 };
 
 export type MountsListResponse = MountsListResponses[keyof MountsListResponses];
 
 export type MountsNewData = {
-    body?: PlannedBody;
+    body: MountNew;
     headers: {
         /**
          * Client-chosen key; a repeat with the same key returns the original result
@@ -14623,9 +16409,1234 @@ export type MountsNewError = MountsNewErrors[keyof MountsNewErrors];
 
 export type MountsNewResponses = {
     /**
+     * Dry run — the mount as it would be registered; nothing changed
+     */
+    200: Mount;
+    /**
+     * The registered mount (the approved request)
+     */
+    201: Mount;
+    /**
      * Gated; a person decides the approval on the approvals topic
      */
     202: ApprovalAccepted;
 };
 
 export type MountsNewResponse = MountsNewResponses[keyof MountsNewResponses];
+
+export type MountsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Mount id (mnt_…) or name
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/mounts/{id}';
+};
+
+export type MountsGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type MountsGetError = MountsGetErrors[keyof MountsGetErrors];
+
+export type MountsGetResponses = {
+    /**
+     * The mount
+     */
+    200: Mount;
+};
+
+export type MountsGetResponse = MountsGetResponses[keyof MountsGetResponses];
+
+export type MountsScanData = {
+    body?: MountScan;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Mount id (mnt_…) or name
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/mounts/{id}:scan';
+};
+
+export type MountsScanErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type MountsScanError = MountsScanErrors[keyof MountsScanErrors];
+
+export type MountsScanResponses = {
+    /**
+     * Dry run — the mount as it is now; nothing queued
+     */
+    200: Mount;
+    /**
+     * Accepted; follow the job on job.{jobId}
+     */
+    202: JobAccepted;
+};
+
+export type MountsScanResponse = MountsScanResponses[keyof MountsScanResponses];
+
+export type MountsVerifyData = {
+    body?: never;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Mount id (mnt_…) or name
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/mounts/{id}:verify';
+};
+
+export type MountsVerifyErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type MountsVerifyError = MountsVerifyErrors[keyof MountsVerifyErrors];
+
+export type MountsVerifyResponses = {
+    /**
+     * Dry run — the mount as it is now; nothing queued
+     */
+    200: Mount;
+    /**
+     * Accepted; follow the job on job.{jobId}
+     */
+    202: JobAccepted;
+};
+
+export type MountsVerifyResponse = MountsVerifyResponses[keyof MountsVerifyResponses];
+
+export type StorageGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/storage';
+};
+
+export type StorageGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type StorageGetError = StorageGetErrors[keyof StorageGetErrors];
+
+export type StorageGetResponses = {
+    /**
+     * The cache now
+     */
+    200: StorageUse;
+};
+
+export type StorageGetResponse = StorageGetResponses[keyof StorageGetResponses];
+
+export type DatasetsMaterializeData = {
+    body: DatasetCacheRequest;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/registry/datasets:materialize';
+};
+
+export type DatasetsMaterializeErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type DatasetsMaterializeError = DatasetsMaterializeErrors[keyof DatasetsMaterializeErrors];
+
+export type DatasetsMaterializeResponses = {
+    /**
+     * Dry run — what would be copied and from where; nothing changed
+     */
+    200: DatasetCachePlan;
+    /**
+     * Accepted; follow the job on job.{jobId}
+     */
+    202: JobAccepted;
+};
+
+export type DatasetsMaterializeResponse = DatasetsMaterializeResponses[keyof DatasetsMaterializeResponses];
+
+export type DatasetsEvictData = {
+    body: DatasetCacheRequest;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/registry/datasets:evict';
+};
+
+export type DatasetsEvictErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type DatasetsEvictError = DatasetsEvictErrors[keyof DatasetsEvictErrors];
+
+export type DatasetsEvictResponses = {
+    /**
+     * Dry run — what would be freed and what blocks it; nothing changed
+     */
+    200: DatasetCachePlan;
+    /**
+     * Accepted; follow the job on job.{jobId}
+     */
+    202: JobAccepted;
+};
+
+export type DatasetsEvictResponse = DatasetsEvictResponses[keyof DatasetsEvictResponses];
+
+export type DatasetsExportData = {
+    body: DatasetExportRequest;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/registry/datasets:export';
+};
+
+export type DatasetsExportErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type DatasetsExportError = DatasetsExportErrors[keyof DatasetsExportErrors];
+
+export type DatasetsExportResponses = {
+    /**
+     * Dry run — the export as it would run; nothing started
+     */
+    200: DatasetExportPlan;
+    /**
+     * The export, started: its pipeline run is queued (follow entity.export.{id} or pipeline_run.{pipelineRunId}); an identical earlier export reused by its input hash comes back done
+     */
+    201: DatasetExport;
+    /**
+     * Gated; a person decides the approval on the approvals topic
+     */
+    202: ApprovalAccepted;
+};
+
+export type DatasetsExportResponse = DatasetsExportResponses[keyof DatasetsExportResponses];
+
+export type ExportsListData = {
+    body?: never;
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        /**
+         * Only exports of this dataset version (ver_…)
+         */
+        version?: string;
+        limit?: number;
+    };
+    url: '/projects/{p}/exports';
+};
+
+export type ExportsListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type ExportsListError = ExportsListErrors[keyof ExportsListErrors];
+
+export type ExportsListResponses = {
+    /**
+     * Exports, newest first
+     */
+    200: DatasetExportList;
+};
+
+export type ExportsListResponse = ExportsListResponses[keyof ExportsListResponses];
+
+export type ExportsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Export id (dex_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/exports/{id}';
+};
+
+export type ExportsGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type ExportsGetError = ExportsGetErrors[keyof ExportsGetErrors];
+
+export type ExportsGetResponses = {
+    /**
+     * The export
+     */
+    200: DatasetExport;
+};
+
+export type ExportsGetResponse = ExportsGetResponses[keyof ExportsGetResponses];
+
+export type DatasetsPreviewData = {
+    body: DatasetPreviewRequest;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/registry/datasets:preview';
+};
+
+export type DatasetsPreviewErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type DatasetsPreviewError = DatasetsPreviewErrors[keyof DatasetsPreviewErrors];
+
+export type DatasetsPreviewResponses = {
+    /**
+     * The preview
+     */
+    200: DatasetPreview;
+};
+
+export type DatasetsPreviewResponse = DatasetsPreviewResponses[keyof DatasetsPreviewResponses];
+
+export type DatasetsFreezeData = {
+    body: DatasetFreezeRequest;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/registry/datasets:freeze';
+};
+
+export type DatasetsFreezeErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type DatasetsFreezeError = DatasetsFreezeErrors[keyof DatasetsFreezeErrors];
+
+export type DatasetsFreezeResponses = {
+    /**
+     * Dry run (the leakage check passed; nothing started), or the version is already frozen
+     */
+    200: DatasetFreeze;
+    /**
+     * Accepted; follow the job on job.{jobId}
+     */
+    202: JobAccepted;
+};
+
+export type DatasetsFreezeResponse = DatasetsFreezeResponses[keyof DatasetsFreezeResponses];
+
+export type UtterancesSearchData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Text the transcript contains (case-insensitive)
+         */
+        q?: string;
+        /**
+         * Source id (src_…) or name
+         */
+        source?: string;
+        /**
+         * Language (he or he-IL; either matches the other)
+         */
+        language?: string;
+        /**
+         * Speaker id within the source
+         */
+        speaker?: string;
+        /**
+         * Transcript origin (human, pseudo-label, model:<id>)
+         */
+        origin?: string;
+        /**
+         * Shortest duration in seconds
+         */
+        minDuration?: number;
+        /**
+         * Longest duration in seconds
+         */
+        maxDuration?: number;
+        /**
+         * Dataset version id (ver_…)
+         */
+        dataset?: string;
+        /**
+         * Split within the dataset version (needs dataset)
+         */
+        split?: DatasetSplitName;
+        /**
+         * Cursor: the `next` value of the previous page
+         */
+        after?: string;
+        limit?: number;
+    };
+    url: '/registry/utterances:search';
+};
+
+export type UtterancesSearchErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type UtterancesSearchError = UtterancesSearchErrors[keyof UtterancesSearchErrors];
+
+export type UtterancesSearchResponses = {
+    /**
+     * A page of matching utterances, oldest first
+     */
+    200: UtteranceList;
+};
+
+export type UtterancesSearchResponse = UtterancesSearchResponses[keyof UtterancesSearchResponses];
+
+export type AuxiliariesListData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)
+         */
+        collection?: string;
+        /**
+         * Only versions in this state
+         */
+        state?: VersionState;
+    };
+    url: '/registry/auxiliaries';
+};
+
+export type AuxiliariesListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type AuxiliariesListError = AuxiliariesListErrors[keyof AuxiliariesListErrors];
+
+export type AuxiliariesListResponses = {
+    /**
+     * Auxiliary versions, newest first
+     */
+    200: AuxiliaryVersionList;
+};
+
+export type AuxiliariesListResponse = AuxiliariesListResponses[keyof AuxiliariesListResponses];
+
+export type AuxiliariesGetData = {
+    body?: never;
+    path: {
+        /**
+         * Registry version id (ver_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/registry/auxiliaries/{id}';
+};
+
+export type AuxiliariesGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type AuxiliariesGetError = AuxiliariesGetErrors[keyof AuxiliariesGetErrors];
+
+export type AuxiliariesGetResponses = {
+    /**
+     * The version
+     */
+    200: AuxiliaryVersion;
+};
+
+export type AuxiliariesGetResponse = AuxiliariesGetResponses[keyof AuxiliariesGetResponses];
+
+export type TriageListData = {
+    body?: never;
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        state?: TriageState;
+        reason?: TriageReason;
+        /**
+         * Only items from this pipeline run (plr_…)
+         */
+        pipelineRun?: string;
+        limit?: number;
+    };
+    url: '/projects/{p}/triage';
+};
+
+export type TriageListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type TriageListError = TriageListErrors[keyof TriageListErrors];
+
+export type TriageListResponses = {
+    /**
+     * Triage items, newest first
+     */
+    200: TriageItemList;
+};
+
+export type TriageListResponse = TriageListResponses[keyof TriageListResponses];
+
+export type VersionsArchiveData = {
+    body: VersionArchive;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/registry/versions:archive';
+};
+
+export type VersionsArchiveErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type VersionsArchiveError = VersionsArchiveErrors[keyof VersionsArchiveErrors];
+
+export type VersionsArchiveResponses = {
+    /**
+     * The archived version (for a dry run, the version as it is; nothing changed)
+     */
+    200: RegistryVersion;
+};
+
+export type VersionsArchiveResponse = VersionsArchiveResponses[keyof VersionsArchiveResponses];
+
+export type BatchesListData = {
+    body?: never;
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        state?: BatchState;
+        limit?: number;
+    };
+    url: '/projects/{p}/batches';
+};
+
+export type BatchesListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type BatchesListError = BatchesListErrors[keyof BatchesListErrors];
+
+export type BatchesListResponses = {
+    /**
+     * Batches, newest first
+     */
+    200: BatchList;
+};
+
+export type BatchesListResponse = BatchesListResponses[keyof BatchesListResponses];
+
+export type BatchesNewData = {
+    body: BatchNew;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/projects/{p}/batches';
+};
+
+export type BatchesNewErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type BatchesNewError = BatchesNewErrors[keyof BatchesNewErrors];
+
+export type BatchesNewResponses = {
+    /**
+     * Dry run — the batch as it would be (strata and sample); nothing was written
+     */
+    200: Batch;
+    /**
+     * The batch
+     */
+    201: Batch;
+};
+
+export type BatchesNewResponse = BatchesNewResponses[keyof BatchesNewResponses];
+
+export type BatchesGetData = {
+    body?: never;
+    path: {
+        /**
+         * Annotation batch id (anb_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/batches/{id}';
+};
+
+export type BatchesGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type BatchesGetError = BatchesGetErrors[keyof BatchesGetErrors];
+
+export type BatchesGetResponses = {
+    /**
+     * The batch
+     */
+    200: Batch;
+};
+
+export type BatchesGetResponse = BatchesGetResponses[keyof BatchesGetResponses];
+
+export type BatchesFreezeData = {
+    body?: never;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Annotation batch id (anb_…)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/batches/{id}:freeze';
+};
+
+export type BatchesFreezeErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type BatchesFreezeError = BatchesFreezeErrors[keyof BatchesFreezeErrors];
+
+export type BatchesFreezeResponses = {
+    /**
+     * Dry run — what would freeze; or the approved freeze, started (pipelineRunId)
+     */
+    200: BatchFreeze;
+    /**
+     * Gated; a person decides the approval on the approvals topic
+     */
+    202: ApprovalAccepted;
+};
+
+export type BatchesFreezeResponse = BatchesFreezeResponses[keyof BatchesFreezeResponses];
+
+export type BatchItemsListData = {
+    body?: never;
+    path: {
+        /**
+         * Annotation batch id (anb_…)
+         */
+        id: string;
+    };
+    query?: {
+        queue?: 'mine' | 'adjudication' | 'all';
+        state?: BatchItemState;
+        limit?: number;
+    };
+    url: '/batches/{id}/batch-items';
+};
+
+export type BatchItemsListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type BatchItemsListError = BatchItemsListErrors[keyof BatchItemsListErrors];
+
+export type BatchItemsListResponses = {
+    /**
+     * Items in batch order
+     */
+    200: BatchItemList;
+};
+
+export type BatchItemsListResponse = BatchItemsListResponses[keyof BatchItemsListResponses];
+
+export type BatchItemsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Annotation batch id (anb_…)
+         */
+        id: string;
+        /**
+         * Batch item id (bit_…)
+         */
+        item: string;
+    };
+    query?: never;
+    url: '/batches/{id}/batch-items/{item}';
+};
+
+export type BatchItemsGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type BatchItemsGetError = BatchItemsGetErrors[keyof BatchItemsGetErrors];
+
+export type BatchItemsGetResponses = {
+    /**
+     * The item
+     */
+    200: BatchItem;
+};
+
+export type BatchItemsGetResponse = BatchItemsGetResponses[keyof BatchItemsGetResponses];
+
+export type BatchItemsAcceptData = {
+    body: BatchItemAccept;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Annotation batch id (anb_…)
+         */
+        id: string;
+        /**
+         * Batch item id (bit_…)
+         */
+        item: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/batches/{id}/batch-items/{item}:accept';
+};
+
+export type BatchItemsAcceptErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type BatchItemsAcceptError = BatchItemsAcceptErrors[keyof BatchItemsAcceptErrors];
+
+export type BatchItemsAcceptResponses = {
+    /**
+     * The adjudicated item
+     */
+    200: BatchItem;
+};
+
+export type BatchItemsAcceptResponse = BatchItemsAcceptResponses[keyof BatchItemsAcceptResponses];
+
+export type AnnotationsNewData = {
+    body: AnnotationNew;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path: {
+        /**
+         * Annotation batch id (anb_…)
+         */
+        id: string;
+        /**
+         * Batch item id (bit_…)
+         */
+        item: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/batches/{id}/batch-items/{item}/annotations';
+};
+
+export type AnnotationsNewErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type AnnotationsNewError = AnnotationsNewErrors[keyof AnnotationsNewErrors];
+
+export type AnnotationsNewResponses = {
+    /**
+     * Dry run — the item as it would be
+     */
+    200: BatchItem;
+    /**
+     * The item with the caller's annotation
+     */
+    201: BatchItem;
+};
+
+export type AnnotationsNewResponse = AnnotationsNewResponses[keyof AnnotationsNewResponses];
+
+export type InvitationsListData = {
+    body?: never;
+    path: {
+        /**
+         * Annotation batch id (anb_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/batches/{id}/invitations';
+};
+
+export type InvitationsListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type InvitationsListError = InvitationsListErrors[keyof InvitationsListErrors];
+
+export type InvitationsListResponses = {
+    /**
+     * Invitations, newest first (revoked and expired ones included)
+     */
+    200: InvitationList;
+};
+
+export type InvitationsListResponse = InvitationsListResponses[keyof InvitationsListResponses];
+
+export type InvitationsNewData = {
+    body: InvitationNew;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path: {
+        /**
+         * Annotation batch id (anb_…)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/batches/{id}/invitations';
+};
+
+export type InvitationsNewErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type InvitationsNewError = InvitationsNewErrors[keyof InvitationsNewErrors];
+
+export type InvitationsNewResponses = {
+    /**
+     * Dry run — the invitation as it would be, without a link
+     */
+    200: Invitation;
+    /**
+     * The invitation with its link (shown once)
+     */
+    201: InvitationCreated;
+};
+
+export type InvitationsNewResponse = InvitationsNewResponses[keyof InvitationsNewResponses];
+
+export type AuthAcceptData = {
+    body: AuthAccept;
+    path?: never;
+    query?: never;
+    url: '/auth:accept';
+};
+
+export type AuthAcceptErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type AuthAcceptError = AuthAcceptErrors[keyof AuthAcceptErrors];
+
+export type AuthAcceptResponses = {
+    /**
+     * Signed in as the reviewer; the session reaches only the invitation's batch
+     */
+    200: AuthStatus;
+};
+
+export type AuthAcceptResponse = AuthAcceptResponses[keyof AuthAcceptResponses];
+
+export type TriageAcceptData = {
+    body?: TriageAccept;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Triage item id (tri_…)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/triage/{id}:accept';
+};
+
+export type TriageAcceptErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type TriageAcceptError = TriageAcceptErrors[keyof TriageAcceptErrors];
+
+export type TriageAcceptResponses = {
+    /**
+     * The resolved item
+     */
+    200: TriageItem;
+};
+
+export type TriageAcceptResponse = TriageAcceptResponses[keyof TriageAcceptResponses];
+
+export type TriageCorrectData = {
+    body: TriageCorrect;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Triage item id (tri_…)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/triage/{id}:correct';
+};
+
+export type TriageCorrectErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type TriageCorrectError = TriageCorrectErrors[keyof TriageCorrectErrors];
+
+export type TriageCorrectResponses = {
+    /**
+     * The resolved item
+     */
+    200: TriageItem;
+};
+
+export type TriageCorrectResponse = TriageCorrectResponses[keyof TriageCorrectResponses];
+
+export type TriageRejectData = {
+    body?: TriageReject;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Triage item id (tri_…)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/triage/{id}:reject';
+};
+
+export type TriageRejectErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type TriageRejectError = TriageRejectErrors[keyof TriageRejectErrors];
+
+export type TriageRejectResponses = {
+    /**
+     * The resolved item
+     */
+    200: TriageItem;
+};
+
+export type TriageRejectResponse = TriageRejectResponses[keyof TriageRejectResponses];
+
+export type TracksGetData = {
+    body?: never;
+    path: {
+        /**
+         * Utterance id (utt_…) or the audio's content hash (b3:…); an annotation batch item (bit_…) or a triage item (tri_…) names its segment's window of the source file, every channel (phase 4)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Resolution: milliseconds per level value, a multiple of 10
+         */
+        hopMs?: number;
+    };
+    url: '/registry/utterances/{id}/tracks';
+};
+
+export type TracksGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type TracksGetError = TracksGetErrors[keyof TracksGetErrors];
+
+export type TracksGetResponses = {
+    /**
+     * The tracks
+     */
+    200: AudioTracks;
+};
+
+export type TracksGetResponse = TracksGetResponses[keyof TracksGetResponses];

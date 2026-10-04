@@ -44,6 +44,7 @@ const TABLE: Record<DefaultWorkspaceName, Slot[]> = {
     { panel: "audio", location: "floating" },
   ],
   Triage: [
+    { panel: "triage", location: "centre" },
     { panel: "chat", location: "right" },
     { panel: "diff", location: "right" },
     { panel: "help", location: "right" },

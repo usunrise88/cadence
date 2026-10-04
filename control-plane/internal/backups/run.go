@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -24,6 +25,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/usunrise88/cadence/control-plane/internal/cas"
+	"github.com/usunrise88/cadence/control-plane/internal/mounts"
 )
 
 // Config says where sets go and how Postgres is reached.
@@ -323,11 +325,16 @@ func redactDSN(dsn string) string {
 // copyCAS mirrors content-store blobs that the mirror does not hold yet (blobs are immutable: an existing file of
 // the same size is the same blob). Blobs that only training states hold are not mirrored: a state is read only to
 // resume a run, it is the bulk of the store (7.66 GB each for the 0.6B model), and its eviction is permanent by design
-// (docs/spec/07 open question D, decided 2026-10-01).
+// (docs/spec/07 open question D, decided 2026-10-01). A mirror on a mount (backups.mirror_mount) records every blob it
+// holds as a copy on that mount.
 func (s *Service) copyCAS(ctx context.Context, m *manifest) error {
 	src := s.Config.CASDir
 	if src == "" {
 		return nil
+	}
+	mr, err := s.MirrorOf(ctx)
+	if err != nil {
+		return err
 	}
 	skip, err := stateOnlyBlobs(ctx, s.Pool)
 	if err != nil {
@@ -337,8 +344,9 @@ func (s *Service) copyCAS(ctx context.Context, m *manifest) error {
 	if _, err := os.Stat(root); errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}
-	dst := filepath.Join(s.Config.Dir, "cas")
-	return filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+	dst := mr.Dir
+	var copies []mounts.Copy
+	err = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return fmt.Errorf("walk the content store: %w", err)
 		}
@@ -358,6 +366,9 @@ func (s *Service) copyCAS(ctx context.Context, m *manifest) error {
 			return fmt.Errorf("blob path: %w", err)
 		}
 		target := filepath.Join(dst, rel)
+		if mr.MountID != "" && blobName.MatchString(d.Name()) {
+			copies = append(copies, mounts.Copy{Hash: cas.Prefix + d.Name(), Path: path.Join(mirrorRel, filepath.ToSlash(rel)), Size: info.Size()})
+		}
 		if st, err := os.Stat(target); err == nil && st.Size() == info.Size() {
 			return nil
 		}
@@ -368,7 +379,14 @@ func (s *Service) copyCAS(ctx context.Context, m *manifest) error {
 		m.CASBytesCopied += info.Size()
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	return s.recordMirrored(ctx, mr, copies)
 }
+
+// blobName is a blob's file name in the store: the 64 hex digits of its hash.
+var blobName = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 // stateOnlyBlobs names (by their file name, the hex of the hash) the blobs that training-state artifacts hold — their
 // manifests and listed files — and no other artifact does. A nil pool (tests without a database) skips nothing.
@@ -576,9 +594,13 @@ func (s *Service) restore(ctx context.Context, b Backup, rt *RestoreTest) error 
 // checkCAS re-hashes up to casSample mirrored blobs (the newest-looking first is not needed: any sample proves the
 // mirror is readable and intact).
 func (s *Service) checkCAS(ctx context.Context) (int, error) {
-	root := filepath.Join(s.Config.Dir, "cas", "b3")
+	mr, err := s.MirrorOf(ctx)
+	if err != nil {
+		return 0, err
+	}
+	root := filepath.Join(mr.Dir, "b3")
 	n := 0
-	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+	err = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if errors.Is(err, fs.ErrNotExist) {
 			return filepath.SkipAll
 		}

@@ -4,6 +4,7 @@
 //	cadence [serve]                     run the server (default)
 //	cadence admin reset-password [...]  set a user's password from the host shell (see admin.go)
 //	cadence version                     print the version
+//	cadence smoke --project SLUG [...]  run a playbook (Try Cadence) and follow its session (see smoke.go)
 //	cadence <entity> <verb> [flags]     call one API operation on a running server (internal/cli, generated)
 //	cadence help [<entity> [<verb>]]    list the generated commands and their flags
 //
@@ -19,7 +20,8 @@
 // $CADENCE_DATA_DIR/job-logs (14 days). CADENCE_BACKUP_DIR ($CADENCE_DATA_DIR/backups:
 // backup sets and the content-store mirror; a mount in phase 4), CADENCE_PG_DUMP / CADENCE_PG_RESTORE (the client
 // commands, default pg_dump / pg_restore on PATH; their major version must be at least the server's),
-// CADENCE_TELEGRAM_API (https://api.telegram.org: the Bot API base URL; tests point it at a fake server).
+// CADENCE_TELEGRAM_API (https://api.telegram.org: the Bot API base URL; tests point it at a fake server),
+// CADENCE_MOUNTS_ALLOW_HTTP (1: an s3 mount may use a plain-http endpoint on any host; development only).
 // Project repositories live under $CADENCE_DATA_DIR/repos (bare), work (working clones) and worktrees; the git binary
 // must be on PATH. `cadence egress-proxy` runs the agent sandbox's allowlisting proxy instead (internal/egress).
 package main
@@ -98,6 +100,17 @@ func main() {
 		}
 	case "version":
 		fmt.Println(version)
+	case "smoke":
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		done, err := smoke(ctx, os.Args[2:], os.Getenv, os.Stdout, os.Stderr, nil)
+		stop()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "cadence smoke:", err)
+			os.Exit(cli.ExitError)
+		}
+		if !done {
+			os.Exit(cli.ExitError)
+		}
 	case "egress-proxy":
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
@@ -107,7 +120,7 @@ func main() {
 		}
 	default:
 		if cmd != "help" && cmd != "--help" && cmd != "-h" && !cli.Known(cmd) {
-			fmt.Fprintf(os.Stderr, "usage: cadence [serve|admin|egress-proxy|version|help|<entity> <verb>]\nunknown command %q; `cadence help` lists the commands\n", cmd)
+			fmt.Fprintf(os.Stderr, "usage: cadence [serve|admin|egress-proxy|smoke|version|help|<entity> <verb>]\nunknown command %q; `cadence help` lists the commands\n", cmd)
 			os.Exit(cli.ExitUsage)
 		}
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -249,7 +262,15 @@ func serve(ctx context.Context, getenv func(string) string) error {
 	}}
 	backupSvc.Register(jobSvc)
 	jobSvc.AddPeriodic("backups.schedule", time.Minute, backupSvc.Tick)
-	evictSvc := &eviction.Service{Pool: pool, CAS: blobs, Log: log, MirrorDir: filepath.Join(backupDir, "cas")}
+	evictSvc := &eviction.Service{Pool: pool, CAS: blobs, Log: log, MirrorDir: filepath.Join(backupDir, "cas"),
+		// The mirror may live on a mount (backups.mirror_mount); a misconfigured mount keeps the default directory, so
+		// eviction waits for blobs it cannot find rather than deleting them as unmirrored.
+		Mirror: func(ctx context.Context) string {
+			if mr, err := backupSvc.MirrorOf(ctx); err == nil {
+				return mr.Dir
+			}
+			return filepath.Join(backupDir, "cas")
+		}}
 	evictSvc.Register(jobSvc)
 	storeWatch := &eviction.Watcher{Service: evictSvc, Defaults: defaults.Get}
 	jobSvc.AddPeriodic("storage.watch", 10*time.Minute, storeWatch.Tick)
@@ -317,6 +338,9 @@ func serve(ctx context.Context, getenv func(string) string) error {
 		Lineage:  lineage.New(evals.LineageSource{}), // evals and eval records join the lineage graph (phase 3)
 		// Origins besides this server's own host that may open the live transcription socket (phase 3 · stream T).
 		AllowedOrigins: splitList(getenv("CADENCE_ALLOWED_ORIGINS")),
+		// A mount never reaches Cadence's own directories; plain-http s3 is for development (audit L3).
+		ReservedPaths:   absPaths(cfg.dataDir, casDir, backupDir, cfg.logDir, filepath.Dir(cfg.masterKey), store.Dir()),
+		MountsAllowHTTP: getenv("CADENCE_MOUNTS_ALLOW_HTTP") == "1",
 	})
 	if err != nil {
 		return err
@@ -434,6 +458,21 @@ func splitList(v string) []string {
 	for _, s := range strings.Split(v, ",") {
 		if s = strings.TrimSpace(s); s != "" {
 			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// absPaths returns the non-empty paths made absolute (a relative CADENCE_DATA_DIR is relative to the working
+// directory); a path that cannot be made absolute is left out.
+func absPaths(paths ...string) []string {
+	var out []string
+	for _, p := range paths {
+		if p == "" {
+			continue
+		}
+		if a, err := filepath.Abs(p); err == nil {
+			out = append(out, a)
 		}
 	}
 	return out

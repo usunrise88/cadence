@@ -1,0 +1,23 @@
+[project]
+name = "cadence-omni"
+version = "0.1.0"
+description = "Cadence omni pack (runtime `omni`, GPU): reference alignment with omniASR CTC emissions (R26, R51, R54); one step kind, loaded per job"
+requires-python = ">=3.12"
+# PyTorch 2.8, torchaudio 2.8 and fairseq2 0.6 come from the runtime image (worker/Dockerfile.omni,
+# packs/omni/requirements-runtime.txt): fairseq2n 0.6 is built against torch 2.8 only, which the NeMo Speech image
+# (torch 2.12) cannot hold. The pack imports them lazily, so the dev environment tests it without them.
+dependencies = ["cadence-worker", "numpy>=1.26"]
+
+# The pack's step kind (runtime `omni`). No model family: an aligner fills no family role.
+[project.entry-points."cadence.steps"]
+align_reference = "cadence_omni.steps.align:AlignReferenceStep"
+
+[tool.uv.sources]
+cadence-worker = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["cadence_omni"]

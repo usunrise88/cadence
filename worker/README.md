@@ -149,5 +149,24 @@ Core (runtime-neutral) step kinds: `echo` and `dataset_import` (imports a NeMo m
 as FLEURS, or a folder with `metadata.csv` as a `dataset` artifact; audio helpers in `cadence_worker/audio.py`; help
 `docs/help/steps/dataset-import.md`) and `wer_score` (hypotheses + dataset + scoring normalizer → `scores`: WER, CER,
 S/D/I, duration buckets, partial stability; the normalizer interpreter is `cadence_worker/normalize.py`, the
-alignment `cadence_worker/align.py`; help `docs/help/steps/wer-score.md`). Help slugs use dashes
-(`steps.dataset-import`).
+alignment `cadence_worker/align.py`; help `docs/help/steps/wer-score.md`) and `pseudolabel_ensemble` (members'
+hypotheses + `segments` + scoring normalizer + optional `lid` → `segments` with pseudo-labels or disputes and
+`hypotheses`; `cadence_worker/segments.py` reads and writes `cadence.segments/1`, `cadence_worker/members.py` holds what
+the members share; help `docs/help/steps/pseudolabel-ensemble.md`) and `segments_cut` (the segments that need a label,
+cut from their mount into the `dataset` the members read, `purpose: pseudo-label`; help
+`docs/help/steps/segments-cut.md`). Help slugs use dashes (`steps.dataset-import`).
+
+Auxiliary models (phase 4, R26): a parameter built with `cadence_field(registry_ref={"kind": "auxiliary", "role": …})`
+names an auxiliary version; the control plane resolves it to the version the project adopted and the step reads it
+with `ctx.auxiliary(param)` (`{versionId, name, version, payload}`). The NeMo pack loads Whisper per job for
+`whisper_transcribe` and `lid_classify` (`cadence_nemo/whisper.py`); the services pack (`packs/services`, runtime
+`services`, CPU, `Dockerfile.services`, compose profile `services`) calls running services: `oasis_transcribe`, a gRPC
+client of the OASIS contract vendored under `packs/services/proto/` (source commit in `proto/SOURCE.yaml`; regenerate
+with `uv run python packs/services/scripts/gen_proto.py`). A service that does not answer raises
+`AuxiliaryUnavailable` (error type `step`, retryable, message `auxiliary-unavailable: …`). Guide:
+`docs/help/guides/auxiliary-models.md`. The omni pack (`packs/omni`, runtime `omni`, GPU, `Dockerfile.omni`, compose profile
+`omni`) holds `align_reference`: omniASR CTC emissions (fairseq2 0.6, which needs PyTorch 2.8, so not in the NeMo
+image) forced through reference texts with torchaudio's `forced_align` or the core NumPy Viterbi
+(`cadence_worker/ctc_align.py`), written as an `alignment` artifact (`cadence_worker/reference_alignment.py`) that
+`latency_score@3` reads for emission delay. Its framework pins are in `packs/omni/requirements-runtime.txt`; the GPU
+test (`packs/omni/tests/test_align_gpu.py`, `-m gpu`) runs in that image.

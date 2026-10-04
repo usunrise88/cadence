@@ -11,6 +11,8 @@ import {
   deltaForest,
   deltaHeatmap,
   ecdfPoints,
+  emissionBars,
+  emissionReasons,
   entityBars,
   latencyBars,
   progressOf,
@@ -168,6 +170,31 @@ describe("Eval report: streaming, distribution and robustness charts", () => {
     expect(unavailableReasons(EVAL_STREAMING, "latency", sr)).toEqual([{ reason: "no VAD for sr", cells: ["replay-golden-sr · 160ms · subject", "replay-golden-sr · 160ms · baseline"] }]);
     const off = { ...cellOf("evc_s_he_80"), metrics: { latency: { scorer: "latency_score@1", available: false, reason: "no partials", measured: 0 } } };
     expect(unavailableReasons(EVAL_STREAMING, "latency", [off])).toEqual([{ reason: "no partials", cells: ["fleurs-he · 80ms · subject"] }]);
+  });
+
+  it("charts emission delay where the references are aligned and says why it is n/a elsewhere", () => {
+    const aligned = { available: true, matchedWords: 40, pr50Ms: 90, pr90Ms: 210, earlyWords: 2, aligner: { auxiliary: "auxiliary/omniasr-ctc-1b" } };
+    const missing = { available: false, reason: "the golden set has no aligned references (run align_reference on its dataset)" };
+    const withEm = {
+      ...EVAL_STREAMING,
+      cells: EVAL_STREAMING.cells!.map((c) =>
+        c.metrics?.latency && c.augmentationIndex !== 1
+          ? { ...c, metrics: { ...c.metrics, latency: { ...c.metrics.latency, emission: c.profile === "160ms" ? aligned : missing } } }
+          : c,
+      ),
+    };
+    const b = emissionBars(withEm, he)!;
+    expect(b.categories).toEqual(["160ms ★ · subject (40 words)", "160ms ★ · baseline (40 words)"]);
+    expect(b.series.map((x) => x.values)).toEqual([
+      [90, 90],
+      [210, 210],
+    ]);
+    expect(b.note).toContain("auxiliary/omniasr-ctc-1b");
+    expect(b.note).toContain("4 word(s) appeared before their aligned end");
+    const at80 = withEm.cells.filter((c) => c.goldenSetVersionId === he && c.profile === "80ms" && c.augmentationIndex !== 1);
+    expect(emissionReasons(withEm, at80)).toEqual([{ reason: missing.reason, cells: ["fleurs-he · 80ms · subject", "fleurs-he · 80ms · baseline"] }]);
+    expect(emissionBars(EVAL_STREAMING, he)).toBeUndefined();
+    expect(emissionReasons(EVAL_STREAMING, EVAL_STREAMING.cells!)).toEqual([]);
   });
 
   it("charts partial stability per profile, only where the scores have it", () => {

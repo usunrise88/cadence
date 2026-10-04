@@ -27,6 +27,32 @@ class ArtifactRef(TypedDict):
     meta: NotRequired[dict[str, Any]]
 
 
+class AuxiliaryPayload(TypedDict):
+    """The payload of an auxiliary version (auxiliary/<name>): a model a step loads per job ({hfRepo, revision}) or a
+    running service ({service}), never both. Cadence never starts a service. Adoption (projects.adopt) is an approval
+    for everyone and refuses outputsCommercialUse false (R26).
+    """
+
+    roles: list[Literal["lid", "pseudolabel", "align"]]
+    licence: str
+    outputsCommercialUse: bool
+    conditions: NotRequired[list[str]]
+    languages: list[str]
+    hfRepo: NotRequired[str]
+    revision: NotRequired[str]
+    service: NotRequired[AuxiliaryService]
+    engine: NotRequired[str]
+    sources: NotRequired[list[str]]
+    checkedAt: NotRequired[str]
+
+
+class AuxiliaryService(TypedDict):
+    kind: str
+    endpoint: str
+    protocol: str
+    tokenSecret: NotRequired[str]
+
+
 class CardTelemetry(TypedDict):
     index: int
     name: NotRequired[str]
@@ -55,11 +81,25 @@ class Lease(TypedDict):
     env: NotRequired[dict[str, str]]
     traceparent: NotRequired[str]
     heartbeatSeconds: int
+    mounts: NotRequired[list[LeaseMount]]
 
 
 class LeaseCard(TypedDict):
     index: int
     memoryCapMb: int
+
+
+class LeaseMount(TypedDict):
+    """A mount as a worker resolves mount://<name>/<path> URIs (cadence_worker.mounts)"""
+
+    name: str
+    kind: Literal["local", "nfs", "smb", "s3", "hf"]
+    root: str
+    readOnly: bool
+    endpoint: NotRequired[str]
+    region: NotRequired[str]
+    revision: NotRequired[str]
+    credentialsEnv: NotRequired[str]
 
 
 class LiveEnd(TypedDict):
@@ -314,6 +354,14 @@ class StepError(TypedDict):
     retryable: NotRequired[bool]
 
 
+class StepKindDeprecation(TypedDict):
+    """A step kind version its pack deprecates: plans warn; from `after` a pipeline file may not newly pin it"""
+
+    after: str
+    replacedBy: NotRequired[str]
+    note: NotRequired[str]
+
+
 class StepKindDescriptor(TypedDict):
     version: str
     params: dict[str, Any]
@@ -326,6 +374,7 @@ class StepKindDescriptor(TypedDict):
     neutral: NotRequired[bool]
     secrets: NotRequired[list[str]]
     help: str
+    deprecation: NotRequired[StepKindDeprecation]
 
 
 class StepOutcome(TypedDict):
@@ -333,6 +382,17 @@ class StepOutcome(TypedDict):
     error: NotRequired[StepError]
     outputs: NotRequired[dict[str, ArtifactRef]]
     metrics: NotRequired[dict[str, float]]
+
+
+class StepRegistryRef(TypedDict):
+    """A registry version a step parameter names (x-cadence.registryRef), resolved for the project when the run was
+    planned; in v1 only auxiliary versions resolve, so payload is an AuxiliaryPayload
+    """
+
+    versionId: str
+    name: str
+    version: str
+    payload: AuxiliaryPayload
 
 
 class StepResources(TypedDict):
@@ -358,6 +418,7 @@ class StepSpec(TypedDict):
     estimateSeconds: NotRequired[float]
     overrides: NotRequired[StepSpecOverrides]
     attempt: int
+    auxiliaries: NotRequired[dict[str, StepRegistryRef]]
 
 
 class StepSpecOverrides(TypedDict):

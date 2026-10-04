@@ -22,6 +22,7 @@ from typing import IO, Any
 
 from cadence_worker.cas import Store
 from cadence_worker.errors import classify
+from cadence_worker.mounts import CACHE_ENV, Mounts
 from cadence_worker.steps.base import StepInputError, check_ranges, implements_step_kind, missing_metadata
 from cadence_worker.steps.context import Card, Event, StepContext
 
@@ -108,6 +109,11 @@ def execute(lease_dir: Path, stop: threading.Event, emit: EventWriter) -> dict[s
             blob_path=store.path if store else None,
             stop=stop,
             attempt=int(job.get("attempt") or 1),
+            mounts=Mounts(
+                job.get("mounts") or [],
+                cache_dir=Path(os.environ.get(CACHE_ENV) or Path(job["workDir"]) / "mount-cache"),
+            ),
+            auxiliaries=job.get("auxiliaries") or {},
         )
         kind().run(params, inputs, outputs, ctx)
         if stop.is_set():

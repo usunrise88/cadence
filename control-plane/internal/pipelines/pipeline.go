@@ -38,6 +38,9 @@ func ConsumedName(in string) string {
 	return in
 }
 
+// Indexed reports whether a step input name is one of several artifacts fed to one input (checkpoints.1).
+func Indexed(in string) bool { return ConsumedName(in) != in }
+
 // acceptsInstead lists the artifact types a consumer accepts in place of the one it declares (R44: a checkpoint is
 // a model of its family, so a step that initialises from a base_model also starts from a checkpoint; the step
 // reads its input's type to tell them apart).
@@ -79,7 +82,9 @@ type Step struct {
 	In     map[string]string `yaml:"in,omitempty" json:"in,omitempty"`
 	Params map[string]any    `yaml:"params,omitempty" json:"params,omitempty"`
 	// Optional marks a step whose failure does not fail the run: the steps that read its outputs (optional too) are
-	// skipped and the run ends done without them (an eval's reported-only metrics, R54).
+	// skipped and the run ends done without them (an eval's reported-only metrics, R54). A step that reads it as one
+	// of several artifacts of an input (`hypotheses.2`: a pseudo-label member) need not be optional: it runs without
+	// that artifact.
 	Optional bool `yaml:"optional,omitempty" json:"optional,omitempty"`
 }
 
@@ -230,8 +235,8 @@ func (p Pipeline) Check(file string) error {
 				switch {
 				case !known:
 					errs.Add(path, "no step %q in this pipeline", w.Step)
-				case p.Steps[j].Optional && !s.Optional:
-					errs.Add(path, "step %q reads the optional step %q: mark it optional too (an optional step's failure skips the steps that read it)", s.ID, w.Step)
+				case p.Steps[j].Optional && !s.Optional && !Indexed(name):
+					errs.Add(path, "step %q reads the optional step %q: mark it optional too (an optional step's failure skips the steps that read it), or wire it as one of several artifacts of an input (%s.<n>), which the step then runs without", s.ID, w.Step, name)
 				}
 			}
 		}

@@ -94,7 +94,7 @@ func (s *Service) run(ctx context.Context, r *jobs.Run) (any, error) {
 	}
 	s.hook("marked")
 	// Training states are never mirrored; eval artifacts are evicted only once the mirror holds them, when there is one.
-	p := Plan{Kept: []Kept{}, Permanent: args.RetentionDays == 0 || s.MirrorDir == ""}
+	p := Plan{Kept: []Kept{}, Permanent: args.RetentionDays == 0 || s.mirrorDir(ctx) == ""}
 	err = pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
 		if err := artifacts.LockExclusive(ctx, tx); err != nil {
 			return err
