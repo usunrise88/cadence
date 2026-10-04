@@ -2661,7 +2661,7 @@ export const notificationRulesListOptions = (options?: Options<NotificationRules
 });
 
 /**
- * Change which channels an event class reaches and when (admin only)
+ * Change which channels an event class reaches, when, and whether Telegram rings (admin only)
  */
 export const notificationRulesEditMutation = (options?: Partial<Options<NotificationRulesEditData>>): UseMutationOptions<NotificationRulesEditResponse, NotificationRulesEditError, Options<NotificationRulesEditData>> => {
     const mutationOptions: UseMutationOptions<NotificationRulesEditResponse, NotificationRulesEditError, Options<NotificationRulesEditData>> = {

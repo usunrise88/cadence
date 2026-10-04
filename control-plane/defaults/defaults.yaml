@@ -326,6 +326,12 @@ notifications:
     value: "08:00"
     description: Local time quiet hours end (before the digest, so the digest is never held back)
     source: Cadence recommendation
+  approval_batch_s:
+    value: 120
+    unit: s
+    description: Approval requests within this window go to Telegram as one message (each with its own Approve / Deny buttons), sent when the window that the first one opened closes; 0 sends each at once
+    source: Cadence recommendation (owner feedback 2026-10-04 — seven approvals in a minute rang seven times)
+    range: { min: 0, max: 900 }
 
 # Backups (docs/spec/06-platform.md "Operations": 24 h RPO, 1 h RTO).
 backups:

@@ -268,6 +268,8 @@ type Notifications struct {
 	QuietHoursEnabled Param[bool]   `yaml:"quiet_hours_enabled"`
 	QuietHoursStart   Param[string] `yaml:"quiet_hours_start"`
 	QuietHoursEnd     Param[string] `yaml:"quiet_hours_end"`
+	// ApprovalBatchS is the window approval requests are gathered in before one Telegram message lists them.
+	ApprovalBatchS Param[int] `yaml:"approval_batch_s"`
 }
 
 // Backups holds the backup schedule and retention.

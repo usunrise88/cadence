@@ -4199,6 +4199,11 @@ export type NotificationRule = {
     channels: NotificationChannels;
     timing: NotificationTiming;
     /**
+     * Telegram messages of this class arrive without sound (disable_notification); seeded true for outcome and the digest, false for approvals and failures
+     *
+     */
+    silent: boolean;
+    /**
      * Failures reach Telegram even in quiet hours; fixed per class
      */
     bypassQuietHours: boolean;
@@ -4220,6 +4225,10 @@ export type NotificationRuleEdit = {
         telegram?: boolean;
     };
     timing?: NotificationTiming;
+    /**
+     * Send this class's Telegram messages without sound
+     */
+    silent?: boolean;
 };
 
 /**

@@ -59,6 +59,9 @@ type Message struct {
 	Chat      Chat   `json:"chat"`
 	From      *User  `json:"from,omitempty"`
 	Text      string `json:"text,omitempty"`
+	// ReplyMarkup is the message's inline keyboard (a pressed button's message carries it: a batched approval
+	// message keeps the rows not decided yet).
+	ReplyMarkup *Keyboard `json:"reply_markup,omitempty"`
 }
 
 // CallbackQuery is the press of an inline button.
@@ -180,9 +183,17 @@ func (c *Client) GetMe(ctx context.Context) (User, error) {
 
 // SendMessage sends plain text (no parse mode, so nothing in it is markup) with an optional inline keyboard.
 func (c *Client) SendMessage(ctx context.Context, chatID int64, text string, kb *Keyboard) (Message, error) {
+	return c.Send(ctx, chatID, text, kb, false)
+}
+
+// Send is SendMessage that may be silent: the message arrives without sound (disable_notification).
+func (c *Client) Send(ctx context.Context, chatID int64, text string, kb *Keyboard, silent bool) (Message, error) {
 	body := map[string]any{"chat_id": chatID, "text": text, "disable_web_page_preview": true}
 	if kb != nil {
 		body["reply_markup"] = kb
+	}
+	if silent {
+		body["disable_notification"] = true
 	}
 	var m Message
 	err := c.call(ctx, "sendMessage", body, &m)
@@ -191,9 +202,17 @@ func (c *Client) SendMessage(ctx context.Context, chatID int64, text string, kb 
 
 // EditMessageText replaces a message's text and drops its keyboard (the buttons of a decided approval).
 func (c *Client) EditMessageText(ctx context.Context, chatID, messageID int64, text string) error {
+	return c.EditMessage(ctx, chatID, messageID, text, nil)
+}
+
+// EditMessage replaces a message's text and its keyboard with kb (nil or empty: no buttons left).
+func (c *Client) EditMessage(ctx context.Context, chatID, messageID int64, text string, kb *Keyboard) error {
+	rows := [][]Button{}
+	if kb != nil && kb.InlineKeyboard != nil {
+		rows = kb.InlineKeyboard
+	}
 	return c.call(ctx, "editMessageText", map[string]any{
-		"chat_id": chatID, "message_id": messageID, "text": text,
-		"reply_markup": Keyboard{InlineKeyboard: [][]Button{}},
+		"chat_id": chatID, "message_id": messageID, "text": text, "reply_markup": Keyboard{InlineKeyboard: rows},
 	}, nil)
 }
 

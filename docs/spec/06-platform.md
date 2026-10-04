@@ -595,11 +595,11 @@ Two channels — the in-app history and a Telegram bot — one routing table by 
 
 | Event class | In-app | Telegram | Timing |
 | --- | --- | --- | --- |
-| Approval requested (agent, automation, registry) | Yes | Message with inline Approve / Deny buttons and the estimate | Immediate |
-| Job or pipeline step failed, compute host unreachable, mount unhealthy, card closed (not built), backup failed | Yes | Yes | Immediate |
-| Gate verdict, promotion, schedule finished, batch closed | Yes | Yes | Immediate |
+| Approval requested (agent, automation, registry) | Yes | Message with inline Approve / Deny buttons and the estimate; requests within 2 minutes share one message | Immediate (batched) |
+| A job, pipeline run, eval or agent session that ended failed; compute host unreachable, mount unhealthy, card closed (not built), backup failed | Yes | Yes | Immediate |
+| Gate verdict, promotion, schedule finished, batch closed | Yes | Yes, silent | Immediate |
 | Progress (step done, checkpoint saved, triage item added) | Yes | No | — |
-| Daily digest: runs, evals, spend against budgets, open approvals | Yes | Yes | 09:00 local |
+| Daily digest: runs, evals, spend against budgets, open approvals | Yes | Yes, silent | 09:00 local |
 
 - The bot talks only to allow-listed chat ids; every inline action carries a single-use signed token, and an approval from Telegram is recorded with actor and channel like any other.
 - Quiet hours suppress Telegram except failures; reviewers get batch-assigned and batch-closing messages only.
@@ -639,7 +639,8 @@ Phase 2 as built (2026-09-30, stream O):
 - Classification (`internal/notify/classify.go`, mirrored by `web/src/shell/notifications/classes.ts`; a test keeps
   the two tables equal): approvals on `approvals`; a job's `job.state_changed` on its job topic (`failed` → failure,
   `done` → progress) except step jobs, whose pipeline step tells them — `pipeline_run.step_changed` on
-  `pipeline_run.{id}` (step `done` → progress, `failed` with no retry left → failure); a host turning `unreachable`
+  `pipeline_run.{id}` (step `done` → progress, `failed` with no retry left → failure; since 2026-10-04 both progress, the
+  run's end is the failure — "Quieter Telegram" below); a host turning `unreachable`
   (`compute.health` on `compute.{id}`) → failure; backups by type. The table also names types no stream emits yet —
   `mount.unhealthy`, `deployment.promoted`, `schedule.finished`, `batch.closed`, `checkpoint.saved`,
   `triage.item_added` arrive with their phases; `compute.card_closed` joins when per-card health closes a card's slot
@@ -650,10 +651,41 @@ Phase 2 as built (2026-09-30, stream O):
   outcome; `golden_set.frozen` → progress. They announce on entity topics only (`entity.eval.{id}`,
   `entity.experiment.{id}`, `entity.golden_set.{id}`), which the router reads for these types and the web history
   subscribes to. The steps of an eval's pipeline run (its `pipeline_run.step_changed` carries `runId: evl_…`) tell
-  nothing when done — an eval of a few hundred cells would send as many notices; a failed step still does. The daily
+  nothing when done — an eval of a few hundred cells would send as many notices; a failed step still did until
+  2026-10-04 (now nothing: the eval's failure tells it). The daily
   digest lists the gate verdicts of its window ("project: subject — verdict", at most 20).
 - The control plane reaches `api.telegram.org` over the compose `default` network (not internal); nothing else is
   needed. Reviewer messages (batch assigned/closing) arrive with batches in phase 4.
+
+Quieter Telegram (2026-10-04, owner feedback: in one day the stand rang 21 times — 12 approvals, 7 of them within a
+minute; 5 step failures, one of them an optional step the run went on without; 3 branches waiting; the digest):
+
+- **Silent rows**: `notification_rules.silent` (migration 0043; contract `NotificationRule.silent`, edited by
+  `notificationRules.edit` and the Settings checkbox). Seeded: approvals and failures ring; outcome and digest are
+  silent; progress has no Telegram message of its own. The router copies the flag onto each delivery
+  (`notification_deliveries.silent`) and the sender sends silent rows with `disable_notification: true`. A changed
+  flag is a departure (`silent`).
+- **Failures by consequence**: a failure notice says what ended, once. `pipeline_run.step_changed` with `failed` is
+  progress (an optional step's failure lets the run go on; an OOM or lost-lease retry re-queues the step without a
+  failed event; any other failure ends the pipeline run); the run's end, `pipeline_run.state_changed` with `failed`
+  on `pipeline_run.{id}`, is the failure ("Run failed: run_…" for a training run's pipeline, else "Pipeline run failed:
+  <pipeline>", the run's error naming the step). Before, a failed required step told the failure and the run's end
+  told nothing, and an eval's failed step told it as well as the eval. An eval's pipeline run and its steps tell
+  nothing; the eval tells its end. An agent session that ends `failed` (`agent_session.changed` on `agent.sessions`)
+  is a failure, once per session: a delivery may carry a `dedupe_key` (unique per channel), here
+  `agent_session.failed:<id>`, so a repeated end is not sent again. Quiet hours still let failures through.
+- **Approvals batched**: an approval request opens a window of `notifications.approval_batch_s` (defaults.yaml, 120 s,
+  0–900; 0 = send each at once); requests routed until it closes join it (their delivery's `next_at` is the window's
+  end), and when it closes the sender sends them as one message, in request order, at most ten per message:
+  `N approvals requested`, then `[i] Approval requested: <operation>` with its body, and one keyboard row per approval
+  (`Approve i` / `Deny i`, each with its own single-use signed tokens). A press decides only its own approval; the
+  message is edited to append `[i] Approved|Denied from Telegram by @user.` and keeps the rows still open. A lone
+  approval keeps the old single message (`Approve` / `Deny`). We hold all requests for the window rather than sending
+  the first at once and batching the rest: a burst then rings once instead of twice, at the cost of up to two minutes
+  before a lone approval reaches the phone (approvals wait up to 24 h; the in-app history shows them at once). An
+  approval decided before its window closes is left out of the message.
+- The digest stays daily; quiet hours keep their behaviour (a suppressed approval is not batched later; it is in the
+  next digest's open approvals).
 
 ## Testing strategy
 

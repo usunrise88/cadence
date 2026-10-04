@@ -24,7 +24,7 @@ const TABLE: Record<string, NotificationClass> = {
   "notification.digest": "digest",
 };
 
-/** Evals (evl_…) tell their end once; their pipeline run's steps are not told one by one. */
+/** Evals (evl_…) tell their end once; their pipeline run and its steps are not told. */
 export const EVAL_RUN_PREFIX = "evl_";
 
 /** The class of e, or undefined for events outside the routing table (they are shown as before). */
@@ -35,9 +35,20 @@ export function classOf(e: CadenceEvent): NotificationClass | undefined {
     return doneOrFailed(job?.state);
   }
   if (e.type === "pipeline_run.step_changed") {
+    // A step's failure is progress: what it costs is told by the run's end (an optional step's lets the run go on).
     const p = e.payload as { runId?: string; step?: { state?: string } } | undefined;
-    if (p?.step?.state === "done" && p.runId?.startsWith(EVAL_RUN_PREFIX)) return undefined;
-    return doneOrFailed(p?.step?.state);
+    if (p?.runId?.startsWith(EVAL_RUN_PREFIX)) return undefined;
+    const state = p?.step?.state;
+    return state === "done" || state === "failed" ? "progress" : undefined;
+  }
+  if (e.type === "pipeline_run.state_changed") {
+    const run = (e.payload as { pipelineRun?: { state?: string; runId?: string } } | undefined)?.pipelineRun;
+    return run?.state === "failed" && !run.runId?.startsWith(EVAL_RUN_PREFIX) ? "failure" : undefined;
+  }
+  if (e.type === "agent_session.changed") {
+    // Read once, on the session list topic "agent.sessions" (the session's own topic repeats it).
+    if (e.topic !== "agent.sessions") return undefined;
+    return (e.payload as { session?: { state?: string } } | undefined)?.session?.state === "failed" ? "failure" : undefined;
   }
   if (e.type === "eval.status_changed") {
     return doneOrFailed((e.payload as { eval?: { status?: string } } | undefined)?.eval?.status);
