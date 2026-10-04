@@ -23,8 +23,9 @@ about 2 real-time streams).
 - Sample (R31's "fixed 200 utterances"): the first 200 files by name of FLEURS sr test
   (`/cadence/corpora/fleurs-sr/70bb2e84b976/test`), 0.627 h, references transliterated sr-Cyrl-Latn as
   `dataset_import@3` does; prompt `hr-HR` (index 29), as the stand's Serbian evals.
-- Memory: export on the CPU; parity ≤ 7.2 GB on the card (NeMo 2.9 GB + ORT ≤ 3.5 GB + contexts); Triton ≤ 8.7 GB
-  in every run kept (one rejected configuration reached 23 GB, see Surprises).
+- Memory: export on the CPU; parity ≤ 7.2 GB on the card (NeMo 2.9 GB + ORT ≤ 3.5 GB + contexts); Triton ≤ 11.3 GB
+  in every run kept: 8.7 GB at the 256-stream limit, 11.3 GB with the 6.5 GB pool for 512 streams. One rejected
+  configuration reached 23 GB (see Surprises).
 
 ## Steps
 1. Export the family to cache-aware ONNX per latency profile (80, 160, 1120 ms); record what had to be patched.
