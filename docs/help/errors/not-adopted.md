@@ -21,6 +21,10 @@ A reference the lock does not cover is refused: the pipeline file names the coll
 both are in the same commit, so a checkout of the repository says exactly which data a run used. The plan
 (`pipelines.run` dry run) shows each resolution in its step's `locked`.
 
+`data.lock` pins and the adoptions allow: an entry the project never adopted (a hand edit, merged from a branch) is
+not resolved either, and merging such an edit adopts nothing — only `projects.adopt` adopts, after the licence,
+locale, leakage and auxiliary checks. An agent session's edit of `data.lock` waits for a person to accept it.
+
 `source` parameters (`sdp_ingest`) are not registry versions; "no licence, no ingest" covers them
 (`source-unlicensed`).
 

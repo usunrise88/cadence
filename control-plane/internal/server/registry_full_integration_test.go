@@ -17,6 +17,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/auth"
 	"github.com/usunrise88/cadence/control-plane/internal/pipelines/pipelinestest"
 	"github.com/usunrise88/cadence/control-plane/internal/registry"
+	"github.com/usunrise88/cadence/control-plane/internal/repos"
 )
 
 // Phase 4 · stream R: adoption checks (licence, locale, purpose), the soft delete of registry versions, data.lock read
@@ -215,6 +216,45 @@ func TestPipelinesReadDataLock(t *testing.T) {
 	ru := e.versionID("datasets", "dataset/fleurs-ru-smoke")
 	e.commitPipeline("hebrew", "lockcheck", "name: lockcheck\nsteps:\n  - {id: a, kind: fx_ref@1, params: {dataset: "+ru+"}}\n")
 	expectProblem(t, e.do("POST", run, `{}`, "Idempotency-Key", e.key(), "If-Match", "*"), 422, "not-adopted")
+}
+
+// An edited data.lock adopts nothing: merging a branch that adds an entry by hand neither adopts the version (no
+// licence, locale or auxiliary check ran) nor lets a pipeline resolve it (audit H1).
+func TestDataLockEditAdoptsNothing(t *testing.T) {
+	e, _ := startSeeded(t)
+	if err := pipelinestest.Register(context.Background(), e.pool, fxRef); err != nil {
+		t.Fatal(err)
+	}
+	e.newProject("hebrew")
+	ru := e.versionID("datasets", "dataset/fleurs-ru-smoke")
+	lock := e.recipe("hebrew", "data.lock", "").Content
+	entry := "resolved:\n  - kind: dataset_version\n    collection: dataset/fleurs-ru-smoke\n    version: \"x\"\n    id: " + ru + "\n"
+	if strings.Contains(lock, "resolved: []\n") {
+		lock = strings.Replace(lock, "resolved: []\n", entry, 1)
+	} else {
+		lock = strings.Replace(lock, "resolved:\n", entry, 1)
+	}
+	store := e.repos.Repos()
+	if _, err := store.CreateBranch(t.Context(), "hebrew", "edit-lock", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Commit(t.Context(), "hebrew", repos.Change{Branch: "edit-lock", Message: "pin ru by hand",
+		Author: repos.Signature{Name: "admin", Email: "usr_admin@cadence.local"},
+		Files: map[string][]byte{"data.lock": []byte(lock),
+			"pipelines/lockcheck.yaml": []byte("name: lockcheck\nsteps:\n  - {id: a, kind: fx_ref@1, params: {dataset: " + ru + "}}\n")}}); err != nil {
+		t.Fatal(err)
+	}
+	var diff struct{ Head string }
+	e.ok(e.do("GET", "/api/projects/hebrew/branches/edit-lock", ""), 200, &diff)
+	e.ok(e.do("POST", "/api/projects/hebrew/branches/edit-lock:accept", "", "Idempotency-Key", e.key(), "If-Match", `"`+diff.Head+`"`), 200, nil)
+	if !strings.Contains(e.recipe("hebrew", "data.lock", "").Content, ru) {
+		t.Fatal("the edited data.lock did not reach main")
+	}
+	if n := e.count("SELECT count(*) FROM adoptions WHERE version_id = '" + ru + "'"); n != 0 {
+		t.Errorf("merging an edited data.lock adopted %s", ru)
+	}
+	expectProblem(t, e.do("POST", "/api/projects/hebrew/pipelines/lockcheck:run?dryRun=true", `{}`, "Idempotency-Key", e.key(), "If-Match", "*"),
+		422, "not-adopted")
 }
 
 func TestStepKindDeprecation(t *testing.T) {
