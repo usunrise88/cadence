@@ -137,6 +137,12 @@ func (s *Server) audioGet(w http.ResponseWriter, r *http.Request, id api.Utteran
 		if p, ok := auth.PrincipalFromContext(ctx); ok && (p.Actor.Kind != auth.KindUser || p.CredentialKind == credentials.KindAgent) {
 			return problems.Forbidden.New("audio is for people: agents, API keys, worker and host tokens read none, signed link or not")
 		}
+		// A reviewer's link lives no longer than the invitation: revoked or expired, its links stop (audit L1).
+		if ok, err := credentials.ReviewerMayPlay(ctx, s.Pool, l.Viewer, u.BatchID); err != nil {
+			return err
+		} else if !ok {
+			return problems.MediaLinkInvalid.New("the invitation this link was made for has ended; open a new invitation link")
+		}
 		actor, via = auth.Actor{Kind: auth.KindUser, ID: l.Viewer}, "link"
 	} else {
 		p, err := s.mediaFor(ctx, u)

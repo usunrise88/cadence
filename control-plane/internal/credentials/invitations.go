@@ -111,6 +111,24 @@ func Redeem(ctx context.Context, tx pgx.Tx, token, name string) (string, Credent
 	return tok, c, User{ID: inv.UserID, Name: userName}, nil
 }
 
+// ReviewerMayPlay reports whether userID may still play audio of batchID through a signed link minted earlier: any
+// user but a reviewer may (their links are bounded by media.signed_link_ttl_s), a reviewer only while a session of an
+// invitation to that batch is neither revoked nor expired — revoking the invitation ends its links at once.
+func ReviewerMayPlay(ctx context.Context, q storage.Querier, userID, batchID string) (bool, error) {
+	var ok bool
+	err := q.QueryRow(ctx, `SELECT u.role <> 'reviewer' OR EXISTS (SELECT 1 FROM credentials c WHERE c.user_id = u.id
+			AND c.kind = 'session' AND c.scope->>'batch' = $2 AND $2 <> '' AND c.revoked_at IS NULL
+			AND (c.expires_at IS NULL OR c.expires_at > now()))
+		FROM users u WHERE u.id = $1`, userID, batchID).Scan(&ok)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("check reviewer %s: %w", userID, err)
+	}
+	return ok, nil
+}
+
 // RevokeBatch revokes every invitation of batchID and every session they started (the batch closed).
 func RevokeBatch(ctx context.Context, tx pgx.Tx, batchID string) (int64, error) {
 	tag, err := tx.Exec(ctx, `UPDATE credentials SET revoked_at = now(), rev = rev + 1

@@ -12,6 +12,8 @@ signature (`viewer`, `exp`, `sig`) that does not hold:
 - the link expired — links live `media.signed_link_ttl_s` seconds (300 by default);
 - the query was edited: the signature binds the utterance, the span (`start`, `end`), the channel and the viewer, so
   a link minted for 1.2–3.4 s does not play 0–60 s;
+- the link was minted for a reviewer whose invitation has ended (revoked, expired, or the batch froze): a reviewer's
+  links stop with the invitation, whatever their own expiry; or for a viewer who is no user of this instance;
 - the link came from another Cadence instance, or this instance's master key changed (links are signed with a key
   derived from it, so they all stop working with it).
 
@@ -29,7 +31,7 @@ span, so this error mostly means an old tab or a link pasted from elsewhere.
 | --- | --- |
 | `type` | `https://cadence.local/help/errors/media-link-invalid` |
 | `status` | `403` |
-| `detail` | Expired (with the time) or not matching |
+| `detail` | Expired (with the time), not matching, or the invitation has ended |
 
 | Default | Value | Meaning |
 | --- | --- | --- |

@@ -230,16 +230,19 @@ func TestMediaSignedLinkWithoutSession(t *testing.T) {
 	e := startWith(t, func(c *Config) { c.Actor = auth.Actor{} })
 	id, _ := mediaUtterance(t, e, "clip", media.EncodeWAV([][]float32{tone(8000, 16000, 300)}, 16000), 16000, 1, 0.5)
 	expectProblem(t, e.do("GET", "/api/registry/utterances/"+id+"/audio", ""), 401, "unauthenticated")
-	l := media.Link{Utterance: id, Viewer: "usr_reviewer", Expires: time.Now().Add(time.Minute).Unix()}
+	l := media.Link{Utterance: id, Viewer: "usr_admin", Expires: time.Now().Add(time.Minute).Unix()}
 	resp := e.do("GET", "/api/registry/utterances/"+id+"/audio?"+e.admin.mediaLinks.Query(l).Encode(), "", "Range", "bytes=0-")
 	if body := readAll(t, resp); resp.StatusCode != 206 || len(body) != 16044 {
 		t.Fatalf("signed link without a session: %d %d", resp.StatusCode, len(body))
 	}
-	if plays := mediaAudits(t, e); len(plays) != 1 || plays[0].ActorID != "usr_reviewer" || plays[0].Detail["via"] != "link" {
+	if plays := mediaAudits(t, e); len(plays) != 1 || plays[0].ActorID != "usr_admin" || plays[0].Detail["via"] != "link" {
 		t.Fatalf("audit %+v", plays)
 	}
 	// A signature does not open any other path.
 	expectProblem(t, e.do("GET", "/api/registry/utterances/"+id+"/peaks?sig=x", ""), 401, "unauthenticated")
+	// A link for a viewer who is no user (any more) plays nothing.
+	l.Viewer = "usr_gone"
+	expectProblem(t, e.do("GET", "/api/registry/utterances/"+id+"/audio?"+e.admin.mediaLinks.Query(l).Encode(), ""), 403, "media-link-invalid")
 
 	// People only: an API key that may read the registry hears nothing, signed link or not.
 	var key string

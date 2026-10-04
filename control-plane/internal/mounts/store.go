@@ -11,6 +11,8 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+
+	"github.com/usunrise88/cadence/control-plane/internal/problems"
 )
 
 // Reader reads a mount from the control plane: a scan walks it, a materialisation copies blobs back from it. Paths
@@ -89,7 +91,10 @@ func (p pathReader) Walk(ctx context.Context, prefix string, fn func(string, int
 		if err := checkPath(prefix); err != nil {
 			return err
 		}
-		start = filepath.Join(p.root, filepath.FromSlash(prefix))
+		var err error
+		if start, err = InRoot(p.root, prefix); err != nil {
+			return err
+		}
 	}
 	err := filepath.WalkDir(start, func(full string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -121,5 +126,28 @@ func (p pathReader) Open(_ context.Context, rel string) (io.ReadCloser, error) {
 	if err := checkPath(rel); err != nil {
 		return nil, err
 	}
-	return os.Open(filepath.Join(p.root, filepath.FromSlash(path.Clean(rel)))) //nolint:gosec // rel is a checked relative path under the root
+	full, err := InRoot(p.root, rel)
+	if err != nil {
+		return nil, err
+	}
+	return os.Open(full) //nolint:gosec // InRoot: a checked relative path that resolves under the root
+}
+
+// InRoot joins rel (a clean relative path) to the root of a path mount and checks that the file it resolves to, links
+// followed, is still under the root: a symbolic link on the share never leads the control plane to its own data,
+// its secrets or the host's files. A path that does not exist (yet) is checked as far as it exists.
+func InRoot(root, rel string) (string, error) {
+	full := filepath.Join(root, filepath.FromSlash(path.Clean("/"+rel)))
+	realRoot, err := filepath.EvalSymlinks(root)
+	if err == nil {
+		var resolved string
+		if resolved, err = filepath.EvalSymlinks(full); err == nil &&
+			resolved != realRoot && !strings.HasPrefix(resolved, realRoot+string(filepath.Separator)) {
+			return "", problems.Forbidden.New("%s leaves its mount (a link out of %s)", rel, root)
+		}
+	}
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return "", fmt.Errorf("resolve %s on its mount: %w", rel, err)
+	}
+	return full, nil // a path that does not exist has nothing to follow: the open answers not found
 }

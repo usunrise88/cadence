@@ -8,7 +8,6 @@ import (
 	"math"
 	"os"
 	"path"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -152,7 +151,7 @@ func (s *Service) localPath(ctx context.Context, uri string) (string, error) {
 		return "", problems.Conflict.New("mount %s is %s: its audio is served once a dataset version is frozen (the control plane plays local, NFS and SMB mounts in place)",
 			ref.Mount, kind)
 	}
-	return filepath.Join(root, filepath.FromSlash(path.Clean("/"+ref.Path))), nil
+	return mounts.InRoot(root, ref.Path)
 }
 
 // openWindow opens the window's file on its mount and answers its audio as an Info of the window.

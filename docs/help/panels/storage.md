@@ -57,6 +57,13 @@ same path), `s3` (bucket[/prefix], endpoint, and a secret holding `<accessKeyId>
 (`datasets/<org>/<name>` or `<org>/<model>` at a commit SHA). Mounts are read-only unless registered writable, and
 never edited: a new location is a new mount.
 
+What a mount may reach: a path mount's root is never Cadence's own data (its data directory, content store, backups,
+logs, secrets, `/var/lib/cadence`) or the system's (`/proc`, `/sys`, `/dev`, `/etc`, `/boot`, `/root`, `/run`), nor a
+directory inside or around one — bind the share at `/mnt/<name>`. A symbolic link on the share that leads out of the
+root is not followed. An `s3` endpoint is `https://host[:port]`; plain http only to `localhost`/`127.0.0.1`, or with
+`CADENCE_MOUNTS_ALLOW_HTTP=1` on the control plane (development). A step receives a mount's credentials only when it
+reads the mount: it names it, or a step that produced its inputs did.
+
 ## Commands
 
 `mounts.list`, `mounts.get`, `mounts.new` (approval, the admin decides), `mounts.scan`, `mounts.verify`,

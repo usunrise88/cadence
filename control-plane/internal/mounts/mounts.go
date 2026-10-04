@@ -14,8 +14,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"net/url"
 	"path"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -205,6 +208,52 @@ func Get(ctx context.Context, q storage.Querier, ref string) (Mount, error) {
 type NewInput struct {
 	Name, Kind, Root, Endpoint, Region, Revision, Credentials, LicenceHint, Description string
 	ReadOnly                                                                            *bool
+	// Reserved are the control plane's own directories (data, content store, backups, logs, secrets; the server's
+	// configuration, not the request): a path mount's root may not be one, lie inside one or contain one.
+	Reserved []string
+	// AllowHTTP lets an s3 endpoint use plain http to any host (CADENCE_MOUNTS_ALLOW_HTTP, development only);
+	// otherwise http is accepted for a loopback host only and everything else needs https.
+	AllowHTTP bool
+}
+
+// systemRoots are never a path mount's root, inside or around: the host's own configuration and kernel files, and
+// where compose keeps Cadence's data in every container (the content store, job logs, secrets).
+var systemRoots = []string{"/proc", "/sys", "/dev", "/etc", "/boot", "/root", "/run", "/var/lib/cadence"}
+
+// reservedRoot returns the reserved directory root equals, lies inside or contains ("" when none).
+func reservedRoot(root string, reserved []string) string {
+	for _, r := range append(slices.Clone(systemRoots), reserved...) {
+		r = path.Clean(r)
+		if r == "/" || r == "." || !path.IsAbs(r) {
+			continue
+		}
+		if root == r || strings.HasPrefix(root, r+"/") || strings.HasPrefix(r, root+"/") {
+			return r
+		}
+	}
+	return ""
+}
+
+// endpointAllowed checks an s3 endpoint: https, or http to a loopback host (or anywhere when allowHTTP).
+func endpointAllowed(endpoint string, allowHTTP bool) string {
+	u, err := url.Parse(endpoint)
+	switch {
+	case err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http"):
+		return "an s3 mount needs the endpoint URL (https://host[:port])"
+	case u.User != nil || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "":
+		return "the endpoint is scheme://host[:port] only (credentials go in the secret)"
+	case u.Scheme == "http" && !allowHTTP && !loopback(u.Hostname()):
+		return "an s3 endpoint uses https (plain http only to a loopback host, or with CADENCE_MOUNTS_ALLOW_HTTP for development)"
+	}
+	return ""
+}
+
+func loopback(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // Validate checks a request and returns the mount as it would be registered (no id yet).
@@ -226,6 +275,8 @@ func Validate(ctx context.Context, q storage.Querier, in NewInput) (Mount, error
 	case KindLocal, KindNFS, KindSMB:
 		if !path.IsAbs(m.Root) || path.Clean(m.Root) != m.Root || m.Root == "/" {
 			bad("/root", "an absolute, clean path other than / (where workers and the control plane see the share)")
+		} else if r := reservedRoot(m.Root, in.Reserved); r != "" {
+			bad("/root", "%s is Cadence's or the system's own (%s): a mount never reaches it; bind the share somewhere else (e.g. /mnt/<name>)", m.Root, r)
 		}
 		if m.Endpoint != "" || m.Revision != "" || m.Credentials != "" || m.Region != "" {
 			bad("/kind", "a %s mount takes only root (the OS mounts the share; Cadence holds no credentials for it)", m.Kind)
@@ -238,8 +289,8 @@ func Validate(ctx context.Context, q storage.Querier, in NewInput) (Mount, error
 		if prefix != "" && (strings.HasSuffix(prefix, "/") || checkPath(prefix) != nil) {
 			bad("/root", "the prefix is a clean relative path without a trailing /")
 		}
-		if !strings.HasPrefix(m.Endpoint, "https://") && !strings.HasPrefix(m.Endpoint, "http://") {
-			bad("/endpoint", "an s3 mount needs the endpoint URL (https://host[:port])")
+		if msg := endpointAllowed(m.Endpoint, in.AllowHTTP); msg != "" {
+			bad("/endpoint", "%s", msg)
 		}
 		if m.Credentials == "" {
 			bad("/credentials", "an s3 mount needs the name of a secret holding <accessKeyId>:<secretAccessKey>")

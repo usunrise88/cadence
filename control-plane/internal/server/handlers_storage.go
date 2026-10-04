@@ -107,10 +107,11 @@ func (s *Server) MountsGet(ctx context.Context, req api.MountsGetRequestObject) 
 	return api.MountsGet200JSONResponse{Body: apiMount(m), Headers: api.MountsGet200ResponseHeaders{ETag: &etag}}, nil
 }
 
-func mountInput(b *api.MountNew) mounts.NewInput {
+func (s *Server) mountInput(b *api.MountNew) mounts.NewInput {
 	return mounts.NewInput{Name: b.Name, Kind: string(b.Kind), Root: b.Root, Endpoint: deref(b.Endpoint),
 		Region: deref(b.Region), Revision: deref(b.Revision), Credentials: deref(b.Credentials),
-		LicenceHint: deref(b.LicenceHint), Description: deref(b.Description), ReadOnly: b.ReadOnly}
+		LicenceHint: deref(b.LicenceHint), Description: deref(b.Description), ReadOnly: b.ReadOnly,
+		Reserved: s.ReservedPaths, AllowHTTP: s.MountsAllowHTTP}
 }
 
 // MountsNew implements mounts.new. The request is validated before the policy gates it (so the admin never
@@ -121,7 +122,7 @@ func (s *Server) MountsNew(ctx context.Context, req api.MountsNewRequestObject) 
 		return nil, err
 	}
 	cmd := command(ctx, mounts.Operation, req.Params.IdempotencyKey, req.Params.DryRun)
-	in := mountInput(req.Body)
+	in := s.mountInput(req.Body)
 	approval := commands.ReplayedApproval(ctx)
 	if !cmd.DryRun && approval == "" {
 		if _, err := mounts.Validate(ctx, s.Pool, in); err != nil {
