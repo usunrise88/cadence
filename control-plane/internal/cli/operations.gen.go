@@ -189,6 +189,23 @@ var Operations = []Operation{
 		}},
 	},
 	{
+		ID: "annotations.new", Entity: "annotations", Verb: "new", Method: "POST", Path: "/batches/{id}/batch-items/{item}/annotations",
+		Summary:        "Submit the caller's annotation of an item — done, skipped or flagged, with text, tags and entity spans",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Annotation batch id (anb_…)"},
+			{Name: "item", In: "path", Flag: "item", Required: true, Type: "string", Description: "Batch item id (bit_…)"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "entities", Type: "array of object"},
+			{Name: "note", Type: "string"},
+			{Name: "status", Required: true, Type: "string", Description: "done: the text is the annotator's transcript; skipped: someone else should take it (it does not count); flagged: a transcript the annotator is unsure of — the item gets a second annotation"},
+			{Name: "tags", Type: "array of string"},
+			{Name: "text", Type: "string", Description: "The transcript (required unless skipped)"},
+		}},
+	},
+	{
 		ID: "approvals.approve", Entity: "approvals", Verb: "approve", Method: "POST", Path: "/approvals/{id}:approve",
 		Summary:        "Approve a pending request; the stored request runs as its original actor",
 		IdempotencyKey: true,
@@ -331,6 +348,96 @@ var Operations = []Operation{
 			{Name: "collection", In: "query", Flag: "collection", Type: "string", Description: "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)"},
 			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated"}},
 		},
+	},
+	{
+		ID: "batchItems.accept", Entity: "batchItems", Verb: "accept", Method: "POST", Path: "/batches/{id}/batch-items/{item}:accept",
+		Summary:        "Adjudicate an item — set its final transcript, tags and entity spans, or exclude it (admin or an adjudicator)",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Annotation batch id (anb_…)"},
+			{Name: "item", In: "path", Flag: "item", Required: true, Type: "string", Description: "Batch item id (bit_…)"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "entities", Type: "array of object"},
+			{Name: "exclude", Type: "boolean", Description: "Leave the item out of the freeze"},
+			{Name: "from", Type: "string", Description: "Take this annotation (ann_…) as the final transcript"},
+			{Name: "tags", Type: "array of string"},
+			{Name: "text", Type: "string", Description: "The final transcript (when not from an annotation)"},
+		}},
+	},
+	{
+		ID: "batchItems.get", Entity: "batchItems", Verb: "get", Method: "GET", Path: "/batches/{id}/batch-items/{item}",
+		Summary: "One batch item — its segment, audio window, the bot's script around it, the prefill and the annotations the caller may see",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Annotation batch id (anb_…)"},
+			{Name: "item", In: "path", Flag: "item", Required: true, Type: "string", Description: "Batch item id (bit_…)"},
+		},
+	},
+	{
+		ID: "batchItems.list", Entity: "batchItems", Verb: "list", Method: "GET", Path: "/batches/{id}/batch-items",
+		Summary: "The items of a batch — the caller's annotation queue (mine), the adjudication queue, or all",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Annotation batch id (anb_…)"},
+			{Name: "queue", In: "query", Flag: "queue", Type: "string", Default: "mine", Enum: []string{"mine", "adjudication", "all"}},
+			{Name: "state", In: "query", Flag: "state", Type: "string", Enum: []string{"pending", "agreed", "disputed", "adjudicated", "excluded"}},
+			{Name: "limit", In: "query", Flag: "limit", Type: "integer", Default: "200"},
+		},
+	},
+	{
+		ID: "batches.freeze", Entity: "batches", Verb: "freeze", Method: "POST", Path: "/batches/{id}:freeze",
+		Summary:        "Freeze a finished batch into a golden set (via goldenSets.freeze) or a training dataset version — an approval",
+		Description:    "Freeze a batch whose items are all resolved: the accepted items become a draft dataset version (human transcripts, entity spans, the target channel cut from the mount) that is cut into the content store, then — purpose golden-set — frozen as golden-set/<goldenSet> through goldenSets.freeze, its card citing the guidelines commit and the inter-annotator WER. A golden-set batch needs its inter-annotator WER at or under annotation.max_iaa_wer (annotation-agreement-low otherwise); every item must be agreed, adjudicated or excluded (batch-incomplete). Always an approval the admin decides (202 approvalId). dryRun answers what would freeze. Reviewers lose access when the batch freezes.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Annotation batch id (anb_…)"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+	},
+	{
+		ID: "batches.get", Entity: "batches", Verb: "get", Method: "GET", Path: "/batches/{id}",
+		Summary:     "Get an annotation batch — progress, inter-annotator agreement, the adjudication queue, reviewers and whether it can freeze",
+		Description: "The state of an annotation batch: progress (pending, agreed, disputed, adjudicated, excluded items; double annotations done), agreement (inter-annotator WER over the double-annotated items against annotation.max_iaa_wer), the adjudication queue, the strata of the sample, the end-of-utterance gaps measured from per-channel voice activity, reviewers, the guidelines commit, and canFreeze with the reasons it cannot freeze yet. Annotated text is not returned here (batchItems.list has it).",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Annotation batch id (anb_…)"},
+		},
+	},
+	{
+		ID: "batches.list", Entity: "batches", Verb: "list", Method: "GET", Path: "/projects/{p}/batches",
+		Summary: "List the project's annotation batches, newest first, with progress and agreement",
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "state", In: "query", Flag: "state", Type: "string", Enum: []string{"open", "freezing", "frozen", "failed"}},
+			{Name: "limit", In: "query", Flag: "limit", Type: "integer", Default: "50"},
+		},
+	},
+	{
+		ID: "batches.new", Entity: "batches", Verb: "new", Method: "POST", Path: "/projects/{p}/batches",
+		Summary:        "Sample an annotation batch from a dataset version's segments (stratified, the caller's channel by default)",
+		Description:    "Open an annotation batch: a fixed sample of segments people transcribe by hand, to freeze as a golden set (purpose golden-set: double annotation and adjudication) or as training data (purpose training: single annotation). The frame is a dataset version (ver_… or dataset/<name>, usually a draft from pipelines/data-ingest) or a segments artifact (b3:…); the sample takes segments of one role (caller by default: the bot's channel labels itself), stratified by campaign, month, duration bucket and confidence (proportional, at least one per stratum, reproducible with seed). guidelines names annotation/guidelines/<name>.md in the project repository; the batch pins its commit. doubleShare of the items (default 10 %) get a second, blind annotation; flagged items get one too. Always dryRun first: the answer shows the strata and the sample without writing. People annotate in the Triage panel (Annotate mode); the admin invites reviewers; watch batches.get; freeze with batches.freeze (approval).",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "contextS", Type: "number", Description: "Seconds of the source file played before and after the segment (default annotation.context_s)"},
+			{Name: "dataset", Type: "string", Description: "The frame: a dataset version (ver_… or dataset/<name>, its newest version) with the segments artifact it was ingested from"},
+			{Name: "description", Type: "string"},
+			{Name: "doubleShare", Type: "number", Description: "Share of items annotated twice, blind (default annotation.double_share)"},
+			{Name: "dueAt", Type: "string", Description: "When annotation should end (default annotation.due_days from now); invitations expire then at the latest"},
+			{Name: "goldenSet", Type: "string", Description: "Name of the golden set (golden-set/<name>) or dataset version the freeze registers (default the batch's name)"},
+			{Name: "guidelines", Type: "string", Description: "annotation/guidelines/<name>.md in the project repository (default annotation.guidelines)"},
+			{Name: "name", Required: true, Type: "string", Description: "The batch's name in the project"},
+			{Name: "purpose", Type: "string", Description: "golden-set: double annotation, adjudication and the agreement target, frozen through goldenSets.freeze; training: single annotation suffices, frozen as a dataset version"},
+			{Name: "role", Type: "string", Description: "The target channel's role (default annotation.target_role: the caller)"},
+			{Name: "seed", Type: "integer", Description: "Seed of the sample (default 0)"},
+			{Name: "segments", Type: "string", Description: "The frame as a segments artifact (cadence.segments/1) instead of a dataset version"},
+			{Name: "size", Type: "integer", Description: "Items to sample (default annotation.batch_size)"},
+			{Name: "stratify", Type: "array of string", Description: "Strata of the sample (default all four)"},
+		}},
 	},
 	{
 		ID: "boost.edit", Entity: "boost", Verb: "edit", Method: "PATCH", Path: "/projects/{p}/langpacks/{locale}/boost/{domain}",
@@ -787,6 +894,27 @@ var Operations = []Operation{
 			{Name: "context", In: "query", Flag: "context", Type: "string", Description: "Qualifier of the place the user is in: panel:<id>, step:<kind>, error:<slug>, field:<path>"},
 			{Name: "limit", In: "query", Flag: "limit", Type: "integer", Default: "20"},
 		},
+	},
+	{
+		ID: "invitations.list", Entity: "invitations", Verb: "list", Method: "GET", Path: "/batches/{id}/invitations",
+		Summary: "The reviewers invited to a batch (admin)",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Annotation batch id (anb_…)"},
+		},
+	},
+	{
+		ID: "invitations.new", Entity: "invitations", Verb: "new", Method: "POST", Path: "/batches/{id}/invitations",
+		Summary:        "Invite a reviewer to a batch — a link that opens this batch's items only, play without download (admin)",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Annotation batch id (anb_…)"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "expiresAt", Type: "string"},
+			{Name: "name", Required: true, Type: "string", Description: "Lowercase letters, digits, dots, dashes and underscores; 2–32 characters"},
+			{Name: "role", Type: "string"},
+		}},
 	},
 	{
 		ID: "jobLogs.list", Entity: "jobLogs", Verb: "list", Method: "GET", Path: "/jobs/{id}/job-logs",
@@ -1732,8 +1860,35 @@ var Operations = []Operation{
 		Params: []Param{
 			{Name: "collection", In: "query", Flag: "collection", Type: "string", Description: "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)"},
 			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated"}},
-			{Name: "templateKind", In: "query", Flag: "template-kind", Type: "string", Description: "Only templates of this kind", Enum: []string{"instructions", "preset", "skill", "pipeline", "agent-config", "playbook", "langpack"}},
+			{Name: "templateKind", In: "query", Flag: "template-kind", Type: "string", Description: "Only templates of this kind", Enum: []string{"instructions", "preset", "skill", "pipeline", "agent-config", "playbook", "langpack", "annotation"}},
 		},
+	},
+	{
+		ID: "triage.accept", Entity: "triage", Verb: "accept", Method: "POST", Path: "/triage/{id}:accept",
+		Summary:        "Resolve a triage item by accepting its best candidate as the segment's human transcript",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Triage item id (tri_…)"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: false, Properties: []BodyProperty{
+			{Name: "tags", Type: "array of string"},
+		}},
+	},
+	{
+		ID: "triage.correct", Entity: "triage", Verb: "correct", Method: "POST", Path: "/triage/{id}:correct",
+		Summary:        "Resolve a triage item with a person's own transcript of the segment",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Triage item id (tri_…)"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "tags", Type: "array of string"},
+			{Name: "text", Required: true, Type: "string"},
+		}},
 	},
 	{
 		ID: "triage.list", Entity: "triage", Verb: "list", Method: "GET", Path: "/projects/{p}/triage",
@@ -1746,6 +1901,19 @@ var Operations = []Operation{
 			{Name: "pipelineRun", In: "query", Flag: "pipeline-run", Type: "string", Description: "Only items from this pipeline run (plr_…)"},
 			{Name: "limit", In: "query", Flag: "limit", Type: "integer", Default: "100"},
 		},
+	},
+	{
+		ID: "triage.reject", Entity: "triage", Verb: "reject", Method: "POST", Path: "/triage/{id}:reject",
+		Summary:        "Resolve a triage item by dropping the segment (no transcript is written)",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Triage item id (tri_…)"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: false, Properties: []BodyProperty{
+			{Name: "reason", Type: "string"},
+		}},
 	},
 	{
 		ID: "utterances.get", Entity: "utterances", Verb: "get", Method: "GET", Path: "/registry/utterances/{id}",

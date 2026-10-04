@@ -295,6 +295,7 @@ export type AuthStatus = {
      * The signed-in user signs in with a TOTP code
      */
     totpEnabled?: boolean;
+    reviewer?: ReviewerScope;
 };
 
 /**
@@ -612,7 +613,7 @@ export type DatasetVersionList = {
     items: Array<DatasetVersion>;
 };
 
-export type TemplateKind = 'instructions' | 'preset' | 'skill' | 'pipeline' | 'agent-config' | 'playbook' | 'langpack';
+export type TemplateKind = 'instructions' | 'preset' | 'skill' | 'pipeline' | 'agent-config' | 'playbook' | 'langpack' | 'annotation';
 
 export type TemplateFile = {
     /**
@@ -925,6 +926,10 @@ export type Defaults = {
      * Manual transcription tests and the live channel (phase 3): ticket, session and idle limits, frame size, file caps, the relay's queue and the interactive job's priority
      */
     transcriptions?: DefaultSection;
+    /**
+     * Annotation batches (phase 4): sample size, double share, agreement target, invitations, strata and the audio tracks' detector
+     */
+    annotation?: DefaultSection;
     /**
      * Pseudo-labels (phase 4): when the members of a pseudo-label ensemble agree on a segment's text (pairwise WER, agreeing members, language identification)
      */
@@ -5296,6 +5301,20 @@ export type GoldenSetPayload = {
      */
     groups: 'call' | 'speaker' | 'utterance';
     approvalId?: string;
+    /**
+     * A golden set frozen from an annotation batch (batches.freeze, R27): the guidelines commit and the agreement it was annotated with
+     */
+    annotation?: {
+        batchId: string;
+        guidelines: BatchGuidelines;
+        /**
+         * Inter-annotator WER over the double-annotated items
+         */
+        iaaWer?: number;
+        pairs?: number;
+        items: number;
+        adjudicated?: number;
+    };
 };
 
 /**
@@ -8026,7 +8045,7 @@ export type StepRegistryRef = {
 };
 
 /**
- * open until a person resolves it (the Triage panel and triage.accept/correct/reject arrive with annotation)
+ * open until a person resolves it in the Triage panel: accepted (the best candidate becomes the human transcript), corrected (a person's own text), rejected (dropped)
  */
 export type TriageState = 'open' | 'accepted' | 'corrected' | 'rejected';
 
@@ -8101,10 +8120,612 @@ export type TriageItem = {
     confidence: number;
     createdAt: string;
     rev: number;
+    resolution?: TriageResolution;
 };
 
 export type TriageItemList = {
     items: Array<TriageItem>;
+};
+
+/**
+ * open while people annotate; freezing once the approved freeze runs (cut, then the golden set); frozen when the dataset version (and golden set) is registered; failed when the freeze failed (freeze.error says why; batches.freeze again)
+ */
+export type BatchState = 'open' | 'freezing' | 'frozen' | 'failed';
+
+/**
+ * golden-set: double annotation, adjudication and the agreement target, frozen through goldenSets.freeze; training: single annotation suffices, frozen as a dataset version
+ */
+export type BatchPurpose = 'golden-set' | 'training';
+
+/**
+ * campaign: the segment's campaign key, else the source file's folder; month: its recorded month (YYYY-MM), else unknown; duration: annotation.duration_edges_s buckets; confidence: the transcript's confidence in annotation.confidence_edges buckets (none without one)
+ */
+export type BatchStratum = 'campaign' | 'month' | 'duration' | 'confidence';
+
+/**
+ * noise and crosstalk are kept (real telephone audio); an item whose final tags hold foreign or unintelligible is excluded from the freeze
+ */
+export type AnnotationTag = 'noise' | 'crosstalk' | 'foreign' | 'unintelligible';
+
+/**
+ * done: the text is the annotator's transcript; skipped: someone else should take it (it does not count); flagged: a transcript the annotator is unsure of — the item gets a second annotation
+ */
+export type AnnotationStatus = 'done' | 'skipped' | 'flagged';
+
+/**
+ * pending until it has the annotations it needs (one; two for double or flagged items); agreed when they agree (WER ≤ annotation.adjudicate_wer); disputed when they do not (the adjudication queue); adjudicated by batchItems.accept; excluded by adjudication, by annotation.max_skips skips, or by a foreign or unintelligible tag
+ */
+export type BatchItemState = 'pending' | 'agreed' | 'disputed' | 'adjudicated' | 'excluded';
+
+/**
+ * A named span of the transcript (character offsets, end exclusive) that entity_score checks in the hypothesis
+ */
+export type EntitySpan = {
+    start: number;
+    end: number;
+    /**
+     * name, address, or a class of the language pack's itn.yaml (number, date, phone, amount, …)
+     */
+    class: string;
+    /**
+     * The span's text (filled by the server from the transcript)
+     */
+    text?: string;
+};
+
+export type BatchNew = {
+    /**
+     * The batch's name in the project
+     */
+    name: string;
+    description?: string;
+    purpose?: BatchPurpose;
+    /**
+     * The frame: a dataset version (ver_… or dataset/<name>, its newest version) with the segments artifact it was ingested from
+     */
+    dataset?: string;
+    /**
+     * The frame as a segments artifact (cadence.segments/1) instead of a dataset version
+     */
+    segments?: string;
+    /**
+     * Items to sample (default annotation.batch_size)
+     */
+    size?: number;
+    /**
+     * The target channel's role (default annotation.target_role: the caller)
+     */
+    role?: 'caller' | 'bot' | 'mono';
+    /**
+     * Strata of the sample (default all four)
+     */
+    stratify?: Array<BatchStratum>;
+    /**
+     * Share of items annotated twice, blind (default annotation.double_share)
+     */
+    doubleShare?: number;
+    /**
+     * annotation/guidelines/<name>.md in the project repository (default annotation.guidelines)
+     */
+    guidelines?: string;
+    /**
+     * When annotation should end (default annotation.due_days from now); invitations expire then at the latest
+     */
+    dueAt?: string;
+    /**
+     * Seed of the sample (default 0)
+     */
+    seed?: number;
+    /**
+     * Name of the golden set (golden-set/<name>) or dataset version the freeze registers (default the batch's name)
+     */
+    goldenSet?: string;
+    /**
+     * Seconds of the source file played before and after the segment (default annotation.context_s)
+     */
+    contextS?: number;
+};
+
+export type BatchStratumCount = {
+    /**
+     * The stratum's value per stratify dimension
+     */
+    key: {
+        [key: string]: string;
+    };
+    /**
+     * Segments of the frame in this stratum
+     */
+    frame: number;
+    /**
+     * Items sampled from it
+     */
+    sampled: number;
+};
+
+export type BatchProgress = {
+    items: number;
+    pending: number;
+    agreed: number;
+    disputed: number;
+    adjudicated: number;
+    excluded: number;
+    /**
+     * Annotations submitted (skips included)
+     */
+    annotations: number;
+    /**
+     * Items that need two annotations (the double share plus flagged items)
+     */
+    doubleItems: number;
+    /**
+     * Of those
+     */
+    doubleDone: number;
+};
+
+export type BatchAgreement = {
+    /**
+     * Double-annotated items with two transcripts
+     */
+    pairs: number;
+    /**
+     * Words of the first transcripts
+     */
+    refWords: number;
+    /**
+     * Word edits between the first and second transcripts (after the scoring normalizer)
+     */
+    edits: number;
+    /**
+     * Inter-annotator WER = edits / refWords (absent without pairs)
+     */
+    iaaWer?: number;
+    /**
+     * annotation.max_iaa_wer
+     */
+    target: number;
+    /**
+     * iaaWer is at or under the target (false without pairs)
+     */
+    meets: boolean;
+};
+
+/**
+ * End of utterance from per-channel voice activity: the target's last speech end to the other party's next speech start
+ */
+export type BatchEou = {
+    /**
+     * Items with a measured gap
+     */
+    items: number;
+    p50GapS?: number;
+    p90GapS?: number;
+    /**
+     * Items where the other party started before the target stopped (negative gap)
+     */
+    overlaps?: number;
+};
+
+export type BatchReviewer = {
+    id: string;
+    name: string;
+    role: 'admin' | 'annotator' | 'adjudicator';
+    annotations: number;
+    expiresAt?: string;
+};
+
+export type BatchGuidelines = {
+    name: string;
+    /**
+     * annotation/guidelines/<name>.md
+     */
+    path: string;
+    /**
+     * The commit the batch pins
+     */
+    commit: string;
+};
+
+export type BatchFreezeState = {
+    approvalId?: string;
+    pipelineRunId?: string;
+    datasetVersionId?: string;
+    goldenSetVersionId?: string;
+    iaaWer?: number;
+    items?: number;
+    error?: string;
+    startedAt?: string;
+    frozenAt?: string;
+};
+
+export type Batch = {
+    /**
+     * anb_…
+     */
+    id: string;
+    projectId: string;
+    name: string;
+    description?: string;
+    purpose: BatchPurpose;
+    state: BatchState;
+    rev: number;
+    role: string;
+    stratify: Array<BatchStratum>;
+    doubleShare: number;
+    seed: number;
+    contextS: number;
+    dueAt?: string;
+    guidelines: BatchGuidelines;
+    frame: {
+        datasetVersionId?: string;
+        segmentsHash: string;
+        /**
+         * The source the segments came from
+         */
+        source: string;
+        /**
+         * Segments of the target role in the frame
+         */
+        segments: number;
+    };
+    strata: Array<BatchStratumCount>;
+    progress: BatchProgress;
+    agreement: BatchAgreement;
+    adjudication: {
+        /**
+         * Disputed items waiting
+         */
+        queue: number;
+    };
+    eou: BatchEou;
+    reviewers: Array<BatchReviewer>;
+    /**
+     * The name the freeze registers (golden-set/<name>, or dataset/<name>-annotated)
+     */
+    goldenSet: string;
+    freeze?: BatchFreezeState;
+    canFreeze: {
+        ok: boolean;
+        reasons: Array<string>;
+    };
+    /**
+     * Dry run only: the items that would be sampled
+     */
+    sample?: Array<BatchItem>;
+    createdBy: Actor;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type BatchList = {
+    items: Array<Batch>;
+};
+
+export type BatchSegment = {
+    /**
+     * b3 hash of the canonical 16 kHz PCM16 segment
+     */
+    hash: string;
+    /**
+     * mount://<mount>/<path>#t=<start>,<end>&ch=<n>
+     */
+    uri: string;
+    /**
+     * The source file's mount URI
+     */
+    file?: string;
+    start: number;
+    end: number;
+    duration: number;
+    channel: number;
+    role: string;
+    language?: string;
+    speaker?: string;
+    sourceRate?: number;
+    codec?: string;
+    crosstalk?: number;
+};
+
+export type ContextTurn = {
+    /**
+     * Seconds in the source file
+     */
+    start: number;
+    end: number;
+    channel?: number;
+    role?: string;
+    text: string;
+};
+
+export type Annotation = {
+    /**
+     * ann_…
+     */
+    id: string;
+    itemId: string;
+    annotator: Actor;
+    status: AnnotationStatus;
+    text: string;
+    tags: Array<AnnotationTag>;
+    entities: Array<EntitySpan>;
+    note?: string;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type BatchItem = {
+    /**
+     * bit_… — also the media id of its audio window (audio.sign, peaks.get, tracks.get)
+     */
+    id: string;
+    batchId: string;
+    position: number;
+    state: BatchItemState;
+    rev: number;
+    segment: BatchSegment;
+    /**
+     * The audio served under the item's id: the segment plus contextS each side, every channel of the source file
+     */
+    window: {
+        /**
+         * Seconds in the source file
+         */
+        start: number;
+        end: number;
+        channels: number;
+        /**
+         * Role per channel, when known
+         */
+        roles?: Array<string>;
+    };
+    /**
+     * The best hypothesis there is (pseudo-label, a member's text, the ingest's transcript); empty when none
+     */
+    prefill: {
+        text: string;
+        origin: string;
+        confidence?: number;
+    };
+    context: {
+        /**
+         * The other channel's transcribed turns in the window (the bot's TTS script): crosstalk and overlap at a glance
+         */
+        turns: Array<ContextTurn>;
+    };
+    strata: {
+        [key: string]: string;
+    };
+    /**
+     * Sampled for double annotation
+     */
+    double: boolean;
+    /**
+     * Transcripts the item needs (1, or 2 when double or flagged)
+     */
+    required: number;
+    eou?: {
+        /**
+         * The target's last speech end (file seconds)
+         */
+        speechEnd?: number;
+        /**
+         * The other channel's next speech start
+         */
+        nextSpeech?: number;
+        gapS?: number;
+    };
+    /**
+     * The annotations the caller may see: a reviewer only their own (blind); the admin and adjudicators every one
+     */
+    annotations: Array<Annotation>;
+    /**
+     * WER between the two transcripts of a double item (not shown to annotators)
+     */
+    wer?: number;
+    /**
+     * The accepted transcript (agreed or adjudicated)
+     */
+    final?: {
+        text?: string;
+        tags?: Array<AnnotationTag>;
+        entities?: Array<EntitySpan>;
+        by?: Actor;
+        at?: string;
+        /**
+         * The annotation it came from (ann_…), when taken as is
+         */
+        from?: string;
+    };
+};
+
+export type BatchItemList = {
+    items: Array<BatchItem>;
+    /**
+     * queue=mine: the item to annotate next (bit_…), absent when nothing is left
+     */
+    next?: string;
+};
+
+export type AnnotationNew = {
+    status: AnnotationStatus;
+    /**
+     * The transcript (required unless skipped)
+     */
+    text?: string;
+    tags?: Array<AnnotationTag>;
+    entities?: Array<EntitySpan>;
+    note?: string;
+};
+
+export type BatchItemAccept = {
+    /**
+     * Take this annotation (ann_…) as the final transcript
+     */
+    from?: string;
+    /**
+     * The final transcript (when not from an annotation)
+     */
+    text?: string;
+    tags?: Array<AnnotationTag>;
+    entities?: Array<EntitySpan>;
+    /**
+     * Leave the item out of the freeze
+     */
+    exclude?: boolean;
+};
+
+export type BatchFreeze = {
+    batch: Batch;
+    /**
+     * Items that freeze
+     */
+    items: number;
+    excluded: number;
+    hours: number;
+    iaaWer?: number;
+    /**
+     * The cut's pipeline run (approved freeze)
+     */
+    pipelineRunId?: string;
+    /**
+     * The draft dataset version the cut freezes
+     */
+    datasetVersionId?: string;
+};
+
+export type Invitation = {
+    /**
+     * The invitation credential (crd_…); credentials.revoke ends it
+     */
+    id: string;
+    batchId: string;
+    reviewer: {
+        id: string;
+        name: string;
+    };
+    role: 'annotator' | 'adjudicator';
+    expiresAt: string;
+    createdAt: string;
+    lastUsedAt?: string;
+    revokedAt?: string;
+};
+
+export type InvitationCreated = Invitation & {
+    /**
+     * The invitation token (cri_…), shown once
+     */
+    token: string;
+    /**
+     * The link to send: the web app opens it, signs the reviewer in and shows the batch
+     */
+    url: string;
+};
+
+export type InvitationList = {
+    items: Array<Invitation>;
+};
+
+export type InvitationNew = {
+    name: Username;
+    role?: 'annotator' | 'adjudicator';
+    expiresAt?: string;
+};
+
+export type AuthAccept = {
+    token: string;
+};
+
+/**
+ * A reviewer's session: one batch, play without download, nothing else
+ */
+export type ReviewerScope = {
+    batchId: string;
+    projectId: string;
+    role: 'annotator' | 'adjudicator';
+    expiresAt?: string;
+};
+
+export type TriageAccept = {
+    tags?: Array<AnnotationTag>;
+};
+
+export type TriageCorrect = {
+    text: string;
+    tags?: Array<AnnotationTag>;
+};
+
+export type TriageReject = {
+    reason?: string;
+};
+
+export type TriageResolution = {
+    /**
+     * The human transcript written (accept, correct)
+     */
+    text?: string;
+    tags?: Array<AnnotationTag>;
+    /**
+     * Why the segment was dropped (reject)
+     */
+    reason?: string;
+    utteranceId?: string;
+    transcriptId?: string;
+    by: Actor;
+    at: string;
+};
+
+export type AudioTrackChannel = {
+    channel: number;
+    role?: string;
+    /**
+     * Level per hop in dBFS (RMS), floored at -100
+     */
+    levelDb: Array<number>;
+    /**
+     * Speech regions [start, end] in seconds from the audio's start
+     */
+    speech: Array<[
+        number,
+        number
+    ]>;
+    noiseFloorDb?: number;
+    /**
+     * Estimated bandwidth
+     */
+    bandwidthHz: number;
+    /**
+     * 8 kHz origin (bandwidth at or under 4 kHz): the spectrogram stops at 4 kHz
+     */
+    narrowband: boolean;
+};
+
+export type AudioTracks = {
+    utteranceId: string;
+    hopS: number;
+    durationS: number;
+    /**
+     * The audio's own sample rate
+     */
+    sampleRate: number;
+    /**
+     * Where the audio starts in its source file (an item's window), seconds
+     */
+    start?: number;
+    channels: Array<AudioTrackChannel>;
+    /**
+     * The widest channel's estimated bandwidth
+     */
+    bandwidthHz: number;
+    narrowband: boolean;
+    /**
+     * End of utterance (an item window with a target and another channel)
+     */
+    eou?: {
+        speechEnd?: number;
+        nextSpeech?: number;
+        gapS?: number;
+    };
 };
 
 export type SecretNewWritable = {
@@ -8193,9 +8814,24 @@ export type MixId = string;
 export type LeaseId = string;
 
 /**
- * Utterance id (utt_…) or the audio's content hash (b3:…)
+ * Utterance id (utt_…) or the audio's content hash (b3:…); an annotation batch item (bit_…) or a triage item (tri_…) names its segment's window of the source file, every channel (phase 4)
  */
 export type UtteranceRef = string;
+
+/**
+ * Annotation batch id (anb_…)
+ */
+export type BatchId = string;
+
+/**
+ * Batch item id (bit_…)
+ */
+export type BatchItemId = string;
+
+/**
+ * Triage item id (tri_…)
+ */
+export type TriageItemId = string;
 
 /**
  * Artifact hash (b3:<64 hex>, BLAKE3-256 of the content)
@@ -15062,7 +15698,7 @@ export type AudioGetData = {
     };
     path: {
         /**
-         * Utterance id (utt_…) or the audio's content hash (b3:…)
+         * Utterance id (utt_…) or the audio's content hash (b3:…); an annotation batch item (bit_…) or a triage item (tri_…) names its segment's window of the source file, every channel (phase 4)
          */
         id: string;
     };
@@ -15121,7 +15757,7 @@ export type AudioSignData = {
     body?: AudioSignRequest;
     path: {
         /**
-         * Utterance id (utt_…) or the audio's content hash (b3:…)
+         * Utterance id (utt_…) or the audio's content hash (b3:…); an annotation batch item (bit_…) or a triage item (tri_…) names its segment's window of the source file, every channel (phase 4)
          */
         id: string;
     };
@@ -15151,7 +15787,7 @@ export type PeaksGetData = {
     body?: never;
     path: {
         /**
-         * Utterance id (utt_…) or the audio's content hash (b3:…)
+         * Utterance id (utt_…) or the audio's content hash (b3:…); an annotation batch item (bit_…) or a triage item (tri_…) names its segment's window of the source file, every channel (phase 4)
          */
         id: string;
     };
@@ -15194,7 +15830,7 @@ export type SpectrogramGetData = {
     body?: never;
     path: {
         /**
-         * Utterance id (utt_…) or the audio's content hash (b3:…)
+         * Utterance id (utt_…) or the audio's content hash (b3:…); an annotation batch item (bit_…) or a triage item (tri_…) names its segment's window of the source file, every channel (phase 4)
          */
         id: string;
     };
@@ -15229,7 +15865,7 @@ export type WordsGetData = {
     body?: never;
     path: {
         /**
-         * Utterance id (utt_…) or the audio's content hash (b3:…)
+         * Utterance id (utt_…) or the audio's content hash (b3:…); an annotation batch item (bit_…) or a triage item (tri_…) names its segment's window of the source file, every channel (phase 4)
          */
         id: string;
     };
@@ -15926,3 +16562,596 @@ export type TriageListResponses = {
 };
 
 export type TriageListResponse = TriageListResponses[keyof TriageListResponses];
+
+export type BatchesListData = {
+    body?: never;
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        state?: BatchState;
+        limit?: number;
+    };
+    url: '/projects/{p}/batches';
+};
+
+export type BatchesListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type BatchesListError = BatchesListErrors[keyof BatchesListErrors];
+
+export type BatchesListResponses = {
+    /**
+     * Batches, newest first
+     */
+    200: BatchList;
+};
+
+export type BatchesListResponse = BatchesListResponses[keyof BatchesListResponses];
+
+export type BatchesNewData = {
+    body: BatchNew;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/projects/{p}/batches';
+};
+
+export type BatchesNewErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type BatchesNewError = BatchesNewErrors[keyof BatchesNewErrors];
+
+export type BatchesNewResponses = {
+    /**
+     * Dry run — the batch as it would be (strata and sample); nothing was written
+     */
+    200: Batch;
+    /**
+     * The batch
+     */
+    201: Batch;
+};
+
+export type BatchesNewResponse = BatchesNewResponses[keyof BatchesNewResponses];
+
+export type BatchesGetData = {
+    body?: never;
+    path: {
+        /**
+         * Annotation batch id (anb_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/batches/{id}';
+};
+
+export type BatchesGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type BatchesGetError = BatchesGetErrors[keyof BatchesGetErrors];
+
+export type BatchesGetResponses = {
+    /**
+     * The batch
+     */
+    200: Batch;
+};
+
+export type BatchesGetResponse = BatchesGetResponses[keyof BatchesGetResponses];
+
+export type BatchesFreezeData = {
+    body?: never;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Annotation batch id (anb_…)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/batches/{id}:freeze';
+};
+
+export type BatchesFreezeErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type BatchesFreezeError = BatchesFreezeErrors[keyof BatchesFreezeErrors];
+
+export type BatchesFreezeResponses = {
+    /**
+     * Dry run — what would freeze; or the approved freeze, started (pipelineRunId)
+     */
+    200: BatchFreeze;
+    /**
+     * Gated; a person decides the approval on the approvals topic
+     */
+    202: ApprovalAccepted;
+};
+
+export type BatchesFreezeResponse = BatchesFreezeResponses[keyof BatchesFreezeResponses];
+
+export type BatchItemsListData = {
+    body?: never;
+    path: {
+        /**
+         * Annotation batch id (anb_…)
+         */
+        id: string;
+    };
+    query?: {
+        queue?: 'mine' | 'adjudication' | 'all';
+        state?: BatchItemState;
+        limit?: number;
+    };
+    url: '/batches/{id}/batch-items';
+};
+
+export type BatchItemsListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type BatchItemsListError = BatchItemsListErrors[keyof BatchItemsListErrors];
+
+export type BatchItemsListResponses = {
+    /**
+     * Items in batch order
+     */
+    200: BatchItemList;
+};
+
+export type BatchItemsListResponse = BatchItemsListResponses[keyof BatchItemsListResponses];
+
+export type BatchItemsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Annotation batch id (anb_…)
+         */
+        id: string;
+        /**
+         * Batch item id (bit_…)
+         */
+        item: string;
+    };
+    query?: never;
+    url: '/batches/{id}/batch-items/{item}';
+};
+
+export type BatchItemsGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type BatchItemsGetError = BatchItemsGetErrors[keyof BatchItemsGetErrors];
+
+export type BatchItemsGetResponses = {
+    /**
+     * The item
+     */
+    200: BatchItem;
+};
+
+export type BatchItemsGetResponse = BatchItemsGetResponses[keyof BatchItemsGetResponses];
+
+export type BatchItemsAcceptData = {
+    body: BatchItemAccept;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Annotation batch id (anb_…)
+         */
+        id: string;
+        /**
+         * Batch item id (bit_…)
+         */
+        item: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/batches/{id}/batch-items/{item}:accept';
+};
+
+export type BatchItemsAcceptErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type BatchItemsAcceptError = BatchItemsAcceptErrors[keyof BatchItemsAcceptErrors];
+
+export type BatchItemsAcceptResponses = {
+    /**
+     * The adjudicated item
+     */
+    200: BatchItem;
+};
+
+export type BatchItemsAcceptResponse = BatchItemsAcceptResponses[keyof BatchItemsAcceptResponses];
+
+export type AnnotationsNewData = {
+    body: AnnotationNew;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path: {
+        /**
+         * Annotation batch id (anb_…)
+         */
+        id: string;
+        /**
+         * Batch item id (bit_…)
+         */
+        item: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/batches/{id}/batch-items/{item}/annotations';
+};
+
+export type AnnotationsNewErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type AnnotationsNewError = AnnotationsNewErrors[keyof AnnotationsNewErrors];
+
+export type AnnotationsNewResponses = {
+    /**
+     * Dry run — the item as it would be
+     */
+    200: BatchItem;
+    /**
+     * The item with the caller's annotation
+     */
+    201: BatchItem;
+};
+
+export type AnnotationsNewResponse = AnnotationsNewResponses[keyof AnnotationsNewResponses];
+
+export type InvitationsListData = {
+    body?: never;
+    path: {
+        /**
+         * Annotation batch id (anb_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/batches/{id}/invitations';
+};
+
+export type InvitationsListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type InvitationsListError = InvitationsListErrors[keyof InvitationsListErrors];
+
+export type InvitationsListResponses = {
+    /**
+     * Invitations, newest first (revoked and expired ones included)
+     */
+    200: InvitationList;
+};
+
+export type InvitationsListResponse = InvitationsListResponses[keyof InvitationsListResponses];
+
+export type InvitationsNewData = {
+    body: InvitationNew;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path: {
+        /**
+         * Annotation batch id (anb_…)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/batches/{id}/invitations';
+};
+
+export type InvitationsNewErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type InvitationsNewError = InvitationsNewErrors[keyof InvitationsNewErrors];
+
+export type InvitationsNewResponses = {
+    /**
+     * Dry run — the invitation as it would be, without a link
+     */
+    200: Invitation;
+    /**
+     * The invitation with its link (shown once)
+     */
+    201: InvitationCreated;
+};
+
+export type InvitationsNewResponse = InvitationsNewResponses[keyof InvitationsNewResponses];
+
+export type AuthAcceptData = {
+    body: AuthAccept;
+    path?: never;
+    query?: never;
+    url: '/auth:accept';
+};
+
+export type AuthAcceptErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type AuthAcceptError = AuthAcceptErrors[keyof AuthAcceptErrors];
+
+export type AuthAcceptResponses = {
+    /**
+     * Signed in as the reviewer; the session reaches only the invitation's batch
+     */
+    200: AuthStatus;
+};
+
+export type AuthAcceptResponse = AuthAcceptResponses[keyof AuthAcceptResponses];
+
+export type TriageAcceptData = {
+    body?: TriageAccept;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Triage item id (tri_…)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/triage/{id}:accept';
+};
+
+export type TriageAcceptErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type TriageAcceptError = TriageAcceptErrors[keyof TriageAcceptErrors];
+
+export type TriageAcceptResponses = {
+    /**
+     * The resolved item
+     */
+    200: TriageItem;
+};
+
+export type TriageAcceptResponse = TriageAcceptResponses[keyof TriageAcceptResponses];
+
+export type TriageCorrectData = {
+    body: TriageCorrect;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Triage item id (tri_…)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/triage/{id}:correct';
+};
+
+export type TriageCorrectErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type TriageCorrectError = TriageCorrectErrors[keyof TriageCorrectErrors];
+
+export type TriageCorrectResponses = {
+    /**
+     * The resolved item
+     */
+    200: TriageItem;
+};
+
+export type TriageCorrectResponse = TriageCorrectResponses[keyof TriageCorrectResponses];
+
+export type TriageRejectData = {
+    body?: TriageReject;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Triage item id (tri_…)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/triage/{id}:reject';
+};
+
+export type TriageRejectErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type TriageRejectError = TriageRejectErrors[keyof TriageRejectErrors];
+
+export type TriageRejectResponses = {
+    /**
+     * The resolved item
+     */
+    200: TriageItem;
+};
+
+export type TriageRejectResponse = TriageRejectResponses[keyof TriageRejectResponses];
+
+export type TracksGetData = {
+    body?: never;
+    path: {
+        /**
+         * Utterance id (utt_…) or the audio's content hash (b3:…); an annotation batch item (bit_…) or a triage item (tri_…) names its segment's window of the source file, every channel (phase 4)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Resolution: milliseconds per level value, a multiple of 10
+         */
+        hopMs?: number;
+    };
+    url: '/registry/utterances/{id}/tracks';
+};
+
+export type TracksGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type TracksGetError = TracksGetErrors[keyof TracksGetErrors];
+
+export type TracksGetResponses = {
+    /**
+     * The tracks
+     */
+    200: AudioTracks;
+};
+
+export type TracksGetResponse = TracksGetResponses[keyof TracksGetResponses];

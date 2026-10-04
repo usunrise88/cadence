@@ -17,12 +17,15 @@ Entities:
   agentProfile   edit get
   agentSessions  accept cancel get list new pause resume revert
   aliases        get list set
+  annotations    new
   approvals      approve deny get list
   artifacts      evict get
   audit          list
   auxiliaries    get list
   backups        get list new verify
   baseModels     get list
+  batchItems     accept get list
+  batches        freeze get list new
   boost          edit
   branches       accept compare get list revert
   checkpoints    average get list
@@ -38,6 +41,7 @@ Entities:
   gates          edit get
   goldenSets     freeze get list
   help           get search
+  invitations    list new
   jobLogs        list
   jobs           cancel edit get list pause resume wait
   langpacks      edit get list
@@ -66,7 +70,7 @@ Entities:
   sweeps         run
   telegramBot    set verify
   templates      get list
-  triage         list
+  triage         accept correct list reject
   utterances     get list search
 
 Global flags:

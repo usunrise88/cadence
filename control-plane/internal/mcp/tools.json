@@ -1072,6 +1072,141 @@
       ]
     },
     {
+      "name": "annotations.new",
+      "title": "Submit the caller's annotation of an item — done, skipped or flagged, with text, tags and entity spans",
+      "description": "Submit the caller's annotation of an item — done, skipped or flagged, with text, tags and entity spans. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/batches/{id}/batch-items/{item}/annotations",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "entities": {
+                "items": {
+                  "additionalProperties": false,
+                  "description": "A named span of the transcript (character offsets, end exclusive) that entity_score checks in the hypothesis",
+                  "properties": {
+                    "class": {
+                      "description": "name, address, or a class of the language pack's itn.yaml (number, date, phone, amount, …)",
+                      "pattern": "^[a-z][a-z0-9_-]{0,31}$",
+                      "type": "string"
+                    },
+                    "end": {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "start": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "text": {
+                      "description": "The span's text (filled by the server from the transcript)",
+                      "maxLength": 500,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "start",
+                    "end",
+                    "class"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 100,
+                "type": "array"
+              },
+              "note": {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              "status": {
+                "description": "done: the text is the annotator's transcript; skipped: someone else should take it (it does not count); flagged: a transcript the annotator is unsure of — the item gets a second annotation",
+                "enum": [
+                  "done",
+                  "skipped",
+                  "flagged"
+                ],
+                "type": "string"
+              },
+              "tags": {
+                "items": {
+                  "description": "noise and crosstalk are kept (real telephone audio); an item whose final tags hold foreign or unintelligible is excluded from the freeze",
+                  "enum": [
+                    "noise",
+                    "crosstalk",
+                    "foreign",
+                    "unintelligible"
+                  ],
+                  "type": "string"
+                },
+                "maxItems": 4,
+                "type": "array"
+              },
+              "text": {
+                "description": "The transcript (required unless skipped)",
+                "maxLength": 5000,
+                "type": "string"
+              }
+            },
+            "required": [
+              "status"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Annotation batch id (anb_…)",
+            "maxLength": 100,
+            "type": "string"
+          },
+          "item": {
+            "description": "Batch item id (bit_…)",
+            "maxLength": 100,
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "id",
+          "item"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "item",
+          "in": "path",
+          "name": "item"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
       "name": "approvals.approve",
       "title": "Approve a pending request; the stored request runs as its original actor",
       "description": "Approve a pending request; the stored request runs as its original actor. Pass dryRun=true to see what would happen without changing anything.",
@@ -1782,6 +1917,555 @@
           "property": "state",
           "in": "query",
           "name": "state"
+        }
+      ]
+    },
+    {
+      "name": "batchItems.accept",
+      "title": "Adjudicate an item — set its final transcript, tags and entity spans, or exclude it (admin or an adjudicator)",
+      "description": "Adjudicate an item — set its final transcript, tags and entity spans, or exclude it (admin or an adjudicator). Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/batches/{id}/batch-items/{item}:accept",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "entities": {
+                "items": {
+                  "additionalProperties": false,
+                  "description": "A named span of the transcript (character offsets, end exclusive) that entity_score checks in the hypothesis",
+                  "properties": {
+                    "class": {
+                      "description": "name, address, or a class of the language pack's itn.yaml (number, date, phone, amount, …)",
+                      "pattern": "^[a-z][a-z0-9_-]{0,31}$",
+                      "type": "string"
+                    },
+                    "end": {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "start": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "text": {
+                      "description": "The span's text (filled by the server from the transcript)",
+                      "maxLength": 500,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "start",
+                    "end",
+                    "class"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 100,
+                "type": "array"
+              },
+              "exclude": {
+                "description": "Leave the item out of the freeze",
+                "type": "boolean"
+              },
+              "from": {
+                "description": "Take this annotation (ann_…) as the final transcript",
+                "type": "string"
+              },
+              "tags": {
+                "items": {
+                  "description": "noise and crosstalk are kept (real telephone audio); an item whose final tags hold foreign or unintelligible is excluded from the freeze",
+                  "enum": [
+                    "noise",
+                    "crosstalk",
+                    "foreign",
+                    "unintelligible"
+                  ],
+                  "type": "string"
+                },
+                "maxItems": 4,
+                "type": "array"
+              },
+              "text": {
+                "description": "The final transcript (when not from an annotation)",
+                "maxLength": 5000,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Annotation batch id (anb_…)",
+            "maxLength": 100,
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          },
+          "item": {
+            "description": "Batch item id (bit_…)",
+            "maxLength": 100,
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "id",
+          "ifMatch",
+          "item"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "item",
+          "in": "path",
+          "name": "item"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "batchItems.get",
+      "title": "One batch item — its segment, audio window, the bot's script around it, the prefill and the annotations the caller may see",
+      "description": "One batch item — its segment, audio window, the bot's script around it, the prefill and the annotations the caller may see",
+      "method": "GET",
+      "path": "/batches/{id}/batch-items/{item}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Annotation batch id (anb_…)",
+            "maxLength": 100,
+            "type": "string"
+          },
+          "item": {
+            "description": "Batch item id (bit_…)",
+            "maxLength": 100,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "item"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "item",
+          "in": "path",
+          "name": "item"
+        }
+      ]
+    },
+    {
+      "name": "batchItems.list",
+      "title": "The items of a batch — the caller's annotation queue (mine), the adjudication queue, or all",
+      "description": "The items of a batch — the caller's annotation queue (mine), the adjudication queue, or all",
+      "method": "GET",
+      "path": "/batches/{id}/batch-items",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Annotation batch id (anb_…)",
+            "maxLength": 100,
+            "type": "string"
+          },
+          "limit": {
+            "default": 200,
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "queue": {
+            "default": "mine",
+            "enum": [
+              "mine",
+              "adjudication",
+              "all"
+            ],
+            "type": "string"
+          },
+          "state": {
+            "description": "pending until it has the annotations it needs (one; two for double or flagged items); agreed when they agree (WER ≤ annotation.adjudicate_wer); disputed when they do not (the adjudication queue); adjudicated by batchItems.accept; excluded by adjudication, by annotation.max_skips skips, or by a foreign or unintelligible tag",
+            "enum": [
+              "pending",
+              "agreed",
+              "disputed",
+              "adjudicated",
+              "excluded"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "queue",
+          "in": "query",
+          "name": "queue"
+        },
+        {
+          "property": "state",
+          "in": "query",
+          "name": "state"
+        },
+        {
+          "property": "limit",
+          "in": "query",
+          "name": "limit"
+        }
+      ]
+    },
+    {
+      "name": "batches.freeze",
+      "title": "Freeze a finished batch into a golden set (via goldenSets.freeze) or a training dataset version — an approval",
+      "description": "Freeze a batch whose items are all resolved: the accepted items become a draft dataset version (human transcripts, entity spans, the target channel cut from the mount) that is cut into the content store, then — purpose golden-set — frozen as golden-set/\u003cgoldenSet\u003e through goldenSets.freeze, its card citing the guidelines commit and the inter-annotator WER. A golden-set batch needs its inter-annotator WER at or under annotation.max_iaa_wer (annotation-agreement-low otherwise); every item must be agreed, adjudicated or excluded (batch-incomplete). Always an approval the admin decides (202 approvalId). dryRun answers what would freeze. Reviewers lose access when the batch freezes. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/batches/{id}:freeze",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Annotation batch id (anb_…)",
+            "maxLength": 100,
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        }
+      ]
+    },
+    {
+      "name": "batches.get",
+      "title": "Get an annotation batch — progress, inter-annotator agreement, the adjudication queue, reviewers and whether it can freeze",
+      "description": "The state of an annotation batch: progress (pending, agreed, disputed, adjudicated, excluded items; double annotations done), agreement (inter-annotator WER over the double-annotated items against annotation.max_iaa_wer), the adjudication queue, the strata of the sample, the end-of-utterance gaps measured from per-channel voice activity, reviewers, the guidelines commit, and canFreeze with the reasons it cannot freeze yet. Annotated text is not returned here (batchItems.list has it).",
+      "method": "GET",
+      "path": "/batches/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Annotation batch id (anb_…)",
+            "maxLength": 100,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        }
+      ]
+    },
+    {
+      "name": "batches.list",
+      "title": "List the project's annotation batches, newest first, with progress and agreement",
+      "description": "List the project's annotation batches, newest first, with progress and agreement",
+      "method": "GET",
+      "path": "/projects/{p}/batches",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "default": 50,
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          },
+          "state": {
+            "description": "open while people annotate; freezing once the approved freeze runs (cut, then the golden set); frozen when the dataset version (and golden set) is registered; failed when the freeze failed (freeze.error says why; batches.freeze again)",
+            "enum": [
+              "open",
+              "freezing",
+              "frozen",
+              "failed"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "state",
+          "in": "query",
+          "name": "state"
+        },
+        {
+          "property": "limit",
+          "in": "query",
+          "name": "limit"
+        }
+      ]
+    },
+    {
+      "name": "batches.new",
+      "title": "Sample an annotation batch from a dataset version's segments (stratified, the caller's channel by default)",
+      "description": "Open an annotation batch: a fixed sample of segments people transcribe by hand, to freeze as a golden set (purpose golden-set: double annotation and adjudication) or as training data (purpose training: single annotation). The frame is a dataset version (ver_… or dataset/\u003cname\u003e, usually a draft from pipelines/data-ingest) or a segments artifact (b3:…); the sample takes segments of one role (caller by default: the bot's channel labels itself), stratified by campaign, month, duration bucket and confidence (proportional, at least one per stratum, reproducible with seed). guidelines names annotation/guidelines/\u003cname\u003e.md in the project repository; the batch pins its commit. doubleShare of the items (default 10 %) get a second, blind annotation; flagged items get one too. Always dryRun first: the answer shows the strata and the sample without writing. People annotate in the Triage panel (Annotate mode); the admin invites reviewers; watch batches.get; freeze with batches.freeze (approval). Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/projects/{p}/batches",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "contextS": {
+                "description": "Seconds of the source file played before and after the segment (default annotation.context_s)",
+                "format": "double",
+                "maximum": 30,
+                "minimum": 0,
+                "type": "number"
+              },
+              "dataset": {
+                "description": "The frame: a dataset version (ver_… or dataset/\u003cname\u003e, its newest version) with the segments artifact it was ingested from",
+                "maxLength": 200,
+                "type": "string"
+              },
+              "description": {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              "doubleShare": {
+                "description": "Share of items annotated twice, blind (default annotation.double_share)",
+                "format": "double",
+                "maximum": 1,
+                "minimum": 0,
+                "type": "number"
+              },
+              "dueAt": {
+                "description": "When annotation should end (default annotation.due_days from now); invitations expire then at the latest",
+                "format": "date-time",
+                "type": "string"
+              },
+              "goldenSet": {
+                "description": "Name of the golden set (golden-set/\u003cname\u003e) or dataset version the freeze registers (default the batch's name)",
+                "pattern": "^[a-z0-9][a-z0-9._-]{0,62}[a-z0-9]$",
+                "type": "string"
+              },
+              "guidelines": {
+                "description": "annotation/guidelines/\u003cname\u003e.md in the project repository (default annotation.guidelines)",
+                "pattern": "^[a-z0-9][a-z0-9._-]{0,62}$",
+                "type": "string"
+              },
+              "name": {
+                "description": "The batch's name in the project",
+                "pattern": "^[a-z0-9][a-z0-9._-]{0,62}[a-z0-9]$",
+                "type": "string"
+              },
+              "purpose": {
+                "description": "golden-set: double annotation, adjudication and the agreement target, frozen through goldenSets.freeze; training: single annotation suffices, frozen as a dataset version",
+                "enum": [
+                  "golden-set",
+                  "training"
+                ],
+                "type": "string"
+              },
+              "role": {
+                "description": "The target channel's role (default annotation.target_role: the caller)",
+                "enum": [
+                  "caller",
+                  "bot",
+                  "mono"
+                ],
+                "type": "string"
+              },
+              "seed": {
+                "description": "Seed of the sample (default 0)",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "segments": {
+                "description": "The frame as a segments artifact (cadence.segments/1) instead of a dataset version",
+                "pattern": "^b3:[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "size": {
+                "description": "Items to sample (default annotation.batch_size)",
+                "maximum": 5000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "stratify": {
+                "description": "Strata of the sample (default all four)",
+                "items": {
+                  "description": "campaign: the segment's campaign key, else the source file's folder; month: its recorded month (YYYY-MM), else unknown; duration: annotation.duration_edges_s buckets; confidence: the transcript's confidence in annotation.confidence_edges buckets (none without one)",
+                  "enum": [
+                    "campaign",
+                    "month",
+                    "duration",
+                    "confidence"
+                  ],
+                  "type": "string"
+                },
+                "maxItems": 4,
+                "type": "array"
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
         }
       ]
     },
@@ -4325,6 +5009,114 @@
           "property": "limit",
           "in": "query",
           "name": "limit"
+        }
+      ]
+    },
+    {
+      "name": "invitations.list",
+      "title": "The reviewers invited to a batch (admin)",
+      "description": "The reviewers invited to a batch (admin)",
+      "method": "GET",
+      "path": "/batches/{id}/invitations",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Annotation batch id (anb_…)",
+            "maxLength": 100,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        }
+      ]
+    },
+    {
+      "name": "invitations.new",
+      "title": "Invite a reviewer to a batch — a link that opens this batch's items only, play without download (admin)",
+      "description": "Invite a reviewer to a batch — a link that opens this batch's items only, play without download (admin). Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/batches/{id}/invitations",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "expiresAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "name": {
+                "description": "Lowercase letters, digits, dots, dashes and underscores; 2–32 characters",
+                "pattern": "^[a-z][a-z0-9._-]{1,31}$",
+                "type": "string"
+              },
+              "role": {
+                "default": "annotator",
+                "enum": [
+                  "annotator",
+                  "adjudicator"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Annotation batch id (anb_…)",
+            "maxLength": 100,
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
         }
       ]
     },
@@ -9454,7 +10246,8 @@
               "pipeline",
               "agent-config",
               "playbook",
-              "langpack"
+              "langpack",
+              "annotation"
             ],
             "type": "string"
           }
@@ -9481,6 +10274,171 @@
           "property": "templateKind",
           "in": "query",
           "name": "templateKind"
+        }
+      ]
+    },
+    {
+      "name": "triage.accept",
+      "title": "Resolve a triage item by accepting its best candidate as the segment's human transcript",
+      "description": "Resolve a triage item by accepting its best candidate as the segment's human transcript. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/triage/{id}:accept",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "tags": {
+                "items": {
+                  "description": "noise and crosstalk are kept (real telephone audio); an item whose final tags hold foreign or unintelligible is excluded from the freeze",
+                  "enum": [
+                    "noise",
+                    "crosstalk",
+                    "foreign",
+                    "unintelligible"
+                  ],
+                  "type": "string"
+                },
+                "maxItems": 4,
+                "type": "array"
+              }
+            },
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Triage item id (tri_…)",
+            "maxLength": 100,
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "triage.correct",
+      "title": "Resolve a triage item with a person's own transcript of the segment",
+      "description": "Resolve a triage item with a person's own transcript of the segment. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/triage/{id}:correct",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "tags": {
+                "items": {
+                  "description": "noise and crosstalk are kept (real telephone audio); an item whose final tags hold foreign or unintelligible is excluded from the freeze",
+                  "enum": [
+                    "noise",
+                    "crosstalk",
+                    "foreign",
+                    "unintelligible"
+                  ],
+                  "type": "string"
+                },
+                "maxItems": 4,
+                "type": "array"
+              },
+              "text": {
+                "maxLength": 5000,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "text"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Triage item id (tri_…)",
+            "maxLength": 100,
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
         }
       ]
     },
@@ -9521,7 +10479,7 @@
             "type": "string"
           },
           "state": {
-            "description": "open until a person resolves it (the Triage panel and triage.accept/correct/reject arrive with annotation)",
+            "description": "open until a person resolves it in the Triage panel: accepted (the best candidate becomes the human transcript), corrected (a person's own text), rejected (dropped)",
             "enum": [
               "open",
               "accepted",
@@ -9566,6 +10524,74 @@
           "property": "limit",
           "in": "query",
           "name": "limit"
+        }
+      ]
+    },
+    {
+      "name": "triage.reject",
+      "title": "Resolve a triage item by dropping the segment (no transcript is written)",
+      "description": "Resolve a triage item by dropping the segment (no transcript is written). Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/triage/{id}:reject",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "reason": {
+                "maxLength": 500,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Triage item id (tri_…)",
+            "maxLength": 100,
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
         }
       ]
     },
