@@ -1,13 +1,38 @@
 import { useEffect, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import { datasetsGetQueryKey } from "@/api/gen/@tanstack/react-query.gen";
-import type { DatasetFreeze, DatasetPayload, DatasetPreview, DatasetPreviewRequest, DatasetVersion, Problem } from "@/api/gen/types.gen";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { datasetsGetQueryKey, exportsListOptions, mountsListOptions, textsGetOptions } from "@/api/gen/@tanstack/react-query.gen";
+import type {
+  DatasetCard,
+  DatasetExportFormat,
+  DatasetExportPlan,
+  DatasetExportRequest,
+  DatasetFreeze,
+  DatasetPayload,
+  DatasetPreview,
+  DatasetPreviewRequest,
+  DatasetVersion,
+  Problem,
+} from "@/api/gen/types.gen";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 import { AnalyticsChart } from "@/shell/charts";
-import { datasetCharts, FREEZE_REQUEST, PREVIEW_REQUEST, UtteranceSearch } from "@/shell/data";
-import { ActorBadge, EmptyState } from "@/shell/entity/primitives";
-import { ADOPT_REQUEST, errorMessage, focusPipelineRun, openDocument, openPanelById, problemOf, runCommand, useEditRequest, useProject, type PanelProps } from "@/shell/panel";
+import { datasetCharts, EXPORT_REQUEST, FREEZE_REQUEST, PREVIEW_REQUEST, UtteranceSearch } from "@/shell/data";
+import { ActorBadge, EmptyState, StatusChip } from "@/shell/entity/primitives";
+import {
+  ADOPT_REQUEST,
+  errorMessage,
+  focusPipelineRun,
+  Markdown,
+  openDocument,
+  openPanelById,
+  problemOf,
+  runCommand,
+  useEditRequest,
+  useProject,
+  useTopic,
+  type PanelProps,
+} from "@/shell/panel";
 
 // The Dataset version document (docs/spec/11-ui-panels.md "Panel catalogue", Dataset version; R53; the phase-4 plan's
 // decisions 3–4): a draft ingested in place on a mount is previewed (datasets.preview) and frozen (datasets.freeze:
@@ -72,11 +97,13 @@ function Overview({ v, doc }: { v: DatasetVersion; doc?: string }) {
   const [freezeOpen, setFreezeOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [adoptOpen, setAdoptOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const [filter, setFilter] = useState<DatasetPreviewRequest | undefined>(undefined);
   const adopted = !!project && v.usedBy.some((u) => u.projectSlug === project);
   useEditRequest(doc ? `${FREEZE_REQUEST}${doc}` : undefined, () => setFreezeOpen(true));
   useEditRequest(doc ? `${PREVIEW_REQUEST}${doc}` : undefined, () => setPreviewOpen(true));
   useEditRequest(doc ? `${ADOPT_REQUEST}${doc}` : undefined, () => setAdoptOpen(true));
+  useEditRequest(doc ? `${EXPORT_REQUEST}${doc}` : undefined, () => setExportOpen(true));
   const draft = v.state === "draft";
   const runId = d.freeze?.pipelineRunId;
   return (
@@ -184,8 +211,10 @@ function Overview({ v, doc }: { v: DatasetVersion; doc?: string }) {
       </Section>
 
       <Quality d={d} id={v.id} />
+      {d.card ? <Card card={d.card} id={v.id} /> : null}
       <Statistics d={d} id={v.id} filter={filter} />
       <Shards d={d} id={v.id} />
+      <Exports v={v} open={exportOpen} onOpen={() => setExportOpen(true)} onClose={() => setExportOpen(false)} />
 
       <Section id={`ds-used-${v.id}`} title="Used by" slot="dataset-used-by">
         {v.usedBy.length ? (
@@ -469,13 +498,299 @@ function Quality({ d, id }: { d: DatasetPayload; id: string }) {
       ) : (
         <p className="text-muted-foreground">The quality checks run when the version is frozen (dataset_freeze); imported versions have none.</p>
       )}
-      {d.card ? (
-        <p data-slot="dataset-card">
-          Dataset card: <code className="text-[11px]">{short(d.card.hash)}</code>
-          {d.card.bytes ? ` (${bytes(d.card.bytes)})` : ""}, a Markdown file in the content store beside the shards.
+    </Section>
+  );
+}
+
+/** The dataset card (Markdown in the content store, texts.get), rendered sanitised. */
+function Card({ card, id }: { card: DatasetCard; id: string }) {
+  const q = useQuery({ ...textsGetOptions({ path: { hash: card.hash } }), staleTime: Infinity });
+  return (
+    <Section id={`ds-card-${id}`} title="Dataset card" slot="dataset-card">
+      {q.data ? (
+        <>
+          <Markdown className="rounded-md border bg-background p-3" slot="dataset-card-text">
+            {q.data.text}
+          </Markdown>
+          <p className="text-muted-foreground">
+            <code className="text-[11px]" title={card.hash}>
+              {short(card.hash)}
+            </code>{" "}
+            · {bytes(q.data.bytes)}
+            {q.data.truncated ? " · shown up to 256 KiB" : ""}
+          </p>
+        </>
+      ) : q.error ? (
+        <p role="alert" className="text-destructive">
+          {errorMessage(q.error)}
+        </p>
+      ) : (
+        <p className="text-muted-foreground">Loading the card…</p>
+      )}
+    </Section>
+  );
+}
+
+// Formats by their contract id (DatasetExportFormat), with what each writes; the interoperability guide has the detail.
+const FORMAT_HINT: Record<DatasetExportFormat, string> = {
+  "lhotse-shar": "Shar shards: cuts and recordings",
+  "nemo-manifest": "JSON-lines manifests beside the WAV files",
+  "cadence-bundle": "for another Cadence instance",
+  "hf-hub": "Hugging Face Hub, approval",
+};
+const FORMATS = Object.keys(FORMAT_HINT) as DatasetExportFormat[];
+const formatLabel = (f: DatasetExportFormat) => `${f} — ${FORMAT_HINT[f] ?? ""}`;
+
+/** Exports of the version run in the open project (exports.list), live on entity.export.*, and the Export command. */
+function Exports({ v, open, onOpen, onClose }: { v: DatasetVersion; open: boolean; onOpen: () => void; onClose: () => void }) {
+  const project = useProject();
+  const qc = useQueryClient();
+  const opts = exportsListOptions({ path: { p: project ?? "" }, query: { version: v.id } });
+  const list = useQuery({ ...opts, enabled: !!project });
+  useTopic(project ? ["entity.export.*"] : null, () => void qc.invalidateQueries({ queryKey: opts.queryKey }));
+  const frozen = v.state === "frozen";
+  const items = list.data?.items ?? [];
+  return (
+    <Section id={`ds-exports-${v.id}`} title="Exports" slot="dataset-exports">
+      {!frozen ? <p className="text-muted-foreground">Only a frozen version can be exported.</p> : null}
+      {frozen && !open ? (
+        <Button size="xs" variant="outline" className="w-fit" onClick={onOpen} data-command="datasets.export">
+          Export…
+        </Button>
+      ) : null}
+      {frozen && open ? <ExportCard v={v} project={project} onClose={onClose} onStarted={() => void qc.invalidateQueries({ queryKey: opts.queryKey })} /> : null}
+      {!project ? (
+        <p className="text-muted-foreground">Open a project to see the exports run in it.</p>
+      ) : items.length ? (
+        <table className="w-full text-xs" aria-label="Exports">
+          <thead className="text-left text-muted-foreground">
+            <tr>
+              <th className="font-normal">Format</th>
+              <th className="font-normal">State</th>
+              <th className="font-normal">Target</th>
+              <th className="font-normal">Files</th>
+              <th className="font-normal">Size</th>
+              <th className="font-normal">Started</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((x) => (
+              <tr key={x.id} className="h-6 border-t align-top" data-export={x.id} title={x.error}>
+                <td>{x.format}</td>
+                <td>
+                  <StatusChip state={x.state} />
+                  {x.pipelineRunId ? (
+                    <button
+                      type="button"
+                      className="ml-1 text-muted-foreground underline-offset-2 hover:underline"
+                      onClick={() => {
+                        focusPipelineRun(x.pipelineRunId!);
+                        openPanelById("pipeline-run");
+                      }}
+                    >
+                      run
+                    </button>
+                  ) : null}
+                  {x.error ? <p className="text-status-failed-foreground">{x.error}</p> : null}
+                </td>
+                <td className="break-all">
+                  {x.hub?.url ? (
+                    <a href={x.hub.url} target="_blank" rel="noopener noreferrer" className="underline-offset-2 hover:underline">
+                      {x.hub.repo}
+                    </a>
+                  ) : (
+                    <code className="text-[11px]">{x.target}</code>
+                  )}
+                  {x.hub?.private ? <span className="text-muted-foreground"> (private)</span> : null}
+                  {x.copies ? <span className="text-muted-foreground"> · {x.copies.toLocaleString()} mount copies</span> : null}
+                </td>
+                <td className="tabular-nums">{x.files.toLocaleString()}</td>
+                <td className="tabular-nums">{bytes(x.bytes)}</td>
+                <td>
+                  {new Date(x.createdAt).toLocaleString()} <ActorBadge actor={x.createdBy} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : list.isLoading ? (
+        <p className="text-muted-foreground">Loading exports…</p>
+      ) : (
+        <p className="text-muted-foreground">No export of this version in {project} yet.</p>
+      )}
+    </Section>
+  );
+}
+
+/**
+ * datasets.export: the format and target (a writable path mount, the content store, or storage.export_mount by
+ * default), the Hub repository for hf-hub; the dry run plans first (what it reads, whether an approval is needed),
+ * then Export starts it — or asks the admin's approval for the Hub.
+ */
+function ExportCard({ v, project, onClose, onStarted }: { v: DatasetVersion; project?: string; onClose: () => void; onStarted: () => void }) {
+  const mounts = useQuery({ ...mountsListOptions(), staleTime: 60_000 });
+  const writable = (mounts.data?.items ?? []).filter((m) => !m.readOnly && (m.kind === "local" || m.kind === "nfs" || m.kind === "smb"));
+  const [format, setFormat] = useState<DatasetExportFormat>("lhotse-shar");
+  const [target, setTarget] = useState("default");
+  const [dir, setDir] = useState("");
+  const [hubRepo, setHubRepo] = useState("");
+  const [visibility, setVisibility] = useState<"default" | "private" | "public">("default");
+  const [busy, setBusy] = useState(false);
+  const [plan, setPlan] = useState<{ key: string; plan: DatasetExportPlan } | null>(null);
+  const [done, setDone] = useState<string | null>(null);
+  const [problem, setProblem] = useState<{ text: string; problem?: Problem } | null>(null);
+  const hub = format === "hf-hub";
+  const defaultDir = `${v.name.replace(/^dataset\//, "")}/${v.version}/${format}`;
+  const body: DatasetExportRequest = {
+    version: v.id,
+    format,
+    ...(project ? { project } : {}),
+    ...(hub
+      ? { hubRepo: hubRepo.trim(), ...(visibility !== "default" ? { hubPrivate: visibility === "private" } : {}) }
+      : target === "cas"
+        ? { target: "cas" }
+        : target.startsWith("mount:")
+          ? { target: `mount://${target.slice(6)}/${(dir.trim() || defaultDir).replace(/^\/+/, "")}` }
+          : {}),
+  };
+  const key = JSON.stringify(body);
+  const fresh = plan?.key === key;
+  const act = async (dryRun: boolean) => {
+    setBusy(true);
+    setProblem(null);
+    try {
+      const res = await runCommand("datasets.export", { body, dryRun });
+      if (!res) return;
+      if (dryRun && "utterances" in res) setPlan({ key, plan: res });
+      else if ("approvalId" in res) setDone(`The Hub export waits for an approval (${res.approvalId}); the admin decides in Approvals.`);
+      else if ("id" in res) {
+        setDone(`Export ${res.id} ${res.state === "done" ? "done (an identical earlier export was reused)" : "started"}; it shows below.`);
+        onStarted();
+      }
+    } catch (err) {
+      setProblem({ text: errorMessage(err), problem: problemOf(err) });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const p = fresh ? plan.plan : null;
+  return (
+    <form
+      className="flex flex-col gap-2 rounded-md border bg-tool p-2"
+      aria-label="Export dataset version"
+      data-slot="export-card"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void act(true);
+      }}
+    >
+      <p>
+        Export <span className="font-medium">{v.name}</span> {v.version} as files another tool reads. The export runs as a pipeline run{project ? ` in ${project}` : ""}; a Hub push always
+        waits for the admin's approval.
+      </p>
+      <div className="grid grid-cols-[8rem_1fr] items-center gap-1.5">
+        <label htmlFor={`ex-format-${v.id}`} className="text-muted-foreground">
+          Format
+        </label>
+        <NativeSelect id={`ex-format-${v.id}`} className="h-6 w-auto text-xs" value={format} onChange={(e) => setFormat(e.target.value as DatasetExportFormat)}>
+          {FORMATS.map((f) => (
+            <option key={f} value={f}>
+              {formatLabel(f)}
+            </option>
+          ))}
+        </NativeSelect>
+        {hub ? (
+          <>
+            <label htmlFor={`ex-repo-${v.id}`} className="text-muted-foreground">
+              Hub repository
+            </label>
+            <Input id={`ex-repo-${v.id}`} className="h-6 text-xs" placeholder="org/name" value={hubRepo} onChange={(e) => setHubRepo(e.target.value)} />
+            <label htmlFor={`ex-vis-${v.id}`} className="text-muted-foreground">
+              Visibility
+            </label>
+            <NativeSelect id={`ex-vis-${v.id}`} className="h-6 w-auto text-xs" value={visibility} onChange={(e) => setVisibility(e.target.value as typeof visibility)}>
+              <option value="default">Default (storage.export_hub_private)</option>
+              <option value="private">Private</option>
+              <option value="public">Public</option>
+            </NativeSelect>
+          </>
+        ) : (
+          <>
+            <label htmlFor={`ex-target-${v.id}`} className="text-muted-foreground">
+              Target
+            </label>
+            <NativeSelect id={`ex-target-${v.id}`} className="h-6 w-auto text-xs" value={target} onChange={(e) => setTarget(e.target.value)}>
+              <option value="default">Default (storage.export_mount, else the content store)</option>
+              <option value="cas">The content store</option>
+              {writable.map((m) => (
+                <option key={m.id} value={`mount:${m.name}`}>
+                  Mount {m.name} ({m.root})
+                </option>
+              ))}
+            </NativeSelect>
+            {target.startsWith("mount:") ? (
+              <>
+                <label htmlFor={`ex-dir-${v.id}`} className="text-muted-foreground">
+                  Directory
+                </label>
+                <Input id={`ex-dir-${v.id}`} className="h-6 text-xs" placeholder={defaultDir} value={dir} onChange={(e) => setDir(e.target.value)} />
+              </>
+            ) : null}
+          </>
+        )}
+      </div>
+      {p ? (
+        <dl className="grid grid-cols-[8rem_1fr] gap-x-3 gap-y-0.5" data-slot="export-plan" role="status">
+          <dt className="text-muted-foreground">Step</dt>
+          <dd>
+            {p.stepKind} in {p.project}
+          </dd>
+          <dt className="text-muted-foreground">Target</dt>
+          <dd className="break-all">
+            <code className="text-[11px]">{p.target}</code>
+          </dd>
+          <dt className="text-muted-foreground">Reads</dt>
+          <dd className="tabular-nums">
+            {p.utterances.toLocaleString()} utterances · {hours(p.hours)} · {bytes(p.bytes)}
+          </dd>
+          <dt className="text-muted-foreground">Licence</dt>
+          <dd>
+            {p.licence || "—"}
+            {p.sources.length ? ` (${p.sources.join(", ")})` : ""}
+          </dd>
+          {p.copies ? (
+            <>
+              <dt className="text-muted-foreground">Mount copies</dt>
+              <dd>The audio lands unchanged on the mount: the cache may then evict the version and materialize it back from there.</dd>
+            </>
+          ) : null}
+          {p.approval ? (
+            <>
+              <dt className="text-muted-foreground">Approval</dt>
+              <dd className="text-status-warning-foreground">Export waits for the admin's approval.</dd>
+            </>
+          ) : null}
+        </dl>
+      ) : null}
+      {done ? (
+        <p role="status" className="text-status-done-foreground">
+          {done}
         </p>
       ) : null}
-    </Section>
+      {problem ? <ProblemList problem={problem.problem} text={problem.text} /> : null}
+      <div className="flex gap-1">
+        <Button type="submit" size="xs" variant="outline" disabled={busy || (hub && !hubRepo.trim())}>
+          Plan
+        </Button>
+        <Button type="button" size="xs" disabled={busy || !fresh || !!done} onClick={() => void act(false)} data-command="datasets.export">
+          {p?.approval ? "Ask to export" : "Export"}
+        </Button>
+        <Button type="button" size="xs" variant="ghost" onClick={onClose}>
+          {done ? "Close" : "Cancel"}
+        </Button>
+      </div>
+      {plan && !fresh && !done ? <p className="text-muted-foreground">The form changed since this plan: plan again to export.</p> : null}
+    </form>
   );
 }
 

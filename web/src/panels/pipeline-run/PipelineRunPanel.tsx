@@ -11,6 +11,7 @@ import {
   errorMessage,
   focusJob,
   LogView,
+  NeedsMaterialize,
   openDocument,
   openPanelById,
   runCommand,
@@ -125,6 +126,7 @@ function RunView({ id }: { id: string }) {
           <span className="ml-auto text-muted-foreground tabular-nums">{DURATION(elapsedSeconds(run.createdAt, run.finishedAt))}</span>
         </div>
         {run.error ? <p className="text-status-failed-foreground">{run.error}</p> : null}
+        <NeedsMaterialize items={run.needsMaterialize ?? []} blocks={run.state === "running" ? "its training step" : "a retry"} onRestored={() => void q.refetch()} />
         {run.inputs && Object.keys(run.inputs).length ? (
           <div className="flex flex-wrap items-center gap-1">
             <span className="text-muted-foreground">Inputs</span>

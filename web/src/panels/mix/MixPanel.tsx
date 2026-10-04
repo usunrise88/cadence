@@ -11,7 +11,7 @@ import { AnalyticsChart, type AnalyticsSpec } from "@/shell/charts";
 import { cn } from "@/lib/utils";
 import { DraftOutline, PresenceNotice, changed, presenceLabel, useActivePresence, useDrafts } from "@/shell/entity/drafts";
 import { ActorBadge, EmptyState } from "@/shell/entity/primitives";
-import { errorMessage, lookupDefault, openDocument, rangeWarning, runCommand, useCommand, useDefaults, useEditRequest, useKeyedEstimate, useProject, useTopic, WhyDefault, type PanelProps } from "@/shell/panel";
+import { errorMessage, lookupDefault, materializeOf, NeedsMaterialize, openDocument, rangeWarning, runCommand, useCommand, useDefaults, useEditRequest, useKeyedEstimate, useProject, useTopic, WhyDefault, type PanelProps } from "@/shell/panel";
 
 // The Mix document (docs/spec/11-ui-panels.md): groups, weights, temperature and replay share over dataset
 // versions, and the preview of hours per language. A person edits the table directly (a new revision); an agent's
@@ -649,6 +649,7 @@ function RunLaunch({ mix, onClose }: { mix: Mix; onClose: () => void }) {
       ) : busy ? (
         <p className="text-muted-foreground">Estimating…</p>
       ) : null}
+      {estimate ? <NeedsMaterialize items={materializeOf(estimate.warnings)} onRestored={() => void act(true)} /> : null}
       {est.stale ? (
         <p className="text-muted-foreground" data-slot="run-estimate-stale">
           {est.pending ? "Estimating…" : "The form changed since this estimate: estimate again to start."}

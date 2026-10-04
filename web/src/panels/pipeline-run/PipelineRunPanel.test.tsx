@@ -155,6 +155,32 @@ describe("Pipeline run", () => {
     await waitFor(() => expect(document.querySelector("[data-run]")!.getAttribute("data-state")).toBe("running"));
   });
 
+  it("says which evicted dataset version a retry needs materialized, and materializes it", async () => {
+    const needs = {
+      versionId: "ver_ds",
+      collection: "dataset/fleurs-sr",
+      version: "2026-10-03.abc",
+      artifact: `b3:${"ef".repeat(32)}`,
+      input: "mix",
+      bytes: 2.5e9,
+      copyBytes: 2.4e9,
+      shards: 3,
+      copyShards: 2,
+      from: [{ mount: "exports", shards: 2, bytes: 2.4e9 }],
+      missing: 0,
+    };
+    qc.setQueryData(pipelineRunsGetQueryKey({ path: { id: "plr_1" } }), { ...run, needsMaterialize: [needs] });
+    runCommand.mockResolvedValue({ jobId: "job_m" });
+    wrap();
+    const box = screen.getByRole("group", { name: "Needs materialize" });
+    expect(box.textContent).toContain("a retry is refused");
+    expect(box.textContent).toContain("dataset/fleurs-sr 2026-10-03.abc");
+    expect(box.textContent).toContain("2.40 GB to copy back (2 of 3 shards) from exports");
+    fireEvent.click(within(box).getByRole("button", { name: "Materialize" }));
+    await waitFor(() => expect(runCommand).toHaveBeenCalledWith("datasets.materialize", { versionId: "ver_ds" }));
+    expect(await within(box).findByText(/Materializing \(job job_m\)/)).toBeTruthy();
+  });
+
   it("follows the pipeline run focused elsewhere", () => {
     const other = { ...run, id: "plr_9", pipeline: "import", steps: [] };
     qc.setQueryData(pipelineRunsGetQueryKey({ path: { id: "plr_9" } }), other);

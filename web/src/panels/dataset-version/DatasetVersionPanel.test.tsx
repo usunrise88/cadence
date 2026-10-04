@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { exportsListQueryKey, mountsListQueryKey, textsGetQueryKey } from "@/api/gen/@tanstack/react-query.gen";
 import type { DatasetVersion } from "@/api/gen/types.gen";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { datasetVersionToEntity } from "@/entities/data";
@@ -138,18 +139,133 @@ describe("Dataset version: a draft", () => {
   });
 });
 
+const cardHash = `b3:${"2".repeat(64)}`;
+function seed(exports: unknown[] = []) {
+  qc.setQueryData(textsGetQueryKey({ path: { hash: cardHash } }), {
+    hash: cardHash,
+    kind: "dataset-card",
+    mediaType: "text/markdown",
+    text: "# parlaspeech-sr\n\n- **Licence:** CC-BY-SA-4.0\n\n<script>alert(1)</script>\n",
+    bytes: 2048,
+    truncated: false,
+    versionId: "ver_d",
+  });
+  qc.setQueryData(exportsListQueryKey({ path: { p: "demo" }, query: { version: "ver_d" } }), { items: exports });
+  qc.setQueryData(mountsListQueryKey(), {
+    items: [
+      { id: "mnt_e", name: "exports", kind: "local", root: "/mnt/exports", readOnly: false },
+      { id: "mnt_c", name: "corpora", kind: "local", root: "/mnt/corpora", readOnly: true },
+    ],
+  });
+}
+
 describe("Dataset version: frozen", () => {
   it("shows the quality checks, card, shards, charts and the leakage result", () => {
+    seed();
     wrap(frozen);
     expect(document.querySelector('[data-slot="dataset-leakage"]')).toBeTruthy();
     expect(screen.getByText("Clipped segments")).toBeTruthy();
     expect(screen.getByText(/2 kB/)).toBeTruthy();
+    // The card renders as Markdown (texts.get), raw HTML dropped.
+    const card = document.querySelector('[data-slot="dataset-card-text"]');
+    expect(card?.querySelector("h1")?.textContent).toBe("parlaspeech-sr");
+    expect(card?.textContent).toContain("Licence: CC-BY-SA-4.0");
+    expect(card?.textContent).not.toContain("alert(1)");
+    expect(card?.querySelector("script")).toBeNull();
     expect(screen.getByText("✓ pinned")).toBeTruthy();
     expect(document.querySelector('[data-chart="histogram"]')?.textContent).toBe("Utterance duration");
     expect(document.querySelector("[data-utterances]")?.getAttribute("data-utterances")).toBe("ver_d");
   });
 
+  it("lists the version's exports with state and files", () => {
+    seed([
+      {
+        id: "dex_1",
+        versionId: "ver_d",
+        format: "nemo-manifest",
+        projectId: "prj_1",
+        target: "mount://exports/parlaspeech-sr/x/nemo-manifest",
+        state: "done",
+        pipelineRunId: "plr_9",
+        files: 901,
+        bytes: 3e8,
+        copies: 900,
+        createdBy: { kind: "user", id: "usr_admin", name: "admin" },
+        createdAt: "2026-10-04T10:00:00Z",
+        rev: 2,
+      },
+    ]);
+    wrap(frozen);
+    const row = document.querySelector('[data-export="dex_1"]');
+    expect(row?.textContent).toContain("nemo-manifest");
+    expect(row?.textContent).toContain("mount://exports/parlaspeech-sr/x/nemo-manifest");
+    expect(row?.textContent).toContain("901");
+    expect(row?.textContent).toContain("900 mount copies");
+  });
+
+  it("plans an export, then starts it on a writable mount", async () => {
+    seed();
+    runCommand.mockImplementation((_id: string, a: { dryRun?: boolean; body: { target?: string } }) =>
+      Promise.resolve(
+        a.dryRun
+          ? {
+              versionId: "ver_d",
+              collection: "dataset/parlaspeech-sr",
+              version: base.version,
+              format: "lhotse-shar",
+              projectId: "prj_1",
+              project: "demo",
+              target: a.body.target,
+              stepKind: "shar_export@1",
+              utterances: 900,
+              hours: 9,
+              bytes: 3e8,
+              licence: "CC-BY-SA-4.0",
+              sources: ["parlaspeech-sr"],
+              approval: false,
+              copies: false,
+            }
+          : { id: "dex_2", format: "lhotse-shar", state: "running", target: a.body.target, files: 0, bytes: 0, copies: 0, projectId: "prj_1", createdAt: "", createdBy: {}, rev: 1 },
+      ),
+    );
+    wrap(frozen);
+    act(() => useEditRequests.getState().request("export:dataset_version:ver_d"));
+    const target = await screen.findByLabelText("Target");
+    expect(screen.queryByRole("option", { name: /corpora/ })).toBeNull(); // read-only mounts are no target
+    fireEvent.change(target, { target: { value: "mount:exports" } });
+    expect((screen.getByRole("button", { name: "Export" }) as HTMLButtonElement).disabled).toBe(true); // plan first
+    screen.getByRole("button", { name: "Plan" }).click();
+    expect(await screen.findByText("shar_export@1 in demo")).toBeTruthy();
+    const body = { version: "ver_d", format: "lhotse-shar", project: "demo", target: `mount://exports/parlaspeech-sr/${base.version}/lhotse-shar` };
+    expect(runCommand).toHaveBeenCalledWith("datasets.export", { body, dryRun: true });
+    screen.getByRole("button", { name: "Export" }).click();
+    expect(await screen.findByText(/Export dex_2 started/)).toBeTruthy();
+    expect(runCommand).toHaveBeenLastCalledWith("datasets.export", { body, dryRun: false });
+  });
+
+  it("asks for the Hub repository and says the push waits for an approval", async () => {
+    seed();
+    runCommand.mockImplementation((_id: string, a: { dryRun?: boolean }) =>
+      Promise.resolve(
+        a.dryRun
+          ? { versionId: "ver_d", collection: "c", version: "v", format: "hf-hub", projectId: "p", project: "demo", target: "hf://datasets/org/sr", stepKind: "hf_push@1", utterances: 1, hours: 1, bytes: 1, licence: "CC-BY-4.0", sources: [], approval: true, copies: false }
+          : { approvalId: "apr_1" },
+      ),
+    );
+    wrap(frozen);
+    screen.getByRole("button", { name: "Export…" }).click();
+    fireEvent.change(await screen.findByLabelText("Format"), { target: { value: "hf-hub" } });
+    expect((screen.getByRole("button", { name: "Plan" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText("Hub repository"), { target: { value: "org/sr" } });
+    screen.getByRole("button", { name: "Plan" }).click();
+    const ask = await screen.findByRole("button", { name: "Ask to export" });
+    ask.click();
+    expect(await screen.findByText(/waits for an approval \(apr_1\)/)).toBeTruthy();
+    expect(runCommand).toHaveBeenLastCalledWith("datasets.export", { body: { version: "ver_d", format: "hf-hub", project: "demo", hubRepo: "org/sr" }, dryRun: false });
+  });
+
   it("offers adopting another language as replay", async () => {
+    seed();
     const { ProblemError } = await import("@/api/client");
     runCommand.mockImplementation((_id: string, a: { purpose?: string }) =>
       a.purpose === "replay"

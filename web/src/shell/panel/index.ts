@@ -92,3 +92,8 @@ export * from "@/shell/transcription";
 // and the request only an open Annotation batch document completes (its invitation form).
 export { AnnotateView, channelLabel, seconds, TAGS, type AnnotateViewProps } from "@/shell/annotation";
 export { INVITE_REQUEST } from "@/shell/commands/annotation";
+// Phase 4 tail: sanitised Markdown for text Cadence shows but did not write (dataset cards, guidelines), and the
+// needs-materialize notice a run's or pipeline's plan shows for an evicted dataset version.
+export { Markdown, type MarkdownProps } from "@/shell/markdown";
+export { GuidelinesPane } from "@/shell/annotation/Guidelines";
+export { materializeOf, NeedsMaterialize, type NeedsMaterializeProps } from "@/shell/data/NeedsMaterialize";

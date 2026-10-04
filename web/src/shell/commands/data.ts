@@ -1,8 +1,11 @@
-import { Archive, Eye, Lock, ShieldCheck } from "iconoir-react";
+import { Archive, Eye, Lock, ShareIos, ShieldCheck } from "iconoir-react";
 import { commandHeaders } from "@/api/client";
-import { datasetsFreeze, datasetsPreview, sourcesArchive, sourcesEdit, versionsArchive } from "@/api/gen/sdk.gen";
+import { datasetsExport, datasetsFreeze, datasetsPreview, sourcesArchive, sourcesEdit, versionsArchive } from "@/api/gen/sdk.gen";
 import type {
   ApprovalAccepted,
+  DatasetExport,
+  DatasetExportPlan,
+  DatasetExportRequest,
   DatasetFreeze,
   DatasetPreview,
   DatasetPreviewRequest,
@@ -27,6 +30,14 @@ import type { Command, CommandContext } from "./registry";
 export const FREEZE_REQUEST = "freeze:";
 export const PREVIEW_REQUEST = "preview:";
 export const CLEAR_REQUEST = "clear:";
+export const EXPORT_REQUEST = "export:";
+
+/**
+ * datasets.export: `body` names the frozen version, the format and the target (phase 4 tail: the export UI). A dry run
+ * answers the plan (DatasetExportPlan); the real call answers the export (201) or, for the Hub, an approval (202).
+ * From the header (`entity`) the Dataset version document shows its export card, which plans first.
+ */
+export type DatasetExportArgs = { body?: DatasetExportRequest; dryRun?: boolean; entity?: EntityData };
 
 /**
  * datasets.freeze: `version` is the draft (ver_…). A dry run runs the leakage check only (200 DatasetFreeze); the real
@@ -49,6 +60,7 @@ export type VersionArchiveArgs = { version?: string; name?: string; dryRun?: boo
 export type DataCommands = {
   "datasets.freeze": { args: DatasetFreezeArgs; result: DatasetFreeze | JobAccepted | undefined };
   "datasets.preview": { args: DatasetPreviewArgs; result: DatasetPreview | undefined };
+  "datasets.export": { args: DatasetExportArgs; result: DatasetExportPlan | DatasetExport | ApprovalAccepted | undefined };
   "sources.edit": { args: SourceEditArgs; result: Source | ApprovalAccepted | undefined };
   "sources.archive": { args: SourceArchiveArgs; result: Source | ApprovalAccepted | undefined };
   "versions.archive": { args: VersionArchiveArgs; result: RegistryVersion | ApprovalAccepted | undefined };
@@ -115,6 +127,29 @@ export function registerDataCommands(): void {
         }
         const { data } = await datasetsPreview({ body: a.body, headers: commandHeaders(), throwOnError: true });
         return data;
+      },
+    },
+    {
+      id: "datasets.export",
+      operation: "datasets.export",
+      title: "Export dataset version…",
+      group: "Project",
+      icon: ShareIos,
+      enabled: needActive("dataset_version", "a dataset version"),
+      run: async (ctx, args) => {
+        const a = (args ?? {}) as DatasetExportArgs;
+        if (!a.body) {
+          const id = a.entity?.id ?? activeOf(ctx, "dataset_version");
+          if (!id) throw new Error("Export: open a frozen dataset version first");
+          return requestCard("dataset_version", id, EXPORT_REQUEST);
+        }
+        const { data } = await datasetsExport({
+          body: a.body,
+          query: a.dryRun ? { dryRun: true } : undefined,
+          headers: commandHeaders(),
+          throwOnError: true,
+        });
+        return data as DatasetExportPlan | DatasetExport | ApprovalAccepted;
       },
     },
     {
