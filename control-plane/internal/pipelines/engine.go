@@ -190,6 +190,10 @@ type StartInput struct {
 	Actor     auth.Actor
 	Priority  int
 	Fresh     bool
+	// Export is set by datasets.export (internal/exports) only: a step of job kind export (dataset_export, hf_push,
+	// shar_export) runs nowhere else, so the export's licence check, golden-set check and approval cannot be skipped
+	// by naming the kind in a project pipeline.
+	Export bool
 }
 
 // Prepare reads (or takes) the pipeline and validates it for a run without writing anything; a dry run answers
@@ -224,6 +228,9 @@ func (e *Engine) Prepare(ctx context.Context, q storage.Querier, in StartInput) 
 	}
 	plan, err := e.Plan(ctx, q, src.Pipeline, PlanInput{Inputs: in.Inputs, Params: in.Params, Estimates: in.Estimates,
 		ProjectID: in.ProjectID})
+	if err == nil && !in.Export {
+		err = exportsOnly(plan)
+	}
 	if err == nil {
 		err = e.trainable(ctx, q, plan, in.Inputs)
 	}
@@ -247,6 +254,19 @@ func (e *Engine) Prepare(ctx context.Context, q storage.Querier, in StartInput) 
 		err = e.lock(ctx, q, *proj, src.Commit, &plan)
 	}
 	return src, plan, err
+}
+
+// exportsOnly refuses (export-not-allowed) a step of job kind export outside datasets.export: an export kind takes
+// the data out of Cadence (a mount, the Hub with the hf-token secret), and only datasets.export runs the licence and
+// golden-set checks and asks the approval the hub-export rule names.
+func exportsOnly(plan Plan) error {
+	for _, ps := range plan.Steps {
+		if ps.Kind.Resources.JobKind == steps.JobExport {
+			return problems.ExportNotAllowed.New("step %s (%s) is an export step: exports run through datasets.export, which checks the "+
+				"licence and asks the approvals, never from a pipeline", ps.Step, ps.Kind.Ref())
+		}
+	}
+	return nil
 }
 
 // RegistrySource is the x-cadence.registry value of a step parameter that names a registry source (sdp_ingest's

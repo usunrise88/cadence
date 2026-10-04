@@ -277,6 +277,19 @@ func hubAllowed(ctx context.Context, q storage.Querier, v registry.Version, srcs
 	case !errors.Is(err, pgx.ErrNoRows):
 		return fmt.Errorf("check golden sets: %w", err)
 	}
+	// A golden set frozen from another version (a batch, a re-cut) may hold the same audio: any shared utterance or
+	// fingerprint, in any split of the version, is held-out audio too.
+	shared, err := data.GoldenShared(ctx, q, []string{v.ID})
+	if err != nil {
+		return err
+	}
+	seen := map[string]bool{golden: true}
+	for _, o := range shared {
+		if !seen[o.GoldenSetID] {
+			seen[o.GoldenSetID] = true
+			bad = append(bad, fmt.Sprintf("it shares %d utterance(s) with golden set %s (held-out test audio)", o.Utterances, o.GoldenSetID))
+		}
+	}
 	if len(bad) > 0 {
 		return problems.ExportNotAllowed.New("%s %s is not pushed to the Hugging Face Hub: %s", v.Name, v.Version, strings.Join(bad, "; "))
 	}
@@ -386,7 +399,7 @@ func Start(ctx context.Context, tx pgx.Tx, eng *pipelines.Engine, store *cas.Sto
 		pipe.Inputs["record"] = RecordType
 		pipe.Steps[0].In["record"] = pipelines.InputsRef + "record"
 	}
-	r, drafts, err := eng.Start(ctx, tx, pipelines.StartInput{ProjectID: pl.ProjectID, Pipeline: pipe, Inputs: inputs, Actor: actor})
+	r, drafts, err := eng.Start(ctx, tx, pipelines.StartInput{ProjectID: pl.ProjectID, Pipeline: pipe, Inputs: inputs, Actor: actor, Export: true})
 	if err != nil {
 		return Export{}, nil, err
 	}
