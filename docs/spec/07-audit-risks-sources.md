@@ -870,7 +870,11 @@ owner may overrule):
 - [ ] Gate (2026-10-04, from the 80 ms check): NeMo warns that `att_context_size` [56,1] (`160ms`) "is not among the
       supported look-aheads [[56,3],[56,0],[56,6],[56,13]]" of Nemotron 3.5 — the model was trained for 80, 320, 560
       and 1120 ms only. **Now:** `160ms` stays a profile (it decodes, and its WER is in range); should it be marked
-      untrained, or dropped from the family's profiles?
+      untrained, or dropped from the family's profiles? **Measured 2026-10-04** (`evl_01a10790-92fb…`, FLEURS Serbian
+      test, phase-4 fine-tune / base): WER 80 ms 0.349 / 0.356, 160 ms 0.335 / 0.346, 320 ms 0.325 / 0.333, 560 ms
+      0.318 / 0.322, 1120 ms 0.304 / 0.311; emission PR50 0.38, 0.40, 0.45, 0.54, 0.81 s. `160ms` lies on the curve
+      between its trained neighbours in both WER and delay — no sign of an untrained look-ahead. **Recommendation:**
+      keep it, labelled "not a trained look-ahead" in the family descriptor; the owner decides.
 
 ## Sources
 
