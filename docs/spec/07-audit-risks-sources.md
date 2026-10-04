@@ -867,6 +867,30 @@ owner may overrule):
       end of utterance on 48 clips, but 18 of 48 transcripts change). Finals and partials now join right, yet a live
       lane shows a one-token "final" at every utterance start. **Now:** unchanged (2); should Cadence set 0 (or
       scale it by chunk) after a WER check?
+      **Measured 2026-10-04 (stream measure): 0 and 1 are refused — they switch end of utterance off; 2 stays.** Base
+      model, 700 FLEURS sr test utterances (2.12 h, prompt `hr-HR`, references Cyrillic→Latin then `normalizer/basic`,
+      batch 8, the pipeline decoder of `nemotron_transcribe@4`), residue 2 / 1 / 0: WER 80 ms 0.3558 / 0.3557 / 0.3557,
+      160 ms 0.3464 / 0.3463 / 0.3463, 1120 ms 0.3107 / 0.3106 / 0.3106 (one utterance of 700 differs at each profile,
+      paired bootstrap 95 % CI of the delta [−0.0002, 0.0000]; sign test 1 better / 0 worse); utterances with a final
+      that continues a word (a mid-word end of utterance) 596 / 0 / 0 at 80 ms, 93 / 0 / 0 at 160 ms, 4 / 0 / 0 at 1120 ms;
+      a one-token first final 699 / 0 / 0, 92 / 0 / 0, 1 / 0 / 0. But with 0 or 1 **no** end of utterance fires at all
+      (utterances closed by the endpointer before the clip's end: 273 / 0 / 0 at 80 ms, 232 / 0 / 0 at 160 ms,
+      115 / 0 / 0 at 1120 ms; the clips have a median 1.38 s of trailing silence): finals come only when the stream
+      ends, so latency to final (VAD speech end to the partial from which the text is final, audio offsets) grows from
+      p50 700 / p90 1 301 ms to 1 145 / 1 800 ms at 80 ms (mean +385 ms), 830 / 1 300 → 1 050 / 1 680 at 160 ms,
+      1 240 / 1 720 → 1 320 / 1 880 at 1120 ms, and a live lane would never close a segment by itself. The 10 Hebrew
+      FLEURS fixtures agree (WER 0.744 / 0.779 / 0.698 at 80 / 160 / 1120 ms for every residue; splits 6 / 1 / 0 with 2,
+      none with 0 or 1). Why (NeMo 3.0.0, `GreedyEndpointing.detect_eou_near_pivot`): the pipeline's label buffer holds
+      `stop_history_eou` frames + the residue, initialised to blanks; the search ends `residue` frames early, so with
+      2 the newest frame (the pivot) is never looked at — the first token of an utterance arrives there after a buffer of
+      "silence" (the blank fill at a stream's start, or the pause before it) and closes a segment holding just that
+      token; with 0 or 1 the buffer can never hold more blanks than `stop_history_eou`, which the strict `>` test needs.
+      **Recommendation (owner decides; not built):** keep 2 and add a sixth decoder shim — no end of utterance while the
+      pivot frame holds a token. Measured the same way (residue 2 + shim): WER 0.3557 / 0.3464 / 0.3107 (80 / 160 /
+      1120 ms; one utterance differs at 80 ms), mid-word ends 0 / 3 / 3, one-token first finals 0 / 0 / 0, utterances
+      closed by the endpointer 264 / 232 / 115, latency to final p50 740 / 830 / 1 240 ms (80 ms: 14 utterances later,
+      mean +30 ms); Hebrew fixtures: no split, WER unchanged. It changes the decoder, so it would ship as
+      `nemotron_transcribe@5` and `nemotron_live@2` (a new eval record key: the stand re-decodes).
 - [ ] Gate (2026-10-04, from the 80 ms check): NeMo warns that `att_context_size` [56,1] (`160ms`) "is not among the
       supported look-aheads [[56,3],[56,0],[56,6],[56,13]]" of Nemotron 3.5 — the model was trained for 80, 320, 560
       and 1120 ms only. **Now:** `160ms` stays a profile (it decodes, and its WER is in range); should it be marked

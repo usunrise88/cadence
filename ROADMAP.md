@@ -704,7 +704,7 @@ R, I, A, L and B, folded into the spec by stream S on 2026-10-04; the gate is st
   and `pipelineRuns.get` lists `needsMaterialize`, shown with **Materialize** in Mix, Run and Pipeline run.
 - Open: waveform peaks at ingest and freeze (computed on first view); the spectrogram tile-pyramid job (tiles per
   request); the audio view's reference-word track; the project-level bundle; the VoxLingua107 LID image; end-of-utterance gaps are not in the dataset manifest; aligning
-  the replay golden sets on the stand; a nightly omni GPU run; Playwright
+  the replay golden sets on the stand (now one `goldenSets.align` call); a nightly omni GPU run; Playwright
   e2e for annotation; `recipes/` lacks `annotation/guidelines/`.
 - Found and fixed running the gate on the stand (2026-10-04): every worker binds the mounts (core steps reached
   `worker-services`/`worker-omni`, which had no `/mnt/corpora`); the default preset allows `mounts.verify`; an
@@ -720,6 +720,15 @@ R, I, A, L and B, folded into the spec by stream S on 2026-10-04; the gate is st
   annotation batch on the ingest's segments artifact instead); the Try Cadence playbook asks to clear a source that
   is already cleared; a pseudo-label ensemble with the base model as a member keeps only what the weak member gets
   right (2 454 of 2 944 FLEURS segments disputed, kept labels no better than Whisper alone).
+- Phase-4 tail (stream measure, 2026-10-04): `goldenSets.align` (new verb `align`) aligns several golden sets in one
+  pipeline run, one optional aligning step per dataset artifact, skipping sets already aligned, with an unfinished
+  aligning step, or in a language the adopted aligner lacks (of the 34 replay golden sets only those in he, sr, hr or bs are in
+  omniASR CTC 1B's list), with a known estimate (`eval.align_step_overhead_s` 30 s + `eval.align_seconds_per_audio_hour`
+  15 s; measured 6.9 s per audio hour on 2.12 h), so the batch is one `gpu-spend` decision. NeMo's
+  `endpointing.residue_tokens_at_end` stays 2: 0 and 1 remove the 80 ms one-token finals only by switching end of
+  utterance off (no segment closes before the stream ends; latency to final +385 ms mean at 80 ms; WER unchanged on
+  700 FLEURS sr utterances); a sixth decoder shim (no end of utterance while the newest frame holds a token) removes
+  the splits with endpointing intact and WER unchanged — measured, recommended, not built (07 "Open questions").
 - Closed by the owner's decisions of 2026-10-04 (00 decision log): `pipelines/calls-ingest.yaml` stops at the
   segments (the frame of `batches.new`); a playbook's clearance step ticks from the `sources.get` that found the
   source already cleared; the pseudo-label template votes Whisper + OASIS (`pseudolabel_ensemble@2`, OASIS required,
