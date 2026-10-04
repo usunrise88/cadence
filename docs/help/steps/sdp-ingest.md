@@ -54,6 +54,10 @@ Data — the first step of `pipelines/data-ingest.yaml` (ingest → `text_normal
 `speaker_disjoint_split` → `dataset_freeze`, draft) and of `pipelines/pseudo-label.yaml` for audio without
 transcripts (then `segments_cut`, the members and `pseudolabel_ensemble` before `text_normalise`).
 `datasets.preview` and `datasets.freeze` follow; the "Adapt a new language" playbook runs either.
+`pipelines/calls-ingest.yaml` is this step alone, for stereo call recordings with sidecars (`channels: split`, roles
+from the sidecar, else `channel_roles`): it ends at the `segments` artifact, the frame of an annotation batch
+(`batches.new` with `segments: b3:…`, the index step's output in `pipelineRuns.get`) — the callers have no text yet,
+so `data-ingest`'s filter would drop them and its draft would refuse them.
 
 ## The segments artifact
 
