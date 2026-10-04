@@ -110,7 +110,11 @@ Nothing is copied yet. Ingest writes a list of segments, each with a URI such as
 names, decoded the same way every time: 16 kHz, mono, 16-bit. The hash is the utterance's identity, so the leakage
 check works before any audio exists in Cadence.
 
-<!-- TBD gate: numbers for the FLEURS ingest — files, segments, hours (sdp_ingest step of the gate's pipeline run) -->
+On the FLEURS Serbian train folder, ingest with `segmentation: file` finds 2 944 files and makes 2 944 segments,
+10.7 hours, each with both fingerprints. Point it at the whole revision instead and it finds 3 234 — train and dev —
+and not one file from `test/`: the default leaves test folders out.
+<!-- sdp_ingest@2 run locally against /cadence/corpora/fleurs-sr/70bb2e84b976 at f075ab6, 2026-10-04; replace with
+     the gate's pipeline run (plr_…) when it is recorded on the stand -->
 
 ## Labels nobody typed
 
