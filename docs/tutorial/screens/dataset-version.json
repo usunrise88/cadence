@@ -1,0 +1,67 @@
+{
+  "id": "dataset-version",
+  "caption": "Figure 13-2. The frozen pseudo-labelled dataset version",
+  "alt": "The Dataset version document of dataset/fleurs-sr-pseudo: state frozen, hours and splits, the leakage result, the quality checks and the shards.",
+  "width": 1440,
+  "height": 900,
+  "capturedAt": "2026-10-04T09:58:27.316Z",
+  "base": "http://127.0.0.1:36200",
+  "regions": [
+    {
+      "label": "Frozen",
+      "target": "[data-panel='dataset-version'] >> text=Frozen 10/4/2026",
+      "note": "The freeze copied the audio into the content store once and fixed the content: from here a run may train on it, and nothing changes it.",
+      "box": [
+        13,
+        282,
+        1414,
+        22
+      ]
+    },
+    {
+      "label": "Leakage",
+      "target": "[data-panel='dataset-version'] >> text=Leakage: checked when it was frozen",
+      "note": "Checked against all 35 golden sets by audio hash and by the hash of the source file, so a re-cut golden recording is caught too.",
+      "box": [
+        13,
+        334,
+        1414,
+        22
+      ]
+    },
+    {
+      "label": "Splits",
+      "target": "[data-panel='dataset-version'] >> text=Split rule",
+      "note": "Speaker-disjoint: no speaker is in two splits. FLEURS publishes no speaker ids, so each file counts as its own speaker here.",
+      "box": [
+        13,
+        492,
+        150,
+        22
+      ]
+    },
+    {
+      "label": "Quality checks",
+      "target": "[data-panel='dataset-version'] >> text=Every check passed.",
+      "note": "Silence, clipping and transcripts too long or short for their audio. A failed check does not block the freeze; it tells you what to look at.",
+      "box": [
+        13,
+        639,
+        1414,
+        22
+      ]
+    },
+    {
+      "label": "Adopt",
+      "target": "[data-panel='dataset-version'] >> text=Adopt into project",
+      "style": "subtle",
+      "note": "Next step: adopting writes the version into data.lock, the project's record of which data its pipelines may read.",
+      "box": [
+        360,
+        103,
+        134,
+        30
+      ]
+    }
+  ]
+}

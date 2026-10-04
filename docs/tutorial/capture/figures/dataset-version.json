@@ -1,0 +1,51 @@
+{
+  "id": "dataset-version",
+  "chapter": 13,
+  "caption": "Figure 13-2. The frozen pseudo-labelled dataset version",
+  "alt": "The Dataset version document of dataset/fleurs-sr-pseudo: state frozen, hours and splits, the leakage result, the quality checks and the shards.",
+  "project": "test",
+  "workspace": "Data",
+  "steps": [
+    {
+      "open": "dataset-version",
+      "doc": "dataset_version:{{version}}",
+      "waitFor": "[data-panel='dataset-version']",
+      "settleMs": 2500
+    },
+    {
+      "close": "Audio"
+    },
+    {
+      "maximize": "dataset-version",
+      "settleMs": 1500
+    }
+  ],
+  "regions": [
+    {
+      "label": "Frozen",
+      "target": "[data-panel='dataset-version'] >> text=Frozen 10/4/2026",
+      "note": "The freeze copied the audio into the content store once and fixed the content: from here a run may train on it, and nothing changes it."
+    },
+    {
+      "label": "Leakage",
+      "target": "[data-panel='dataset-version'] >> text=Leakage: checked when it was frozen",
+      "note": "Checked against all 35 golden sets by audio hash and by the hash of the source file, so a re-cut golden recording is caught too."
+    },
+    {
+      "label": "Splits",
+      "target": "[data-panel='dataset-version'] >> text=Split rule",
+      "note": "Speaker-disjoint: no speaker is in two splits. FLEURS publishes no speaker ids, so each file counts as its own speaker here."
+    },
+    {
+      "label": "Quality checks",
+      "target": "[data-panel='dataset-version'] >> text=Every check passed.",
+      "note": "Silence, clipping and transcripts too long or short for their audio. A failed check does not block the freeze; it tells you what to look at."
+    },
+    {
+      "label": "Adopt",
+      "target": "[data-panel='dataset-version'] >> text=Adopt into project",
+      "style": "subtle",
+      "note": "Next step: adopting writes the version into data.lock, the project's record of which data its pipelines may read."
+    }
+  ]
+}

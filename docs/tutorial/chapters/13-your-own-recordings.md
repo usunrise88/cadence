@@ -29,7 +29,7 @@ without a person typing a transcript.
 
 **Before you start.** You need the project from Chapters 3–9 with its golden set `golden-set/fleurs-sr-latn-test`,
 an admin who can decide approvals (three of them come up in this chapter), and about
-<!-- TBD gate: GPU-hours of the pseudo-label run --> GPU-hours for labelling and a short run.
+half an hour of the card for labelling 10 hours of audio, and a few minutes for a short run.
 
 ## Where the audio lives
 
@@ -180,13 +180,33 @@ commercially, and pseudo-labels *are* its output.
    normalisation (Whisper writes Serbian in Cyrillic, so the pipeline transliterates to Latin), filtering,
    the speaker-disjoint split and the draft.
 
-<!-- TBD gate: pipeline run id, per-step times, ensemble counts (kept / disputed by reason), pseudo-label WER
-     against the withheld FLEURS transcripts. Cite plr_… and the date. -->
+On the stand the run took 29 minutes for the 2 944 FLEURS train files, 10.7 hours of audio. Most of it was Nemotron
+decoding at its streaming 80 ms profile; Whisper needed seven minutes. The ensemble kept 490 segments, 1.9 hours, and
+disputed the other 2 454, every one for the same reason: the members disagreed.
+
+That is a lot to throw away, so we checked the labels against the transcripts FLEURS publishes and we withheld:
+
+| Text | WER against the FLEURS transcripts | Segments |
+| --- | --- | --- |
+| The base model alone (Nemotron, `hr-HR` prompt) | 0.336 | 2 944 |
+| Whisper large-v3 alone | 0.121 | 2 944 |
+| The ensemble's kept pseudo-labels | 0.121 | 490 |
+| The disputed segments (the text the ensemble picked) | 0.377 | 2 454 |
+
+<!-- plr_01a10639-2160-7b6b…, 2026-10-04; WER after lower-casing, Cyrillic→Latin and punctuation removal -->
+
+Read the table carefully, because it holds the chapter's main lesson. The kept labels are exactly as good as Whisper
+alone — no better. With two members, one strong and one weak, "agreement" mostly selects the utterances the weak
+member happens to get right: the easy ones. The weak member here is the very base model you are trying to improve,
+so it vetoed five segments in six. An ensemble is only as useful as its members are *independently* good. Two
+remedies are in your hands: replace the weak member (the `oasis` service, or Whisper's Hebrew fine-tune for Hebrew),
+or keep the weak member out of the vote and use agreement between strong ones.
 
 > **In the field** — The first time the ensemble ran on Serbian, every segment was disputed. Whisper wrote
 > Cyrillic, Nemotron wrote Latin, and the two "disagreed" on every word. Nothing was wrong with either model; the
 > texts were in different scripts. The fix is the transliteration you met in Chapter 5, applied to each member's
-> output before the vote. <!-- TBD gate: confirm on the stand or remove; reported by stream X, 2026-10-03 -->
+> output before the vote; the stand's run, transliterating, had no such dispute. <!-- found in development
+> 2026-10-03 (whisper_transcribe tests); the 2026-10-04 run's disputes were all agreement, none script -->
 
 ## The draft, and freezing it
 
@@ -226,7 +246,37 @@ Freezing does three things, in order:
 3. **Freeze**. Watch the cut's pipeline run; when it ends, the document shows the frozen version, its quality
    checks and its shards.
 
-<!-- TBD gate: frozen version id, hours, quality checks; Figure 13-2 annotated dataset-version screenshot -->
+Freezing the stand's draft took about a minute. The filter had already dropped 15 of the 490 labels (too fast or
+too slow for their audio), so the version holds 475 utterances, 1.84 hours: 375 to train on and 100 to validate.
+Every quality check passed, and the leakage check covered all 35 golden sets. <!-- ver_01a10657-64e5…, 2026-10-04 -->
+
+```annotated id=dataset-version
+image: screens/dataset-version.png
+caption: "Figure 13-2. The frozen pseudo-labelled dataset version"
+alt: The Dataset version document of dataset/fleurs-sr-pseudo: state frozen, hours and splits, the leakage result, the quality checks and the shards.
+regions:
+  - target: "[data-panel='dataset-version'] >> text=Frozen 10/4/2026"
+    label: Frozen
+    note: >
+      The freeze copied the audio into the content store once and fixed the content: from here a run may train on it, and nothing changes it.
+  - target: "[data-panel='dataset-version'] >> text=Leakage: checked when it was frozen"
+    label: Leakage
+    note: >
+      Checked against all 35 golden sets by audio hash and by the hash of the source file, so a re-cut golden recording is caught too.
+  - target: "[data-panel='dataset-version'] >> text=Split rule"
+    label: Splits
+    note: >
+      Speaker-disjoint: no speaker is in two splits. FLEURS publishes no speaker ids, so each file counts as its own speaker here.
+  - target: "[data-panel='dataset-version'] >> text=Every check passed."
+    label: Quality checks
+    note: >
+      Silence, clipping and transcripts too long or short for their audio. A failed check does not block the freeze; it tells you what to look at.
+  - target: "[data-panel='dataset-version'] >> text=Adopt into project"
+    label: Adopt
+    note: >
+      Next step: adopting writes the version into data.lock, the project's record of which data its pipelines may read.
+    style: subtle
+```
 
 ## Training on it
 
