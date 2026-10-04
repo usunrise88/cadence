@@ -704,7 +704,8 @@ R, I, A, L and B, folded into the spec by stream S on 2026-10-04; the gate is st
   approval; the version's exports with state and files); dry runs of `runs.new|stage` and `pipelines.run` warn
   `needs-materialize` (version, bytes and mounts to copy back) instead of refusing — the real call is still refused —
   and `pipelineRuns.get` lists `needsMaterialize`, shown with **Materialize** in Mix, Run and Pipeline run.
-- Open: aligning the replay golden sets on the stand (now one `goldenSets.align` call); the Dataset version panel does not chart `stats.eou` yet.
+- Open: aligning the replay golden sets on the stand (now one `goldenSets.align` call); `web/e2e/training-panels.spec.ts` (not in `make ui-e2e`) is stale: its scripted worker publishes
+  `dataset_import@1` while the bundled import pipeline pins `@4`.
 - Closed in the phase 4 tail (2026-10-04, migration 0045; 06 "Media", 00 decision log):
   - Waveform peaks are stored when a dataset version is registered: a second `dataset` output hook queues the
     control-plane job `media.peaks` (one per version and artifact, so a draft's readable segments and then its frozen
@@ -768,9 +769,25 @@ R, I, A, L and B, folded into the spec by stream S on 2026-10-04; the gate is st
     (`internal/e2etools/seedannotation`): a batch from the API, two items annotated in Triage Annotate mode, a reviewer
     invitation that sees only its batch, blind double annotation, adjudication, the freeze blockers and the freeze
     approval. Found: the floating Audio panel covers the Annotation batch document's lower sections; Annotate shows a
-    done item instead of "Nothing left to annotate" once a person's queue is empty.
+    done item instead of "Nothing left to annotate" once a person's queue is empty (both closed below).
   - `recipes/projects/hebrew/annotation/guidelines/default.md`: the template adapted to he-IL (no niqqud, plene
     spelling, prefixes attached, numbers in the pack's written forms).
+- Closed in the phase-4 tail (polish, 2026-10-04; 00 decision log):
+  - A default workspace builds nothing floating: its Floating column is the slot the Audio panel floats in when
+    something opens it, so no empty Audio covers the Annotation batch, Dataset version or Eval report documents;
+    workspace schema 3 drops the Audio float from stored layouts (11 "Default workspaces", 10 "Persistence").
+  - Annotate shows "Nothing left to annotate in this batch." once a person's queue is empty (the server's `next`, never
+    the first item by default); the annotation e2e checks both.
+  - The Dataset version document charts `stats.eou` (End-of-utterance gap: histogram with p50/p90 marks, table view and
+    CSV copy; only when the version has gaps measured).
+  - Annotation and triage windows get their peaks before the first view: `batches.new` queues `media.peaks` for the
+    batch's item windows, and a hook after the triage hook queues it for the windows of the items a segments artifact
+    indexed; the first-view computation stays the fallback (06 "Media").
+  - Tile pyramids the control plane built are kept by last view: `media.tiles_retention_days` (14; `defaults.yaml`
+    version 18), the daily `mediaTiles.retention` queues `artifacts.evict` as the system actor (permanent, no
+    approval), the next view builds them again (02 "Content store", help `guides.freeing-store-space`).
+  - Fixed on the way: the Dataset version's export formats left out `cadence-project-bundle` (a `tsc` error after the
+    infra merge; projects.export's alone).
 
 ---
 

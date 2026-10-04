@@ -532,14 +532,15 @@ function Card({ card, id }: { card: DatasetCard; id: string }) {
 }
 
 // Formats by their contract id (DatasetExportFormat), with what each writes; the interoperability guide has the detail.
-const FORMAT_HINT: Record<DatasetExportFormat, string> = {
+// A project bundle is projects.export's alone (datasets.export refuses it), so it is not offered here.
+const FORMAT_HINT: Record<Exclude<DatasetExportFormat, "cadence-project-bundle">, string> = {
   "lhotse-shar": "Shar shards: cuts and recordings",
   "nemo-manifest": "JSON-lines manifests beside the WAV files",
   "cadence-bundle": "for another Cadence instance",
   "hf-hub": "Hugging Face Hub, approval",
 };
 const FORMATS = Object.keys(FORMAT_HINT) as DatasetExportFormat[];
-const formatLabel = (f: DatasetExportFormat) => `${f} — ${FORMAT_HINT[f] ?? ""}`;
+const formatLabel = (f: DatasetExportFormat) => `${f} — ${(FORMAT_HINT as Partial<Record<DatasetExportFormat, string>>)[f] ?? ""}`;
 
 /** Exports of the version run in the open project (exports.list), live on entity.export.*, and the Export command. */
 function Exports({ v, open, onOpen, onClose }: { v: DatasetVersion; open: boolean; onOpen: () => void; onClose: () => void }) {
@@ -810,7 +811,7 @@ function Statistics({ d, id, filter }: { d: DatasetPayload; id: string; filter?:
           ))}
         </div>
       ) : (
-        <p className="text-muted-foreground">No statistics yet: dataset_freeze computes them (duration, characters per second, level, origins, channel roles).</p>
+        <p className="text-muted-foreground">No statistics yet: dataset_freeze computes them (duration, characters per second, level, origins, channel roles, end-of-utterance gaps of calls).</p>
       )}
     </Section>
   );

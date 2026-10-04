@@ -233,7 +233,8 @@ func New(c Config) (*Server, error) {
 	// Alignment outputs: golden sets carry word timings of their references (phase 4 stream L).
 	goldensets.InstallAlignments(c.StepHooks)
 	s.media, s.mediaLinks = s.newMedia()
-	c.StepHooks.On(data.ArtifactType, s.media.DatasetHook) // after the importer: peaks of the version's members (media.peaks)
+	c.StepHooks.On(data.ArtifactType, s.media.DatasetHook)  // after the importer: peaks of the version's members (media.peaks)
+	c.StepHooks.On(triage.TypeSegments, s.media.TriageHook) // after the triage hook: peaks of the new items' windows
 	s.experiments = s.newExperimentsService()
 	s.experiments.Install() // a run that ends starts its sweep's next run
 	s.transcriptions = s.newTranscriptions()

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { SerializedDockview } from "dockview-core";
 import { planDefaultLayout } from "./defaults";
-import { addChatToRightColumn, DEFAULT_WORKSPACES, isPlaceholderLayout, migrate, normalizeLayout, parseWorkspace, WorkspaceSchemaError, type WorkspaceData } from "./schema";
+import { addChatToRightColumn, DEFAULT_WORKSPACES, dropOnDemandFloats, isPlaceholderLayout, migrate, normalizeLayout, parseWorkspace, WorkspaceSchemaError, type WorkspaceData } from "./schema";
 import legacy from "./fixtures/legacy-training.json";
 import { headlessDockview, phase0Registry } from "./testkit";
 
@@ -40,7 +40,7 @@ describe("schema 2: Chat in the right column", () => {
 
   it("adds Chat as an inactive tab of the right-column group of a layout saved before it existed", () => {
     const ws = migrate(parseWorkspace(legacy));
-    expect(ws.schemaVersion).toBe(2);
+    expect(ws.schemaVersion).toBe(3);
     expect(ws.layout.panels?.chat).toEqual({ id: "chat", contentComponent: "panel", title: "Chat", params: { panel: "chat", loc: "right" } });
     const right = leaves(ws).find((l) => l.views.includes("properties"))!;
     expect(right.views).toEqual(["properties", "old-metrics", "chat"]);
@@ -56,6 +56,36 @@ describe("schema 2: Chat in the right column", () => {
     expect(addChatToRightColumn(once.layout)).toBe(once.layout);
     const noRight = { ...legacy.layout, panels: { library: legacy.layout.panels.library } };
     expect(addChatToRightColumn(noRight as WorkspaceData["layout"])).toBe(noRight);
+  });
+});
+
+describe("schema 3: no empty floating Audio over the documents", () => {
+  const floatAudio = (extra: string[] = []) => ({
+    grid: { root: { type: "branch", data: [{ type: "leaf", data: { views: ["project:project:demo"], activeView: "project:project:demo", id: "1" } }] } },
+    panels: {
+      "project:project:demo": { id: "project:project:demo", params: { panel: "project", doc: "project:demo" } },
+      audio: { id: "audio", params: { panel: "audio", loc: "floating" } },
+      ...Object.fromEntries(extra.map((id) => [id, { id, params: { panel: id, loc: "floating" } }])),
+    },
+    floatingGroups: [{ data: { views: ["audio", ...extra], activeView: "audio", id: "2" }, position: { left: 120, top: 200, width: 760, height: 380 } }],
+    activeGroup: "2",
+  });
+
+  it("takes the Audio float out of a layout saved before schema 3, and the window it leaves empty", () => {
+    const ws = migrate({ schemaVersion: 2, name: "Data", layout: floatAudio(), panels: {} });
+    expect(ws.schemaVersion).toBe(3);
+    expect(ws.layout.floatingGroups).toEqual([]);
+    expect(Object.keys(ws.layout.panels ?? {})).toEqual(["project:project:demo"]);
+    expect(ws.layout.activeGroup).toBeUndefined();
+  });
+
+  it("keeps the other panels of a shared floating window, and docked or placeholder layouts as they are", () => {
+    const out = dropOnDemandFloats(floatAudio(["help"]));
+    expect(out.floatingGroups).toEqual([{ data: { views: ["help"], activeView: "help", id: "2" }, position: { left: 120, top: 200, width: 760, height: 380 } }]);
+    expect(out.activeGroup).toBe("2");
+    const docked = { ...floatAudio(), floatingGroups: [] };
+    expect(dropOnDemandFloats(docked)).toBe(docked);
+    expect(dropOnDemandFloats({})).toEqual({});
   });
 });
 
@@ -95,6 +125,16 @@ describe("default workspaces", () => {
     expect(planDefaultLayout("Training", r, "demo").at(-1)).toEqual({ panel: "getting-started", location: "right" });
     dismissed = true;
     expect(planDefaultLayout("Training", r, "demo").map((p) => p.panel)).not.toContain("getting-started");
+  });
+
+  it("opens no floating panel: Audio waits in its slot until something opens it (11 'Default workspaces')", () => {
+    const r = phase0Registry();
+    r.register({ ...r.get("help")!, id: "audio", help: "panels.audio", defaultLocation: "floating" });
+    for (const name of DEFAULT_WORKSPACES) {
+      const plan = planDefaultLayout(name, r, "demo");
+      expect(plan.map((p) => p.panel), name).not.toContain("audio");
+      expect(plan.every((p) => p.location !== "floating"), name).toBe(true);
+    }
   });
 
   it("phase-2 panels join their columns; Metrics and Checkpoints take their Training slots once registered", () => {

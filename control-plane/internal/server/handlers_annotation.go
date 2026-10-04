@@ -148,6 +148,12 @@ func (s *Server) BatchesNew(ctx context.Context, req api.BatchesNewRequestObject
 		if err != nil {
 			return commands.Result{}, nil, err
 		}
+		// The items' windows get their peaks now (media.peaks), so an annotator's first view does not compute them.
+		peaks, err := s.media.EnqueueBatchPeaks(ctx, tx, v.ID)
+		if err != nil {
+			return commands.Result{}, nil, err
+		}
+		drafts = append(drafts, peaks...)
 		got, err := s.annotation.Get(ctx, tx, v.ID)
 		if err != nil {
 			return commands.Result{}, nil, err

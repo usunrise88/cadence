@@ -43,7 +43,7 @@ Data → evaluation: ingest → pseudo-labels → **triage** → dataset version
 | --- | --- |
 | Reason | `disagreement`, `lid-mismatch`, `lid-unknown`, `no-speech`, `too-few-members` |
 | Mean WER | A member's text against the others' (after the scoring normalizer) |
-| Window | The segment plus 2 s of its call each side (triage), or `annotation.context_s` (annotation) |
+| Window | The segment plus 2 s of its call each side (triage), or `annotation.context_s` (annotation). Its waveform peaks are stored when the batch is created or the items are indexed (`media.peaks`), so the first view does not compute them |
 | 8 kHz origin | Telephone audio: the spectrogram stops at 4 kHz (R52) |
 
 ## Commands

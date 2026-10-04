@@ -391,7 +391,11 @@ Audio serving as built (2026-10-02, stream A; `internal/media`, `internal/server
   control-plane job `media.peaks` (one per version and artifact, so a draft and then its frozen cut), which stores the
   peaks of every member the store lacks — a frozen version's WAVs, an import, and a draft's segments whose files the
   control plane reads without a decoder (WAV PCM, float, G.711; compressed files wait for the cut) — reading the audio
-  exactly as `audio.get` does (`meta.source: media.peaks`). `peaks.get` reads only the span it asks for, from the
+  exactly as `audio.get` does (`meta.source: media.peaks`). The windows annotators and triage show get theirs the same
+  way before anyone opens them (phase 4 tail, 2026-10-04): `batches.new` queues `media.peaks` for the batch's item
+  windows in its transaction (subject: the batch id), and a hook after the triage hook queues it for the windows of
+  the triage items a segments artifact indexed (subject `triage|<project>|<segments hash>`, once per project and
+  artifact); a window on a mount the control plane does not read is skipped. `peaks.get` reads only the span it asks for, from the
   coarsest stored level whose factor divides `hopMs` (`start` then falls on that level's grid); audio with no stored
   peaks is computed on that request and stored (`computed: true`, `meta.source: view`) — the first-view fallback. The
   audio view asks for long audio's overview at a stored level (≤ 32 768 pairs) and 10 ms detail for the window around
@@ -408,6 +412,12 @@ Audio serving as built (2026-10-02, stream A; `internal/media`, `internal/server
   `tracks.get` rule over every fourth frame) says 8 kHz origin (`narrowband`, `bandwidthHz` in the manifest; the view
   draws the band above as no data). Artifacts record `meta.settings`; one written by `spectrogram_tiles@1` in a pipeline
   (no settings) is served too. Media jobs compute one at a time.
+- Tile pyramid retention (phase 4 tail, 2026-10-04; 00 decision log): a pyramid `media.spectrogram` built is a view
+  cache. A manifest request records a view (`artifacts.last_used_at`, at most once an hour; a build counts as one), and
+  the daily periodic job `mediaTiles.retention` queues `artifacts.evict` as the system actor for pyramids last viewed
+  more than `media.tiles_retention_days` (14) ago and referenced by nothing (`detail.tilesRetentionDays` in the audit
+  entry; permanent, no approval, no backup-mirror wait). The next manifest request builds the pyramid again (`202`).
+  Pyramids a pipeline step wrote (`spectrogram_tiles@1`) are not taken; peaks files (≈ 0.4 % of the audio) stay.
 
 **Manual transcription tests (R47).** A person runs one to three models on a file, the microphone or an utterance
 span and watches the words appear; nothing outlives the session.

@@ -82,6 +82,16 @@ export function channelLabel(item: BatchItem, ch: number | undefined): string {
   return ch === item.segment.channel ? `${name} (target)` : name;
 }
 
+/**
+ * The item the Annotate view shows: the one the person picked from the list, else the server's next one for them
+ * (BatchItemList.next). When the queue is empty there is none — never an item already done (the annotation e2e found
+ * the first done item shown in place of "Nothing left to annotate").
+ */
+export function shownItem(items: BatchItem[], next: string | undefined, picked: string | undefined): BatchItem | undefined {
+  const id = picked ?? next;
+  return id === undefined ? undefined : items.find((i) => i.id === id);
+}
+
 /** "1.2 s" with one decimal. */
 export function seconds(v: number | undefined): string {
   return v === undefined || !Number.isFinite(v) ? "—" : `${v.toFixed(1)} s`;

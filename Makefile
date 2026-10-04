@@ -35,7 +35,7 @@ test-integration: ## control plane against Postgres in Docker (testcontainers): 
 	cd control-plane && go test -tags integration ./...
 
 ui-e2e:        ## Playwright on sign-in and the shell against the real control plane (Postgres in Docker)
-	cd web && npx playwright test e2e/auth.spec.ts e2e/panels.spec.ts e2e/shell.spec.ts e2e/search.spec.ts e2e/mix.spec.ts e2e/chat.spec.ts e2e/agents.spec.ts
+	cd web && npx playwright test e2e/auth.spec.ts e2e/panels.spec.ts e2e/shell.spec.ts e2e/search.spec.ts e2e/mix.spec.ts e2e/chat.spec.ts e2e/agents.spec.ts e2e/annotation.spec.ts
 
 conformance:   ## framework-pack conformance suite for the CPU toy pack (R45); the NeMo pack runs it nightly in its image
 	cd worker && uv run python -m cadence_worker.conformance --runtime toy --report test-results/conformance-toy.json > /dev/null

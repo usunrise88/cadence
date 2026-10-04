@@ -508,7 +508,10 @@ Audio lives where it already is — local disk, a network share or object storag
 - The `artifacts` table is the index (hash, type, size, metadata, producing step); lineage and "used by" follow the
   hashes. Metrics are rows in Postgres (`metric_points`) and job logs NDJSON files under `$CADENCE_DATA_DIR/job-logs/`
   kept 14 days — neither lives in the store. Backups mirror the store once per blob. Eviction is narrow: eval artifacts
-  by age, training states, and from phase 4 dataset shards with a mount copy ("The cache and materialisation" below).
+  by age, training states, from phase 4 dataset shards with a mount copy ("The cache and materialisation" below), and
+  spectrogram tile pyramids the control plane built, by last view (`media.tiles_retention_days`, 14; 06 "Media"): they
+  are re-derivable but have no mount copy, so the cache sweep never takes them and an age rule like the eval
+  artifacts' does (phase 4 tail).
 - Compose puts the store on the `artifacts` volume (`/var/lib/cadence/cas`), mounted by the control plane and every
   worker service; per-lease scratch (`/var/lib/cadence/scratch`) sits on the same file system so inputs are hard
   links, not copies.

@@ -53,7 +53,9 @@ async function annotateShown(scope: Locator, text: (id: string) => string, after
   await box.fill(text(id));
   await form.getByRole("button", { name: "Done", exact: true }).click();
   await expect(scope.getByText(`${after.open} to annotate · ${after.done} done by you`)).toBeVisible();
-  if (after.open > 0) await expect(scope.locator(`[data-slot="annotate-item"][data-item="${id}"]`)).toHaveCount(0);
+  await expect(scope.locator(`[data-slot="annotate-item"][data-item="${id}"]`)).toHaveCount(0);
+  // An empty queue says so instead of showing an item already done.
+  if (after.open === 0) await expect(scope.getByText("Nothing left to annotate in this batch.")).toBeVisible();
   return id;
 }
 
@@ -143,8 +145,8 @@ test("Annotation: Triage annotates, a reviewer sees only its batch, a disputed i
   await triage.getByRole("button", { name: "Open the batch" }).click();
   const doc = page.locator(`[data-batch="${batch.id}"]`).filter({ has: page.locator('[data-slot="progress"]') });
   await expect(doc).toBeVisible();
-  // The workspace's floating Audio panel sits over the document's lower sections: put it away, as a person would.
-  await page.getByRole("button", { name: "Close Audio" }).click();
+  // The workspace builds no floating Audio (schema 3): nothing covers the document's lower sections.
+  await expect(page.getByRole("button", { name: "Close Audio" })).toHaveCount(0);
   await expect(doc.locator('[data-slot="progress"]')).toContainText("3 agreed");
   await expect(doc.locator('[data-slot="progress"]')).toContainText("1 disputed");
   await expect(doc.locator('[data-slot="agreement"]')).toContainText("over 2 double item(s)");

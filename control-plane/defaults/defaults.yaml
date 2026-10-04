@@ -4,7 +4,7 @@
 # the control-plane binary and packaged with the worker. Every value carries a description, a source and, where it
 # applies, a safe range; a value without a published source is a "Cadence recommendation" re-checked after the spikes.
 # Keys are addressed as <section>.<key> (x-cadence.defaultRef: training.steps). Bump `version` on every change.
-version: 18
+version: 19
 
 # The project wizard's Recommended mode (docs/spec/02-domain-projects-registry.md "Project wizard").
 wizard:
@@ -916,6 +916,12 @@ media:
     description: After a failed tile-pyramid build, how long spectrogram.get reports the failure before a request builds again
     source: Cadence recommendation
     range: { min: 10, max: 86400 }
+  tiles_retention_days:
+    value: 14
+    unit: days
+    description: How long a spectrogram tile pyramid the control plane built stays in the content store after it was last viewed; a daily sweep evicts older ones (permanent, as the system actor) and the next view builds it again
+    source: Cadence recommendation (pyramids are a view cache, ≈ 185 MB per hour of audio per channel; 14 days like the job logs)
+    range: { min: 1, max: 365 }
 
 # Manual transcription tests and the live channel (phase 3, stream T; docs/spec/06-platform.md "Media", R47–R50; the
 # numbers come from spike A5, docs/spikes/A5-live-transcription.md "Result").

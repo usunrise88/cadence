@@ -520,6 +520,21 @@ func BuildTiles(r io.ReaderAt, info Info, key string, st TileSettings, bp BandPa
 
 // ---------------------------------------------------------------- finding, starting and running a build
 
+// tilesTouchEvery is how stale a pyramid's last view may be before a view records a new one (one write per view
+// session, not per tile).
+const tilesTouchEvery = time.Hour
+
+// TouchTiles records a view of a pyramid (its manifest was read): the retention (internal/eviction,
+// media.tiles_retention_days) counts from the last view. Best effort: a failed write only shortens the retention.
+func (s *Service) TouchTiles(ctx context.Context, artifact string) {
+	if s.Pool == nil || artifact == "" {
+		return
+	}
+	_, _ = s.Pool.Exec(ctx, `UPDATE artifacts SET last_used_at = now()
+		WHERE hash = $1 AND evicted_at IS NULL AND (last_used_at IS NULL OR last_used_at < now() - make_interval(secs => $2))`,
+		artifact, tilesTouchEvery.Seconds())
+}
+
 // tilesMeta is a spectrogram_tiles artifact's meta (the worker step's, plus settings and source when the control
 // plane built it).
 type tilesMeta struct {
@@ -648,7 +663,12 @@ func (s *Service) runSpectrogram(ctx context.Context, run *jobs.Run) (any, error
 		return nil, err
 	}
 	err = pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
-		_, err := artifacts.Record(ctx, tx, s.CAS, steps.ArtifactRef{Hash: dir, Type: TypeSpectrogramTiles, Size: size, Meta: meta}, "", nil)
+		if _, err := artifacts.Record(ctx, tx, s.CAS, steps.ArtifactRef{Hash: dir, Type: TypeSpectrogramTiles, Size: size, Meta: meta}, "", nil); err != nil {
+			return err
+		}
+		// A build is a view: a pyramid rebuilt after the retention evicted it keeps its row (and creation) and starts
+		// its retention again.
+		_, err := tx.Exec(ctx, `UPDATE artifacts SET last_used_at = now() WHERE hash = $1`, dir)
 		return err
 	})
 	if err != nil {

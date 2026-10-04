@@ -518,6 +518,8 @@ type Workspace = {
   when the serialized workspace differs from the stored one, and at once when the page is hidden or the workspace is
   switched. A layout save is a preference, not a domain command: its committed runs are not in the audit log.
 - Migrations: an integer `schemaVersion` and a chain of migration functions. The panel registry keeps an alias map for renamed panel ids.
+  As built: schema 2 adds Chat to the right column; schema 3 (phase 4 tail) removes an Audio panel from single-group
+  floating windows (default workspaces no longer open it; 11 "Default workspaces").
 - An unknown panel id restores as a placeholder panel ("Panel X no longer exists — remove"), never as a failed restore.
 - Default workspaces are built by code factories, not stored JSON, so "Reset to default" always matches the current registry.
 - Dockview upgrades run `fromJSON(toJSON())` round-trips over fixtures of every stored workspace in CI.

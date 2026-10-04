@@ -279,6 +279,11 @@ func serve(ctx context.Context, getenv func(string) string) error {
 	jobSvc.AddPeriodic("evalArtifacts.retention", 24*time.Hour, func(ctx context.Context) error {
 		return evictSvc.SweepEvalArtifacts(ctx, defaults.Get())
 	})
+	// Tile pyramids the control plane built are a view cache (media.tiles_retention_days after the last view): a daily
+	// sweep queues the eviction of those past it; the next view builds them again.
+	jobSvc.AddPeriodic("mediaTiles.retention", 24*time.Hour, func(ctx context.Context) error {
+		return evictSvc.SweepTiles(ctx, defaults.Get())
+	})
 	if indexed, restored, err := eviction.Backfill(ctx, pool, blobs); err != nil {
 		return fmt.Errorf("content-store file index: %w", err)
 	} else if indexed+restored > 0 {

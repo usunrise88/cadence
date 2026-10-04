@@ -177,6 +177,22 @@ describe("Dataset version: frozen", () => {
     expect(document.querySelector("[data-utterances]")?.getAttribute("data-utterances")).toBe("ver_d");
   });
 
+  it("charts the end-of-utterance gaps only when the version has them", () => {
+    seed();
+    const withEou = {
+      ...frozen,
+      dataset: {
+        ...frozen.dataset,
+        stats: { ...frozen.dataset!.stats, eou: { utterances: 577, withGap: 420, overlapping: 31, p50GapS: 0.62, p90GapS: 1.84, gapHistogram: { edges: [-1, 0, 1], counts: [31, 300, 89] } } },
+      },
+    } as unknown as DatasetVersion;
+    const { unmount } = wrap(withEou);
+    expect(document.querySelector('[data-chart="End-of-utterance gap"]')).toBeTruthy();
+    unmount();
+    wrap(frozen);
+    expect(document.querySelector('[data-chart="End-of-utterance gap"]')).toBeNull();
+  });
+
   it("lists the version's exports with state and files", () => {
     seed([
       {
