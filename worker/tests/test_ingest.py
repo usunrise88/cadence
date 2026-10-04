@@ -19,6 +19,7 @@ from cadence_worker import segments as seg
 from cadence_worker.__main__ import registry
 from cadence_worker.cas import hash_bytes
 from cadence_worker.mounts import Mounts
+from cadence_worker.steps import dataset_freeze as freeze_mod
 from cadence_worker.steps.base import StepInputError, missing_metadata
 from cadence_worker.steps.dataset_freeze import DatasetFreezeParams, DatasetFreezeStep, member_line
 from cadence_worker.steps.manifest_filter import ManifestFilterParams, ManifestFilterStep
@@ -163,6 +164,18 @@ def test_env_mounts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert mounts.resolve("mount://corpora/a/b.wav", mounts.mounts_of(None)) == (tmp_path / "a" / "b.wav").resolve()
 
 
+def test_eou_of() -> None:
+    own = [(0.5, 2.5), (5.0, 6.5)]
+    others = [(3.0, 4.5), (6.0, 9.0)]
+    assert seg.eou_of(own, 0.3, 2.8, others) == {"speechEnd": 2.2, "nextSpeech": 2.7, "gapS": 0.5}
+    # A barge-in: the other party starts before the speech ends.
+    assert seg.eou_of(own, 4.8, 6.7, others) == {"speechEnd": 1.7, "nextSpeech": 1.2, "gapS": -0.5}
+    # Nobody speaks within 10 s.
+    assert seg.eou_of([(0.0, 1.0)], 0.0, 1.0, [(20.0, 21.0)]) == {"speechEnd": 1.0}
+    # No speech found in the segment: its end counts.
+    assert seg.eou_of([], 1.0, 2.0, [(2.5, 3.0)]) == {"speechEnd": 1.0, "nextSpeech": 1.5, "gapS": 0.5}
+
+
 def test_vad_finds_the_bursts() -> None:
     x = seg.to_rate(bursts(16000, [(0.5, 2.0), (3.0, 4.2)], 5.0), 16000)
     p = SdpIngestParams(source="toy", path="mount://corpora/x")
@@ -225,6 +238,15 @@ def test_ingest_writes_segments(tmp_path: Path) -> None:
     assert all(x["speaker"] == "caller-1" and x["channel"] == 0 for x in caller)
     assert all("crosstalk" in x for x in call)
     assert bot[0]["crosstalk"] < 0.2
+    # End of utterance per channel: the caller's first turn ends ≈ 2.5 s, the bot answers ≈ 3.0 s; the bot ends ≈ 4.5 s,
+    # the caller answers ≈ 5.0 s; nobody speaks after the caller's last turn. Single-track files have none.
+    first, last = sorted(caller, key=lambda x: x["start"])
+    assert 0.2 <= first["eou"]["gapS"] <= 0.7
+    assert first["eou"]["nextSpeech"] == pytest.approx(first["eou"]["speechEnd"] + first["eou"]["gapS"], abs=0.002)
+    assert 0.2 <= bot[0]["eou"]["gapS"] <= 0.7
+    assert "gapS" not in last["eou"]
+    assert last["eou"]["speechEnd"] > 0
+    assert all("eou" not in x for f in ("a.wav", "b.wav", "long.wav") for x in by_file[f])
     files = [json.loads(r) for r in (out / seg.FILES).read_text(encoding="utf-8").splitlines()]
     assert {f["uri"].rsplit("/", 1)[1]: f["roles"] for f in files}["call.wav"] == ["caller", "bot"]
     # The canonical hash is the hash of the 16 kHz WAV of exactly that range.
@@ -395,6 +417,55 @@ def test_draft_then_cut(tmp_path: Path) -> None:
     for f in sorted((tmp_path / "cut").rglob("*")):
         if f.is_file():
             assert f.read_bytes() == (tmp_path / "cut2" / f.relative_to(tmp_path / "cut")).read_bytes(), f
+
+
+def test_freeze_carries_end_of_utterance(tmp_path: Path) -> None:
+    # Keep the call's bot turn (its text is the TTS script): a segment of a two-channel recording, with an end of
+    # utterance.
+    out, ctx = ingest(tmp_path)
+    filt = step(
+        ManifestFilterStep, ManifestFilterParams(min_duration=0.5, roles=["mono", "caller", "bot"]), out, tmp_path / "f"
+    )
+    split = step(
+        SpeakerDisjointSplitStep,
+        SpeakerDisjointSplitParams(validation_share=0.5, min_validation_utterances=1),
+        filt,
+        tmp_path / "s",
+    )
+    _, segs = seg.read(split)
+    with_eou = [x for x in segs if "eou" in x]
+    gaps = [x["eou"]["gapS"] for x in with_eou if "gapS" in x["eou"]]
+    assert with_eou
+    assert gaps
+    assert all(x["role"] != "mono" for x in with_eou)
+    draft = tmp_path / "draft"
+    DatasetFreezeStep().run(DatasetFreezeParams(name="toy-eou"), {"segments": split}, {"dataset": draft}, ctx)
+    h = json.loads((draft / "dataset.json").read_text(encoding="utf-8"))
+    eou = h["stats"]["eou"]
+    assert (eou["utterances"], eou["withGap"], eou["overlapping"]) == (len(with_eou), len(gaps), 0)
+    assert eou["p50GapS"] == pytest.approx(float(np.percentile(gaps, 50)), abs=0.001)
+    assert sum(eou["gapHistogram"]["counts"]) == len(gaps)
+    assert "End of utterance" in (draft / "card.md").read_text(encoding="utf-8")
+    dlines = [json.loads(x) for x in (draft / "manifest.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert [x.get("eou") for x in dlines] == [x.get("eou") for x in segs]
+    # The frozen cut (cadence.dataset/1) carries the same records and statistics.
+    cut = tmp_path / "cut"
+    p = DatasetFreezeParams(name="toy-eou", mode="cut", draft_version="ver_draft")
+    DatasetFreezeStep().run(p, {"segments": split}, {"dataset": cut}, ctx)
+    c = json.loads((cut / "dataset.json").read_text(encoding="utf-8"))
+    clines = [json.loads(x) for x in (cut / "manifest.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert [x.get("eou") for x in clines] == [x.get("eou") for x in segs]
+    assert c["stats"]["eou"] == eou
+
+
+def test_freeze_eou_stats_without_records() -> None:
+    assert freeze_mod.eou_stats([{"duration": 1.0}]) is None
+    assert freeze_mod.eou_of({"eou": {"speechEnd": 1.0, "nextSpeech": 0.5}}) == {"speechEnd": 1.0}  # no gap: no next
+    st = freeze_mod.eou_stats(
+        [{"eou": {"speechEnd": 1.0}}, {"eou": {"speechEnd": 2.0, "nextSpeech": 1.5, "gapS": -0.5}}]
+    )
+    assert st is not None
+    assert (st["utterances"], st["withGap"], st["overlapping"]) == (2, 1, 1)
 
 
 def test_cut_refuses_changed_audio(tmp_path: Path) -> None:

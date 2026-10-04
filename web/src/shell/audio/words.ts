@@ -1,3 +1,5 @@
+import type { UtteranceWords } from "@/api/gen/types.gen";
+
 // Word tracks are DOM, not canvas (R51): each word is its own bidi-isolated <bdi dir="auto"> run on the shared time
 // axis, which runs left to right in every locale; Hebrew reads right to left inside its box, digits and Latin text
 // stay isolated. Only words in the visible range exist as elements (a pool); above views.audio.words_max_visible
@@ -15,7 +17,21 @@ export type WordTrackData = {
   words: TrackWord[];
   /** Reference words the hypothesis dropped, drawn as a marker at the time the next word starts. */
   deletions?: { at: number; ref: string }[];
+  /** Text shown across the track when it has no timed words (an unaligned reference, R51). */
+  note?: string;
 };
+
+/**
+ * The reference word track of a words.get answer (R51): the golden set's reference at its aligned times, outlined;
+ * an unaligned reference shows as text with the reason. Undefined when the answer has no reference.
+ */
+export function referenceTrack(w: UtteranceWords, lang?: string): WordTrackData | undefined {
+  const r = w.reference;
+  if (!r) return undefined;
+  const words: TrackWord[] = r.words.map((x) => ({ word: x.word, start: x.start, end: x.end }));
+  const note = r.aligned ? undefined : `${r.text}${r.reason ? ` (unaligned: ${r.reason})` : " (unaligned)"}`;
+  return { id: "ref", label: "Reference", lang: lang ?? r.language, words, note };
+}
 
 const TEXT_MIN_PX = 14;
 
@@ -77,6 +93,13 @@ export class WordTrack {
     label.className = "cadence-audio-track-label";
     label.textContent = data.label;
     this.el.append(label);
+    if (data.note && data.words.length === 0) {
+      const note = doc.createElement("bdi");
+      note.className = "cadence-audio-track-note";
+      note.dir = "auto";
+      note.textContent = data.note;
+      this.el.append(note);
+    }
     this.el.addEventListener("pointerover", (e) => {
       const t = (e.target as HTMLElement).closest<HTMLElement>("[data-i]");
       if (t) onHover(this, Number(t.dataset.i));

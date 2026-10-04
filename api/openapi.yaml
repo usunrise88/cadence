@@ -3774,9 +3774,12 @@ paths:
       summary: Min/max peaks per channel of an utterance (or a span) at a resolution, for the waveform track
       tags: [media]
       description: >
-        int8 min/max pairs (value / 127 = sample) per hop and channel, frames × channels × [min, max], base64. The 10 ms
-        peaks are computed from the audio on first use and cached in the content store as a peaks artifact (a stored
-        peaks artifact of the audio is used when present); coarser hops are max-pooled from them.
+        int8 min/max pairs (value / 127 = sample) per hop and channel, frames × channels × [min, max], base64. Peaks are
+        stored once per audio as a peaks artifact (cadence.peaks/2): the 10 ms base level and, for long audio, coarser
+        levels (×16 each), computed when a dataset version is registered (a frozen version's members, and a draft's
+        segments whose files the control plane reads without a decoder) by the media.peaks job. A request reads only
+        the span it asks for from the coarsest stored level that divides hopMs and pools it; audio with no stored peaks
+        is computed on this request and stored (computed: true).
       parameters:
         - { name: hopMs, in: query, description: "Resolution: milliseconds per min/max pair, a multiple of 10", schema: { type: integer, minimum: 10, maximum: 60000, default: 10 } }
         - { name: start, in: query, description: "Span start in seconds (default 0)", schema: { type: number, format: double, minimum: 0 } }
@@ -3792,13 +3795,19 @@ paths:
     parameters: [{ $ref: "#/components/parameters/UtteranceRef" }]
     get:
       operationId: spectrogram.get
-      summary: The spectrogram tile pyramid of an utterance's audio (spectrogram_tiles@1) — its manifest, or one tile
+      summary: The spectrogram tile pyramid of an utterance's audio — its manifest, or one tile; the first request builds it
       tags: [media]
       description: >
         For audio longer than views.audio.browser_stft_max_s the audio view reads a server tile pyramid: the newest
-        spectrogram_tiles artifact computed for the utterance's audio. Without tile: the manifest (JSON). With
-        tile=c<ch>/l<level>/<index>: that tile's bytes (uint8 dB, bins × 512 frames, dB = -120 + 0.5 × value). 404 when
-        no pyramid was computed for this audio.
+        spectrogram_tiles artifact of the utterance's audio at the views.audio settings (or one spectrogram_tiles@1
+        wrote in a pipeline). Without tile: the manifest (JSON). With tile=c<ch>/l<level>/<index>: that tile's bytes
+        (uint8 dB, bins × 512 frames, dB = -120 + 0.5 × value). When no pyramid exists, a manifest request starts the
+        media.spectrogram job that builds it once in the control plane (any audio the view plays: a stored utterance,
+        a segment or window of a file on a mount) and answers 202 with the job (Retry-After 2); requests while it runs
+        answer the same job, so each audio is built once. A failed build answers media-tiles-failed until
+        media.tiles_retry_s has passed, then builds again; audio longer than media.tiles_max_s is refused. Narrowband
+        audio (8 kHz origin by its estimated bandwidth) keeps bins up to 4 kHz (manifest narrowband, bandwidthHz). A
+        tile request with no pyramid answers 404.
       parameters:
         - { name: tile, in: query, description: "A tile: c<channel>/l<level>/<index>", schema: { type: string, pattern: "^c[0-9]{1,2}/l[0-9]{1,2}/[0-9]{1,7}$" } }
       responses:
@@ -3807,6 +3816,7 @@ paths:
           content:
             application/json: { schema: { $ref: "#/components/schemas/SpectrogramManifest" } }
             application/octet-stream: { schema: { type: string, format: binary } }
+        "202": { $ref: "#/components/responses/JobAccepted" }
         default: { $ref: "#/components/responses/Problem" }
 
   /registry/utterances/{id}/words:
@@ -3814,16 +3824,21 @@ paths:
     parameters: [{ $ref: "#/components/parameters/UtteranceRef" }]
     get:
       operationId: words.get
-      summary: An utterance's hypothesis words with times from a hypotheses artifact, marked S/D/I against the reference by a scores artifact
+      summary: An utterance's hypothesis words with times (marked S/D/I against the reference by a scores artifact) and its reference words at aligned times
       tags: [media]
       description: >
-        The audio view's word track for one utterance: its row of a hypotheses artifact (words with start, end and
+        The audio view's word tracks for one utterance: its row of a hypotheses artifact (words with start, end and
         confidence; partial events of a streaming decode), and, with scores, the alignment of that utterance's row in
         the scores artifact — each hypothesis word marked =, S or I (with the reference word for S), and the reference
-        words the hypothesis deleted placed between hypothesis words.
+        words the hypothesis deleted placed between hypothesis words. With goldenSet (or alignment), the reference
+        track: the utterance's row of the golden set's newest reference alignment (align_reference) — its words at
+        their aligned times, or the text and the reason when it stayed unaligned. At least one of hypotheses,
+        goldenSet and alignment is required.
       parameters:
-        - { name: hypotheses, in: query, required: true, description: "The hypotheses artifact (b3:…), e.g. an eval cell's", schema: { type: string, pattern: "^b3:[0-9a-f]{64}$" } }
+        - { name: hypotheses, in: query, description: "The hypotheses artifact (b3:…), e.g. an eval cell's", schema: { type: string, pattern: "^b3:[0-9a-f]{64}$" } }
         - { name: scores, in: query, description: "The scores artifact (b3:…) of the same cell", schema: { type: string, pattern: "^b3:[0-9a-f]{64}$" } }
+        - { name: goldenSet, in: query, description: "A golden set version (ver_…): its newest reference alignment gives the reference track", schema: { type: string, maxLength: 100 } }
+        - { name: alignment, in: query, description: "An alignment artifact (b3:…, cadence.alignment/1) to read the reference track from", schema: { type: string, pattern: "^b3:[0-9a-f]{64}$" } }
       responses:
         "200":
           description: The words
@@ -9388,7 +9403,8 @@ components:
         clipped: { type: array, items: { type: integer }, description: "Frames where a sample of any channel reached full scale (at most 1000)" }
         encoding: { type: string, enum: [int8-minmax], description: "frames × channels × [min, max], int8, value / 127 = sample" }
         data: { type: string, format: byte, description: Base64 of the int8 bytes }
-        artifact: { type: string, description: "The cached 10 ms peaks artifact (b3:…)" }
+        artifact: { type: string, description: "The stored peaks artifact (b3:…; cadence.peaks/2: the 10 ms base level and coarser levels for long audio)" }
+        computed: { type: boolean, description: "True when this request computed the peaks from the audio (no stored peaks artifact: the first-view fallback)" }
     SpectrogramLevel:
       type: object
       required: [level, hopS, frames, tiles]
@@ -9411,8 +9427,10 @@ components:
         windowSamples: { type: integer }
         hopSamples: { type: integer }
         nFft: { type: integer }
-        bins: { type: integer, description: "Bins kept: up to the origin's Nyquist" }
+        bins: { type: integer, description: "Bins kept: up to the origin's Nyquist (4 kHz for narrowband audio)" }
         binHz: { type: number, format: double }
+        bandwidthHz: { type: number, format: double, description: "Estimated bandwidth of the audio (pyramids built by the control plane)" }
+        narrowband: { type: boolean, description: "The audio is of 8 kHz origin (bandwidth ≤ 4.2 kHz): bins stop at 4 kHz, the view draws a Nyquist line" }
         tileFrames: { type: integer }
         encoding:
           type: object
@@ -9452,8 +9470,9 @@ components:
       properties:
         utteranceId: { type: string }
         audio: { type: string, description: "The audio's content hash (b3:…)" }
-        text: { type: string, description: The hypothesis text }
+        text: { type: string, description: "The hypothesis text (empty without hypotheses)" }
         ref: { type: string, description: "The normalised reference (with scores)" }
+        reference: { $ref: "#/components/schemas/ReferenceWords" }
         words: { type: array, items: { $ref: "#/components/schemas/HypothesisWord" } }
         deletions: { type: array, items: { $ref: "#/components/schemas/DeletedWord" } }
         aligned: { type: boolean, description: "The scores' alignment was mapped onto the timed words (false without scores, or when the normaliser changed the word count)" }
@@ -10459,6 +10478,7 @@ components:
             required: [rate, utterances]
             properties: { rate: { type: integer }, utterances: { type: integer } }
         speakers: { type: integer }
+        eou: { $ref: "#/components/schemas/DatasetEouStats" }
     DatasetShard:
       type: object
       description: "One shard of a frozen version: a Lhotse cuts manifest over the version's audio in the content store"
@@ -11128,3 +11148,38 @@ components:
         earlyWords: { type: integer, description: Words shown before their aligned end (negative delays, kept) }
         unalignedUtterances: { type: integer }
         mismatchedUtterances: { type: integer, description: "Utterances whose alignment was made for another text, or whose words the normalizer does not tie to tokens" }
+    # ---------------------------------------------------------------- long audio and the reference track schemas (phase 4 tail · stream audio) — add below
+    ReferenceWord:
+      type: object
+      required: [index, word, start, end]
+      properties:
+        index: { type: integer, description: "Position of the word in the reference text split on whitespace" }
+        word: { type: string, description: The reference token as written }
+        start: { type: number, format: double, description: Seconds from the start of the audio }
+        end: { type: number, format: double }
+        score: { type: number, format: double, description: "Mean probability of the word's tokens over its frames (a low score marks a doubtful alignment)" }
+    ReferenceWords:
+      type: object
+      description: "The audio view's reference-word track (R51): the utterance's reference text at the times an alignment artifact (cadence.alignment/1, align_reference) gives its words. An unaligned reference carries its text and the reason, and no times: nothing is estimated"
+      required: [artifact, aligned, text, words]
+      properties:
+        artifact: { type: string, description: "The alignment artifact (b3:…)" }
+        aligned: { type: boolean }
+        text: { type: string, description: The reference exactly as the dataset has it }
+        language: { type: string }
+        words: { type: array, items: { $ref: "#/components/schemas/ReferenceWord" } }
+        skipped: { type: array, items: { type: integer }, description: "Indexes of reference tokens with no timing (punctuation only, or nothing the aligner can spell)" }
+        reason: { type: string, description: Why the reference stayed unaligned }
+        aligner: { type: string, description: "The aligner auxiliary (auxiliary/<name>)" }
+    DatasetEouStats:
+      type: object
+      description: "End-of-utterance gaps of the version's members (per-channel VAD at ingest, sdp_ingest): from a segment's last speech end to the other party's next speech start, for segments of multi-channel recordings"
+      required: [utterances, withGap]
+      properties:
+        utterances: { type: integer, description: "Members with an end-of-utterance record (segments of multi-channel recordings)" }
+        withGap: { type: integer, description: "Members whose other party spoke next within 10 s (a gap was measured)" }
+        overlapping: { type: integer, description: "Gaps below zero: the other party started before the speech ended (barge-in)" }
+        p50GapS: { type: number, format: double }
+        p90GapS: { type: number, format: double }
+        meanGapS: { type: number, format: double }
+        gapHistogram: { $ref: "#/components/schemas/DatasetHistogram" }

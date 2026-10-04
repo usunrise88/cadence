@@ -3545,7 +3545,7 @@ export const peaksGetQueryKey = (options: Options<PeaksGetData>) => createQueryK
 /**
  * Min/max peaks per channel of an utterance (or a span) at a resolution, for the waveform track
  *
- * int8 min/max pairs (value / 127 = sample) per hop and channel, frames × channels × [min, max], base64. The 10 ms peaks are computed from the audio on first use and cached in the content store as a peaks artifact (a stored peaks artifact of the audio is used when present); coarser hops are max-pooled from them.
+ * int8 min/max pairs (value / 127 = sample) per hop and channel, frames × channels × [min, max], base64. Peaks are stored once per audio as a peaks artifact (cadence.peaks/2): the 10 ms base level and, for long audio, coarser levels (×16 each), computed when a dataset version is registered (a frozen version's members, and a draft's segments whose files the control plane reads without a decoder) by the media.peaks job. A request reads only the span it asks for from the coarsest stored level that divides hopMs and pools it; audio with no stored peaks is computed on this request and stored (computed: true).
  *
  */
 export const peaksGetOptions = (options: Options<PeaksGetData>) => queryOptions<PeaksGetResponse, PeaksGetError, PeaksGetResponse, ReturnType<typeof peaksGetQueryKey>>({
@@ -3566,7 +3566,7 @@ export const peaksGetInfiniteQueryKey = (options: Options<PeaksGetData>): QueryK
 /**
  * Min/max peaks per channel of an utterance (or a span) at a resolution, for the waveform track
  *
- * int8 min/max pairs (value / 127 = sample) per hop and channel, frames × channels × [min, max], base64. The 10 ms peaks are computed from the audio on first use and cached in the content store as a peaks artifact (a stored peaks artifact of the audio is used when present); coarser hops are max-pooled from them.
+ * int8 min/max pairs (value / 127 = sample) per hop and channel, frames × channels × [min, max], base64. Peaks are stored once per audio as a peaks artifact (cadence.peaks/2): the 10 ms base level and, for long audio, coarser levels (×16 each), computed when a dataset version is registered (a frozen version's members, and a draft's segments whose files the control plane reads without a decoder) by the media.peaks job. A request reads only the span it asks for from the coarsest stored level that divides hopMs and pools it; audio with no stored peaks is computed on this request and stored (computed: true).
  *
  */
 export const peaksGetInfiniteOptions = (options: Options<PeaksGetData>) => {
@@ -3597,9 +3597,9 @@ export const peaksGetInfiniteOptions = (options: Options<PeaksGetData>) => {
 export const spectrogramGetQueryKey = (options: Options<SpectrogramGetData>) => createQueryKey('spectrogramGet', options);
 
 /**
- * The spectrogram tile pyramid of an utterance's audio (spectrogram_tiles@1) — its manifest, or one tile
+ * The spectrogram tile pyramid of an utterance's audio — its manifest, or one tile; the first request builds it
  *
- * For audio longer than views.audio.browser_stft_max_s the audio view reads a server tile pyramid: the newest spectrogram_tiles artifact computed for the utterance's audio. Without tile: the manifest (JSON). With tile=c<ch>/l<level>/<index>: that tile's bytes (uint8 dB, bins × 512 frames, dB = -120 + 0.5 × value). 404 when no pyramid was computed for this audio.
+ * For audio longer than views.audio.browser_stft_max_s the audio view reads a server tile pyramid: the newest spectrogram_tiles artifact of the utterance's audio at the views.audio settings (or one spectrogram_tiles@1 wrote in a pipeline). Without tile: the manifest (JSON). With tile=c<ch>/l<level>/<index>: that tile's bytes (uint8 dB, bins × 512 frames, dB = -120 + 0.5 × value). When no pyramid exists, a manifest request starts the media.spectrogram job that builds it once in the control plane (any audio the view plays: a stored utterance, a segment or window of a file on a mount) and answers 202 with the job (Retry-After 2); requests while it runs answer the same job, so each audio is built once. A failed build answers media-tiles-failed until media.tiles_retry_s has passed, then builds again; audio longer than media.tiles_max_s is refused. Narrowband audio (8 kHz origin by its estimated bandwidth) keeps bins up to 4 kHz (manifest narrowband, bandwidthHz). A tile request with no pyramid answers 404.
  *
  */
 export const spectrogramGetOptions = (options: Options<SpectrogramGetData>) => queryOptions<SpectrogramGetResponse, SpectrogramGetError, SpectrogramGetResponse, ReturnType<typeof spectrogramGetQueryKey>>({
@@ -3618,9 +3618,9 @@ export const spectrogramGetOptions = (options: Options<SpectrogramGetData>) => q
 export const wordsGetQueryKey = (options: Options<WordsGetData>) => createQueryKey('wordsGet', options);
 
 /**
- * An utterance's hypothesis words with times from a hypotheses artifact, marked S/D/I against the reference by a scores artifact
+ * An utterance's hypothesis words with times (marked S/D/I against the reference by a scores artifact) and its reference words at aligned times
  *
- * The audio view's word track for one utterance: its row of a hypotheses artifact (words with start, end and confidence; partial events of a streaming decode), and, with scores, the alignment of that utterance's row in the scores artifact — each hypothesis word marked =, S or I (with the reference word for S), and the reference words the hypothesis deleted placed between hypothesis words.
+ * The audio view's word tracks for one utterance: its row of a hypotheses artifact (words with start, end and confidence; partial events of a streaming decode), and, with scores, the alignment of that utterance's row in the scores artifact — each hypothesis word marked =, S or I (with the reference word for S), and the reference words the hypothesis deleted placed between hypothesis words. With goldenSet (or alignment), the reference track: the utterance's row of the golden set's newest reference alignment (align_reference) — its words at their aligned times, or the text and the reason when it stayed unaligned. At least one of hypotheses, goldenSet and alignment is required.
  *
  */
 export const wordsGetOptions = (options: Options<WordsGetData>) => queryOptions<WordsGetResponse, WordsGetError, WordsGetResponse, ReturnType<typeof wordsGetQueryKey>>({

@@ -597,13 +597,13 @@ none of them.
 
   | Track | Shows | Data | Phase |
   | --- | --- | --- | --- |
-  | Overview, waveform | Min/max peaks per channel (caller and bot lanes for calls), clipping marks | Session audio and short utterances from their PCM; long audio from a `peaks` artifact (≈ 450 KB per hour; *S5: 720 KB per channel-hour, 10 ms int8 min/max*) computed at ingest (phase 4) | 3 |
+  | Overview, waveform | Min/max peaks per channel (caller and bot lanes for calls), clipping marks | Session audio and short utterances from their PCM; long audio from a `peaks` artifact (≈ 450 KB per hour; *S5: 720 KB per channel-hour, 10 ms int8 min/max*) computed at ingest (phase 4; *as built: stored when a dataset version is registered, multi-level `cadence.peaks/2`, first view as fallback, 06 "Media"*) | 3 |
   | Spectrogram | The acoustic view (R52) | Browser FFT for session audio and short spans; server tiles for long audio | 3 |
   | Model input | The family's features as the model saw them, from its own preprocessor; SpecAugment masks in training previews | `analysis` artifact | 3 |
   | Emissions | CTC posteriors or RNNT per-frame emissions (top tokens and blank) | `analysis` artifact | 3 |
   | Hypothesis words | One lane per target; word confidence shades each word (NeMo's entropy-based confidence); S, D and I against the reference by glyph as well as colour | `hypotheses` | 3 |
   | Streaming timeline | Each word from its first partial to its final, against audio time; revisions highlighted | `hypotheses` partial events | 3 |
-  | Reference words | The reference transcript at aligned times; unaligned references show as text | Alignment step (NeMo Forced Aligner with a CTC model for the locale; *as built: `align_reference@1`, omniASR CTC emissions + torchaudio's aligner, NFA cannot read omniASR*) | 4 (*the alignment is built; the track is not drawn yet*) |
+  | Reference words | The reference transcript at aligned times; unaligned references show as text | Alignment step (NeMo Forced Aligner with a CTC model for the locale; *as built: `align_reference@1`, omniASR CTC emissions + torchaudio's aligner, NFA cannot read omniASR*) | 4 (*drawn since the phase 4 tail: `words.get?goldenSet=`*) |
   | Energy, VAD | Level in dBFS, speech regions, endpoints, estimated bandwidth | Worker step; the worklet when live (*as built: `tracks.get`, computed on request; bandwidth too*) | 4 (live: 3) |
   | Redactions, boosted terms | PII spans replaced by tone; hits of boost-list terms | `pii_redact`; decode | 5; 3 |
 
@@ -662,8 +662,9 @@ none of them.
     - Canvas 2D is the fallback.
   - Server, for long audio:
     - a uint8 dB tile pyramid: a 10 ms base level, with coarser levels max-pooled over time;
-    - computed by a worker step on demand and cached in the artifact store by content hash and settings (*not built
-      in phase 4: tiles are still computed per request, `ROADMAP.md` "Phase 4 notes"*);
+    - computed by a worker step on demand and cached in the artifact store by content hash and settings (*as built
+      in the phase 4 tail: by the control-plane job `media.spectrogram` on the first view, the same STFT as
+      `spectrogram_tiles@1`; 00 decision log 2026-10-04, 06 "Media"*);
     - one hour at 10 ms × 257 bins is ≈ 93 MB, too much for a tab to compute or hold.
   - Live microphone:
     - AudioWorklet frames are posted to a worker as transferable buffers and drawn by the same FFT and renderer as a

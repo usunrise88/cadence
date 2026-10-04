@@ -1,6 +1,6 @@
 ---
 title: Audio
-summary: Hear and see one utterance or span — waveform, spectrogram and the hypothesis words marked against the reference — played through a short-lived signed link; loop, zoom, attach the span to Chat, export the words.
+summary: Hear and see one utterance or span — waveform, spectrogram, the hypothesis words marked against the reference and the reference words at their aligned times — played through a short-lived signed link; loop, zoom, attach the span to Chat, export the words.
 contexts: [panel:audio, command:view.audioPlay]
 ---
 
@@ -18,16 +18,22 @@ Tracks, top to bottom, on one time axis that runs left to right in every locale:
 | Waveform | Min/max per 10 ms per channel (a call: one lane per channel); red ticks mark clipping |
 | Spectrogram | dB magnitude, mel or Hz axis, one per channel. Audio of 8 kHz origin stops at 4 kHz (the band above is dark) |
 | Hypothesis | The model's words at their times, shaded by confidence; ≠ substituted (hover for the reference word), + inserted, − a deleted reference word |
+| Reference | The golden set's reference words at the times its alignment (`align_reference`) gives them, outlined; a reference that stayed unaligned shows as text with the reason, never at guessed times |
 | Overview | The whole audio with the visible range; drag it to scroll |
 
-The hypothesis track appears when the view knows the eval cell: its hypotheses and scores artifacts. Words are
-real text: Hebrew reads right to left inside each word's box, and the transcript under the view follows the
-language's direction — click a word to move the playhead there.
+The hypothesis track appears when the view knows the eval cell: its hypotheses and scores artifacts. The reference
+track appears when it knows the cell's golden set and the golden set has been aligned (Eval report and Diff rows pass
+both). Comparing the two lanes shows where the model put a word against where it was said. Words are real text:
+Hebrew reads right to left inside each word's box, and the transcript under the view follows the language's direction
+— click a word to move the playhead there.
 
 Short audio (up to `views.audio.browser_stft_max_s`, 10 minutes) gets its spectrogram computed in your browser, in a
-background worker; longer audio reads the tile pyramid a `spectrogram_tiles` step computed on the server. All views of
-a window share one WebGL2 renderer, so a dozen views across popouts keep drawing; if the graphics context is lost the
-views keep their last picture and redraw when it returns.
+background worker. Longer audio — a call recording — reads a tile pyramid from the server: the first view asks the
+control plane to build it once (*Building the spectrogram…* while the `media.spectrogram` job runs), and every later
+view reads it; audio of 8 kHz origin keeps bins to 4 kHz only. Its waveform comes from peaks stored when the dataset
+version was registered: an overview of the whole recording at a coarse step, and 10 ms detail for the part you zoom
+into. All views of a window share one WebGL2 renderer, so a dozen views across popouts keep drawing; if the graphics
+context is lost the views keep their last picture and redraw when it returns.
 
 ## Keys
 
@@ -62,6 +68,7 @@ a word swallowed at a cut. Phase 4's Triage and Annotate use the same view.
 | `media.max_span_s` | 600 s | Longest span converted to 16 kHz in one response (a stored 16 kHz WAV plays whole at any length) |
 | `media.max_conversions`, `media.span_cache_mb` | 2, 2048 MB | Conversions at once (one more waits: `media-busy`); converted spans kept for the next plays |
 | `media.play_audit_window_s` | 600 s | A play is written to the audit log once per viewer, span and channel within it |
+| `media.tiles_max_s`, `media.tiles_retry_s` | 14 400 s, 600 s | Longest audio the server builds a tile pyramid for; how long a failed build is reported ([media-tiles-failed](../errors/media-tiles-failed.md)) before a view builds again |
 
 The toolbar changes colormap, axis, range and gain for this view without touching the defaults.
 
@@ -82,6 +89,8 @@ The toolbar changes colormap, axis, range and gain for this view without touchin
 - **The player stopped after a pause.** Press Space again; an expired link is replaced
   ([media-link-invalid](../errors/media-link-invalid.md)).
 - **Discuss a moment with the agent.** Drag across it, **Attach to Chat**, ask.
+- **No reference track.** The golden set has no alignment yet: run `pipelines/align-reference.yaml` on it (an
+  aligner must cover its language; otherwise the references stay unaligned and the track shows them as text).
 
 ## Sources
 

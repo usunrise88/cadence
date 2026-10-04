@@ -91,7 +91,11 @@ budgets and decided against wavesurfer.js).
   (min/max peaks per channel, clipping marks), acoustic spectrogram, model input and emissions (from the transcribe
   step's `analysis` artifact), hypothesis words (one lane per target, confidence shading, S/D/I against the reference
   by glyph and colour), the streaming timeline (each word from first partial to final), boosted-term hits, and the
-  live energy meter; reference words and energy/VAD from steps arrive in phase 4 (the R51 table).
+  live energy meter; reference words and energy/VAD from steps arrive in phase 4 (the R51 table). As built (phase 4
+  tail, 2026-10-04): the reference track is drawn under the hypothesis lane from `words.get?goldenSet=` (the golden
+  set's newest `align_reference` alignment; `AudioView` prop `goldenSet`, selection items `&gs=ver_…`, passed by Eval
+  report and Diff rows), outlined so it never reads as a hypothesis, with an unaligned reference shown as text and
+  its reason, never at guessed times.
 - Spectrogram defaults live in `defaults.yaml` `views.audio` (R52): 25 ms Hann window, 10 ms hop, FFT 512, mel axis
   0–8 kHz (4 kHz with a Nyquist line for audio of 8 kHz origin), range 80 dB below the peak, gain 0, magma; presets
   "Praat broadband", "Narrowband", "Model frames" (the default). Model-input mode shows the checkpoint's own features
@@ -100,7 +104,10 @@ budgets and decided against wavesurfer.js).
   request; never jet or rainbow.
 - Computation: session audio and spans under 10 minutes in the browser (served 16 kHz PCM → FFT in a Web Worker,
   a JavaScript FFT (`fourier-transform`, MIT; no maintained WASM FFT exists) → uint8 dB into WebGL2 R8 textures with a 256×1 lookup texture, so gain, range and colormap are shader
-  parameters; Canvas 2D fallback); long audio from a server tile pyramid cached in the content store; the live
+  parameters; Canvas 2D fallback); long audio from a server tile pyramid cached in the content store (as built: built
+  once by the control-plane job `media.spectrogram` on the first view, which polls `spectrogram.get` while it answers
+  `202`; narrowband pyramids stop at 4 kHz; long audio's waveform reads a stored overview level plus 10 ms detail for
+  the window around the visible range, 06 "Media"); the live
   microphone as a waterfall from AudioWorklet frames, never an AnalyserNode. One WebGL2 renderer per window (Chrome's
   16-context limit); views survive context loss and hidden panels release their textures.
 - Playback goes through an HTMLMediaElement, with Media Source Extensions for signed segments (R25, 06 "Media").

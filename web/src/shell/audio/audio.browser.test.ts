@@ -4,15 +4,17 @@ import { afterEach, describe, expect, it } from "vitest";
 import { AudioAxis } from "./axis";
 import { blurAudio, focusedAudio } from "./controller";
 import { AudioEngine, type EngineOptions } from "./engine";
-import { peaksFromPcm } from "./peaks";
+import { LongPeaks, PeakPyramid, peaksFromPcm } from "./peaks";
 import { rendererOf } from "./renderer";
 import { stftU8 } from "./stft";
 import { MemorySource } from "./tiles";
+import { referenceTrack } from "./words";
 
 // The audio view in headless Chromium: the shared WebGL2 renderer draws the spectrogram into each view's canvas,
 // several views in one window share one context, a second document (an iframe, like a popout) gets its own renderer,
 // a lost context keeps the picture and redraws on restore, and word tracks are bidi-isolated DOM.
 
+const H = "b3:" + "a".repeat(64);
 const engines: AudioEngine[] = [];
 afterEach(() => {
   for (const e of engines.splice(0)) e.destroy();
@@ -82,6 +84,54 @@ describe("audio view", () => {
     expect(a.root.querySelector(".cadence-audio-deletion")?.getAttribute("title")).toBe("deleted: “תודה”");
     expect(a.root.style.direction || getComputedStyle(a.root).direction).toBe("ltr");
     expect(a.summaryText()).toContain("Tracks: waveform, spectrogram, Hypothesis (2 words)");
+  });
+
+  it("draws the reference track on the hypothesis track's time axis, and an unaligned reference as text", async () => {
+    const axis = new AudioAxis(2, { start: 0, span: 2 });
+    const e = view(document, axis);
+    const hyp = { id: "hyp", label: "Hypothesis", lang: "he", words: [{ word: "שלום", start: 0.2, end: 0.6 }, { word: "עולם", start: 0.8, end: 1.4 }] };
+    const ref = referenceTrack({ utteranceId: "utt_1", audio: H, text: "", words: [], deletions: [], aligned: false,
+      reference: { artifact: H, aligned: true, text: "שלום עולמות", words: [{ index: 0, word: "שלום", start: 0.2, end: 0.6 }, { index: 1, word: "עולמות", start: 0.75, end: 1.5 }] } })!;
+    e.setWords([hyp, ref]);
+    await frames(window, 3);
+    const lanes = [...e.root.querySelectorAll<HTMLElement>(".cadence-audio-words")];
+    expect(lanes.map((l) => l.dataset.track)).toEqual(["hyp", "ref"]);
+    const box = (lane: HTMLElement, i: number) => lane.querySelectorAll<HTMLElement>(".cadence-audio-word")[i]!.getBoundingClientRect();
+    // The same times sit at the same place in both lanes; the reference is outlined, not shaded.
+    expect(Math.abs(box(lanes[0]!, 0).left - box(lanes[1]!, 0).left)).toBeLessThan(1);
+    expect(Math.abs(box(lanes[0]!, 0).width - box(lanes[1]!, 0).width)).toBeLessThan(1);
+    expect(box(lanes[1]!, 1).left).toBeLessThan(box(lanes[0]!, 1).left);
+    expect(getComputedStyle(lanes[1]!.querySelector(".cadence-audio-word")!).borderStyle).toBe("dashed");
+    expect(e.summaryText()).toContain("Reference (2 words)");
+    const unaligned = referenceTrack({ utteranceId: "utt_1", audio: H, text: "", words: [], deletions: [], aligned: false,
+      reference: { artifact: H, aligned: false, text: "שלום עולם", words: [], reason: "language not covered" } })!;
+    e.setWords([unaligned]);
+    await frames(window, 2);
+    const note = e.root.querySelector<HTMLElement>(".cadence-audio-track-note");
+    expect(note?.textContent).toBe("שלום עולם (unaligned: language not covered)");
+    expect(note?.dir).toBe("auto");
+  });
+
+  it("draws long audio from its overview and the detail of the window it shows", async () => {
+    const pcm = tone(2, 200);
+    const fine = peaksFromPcm([pcm], 16000); // 10 ms
+    const coarse = peaksFromPcm([pcm.map(() => 0)], 16000); // a silent overview: only the detail draws a wave
+    const axis = new AudioAxis(2, { start: 0, span: 2 });
+    const e = view(document, axis);
+    e.setPeaks(new LongPeaks(coarse, null));
+    await frames(window, 2);
+    const wave = e.root.querySelector<HTMLCanvasElement>(".cadence-audio-wave")!;
+    const inked = () => {
+      const d = wave.getContext("2d")!.getImageData(0, 0, wave.width, wave.height).data;
+      let n = 0;
+      for (let i = 3; i < d.length; i += 4) if (d[i]! > 0) n++;
+      return n;
+    };
+    const silent = inked();
+    e.setPeaks(new LongPeaks(new PeakPyramid(1, coarse.levels[0]!, 0.16), fine));
+    axis.setRange(0.5, 0.5);
+    await frames(window, 2);
+    expect(inked()).toBeGreaterThan(silent * 4);
   });
 
   it("keeps the picture through a context loss and redraws on restore", async () => {

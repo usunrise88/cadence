@@ -357,7 +357,9 @@ Audio serving as built (2026-10-02, stream A; `internal/media`, `internal/server
   `range-not-satisfiable`), `audio.sign` (POST, `{channel?, start?, end?}` → `AudioLink`: a relative URL with
   `viewer`, `exp`, `sig`), `peaks.get` (`hopMs` a multiple of 10, `start`, `end`), `spectrogram.get` (the manifest, or
   one tile with `tile=c<ch>/l<L>/<i>`) and `words.get` (`hypotheses`, `scores` artifacts → the row's timed words with
-  `op`/`ref` from the alignment, deletions, partials). `audio.get` and `spectrogram.get` answer bytes from the
+  `op`/`ref` from the alignment, deletions, partials; phase 4 tail: `goldenSet` (ver_…) or `alignment` (b3:…) adds
+  `reference` — the utterance's row of the golden set's newest reference alignment, its words at their aligned times,
+  or the text and the reason when unaligned; `hypotheses` became optional). `audio.get` and `spectrogram.get` answer bytes from the
   non-strict router layer.
 - `audio.get` serves the stored file as is when it is 16 kHz 16-bit PCM and asked whole; any other span is decoded
   (PCM 8/16/24/32-bit, float 32), the channel picked, resampled to 16 kHz (polyphase Hann-windowed sinc, ±0.01 dB to
@@ -381,13 +383,31 @@ Audio serving as built (2026-10-02, stream A; `internal/media`, `internal/server
   (600 s), whatever its `Range` (before, only requests from byte 0 counted, so `bytes=1-` played unaudited); the
   window is kept in the control plane's memory, so a restart audits a play again rather than never. The row is
   written before the first byte is sent.
-- Peaks are computed on the first `peaks.get` from the stored audio at 10 ms (int8 min/max, clipping frames) and
-  recorded as a registry `peaks` artifact (`meta.audio`, `meta.format` `cadence.peaks/1`); later reads pool it. Phase 4
-  meant to compute them at ingest; as built they are still computed on first view (`ROADMAP.md` "Phase 4 notes").
-- The server tile pyramid is the worker step `spectrogram_tiles@1` (manifest `cadence.spectrogram-tiles/1`, uint8 dB
-  `-120 + 0.5 × v`, 512-frame tiles, bins up to the origin's Nyquist, levels max-pooled by two); `spectrogram.get`
-  serves the newest such artifact whose `meta.audio` is the utterance's hash. Nothing starts the step automatically
-  yet (phase-3 golden sets are short; long calls arrive with phase 4).
+- Peaks (10 ms int8 min/max per channel, clipping frames) are one registry `peaks` artifact per audio (`meta.audio`:
+  the utterance's hash, or a window's key). As built in the phase 4 tail (2026-10-04, migration 0045): format
+  `cadence.peaks/2` holds the base level and, while a level has more than 1 024 pairs, coarser levels pooled ×16
+  (`meta.levels: [{factor, frames, offset}]`; ≈ 4 % more bytes); `cadence.peaks/1` files (base level only) are still
+  read. They are stored when a dataset version is registered: the dataset output hook's second hook queues the
+  control-plane job `media.peaks` (one per version and artifact, so a draft and then its frozen cut), which stores the
+  peaks of every member the store lacks — a frozen version's WAVs, an import, and a draft's segments whose files the
+  control plane reads without a decoder (WAV PCM, float, G.711; compressed files wait for the cut) — reading the audio
+  exactly as `audio.get` does (`meta.source: media.peaks`). `peaks.get` reads only the span it asks for, from the
+  coarsest stored level whose factor divides `hopMs` (`start` then falls on that level's grid); audio with no stored
+  peaks is computed on that request and stored (`computed: true`, `meta.source: view`) — the first-view fallback. The
+  audio view asks for long audio's overview at a stored level (≤ 32 768 pairs) and 10 ms detail for the window around
+  the visible range when zoomed in.
+- The server tile pyramid (manifest `cadence.spectrogram-tiles/1`, uint8 dB `-120 + 0.5 × v`, 512-frame tiles, levels
+  max-pooled by two) is built on demand by the control plane (phase 4 tail; 00 decision log 2026-10-04): the first
+  manifest request of `spectrogram.get` for audio with no pyramid at the current `views.audio` settings starts the job
+  `media.spectrogram` and answers `202` with it (`Retry-After: 2`); requests while it runs answer the same job
+  (`media_jobs`), a failed build answers `422 media-tiles-failed` until `media.tiles_retry_s` (600 s) has passed, and
+  audio longer than `media.tiles_max_s` (14 400 s) is refused. The job reads the audio as `audio.get` serves it (any
+  utterance, a segment or a window of a file on a mount), resamples to 16 kHz and computes the same STFT as the worker
+  step `spectrogram_tiles@1` (byte-identical on a cross-check) in 2 048-frame blocks, writing tiles as they fill
+  (memory independent of length); bins stop at the origin's Nyquist and at 4 kHz when the estimated bandwidth (the
+  `tracks.get` rule over every fourth frame) says 8 kHz origin (`narrowband`, `bandwidthHz` in the manifest; the view
+  draws the band above as no data). Artifacts record `meta.settings`; one written by `spectrogram_tiles@1` in a pipeline
+  (no settings) is served too. Media jobs compute one at a time.
 
 **Manual transcription tests (R47).** A person runs one to three models on a file, the microphone or an utterance
 span and watches the words appear; nothing outlives the session.

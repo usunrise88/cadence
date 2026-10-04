@@ -233,6 +233,7 @@ func New(c Config) (*Server, error) {
 	// Alignment outputs: golden sets carry word timings of their references (phase 4 stream L).
 	goldensets.InstallAlignments(c.StepHooks)
 	s.media, s.mediaLinks = s.newMedia()
+	c.StepHooks.On(data.ArtifactType, s.media.DatasetHook) // after the importer: peaks of the version's members (media.peaks)
 	s.experiments = s.newExperimentsService()
 	s.experiments.Install() // a run that ends starts its sweep's next run
 	s.transcriptions = s.newTranscriptions()
@@ -292,6 +293,7 @@ func (s *Server) RegisterJobs(j *jobs.Service) {
 	s.cache.Register(j)          // dataset eviction, materialisation and the cache sweep
 	s.bundles.Register(j)        // bundles.adopt imports (phase 4 tail)
 	s.bundleWriter.Register(j)   // projects.export writes project bundles
+	s.media.Register(j)          // peaks of dataset versions and spectrogram tile pyramids (phase 4 tail)
 }
 
 // Handler is the whole HTTP surface: /api (the contract), /mcp (the same operations as MCP tools), /git (the

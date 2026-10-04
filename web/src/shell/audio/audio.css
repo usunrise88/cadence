@@ -93,6 +93,23 @@
   color: var(--cadence-text-secondary);
   pointer-events: none;
 }
+.cadence-audio-track-note {
+  position: absolute;
+  left: 4px;
+  right: 64px;
+  top: 2px;
+  font-size: 11px;
+  font-style: italic;
+  color: var(--cadence-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The reference track: outlined words, so it never reads as a hypothesis lane (shape as well as colour). */
+.cadence-audio-words[data-track="ref"] .cadence-audio-word {
+  background: transparent;
+  border: 1px dashed var(--cadence-text-secondary);
+}
 .cadence-audio-word {
   position: absolute;
   left: 0;

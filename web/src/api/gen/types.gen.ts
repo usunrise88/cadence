@@ -6521,9 +6521,13 @@ export type AudioPeaks = {
      */
     data: string;
     /**
-     * The cached 10 ms peaks artifact (b3:…)
+     * The stored peaks artifact (b3:…; cadence.peaks/2: the 10 ms base level and coarser levels for long audio)
      */
     artifact?: string;
+    /**
+     * True when this request computed the peaks from the audio (no stored peaks artifact: the first-view fallback)
+     */
+    computed?: boolean;
 };
 
 export type SpectrogramLevel = {
@@ -6553,10 +6557,18 @@ export type SpectrogramManifest = {
     hopSamples?: number;
     nFft?: number;
     /**
-     * Bins kept: up to the origin's Nyquist
+     * Bins kept: up to the origin's Nyquist (4 kHz for narrowband audio)
      */
     bins: number;
     binHz: number;
+    /**
+     * Estimated bandwidth of the audio (pyramids built by the control plane)
+     */
+    bandwidthHz?: number;
+    /**
+     * The audio is of 8 kHz origin (bandwidth ≤ 4.2 kHz): bins stop at 4 kHz, the view draws a Nyquist line
+     */
+    narrowband?: boolean;
     tileFrames: number;
     encoding: {
         floorDb: number;
@@ -6609,13 +6621,14 @@ export type UtteranceWords = {
      */
     audio: string;
     /**
-     * The hypothesis text
+     * The hypothesis text (empty without hypotheses)
      */
     text: string;
     /**
      * The normalised reference (with scores)
      */
     ref?: string;
+    reference?: ReferenceWords;
     words: Array<HypothesisWord>;
     deletions: Array<DeletedWord>;
     /**
@@ -8296,6 +8309,7 @@ export type DatasetStats = {
         utterances: number;
     }>;
     speakers?: number;
+    eou?: DatasetEouStats;
 };
 
 /**
@@ -9347,6 +9361,77 @@ export type EvalEmissionDelay = {
      * Utterances whose alignment was made for another text, or whose words the normalizer does not tie to tokens
      */
     mismatchedUtterances?: number;
+};
+
+export type ReferenceWord = {
+    /**
+     * Position of the word in the reference text split on whitespace
+     */
+    index: number;
+    /**
+     * The reference token as written
+     */
+    word: string;
+    /**
+     * Seconds from the start of the audio
+     */
+    start: number;
+    end: number;
+    /**
+     * Mean probability of the word's tokens over its frames (a low score marks a doubtful alignment)
+     */
+    score?: number;
+};
+
+/**
+ * The audio view's reference-word track (R51): the utterance's reference text at the times an alignment artifact (cadence.alignment/1, align_reference) gives its words. An unaligned reference carries its text and the reason, and no times: nothing is estimated
+ */
+export type ReferenceWords = {
+    /**
+     * The alignment artifact (b3:…)
+     */
+    artifact: string;
+    aligned: boolean;
+    /**
+     * The reference exactly as the dataset has it
+     */
+    text: string;
+    language?: string;
+    words: Array<ReferenceWord>;
+    /**
+     * Indexes of reference tokens with no timing (punctuation only, or nothing the aligner can spell)
+     */
+    skipped?: Array<number>;
+    /**
+     * Why the reference stayed unaligned
+     */
+    reason?: string;
+    /**
+     * The aligner auxiliary (auxiliary/<name>)
+     */
+    aligner?: string;
+};
+
+/**
+ * End-of-utterance gaps of the version's members (per-channel VAD at ingest, sdp_ingest): from a segment's last speech end to the other party's next speech start, for segments of multi-channel recordings
+ */
+export type DatasetEouStats = {
+    /**
+     * Members with an end-of-utterance record (segments of multi-channel recordings)
+     */
+    utterances: number;
+    /**
+     * Members whose other party spoke next within 10 s (a gap was measured)
+     */
+    withGap: number;
+    /**
+     * Gaps below zero: the other party started before the speech ended (barge-in)
+     */
+    overlapping?: number;
+    p50GapS?: number;
+    p90GapS?: number;
+    meanGapS?: number;
+    gapHistogram?: DatasetHistogram;
 };
 
 export type SecretNewWritable = {
@@ -16478,6 +16563,10 @@ export type SpectrogramGetResponses = {
      * The manifest (no tile) or the tile's bytes
      */
     200: SpectrogramManifest;
+    /**
+     * Accepted; follow the job on job.{jobId}
+     */
+    202: JobAccepted;
 };
 
 export type SpectrogramGetResponse = SpectrogramGetResponses[keyof SpectrogramGetResponses];
@@ -16490,15 +16579,23 @@ export type WordsGetData = {
          */
         id: string;
     };
-    query: {
+    query?: {
         /**
          * The hypotheses artifact (b3:…), e.g. an eval cell's
          */
-        hypotheses: string;
+        hypotheses?: string;
         /**
          * The scores artifact (b3:…) of the same cell
          */
         scores?: string;
+        /**
+         * A golden set version (ver_…): its newest reference alignment gives the reference track
+         */
+        goldenSet?: string;
+        /**
+         * An alignment artifact (b3:…, cadence.alignment/1) to read the reference track from
+         */
+        alignment?: string;
     };
     url: '/registry/utterances/{id}/words';
 };

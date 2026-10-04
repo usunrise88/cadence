@@ -10,7 +10,7 @@ import { useAudioAxis, type AudioAxis } from "./axis";
 import { useAudioLink, usePeaks, useSpectrogram } from "./data";
 import { AudioEngine, type SpecSettings } from "./engine";
 import { audioDefaults, type AudioDefaults } from "./settings";
-import type { TrackWord, WordTrackData } from "./words";
+import { referenceTrack, type TrackWord, type WordTrackData } from "./words";
 import "./audio.css";
 
 // The React face of the audio view (R51): one utterance, its signed audio, peaks, spectrogram and word tracks against
@@ -37,6 +37,8 @@ export type AudioViewProps = {
   /** Hypothesis and scores artifacts: the hypothesis word track, marked against the reference. */
   hypotheses?: string;
   scores?: string;
+  /** A golden set version (ver_…): its reference words at their aligned times as a track beside the hypothesis. */
+  goldenSet?: string;
   /** BCP 47 language of the words. */
   lang?: string;
   /** Spectrogram settings over views.audio's defaults. */
@@ -64,10 +66,19 @@ export function hypothesisTrack(w: UtteranceWords, label = "Hypothesis", lang?: 
   };
 }
 
-export function useWords(utterance: string | undefined, hypotheses: string | undefined, scores: string | undefined) {
+/**
+ * words.get: the hypothesis words of a hypotheses artifact (marked against scores) and, with a golden set version, the
+ * reference words at their aligned times.
+ */
+export function useWords(utterance: string | undefined, hypotheses: string | undefined, scores: string | undefined, goldenSet?: string) {
+  const query = {
+    ...(hypotheses ? { hypotheses } : {}),
+    ...(hypotheses && scores ? { scores } : {}),
+    ...(goldenSet ? { goldenSet } : {}),
+  };
   return useQuery({
-    ...wordsGetOptions({ path: { id: utterance ?? "" }, query: { hypotheses: hypotheses ?? "", ...(scores ? { scores } : {}) } }),
-    enabled: !!utterance && !!hypotheses,
+    ...wordsGetOptions({ path: { id: utterance ?? "" }, query }),
+    enabled: !!utterance && (!!hypotheses || !!goldenSet),
     staleTime: Infinity,
     retry: false,
   });
@@ -87,10 +98,10 @@ export function AudioView(props: AudioViewProps) {
   const [doc, setDoc] = useState<Document | null>(null);
   const link = useAudioLink(props.utterance, props.channel);
   const tracks = useTracks(props.utterance, !!props.analysis);
-  const peaks = usePeaks(props.utterance);
+  const peaks = usePeaks(props.utterance, link.data?.durationS, axis);
   const showSpec = props.showSpectrogram ?? true;
   const spec = useSpectrogram(props.utterance, link.data, d, showSpec);
-  const words = useWords(props.utterance, props.hypotheses, props.scores);
+  const words = useWords(props.utterance, props.hypotheses, props.scores, props.goldenSet);
   const { onEngine, onSpan, onLink, onPlayState } = props;
   const cb = useRef({ onSpan, onEngine, onPlayState });
   useEffect(() => {
@@ -177,13 +188,16 @@ export function AudioView(props: AudioViewProps) {
   }, [engine, spec.source, spec.note, spec.loading, showSpec]);
   const extra = props.tracks;
   const lang = props.lang;
+  const withHypotheses = !!props.hypotheses;
   useEffect(() => {
     if (!engine) return;
     const list: WordTrackData[] = [];
-    if (words.data) list.push(hypothesisTrack(words.data, "Hypothesis", lang));
+    if (words.data && withHypotheses) list.push(hypothesisTrack(words.data, "Hypothesis", lang));
+    const ref = words.data ? referenceTrack(words.data, lang) : undefined;
+    if (ref) list.push(ref);
     if (extra) list.push(...extra);
     engine.setWords(list);
-  }, [engine, words.data, extra, lang]);
+  }, [engine, words.data, extra, lang, withHypotheses]);
 
   const error = link.error ?? peaks.error;
   return (

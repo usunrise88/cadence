@@ -322,6 +322,8 @@ type Media struct {
 	MaxConversions         Param[int] `yaml:"max_conversions"`
 	SpanCacheMB            Param[int] `yaml:"span_cache_mb"`
 	PlayAuditWindowSeconds Param[int] `yaml:"play_audit_window_s"`
+	TilesMaxSeconds        Param[int] `yaml:"tiles_max_s"`
+	TilesRetrySeconds      Param[int] `yaml:"tiles_retry_s"`
 }
 
 // Annotation holds the annotation batch defaults (phase 4, stream A; docs/spec/04-blocks.md "Annotation workflow").

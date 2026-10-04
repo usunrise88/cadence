@@ -96,6 +96,7 @@ var (
 	MediaLinkInvalid    = Type{"media-link-invalid", http.StatusForbidden, "Audio link invalid or expired"}
 	RangeNotSatisfiable = Type{"range-not-satisfiable", http.StatusRequestedRangeNotSatisfiable, "Range not satisfiable"}
 	MediaBusy           = Type{"media-busy", http.StatusTooManyRequests, "Audio conversions busy"}
+	MediaTilesFailed    = Type{"media-tiles-failed", http.StatusUnprocessableEntity, "Spectrogram tiles could not be built"}
 	// Experiments and sweeps (phase 3 · stream X).
 	SweepOverCap = Type{"sweep-over-cap", http.StatusUnprocessableEntity, "Sweep over its GPU-hour cap"}
 	// Manual transcription tests and the live channel (phase 3 · stream T).
@@ -142,7 +143,7 @@ func Types() []Type {
 		FamilyUnavailable, RecipeMismatch, NoTrainingState, ArtifactNotEvictable, ArtifactEvicted,
 		EvalBaselineMissing, GateNotPassed, GateConfigInvalid,
 		GoldenSetLeakage, GoldenSetNotEvalOnly, NormalizerUnknown,
-		MediaLinkInvalid, RangeNotSatisfiable, MediaBusy,
+		MediaLinkInvalid, RangeNotSatisfiable, MediaBusy, MediaTilesFailed,
 		SweepOverCap,
 		TranscriptionInProgress, TranscriptionAllowanceExhausted, TranscriptionTicketInvalid, TranscriptionInputInvalid,
 		TranscriptionLimit,

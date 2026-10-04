@@ -383,8 +383,9 @@ func TestMediaPeaksWordsTiles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Tiles: none computed yet, then a spectrogram_tiles artifact of the audio.
-	expectProblem(t, e.do("GET", "/api/registry/utterances/"+id+"/spectrogram", ""), 404, "not-found")
+	// Tiles: none built yet (a tile request builds nothing; the manifest request's build is in
+	// media_longaudio_integration_test.go), then a spectrogram_tiles@1 artifact of the audio.
+	expectProblem(t, e.do("GET", "/api/registry/utterances/"+id+"/spectrogram?tile=c0/l0/0", ""), 404, "not-found")
 	manifest := `{"schema":"cadence.spectrogram-tiles/1","sampleRate":16000,"originSampleRate":8000,"channels":1,"bins":129,` +
 		`"binHz":31.25,"tileFrames":512,"encoding":{"floorDb":-120,"stepDb":0.5},"levels":[{"level":0,"hopS":0.01,"frames":101,"tiles":1}],` +
 		`"peakDb":[-6.0],"durationS":1.0}`

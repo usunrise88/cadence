@@ -12,7 +12,8 @@ A segments artifact is a directory:
                      splitRule?, sourceInfo?, steps [kind@version, …], filtered?
     segments.jsonl   one segment per line (keys sorted): uri, file, file-b3, hash, bytes, start, end, duration,
                      channel, role, language?, text?, origin?, confidence?, speaker?, split?, vad {speech, ratio},
-                     level {rmsDb, peakDb, clipping}, crosstalk?, sourceRate, codec?, lid?, hypotheses?, …
+                     level {rmsDb, peakDb, clipping}, crosstalk?, eou? {speechEnd, nextSpeech?, gapS?}, sourceRate,
+                     codec?, lid?, hypotheses?, …
 
 ``file-b3`` is the canonical hash of the whole track the segment was cut from (the file's channel, or the file mixed
 down): what an import of that file as one utterance (dataset_import) hashes, so the leakage check finds a golden set's
@@ -376,6 +377,26 @@ def covered(runs: Sequence[Interval], a: float, b: float) -> float:
 def vad_of(runs: Sequence[Interval], a: float, b: float) -> dict[str, Any]:
     parts = within(runs, a, b)
     return {"speech": [[s, e] for s, e in parts], "ratio": round(covered(runs, a, b), 4)}
+
+
+EOU_LOOK_AROUND_S = 10.0  # how far after a speech end the other party's next speech is looked for
+
+
+def eou_of(own: Sequence[Interval], a: float, b: float, others: Sequence[Interval]) -> dict[str, float]:
+    """End of utterance of the segment [a, b] of one channel, in seconds from a: its last speech end (per-channel VAD;
+    the segment's end when it has none) and the other channels' next speech start — the earliest run that ends after
+    the speech end and starts within EOU_LOOK_AROUND_S of it, so a barge-in gives a negative gap. ``nextSpeech`` and
+    ``gapS`` are absent when nobody spoke next. The same rule as an annotation item's (control plane, eouOf)."""
+    parts = within(own, a, b)
+    speech_end = parts[-1][1] if parts else round(b - a, 6)
+    end = a + speech_end
+    starts = [s for s, e in others if e > end and s < end + EOU_LOOK_AROUND_S]
+    out = {"speechEnd": round(speech_end, 3)}
+    if starts:
+        nxt = min(starts)
+        out["nextSpeech"] = round(nxt - a, 3)
+        out["gapS"] = round(nxt - end, 3)
+    return out
 
 
 # ---------------------------------------------------------------- strict reading for the pseudo-label steps

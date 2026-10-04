@@ -644,10 +644,11 @@ Write before starting:
       invitations per batch (play, no download), Annotation batch, double annotation 10 %, adjudication,
       inter-annotator WER ≤ 5 %, freeze as the telephone golden set (built on synthetic calls:
       `golden-set/calls-synth-sr`); entity spans for names and addresses; end-of-utterance metric from per-channel VAD
-- [ ] For long audio (call recordings): waveform peaks at ingest and freeze, the spectrogram tile pyramid on demand,
+- [x] For long audio (call recordings): waveform peaks at ingest and freeze, the spectrogram tile pyramid on demand,
       an estimated bandwidth per utterance so 8 kHz-origin audio is shown to 4 kHz (R51, R52); energy/VAD and channel
-      tracks — partial: bandwidth, energy/VAD and channel tracks are built (`tracks.get`, computed on request); peaks
-      at ingest and freeze and the tile-pyramid job are open (notes below)
+      tracks — bandwidth, energy/VAD and channel tracks from `tracks.get` (computed on request); peaks stored when a
+      version is registered (`media.peaks`, multi-level) and the pyramid built on first view (`media.spectrogram`),
+      both control-plane jobs (notes below)
 - [x] A reference alignment step (NeMo Forced Aligner, per the **decide** above) so golden sets carry word timings for
       the reference track; emission delay PR50/PR90 joins the scorers (R54) — `align_reference@1` uses omniASR CTC
       emissions with torchaudio's aligner (NFA reads only NeMo checkpoints); `latency_score@3`
@@ -703,9 +704,23 @@ R, I, A, L and B, folded into the spec by stream S on 2026-10-04; the gate is st
   approval; the version's exports with state and files); dry runs of `runs.new|stage` and `pipelines.run` warn
   `needs-materialize` (version, bytes and mounts to copy back) instead of refusing — the real call is still refused —
   and `pipelineRuns.get` lists `needsMaterialize`, shown with **Materialize** in Mix, Run and Pipeline run.
-- Open: waveform peaks at ingest and freeze (computed on first view); the spectrogram tile-pyramid job (tiles per
-  request); the audio view's reference-word track; end-of-utterance gaps are not in the dataset manifest; aligning
-  the replay golden sets on the stand.
+- Open: aligning the replay golden sets on the stand; the Dataset version panel does not chart `stats.eou` yet.
+- Closed in the phase 4 tail (2026-10-04, migration 0045; 06 "Media", 00 decision log):
+  - Waveform peaks are stored when a dataset version is registered: a second `dataset` output hook queues the
+    control-plane job `media.peaks` (one per version and artifact, so a draft's readable segments and then its frozen
+    cut); peaks files are `cadence.peaks/2` with levels pooled ×16, and `peaks.get` reads only the span it asks for from
+    the coarsest level dividing `hopMs` (`computed: true` marks the first-view fallback, which remains). The audio view
+    reads long audio's overview at a stored level and 10 ms detail around the visible range.
+  - The spectrogram tile pyramid is built once, on the first `spectrogram.get` (`202` with a `media.spectrogram` job;
+    `422 media-tiles-failed` until `media.tiles_retry_s`; `media.tiles_max_s` 4 h), by the control plane with the
+    STFT of `spectrogram_tiles@1` (byte-identical on a cross-check); narrowband audio keeps bins to 4 kHz (manifest
+    `narrowband`, `bandwidthHz`). Not a worker step: windows of mount files have no artifact, utterances no project.
+  - The audio view's reference-word track: `words.get?goldenSet=` (or `alignment=`) answers `reference` from the golden
+    set's newest alignment; Eval report and Diff rows pass the cell's golden set (`&gs=` in selection items).
+  - End-of-utterance gaps: `sdp_ingest` writes `eou` per segment of a split file (per-channel VAD, the annotation
+    item's rule); `dataset_freeze` carries it into `manifest.jsonl` (draft and `cadence.dataset/1`) and `stats.eou`
+    (`datasets.get`), and the card states the gap percentiles. Steps reused by input hash keep their old output
+    (`fresh: true` re-ingests).
 - Found and fixed running the gate on the stand (2026-10-04): every worker binds the mounts (core steps reached
   `worker-services`/`worker-omni`, which had no `/mnt/corpora`); the default preset allows `mounts.verify`; an
   optional step naming an auxiliary the project has not adopted is skipped with a warning; a retry leaves the plan's

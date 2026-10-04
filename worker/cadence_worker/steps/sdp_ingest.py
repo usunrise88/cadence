@@ -321,6 +321,7 @@ def ingest(p: SdpIngestParams, out: Path, ctx: Any = None) -> dict[str, Any]:
                         line["codec"] = d.codec
                     if len(tr) > 1:
                         line["crosstalk"] = round(seg.covered(_union(others), a, b), 4)
+                        line["eou"] = seg.eou_of(runs[c], a, b, others)
                     if language:
                         line["language"] = language
                     if 0 <= c < len(speakers) and speakers[c]:
