@@ -94,18 +94,18 @@ Help (tool, new); search has no panel of its own — it lives in the palette, th
 
 ## Panel catalogue
 
-Version 1 has 33 panels: 13 documents that open in the centre and 20 tools that follow the active document or are pinned to an agent session. Notifications are part of the chrome, not a panel.
+Version 1 has 33 panels: 12 documents that open in the centre and 21 tools that follow the active document or are pinned to an agent session (Triage became a tool in phase 4). Notifications are part of the chrome, not a panel.
 
 | Panel | Kind | Shows | Main actions | Live topic |
 | --- | --- | --- | --- | --- |
 | Run | Document | Config diff against the parent run, status, stage timeline, final metrics | Pause, resume, stop; resume from checkpoint; new stage from checkpoint with an explicit peak LR | `run.{id}.``status`, `run.{id}.``metrics` |
 | Eval report | Document | One eval (`evals.get`): the matrix of golden sets × latency profiles (`80ms`, `160ms`, `1120ms`; R43) × decoding, filling live; per cell WER, CER and `werNoPunct` with the delta to the baseline, its 95 % interval and the gate colour (glyph as well as colour); cached cells marked; the gate verdict with each check, its numbers and the `gates.yaml` SHA. Charts through `@/shell/charts` (R53): matrix heatmap, forest plot of WER deltas with intervals, S/D/I stacked bars, WER by duration bucket, per-utterance WER ECDF, partial stability; latency to final, entity accuracy, the robustness matrix and WER against latency as their scorers land. An utterance table (worst first, filters) whose rows open in Diff and Audio | Run the gate; open a cell in Diff; open a row in Audio; re-run missing cells; register the model (passed verdict); set the baseline (approval); open `gates.yaml` | `eval.{id}.progress`, `entity.eval.{id}` |
-| Dataset version | Document | Fingerprint, hours by language and source, applied filters, lineage; statistics charts: duration, characters per second, level and SNR, sample rates, speakers (R53) | Diff two versions; export to Shar | `entity.dataset_version.{id}`, `job.{id}` |
+| Dataset version | Document | Draft, frozen or archived; the freeze's leakage result and pipeline run; what it holds (size, languages, sources, licence, split rule, recipe, splits); quality checks; statistics charts from `datasets.get` (R53): hours by language and split, duration with p5/p50/p95 and the preview's bounds, characters per second, level, source sample rates, hours by origin and channel role; shards with location and pin; used by; utterances (`utterances.search`) | Preview with filters; freeze (dry run first); adopt (licence and locale checks); archive (admin) | `entity.dataset_version.{id}` |
 | Mix | Document | Groups, weights, temperature, replay share; preview of hours per language; agents' drafts (dashed outline, diff on hover) and "agent editing" presence | Save (a new revision; 412 conflict notice with reload / reapply); accept or revert an agent draft; launch a run with this mix (phase 2) | `entity.mix.{id}` (drafts arrive here) |
-| Triage queue | Document | Disputed production utterances: audio with a channel switch, hypotheses from several models, consensus, the item's signals; an Annotate mode for annotation batches with an editable transcript, tags and a keyboard-first flow | Accept, correct, reject; send to the next dataset version | `triage.new` |
+| Triage | Tool (centre of the Triage workspace, renderer `always`) | Queue mode: the project's disputed pseudo-labels (`triage.list`; production samples from phase 5) with the reason, every member's text and mean WER, the segment's window of its call; Annotate mode: an open annotation batch one item at a time — the call window with a channel switch, level and voice-activity lanes, the other party's turns (the bot's TTS script), a prefilled transcript, tags and entity spans, keyboard-first | Accept, correct, reject (people only); annotate: done, flag, skip | `triage.new`, `entity.triage_item.{id}`, `entity.annotation_batch.{id}` |
 | Model | Document | A model version: the checkpoint it publishes, gate verdict and eval, model card, lineage, "used by"; from phase 5 ONNX → Triton repository and stage (shadow, canary, prod) | Adopt as base model; set as baseline (approval); export, promote, roll back (phase 5) | `entity.model.{id}`, `deploy.{id}` |
 | Recipe | Document | A recipe file (SDP config, pipeline, mix, training or eval YAML, augmentation profile) with its commit history; open session branches and their diffs against `main`; agent edits stream in as a live diff | Edit; accept or revert an agent draft; accept or discard session changes (three-way diff on conflict); commit | `recipe.{path}` |
-| Source | Document | Licence, languages, kind, ingest history and utterance counts of a corpus | Clear the licence for training; run ingest | `entity.source.{id}` |
+| Source | Document | Licence, kind, languages, URL, training clearance; ingest history (`ingests`: each version with step kind, draft or frozen, utterances, hours); utterances (`utterances.search`); the clearing history on the Activity tab | Clear for training or make eval-only (`sources.edit`; an agent's call waits for a person); archive (admin); open `pipelines/data-ingest` | `entity.source.{id}` |
 | Golden set | Document | A golden set version: locale, domain, the dataset version and scoring normalizer version it pins, utterances, hours, resampling unit (`groups`), leakage check result, "used by" (projects, gates, evals), lineage; a sample of utterances that open in Audio | Freeze from an eval-only dataset version with a normalizer (approval, admin); adopt into the project; open the normalizer | `entity.golden_set.{id}`, `approvals` |
 | Library | Tool | The registry (sources, dataset versions, golden sets, models, normalizers, templates) and the project's work (runs, mixes, recipes) with search, tags and a this-project / all filter | Open as document; compare two; adopt into project; set alias | — |
 | Queue & GPU | Tool | Job queue per card; GPU memory and compute; who holds the training slot | Reorder, pause, cancel | `queue`, `gpu` |
@@ -120,7 +120,7 @@ Version 1 has 33 panels: 13 documents that open in the centre and 20 tools that 
 | Chat | Tool, one per agent session | Streaming transcript: replies with entity links, plan checklist (a playbook's chain is the initial plan), tool-call cards with dry-run estimates and diffs, shell cards, approval cards; header chip with the session kind (interactive, playbook, scheduled, read-only) and state; budget meter for turns, tokens and GPU-hours | Send; stop; attach the selection; approve or deny; pause or resume; merge session changes | `agent.session.{id}` |
 | Agent sessions | Tool | All sessions of the project by kind and state (running, waiting approval, paused, done, failed) with driver, model, budget use, pending approvals and merge state of the session branch; scheduled runs included | New session (Claude Code or opencode; interactive or from a playbook); open its Chat; pause; resume; merge or discard session changes | `agent.sessions` |
 | Approvals | Tool | Pending requests from agents, automations and registry actions: action, estimate, requester, scope (project or registry), context; decisions taken from Telegram appear here with their channel | Approve once or for the session; deny; open the requesting Chat | `approvals` |
-| Storage | Tool | Mounts with health and free space; cache use; pinned dataset versions; where each shard lives | Add mount (approval); rescan; materialise or evict a dataset version | `mount.{id}` |
+| Storage | Tool | Mounts with kind, root, health (reachable, free space, throughput), last scan, utterance URIs and blob copies; the cache against its water marks; per-project quotas; dataset versions least recently used first — cached or evicted, mount copies, why pinned (`storage.get`) | Add mount (approval, admin decides); rescan; check health; evict or materialize a dataset version | `mount.{id}`, `entity.artifact.{hash}`, `storage` |
 | Pipeline run | Tool | Any pipeline run: steps with status, inputs and outputs, per-step logs; parameters rendered from the step schema | Retry a step; open an output; open the pipeline file in Recipe | `pipeline_run.{id}` |
 | Project | Document | Overview of one project: locales, base model revision, repository and branch, agent profile, budgets and today's use, gates, mounts, decision log | Edit any wizard choice; open Agent settings; archive | `entity.project.{id}` |
 | Agent settings | Tool | The project's agent profile: driver, model, permission preset with a preview of the rendered `.claude/settings.json` and `opencode.json`, auto-merge policy for session branches, draft policy per entity kind; raw config editors with schema validation; `AGENTS.md` editor | Save (commits to the project repository); reset to template; test-launch a session | `entity.project.{id}` |
@@ -129,7 +129,7 @@ Version 1 has 33 panels: 13 documents that open in the centre and 20 tools that 
 | Getting started | Tool, until the first gate passes | Setup checklist with state: mount attached, project created, first dataset frozen, first run done, first gate passed; each step with its playbook or command | Run the step; dismiss | `entity.project.{id}` |
 | Help | Tool, follows focus unless pinned | The article for the focused panel, field or error: what it is, its place in the loop, fields and defaults from the schema, live commands, playbooks, sources | Search help; pin; Explain this (agent) | — |
 | Language pack | Document | One locale of the project (`langpacks.get`): the scoring normalizer it references (a registry version, R21) and the training text style, inverse normalisation, transliteration, LID config, boost lists with weights, golden-set recipe, README; commit history | Edit (`langpacks.edit`); edit a boost list (`boost.edit`); test a phrase with and without boosting (a one-utterance eval, then a two-target transcription once Transcription lands); sync from the shipped pack | `recipe.{path}` |
-| Annotation batch | Document | Progress per annotator, double-annotation sample, inter-annotator WER, adjudication queue, guidelines version | Invite an annotator; adjudicate; freeze as golden set (approval) | `entity.annotation_batch.{id}` |
+| Annotation batch | Document | Sample and strata, progress by item state, inter-annotator WER against the target, end-of-utterance gaps, reviewers and invitations, the adjudication queue, guidelines (path and pinned commit), the freeze | Invite a reviewer (admin; link shown once); adjudicate (`batchItems.accept`); check, then freeze into a golden set or training data (approval) | `entity.annotation_batch.{id}` |
 | Experiment | Document | Question, fixed mix and base, sweep grid or random set and GPU-hour cap, parameters × metrics table of its runs with departures from defaults highlighted, best run by validation WER; charts: parameter against metric scatter, parallel coordinates for sweeps (R53) | Run the sweep (dry run first); compare N; evaluate the best; register it (`models.register`, passed gate) | `entity.experiment.{id}`, `run.{id}.status` |
 
 As built (phase 3, stream U; help `panels.eval`, `panels.diff`, `panels.golden-set`, `panels.model`,
@@ -161,6 +161,28 @@ As built (phase 3, stream U; help `panels.eval`, `panels.diff`, `panels.golden-s
   `evals.list` and retires once a gate passed.
 - Not built: "test a phrase" in the Language pack, and the Playwright smoke of the Eval workspace.
 
+As built (phase 4, streams M, R, A; help `panels.storage`, `panels.source`, `panels.dataset-version`,
+`panels.triage`, `panels.annotation-batch`):
+
+- Storage: a singleton tool in the Ops workspace's right column; every action dry-runs first and shows what blocks it
+  (pins, shards on no mount). The Settings panel keeps its "Content store" section (phase 2) beside it.
+- Source and Dataset version are documents of the Data workspace, opened from the Library (sources are listed with
+  Adopt and the this-project / all filter), a Source's ingest history, a Mix and links. Charts and the utterance
+  table come from `@/shell/data` (R53 charts over `dataset.stats`, `UtteranceSearch`), which panels use instead of
+  each other. The dataset card's Markdown is not rendered (only its hash and size: no operation serves CAS text), and
+  there is no export UI (`datasets.export` is API, CLI and MCP only).
+- Triage is a tool, not a document: it follows the project, not an entity. Queue keys: `Enter` accept, `E` correct
+  (`Ctrl+Enter` saves), `Backspace` reject, `↑`/`↓` move. Annotate keys (no browser-reserved keys): `Ctrl+Enter` done,
+  `Ctrl+Shift+Enter` flag, `Alt+S` skip, `Alt+P` play/pause, `Alt+R` replay the segment, `Alt+C` switch channel,
+  `Alt+1`…`Alt+4` tags, `Alt+E` mark the selected words as an entity. A reviewer's invitation opens the same view
+  restricted to its batch; your queue is your own, and double items reach a second annotator blind.
+- Annotation batch is a document of the Eval workspace (opens from the Triage panel, links and `batches.new`).
+  Reviewers see the guidelines' path and pinned commit, not the text.
+- Getting started's "Attach the call recordings" step ticks once a mount exists; a playbook's person step (an admin approving
+  `mounts.new`) shows in Chat's plan.
+- Not built: peaks computed at ingest or freeze (on first view), the tile pyramid as a job, the reference word track
+  in the audio view, the Playwright smoke of the annotation flow.
+
 Topics follow the event model in the Cadence system tab; the backend contract below lists the endpoints.
 
 ## Default workspaces
@@ -172,7 +194,7 @@ Five workspaces ship by default, and Chat sits in the right column of every one,
 | Training | Run, Mix, Experiment | Library | Chat, Checkpoints, Getting started (until dismissed) | Metrics, Logs | — |
 | Eval | Eval report, Golden set, Annotation batch (phase 4) | Library | Chat, Inspector, Lineage | Diff | Audio |
 | Data | Dataset version, Source, Recipe, Language pack | Library | Chat, Inspector, Pipeline run | Logs | Audio |
-| Triage | Triage queue | — | Chat, Diff | Inspector | Audio |
+| Triage | Triage (tool) | — | Chat, Diff | Inspector | Audio |
 | Ops | Model | Queue & GPU | Chat, Approvals, Storage | Shadow, Logs | — |
 
 > **Figure:** Eval workspace wireframe · Library, Eval report, Diff, Chat, Inspector, floating Audio — see the drawing in the Claude Doc "Cadence — spec v0.2".
@@ -213,8 +235,8 @@ Commands are the only way the UI changes anything: menus, buttons, shortcuts and
 | Run eval matrix | — | `evals.new` (`POST /projects/{p}/evals`, dry run first) — one command wherever an eval starts (Checkpoints, Experiment, Eval report) |
 | Set eval baseline | — | `aliases.set` on `baseline` (`PUT /projects/{p}/aliases/baseline`) — approval (R8, R23) |
 | New mix / Edit mix | — | `POST /projects/{p}/mixes` (`mixes.new`); `PATCH /mixes/{id}` (`mixes.edit`) — R13: a mix is saved as a revision, not a version |
-| Export dataset version to Shar | — | `POST /``projects/{p}/datasets/{id``}:export` |
-| Accept / correct / reject triage item | Enter / E / Backspace in Triage queue | `PATCH /triage/{id}` |
+| Export dataset version | — | `datasets.export` (`POST /registry/datasets:export`; Lhotse Shar, NeMo manifest, Cadence bundle to a mount or the content store; the Hub needs an approval) — no UI yet |
+| Accept / correct / reject triage item | Enter / E / Backspace in Triage | `triage.accept`, `triage.correct`, `triage.reject` (`POST /triage/{id}:accept`, `:correct`, `:reject`) — people only |
 | Export model to ONNX | — | `POST /models/{id}:export` |
 | Promote to shadow / canary / prod | — | `POST /`projects/{p}/deployments — approval; confirm modal for production |
 | Roll back deployment | — | `POST /`projects/{p}/deployments/{id}:rollback — approval, confirm modal |
@@ -223,11 +245,12 @@ Commands are the only way the UI changes anything: menus, buttons, shortcuts and
 | Stop the agent's turn | Ctrl/Cmd+. | `agentSessions.cancel` (`POST /agent-sessions/{id}:cancel`) |
 | Approve / deny a request | Enter / Backspace on a focused approval card | `POST /approvals/{id}:approve`, `:deny` |
 | Accept / revert an agent draft | — | `POST /drafts/{id}:accept`, `:revert` |
-| New source | — | `POST /projects/{p}/sources` |
-| Add mount / Rescan mount | — | `POST /mounts` (approval), `POST /mounts/{id}:scan` |
+| New source / Edit source | — | `sources.new` (`POST /registry/sources`); `sources.edit` (clearing is an approval for an agent) |
+| Add mount / Rescan / Check health | — | `mounts.new` (`POST /mounts`, approval, admin); `mounts.scan`, `mounts.verify` (`POST /mounts/{id}:scan`, `:verify`) |
 | Run pipeline | — | `POST /projects/{p}/pipelines/{name}:run` |
-| Preview dataset / Freeze dataset version | — | `POST /projects/{p}/datasets:preview`, `POST /projects/{p}/datasets/{id}:freeze` |
-| Materialise / Evict dataset version | — | `POST /projects/{p}/datasets/{id}:materialize`, `:evict` |
+| Preview dataset / Freeze dataset version | — | `datasets.preview`, `datasets.freeze` (`POST /registry/datasets:preview`, `:freeze`, body `{version}`) — inline confirm after the dry run |
+| Materialise / Evict dataset version | — | `datasets.materialize`, `datasets.evict` (`POST /registry/datasets:materialize`, `:evict`, body `{versionId}`) |
+| Archive registry version | — | `versions.archive` (`POST /registry/versions:archive`) — admin, inline confirm |
 | Calibrate run (OOMptimizer) | — | `POST /projects/{p}/runs:calibrate` |
 | Average checkpoints | — | `POST /runs/{id}/checkpoints:average` |
 | Freeze golden set | — | `goldenSets.freeze` (registry scope) — approval, admin |
@@ -248,10 +271,11 @@ Commands are the only way the UI changes anything: menus, buttons, shortcuts and
 | Save search as view | — | `PUT /me/projects/{p}/views/{name}` |
 | Edit language pack / Edit boost list / Test boosting | — | `langpacks.edit`; `boost.edit`; `evals.new` with a `decoding` axis (R1, R24) |
 | Try a model (file, microphone) | — | `transcriptions.new` (`POST /projects/{p}/transcriptions`, tag `media`, not an MCP tool); audio and words over the WebSocket it returns |
-| New annotation batch / Adjudicate / Freeze batch | — | `POST /projects/{p}/batches`; `PATCH /batches/{id}/items/{i}`; `POST /batches/{id}:freeze` — approval |
+| New annotation batch / Annotate / Adjudicate / Freeze batch | Annotate keys in Triage | `batches.new` (`POST /projects/{p}/batches`, dry run first); `annotations.new` (`POST /batches/{id}/batch-items/{item}/annotations`); `batchItems.accept`; `batches.freeze` (`POST /batches/{id}:freeze`) — approval |
+| Invite a reviewer | — | `invitations.new` (`POST /batches/{id}/invitations`, admin); the link opens `auth.accept` |
 | New experiment / Run sweep | — | `experiments.new`; `sweeps.run` (dry run first; cap enforced) |
 | Preview augmentation / Robustness matrix | — | `POST /projects/{p}/augment:preview`; `evals.new` with an `augmentation` axis |
-| Import dataset / Export to Hub | — | `POST /projects/{p}/pipelines/import:run`; `POST /registry/{kind}/{id}:export` — approval |
+| Import dataset / Export to Hub | — | `pipelines.run` on `pipelines/import` (`dataset_import@4`); `datasets.export` with format `hf-hub` — approval |
 | Create API key / Revoke credential | — | `POST /credentials`; `POST /credentials/{id}:revoke` |
 | Start playbook | — | `POST /projects/{p}/playbooks/{name}:run` (shows the estimate first) |
 | Pause / resume agent session | — | `POST /agent-sessions/{id}:pause`, `:resume` |
@@ -277,7 +301,7 @@ The shell needs fourteen things from the Go control plane, all in the OpenAPI 3.
 | Approvals and drafts | `GET /approvals?state=pending`; `POST /approvals/{id}:approve` or `:deny`; `GET /drafts?entityKind=&entityId=`; `POST /drafts/{id}:accept` or `:revert` | Approval scope: once or for the session. A gated command returns `202 Accepted` with the approval id and runs when approved |
 | Errors | Every endpoint | `application/problem+json`; a stale revision returns `412` with the current revision in the body |
 | Projects | `GET /projects`, `POST /projects`; every project-scoped path lives under `/projects/{p}/…`; workspaces at `PUT /me/projects/{p}/workspaces/{name}` | Events carry projectId; the client filters the stream to the current project |
-| Mounts and materialisation | `GET` / `POST /mounts`; `POST /mounts/{id}:scan`; `POST /projects/{p}/datasets/{id}:materialize`, `:evict` | Health on mount.{id}; materialisation progress on job.{id} |
+| Mounts and materialisation | `GET` / `POST /mounts`; `GET /mounts/{id}`; `POST /mounts/{id}:scan`, `:verify`; `GET /storage`; `POST /registry/datasets:materialize`, `:evict` | Health and scans on `mount.{id}`; eviction and restore on `entity.artifact.{hash}`; progress on `job.{id}` |
 | Project bootstrap and agent profile | `POST /projects/{p}:bootstrap` (job: repository, files, worktree, workspaces); `PATCH /projects/{p}/agent-profile`; `GET /catalog/base-models`, `GET /catalog/agent-models`, `GET /catalog/instruction-templates` | The wizard reads the catalogues; bootstrap progress on job.{id}; profile changes commit to the repository |
 | Registry | `GET /registry/{kind}` with tag filters; `GET /registry/{kind}/{id}/versions`; `GET /registry/{id}:lineage` (`registry.lineage`, phase 3; the id's prefix names the kind); golden sets, normalizers and models under `/registry/golden-sets`, `/registry/normalizers`, `/registry/models`; `POST /projects/{p}/adoptions`; `PUT /projects/{p}/aliases/{name}` | Registry events carry no projectId; the Library shows them by reference. Versions are immutable; only aliases change |
 | Settings | `GET` / `PATCH /compute/{id}`; `POST /secrets` (values never returned); `GET /agent-credentials`, `PUT /agent-credentials/{id}`, `POST /agent-credentials/{id}:verify|archive`, `GET /agent-providers` (values never returned); `GET /catalog/*`; `GET` / `PATCH /policies` (budgets, timezone); `GET /notification-rules`, `PATCH /notification-rules/{id}`; `GET` / `PATCH /notification-settings`; `PUT /telegram-bot` (write-only token), `POST /telegram-bot:verify`; `GET` / `POST /backups`, `GET /backups/{id}`, `POST /backups/{id}:verify` (phase 2) | Admin only; compute health on compute.{id}; backup and restore-test outcomes on `backups` |
