@@ -84,7 +84,7 @@ func TestGoldenSetsAlign(t *testing.T) {
 		{"fx-gs-he", "he-IL", 0.5, he},
 		{"fx-gs-he-copy", "he-IL", 0.5, he}, // the same dataset artifact
 		{"fx-gs-sr", "sr-RS", 0.25, utts("2", 3)},
-		{"fx-gs-nb", "nb-NO", 0.1, utts("3", 2)},
+		{"fx-gs-ka", "ka-GE", 0.1, utts("3", 2)},
 	} {
 		id, err := pipelinestest.RegisterGoldenSet(ctx, e.pool, e.admin.CAS, g.name, g.locale, g.hours, g.utts)
 		if err != nil {
@@ -107,7 +107,7 @@ func TestGoldenSetsAlign(t *testing.T) {
 	}
 	e.adoptAuxiliary("gsal", e.auxiliary("auxiliary/omniasr-ctc-1b").ID, e.do)
 
-	// The dry run: he and its copy share one step, sr has its own, nb is a language the aligner lacks.
+	// The dry run: he and its copy share one step, sr has its own, ka is a language the aligner lacks.
 	var dry alignPlanView
 	e.ok(e.do("POST", path+"?dryRun=true", "{}", "Idempotency-Key", e.key()), 200, &dry)
 	if dry.Kind != pipelinestest.KindAlign+"@2" || dry.Aligner == nil || dry.Aligner.Name != "auxiliary/omniasr-ctc-1b" ||
@@ -127,8 +127,8 @@ func TestGoldenSetsAlign(t *testing.T) {
 		steps["golden-set/fx-gs-sr"] == steps["golden-set/fx-gs-he"] {
 		t.Fatalf("sets %+v", dry.Sets)
 	}
-	if len(dry.Skipped) != 1 || dry.Skipped[0].Name != "golden-set/fx-gs-nb" || dry.Skipped[0].Reason != "language" ||
-		!strings.Contains(dry.Skipped[0].Message, "does not cover nb-NO") {
+	if len(dry.Skipped) != 1 || dry.Skipped[0].Name != "golden-set/fx-gs-ka" || dry.Skipped[0].Reason != "language" ||
+		!strings.Contains(dry.Skipped[0].Message, "does not cover ka-GE") {
 		t.Fatalf("skipped %+v", dry.Skipped)
 	}
 	// Two steps (overhead + audio hours × seconds per audio hour each), on a card: the policy weighs a known estimate.
@@ -166,7 +166,7 @@ func TestGoldenSetsAlign(t *testing.T) {
 		}
 	}
 	if again.PipelineRun != nil || len(again.Sets) != 0 || len(reasons) != 4 || reasons["golden-set/fx-gs-sr"] != "aligned" ||
-		reasons["golden-set/fx-gs-nb"] != "language" {
+		reasons["golden-set/fx-gs-ka"] != "language" {
 		t.Fatalf("again %+v", again)
 	}
 
