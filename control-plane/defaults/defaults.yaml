@@ -982,6 +982,21 @@ sweeps:
     source: Cadence recommendation
     range: { min: 0, max: 2147483647 }
 
+# Playbooks (phase 4 · stream B): what a playbook input takes when the person names nothing (its defaultRef).
+playbooks:
+  try_hours:
+    value: 2
+    unit: h
+    description: Hours of FLEURS the "Try Cadence" playbook imports (the train split, read up to this cap)
+    source: ROADMAP.md phase 4 ("Try Cadence" — 2 h FLEURS, the full loop in about 1 GPU-hour)
+    range: { min: 0.1, max: 20 }
+  try_steps:
+    value: 300
+    unit: steps
+    description: Optimiser steps of the "Try Cadence" training run
+    source: docs/spec/06-platform.md "Test layers" (the smoke project — ingest, freeze, 300 steps, eval, gate)
+    range: { min: 10, max: 5000 }
+
 # Framework packs (R45): one section per pack, read by its step kinds through x-cadence defaultRef packs.<pack>.<key>.
 packs:
   # The CPU toy pack (runtime `toy`, family `toy-ctc`): a tiny CTC model trained in seconds that exists only to keep the

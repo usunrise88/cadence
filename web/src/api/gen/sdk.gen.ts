@@ -1601,7 +1601,7 @@ export const utterancesSearch = <ThrowOnError extends boolean = false>(options?:
 export const auxiliariesList = <ThrowOnError extends boolean = false>(options?: Options<AuxiliariesListData, ThrowOnError>): RequestResult<AuxiliariesListResponses, AuxiliariesListErrors, ThrowOnError> => (options?.client ?? client).get<AuxiliariesListResponses, AuxiliariesListErrors, ThrowOnError>({ url: '/registry/auxiliaries', ...options });
 
 /**
- * Get an auxiliary model version with its payload and the projects that adopted it
+ * Get an auxiliary model version with its payload, the projects that adopted it and whether its service answers
  */
 export const auxiliariesGet = <ThrowOnError extends boolean = false>(options: Options<AuxiliariesGetData, ThrowOnError>): RequestResult<AuxiliariesGetResponses, AuxiliariesGetErrors, ThrowOnError> => (options.client ?? client).get<AuxiliariesGetResponses, AuxiliariesGetErrors, ThrowOnError>({ url: '/registry/auxiliaries/{id}', ...options });
 

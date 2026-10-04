@@ -56,6 +56,12 @@ func (s *Server) AuxiliariesGet(ctx context.Context, req api.AuxiliariesGetReque
 	if err != nil {
 		return nil, err
 	}
+	// A service auxiliary says whether it answers now, as a pipeline's dry run would probe it (Cadence never starts
+	// it; the "Adapt a new language" playbook waits on this while a person starts it).
+	if pr := s.Pipelines.Prober(); pr != nil && v.Auxiliary.Service != nil {
+		reachable := pr.Probe(ctx, v.Auxiliary.Service.Endpoint) == nil
+		v.Reachable = &reachable
+	}
 	return api.AuxiliariesGet200JSONResponse(v), nil
 }
 

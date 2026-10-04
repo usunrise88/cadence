@@ -174,7 +174,30 @@ func TestAuxiliaryAdoptionAndRegistryRefs(t *testing.T) {
 	if !strings.Contains(p.Detail, "host.docker.internal:50051") || !strings.Contains(p.Detail, "auxiliary/oasis") {
 		t.Errorf("unavailable: %s", p.Detail)
 	}
+	// The same step marked optional only warns: the run goes on without it. auxiliaries.get says the service is down.
+	e.commitPipeline("demo", "member-optional", "name: member-optional\ninputs: {text: text}\nsteps:\n  - {id: m, kind: fx_member@1, in: {text: $inputs.text}, optional: true}\n")
+	var planned struct {
+		Warnings []struct{ Code, Step string }
+	}
+	e.ok(e.do("POST", "/api/projects/demo/pipelines/member-optional:run?dryRun=true", body, "Idempotency-Key", e.key(), "If-Match", "*"), 200, &planned)
+	if len(planned.Warnings) != 1 || planned.Warnings[0].Code != "auxiliary-unavailable" || planned.Warnings[0].Step != "m" {
+		t.Errorf("optional step warnings %+v", planned.Warnings)
+	}
+	var reach struct{ Reachable *bool }
+	e.ok(e.do("GET", "/api/registry/auxiliaries/"+oasis.ID, ""), 200, &reach)
+	if reach.Reachable == nil || *reach.Reachable {
+		t.Errorf("reachable while down: %v", reach.Reachable)
+	}
 	prober.err = nil
+	e.ok(e.do("GET", "/api/registry/auxiliaries/"+oasis.ID, ""), 200, &reach)
+	if reach.Reachable == nil || !*reach.Reachable {
+		t.Errorf("reachable while up: %v", reach.Reachable)
+	}
+	var model struct{ Reachable *bool }
+	e.ok(e.do("GET", "/api/registry/auxiliaries/"+whisper.ID, ""), 200, &model)
+	if model.Reachable != nil {
+		t.Errorf("a model auxiliary has no service: %v", model.Reachable)
+	}
 	e.ok(e.do("POST", run+"?dryRun=true", body, "Idempotency-Key", e.key(), "If-Match", "*"), 200, nil)
 
 	// The run carries the resolved version and its payload in the step spec.

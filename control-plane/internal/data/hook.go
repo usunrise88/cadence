@@ -58,12 +58,17 @@ func (im *Importer) Hook(ctx context.Context, tx pgx.Tx, out steps.Output) ([]ev
 // input, never registered as a dataset version, its utterances not utterances of the registry.
 const PurposeAugmented = "augmented"
 
-// Derived reports whether a dataset output's meta marks it as derived for an eval (purpose augmented).
+// PurposePseudoLabel marks the dataset segments_cut cuts from untranscribed segments for the pseudo-label members
+// (phase 4 · stream B): an input of the members, never a dataset version and never trained on.
+const PurposePseudoLabel = "pseudo-label"
+
+// Derived reports whether a dataset output's meta marks it as derived for an eval or for the pseudo-label members
+// (purpose augmented or pseudo-label): never registered, never trained on.
 func Derived(meta json.RawMessage) bool {
 	var m struct {
 		Purpose string `json:"purpose"`
 	}
-	return len(meta) > 0 && json.Unmarshal(meta, &m) == nil && m.Purpose == PurposeAugmented
+	return len(meta) > 0 && json.Unmarshal(meta, &m) == nil && (m.Purpose == PurposeAugmented || m.Purpose == PurposePseudoLabel)
 }
 
 // Import is Hook that also returns the registered (or existing) version.

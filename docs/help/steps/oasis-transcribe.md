@@ -37,7 +37,9 @@ with an input error (`UNAUTHENTICATED`).
 
 ## Place in the loop
 
-Data. One member of the pseudo-label ensemble, on segments without text.
+Data. One member of the pseudo-label ensemble, on segments without text (`segments_cut`). In
+`pipelines/pseudo-label.yaml` it is an optional step: without the service the dry run warns and the run goes on with
+the other members.
 
 ## Fields and defaults
 

@@ -38,7 +38,9 @@ instead; the operations are the same.
 - `cadence help` lists the entities and their verbs; `cadence help <entity>` lists one entity's verbs with their
   flags; `cadence <entity> <verb> --help` describes one command's flags and body properties.
 - `cadence help get --id <article>` and `cadence help search --q <text>` are the help entity's own commands.
-- `cadence serve`, `cadence admin reset-password` and `cadence version` are the hand-written commands of the binary.
+- `cadence serve`, `cadence admin reset-password`, `cadence smoke` and `cadence version` are the hand-written commands
+  of the binary. `cadence smoke --project <slug>` runs a playbook ("Try Cadence" by default; `--input NAME=VALUE`,
+  `--dry-run`) and follows its session until the plan ends — exit 0 done, 1 stopped; `make e2e` calls it.
 
 ## Playbooks
 

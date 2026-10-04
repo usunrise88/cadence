@@ -1,10 +1,10 @@
 # written by Cadence — playbook template (docs/spec/03-pipelines-defaults.md "Playbooks", R16; format:
-# control-plane/internal/playbooks/README.md). Listed from phase 2; runs once phases 4–5 ship triage and schedules.
+# control-plane/internal/playbooks/README.md). Listed from phase 2; runs once phase 5 ships signals, triage verbs and schedules.
 name: weekly-flywheel
 title: Weekly flywheel
 description: On a schedule, replay production samples, read the signals, triage, package a correction batch, train a continuation, evaluate and shadow.
 typicalCost: 2–3 GPU-hours per week
-availableFrom: 4
+availableFrom: 5
 
 inputs:
   base:

@@ -3993,7 +3993,7 @@ export const auxiliariesListOptions = (options?: Options<AuxiliariesListData>) =
 export const auxiliariesGetQueryKey = (options: Options<AuxiliariesGetData>) => createQueryKey('auxiliariesGet', options);
 
 /**
- * Get an auxiliary model version with its payload and the projects that adopted it
+ * Get an auxiliary model version with its payload, the projects that adopted it and whether its service answers
  */
 export const auxiliariesGetOptions = (options: Options<AuxiliariesGetData>) => queryOptions<AuxiliariesGetResponse, AuxiliariesGetError, AuxiliariesGetResponse, ReturnType<typeof auxiliariesGetQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {

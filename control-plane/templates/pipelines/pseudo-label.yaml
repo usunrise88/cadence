@@ -1,0 +1,80 @@
+# written by Cadence — starter pipeline: label untranscribed audio on a mount with an ensemble of models (R26,
+# Granary-style agreement), then normalise, filter, split and register a draft dataset version — data-ingest for
+# audio without transcripts (docs/review/2026-10-03-phase-4-plan.md decisions 6–7).
+#
+# segments_cut cuts the segments without text into a dataset the members read; each member writes hypotheses keyed by
+# the segment's audio hash; pseudolabel_ensemble keeps a text when two members agree within pseudolabel.max_pairwise_wer
+# and language identification agrees, and marks the rest pseudo-label:disputed (triage.list; manifest_filter drops
+# them, so they never reach training).
+#
+# Inputs: model — the base model the nemotron member decodes with (baseModels.get: its artifact); normalizer — the
+# scoring normalizer the ensemble compares texts after (normalizers.get). Before running, the project adopts the
+# auxiliaries the members name (projects.adopt: an approval the admin decides) and the params marked "set me" are set.
+# The oasis member calls a running service Cadence never starts: it is optional, so without it the dry run warns
+# (auxiliary-unavailable) and the run goes on with two members. To use it, a person starts it on the host
+# (scripts/serve.sh ensemble no-300m in the OASIS checkout). OASIS writes lowercase text without punctuation and wins
+# when it agrees (it is itself a vote), so check the draft's texts in datasets.preview before freezing.
+# Serbian: Whisper writes Cyrillic (transliterate: sr-Cyrl-Latn, also on text_normalise), and the base model has no
+# Serbian prompt (nemotron's target_lang: hr-HR). Hebrew: whisper's auxiliary auxiliary/whisper-he-ivrit, no
+# transliterate, nemotron's target_lang empty. Help: docs/help/steps/segments-cut.md, docs/help/guides/playbooks.md.
+name: pseudo-label
+description: Pseudo-label untranscribed audio on a mount (model ensemble + LID) into a draft dataset version
+inputs: { model: base_model, normalizer: normalizer }
+steps:
+  - id: index
+    kind: sdp_ingest@1
+    params:
+      source: my-corpus                                # set me: a registered source
+      path: mount://corpora/my-corpus/2026-10-01       # set me: <mount>/<source>/<revision>
+      language: sr-RS                                  # set me
+  - id: audio
+    kind: segments_cut@1
+    in: { segments: index.segments }
+  - id: weights
+    kind: checkpoint_from_base@1
+    in: { base: $inputs.model }
+  - id: nemotron
+    kind: nemotron_transcribe@3
+    in: { model: weights.checkpoint, data: audio.data }
+    params:
+      target_lang: hr-HR                               # set me: the base model's prompt for the language
+  - id: whisper
+    kind: whisper_transcribe@1
+    in: { data: audio.data }
+    params:
+      transliterate: sr-Cyrl-Latn                      # set me: "" outside Serbian
+  - id: oasis
+    kind: oasis_transcribe@1
+    in: { data: audio.data }
+    optional: true
+    params:
+      transliterate: sr-Cyrl-Latn                      # set me: "" outside Serbian
+  - id: lid
+    kind: lid_classify@1
+    in: { data: audio.data }
+  - id: ensemble
+    kind: pseudolabel_ensemble@1
+    in:
+      segments: index.segments
+      hypotheses.0: nemotron.hypotheses
+      hypotheses.1: whisper.hypotheses
+      hypotheses.2: oasis.hypotheses
+      lid: lid.lid
+      normalizer: $inputs.normalizer
+  - id: normalise
+    kind: text_normalise@1
+    in: { segments: ensemble.segments }
+    params:
+      transliterate: sr-Cyrl-Latn                      # set me: lang/<locale>/normalizer.yaml training
+  - id: filter
+    kind: manifest_filter@1
+    in: { segments: normalise.segments }
+  - id: split
+    kind: speaker_disjoint_split@1
+    in: { segments: filter.segments }
+  - id: draft
+    kind: dataset_freeze@1
+    in: { segments: split.segments }
+    params:
+      name: my-corpus                                  # set me: dataset/<name>
+      tags: [pseudo-label]

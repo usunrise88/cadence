@@ -848,6 +848,28 @@ func TestOptionalStepFailureLeavesTheRunDone(t *testing.T) {
 	if s := stepOf(t, run, "count"); s.State != pipelines.StepDone {
 		t.Fatalf("count %+v", s)
 	}
+	// A required step may read an optional one as one of several artifacts of an input (a pseudo-label member):
+	// when the optional step fails, it runs without that artifact.
+	members := &pipelines.Pipeline{Name: "members", Inputs: map[string]string{"text": "text"}, Steps: []pipelines.Step{
+		{ID: "main", Kind: "echo@1", In: map[string]string{"text": "$inputs.text"}},
+		{ID: "extra", Kind: "echo@1", In: map[string]string{"text": "$inputs.text"}, Optional: true},
+		{ID: "count", Kind: "tally@1", In: map[string]string{"text.0": "extra.text", "text.1": "main.text"}},
+	}}
+	if err := members.Check(""); err != nil {
+		t.Fatalf("an indexed wire from an optional step: %v", err)
+	}
+	r.leases.Script("extra", pipelinestest.Action{Fail: &steps.StepError{Type: steps.ErrStep, Message: "service down"}})
+	in = r.input("abcd")
+	in.Pipeline = members
+	run = r.wait(r.start(in).ID, pipelines.RunDone)
+	count := stepOf(t, run, "count")
+	if count.State != pipelines.StepDone {
+		t.Fatalf("count %+v", count)
+	}
+	if _, ok := count.Inputs["text.0"]; ok || len(count.Inputs) != 1 {
+		t.Fatalf("count ran with the failed optional step's artifact: %+v", count.Inputs)
+	}
+
 	p.Steps[2].Optional = false
 	err := p.Check("")
 	var pe *problems.Error

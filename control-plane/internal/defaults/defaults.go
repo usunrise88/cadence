@@ -97,6 +97,9 @@ type Defaults struct {
 	// Pseudolabel holds the pseudo-label ensemble's agreement rules (phase 4, stream X); read by the worker's
 	// pseudolabel_ensemble through its defaultRefs, never by the control plane.
 	Pseudolabel map[string]any `yaml:"pseudolabel"`
+	// Playbooks holds what playbook inputs default to (phase 4, stream B); read through Lookup by the inputs'
+	// defaultRefs (internal/playbooks).
+	Playbooks map[string]any `yaml:"playbooks"`
 	// Manual transcription tests and the live channel (phase 3, stream T).
 	Transcriptions Transcriptions `yaml:"transcriptions"`
 

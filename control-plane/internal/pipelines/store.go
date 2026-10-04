@@ -79,10 +79,11 @@ func (r Run) optional(step string) bool {
 	return false
 }
 
-// readsAny reports whether s reads an output of one of the steps.
-func readsAny(s StepRow, set map[string]bool) bool {
-	for _, v := range s.Wiring {
-		if w, ok := ParseWire(v); ok && w.Step != "" && set[w.Step] {
+// needsAny reports whether s reads a step in set through an input it cannot run without: an indexed input
+// (hypotheses.2, one of several artifacts) from an optional step is dropped instead (Step.Optional).
+func (r Run) needsAny(s StepRow, set map[string]bool) bool {
+	for name, v := range s.Wiring {
+		if w, ok := ParseWire(v); ok && w.Step != "" && set[w.Step] && !(Indexed(name) && r.optional(w.Step)) {
 			return true
 		}
 	}

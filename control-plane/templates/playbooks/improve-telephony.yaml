@@ -1,5 +1,5 @@
 # written by Cadence — playbook template (docs/spec/03-pipelines-defaults.md "Playbooks", R16; format:
-# control-plane/internal/playbooks/README.md). Listed from phase 2; runs once phase 4 ships sources and augmentation.
+# control-plane/internal/playbooks/README.md). Listed from phase 2; runs from phase 4 (sources); the augmentation preview arrives in phase 5.
 name: improve-telephony
 title: Improve on telephony
 description: Attach call recordings, add telephony augmentation, train a continuation stage and evaluate on the phone golden set.
@@ -33,7 +33,7 @@ chain:
   - id: augment
     title: Preview the telephony augmentation profile
     command: augment.preview
-    phase: 4
+    phase: 5
   - id: stage
     title: Continuation stage (dry run first)
     command: runs.stage

@@ -4275,7 +4275,7 @@ paths:
     parameters: [{ $ref: "#/components/parameters/VersionId" }]
     get:
       operationId: auxiliaries.get
-      summary: Get an auxiliary model version with its payload and the projects that adopted it
+      summary: Get an auxiliary model version with its payload, the projects that adopted it and whether its service answers
       tags: [registry]
       responses:
         "200":
@@ -5219,6 +5219,7 @@ components:
         sweeps: { $ref: "#/components/schemas/DefaultSection", description: "Sweeps (phase 3): mode, run counts, the GPU-hour cap and the seed of a random draw" }
         transcriptions: { $ref: "#/components/schemas/DefaultSection", description: "Manual transcription tests and the live channel (phase 3): ticket, session and idle limits, frame size, file caps, the relay's queue and the interactive job's priority" }
         pseudolabel: { $ref: "#/components/schemas/DefaultSection", description: "Pseudo-labels (phase 4): when the members of a pseudo-label ensemble agree on a segment's text (pairwise WER, agreeing members, language identification)" }
+        playbooks: { $ref: "#/components/schemas/DefaultSection", description: "Playbooks (phase 4 · stream B): the values playbook inputs default to (Try Cadence's hours of FLEURS and training steps)" }
         estimates:
           type: object
           required: [bytes_per_audio_hour, training]
@@ -7943,6 +7944,9 @@ components:
         phase: { type: integer, description: The roadmap phase that ships the step; a later phase than the running one lists it as skipped }
         spending: { type: boolean, description: "A GPU-spending command: in a playbook session it needs a successful dry run of the same operation first" }
         available: { type: boolean, description: "The step can run now (its phase has shipped)" }
+        person: { type: string, description: "A step a person does (an admin approves a mount, a service is started on the host): what they do. It ticks from the operation it names, like any step (phase 4 · stream B)" }
+        optional: { type: boolean, description: "Passed over (skipped) when a later step ticks first" }
+        when: { type: object, additionalProperties: true, description: "The step ticks only from an answer whose fields (dotted paths) equal these values; any other answer marks it running" }
     PlaybookStop:
       type: object
       required: [on, when]
@@ -8029,6 +8033,9 @@ components:
         jobId: { type: string, description: The job the command started (a later terminal step waits for it) }
         at: { type: string, format: date-time }
         estimate: { $ref: "#/components/schemas/PlaybookStepEstimate" }
+        person: { type: string, description: "A step a person does: what they do (phase 4 · stream B)" }
+        optional: { type: boolean, description: "Passed over (skipped) when a later step ticks first" }
+        when: { type: object, additionalProperties: true, description: "The answer's fields that tick the step" }
     PlaybookRunResult:
       type: object
       required: [playbook, inputs, estimate, plan, prompt]
@@ -9950,6 +9957,7 @@ components:
           properties:
             auxiliary: { $ref: "#/components/schemas/AuxiliaryPayload" }
             usedBy: { type: array, items: { $ref: "#/components/schemas/UsedBy" } }
+            reachable: { type: boolean, description: "A service auxiliary only, in auxiliaries.get: whether its endpoint answers now, as a pipeline dry run would probe it (Cadence never starts a service; phase 4 · stream B)" }
     AuxiliaryVersionList:
       type: object
       required: [items]
@@ -10035,7 +10043,7 @@ components:
       description: Something a plan found that does not stop the run
       required: [code, message]
       properties:
-        code: { type: string, enum: [step-kind-deprecated], description: "step-kind-deprecated: a step pins a kind its pack deprecates" }
+        code: { type: string, enum: [step-kind-deprecated, auxiliary-unavailable], description: "step-kind-deprecated: a step pins a kind its pack deprecates; auxiliary-unavailable: an optional step's service does not answer, so the run goes on without that step (phase 4 · stream B)" }
         step: { type: string, description: The step id }
         kind: { type: string, description: The pinned kind@version }
         message: { type: string }
