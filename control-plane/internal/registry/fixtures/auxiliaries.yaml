@@ -97,9 +97,11 @@
     roles: [align]
     licence: Apache-2.0 (weights); training corpus CC-BY-4.0
     outputsCommercialUse: true
-    languages: [he, sr, hr, bs]
+    languages: [he, sr, hr, bs, ar, bg, cs, da, de, el, en, es, et, fi, fr, hi, hu, it, ja, ko, lt, lv, mt, no, nl, pl, pt, ro, ru, sk, sl, sv, th, tr, uk, vi, zh]
     conditions:
       - Its language list has heb_Hebr, srp_Cyrl, hrv_Latn and bos_Latn (checked 2026-10-04); srp_Latn is not in it, so Serbian references in Latin script align in a script the model was not trained on for Serbian
+      - The replay golden sets' languages are all in omnilingual-asr's lang_ids.py (checked 2026-10-04; Estonian ekk_Latn, Chinese cmn_Hans, Arabic arb_Arab, Norwegian nob_Latn)
+      - The aligner reads characters, not a language code; a character outside its vocabulary leaves that word unaligned
       - Runs in the omni runtime (worker/packs/omni, its own image with fairseq2), never in nemo-speech
     hfRepo: facebook/omniASR-CTC-1B
     revision: 8c22e3ffdaa4aab6431b128b84b991a7d9c2515c
