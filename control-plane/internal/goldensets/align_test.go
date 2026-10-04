@@ -17,6 +17,8 @@ func TestCovers(t *testing.T) {
 		{[]string{"he", "sr", "hr", "bs"}, "sr-RS", true},
 		{[]string{"he", "sr", "hr", "bs"}, "he-IL", true},
 		{[]string{"he", "sr", "hr", "bs"}, "nb-NO", false},
+		{[]string{"no", "zh"}, "nb-NO", true}, // macrolanguages fold
+		{[]string{"zh"}, "cmn-Hans-CN", true},
 		{[]string{"he", "sr"}, "sr_Latn_RS", true},
 		{[]string{"*"}, "th-TH", true},
 		{[]string{"he"}, "", false},

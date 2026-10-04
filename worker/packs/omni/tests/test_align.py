@@ -91,6 +91,8 @@ def test_covers() -> None:
     assert not covers(["he", "sr"], "hr-HR")
     assert not covers(["he"], "")
     assert not covers(None, "he")
+    assert covers(["no"], "nb-NO")  # macrolanguages fold, as the control plane's langtag does
+    assert covers(["et"], "ekk")
 
 
 def _dataset(tmp_path: Path, locale: str) -> Path:

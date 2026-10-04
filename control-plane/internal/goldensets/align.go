@@ -511,18 +511,17 @@ func alignerOf(plan pipelines.Plan, param string) (*AlignerView, error) {
 	return &AlignerView{Name: ref.Name, Version: ref.Version, VersionID: ref.VersionID, Languages: p.Languages}, nil
 }
 
-// covers reports whether an aligner's languages (primary subtags, or *) include a locale, as the aligning step decides
-// per utterance (its primary subtag).
+// covers reports whether an aligner's languages (primary subtags, or *) include a locale once both fold to their
+// macrolanguage (langtag.Same), as the aligning step decides per utterance.
 func covers(languages []string, locale string) bool {
 	if slices.Contains(languages, "*") {
 		return true
 	}
-	want := langtag.Primary(locale)
-	if want == "" {
+	if langtag.Primary(locale) == "" {
 		return false
 	}
 	for _, l := range languages {
-		if langtag.Primary(l) == want {
+		if langtag.Same(l, locale) { // macrolanguages fold: an aligner listing no covers nb-NO
 			return true
 		}
 	}

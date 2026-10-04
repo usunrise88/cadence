@@ -21,7 +21,7 @@ from pydantic import BaseModel
 from cadence_omni import RUNTIME
 from cadence_omni.aligner import UnalignedError, align_utterance
 from cadence_worker import reference_alignment as ra
-from cadence_worker.members import primary, read_utterances, samples_16k
+from cadence_worker.members import macro, read_utterances, samples_16k
 from cadence_worker.protocol_gen import StepResources
 from cadence_worker.steps.base import StepInputError, cadence_field
 from cadence_worker.steps.context import StepContext
@@ -41,12 +41,13 @@ class AlignReferenceParams(BaseModel):
 
 
 def covers(languages: Any, language: str) -> bool:
-    """Whether an auxiliary's ``languages`` (primary subtags, or ``*``) include an utterance's language."""
+    """Whether an auxiliary's ``languages`` (primary subtags, or ``*``) include an utterance's language, both folded to
+    their macrolanguage (an aligner listing ``no`` covers ``nb-NO``)."""
     if not isinstance(languages, list):
         return False
     if "*" in languages:
         return True
-    return bool(language) and primary(language) in {primary(str(x)) for x in languages}
+    return bool(language) and macro(language) in {macro(str(x)) for x in languages}
 
 
 def why_not(u_language: str, duration: float, text: str, languages: Any, label: str, max_s: float) -> str | None:
