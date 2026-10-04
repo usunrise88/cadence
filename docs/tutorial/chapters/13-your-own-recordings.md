@@ -200,7 +200,15 @@ Freezing does three things, in order:
    matter: the hash of the segment itself, and the hash of the whole file it was cut from. The second one catches
    golden-set audio that ingest cut differently — trimmed by VAD, say — so its own hash no longer matches. If FLEURS
    test audio had slipped into the folder you ingested, the freeze would stop here with `golden-set-leakage` and
-   list the overlap. <!-- TBD gate: run the deliberate leakage demo on the test split, record the refusal -->
+   list the overlap. We tried it on the stand: ingesting the FLEURS `test/` folder on purpose (with the exclusion
+   turned off) gives a draft, and freezing it answers:
+
+   ```text
+   422 Golden set leakage: dataset/fleurs-sr-test-from-mount … shares 700 utterances with
+   golden-set/fleurs-sr-latn-test 2026-10-02.bbf381630549
+   ```
+
+   All 700 — the whole golden set. <!-- ver_01a10646-c5fc…, datasets.freeze dry run, 2026-10-04 -->
    > **In the field** — The first version of this check compared only the segments' own hashes. A review before
    > the stand ran it noticed that ingest trims every FLEURS file with VAD, so a test file ingested from the mount
    > would get a new hash and pass the check — and the model would train on its own exam. The fix was the second
