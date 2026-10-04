@@ -249,4 +249,9 @@ func TestCheckLanguages(t *testing.T) {
 	if err := checkLanguages([]GoldenSet{sr}, m); err != nil {
 		t.Fatalf("a set decoded in a language the model knows: %v", err)
 	}
+	// A replay set in Bokmål on a model tagged with the macrolanguage Norwegian needs no languages map (2026-10-04).
+	no := Model{Label: "subject", base: registry.Version{ID: "ver_n", Name: "base-model/n", Tags: []string{"locale:no", "locale:en-US"}}}
+	if err := checkLanguages([]GoldenSet{{VersionID: "ver_nb", Name: "golden-set/nb", Locale: "nb-NO"}, {VersionID: "ver_nn", Locale: "nn-NO"}}, no); err != nil {
+		t.Fatalf("nb-NO and nn-NO on a model that knows no: %v", err)
+	}
 }

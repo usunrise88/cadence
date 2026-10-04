@@ -81,6 +81,7 @@ func TestCheckLocale(t *testing.T) {
 		{"every locale normalizer", Version{Kind: KindNormalizer, Payload: []byte(`{"locale":"*"}`)}, []string{"sr-RS"}, "", false},
 		{"base model is exempt", Version{Kind: KindBaseModel, Tags: []string{"locale:en"}, Payload: []byte(`{}`)}, []string{"sr-RS"}, "", false},
 		{"script subtag", ds("locale:sr-Latn"), []string{"sr-RS"}, "", false},
+		{"macrolanguage member", ds("locale:nb-NO"), []string{"no"}, "", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := problemType(CheckLocale(tc.v, tc.project, tc.purpose))

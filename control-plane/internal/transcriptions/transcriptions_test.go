@@ -112,6 +112,7 @@ func TestKnowsLanguage(t *testing.T) {
 		want bool
 	}{
 		{tags, "he-IL", true}, {tags, "he", true}, {tags, "ru", true}, {tags, "th-TH", false}, {tags, "auto", true}, {nil, "th-TH", true},
+		{[]string{"locale:no"}, "nb-NO", true}, {[]string{"locale:nb-NO"}, "nn", true}, {[]string{"locale:no"}, "sv-SE", false},
 	} {
 		if got, _ := knowsLanguage(tt.tags, tt.lang); got != tt.want {
 			t.Errorf("knowsLanguage(%v, %s) = %v", tt.tags, tt.lang, got)

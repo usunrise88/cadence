@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/usunrise88/cadence/control-plane/internal/langtag"
 	"github.com/usunrise88/cadence/control-plane/internal/problems"
 )
 
@@ -150,24 +151,18 @@ func Locales(v Version) []string {
 	return out
 }
 
-// language is a locale's primary subtag in lower case (he-IL → he, sr-Latn-RS → sr).
-func language(locale string) string {
-	l, _, _ := strings.Cut(strings.ToLower(strings.TrimSpace(locale)), "-")
-	l, _, _ = strings.Cut(l, "_")
-	return l
-}
-
 // anyLanguage reports a locale that stands for every language (a normalizer for all locales).
 func anyLanguage(l string) bool { return l == "*" || strings.EqualFold(l, "mul") }
 
-// SharesLanguage reports whether any of have is in the language of any of want (he matches he-IL).
+// SharesLanguage reports whether any of have is in the language of any of want (he matches he-IL; a member of a
+// macrolanguage matches it, nb-NO matches no: langtag).
 func SharesLanguage(have, want []string) bool {
 	for _, h := range have {
 		if anyLanguage(h) {
 			return true
 		}
 		for _, w := range want {
-			if language(h) == language(w) {
+			if langtag.Same(h, w) {
 				return true
 			}
 		}
