@@ -20,8 +20,9 @@ oasis-token}`), resolved by the control plane to the version the project adopted
 3. Rows: `{audio, text, member, language, confidence, reason, vote: true, model: {auxiliary, versionId, endpoint,
    engine, modelVersion}, decodingHash}`. A `NON_SPEECH` answer is an empty text.
 
-OASIS is itself a vote of several models, so its rows carry `vote: true` and `pseudolabel_ensemble` prefers its text
-when it agrees with another member. Its text is spoken form without punctuation or capitals.
+OASIS is itself a vote of several models, so its rows carry `vote: true`. Its text is spoken form without
+punctuation or capitals, so when it agrees with Whisper `pseudolabel_ensemble` keeps Whisper's cased, punctuated text
+(`pseudolabel.prefer_written_form`); OASIS's vote decides only between members that write alike.
 
 The client is generated from the contract vendored at `worker/packs/services/proto/oasis_contract/v1/asr.proto`; the
 copy's source commit is in `proto/SOURCE.yaml` (`23811461…`, the file last changed in `94f74382…`).
@@ -37,9 +38,10 @@ with an input error (`UNAUTHENTICATED`).
 
 ## Place in the loop
 
-Data. One member of the pseudo-label ensemble, on segments without text (`segments_cut`). In
-`pipelines/pseudo-label.yaml` it is an optional step: without the service the dry run warns and the run goes on with
-the other members.
+Data. One of the two members of the pseudo-label ensemble in `pipelines/pseudo-label.yaml` (with Whisper; owner
+decision 2026-10-04), on segments without text (`segments_cut`). It is required there: without the service the dry
+run refuses with `auxiliary-unavailable` and nothing is queued, rather than running a one-member ensemble. Start
+OASIS, check `auxiliaries.get` answers `reachable: true`, and run again.
 
 ## Fields and defaults
 

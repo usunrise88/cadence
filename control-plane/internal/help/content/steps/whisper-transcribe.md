@@ -30,8 +30,9 @@ the ensemble's second opinion on LID.
 
 ## Place in the loop
 
-Data. One member of the pseudo-label ensemble (`pseudolabel_ensemble`), beside `oasis_transcribe` and
-`nemotron_transcribe`, on segments without text.
+Data. One of the two members of the pseudo-label ensemble (`pseudolabel_ensemble`) in `pipelines/pseudo-label.yaml`,
+beside `oasis_transcribe`, on segments without text. When the two agree its text is the label: it is cased and
+punctuated, the training style (`pseudolabel.prefer_written_form`).
 
 ## Fields and defaults
 

@@ -14,7 +14,7 @@ The bot's scripted turns and segments with a human transcript are left out (`whi
 segment whose audio repeats another's (the same hash: two copies of one file on the mount) is cut once; the ensemble
 gives every row with that audio the same verdict.
 
-The pseudo-label members (`nemotron_transcribe`, `whisper_transcribe`, `oasis_transcribe`) and `lid_classify` read
+The pseudo-label members (`whisper_transcribe` and `oasis_transcribe` in the template) and `lid_classify` read
 it as any dataset and key their rows by the BLAKE3 hash of each clip, which is the segment's identity, so
 `pseudolabel_ensemble` joins their hypotheses back to the segments.
 

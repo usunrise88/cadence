@@ -1,4 +1,4 @@
-"""``pseudolabel_ensemble@1`` — combine the hypotheses of several pseudo-label members into one text per segment, or
+"""``pseudolabel_ensemble@2`` — combine the hypotheses of several pseudo-label members into one text per segment, or
 a dispute (docs/review/2026-10-03-phase-4-plan.md "Decisions taken for phase 4" 6-7, R26; Granary-style agreement).
 
 Consumes ``segments`` (``cadence.segments/1``), ``hypotheses`` from each member wired as ``hypotheses.0``,
@@ -10,8 +10,9 @@ segment: the chosen text and every member's text).
 Per segment without a text of its own (a segment that already has text and an origin that is not a pseudo-label,
 such as the bot channel's TTS script, passes unchanged):
 
-1. Candidates are the members that wrote a hypothesis for it. Fewer than two → disputed ``too-few-members``; every
-   text empty after the normalizer → ``no-speech``.
+1. Candidates are the members that wrote a hypothesis for it. Fewer than ``min_members`` → disputed
+   ``too-few-members``; every text empty after the normalizer → ``no-speech``. The step itself refuses to run with
+   fewer than ``min_members`` members wired: a one-member "ensemble" would agree with itself.
 2. Pairwise WER after the scoring normalizer: word edit distance over the longer of the two texts (symmetric, so the
    order of members does not matter). Members within ``max_pairwise_wer`` of at least one other member agree; fewer
    than ``min_agreeing_members`` agreeing → ``disagreement``.
@@ -19,8 +20,10 @@ such as the bot channel's TTS script, passes unchanged):
    confidence reaches ``lid_min_confidence``, else the members' own detected languages (Whisper's second opinion),
    compared by primary subtag or within one of ``lid_equivalents``. A mismatch → ``lid-mismatch``; no evidence while
    ``require_lid`` → ``lid-unknown``; a segment without a language skips the check.
-4. The pick: a member marked ``vote`` (itself an ensemble) when it agrees, else the agreeing member with the lowest
-   mean WER to the others; its text is written as the member wrote it (the training style is restored downstream).
+4. The pick among the agreeing members: with ``prefer_written_form`` (the default) first a member whose text is in
+   written form — capitals or sentence punctuation, as Whisper writes — over one in spoken form (OASIS writes
+   lowercase without punctuation), so a label keeps the training style; then a member marked ``vote`` (itself an
+   ensemble); then the lowest mean WER to the others. Its text is written as the member wrote it.
    Confidence = (agreeing members / members) x (1 - the pick's mean WER to the other agreeing members).
 
 A kept segment gets origin ``pseudo-label``; a disputed one ``pseudo-label:disputed`` with the best candidate as its
@@ -34,6 +37,7 @@ docs/help/steps/pseudolabel-ensemble.md.
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -51,7 +55,7 @@ from cadence_worker.segments import ORIGIN_DISPUTED, ORIGIN_PSEUDO, needs_label,
 from cadence_worker.steps.base import StepInputError, cadence_field
 from cadence_worker.steps.context import StepContext
 
-KIND = "pseudolabel_ensemble@1"
+KIND = "pseudolabel_ensemble@2"
 MEMBER_INPUT = re.compile(r"^hypotheses(\.\d+)?$")
 
 
@@ -61,6 +65,8 @@ class EnsembleParams(BaseModel):
     lid_min_confidence: float = cadence_field(default_ref="pseudolabel.lid_min_confidence")
     lid_equivalents: list[list[str]] = cadence_field(default_ref="pseudolabel.lid_equivalents")
     require_lid: bool = cadence_field(default_ref="pseudolabel.require_lid")
+    min_members: int = cadence_field(default_ref="pseudolabel.min_members")
+    prefer_written_form: bool = cadence_field(default_ref="pseudolabel.prefer_written_form")
 
 
 @dataclass
@@ -90,6 +96,21 @@ def pairwise_wer(a: Sequence[str], b: Sequence[str]) -> float:
     """Word edit distance over the longer text: 0 for equal texts, 1 when nothing matches (symmetric)."""
     longest = max(len(a), len(b))
     return edit_distance(list(a), list(b)) / longest if longest else 0.0
+
+
+# Apostrophes and hyphens sit inside words of spoken-form text too ("don't", "e-mail"): they say nothing of style.
+INWORD_PUNCTUATION = frozenset("'\u2019-\u2010")
+
+
+def written_form(text: str) -> bool:
+    """Whether a text is in written form: a capital letter or sentence punctuation (Whisper's "Dobar dan, hvala.")
+    rather than spoken form (OASIS's "dobar dan hvala"). Scripts without case (Hebrew) count by punctuation."""
+    for ch in text:
+        if ch.isupper() or ch.istitle():
+            return True
+        if unicodedata.category(ch).startswith("P") and ch not in INWORD_PUNCTUATION:
+            return True
+    return False
 
 
 def lid_verdict(
@@ -132,7 +153,7 @@ def decide(cands: list[Candidate], expected: str, lid_row: Mapping[str, Any] | N
         conf = max(0.0, 1.0 - best.mean_wer) if best and n > 1 else 0.0
         return Verdict(ORIGIN_DISPUTED, best.text if best else "", round(conf, 4), "", reason, lid, cands)
 
-    if n < 2:
+    if n < max(2, p.min_members):
         return disputed("too-few-members")
     if all(not c.words for c in cands):
         return disputed("no-speech")
@@ -143,13 +164,16 @@ def decide(cands: list[Candidate], expected: str, lid_row: Mapping[str, Any] | N
         return disputed("lid-mismatch")
     if lid.get("agrees") is None and expected and p.require_lid:
         return disputed("lid-unknown")
-    voters = [i for i in agree if cands[i].vote]
 
     def mean_to_agreeing(i: int) -> float:
         others = [wer[i][j] for j in agree if j != i]
         return sum(others) / len(others) if others else 1.0
 
-    pick = voters[0] if voters else min(agree, key=lambda i: (cands[i].mean_wer, i))
+    if p.prefer_written_form:
+        pick = min(agree, key=lambda i: (not written_form(cands[i].text), not cands[i].vote, cands[i].mean_wer, i))
+    else:
+        voters = [i for i in agree if cands[i].vote]
+        pick = voters[0] if voters else min(agree, key=lambda i: (cands[i].mean_wer, i))
     conf = len(agree) / n * (1.0 - mean_to_agreeing(pick))
     return Verdict(
         ORIGIN_PSEUDO, cands[pick].text, round(max(0.0, min(1.0, conf)), 4), cands[pick].member, "", lid, cands
@@ -186,7 +210,7 @@ def labelled(row: Mapping[str, Any], v: Verdict) -> dict[str, Any]:
 
 
 class PseudolabelEnsembleStep:
-    version: ClassVar[str] = "1"
+    version: ClassVar[str] = "2"
     consumes: ClassVar[Mapping[str, str]] = {
         "segments": "segments",
         "hypotheses": "hypotheses",
@@ -207,8 +231,11 @@ class PseudolabelEnsembleStep:
             raise StepInputError(str(e)) from e
         header, rows = read_segments(inputs["segments"])
         names = sorted((k for k in inputs if MEMBER_INPUT.match(k)), key=lambda k: (len(k), k))
-        if len(names) < 2:
-            raise StepInputError(f"wire at least two members' hypotheses (hypotheses.0, hypotheses.1, …); got {names}")
+        if len(names) < max(2, p.min_members):
+            raise StepInputError(
+                f"wire at least {max(2, p.min_members)} members' hypotheses (hypotheses.0, hypotheses.1, …; "
+                f"pseudolabel.min_members); got {names}: an ensemble of fewer agrees with itself"
+            )
         members = [read_jsonl_by_audio(inputs[k], f"hypotheses {k}") for k in names]
         lid = read_jsonl_by_audio(inputs["lid"], "lid") if "lid" in inputs else {}
         default_language = str(header.get("language") or "")

@@ -13,7 +13,7 @@ It checks it in two places:
 
 | Where | Check | What you see |
 | --- | --- | --- |
-| `pipelines.run` (the dry run included), `playbooks` steps that start a pipeline | A step parameter names the auxiliary (x-cadence `registryRef`); the control plane opens a TCP connection to `service.endpoint` within 3 s | This problem; nothing was queued. For a step marked `optional` (the `oasis` member of `pipelines/pseudo-label`) only a plan warning with code `auxiliary-unavailable`: the run starts, the step fails and the run goes on without it |
+| `pipelines.run` (the dry run included), `playbooks` steps that start a pipeline | A step parameter names the auxiliary (x-cadence `registryRef`); the control plane opens a TCP connection to `service.endpoint` within 3 s | This problem; nothing was queued — the `oasis` member of `pipelines/pseudo-label` is required (the ensemble votes Whisper and OASIS). For a step marked `optional` in a pipeline of your own only a plan warning with code `auxiliary-unavailable`: the run starts, the step fails and the run goes on without it |
 | `auxiliaries.get` | The same connection, for a service auxiliary | `reachable: false` (the "Adapt a new language" playbook waits on `reachable: true`) |
 | The step itself (`oasis_transcribe`) | `GetModelInfo` must answer within `health_timeout_s` (5 s) before any audio is sent; a `Transcribe` call that is unavailable or exceeds `timeout_s` fails the step too | The step fails with error type `step`, retryable, message `auxiliary-unavailable: …` |
 
