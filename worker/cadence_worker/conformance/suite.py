@@ -15,7 +15,11 @@ then requires the trained, averaged model to beat it on every profile, and to st
 ``conformance["score"]["maxWer"]`` when the family declares one. A family without ``baseline`` has that check reported
 as skipped. The base model's WER (materialize role → transcribe at the kind's default profile → score) is reported.
 
-Export and parity join in phase 5. Contracts a pack must meet beyond the schemas: the transcribe kind takes a
+Phase 5 adds export → parity (the parity reference and the serve role on the deployable, judged by the neutral
+``parity_score``) → benchmark (two real-time levels judged by ``benchmark_score``) for a family that maps the export,
+parity and serve roles; a family that maps fewer has them reported as skipped.
+
+Contracts a pack must meet beyond the schemas: the transcribe kind takes a
 ``profile`` parameter naming a latency profile; the train kind resumes from ``overrides.resumeFrom``; checkpoints carry
 the neutral meta family, step, valWer and weightsHash (a materialized base model's valWer may be null).
 
@@ -28,6 +32,7 @@ stay unwired.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import tempfile
 import time
@@ -43,7 +48,14 @@ from cadence_worker.registry import Family, KindEntry, load_families, load_kinds
 from cadence_worker.steps.base import help_slug, missing_metadata, role_of
 
 REQUIRED_ROLES = ("calibrate", "train", "average", "transcribe", "materialize")
-LATER_ROLES = {"export": "joins in phase 5", "parity": "joins in phase 5"}
+# Phase 5: a family that maps all three runs the export, parity and benchmark stages (a deployable, its served decode
+# against the parity reference, the latency report); one that maps fewer has them reported as skipped.
+DEPLOY_ROLES = ("export", "parity", "serve")
+# A role a kind may fill although it declares another: the parity reference is the family's own decoder.
+ROLE_STAND_INS = {"parity": "transcribe"}
+PARITY_SCORE_KIND = "parity_score"
+BENCHMARK_SCORE_KIND = "benchmark_score"
+DEPLOYABLE_KEYS = ("schema", "format", "family", "profile", "weightsHash", "serving", "files", "manifestSha256")
 CHECKPOINT_META = ("family", "step", "valWer", "weightsHash")
 HYPOTHESIS_FIELDS = ("text", "words", "decoding", "decodingHash", "family", "weightsHash")
 SCORES_SUMMARY = ("schema", "scorer", "utterances", "refWords", "wer", "cer", "werNoPunct", "sub", "del", "ins")
@@ -148,8 +160,10 @@ def check_schemas(
             mapped = kinds.get(kind)
             if mapped is None:
                 problems.append(f"family {fname}: role {role} maps to {kind}, which runtime {runtime} does not publish")
-            elif role_of(mapped.cls) != role:
+            elif role_of(mapped.cls) != role and role_of(mapped.cls) != ROLE_STAND_INS.get(role):
                 problems.append(f"family {fname}: {kind} fills role {role!r} but declares {role_of(mapped.cls)!r}")
+        if roles.get("export") and not d.get("exportFormats"):
+            problems.append(f"family {fname}: an export role without exportFormats")
         if not d.get("help"):
             problems.append(f"family {fname}: no help slug")
         elif (f := _help_file(str(d["help"]), help_dir)) is not None and not f.is_file():
@@ -586,6 +600,91 @@ def run_family(flow: Flow, fam: Family, report: Report) -> None:
                 raise ConformanceError(f"WER above the family's conformance bound {max_wer}: {over}")
         return detail
 
+    # ---------------------------------------------------------------- phase 5: export, parity, benchmark
+
+    def export() -> dict[str, Any]:
+        """The averaged checkpoint as a deployable (role export) at the default profile in the family's format."""
+        kind = roles["export"]
+        fmt = next((f["format"] for f in d["exportFormats"] if f.get("default")), d["exportFormats"][0]["format"])
+        params = {**conf.get("export", {}), "profile": default_profile()["name"], "format": fmt}
+        out, _ = flow.run(kind, params, flow.inputs_for(kind, {**available, "checkpoint": state["avg"]}))
+        dep = _by_type(_expect_done(out, "export"), "deployable", "export")
+        files = flow.dir_files(dep)
+        if "deployable.json" not in files:
+            raise ConformanceError(f"the deployable lacks deployable.json: {sorted(files)}")
+        doc = json.loads(files["deployable.json"].read_bytes())
+        if missing := [k for k in DEPLOYABLE_KEYS if k not in doc]:
+            raise ConformanceError(f"deployable.json lacks {missing}")
+        if doc["schema"] != "cadence.deployable/1" or doc["format"] != fmt or doc["family"] != d["name"]:
+            raise ConformanceError(f"deployable.json names {doc['schema']}, {doc['format']}, {doc['family']}")
+        model_dir = str(doc["serving"].get("modelDir") or "").strip("/")
+        listed = {f["path"]: f for f in doc["files"]}
+        held = {p.removeprefix(model_dir + "/"): f for p, f in files.items() if p.startswith(model_dir + "/")}
+        if not model_dir or set(listed) != set(held):
+            raise ConformanceError(f"deployable.json files {sorted(listed)} are not the model directory {sorted(held)}")
+        for rel, f in held.items():
+            if hashlib.sha256(f.read_bytes()).hexdigest() != listed[rel]["sha256"]:
+                raise ConformanceError(f"deployable.json's sha256 of {rel} is not the file's")
+        lines = "".join(f"{listed[p]['sha256']}  {p}\n" for p in sorted(listed, key=str.encode))
+        if hashlib.sha256(lines.encode()).hexdigest() != doc["manifestSha256"]:
+            raise ConformanceError("manifestSha256 is not the SHA-256 of the sorted (sha256, path) lines")
+        state["deployable"] = dep
+        return {"format": fmt, "profile": doc["profile"], "files": len(listed), "manifestSha256": doc["manifestSha256"]}
+
+    def serve(concurrency: int, pace: str, seconds: float = 0.0) -> tuple[ArtifactRef, ArtifactRef]:
+        kind = roles["serve"]
+        params = {
+            **conf.get("serve", {}),
+            "profile": default_profile()["name"],
+            "concurrency": concurrency,
+            "pace": pace,
+            "seconds": seconds,
+        }
+        out, _ = flow.run(kind, params, flow.inputs_for(kind, {**available, "deployable": state["deployable"]}))
+        outputs = _expect_done(out, f"serve at {concurrency}")
+        return _by_type(outputs, "hypotheses", "serve"), _by_type(outputs, "serving_timings", "serve")
+
+    def parity() -> dict[str, Any]:
+        """The parity reference and the served decode of the fixtures, judged by the neutral parity_score."""
+        kind = roles["parity"]
+        params = {**conf.get("transcribe", {}), "profile": default_profile()["name"]}
+        out, _ = flow.run(kind, params, flow.inputs_for(kind, {**available, "checkpoint": state["avg"]}))
+        ref_out = _expect_done(out, "parity reference")
+        reference = _by_type(ref_out, "hypotheses", "parity reference")
+        served, _ = serve(2, "fast")
+        inputs = {
+            "reference": reference,
+            "served": served,
+            "data": available["dataset"],
+            "normalizer": available["normalizer"],
+        }
+        if any(r["type"] == "smoke_inputs" for r in ref_out.values()):
+            inputs["smoke"] = _by_type(ref_out, "smoke_inputs", "parity reference")
+        out, _ = flow.run(PARITY_SCORE_KIND, {}, inputs)
+        rep = _by_type(_expect_done(out, PARITY_SCORE_KIND), "parity_report", PARITY_SCORE_KIND)
+        doc = json.loads(flow.dir_files(rep)["report.json"].read_bytes())
+        if doc.get("schema") != "cadence.parity/1" or doc.get("utterances") != len(refs):
+            raise ConformanceError(f"the parity report is not cadence.parity/1 over {len(refs)} utterances")
+        if doc["verdict"] != "passed":
+            raise ConformanceError(f"the served decode is not the reference's: {doc['reasons']}")
+        return {k: doc[k] for k in ("verdict", "compared", "identicalShare", "werDelta", "disagreement")}
+
+    def benchmark() -> dict[str, Any]:
+        """Two real-time levels through the serve role, judged by the neutral benchmark_score at the higher one."""
+        timings = {f"timings.{i}": serve(n, "realtime")[1] for i, n in enumerate((1, 2))}
+        out, _ = flow.run(BENCHMARK_SCORE_KIND, {"target_streams": 2}, timings)
+        rep = _by_type(_expect_done(out, BENCHMARK_SCORE_KIND), "benchmark_report", BENCHMARK_SCORE_KIND)
+        doc = flow.read_json(rep)
+        if doc.get("schema") != "cadence.benchmark/1" or [lv["streams"] for lv in doc.get("levels", [])] != [1, 2]:
+            raise ConformanceError(f"the benchmark report is not cadence.benchmark/1 over levels 1 and 2: {doc}")
+        if any(lv["chunks"] == 0 for lv in doc["levels"]):
+            raise ConformanceError("a benchmark level counted no chunks")
+        return {
+            "verdict": doc["verdict"],
+            "maxStreamsWithinBudget": doc["maxStreamsWithinBudget"],
+            "p95ChunkLatencyMs": [lv["chunkLatencyMs"]["p95"] for lv in doc["levels"]],
+        }
+
     ok = stage("calibrate", calibrate)
     ok = stage("train", train) and ok
     if ok:
@@ -598,8 +697,15 @@ def run_family(flow: Flow, fam: Family, report: Report) -> None:
             if stage("materialize", materialize):
                 stage("transcribe:base-model", transcribe(default_profile(), "material", "baseModelWer"))
             stage("score", score)
-    for role, why in LATER_ROLES.items():
-        report.stages.append(Stage(f"{prefix}/{role}", True, 0.0, {"skipped": why}))
+            if all(roles.get(r) for r in DEPLOY_ROLES):
+                if stage("export", export):
+                    stage("parity", parity)
+                    stage("benchmark", benchmark)
+                return
+    missing = [r for r in DEPLOY_ROLES if not roles.get(r)]
+    why = f"the family maps no {', '.join(missing)} role" if missing else "the averaged checkpoint is missing"
+    for name in ("export", "parity", "benchmark"):
+        report.stages.append(Stage(f"{prefix}/{name}", True, 0.0, {"skipped": why}))
 
 
 def run(

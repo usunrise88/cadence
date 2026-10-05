@@ -92,7 +92,17 @@ def test_family_profiles_and_roles() -> None:
     assert FAMILY.runtime == "toy"
     assert d["defaultsSection"] == "packs.toy"
     assert [p["name"] for p in PROFILES] == ["offline", "320ms"]
-    assert set(d["roles"]) == {"calibrate", "train", "average", "transcribe", "materialize", "live"}
+    assert set(d["roles"]) == {
+        "calibrate",
+        "train",
+        "average",
+        "transcribe",
+        "materialize",
+        "live",
+        "export",
+        "parity",
+        "serve",
+    }
 
 
 def test_train_average_transcribe_in_process(tmp_path: Path, dataset: tuple[Path, Store]) -> None:

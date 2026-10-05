@@ -298,6 +298,7 @@ class ModelFamilyDescriptor(TypedDict):
     capabilities: NotRequired[ModelFamilyDescriptorCapabilities]
     latencyProfiles: list[LatencyProfile]
     roles: dict[str, str]
+    exportFormats: NotRequired[list[ModelFamilyDescriptorExportFormatsItem]]
     interactive: NotRequired[ModelFamilyDescriptorInteractive]
     defaultsSection: NotRequired[str]
     help: NotRequired[str]
@@ -311,6 +312,12 @@ class ModelFamilyDescriptorCapabilities(TypedDict):
     boosting: NotRequired[str]
     languagePrompt: NotRequired[bool]
     trainModes: NotRequired[list[Literal["finetune", "adapter", "scratch"]]]
+
+
+class ModelFamilyDescriptorExportFormatsItem(TypedDict):
+    format: str
+    server: NotRequired[str]
+    default: NotRequired[bool]
 
 
 class ModelFamilyDescriptorInput(TypedDict):
@@ -401,7 +408,7 @@ class StepResources(TypedDict):
     gpus: NotRequired[int]
     memoryGb: NotRequired[float]
     diskGb: NotRequired[float]
-    jobKind: NotRequired[Literal["training", "eval", "export", "data", "interactive"]]
+    jobKind: NotRequired[Literal["training", "eval", "export", "data", "interactive", "shadow", "benchmark"]]
 
 
 class StepSpec(TypedDict):
